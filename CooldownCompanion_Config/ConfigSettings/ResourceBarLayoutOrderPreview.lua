@@ -65,16 +65,23 @@ local LAYOUT_PREVIEW_ANIM_DURATION = 0.08
 local LAYOUT_PREVIEW_EMPTY_DROP_SIZE = 8
 local LAYOUT_PREVIEW_MAX_REAL_ICONS = 4
 
--- Custom-bar identity marks. Two bars in the same color are otherwise
--- indistinguishable without clicking each one, so the canvas labels them —
--- the one sanctioned permanent deviation from the fidelity principle (owner
--- ruling 2026-07-26). Deliberately config-chrome: small, dimmed, truncated,
--- in the config's own font rather than the bar's configured text fonts, so
--- it reads as something the config drew and never as bar content. Custom
--- bars only; resources are identified by their well-known colors.
-local LAYOUT_PREVIEW_IDENTITY_ALPHA = 0.72
+-- Custom-bar identity, revealed on hover (owner ruling 2026-07-26, after
+-- seeing a permanent label in game). The preview must be clean at rest AND
+-- identify every bar at a glance; those only conflict if identity is
+-- visible at rest, so it is not. Hovering any bar names them ALL at once —
+-- one mouse movement, no clicks, the whole map — and moving away leaves
+-- bars only.
+--
+-- A permanent label was tried first and rejected: anything drawn inside the
+-- bar's rect reads as the bar's own content no matter how it is styled,
+-- because that rect is exactly where bar text lives. A transient overlay
+-- has the opposite problem to solve — it reads as an affordance on sight,
+-- so it can be properly legible instead of apologetically dim, and it is
+-- never present while the owner is judging their design.
+-- Custom bars only; resources are identified by their well-known colors.
 local LAYOUT_PREVIEW_IDENTITY_FONT_SCREEN_SIZE = 10
 local LAYOUT_PREVIEW_IDENTITY_INSET = 4
+local LAYOUT_PREVIEW_IDENTITY_PLATE_COLOR = { 0, 0, 0, 0.78 }
 -- Shell (Show Only While Aura Active) bars carry the bar-mode panel
 -- mirror's crossed-eye badge, same atlas and counter-scale convention, so
 -- the two previews say "this one only shows while its aura runs" the same
@@ -435,6 +442,10 @@ local function CreateSlotFrame(parent)
     frame.identityLayer = CreateFrame("Frame", nil, frame)
     frame.identityLayer:SetAllPoints(frame.previewCanvas)
     frame.identityLayer:EnableMouse(false)
+    -- Plate behind the name so it stays legible over any bar color, and
+    -- so the label reads as an overlay laid on top rather than as text the
+    -- bar is displaying.
+    frame.identityLayer.labelBg = frame.identityLayer:CreateTexture(nil, "ARTWORK")
     frame.identityLayer.label = frame.identityLayer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     frame.identityLayer.label:SetWordWrap(false)
     frame.identityLayer.badge = frame.identityLayer:CreateTexture(nil, "OVERLAY", nil, 7)
@@ -1256,8 +1267,10 @@ end
 
 -- Identity marks for one custom-bar slot. Runs AFTER the content scale is
 -- known so both marks can counter-scale and stay legible on a preview that
--- has been shrunk to fit.
-local function ApplySlotIdentityMarks(frame, scale)
+-- has been shrunk to fit. The badge is permanent (a small corner glyph
+-- reads as chrome, and the setting it stands for has no other visual); the
+-- name is laid out here but only shown while the preview is hovered.
+local function ApplySlotIdentityMarks(preview, frame, scale)
     local layer = frame and frame.identityLayer
     if not layer then return end
     local slot = frame.slotData
@@ -1270,7 +1283,8 @@ local function ApplySlotIdentityMarks(frame, scale)
     local isVertical = frame._cdcIdentityVertical == true
 
     -- A narrow vertical bar cannot carry a name, so it gets the same short
-    -- label the drag chrome uses.
+    -- label the drag chrome uses; its plate is allowed to overhang the thin
+    -- bar, which a transient overlay can afford to do.
     local text = isVertical and slot.shortLabel or slot.label
     -- Slot labels are stored as "Custom Bar: <name>"; the prefix is noise
     -- when every labelled bar in the canvas is a custom bar.
@@ -1279,31 +1293,43 @@ local function ApplySlotIdentityMarks(frame, scale)
     end
 
     local label = layer.label
+    local labelBg = layer.labelBg
     if text and text ~= "" then
         local fontFile, _, flags = label:GetFont()
         label:SetFont(fontFile,
             math_max(8, math_min(14, LAYOUT_PREVIEW_IDENTITY_FONT_SCREEN_SIZE / scale)),
             flags or "")
         label:SetText(text)
-        label:SetTextColor(1, 1, 1, LAYOUT_PREVIEW_IDENTITY_ALPHA)
+        label:SetTextColor(1, 1, 1, 1)
+        label:SetJustifyH("CENTER")
         label:ClearAllPoints()
+        label:SetPoint("CENTER", layer, "CENTER", 0, 0)
         if isVertical then
-            label:SetJustifyH("CENTER")
-            label:SetPoint("CENTER", layer, "CENTER", 0, 0)
             label:SetWidth(0)
         else
-            label:SetJustifyH("LEFT")
-            label:SetPoint("LEFT", layer, "LEFT", LAYOUT_PREVIEW_IDENTITY_INSET, 0)
-            -- Fixed width + no word wrap truncates with an ellipsis rather
-            -- than overflowing the bar. Measured off the slot frame, which
-            -- was explicitly sized; the layer only inherits that by anchor
-            -- and would report nothing until the next layout pass.
-            label:SetWidth(math_max(1,
-                (frame:GetWidth() or 0) - (LAYOUT_PREVIEW_IDENTITY_INSET * 2)))
+            -- Snug to the text, but never wider than the bar: a long name
+            -- truncates with an ellipsis instead of overflowing. Measured
+            -- off the slot frame, which was explicitly sized; the layer
+            -- inherits its size by anchor and reports nothing until the
+            -- next layout pass.
+            local available = math_max(1,
+                (frame:GetWidth() or 0) - (LAYOUT_PREVIEW_IDENTITY_INSET * 2))
+            label:SetWidth(math_min(label:GetStringWidth() + 1, available))
         end
-        label:Show()
+        labelBg:SetColorTexture(
+            LAYOUT_PREVIEW_IDENTITY_PLATE_COLOR[1], LAYOUT_PREVIEW_IDENTITY_PLATE_COLOR[2],
+            LAYOUT_PREVIEW_IDENTITY_PLATE_COLOR[3], LAYOUT_PREVIEW_IDENTITY_PLATE_COLOR[4])
+        labelBg:ClearAllPoints()
+        labelBg:SetPoint("TOPLEFT", label, "TOPLEFT", -3, 1)
+        labelBg:SetPoint("BOTTOMRIGHT", label, "BOTTOMRIGHT", 3, -1)
+        layer._cdcHasLabel = true
+        local shown = preview.identityLabelsShown == true
+        label:SetShown(shown)
+        labelBg:SetShown(shown)
     else
+        layer._cdcHasLabel = nil
         label:Hide()
+        labelBg:Hide()
     end
 
     local badge = layer.badge
@@ -1325,6 +1351,38 @@ local function ApplySlotIdentityMarks(frame, scale)
     end
 
     layer:Show()
+end
+
+local function AnyPreviewSlotHovered(preview)
+    local pool = preview.pools and preview.pools.slots
+    if not pool then return false end
+    for index = 1, (preview.used.slots or 0) do
+        local frame = pool[index]
+        if frame and frame:IsShown() and frame:IsMouseOver() then
+            return true
+        end
+    end
+    return false
+end
+
+-- Reveal or hide every custom bar's name at once. Hovering ONE bar names
+-- them ALL: the point is the whole map in one glance, which naming only the
+-- hovered bar would not give (the tooltip already does that).
+local function SetIdentityLabelsShown(preview, shown)
+    shown = shown == true
+    if preview.identityLabelsShown == shown then
+        return
+    end
+    preview.identityLabelsShown = shown
+    local pool = preview.pools and preview.pools.slots
+    if not pool then return end
+    for index = 1, (preview.used.slots or 0) do
+        local layer = pool[index] and pool[index].identityLayer
+        if layer and layer._cdcHasLabel then
+            layer.label:SetShown(shown)
+            layer.labelBg:SetShown(shown)
+        end
+    end
 end
 
 local function HideUnusedSlotVisuals(frame)
@@ -2042,6 +2100,8 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             if self.hoverHighlight then
                 self.hoverHighlight:Show()
             end
+            -- Names every custom bar, not just this one.
+            SetIdentityLabelsShown(preview, true)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(slotModel.label or "Bar", 1, 1, 1)
             local dragHelp
@@ -2062,6 +2122,13 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             if self.hoverHighlight then
                 self.hoverHighlight:Hide()
             end
+            -- Next frame, so sliding from one bar straight onto its
+            -- neighbour does not flicker the whole set off and back on:
+            -- by then the neighbour's OnEnter has fired and this reports
+            -- the cursor still inside the stack.
+            C_Timer.After(0, function()
+                SetIdentityLabelsShown(preview, AnyPreviewSlotHovered(preview))
+            end)
             GameTooltip:Hide()
         end)
         local x, y, w, h = BuildLaneSlotGeometry(lane, index)
@@ -2886,9 +2953,13 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     content:SetPoint("CENTER", root, "CENTER", 0, 0)
 
     -- Identity marks last: they counter-scale against the fit above, so
-    -- they can only be laid out once it is known.
+    -- they can only be laid out once it is known. A rebuild can happen with
+    -- the cursor already resting on a bar (a value change repaints the
+    -- preview under it), so the reveal state is re-derived rather than
+    -- assumed off.
+    preview.identityLabelsShown = AnyPreviewSlotHovered(preview)
     for index = 1, (preview.used.slots or 0) do
-        ApplySlotIdentityMarks(preview.pools.slots[index], scale)
+        ApplySlotIdentityMarks(preview, preview.pools.slots[index], scale)
     end
 
     FinalizePreviewState(preview)
