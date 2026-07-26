@@ -51,9 +51,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
     local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
     local IsSpellCustomBarConfig = RB.IsSpellCustomBarConfig
     local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
-    local ApplyPixelBorders = RB.ApplyPixelBorders
     local HidePixelBorders = RB.HidePixelBorders
-    local IsBarAuraIndicatorEnabled = ST.IsBarAuraIndicatorEnabled
 
     local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
     local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
@@ -225,12 +223,15 @@ function RB.CreateResourceBarAuraHostModule(deps)
         style.borderRenderMode = GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM)
 
         -- Fill: StyleActiveBarFill reads barAuraColor as THE fill color (the
-        -- kit fill only exists while the aura runs). The barAuraColor
-        -- override applies only with the indicator enabled — live custom-bar
-        -- behavior; otherwise the bar's configured color drives the fill.
-        if IsBarAuraIndicatorEnabled(cabConfig) and cabConfig.barAuraColor then
+        -- kit fill only exists while the aura runs). Unconditional, like the
+        -- panels — never gated on the indicator toggle (that gate ate the
+        -- configured aura color during 1B validation). An explicit
+        -- barAuraColor always wins; without one, aura entries default to
+        -- the bar's own color (the fill IS the bar) and spell entries to
+        -- the kit's green aura-drain default (nil → StyleActiveBarFill).
+        if cabConfig.barAuraColor then
             style.barAuraColor = cabConfig.barAuraColor
-        else
+        elseif not IsSpellCustomBarConfig(cabConfig) then
             style.barAuraColor = cabConfig.barColor or { 0.5, 0.5, 1, 1 }
         end
         -- Overwritten by the collector from the live frame's fill direction.
@@ -317,6 +318,14 @@ function RB.CreateResourceBarAuraHostModule(deps)
                 frame._ccCabStackBlocksActive = nil
                 ST.HideStackBlocks(frame._ccCabStackBlocks)
                 ST.HideStackBlockBorders(frame._ccCabStackBlockBorders)
+            end
+            -- Unconditional restore: blocks-mode zeroes the bg region alpha
+            -- and ClearStaleRecycledBarRuntimeState clears the flag before
+            -- this runs, so a mode switch back to duration would otherwise
+            -- leave the background dark. Prepare re-applies the pixel
+            -- borders itself; region alpha 1 is the untouched default.
+            if frame.bg then
+                frame.bg:SetAlpha(1)
             end
             return
         end
