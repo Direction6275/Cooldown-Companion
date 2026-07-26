@@ -1430,6 +1430,29 @@ local function GetResourceSegmentedSmoothing(settings, specID)
     return ST.NormalizeSegmentedSmoothing(profile and profile.segmentedSmoothing or nil)
 end
 
+-- Maelstrom Weapon stack display shape. The stack count is identical in
+-- every style; only the widget that renders it differs:
+--   overlay    five segments with a second colour layer for stacks past
+--              five (the default, and the only pre-12.1 look)
+--   segments   one segment per stack, no overlay layer
+--   continuous a single bar filling from empty to the stack maximum
+-- The maximum is talent-driven (mwMaxStacks), so "segments" is five or ten
+-- segments depending on Raging Maelstrom, exactly like the overlay style's
+-- own capacity.
+local MW_DISPLAY_STYLES = { overlay = true, segments = true, continuous = true }
+
+local function GetMWDisplayStyle(settings, specID)
+    if type(settings) ~= "table" or type(settings.resources) ~= "table" then
+        return "overlay"
+    end
+    local resource = settings.resources[RESOURCE_MAELSTROM_WEAPON]
+    if type(resource) ~= "table" then
+        return "overlay"
+    end
+    local style = ResolveSpecOverrideKey(resource, specID or GetCurrentSpecID(), "mwDisplayStyle")
+    return MW_DISPLAY_STYLES[style] and style or "overlay"
+end
+
 local function GetResourceDisplayConfig(settings, powerType)
     local resource = settings and settings.resources and settings.resources[powerType]
     if type(resource) ~= "table" then return nil end
@@ -2040,6 +2063,7 @@ RB.GetSpecLayoutOrder = GetSpecLayoutOrder
 RB.GetSpecResourceDisplayProfile = GetSpecResourceDisplayProfile
 RB.GetResourceDisplayValue = GetResourceDisplayValue
 RB.GetResourceSegmentedSmoothing = GetResourceSegmentedSmoothing
+RB.GetMWDisplayStyle = GetMWDisplayStyle
 RB.GetResourceDisplayConfig = GetResourceDisplayConfig
 RB.GetResourceSpecOverrideTable = GetResourceSpecOverrideTable
 RB.RESOURCE_TEXT_DISPLAY_KEYS = RESOURCE_TEXT_DISPLAY_KEYS

@@ -173,6 +173,18 @@ local function CustomBarAuraPreview(cabConfig)
     }
 end
 
+local function ResourceAuraPreview(powerType)
+    return {
+        groupScoped = true,
+        IsActive = function()
+            return CooldownCompanion:IsResourceAuraActivePreviewActive(powerType) == true
+        end,
+        SetActive = function(_, _, show)
+            CooldownCompanion:SetResourceAuraActivePreview(powerType, show)
+        end,
+    }
+end
+
 ------------------------------------------------------------------------
 -- Availability gates
 ------------------------------------------------------------------------
@@ -517,6 +529,27 @@ local function HealthEffectEnabled(healthConfig, settingKey)
     return healthConfig ~= nil and healthConfig[settingKey] == true
 end
 
+-- Does this resource have an overlay that would render? The same three
+-- questions the collector asks before it builds a want: the resource is
+-- on, the overlay is enabled for this spec, and an aura is actually set.
+local function ResourceAuraOverlayConfigured(settings, powerType)
+    if powerType == RB.RESOURCE_HEALTH then
+        return false
+    end
+    if not (RB.IsResourceEnabled and RB.IsResourceEnabled(powerType, settings)) then
+        return false
+    end
+    local resource = settings.resources and settings.resources[powerType]
+    if not (type(resource) == "table"
+        and RB.IsResourceAuraOverlayEnabled
+        and RB.IsResourceAuraOverlayEnabled(resource)) then
+        return false
+    end
+    local entry = RB.GetActiveResourceAuraEntry and RB.GetActiveResourceAuraEntry(resource)
+    local spellID = type(entry) == "table" and tonumber(entry.auraColorSpellID) or nil
+    return spellID ~= nil and spellID > 0
+end
+
 local function CastBarEnabled()
     local settings = CooldownCompanion.GetCastBarSettings
         and CooldownCompanion:GetCastBarSettings()
@@ -633,6 +666,29 @@ local function CollectObjectControls(objects)
             end
         end
     end
+
+    -- Per-resource groups (the aura pass, Phase 2): one group per resource
+    -- whose overlay is configured, built the same way as the custom-bar
+    -- groups above. Enumerated from the runtime's own active-resource list,
+    -- so a form change adds and drops entries with the bars themselves, and
+    -- keyed by power type — the identity that survives that rebuild.
+    if objects.resourceAuras then
+        local settings = CooldownCompanion.GetResourceBarSettings
+            and CooldownCompanion:GetResourceBarSettings()
+        if settings and settings.enabled == true and RB.DetermineActiveResources then
+            for _, powerType in ipairs(RB.DetermineActiveResources()) do
+                if ResourceAuraOverlayConfigured(settings, powerType) then
+                    applicable[#applicable + 1] = {
+                        id = "resourceAura_" .. tostring(powerType),
+                        label = "Preview Active Aura",
+                        group = RB.POWER_NAMES[powerType] or ("Power " .. powerType),
+                        object = "resourceAuras",
+                        preview = ResourceAuraPreview(powerType),
+                    }
+                end
+            end
+        end
+    end
     return applicable
 end
 
@@ -661,8 +717,10 @@ local function GetAnchorLaneObjects()
             and cbSettings.enabled == true
             and not IsTruthyConfigFlag(cbSettings.independentAnchorEnabled),
         -- Custom bars ride the same attached resource stack as the health
-        -- bar; their aura previews belong on the anchor canvas too.
+        -- bar; their aura previews belong on the anchor canvas too, and so
+        -- do the resource overlays drawn on those same lanes.
         customBars = barsAttached,
+        resourceAuras = barsAttached,
     }
 end
 
@@ -1171,6 +1229,8 @@ local function UpdateResourcesPreviewCommandCenter(host)
             and ST._ResourcesPreviewRendersCastSlot() == true,
         health = CS.resourcesEntrySelected == true,
         customBars = CS.resourcesEntrySelected == true or CS.selectedCustomBarId ~= nil,
+        resourceAuras = CS.resourcesEntrySelected == true
+            or CS.selectedResourcePowerType ~= nil,
     }
     UpdateBar(host, RESOURCES_SURFACE, CollectObjectControls(objects))
 end

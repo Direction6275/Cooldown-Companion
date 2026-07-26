@@ -878,6 +878,12 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             end
         else
             barInfo.frame:Show()
+            -- Resource-bar overlay holders ride the same frame-identity
+            -- repair (the stack recycles resource slots just as readily on
+            -- a form change, and in combat this is the only repair path).
+            if RB.SyncResourceBarAuraHostAnchor then
+                RB.SyncResourceBarAuraHostAnchor(barInfo)
+            end
         end
     end
 

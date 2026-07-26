@@ -50,6 +50,7 @@ local RB = ST._RB
 local UPDATE_INTERVAL = RB.UPDATE_INTERVAL
 local PERCENT_SCALE_CURVE = RB.PERCENT_SCALE_CURVE
 local RAGING_MAELSTROM_SPELL_ID = RB.RAGING_MAELSTROM_SPELL_ID
+local MW_AURA_SPELL_ID = RB.MW_AURA_SPELL_ID
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local RESOURCE_MAELSTROM_WEAPON = RB.RESOURCE_MAELSTROM_WEAPON
 local DEFAULT_RESOURCE_TEXT_FORMAT = RB.DEFAULT_RESOURCE_TEXT_FORMAT
@@ -146,6 +147,10 @@ local layoutDirty = false
 local independentWrapperFrame = nil
 local activeCustomAuraBarActivePreviews = {}
 local activeCustomAuraBarPandemicPreviews = {}
+-- Resource aura overlay previews, keyed by POWER TYPE. Never by barInfo or
+-- frame: a form change rebuilds the positional bar array, and the power
+-- type is the only identity that survives it.
+local activeResourceAuraPreviews = {}
 local segmentedUpdateScratch = { auraActiveCache = {} }
 local HealthBar = RB.HealthBar
 local HEALTH_EFFECTS = RB.HealthEffects
@@ -1280,21 +1285,92 @@ end
 -- Update logic: Maelstrom Weapon (overlay bar, plain applications)
 ------------------------------------------------------------------------
 
-local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
-    if not holder or not holder.segments then return end
+local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache, barType)
+    if not holder then return end
+    -- The continuous style has no segments; every other style does.
+    local isContinuous = barType == "mw_continuous"
+    if not (isContinuous or holder.segments) then return end
     if not settings then
         settings = GetResourceBarSettings()
     end
     local segmentedSmoothing = GetResourceSegmentedSmoothing(settings)
 
-    -- 12.1 demolition: MW stack reads removed (aura data blocked in combat).
-    -- The bar renders permanently empty until the AuraContainer rebuild.
+    -- Maelstrom Weapon stacks (the aura pass, Phase 2). MW carries the
+    -- server-side per-spell never-secret flag — validated on PTR 7 by
+    -- dumping the aura mid-combat: a fully PLAIN AuraData with a readable
+    -- `applications`, exactly the carve-out the API docs describe for
+    -- resource-like auras. So the bar reads its own stacks and keeps the
+    -- full Lua render (dual-colour halves, threshold and max colours,
+    -- segment text) instead of a Blizzard-driven kit shape.
+    --
+    -- GetPlayerAuraBySpellID is the RequiresNonSecretAura read path: it
+    -- returns NOTHING for a secret aura rather than erroring, so this is
+    -- safe in every restricted context. The secret guard below covers the
+    -- flag being changed by a future build (retest-each-build discipline) —
+    -- a secret reaching the comparisons underneath would be a hard error.
     local stacks = 0
+    local mwAura = C_UnitAuras.GetPlayerAuraBySpellID(MW_AURA_SPELL_ID)
+    if mwAura then
+        stacks = mwAura.applications or 0
+    end
+    if issecretvalue and issecretvalue(stacks) then
+        if isContinuous then
+            SetStatusBarImmediateValue(holder, 0)
+            if holder.text then holder.text:SetText("") end
+            return
+        end
+        for i = 1, #holder.segments do
+            SetStatusBarImmediateValue(holder.segments[i], 0)
+            if holder.overlaySegments and holder.overlaySegments[i] then
+                SetStatusBarImmediateValue(holder.overlaySegments[i], 0)
+                holder.overlaySegments[i]:SetAlpha(0)
+            end
+        end
+        ClearSegmentedText(holder)
+        return
+    end
 
-    local half = #holder.segments
     local baseColor, overlayColor, maxColor = GetResourceColors(100, settings)
     local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(RESOURCE_MAELSTROM_WEAPON, settings, stacks)
     local isMax = stacks > 0 and stacks == mwMaxStacks
+    -- Colour precedence is identical in all three shapes: at max wins, then
+    -- a configured threshold, then the resource's own colour.
+    local activeColor = isMax and maxColor or (thresholdActive and thresholdColor or baseColor)
+
+    if isContinuous then
+        -- One bar, empty to full, the stack maximum as its range.
+        SetStatusBarSmoothRange(holder, 0, mwMaxStacks)
+        SetStatusBarSegmentedValue(holder, stacks, segmentedSmoothing)
+        holder:SetStatusBarColor(activeColor[1], activeColor[2], activeColor[3], 1)
+        if holder.brightnessOverlay then
+            holder.brightnessOverlay:Hide()
+        end
+        if holder.text and holder.text:IsShown() then
+            local textFormat = holder._textFormat
+            if textFormat == "current" then
+                holder.text:SetFormattedText("%d", stacks)
+            elseif textFormat == "percent" then
+                holder.text:SetFormattedText("%d", (stacks / mwMaxStacks) * 100)
+            else
+                holder.text:SetFormattedText("%d / %d", stacks, mwMaxStacks)
+            end
+        end
+        return
+    end
+
+    if barType == "mw_segments" then
+        -- One segment per stack: each fills whole, like every other
+        -- discrete resource.
+        for i = 1, #holder.segments do
+            local seg = holder.segments[i]
+            SetStatusBarSegmentedValue(seg, i <= stacks and 1 or 0, segmentedSmoothing)
+            seg:SetStatusBarColor(activeColor[1], activeColor[2], activeColor[3], 1)
+        end
+        SetSegmentedText(holder, stacks, mwMaxStacks)
+        return
+    end
+
+    local half = #holder.segments
 
     for i = 1, half do
         local baseSeg = holder.segments[i]
@@ -1523,8 +1599,10 @@ local function OnUpdate(self, elapsed)
                 HealthBar.Update(barInfo.frame, settings)
             elseif barInfo.barType == "segmented" then
                 UpdateSegmentedBar(barInfo.frame, barInfo.powerType, settings, auraActiveCache)
-            elseif barInfo.barType == "mw_segmented" then
-                UpdateMaelstromWeaponBar(barInfo.frame, settings, auraActiveCache)
+            elseif barInfo.barType == "mw_segmented"
+                or barInfo.barType == "mw_segments"
+                or barInfo.barType == "mw_continuous" then
+                UpdateMaelstromWeaponBar(barInfo.frame, settings, auraActiveCache, barInfo.barType)
             elseif barInfo.barType == "stagger_continuous" then
                 UpdateStaggerBar(barInfo.frame, settings)
             elseif barInfo.barType == "custom_cooldown" then
@@ -1636,8 +1714,13 @@ local function StyleContinuousBar(bar, powerType, settings)
     bar.text:SetShown(showText)
     bar._textFormat = textFormat
 
-    -- Stagger (101) uses UnitHealthMax, not UnitPowerMax; tick markers not applicable
-    if powerType ~= 101 then
+    -- Tick markers need a real power type to measure against. Both of CC's
+    -- invented ids are excluded: Stagger (101) is sized by UnitHealthMax,
+    -- and Maelstrom Weapon (100) is sized by its aura's stack cap — passing
+    -- either to UnitPowerMax is a hard error. Neither is offered tick
+    -- markers anyway (GetContinuousTickEntriesConfig groups Maelstrom with
+    -- the segmented resources, whose threshold colours serve the same role).
+    if powerType ~= 101 and powerType ~= RESOURCE_MAELSTROM_WEAPON then
         local maxPower = UnitPowerMax("player", powerType)
         local maxPowerIsSecret = IsUnitPowerMaxSecret("player", powerType)
         if issecretvalue and issecretvalue(maxPower) then
@@ -1981,34 +2064,92 @@ function CooldownCompanion:ApplyResourceBars(opts)
             StyleContinuousBar(barInfo.frame, powerType, settings)
 
         elseif powerType == RESOURCE_MAELSTROM_WEAPON then
-            -- Maelstrom Weapon: overlay bar with dedicated update
-            local halfSegments = mwMaxStacks <= 5 and mwMaxStacks or (mwMaxStacks / 2)
+            -- Maelstrom Weapon renders in one of three shapes (see
+            -- GetMWDisplayStyle). The stack source is the same in all of
+            -- them; only the widget differs, so each style materializes the
+            -- matching bar frame here and UpdateMaelstromWeaponBar renders
+            -- to it. The style is read once per apply, never per tick, and
+            -- reached through RB rather than a new file-level local:
+            -- ApplyResourceBars sits at Lua 5.1's 60-upvalue ceiling.
+            local mwStyle = RB.GetMWDisplayStyle(settings)
 
-            if not barInfo or barInfo.barType ~= "mw_segmented"
-                or #barInfo.frame.segments ~= halfSegments then
-                if barInfo and barInfo.frame then
-                    ClearStaleRecycledBarRuntimeState(barInfo.frame)
-                    ClearResourceAuraVisuals(barInfo.frame)
-                    barInfo.frame:Hide()
+            if mwStyle == "continuous" then
+                if not barInfo or barInfo.barType ~= "mw_continuous" then
+                    if barInfo and barInfo.frame then
+                        ClearStaleRecycledBarRuntimeState(barInfo.frame)
+                        ClearResourceAuraVisuals(barInfo.frame)
+                        barInfo.frame:Hide()
+                    end
+                    local bar = CreateContinuousBar(targetContainer)
+                    barInfo = { frame = bar, barType = "mw_continuous", powerType = powerType }
+                    resourceBarFrames[idx] = barInfo
+                else
+                    barInfo.powerType = powerType
                 end
-                local holder = CreateOverlayBar(targetContainer, halfSegments)
-                barInfo = { frame = holder, barType = "mw_segmented", powerType = powerType }
-                resourceBarFrames[idx] = barInfo
+
+                barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
+                -- Shares the continuous styling path, so texture, borders,
+                -- background, and the bar text all follow the same resource
+                -- settings every other continuous bar uses.
+                StyleContinuousBar(barInfo.frame, powerType, settings)
+
+            elseif mwStyle == "segments" then
+                -- One segment per stack, no overlay layer: the plain
+                -- segmented widget every other discrete resource uses.
+                if not barInfo or barInfo.barType ~= "mw_segments"
+                    or #barInfo.frame.segments ~= mwMaxStacks then
+                    if barInfo and barInfo.frame then
+                        ClearStaleRecycledBarRuntimeState(barInfo.frame)
+                        ClearResourceAuraVisuals(barInfo.frame)
+                        barInfo.frame:Hide()
+                    end
+                    local holder = CreateSegmentedBar(targetContainer, mwMaxStacks)
+                    barInfo = { frame = holder, barType = "mw_segments", powerType = powerType }
+                    resourceBarFrames[idx] = barInfo
+                else
+                    barInfo.powerType = powerType
+                end
+
+                barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
+                LayoutSegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings)
+
+                local baseColor = GetResourceColors(100, settings)
+                for i = 1, mwMaxStacks do
+                    barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+                end
+                StyleSegmentedText(barInfo.frame, powerType, settings)
+
             else
-                barInfo.powerType = powerType
-            end
+                -- Overlay: five segments carrying a second colour layer for
+                -- stacks past five (the default shape).
+                local halfSegments = mwMaxStacks <= 5 and mwMaxStacks or (mwMaxStacks / 2)
 
-            barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
-            LayoutOverlaySegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings, halfSegments)
+                if not barInfo or barInfo.barType ~= "mw_segmented"
+                    or #barInfo.frame.segments ~= halfSegments then
+                    if barInfo and barInfo.frame then
+                        ClearStaleRecycledBarRuntimeState(barInfo.frame)
+                        ClearResourceAuraVisuals(barInfo.frame)
+                        barInfo.frame:Hide()
+                    end
+                    local holder = CreateOverlayBar(targetContainer, halfSegments)
+                    barInfo = { frame = holder, barType = "mw_segmented", powerType = powerType }
+                    resourceBarFrames[idx] = barInfo
+                else
+                    barInfo.powerType = powerType
+                end
 
-            -- Apply initial colors
-            local baseColor, overlayColor = GetResourceColors(100, settings)
-            for i = 1, halfSegments do
-                barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
-                barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
-                barInfo.frame.overlaySegments[i]:Show()
+                barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
+                LayoutOverlaySegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings, halfSegments)
+
+                -- Apply initial colors
+                local baseColor, overlayColor = GetResourceColors(100, settings)
+                for i = 1, halfSegments do
+                    barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+                    barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
+                    barInfo.frame.overlaySegments[i]:Show()
+                end
+                StyleSegmentedText(barInfo.frame, powerType, settings)
             end
-            StyleSegmentedText(barInfo.frame, powerType, settings)
 
         elseif isCustomEntry then
             barInfo = PrepareCustomAuraBar(
@@ -2314,6 +2455,7 @@ function CooldownCompanion:DisableResourceBarRuntime()
     -- teardown above, and clearing here is the point.
     self:ClearAllHealthEffectPreviews()
     self:ClearAllCustomAuraBarPreviews()
+    self:ClearAllResourceAuraPreviews()
 end
 
 function CooldownCompanion:GetSpecCustomAuraBars()
@@ -2347,6 +2489,25 @@ end
 function CooldownCompanion:ClearAllCustomAuraBarPreviews()
     wipe(activeCustomAuraBarActivePreviews)
     wipe(activeCustomAuraBarPandemicPreviews)
+end
+
+-- Resource aura overlay preview (the aura pass, Phase 2): which resources
+-- have their Active Aura stand-in armed. State only, same as the custom-bar
+-- previews above — the stand-in renders on the config canvas and the live
+-- bar is never touched (owner ruling 2026-07-26).
+function CooldownCompanion:SetResourceAuraActivePreview(powerType, active)
+    powerType = tonumber(powerType)
+    if not powerType then return end
+    activeResourceAuraPreviews[powerType] = active and true or nil
+end
+
+function CooldownCompanion:IsResourceAuraActivePreviewActive(powerType)
+    powerType = tonumber(powerType)
+    return powerType ~= nil and activeResourceAuraPreviews[powerType] == true
+end
+
+function CooldownCompanion:ClearAllResourceAuraPreviews()
+    wipe(activeResourceAuraPreviews)
 end
 
 function HealthBar.HasActiveEffectPreview()

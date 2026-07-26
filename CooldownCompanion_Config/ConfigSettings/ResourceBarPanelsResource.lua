@@ -33,6 +33,11 @@ local DEFAULT_POWER_COLORS = RB.DEFAULT_POWER_COLORS
 local DEFAULT_MW_BASE_COLOR = RB.DEFAULT_MW_BASE_COLOR
 local DEFAULT_MW_OVERLAY_COLOR = RB.DEFAULT_MW_OVERLAY_COLOR
 local DEFAULT_MW_MAX_COLOR = RB.DEFAULT_MW_MAX_COLOR
+local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
+local SupportsResourceAuraStackMode = RB.SupportsResourceAuraStackMode
+local ClassifyAuraSpellUnit = ST._ClassifyAuraSpellUnit
+local AddAuraCandidateRow = ST._AddAuraCandidateRow
+local AddColorPicker = ST._AddColorPicker
 local DEFAULT_RESOURCE_TEXT_FORMAT = RB.DEFAULT_RESOURCE_TEXT_FORMAT
 local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
 local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
@@ -114,6 +119,7 @@ local GetContinuousTickAbsoluteConfig = RBP.GetContinuousTickAbsoluteConfig
 local IsResourceBarVerticalConfig = RBP.IsResourceBarVerticalConfig
 local GetResourceThicknessFieldConfig = RBP.GetResourceThicknessFieldConfig
 local GetResourceGapFieldConfig = RBP.GetResourceGapFieldConfig
+local ResolveAuraColorSpellIDFromText = RBP.ResolveAuraColorSpellIDFromText
 
 local function EnsureResourceLayoutAnchor(settings, layout)
     if type(layout.independentAnchor) ~= "table" then
@@ -1766,6 +1772,188 @@ local function AddThresholdTickEntryEditor(panel, options)
     end
 end
 
+------------------------------------------------------------------------
+-- Resource aura overlays (the aura pass, Phase 2). One tracked aura per
+-- resource per specialization, in one of two modes. Blizzard shows and
+-- hides the overlay with the aura itself, so it survives combat, where
+-- the addon cannot read aura state at all.
+------------------------------------------------------------------------
+
+local function GetResourceAuraOverlayEntry(settings, powerType, specID)
+    local resource = settings.resources and settings.resources[powerType]
+    local entries = resource and resource.auraOverlayEntries
+    if type(entries) ~= "table" or not specID then return nil end
+    local entry = entries[specID]
+    if type(entry) ~= "table" then
+        entry = entries[tostring(specID)]
+    end
+    return type(entry) == "table" and entry or nil
+end
+
+local function EnsureResourceAuraOverlayEntry(settings, powerType, specID)
+    if not specID then return nil end
+    if type(settings.resources[powerType]) ~= "table" then
+        settings.resources[powerType] = {}
+    end
+    local resource = settings.resources[powerType]
+    if type(resource.auraOverlayEntries) ~= "table" then
+        resource.auraOverlayEntries = {}
+    end
+    local entries = resource.auraOverlayEntries
+    if type(entries[specID]) ~= "table" then
+        -- Adopt a string-keyed entry rather than shadowing it: the runtime
+        -- reads either key, so two entries for one spec would diverge.
+        local legacy = entries[tostring(specID)]
+        entries[specID] = type(legacy) == "table" and legacy or {}
+        entries[tostring(specID)] = nil
+    end
+    return entries[specID]
+end
+
+-- Mirrors IsResourceAuraOverlayEnabled (ResourceBarVisuals) for an
+-- arbitrary spec: the runtime answers only for the spec being played.
+local function IsResourceAuraOverlayEnabledConfig(settings, powerType, specID)
+    local resource = settings.resources and settings.resources[powerType]
+    if type(resource) ~= "table" then return false end
+    local specOverrides = resource.specOverrides
+    local specData = type(specOverrides) == "table"
+        and (specOverrides[specID] or specOverrides[tostring(specID)]) or nil
+    if type(specData) == "table" and type(specData.auraOverlayEnabled) == "boolean" then
+        return specData.auraOverlayEnabled
+    end
+    if resource.auraOverlayEnabled == false then return false end
+    return GetResourceAuraOverlayEntry(settings, powerType, specID) ~= nil
+end
+
+local function BuildResourceAuraOverlaySection(container, settings, powerType, specID, resourceName)
+    local sectionKey = "rb_aura_overlay_" .. powerType
+    local heading, collapsed, collapseBtn =
+        BuildCollapsibleSection(container, "Aura Overlay", sectionKey, resourceBarCollapsedSections)
+
+    local sectionInfoBtn = CreateInfoButton(heading.frame, collapseBtn, "LEFT", "RIGHT", 4, 0, {
+        "Aura Overlay",
+        {"One aura per resource and specialization. Blizzard shows and hides the overlay with the aura itself, so it keeps working in combat, where the addon cannot read aura state.", 1, 1, 1, true},
+        " ",
+        {"Buffs can only be tracked on yourself, and your own debuffs only on your target. The tracked unit is set automatically from the aura.", 1, 1, 1, true},
+    }, heading)
+    heading.right:ClearAllPoints()
+    heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
+    heading.right:SetPoint("LEFT", sectionInfoBtn, "RIGHT", 4, 0)
+
+    if collapsed then return end
+
+    local applyBars = function() CooldownCompanion:ApplyResourceBars() end
+    local function refresh()
+        applyBars()
+        C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
+    end
+
+    local enabled = IsResourceAuraOverlayEnabledConfig(settings, powerType, specID)
+
+    local enableCb = AceGUI:Create("CheckBox")
+    enableCb:SetLabel("Enable " .. resourceName .. " Aura Overlay")
+    enableCb:SetValue(enabled)
+    enableCb:SetFullWidth(true)
+    enableCb:SetCallback("OnValueChanged", function(_, _, value)
+        WriteSpecOverrideKey(settings, powerType, specID, "auraOverlayEnabled", value == true)
+        refresh()
+    end)
+    container:AddChild(enableCb)
+
+    if not enabled then return end
+
+    local entry = GetResourceAuraOverlayEntry(settings, powerType, specID)
+    local spellID = entry and tonumber(entry.auraColorSpellID) or nil
+
+    if not spellID then
+        local addBox = AceGUI:Create("EditBox")
+        addBox:SetLabel("Overlay aura by name or ID")
+        addBox:SetText("")
+        addBox:SetFullWidth(true)
+        addBox:SetCallback("OnEnterPressed", function(widget, _, text)
+            local id, blank = ResolveAuraColorSpellIDFromText(text)
+            if not id then
+                -- Enter on an empty box is a no-op, not a failed lookup.
+                if not blank then
+                    CooldownCompanion:Print("No spell found for that name or ID.")
+                end
+                return
+            end
+            local target = EnsureResourceAuraOverlayEntry(settings, powerType, specID)
+            if not target then return end
+            target.auraColorSpellID = id
+            -- Store the derived unit so the runtime's fallback starts right
+            -- for spells the client has not cached yet; the rebind pass
+            -- re-derives it from spell polarity every pass regardless.
+            target.auraUnit = ClassifyAuraSpellUnit(id) or "player"
+            widget:SetText("")
+            refresh()
+        end)
+        container:AddChild(addBox)
+        return
+    end
+
+    local unit = ClassifyAuraSpellUnit(spellID) or "player"
+    local unitLabel = AceGUI:Create("Label")
+    unitLabel:SetText("|cffffd100Tracked on:|r " .. (unit == "target" and "Target" or "You"))
+    unitLabel:SetFullWidth(true)
+    container:AddChild(unitLabel)
+
+    AddAuraCandidateRow(container, spellID, function()
+        local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
+        if target then
+            target.auraColorSpellID = nil
+            target.auraUnit = nil
+        end
+        refresh()
+    end)
+
+    AddColorPicker(container, entry, "auraActiveColor", "Overlay Color",
+        DEFAULT_RESOURCE_AURA_ACTIVE_COLOR, false, applyBars, nil)
+
+    -- Stack mode only exists where the runtime can draw the lane, so the
+    -- dropdown only appears there; everything else is Active by definition
+    -- and a lone-option dropdown would just be furniture.
+    if not SupportsResourceAuraStackMode(powerType) then return end
+
+    local mode = RB.GetResourceOverlayTrackingMode(entry, powerType)
+
+    local modeDrop = AceGUI:Create("Dropdown")
+    modeDrop:SetLabel("Tracking Mode")
+    modeDrop:SetList({ active = "Active", stacks = "Stack Count" }, { "active", "stacks" })
+    modeDrop:SetValue(mode)
+    modeDrop:SetFullWidth(true)
+    modeDrop:SetCallback("OnValueChanged", function(_, _, value)
+        if value ~= "active" and value ~= "stacks" then return end
+        local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
+        if not target then return end
+        target.auraColorTrackingMode = value
+        refresh()
+    end)
+    container:AddChild(modeDrop)
+    CreateInfoButton(modeDrop.frame, modeDrop.label, "LEFT", "RIGHT", 4, 0, {
+        "Tracking Mode",
+        {"Active tints the bar in the overlay colour for as long as the aura is up.", 1, 1, 1, true},
+        " ",
+        {"Stack Count runs a lane along the bar that fills as stacks build. The maximum comes from the game's spell data, so an aura that does not stack falls back to Active.", 1, 1, 1, true},
+    }, modeDrop)
+
+    if mode ~= "stacks" then return end
+
+    local maxStacks = RB.ResolveResourceOverlayStackMax(entry, powerType)
+    local statusLabel = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(statusLabel)
+    if maxStacks then
+        statusLabel:SetText("|cffffd100Stack lane:|r full at " .. maxStacks .. " stacks")
+    elseif InCombatLockdown() then
+        statusLabel:SetText("|cffff9955The stack maximum can't be read in combat — it resolves when you leave combat.|r")
+    else
+        statusLabel:SetText("|cffff9955This aura doesn't stack, so the bar will tint instead.|r")
+    end
+    statusLabel:SetFullWidth(true)
+    container:AddChild(statusLabel)
+end
+
 local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     if BuildResourceBarConflictGate(container, "Resource Bars", true) then
         return
@@ -1793,9 +1981,15 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     local applyBars = function() CooldownCompanion:ApplyResourceBars() end
     local healthResourceID = RESOURCE_HEALTH
     if showResourceSettings then
-        local hasSegmentedThreshold = SEGMENTED_TYPES[resourceSettingsPowerType] == true or resourceSettingsPowerType == 100
-        local hasContinuousTick = resourceSettingsPowerType ~= 101 and resourceSettingsPowerType ~= healthResourceID
-        showThresholdsTicks = hasSegmentedThreshold or hasContinuousTick
+        -- Same split the section itself makes below, and the runtime makes
+        -- in GetContinuousTickEntriesConfig: segmented resources — Maelstrom
+        -- Weapon among them — get threshold colours, every other real power
+        -- type gets tick markers, and the two invented ids (Stagger, Health)
+        -- get neither. The section shows if either half applies.
+        local isSegmented = SEGMENTED_TYPES[resourceSettingsPowerType] == true
+            or resourceSettingsPowerType == 100
+        showThresholdsTicks = isSegmented
+            or (resourceSettingsPowerType ~= 101 and resourceSettingsPowerType ~= healthResourceID)
     end
     local displaySpecID = opts and tonumber(opts.specID) or CS._GetCurrentConfigSpecID()
     local displayProfile = displaySpecID and CS._GetSpecResourceDisplayProfile(settings, displaySpecID) or nil
@@ -1813,6 +2007,27 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
 
     if showResourceSettings then
         BuildResourceColorControls(container, settings, resourceSettingsPowerType, _colorSpecID, effectiveBarTextureName, applyBars)
+    end
+
+    -- Maelstrom Weapon stack shape. Only this resource has a choice: its
+    -- stacks can run past the segment count, which is what the overlay
+    -- layer exists for, and the other two shapes drop it.
+    if showResourceSettings and resourceSettingsPowerType == 100 then
+        local mwStyleDrop = AceGUI:Create("Dropdown")
+        mwStyleDrop:SetLabel("Stack Display")
+        mwStyleDrop:SetList({
+            overlay = "Overlay",
+            segments = "One Segment Per Stack",
+            continuous = "Continuous",
+        }, { "overlay", "segments", "continuous" })
+        mwStyleDrop:SetValue(ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwDisplayStyle", "overlay"))
+        mwStyleDrop:SetFullWidth(true)
+        mwStyleDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwDisplayStyle",
+                val ~= "overlay" and val or nil)
+            applyBars()
+        end)
+        container:AddChild(mwStyleDrop)
     end
 
     if showBarText then
@@ -2116,6 +2331,14 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         end
     end
 
+    end
+
+    -- Aura overlays: last section on a resource's own page, and never on
+    -- health (its bar has its own effect family) or the shared styling tabs.
+    if showResourceSettings and resourceSettingsPowerType ~= healthResourceID then
+        BuildResourceAuraOverlaySection(container, settings, resourceSettingsPowerType,
+            displaySpecID, POWER_NAMES[resourceSettingsPowerType]
+                or ("Power " .. resourceSettingsPowerType))
     end
 
 end

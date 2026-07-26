@@ -1434,6 +1434,7 @@ end
 ------------------------------------------------------------------------
 
 RB.GetActiveResourceAuraEntry = GetActiveResourceAuraEntry
+RB.GetResourceAuraTrackingMode = GetResourceAuraTrackingMode
 RB.GetResourceAuraConfiguredMaxStacks = GetResourceAuraConfiguredMaxStacks
 RB.IsResourceAuraOverlayEnabled = IsResourceAuraOverlayEnabled
 RB.GetResourceAuraState = GetResourceAuraState

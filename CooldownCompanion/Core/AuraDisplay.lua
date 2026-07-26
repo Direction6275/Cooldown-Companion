@@ -179,6 +179,13 @@ local function BuildSlotKit(slotButton)
     kit.barBackdrop = slotButton:CreateTexture(nil, "BACKGROUND", nil, 2)
     kit.barBackdrop:SetAllPoints(slotButton)
     kit.barBackdrop:SetAlpha(0)
+
+    -- Whole-bar tint (resource overlay shape): a translucent wash over the
+    -- live resource bar while the aura runs. CC-authored, never registered;
+    -- alpha-0 for every other host kind. Below the icon regions, above the
+    -- backdrop; the lane fills are child frames and draw above it.
+    kit.barTint = slotButton:CreateTexture(nil, "ARTWORK", nil, 0)
+    kit.barTint:SetAlpha(0)
     if slotButton.SetDurationBar then
         kit.barFill = CreateFrame("StatusBar", nil, slotButton)
         kit.barFill:SetAllPoints(slotButton)
@@ -596,6 +603,29 @@ local function StyleStackSegments(kit, button, buttonData, style, boundMax, show
     end
 end
 
+-- The resource overlay stack lane: a thin Blizzard-driven strip over the
+-- live bar (the resource fill stays visible — nothing occludes on these
+-- hosts). It takes the inner half of the bar's thickness on the near edge,
+-- which is live's lane convention: bottom on horizontal bars, left on
+-- vertical ones. Thickness reads the HOST rect (CC-owned geometry, valid
+-- at bind time) — never the slot button.
+local function AnchorResourceStackLane(fill, slotButton, host, vertical)
+    local thickness = (vertical and host:GetWidth() or host:GetHeight()) or 0
+    local size = math.floor(thickness * 0.5 + 0.5)
+    if size < 1 then size = 1 end
+    if thickness >= 1 and size > thickness then size = thickness end
+    fill:ClearAllPoints()
+    if vertical then
+        fill:SetPoint("TOPLEFT", slotButton, "TOPLEFT", 0, 0)
+        fill:SetPoint("BOTTOMLEFT", slotButton, "BOTTOMLEFT", 0, 0)
+        fill:SetWidth(size)
+    else
+        fill:SetPoint("BOTTOMLEFT", slotButton, "BOTTOMLEFT", 0, 0)
+        fill:SetPoint("BOTTOMRIGHT", slotButton, "BOTTOMRIGHT", 0, 0)
+        fill:SetHeight(size)
+    end
+end
+
 -- Widget-stack eligibility for the CURRENT bind: a SEGMENTED stack-mode
 -- bind on a standalone aura entry whose max fits the block atlas.
 -- Continuous-style binds and spell-entry stack binds use the plain-bar /
@@ -780,6 +810,11 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- no kit bg blocks: the bar's own configured background/borders/blocks
     -- ARE the absent-state layer and must show through).
     local isCustomBarHost = button._ccAuraHostKind == "customBar"
+    -- Resource-bar hosts (Phase 2 overlay holders): the kit renders one
+    -- overlay shape over the live resource bar — no icon, no text, no
+    -- occlusion, no shell, no glow; the bar itself is the absent state.
+    local isResourceHost = button._ccAuraHostKind == "resourceBar"
+    local resShapes = isResourceHost and (style.resourceShapes or {}) or nil
     local shellEntry = buttonData.hideWhileAuraNotActive == true
     local barIconShown = isBar and style.showBarIcon ~= false and button.icon ~= nil
     local showAuraIcon = ShouldShowAuraIcon(buttonData)
@@ -797,7 +832,10 @@ local function StyleSlotKit(slot, button, buttonData, style)
     kit.iconCover:SetPoint("TOPLEFT", iconAnchor, "TOPLEFT", 0, 0)
     kit.iconCover:SetPoint("BOTTOMRIGHT", iconAnchor, "BOTTOMRIGHT", 0, 0)
 
-    local auraIconShown = showAuraIcon and (not isBar or barIconShown)
+    -- Resource overlays never swap in an aura icon: live's overlay has no
+    -- icon of any kind.
+    local auraIconShown = not isResourceHost
+        and showAuraIcon and (not isBar or barIconShown)
     kit.auraIcon:SetAlpha(auraIconShown and 1 or 0)
     -- The cover occludes the CC icon underneath: always on icon hosts; on bar
     -- hosts only when the icon square participates (aura icon swap enabled,
@@ -820,8 +858,9 @@ local function StyleSlotKit(slot, button, buttonData, style)
     else
         local ApplyIconTexCoord = ST._ApplyIconTexCoord
         if ApplyIconTexCoord then
-            ApplyIconTexCoord(kit.iconCover, button:GetWidth(), button:GetHeight())
-            ApplyIconTexCoord(kit.auraIcon, button:GetWidth(), button:GetHeight())
+            local cropW, cropH = button:GetWidth(), button:GetHeight()
+            ApplyIconTexCoord(kit.iconCover, cropW, cropH)
+            ApplyIconTexCoord(kit.auraIcon, cropW, cropH)
         end
         if buttonData.type == "spell" and buttonData.id then
             kit.iconCover:SetTexture(C_Spell.GetSpellTexture(buttonData.id))
@@ -868,7 +907,16 @@ local function StyleSlotKit(slot, button, buttonData, style)
     end
     kit.durationText:ClearAllPoints()
     kit.stackText:ClearAllPoints()
-    if isBar and isCustomBarHost then
+    if isBar and isResourceHost then
+        -- Resource overlays run no text of their own — the resource bar's
+        -- own text is the only text over a resource bar. Both regions still
+        -- need a point: an unanchored FontString is a layout error even at
+        -- alpha 0, and slots are reused across entries and hosts.
+        kit.durationText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
+        kit.stackText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
+        kit.durationText:SetAlpha(0)
+        kit.stackText:SetAlpha(0)
+    elseif isBar and isCustomBarHost then
         -- Custom-bar convention (StyleCustomAuraBar parity): duration text
         -- centers when alone and moves to the start end when the stack text
         -- shares the bar; stack text mirrors on the far end.
@@ -1020,8 +1068,14 @@ local function StyleSlotKit(slot, button, buttonData, style)
 
     -- Duration swipe: Blizzard drives the swipe's cooldown; draw flags and
     -- colors are CC styling and persist across those writes. Bars have no
-    -- aura swipe — the draining bar is the timer.
-    if isBar then
+    -- aura swipe — the draining bar is the timer, and a resource overlay
+    -- has no icon square for one to ride.
+    if isBar and isResourceHost then
+        kit.swipe:ClearAllPoints()
+        kit.swipe:SetAllPoints(slotButton)
+        kit.swipe:SetDrawSwipe(false)
+        kit.swipe:SetDrawEdge(false)
+    elseif isBar then
         kit.swipe:SetDrawSwipe(false)
         kit.swipe:SetDrawEdge(false)
     else
@@ -1034,7 +1088,55 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- their own alpha and only happen in the enabled branch
     -- (SetVertexColor-alpha gotcha: a 4-arg color write after SetAlpha(0)
     -- would resurrect the region).
-    if isBar then
+    if isBar and isResourceHost then
+        -- Resource overlay composition: occlusion-free by construction (the
+        -- live resource bar IS the absent state). Exactly one shape runs —
+        -- the whole-bar tint is a translucent wash Blizzard shows with the
+        -- aura, and the stack lane is a thin strip, never the whole-rect
+        -- fills the other bar hosts run.
+        kit.barBackdrop:SetAlpha(0)
+        ST.HideStackBlocks(kit.stackBgBlocks)
+        ST.HideStackBlockBorders(kit.stackBlockBorders)
+        if kit.barTint then
+            if resShapes.tint then
+                local c = style.barAuraColor or { 1, 0.84, 0 }
+                kit.barTint:ClearAllPoints()
+                kit.barTint:SetPoint("TOPLEFT", slotButton, "TOPLEFT", 0, 0)
+                kit.barTint:SetPoint("BOTTOMRIGHT", slotButton, "BOTTOMRIGHT", 0, 0)
+                -- The wash strength rides the color's own alpha (live-era
+                -- entries carry RGB only, so they take the default the host
+                -- hands over — the config canvas stands in at the same one).
+                kit.barTint:SetColorTexture(c[1] or 1, c[2] or 0.84, c[3] or 0,
+                    c[4] or style.resourceTintAlpha or 0.35)
+                kit.barTint:SetAlpha(1)
+            else
+                kit.barTint:SetAlpha(0)
+            end
+        end
+        local laneHost = button.statusBar or button
+        local laneVertical = button._isVertical == true
+        -- The duration fill never runs on a resource host: live's overlay
+        -- has no duration readout, and the tint carries the active state.
+        if kit.barFill then
+            RestBarFill(kit.barFill, kit.barFillTexture, kit.barFillPulseAG, kit.barFillCsAG)
+        end
+        local stackLaneOn = resShapes.stackLane == true
+            and kit.stackFill ~= nil and slot.boundStackMax ~= nil
+        if kit.stackFill then
+            if stackLaneOn then
+                AnchorResourceStackLane(kit.stackFill, slotButton, laneHost, laneVertical)
+                StyleActiveBarFill(kit.stackFill, kit.stackFillTexture,
+                    kit.stackFillPulseAG, kit.stackFillPulseAnim,
+                    kit.stackFillCsAG, kit.stackFillCsAnim, button, style)
+            else
+                RestBarFill(kit.stackFill, kit.stackFillTexture, kit.stackFillPulseAG, kit.stackFillCsAG)
+            end
+        end
+        StyleStackSegments(kit, button, buttonData, style, slot.boundStackMax, stackLaneOn)
+    elseif isBar then
+        if kit.barTint then
+            kit.barTint:SetAlpha(0)
+        end
         -- Fill mode (tracker C2): a stack-mode bind carries boundStackMax
         -- (resolved by the rebind pass, re-called onto the registered stack
         -- bar before styling); every other bind runs the duration fill.
@@ -1123,6 +1225,9 @@ local function StyleSlotKit(slot, button, buttonData, style)
             segmentedStyle and not widgetStack)
     else
         kit.barBackdrop:SetAlpha(0)
+        if kit.barTint then
+            kit.barTint:SetAlpha(0)
+        end
         ST.HideStackBlocks(kit.stackBgBlocks)
         ST.HideStackBlockBorders(kit.stackBlockBorders)
         if kit.barFill then

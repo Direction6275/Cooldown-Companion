@@ -298,6 +298,12 @@ ST._RB = {
     CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS = CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS,
     CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION = CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION,
     RAGING_MAELSTROM_SPELL_ID = RAGING_MAELSTROM_SPELL_ID,
+    -- The APPLIED Maelstrom Weapon aura (CumulativeAura=5 in SpellAuraOptions,
+    -- 10 with Raging Maelstrom). Not live's 187880, which is the proc trigger
+    -- carrying no stacks — live only resolved the real aura through a CDM
+    -- viewer frame's auraInstanceID, a path 12.1 closed. Written inline
+    -- rather than as a local: this chunk is at Lua 5.1's 200-local ceiling.
+    MW_AURA_SPELL_ID = 344179,
     RESOURCE_HEALTH = RESOURCE_HEALTH,
     RESOURCE_MAELSTROM_WEAPON = RESOURCE_MAELSTROM_WEAPON,
 
@@ -307,6 +313,17 @@ ST._RB = {
     DEFAULT_MW_MAX_COLOR = DEFAULT_MW_MAX_COLOR,
     DEFAULT_CUSTOM_AURA_MAX_COLOR = DEFAULT_CUSTOM_AURA_MAX_COLOR,
     DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR,
+    -- How strong the overlay's whole-bar tint is when the entry's colour
+    -- carries no alpha of its own. Written inline: this chunk sits at the
+    -- 200-local ceiling.
+    RESOURCE_OVERLAY_TINT_ALPHA = 0.35,
+    -- How far above a resource bar its aura overlay mounts. Clear of every
+    -- layer the bar draws: segment children at bar+3, MW overlay segments
+    -- at +4, the CC-side aura lane pool at +7, the text layer at +8. Frame
+    -- level beats draw layer, so anything short of this renders behind the
+    -- bar it decorates. The config canvas stands the overlay in at the same
+    -- height, which is why this is shared rather than local to the host.
+    RESOURCE_OVERLAY_HOLDER_LEVEL = 9,
     DEFAULT_SEG_THRESHOLD_COLOR = DEFAULT_SEG_THRESHOLD_COLOR,
     DEFAULT_HEALTH_BAR_COLOR = DEFAULT_HEALTH_BAR_COLOR,
     DEFAULT_HEALTH_BAR_OPACITY = DEFAULT_HEALTH_BAR_OPACITY,

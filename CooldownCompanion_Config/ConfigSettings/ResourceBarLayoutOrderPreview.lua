@@ -1483,27 +1483,64 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         barInfo.frame:SetSize(width, height)
         StyleHealthBar(barInfo.frame, rbSettings)
     elseif slot.powerType == RESOURCE_MAELSTROM_WEAPON then
+        -- Mirrors the three real MW shapes exactly (ResourceBar.lua's apply
+        -- branch); the canvas must show the shape the bar will actually be.
         local mwMaxStacks = GetMWMaxStacks() or 5
-        local halfSegments = (mwMaxStacks <= 5) and mwMaxStacks or (mwMaxStacks / 2)
-        if not barInfo or barInfo.barType ~= "mw_segmented" or #barInfo.frame.segments ~= halfSegments then
-            if barInfo and barInfo.frame then
-                barInfo.frame:Hide()
+        local mwStyle = RB.GetMWDisplayStyle(rbSettings)
+        if mwStyle == "continuous" then
+            if not barInfo or barInfo.barType ~= "mw_continuous" then
+                if barInfo and barInfo.frame then
+                    barInfo.frame:Hide()
+                end
+                barInfo = {
+                    frame = CreateContinuousBar(frame.previewCanvas),
+                    barType = "mw_continuous",
+                    powerType = slot.powerType,
+                }
             end
-            barInfo = {
-                frame = CreateOverlayBar(frame.previewCanvas, halfSegments),
-                barType = "mw_segmented",
-                powerType = slot.powerType,
-            }
+            barInfo.frame:SetSize(width, height)
+            StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings)
+        elseif mwStyle == "segments" then
+            if not barInfo or barInfo.barType ~= "mw_segments"
+                or #barInfo.frame.segments ~= mwMaxStacks then
+                if barInfo and barInfo.frame then
+                    barInfo.frame:Hide()
+                end
+                barInfo = {
+                    frame = CreateSegmentedBar(frame.previewCanvas, mwMaxStacks),
+                    barType = "mw_segments",
+                    powerType = slot.powerType,
+                }
+            end
+            barInfo.frame:SetSize(width, height)
+            LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings)
+            local baseColor = GetResourceColors(RESOURCE_MAELSTROM_WEAPON, rbSettings)
+            for i = 1, mwMaxStacks do
+                barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+            end
+            RB.StyleSegmentedText(barInfo.frame, slot.powerType, rbSettings)
+        else
+            local halfSegments = (mwMaxStacks <= 5) and mwMaxStacks or (mwMaxStacks / 2)
+            if not barInfo or barInfo.barType ~= "mw_segmented" or #barInfo.frame.segments ~= halfSegments then
+                if barInfo and barInfo.frame then
+                    barInfo.frame:Hide()
+                end
+                barInfo = {
+                    frame = CreateOverlayBar(frame.previewCanvas, halfSegments),
+                    barType = "mw_segmented",
+                    powerType = slot.powerType,
+                }
+            end
+            barInfo.frame:SetSize(width, height)
+            LayoutOverlaySegments(barInfo.frame, width, height, segmentGap, rbSettings, halfSegments)
+            local baseColor, overlayColor = GetResourceColors(RESOURCE_MAELSTROM_WEAPON, rbSettings)
+            for i = 1, halfSegments do
+                barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+                barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
+                barInfo.frame.overlaySegments[i]:Show()
+            end
+            RB.StyleSegmentedText(barInfo.frame, slot.powerType, rbSettings)
         end
-        barInfo.frame:SetSize(width, height)
-        LayoutOverlaySegments(barInfo.frame, width, height, segmentGap, rbSettings, halfSegments)
-        local baseColor, overlayColor = GetResourceColors(RESOURCE_MAELSTROM_WEAPON, rbSettings)
-        for i = 1, halfSegments do
-            barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
-            barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
-            barInfo.frame.overlaySegments[i]:Show()
-        end
-        RB.StyleSegmentedText(barInfo.frame, slot.powerType, rbSettings)
     elseif SEGMENTED_TYPES[slot.powerType] then
         local maxValue = UnitPowerMax("player", slot.powerType)
         if slot.powerType == 5 then
@@ -1547,6 +1584,13 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         barInfo.frame:SetPoint("TOPLEFT", frame.previewCanvas, "TOPLEFT", 0, 0)
         barInfo.frame:SetPoint("BOTTOMRIGHT", frame.previewCanvas, "BOTTOMRIGHT", 0, 0)
         barInfo.frame:Show()
+        -- The resource overlay's Active Aura preview state, on the canvas
+        -- rather than out in the world (owner ruling 2026-07-26). Keyed by
+        -- power type, and written every pass so stopping the preview clears
+        -- it from a recycled frame. Set before the render, which reads it.
+        barInfo.frame._resourceAuraActivePreview = barInfo.powerType ~= nil
+            and CooldownCompanion:IsResourceAuraActivePreviewActive(barInfo.powerType)
+            or nil
         ApplyPreviewBarState(barInfo, rbSettings)
         -- The aura-absent layer for stacks-mode aura bars: the real
         -- capacity blocks and their per-block rings, the same call the live
