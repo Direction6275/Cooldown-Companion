@@ -1559,17 +1559,20 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         -- cannot measure it; maxStacks because a bar the config shows may
         -- have no live slot running and therefore no cached max.
         if slot.kind == "custom" and RB.ApplyCustomBarAbsentStackVisuals then
-            local cabConfig = slot.customEntry and slot.customEntry.config
+            -- One resolved max for the blocks AND for the stand-in's lit run
+            -- and stack text, so the number of blocks drawn and the number
+            -- the text quotes can never disagree.
+            local standInMax = RB.GetCustomBarStandInStackMax
+                and RB.GetCustomBarStandInStackMax(barInfo, rbSettings) or nil
             RB.ApplyCustomBarAbsentStackVisuals(barInfo, rbSettings, {
                 includeShell = true,
                 barLength = frame._cdcCustomBarLength,
-                maxStacks = RB.ResolveCustomBarStackMax
-                    and RB.ResolveCustomBarStackMax(cabConfig, rbSettings) or nil,
+                maxStacks = standInMax,
                 -- The Active Aura stand-in on a stacks bar: the blocks are
                 -- the bar, so the lit run is painted here rather than as a
                 -- fill over the top of them.
                 litStacks = RB.GetCustomBarStandInLitStacks
-                    and RB.GetCustomBarStandInLitStacks(barInfo, rbSettings) or nil,
+                    and RB.GetCustomBarStandInLitStacks(barInfo, rbSettings, standInMax) or nil,
             })
         end
         if barInfo.frame._barAuraActivePreview and RB.AnimatePreviewBarAura then
@@ -1584,9 +1587,11 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
             and RB.IsHealthEffectPreviewAnimated() then
             table_insert(preview.animated, {
                 barInfo = barInfo,
-                settings = rbSettings,
+                -- Resolved here rather than per tick; see the exporter.
+                config = RB.GetHealthPreviewAnimationConfig
+                    and RB.GetHealthPreviewAnimationConfig(rbSettings) or nil,
                 Tick = function(entry)
-                    RB.AnimatePreviewHealthEffects(entry.barInfo, entry.settings)
+                    RB.AnimatePreviewHealthEffects(entry.barInfo, entry.config)
                 end,
             })
         end
@@ -1807,6 +1812,18 @@ local function ConfigureSlotPreview(frame, slot, preview, width, height, isVerti
         ConfigureCastPreview(frame, slot, preview, width, height)
     else
         EnsureResourcePreview(frame, slot, preview, width, height)
+    end
+end
+
+-- The drag ghost runs through the same slot renderer, which would enrol its
+-- throwaway frames in the animation list. That list is only emptied by a
+-- full rebuild, and cancelling a drag does not rebuild — so each cancelled
+-- drag left an entry ticking a hidden ghost, and they accumulated.
+local function ConfigureGhostSlotPreview(frame, slot, preview, width, height, isVerticalSlot)
+    local enrolled = #preview.animated
+    ConfigureSlotPreview(frame, slot, preview, width, height, isVerticalSlot)
+    for index = #preview.animated, enrolled + 1, -1 do
+        preview.animated[index] = nil
     end
 end
 
@@ -2749,7 +2766,7 @@ local function ConfigureGhost(preview, slotData, slotFrame)
     local ghostSlot = ghost._cdcSlot
     ghostSlot.previewBarInfo = ghost.previewBarInfo
     ghostSlot.castPreview = ghost.castPreview
-    ConfigureSlotPreview(ghostSlot, slotData, preview, ghost:GetWidth(), ghost:GetHeight(), slotFrame.shortText:IsShown())
+    ConfigureGhostSlotPreview(ghostSlot, slotData, preview, ghost:GetWidth(), ghost:GetHeight(), slotFrame.shortText:IsShown())
     ghost.previewBarInfo = ghostSlot.previewBarInfo
     ghost.castPreview = ghostSlot.castPreview
 

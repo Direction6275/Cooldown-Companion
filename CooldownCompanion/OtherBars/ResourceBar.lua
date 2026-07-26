@@ -2295,9 +2295,13 @@ function CooldownCompanion:RevertResourceBars()
     HideIndependentWrapperFrame()
 
     isUnlockAssistActive = false
-    wipe(HEALTH_EFFECTS.preview)
-    wipe(activeCustomAuraBarActivePreviews)
-    wipe(activeCustomAuraBarPandemicPreviews)
+    -- Config-canvas preview state is deliberately NOT cleared here. This
+    -- teardown runs for transient live conditions — no anchor group yet, an
+    -- anchor that is not icon-like, an anchor frame that is momentarily
+    -- hidden — and the canvas keeps rendering from saved data through all of
+    -- them. Wiping the maps made a running command-center preview die
+    -- because of live-frame availability it has nothing to do with.
+    -- Ownership sits with ClearAllConfigPreviews and the explicit stops.
     activeResources = {}
 end
 
@@ -2305,6 +2309,11 @@ function CooldownCompanion:DisableResourceBarRuntime()
     self._resourceBarsNeedsMWMaxRefresh = true
     DisableLifecycleEvents()
     self:RevertResourceBars()
+    -- The feature itself is off, so the bars those previews stand for no
+    -- longer exist anywhere — this is the disable path, not the transient
+    -- teardown above, and clearing here is the point.
+    self:ClearAllHealthEffectPreviews()
+    self:ClearAllCustomAuraBarPreviews()
 end
 
 function CooldownCompanion:GetSpecCustomAuraBars()

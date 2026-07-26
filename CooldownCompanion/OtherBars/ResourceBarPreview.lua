@@ -84,13 +84,21 @@ local function GetReadyChargeCount(cabConfig)
     return nil
 end
 
--- Stack capacity the Active Aura stand-in fills against. The cached
--- automatic max belongs to a live slot; a bar the config shows may have no
--- slot running, so the config-time resolver is the fallback.
-local function GetStandInStackMax(barInfo, cabConfig, settings)
-    local max = RB.GetCustomBarCachedStackMax(barInfo)
-    if not max and RB.ResolveCustomBarStackMax then
-        max = RB.ResolveCustomBarStackMax(cabConfig, settings)
+-- Stack capacity for everything the canvas draws on one bar: the capacity
+-- blocks, the stand-in's lit run, and its stack text. ONE resolver, because
+-- the blocks and the text used to come from different ones and could
+-- disagree — blocks from a fresh resolve, text from the runtime cache.
+--
+-- Config time is out of combat, so the fresh resolve is the truth; the
+-- cache is the in-combat safety net the live rebind pass owns, and it can
+-- be a talent or a spec change behind. It is only the fallback here, for a
+-- bar the config shows that no live slot is currently running.
+function RB.GetCustomBarStandInStackMax(barInfo, settings)
+    local cabConfig = barInfo and barInfo.cabConfig
+    local max = RB.ResolveCustomBarStackMax
+        and RB.ResolveCustomBarStackMax(cabConfig, settings)
+    if not max then
+        max = RB.GetCustomBarCachedStackMax(barInfo)
     end
     return tonumber(max) or 1
 end
@@ -99,7 +107,7 @@ end
 -- not render as blocks. The canvas asks so it can hand the count to the
 -- block layout, which is the only thing that can paint them: on a block bar
 -- the blocks ARE the bar and a status-bar fill just covers them.
-function RB.GetCustomBarStandInLitStacks(barInfo, settings)
+function RB.GetCustomBarStandInLitStacks(barInfo, settings, maxStacks)
     local frame = barInfo and barInfo.frame
     local cabConfig = barInfo and barInfo.cabConfig
     if not (frame and cabConfig and frame._barAuraActivePreview) then
@@ -108,7 +116,7 @@ function RB.GetCustomBarStandInLitStacks(barInfo, settings)
     if not RB.WantsCustomBarStackBlocks then return nil end
     local max = RB.WantsCustomBarStackBlocks(barInfo, {
         includeShell = true,
-        maxStacks = GetStandInStackMax(barInfo, cabConfig, settings),
+        maxStacks = maxStacks or RB.GetCustomBarStandInStackMax(barInfo, settings),
     })
     if not max then return nil end
     return math_min(PREVIEW_STACKS, max), max
@@ -160,7 +168,8 @@ function RB.CreateResourceBarPreviewModule(deps)
         local barColor = cabConfig.barColor or {0.5, 0.5, 1, 1}
         bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4] ~= nil and barColor[4] or 1)
 
-        local blockStacks, blockMax = RB.GetCustomBarStandInLitStacks(barInfo, settings)
+        local standInMax = RB.GetCustomBarStandInStackMax(barInfo, settings)
+        local blockStacks, blockMax = RB.GetCustomBarStandInLitStacks(barInfo, settings, standInMax)
         local maxStacks = 1
         local stacks = 1
         if blockStacks then
@@ -174,7 +183,7 @@ function RB.CreateResourceBarPreviewModule(deps)
             SetStatusBarSmoothRange(bar, 0, 1)
             SetStatusBarImmediateValue(bar, 0)
         elseif stacksMode then
-            maxStacks = GetStandInStackMax(barInfo, cabConfig, settings)
+            maxStacks = standInMax
             stacks = math_min(PREVIEW_STACKS, maxStacks)
             SetStatusBarSmoothRange(bar, 0, maxStacks)
             SetStatusBarImmediateValue(bar, stacks)
@@ -239,15 +248,19 @@ function RB.CreateResourceBarPreviewModule(deps)
         return HEALTH_EFFECTS.preview.lowHealthAlert == true
     end
 
-    function RB.AnimatePreviewHealthEffects(barInfo, settings)
+    -- Resolved once at build time, not per tick: HealthBar.GetConfig runs
+    -- through GetResourceDisplayConfig, which deep-copies the whole health
+    -- resource table. The canvas ticker is unthrottled, so calling it per
+    -- frame meant a fresh table every frame for an animation that only needs
+    -- the clock.
+    function RB.GetHealthPreviewAnimationConfig(settings)
+        return HealthBar.GetConfig(settings or GetResourceBarSettings())
+    end
+
+    function RB.AnimatePreviewHealthEffects(barInfo, config)
         local bar = barInfo and barInfo.frame
         if not (bar and bar:IsShown()) then return end
-        HealthBar.UpdateEffectBars(
-            bar,
-            HealthBar.GetConfig(settings or GetResourceBarSettings()),
-            UnitHealthMax("player"),
-            HEALTH_EFFECTS.preview
-        )
+        HealthBar.UpdateEffectBars(bar, config, UnitHealthMax("player"), HEALTH_EFFECTS.preview)
     end
 
     ------------------------------------------------------------------------
