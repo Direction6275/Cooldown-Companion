@@ -424,6 +424,18 @@ function RB.CreateResourceBarAuraHostModule(deps)
                         barInfo._ccCabStackMaxBarId = barInfo.customBarId
                         ApplyCustomBarAbsentStackVisuals(barInfo, settings)
 
+                        -- TEMP DEBUG (aura pass 1B white-fill investigation;
+                        -- remove after validation): CC-side decided values
+                        -- only — never a read-back from kit regions.
+                        local c = style.barAuraColor
+                        CooldownCompanion:Print(("aura-host bind %s kind=%s color=%s tex=%s stackMax=%s holder=%dx%d inset=%d"):format(
+                            tostring(barInfo.customBarId),
+                            buttonData.addedAs or "spell",
+                            c and ("%.2f,%.2f,%.2f,%.2f"):format(c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1)
+                                or "nil(kit green default)",
+                            tostring(style.barTexture), tostring(stackBarMax),
+                            holder:GetWidth() + 0.5, holder:GetHeight() + 0.5, inset))
+
                         wanted[#wanted + 1] = {
                             button = holder,
                             buttonData = buttonData,
