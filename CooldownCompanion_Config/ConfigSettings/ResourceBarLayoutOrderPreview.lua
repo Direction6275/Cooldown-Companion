@@ -24,6 +24,7 @@ local HideDragIndicator = ST._HideDragIndicator
 local ApplyIconTexCoord = ST._ApplyIconTexCoord
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
 local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
+local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 
 local POWER_NAMES = RB.POWER_NAMES
 local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
@@ -1653,7 +1654,9 @@ end
 local function SetCastPreviewProgress(castPreview, progress)
     local bar = castPreview.bar
     SetStatusBarSmoothRange(bar, 0, 100)
-    SetStatusBarSmoothValue(bar, progress * 100)
+    -- Immediate, not smoothed: the sweep advances every tick, and smoothing
+    -- toward a moving target would drag visibly backwards at the wrap.
+    SetStatusBarImmediateValue(bar, progress * 100)
     if bar.spark:IsShown() then
         -- The measured length is the fallback, not the source: the slot is
         -- built and laid out in the same frame, so the anchor chain may not
