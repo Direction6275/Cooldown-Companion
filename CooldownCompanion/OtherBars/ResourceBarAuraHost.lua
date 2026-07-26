@@ -38,6 +38,7 @@ local CooldownCompanion = ST.Addon
 local ipairs = ipairs
 local pairs = pairs
 local tonumber = tonumber
+local math_min = math.min
 local CreateFrame = CreateFrame
 
 local RB = ST._RB
@@ -366,6 +367,13 @@ function RB.CreateResourceBarAuraHostModule(deps)
         return borderInset
     end
 
+    -- Does this bar render as capacity blocks rather than as one fill? The
+    -- config canvas asks before painting a preview: on a block bar the blocks
+    -- ARE the bar, and a status-bar fill would draw straight over them.
+    function RB.WantsCustomBarStackBlocks(barInfo, opts)
+        return WantsAbsentStackBlocks(barInfo, opts)
+    end
+
     local function ApplyCustomBarAbsentStackVisuals(barInfo, settings, opts)
         local frame = barInfo and barInfo.frame
         if not frame then return end
@@ -429,6 +437,25 @@ function RB.CreateResourceBarAuraHostModule(deps)
         -- is the block run's length unchanged.
         local rectLength = opts and opts.barLength or nil
         ST.LayoutStackBlocks(blocks, rect, max, frame._isVertical, bgColor, bgColor[4] or 1, rectLength)
+        -- litStacks (config preview only): the Active Aura stand-in. On a
+        -- live bar the kit paints its atlas fill over these same blocks; with
+        -- no kit on the canvas, CC lights them itself, in the same colour the
+        -- kit's stack fill uses.
+        local lit = opts and tonumber(opts.litStacks) or nil
+        if lit and lit > 0 then
+            local auraColor = style.barAuraColor or { 0.2, 1.0, 0.2, 1.0 }
+            for i = 1, math_min(lit, max) do
+                local tex = blocks[i]
+                if tex then
+                    tex:SetColorTexture(
+                        auraColor[1] or 0.2,
+                        auraColor[2] or 1.0,
+                        auraColor[3] or 0.2,
+                        auraColor[4] ~= nil and auraColor[4] or 1
+                    )
+                end
+            end
+        end
         ST.LayoutStackBlockBorders(borders, blocks, max, style)
         -- Owner ruling (panel parity): each stack is its own widget — the
         -- background slab and the whole-bar border ring come off; the blocks

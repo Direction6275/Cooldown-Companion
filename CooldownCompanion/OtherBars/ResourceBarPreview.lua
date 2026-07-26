@@ -95,6 +95,25 @@ local function GetStandInStackMax(barInfo, cabConfig, settings)
     return tonumber(max) or 1
 end
 
+-- How many capacity blocks the stand-in lights, or nil when this bar does
+-- not render as blocks. The canvas asks so it can hand the count to the
+-- block layout, which is the only thing that can paint them: on a block bar
+-- the blocks ARE the bar and a status-bar fill just covers them.
+function RB.GetCustomBarStandInLitStacks(barInfo, settings)
+    local frame = barInfo and barInfo.frame
+    local cabConfig = barInfo and barInfo.cabConfig
+    if not (frame and cabConfig and frame._barAuraActivePreview) then
+        return nil
+    end
+    if not RB.WantsCustomBarStackBlocks then return nil end
+    local max = RB.WantsCustomBarStackBlocks(barInfo, {
+        includeShell = true,
+        maxStacks = GetStandInStackMax(barInfo, cabConfig, settings),
+    })
+    if not max then return nil end
+    return math_min(PREVIEW_STACKS, max), max
+end
+
 function RB.CreateResourceBarPreviewModule(deps)
     local HealthBar = deps.HealthBar
     local HEALTH_EFFECTS = deps.HEALTH_EFFECTS
@@ -141,9 +160,20 @@ function RB.CreateResourceBarPreviewModule(deps)
         local barColor = cabConfig.barColor or {0.5, 0.5, 1, 1}
         bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4] ~= nil and barColor[4] or 1)
 
+        local blockStacks, blockMax = RB.GetCustomBarStandInLitStacks(barInfo, settings)
         local maxStacks = 1
         local stacks = 1
-        if stacksMode then
+        if blockStacks then
+            -- Capacity blocks: the lit run is painted onto the blocks
+            -- themselves by the absent-state pass (the canvas hands it the
+            -- count), because a status-bar fill would draw over them. This is
+            -- the CC stand-in for what the kit's atlas fill does on a live
+            -- bar, which likewise never uses this status bar.
+            maxStacks = blockMax
+            stacks = blockStacks
+            SetStatusBarSmoothRange(bar, 0, 1)
+            SetStatusBarImmediateValue(bar, 0)
+        elseif stacksMode then
             maxStacks = GetStandInStackMax(barInfo, cabConfig, settings)
             stacks = math_min(PREVIEW_STACKS, maxStacks)
             SetStatusBarSmoothRange(bar, 0, maxStacks)

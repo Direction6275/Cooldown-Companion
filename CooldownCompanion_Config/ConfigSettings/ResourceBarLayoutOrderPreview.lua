@@ -1565,6 +1565,11 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 barLength = frame._cdcCustomBarLength,
                 maxStacks = RB.ResolveCustomBarStackMax
                     and RB.ResolveCustomBarStackMax(cabConfig, rbSettings) or nil,
+                -- The Active Aura stand-in on a stacks bar: the blocks are
+                -- the bar, so the lit run is painted here rather than as a
+                -- fill over the top of them.
+                litStacks = RB.GetCustomBarStandInLitStacks
+                    and RB.GetCustomBarStandInLitStacks(barInfo, rbSettings) or nil,
             })
         end
         if barInfo.frame._barAuraActivePreview and RB.AnimatePreviewBarAura then

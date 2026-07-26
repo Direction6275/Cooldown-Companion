@@ -35,6 +35,10 @@ local HEALTH_EFFECT_JOIN_OVERLAP = 1
 local HealthBar
 local HEALTH_EFFECTS
 
+-- The absence of a preview, as a table, so the live path can say so
+-- explicitly instead of falling through to whatever the config has armed.
+local NO_HEALTH_EFFECT_PREVIEW = {}
+
 local function EnsureNonNilNumber(value)
     if type(value) == "nil" then
         return 0
@@ -434,7 +438,12 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
         return
     end
 
-    preview = preview or HEALTH_EFFECTS.preview
+    -- No preview table means NO preview. The default used to be the shared
+    -- HEALTH_EFFECTS.preview, which quietly made the real health bar render
+    -- whatever the config had armed — invisible while previews also painted
+    -- the live bar, and a leak the moment they stopped. Only the config
+    -- canvas passes the preview table now.
+    preview = preview or NO_HEALTH_EFFECT_PREVIEW
 
     if bar.lowHealthAlertBar then
         HealthBar.ApplyLowHealthAlertStyle(bar.lowHealthAlertBar, config)
