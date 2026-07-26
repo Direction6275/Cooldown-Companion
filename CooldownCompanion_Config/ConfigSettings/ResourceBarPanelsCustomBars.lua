@@ -1137,7 +1137,11 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                 colorHeading:SetFullWidth(true)
                 container:AddChild(colorHeading)
 
-                AddColorPicker(container, customBars[cabIdx], "barColor", "Bar Color", {0.5, 0.5, 1}, false,
+                -- Standalone aura bars: the fill IS the aura, so the label
+                -- says so — "Bar Color" stays the spell-cooldown verbiage.
+                -- Same barColor key either way; label only.
+                AddColorPicker(container, customBars[cabIdx], "barColor",
+                    isSpellCustomBar and "Bar Color" or "Aura Bar Color", {0.5, 0.5, 1}, false,
                     cabApplyBars, function() CooldownCompanion:RecolorCustomAuraBar(customBars[cabIdx]) end)
 
                 if isSpellCustomBar then
