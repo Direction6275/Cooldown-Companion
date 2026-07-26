@@ -150,7 +150,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         -- stand-in fills to the preview stack count against the OOC-cached
         -- automatic max.
         local indicatorPreview = auraPreview or pandemicPreview
-        local maxStacks = barInfo._ccCabStackMax or cabConfig.maxStacks or 1
+        local maxStacks = RB.GetCustomBarCachedStackMax(barInfo) or cabConfig.maxStacks or 1
         local configUnit = EnsureCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
         local viewerFrame
         local auraUnit = configUnit
@@ -480,9 +480,14 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         local auraPreview = bar._barAuraActivePreview == true
         local pandemicPreview = bar._pandemicPreview == true
         local spellAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
+        local indicatorPreview = auraPreview or pandemicPreview
+        -- Stack-mode spell bars leave the live aura render to the kit (the
+        -- early return below), but the preview stand-in still renders here:
+        -- the kit is never driven by a preview, so gating stack mode out
+        -- entirely would leave the command-center toggle showing nothing.
         local renderAuraState = cabConfig.auraTracking == true
-            and not spellAuraStackDisplay
-            and (auraPresent or auraPreview or pandemicPreview)
+            and (not spellAuraStackDisplay or indicatorPreview)
+            and (auraPresent or indicatorPreview)
 
         local barColor = cabConfig.barColor or {0.5, 0.5, 1, 1}
         local cooldownColor = cabConfig.barCooldownColor or {0.6, 0.13, 0.18, 1}
@@ -553,15 +558,26 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
             local auraDurationObj = auraState and auraState.durationObj
             bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4] ~= nil and barColor[4] or 1)
-            SetStatusBarSmoothRange(bar, 0, 1)
-            if auraDurationObj then
-                if not SetStatusBarRemainingDuration(bar, auraDurationObj) then
-                    SetStatusBarSmoothValue(bar, auraDurationObj:GetRemainingPercent())
-                end
-            elseif auraPreview or pandemicPreview then
-                SetStatusBarImmediateValue(bar, CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL)
+            -- Stack mode is preview-only here (see renderAuraState): fill
+            -- against the OOC-cached automatic max, matching what the pure
+            -- aura bars' stand-in does.
+            local previewStacks, previewMax
+            if spellAuraStackDisplay then
+                previewMax = RB.GetCustomBarCachedStackMax(barInfo) or 1
+                previewStacks = math_min(CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS, previewMax)
+                SetStatusBarSmoothRange(bar, 0, previewMax)
+                SetStatusBarImmediateValue(bar, previewStacks)
             else
-                SetStatusBarImmediateValue(bar, 1)
+                SetStatusBarSmoothRange(bar, 0, 1)
+                if auraDurationObj then
+                    if not SetStatusBarRemainingDuration(bar, auraDurationObj) then
+                        SetStatusBarSmoothValue(bar, auraDurationObj:GetRemainingPercent())
+                    end
+                elseif indicatorPreview then
+                    SetStatusBarImmediateValue(bar, CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL)
+                else
+                    SetStatusBarImmediateValue(bar, 1)
+                end
             end
 
             if bar.thresholdOverlay then
@@ -572,7 +588,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             if bar.text and bar.text:IsShown() then
                 if auraDurationObj then
                     BindDurationText(bar.text, auraDurationObj, cabConfig)
-                elseif auraPreview or pandemicPreview then
+                elseif indicatorPreview then
                     SetManualDurationText(bar.text, FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig))
                 else
                     SetManualDurationText(bar.text, "")
@@ -581,7 +597,11 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                 UnbindDurationText(bar.text)
             end
 
-            UpdateSpellCustomBarChargeText(bar, cooldownResult)
+            if previewStacks then
+                RB.UpdateSpellCustomBarAuraStackText(bar, cabConfig, previewStacks, previewMax, true)
+            else
+                UpdateSpellCustomBarChargeText(bar, cooldownResult)
+            end
             UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPresent)
 
             if barInfo._maxStacksIndicator and SetMaxStacksIndicatorActive then
@@ -817,8 +837,10 @@ function RB.CreateResourceBarCustomBarsModule(deps)
     -- reserved in combat (no reflow) — documented, accepted. Whole-frame
     -- alpha, not per-region: the kit lives in a separate holder subtree,
     -- and abandoned frames are never reused so a zeroed alpha cannot leak
-    -- into another bar type. Previews lift the shell so the bar is
-    -- editable while the command center drives it.
+    -- into another bar type. Every preview lifts the shell so the bar is
+    -- editable: the per-bar command-center flags AND the whole-stack
+    -- preview, which paints its data into this frame and would otherwise
+    -- render it invisible (nothing else raises a zeroed whole-frame alpha).
     local function ApplyCustomBarShellAlpha(barInfo)
         local bar = barInfo.frame
         local cabConfig = barInfo.cabConfig
@@ -828,6 +850,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         local shell = auraTracked
             and cabConfig.hideWhenInactive == true
             and not (bar._barAuraActivePreview or bar._pandemicPreview)
+            and not GetPreviewActive()
         bar:SetAlpha(shell and 0 or 1)
     end
 
@@ -989,6 +1012,11 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             barInfo._sndPrevCharges = nil
             barInfo._sndPrevChargeRecharging = nil
             barInfo._sndPrevChargeCooldownStart = nil
+            -- The automatic stack max belongs to the bar that was here, not
+            -- the one moving in; the OOC rebind refreshes it, but nothing
+            -- may read the old bar's value in the meantime.
+            barInfo._ccCabStackMax = nil
+            barInfo._ccCabStackMaxBarId = nil
         end
         barInfo.cabConfig = cabConfig
         barInfo.powerType = legacyPowerType

@@ -1063,8 +1063,15 @@ local function StyleSlotKit(slot, button, buttonData, style)
         if widgetStack and not occlusionFree then
             -- Block geometry reads the CC statusBar (sanctioned anchor
             -- target + CC-owned width), matching BarMode's block set exactly.
+            -- Alpha: forced opaque is an OCCLUSION rule, so it applies only
+            -- where something renders beneath. On a custom-bar shell the CC
+            -- frame is at whole-frame alpha 0 and these blocks are the whole
+            -- background, so they follow the configured alpha — otherwise the
+            -- shell toggle would visibly change a bar's opacity.
+            local blockBg = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
             ST.LayoutStackBlocks(kit.stackBgBlocks, button.statusBar or slotButton,
-                slot.boundStackMax, button._isVertical, style.barBgColor or { 0.1, 0.1, 0.1, 0.8 })
+                slot.boundStackMax, button._isVertical, blockBg,
+                isCustomBarHost and (blockBg[4] or 1) or nil)
             ST.LayoutStackBlockBorders(kit.stackBlockBorders, kit.stackBgBlocks,
                 slot.boundStackMax, style)
         else

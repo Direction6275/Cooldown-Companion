@@ -17,6 +17,131 @@ local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 local tabInfoButtons = CS.tabInfoButtons
 
 ------------------------------------------------------------------------
+-- TRACKED-AURA CANDIDATE LISTS
+------------------------------------------------------------------------
+-- Both aura surfaces (panel entries and custom bars) store the same shape:
+-- a CSV of spell IDs on `auraSpellID`, with the Blizzard polarity rule that
+-- one entry may never mix buffs and debuffs. The rules and their messages
+-- live here once so the two surfaces cannot answer the same action
+-- differently. Callers supply their own derived unit and a post-change hook
+-- (each surface normalizes its own entry shape afterwards).
+
+local function ClassifyAuraSpellUnit(spellID)
+    if not (spellID and C_Spell.DoesSpellExist(spellID)) then return nil end
+    return C_Spell.IsSpellHarmful(spellID) and "target" or "player"
+end
+
+local function GetAuraCandidateList(config)
+    local list = {}
+    local raw = config and config.auraSpellID and tostring(config.auraSpellID) or nil
+    if raw then
+        for id in raw:gmatch("%d+") do
+            list[#list + 1] = tonumber(id)
+        end
+    end
+    return list
+end
+
+local function SetAuraCandidateList(config, list, onChanged)
+    if #list > 0 then
+        local parts = {}
+        for i, id in ipairs(list) do parts[i] = tostring(id) end
+        config.auraSpellID = table.concat(parts, ",")
+    else
+        config.auraSpellID = nil
+    end
+    if onChanged then onChanged(config) end
+end
+
+-- currentUnit is the surface's own derived tracking unit. Returns true when
+-- the list actually changed.
+local function TryAddAuraCandidate(config, input, currentUnit, onChanged)
+    input = input and input:gsub("^%s+", ""):gsub("%s+$", "") or ""
+    if input == "" then return false end
+    local spellID = tonumber(input)
+    if not spellID then
+        local info = C_Spell.GetSpellInfo(input)
+        spellID = info and info.spellID
+    end
+    if not (spellID and C_Spell.DoesSpellExist(spellID)) then
+        CooldownCompanion:Print("Aura not found: " .. input .. ". Try the spell ID.")
+        return false
+    end
+    local list = GetAuraCandidateList(config)
+    for _, existing in ipairs(list) do
+        if existing == spellID then
+            return false
+        end
+    end
+    local newUnit = ClassifyAuraSpellUnit(spellID)
+    if newUnit and currentUnit and newUnit ~= currentUnit then
+        CooldownCompanion:Print("Buffs and debuffs can't be tracked by the same entry. Debuffs are tracked on your target, buffs on you.")
+        return false
+    end
+    list[#list + 1] = spellID
+    SetAuraCandidateList(config, list, onChanged)
+    return true
+end
+
+-- Removing the last listed aura is always allowed: the entry's own aura is
+-- implicit, so an empty list just returns to the default.
+local function RemoveAuraCandidate(config, spellID, onChanged)
+    local list = GetAuraCandidateList(config)
+    for i, existing in ipairs(list) do
+        if existing == spellID then
+            table.remove(list, i)
+            SetAuraCandidateList(config, list, onChanged)
+            return true
+        end
+    end
+    return false
+end
+
+local function AddAuraCandidateRow(container, spellID, onRemove)
+    local row = AceGUI:Create("SimpleGroup")
+    row:SetLayout("Flow")
+    row:SetFullWidth(true)
+
+    local info = C_Spell.GetSpellInfo(spellID)
+    local name = info and info.name or ("Spell " .. spellID)
+
+    local label = AceGUI:Create("Label")
+    label:SetImage(C_Spell.GetSpellTexture(spellID) or 134400)
+    label:SetImageSize(16, 16)
+    label:SetText(("%s |cff999999(%d)|r"):format(name, spellID))
+    label:SetRelativeWidth(0.8)
+    row:AddChild(label)
+
+    local remove = AceGUI:Create("InteractiveLabel")
+    remove:SetText("|cffff5555Remove|r")
+    remove:SetRelativeWidth(0.2)
+    remove:SetCallback("OnClick", function()
+        onRemove(spellID)
+    end)
+    row:AddChild(remove)
+
+    container:AddChild(row)
+end
+
+-- The stack-bar status line. A nil max means one of two very different
+-- things, and only the combat check tells them apart: in combat the game
+-- returns the stack maximum as a secret the addon must discard, so claiming
+-- the aura doesn't stack would be a lie the tab tells whenever it is
+-- rebuilt mid-fight.
+local function AddAuraStackMaxStatusLabel(container, maxStacks)
+    local statusLabel = AceGUI:Create("Label")
+    if maxStacks then
+        statusLabel:SetText("|cffffd100Stack bar:|r full at " .. maxStacks .. " stacks")
+    elseif InCombatLockdown() then
+        statusLabel:SetText("|cffff9955The stack maximum can't be read in combat — it resolves when you leave combat.|r")
+    else
+        statusLabel:SetText("|cffff9955This aura doesn't stack — the bar will show duration.|r")
+    end
+    statusLabel:SetFullWidth(true)
+    container:AddChild(statusLabel)
+end
+
+------------------------------------------------------------------------
 -- REUSABLE SECTION BUILDER FUNCTIONS
 ------------------------------------------------------------------------
 -- Each builder takes (container, styleTable, refreshCallback) and adds
@@ -1622,3 +1747,12 @@ ST._BuildBarReadyTextControls = BuildBarReadyTextControls
 ST._BuildTextFontControls = BuildTextFontControls
 ST._BuildTextColorsControls = BuildTextColorsControls
 ST._BuildTextBackgroundControls = BuildTextBackgroundControls
+
+-- Tracked-aura candidate lists (shared by the panel Aura tab and the
+-- custom-bar Aura tab).
+ST._ClassifyAuraSpellUnit = ClassifyAuraSpellUnit
+ST._GetAuraCandidateList = GetAuraCandidateList
+ST._TryAddAuraCandidate = TryAddAuraCandidate
+ST._RemoveAuraCandidate = RemoveAuraCandidate
+ST._AddAuraCandidateRow = AddAuraCandidateRow
+ST._AddAuraStackMaxStatusLabel = AddAuraStackMaxStatusLabel

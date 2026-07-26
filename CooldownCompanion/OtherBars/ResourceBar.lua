@@ -2368,7 +2368,14 @@ function CooldownCompanion:ClearAllCustomAuraBarPreviews()
         if frame and (frame._barAuraActivePreview or frame._pandemicPreview) then
             frame._barAuraActivePreview = nil
             frame._pandemicPreview = nil
-            if barInfo.barType == "custom_cooldown" then
+            -- Finalize, not a bare update: the preview lifted the shell
+            -- alpha, and nothing else on this path lowers it — a bulk clear
+            -- (config close, entry switch, another preview starting) would
+            -- otherwise leave a hide-while-inactive bar showing its empty
+            -- absent state until the next ApplyResourceBars.
+            if type(barInfo.customBarId) == "string" then
+                FinalizeAppliedBarVisibility(barInfo, isPreviewActive)
+            elseif barInfo.barType == "custom_cooldown" then
                 RB.UpdateCustomCooldownBar(barInfo)
             else
                 UpdateCustomAuraBar(barInfo)

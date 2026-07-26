@@ -529,10 +529,14 @@ local function RefreshCustomBarAuraConfig()
     CooldownCompanion:RefreshConfigPanel()
 end
 
-local function ClassifyAuraSpellUnit(spellID)
-    if not (spellID and C_Spell.DoesSpellExist(spellID)) then return nil end
-    return C_Spell.IsSpellHarmful(spellID) and "target" or "player"
-end
+-- Shared tracked-aura list rules (SectionBuilders.lua), the same ones the
+-- panel Aura tab runs on.
+local ClassifyAuraSpellUnit = ST._ClassifyAuraSpellUnit
+local GetAuraCandidateList = ST._GetAuraCandidateList
+local TryAddAuraCandidate = ST._TryAddAuraCandidate
+local RemoveAuraCandidate = ST._RemoveAuraCandidate
+local AddAuraCandidateRow = ST._AddAuraCandidateRow
+local AddAuraStackMaxStatusLabel = ST._AddAuraStackMaxStatusLabel
 
 -- Candidate-resolution probe: the buttonData shape Core/Aura.lua reads,
 -- synthesized from cabConfig (the same mapping the runtime adapter uses).
@@ -562,95 +566,12 @@ local function SyncCustomBarDerivedAuraUnit(cab)
     end
 end
 
-local function GetCustomBarCandidateList(cab)
-    local list = {}
-    local raw = cab.auraSpellID and tostring(cab.auraSpellID) or nil
-    if raw then
-        for id in raw:gmatch("%d+") do
-            list[#list + 1] = tonumber(id)
-        end
-    end
-    return list
-end
-
-local function SetCustomBarCandidateList(cab, list)
-    if #list > 0 then
-        local parts = {}
-        for i, id in ipairs(list) do parts[i] = tostring(id) end
-        cab.auraSpellID = table.concat(parts, ",")
-    else
-        cab.auraSpellID = nil
-    end
-    SyncCustomBarDerivedAuraUnit(cab)
-end
-
-local function TryAddCustomBarCandidate(cab, input)
-    input = input and input:gsub("^%s+", ""):gsub("%s+$", "") or ""
-    if input == "" then return false end
-    local spellID = tonumber(input)
-    if not spellID then
-        local info = C_Spell.GetSpellInfo(input)
-        spellID = info and info.spellID
-    end
-    if not (spellID and C_Spell.DoesSpellExist(spellID)) then
-        CooldownCompanion:Print("Aura not found: " .. input .. ". Try the spell ID.")
-        return false
-    end
-    local list = GetCustomBarCandidateList(cab)
-    for _, existing in ipairs(list) do
-        if existing == spellID then
-            return false
-        end
-    end
-    local newUnit = ClassifyAuraSpellUnit(spellID)
-    local currentUnit = GetCustomBarAuraUnit(cab)
-    if newUnit and newUnit ~= currentUnit then
-        CooldownCompanion:Print("Buffs and debuffs can't be tracked by the same entry. Debuffs are tracked on your target, buffs on you.")
-        return false
-    end
-    list[#list + 1] = spellID
-    SetCustomBarCandidateList(cab, list)
-    return true
-end
-
-local function RemoveCustomBarCandidate(cab, spellID)
-    local list = GetCustomBarCandidateList(cab)
-    for i, existing in ipairs(list) do
-        if existing == spellID then
-            table.remove(list, i)
-            SetCustomBarCandidateList(cab, list)
-            return true
-        end
-    end
-    return false
-end
-
 local function AddCustomBarCandidateRow(container, cab, spellID)
-    local row = AceGUI:Create("SimpleGroup")
-    row:SetLayout("Flow")
-    row:SetFullWidth(true)
-
-    local info = C_Spell.GetSpellInfo(spellID)
-    local name = info and info.name or ("Spell " .. spellID)
-
-    local label = AceGUI:Create("Label")
-    label:SetImage(C_Spell.GetSpellTexture(spellID) or 134400)
-    label:SetImageSize(16, 16)
-    label:SetText(("%s |cff999999(%d)|r"):format(name, spellID))
-    label:SetRelativeWidth(0.8)
-    row:AddChild(label)
-
-    local remove = AceGUI:Create("InteractiveLabel")
-    remove:SetText("|cffff5555Remove|r")
-    remove:SetRelativeWidth(0.2)
-    remove:SetCallback("OnClick", function()
-        if RemoveCustomBarCandidate(cab, spellID) then
+    AddAuraCandidateRow(container, spellID, function(removedID)
+        if RemoveAuraCandidate(cab, removedID, SyncCustomBarDerivedAuraUnit) then
             RefreshCustomBarAuraConfig()
         end
     end)
-    row:AddChild(remove)
-
-    container:AddChild(row)
 end
 
 local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons)
@@ -687,7 +608,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons)
     unitLabel:SetFullWidth(true)
     container:AddChild(unitLabel)
 
-    for _, spellID in ipairs(GetCustomBarCandidateList(cab)) do
+    for _, spellID in ipairs(GetAuraCandidateList(cab)) do
         AddCustomBarCandidateRow(container, cab, spellID)
     end
 
@@ -696,7 +617,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons)
     addBox:SetText("")
     addBox:SetFullWidth(true)
     addBox:SetCallback("OnEnterPressed", function(widget, _, text)
-        if TryAddCustomBarCandidate(cab, text) then
+        if TryAddAuraCandidate(cab, text, GetCustomBarAuraUnit(cab), SyncCustomBarDerivedAuraUnit) then
             widget:SetText("")
             RefreshCustomBarAuraConfig()
         end
@@ -743,14 +664,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons)
             container:AddChild(styleDrop)
         end
 
-        local statusLabel = AceGUI:Create("Label")
-        if maxStacks then
-            statusLabel:SetText("|cffffd100Stack bar:|r full at " .. maxStacks .. " stacks")
-        else
-            statusLabel:SetText("|cffff9955This aura doesn't stack — the bar will show duration.|r")
-        end
-        statusLabel:SetFullWidth(true)
-        container:AddChild(statusLabel)
+        AddAuraStackMaxStatusLabel(container, maxStacks)
     end
 
     -- Pandemic marker per-entry switch. The auto default follows the tracked
@@ -886,7 +800,7 @@ local function BuildCustomBarWorkspaceAddBox(container)
                 spellID = spellId,
                 trackingMode = "active",
                 showDurationText = true,
-                auraUnit = C_Spell.IsSpellHarmful(spellId) and "target" or "player",
+                auraUnit = ClassifyAuraSpellUnit(spellId) or "player",
                 label = labelOverride or GetAuraBarAutocompleteDisplayName(spellId) or C_Spell.GetSpellName(spellId) or "",
             }
         else

@@ -967,6 +967,15 @@ end
 -- never store the table or read it after this call returns.
 function CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, auraActive, cooldownActive, cooldownResult)
     local customBar = barInfo and barInfo.cabConfig
+    -- Aura custom bars have no CC-side transition legs on 12.1: their only
+    -- sound trigger is aura activity, which Blizzard owns (the native
+    -- AddAuraSound registrations made at bind time), and the addon never
+    -- evaluates aura state for them — auraActive is structurally false. So
+    -- the whole scan below is dead work, and this runs per bar at 30Hz.
+    if customBar and (customBar.entryType or "aura") ~= "spell" then
+        barInfo._sndInitialized = nil
+        return
+    end
     local enabledEvents = self:GetEnabledSoundAlertEventsForCustomBar(customBar)
     if not enabledEvents then
         if barInfo then

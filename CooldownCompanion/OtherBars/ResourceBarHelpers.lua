@@ -330,6 +330,16 @@ local function IsSpellCustomBarAuraStackDisplay(cab)
         and GetCustomBarTrackingMode(cab, true) ~= "active"
 end
 
+-- The automatic aura stack max (the aura pass), cached on the slot by the
+-- OOC rebind collector so in-combat re-applies never touch the restricted
+-- lookup. Always read through here: the cache outlives slot reassignment,
+-- so the recorded owner must match the bar asking for it.
+local function GetCustomBarCachedStackMax(barInfo)
+    if type(barInfo) ~= "table" then return nil end
+    if barInfo._ccCabStackMaxBarId ~= barInfo.customBarId then return nil end
+    return barInfo._ccCabStackMax
+end
+
 local function NormalizeCustomBarEntryType(cab)
     if type(cab) ~= "table" then
         return "aura"
@@ -2010,6 +2020,7 @@ RB.IsConfiguredCustomBar = IsConfiguredCustomBar
 RB.GetCustomBarEntryType = GetCustomBarEntryType
 RB.IsSpellCustomBarConfig = IsSpellCustomBarConfig
 RB.IsSpellCustomBarAuraStackDisplay = IsSpellCustomBarAuraStackDisplay
+RB.GetCustomBarCachedStackMax = GetCustomBarCachedStackMax
 RB.GetResolvedCustomAuraBarAuraUnit = GetResolvedCustomAuraBarAuraUnit
 RB.EnsureCustomAuraBarAuraUnit = EnsureCustomAuraBarAuraUnit
 RB.GetSpecLayoutOrder = GetSpecLayoutOrder

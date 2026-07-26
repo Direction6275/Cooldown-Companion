@@ -50,6 +50,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
     local GetResourceDisplayValue = RB.GetResourceDisplayValue
     local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
     local IsSpellCustomBarConfig = RB.IsSpellCustomBarConfig
+    local GetCustomBarCachedStackMax = RB.GetCustomBarCachedStackMax
     local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
     local HidePixelBorders = RB.HidePixelBorders
 
@@ -262,11 +263,15 @@ function RB.CreateResourceBarAuraHostModule(deps)
         -- Stack text resolution mirrors StyleCustomAuraBar's compat rule:
         -- stacks-mode bars with no explicit showStackText fall back to the
         -- legacy showText flag.
+        -- The legacy flag only ever meant stack text on stacks-mode bars, so
+        -- the fallback carries that gate too: without it a duration bar with
+        -- an old showText would render a stack count AND push its duration
+        -- text off center (the kit splits the placement when both show).
         local showStack = cabConfig.showStackText
         if IsSpellCustomBarConfig(cabConfig) then
             showStack = showStack == true
         elseif showStack == nil then
-            showStack = cabConfig.showText == true
+            showStack = WantsStackMode(cabConfig, false) and cabConfig.showText == true
         end
         style.showAuraStackText = showStack == true
 
@@ -303,8 +308,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
         if cabConfig.hideWhenInactive == true then return nil end -- shell: kit renders the whole bar
         if not WantsStackMode(cabConfig, false) then return nil end
         if cabConfig.displayMode == "continuous" then return nil end
-        local max = barInfo._ccCabStackMax
-        if barInfo._ccCabStackMaxBarId ~= barInfo.customBarId then max = nil end
+        local max = GetCustomBarCachedStackMax(barInfo)
         if not max or max <= 1 or max > ST.STACK_SEGMENT_ATLAS_MAX then return nil end
         return max
     end
