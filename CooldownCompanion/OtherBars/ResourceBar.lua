@@ -1710,8 +1710,13 @@ local function StyleContinuousBar(bar, powerType, settings)
     bar.text:SetShown(showText)
     bar._textFormat = textFormat
 
-    -- Stagger (101) uses UnitHealthMax, not UnitPowerMax; tick markers not applicable
-    if powerType ~= 101 then
+    -- Tick markers need a real power type to measure against. Both of CC's
+    -- invented ids are excluded: Stagger (101) is sized by UnitHealthMax,
+    -- and Maelstrom Weapon (100) is sized by its aura's stack cap — passing
+    -- either to UnitPowerMax is a hard error. Neither is offered tick
+    -- markers anyway (GetContinuousTickEntriesConfig groups Maelstrom with
+    -- the segmented resources, whose threshold colours serve the same role).
+    if powerType ~= 101 and powerType ~= RESOURCE_MAELSTROM_WEAPON then
         local maxPower = UnitPowerMax("player", powerType)
         local maxPowerIsSecret = IsUnitPowerMaxSecret("player", powerType)
         if issecretvalue and issecretvalue(maxPower) then
