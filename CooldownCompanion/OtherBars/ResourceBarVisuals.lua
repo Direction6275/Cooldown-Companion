@@ -10,10 +10,7 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
-local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
-local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
 
-local math_floor = math.floor
 local math_min = math.min
 local math_max = math.max
 local math_sin = math.sin
@@ -134,21 +131,6 @@ local function GetResourceAuraTrackingMode(resourceEntry)
     return "active"
 end
 
-local function GetResourceAuraConfiguredMaxStacks(powerType, settings)
-    if not settings or not settings.resources then return nil end
-    local resource = settings.resources[powerType]
-    if not resource then return nil end
-    local entry = GetActiveResourceAuraEntry(resource)
-    if not entry then return nil end
-    if GetResourceAuraTrackingMode(entry) ~= "stacks" then return nil end
-    local configured = tonumber(entry.auraColorMaxStacks)
-    if not configured then return nil end
-    configured = math_floor(configured)
-    if configured <= 1 then return nil end
-    if configured > 99 then configured = 99 end
-    return configured
-end
-
 local function IsResourceAuraOverlayEnabled(resource)
     if type(resource) ~= "table" then
         return false
@@ -179,179 +161,6 @@ local function IsResourceAuraOverlayEnabled(resource)
     end
     local auraSpellID = tonumber(resource.auraColorSpellID)
     return auraSpellID and auraSpellID > 0 or false
-end
-
-local function GetResourceAuraState(powerType, settings, auraActiveCache)
-    -- 12.1 demolition: aura reads removed. Resource aura recolor and aura-stack
-    -- segments stay inert (base colors) until the AuraContainer rebuild.
-    return nil, nil, false
-end
-
-local function HideResourceAuraStackSegments(holder)
-    if not holder or not holder.auraStackSegments then return end
-    for _, seg in ipairs(holder.auraStackSegments) do
-        SetStatusBarImmediateValue(seg, 0)
-        seg:Hide()
-    end
-end
-
-local function GetResourceAuraStackLayoutInputs(holder, settings, orientationOverride, reverseFillOverride)
-    local style = GetResourceDisplayStyle(settings)
-    local barTextureName = ST.GetEffectiveBarTextureName(style and style.barTexture or "Solid")
-    local borderStyle = style and style.borderStyle or "pixel"
-    local borderSize = style and style.borderSize or 1
-    local borderRenderMode = ST.GetBorderRenderMode(style)
-    local isVertical
-    if orientationOverride == "vertical" then
-        isVertical = true
-    elseif orientationOverride == "horizontal" then
-        isVertical = false
-    else
-        isVertical = IsVerticalResourceLayout(settings)
-    end
-    local reverseFill = false
-    if reverseFillOverride ~= nil then
-        reverseFill = reverseFillOverride == true
-    elseif isVertical then
-        reverseFill = IsVerticalFillReversed(settings)
-    end
-
-    local baseSeg = holder and holder.segments and holder.segments[1]
-    local baseWidth = baseSeg and baseSeg:GetWidth() or 0
-    local baseHeight = baseSeg and baseSeg:GetHeight() or 0
-    local baseFrameLevel = baseSeg and baseSeg:GetFrameLevel() or 0
-
-    return barTextureName, borderStyle, borderSize, borderRenderMode, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel
-end
-
-local function UpdateResourceAuraStackLayoutState(holder, count, barTextureName, borderStyle, borderSize, borderRenderMode, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel)
-    holder._auraStackLayoutCount = count
-    holder._auraStackLayoutTexture = barTextureName
-    holder._auraStackLayoutBorderStyle = borderStyle
-    holder._auraStackLayoutBorderSize = borderSize
-    holder._auraStackLayoutBorderRenderMode = borderRenderMode
-    holder._auraStackLayoutVertical = isVertical
-    holder._auraStackLayoutReverseFill = reverseFill
-    holder._auraStackLayoutBaseWidth = baseWidth
-    holder._auraStackLayoutBaseHeight = baseHeight
-    holder._auraStackLayoutBaseFrameLevel = baseFrameLevel
-end
-
-local function ResourceAuraStackLayoutChanged(holder, settings)
-    local count = holder.auraStackSegments and #holder.auraStackSegments or 0
-    local barTextureName, borderStyle, borderSize, borderRenderMode, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel =
-        GetResourceAuraStackLayoutInputs(holder, settings)
-
-    if holder._auraStackLayoutCount ~= count
-        or holder._auraStackLayoutTexture ~= barTextureName
-        or holder._auraStackLayoutBorderStyle ~= borderStyle
-        or holder._auraStackLayoutBorderSize ~= borderSize
-        or holder._auraStackLayoutBorderRenderMode ~= borderRenderMode
-        or holder._auraStackLayoutVertical ~= isVertical
-        or holder._auraStackLayoutReverseFill ~= reverseFill
-        or holder._auraStackLayoutBaseWidth ~= baseWidth
-        or holder._auraStackLayoutBaseHeight ~= baseHeight
-        or holder._auraStackLayoutBaseFrameLevel ~= baseFrameLevel then
-        return true
-    end
-
-    return false
-end
-
-local function LayoutResourceAuraStackSegments(holder, settings, orientationOverride, reverseFillOverride)
-    if not holder or not holder.auraStackSegments or not holder.segments then return end
-    local count = #holder.auraStackSegments
-    local barTextureName, borderStyle, borderSize, borderRenderMode, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel =
-        GetResourceAuraStackLayoutInputs(holder, settings, orientationOverride, reverseFillOverride)
-    local barTexture = CooldownCompanion:FetchStatusBar(barTextureName)
-
-    for i, auraSeg in ipairs(holder.auraStackSegments) do
-        local baseSeg = holder.segments[i]
-        if baseSeg then
-            local inset = (borderStyle == "pixel") and ST.GetEffectiveBorderLayoutSize(baseSeg, borderSize, borderRenderMode) or 0
-            if inset < 0 then inset = 0 end
-
-            auraSeg:ClearAllPoints()
-            if isVertical then
-                local usableWidth = baseSeg:GetWidth() - (inset * 2)
-                if usableWidth < 1 then usableWidth = 1 end
-                local laneWidth = math_floor((usableWidth * 0.5) + 0.5)
-                laneWidth = math_max(1, math_min(usableWidth, laneWidth))
-                auraSeg:SetPoint("BOTTOMLEFT", baseSeg, "BOTTOMLEFT", inset, inset)
-                auraSeg:SetPoint("TOPLEFT", baseSeg, "TOPLEFT", inset, -inset)
-                auraSeg:SetWidth(laneWidth)
-            else
-                local usableHeight = baseSeg:GetHeight() - (inset * 2)
-                if usableHeight < 1 then usableHeight = 1 end
-                local laneHeight = math_floor((usableHeight * 0.5) + 0.5)
-                laneHeight = math_max(1, math_min(usableHeight, laneHeight))
-                auraSeg:SetPoint("BOTTOMLEFT", baseSeg, "BOTTOMLEFT", inset, inset)
-                auraSeg:SetPoint("BOTTOMRIGHT", baseSeg, "BOTTOMRIGHT", -inset, inset)
-                auraSeg:SetHeight(laneHeight)
-            end
-            auraSeg:SetStatusBarTexture(barTexture)
-            auraSeg:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
-            auraSeg:SetReverseFill(reverseFill)
-            auraSeg:SetFrameLevel(baseSeg:GetFrameLevel() + 4)
-        else
-            auraSeg:Hide()
-        end
-    end
-
-    UpdateResourceAuraStackLayoutState(holder, count, barTextureName, borderStyle, borderSize, borderRenderMode, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel)
-end
-
-local function EnsureResourceAuraStackSegments(holder, settings)
-    if not holder or not holder.segments then return nil end
-    local count = #holder.segments
-    if count == 0 then return nil end
-
-    if not holder.auraStackSegments or #holder.auraStackSegments ~= count then
-        if holder.auraStackSegments then
-            for _, oldSeg in ipairs(holder.auraStackSegments) do
-                SetStatusBarImmediateValue(oldSeg, 0)
-                oldSeg:ClearAllPoints()
-                oldSeg:Hide()
-            end
-        end
-        holder.auraStackSegments = {}
-        for i = 1, count do
-            local seg = CreateFrame("StatusBar", nil, holder)
-            seg:SetMinMaxValues(0, 1)
-            SetStatusBarImmediateValue(seg, 0)
-            seg:Hide()
-            holder.auraStackSegments[i] = seg
-        end
-        holder._auraStackLayoutCount = nil
-    end
-
-    if ResourceAuraStackLayoutChanged(holder, settings) then
-        LayoutResourceAuraStackSegments(holder, settings)
-    end
-    return holder.auraStackSegments
-end
-
-local function ApplyResourceAuraStackSegments(holder, settings, stackValue, maxStacks, color)
-    local auraSegments = EnsureResourceAuraStackSegments(holder, settings)
-    if not auraSegments then return end
-
-    local segmentedSmoothing = RB.GetResourceSegmentedSmoothing(settings)
-    local count = #auraSegments
-    for i = 1, count do
-        local seg = auraSegments[i]
-        local segMin = ((i - 1) * maxStacks) / count
-        local segMax = (i * maxStacks) / count
-        SetStatusBarSmoothRange(seg, segMin, segMax)
-        SetStatusBarSegmentedValue(seg, stackValue, segmentedSmoothing)
-        seg:SetAlpha(1)
-        seg:SetStatusBarColor(color[1], color[2], color[3], 1)
-        seg:Show()
-    end
-end
-
-local function ClearResourceAuraVisuals(frame)
-    if not frame then return end
-    HideResourceAuraStackSegments(frame)
 end
 
 ------------------------------------------------------------------------
@@ -471,19 +280,13 @@ local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, ma
     HideContinuousTickMarkers(bar, shownCount + 1)
 end
 
-local function ApplyContinuousFillColor(bar, powerType, settings, overrideColor)
+local function ApplyContinuousFillColor(bar, powerType, settings)
     if not bar or not settings then return end
 
     local style = GetResourceDisplayStyle(settings)
     local texName = bar._effectiveBarTextureName or ST.GetEffectiveBarTextureName(style and style.barTexture or "Solid")
     local atlasInfo = (texName == "blizzard_class") and POWER_ATLAS_INFO[powerType] or nil
     if atlasInfo then
-        if overrideColor then
-            bar:SetStatusBarColor(overrideColor[1], overrideColor[2], overrideColor[3], 1)
-            bar.brightnessOverlay:Hide()
-            return
-        end
-
         local brightness = style and style.classBarBrightness or 1.3
         bar:SetStatusBarColor(1, 1, 1, 1)
         if brightness > 1.0 then
@@ -498,7 +301,7 @@ local function ApplyContinuousFillColor(bar, powerType, settings, overrideColor)
         return
     end
 
-    local color = overrideColor or GetResourceColors(powerType, settings)
+    local color = GetResourceColors(powerType, settings)
     bar:SetStatusBarColor(color[1], color[2], color[3], 1)
     bar.brightnessOverlay:Hide()
 end
@@ -1249,9 +1052,6 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings, or
         end
     end
 
-    if holder.auraStackSegments then
-        LayoutResourceAuraStackSegments(holder, settings, orientationOverride, reverseFill)
-    end
 end
 
 ------------------------------------------------------------------------
@@ -1424,9 +1224,6 @@ local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, setti
         end
     end
 
-    if holder.auraStackSegments then
-        LayoutResourceAuraStackSegments(holder, settings, orientationOverride, reverseFill)
-    end
 end
 
 ------------------------------------------------------------------------
@@ -1435,12 +1232,7 @@ end
 
 RB.GetActiveResourceAuraEntry = GetActiveResourceAuraEntry
 RB.GetResourceAuraTrackingMode = GetResourceAuraTrackingMode
-RB.GetResourceAuraConfiguredMaxStacks = GetResourceAuraConfiguredMaxStacks
 RB.IsResourceAuraOverlayEnabled = IsResourceAuraOverlayEnabled
-RB.GetResourceAuraState = GetResourceAuraState
-RB.HideResourceAuraStackSegments = HideResourceAuraStackSegments
-RB.ApplyResourceAuraStackSegments = ApplyResourceAuraStackSegments
-RB.ClearResourceAuraVisuals = ClearResourceAuraVisuals
 RB.UpdateContinuousTickMarker = UpdateContinuousTickMarker
 RB.ApplyContinuousFillColor = ApplyContinuousFillColor
 RB.CreatePixelBorders = CreatePixelBorders

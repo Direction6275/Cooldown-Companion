@@ -48,7 +48,6 @@ local PREVIEW_DURATION = RB.CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION
 -- bars are sized as shares of the real maximum, so this leaves them room.
 local HEALTH_EFFECT_PREVIEW_FILL = 0.65
 
-local ClearResourceAuraVisuals = RB.ClearResourceAuraVisuals
 local IsResourceAuraOverlayEnabled = RB.IsResourceAuraOverlayEnabled
 local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
 local GetResourceDisplayValue = RB.GetResourceDisplayValue
@@ -416,7 +415,6 @@ function RB.CreateResourceBarPreviewModule(deps)
             end
         end
 
-        ClearResourceAuraVisuals(barInfo.frame)
         if barInfo.barType == "continuous" then
             local maxPower = UnitPowerMax("player", barInfo.powerType or 0)
             SetStatusBarSmoothRange(barInfo.frame, 0, maxPower)

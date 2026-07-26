@@ -39,7 +39,6 @@ local GetCustomAuraMaxThresholdColor = RB.GetCustomAuraMaxThresholdColor
 local SetCustomAuraMaxThresholdRange = RB.SetCustomAuraMaxThresholdRange
 local ApplyPixelBorders = RB.ApplyPixelBorders
 local HidePixelBorders = RB.HidePixelBorders
-local ClearResourceAuraVisuals = RB.ClearResourceAuraVisuals
 local IsCustomAuraMaxBarEffectEnabled = RB.IsCustomAuraMaxBarEffectEnabled
 local GetCustomAuraMaxBarEffectColor = RB.GetCustomAuraMaxBarEffectColor
 local ApplyCustomAuraMaxBarEffects = RB.ApplyCustomAuraMaxBarEffects
@@ -894,7 +893,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                 UnbindFrameDurationText(barInfo.frame)
                 ClearStaleRecycledBarRuntimeState(barInfo.frame)
                 ClearCustomAuraBarIndicatorState(barInfo, true)
-                ClearResourceAuraVisuals(barInfo.frame)
                 ClearMaxStacksIndicator(barInfo)
                 barInfo.frame:Hide()
                 barInfo.cabConfig = nil
@@ -980,7 +978,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             if barInfo and barInfo.frame then
                 UnbindFrameDurationText(barInfo.frame)
                 ClearCustomAuraBarIndicatorState(barInfo, true)
-                ClearResourceAuraVisuals(barInfo.frame)
                 ClearMaxStacksIndicator(barInfo)
                 -- The old frame is abandoned (frames are never destroyed);
                 -- release its evaluation scratch so it stops pinning aura refs.
