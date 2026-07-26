@@ -625,6 +625,32 @@ function RB.CreateResourceBarAuraHostModule(deps)
         return style
     end
 
+    -- Shared with the config panel so its dropdown shows the mode the
+    -- runtime will actually render: an entry set to stacks on a resource
+    -- that has no stack lane reads back as active, here and there alike.
+    function RB.GetResourceOverlayTrackingMode(entry, powerType)
+        if type(entry) ~= "table" then
+            return "active"
+        end
+        return ResolveResourceOverlayShapes(entry, powerType).stackLane
+            and "stacks" or "active"
+    end
+
+    -- The automatic stack max for an overlay entry, resolved straight from
+    -- game data through the same adapter the collector uses, for the config
+    -- panel's status line. Deliberately does not touch the runtime cache:
+    -- that cache is the in-combat safety net and the rebind pass owns it.
+    function RB.ResolveResourceOverlayStackMax(entry, powerType)
+        if type(entry) ~= "table" or not tonumber(entry.auraColorSpellID) then
+            return nil
+        end
+        local settings = GetResourceBarSettings()
+        if not settings then return nil end
+        local buttonData = BuildResourceOverlayEntryAdapter(
+            entry, settings, ResolveResourceOverlayShapes(entry, powerType))
+        return CooldownCompanion:GetAuraStackBarMax(buttonData)
+    end
+
     ------------------------------------------------------------------------
     -- The want collector: called by RunAuraRebind (structurally OOC) after
     -- the panel pass. Appends one want record per live aura-tracked custom
