@@ -98,7 +98,6 @@ local UpdateContinuousTickMarker = RB.UpdateContinuousTickMarker
 local ApplyContinuousFillColor = RB.ApplyContinuousFillColor
 local ApplyPixelBorders = RB.ApplyPixelBorders
 local HidePixelBorders = RB.HidePixelBorders
-local ClearMaxStacksIndicator = RB.ClearMaxStacksIndicator
 local CreateContinuousBar = RB.CreateContinuousBar
 local CreateSegmentedBar = RB.CreateSegmentedBar
 local LayoutSegments = RB.LayoutSegments
@@ -110,8 +109,6 @@ local FormatTime = CooldownCompanion.FormatTime
 -- Other ST imports
 local CreateGlowContainer = ST._CreateGlowContainer
 local SetBarAuraEffect = ST._SetBarAuraEffect
-local IsBarAuraIndicatorEnabled = ST.IsBarAuraIndicatorEnabled
-local DEFAULT_BAR_PANDEMIC_COLOR = ST._DEFAULT_BAR_PANDEMIC_COLOR
 
 ------------------------------------------------------------------------
 -- State
@@ -137,10 +134,8 @@ local savedContainerAlpha = nil
 local alphaSyncFrame = nil
 local lastAppliedBarSpacing = nil
 local lastAppliedBarThickness = nil
-local layoutDirty = false
 local independentWrapperFrame = nil
 local activeCustomAuraBarActivePreviews = {}
-local activeCustomAuraBarPandemicPreviews = {}
 -- Resource aura overlay previews, keyed by POWER TYPE. Never by barInfo or
 -- frame: a form change rebuilds the positional bar array, and the power
 -- type is the only identity that survives it.
@@ -149,10 +144,6 @@ local segmentedUpdateScratch = {}
 local HealthBar = RB.HealthBar
 local HEALTH_EFFECTS = RB.HealthEffects
 local lifecycleModule = nil
-
-local function HasCustomAuraBarAuraVisuals(cabConfig)
-    return IsBarAuraIndicatorEnabled(cabConfig)
-end
 
 local function ResetCustomAuraBarIndicatorVisuals(bar, cabConfig)
     if not bar then return end
@@ -195,7 +186,6 @@ local function ClearCustomAuraBarIndicatorVisualState(barInfo, clearPreviewFlags
 
     if clearPreviewFlags then
         bar._barAuraActivePreview = nil
-        bar._pandemicPreview = nil
     end
 
     ResetCustomAuraBarIndicatorVisuals(bar, barInfo.cabConfig)
@@ -247,7 +237,11 @@ local function AnimateCustomAuraBarIndicator(bar)
     end
 end
 
-local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPresent)
+-- The aura pass (12.1): the kit renders all live aura effects, so the only
+-- thing that can arm this is the config canvas's Active Aura stand-in — the
+-- preview flag is set on canvas frames alone, and live bars only ever reach
+-- the reset leg.
+local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig)
     local isSpellCustomCooldown = barInfo and barInfo.barType == "custom_cooldown"
     if not barInfo or (barInfo.barType ~= "custom_continuous" and not isSpellCustomCooldown) then return end
     if not cabConfig
@@ -261,82 +255,29 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPrese
     if not bar then return end
 
     local auraPreview = bar._barAuraActivePreview
-    local pandemicPreview = bar._pandemicPreview
-    local auraActive = auraPresent or auraPreview or pandemicPreview
-    bar._auraActive = auraActive or nil
 
-    if not auraActive then
-        bar._inPandemic = nil
-        EntryRuntime.ClearAuraPandemicRuntimeState(bar)
+    if not auraPreview then
         ResetCustomAuraBarIndicatorVisuals(bar, cabConfig)
         return
     end
 
-    local inCombat = InCombatLockdown()
-    local auraVisualsEnabled = HasCustomAuraBarAuraVisuals(cabConfig)
-    local auraCombatAllowed = not cabConfig.auraGlowCombatOnly or inCombat
-    local pandemicEnabled = cabConfig.showPandemicGlow == true
-    local pandemicCombatAllowed = not cabConfig.pandemicGlowCombatOnly or inCombat
-
-    local wantAuraColor
-    local activeAuraColor = cabConfig.barAuraColor
+    local wantAuraColor = cabConfig.barAuraColor
         or (isSpellCustomCooldown and {0.2, 1.0, 0.2, 1.0})
         or (cabConfig.barColor or {0.5, 0.5, 1})
 
-    if pandemicPreview then
-        wantAuraColor = cabConfig.barPandemicColor or DEFAULT_BAR_PANDEMIC_COLOR
-    elseif auraPreview then
-        wantAuraColor = activeAuraColor
-    elseif auraPresent then
-        if bar._inPandemic and pandemicEnabled and pandemicCombatAllowed then
-            wantAuraColor = cabConfig.barPandemicColor or DEFAULT_BAR_PANDEMIC_COLOR
-        elseif auraVisualsEnabled and auraCombatAllowed then
-            wantAuraColor = activeAuraColor
-        end
-    end
-
-    if bar._barAuraColor ~= wantAuraColor then
-        bar._barAuraColor = wantAuraColor
-        if not wantAuraColor and not bar._barColorShiftActive then
-            local baseColor = cabConfig.barColor or {0.5, 0.5, 1}
-            bar:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
-        end
-    end
-    if wantAuraColor and not bar._barColorShiftActive then
+    bar._barAuraColor = wantAuraColor
+    if not bar._barColorShiftActive then
         bar:SetStatusBarColor(wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4] or 1)
     end
 
-    local showBarAuraEffect = auraPreview
-        or pandemicPreview
-        or auraVisualsEnabled
-        or pandemicEnabled
-    if showBarAuraEffect and not bar.barAuraEffect then
+    if not bar.barAuraEffect then
         bar.barAuraEffect = CreateGlowContainer(bar, 32, false)
     end
+    SetBarAuraEffect(bar, true, false)
 
-    local pandemicActive = pandemicPreview
-        or (auraPresent and bar._inPandemic and pandemicEnabled and pandemicCombatAllowed)
-    local effectShow = auraPreview
-        or pandemicPreview
-        or (auraPresent and (pandemicActive or (auraVisualsEnabled and auraCombatAllowed)))
-    if bar.barAuraEffect then
-        SetBarAuraEffect(bar, effectShow, pandemicActive or false)
-    end
-
-    local auraActiveForPulse = auraPreview
-        or (auraVisualsEnabled and auraPresent and auraCombatAllowed)
-
-    local wantPulse
-    if (pandemicPreview or pandemicActive) and cabConfig.pandemicBarPulseEnabled then
-        wantPulse = "pandemic"
-    elseif auraActiveForPulse and cabConfig.barAuraPulseEnabled then
-        wantPulse = "aura"
-    end
-    if wantPulse then
+    if cabConfig.barAuraPulseEnabled then
         bar._barPulseActive = true
-        bar._barPulseSpeed = (wantPulse == "pandemic")
-            and (cabConfig.pandemicBarPulseSpeed or 0.5)
-            or (cabConfig.barAuraPulseSpeed or 0.5)
+        bar._barPulseSpeed = cabConfig.barAuraPulseSpeed or 0.5
     elseif bar._barPulseActive then
         bar._barPulseActive = nil
         bar._barPulseSpeed = nil
@@ -346,29 +287,17 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPrese
         end
     end
 
-    local wantColorShift
-    if (pandemicPreview or pandemicActive) and cabConfig.pandemicBarColorShiftEnabled then
-        wantColorShift = "pandemic"
-    elseif auraActiveForPulse and cabConfig.barAuraColorShiftEnabled then
-        wantColorShift = "aura"
-    end
-    if wantColorShift then
+    if cabConfig.barAuraColorShiftEnabled then
         bar._barColorShiftActive = true
-        bar._barCSBaseColor = wantAuraColor or cabConfig.barColor or {0.5, 0.5, 1, 1}
-        if wantColorShift == "pandemic" then
-            bar._barCSShiftColor = cabConfig.pandemicBarColorShiftColor or {1, 1, 1, 1}
-            bar._barCSSpeed = cabConfig.pandemicBarColorShiftSpeed or 0.5
-        else
-            bar._barCSShiftColor = cabConfig.barAuraColorShiftColor or {1, 1, 1, 1}
-            bar._barCSSpeed = cabConfig.barAuraColorShiftSpeed or 0.5
-        end
+        bar._barCSBaseColor = wantAuraColor
+        bar._barCSShiftColor = cabConfig.barAuraColorShiftColor or {1, 1, 1, 1}
+        bar._barCSSpeed = cabConfig.barAuraColorShiftSpeed or 0.5
     elseif bar._barColorShiftActive then
         bar._barColorShiftActive = nil
         bar._barCSBaseColor = nil
         bar._barCSShiftColor = nil
         bar._barCSSpeed = nil
-        local resetColor = wantAuraColor or cabConfig.barColor or {0.5, 0.5, 1}
-        bar:SetStatusBarColor(resetColor[1], resetColor[2], resetColor[3], resetColor[4] or 1)
+        bar:SetStatusBarColor(wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4] or 1)
     end
 end
 local function ClearStaleRecycledBarRuntimeState(frame)
@@ -1361,14 +1290,10 @@ end
 ------------------------------------------------------------------------
 
 local RelayoutBars
-local RelayoutResourceStack
 local customBarsModule = RB.CreateResourceBarCustomBarsModule({
     resourceBarFrames = resourceBarFrames,
     GetUnlockAssistActive = function()
         return isUnlockAssistActive
-    end,
-    MarkLayoutDirty = function()
-        layoutDirty = true
     end,
     ClearStaleRecycledBarRuntimeState = ClearStaleRecycledBarRuntimeState,
     ClearCustomAuraBarIndicatorState = ClearCustomAuraBarIndicatorState,
@@ -1376,7 +1301,6 @@ local customBarsModule = RB.CreateResourceBarCustomBarsModule({
     UpdateCustomAuraBarIndicatorVisuals = UpdateCustomAuraBarIndicatorVisuals,
 })
 local UpdateCustomAuraBar = customBarsModule.UpdateCustomAuraBar
-local ShouldUpdateHiddenCustomAuraPandemicWake = customBarsModule.ShouldUpdateHiddenCustomAuraPandemicWake
 local FinalizeAppliedBarVisibility = customBarsModule.FinalizeAppliedBarVisibility
 local HideUnusedResourceBarFrames = customBarsModule.HideUnusedResourceBarFrames
 local PrepareCustomAuraBar = customBarsModule.PrepareCustomAuraBar
@@ -1391,7 +1315,7 @@ RB.CreateResourceBarAuraHostModule({
 
 ------------------------------------------------------------------------
 -- Relayout: reposition bars within their containers by visibility/order
--- Called from ApplyResourceBars() and from OnUpdate when layoutDirty.
+-- Called from ApplyResourceBars().
 ------------------------------------------------------------------------
 
 local function CompareBarOrder(a, b)
@@ -1501,15 +1425,6 @@ RelayoutBars = function()
     end
 end
 
-RelayoutResourceStack = function()
-    layoutDirty = false
-    RelayoutBars()
-    if lastAppliedIndependentStack then
-        UpdateIndependentStackChrome(lastAppliedOrientation == "vertical", lastAppliedLayout)
-    end
-    CooldownCompanion:RepositionCastBar()
-end
-
 ------------------------------------------------------------------------
 -- OnUpdate handler (30 Hz)
 ------------------------------------------------------------------------
@@ -1524,7 +1439,7 @@ local function OnUpdate(self, elapsed)
     local settings = GetResourceBarSettings()
 
     for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo.frame and (barInfo.frame:IsShown() or ShouldUpdateHiddenCustomAuraPandemicWake(barInfo)) then
+        if barInfo.frame and barInfo.frame:IsShown() then
             if barInfo.barType == "continuous" then
                 UpdateContinuousBar(barInfo.frame, barInfo.powerType, settings)
             elseif barInfo.barType == "health_continuous" then
@@ -1551,9 +1466,6 @@ local function OnUpdate(self, elapsed)
         end
     end
 
-    if layoutDirty then
-        RelayoutResourceStack()
-    end
 end
 
 ------------------------------------------------------------------------
@@ -2313,7 +2225,6 @@ function CooldownCompanion:RevertResourceBars()
     lastAppliedIndependentStack = false
     lastAppliedBarSpacing = nil
     lastAppliedBarThickness = nil
-    layoutDirty = false
 
     -- Stop alpha sync, unregister module alpha, restore alpha
     CooldownCompanion:UnregisterModuleAlpha("rb")
@@ -2346,7 +2257,6 @@ function CooldownCompanion:RevertResourceBars()
         if barInfo.frame then
             ClearStaleRecycledBarRuntimeState(barInfo.frame)
             ClearCustomAuraBarIndicatorState(barInfo, true)
-            ClearMaxStacksIndicator(barInfo)
             barInfo.frame:Hide()
             if barInfo.frame.brightnessOverlay then
                 barInfo.frame.brightnessOverlay:Hide()
@@ -2412,7 +2322,6 @@ end
 
 function CooldownCompanion:ClearAllCustomAuraBarPreviews()
     wipe(activeCustomAuraBarActivePreviews)
-    wipe(activeCustomAuraBarPandemicPreviews)
 end
 
 -- Resource aura overlay preview (the aura pass, Phase 2): which resources

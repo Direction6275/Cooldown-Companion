@@ -56,7 +56,6 @@ local IsVerticalFillReversed = RB.IsVerticalFillReversed
 local GetResourceColors = RB.GetResourceColors
 local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
 local SetSegmentedText = RB.SetSegmentedText
-local SetMaxStacksIndicatorActive = RB.SetMaxStacksIndicatorActive
 local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
 local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
@@ -233,11 +232,6 @@ function RB.CreateResourceBarPreviewModule(deps)
             SetStatusBarImmediateValue(bar, PREVIEW_FILL)
         end
 
-        if bar.thresholdOverlay then
-            SetStatusBarImmediateValue(bar.thresholdOverlay, 0)
-            bar.thresholdOverlay:Hide()
-        end
-
         if bar.text and bar.text:IsShown() then
             UnbindDurationText(bar.text)
             bar.text:SetText(FormatTime(PREVIEW_DURATION, cabConfig))
@@ -263,10 +257,7 @@ function RB.CreateResourceBarPreviewModule(deps)
         -- Glow, pulse and colour shift. Self-gating on tracking mode, and it
         -- reads the preview flag off the frame for the aura-active legs.
         if UpdateCustomAuraBarIndicatorVisuals then
-            UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, false)
-        end
-        if barInfo._maxStacksIndicator and SetMaxStacksIndicatorActive then
-            SetMaxStacksIndicatorActive(barInfo, false)
+            UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig)
         end
         return true
     end
@@ -549,10 +540,6 @@ function RB.CreateResourceBarPreviewModule(deps)
             end
             SetStatusBarSmoothRange(barInfo.frame, 0, 1)
             SetStatusBarImmediateValue(barInfo.frame, 1)
-            if barInfo.frame.thresholdOverlay then
-                SetStatusBarImmediateValue(barInfo.frame.thresholdOverlay, 0)
-                barInfo.frame.thresholdOverlay:Hide()
-            end
             if barInfo.frame.text and barInfo.frame.text:IsShown() then
                 barInfo.frame.text:SetText("")
             end
@@ -565,12 +552,6 @@ function RB.CreateResourceBarPreviewModule(deps)
                 end
             end
             ClearCustomAuraBarIndicatorState(barInfo, true)
-            if barInfo._maxStacksIndicator then
-                SetStatusBarImmediateValue(barInfo._maxStacksIndicator, 0)
-                if SetMaxStacksIndicatorActive then
-                    SetMaxStacksIndicatorActive(barInfo, false)
-                end
-            end
         elseif barInfo.barType == "custom_continuous" then
             -- Aura custom bar, aura ABSENT: an empty fill. Stacks-mode bars
             -- get their capacity blocks from the aura host's absent-state
@@ -583,23 +564,11 @@ function RB.CreateResourceBarPreviewModule(deps)
             ClearCustomAuraBarIndicatorState(barInfo, false)
             SetStatusBarSmoothRange(barInfo.frame, 0, 1)
             SetStatusBarImmediateValue(barInfo.frame, 0)
-            -- Max-stack threshold and its effects were dropped by owner
-            -- ruling (the aura pass); the runtime forces them dark, so the
-            -- preview must too or it advertises unreachable visuals from
-            -- dormant keys.
-            if barInfo.frame.thresholdOverlay then
-                SetStatusBarImmediateValue(barInfo.frame.thresholdOverlay, 0)
-                barInfo.frame.thresholdOverlay:Hide()
-            end
             if barInfo.frame.text and barInfo.frame.text:IsShown() then
                 barInfo.frame.text:SetText("")
             end
             if barInfo.frame.stackText and barInfo.frame.stackText:IsShown() then
                 barInfo.frame.stackText:SetText("")
-            end
-            -- Max-stack indicator dropped with the threshold (owner ruling).
-            if barInfo._maxStacksIndicator and SetMaxStacksIndicatorActive then
-                SetMaxStacksIndicatorActive(barInfo, false)
             end
         end
 
