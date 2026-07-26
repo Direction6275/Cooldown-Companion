@@ -157,6 +157,22 @@ local CastBarPreview = {
     end,
 }
 
+-- Custom-bar active-aura preview (the aura pass): a CC-side stand-in on
+-- the real bar out in the world — fill, texts, and effects render as if
+-- the aura were running; the aura slot kit is never touched. Keyed by the
+-- stored config table (the identity the runtime carries).
+local function CustomBarAuraPreview(cabConfig)
+    return {
+        groupScoped = true,
+        IsActive = function()
+            return CooldownCompanion:IsCustomAuraBarActivePreviewActive(cabConfig) == true
+        end,
+        SetActive = function(_, _, show)
+            CooldownCompanion:SetCustomAuraBarActivePreview(cabConfig, show)
+        end,
+    }
+end
+
 ------------------------------------------------------------------------
 -- Availability gates
 ------------------------------------------------------------------------
@@ -565,6 +581,35 @@ local function CollectObjectControls(objects)
             applicable[#applicable + 1] = control
         end
     end
+
+    -- Per-custom-bar groups (the aura pass): one group per live
+    -- aura-tracked Custom Bar, built dynamically — the entry appears
+    -- exactly when the bar would render an aura display. Controls close
+    -- over the stored config table, the same identity the runtime keys
+    -- its preview state by.
+    if objects.customBars then
+        local settings = CooldownCompanion.GetResourceBarSettings
+            and CooldownCompanion:GetResourceBarSettings()
+        if settings and settings.enabled == true then
+            for _, cab in ipairs(CooldownCompanion:GetSpecCustomAuraBars()) do
+                local auraTracked = type(cab) == "table"
+                    and (cab.entryType ~= "spell" or cab.auraTracking == true)
+                if auraTracked and CooldownCompanion:IsCustomBarRuntimeEligible(cab) then
+                    local name = cab.label
+                    if not name or name == "" then
+                        name = C_Spell.GetSpellName(tonumber(cab.spellID)) or "Custom Bar"
+                    end
+                    applicable[#applicable + 1] = {
+                        id = "customBarAura_" .. tostring(cab.customBarId),
+                        label = "Preview Active Aura",
+                        group = "Custom Bar: " .. name,
+                        object = "customBars",
+                        preview = CustomBarAuraPreview(cab),
+                    }
+                end
+            end
+        end
+    end
     return applicable
 end
 
@@ -584,13 +629,17 @@ local function GetAnchorLaneObjects()
     if not (layout and IsTruthyConfigFlag) then
         return {}
     end
+    local barsAttached = rbSettings ~= nil
+        and rbSettings.enabled == true
+        and not IsTruthyConfigFlag(layout.independentAnchorEnabled)
     return {
-        health = rbSettings ~= nil
-            and rbSettings.enabled == true
-            and not IsTruthyConfigFlag(layout.independentAnchorEnabled),
+        health = barsAttached,
         cast = cbSettings ~= nil
             and cbSettings.enabled == true
             and not IsTruthyConfigFlag(cbSettings.independentAnchorEnabled),
+        -- Custom bars ride the same attached resource stack as the health
+        -- bar; their aura previews belong on the anchor canvas too.
+        customBars = barsAttached,
     }
 end
 
@@ -1086,8 +1135,13 @@ local function UpdateResourcesPreviewCommandCenter(host)
     end
 
     -- The health bar is a Resources-workspace object; the cast bar is
-    -- drawn on both homes and owns one of them.
-    local objects = { cast = true, health = CS.resourcesEntrySelected == true }
+    -- drawn on both homes and owns one of them. Custom bars are Resources
+    -- objects too — their aura previews live here.
+    local objects = {
+        cast = true,
+        health = CS.resourcesEntrySelected == true,
+        customBars = CS.resourcesEntrySelected == true or CS.selectedCustomBarId ~= nil,
+    }
     UpdateBar(host, RESOURCES_SURFACE, CollectObjectControls(objects))
 end
 

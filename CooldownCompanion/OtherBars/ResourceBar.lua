@@ -2333,7 +2333,30 @@ function CooldownCompanion:GetSpecLayoutOrder()
     return GetSpecLayoutOrder(settings)
 end
 
--- 12.1 aura teardown: custom-bar preview setters removed with the config UI;
+-- Custom-bar aura preview (the aura pass): a CC-side stand-in on the real
+-- bar — fill, texts, and the surviving CC animators render as if the aura
+-- were running; the slot kit is never touched. Keyed by the stored config
+-- table (the same identity barInfo.cabConfig carries).
+function CooldownCompanion:SetCustomAuraBarActivePreview(cabConfig, active)
+    if type(cabConfig) ~= "table" then return end
+    activeCustomAuraBarActivePreviews[cabConfig] = active and true or nil
+    for _, barInfo in ipairs(resourceBarFrames) do
+        if barInfo.cabConfig == cabConfig and barInfo.frame then
+            ApplyCustomAuraBarPreviewState(barInfo)
+            -- Re-runs the update, the shell alpha (previews lift the
+            -- shell), and the absent-state blocks in one pass.
+            FinalizeAppliedBarVisibility(barInfo, isPreviewActive)
+        end
+    end
+    if layoutDirty then
+        RelayoutResourceStack()
+    end
+end
+
+function CooldownCompanion:IsCustomAuraBarActivePreviewActive(cabConfig)
+    return activeCustomAuraBarActivePreviews[cabConfig] == true
+end
+
 -- ClearAllCustomAuraBarPreviews stays (Preview.lua recycled-frame safety).
 function CooldownCompanion:ClearAllCustomAuraBarPreviews()
     wipe(activeCustomAuraBarActivePreviews)

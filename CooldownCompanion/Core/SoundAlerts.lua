@@ -135,11 +135,8 @@ local function NormalizeSpellCustomBarAlertEvents(scopedEvents)
         scopedEvents.available = true
         scopedEvents.chargeGained = nil
     end
-    -- Custom bars have no aura display binding yet; the bars phases own
-    -- custom-bar aura sounds.
-    for eventKey in pairs(AURA_SOUND_ALERT_EVENTS) do
-        scopedEvents[eventKey] = nil
-    end
+    -- Aura events stay in the set (the aura pass): custom bars ride the
+    -- same native AddAuraSound registration as panel entries at bind time.
     return scopedEvents
 end
 
@@ -326,9 +323,21 @@ function CooldownCompanion:GetScopedValidSoundAlertEventsForCustomBar(customBar)
     local entryType = customBar.entryType or "aura"
     local scopedEvents = {}
     if entryType == "aura" then
-        -- 12.1 aura teardown: aura-driven custom bars are dormant and aura
-        -- sound events no longer exist.
-        return nil
+        -- Aura custom bars (the aura pass): same event scoping as a
+        -- standalone panel aura entry — the native AddAuraSound triggers
+        -- registered at bind time are the only players.
+        local scoped = self:GetScopedValidSoundAlertEventsForButton({
+            type = "spell",
+            id = customBar.spellID,
+            addedAs = "aura",
+            auraTracking = true,
+            auraSpellID = customBar.auraSpellID,
+            auraUnit = customBar.auraUnit,
+        }, customBar.spellID)
+        if scoped and not next(scoped) then
+            return nil
+        end
+        return scoped
     elseif entryType == "spell" then
         local scoped = NormalizeSpellCustomBarAlertEvents(self:GetScopedValidSoundAlertEventsForButton({
             type = "spell",

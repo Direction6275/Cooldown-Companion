@@ -146,7 +146,11 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         local bar = barInfo.barType == "custom_continuous" and barInfo.frame or nil
         local auraPreview = bar and bar._barAuraActivePreview
         local pandemicPreview = bar and bar._pandemicPreview
-        local indicatorPreview = isActive and (auraPreview or pandemicPreview)
+        -- Previews render on stack bars too (the aura pass): the CC-side
+        -- stand-in fills to the preview stack count against the OOC-cached
+        -- automatic max.
+        local indicatorPreview = auraPreview or pandemicPreview
+        local maxStacks = barInfo._ccCabStackMax or cabConfig.maxStacks or 1
         local configUnit = EnsureCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
         local viewerFrame
         local auraUnit = configUnit
@@ -210,7 +214,8 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             auraPresent = true
             applications = CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS
             readableApplications = CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS
-            stacks = 1
+            stacks = isActive and 1
+                or math_min(CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS, maxStacks)
         end
 
         if CooldownCompanion.UpdateCustomBarSoundAlerts then
@@ -260,9 +265,10 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             end
         end
 
-        local maxStacks = cabConfig.maxStacks or 1
-        -- Dropped by owner ruling (the aura pass): threshold color and
-        -- max-stack bar effects never light; dormant keys stay untouched.
+        -- maxStacks resolved above (OOC-cached automatic max, dormant manual
+        -- key as harmless fallback). Dropped by owner ruling (the aura
+        -- pass): threshold color and max-stack bar effects never light;
+        -- dormant keys stay untouched.
         local thresholdVisible = false
 
         if barInfo.barType == "custom_continuous" then
