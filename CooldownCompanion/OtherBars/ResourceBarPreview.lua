@@ -177,7 +177,11 @@ function RB.CreateResourceBarPreviewModule(deps)
         elseif barInfo.barType == "custom_cooldown" then
             local cabConfig = barInfo.cabConfig
             local isSpellAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
-            local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
+            -- The aura pass: the stack max is automatic (OOC-cached from
+            -- game data). Same resolution order as the runtime, so preview
+            -- and live render agree; the manual key is dormant legacy.
+            local maxStacks = RB.GetCustomBarCachedStackMax(barInfo)
+                or (cabConfig and cabConfig.maxStacks) or 1
             local previewValue
             if isSpellAuraStackDisplay then
                 SetStatusBarSmoothRange(barInfo.frame, 0, maxStacks)
@@ -216,44 +220,31 @@ function RB.CreateResourceBarPreviewModule(deps)
         elseif barInfo.barType == "custom_continuous" then
             local cabConfig = barInfo.cabConfig
             local isActive = cabConfig and cabConfig.trackingMode == "active"
-            local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
-            local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
-            local maxStackBarEffectsEnabled = IsCustomAuraMaxBarEffectEnabled and IsCustomAuraMaxBarEffectEnabled(cabConfig)
-            local thresholdVisible = thresholdEnabled or maxStackBarEffectsEnabled
-            local thresholdColor = maxStackBarEffectsEnabled and GetCustomAuraMaxBarEffectColor
-                and GetCustomAuraMaxBarEffectColor(cabConfig)
-            local indicatorPreview = cabConfig and cabConfig.maxStacksGlowEnabled
+            -- Automatic OOC-cached max, same order as the runtime (see the
+            -- custom_cooldown branch above).
+            local maxStacks = RB.GetCustomBarCachedStackMax(barInfo)
+                or (cabConfig and cabConfig.maxStacks) or 1
             ClearCustomAuraBarIndicatorState(barInfo, false)
             local previewValue
             if isActive then
                 SetStatusBarSmoothRange(barInfo.frame, 0, 1)
-                previewValue = indicatorPreview and 1 or 0.65
+                previewValue = 0.65
                 SetStatusBarSmoothValue(barInfo.frame, previewValue)
             else
                 SetStatusBarSmoothRange(barInfo.frame, 0, maxStacks)
-                previewValue = indicatorPreview and maxStacks or math.ceil(maxStacks * 0.65)
+                previewValue = math.ceil(maxStacks * 0.65)
                 SetStatusBarSmoothValue(barInfo.frame, previewValue)
             end
+            -- Max-stack threshold and its effects were dropped by owner
+            -- ruling (the aura pass); the runtime forces them dark, so the
+            -- preview must too or it advertises unreachable visuals from
+            -- dormant keys.
             if barInfo.frame.thresholdOverlay then
-                if thresholdVisible then
-                    SetCustomAuraMaxThresholdRange(barInfo.frame.thresholdOverlay, maxStacks)
-                    if thresholdColor then
-                        barInfo.frame.thresholdOverlay:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], thresholdColor[4] or 1)
-                    end
-                    if maxStackBarEffectsEnabled and ApplyCustomAuraMaxBarEffects then
-                        ApplyCustomAuraMaxBarEffects(barInfo.frame.thresholdOverlay, cabConfig, thresholdColor)
-                    elseif ClearCustomAuraMaxBarEffects then
-                        ClearCustomAuraMaxBarEffects(barInfo.frame.thresholdOverlay, thresholdColor)
-                    end
-                    SetStatusBarSmoothValue(barInfo.frame.thresholdOverlay, previewValue or 0)
-                    barInfo.frame.thresholdOverlay:Show()
-                else
-                    if ClearCustomAuraMaxBarEffects then
-                        ClearCustomAuraMaxBarEffects(barInfo.frame.thresholdOverlay, thresholdColor)
-                    end
-                    SetStatusBarImmediateValue(barInfo.frame.thresholdOverlay, 0)
-                    barInfo.frame.thresholdOverlay:Hide()
+                if ClearCustomAuraMaxBarEffects then
+                    ClearCustomAuraMaxBarEffects(barInfo.frame.thresholdOverlay, nil)
                 end
+                SetStatusBarImmediateValue(barInfo.frame.thresholdOverlay, 0)
+                barInfo.frame.thresholdOverlay:Hide()
             end
             if barInfo.frame.text and barInfo.frame.text:IsShown() then
                 barInfo.frame.text:SetText(FormatTime(12.3, cabConfig))
@@ -270,12 +261,8 @@ function RB.CreateResourceBarPreviewModule(deps)
                     end
                 end
             end
-            if cabConfig and cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
-                SetStatusBarSmoothValue(barInfo._maxStacksIndicator, maxStacks)
-                if SetMaxStacksIndicatorActive then
-                    SetMaxStacksIndicatorActive(barInfo, true)
-                end
-            elseif barInfo._maxStacksIndicator and SetMaxStacksIndicatorActive then
+            -- Max-stack indicator dropped with the threshold (owner ruling).
+            if barInfo._maxStacksIndicator and SetMaxStacksIndicatorActive then
                 SetMaxStacksIndicatorActive(barInfo, false)
             end
         elseif barInfo.barType == "custom_segmented" then

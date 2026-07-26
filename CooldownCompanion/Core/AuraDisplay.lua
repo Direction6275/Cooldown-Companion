@@ -417,9 +417,14 @@ function ST.GetStackSegmentsTexture(max)
 end
 
 -- Lay out `max` capacity blocks over `host` with the atlas proportions.
--- Forced opaque like the bar backdrop: a translucent block would let the
--- layer underneath bleed through while the aura display is occluding it.
-function ST.LayoutStackBlocks(blocks, host, max, vertical, color)
+-- Opaque by default like the bar backdrop: a translucent block would let
+-- the layer underneath bleed through while the aura display is occluding
+-- it. Custom-bar hosts pass `alpha` so their blocks follow the configured
+-- background instead — nothing renders beneath them that needs hiding.
+-- `alpha = 0` lays the blocks out without drawing them at all, which is how
+-- occlusion-free hosts get anchor rects for their per-block border rings
+-- while the CC layer underneath supplies the visible background.
+function ST.LayoutStackBlocks(blocks, host, max, vertical, color, alpha)
     local length = vertical and host:GetHeight() or host:GetWidth()
     if length <= 0 then
         ST.HideStackBlocks(blocks)
@@ -430,7 +435,7 @@ function ST.LayoutStackBlocks(blocks, host, max, vertical, color)
     for i, tex in ipairs(blocks) do
         if i <= max then
             local start = (i - 1) * (blockLen + gap)
-            tex:SetColorTexture(color[1] or 0.1, color[2] or 0.1, color[3] or 0.1, 1)
+            tex:SetColorTexture(color[1] or 0.1, color[2] or 0.1, color[3] or 0.1, alpha or 1)
             tex:ClearAllPoints()
             if vertical then
                 -- VERTICAL fills bottom-up; blocks stack from the bottom.
@@ -511,11 +516,16 @@ local function StyleActiveBarFill(fill, fillTex, pulseAG, pulseAnim, csAG, csAni
     fill:SetRotatesTexture(rotates == true)
     fill:SetStatusBarTexture(fillTexture or CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
     fill:SetAlpha(1)
-    fill:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1)
 
     pulseAG:Stop()
     csAG:Stop()
+    -- Residual-anim vertex reset BEFORE the color write, never after:
+    -- SetStatusBarColor lands on this same fill-texture vertex channel, so
+    -- a trailing white reset clobbers the configured color to white (the
+    -- aura-pass 1B white-fill bug — bind-time prints proved the correct
+    -- color arriving while the fill rendered white).
     fillTex:SetVertexColor(1, 1, 1, 1)
+    fill:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1)
     local indicatorOn = ST.IsBarAuraIndicatorEnabled(style)
     if indicatorOn and style.barAuraPulseEnabled then
         pulseAnim:SetDuration(style.barAuraPulseSpeed or 0.5)
@@ -761,6 +771,12 @@ local function StyleSlotKit(slot, button, buttonData, style)
 
     local slotButton = slot.slotButton
     local isBar = button._isBar == true
+    -- Custom-bar hosts (ResourceBarAuraHost holders): same kit, three host
+    -- differences — text placement follows the custom-bar convention, and
+    -- non-shell aura bars keep the CC layer visible (no occlusion backdrop,
+    -- no kit bg blocks: the bar's own configured background/borders/blocks
+    -- ARE the absent-state layer and must show through).
+    local isCustomBarHost = button._ccAuraHostKind == "customBar"
     local shellEntry = buttonData.hideWhileAuraNotActive == true
     local barIconShown = isBar and style.showBarIcon ~= false and button.icon ~= nil
     local showAuraIcon = ShouldShowAuraIcon(buttonData)
@@ -849,7 +865,39 @@ local function StyleSlotKit(slot, button, buttonData, style)
     end
     kit.durationText:ClearAllPoints()
     kit.stackText:ClearAllPoints()
-    if isBar then
+    if isBar and isCustomBarHost then
+        -- Custom-bar convention (StyleCustomAuraBar parity): duration text
+        -- centers when alone and moves to the start end when the stack text
+        -- shares the bar; stack text mirrors on the far end.
+        local showDur = style.showAuraText ~= false
+        local showStack = style.showAuraStackText ~= false
+        if button._isVertical then
+            if showStack then
+                kit.durationText:SetPoint("BOTTOM", slotButton, "BOTTOM", 0, 2)
+            else
+                kit.durationText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
+            end
+            if showDur then
+                kit.stackText:SetPoint("TOP", slotButton, "TOP", 0, -2)
+            else
+                kit.stackText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
+            end
+        else
+            if showStack then
+                kit.durationText:SetPoint("LEFT", slotButton, "LEFT", 4, 0)
+            else
+                kit.durationText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
+            end
+            if showDur then
+                kit.stackText:SetPoint("RIGHT", slotButton, "RIGHT", -4, 0)
+            else
+                kit.stackText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
+            end
+        end
+        kit.durationText:SetJustifyH("CENTER")
+        kit.durationText:SetAlpha(showDur and 1 or 0)
+        kit.stackText:SetAlpha(showStack and 1 or 0)
+    elseif isBar then
         -- Bar texts replicate the CC bar's own placement conventions (the
         -- backdrop occludes the originals): duration text at the bar
         -- time-text spot, stack text against the icon square like the old
@@ -997,7 +1045,15 @@ local function StyleSlotKit(slot, button, buttonData, style)
         local widgetStack = IsWidgetStackBind(slot, buttonData)
         local segmentedStyle = useStackFill
             and CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) == "segmented"
-        if shellEntry or widgetStack then
+        -- Occlusion-free binds (owner ruling, attempt-1 failure 4): a pure
+        -- aura custom bar has nothing running beneath that must be hidden —
+        -- the CC bar renders the absent state and follows the configured
+        -- background, so the opaque backdrop and the kit's own bg blocks
+        -- stay off and the kit adds only fill/texts/effects. Spell custom
+        -- bars keep the opaque backdrop (a live cooldown fill and its texts
+        -- render beneath and must be occluded), as do panel bars and shells.
+        local occlusionFree = isCustomBarHost and buttonData.addedAs == "aura" and not shellEntry
+        if shellEntry or widgetStack or occlusionFree then
             kit.barBackdrop:SetAlpha(0)
         else
             local bg = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
@@ -1009,8 +1065,31 @@ local function StyleSlotKit(slot, button, buttonData, style)
         if widgetStack then
             -- Block geometry reads the CC statusBar (sanctioned anchor
             -- target + CC-owned width), matching BarMode's block set exactly.
+            local blockBg = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
+            -- Alpha: forced opaque is an OCCLUSION rule, so it applies only
+            -- where something renders beneath.
+            --   * occlusion-free: the CC-side blocks under the holder ARE
+            --     the background, so the kit's stay invisible.
+            --   * custom-bar shell: the CC frame is at whole-frame alpha 0,
+            --     so these blocks are the whole background and follow the
+            --     configured alpha (otherwise the shell toggle would change
+            --     a bar's opacity).
+            --   * panels: opaque, occluding whatever runs beneath.
+            local blockAlpha
+            if occlusionFree then
+                blockAlpha = 0
+            elseif isCustomBarHost then
+                blockAlpha = blockBg[4] or 1
+            end
             ST.LayoutStackBlocks(kit.stackBgBlocks, button.statusBar or slotButton,
-                slot.boundStackMax, button._isVertical, style.barBgColor or { 0.1, 0.1, 0.1, 0.8 })
+                slot.boundStackMax, button._isVertical, blockBg, blockAlpha)
+            -- The per-block rings always come from the KIT, even when its
+            -- blocks are invisible (they are laid out purely to anchor
+            -- these). The kit's rings live inside the fill frame and draw
+            -- above it; the CC-side rings sit on the bar frame, which the
+            -- holder and its fill cover entirely — so relying on those made
+            -- a segmented bar read as one continuous fill for exactly as
+            -- long as the aura was up.
             ST.LayoutStackBlockBorders(kit.stackBlockBorders, kit.stackBgBlocks,
                 slot.boundStackMax, style)
         else
@@ -1092,11 +1171,14 @@ local function StyleSlotKit(slot, button, buttonData, style)
         local barBounds = button._barBounds or button
         -- CC parity: with the icon square shown the background covers only
         -- the bar area (the square has its own), otherwise the whole button.
-        -- Widget-stack shells skip the slab AND the whole-bar border ring —
-        -- the capacity blocks laid out above ARE the background, each with
-        -- its own border ring (owner ruling: every stack its own widget; a
-        -- slab would fill the gaps and one ring would wrap all stacks).
-        local bgAnchor = barIconShown and barBounds or button
+        -- Custom-bar hosts always use the bar bounds — the holder (button)
+        -- is the border-inset mount, and the shell bg must fill the bar's
+        -- real footprint. Widget-stack shells skip the slab AND the
+        -- whole-bar border ring — the capacity blocks laid out above ARE
+        -- the background, each with its own border ring (owner ruling:
+        -- every stack its own widget; a slab would fill the gaps and one
+        -- ring would wrap all stacks).
+        local bgAnchor = (barIconShown or isCustomBarHost) and barBounds or button
         local widgetShell = IsWidgetStackBind(slot, buttonData)
         if widgetShell then
             kit.bg:SetAlpha(0)
@@ -1434,8 +1516,9 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     StyleSlotKit(record, button, buttonData, style)
     -- CC-side capacity blocks sync here too: rebinds are OOC by design, so
     -- this repairs bars whose style pass ran in combat (where the block
-    -- helper defers).
-    if button._isBar and ST._UpdateBarStackBlocks then
+    -- helper defers). Panel buttons only — custom-bar hosts sync their
+    -- absent-state blocks in the collector.
+    if button._isBar and not button._ccAuraHostKind and ST._UpdateBarStackBlocks then
         ST._UpdateBarStackBlocks(button, style)
     end
     RegisterSlotAuraSounds(record, buttonData, spellSet)
@@ -1511,7 +1594,6 @@ function RunAuraRebind()
     -- mode has no compliant aura display; trigger/texture panels lost aura
     -- conditions by design; dormant flags there stay dormant).
     local wanted = {}
-    local anyTargetWant = false
     for groupId, frame in pairs(self.groupFrames) do
         local group = self.db.profile.groups[groupId]
         local displayMode = group and (group.displayMode or "icons")
@@ -1522,8 +1604,6 @@ function RunAuraRebind()
                     and (buttonData.auraTracking or buttonData.addedAs == "aura") then
                     local spellSet = self:GetAuraCandidateSpellIDSet(buttonData)
                     if spellSet then
-                        local unit = ResolveEntryAuraUnit(self, buttonData)
-                        anyTargetWant = anyTargetWant or unit == "target"
                         -- Stack fill (tracker C2): bar hosts only; the max is
                         -- automatic (owner ruling). A nil resolve means "not
                         -- a stacking aura" and the bind falls back to the
@@ -1536,7 +1616,6 @@ function RunAuraRebind()
                             button = button,
                             buttonData = buttonData,
                             spellSet = spellSet,
-                            unit = unit,
                             style = self:GetEffectiveStyle(group.style, buttonData),
                             stackBarMax = stackBarMax,
                         }
@@ -1544,6 +1623,24 @@ function RunAuraRebind()
                 end
             end
         end
+    end
+
+    -- Custom-bar hosts (OtherBars/ResourceBarAuraHost.lua): appends want
+    -- records in the same shape, hosted on stable holder frames. Looked up
+    -- at run time (the module loads after this file).
+    local collectCustomWants = ST._CollectCustomBarAuraWants
+    if collectCustomWants then
+        collectCustomWants(wanted)
+    end
+
+    -- Shared unit resolution: every want derives its unit from spell
+    -- polarity the same way (custom-bar wants arrive with unit unset).
+    local anyTargetWant = false
+    for _, want in ipairs(wanted) do
+        if not want.unit then
+            want.unit = ResolveEntryAuraUnit(self, want.buttonData)
+        end
+        anyTargetWant = anyTargetWant or want.unit == "target"
     end
 
     -- Authoritative P11 gate: CanRunRebindNow only sees EXISTING target

@@ -99,20 +99,12 @@ function RB.CreateResourceBarCustomBarsModule(deps)
     ------------------------------------------------------------------------
 
     local function ResolveCustomAuraVisibility(cabConfig, auraPresent, inPandemic, auraPreview, pandemicPreview)
-        if not (cabConfig and (cabConfig.hideWhenInactive or cabConfig.hideWhileAuraActive)) then
-            return true, false
-        end
-
-        local hideWhileAuraActive = cabConfig.hideWhileAuraActive == true
-            and cabConfig.hideWhenInactive ~= true
-            and auraPresent
-            and not (cabConfig.hideAuraActiveExceptPandemic == true and inPandemic)
-        local hideWhileAuraNotActive = cabConfig.hideWhenInactive == true and not auraPresent
-        local shouldShow = not (hideWhileAuraActive or hideWhileAuraNotActive)
-            or auraPreview
-            or pandemicPreview
-
-        return shouldShow, true
+        -- The aura pass (12.1): aura-state visibility is gone by design.
+        -- hideWhileAuraActive (+except-pandemic) is dropped (no combat aura
+        -- source exists); hideWhenInactive is the shell composition — the
+        -- frame stays shown as the layout shell and aura host, and the kit
+        -- renders the entire visible bar. Dormant keys stay untouched.
+        return true, false
     end
 
     local function RequestCustomBarPresentationRefresh()
@@ -154,7 +146,11 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         local bar = barInfo.barType == "custom_continuous" and barInfo.frame or nil
         local auraPreview = bar and bar._barAuraActivePreview
         local pandemicPreview = bar and bar._pandemicPreview
-        local indicatorPreview = isActive and (auraPreview or pandemicPreview)
+        -- Previews render on stack bars too (the aura pass): the CC-side
+        -- stand-in fills to the preview stack count against the OOC-cached
+        -- automatic max.
+        local indicatorPreview = auraPreview or pandemicPreview
+        local maxStacks = RB.GetCustomBarCachedStackMax(barInfo) or cabConfig.maxStacks or 1
         local configUnit = EnsureCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
         local viewerFrame
         local auraUnit = configUnit
@@ -218,7 +214,8 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             auraPresent = true
             applications = CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS
             readableApplications = CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS
-            stacks = 1
+            stacks = isActive and 1
+                or math_min(CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS, maxStacks)
         end
 
         if CooldownCompanion.UpdateCustomBarSoundAlerts then
@@ -268,12 +265,11 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             end
         end
 
-        local maxStacks = cabConfig.maxStacks or 1
-        local thresholdEnabled = (not spellAuraStackDisplay) and IsCustomAuraMaxThresholdEnabled(cabConfig)
-        local maxStackBarEffectsEnabled = (not spellAuraStackDisplay)
-            and IsCustomAuraMaxBarEffectEnabled
-            and IsCustomAuraMaxBarEffectEnabled(cabConfig)
-        local thresholdVisible = thresholdEnabled or maxStackBarEffectsEnabled
+        -- maxStacks resolved above (OOC-cached automatic max, dormant manual
+        -- key as harmless fallback). Dropped by owner ruling (the aura
+        -- pass): threshold color and max-stack bar effects never light;
+        -- dormant keys stay untouched.
+        local thresholdVisible = false
 
         if barInfo.barType == "custom_continuous" then
             local bar = barInfo.frame
@@ -484,9 +480,14 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         local auraPreview = bar._barAuraActivePreview == true
         local pandemicPreview = bar._pandemicPreview == true
         local spellAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
+        local indicatorPreview = auraPreview or pandemicPreview
+        -- Stack-mode spell bars leave the live aura render to the kit (the
+        -- early return below), but the preview stand-in still renders here:
+        -- the kit is never driven by a preview, so gating stack mode out
+        -- entirely would leave the command-center toggle showing nothing.
         local renderAuraState = cabConfig.auraTracking == true
-            and not spellAuraStackDisplay
-            and (auraPresent or auraPreview or pandemicPreview)
+            and (not spellAuraStackDisplay or indicatorPreview)
+            and (auraPresent or indicatorPreview)
 
         local barColor = cabConfig.barColor or {0.5, 0.5, 1, 1}
         local cooldownColor = cabConfig.barCooldownColor or {0.6, 0.13, 0.18, 1}
@@ -557,15 +558,26 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
             local auraDurationObj = auraState and auraState.durationObj
             bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4] ~= nil and barColor[4] or 1)
-            SetStatusBarSmoothRange(bar, 0, 1)
-            if auraDurationObj then
-                if not SetStatusBarRemainingDuration(bar, auraDurationObj) then
-                    SetStatusBarSmoothValue(bar, auraDurationObj:GetRemainingPercent())
-                end
-            elseif auraPreview or pandemicPreview then
-                SetStatusBarImmediateValue(bar, CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL)
+            -- Stack mode is preview-only here (see renderAuraState): fill
+            -- against the OOC-cached automatic max, matching what the pure
+            -- aura bars' stand-in does.
+            local previewStacks, previewMax
+            if spellAuraStackDisplay then
+                previewMax = RB.GetCustomBarCachedStackMax(barInfo) or 1
+                previewStacks = math_min(CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS, previewMax)
+                SetStatusBarSmoothRange(bar, 0, previewMax)
+                SetStatusBarImmediateValue(bar, previewStacks)
             else
-                SetStatusBarImmediateValue(bar, 1)
+                SetStatusBarSmoothRange(bar, 0, 1)
+                if auraDurationObj then
+                    if not SetStatusBarRemainingDuration(bar, auraDurationObj) then
+                        SetStatusBarSmoothValue(bar, auraDurationObj:GetRemainingPercent())
+                    end
+                elseif indicatorPreview then
+                    SetStatusBarImmediateValue(bar, CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL)
+                else
+                    SetStatusBarImmediateValue(bar, 1)
+                end
             end
 
             if bar.thresholdOverlay then
@@ -576,7 +588,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             if bar.text and bar.text:IsShown() then
                 if auraDurationObj then
                     BindDurationText(bar.text, auraDurationObj, cabConfig)
-                elseif auraPreview or pandemicPreview then
+                elseif indicatorPreview then
                     SetManualDurationText(bar.text, FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig))
                 else
                     SetManualDurationText(bar.text, "")
@@ -585,7 +597,11 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                 UnbindDurationText(bar.text)
             end
 
-            UpdateSpellCustomBarChargeText(bar, cooldownResult)
+            if previewStacks then
+                RB.UpdateSpellCustomBarAuraStackText(bar, cabConfig, previewStacks, previewMax, true)
+            else
+                UpdateSpellCustomBarChargeText(bar, cooldownResult)
+            end
             UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPresent)
 
             if barInfo._maxStacksIndicator and SetMaxStacksIndicatorActive then
@@ -695,13 +711,12 @@ function RB.CreateResourceBarCustomBarsModule(deps)
     local function StyleCustomAuraBar(barInfo, cabConfig)
         local barColor = cabConfig.barColor or {0.5, 0.5, 1}
         local isSpellCustomBar = RB.IsSpellCustomBarConfig(cabConfig)
-        local thresholdEnabled = (not isSpellCustomBar) and IsCustomAuraMaxThresholdEnabled(cabConfig)
-        local maxStackBarEffectsEnabled = (not isSpellCustomBar)
-            and IsCustomAuraMaxBarEffectEnabled
-            and IsCustomAuraMaxBarEffectEnabled(cabConfig)
-        local thresholdVisible = thresholdEnabled or maxStackBarEffectsEnabled
-        local thresholdColor = maxStackBarEffectsEnabled and GetCustomAuraMaxBarEffectColor(cabConfig)
-            or GetCustomAuraMaxThresholdColor(cabConfig)
+        -- The aura pass (12.1): threshold color and max-stack bar effects
+        -- are dropped by owner ruling (stack-count logic is secret); the
+        -- overlays stay dark. Dormant keys stay untouched.
+        local maxStackBarEffectsEnabled = false
+        local thresholdVisible = false
+        local thresholdColor = GetCustomAuraMaxThresholdColor(cabConfig)
 
         if barInfo.barType == "custom_continuous" or barInfo.barType == "custom_cooldown" then
             local bar = barInfo.frame
@@ -815,24 +830,57 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end
     end
 
+    -- Shell composition (hideWhenInactive, 12.1): the CC frame stays SHOWN
+    -- as the layout member and aura host but renders nothing — the kit's
+    -- shell replicas (bg + border ring + fill + texts) are the entire
+    -- visible bar, Blizzard-shown only while the aura runs. The slot stays
+    -- reserved in combat (no reflow) — documented, accepted. Whole-frame
+    -- alpha, not per-region: the kit lives in a separate holder subtree,
+    -- and abandoned frames are never reused so a zeroed alpha cannot leak
+    -- into another bar type. Every preview lifts the shell so the bar is
+    -- editable: the per-bar command-center flags AND the whole-stack
+    -- preview, which paints its data into this frame and would otherwise
+    -- render it invisible (nothing else raises a zeroed whole-frame alpha).
+    local function ApplyCustomBarShellAlpha(barInfo)
+        local bar = barInfo.frame
+        local cabConfig = barInfo.cabConfig
+        if not (bar and cabConfig) then return end
+        local auraTracked = not RB.IsSpellCustomBarConfig(cabConfig)
+            or cabConfig.auraTracking == true
+        local shell = auraTracked
+            and cabConfig.hideWhenInactive == true
+            and not (bar._barAuraActivePreview or bar._pandemicPreview)
+            and not GetPreviewActive()
+        bar:SetAlpha(shell and 0 or 1)
+    end
+
     local function FinalizeAppliedBarVisibility(barInfo, previewActive)
         if barInfo and type(barInfo.customBarId) == "string" then
-            if previewActive then
-                barInfo.frame:Show()
-            elseif barInfo.cabConfig
-                and (barInfo.cabConfig.hideWhenInactive or barInfo.cabConfig.hideWhileAuraActive) then
+            -- The aura pass (12.1): aura-state visibility is gone by design;
+            -- custom bars always show. hideWhenInactive renders as the kit
+            -- shell (the CC frame stays as the layout shell and aura host).
+            barInfo.frame:Show()
+            ApplyCustomBarShellAlpha(barInfo)
+            if not previewActive then
                 if barInfo.barType == "custom_cooldown" then
                     RB.UpdateCustomCooldownBar(barInfo)
                 else
                     UpdateCustomAuraBar(barInfo)
                 end
-            else
-                barInfo.frame:Show()
-                if barInfo.barType == "custom_cooldown" then
-                    RB.UpdateCustomCooldownBar(barInfo)
-                else
-                    UpdateCustomAuraBar(barInfo)
-                end
+            end
+            -- CC-side absent-state stack blocks re-lay from the OOC-cached
+            -- max (this runs after ClearStaleRecycledBarRuntimeState hid the
+            -- pools for the apply pass). Late-bound: the aura host module
+            -- loads after this file.
+            if RB.ApplyCustomBarAbsentStackVisuals then
+                RB.ApplyCustomBarAbsentStackVisuals(barInfo)
+            end
+            -- Follow the bar if the stack handed it a different frame (a
+            -- form change adding or removing a resource does exactly that).
+            -- In combat this is the only thing that can repair it — the
+            -- rebind pass is deferred to combat end.
+            if RB.SyncCustomBarAuraHostAnchor then
+                RB.SyncCustomBarAuraHostAnchor(barInfo)
             end
         else
             barInfo.frame:Show()
@@ -900,22 +948,17 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end
         customBarId = customBarId or RB.EnsureCustomBarId(settings, cabConfig)
         local isSpellCustomBar = RB.IsSpellCustomBarConfig(cabConfig)
-        local spellAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
-        local spellAuraStackPresent = spellAuraStackDisplay and GetPreviewActive()
-        if spellAuraStackDisplay and not spellAuraStackPresent and barInfo and barInfo.frame then
-            local auraState = ResolveSpellCustomBarAuraState(barInfo)
-            spellAuraStackPresent = auraState and auraState.ready == true and auraState.auraPresent == true
-        end
-        local spellAuraStackActive = spellAuraStackDisplay and spellAuraStackPresent
-        local isActive = (isSpellCustomBar and not spellAuraStackActive)
-            or ((not isSpellCustomBar) and cabConfig.trackingMode == "active")
-        local mode = isSpellCustomBar
-            and (spellAuraStackActive and (cabConfig.displayMode or "segmented") or "continuous")
-            or (isActive and "continuous" or (cabConfig.displayMode or "segmented"))
-        local maxStacks = isActive and 1 or (cabConfig.maxStacks or 1)
-        local targetBarType = (isSpellCustomBar and not spellAuraStackActive)
-            and "custom_cooldown"
-            or ("custom_" .. mode)
+        -- The aura pass (12.1): every custom bar materializes as a single
+        -- continuous CC frame — spell bars as the cooldown bar, aura bars as
+        -- the absent-state layer. The kit owns stack segmentation (the CC
+        -- segmented/overlay StatusBar stacks can't be driven; the count is
+        -- secret), so custom_segmented/custom_overlay are never produced —
+        -- old frames of those types recreate as continuous on the barType
+        -- mismatch below. No manual max: stack capacity is game-data
+        -- resolved at OOC bind time (ResourceBarAuraHost / AuraDisplay).
+        local mode = "continuous"
+        local maxStacks = 1
+        local targetBarType = isSpellCustomBar and "custom_cooldown" or "custom_continuous"
         local customOrientation = isVerticalLayout and "vertical" or "horizontal"
         local customIsVertical = customOrientation == "vertical"
         local customReverseFill = false
@@ -1059,28 +1102,9 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end
         StyleCustomAuraBar(barInfo, cabConfig)
 
-        if cabConfig.maxStacksGlowEnabled then
-            if isSpellCustomBar then
-                ClearMaxStacksIndicator(barInfo)
-            else
-                local indBorderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
-                local indBorderSize = GetResourceDisplayValue(settings, "borderSize", 1)
-                local indBorderRenderMode = GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM)
-                local indBarTexture = CooldownCompanion:FetchEffectiveBarTexture(GetResourceDisplayValue(settings, "barTexture", "Solid"))
-                local frameTreatmentStyle = GetMaxStacksFrameTreatmentStyle and GetMaxStacksFrameTreatmentStyle(cabConfig) or "solidBorder"
-                if frameTreatmentStyle ~= "none" then
-                    EnsureMaxStacksIndicator(barInfo)
-                end
-                if barInfo._maxStacksIndicator then
-                    LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, indBarTexture, indBorderStyle, indBorderSize, indBorderRenderMode)
-                end
-                if frameTreatmentStyle == "none" then
-                    ClearMaxStacksIndicator(barInfo)
-                end
-            end
-        else
-            ClearMaxStacksIndicator(barInfo)
-        end
+        -- Max-stack indicator: dropped by owner ruling (the aura pass) —
+        -- stack-count logic is secret. Dormant keys stay untouched.
+        ClearMaxStacksIndicator(barInfo)
 
         return barInfo
     end

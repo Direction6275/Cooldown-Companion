@@ -516,6 +516,198 @@ local function AddResourceBarsDisabledLabel(container, text)
 end
 ST._AddResourceBarsDisabledLabel = AddResourceBarsDisabledLabel
 
+------------------------------------------------------------------------
+-- Aura tracking section (the aura pass): the panel Aura-tab vocabulary on
+-- custom bars. The tracked unit is auto-derived from spell polarity and
+-- never user-set (Blizzard's anti-cheat gate makes illegal configurations
+-- unrepresentable); max stacks is automatic from game data. Every change
+-- goes through ApplyResourceBars, which requests the OOC aura rebind.
+------------------------------------------------------------------------
+
+local function RefreshCustomBarAuraConfig()
+    CooldownCompanion:ApplyResourceBars()
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+-- Shared tracked-aura list rules (SectionBuilders.lua), the same ones the
+-- panel Aura tab runs on.
+local ClassifyAuraSpellUnit = ST._ClassifyAuraSpellUnit
+local GetAuraCandidateList = ST._GetAuraCandidateList
+local TryAddAuraCandidate = ST._TryAddAuraCandidate
+local RemoveAuraCandidate = ST._RemoveAuraCandidate
+local AddAuraCandidateRow = ST._AddAuraCandidateRow
+local AddAuraStackMaxStatusLabel = ST._AddAuraStackMaxStatusLabel
+
+-- Candidate-resolution probe: the buttonData shape Core/Aura.lua reads,
+-- synthesized from cabConfig (the same mapping the runtime adapter uses).
+local function BuildCustomBarAuraProbe(cab)
+    return {
+        type = "spell",
+        id = tonumber(cab.spellID),
+        addedAs = (not IsSpellCustomBarConfig(cab)) and "aura" or nil,
+        auraTracking = true,
+        auraSpellID = cab.auraSpellID,
+        auraUnit = cab.auraUnit,
+    }
+end
+
+local function GetCustomBarAuraUnit(cab)
+    local resolved = CooldownCompanion:ResolveAuraSpellID(BuildCustomBarAuraProbe(cab))
+    return ClassifyAuraSpellUnit(resolved) or cab.auraUnit or "player"
+end
+
+-- Store the derived unit whenever tracking config changes, so the runtime
+-- fallback (uncached spells at login) starts from the right value.
+local function SyncCustomBarDerivedAuraUnit(cab)
+    local unit = ClassifyAuraSpellUnit(CooldownCompanion:ResolveAuraSpellID(BuildCustomBarAuraProbe(cab)))
+    if unit then
+        cab.auraUnit = unit
+        cab.auraUnitExplicit = nil
+    end
+end
+
+local function AddCustomBarCandidateRow(container, cab, spellID)
+    AddAuraCandidateRow(container, spellID, function(removedID)
+        if RemoveAuraCandidate(cab, removedID, SyncCustomBarDerivedAuraUnit) then
+            RefreshCustomBarAuraConfig()
+        end
+    end)
+end
+
+local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons)
+    local isSpellBar = IsSpellCustomBarConfig(cab)
+
+    AddCustomBarSettingsHeading(container, "Aura Tracking", infoButtons, {
+        "Blizzard tracks the aura and drives the bar directly; the addon never reads aura state in combat.",
+        "Buffs can only be tracked on yourself, and your own debuffs only on your target. This is a Blizzard restriction. The tracked unit is set automatically from the aura.",
+        "With no auras listed, the bar tracks its own aura. Added aura IDs override that; for spell bars the spell's own aura is always kept as a fallback.",
+    })
+
+    if isSpellBar then
+        local enable = AceGUI:Create("CheckBox")
+        enable:SetLabel("Track an Aura")
+        enable:SetValue(cab.auraTracking == true)
+        enable:SetFullWidth(true)
+        enable:SetCallback("OnValueChanged", function(_, _, value)
+            cab.auraTracking = value and true or nil
+            if value then
+                SyncCustomBarDerivedAuraUnit(cab)
+            end
+            RefreshCustomBarAuraConfig()
+        end)
+        container:AddChild(enable)
+        if cab.auraTracking ~= true then
+            return
+        end
+    end
+
+    -- Derived unit line (read-only by design; the "?" heading explains why).
+    local unit = GetCustomBarAuraUnit(cab)
+    local unitLabel = AceGUI:Create("Label")
+    unitLabel:SetText("|cffffd100Tracked on:|r " .. (unit == "target" and "Target" or "You"))
+    unitLabel:SetFullWidth(true)
+    container:AddChild(unitLabel)
+
+    for _, spellID in ipairs(GetAuraCandidateList(cab)) do
+        AddCustomBarCandidateRow(container, cab, spellID)
+    end
+
+    local addBox = AceGUI:Create("EditBox")
+    addBox:SetLabel("Add aura by name or ID")
+    addBox:SetText("")
+    addBox:SetFullWidth(true)
+    addBox:SetCallback("OnEnterPressed", function(widget, _, text)
+        if TryAddAuraCandidate(cab, text, GetCustomBarAuraUnit(cab), SyncCustomBarDerivedAuraUnit) then
+            widget:SetText("")
+            RefreshCustomBarAuraConfig()
+        end
+    end)
+    container:AddChild(addBox)
+
+    -- Bar fill mode: duration drain or stack count. Max stacks is automatic
+    -- (game data); the status line shows what resolved.
+    local mode = cab.trackingMode
+    if mode ~= "active" and mode ~= "stacks" then
+        mode = isSpellBar and "active" or "stacks"
+    end
+    local stacksCb = AceGUI:Create("CheckBox")
+    stacksCb:SetLabel("Bar Shows Stacks")
+    stacksCb:SetValue(mode == "stacks")
+    stacksCb:SetFullWidth(true)
+    stacksCb:SetCallback("OnValueChanged", function(_, _, value)
+        cab.trackingMode = value and "stacks" or "active"
+        RefreshCustomBarAuraConfig()
+    end)
+    container:AddChild(stacksCb)
+    CreateInfoButton(stacksCb.frame, stacksCb.checkbg, "LEFT", "RIGHT", stacksCb.text:GetStringWidth() + 4, 0, {
+        "Bar Shows Stacks",
+        {"The bar shows the stack count instead of draining with time. Blizzard drives the fill and the maximum comes from the game's spell data — nothing to configure.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Stack Style picks the look: Segmented renders each stack as its own bordered piece with real gaps; Continuous is one plain bar that fills as stacks build. Segment gap and smoothing follow the Resource Bars settings.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"If the tracked aura doesn't stack, the bar keeps the normal duration fill.", 1, 1, 1, true},
+    }, infoButtons)
+
+    if mode == "stacks" then
+        local maxStacks = CooldownCompanion:GetAuraStackBarMax(BuildCustomBarAuraProbe(cab))
+        if maxStacks then
+            local styleDrop = AceGUI:Create("Dropdown")
+            styleDrop:SetLabel("Stack Style")
+            styleDrop:SetList({ segmented = "Segmented", continuous = "Continuous" },
+                { "segmented", "continuous" })
+            styleDrop:SetValue(cab.displayMode == "continuous" and "continuous" or "segmented")
+            styleDrop:SetFullWidth(true)
+            styleDrop:SetCallback("OnValueChanged", function(_, _, value)
+                cab.displayMode = value
+                RefreshCustomBarAuraConfig()
+            end)
+            container:AddChild(styleDrop)
+        end
+
+        AddAuraStackMaxStatusLabel(container, maxStacks)
+    end
+
+    -- Pandemic marker per-entry switch. The auto default follows the tracked
+    -- unit (on for target debuffs, off for player buffs); only an explicit
+    -- override is stored.
+    local pandemicDefault = unit == "target"
+    local pandemicCb = AceGUI:Create("CheckBox")
+    pandemicCb:SetLabel("Pandemic Marker")
+    local pandemicValue = cab.pandemicMarker
+    if pandemicValue == nil then pandemicValue = pandemicDefault end
+    pandemicCb:SetValue(pandemicValue == true)
+    pandemicCb:SetFullWidth(true)
+    pandemicCb:SetCallback("OnValueChanged", function(_, _, value)
+        if value == pandemicDefault then
+            cab.pandemicMarker = nil
+        else
+            cab.pandemicMarker = value and true or false
+        end
+        RefreshCustomBarAuraConfig()
+    end)
+    container:AddChild(pandemicCb)
+    CreateInfoButton(pandemicCb.frame, pandemicCb.checkbg, "LEFT", "RIGHT", pandemicCb.text:GetStringWidth() + 4, 0, {
+        "Pandemic Marker",
+        {"Marks the aura duration text during the last 30% of the aura's duration — the refresh window where recasting extends the remaining time instead of wasting it. Blizzard evaluates the timing; the addon never reads combat values.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"On by default for debuffs on your target, off by default for your own buffs.", 1, 1, 1, true},
+    }, infoButtons)
+
+    local shellCb = AceGUI:Create("CheckBox")
+    shellCb:SetLabel("Show Only While Aura Active")
+    shellCb:SetValue(cab.hideWhenInactive == true)
+    shellCb:SetFullWidth(true)
+    shellCb:SetCallback("OnValueChanged", function(_, _, value)
+        cab.hideWhenInactive = value or nil
+        RefreshCustomBarAuraConfig()
+    end)
+    container:AddChild(shellCb)
+    CreateInfoButton(shellCb.frame, shellCb.checkbg, "LEFT", "RIGHT", shellCb.text:GetStringWidth() + 4, 0, {
+        "Show Only While Aura Active",
+        {"The bar renders only while the aura is running. Its slot in the bar stack stays reserved — bars cannot reflow around it in combat.", 1, 1, 1, true},
+    }, infoButtons)
+end
+
 local function BuildCustomBarWorkspaceAddBox(container)
     if BuildResourceBarConflictGate(container, "Custom Bars", false) then
         return
@@ -597,24 +789,33 @@ local function BuildCustomBarWorkspaceAddBox(container)
 
     local function AddCustomBarFromSpell(spellId, labelOverride, entryType)
         if not spellId then return false end
+        local entry
         if entryType == "aura" then
-            -- Aura-driven Custom Bars are stubbed until the custom aura bars
-            -- phase group rebuilds them. Treat as handled so the add box
-            -- clears without a second "not found" message.
-            CooldownCompanion:Print("Aura-driven Custom Bars return in a later update.")
-            return true
-        end
-        local entry = {
-            entryType = "spell",
-            enabled = true,
-            spellID = spellId,
-            label = labelOverride or GetAuraBarAutocompleteDisplayName(spellId) or C_Spell.GetSpellName(spellId) or "",
-        }
-        local charges = C_Spell.GetSpellCharges(spellId)
-        local maxCharges = charges and tonumber(charges.maxCharges)
-        if maxCharges and maxCharges > 1 then
-            entry.hasCharges = true
-            entry.maxCharges = maxCharges
+            -- Aura-driven Custom Bar (the aura pass): duration bar by
+            -- default; stacks are the "Bar Shows Stacks" opt-in. The unit
+            -- seed derives from spell polarity (never user-set).
+            entry = {
+                entryType = "aura",
+                enabled = true,
+                spellID = spellId,
+                trackingMode = "active",
+                showDurationText = true,
+                auraUnit = ClassifyAuraSpellUnit(spellId) or "player",
+                label = labelOverride or GetAuraBarAutocompleteDisplayName(spellId) or C_Spell.GetSpellName(spellId) or "",
+            }
+        else
+            entry = {
+                entryType = "spell",
+                enabled = true,
+                spellID = spellId,
+                label = labelOverride or GetAuraBarAutocompleteDisplayName(spellId) or C_Spell.GetSpellName(spellId) or "",
+            }
+            local charges = C_Spell.GetSpellCharges(spellId)
+            local maxCharges = charges and tonumber(charges.maxCharges)
+            if maxCharges and maxCharges > 1 then
+                entry.hasCharges = true
+                entry.maxCharges = maxCharges
+            end
         end
         local id = RB.AddCustomBar
             and RB.AddCustomBar(settings, entry, customBarsSpecID, 1000 + #CooldownCompanion:GetSpecCustomAuraBars() + 1)
@@ -789,12 +990,25 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
         return
     end
 
-    if not isSpellCustomBar then
-        local dormantLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(dormantLabel)
-        dormantLabel:SetText("|cffff8800This Custom Bar tracked an aura. It is inactive for now and returns in a later update.|r")
-        dormantLabel:SetFullWidth(true)
-        container:AddChild(dormantLabel)
+    -- Aura tab (the aura pass): the tracking section plus the active-aura
+    -- effects, the same shape as the panel entry Aura tab. Aura-look
+    -- colors and texts stay on Appearance with the rest of the bar style.
+    if activeTab == "aura" then
+        if cab.spellID then
+            BuildCustomBarAuraTrackingSection(container, cab, infoButtons)
+
+            -- Shared builder (SectionBuilders): the cabConfig speaks the
+            -- same barAura* key family as the panel bar style tables.
+            local isAuraTracked = (not isSpellCustomBar) or cab.auraTracking == true
+            if isAuraTracked and ST._BuildBarActiveAuraControls then
+                AddCustomBarSettingsHeading(container, "Effects", infoButtons, {
+                    "Effects the bar plays while the tracked aura is active: a border effect, a fill pulse, and a fill color shift.",
+                    "Use the preview in the command center below the bar list to see them without a live aura.",
+                })
+                ST._BuildBarActiveAuraControls(container, cab, function() CooldownCompanion:ApplyResourceBars() end)
+            end
+        end
+        return
     end
 
             -- Per-slot bar thickness override
@@ -825,25 +1039,38 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                 container:AddChild(cabHeightSlider)
             end
 
-            -- ---- Colors section (spell Custom Bars only) ----
+            -- ---- Colors / Texts sections ----
             if cab.spellID then
                 local cabIdx = capturedIdx
                 local cabApplyBars = function() CooldownCompanion:ApplyResourceBars() end
+                local isAuraTracked = (not isSpellCustomBar) or cab.auraTracking == true
 
-                if isSpellCustomBar then
                 local colorHeading = AceGUI:Create("Heading")
                 colorHeading:SetText("Colors")
                 ColorHeading(colorHeading)
                 colorHeading:SetFullWidth(true)
                 container:AddChild(colorHeading)
 
-                AddColorPicker(container, customBars[cabIdx], "barColor", "Bar Color", {0.5, 0.5, 1}, false,
+                -- Standalone aura bars: the fill IS the aura, so the label
+                -- says so — "Bar Color" stays the spell-cooldown verbiage.
+                -- Same barColor key either way; label only.
+                AddColorPicker(container, customBars[cabIdx], "barColor",
+                    isSpellCustomBar and "Bar Color" or "Aura Bar Color", {0.5, 0.5, 1}, false,
                     cabApplyBars, function() CooldownCompanion:RecolorCustomAuraBar(customBars[cabIdx]) end)
 
-                AddColorPicker(container, customBars[cabIdx], "barCooldownColor", "Bar Cooldown Color", {0.6, 0.13, 0.18, 1}, true,
-                    cabApplyBars, cabApplyBars)
-                AddColorPicker(container, customBars[cabIdx], "barChargeColor", "Bar Recharging Color", {1.0, 0.82, 0.0, 1}, true,
-                    cabApplyBars, cabApplyBars)
+                if isSpellCustomBar then
+                    AddColorPicker(container, customBars[cabIdx], "barCooldownColor", "Bar Cooldown Color", {0.6, 0.13, 0.18, 1}, true,
+                        cabApplyBars, cabApplyBars)
+                    AddColorPicker(container, customBars[cabIdx], "barChargeColor", "Bar Recharging Color", {1.0, 0.82, 0.0, 1}, true,
+                        cabApplyBars, cabApplyBars)
+                    if isAuraTracked then
+                        -- The kit's aura-drain fill while the tracked aura
+                        -- runs (pure aura bars use Bar Color — the fill IS
+                        -- the bar there).
+                        AddColorPicker(container, customBars[cabIdx], "barAuraColor", "Aura Bar Color", {0.2, 1.0, 0.2, 1}, true,
+                            cabApplyBars, cabApplyBars)
+                    end
+                end
 
                 -- ---- Text / Duration controls ----
                 do
@@ -872,7 +1099,9 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                     local stackVal = cab.showStackText
 
                     local stackTextCb = AceGUI:Create("CheckBox")
-                    local stackTextLabel = "Show Count Text (Charges/Uses)"
+                    local stackTextLabel = isSpellCustomBar
+                        and "Show Count Text (Charges/Uses)"
+                        or "Show Stack Text"
                     stackTextCb:SetLabel(stackTextLabel)
                     stackTextCb:SetValue(stackVal == true)
                     stackTextCb:SetFullWidth(true)
@@ -973,7 +1202,6 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         build = BuildStackTextAdvanced,
                     })
                 end
-                end -- isSpellCustomBar
 
                 -- ---- Talent Conditions section ----
                 local talentKey = "cab_talent_" .. capturedKey
