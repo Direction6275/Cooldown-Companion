@@ -1008,11 +1008,20 @@ function CooldownCompanion:RevertCastBar()
     -- Restore FX regions to original sizes
     RevertFXScaling(cb)
 
-    -- End the unlock stand-in if active. The canvas preview goes with it:
-    -- reverting removes the bar the preview stands for, and leaving the flag
-    -- set made it silently resume when the cast bar came back.
+    -- End the unlock stand-in if active: it paints THIS bar, so it goes when
+    -- the bar does.
+    --
+    -- The config-canvas preview deliberately does NOT go with it. This
+    -- teardown runs for transient live conditions -- no anchor group yet, an
+    -- anchor frame that is momentarily hidden, an anchor that is not
+    -- icon-like -- and the canvas keeps rendering from saved settings through
+    -- all of them, the same reason RevertResourceBars leaves canvas state
+    -- alone. Clearing here killed a running preview because of live-frame
+    -- availability it has nothing to do with. Ownership sits with
+    -- ClearAllConfigPreviews and the command center's stranded-preview stop,
+    -- which ask whether the cast bar is configured at all rather than whether
+    -- it happens to be drawable this instant.
     isUnlockAssistActive = false
-    isCanvasPreviewActive = false
 
     -- Restore spark visibility and size (CLASSIC: 8x20)
     if cb.Spark then

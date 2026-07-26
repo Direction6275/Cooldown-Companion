@@ -3185,6 +3185,18 @@ end
 -- stack drops the cast slot from this home entirely (includeCastSlots
 -- below), and offering a preview whose destination is not on screen means
 -- pressing play visibly does nothing.
+--
+-- Answered by re-deriving the build's own preconditions rather than by
+-- reporting what the last build drew: the command center runs BEFORE the
+-- renderer on every rebuild (it owns the host's bottom reserve, which the
+-- renderer then measures), so a recorded answer would always be one change
+-- stale. The source-panel resolve is the same one _BuildLayoutOrderPreview-
+-- Panel makes and _HasAttachedBarLanesToRender already pays for; config
+-- time, once per rebuild.
+--
+-- Deliberately an OFFER test only. It must not feed the stranded-preview
+-- stop: `layout` is briefly nil across a spec change, and stopping on that
+-- would kill a running preview for a transient live condition.
 function ST._ResourcesPreviewRendersCastSlot()
     local cbSettings = CooldownCompanion:GetCastBarSettings()
     if not (cbSettings and cbSettings.enabled == true) then
@@ -3193,13 +3205,22 @@ function ST._ResourcesPreviewRendersCastSlot()
     if IsTruthyConfigFlag(cbSettings.independentAnchorEnabled) then
         return false
     end
-    local rbSettings = CooldownCompanion:GetResourceBarSettings()
     local layout = CooldownCompanion:GetSpecLayoutOrder()
+    if not layout then
+        -- "Specialization data loading..." - the canvas is a message.
+        return false
+    end
+    local rbSettings = CooldownCompanion:GetResourceBarSettings()
     local independentResourcesPreview = CS.resourcesEntrySelected
         and rbSettings and rbSettings.enabled == true
-        and layout
         and IsTruthyConfigFlag(layout.independentAnchorEnabled)
-    return not independentResourcesPreview
+    if independentResourcesPreview then
+        return false
+    end
+    -- An attached cast lane is drawn around the mirrored icon panel, so no
+    -- resolvable panel means no lane: either the canvas is a message, or the
+    -- unit-frame-proxy path wiped the slots and rendered proxies alone.
+    return ResolveLayoutPreviewSourcePanel() ~= nil
 end
 
 -- Shared with ButtonPanelPreview.lua: config-safe icon resolution and the
