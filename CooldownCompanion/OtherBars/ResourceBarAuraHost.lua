@@ -390,6 +390,11 @@ function RB.CreateResourceBarAuraHostModule(deps)
                         holder:SetPoint("TOPLEFT", frame, "TOPLEFT", inset, -inset)
                         holder:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -inset, inset)
                         holder._isVertical = frame._isVertical == true
+                        -- Full bar rect for the kit's shell replicas (the
+                        -- shell bg + border ring must match the bar's real
+                        -- footprint, not the inset mount) — same field name
+                        -- the panel shell branch reads.
+                        holder._barBounds = frame
                         -- Above the bar's textLayer (bar+2): the kit must
                         -- render over every CC-side bar visual. Same-strata
                         -- level ordering; the root already matches the

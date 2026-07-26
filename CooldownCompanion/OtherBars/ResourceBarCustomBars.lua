@@ -804,12 +804,34 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end
     end
 
+    -- Shell composition (hideWhenInactive, 12.1): the CC frame stays SHOWN
+    -- as the layout member and aura host but renders nothing — the kit's
+    -- shell replicas (bg + border ring + fill + texts) are the entire
+    -- visible bar, Blizzard-shown only while the aura runs. The slot stays
+    -- reserved in combat (no reflow) — documented, accepted. Whole-frame
+    -- alpha, not per-region: the kit lives in a separate holder subtree,
+    -- and abandoned frames are never reused so a zeroed alpha cannot leak
+    -- into another bar type. Previews lift the shell so the bar is
+    -- editable while the command center drives it.
+    local function ApplyCustomBarShellAlpha(barInfo)
+        local bar = barInfo.frame
+        local cabConfig = barInfo.cabConfig
+        if not (bar and cabConfig) then return end
+        local auraTracked = not RB.IsSpellCustomBarConfig(cabConfig)
+            or cabConfig.auraTracking == true
+        local shell = auraTracked
+            and cabConfig.hideWhenInactive == true
+            and not (bar._barAuraActivePreview or bar._pandemicPreview)
+        bar:SetAlpha(shell and 0 or 1)
+    end
+
     local function FinalizeAppliedBarVisibility(barInfo, previewActive)
         if barInfo and type(barInfo.customBarId) == "string" then
             -- The aura pass (12.1): aura-state visibility is gone by design;
             -- custom bars always show. hideWhenInactive renders as the kit
             -- shell (the CC frame stays as the layout shell and aura host).
             barInfo.frame:Show()
+            ApplyCustomBarShellAlpha(barInfo)
             if not previewActive then
                 if barInfo.barType == "custom_cooldown" then
                     RB.UpdateCustomCooldownBar(barInfo)

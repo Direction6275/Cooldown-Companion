@@ -1141,11 +1141,14 @@ local function StyleSlotKit(slot, button, buttonData, style)
         local barBounds = button._barBounds or button
         -- CC parity: with the icon square shown the background covers only
         -- the bar area (the square has its own), otherwise the whole button.
-        -- Widget-stack shells skip the slab AND the whole-bar border ring —
-        -- the capacity blocks laid out above ARE the background, each with
-        -- its own border ring (owner ruling: every stack its own widget; a
-        -- slab would fill the gaps and one ring would wrap all stacks).
-        local bgAnchor = barIconShown and barBounds or button
+        -- Custom-bar hosts always use the bar bounds — the holder (button)
+        -- is the border-inset mount, and the shell bg must fill the bar's
+        -- real footprint. Widget-stack shells skip the slab AND the
+        -- whole-bar border ring — the capacity blocks laid out above ARE
+        -- the background, each with its own border ring (owner ruling:
+        -- every stack its own widget; a slab would fill the gaps and one
+        -- ring would wrap all stacks).
+        local bgAnchor = (barIconShown or isCustomBarHost) and barBounds or button
         local widgetShell = IsWidgetStackBind(slot, buttonData)
         if widgetShell then
             kit.bg:SetAlpha(0)
