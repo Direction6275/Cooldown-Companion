@@ -3114,6 +3114,29 @@ function ST._HasAttachedBarLanesToRender()
     return #primarySlots > 0 or #castSlots > 0
 end
 
+-- Does the Resources / Cast Bar canvas actually draw a cast lane right now?
+-- The command center asks before offering the cast preview, because "the
+-- cast bar is attached" is not the same question: an INDEPENDENT resource
+-- stack drops the cast slot from this home entirely (includeCastSlots
+-- below), and offering a preview whose destination is not on screen means
+-- pressing play visibly does nothing.
+function ST._ResourcesPreviewRendersCastSlot()
+    local cbSettings = CooldownCompanion:GetCastBarSettings()
+    if not (cbSettings and cbSettings.enabled == true) then
+        return false
+    end
+    if IsTruthyConfigFlag(cbSettings.independentAnchorEnabled) then
+        return false
+    end
+    local rbSettings = CooldownCompanion:GetResourceBarSettings()
+    local layout = CooldownCompanion:GetSpecLayoutOrder()
+    local independentResourcesPreview = CS.resourcesEntrySelected
+        and rbSettings and rbSettings.enabled == true
+        and layout
+        and IsTruthyConfigFlag(layout.independentAnchorEnabled)
+    return not independentResourcesPreview
+end
+
 -- Shared with ButtonPanelPreview.lua: config-safe icon resolution and the
 -- mirrored icon styling both previews use. StyleMirroredIconFrame expects an
 -- icon frame carrying bg, icon, countText, and borderTextures[4]; pass

@@ -1008,8 +1008,11 @@ function CooldownCompanion:RevertCastBar()
     -- Restore FX regions to original sizes
     RevertFXScaling(cb)
 
-    -- End the unlock stand-in if active
+    -- End the unlock stand-in if active. The canvas preview goes with it:
+    -- reverting removes the bar the preview stands for, and leaving the flag
+    -- set made it silently resume when the cast bar came back.
     isUnlockAssistActive = false
+    isCanvasPreviewActive = false
 
     -- Restore spark visibility and size (CLASSIC: 8x20)
     if cb.Spark then

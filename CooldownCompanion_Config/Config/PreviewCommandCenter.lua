@@ -523,6 +523,28 @@ local function CastBarEnabled()
     return settings ~= nil and settings.enabled == true
 end
 
+-- Does a canvas cast lane exist ANYWHERE for the current configuration?
+-- Distinct from "is the control offered on this surface": navigating away
+-- from a home must not stop a running preview, but the cast bar being
+-- disabled or moved to its own anchor leaves the preview with nothing to
+-- render on, and it would silently resume when the setting came back.
+local function HasCastPreviewDestination()
+    local settings = CooldownCompanion.GetCastBarSettings
+        and CooldownCompanion:GetCastBarSettings()
+    local IsTruthyConfigFlag = RB and RB.IsTruthyConfigFlag
+    return settings ~= nil
+        and settings.enabled == true
+        and IsTruthyConfigFlag ~= nil
+        and not IsTruthyConfigFlag(settings.independentAnchorEnabled)
+end
+
+local function StopStrandedCastPreview()
+    if HasCastPreviewDestination() then return end
+    if CooldownCompanion:IsCastBarPreviewActive() then
+        CooldownCompanion:StopCastBarPreview()
+    end
+end
+
 local OBJECT_CONTROLS = {
     {
         id = "healthAbsorbs",
@@ -572,6 +594,7 @@ local OBJECT_CONTROLS = {
 -- bar's settings can be open below the divider there.
 local function CollectObjectControls(objects)
     local applicable = {}
+    StopStrandedCastPreview()
     -- Resolved once and handed to the gates that want it, since resolving
     -- deep-copies the resource table. Skipped entirely on a surface that
     -- hosts no health entries.
@@ -1138,12 +1161,14 @@ local function UpdateResourcesPreviewCommandCenter(host)
     -- drawn on both homes and owns one of them. Custom bars are Resources
     -- objects too — their aura previews live here.
     --
-    -- The cast bar only qualifies while it is attached, because that is when
-    -- the canvas draws it as a lane and previews render on the canvas. A cast
-    -- bar on its own independent anchor has no canvas representation at all,
-    -- so offering the control there would name a preview nothing can show.
+    -- The cast bar qualifies only when THIS canvas actually draws a cast
+    -- lane. Testing "the cast bar is attached" was not enough: an
+    -- independent resource stack drops the cast slot from this home even
+    -- with the cast bar attached, and the control then named a preview that
+    -- repainted a cast-free canvas and visibly did nothing.
     local objects = {
-        cast = GetAnchorLaneObjects().cast == true,
+        cast = ST._ResourcesPreviewRendersCastSlot ~= nil
+            and ST._ResourcesPreviewRendersCastSlot() == true,
         health = CS.resourcesEntrySelected == true,
         customBars = CS.resourcesEntrySelected == true or CS.selectedCustomBarId ~= nil,
     }
