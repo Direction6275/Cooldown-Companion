@@ -318,6 +318,12 @@ local function OpenAdvancedSettingsPanel(opts)
         window:SetLayout("Fill")
         window:EnableResize(false)
         window:SetCallback("OnClose", CleanupWindow)
+        -- Modern UIPanelCloseButton art (RedButton-Exit) fills the whole 24x24 button,
+        -- so AceGUI's legacy (+2, +1) offset leaves the X hanging outside the corner.
+        if window.closebutton then
+            window.closebutton:ClearAllPoints()
+            window.closebutton:SetPoint("TOPRIGHT", window.frame, "TOPRIGHT", -3, -3)
+        end
         advancedWindow = window
         CS.advancedSettingsPanelWindow = window
         if CS.RegisterConfigDragAlphaFrame then
