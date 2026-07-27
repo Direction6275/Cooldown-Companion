@@ -401,10 +401,14 @@ function CooldownCompanion:OnZoneChanged()
     self:RefreshSpellAvailabilityState({ evaluateResourceBars = true })
 end
 
+-- PLAYER_UPDATE_RESTING also fires on login and loading screens without the
+-- resting state actually flipping, so only do work on a real change. The
+-- RefreshAllGroupsVisibilityOnly hooks re-evaluate bars and frame anchoring.
 function CooldownCompanion:OnRestingChanged()
-    self._isResting = IsResting()
+    local isResting = IsResting()
+    if isResting == self._isResting then return end
+    self._isResting = isResting
     self:RefreshAllGroupsVisibilityOnly()
-    self:EvaluateBarsAndFramesRuntime("resting-changed")
     self:RefreshConfigPanel()
 end
 

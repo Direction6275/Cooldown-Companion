@@ -664,7 +664,7 @@ local function ConfigureConfigEntryRow(entry, panel, panelId, buttonData, button
     entry:SetUserData(
         "cdcShiftTooltipExtraLine",
         CooldownCompanion:HasLocalLoadConditions(buttonData)
-            and "This entry adds load conditions."
+            and "This entry adds visibility rules."
             or nil
     )
 
@@ -686,7 +686,7 @@ local function ConfigureConfigEntryRow(entry, panel, panelId, buttonData, button
         warnBadge = EnsureRowBadge(rowFrame, "_cdcWarnBtn", "Ping_Marker_Icon_Warning")
         warnBadge:SetFrameLevel(rowBadgeLevel)
         if not loadAllowed then
-            SetRowBadgeTooltip(warnBadge, "Hidden by load conditions", 1, 0.3, 0.3)
+            SetRowBadgeTooltip(warnBadge, "Hidden by visibility rules", 1, 0.3, 0.3)
         else
             SetRowBadgeTooltip(warnBadge, "Spell/item unavailable", 1, 0.3, 0.3)
         end

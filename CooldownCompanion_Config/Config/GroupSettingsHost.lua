@@ -83,6 +83,14 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             tabGroup:SetLayout("Fill")
             tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
                 CS.selectedContainerTab = tab
+                -- Clean up raw (?) info buttons BEFORE releasing children, so they
+                -- don't leak onto recycled AceGUI frames when switching tabs
+                for _, btn in ipairs(CS.tabInfoButtons) do
+                    btn:ClearAllPoints()
+                    btn:Hide()
+                    btn:SetParent(nil)
+                end
+                wipe(CS.tabInfoButtons)
                 widget:ReleaseChildren()
 
                 local scroll = AceGUI:Create("ScrollFrame")
@@ -96,6 +104,11 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
                     ST._BuildContainerLoadConditionsTab(scroll, CS.selectedContainer)
                 end
 
+                -- Re-run the layout with final widths: nested Flow rows resize
+                -- themselves after their children land, and that height never
+                -- reaches the scroll frame until something relayouts it.
+                scroll:DoLayout()
+
             end)
             tabGroup.frame:SetParent(container)
             container.containerTabGroup = tabGroup
@@ -104,7 +117,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
         anchorFn(container, container.containerTabGroup.frame)
         container.containerTabGroup:SetTabs({
             { value = "general",         text = "General" },
-            { value = "loadconditions",  text = "Load Conditions" },
+            { value = "loadconditions",  text = "Visibility" },
         })
         container.containerTabGroup.frame:Show()
         local containerTab = CS.selectedContainerTab
@@ -216,7 +229,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
         tabs[#tabs + 1] = { value = "effects", text = "Indicators" }
     end
     tabs[#tabs + 1] = { value = "layout",          text = "Layout" }
-    tabs[#tabs + 1] = { value = "loadconditions",  text = "Load Conditions" }
+    tabs[#tabs + 1] = { value = "loadconditions",  text = "Visibility" }
     container.tabGroup:SetTabs(tabs)
 
     -- Migrate stale tab keys from previous layout

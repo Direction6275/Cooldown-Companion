@@ -1509,7 +1509,7 @@ local function ShowEntrySlotTooltip(slot, buttonData, status, visibility)
     end
     if status.warn then
         if status.loadBlocked then
-            GameTooltip:AddLine("Hidden by load conditions", 1, 0.3, 0.3)
+            GameTooltip:AddLine("Hidden by visibility rules", 1, 0.3, 0.3)
         else
             GameTooltip:AddLine("Spell/item unavailable", 1, 0.3, 0.3)
         end
@@ -1534,7 +1534,7 @@ local function ShowEntrySlotTooltip(slot, buttonData, status, visibility)
         end
     end
     if CooldownCompanion:HasLocalLoadConditions(buttonData) then
-        GameTooltip:AddLine("This entry adds load conditions.", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine("This entry adds visibility rules.", 0.7, 0.7, 0.7)
     end
     if slot._cdcDraggable then
         GameTooltip:AddLine("Drag to reorder.", 0.75, 0.82, 0.92)

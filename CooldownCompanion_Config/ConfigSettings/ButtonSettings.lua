@@ -45,7 +45,7 @@ end
 local function BuildButtonSettingsTabs(group, buttonData)
     if CooldownCompanion:IsRotationAssistantGroup(group) then
         return {
-            { value = "loadconditions", text = "Load Conditions" },
+            { value = "loadconditions", text = "Visibility" },
         }
     end
 
@@ -54,7 +54,7 @@ local function BuildButtonSettingsTabs(group, buttonData)
     if GroupUsesTriggerPanelEntries(group) then
         return {
             { value = "settings", text = "Condition" },
-            { value = "loadconditions", text = "Load Conditions" },
+            { value = "loadconditions", text = "Visibility" },
         }
     end
 
@@ -70,7 +70,7 @@ local function BuildButtonSettingsTabs(group, buttonData)
     if not GroupUsesTexturePanelEntries(group) then
         tabs[#tabs + 1] = { value = "overrides", text = "Overrides" }
     end
-    tabs[#tabs + 1] = { value = "loadconditions", text = "Load Conditions" }
+    tabs[#tabs + 1] = { value = "loadconditions", text = "Visibility" }
 
     return tabs
 end
@@ -78,7 +78,7 @@ end
 -- Entry tabs are appended to the panel tabs in one shared row. The gap in
 -- front of the cluster, the entry's own icon on its first tab, and the
 -- selection accent on every entry label are what separate the two scopes -
--- and what tells the two "Load Conditions" tabs apart without renaming
+-- and what tells the two "Visibility" tabs apart without renaming
 -- either of them.
 local function EntryTabIconMarkup(icon)
     if not icon or icon == "" then return "" end

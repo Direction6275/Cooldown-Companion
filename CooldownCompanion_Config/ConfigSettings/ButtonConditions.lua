@@ -243,7 +243,7 @@ local function AddInheritedLoadSummary(container, sources, collapsedKey)
     if not hasAny then return end
 
     local heading = AceGUI:Create("Heading")
-    heading:SetText("Inherited Load Conditions")
+    heading:SetText("Inherited Visibility Rules")
     ColorHeading(heading)
     heading:SetFullWidth(true)
     container:AddChild(heading)
@@ -290,7 +290,11 @@ local function AddScopedLoadConditionToggles(container, opts)
         end
     end
 
-    AddInheritedLoadSummary(container, inheritedSources, opts.inheritedCollapsedKey)
+    -- opts.skipInheritedSummary: the caller already emitted the summary above
+    -- its own sections (the panel/entry tabs lead with it).
+    if not opts.skipInheritedSummary then
+        AddInheritedLoadSummary(container, inheritedSources, opts.inheritedCollapsedKey)
+    end
 
     local heading = AceGUI:Create("Heading")
     heading:SetText((inheritedAny and opts.headingTextWhenInherited) or opts.headingText or "Hide When In")
@@ -299,11 +303,30 @@ local function AddScopedLoadConditionToggles(container, opts)
     container:AddChild(heading)
 
     local localCollapsed = opts.localCollapsedKey and CS.collapsedSections[opts.localCollapsedKey]
+    local collapseBtn
     if opts.localCollapsedKey then
-        AttachCollapseButton(heading, localCollapsed, function()
+        collapseBtn = AttachCollapseButton(heading, localCollapsed, function()
             CS.collapsedSections[opts.localCollapsedKey] = not CS.collapsedSections[opts.localCollapsedKey]
             CooldownCompanion:RefreshConfigPanel()
         end)
+    end
+
+    -- opts.infoTooltipLines: the "?" anchors right of whatever already decorates
+    -- the label, then takes over the heading's right line.
+    if opts.infoTooltipLines then
+        local infoBtn = CreateInfoButton(
+            heading.frame,
+            collapseBtn or heading.label,
+            "LEFT",
+            "RIGHT",
+            collapseBtn and 2 or 4,
+            0,
+            opts.infoTooltipLines,
+            opts.infoButtons
+        )
+        heading.right:ClearAllPoints()
+        heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
+        heading.right:SetPoint("LEFT", infoBtn, "RIGHT", 4, 0)
     end
     if localCollapsed then return end
 
@@ -636,7 +659,7 @@ end
 local function BuildCharacterEligibilityTooltip(subjectLabel)
     local subjectPluralLabel = GetEligibilitySubjectPluralLabel(subjectLabel)
     return {
-        "Character Eligibility",
+        "Character",
         {"Choose which characters can use this " .. subjectLabel .. ".", 1, 1, 1, true},
         " ",
         {"Leave empty for no character limit.", 1, 1, 1, true},
@@ -648,7 +671,7 @@ end
 local function BuildClassEligibilityTooltip(subjectLabel)
     local subjectPluralLabel = GetEligibilitySubjectPluralLabel(subjectLabel)
     return {
-        "Class Eligibility",
+        "Class",
         {"Global " .. subjectPluralLabel .. " can be limited to selected classes.", 1, 1, 1, true},
         " ",
         {"Leave empty to allow all classes.", 1, 1, 1, true},
@@ -659,7 +682,7 @@ end
 
 local function BuildSpecializationEligibilityTooltip(subjectLabel)
     return {
-        "Specialization Eligibility",
+        "Specialization",
         {"Limit this " .. subjectLabel .. " to selected specializations.", 1, 1, 1, true},
         " ",
         {"Specializations come from eligible classes.", 1, 1, 1, true},
@@ -670,13 +693,31 @@ end
 
 local function BuildHeroTalentEligibilityTooltip(subjectLabel)
     return {
-        "Hero Talent Eligibility",
+        "Hero Talent",
         {"Limit this " .. subjectLabel .. " to specific hero talent trees.", 1, 1, 1, true},
         " ",
         {"Hero talents come from selected specializations.", 1, 1, 1, true},
         " ",
         {"Leave empty to allow any hero talent for that spec.", 1, 1, 1, true},
     }
+end
+
+-- includePreCheckedNote: panel and group scopes ship with Pet Battle and
+-- Vehicle / Override UI already ticked; entry scopes start fully unchecked.
+local function BuildWhereToHideTooltip(subjectLabel, includePreCheckedNote)
+    local lines = {
+        "Where To Hide It",
+        {"Checked places hide this " .. subjectLabel .. " there. Leave everything unchecked to show it everywhere.", 1, 1, 1, true},
+        " ",
+        {"Rested Area means inns and cities, and can change while you play — no loading screen needed.", 1, 1, 1, true},
+        " ",
+        {"Open World also covers scenarios.", 1, 1, 1, true},
+    }
+    if includePreCheckedNote then
+        lines[#lines + 1] = " "
+        lines[#lines + 1] = {"Pet Battle and Vehicle / Override UI start checked because most players want cooldowns hidden there.", 1, 1, 1, true}
+    end
+    return lines
 end
 
 local function ResolveOwnerClassChoice(opts)
@@ -841,9 +882,25 @@ local function AddEligibilitySelectedRow(container, rowInfo, onRemove)
     container:AddChild(row)
 end
 
-local function FormatActiveEligibilityLabel(category, value)
+-- omitCategory: rows rendered directly under their own picker don't need the
+-- category prefix, the dropdown above them already names the category.
+local function FormatActiveEligibilityLabel(category, value, omitCategory)
+    if omitCategory then
+        return tostring(value or "")
+    end
     return "|cffffd100" .. tostring(category or "Filter") .. ":|r " .. tostring(value or "")
 end
+
+local function AddEligibilitySelectedRows(container, rows)
+    for _, row in ipairs(rows or {}) do
+        AddEligibilitySelectedRow(container, row, row.onRemove)
+    end
+end
+
+-- Forward declarations: the selected-row builders sit below the pickers, but
+-- the pickers render their own rows when opts.showSelectedRows is set.
+local AddActiveCharacterEligibilityRows
+local BuildActiveClassSpecEligibilityRows
 
 local function AddCharacterEligibilityControls(container, opts)
     local target = opts.target
@@ -858,31 +915,33 @@ local function AddCharacterEligibilityControls(container, opts)
     local choices = BuildCharacterChoices(target, inheritedMap, scopeClassChoice and scopeClassChoice.key or nil, opts.ownerCharKey)
     if #choices == 0 then return end
 
-    local heading = AceGUI:Create("Heading")
-    heading:SetText(opts.characterHeadingText or "Character Eligibility")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    container:AddChild(heading)
+    -- opts.omitHeading: the caller already opened a section around the pickers.
+    if not opts.omitHeading then
+        local heading = AceGUI:Create("Heading")
+        heading:SetText(opts.characterHeadingText or "Character Eligibility")
+        ColorHeading(heading)
+        heading:SetFullWidth(true)
+        container:AddChild(heading)
 
-    local collapsed = opts.characterCollapsedKey and CS.collapsedSections[opts.characterCollapsedKey]
-    if opts.characterCollapsedKey then
-        AttachCollapseButton(heading, collapsed, function()
-            CS.collapsedSections[opts.characterCollapsedKey] = not CS.collapsedSections[opts.characterCollapsedKey]
-            CooldownCompanion:RefreshConfigPanel()
-        end)
+        local collapsed = opts.characterCollapsedKey and CS.collapsedSections[opts.characterCollapsedKey]
+        if opts.characterCollapsedKey then
+            AttachCollapseButton(heading, collapsed, function()
+                CS.collapsedSections[opts.characterCollapsedKey] = not CS.collapsedSections[opts.characterCollapsedKey]
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+        end
+        if collapsed then return end
     end
-    if collapsed then return end
 
     if inheritedRestricted then
         local inheritedLabel = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(inheritedLabel)
-        inheritedLabel:SetText("|cff888888Parent eligibility limits which characters can load here.|r")
+        inheritedLabel:SetText("|cff888888Parent eligibility limits which characters can be picked here.|r")
         inheritedLabel:SetFullWidth(true)
         container:AddChild(inheritedLabel)
     end
 
     local localMap = target.loadConditions and target.loadConditions.characterAllowlist
-    local selected = {}
     local selectedByKey = {}
     local dropdownValues = {}
     local dropdownOrder = {}
@@ -894,13 +953,6 @@ local function AddCharacterEligibilityControls(container, opts)
         local outsideInherited = inheritedRestricted and not (inheritedMap and inheritedMap[key])
         if localSelected then
             selectedByKey[key] = true
-            selected[#selected + 1] = {
-                key = key,
-                label = outsideInherited and (choice.label .. " |cff888888(unavailable from parent)|r") or choice.label,
-                tooltipTitle = choice.tooltipTitle,
-                tooltipText = choice.tooltipText,
-                sortLabel = choice.sortLabel,
-            }
         elseif not outsideInherited then
             dropdownValues[key] = choice.label
             dropdownSortLabels[key] = choice.sortLabel or choice.label
@@ -929,7 +981,11 @@ local function AddCharacterEligibilityControls(container, opts)
     end
     container:AddChild(picker)
 
-    SortChoices(selected)
+    if opts.showSelectedRows then
+        local rows = {}
+        AddActiveCharacterEligibilityRows(rows, opts)
+        AddEligibilitySelectedRows(container, rows)
+    end
 end
 
 local function AddClassForSpecId(classChoices, classByKey, specId)
@@ -1245,11 +1301,18 @@ local function AddClassSpecEligibilityControls(container, opts)
     local classChoices = BuildClassChoices(target, inheritedClassMap)
     local localClassMap = target.loadConditions and target.loadConditions.classAllowlist
 
+    -- opts.showSelectedRows: each picker carries its own removable selections
+    -- instead of a separate summary section further down the tab.
+    local selectedClassRows, selectedSpecRows, selectedHeroRows
+    if opts.showSelectedRows then
+        selectedClassRows, selectedSpecRows, selectedHeroRows = BuildActiveClassSpecEligibilityRows(opts)
+    end
+
     if allowClassEligibility then
         if inheritedClassRestricted then
             local inheritedLabel = AceGUI:Create("Label")
             ST._ConfigureWrappedHelperLabel(inheritedLabel)
-            inheritedLabel:SetText("|cff888888Parent eligibility limits which classes can load here.|r")
+            inheritedLabel:SetText("|cff888888Parent eligibility limits which classes can be picked here.|r")
             inheritedLabel:SetFullWidth(true)
             container:AddChild(inheritedLabel)
         end
@@ -1285,6 +1348,7 @@ local function AddClassSpecEligibilityControls(container, opts)
             end)
         end
         container:AddChild(classPicker)
+        AddEligibilitySelectedRows(container, selectedClassRows)
     end
 
     local useSpecAllowlist = opts.useSpecAllowlist == true
@@ -1336,6 +1400,7 @@ local function AddClassSpecEligibilityControls(container, opts)
             end)
         end
         container:AddChild(specPicker)
+        AddEligibilitySelectedRows(container, selectedSpecRows)
     end
 
     local configID = opts.configID or (C_ClassTalents and C_ClassTalents.GetActiveConfigID and C_ClassTalents.GetActiveConfigID())
@@ -1385,6 +1450,7 @@ local function AddClassSpecEligibilityControls(container, opts)
         inheritedLabel:SetFullWidth(true)
         container:AddChild(inheritedLabel)
     end
+    AddEligibilitySelectedRows(container, selectedHeroRows)
 
 end
 
@@ -1396,9 +1462,10 @@ local function NotifyEligibilityChanged(opts, callbackName)
     if callback then callback() end
 end
 
-local function AddActiveCharacterEligibilityRows(rows, opts)
+function AddActiveCharacterEligibilityRows(rows, opts)
     local target = opts.target
     if type(target) ~= "table" then return end
+    local omitCategory = opts.showSelectedRows == true
 
     local inheritedMap, inheritedRestricted = GetInheritedAllowlist(opts.inheritedSources, "characterAllowlist", "character")
     local scopeClassChoice
@@ -1417,7 +1484,8 @@ local function AddActiveCharacterEligibilityRows(rows, opts)
                 key = key,
                 label = FormatActiveEligibilityLabel(
                     "Character",
-                    outsideInherited and (choice.label .. " |cff888888(unavailable from parent)|r") or choice.label
+                    outsideInherited and (choice.label .. " |cff888888(unavailable from parent)|r") or choice.label,
+                    omitCategory
                 ),
                 tooltipTitle = choice.tooltipTitle,
                 tooltipText = choice.tooltipText,
@@ -1436,9 +1504,13 @@ local function AddActiveCharacterEligibilityRows(rows, opts)
     end
 end
 
-local function AddActiveClassSpecEligibilityRows(rows, opts)
+-- Returns the class, specialization and hero talent rows as three lists so the
+-- pickers can each carry their own selections. A spec with hero talents chosen
+-- contributes hero rows instead of a spec row: the hero row already names it.
+function BuildActiveClassSpecEligibilityRows(opts)
     local target = opts.target
-    if type(target) ~= "table" then return end
+    if type(target) ~= "table" then return {}, {}, {} end
+    local omitCategory = opts.showSelectedRows == true
 
     local allowClassEligibility = opts.allowClassEligibility == true
     local scopeClassChoice
@@ -1496,7 +1568,7 @@ local function AddActiveClassSpecEligibilityRows(rows, opts)
                 end
                 if #selectedSpecs == 0 then
                     classRows[#classRows + 1] = {
-                        label = FormatActiveEligibilityLabel("Class", GetClassDisplayLabel(classChoice) or classChoice.label),
+                        label = FormatActiveEligibilityLabel("Class", GetClassDisplayLabel(classChoice) or classChoice.label, omitCategory),
                         sortLabel = classChoice.label or classKey,
                         onRemove = function()
                             SetAllowlistValue(target, "classAllowlist", "class", classKey, false)
@@ -1514,24 +1586,23 @@ local function AddActiveClassSpecEligibilityRows(rows, opts)
         end
     end
     SortChoices(classRows)
-    for _, row in ipairs(classRows) do
-        rows[#rows + 1] = row
-    end
 
     local specRows = {}
+    local heroRows = {}
     for _, specInfo in ipairs(specChoices) do
         local specId = specInfo.id
         if type(selectedSpecMap) == "table" and selectedSpecMap[specId] == true then
-            local heroRows = selectedHeroBySpec[specId]
-            if heroRows and #heroRows > 0 then
-                table.sort(heroRows, function(a, b)
+            local specHeroes = selectedHeroBySpec[specId]
+            if specHeroes and #specHeroes > 0 then
+                table.sort(specHeroes, function(a, b)
                     return tostring(a.label or a.id) < tostring(b.label or b.id)
                 end)
-                for _, heroInfo in ipairs(heroRows) do
-                    specRows[#specRows + 1] = {
+                for _, heroInfo in ipairs(specHeroes) do
+                    heroRows[#heroRows + 1] = {
                         label = FormatActiveEligibilityLabel(
                             "Hero Talent",
-                            FormatEligibilityHeroChoiceLabel(heroInfo, specInfo, allowClassEligibility)
+                            FormatEligibilityHeroChoiceLabel(heroInfo, specInfo, allowClassEligibility),
+                            omitCategory
                         ),
                         sortLabel = (specInfo.classLabel or "") .. (specInfo.name or "") .. (heroInfo.label or ""),
                         disabled = opts.disableHeroTalents == true,
@@ -1547,7 +1618,8 @@ local function AddActiveClassSpecEligibilityRows(rows, opts)
                     label = FormatActiveEligibilityLabel(
                         "Specialization",
                         FormatEligibilitySpecRowLabel(specInfo, allowClassEligibility)
-                            .. (outsideAllowed and " |cff888888(unavailable from parent)|r" or "")
+                            .. (outsideAllowed and " |cff888888(unavailable from parent)|r" or ""),
+                        omitCategory
                     ),
                     sortLabel = (specInfo.classLabel or "") .. (specInfo.name or specInfo.label or tostring(specId)),
                     onRemove = function()
@@ -1562,31 +1634,9 @@ local function AddActiveClassSpecEligibilityRows(rows, opts)
         end
     end
 
-    table.sort(specRows, function(a, b)
-        return tostring(a.sortLabel or a.label) < tostring(b.sortLabel or b.label)
-    end)
-    for _, row in ipairs(specRows) do
-        rows[#rows + 1] = row
-    end
-end
-
-local function AddActiveEligibilitySummary(container, opts)
-    opts = opts or {}
-    local rows = {}
-    AddActiveCharacterEligibilityRows(rows, opts)
-    AddActiveClassSpecEligibilityRows(rows, opts)
-    if #rows == 0 then return false end
-
-    local heading = AceGUI:Create("Heading")
-    heading:SetText("Active Filters")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    container:AddChild(heading)
-
-    for _, row in ipairs(rows) do
-        AddEligibilitySelectedRow(container, row, row.onRemove)
-    end
-    return true
+    SortChoices(specRows)
+    SortChoices(heroRows)
+    return classRows, specRows, heroRows
 end
 
 ------------------------------------------------------------------------
@@ -1908,7 +1958,7 @@ end
 ------------------------------------------------------------------------
 -- PER-BUTTON VISIBILITY SETTINGS
 ------------------------------------------------------------------------
--- insertBeforeTalents: optional callback run between the Visibility Rules and
+-- insertBeforeTalents: optional callback run between the Show Conditions and
 -- Talent Conditions sections. Talent Conditions is the last section of the
 -- entry Settings tab by owner ruling, so everything the caller wants above it
 -- goes through here rather than after the call.
@@ -2082,7 +2132,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     local visKey = isBatch
         and (CS.selectedGroup .. "_batch_visibility")
         or  (CS.selectedGroup .. "_" .. CS.selectedButton .. "_visibility")
-    local heading, visCollapsed = BuildCollapsibleSection(scroll, "Visibility Rules", visKey)
+    local heading, visCollapsed = BuildCollapsibleSection(scroll, "Show Conditions", visKey)
 
 
     if not visCollapsed then
@@ -2534,7 +2584,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     end
 
     ------------------------------------------------------------------------
-    -- TALENT CONDITIONS (independent section, not nested under Visibility Rules)
+    -- TALENT CONDITIONS (independent section, not nested under Show Conditions)
     ------------------------------------------------------------------------
 
     local talentKey = isBatch
@@ -2747,7 +2797,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
 end
 
 ------------------------------------------------------------------------
--- LOAD CONDITIONS TAB
+-- VISIBILITY TAB (internal tab key stays "loadconditions")
 ------------------------------------------------------------------------
 
 local function BuildLoadConditionsTab(container)
@@ -2794,57 +2844,22 @@ local function BuildLoadConditionsTab(container)
         CooldownCompanion:RefreshConfigPanel()
     end
 
-    AddScopedLoadConditionToggles(container, {
-        target = group,
-        defaults = CooldownCompanion:GetDefaultLoadConditions(),
-        inheritedSources = inheritedSources,
-        headingText = "Hide This Panel In",
-        headingTextWhenInherited = "Also Hide This Panel In",
-        inheritedCollapsedKey = "loadconditions_panel_inherited",
-        localCollapsedKey = "loadconditions_panel_local",
-        twoColumn = true,
-        onChanged = RefreshPanelLoadConditions,
-    })
+    -- The tab reads as two halves under an optional inherited summary: who the
+    -- panel is for, then where it stays hidden.
+    AddInheritedLoadSummary(container, inheritedSources, "loadconditions_panel_inherited")
 
-    AddActiveEligibilitySummary(container, {
-        target = group,
-        inheritedSources = inheritedSources,
-        eligibilitySubjectLabel = "panel",
-        allowClassEligibility = scopeIsGlobal,
-        ownerCharKey = ownerCharKey,
-        useSpecAllowlist = inheritedSpecFilter,
-        allowedSpecRestricted = inheritedSpecFilter,
-        allowedSpecMap = inheritedSpecs,
-        effectiveSpecs = effectiveSpecs,
-        choiceSpecMap = inheritedSpecs,
-        heroTalentsSource = effectiveHeroTalents,
-        useHeroTalentsSource = inheritedHeroFilter,
-        disableHeroTalents = inheritedHeroFilter,
-        onChanged = RefreshPanelLoadConditions,
-    })
+    local _, whoCollapsed = BuildCollapsibleSection(container, "Who Can Use This", "loadconditions_panel_who")
 
-    AddCharacterEligibilityControls(container, {
-        target = group,
-        inheritedSources = inheritedSources,
-        eligibilitySubjectLabel = "panel",
-        allowClassEligibility = scopeIsGlobal,
-        ownerCharKey = ownerCharKey,
-        characterCollapsedKey = "loadconditions_panel_character",
-        onChanged = RefreshPanelLoadConditions,
-    })
-
-    local specHeading, specCollapsed = BuildCollapsibleSection(container, "Class & Specialization Eligibility", "loadconditions_spec")
-
-    if not specCollapsed then
+    if not whoCollapsed then
         if inheritedSpecFilter or inheritedHeroFilter then
             local inheritedLabel = AceGUI:Create("Label")
             ST._ConfigureWrappedHelperLabel(inheritedLabel)
-            inheritedLabel:SetText("|cff888888Some filters inherited from group settings.|r")
+            inheritedLabel:SetText("|cff888888Some rules are inherited from group settings.|r")
             inheritedLabel:SetFullWidth(true)
             container:AddChild(inheritedLabel)
         end
 
-        AddClassSpecEligibilityControls(container, {
+        local eligibilityOpts = {
             target = group,
             inheritedSources = inheritedSources,
             eligibilitySubjectLabel = "panel",
@@ -2858,9 +2873,27 @@ local function BuildLoadConditionsTab(container)
             heroTalentsSource = effectiveHeroTalents,
             useHeroTalentsSource = inheritedHeroFilter,
             disableHeroTalents = inheritedHeroFilter,
+            omitHeading = true,
+            showSelectedRows = true,
             onChanged = RefreshPanelLoadConditions,
-        })
-    end -- not specCollapsed
+        }
+
+        AddCharacterEligibilityControls(container, eligibilityOpts)
+        AddClassSpecEligibilityControls(container, eligibilityOpts)
+    end -- not whoCollapsed
+
+    AddScopedLoadConditionToggles(container, {
+        target = group,
+        defaults = CooldownCompanion:GetDefaultLoadConditions(),
+        inheritedSources = inheritedSources,
+        skipInheritedSummary = true,
+        headingText = "Where To Hide It",
+        localCollapsedKey = "loadconditions_panel_local",
+        twoColumn = true,
+        infoTooltipLines = BuildWhereToHideTooltip("panel", true),
+        infoButtons = tabInfoButtons,
+        onChanged = RefreshPanelLoadConditions,
+    })
 end
 
 local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
@@ -2873,12 +2906,13 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
         target = buttonData,
         defaults = CooldownCompanion:GetLocalLoadConditionDefaults(),
         inheritedSources = CooldownCompanion:GetLoadConditionSourcesForGroup(group),
-        headingText = "Hide This Entry In",
-        headingTextWhenInherited = "Also Hide This Entry In",
+        headingText = "Where To Hide It",
         inheritedCollapsedKey = "loadconditions_entry_inherited",
         localCollapsedKey = "loadconditions_entry_local",
         preserveMissing = true,
         twoColumn = true,
+        infoTooltipLines = BuildWhereToHideTooltip("entry", false),
+        infoButtons = infoButtons,
         onChanged = function()
             if buttonData.loadConditions and not next(buttonData.loadConditions) then
                 buttonData.loadConditions = nil
@@ -2890,7 +2924,7 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
 
     if CooldownCompanion:HasLocalLoadConditions(buttonData) then
         local clearBtn = AceGUI:Create("Button")
-        clearBtn:SetText("Clear Entry Load Conditions")
+        clearBtn:SetText("Clear Entry Visibility Rules")
         clearBtn:SetFullWidth(true)
         clearBtn:SetCallback("OnClick", function()
             buttonData.loadConditions = nil
@@ -2908,7 +2942,7 @@ ST._BuildVisibilitySettings = BuildVisibilitySettings
 ST._BuildLoadConditionsTab = BuildLoadConditionsTab
 ST._BuildEntryLoadConditionsTab = BuildEntryLoadConditionsTab
 ST._AddScopedLoadConditionToggles = AddScopedLoadConditionToggles
-ST._AddActiveEligibilitySummary = AddActiveEligibilitySummary
+ST._BuildWhereToHideTooltip = BuildWhereToHideTooltip
 ST._AddCharacterEligibilityControls = AddCharacterEligibilityControls
 ST._AddClassSpecEligibilityControls = AddClassSpecEligibilityControls
 ST._GetConditionDisplayName = GetConditionDisplayName

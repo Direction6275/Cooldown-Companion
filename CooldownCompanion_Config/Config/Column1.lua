@@ -601,7 +601,7 @@ local function ShowPanelContextMenu(panelId, containerId)
             UIDropDownMenu_AddButton(info, level)
 
             info = UIDropDownMenu_CreateInfo()
-            info.text = "Load Conditions"
+            info.text = "Visibility"
             info.notCheckable = true
             info.func = function()
                 CloseDropDownMenus()
@@ -942,7 +942,7 @@ local function ShowContainerContextMenu(db, containerId, container)
             end
 
             info = UIDropDownMenu_CreateInfo()
-            info.text = "Spec Filter"
+            info.text = "Visibility"
             info.notCheckable = true
             info.func = function()
                 CloseDropDownMenus()

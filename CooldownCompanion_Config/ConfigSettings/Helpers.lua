@@ -1037,7 +1037,7 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
         {"Click Save to store this panel's settings as a preset.", 1, 1, 1},
         " ",
         {"Presets save appearance, indicator, and text settings.", 1, 1, 1},
-        {"Load Conditions (including Spec/Hero filters) are not saved or changed.", 1, 1, 1},
+        {"Visibility rules (including Spec/Hero filters) are not saved or changed.", 1, 1, 1},
         {"Presets do not include Columns 1, 2, or 3.", 1, 1, 1},
         {"Anchors are not saved or changed.", 1, 1, 1},
         " ",

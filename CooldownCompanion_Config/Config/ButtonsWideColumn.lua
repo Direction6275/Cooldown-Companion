@@ -520,7 +520,7 @@ local function UpdateEditingHeader(col3)
                 local badge = AcquireEditingHeaderBadge(headerLine, shown)
                 badge.icon:SetAtlas(desc.atlas, false)
                 badge._cdcLabel = (desc.key == "warn" and badgeStatus.loadBlocked)
-                    and "Hidden by load conditions" or desc.label
+                    and "Hidden by visibility rules" or desc.label
                 badge:ClearAllPoints()
                 if rightAnchor then
                     badge:SetPoint("RIGHT", rightAnchor, "LEFT", -EDIT_CONTEXT_BADGE_GAP, 0)

@@ -439,11 +439,14 @@ local function BuildCustomBarLoadConditionsTab(container, cab, infoButtons)
     container:AddChild(specsHeading)
     AddCustomBarSpecFilterControls(container, settings, cab, currentSpecID)
 
+    -- ButtonConditions.lua loads after this file, so both helpers are read at
+    -- call time rather than captured at file scope.
     local addScopedLoadConditionToggles = ST._AddScopedLoadConditionToggles
+    local buildWhereToHideTooltip = ST._BuildWhereToHideTooltip
     if type(addScopedLoadConditionToggles) ~= "function" then
         local unavailable = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(unavailable)
-        unavailable:SetText("|cff888888Load condition controls are not available yet.|r")
+        unavailable:SetText("|cff888888Visibility controls are not available yet.|r")
         unavailable:SetFullWidth(true)
         container:AddChild(unavailable)
         return
@@ -453,11 +456,14 @@ local function BuildCustomBarLoadConditionsTab(container, cab, infoButtons)
         target = cab,
         defaults = CooldownCompanion:GetLocalLoadConditionDefaults(),
         inheritedSources = {},
-        headingText = "Hide This Entry In",
-        headingTextWhenInherited = "Also Hide This Entry In",
+        headingText = "Where To Hide It",
         inheritedCollapsedKey = "loadconditions_custombar_inherited",
         localCollapsedKey = "loadconditions_custombar_local",
         preserveMissing = true,
+        twoColumn = true,
+        infoTooltipLines = type(buildWhereToHideTooltip) == "function"
+            and buildWhereToHideTooltip("bar", false) or nil,
+        infoButtons = infoButtons,
         onChanged = function()
             if cab.loadConditions and not next(cab.loadConditions) then
                 cab.loadConditions = nil
@@ -470,7 +476,7 @@ local function BuildCustomBarLoadConditionsTab(container, cab, infoButtons)
 
     if CooldownCompanion:HasLocalLoadConditions(cab) then
         local clearBtn = AceGUI:Create("Button")
-        clearBtn:SetText("Clear Entry Load Conditions")
+        clearBtn:SetText("Clear Bar Visibility Rules")
         clearBtn:SetFullWidth(true)
         clearBtn:SetCallback("OnClick", function()
             cab.loadConditions = nil

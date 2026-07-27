@@ -1534,7 +1534,7 @@ local function CreateConfigPanel()
         GameTooltip:AddLine("Left-click to select/deselect.", 1, 1, 1, true)
         GameTooltip:AddLine("Ctrl+Left-click to multi-select.", 1, 1, 1, true)
         GameTooltip:AddLine("Middle-click to toggle lock/unlock.", 1, 1, 1, true)
-        GameTooltip:AddLine("Shift+Left-click to set spec filter.", 1, 1, 1, true)
+        GameTooltip:AddLine("Shift+Left-click to open Visibility.", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Panel Rows", 1, 0.82, 0)
         GameTooltip:AddLine("Left-click to select; Ctrl+Left-click to multi-select.", 1, 1, 1, true)
@@ -1715,7 +1715,7 @@ local function CreateConfigPanel()
     bsTabGroup:SetTabs({
         { value = "settings",  text = "Settings" },
         { value = "overrides", text = "Overrides" },
-        { value = "loadconditions", text = "Load Conditions" },
+        { value = "loadconditions", text = "Visibility" },
     })
     bsTabGroup:SetLayout("Fill")
 
@@ -1784,7 +1784,7 @@ local function CreateConfigPanel()
                         ST._BuildEquipItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
                     end
                     -- Talent Conditions is always the last section (owner ruling),
-                    -- so everything below Visibility Rules is emitted through the
+                    -- so everything below Show Conditions is emitted through the
                     -- visibility builder's mid-point hook rather than after it.
                     ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons, nil, function()
                         ST._BuildCustomKeybindSection(scroll, buttonData)

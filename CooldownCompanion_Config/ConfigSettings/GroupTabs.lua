@@ -29,7 +29,7 @@ local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 local ApplyIconTexCoord = ST._ApplyIconTexCoord
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 local AddScopedLoadConditionToggles = ST._AddScopedLoadConditionToggles
-local AddActiveEligibilitySummary = ST._AddActiveEligibilitySummary
+local BuildWhereToHideTooltip = ST._BuildWhereToHideTooltip
 local AddCharacterEligibilityControls = ST._AddCharacterEligibilityControls
 local AddClassSpecEligibilityControls = ST._AddClassSpecEligibilityControls
 local BuildEligibilityBadgeMap = ST._BuildEligibilityBadgeMap
@@ -3939,48 +3939,25 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
         CooldownCompanion:RefreshConfigPanel()
     end
 
-    AddScopedLoadConditionToggles(scroll, {
-        target = container,
-        defaults = CooldownCompanion:GetDefaultLoadConditions(),
-        inheritedSources = inheritedSources,
-        headingText = "Hide This Group In",
-        headingTextWhenInherited = "Also Hide This Group In",
-        inheritedCollapsedKey = "container_loadconditions_inherited",
-        localCollapsedKey = "container_loadconditions_local",
-        onChanged = RefreshContainerLoadConditions,
-    })
+    -- Two halves, same shape as the panel tab: who the group is for, then
+    -- where it stays hidden. Groups sit at the top of the inheritance chain,
+    -- so there is never an inherited summary to lead with.
+    local _, whoCollapsed = BuildCollapsibleSection(scroll, "Who Can Use This", "container_loadconditions_who")
 
-    AddActiveEligibilitySummary(scroll, {
-        target = container,
-        inheritedSources = inheritedSources,
-        eligibilitySubjectLabel = "group",
-        allowClassEligibility = container.isGlobal == true,
-        ownerCharKey = container.createdBy,
-        onChanged = RefreshContainerLoadConditions,
-    })
-
-    AddCharacterEligibilityControls(scroll, {
-        target = container,
-        inheritedSources = inheritedSources,
-        eligibilitySubjectLabel = "group",
-        allowClassEligibility = container.isGlobal == true,
-        ownerCharKey = container.createdBy,
-        characterCollapsedKey = "container_loadconditions_character",
-        onChanged = RefreshContainerLoadConditions,
-    })
-
-    -- Class/spec eligibility section
-    local specHeading, specCollapsed = BuildCollapsibleSection(scroll, "Class & Specialization Eligibility", "container_loadconditions_spec")
-
-    if not specCollapsed then
-        AddClassSpecEligibilityControls(scroll, {
+    if not whoCollapsed then
+        local eligibilityOpts = {
             target = container,
             inheritedSources = inheritedSources,
             eligibilitySubjectLabel = "group",
             allowClassEligibility = container.isGlobal == true,
             ownerCharKey = container.createdBy,
+            omitHeading = true,
+            showSelectedRows = true,
             onChanged = RefreshContainerLoadConditions,
-        })
+        }
+
+        AddCharacterEligibilityControls(scroll, eligibilityOpts)
+        AddClassSpecEligibilityControls(scroll, eligibilityOpts)
 
         local hasOwnSpecs = (type(container.specs) == "table" and next(container.specs) ~= nil)
             or (type(container.loadConditions) == "table"
@@ -4002,7 +3979,20 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
             end)
             scroll:AddChild(clearBtn)
         end
-    end -- not specCollapsed
+    end -- not whoCollapsed
+
+    AddScopedLoadConditionToggles(scroll, {
+        target = container,
+        defaults = CooldownCompanion:GetDefaultLoadConditions(),
+        inheritedSources = inheritedSources,
+        skipInheritedSummary = true,
+        headingText = "Where To Hide It",
+        localCollapsedKey = "container_loadconditions_local",
+        twoColumn = true,
+        infoTooltipLines = BuildWhereToHideTooltip("group", true),
+        infoButtons = tabInfoButtons,
+        onChanged = RefreshContainerLoadConditions,
+    })
 end
 
 -- Expose for Config.lua

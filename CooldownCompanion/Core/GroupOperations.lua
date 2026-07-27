@@ -3038,25 +3038,25 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     end
 end
 
--- Fully unload a group: save/clear button OnUpdate scripts, remove from
--- Masque, clear runtime state, hide the frame, and move it to a dormant
--- cache for reuse. Config data (db.profile.groups) is preserved so the
--- group can reload when load conditions change. Buttons remain attached
--- to the frame so visibility-only transitions can reuse them without
--- creating new C-side frame objects.
+-- Fully unload a group: save/clear button OnUpdate scripts, clear runtime
+-- state, hide the frame, and move it to a dormant cache for reuse. Config
+-- data (db.profile.groups) is preserved so the group can reload when load
+-- conditions change. Buttons remain attached to the frame so visibility-only
+-- transitions can reuse them without creating new C-side frame objects, and
+-- Masque registration is left intact for the same reason -- it is torn down
+-- in DiscardDormantFrame, the true-teardown path.
 function CooldownCompanion:UnloadGroup(groupId)
     local frame = self.groupFrames[groupId]
     if not frame then return end
     UnregisterKeyPressHighlightFrame(frame)
 
-    -- Save and clear button OnUpdate scripts, remove from Masque.
+    -- Save and clear button OnUpdate scripts.
     -- Buttons stay attached to the frame for potential reuse.
     if frame.buttons then
         for _, button in ipairs(frame.buttons) do
             if self.HideAuraTextureVisual then
                 self:HideAuraTextureVisual(button)
             end
-            self:RemoveButtonFromMasque(groupId, button)
             local onUpdate = button:GetScript("OnUpdate")
             if onUpdate then
                 button._savedOnUpdate = onUpdate
@@ -3067,9 +3067,6 @@ function CooldownCompanion:UnloadGroup(groupId)
             ST.EntryRuntime.ReleaseTrackedAuraScratch(button)
         end
     end
-
-    -- Delete Masque group
-    self:DeleteMasqueGroup(groupId)
 
     -- Clear alpha fade state
     if self.alphaState then
@@ -3104,9 +3101,9 @@ function CooldownCompanion:UnloadGroup(groupId)
     end
 end
 
--- Recover a dormant frame: restore it to groupFrames, re-enable button
--- OnUpdate scripts, and recreate Masque group. Used by visibility-only
--- transitions to avoid recreating buttons.
+-- Recover a dormant frame: restore it to groupFrames and re-enable button
+-- OnUpdate scripts. Used by visibility-only transitions to avoid recreating
+-- buttons.
 function CooldownCompanion:RecoverDormantFrame(groupId)
     if not self._dormantFrames then return nil end
     local frame = self._dormantFrames[groupId]
@@ -3126,13 +3123,23 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
     end
     RefreshKeyPressHighlightFrame(frame)
 
-    -- Recreate Masque group and re-add buttons
+    -- Masque registration survives dormancy, so reconcile it in both directions:
+    -- rebuild it when the group should be skinned but isn't, and release it when
+    -- the group stopped being skinned while the frame was parked. The second case
+    -- matters because writers that bypass ToggleGroupMasque (preset/style copies,
+    -- combat-deferred edits) can clear masqueEnabled on a dormant group, and only
+    -- RemoveButtonFromMasque restores CC's native borders.
     local group = self.db.profile.groups[groupId]
-    if group and group.masqueEnabled and self.Masque then
+    if group and group.masqueEnabled and self.Masque and not self.MasqueGroups[groupId] then
         self:CreateMasqueGroup(groupId)
         for _, button in ipairs(frame.buttons) do
             self:AddButtonToMasque(groupId, button)
         end
+    elseif self.Masque and self.MasqueGroups[groupId] and not (group and group.masqueEnabled) then
+        for _, button in ipairs(frame.buttons) do
+            self:RemoveButtonFromMasque(groupId, button)
+        end
+        self:DeleteMasqueGroup(groupId)
     end
 
     -- Restore alpha sync if this frame inherits alpha from a parent frame.
@@ -3149,19 +3156,25 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
     return frame
 end
 
--- Discard a dormant frame permanently (used by delete operations).
+-- Discard a dormant frame permanently (used by delete operations). This is the
+-- true-teardown path, so the Masque group is released here rather than when the
+-- frame is merely parked.
 function CooldownCompanion:DiscardDormantFrame(groupId)
-    if self._dormantFrames then
-        local frame = self._dormantFrames[groupId]
-        UnregisterKeyPressHighlightFrame(frame)
-        if frame and frame.buttons and self.ReleaseAuraTextureVisual then
-            for _, button in ipairs(frame.buttons) do
+    local frame = self._dormantFrames and self._dormantFrames[groupId] or nil
+    UnregisterKeyPressHighlightFrame(frame)
+    if frame and frame.buttons then
+        for _, button in ipairs(frame.buttons) do
+            self:RemoveButtonFromMasque(groupId, button)
+            if self.ReleaseAuraTextureVisual then
                 self:ReleaseAuraTextureVisual(button)
             end
         end
-        if frame and self.ReleaseGroupButtonPools then
-            self:ReleaseGroupButtonPools(frame)
-        end
+    end
+    self:DeleteMasqueGroup(groupId)
+    if frame and self.ReleaseGroupButtonPools then
+        self:ReleaseGroupButtonPools(frame)
+    end
+    if self._dormantFrames then
         self._dormantFrames[groupId] = nil
     end
 end

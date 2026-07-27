@@ -517,7 +517,7 @@ local function GetCustomBarEntryTabs(entry)
         tabs[#tabs + 1] = { value = "aura", text = "Aura" }
     end
     tabs[#tabs + 1] = { value = "soundalerts", text = "Sound Alerts" }
-    tabs[#tabs + 1] = { value = "loadconditions", text = "Load Conditions" }
+    tabs[#tabs + 1] = { value = "loadconditions", text = "Visibility" }
     return AddTabAccent(tabs)
 end
 
@@ -859,6 +859,10 @@ local function ShowCustomBarDetail(col3, selectedEntry)
             widget._cdcScroll = scroll
             widget._cdcScrollKey = GetCustomBarDetailScrollKey()
             ST._BuildCustomAuraBarPanel(scroll, CS.selectedCustomBarId, CS.customBarSettingsTab)
+            -- Re-run the layout with final widths: nested Flow rows resize
+            -- themselves after their children land, and that height never
+            -- reaches the scroll frame until something relayouts it.
+            scroll:DoLayout()
         end)
         ST._UnifiedRowInstallStrip(tabGroup, "detail")
         col3._customBarEntryTabGroup = tabGroup
