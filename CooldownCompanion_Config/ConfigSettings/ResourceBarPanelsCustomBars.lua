@@ -1042,7 +1042,16 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
             -- ---- Colors / Texts sections ----
             if cab.spellID then
                 local cabIdx = capturedIdx
-                local cabApplyBars = function() CooldownCompanion:ApplyResourceBars() end
+                -- Commit path: apply to the live bars AND repaint the config
+                -- canvas, so a confirmed color shows on both surfaces at once.
+                local cabApplyBars = function()
+                    CooldownCompanion:ApplyResourceBars()
+                    RefreshLayoutOrderPreview()
+                end
+                -- Drag path: uncommitted edits belong to the config canvas
+                -- only — the live display keeps its committed style until the
+                -- picker closes.
+                local cabPreviewOnly = RefreshLayoutOrderPreview
                 local isAuraTracked = (not isSpellCustomBar) or cab.auraTracking == true
 
                 local colorHeading = AceGUI:Create("Heading")
@@ -1056,19 +1065,19 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                 -- Same barColor key either way; label only.
                 AddColorPicker(container, customBars[cabIdx], "barColor",
                     isSpellCustomBar and "Bar Color" or "Aura Bar Color", {0.5, 0.5, 1}, false,
-                    cabApplyBars, function() CooldownCompanion:RecolorCustomAuraBar(customBars[cabIdx]) end)
+                    cabApplyBars, cabPreviewOnly, true)
 
                 if isSpellCustomBar then
                     AddColorPicker(container, customBars[cabIdx], "barCooldownColor", "Bar Cooldown Color", {0.6, 0.13, 0.18, 1}, true,
-                        cabApplyBars, cabApplyBars)
+                        cabApplyBars, cabPreviewOnly, true)
                     AddColorPicker(container, customBars[cabIdx], "barChargeColor", "Bar Recharging Color", {1.0, 0.82, 0.0, 1}, true,
-                        cabApplyBars, cabApplyBars)
+                        cabApplyBars, cabPreviewOnly, true)
                     if isAuraTracked then
                         -- The kit's aura-drain fill while the tracked aura
                         -- runs (pure aura bars use Bar Color — the fill IS
                         -- the bar there).
                         AddColorPicker(container, customBars[cabIdx], "barAuraColor", "Aura Bar Color", {0.2, 1.0, 0.2, 1}, true,
-                            cabApplyBars, cabApplyBars)
+                            cabApplyBars, cabPreviewOnly, true)
                     end
                 end
 
@@ -1148,7 +1157,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         end)
                         panel:AddChild(outlineDrop)
 
-                        AddColorPicker(panel, customBars[cabIdx], "durationTextFontColor", "Duration Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, cabApplyBars)
+                        AddColorPicker(panel, customBars[cabIdx], "durationTextFontColor", "Duration Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, cabApplyBars, cabPreviewOnly, true)
 
                         AddDurationFormatDropdown(panel, customBars[cabIdx], cabApplyBars)
                     end
@@ -1194,7 +1203,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         end)
                         panel:AddChild(outlineDrop)
 
-                        AddColorPicker(panel, customBars[cabIdx], "stackTextFontColor", "Stack Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, cabApplyBars)
+                        AddColorPicker(panel, customBars[cabIdx], "stackTextFontColor", "Stack Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, cabApplyBars, cabPreviewOnly, true)
                     end
 
                     AddAdvancedToggle(stackTextCb, "rbCabStackText_" .. capturedKey, rbCabTextAdvBtns, showStack, {

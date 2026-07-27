@@ -1246,15 +1246,68 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
     return btn
 end
 
+-- The modern ColorPickerFrame never delivers AceGUI's OnValueConfirmed:
+-- the OK button runs swatchFunc/opacityFunc BEFORE Hide(), so the widget's
+-- "picker still open" test routes them to OnValueChanged — and its no-change
+-- guard swallows them anyway, because the last drag tick already carried the
+-- same values. Commit is therefore detected by picker CLOSE. Every close
+-- path (OK, Cancel, Esc, any click outside the picker — including on
+-- another swatch, which cancels via GLOBAL_MOUSE_DOWN before its own click
+-- lands) runs through OnHide, and the cancel paths restore the original
+-- color into the bound table via OnValueChanged before hiding — so flushing
+-- the armed commit on hide applies the right value on every path.
+local pendingColorCommit
+local colorCommitHookInstalled
+local function ArmColorCommitOnClose(onConfirmedFn)
+    if not colorCommitHookInstalled then
+        if not ColorPickerFrame then return end
+        colorCommitHookInstalled = true
+        ColorPickerFrame:HookScript("OnHide", function()
+            local commit = pendingColorCommit
+            pendingColorCommit = nil
+            if commit then commit() end
+        end)
+    end
+    pendingColorCommit = onConfirmedFn
+end
+
 -- Helper: wire up OnValueChanged and OnValueConfirmed for a ColorPicker widget.
--- Stores {r,g,b,a} into tbl[key]. onConfirmedFn fires on release; onChangeFn
--- (optional) fires during drag for live preview.
-local function SetupColorCallbacks(widget, tbl, key, onConfirmedFn, onChangeFn)
+-- Stores {r,g,b,a} into tbl[key]. onConfirmedFn fires when the color picker
+-- closes (via the commit-on-close bridge above); onChangeFn (optional) fires
+-- during drag for live preview.
+-- With deferCommit, the drag value never rests in the bound table: it is
+-- swapped in only for the duration of the onChangeFn call and committed for
+-- real when the picker closes. Use it when a live renderer re-reads the same
+-- table every tick and must keep showing the committed color during a drag.
+local function SetupColorCallbacks(widget, tbl, key, onConfirmedFn, onChangeFn, deferCommit)
     widget:SetCallback("OnValueChanged", function(_, _, r, g, b, a)
-        tbl[key] = {r, g, b, a}
-        if onChangeFn then onChangeFn() end
+        if deferCommit then
+            -- Deferred mode: the live renderers re-read this table every tick,
+            -- so an uncommitted drag value may only exist in it for the moment
+            -- the config canvas rebuild reads it. Arm the close commit FIRST so
+            -- a failed refresh still converges when the picker closes — and arm
+            -- it unconditionally, because this closure is the only writer of
+            -- tbl[key] in deferred mode; without it the edit would be silently
+            -- discarded when no confirm callback is supplied.
+            local pending = {r, g, b, a}
+            ArmColorCommitOnClose(function()
+                tbl[key] = pending
+                if onConfirmedFn then onConfirmedFn() end
+            end)
+            local committed = tbl[key]
+            tbl[key] = pending
+            if onChangeFn then onChangeFn() end
+            tbl[key] = committed
+        else
+            tbl[key] = {r, g, b, a}
+            if onConfirmedFn then ArmColorCommitOnClose(onConfirmedFn) end
+            if onChangeFn then onChangeFn() end
+        end
     end)
+    -- Kept wired so nothing double-fires if a future Ace3 update restores
+    -- OnValueConfirmed: disarm the pending close commit before running it here.
     widget:SetCallback("OnValueConfirmed", function(_, _, r, g, b, a)
+        pendingColorCommit = nil
         tbl[key] = {r, g, b, a}
         if onConfirmedFn then onConfirmedFn() end
     end)
@@ -1267,15 +1320,18 @@ end
 ------------------------------------------------------------------------
 
 -- Create a ColorPicker, configure it, wire callbacks, add to container.
--- onConfirmFn fires on mouse release; onChangeFn (optional) fires during drag.
-local function AddColorPicker(container, tbl, key, label, default, hasAlpha, onConfirmFn, onChangeFn)
+-- onConfirmFn fires when the color picker closes; onChangeFn (optional)
+-- fires during drag.
+-- deferCommit (optional) keeps the drag value out of the bound table except
+-- while onChangeFn runs — see SetupColorCallbacks.
+local function AddColorPicker(container, tbl, key, label, default, hasAlpha, onConfirmFn, onChangeFn, deferCommit)
     local picker = AceGUI:Create("ColorPicker")
     picker:SetLabel(label)
     picker:SetHasAlpha(hasAlpha)
     local c = tbl[key] or default
     picker:SetColor(c[1], c[2], c[3], c[4])
     picker:SetFullWidth(true)
-    SetupColorCallbacks(picker, tbl, key, onConfirmFn, onChangeFn)
+    SetupColorCallbacks(picker, tbl, key, onConfirmFn, onChangeFn, deferCommit)
     container:AddChild(picker)
     return picker
 end

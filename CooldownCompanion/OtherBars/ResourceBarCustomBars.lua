@@ -510,21 +510,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
     RB.PrepareCustomAuraBar = PrepareCustomAuraBar
 
-    ------------------------------------------------------------------------
-    -- Live recolor for custom aura bars (called from config color picker)
-    ------------------------------------------------------------------------
-
-    function CooldownCompanion:RecolorCustomAuraBar(cabConfig)
-        for _, barInfo in ipairs(resourceBarFrames) do
-            if barInfo.cabConfig == cabConfig then
-                StyleCustomAuraBar(barInfo, cabConfig)
-                break
-            end
-        end
-    end
-
-
-
     return {
         UpdateCustomAuraBar = UpdateCustomAuraBar,
         FinalizeAppliedBarVisibility = FinalizeAppliedBarVisibility,
