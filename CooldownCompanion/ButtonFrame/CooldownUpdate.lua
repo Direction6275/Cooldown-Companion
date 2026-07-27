@@ -276,7 +276,8 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
             button._auraTextPreviewFS = fs
         end
         if CooldownCompanion.ApplyFontStyle then
-            CooldownCompanion.ApplyFontStyle(fs, style, "auraText")
+            CooldownCompanion.ApplyFontStyle(fs, style, "auraText", nil,
+                CooldownCompanion.DEFAULT_AURA_TEXT_COLOR)
         end
         local anchor, xOff, yOff = CooldownCompanion:GetAuraDurationTextPlacement(style)
         fs:ClearAllPoints()

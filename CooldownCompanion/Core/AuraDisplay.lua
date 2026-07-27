@@ -769,7 +769,7 @@ end
 -- forced white at bind so the curve's colors render unmodulated.
 local function BuildPandemicColorCurve(threshold, style)
     local p = style.pandemicMarkerColor or { 1, 0.5, 0, 1 }
-    local n = style.auraTextFontColor or { 1, 1, 1, 1 }
+    local n = style.auraTextFontColor or CooldownCompanion.DEFAULT_AURA_TEXT_COLOR
     local curve = C_CurveUtil.CreateColorCurve()
     curve:AddPoint(threshold, CreateColor(p[1] or 1, p[2] or 0.5, p[3] or 0, p[4] or 1))
     curve:AddPoint(threshold + 0.1, CreateColor(n[1] or 1, n[2] or 1, n[3] or 1, n[4] or 1))
@@ -902,7 +902,8 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- enables separateTextPositions, which switches it to the aura keys.
     local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
     if ApplyFontStyle then
-        ApplyFontStyle(kit.durationText, style, "auraText")
+        ApplyFontStyle(kit.durationText, style, "auraText", nil,
+            CooldownCompanion.DEFAULT_AURA_TEXT_COLOR)
         ApplyFontStyle(kit.stackText, style, "auraStack")
     end
     kit.durationText:ClearAllPoints()

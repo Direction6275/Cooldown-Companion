@@ -2014,7 +2014,8 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
             local startTime, _, remaining = GetConditionalPreviewTiming(state, now)
             if startTime then
                 local fs = EnsureSlotAuraText(slot)
-                CooldownCompanion.ApplyFontStyle(fs, style, "auraText")
+                CooldownCompanion.ApplyFontStyle(fs, style, "auraText", nil,
+                    CooldownCompanion.DEFAULT_AURA_TEXT_COLOR)
                 local anchor, xOff, yOff = CooldownCompanion:GetAuraDurationTextPlacement(style)
                 fs:ClearAllPoints()
                 fs:SetPoint(anchor, slot, anchor, xOff, yOff)
@@ -2072,9 +2073,6 @@ end
 -- per BarMode.lua's recipes (UpdateBarFill drain/fill + time text,
 -- UpdateBarDisplay colors and fill effects).
 ------------------------------------------------------------------------
--- BarMode.lua DEFAULT_AURA_TEXT_COLOR
-local DEFAULT_AURA_TEXT_COLOR = { 0, 0.925, 1, 1 }
-
 local function EnsureBarSlotTimeText(slot)
     if not slot.timeText then
         slot.timeText = slot.textFrame:CreateFontString(nil, "OVERLAY")
@@ -2244,7 +2242,7 @@ local function ApplyBarAuraTimeTextPreview(slot, style, remaining)
     local outline = ST.GetEffectiveFontOutline(style.auraTextFontOutline or "OUTLINE")
     tt:SetFont(font, size, outline)
     ST.ApplyFontShadowForOutline(tt, outline)
-    local color = style.auraTextFontColor or DEFAULT_AURA_TEXT_COLOR
+    local color = style.auraTextFontColor or CooldownCompanion.DEFAULT_AURA_TEXT_COLOR
     tt:SetTextColor(color[1], color[2], color[3], color[4])
     AnchorBarSlotTimeText(slot, style)
     tt:SetText(CooldownCompanion.FormatTime(remaining, style))

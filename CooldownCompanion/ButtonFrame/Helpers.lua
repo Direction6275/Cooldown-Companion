@@ -456,16 +456,22 @@ local function ApplyDurationFormatToCooldown(cooldown, source)
 end
 CooldownCompanion.ApplyDurationFormatToCooldown = ApplyDurationFormatToCooldown
 
+-- Advertised config default for aura duration text: the color pickers offer
+-- this same literal, and saved styles carry no key until the user changes it,
+-- so every aura-text styling site must fall back to this instead of white.
+CooldownCompanion.DEFAULT_AURA_TEXT_COLOR = {0, 0.925, 1, 1}
+
 -- Apply font, size, outline, and text color to a FontString from a style table.
 -- Keys are derived from prefix: e.g. prefix="charge" reads chargeFont, chargeFontSize,
--- chargeFontOutline, chargeFontColor. defaultSize overrides the 12pt fallback.
-local function ApplyFontStyle(region, source, prefix, defaultSize)
+-- chargeFontOutline, chargeFontColor. defaultSize overrides the 12pt fallback and
+-- defaultColor the white fallback.
+local function ApplyFontStyle(region, source, prefix, defaultSize, defaultColor)
     local font = CooldownCompanion:FetchFont(source[prefix .. "Font"] or "Friz Quadrata TT")
     local size = source[prefix .. "FontSize"] or defaultSize or 12
     local outline = ST.GetEffectiveFontOutline(source[prefix .. "FontOutline"] or "OUTLINE")
     region:SetFont(font, size, outline)
     ST.ApplyFontShadowForOutline(region, outline)
-    local color = source[prefix .. "FontColor"] or {1, 1, 1, 1}
+    local color = source[prefix .. "FontColor"] or defaultColor or {1, 1, 1, 1}
     region:SetTextColor(color[1], color[2], color[3], color[4])
 end
 CooldownCompanion.ApplyFontStyle = ApplyFontStyle
