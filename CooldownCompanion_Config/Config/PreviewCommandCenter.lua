@@ -44,6 +44,12 @@ local PLAY_GAP = 6
 local PLAY_ATLAS = "CreditsScreen-Assets-Buttons-Play"
 local STOP_ATLAS = "CreditsScreen-Assets-Buttons-Pause"
 local CHEVRON_ATLAS = "uitools-icon-chevron-down"
+-- The glyph the settings-side advanced gears already wear
+-- (ADVANCED_TOGGLE_ATLAS in Helpers.lua): this button opens the same side
+-- panel they do. Restated rather than imported because Helpers loads after
+-- this file.
+local GEAR_ATLAS = "QuestLog-icon-setting"
+local GEAR_GAP = 4
 
 -- Vertical band the bar claims inside the host. The preview renderers
 -- read this off the host and keep their content above it.
@@ -291,6 +297,51 @@ local GROUP_EFFECTS = "Effects"
 local GROUP_STATES = "Button States"
 local GROUP_READOUTS = "Text & Timers"
 
+------------------------------------------------------------------------
+-- Where each preview's settings live (the quick-access gear)
+--
+-- `settings` is either one route or a route per display mode. A route names
+-- the tab to show and, when the setting has an advanced side panel, the
+-- `AddAdvancedToggle` key that opens it - the gear queues that key and lets
+-- the rebuild pop it open, exactly as the shipped enable-then-open callers
+-- do. Routes with no key navigate to the tab and stop: some previews stand
+-- in for several settings at once (a cooldown drives swipe, desaturation,
+-- fill and text) and there is no single panel to open.
+--
+-- `overrideSection` is only set where the section id differs from the
+-- control's own `section`; the gear reads one or the other to decide whether
+-- the selected entry's Overrides tab is the truer destination.
+------------------------------------------------------------------------
+
+-- The conditional states share a shape: their visuals live on the Indicators
+-- tab wherever there is one. Text panels have none (GroupSettingsHost builds
+-- the tab list without it), so they land on Appearance - which is where a
+-- text panel's state styling lives anyway.
+local function StateRoute(advancedKey)
+    return {
+        icons = { tab = "effects", key = advancedKey },
+        bars = { tab = "effects", key = advancedKey },
+        rotationAssistant = { tab = "effects", key = advancedKey },
+        text = { tab = "appearance" },
+    }
+end
+
+-- Bar-mode text settings sit inside the "Text & Icon" collapsible, so the
+-- gear opens it on the way past - a queued advanced key whose checkbox is
+-- never built would expire silently.
+local BAR_TEXT_SECTION = "barappearance_textIcon"
+
+local function TextRoute(iconKey, barKey)
+    return {
+        icons = { tab = "appearance", key = iconKey },
+        bars = { tab = "appearance", key = barKey, uncollapse = BAR_TEXT_SECTION },
+    }
+end
+
+-- The three charge states are three looks at one setting, so they share one
+-- destination.
+local CHARGE_ROUTE = TextRoute("chargeText", "barChargeText")
+
 local CONTROLS = {
     {
         id = "procGlow",
@@ -299,6 +350,7 @@ local CONTROLS = {
         modes = { icons = true },
         section = "procGlow",
         glowStyleKey = "procGlowStyle",
+        settings = { tab = "effects", key = "procGlow" },
         preview = FlagPreview("_procGlowPreview", "SetProcGlowPreview", "SetGroupProcGlowPreview"),
     },
     {
@@ -308,6 +360,7 @@ local CONTROLS = {
         modes = { icons = true },
         section = "auraIndicator",
         glowStyleKey = "auraGlowStyle",
+        settings = { tab = "effects", key = "auraGlow" },
         preview = FlagPreview("_auraGlowPreview", "SetAuraGlowPreview", "SetGroupAuraGlowPreview"),
     },
     {
@@ -317,6 +370,7 @@ local CONTROLS = {
         modes = { icons = true },
         section = "readyGlow",
         glowStyleKey = "readyGlowStyle",
+        settings = { tab = "effects", key = "readyGlow" },
         preview = FlagPreview("_readyGlowPreview", "SetReadyGlowPreview", "SetGroupReadyGlowPreview"),
     },
     {
@@ -326,6 +380,7 @@ local CONTROLS = {
         modes = { icons = true },
         section = "keyPressHighlight",
         glowStyleKey = "keyPressHighlightStyle",
+        settings = { tab = "effects", key = "keyPressHighlight" },
         preview = GroupOnlyFlagPreview("_keyPressHighlightPreview", "SetGroupKeyPressHighlightPreview"),
     },
     {
@@ -335,6 +390,7 @@ local CONTROLS = {
         modes = { bars = true },
         section = "barActiveAura",
         requiresBarAuraIndicator = true,
+        settings = { tab = "effects", key = "barActiveAura" },
         preview = FlagPreview("_barAuraEffectPreview", "SetBarAuraEffectPreview", "SetGroupBarAuraEffectPreview"),
     },
     {
@@ -343,6 +399,7 @@ local CONTROLS = {
         group = GROUP_EFFECTS,
         modes = { textures = true },
         indicatorKey = "proc",
+        settings = { tab = "effects", key = "textureIndicator_proc" },
         preview = TextureIndicatorPreview("proc"),
     },
     {
@@ -351,6 +408,7 @@ local CONTROLS = {
         group = GROUP_EFFECTS,
         modes = { textures = true },
         indicatorKey = "ready",
+        settings = { tab = "effects", key = "textureIndicator_ready" },
         preview = TextureIndicatorPreview("ready"),
     },
     {
@@ -359,6 +417,7 @@ local CONTROLS = {
         group = GROUP_EFFECTS,
         modes = { textures = true },
         indicatorKey = "unusable",
+        settings = { tab = "effects", key = "textureIndicator_unusable" },
         preview = TextureIndicatorPreview("unusable"),
     },
     {
@@ -367,6 +426,9 @@ local CONTROLS = {
         group = GROUP_EFFECTS,
         modes = { trigger = true },
         requiresTriggerEffect = true,
+        -- Tab only: the preview plays every enabled trigger effect at once,
+        -- and each has its own advanced panel.
+        settings = { tab = "effects" },
         preview = TriggerEffectsPreview,
     },
 
@@ -375,6 +437,10 @@ local CONTROLS = {
         label = "Preview Cooldown State",
         group = GROUP_STATES,
         modes = { icons = true, bars = true, text = true, rotationAssistant = true },
+        -- Tab only: one cooldown drives the swipe, desaturation, fill timer
+        -- and cooldown text, so the Indicators tab is the closest thing to a
+        -- home this state has.
+        settings = StateRoute(nil),
         preview = ConditionalPreview("cooldown"),
     },
     {
@@ -383,6 +449,8 @@ local CONTROLS = {
         group = GROUP_STATES,
         modes = { icons = true, bars = true, text = true, rotationAssistant = true },
         styleKey = "showUnusable",
+        overrideSection = "unusableDimming",
+        settings = StateRoute("unusableVisual"),
         preview = ConditionalPreview("unusable"),
     },
     {
@@ -391,6 +459,8 @@ local CONTROLS = {
         group = GROUP_STATES,
         modes = { icons = true, text = true, rotationAssistant = true },
         styleKey = "showOutOfRange",
+        overrideSection = "showOutOfRange",
+        settings = StateRoute(nil),
         preview = ConditionalPreview("out_of_range"),
     },
     {
@@ -400,6 +470,7 @@ local CONTROLS = {
         modes = { icons = true, bars = true, rotationAssistant = true },
         section = "lossOfControl",
         styleKey = "showLossOfControl",
+        settings = StateRoute(nil),
         preview = ConditionalPreview("loss_of_control"),
     },
 
@@ -410,6 +481,7 @@ local CONTROLS = {
         modes = { icons = true, bars = true },
         section = "auraText",
         styleKeyDefaultOn = "showAuraText",
+        settings = TextRoute("auraText", "barAuraText"),
         preview = ConditionalPreview("aura_duration_text"),
     },
     {
@@ -419,6 +491,7 @@ local CONTROLS = {
         modes = { icons = true, bars = true },
         section = "auraStackText",
         styleKeyDefaultOn = "showAuraStackText",
+        settings = TextRoute("auraStackText", "barAuraStackText"),
         preview = ConditionalPreview("aura_stack_text"),
     },
     {
@@ -428,6 +501,7 @@ local CONTROLS = {
         modes = { icons = true },
         section = "auraDurationSwipe",
         styleKeyDefaultOn = "showAuraDurationSwipe",
+        settings = { tab = "effects", key = "auraDurationSwipe" },
         preview = ConditionalPreview("aura_duration_swipe"),
     },
     {
@@ -437,6 +511,7 @@ local CONTROLS = {
         modes = { icons = true, bars = true },
         section = "chargeText",
         styleKeyDefaultOn = "showChargeText",
+        settings = CHARGE_ROUTE,
         preview = ConditionalPreview("charge_full"),
     },
     {
@@ -446,6 +521,7 @@ local CONTROLS = {
         modes = { icons = true, bars = true },
         section = "chargeText",
         styleKeyDefaultOn = "showChargeText",
+        settings = CHARGE_ROUTE,
         preview = ConditionalPreview("charge_missing"),
     },
     {
@@ -455,6 +531,7 @@ local CONTROLS = {
         modes = { icons = true, bars = true },
         section = "chargeText",
         styleKeyDefaultOn = "showChargeText",
+        settings = CHARGE_ROUTE,
         preview = ConditionalPreview("charge_zero"),
     },
 }
@@ -486,6 +563,41 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
         return false
     end
     return true
+end
+
+-- Where the gear goes for the control the chooser is naming. Returns nil
+-- when the preview has no settings destination, which is what hides the
+-- button.
+--
+-- An entry that overrides the section wins: with that entry selected the
+-- preview is running on ITS look, and the panel-scope controls the advanced
+-- panel would open are not the ones driving it. The entry's Overrides tab
+-- carries the section inline, so there is no advanced key to queue - the tab
+-- IS the destination. Panel-wide previews are excluded: an entry's override
+-- is not what they are showing, so the panel setting is still the right
+-- destination even with that entry selected.
+local function ResolveGearRoute(control, group, displayMode, buttonIndex)
+    local sectionId = control.overrideSection or control.section
+    if buttonIndex and sectionId and group and not control.preview.groupScoped then
+        local buttonData = (group.buttons or {})[buttonIndex]
+        local canUse = ST._CanButtonUseConfigOverrideSection
+        if buttonData
+            and type(buttonData.overrideSections) == "table"
+            and buttonData.overrideSections[sectionId]
+            and (canUse == nil or canUse(buttonData, sectionId) == true) then
+            return { overrideSection = sectionId }
+        end
+    end
+
+    local settings = control.settings
+    if type(settings) ~= "table" then
+        return nil
+    end
+    -- One route, or one per display mode.
+    if settings.tab or settings.object then
+        return settings
+    end
+    return displayMode and settings[displayMode] or nil
 end
 
 ------------------------------------------------------------------------
@@ -585,6 +697,7 @@ local OBJECT_CONTROLS = {
         group = GROUP_HEALTH_BAR,
         object = "health",
         Applies = function(healthConfig) return HealthEffectEnabled(healthConfig, "showAbsorbs") end,
+        settings = { object = "health", key = "healthAbsorbs" },
         preview = HealthEffectPreview("absorbs"),
     },
     {
@@ -593,6 +706,7 @@ local OBJECT_CONTROLS = {
         group = GROUP_HEALTH_BAR,
         object = "health",
         Applies = function(healthConfig) return HealthEffectEnabled(healthConfig, "showHealAbsorbs") end,
+        settings = { object = "health", key = "healthHealAbsorbs" },
         preview = HealthEffectPreview("healAbsorbs"),
     },
     {
@@ -601,6 +715,7 @@ local OBJECT_CONTROLS = {
         group = GROUP_HEALTH_BAR,
         object = "health",
         Applies = function(healthConfig) return HealthEffectEnabled(healthConfig, "showIncomingHeals") end,
+        settings = { object = "health", key = "healthIncomingHeals" },
         preview = HealthEffectPreview("incomingHeals"),
     },
     {
@@ -609,6 +724,7 @@ local OBJECT_CONTROLS = {
         group = GROUP_HEALTH_BAR,
         object = "health",
         Applies = function(healthConfig) return HealthEffectEnabled(healthConfig, "showLowHealthAlert") end,
+        settings = { object = "health", key = "healthLowHealthAlert" },
         preview = HealthEffectPreview("lowHealthAlert"),
     },
     {
@@ -617,6 +733,9 @@ local OBJECT_CONTROLS = {
         group = GROUP_CAST_BAR,
         object = "cast",
         Applies = CastBarEnabled,
+        -- Tab only: the preview is the whole bar, so its home is the cast
+        -- bar's Appearance tab rather than any one advanced panel.
+        settings = { object = "cast" },
         preview = CastBarPreview,
     },
 }
@@ -660,6 +779,13 @@ local function CollectObjectControls(objects)
                         label = "Preview Active Aura",
                         group = "Custom Bar: " .. name,
                         object = "customBars",
+                        settings = {
+                            object = "customBarAura",
+                            customBarId = cab.customBarId,
+                            -- The bar's Aura tab only exists for a spell
+                            -- entry (GetCustomBarEntryTabs).
+                            auraTab = cab.spellID ~= nil,
+                        },
                         preview = CustomBarAuraPreview(cab),
                     }
                 end
@@ -683,6 +809,7 @@ local function CollectObjectControls(objects)
                         label = "Preview Active Aura",
                         group = RB.POWER_NAMES[powerType] or ("Power " .. powerType),
                         object = "resourceAuras",
+                        settings = { object = "resourceAura", powerType = powerType },
                         preview = ResourceAuraPreview(powerType),
                     }
                 end
@@ -690,38 +817,6 @@ local function CollectObjectControls(objects)
         end
     end
     return applicable
-end
-
--- Which bars the unified anchor preview draws as lanes: the same
--- attached-vs-independent test the lane renderer itself makes
--- (ST._HasAttachedBarLanesToRender). A bar on its own independent anchor
--- is not on that canvas and its settings cannot be opened there, so its
--- previews stay on its own home.
-local function GetAnchorLaneObjects()
-    local rbSettings = CooldownCompanion.GetResourceBarSettings
-        and CooldownCompanion:GetResourceBarSettings()
-    local cbSettings = CooldownCompanion.GetCastBarSettings
-        and CooldownCompanion:GetCastBarSettings()
-    local layout = CooldownCompanion.GetSpecLayoutOrder
-        and CooldownCompanion:GetSpecLayoutOrder()
-    local IsTruthyConfigFlag = RB and RB.IsTruthyConfigFlag
-    if not (layout and IsTruthyConfigFlag) then
-        return {}
-    end
-    local barsAttached = rbSettings ~= nil
-        and rbSettings.enabled == true
-        and not IsTruthyConfigFlag(layout.independentAnchorEnabled)
-    return {
-        health = barsAttached,
-        cast = cbSettings ~= nil
-            and cbSettings.enabled == true
-            and not IsTruthyConfigFlag(cbSettings.independentAnchorEnabled),
-        -- Custom bars ride the same attached resource stack as the health
-        -- bar; their aura previews belong on the anchor canvas too, and so
-        -- do the resource overlays drawn on those same lanes.
-        customBars = barsAttached,
-        resourceAuras = barsAttached,
-    }
 end
 
 ------------------------------------------------------------------------
@@ -807,6 +902,170 @@ local function SetPreviewRunning(surface, control, panelId, buttonIndex, show)
     end
     control.preview.SetActive(panelId, buttonIndex, show)
     surface.Repaint()
+end
+
+------------------------------------------------------------------------
+-- The quick-access gear: jump to the settings for the chosen preview
+--
+-- Two halves. Moving the config surface is plain selection/tab state, the
+-- same writes the navigator and tab rows make. Opening the advanced side
+-- panel rides `QueueAdvancedSettingsPanelOpen`: the key is queued, and the
+-- rebuild pops the panel open when it reaches the matching gear. That is
+-- the shipped seam (the enable-a-setting-and-open-its-panel callers use it),
+-- and it is why every piece of navigation state must be written BEFORE the
+-- queue - the queue snapshots the context and the consume side drops it if
+-- the context has moved on.
+------------------------------------------------------------------------
+
+-- Which cluster of the unified tab row owns the settings surface at the
+-- destination: "primary" for a module/panel tab, "detail" for one belonging
+-- to a selected entry or bar.
+local function SetRowScope(scope)
+    if ST._UnifiedRowSetScope then
+        ST._UnifiedRowSetScope(scope)
+    end
+end
+
+-- Objects live on the two homes rather than in the buttons workspace, so
+-- their routes select a destination first. Returns the surface whose canvas
+-- shows the destination, which is the one to repaint afterwards.
+local function ApplyObjectRoute(route)
+    local RBP = ST._RBP
+
+    if route.object == "cast" then
+        if not CS.castFramesEntrySelected and ST._SelectConfigCastFramesEntry then
+            ST._SelectConfigCastFramesEntry()
+        end
+        if ST._SelectConfigCastFramesItem then
+            ST._SelectConfigCastFramesItem("castbar")
+        end
+        CS.castBarHomeTab = "appearance"
+        SetRowScope("detail")
+        return RESOURCES_SURFACE
+    end
+
+    -- Everything else is a Resources-home object. Selecting the home first
+    -- matters: it drops any bar selection unless the home was already open,
+    -- so a bar selected below would be cleared right after we made it.
+    if not CS.resourcesEntrySelected and ST._SelectConfigResourcesEntry then
+        ST._SelectConfigResourcesEntry()
+    end
+
+    if route.object == "health" then
+        -- A module tab rather than a bar: at primary scope it owns the
+        -- surface even while a bar stays selected beside it.
+        CS.resourcesSettingsTab = "health"
+        SetRowScope("primary")
+        if RBP then
+            RBP.collapsedSections["rb_health_effects"] = nil
+        end
+    elseif route.object == "customBarAura" then
+        if ST._SelectConfigCustomBar then
+            ST._SelectConfigCustomBar(route.customBarId)
+        end
+        if ST._SetConfigCustomBarSettingsTab then
+            ST._SetConfigCustomBarSettingsTab(route.auraTab and "aura" or "appearance")
+        end
+        SetRowScope("detail")
+    elseif route.object == "resourceAura" then
+        -- Always the CURRENT spec: the overlay the preview draws is resolved
+        -- for it (GetActiveResourceAuraEntry), so a resource already selected
+        -- but parked on another spec's tab would send the gear to settings
+        -- that are not the ones being previewed.
+        local specID = RBP and RBP.GetCurrentConfigSpecID() or nil
+        if CS.selectedResourcePowerType ~= route.powerType then
+            if ST._SelectConfigResource then
+                ST._SelectConfigResource(route.powerType, { specID = specID })
+            end
+        elseif ST._SetConfigResourceSettingsSpecID then
+            ST._SetConfigResourceSettingsSpecID(specID)
+        end
+        SetRowScope("detail")
+        if RBP then
+            RBP.collapsedSections["rb_aura_overlay_" .. tostring(route.powerType)] = nil
+        end
+    end
+
+    return RESOURCES_SURFACE
+end
+
+local function ApplyGearRoute(route)
+    if route.overrideSection then
+        SetRowScope("detail")
+        CS.buttonSettingsTab = "overrides"
+        return BUTTONS_SURFACE
+    end
+
+    if route.object then
+        return ApplyObjectRoute(route)
+    end
+
+    SetRowScope("primary")
+    CS.selectedTab = route.tab
+    CS.panelSettingsTab = route.tab
+    -- A collapsed section never builds its checkbox, and a queued key with
+    -- no gear to consume it expires silently.
+    if route.uncollapse and type(CS.collapsedSections) == "table" then
+        CS.collapsedSections[route.uncollapse] = nil
+    end
+    return BUTTONS_SURFACE
+end
+
+local function NavigateToPreviewSettings(bar)
+    local control = bar._selected
+    local route = bar._gearRoute
+    if not (control and route) then
+        return
+    end
+
+    -- Toggle: while this gear's advanced panel is on screen, the click
+    -- closes it. No navigation happens on the way out - the panel can only
+    -- stay open while its surface is current, so there is nowhere to go.
+    if route.key
+        and CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(route.key)
+        and CS.CloseAdvancedSettingsPanel then
+        CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+        return
+    end
+
+    local surface = bar._surface
+    local ok, panelId, buttonIndex = surface.ResolveTarget()
+    if not ok then
+        return
+    end
+
+    -- Read BEFORE navigating. Every seam below clears previews - the panel
+    -- and entry tab switches both do, and so do the two home selectors - so
+    -- a live check afterwards always reports "not running" and the preview
+    -- the user was studying would silently die on the way to its settings.
+    local wasRunning = control.preview.IsActive(panelId, buttonIndex) == true
+
+    -- The inline texture browser takes over the settings area; leave it
+    -- before landing somewhere underneath it.
+    if CS.CancelPickAuraTexture then
+        CS.CancelPickAuraTexture()
+    end
+
+    local destination = ApplyGearRoute(route)
+
+    -- Queued last, with every navigation write already made, so the context
+    -- it snapshots is the one the rebuild will consume it under. The
+    -- already-open case normally exits through the toggle branch above;
+    -- this guard keeps a stale open from flapping the panel shut if the
+    -- post-navigation context still matches it.
+    if route.key
+        and CS.QueueAdvancedSettingsPanelOpen
+        and not (CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(route.key)) then
+        CS.QueueAdvancedSettingsPanelOpen(route.key)
+    end
+
+    CooldownCompanion:RefreshConfigPanel()
+
+    -- Put the preview back if a seam took it. Guarded on live state so a
+    -- route that crossed nothing does not flicker through a clear/set cycle.
+    if wasRunning and control.preview.IsActive(panelId, buttonIndex) ~= true then
+        SetPreviewRunning(destination, control, panelId, buttonIndex, true)
+    end
 end
 
 ------------------------------------------------------------------------
@@ -973,6 +1232,40 @@ local function OpenPreviewMenu(bar)
     CS.previewCommandCenterMenuOpen = opened and true or nil
 end
 
+------------------------------------------------------------------------
+-- Gear tint: gold while an advanced settings panel is on screen, grey
+-- otherwise.
+--
+-- Read from the window itself rather than from
+-- IsAdvancedSettingsPanelOpen(key), which also compares the full navigation
+-- context and so answered "closed" for a panel the user could plainly see.
+-- And repaintable on its own, because the panel opens and closes without
+-- rebuilding this bar - a settings-side gear toggles it with no config
+-- refresh at all. Those two together are what made the tint look random.
+------------------------------------------------------------------------
+
+-- The bar currently on screen, so the advanced panel can repaint its gear
+-- without going through a rebuild.
+local activeBar
+
+local function IsAdvancedSettingsWindowShown()
+    local window = CS.advancedSettingsPanelWindow
+    local frame = window and window.frame
+    return frame ~= nil and frame:IsShown() == true
+end
+
+local function ApplyGearTint(bar)
+    local gear = bar and bar.gear
+    if not gear then
+        return
+    end
+    if IsAdvancedSettingsWindowShown() then
+        gear._icon:SetVertexColor(1, 0.82, 0, 1)
+    else
+        gear._icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
+    end
+end
+
 local function EnsureBar(host, surface)
     local bar = host._cdcPreviewCommandCenter
     if bar then
@@ -1066,13 +1359,49 @@ local function EnsureBar(host, surface)
     end)
     bar.play = play
 
+    -- Quick access to the settings behind the chosen preview: the same
+    -- destination the user would otherwise hunt for, one click from where
+    -- they are already looking at the thing it styles.
+    local gear = CreateFrame("Button", nil, bar)
+    gear:SetSize(PLAY_SIZE, PLAY_SIZE)
+    gear:SetPoint("LEFT", play, "RIGHT", GEAR_GAP, 0)
+    gear._icon = gear:CreateTexture(nil, "ARTWORK")
+    gear._icon:SetSize(PLAY_ICON_SIZE, PLAY_ICON_SIZE)
+    gear._icon:SetPoint("CENTER")
+    gear._icon:SetAtlas(GEAR_ATLAS, false)
+
+    gear:SetScript("OnEnter", function(self)
+        self._icon:SetVertexColor(1, 1, 1, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        local route = bar._gearRoute
+        local isOpen = route and route.key
+            and CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(route.key)
+        if isOpen then
+            GameTooltip:AddLine("Close settings")
+            GameTooltip:AddLine("Close the advanced settings for this preview.", 0.7, 0.7, 0.7)
+        else
+            GameTooltip:AddLine("Open settings")
+            GameTooltip:AddLine("Go to the settings for this preview.", 0.7, 0.7, 0.7)
+        end
+        GameTooltip:Show()
+    end)
+    gear:SetScript("OnLeave", function()
+        ApplyGearTint(bar)
+        GameTooltip:Hide()
+    end)
+    gear:SetScript("OnClick", function()
+        NavigateToPreviewSettings(bar)
+    end)
+    bar.gear = gear
+
     bar._surface = surface
     host._cdcPreviewCommandCenter = bar
     return bar
 end
 
-local function ApplyBarState(bar, control, running)
+local function ApplyBarState(bar, control, running, gearRoute)
     bar._selected = control
+    bar._gearRoute = gearRoute
     bar.play._running = running
 
     bar.chooser.label:SetText(control.label)
@@ -1096,6 +1425,13 @@ local function ApplyBarState(bar, control, running)
         bar.play._icon:SetAtlas(PLAY_ATLAS, false)
         bar.play._icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
     end
+
+    if not gearRoute then
+        bar.gear:Hide()
+        return
+    end
+    ApplyGearTint(bar)
+    bar.gear:Show()
 end
 
 local function HideBar(host)
@@ -1103,6 +1439,19 @@ local function HideBar(host)
     local bar = host and host._cdcPreviewCommandCenter
     if bar then
         bar:Hide()
+        if activeBar == bar then
+            activeBar = nil
+        end
+    end
+end
+
+-- Called by the advanced settings panel as it opens and closes: the gear
+-- reports whether that panel is on screen, and nothing else repaints this
+-- bar when it toggles.
+local function RefreshPreviewCommandCenterGear()
+    local bar = activeBar
+    if bar and bar._gearRoute and bar:IsShown() then
+        ApplyGearTint(bar)
     end
 end
 
@@ -1112,7 +1461,7 @@ end
 -- decided what they can offer.
 ------------------------------------------------------------------------
 
-local function UpdateBar(host, surface, applicable)
+local function UpdateBar(host, surface, applicable, group, displayMode)
     if #applicable == 0 then
         HideBar(host)
         return nil, false
@@ -1146,10 +1495,12 @@ local function UpdateBar(host, surface, applicable)
 
     local bar = EnsureBar(host, surface)
     bar._applicable = applicable
-    ApplyBarState(bar, selected, running)
+    ApplyBarState(bar, selected, running,
+        ResolveGearRoute(selected, group, displayMode, buttonIndex))
 
     host._cdcPreviewReserveBottom = BAR_RESERVE
     bar:Show()
+    activeBar = bar
     return selected, running
 end
 
@@ -1180,16 +1531,11 @@ local function UpdatePreviewCommandCenter(host)
         end
     end
 
-    -- On the anchor panel the canvas draws the attached bar lanes and
-    -- their settings open below the divider, so the bars' previews belong
-    -- in this menu too - the rule everywhere is that the chooser lists
-    -- every preview for what the canvas is showing. Appended after the
-    -- panel groups, under their own object headers.
-    if ST._ShouldUseUnifiedAnchorPreview and ST._ShouldUseUnifiedAnchorPreview(panelId) then
-        for _, control in ipairs(CollectObjectControls(GetAnchorLaneObjects())) do
-            applicable[#applicable + 1] = control
-        end
-    end
+    -- Object previews (health/cast/custom-bar auras) deliberately do NOT
+    -- appear here, even on the anchor panel whose canvas draws the bar
+    -- lanes — owner ruling 2026-07-26: the panel-view chooser stays scoped
+    -- to panel previews, and the bars' previews live on the Resources /
+    -- Cast Bar & Unit Frames homes that configure those objects.
 
     if #applicable == 0 then
         HideBar(host)
@@ -1198,7 +1544,7 @@ local function UpdatePreviewCommandCenter(host)
 
     MigrateRunningPreview(panelId, buttonIndex, applicable)
 
-    local _, running = UpdateBar(host, BUTTONS_SURFACE, applicable)
+    local _, running = UpdateBar(host, BUTTONS_SURFACE, applicable, group, displayMode)
     -- Read by the migration above on the next pass, since the selection
     -- seam clears previews before we get to look at live state.
     CS.previewCommandCenterWasRunning = running
@@ -1240,3 +1586,4 @@ end
 ------------------------------------------------------------------------
 ST._UpdatePreviewCommandCenter = UpdatePreviewCommandCenter
 ST._UpdateResourcesPreviewCommandCenter = UpdateResourcesPreviewCommandCenter
+ST._RefreshPreviewCommandCenterGear = RefreshPreviewCommandCenterGear

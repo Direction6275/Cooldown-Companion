@@ -252,6 +252,11 @@ local function CleanupWindow(widget)
     if CS.SetActiveAdvancedSettingsToggleButton then
         CS.SetActiveAdvancedSettingsToggleButton(nil)
     end
+    -- The preview command center's gear is gold while this window is up, and
+    -- closing it does not rebuild that bar.
+    if ST._RefreshPreviewCommandCenterGear then
+        ST._RefreshPreviewCommandCenterGear()
+    end
 
 end
 
@@ -259,6 +264,12 @@ local function CloseAdvancedSettingsPanel()
     queuedOpen = nil
     if advancedWindow then
         advancedWindow:Hide()
+        -- Belt and braces: CleanupWindow repaints the command center gear
+        -- when the OnClose callback runs, but Hide alone must not be able to
+        -- leave a gold gear over a closed window.
+        if ST._RefreshPreviewCommandCenterGear then
+            ST._RefreshPreviewCommandCenterGear()
+        end
         return true
     else
         local hadActiveDescriptor = activeDescriptor ~= nil
@@ -320,6 +331,9 @@ local function OpenAdvancedSettingsPanel(opts)
     AnchorWindowToConfig()
     if not descriptor.deferBuild and not CS.configRefreshInProgress then
         BuildWindowContents()
+    end
+    if ST._RefreshPreviewCommandCenterGear then
+        ST._RefreshPreviewCommandCenterGear()
     end
     return true
 end
