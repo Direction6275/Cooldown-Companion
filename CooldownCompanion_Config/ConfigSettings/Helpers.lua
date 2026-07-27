@@ -186,6 +186,11 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
     -- Clean up on widget release (prevent leaking into recycled widgets).
     -- Also covers any collapse button on the same frame, since AddAdvancedToggle
     -- is always called after AttachCollapseButton and overwrites its OnRelease.
+    --
+    -- Every close below names its own setting key. A settings-side gear owns
+    -- exactly one panel, and the preview command center can have a second one
+    -- open whose gear lives on another tab - closing that one too would be a
+    -- gear reaching past its own panel.
     parentWidget:SetCallback("OnRelease", function()
         local activeSidePanelToggleReleased = useSidePanel and CS.activeAdvancedSettingsToggleButton == btn
         if activeSidePanelToggleReleased
@@ -193,7 +198,7 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
             and not CS.advancedSettingsPanelRefreshing
             and CS.CloseAdvancedSettingsPanel
         then
-            CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+            CS.CloseAdvancedSettingsPanel({ settingKey = settingKey })
         end
 
         btn:ClearAllPoints()
@@ -214,7 +219,7 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
     -- Hide when parent setting is disabled
     if isEnabled == false then
         if useSidePanel and isActive and CS.CloseAdvancedSettingsPanel then
-            CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+            CS.CloseAdvancedSettingsPanel({ settingKey = settingKey })
         end
         btn:Hide()
         btn._icon:Hide()
@@ -241,7 +246,7 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
     btn:SetScript("OnClick", function()
         if useSidePanel then
             if CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(settingKey, options.context) then
-                CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+                CS.CloseAdvancedSettingsPanel({ settingKey = settingKey })
             else
                 local descriptor = BuildAdvancedDescriptor(parentWidget, settingKey, options)
                 if CS.OpenAdvancedSettingsPanel(descriptor) and btn:GetParent() == frame then

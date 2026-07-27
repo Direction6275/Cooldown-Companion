@@ -218,6 +218,37 @@ local function SectionApplies(group, sectionId, buttonIndex)
     return false
 end
 
+-- Does this entry have a count the charge previews can stand in for? The two
+-- mirrors disagree, deliberately: the icon mirror renders the charge states
+-- for anything with charge behavior (real charges, a Blizzard display or use
+-- count), while the Bar mirror gates on real charges alone
+-- (UsesConfigOnlyBarChargeBehavior in ButtonPanelPreview). Asking the same
+-- question the renderer for THIS display mode will ask is what keeps the
+-- chooser from offering a preview that draws nothing.
+local function UsesChargePreviewBehavior(buttonData, displayMode)
+    if displayMode == "bars" then
+        local barUsesCharges = ST._UsesConfigOnlyBarChargeBehavior
+        return barUsesCharges ~= nil and barUsesCharges(buttonData) == true
+    end
+    local usesCharges = CooldownCompanion.UsesChargeBehavior
+    return usesCharges ~= nil and usesCharges(buttonData) == true
+end
+
+-- Same scoping rule as SectionApplies: with a single entry selected that
+-- entry must qualify, at panel scope at least one entry must.
+local function ChargeEntryApplies(group, displayMode, buttonIndex)
+    local buttons = group.buttons or {}
+    if buttonIndex then
+        return UsesChargePreviewBehavior(buttons[buttonIndex], displayMode)
+    end
+    for _, buttonData in ipairs(buttons) do
+        if UsesChargePreviewBehavior(buttonData, displayMode) then
+            return true
+        end
+    end
+    return false
+end
+
 -- Style as it applies to the target: the selected entry's effective style,
 -- or the panel style at panel scope.
 local function ResolveTargetStyle(group, buttonIndex)
@@ -304,9 +335,15 @@ local GROUP_READOUTS = "Text & Timers"
 -- the tab to show and, when the setting has an advanced side panel, the
 -- `AddAdvancedToggle` key that opens it - the gear queues that key and lets
 -- the rebuild pop it open, exactly as the shipped enable-then-open callers
--- do. Routes with no key navigate to the tab and stop: some previews stand
--- in for several settings at once (a cooldown drives swipe, desaturation,
--- fill and text) and there is no single panel to open.
+-- do. Routes with no key navigate to the tab and stop.
+--
+-- `panels` is the command center's own shape (owner ruling 2026-07-26): this
+-- gear opens EVERY advanced panel the preview it names is driven by, not just
+-- one. A route carrying it returns descriptors, built from the same factories
+-- the tabs use, and the gear opens them directly. The queue seam alone could
+-- never do that job: it only fires for a gear that actually builds, and one
+-- preview's panels can live on two different tabs. Everywhere else in the
+-- config the one-panel-at-a-time rule is unchanged.
 --
 -- `overrideSection` is only set where the section id differs from the
 -- control's own `section`; the gear reads one or the other to decide whether
@@ -341,6 +378,82 @@ end
 -- The three charge states are three looks at one setting, so they share one
 -- destination.
 local CHARGE_ROUTE = TextRoute("chargeText", "barChargeText")
+
+-- The advanced panels a cooldown preview is driven by. One cooldown drives
+-- the swipe and the cooldown text at once, and in icons mode their gears sit
+-- on two different tabs - which is the whole reason this route hands back
+-- descriptors instead of a queued key.
+--
+-- Only panels whose own checkbox is enabled are offered: AddAdvancedToggle
+-- closes the panel of a disabled setting on the next rebuild, so opening one
+-- would flap it straight back shut. That is also what happens when the icon
+-- fill timer owns the cooldown visual - the swipe checkbox and its gear are
+-- both disabled there, so the gear opens the text panel alone.
+--
+-- Gated through the same lens the rest of the bar uses (ResolveTargetStyle):
+-- with an entry selected the preview renders THAT entry's effective style, so
+-- an override switching the cooldown text or the fill timer on or off has to
+-- move the offered panels with it. What the panels EDIT is still panel-level
+-- style - that split is deliberate and unchanged.
+local function CooldownAdvancedPanels(group, displayMode, buttonIndex)
+    local style = ResolveTargetStyle(group, buttonIndex)
+    if type(style) ~= "table" then
+        return nil
+    end
+
+    local panels = {}
+
+    if displayMode == "bars" then
+        local makeBarText = ST._MakeBarCooldownTextAdvancedDescriptor
+        if makeBarText and style.showCooldownText then
+            -- No style handed over: the factories resolve the panel style they
+            -- edit at build time (see the comment on their definitions), and
+            -- the effective style above is only the gate.
+            panels[#panels + 1] = makeBarText()
+        end
+        return panels
+    end
+
+    if displayMode ~= "icons" then
+        return nil
+    end
+
+    local makeText = ST._MakeCooldownTextAdvancedDescriptor
+    if makeText and style.showCooldownText then
+        panels[#panels + 1] = makeText()
+    end
+
+    local makeSwipe = ST._MakeCooldownSwipeAdvancedDescriptor
+    -- The same gate GroupTabs puts on the swipe checkbox, read through the
+    -- effective style: the fill timer is a promotable section, so an entry can
+    -- turn it on for itself, and the mirror draws the fill for that entry.
+    -- Masque is panel-wide and has no per-entry form.
+    local iconFillTimerActive = style.iconFillEnabled == true and group.masqueEnabled ~= true
+    if makeSwipe and style.showCooldownSwipe ~= false and not iconFillTimerActive then
+        panels[#panels + 1] = makeSwipe()
+    end
+    return panels
+end
+
+-- Bars mode lands on Appearance, where the bar's cooldown text lives (inside
+-- the "Text & Icon" collapsible, hence the uncollapse). Text and rotation
+-- assistant panels have no advanced panel for cooldown visuals at all, so
+-- those routes stay tab-only.
+--
+-- `key` names the one panel whose gear is on the destination tab: it rides
+-- the shipped queue seam so that gear ends up gold exactly as a settings-side
+-- click would leave it, while the rest are opened directly afterwards.
+local COOLDOWN_ROUTE = {
+    icons = { tab = "effects", key = "cooldownSwipe", panels = CooldownAdvancedPanels },
+    bars = {
+        tab = "appearance",
+        key = "barCooldownText",
+        panels = CooldownAdvancedPanels,
+        uncollapse = BAR_TEXT_SECTION,
+    },
+    rotationAssistant = { tab = "effects" },
+    text = { tab = "appearance" },
+}
 
 local CONTROLS = {
     {
@@ -437,10 +550,10 @@ local CONTROLS = {
         label = "Preview Cooldown State",
         group = GROUP_STATES,
         modes = { icons = true, bars = true, text = true, rotationAssistant = true },
-        -- Tab only: one cooldown drives the swipe, desaturation, fill timer
-        -- and cooldown text, so the Indicators tab is the closest thing to a
-        -- home this state has.
-        settings = StateRoute(nil),
+        -- One cooldown drives the swipe, desaturation, fill timer and cooldown
+        -- text, so this gear opens every advanced panel behind those visuals
+        -- rather than picking one (see COOLDOWN_ROUTE).
+        settings = COOLDOWN_ROUTE,
         preview = ConditionalPreview("cooldown"),
     },
     {
@@ -511,6 +624,7 @@ local CONTROLS = {
         modes = { icons = true, bars = true },
         section = "chargeText",
         styleKeyDefaultOn = "showChargeText",
+        requiresChargeEntry = true,
         settings = CHARGE_ROUTE,
         preview = ConditionalPreview("charge_full"),
     },
@@ -521,6 +635,7 @@ local CONTROLS = {
         modes = { icons = true, bars = true },
         section = "chargeText",
         styleKeyDefaultOn = "showChargeText",
+        requiresChargeEntry = true,
         settings = CHARGE_ROUTE,
         preview = ConditionalPreview("charge_missing"),
     },
@@ -531,6 +646,7 @@ local CONTROLS = {
         modes = { icons = true, bars = true },
         section = "chargeText",
         styleKeyDefaultOn = "showChargeText",
+        requiresChargeEntry = true,
         settings = CHARGE_ROUTE,
         preview = ConditionalPreview("charge_zero"),
     },
@@ -560,6 +676,9 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
         return false
     end
     if control.requiresTriggerEffect and not AnyTriggerEffectEnabled(group) then
+        return false
+    end
+    if control.requiresChargeEntry and not ChargeEntryApplies(group, displayMode, buttonIndex) then
         return false
     end
     return true
@@ -1011,6 +1130,90 @@ local function ApplyGearRoute(route)
     return BUTTONS_SURFACE
 end
 
+-- The advanced panels a `panels` route opens, as descriptors, resolved from
+-- live selection state rather than carried on the bar: the same answer is
+-- wanted at click time, at hover time, and after navigating, and the panel
+-- the gear acts on never changes underneath any of those. The selected entry
+-- goes with it, so the callback can gate on the style the preview is actually
+-- rendering rather than on the panel's.
+local function ResolveRoutePanels(route)
+    if not (route and route.panels) then
+        return nil
+    end
+    local panelId, group, buttonIndex = ResolveContext()
+    if not (panelId and group) then
+        return nil
+    end
+    local panels = route.panels(group, group.displayMode or "icons", buttonIndex)
+    if type(panels) ~= "table" or #panels == 0 then
+        return nil
+    end
+    return panels
+end
+
+-- A `panels` route's key list is its resolved descriptors and nothing else:
+-- `key` there only names which of them rides the queue, so a route that
+-- currently offers no panel offers no key either.
+local function RouteAdvancedKeys(route, panels)
+    if not route then
+        return nil
+    end
+    if route.panels then
+        if not panels then
+            return nil
+        end
+        local keys = {}
+        for _, descriptor in ipairs(panels) do
+            keys[#keys + 1] = descriptor.settingKey
+        end
+        return keys
+    end
+    if route.key then
+        return { route.key }
+    end
+    return nil
+end
+
+-- Gold gear, gold tooltip: the command center's gear reads as "on" whenever
+-- any of the panels behind this preview is up, which is also what the tint
+-- (read off the window itself) shows.
+local function AnyRoutePanelOpen(route)
+    if not (route and CS.IsAdvancedSettingsPanelOpen) then
+        return false
+    end
+    local keys = RouteAdvancedKeys(route, ResolveRoutePanels(route))
+    if not keys then
+        return false
+    end
+    for _, key in ipairs(keys) do
+        if CS.IsAdvancedSettingsPanelOpen(key) then
+            return true
+        end
+    end
+    return false
+end
+
+-- The one panel whose gear lives on the destination tab, so it can ride the
+-- queue seam and leave that gear gold. Nil when the route's key is not among
+-- the panels this preview actually offers.
+local function ResolveQueueKey(route, panels)
+    if not route.key then
+        return nil
+    end
+    if not route.panels then
+        return route.key
+    end
+    if not panels then
+        return nil
+    end
+    for _, descriptor in ipairs(panels) do
+        if descriptor.settingKey == route.key then
+            return route.key
+        end
+    end
+    return nil
+end
+
 local function NavigateToPreviewSettings(bar)
     local control = bar._selected
     local route = bar._gearRoute
@@ -1018,15 +1221,17 @@ local function NavigateToPreviewSettings(bar)
         return
     end
 
-    -- Toggle: while this gear's advanced panel is on screen, the click
-    -- closes it. No navigation happens on the way out - the panel can only
-    -- stay open while its surface is current, so there is nowhere to go.
-    if route.key
-        and CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(route.key)
-        and CS.CloseAdvancedSettingsPanel then
+    -- Toggle: while this gear's advanced panels are on screen, the click
+    -- closes them. No navigation happens on the way out - a panel can only
+    -- stay open while its surface is current, so there is nowhere to go, and
+    -- nothing but this preview's panels can be up beside them.
+    if AnyRoutePanelOpen(route) and CS.CloseAdvancedSettingsPanel then
         CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
         return
     end
+
+    local routePanels = ResolveRoutePanels(route)
+    local queueKey = ResolveQueueKey(route, routePanels)
 
     local surface = bar._surface
     local ok, panelId, buttonIndex = surface.ResolveTarget()
@@ -1053,13 +1258,21 @@ local function NavigateToPreviewSettings(bar)
     -- already-open case normally exits through the toggle branch above;
     -- this guard keeps a stale open from flapping the panel shut if the
     -- post-navigation context still matches it.
-    if route.key
+    if queueKey
         and CS.QueueAdvancedSettingsPanelOpen
-        and not (CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(route.key)) then
-        CS.QueueAdvancedSettingsPanelOpen(route.key)
+        and not (CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(queueKey)) then
+        CS.QueueAdvancedSettingsPanelOpen(queueKey)
     end
 
     CooldownCompanion:RefreshConfigPanel()
+
+    -- The rest of this preview's panels, opened after the rebuild so the
+    -- context they snapshot is the one the user is now looking at - and after
+    -- the refresh's own advanced-panel pass, so nothing reopens or closes them
+    -- behind us. The panel the queue already opened is left alone.
+    if routePanels and CS.OpenAdvancedSettingsPanels then
+        CS.OpenAdvancedSettingsPanels(routePanels)
+    end
 
     -- Put the preview back if a seam took it. Guarded on live state so a
     -- route that crossed nothing does not flicker through a clear/set cycle.
@@ -1374,9 +1587,7 @@ local function EnsureBar(host, surface)
         self._icon:SetVertexColor(1, 1, 1, 1)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         local route = bar._gearRoute
-        local isOpen = route and route.key
-            and CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(route.key)
-        if isOpen then
+        if AnyRoutePanelOpen(route) then
             GameTooltip:AddLine("Close settings")
             GameTooltip:AddLine("Close the advanced settings for this preview.", 0.7, 0.7, 0.7)
         else

@@ -40,6 +40,61 @@ local function SetCompactWidth(widget)
     widget:SetRelativeWidth(0.5)
 end
 
+-- Cooldown text advanced, as a descriptor.
+--
+-- The preview command center's gear opens the advanced panels behind the
+-- preview it names without going through their gears (owner ruling
+-- 2026-07-26), which for a bar-mode cooldown is this one - and its gear sits
+-- inside the "Text & Icon" collapsible, so it is not always built. The tab
+-- below calls the same factory, so the panel has exactly one definition.
+--
+-- The style table is resolved inside `build`, never captured: a panel the
+-- command center opened has no gear on screen to rebind its descriptor, so a
+-- wholesale style replacement that keeps the same context (Copy Style From
+-- Panel assigns a fresh group.style outright) would leave a captured table
+-- orphaned and every control writing into nothing.
+local function ResolveSelectedGroupStyle()
+    local groupId = CS.selectedGroup
+    local profile = groupId and CooldownCompanion.db and CooldownCompanion.db.profile
+    local group = profile and profile.groups and profile.groups[groupId]
+    return group and group.style or nil
+end
+
+local function MakeBarCooldownTextAdvancedDescriptor()
+    local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
+    return {
+        settingKey = "barCooldownText",
+        title = "Cooldown Text Advanced",
+        build = function(panel)
+            local style = ResolveSelectedGroupStyle()
+            if not style then
+                return
+            end
+
+            local flipTimeCheck = AceGUI:Create("CheckBox")
+            flipTimeCheck:SetLabel("Flip Time Text")
+            flipTimeCheck:SetValue(style.barTimeTextReverse or false)
+            flipTimeCheck:SetFullWidth(true)
+            flipTimeCheck:SetCallback("OnValueChanged", function(widget, event, val)
+                style.barTimeTextReverse = val or nil
+                refreshStyle()
+            end)
+            panel:AddChild(flipTimeCheck)
+
+            -- (?) tooltip for Flip Time Text
+            CreateInfoButton(flipTimeCheck.frame, flipTimeCheck.checkbg, "LEFT", "RIGHT", flipTimeCheck.text:GetStringWidth() + 4, 0, {
+                "Flip Time Text",
+                {"Applies to all time-based text, including cooldown time and ready text.", 1, 1, 1, true},
+            }, flipTimeCheck)
+
+            AddFontControls(panel, style, "cooldown", {sizeMin = 6, sizeMax = 24}, refreshStyle)
+            AddColorPicker(panel, style, "cooldownFontColor", "Font Color", {1, 1, 1, 1}, false, refreshStyle, refreshStyle)
+            AddOffsetSliders(panel, style, "barCdTextOffsetX", "barCdTextOffsetY", {range = 50}, refreshStyle)
+        end,
+    }
+end
+ST._MakeBarCooldownTextAdvancedDescriptor = MakeBarCooldownTextAdvancedDescriptor
+
 local function BuildBarAppearanceTab(container, group, style)
     local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
     container:SetLayout("Flow")
@@ -342,31 +397,11 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(showTimeCbBasic)
 
-    local function BuildBarCooldownTextAdvanced(panel)
-        local flipTimeCheck = AceGUI:Create("CheckBox")
-        flipTimeCheck:SetLabel("Flip Time Text")
-        flipTimeCheck:SetValue(style.barTimeTextReverse or false)
-        flipTimeCheck:SetFullWidth(true)
-        flipTimeCheck:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barTimeTextReverse = val or nil
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        panel:AddChild(flipTimeCheck)
+    local barCdTextAdvanced = MakeBarCooldownTextAdvancedDescriptor()
 
-        -- (?) tooltip for Flip Time Text
-        CreateInfoButton(flipTimeCheck.frame, flipTimeCheck.checkbg, "LEFT", "RIGHT", flipTimeCheck.text:GetStringWidth() + 4, 0, {
-            "Flip Time Text",
-            {"Applies to all time-based text, including cooldown time and ready text.", 1, 1, 1, true},
-        }, flipTimeCheck)
-
-        AddFontControls(panel, style, "cooldown", {sizeMin = 6, sizeMax = 24}, refreshStyle)
-        AddColorPicker(panel, style, "cooldownFontColor", "Font Color", {1, 1, 1, 1}, false, refreshStyle, refreshStyle)
-        AddOffsetSliders(panel, style, "barCdTextOffsetX", "barCdTextOffsetY", {range = 50}, refreshStyle)
-    end
-
-    local _, timeAdvBtn = AddAdvancedToggle(showTimeCbBasic, "barCooldownText", tabInfoButtons, style.showCooldownText, {
-        title = "Cooldown Text Advanced",
-        build = BuildBarCooldownTextAdvanced,
+    local _, timeAdvBtn = AddAdvancedToggle(showTimeCbBasic, barCdTextAdvanced.settingKey, tabInfoButtons, style.showCooldownText, {
+        title = barCdTextAdvanced.title,
+        build = barCdTextAdvanced.build,
     })
     CreateCheckboxPromoteButton(showTimeCbBasic, timeAdvBtn, "cooldownText", group, style)
 

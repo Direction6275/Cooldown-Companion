@@ -158,6 +158,10 @@ local function UsesConfigOnlyBarChargeBehavior(buttonData)
     end
     return buttonData.hasCharges == true
 end
+-- Exported because the Bar mirror's charge rendering gates on this narrower
+-- rule than the icon mirror's UsesChargeBehavior, and the preview command
+-- center only offers a charge preview that would visibly render.
+ST._UsesConfigOnlyBarChargeBehavior = UsesConfigOnlyBarChargeBehavior
 
 -- Pure Bar-mirror visibility projection. Inputs are saved entry/group data and
 -- a stored config-preview snapshot only. It deliberately does not accept live

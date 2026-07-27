@@ -2164,6 +2164,127 @@ local function UpdateSelectedGroupStyle(refreshConfig)
     end
 end
 
+------------------------------------------------------------------------
+-- Cooldown advanced panels, as descriptors
+--
+-- One cooldown drives the swipe and the cooldown text, and their gears sit on
+-- two different tabs - only one of which is ever on screen. The preview
+-- command center's gear opens BOTH panels at once (owner ruling 2026-07-26),
+-- so their contents have to be reachable without the gear that normally
+-- builds them. The tab builders below call these same factories, so each
+-- panel still has exactly one definition.
+--
+-- The style table is resolved inside `build`, never captured. A panel the
+-- command center opened for the tab you are NOT on has no gear on screen to
+-- rebind its descriptor (RebindAdvancedSettingsPanel only fires from
+-- AddAdvancedToggle, i.e. from a gear that actually builds), so a wholesale
+-- style replacement that keeps the same context - Copy Style From Panel
+-- assigns a fresh group.style outright - would leave a captured table
+-- orphaned and every control in the panel writing into nothing. The tab
+-- callers are unaffected either way: they rebuild and rebind every refresh.
+------------------------------------------------------------------------
+
+local function RefreshSelectedGroupStyle()
+    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+end
+
+local function ResolveSelectedGroupStyle()
+    local groupId = CS.selectedGroup
+    local profile = groupId and CooldownCompanion.db and CooldownCompanion.db.profile
+    local group = profile and profile.groups and profile.groups[groupId]
+    return group and group.style or nil
+end
+
+local function MakeCooldownTextAdvancedDescriptor()
+    return {
+        settingKey = "cooldownText",
+        title = "Cooldown Text Advanced",
+        build = function(panel)
+            local style = ResolveSelectedGroupStyle()
+            if not style then
+                return
+            end
+
+            AddFontControls(panel, style, "cooldown", { size = 12 }, RefreshSelectedGroupStyle)
+            AddColorPicker(panel, style, "cooldownFontColor", "Font Color", {1, 1, 1, 1}, false, RefreshSelectedGroupStyle, RefreshSelectedGroupStyle)
+
+            AddAnchorDropdown(panel, style, "cooldownTextAnchor", "CENTER", RefreshSelectedGroupStyle)
+
+            AddOffsetSliders(panel, style, "cooldownTextXOffset", "cooldownTextYOffset", { x = 0, y = 0 }, RefreshSelectedGroupStyle)
+        end,
+    }
+end
+ST._MakeCooldownTextAdvancedDescriptor = MakeCooldownTextAdvancedDescriptor
+
+local function MakeCooldownSwipeAdvancedDescriptor()
+    return {
+        settingKey = "cooldownSwipe",
+        title = "Cooldown Swipe Advanced",
+        build = function(panel)
+            local style = ResolveSelectedGroupStyle()
+            if not style then
+                return
+            end
+
+            -- Reverse Swipe
+            local reverseCb = AceGUI:Create("CheckBox")
+            reverseCb:SetLabel("Reverse Swipe")
+            reverseCb:SetValue(style.cooldownSwipeReverse or false)
+            reverseCb:SetFullWidth(true)
+            reverseCb:SetCallback("OnValueChanged", function(widget, event, val)
+                style.cooldownSwipeReverse = val
+                RefreshSelectedGroupStyle()
+            end)
+            panel:AddChild(reverseCb)
+
+            -- Show Swipe Fill
+            local fillCb = AceGUI:Create("CheckBox")
+            fillCb:SetLabel("Show Swipe Fill")
+            fillCb:SetValue(style.showCooldownSwipeFill ~= false)
+            fillCb:SetFullWidth(true)
+            fillCb:SetCallback("OnValueChanged", function(widget, event, val)
+                style.showCooldownSwipeFill = val
+                RefreshSelectedGroupStyle()
+                RefreshActiveAdvancedSettingsPanel()
+            end)
+            panel:AddChild(fillCb)
+
+            -- Swipe Fill Opacity (only when fill is visible)
+            if style.showCooldownSwipeFill ~= false then
+                local alphaSlider = AceGUI:Create("Slider")
+                alphaSlider:SetLabel("Swipe Fill Opacity")
+                alphaSlider:SetSliderValues(0, 1, 0.05)
+                alphaSlider:SetIsPercent(true)
+                alphaSlider:SetValue(style.cooldownSwipeAlpha or 0.8)
+                alphaSlider:SetFullWidth(true)
+                alphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                    style.cooldownSwipeAlpha = val
+                    RefreshSelectedGroupStyle()
+                end)
+                panel:AddChild(alphaSlider)
+            end
+
+            -- Show Swipe Edge
+            local edgeCb = AceGUI:Create("CheckBox")
+            edgeCb:SetLabel("Show Swipe Edge")
+            edgeCb:SetValue(style.showCooldownSwipeEdge ~= false)
+            edgeCb:SetFullWidth(true)
+            edgeCb:SetCallback("OnValueChanged", function(widget, event, val)
+                style.showCooldownSwipeEdge = val
+                RefreshSelectedGroupStyle()
+                RefreshActiveAdvancedSettingsPanel()
+            end)
+            panel:AddChild(edgeCb)
+
+            -- Swipe Edge Color (only when edge is visible)
+            if style.showCooldownSwipeEdge ~= false then
+                AddColorPicker(panel, style, "cooldownSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, RefreshSelectedGroupStyle, RefreshSelectedGroupStyle)
+            end
+        end,
+    }
+end
+ST._MakeCooldownSwipeAdvancedDescriptor = MakeCooldownSwipeAdvancedDescriptor
+
 local function ClearEffectsTabWidgets()
     for _, btn in ipairs(tabInfoButtons) do
         btn:ClearAllPoints()
@@ -2645,67 +2766,11 @@ local function BuildEffectsTab(container)
     end)
     container:AddChild(swipeCb)
 
-    local function BuildCooldownSwipeAdvanced(panel)
-        -- Reverse Swipe
-        local reverseCb = AceGUI:Create("CheckBox")
-        reverseCb:SetLabel("Reverse Swipe")
-        reverseCb:SetValue(style.cooldownSwipeReverse or false)
-        reverseCb:SetFullWidth(true)
-        reverseCb:SetCallback("OnValueChanged", function(widget, event, val)
-            style.cooldownSwipeReverse = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        panel:AddChild(reverseCb)
+    local swipeAdvanced = MakeCooldownSwipeAdvancedDescriptor()
 
-        -- Show Swipe Fill
-        local fillCb = AceGUI:Create("CheckBox")
-        fillCb:SetLabel("Show Swipe Fill")
-        fillCb:SetValue(style.showCooldownSwipeFill ~= false)
-        fillCb:SetFullWidth(true)
-        fillCb:SetCallback("OnValueChanged", function(widget, event, val)
-            style.showCooldownSwipeFill = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            RefreshActiveAdvancedSettingsPanel()
-        end)
-        panel:AddChild(fillCb)
-
-        -- Swipe Fill Opacity (only when fill is visible)
-        if style.showCooldownSwipeFill ~= false then
-            local alphaSlider = AceGUI:Create("Slider")
-            alphaSlider:SetLabel("Swipe Fill Opacity")
-            alphaSlider:SetSliderValues(0, 1, 0.05)
-            alphaSlider:SetIsPercent(true)
-            alphaSlider:SetValue(style.cooldownSwipeAlpha or 0.8)
-            alphaSlider:SetFullWidth(true)
-            alphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                style.cooldownSwipeAlpha = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end)
-            panel:AddChild(alphaSlider)
-        end
-
-        -- Show Swipe Edge
-        local edgeCb = AceGUI:Create("CheckBox")
-        edgeCb:SetLabel("Show Swipe Edge")
-        edgeCb:SetValue(style.showCooldownSwipeEdge ~= false)
-        edgeCb:SetFullWidth(true)
-        edgeCb:SetCallback("OnValueChanged", function(widget, event, val)
-            style.showCooldownSwipeEdge = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            RefreshActiveAdvancedSettingsPanel()
-        end)
-        panel:AddChild(edgeCb)
-
-        -- Swipe Edge Color (only when edge is visible)
-        if style.showCooldownSwipeEdge ~= false then
-            local swipeRefresh = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
-            AddColorPicker(panel, style, "cooldownSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, swipeRefresh, swipeRefresh)
-        end
-    end
-
-    local _, swipeAdvBtn = AddAdvancedToggle(swipeCb, "cooldownSwipe", tabInfoButtons, style.showCooldownSwipe ~= false and not iconFillTimerActive, {
-        title = "Cooldown Swipe Advanced",
-        build = BuildCooldownSwipeAdvanced,
+    local _, swipeAdvBtn = AddAdvancedToggle(swipeCb, swipeAdvanced.settingKey, tabInfoButtons, style.showCooldownSwipe ~= false and not iconFillTimerActive, {
+        title = swipeAdvanced.title,
+        build = swipeAdvanced.build,
     })
     local swipePromoteBtn
     if not iconFillTimerActive then
@@ -3389,19 +3454,11 @@ local function BuildAppearanceTab(container)
     end)
     container:AddChild(cdTextCb)
 
-    local function BuildCooldownTextAdvanced(panel)
-        AddFontControls(panel, style, "cooldown", { size = 12 }, refreshStyle)
-        AddColorPicker(panel, style, "cooldownFontColor", "Font Color", {1, 1, 1, 1}, false, refreshStyle, refreshStyle)
+    local cdTextAdvanced = MakeCooldownTextAdvancedDescriptor()
 
-        AddAnchorDropdown(panel, style, "cooldownTextAnchor", "CENTER", refreshStyle)
-
-        AddOffsetSliders(panel, style, "cooldownTextXOffset", "cooldownTextYOffset", { x = 0, y = 0 }, refreshStyle)
-
-    end
-
-    local _, cdTextAdvBtn = AddAdvancedToggle(cdTextCb, "cooldownText", tabInfoButtons, style.showCooldownText, {
-        title = "Cooldown Text Advanced",
-        build = BuildCooldownTextAdvanced,
+    local _, cdTextAdvBtn = AddAdvancedToggle(cdTextCb, cdTextAdvanced.settingKey, tabInfoButtons, style.showCooldownText, {
+        title = cdTextAdvanced.title,
+        build = cdTextAdvanced.build,
     })
     CreateCheckboxPromoteButton(cdTextCb, cdTextAdvBtn, "cooldownText", group, style)
 
