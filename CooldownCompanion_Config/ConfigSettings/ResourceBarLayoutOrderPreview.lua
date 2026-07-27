@@ -57,6 +57,16 @@ local ApplyPixelBorders = RB.ApplyPixelBorders
 local HidePixelBorders = RB.HidePixelBorders
 local POWER_SHORT_NAMES = RB.POWER_SHORT_NAMES or {}
 
+-- The bars workspace draws ONE canvas for every object it configures: the
+-- resource stack, the attached cast bar, and the unit-frame badges. Its
+-- composition does not depend on the selection — selecting an object moves
+-- the highlight and swaps the settings below, nothing else. Outside the
+-- workspace this same renderer draws the buttons view's unified anchor
+-- preview, which owns its own selection model.
+local function IsBarsWorkspaceActive()
+    return CS.barsEntrySelected == true
+end
+
 local LAYOUT_PREVIEW_PADDING = 12
 local LAYOUT_PREVIEW_SECTION_GAP = 18
 local LAYOUT_PREVIEW_GAP = 4
@@ -176,11 +186,15 @@ local function ResolvePreviewSkin(host)
     }
 end
 
--- Bottom chrome on the host - the preview command center, on every
--- workspace that has one - claims a band the composition must stay clear
--- of. Hosts without a bar report 0.
+-- Bottom chrome on the host claims a band the composition must stay clear
+-- of. Two owners can claim it, each from its own corner: the preview
+-- command center (bottom-left, on every workspace that has one) and the
+-- bars workspace's module-enable cluster (bottom-right). They share one
+-- band, so the reserve is whichever needs more. Hosts with neither report 0.
 local function GetHostBottomReserve(host)
-    return host and host._cdcPreviewReserveBottom or 0
+    if not host then return 0 end
+    return math_max(host._cdcPreviewReserveBottom or 0,
+        host._cdcBarsCornerReserveBottom or 0)
 end
 
 local function ApplyHostBottomReserve(host, root)
@@ -206,7 +220,7 @@ local function EnsurePreviewState(host)
             icons = {},
             slots = {},
             gaps = {},
-            unitProxies = {},
+            pills = {},
         },
         used = {},
         tweens = {},
@@ -218,6 +232,11 @@ local function EnsurePreviewState(host)
     }
     host._cdcLayoutPreview = preview
 
+    -- The root already carries the host's bottom reserve, so the content
+    -- block centers into it with a zero offset - which stays exact under
+    -- the fit-to-host scale, where a non-zero anchor offset would be
+    -- measured in the scaled frame's own coordinate space and have to be
+    -- divided back out.
     local root = CreateFrame("Frame", nil, host)
     root:SetClipsChildren(false)
     root:Hide()
@@ -241,7 +260,7 @@ local function ResetPreviewState(preview)
     preview.used.icons = 0
     preview.used.slots = 0
     preview.used.gaps = 0
-    preview.used.unitProxies = 0
+    preview.used.pills = 0
     preview.renderedSelectionKeys = {}
     preview.independentResources = false
     preview.layoutDrag = nil
@@ -499,77 +518,126 @@ local function AcquireGap(preview, parent)
     return frame
 end
 
-local function CreateUnitFrameProxy(parent)
-    local frame = CreateFrame("Button", nil, parent)
-    frame:RegisterForClicks("LeftButtonUp")
+-- The bars workspace's pills. One visual family for two kinds of item:
+-- the unit-frame badges, which are canvas objects riding under the bar
+-- stack as part of the composition, and the module-enable pills pinned to
+-- the pane's bottom-right corner. Everything else this workspace can
+-- configure but is not drawing right now goes to the quiet text-chip strip
+-- below the editing divider, not here.
+--
+-- The badges are deliberately not facsimile unit frames. The frame
+-- anchoring module re-anchors the player's real unit frames and draws
+-- nothing of its own, so a mocked-up health bar would promise a look
+-- Cooldown Companion never renders. A badge promises only what it is: a
+-- handle on that frame's anchoring settings.
+local BARS_PILL_HEIGHT = 26
+local BARS_PILL_MIN_WIDTH = 112
+local BARS_PILL_GAP = 10
+local BARS_PILL_LINE_GAP = 6
+local BARS_PILL_INSET = 9
+local BARS_PILL_ACCENT_WIDTH = 3
+local BARS_PILL_ICON_SIZE = 16
+local BARS_PILL_ICON_GAP = 5
+local BARS_PILL_TEXT_COLOR = { 0.70, 0.68, 0.64 }
+local BARS_PILL_SELECTED_TEXT_COLOR = { 1, 1, 1 }
+local BARS_PILL_NEUTRAL_ACCENT = { 0.46, 0.48, 0.53 }
+local BARS_PILL_ENABLE_ACCENT = { 0.36, 0.72, 0.45 }
+-- Selection border: the same blue the canvas slots use for hover/selection.
+local BARS_PILL_SELECTED_BORDER = { 0.38, 0.60, 0.92, 1 }
+local BARS_PILL_TARGET_ICON = "groupfinder-icon-friend"
+
+-- The badge pair sits under the bar stack with a modest gap, inside the
+-- content block and therefore inside the fit-to-host scale.
+local BARS_BADGE_GAP = 15
+
+-- The module-enable cluster mirrors the preview command center across the
+-- pane: same bottom band, same insets off its own corner, so the two read
+-- as one line of chrome framing the canvas. Matching that band is why
+-- these pills are the bar's height rather than the badges' - level with
+-- the command center matters more here than a shared pill height.
+-- Its lines stack upward when the pane is too narrow for one row.
+local BARS_CORNER_PILL_HEIGHT = 20
+local BARS_CORNER_BOTTOM_INSET = 3
+local BARS_CORNER_SIDE_INSET = 4
+local BARS_CORNER_COMMAND_GAP = 12
+
+-- Re-attached on every acquire: FinalizePreviewState strips these from
+-- pooled frames it parks, so a pill reused by a later build would come back
+-- without its hover state or tooltip.
+local function BarsPillOnEnter(self)
+    self.hover:Show()
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(self._cdcTooltip or "", 1, 1, 1)
+    if self._cdcTooltipLine then
+        GameTooltip:AddLine(self._cdcTooltipLine, 0.75, 0.82, 0.92, true)
+    end
+    if self._cdcTooltipNote then
+        GameTooltip:AddLine(self._cdcTooltipNote, 0.62, 0.62, 0.66, true)
+    end
+    GameTooltip:Show()
+end
+
+local function BarsPillOnLeave(self)
+    self.hover:Hide()
+    GameTooltip:Hide()
+end
+
+local function CreateBarsPill(parent)
+    local frame = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    frame:RegisterForClicks("AnyUp")
     frame:SetClipsChildren(false)
 
-    frame.portrait = frame:CreateTexture(nil, "ARTWORK")
-    frame.portrait:SetSize(26, 26)
-    frame.portrait:SetPoint("LEFT", frame, "LEFT", 0, 0)
+    frame.accent = frame:CreateTexture(nil, "ARTWORK")
+    frame.accent:SetWidth(BARS_PILL_ACCENT_WIDTH)
+    frame.accent:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
+    frame.accent:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 1, 1)
 
-    frame.health = CreateFrame("StatusBar", nil, frame)
-    frame.health:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-    frame.health:SetMinMaxValues(0, 100)
-    frame.health:SetValue(72)
-    frame.health:SetStatusBarColor(0.18, 0.72, 0.28, 0.92)
-    frame.health:SetPoint("TOPLEFT", frame.portrait, "TOPRIGHT", 4, -2)
-    frame.health:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 2)
-    frame.health.bg = frame.health:CreateTexture(nil, "BACKGROUND")
-    frame.health.bg:SetAllPoints()
-    frame.health.bg:SetColorTexture(0.04, 0.05, 0.04, 0.88)
+    frame.icon = frame:CreateTexture(nil, "ARTWORK")
+    frame.icon:SetSize(BARS_PILL_ICON_SIZE, BARS_PILL_ICON_SIZE)
+    frame.icon:SetPoint("LEFT", frame, "LEFT", BARS_PILL_ACCENT_WIDTH + BARS_PILL_ICON_GAP, 0)
+    frame.icon:Hide()
 
-    frame.name = frame.health:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.name:SetPoint("LEFT", frame.health, "LEFT", 4, 0)
-    frame.name:SetPoint("RIGHT", frame.health, "RIGHT", -4, 0)
-    frame.name:SetJustifyH("LEFT")
+    frame.label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.label:SetJustifyH("CENTER")
+    frame.label:SetJustifyV("MIDDLE")
+    frame.label:SetWordWrap(false)
 
     frame.hover = frame:CreateTexture(nil, "OVERLAY")
-    frame.hover:SetAllPoints(frame.health)
-    frame.hover:SetColorTexture(1, 1, 1, 0.11)
+    frame.hover:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
+    frame.hover:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
+    frame.hover:SetColorTexture(1, 1, 1, 0.10)
     frame.hover:SetBlendMode("ADD")
     frame.hover:Hide()
 
     frame.selected = frame:CreateTexture(nil, "OVERLAY", nil, 1)
-    frame.selected:SetAllPoints(frame.health)
-    frame.selected:SetColorTexture(1, 1, 1, 0.16)
+    frame.selected:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
+    frame.selected:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
+    frame.selected:SetColorTexture(1, 1, 1, 0.10)
     frame.selected:SetBlendMode("ADD")
     frame.selected:Hide()
 
-    frame.accent = frame:CreateTexture(nil, "OVERLAY", nil, 2)
-    frame.accent:SetWidth(3)
-    frame.accent:SetPoint("TOPLEFT", frame.health, "TOPLEFT", 0, 0)
-    frame.accent:SetPoint("BOTTOMLEFT", frame.health, "BOTTOMLEFT", 0, 0)
-    frame.accent:Hide()
-
-    frame:SetScript("OnEnter", function(self)
-        self.hover:Show()
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(self._cdcLabel or "Unit Frame", 1, 1, 1)
-        GameTooltip:AddLine("Click to edit this frame's anchoring.", 0.75, 0.82, 0.92, true)
-        GameTooltip:Show()
-    end)
-    frame:SetScript("OnLeave", function(self)
-        self.hover:Hide()
-        GameTooltip:Hide()
-    end)
     return frame
 end
 
-local function AcquireUnitFrameProxy(preview, parent)
-    local pool = preview.pools.unitProxies
-    local index = (preview.used.unitProxies or 0) + 1
-    preview.used.unitProxies = index
+local function AcquireBarsPill(preview, parent)
+    local pool = preview.pools.pills
+    local index = (preview.used.pills or 0) + 1
+    preview.used.pills = index
     local frame = pool[index]
     if not frame then
-        frame = CreateUnitFrameProxy(parent)
+        frame = CreateBarsPill(parent)
         pool[index] = frame
     end
     frame:SetParent(parent)
+    frame:SetScript("OnEnter", BarsPillOnEnter)
+    frame:SetScript("OnLeave", BarsPillOnLeave)
+    frame.hover:Hide()
     frame:Show()
     return frame
 end
 
+-- The root already stops short of the host's bottom band, so a message
+-- centered in it never collides with the chrome pinned down there.
 local function SetPreviewMessage(preview, message)
     local label = preview.messageLabel
     if not label then
@@ -577,10 +645,11 @@ local function SetPreviewMessage(preview, message)
         label:SetJustifyH("CENTER")
         label:SetJustifyV("MIDDLE")
         label:SetWordWrap(true)
-        label:SetPoint("TOPLEFT", preview.root, "TOPLEFT", 18, -18)
-        label:SetPoint("BOTTOMRIGHT", preview.root, "BOTTOMRIGHT", -18, 18)
         preview.messageLabel = label
     end
+    label:ClearAllPoints()
+    label:SetPoint("TOPLEFT", preview.root, "TOPLEFT", 18, -18)
+    label:SetPoint("BOTTOMRIGHT", preview.root, "BOTTOMRIGHT", -18, 18)
     label:SetText(message or "")
     label:Show()
 end
@@ -2118,25 +2187,25 @@ local function SelectPreviewSlot(slot, modifierMulti)
         return false
     end
 
-    if CS.castFramesEntrySelected then
-        if slot.kind == "cast" then
-            if ST._SelectConfigCastFramesItem then
-                ST._SelectConfigCastFramesItem("castbar")
-            else
-                CS.castFramesSelectedItem = "castbar"
-            end
-            return true
-        end
-        return false
-    end
-
     -- Unified anchor preview (buttons view): route to the unified bar
     -- selection, which owns the entry-vs-bar exclusivity and cast support.
-    if not CS.resourcesEntrySelected then
+    if not IsBarsWorkspaceActive() then
         if ST._SelectUnifiedAnchorBar then
             return ST._SelectUnifiedAnchorBar(slot)
         end
         return false
+    end
+
+    -- Every slot on the workspace canvas is click-to-edit, whatever is
+    -- selected right now. The State.lua setters own the exclusivity between
+    -- the three selection families, so there is nothing to clear here.
+    if slot.kind == "cast" then
+        if ST._SelectConfigCastFramesItem then
+            ST._SelectConfigCastFramesItem("castbar")
+        else
+            CS.castFramesSelectedItem = "castbar"
+        end
+        return true
     end
 
     if slot.kind == "resource" and slot.powerType ~= nil and ST._SelectConfigResource then
@@ -2205,14 +2274,20 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         preview.renderedSelectionKeys[slotModel.id] = true
 
         -- Mark the bar currently being configured: held hover-style glow
-        -- plus inward-pointing arrows. In the Cast Bar home only its cast
-        -- slot participates; in the buttons view (unified anchor preview)
+        -- plus inward-pointing arrows. In the workspace exactly one object
+        -- is selected across all three families, so one slot lights up
+        -- whichever kind it is; in the buttons view (unified anchor preview)
         -- the highlight follows the unified bar selection, so a stale
-        -- Resources-home selection can't light a bar up.
+        -- workspace selection can't light a bar up.
         local isSelected
-        if CS.castFramesEntrySelected then
-            isSelected = slotModel.kind == "cast" and CS.castFramesSelectedItem == "castbar"
-        elseif not CS.resourcesEntrySelected then
+        if IsBarsWorkspaceActive() then
+            isSelected = (slotModel.kind == "cast" and CS.castFramesSelectedItem == "castbar")
+                or (slotModel.kind == "resource" and slotModel.powerType ~= nil
+                    and tostring(CS.selectedResourcePowerType) == tostring(slotModel.powerType))
+                or (slotModel.kind == "custom" and slotModel.customBarId ~= nil
+                    and (tostring(CS.selectedCustomBarId) == tostring(slotModel.customBarId)
+                        or (CS.selectedCustomBars and CS.selectedCustomBars[slotModel.customBarId] == true)))
+        else
             local kind = CS.unifiedBarKind
             isSelected = (kind == "resource" and slotModel.kind == "resource"
                     and slotModel.powerType ~= nil
@@ -2221,12 +2296,6 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
                     and slotModel.customBarId ~= nil
                     and tostring(CS.selectedCustomBarId) == tostring(slotModel.customBarId))
                 or (kind == "cast" and slotModel.kind == "cast")
-        else
-            isSelected = (slotModel.kind == "resource" and slotModel.powerType ~= nil
-                and tostring(CS.selectedResourcePowerType) == tostring(slotModel.powerType))
-            or (slotModel.kind == "custom" and slotModel.customBarId ~= nil
-                and (tostring(CS.selectedCustomBarId) == tostring(slotModel.customBarId)
-                    or (CS.selectedCustomBars and CS.selectedCustomBars[slotModel.customBarId] == true)))
         end
         if isSelected and slotFrame.selectedHighlight then
             local marker = slotFrame.selectedHighlight
@@ -2268,7 +2337,7 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         end)
         slotFrame:SetScript("OnMouseUp", function(self, button)
             if button == "RightButton" then
-                if CS.resourcesEntrySelected and slotModel.kind == "custom"
+                if IsBarsWorkspaceActive() and slotModel.kind == "custom"
                     and slotModel.customBarId ~= nil then
                     ST._SelectConfigCustomBar(slotModel.customBarId)
                     CooldownCompanion:RefreshConfigPanel()
@@ -2309,16 +2378,11 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(slotModel.label or "Bar", 1, 1, 1)
-            local dragHelp
-            if CS.resourcesEntrySelected and slotModel.kind == "cast" then
-                dragHelp = "Drag to reorder this attached bar. Edit it under Cast Bar & Unit Frames."
-            else
-                dragHelp = preview.independentResources
-                    and "Click to edit. Drag to reorder this independent bar."
-                    or "Click to edit. Drag to reorder this attached bar."
-            end
+            local dragHelp = preview.independentResources
+                and "Click to edit. Drag to reorder this independent bar."
+                or "Click to edit. Drag to reorder this attached bar."
             GameTooltip:AddLine(dragHelp, 0.75, 0.82, 0.92, true)
-            if CS.resourcesEntrySelected and slotModel.kind == "custom" then
+            if IsBarsWorkspaceActive() and slotModel.kind == "custom" then
                 GameTooltip:AddLine("Ctrl+Click to multi-select. Right-click for actions.", 0.75, 0.82, 0.92, true)
             end
             GameTooltip:Show()
@@ -2541,85 +2605,290 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
     return totalWidth, totalHeight, iconCenterOffsetY
 end
 
-local function ConfigureUnitFrameProxy(frame, item, label, selected)
-    local r, g, b = 0.40, 0.67, 1.0
-    local _, classKey = UnitClass("player")
-    local classColor = classKey and C_ClassColor.GetClassColor(classKey)
-    if classColor then
-        r, g, b = classColor.r, classColor.g, classColor.b
-    end
-
-    frame._cdcLabel = label
-    frame.name:SetText(label)
-    if item == "player" and classKey then
-        frame.portrait:SetAtlas("classicon-" .. string.lower(classKey), false)
+local function SelectPreviewCastFramesItem(item)
+    if ST._SelectConfigCastFramesItem then
+        ST._SelectConfigCastFramesItem(item)
     else
-        frame.portrait:SetAtlas("groupfinder-icon-friend", false)
+        CS.castFramesSelectedItem = item
     end
-    frame.portrait:SetVertexColor(1, 1, 1, 1)
-    frame.accent:SetColorTexture(r, g, b, 1)
-    frame.selected:SetShown(selected == true)
-    frame.accent:SetShown(selected == true)
+    CooldownCompanion:RefreshConfigPanel()
+end
 
-    frame:SetScript("OnEnter", function(self)
-        self.hover:Show()
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(self._cdcLabel or "Unit Frame", 1, 1, 1)
-        GameTooltip:AddLine("Click to edit this frame's anchoring.", 0.75, 0.82, 0.92, true)
-        GameTooltip:Show()
-    end)
-    frame:SetScript("OnLeave", function(self)
-        self.hover:Hide()
-        GameTooltip:Hide()
-    end)
-    frame:SetScript("OnClick", function()
-        if ST._SelectConfigCastFramesItem then
-            ST._SelectConfigCastFramesItem(item)
-        else
-            CS.castFramesSelectedItem = item
+local function ConfigureBarsPill(preview, frame, item)
+    local skin = preview.skin
+    local selected = item.selected == true
+    local accent = item.accent or BARS_PILL_NEUTRAL_ACCENT
+
+    frame.label:SetText(item.label or "")
+    frame.label:ClearAllPoints()
+    if item.icon then
+        frame.icon:SetAtlas(item.icon, false)
+        frame.icon:SetVertexColor(1, 1, 1, 1)
+        frame.icon:Show()
+        frame.label:SetPoint("LEFT", frame.icon, "RIGHT", BARS_PILL_ICON_GAP, 0)
+    else
+        frame.icon:Hide()
+        frame.label:SetPoint("LEFT", frame, "LEFT", BARS_PILL_ACCENT_WIDTH + BARS_PILL_INSET, 0)
+    end
+    frame.label:SetPoint("RIGHT", frame, "RIGHT", -BARS_PILL_INSET, 0)
+
+    ApplyBackdrop(frame, skin.slotBg,
+        selected and BARS_PILL_SELECTED_BORDER or skin.slotBorder, 1)
+    frame.accent:SetColorTexture(accent[1], accent[2], accent[3], selected and 1 or 0.85)
+    frame.selected:SetShown(selected)
+    local color = selected and BARS_PILL_SELECTED_TEXT_COLOR or BARS_PILL_TEXT_COLOR
+    frame.label:SetTextColor(color[1], color[2], color[3])
+
+    frame._cdcTooltip = item.tooltip or item.label
+    frame._cdcTooltipLine = item.tooltipLine
+    frame._cdcTooltipNote = item.tooltipNote
+    frame:SetScript("OnClick", function(_, mouseButton)
+        if mouseButton == "RightButton" then
+            if item.onRightClick then
+                item.onRightClick()
+            end
+            return
         end
-        CooldownCompanion:RefreshConfigPanel()
+        if mouseButton == "LeftButton" and item.onClick then
+            item.onClick()
+        end
     end)
 end
 
-local function AppendUnitFrameProxies(preview, content, contentWidth, contentHeight)
-    local settings = CooldownCompanion.GetFrameAnchoringSettings
-        and CooldownCompanion:GetFrameAnchoringSettings()
-    if not (CS.castFramesEntrySelected and settings and settings.enabled == true) then
-        return contentWidth, contentHeight
+-- Mirrors ConfigureBarsPill's anchors exactly, so a pill sized from this is
+-- the natural width of what it draws and the label's centering has no slack
+-- to absorb.
+local function GetBarsPillWidth(frame, item)
+    local lead = item.icon
+        and (BARS_PILL_ICON_GAP + BARS_PILL_ICON_SIZE + BARS_PILL_ICON_GAP)
+        or BARS_PILL_INSET
+    local width = BARS_PILL_ACCENT_WIDTH + lead
+        + math_floor((frame.label:GetStringWidth() or 0) + 0.5) + BARS_PILL_INSET
+    return math_max(BARS_PILL_MIN_WIDTH, width)
+end
+
+-- Lays the items out as centered lines, wrapping onto another line when
+-- `maxWidth` runs out, and returns the row plus its measured size. A single
+-- item wider than `maxWidth` keeps its line to itself rather than being
+-- clipped; the caller's fit-to-host scale absorbs the overflow.
+local function BuildBarsPillRow(preview, parent, items, maxWidth)
+    local row = AcquireContainer(preview, parent)
+    row:ClearAllPoints()
+
+    local frames = {}
+    local widths = {}
+    for index, item in ipairs(items) do
+        local frame = AcquireBarsPill(preview, row)
+        ConfigureBarsPill(preview, frame, item)
+        frames[index] = frame
+        widths[index] = GetBarsPillWidth(frame, item)
     end
 
-    local proxyWidth = 126
-    local proxyHeight = 30
-    local proxyGap = 14
-    local rowWidth = (proxyWidth * 2) + proxyGap
-    local row = AcquireContainer(preview, content)
-    row:SetSize(rowWidth, proxyHeight)
-    row:ClearAllPoints()
-    row:SetPoint(
-        "TOPLEFT",
-        content,
-        "TOPLEFT",
-        math_max(0, math_floor((math_max(contentWidth, rowWidth) - rowWidth) / 2)),
-        -(contentHeight > 0 and (contentHeight + LAYOUT_PREVIEW_SECTION_GAP) or 0)
-    )
+    local lines = {}
+    local current = { width = 0, first = 1, last = 0 }
+    for index = 1, #frames do
+        local candidate = current.width > 0
+            and (current.width + BARS_PILL_GAP + widths[index])
+            or widths[index]
+        if current.width > 0 and candidate > maxWidth then
+            lines[#lines + 1] = current
+            current = { width = widths[index], first = index, last = index }
+        else
+            current.width = candidate
+            current.last = index
+        end
+    end
+    if current.last >= current.first then
+        lines[#lines + 1] = current
+    end
 
-    local player = AcquireUnitFrameProxy(preview, row)
-    player:SetSize(proxyWidth, proxyHeight)
-    player:ClearAllPoints()
-    player:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
-    ConfigureUnitFrameProxy(player, "player", "Player Frame", CS.castFramesSelectedItem == "player")
+    local rowWidth = 0
+    for _, line in ipairs(lines) do
+        rowWidth = math_max(rowWidth, line.width)
+    end
+
+    local top = 0
+    for lineIndex, line in ipairs(lines) do
+        local x = math_floor((rowWidth - line.width) / 2)
+        for index = line.first, line.last do
+            local frame = frames[index]
+            frame:SetSize(widths[index], BARS_PILL_HEIGHT)
+            frame:ClearAllPoints()
+            frame:SetPoint("TOPLEFT", row, "TOPLEFT", x, -top)
+            x = x + widths[index] + BARS_PILL_GAP
+        end
+        top = top + BARS_PILL_HEIGHT
+            + (lineIndex < #lines and BARS_PILL_LINE_GAP or 0)
+    end
+
+    row:SetSize(math_max(1, rowWidth), math_max(1, top))
+    return row, rowWidth, top
+end
+
+-- The two unit-frame badges: canvas objects, so their selection keys
+-- register as rendered. Called only when frame anchoring is on; the
+-- caller has already tested that, since it also decides whether the
+-- composition has anything at all to draw.
+local function BuildBarsUnitFrameBadgeItems(preview)
+    local items = {}
+    local accent = BARS_PILL_NEUTRAL_ACCENT
+    local _, classKey = UnitClass("player")
+    local classColor = classKey and C_ClassColor.GetClassColor(classKey)
+    if classColor then
+        accent = { classColor.r, classColor.g, classColor.b }
+    end
+
+    local anchoringNote = "Stands in for your real unit frame, which "
+        .. "Cooldown Companion re-anchors rather than draws."
+
+    items[#items + 1] = {
+        label = "Player Frame",
+        icon = classKey and ("classicon-" .. string.lower(classKey)) or BARS_PILL_TARGET_ICON,
+        accent = accent,
+        selected = CS.castFramesSelectedItem == "player",
+        tooltip = "Player Frame",
+        tooltipLine = "Click to edit this frame's anchoring.",
+        tooltipNote = anchoringNote,
+        onClick = function()
+            SelectPreviewCastFramesItem("player")
+        end,
+    }
     preview.renderedSelectionKeys["frame:player"] = true
 
-    local target = AcquireUnitFrameProxy(preview, row)
-    target:SetSize(proxyWidth, proxyHeight)
-    target:ClearAllPoints()
-    target:SetPoint("LEFT", player, "RIGHT", proxyGap, 0)
-    ConfigureUnitFrameProxy(target, "target", "Target Frame", CS.castFramesSelectedItem == "target")
+    items[#items + 1] = {
+        label = "Target Frame",
+        icon = BARS_PILL_TARGET_ICON,
+        accent = BARS_PILL_NEUTRAL_ACCENT,
+        selected = CS.castFramesSelectedItem == "target",
+        tooltip = "Target Frame",
+        tooltipLine = "Click to edit this frame's anchoring.",
+        tooltipNote = anchoringNote,
+        onClick = function()
+            SelectPreviewCastFramesItem("target")
+        end,
+    }
     preview.renderedSelectionKeys["frame:target"] = true
 
-    local height = contentHeight + (contentHeight > 0 and LAYOUT_PREVIEW_SECTION_GAP or 0) + proxyHeight
-    return math_max(contentWidth, rowWidth), height
+    return items
+end
+
+-- The module-enable cluster, pinned to the pane's bottom-right corner: one
+-- pill per module of this workspace that is switched off entirely. It is
+-- host chrome rather than canvas content, built on every bars build before
+-- anything measures itself, so it is on screen in the message-only states
+-- too - those are exactly the states whose way out is turning a module on.
+--
+-- It claims its own share of the host's bottom reserve (see
+-- GetHostBottomReserve), which is why a wrap costs the composition height
+-- instead of drawing over it. One line matches the command center's band
+-- exactly, so the common case costs nothing.
+--
+-- Never more than two pills: with all three modules off the workspace
+-- shows its overview pane instead and no canvas is built at all.
+local function BuildBarsEnableCluster(preview)
+    local host = preview.host
+    if not host then
+        return
+    end
+
+    local items = IsBarsWorkspaceActive()
+        and ST._CollectBarsEnableItems
+        and ST._CollectBarsEnableItems()
+        or nil
+    if not (items and #items > 0) then
+        if preview.enableCluster then
+            preview.enableCluster:Hide()
+        end
+        host._cdcBarsCornerReserveBottom = nil
+        return
+    end
+
+    local cluster = preview.enableCluster
+    if not cluster then
+        cluster = CreateFrame("Frame", nil, host)
+        cluster:SetClipsChildren(false)
+        -- Level with the command center, above the composition's own
+        -- frames, so neither corner is ever buried by an overhanging slot.
+        cluster:SetFrameLevel(host:GetFrameLevel() + 20)
+        preview.enableCluster = cluster
+    end
+    cluster:Show()
+
+    local frames = {}
+    local widths = {}
+    for index, item in ipairs(items) do
+        item.accent = BARS_PILL_ENABLE_ACCENT
+        item.label = "+ " .. tostring(item.label or "")
+        local frame = AcquireBarsPill(preview, cluster)
+        ConfigureBarsPill(preview, frame, item)
+        frames[index] = frame
+        widths[index] = GetBarsPillWidth(frame, item)
+    end
+
+    -- The command center owns the left of this band. Leave it its width
+    -- plus a gap and wrap into what is left; when even one pill will not
+    -- fit that, the cluster takes the room it needs and the command center
+    -- keeps the left edge it is anchored to.
+    local hostWidth = host:GetWidth() or 0
+    if hostWidth < 40 then
+        hostWidth = 340
+    end
+    local occupied = ST._GetPreviewCommandCenterOccupiedWidth
+        and ST._GetPreviewCommandCenterOccupiedWidth(host) or 0
+    local budget = hostWidth - BARS_CORNER_SIDE_INSET - occupied
+    if occupied > 0 then
+        budget = budget - BARS_CORNER_COMMAND_GAP
+    end
+    budget = math_max(BARS_PILL_MIN_WIDTH, budget)
+
+    local lines = {}
+    local current = { width = 0, first = 1, last = 0 }
+    for index = 1, #frames do
+        local candidate = current.width > 0
+            and (current.width + BARS_PILL_GAP + widths[index])
+            or widths[index]
+        if current.width > 0 and candidate > budget then
+            lines[#lines + 1] = current
+            current = { width = widths[index], first = index, last = index }
+        else
+            current.width = candidate
+            current.last = index
+        end
+    end
+    if current.last >= current.first then
+        lines[#lines + 1] = current
+    end
+
+    local clusterWidth = 0
+    for _, line in ipairs(lines) do
+        clusterWidth = math_max(clusterWidth, line.width)
+    end
+
+    local top = 0
+    for lineIndex, line in ipairs(lines) do
+        local right = 0
+        for index = line.last, line.first, -1 do
+            local frame = frames[index]
+            frame:SetSize(widths[index], BARS_CORNER_PILL_HEIGHT)
+            frame:ClearAllPoints()
+            frame:SetPoint("TOPRIGHT", cluster, "TOPRIGHT", -right, -top)
+            right = right + widths[index] + BARS_PILL_GAP
+        end
+        top = top + BARS_CORNER_PILL_HEIGHT
+            + (lineIndex < #lines and BARS_PILL_LINE_GAP or 0)
+    end
+
+    cluster:SetSize(math_max(1, clusterWidth), math_max(1, top))
+    cluster:ClearAllPoints()
+    cluster:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT",
+        -BARS_CORNER_SIDE_INSET, BARS_CORNER_BOTTOM_INSET)
+
+    host._cdcBarsCornerReserveBottom = BARS_CORNER_BOTTOM_INSET + top
+end
+
+local function FinishPreviewWithMessage(preview, message)
+    SetPreviewMessage(preview, message)
+    FinalizePreviewState(preview)
 end
 
 local function GetLayoutOrderForInsertion(laneSlots, reversed, insertIndex)
@@ -2984,11 +3253,17 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     local layout = CooldownCompanion:GetSpecLayoutOrder()
     preview.isVerticalLayout = preview.rbSettings
         and preview.rbSettings.enabled == true
-        and not CS.castFramesEntrySelected
         and IsResourceBarVerticalConfig(preview.rbSettings, layout)
         or false
 
     ResetPreviewState(preview)
+    -- Corner chrome first: it claims part of the host's bottom reserve, and
+    -- everything below - the composition's fit box and the message box
+    -- alike - is measured against what that reserve leaves. Every exit from
+    -- this function is downstream of here, so the cluster is on screen in
+    -- the message-only states too.
+    BuildBarsEnableCluster(preview)
+    ApplyHostBottomReserve(container, preview.root)
     preview.layout = layout
     -- The real spacing between stacked bars, not a fixed 4px. (The gap
     -- between the icon panel and the lanes is a different setting,
@@ -3005,16 +3280,16 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     local castBarEnabled = cbSettings and cbSettings.enabled == true
     local frameAnchoringSettings = CooldownCompanion.GetFrameAnchoringSettings
         and CooldownCompanion:GetFrameAnchoringSettings()
-    local hasUnitFrameProxies = CS.castFramesEntrySelected
+    local hasUnitFrameBadges = IsBarsWorkspaceActive()
         and frameAnchoringSettings
         and frameAnchoringSettings.enabled == true
-    if not (resourceBarsEnabled or castBarEnabled or hasUnitFrameProxies) then
-        SetPreviewMessage(preview, "Enable Resource Bars or Cast Bar to configure layout.")
-        FinalizePreviewState(preview)
+    if not (resourceBarsEnabled or castBarEnabled or hasUnitFrameBadges) then
+        FinishPreviewWithMessage(preview,
+            "Nothing to show yet. Switch on Resource Bars, the cast bar, or unit frames to start.")
         return
     end
 
-    local independentResourcesPreview = CS.resourcesEntrySelected
+    local independentResourcesPreview = IsBarsWorkspaceActive()
         and resourceBarsEnabled
         and layout
         and IsTruthyConfigFlag(layout.independentAnchorEnabled)
@@ -3022,21 +3297,19 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     local supportsAttachedResourceBars = resourceBarsEnabled
         and not (layout and IsTruthyConfigFlag(layout.independentAnchorEnabled))
     local hasAttachedCastBar = castBarEnabled and not IsTruthyConfigFlag(cbSettings.independentAnchorEnabled)
-    local includeResourceSlots = not CS.castFramesEntrySelected
-        and (supportsAttachedResourceBars or independentResourcesPreview)
+    local includeResourceSlots = supportsAttachedResourceBars or independentResourcesPreview
     local includeCastSlots = not independentResourcesPreview
     local hasAttachedBarContext = not independentResourcesPreview
         and (includeResourceSlots or hasAttachedCastBar)
     local hasBarContext = independentResourcesPreview or hasAttachedBarContext
-    if not hasBarContext and not hasUnitFrameProxies then
-        SetPreviewMessage(preview, "These settings apply only when Resource Bars or Cast Bar are anchored to a panel.")
-        FinalizePreviewState(preview)
+    if not hasBarContext and not hasUnitFrameBadges then
+        FinishPreviewWithMessage(preview,
+            "Nothing is anchored to a panel right now. Pick an object below to edit it.")
         return
     end
 
     if hasBarContext and not layout then
-        SetPreviewMessage(preview, "Specialization data loading...")
-        FinalizePreviewState(preview)
+        FinishPreviewWithMessage(preview, "Specialization data loading...")
         return
     end
 
@@ -3061,9 +3334,8 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
 
         if hasAttachedBarContext and (#primarySlots > 0 or #castSlots > 0) then
             sourcePanel, sourceMessage = ResolveLayoutPreviewSourcePanel()
-            if not sourcePanel and not hasUnitFrameProxies then
-                SetPreviewMessage(preview, sourceMessage)
-                FinalizePreviewState(preview)
+            if not sourcePanel and not hasUnitFrameBadges then
+                FinishPreviewWithMessage(preview, sourceMessage)
                 return
             end
             if not sourcePanel then
@@ -3073,13 +3345,14 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
         end
     end
 
-    if #primarySlots == 0 and #castSlots == 0 and not hasUnitFrameProxies then
+    if #primarySlots == 0 and #castSlots == 0 and not hasUnitFrameBadges then
         if independentResourcesPreview then
-            SetPreviewMessage(preview, "No active resources to order. Enable a resource or Custom Bar first.")
+            FinishPreviewWithMessage(preview,
+                "No active resources to order. Enable a resource or Custom Bar first.")
         else
-            SetPreviewMessage(preview, "No active bars to order. Enable resources, Custom Bars, or cast bar first.")
+            FinishPreviewWithMessage(preview,
+                "No active bars to order. Enable resources, Custom Bars, or cast bar first.")
         end
-        FinalizePreviewState(preview)
         return
     end
 
@@ -3090,7 +3363,15 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     end
 
     local root = preview.root
-    local content = AcquireContainer(preview, root)
+    -- Two frames, not one: `block` is everything the pane centers and
+    -- scales, `content` is the bar composition alone. The unit-frame badges
+    -- are the other member of the block, and nesting is what keeps a badge
+    -- pair wider than the bar stack from dragging the stack off the pane's
+    -- axis - each member centers inside the block, and the block centers on
+    -- the pane.
+    local block = AcquireContainer(preview, root)
+    block:SetClipsChildren(false)
+    local content = AcquireContainer(preview, block)
     content:SetClipsChildren(false)
 
     local contentWidth = 0
@@ -3153,23 +3434,44 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
         end
     end
 
-    contentWidth, contentHeight = AppendUnitFrameProxies(preview, content, contentWidth, contentHeight)
-
-    content:SetSize(contentWidth, contentHeight)
-
     local hostWidth = container:GetWidth() or 0
     local hostHeight = (container:GetHeight() or 0) - GetHostBottomReserve(container)
     if hostWidth < 40 then hostWidth = 340 end
     if hostHeight < 40 then hostHeight = 520 end
     local maxWidth = math_max(120, hostWidth - (LAYOUT_PREVIEW_PADDING * 2))
     local maxHeight = math_max(120, hostHeight - (LAYOUT_PREVIEW_PADDING * 2))
-    local scale = math_min(1, maxWidth / math_max(1, contentWidth), maxHeight / math_max(1, contentHeight))
+
+    content:SetSize(contentWidth, contentHeight)
+    content:ClearAllPoints()
+    content:SetPoint("TOP", block, "TOP", 0, 0)
+
+    -- The badges join the composition rather than docking to the pane: they
+    -- are objects this canvas draws, so they belong inside the block that
+    -- gets measured, scaled and centered with the bars.
+    local blockWidth = contentWidth
+    local blockHeight = contentHeight
+    if hasUnitFrameBadges then
+        local badgeRow, badgeWidth, badgeHeight = BuildBarsPillRow(
+            preview, block, BuildBarsUnitFrameBadgeItems(preview), maxWidth)
+        local gap = contentHeight > 0 and BARS_BADGE_GAP or 0
+        badgeRow:ClearAllPoints()
+        badgeRow:SetPoint("TOP", content, "BOTTOM", 0, -gap)
+        blockWidth = math_max(blockWidth, badgeWidth)
+        blockHeight = blockHeight + gap + badgeHeight
+    end
+
+    block:SetSize(math_max(1, blockWidth), math_max(1, blockHeight))
+
+    local scale = math_min(1, maxWidth / math_max(1, blockWidth), maxHeight / math_max(1, blockHeight))
 
     -- Center the whole visual block in the pane so dead space stays
-    -- symmetric regardless of how bars split across their configured sides.
-    content:SetScale(scale)
-    content:ClearAllPoints()
-    content:SetPoint("CENTER", root, "CENTER", 0, 0)
+    -- symmetric regardless of how bars split across their configured
+    -- sides. The root already stops short of the host's bottom band, so
+    -- this stays a zero anchor offset - which is what keeps it exact under
+    -- the scale above.
+    block:SetScale(scale)
+    block:ClearAllPoints()
+    block:SetPoint("CENTER", root, "CENTER", 0, 0)
 
     -- Identity marks last: they counter-scale against the fit above, so
     -- they can only be laid out once it is known. A rebuild can happen with
@@ -3183,11 +3485,6 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
 
     FinalizePreviewState(preview)
     StartPreviewAnimationDriver(preview)
-end
-
-function ST._GetLayoutPreviewRenderedSelectionKeys(host)
-    local preview = host and host._cdcLayoutPreview
-    return preview and preview.renderedSelectionKeys or {}
 end
 
 -- True when the Layout & Order lanes would actually render bars around an
@@ -3255,7 +3552,7 @@ function ST._ResourcesPreviewRendersCastSlot()
         return false
     end
     local rbSettings = CooldownCompanion:GetResourceBarSettings()
-    local independentResourcesPreview = CS.resourcesEntrySelected
+    local independentResourcesPreview = IsBarsWorkspaceActive()
         and rbSettings and rbSettings.enabled == true
         and IsTruthyConfigFlag(layout.independentAnchorEnabled)
     if independentResourcesPreview then
@@ -3265,6 +3562,15 @@ function ST._ResourcesPreviewRendersCastSlot()
     -- resolvable panel means no lane: either the canvas is a message, or the
     -- unit-frame-proxy path wiped the slots and rendered proxies alone.
     return ResolveLayoutPreviewSourcePanel() ~= nil
+end
+
+-- The selection keys the canvas drew on its most recent build for `host`.
+-- Read by the bars workspace as it builds the "Not currently shown:" chip
+-- strip below the editing divider, so the strip and the canvas can never
+-- disagree about which objects are on screen. Call it AFTER the build.
+function ST._GetLayoutPreviewRenderedSelectionKeys(host)
+    local preview = host and host._cdcLayoutPreview
+    return preview and preview.renderedSelectionKeys or nil
 end
 
 -- Shared with ButtonPanelPreview.lua: config-safe icon resolution and the

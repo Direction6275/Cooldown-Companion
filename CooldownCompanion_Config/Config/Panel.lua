@@ -50,7 +50,7 @@ local MANUAL_COLUMN_LAYOUT = "CDC_MANUAL"
 local CONFIG_FINDER_BOX_HEIGHT = 28
 local CONFIG_FINDER_BUTTON_GAP = 3
 local CONFIG_FINDER_RESERVED_HEIGHT = CONFIG_FINDER_BOX_HEIGHT + CONFIG_FINDER_BUTTON_GAP
-local NAVIGATOR_DESTINATIONS_HEIGHT = 57
+local NAVIGATOR_DESTINATIONS_HEIGHT = 33
 local CONFIG_COMPACT_ROW_MIN_WIDTH = 236
 local NAVIGATOR_WIDTH = 300
 local CONFIG_DRAG_ALPHA = 0.40
@@ -271,7 +271,7 @@ end
 ST._HasOtherClassInventory = HasOtherClassInventory
 ST._ShouldShowOtherClassNavigatorRow = ShouldShowOtherClassNavigatorRow
 
--- 8px top offset + 24px per row (+1 slack). The third row appears only when
+-- 8px top offset + 24px per row (+1 slack). The second row appears only when
 -- another class has browsable inventory.
 local function GetNavigatorDestinationsHeight()
     return ShouldShowOtherClassNavigatorRow() and (NAVIGATOR_DESTINATIONS_HEIGHT + 24) or NAVIGATOR_DESTINATIONS_HEIGHT
@@ -399,9 +399,16 @@ local function GetConfigSelectionSummary()
 end
 
 local function GetColumn3HeaderMode(selection)
-    -- Cast Bar & Unit Frames home: the workspace shows the selected
-    -- Navigator row's settings.
-    if CS.castFramesEntrySelected then
+    -- The bars workspace shows whichever object is selected: a cast/frames
+    -- item first, otherwise the Resources home and its editing surfaces.
+    -- With every module disabled the overview pane replaces all of them.
+    local barsOverview = CS.barsEntrySelected
+        and ST._IsBarsOverviewActive
+        and ST._IsBarsOverviewActive()
+    if barsOverview then
+        return "bars_overview"
+    end
+    if CS.barsEntrySelected and CS.castFramesSelectedItem then
         if CS.castFramesSelectedItem == "player" then
             return "player_frame"
         elseif CS.castFramesSelectedItem == "target" then
@@ -409,11 +416,7 @@ local function GetColumn3HeaderMode(selection)
         end
         return "cast_bar"
     end
-    -- Resources home: the workspace hosts the resource editing surfaces.
-    if CS.resourcesEntrySelected then
-        if ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
-            return "resources_intro"
-        end
+    if CS.barsEntrySelected then
         local resourceBarSettings = CooldownCompanion:GetResourceBarSettings()
         if resourceBarSettings and resourceBarSettings.enabled == true then
             if CS.selectedResourcePowerType
@@ -463,8 +466,8 @@ end
 
 local function GetColumn3HeaderTitle(selection)
     local mode = GetColumn3HeaderMode(selection)
-    if mode == "resources_intro" then
-        return "Resource Bars"
+    if mode == "bars_overview" then
+        return "Resources, Cast Bar & Unit Frames"
     elseif mode == "resources_panel" then
         return "Resource Bars"
     elseif mode == "resource_settings" then
@@ -1615,29 +1618,29 @@ local function CreateConfigPanel()
     bsInfoIcon:SetAtlas("QuestRepeatableTurnin")
     bsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if CS.castFramesEntrySelected and CS.castFramesSelectedItem ~= "player" and CS.castFramesSelectedItem ~= "target" then
+        if CS.barsEntrySelected and ST._IsBarsOverviewActive and ST._IsBarsOverviewActive() then
+            GameTooltip:AddLine("Resources, Cast Bar & Unit Frames")
+            GameTooltip:AddLine("Resource Bars, the cast bar, and unit frame anchoring are all disabled. Enable any of them to start building this workspace.", 1, 1, 1, true)
+        elseif CS.barsEntrySelected and CS.castFramesSelectedItem == "castbar" then
             GameTooltip:AddLine("Cast Bar")
             GameTooltip:AddLine("Skins the Blizzard cast bar and anchors it to a panel, or positions it anywhere on screen.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Click the cast bar or unit-frame proxies to edit them; drag the attached cast bar to reorder it.", 1, 1, 1, true)
+            GameTooltip:AddLine("Click any bar or unit-frame badge in the preview to edit it; drag attached bars to reorder them.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("These settings are saved per character.", 1, 1, 1, true)
-        elseif CS.castFramesEntrySelected then
+        elseif CS.barsEntrySelected and CS.castFramesSelectedItem then
             GameTooltip:AddLine("Unit Frames")
             GameTooltip:AddLine("Anchors your player and target unit frames to your panels.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("These settings are saved per character.", 1, 1, 1, true)
-        elseif ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
-            GameTooltip:AddLine("Resource Bars")
-            GameTooltip:AddLine("Enable Resource Bars to configure Resources and Custom Bars here.", 1, 1, 1, true)
-        elseif CS.resourcesEntrySelected and not CS.selectedResourcePowerType and not CS.selectedCustomBarId then
+        elseif CS.barsEntrySelected and not CS.selectedResourcePowerType and not CS.selectedCustomBarId then
             GameTooltip:AddLine("Resource Bars")
             GameTooltip:AddLine("Shared resource bar settings, organized into tabs.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("Click bars to edit them, or drag attached bars around the mirrored icon panel. Layout is saved per specialization.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("Click a bar in the preview, or use the inactive row below it, for per-bar settings.", 1, 1, 1, true)
-        elseif CS.resourcesEntrySelected then
+        elseif CS.barsEntrySelected then
             GameTooltip:AddLine("Layout & Order")
             GameTooltip:AddLine("Arrange attached bars by dragging them around the mirrored icon panel.", 1, 1, 1)
             GameTooltip:AddLine(" ")

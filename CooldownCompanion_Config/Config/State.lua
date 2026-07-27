@@ -309,11 +309,12 @@ ST._configState = {
     customBarSettingsTab = "appearance",
     selectedCustomBarId = nil,
     customBarSpecExpandedId = nil,
-    resourcesEntrySelected = false,
-    castFramesEntrySelected = false,
-    -- Cast Bar & Unit Frames home: which column-2 row is selected
-    -- ("castbar" | "player" | "target")
-    castFramesSelectedItem = "castbar",
+    -- The unified Resources, Cast Bar & Unit Frames workspace
+    barsEntrySelected = false,
+    -- Which cast/frames object that workspace is editing
+    -- ("castbar" | "player" | "target"); nil is the Resources home, where a
+    -- resource or a custom bar can be selected instead
+    castFramesSelectedItem = nil,
     -- Buttons view, unified anchor preview: which attached bar's settings
     -- own the settings area ("resource" | "custom" | "cast", nil = none).
     -- The matching id lives in selectedResourcePowerType/selectedCustomBarId.
@@ -620,8 +621,7 @@ local function SnapshotOtherClassLibraryState()
         selectedCustomBarId = CS.selectedCustomBarId,
         selectedResourcePowerType = CS.selectedResourcePowerType,
         resourceSettingsSpecID = CS.resourceSettingsSpecID,
-        resourcesEntrySelected = CS.resourcesEntrySelected,
-        castFramesEntrySelected = CS.castFramesEntrySelected,
+        barsEntrySelected = CS.barsEntrySelected,
         castFramesSelectedItem = CS.castFramesSelectedItem,
         unifiedBarKind = CS.unifiedBarKind,
         addingToPanelId = CS.addingToPanelId,
@@ -652,8 +652,7 @@ local function RestoreOtherClassLibrarySnapshot()
     CS.selectedCustomBarId = snapshot.selectedCustomBarId
     CS.selectedResourcePowerType = snapshot.selectedResourcePowerType
     CS.resourceSettingsSpecID = snapshot.resourceSettingsSpecID
-    CS.resourcesEntrySelected = snapshot.resourcesEntrySelected
-    CS.castFramesEntrySelected = snapshot.castFramesEntrySelected
+    CS.barsEntrySelected = snapshot.barsEntrySelected
     CS.castFramesSelectedItem = snapshot.castFramesSelectedItem
     CS.unifiedBarKind = snapshot.unifiedBarKind
     CS.addingToPanelId = snapshot.addingToPanelId
@@ -1052,8 +1051,8 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CS.selectedGroup = panelId
     CS.selectedButton = buttonIndex
     CS.selectedRotationAssistantEntry = nil
-    CS.resourcesEntrySelected = false
-    CS.castFramesEntrySelected = false
+    CS.barsEntrySelected = false
+    CS.castFramesSelectedItem = nil
     CS.unifiedBarKind = nil
     CS.addingToPanelId = nil
     CS.configFinderNavigated = true
@@ -2711,8 +2710,8 @@ ClearConfigPrimarySelection = function()
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedContainer = nil
     CS.selectedGroup = nil
-    CS.resourcesEntrySelected = false
-    CS.castFramesEntrySelected = false
+    CS.barsEntrySelected = false
+    CS.castFramesSelectedItem = nil
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     wipe(CS.selectedGroups)
@@ -2743,8 +2742,8 @@ local function SelectConfigContainer(containerId, opts)
         CS.lastActiveContainer = CS.selectedContainer
     end
 
-    CS.resourcesEntrySelected = false
-    CS.castFramesEntrySelected = false
+    CS.barsEntrySelected = false
+    CS.castFramesSelectedItem = nil
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     if opts and opts.clearFinder then
@@ -2768,8 +2767,8 @@ local function ToggleConfigContainerMultiSelect(containerId)
 
     CS.selectedContainer = nil
     CS.selectedGroup = nil
-    CS.resourcesEntrySelected = false
-    CS.castFramesEntrySelected = false
+    CS.barsEntrySelected = false
+    CS.castFramesSelectedItem = nil
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     wipe(CS.selectedCustomBars)
@@ -2807,8 +2806,8 @@ local function SelectConfigPanel(panelId, opts)
         CS.lastActiveContainer = activeContainerId
     end
 
-    CS.resourcesEntrySelected = false
-    CS.castFramesEntrySelected = false
+    CS.barsEntrySelected = false
+    CS.castFramesSelectedItem = nil
     ClearSelectedButton()
     RefreshAlphaDriverForConfigSelection()
 end
@@ -2825,8 +2824,8 @@ local function ToggleConfigPanelMultiSelect(panelId)
     end
 
     CS.selectedGroup = nil
-    CS.resourcesEntrySelected = false
-    CS.castFramesEntrySelected = false
+    CS.barsEntrySelected = false
+    CS.castFramesSelectedItem = nil
     ClearSelectedButton()
     CS.addingToPanelId = nil
     RefreshAlphaDriverForConfigSelection()
@@ -2840,8 +2839,8 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
     if opts and opts.containerId ~= nil then
         CS.selectedContainer = opts.containerId
     end
-    CS.resourcesEntrySelected = false
-    CS.castFramesEntrySelected = false
+    CS.barsEntrySelected = false
+    CS.castFramesSelectedItem = nil
     CS.unifiedBarKind = nil
     if panelChanged then
         CS.selectedGroup = panelId
@@ -2889,8 +2888,8 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
     CS.selectedGroup = panelId
     CS.selectedButton = nil
     CS.selectedRotationAssistantEntry = true
-    CS.resourcesEntrySelected = false
-    CS.castFramesEntrySelected = false
+    CS.barsEntrySelected = false
+    CS.castFramesSelectedItem = nil
     CS.unifiedBarKind = nil
     wipe(CS.selectedButtons)
     CS.buttonSettingsTab = "loadconditions"
@@ -2906,8 +2905,8 @@ local function SelectConfigButtonPanel(panelId, opts)
     if CS.selectedGroup ~= panelId then
         CooldownCompanion:ClearAllConfigPreviews()
         CS.selectedGroup = panelId
-        CS.resourcesEntrySelected = false
-        CS.castFramesEntrySelected = false
+        CS.barsEntrySelected = false
+        CS.castFramesSelectedItem = nil
         ClearSelectedButton()
         RefreshAlphaDriverForConfigSelection()
     end
@@ -2930,6 +2929,15 @@ local function ClearConfigCustomBarSelection(opts)
     SetConfigCustomBarSettingsTab("appearance")
 end
 
+-- The unified bars workspace edits one object at a time: a resource, a
+-- custom bar, or a cast/frames item. Clearing all three is "back to the
+-- Resources home".
+local function ClearConfigBarsHomeSelection()
+    ClearConfigResourceSelection()
+    ClearConfigCustomBarSelection({ clearExpanded = true })
+    CS.castFramesSelectedItem = nil
+end
+
 local function SelectConfigCustomBar(customBarId, opts)
     local selectionChanged = CS.selectedCustomBarId ~= customBarId
     if opts and opts.toggle and not selectionChanged then
@@ -2938,6 +2946,7 @@ local function SelectConfigCustomBar(customBarId, opts)
     end
 
     ClearConfigResourceSelection()
+    CS.castFramesSelectedItem = nil
     -- Selecting a bar jumps to its own tabs, the same way selecting an
     -- entry does, even if a module tab was the last thing shown.
     CS.unifiedRowScope = "detail"
@@ -2955,6 +2964,7 @@ end
 
 local function ToggleConfigCustomBarMultiSelect(customBarId)
     ClearConfigResourceSelection()
+    CS.castFramesSelectedItem = nil
     if CS.selectedCustomBars[customBarId] then
         CS.selectedCustomBars[customBarId] = nil
     else
@@ -2998,6 +3008,7 @@ local function SelectConfigResource(powerType, opts)
     CS.selectedCustomBarId = nil
     CS.customBarSpecExpandedId = nil
     wipe(CS.selectedCustomBars)
+    CS.castFramesSelectedItem = nil
     -- Selecting a resource jumps to its own tabs, the same way selecting an
     -- entry does, even if a module tab was the last thing shown.
     CS.unifiedRowScope = "detail"
@@ -3097,62 +3108,39 @@ local function SelectUnifiedAnchorBar(slot)
     return true
 end
 
-local function SelectConfigResourcesEntry(opts)
-    local keepObjectSelection = CS.resourcesEntrySelected == true
-        and not (opts and opts.toggle)
+-- The unified Resources, Cast Bar & Unit Frames workspace: the pinned
+-- preview and the inactive chips select the resource, custom bar, or
+-- cast/frames item whose settings show beneath it. The destination row is a
+-- "go home" click - entering, or clicking it again while an object is
+-- selected, lands on the Resources home with nothing selected.
+local function SelectConfigBarsEntry(opts)
     CooldownCompanion:ClearAllConfigPreviews()
     ResetOtherClassLibraryState()
     -- Destination navigation exits the temporary filtered-tree view.
     ClearConfigFinderText({ preservePrimarySelection = true })
-    if opts and opts.toggle and CS.resourcesEntrySelected then
-        CS.resourcesEntrySelected = false
+    if opts and opts.toggle and CS.barsEntrySelected then
+        CS.barsEntrySelected = false
     else
-        CS.resourcesEntrySelected = true
+        CS.barsEntrySelected = true
     end
-    CS.castFramesEntrySelected = false
     CS.selectedGroup = nil
     CS.unifiedBarKind = nil
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     wipe(CS.selectedGroups)
-    if not keepObjectSelection then
-        ClearConfigResourceSelection()
-        ClearConfigCustomBarSelection({ clearExpanded = true })
-    end
+    ClearConfigBarsHomeSelection()
     RefreshAlphaDriverForConfigSelection()
 end
 
--- The Cast Bar & Unit Frames home: the workspace preview/inactive chips
--- select Cast Bar / Player Frame / Target Frame beneath the pinned preview.
-local function SelectConfigCastFramesEntry(opts)
-    local keepObjectSelection = CS.castFramesEntrySelected == true
-        and not (opts and opts.toggle)
-    CooldownCompanion:ClearAllConfigPreviews()
-    ResetOtherClassLibraryState()
-    ClearConfigFinderText({ preservePrimarySelection = true })
-    if opts and opts.toggle and CS.castFramesEntrySelected then
-        CS.castFramesEntrySelected = false
-    else
-        CS.castFramesEntrySelected = true
-    end
-    CS.resourcesEntrySelected = false
-    CS.selectedGroup = nil
-    CS.unifiedBarKind = nil
-    ClearSelectedButton()
-    wipe(CS.selectedPanels)
-    wipe(CS.selectedGroups)
-    if not keepObjectSelection then
-        ClearConfigResourceSelection()
-        ClearConfigCustomBarSelection({ clearExpanded = true })
-    end
-    RefreshAlphaDriverForConfigSelection()
-end
-
+-- A cast/frames item belongs to the same mutually exclusive family as the
+-- resources and custom bars beside it, so selecting one drops any bar.
 local function SelectConfigCastFramesItem(item)
     if item ~= "castbar" and item ~= "player" and item ~= "target" then
         return false
     end
     local changed = CS.castFramesSelectedItem ~= item
+    ClearConfigResourceSelection()
+    ClearConfigCustomBarSelection({ clearExpanded = true })
     CS.castFramesSelectedItem = item
     return changed
 end
@@ -3174,29 +3162,44 @@ local function GetResourcesEntryPlacement()
     return "attached", CooldownCompanion:GetFirstAvailableAnchorGroup()
 end
 
--- The Resources home shows a single wide intro pane (col3 spanning the col4
--- region) while Resource Bars are disabled. A profile conflict keeps the
--- normal split layout so the conflict gate stays reachable.
-local function IsResourcesEmptyStateActive()
-    if not CS.resourcesEntrySelected then
+-- With all three of the workspace's modules disabled there is nothing for
+-- the canvas to draw and nothing to select, so the workspace becomes a
+-- single wide overview pane offering each module its own enable button. A
+-- profile conflict keeps the normal layout so its gate stays reachable.
+local function IsBarsOverviewActive()
+    if not CS.barsEntrySelected then
         return false
     end
     if CooldownCompanion.GetCurrentResourceBarConflict
         and CooldownCompanion:GetCurrentResourceBarConflict() then
         return false
     end
-    local settings = CooldownCompanion.GetResourceBarSettings
+    local resourceBars = CooldownCompanion.GetResourceBarSettings
         and CooldownCompanion:GetResourceBarSettings()
         or nil
-    return not (settings and settings.enabled == true)
+    if resourceBars and resourceBars.enabled == true then
+        return false
+    end
+    local castBar = CooldownCompanion.GetCastBarSettings
+        and CooldownCompanion:GetCastBarSettings()
+        or nil
+    if castBar and castBar.enabled == true then
+        return false
+    end
+    local frameAnchoring = CooldownCompanion.GetFrameAnchoringSettings
+        and CooldownCompanion:GetFrameAnchoringSettings()
+        or nil
+    if frameAnchoring and frameAnchoring.enabled == true then
+        return false
+    end
+    return true
 end
 
--- True for the normal panel workspace. Browse, Resources, Cast, and the
+-- True for the normal panel workspace. Browse, the bars workspace, and the
 -- talent picker have their own workspace routing even though the cutover
 -- now gives every non-picker view the same Navigator + workspace frame.
 local function IsButtonsWideViewActive()
-    return not (CS.resourcesEntrySelected
-        or CS.castFramesEntrySelected
+    return not (CS.barsEntrySelected
         or CS.talentPickerMode
         or CS.otherClassLibraryActive)
 end
@@ -3222,8 +3225,8 @@ local function ResetConfigSelection(full)
     if full then
         CS.selectedContainer = nil
         CS.selectedGroup = nil
-        CS.resourcesEntrySelected = false
-        CS.castFramesEntrySelected = false
+        CS.barsEntrySelected = false
+        CS.castFramesSelectedItem = nil
         wipe(CS.selectedGroups)
         wipe(CS.selectedCustomBars)
         CS.addingToPanelId = nil
@@ -3577,6 +3580,7 @@ ST._SelectConfigButtonPanel = SelectConfigButtonPanel
 ST._SetConfigCustomBarSettingsTab = SetConfigCustomBarSettingsTab
 ST._ClearConfigCustomBarSelection = ClearConfigCustomBarSelection
 ST._ClearConfigResourceSelection = ClearConfigResourceSelection
+ST._ClearConfigBarsHomeSelection = ClearConfigBarsHomeSelection
 ST._SelectConfigCustomBar = SelectConfigCustomBar
 ST._ToggleConfigCustomBarMultiSelect = ToggleConfigCustomBarMultiSelect
 ST._PruneConfigCustomBarSelection = PruneConfigCustomBarSelection
@@ -3584,11 +3588,10 @@ ST._SelectConfigResource = SelectConfigResource
 ST._SelectUnifiedAnchorBar = SelectUnifiedAnchorBar
 ST._SetConfigResourceSettingsSpecID = SetConfigResourceSettingsSpecID
 ST._PruneConfigResourceSelection = PruneConfigResourceSelection
-ST._SelectConfigResourcesEntry = SelectConfigResourcesEntry
-ST._SelectConfigCastFramesEntry = SelectConfigCastFramesEntry
+ST._SelectConfigBarsEntry = SelectConfigBarsEntry
 ST._SelectConfigCastFramesItem = SelectConfigCastFramesItem
 ST._GetResourcesEntryPlacement = GetResourcesEntryPlacement
-ST._IsResourcesEmptyStateActive = IsResourcesEmptyStateActive
+ST._IsBarsOverviewActive = IsBarsOverviewActive
 ST._IsButtonsWideViewActive = IsButtonsWideViewActive
 ST._IsWideCol3LayoutActive = IsWideCol3LayoutActive
 ST._ResetConfigSelection = ResetConfigSelection

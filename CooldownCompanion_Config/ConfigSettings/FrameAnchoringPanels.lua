@@ -250,14 +250,21 @@ end
 local function BuildFrameAnchoringTargetPanel(container)
     local settings = CooldownCompanion:GetFrameAnchoringSettings()
 
-    if not settings.enabled then
-        local disabledLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(disabledLabel)
-        disabledLabel:SetText("Enable Frame Anchoring in the Player Frame column to configure target settings.")
-        disabledLabel:SetFullWidth(true)
-        container:AddChild(disabledLabel)
-        return
-    end
+    -- The module switch, as on the Player Frame panel: either frame can be
+    -- selected on its own in the workspace, so each one has to be able to
+    -- turn frame anchoring on rather than pointing at the other.
+    local enableCb = AceGUI:Create("CheckBox")
+    enableCb:SetLabel("Enable Frame Anchoring")
+    enableCb:SetValue(settings.enabled)
+    enableCb:SetFullWidth(true)
+    enableCb:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.enabled = val
+        CooldownCompanion:EvaluateFrameAnchoring()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(enableCb)
+
+    if not settings.enabled then return end
 
     if settings.mirroring then
         local infoLabel = AceGUI:Create("Label")

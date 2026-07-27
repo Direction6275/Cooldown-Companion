@@ -175,46 +175,33 @@ local function UpdateRailDestinations()
     host._cdcDividerOrnament:ClearAllPoints()
     host._cdcDividerOrnament:SetPoint("CENTER", host, "TOP", 0, -4)
 
-    local resources = EnsureRailDestinationButton(host, "resources")
-    resources:ClearAllPoints()
-    resources:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -8)
-    resources:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -8)
-    ConfigureRailDestinationButton(resources, {
-        label = "Resources",
+    local bars = EnsureRailDestinationButton(host, "bars-frames")
+    bars:ClearAllPoints()
+    bars:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -8)
+    bars:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -8)
+    ConfigureRailDestinationButton(bars, {
+        label = "Resources, Cast Bar & Unit Frames",
         atlas = "ui_adv_health",
-        selected = CS.resourcesEntrySelected == true,
+        selected = CS.barsEntrySelected == true,
         onClick = function()
-            if ST._SelectConfigResourcesEntry then
-                ST._SelectConfigResourcesEntry()
+            -- Always a "go home" click: the setter clears whatever bar or
+            -- cast/frames item was selected, so a second click on the row
+            -- returns to the Resources home instead of doing nothing.
+            if ST._SelectConfigBarsEntry then
+                ST._SelectConfigBarsEntry()
             end
             CooldownCompanion:RefreshConfigPanel()
         end,
     })
-    CS.col1ResourcesButton = resources
-
-    local castFrames = EnsureRailDestinationButton(host, "cast-frames")
-    castFrames:ClearAllPoints()
-    castFrames:SetPoint("TOPLEFT", resources, "BOTTOMLEFT", 0, 0)
-    castFrames:SetPoint("TOPRIGHT", resources, "BOTTOMRIGHT", 0, 0)
-    ConfigureRailDestinationButton(castFrames, {
-        label = "Cast Bar & Unit Frames",
-        atlas = "groupfinder-icon-friend",
-        selected = CS.castFramesEntrySelected == true,
-        onClick = function()
-            if ST._SelectConfigCastFramesEntry then
-                ST._SelectConfigCastFramesEntry()
-            end
-            CooldownCompanion:RefreshConfigPanel()
-        end,
-    })
+    CS.col1ResourcesButton = bars
 
     local otherClasses = EnsureRailDestinationButton(host, "other-classes")
     local showOtherClasses = ST._ShouldShowOtherClassNavigatorRow
         and ST._ShouldShowOtherClassNavigatorRow() or false
     if showOtherClasses then
         otherClasses:ClearAllPoints()
-        otherClasses:SetPoint("TOPLEFT", castFrames, "BOTTOMLEFT", 0, 0)
-        otherClasses:SetPoint("TOPRIGHT", castFrames, "BOTTOMRIGHT", 0, 0)
+        otherClasses:SetPoint("TOPLEFT", bars, "BOTTOMLEFT", 0, 0)
+        otherClasses:SetPoint("TOPRIGHT", bars, "BOTTOMRIGHT", 0, 0)
         ConfigureRailDestinationButton(otherClasses, {
             label = "Browse Other Classes",
             atlas = "BattleBar-SwapPetIcon",
@@ -234,8 +221,8 @@ local function UpdateRailDestinations()
                 -- and a search matching no foreign container left the row
                 -- visible, undimmed, and silently inert.
                 --
-                -- Leaving the filtered tree behind is what the Resources and
-                -- Cast Bar rows already do (both clear the finder on their
+                -- Leaving the filtered tree behind is what the bars
+                -- destination row already does (it clears the finder on its
                 -- way in). Cleared BEFORE entering, because stopping a search
                 -- while the library is already active resets straight back
                 -- out of it (SetConfigFinderText) - which would put the dead
@@ -1567,8 +1554,7 @@ local function RefreshColumn1(preserveDrag)
             entry:SetColor(0.4, 0.7, 1.0)
         elseif CS.selectedContainer == containerId
             and not CS.selectedGroup
-            and not CS.resourcesEntrySelected
-            and not CS.castFramesEntrySelected then
+            and not CS.barsEntrySelected then
             entry:SetColor(0, 1, 0)
         elseif isInactive then
             entry:SetColor(0.55, 0.55, 0.55)

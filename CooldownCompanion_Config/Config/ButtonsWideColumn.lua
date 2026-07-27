@@ -22,6 +22,9 @@ local StartDragTracking = ST._StartDragTracking
 local GetScaledCursorPosition = ST._GetScaledCursorPosition
 
 local PREVIEW_GAP = 4
+-- The one destination that owns resources, custom bars, the cast bar, and
+-- the unit frames; every crumb under it names it as the parent.
+local BARS_HOME_LABEL = "Resources, Cast Bar & Unit Frames"
 local ADD_BOX_HEIGHT = 26
 local EDIT_CONTEXT_ICON_SIZE = 16
 local EDIT_CONTEXT_BADGE_SIZE = 16
@@ -386,19 +389,19 @@ end
 -- (what the settings below actually edit) emphasized.
 local function GetEditingHeaderPath()
     local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    if CS.castFramesEntrySelected then
+    if CS.barsEntrySelected and CS.castFramesSelectedItem then
         if CS.castFramesSelectedItem == "player" then
-            return "Cast Bar & Unit Frames", "Player Frame"
+            return BARS_HOME_LABEL, "Player Frame"
         elseif CS.castFramesSelectedItem == "target" then
-            return "Cast Bar & Unit Frames", "Target Frame"
+            return BARS_HOME_LABEL, "Target Frame"
         end
-        return "Cast Bar & Unit Frames", "Cast Bar"
+        return BARS_HOME_LABEL, "Cast Bar"
     end
-    if CS.resourcesEntrySelected then
+    if CS.barsEntrySelected then
         local multiCount = 0
         for _ in pairs(CS.selectedCustomBars) do multiCount = multiCount + 1 end
         if multiCount >= 2 then
-            return "Resources", "Custom Bars"
+            return BARS_HOME_LABEL, "Custom Bars"
         end
         local settings = CooldownCompanion.GetResourceBarSettings
             and CooldownCompanion:GetResourceBarSettings()
@@ -407,12 +410,12 @@ local function GetEditingHeaderPath()
             and ST._RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, settings, true) then
             local powerNames = ST._RB and ST._RB.POWER_NAMES
             local resourceName = powerNames and powerNames[tonumber(CS.selectedResourcePowerType)]
-            return "Resources", resourceName or "Resource"
+            return BARS_HOME_LABEL, resourceName or "Resource"
         end
         if CS.selectedCustomBarId then
             local entry = ST._FindSelectedConfigCustomBar and ST._FindSelectedConfigCustomBar()
             if entry then
-                return "Resources", entry.label or "Custom Bar"
+                return BARS_HOME_LABEL, entry.label or "Custom Bar"
             end
         end
         return nil, "Resources"
@@ -480,11 +483,10 @@ local function BreadcrumbToPanel()
 end
 
 local function BreadcrumbToResourcesHome()
-    if ST._ClearConfigResourceSelection then
-        ST._ClearConfigResourceSelection()
-    end
-    if ST._ClearConfigCustomBarSelection then
-        ST._ClearConfigCustomBarSelection({ clearExpanded = true })
+    -- Drops the resource, custom bar, or cast/frames item being edited, so
+    -- the workspace falls back to its Resources home.
+    if ST._ClearConfigBarsHomeSelection then
+        ST._ClearConfigBarsHomeSelection()
     end
     CooldownCompanion:RefreshConfigPanel()
 end
@@ -559,8 +561,9 @@ local function UpdateEditingHeader(col3)
     end
 
     -- Every ancestor scope in the dimmed path is a clickable crumb; only
-    -- the current selection stays plain text. Cast frame items have no
-    -- unselected home state, so that lane stays static.
+    -- the current selection stays plain text. In the bars workspace that
+    -- ancestor is its Resources home, which every object it edits - bars,
+    -- cast bar, unit frames - returns to.
     local segments = {}
     local currentText
     if context and context.name then
@@ -579,11 +582,11 @@ local function UpdateEditingHeader(col3)
             contextName = contextName .. " |cff7d7566(" .. context.kindText .. ")|r"
         end
         currentText = contextName
-    elseif CS.resourcesEntrySelected and parent == "Resources" then
+    elseif CS.barsEntrySelected and parent == BARS_HOME_LABEL then
         segments[1] = { label = parent,
             tooltip = "Back to Resources", onClick = BreadcrumbToResourcesHome }
         currentText = leaf
-    elseif parent and not CS.castFramesEntrySelected then
+    elseif parent and not CS.barsEntrySelected then
         -- Panel scope in the buttons workspace: the group is the one
         -- clickable ancestor.
         segments[1] = { label = parent,

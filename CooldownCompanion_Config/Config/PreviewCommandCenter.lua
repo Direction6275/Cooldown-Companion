@@ -1052,8 +1052,8 @@ local function ApplyObjectRoute(route)
     local RBP = ST._RBP
 
     if route.object == "cast" then
-        if not CS.castFramesEntrySelected and ST._SelectConfigCastFramesEntry then
-            ST._SelectConfigCastFramesEntry()
+        if not CS.barsEntrySelected and ST._SelectConfigBarsEntry then
+            ST._SelectConfigBarsEntry()
         end
         if ST._SelectConfigCastFramesItem then
             ST._SelectConfigCastFramesItem("castbar")
@@ -1064,15 +1064,19 @@ local function ApplyObjectRoute(route)
     end
 
     -- Everything else is a Resources-home object. Selecting the home first
-    -- matters: it drops any bar selection unless the home was already open,
-    -- so a bar selected below would be cleared right after we made it.
-    if not CS.resourcesEntrySelected and ST._SelectConfigResourcesEntry then
-        ST._SelectConfigResourcesEntry()
+    -- matters: it always drops any object selection, so a bar selected below
+    -- would be cleared right after we made it.
+    if not CS.barsEntrySelected and ST._SelectConfigBarsEntry then
+        ST._SelectConfigBarsEntry()
     end
 
     if route.object == "health" then
         -- A module tab rather than a bar: at primary scope it owns the
-        -- surface even while a bar stays selected beside it.
+        -- surface even while a bar stays selected beside it. The cast/frames
+        -- item is cleared here because this is the only Resources-home route
+        -- that selects nothing of its own - the resource and custom routes
+        -- get the clear from their State.lua setters.
+        CS.castFramesSelectedItem = nil
         CS.resourcesSettingsTab = "health"
         SetRowScope("primary")
         if RBP then
@@ -1656,6 +1660,25 @@ local function HideBar(host)
     end
 end
 
+-- How far the bar's controls reach from the host's left edge. The bar
+-- frame itself spans the whole width, but only this much of the band is
+-- actually occupied - chrome pinned to the opposite corner of the same
+-- band asks so it can keep clear. 0 while the bar is not showing.
+local function GetPreviewCommandCenterOccupiedWidth(host)
+    local bar = host and host._cdcPreviewCommandCenter
+    if not (bar and bar:IsShown()) then
+        return 0
+    end
+    local width = BAR_LEFT_INSET + (bar.chooser:GetWidth() or 0)
+    if bar.play:IsShown() then
+        width = width + PLAY_GAP + PLAY_SIZE
+    end
+    if bar.gear:IsShown() then
+        width = width + GEAR_GAP + PLAY_SIZE
+    end
+    return width
+end
+
 -- Called by the advanced settings panel as it opens and closes: the gear
 -- reports whether that panel is on screen, and nothing else repaints this
 -- bar when it toggles.
@@ -1746,7 +1769,7 @@ local function UpdatePreviewCommandCenter(host)
     -- appear here, even on the anchor panel whose canvas draws the bar
     -- lanes — owner ruling 2026-07-26: the panel-view chooser stays scoped
     -- to panel previews, and the bars' previews live on the Resources /
-    -- Cast Bar & Unit Frames homes that configure those objects.
+    -- Cast Bar & Unit Frames home that configures those objects.
 
     if #applicable == 0 then
         HideBar(host)
@@ -1762,9 +1785,9 @@ local function UpdatePreviewCommandCenter(host)
 end
 
 ------------------------------------------------------------------------
--- Resources / Cast Bar & Unit Frames entry point. Both homes share one
--- preview host and one renderer, so they share one bar; what differs is
--- which objects that home configures.
+-- Resources, Cast Bar & Unit Frames entry point. The home and its
+-- cast/frames objects share one preview host and one renderer, so they
+-- share one bar; what differs is which objects are being configured.
 ------------------------------------------------------------------------
 
 local function UpdateResourcesPreviewCommandCenter(host)
@@ -1772,21 +1795,24 @@ local function UpdateResourcesPreviewCommandCenter(host)
         return
     end
 
-    -- The health bar is a Resources-workspace object; the cast bar is
-    -- drawn on both homes and owns one of them. Custom bars are Resources
-    -- objects too — their aura previews live here.
+    -- One canvas draws every object this workspace configures, whatever is
+    -- selected, so the health bar, the custom bars and the resource overlays
+    -- qualify for the whole workspace rather than for its home alone. Each
+    -- object still carries its own enablement gate below (CollectObject-
+    -- Controls), so a disabled module contributes nothing.
     --
     -- The cast bar qualifies only when THIS canvas actually draws a cast
     -- lane. Testing "the cast bar is attached" was not enough: an
-    -- independent resource stack drops the cast slot from this home even
+    -- independent resource stack drops the cast slot from the canvas even
     -- with the cast bar attached, and the control then named a preview that
     -- repainted a cast-free canvas and visibly did nothing.
+    local onBarsWorkspace = CS.barsEntrySelected == true
     local objects = {
         cast = ST._ResourcesPreviewRendersCastSlot ~= nil
             and ST._ResourcesPreviewRendersCastSlot() == true,
-        health = CS.resourcesEntrySelected == true,
-        customBars = CS.resourcesEntrySelected == true or CS.selectedCustomBarId ~= nil,
-        resourceAuras = CS.resourcesEntrySelected == true
+        health = onBarsWorkspace,
+        customBars = onBarsWorkspace or CS.selectedCustomBarId ~= nil,
+        resourceAuras = onBarsWorkspace
             or CS.selectedResourcePowerType ~= nil,
     }
     UpdateBar(host, RESOURCES_SURFACE, CollectObjectControls(objects))
@@ -1798,3 +1824,5 @@ end
 ST._UpdatePreviewCommandCenter = UpdatePreviewCommandCenter
 ST._UpdateResourcesPreviewCommandCenter = UpdateResourcesPreviewCommandCenter
 ST._RefreshPreviewCommandCenterGear = RefreshPreviewCommandCenterGear
+-- Read by the bars canvas while it places its bottom-right enable cluster.
+ST._GetPreviewCommandCenterOccupiedWidth = GetPreviewCommandCenterOccupiedWidth

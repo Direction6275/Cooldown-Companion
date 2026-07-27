@@ -581,8 +581,8 @@ local function FinishRailPanelDrag(state)
         CS.selectedContainer = targetContainerId
         CS.selectedGroup = nil
         CS.expandedContainer = targetContainerId
-        CS.resourcesEntrySelected = false
-        CS.castFramesEntrySelected = false
+        CS.barsEntrySelected = false
+        CS.castFramesSelectedItem = nil
         CS.addingToPanelId = nil
         wipe(CS.selectedPanels)
         for _, panelId in ipairs(state.sourcePanelOrder or {}) do

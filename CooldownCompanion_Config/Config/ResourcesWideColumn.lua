@@ -1,13 +1,13 @@
 --[[
     CooldownCompanion - Config/ResourcesWideColumn
-    Workspace for the Resources home and the Cast Bar & Unit Frames
+    Workspace for the unified Resources, Cast Bar & Unit Frames
     home: the pinned Layout & Order preview (sharing the split divider and
     persisted split fraction from ButtonsWideColumn) above the editing
     surfaces: the resources tab page, per-resource
     settings, the Custom Bar detail tabs, the Custom Bar multi-select, and
     the Cast Bar tabs - plus the player/target frame anchoring panels.
-    The Navigator keeps only the two destination rows; preview objects and
-    the inactive-object chips below select the concrete bar/frame settings.
+    The Navigator keeps only its destination row; the canvas objects and
+    the pill row along its bottom select the concrete bar/frame settings.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -67,17 +67,6 @@ local function FindSelectedCustomBar()
     return FindCustomBarById(CooldownCompanion:GetResourceBarSettings(), CS.selectedCustomBarId)
 end
 
-local function GetRenderedDestinationKeys(col3)
-    local host = col3 and col3._resourcesPreviewHost
-    if not (host and host:IsShown()) then
-        return {}
-    end
-    if ST._GetLayoutPreviewRenderedSelectionKeys then
-        return ST._GetLayoutPreviewRenderedSelectionKeys(host)
-    end
-    return {}
-end
-
 local function ExportAllCustomBars()
     if BlockCustomBarExportForResourceBarConflict and BlockCustomBarExportForResourceBarConflict() then
         return
@@ -121,10 +110,124 @@ local function EnsureResourcesAddBox(col3)
     end
 end
 
-local function BuildResourcesInactiveChips(col3, settings)
-    if not ST._SetWideEditingChips then return end
-    local rendered = GetRenderedDestinationKeys(col3)
+------------------------------------------------------------------------
+-- Module enable, shared by the overview pane's buttons and the canvas's
+-- enable pills. Either route leaves exactly the state the module checkbox
+-- on the settings surface leaves, then lands on that module's own
+-- settings: the cast bar and the unit frames select their object, while
+-- Resource Bars clears the selection because the Resources home tabs ARE
+-- its settings surface.
+------------------------------------------------------------------------
+local function SelectBarsCastFramesItem(item)
+    if ST._SelectConfigCastFramesItem then
+        ST._SelectConfigCastFramesItem(item)
+    else
+        CS.castFramesSelectedItem = item
+    end
+end
+
+local function EnableResourceBarsModule()
+    local settings = CooldownCompanion:GetResourceBarSettings()
+    if not settings then
+        return
+    end
+    settings.enabled = true
+    -- Nothing to select: the Resources home tabs are the surface. Clearing
+    -- all three selection families is what lands there, and a stale one can
+    -- be standing (a Custom Bar selection survives the module being turned
+    -- off, since the bar itself still exists).
+    if ST._ClearConfigBarsHomeSelection then
+        ST._ClearConfigBarsHomeSelection()
+    else
+        CS.castFramesSelectedItem = nil
+    end
+    CooldownCompanion:EvaluateResourceBars()
+    CooldownCompanion:UpdateAnchorStacking()
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function EnableCastBarModule()
+    local settings = CooldownCompanion:GetCastBarSettings()
+    if not settings then
+        return
+    end
+    settings.enabled = true
+    SelectBarsCastFramesItem("castbar")
+    CooldownCompanion:EvaluateCastBar()
+    CooldownCompanion:UpdateAnchorStacking()
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function EnableFrameAnchoringModule()
+    local settings = CooldownCompanion:GetFrameAnchoringSettings()
+    if not settings then
+        return
+    end
+    settings.enabled = true
+    SelectBarsCastFramesItem("player")
+    CooldownCompanion:EvaluateFrameAnchoring()
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+-- Every module of this workspace that is switched off entirely, as
+-- descriptors for the canvas's bottom-right enable cluster. Never all
+-- three: with nothing enabled the workspace shows its overview pane
+-- instead, and that pane offers the same three handlers.
+local function CollectBarsEnableItems()
     local items = {}
+
+    local settings = CooldownCompanion:GetResourceBarSettings()
+    if not (settings and settings.enabled == true) then
+        items[#items + 1] = {
+            label = "Enable Resource Bars",
+            tooltip = "Resource Bars",
+            tooltipLine = "Turn them on and open their settings.",
+            onClick = EnableResourceBarsModule,
+        }
+    end
+
+    local castSettings = CooldownCompanion:GetCastBarSettings()
+    if not (castSettings and castSettings.enabled == true) then
+        items[#items + 1] = {
+            label = "Enable Cast Bar",
+            tooltip = "Cast Bar",
+            tooltipLine = "Turn it on and open its settings.",
+            onClick = EnableCastBarModule,
+        }
+    end
+
+    local frameSettings = CooldownCompanion.GetFrameAnchoringSettings
+        and CooldownCompanion:GetFrameAnchoringSettings()
+    if not (frameSettings and frameSettings.enabled == true) then
+        items[#items + 1] = {
+            label = "Enable Unit Frames",
+            tooltip = "Unit Frames",
+            tooltipLine = "Turn frame anchoring on and open the player frame's settings.",
+            onClick = EnableFrameAnchoringModule,
+        }
+    end
+
+    return items
+end
+
+-- Every OBJECT this workspace can configure that the shared canvas is not
+-- drawing right now, as items for the quiet "Not currently shown:" chip
+-- strip below the editing divider. One list for the whole workspace,
+-- because one canvas serves every selection within it. `rendered` is the
+-- canvas's own selection-key set from the build that just ran, so the
+-- strip and the canvas can never disagree about what is on screen.
+--
+-- A chip is a plain left-click destination; the richer gestures
+-- (multi-select, the context menu) stay on the canvas slots, where the
+-- object is actually visible.
+--
+-- The player and target frames are never chips: with frame anchoring on
+-- they are badges on the canvas, and with it off the corner cluster's
+-- enable pill is the only thing to offer.
+local function CollectBarsOffCanvasChipItems(rendered)
+    rendered = rendered or {}
+    local items = {}
+    local settings = CooldownCompanion:GetResourceBarSettings()
     local RBP = ST._RBP
     local powerNames = RB and RB.POWER_NAMES or {}
 
@@ -144,8 +247,15 @@ local function BuildResourcesInactiveChips(col3, settings)
         end
     end
 
-    local customBars = RB and RB.GetAllCustomBars and RB.GetAllCustomBars(settings)
-        or CooldownCompanion:GetSpecCustomAuraBars()
+    -- Custom bars ride on the Resource Bars module: with it disabled none of
+    -- them can render and selecting one lands on the disabled intro pane, so
+    -- they are not offered as destinations. (The resource loop above already
+    -- self-gates the same way, inside GetConfigEditableResources.)
+    local customBars
+    if settings and settings.enabled == true then
+        customBars = RB and RB.GetAllCustomBars and RB.GetAllCustomBars(settings)
+            or CooldownCompanion:GetSpecCustomAuraBars()
+    end
     for index, entry in ipairs(customBars or {}) do
         local customBarId = RB and RB.EnsureCustomBarId and RB.EnsureCustomBarId(settings, entry)
             or entry.customBarId
@@ -159,33 +269,47 @@ local function BuildResourcesInactiveChips(col3, settings)
                 label = label,
                 selected = tostring(CS.selectedCustomBarId) == tostring(customBarId)
                     or (CS.selectedCustomBars and CS.selectedCustomBars[customBarId] == true),
-                tooltip = "Left-click to edit. Ctrl+Left-click to multi-select. Right-click for actions.",
                 onClick = function()
-                    if IsControlKeyDown and IsControlKeyDown() then
-                        if not CS.selectedCustomBarId then
-                            ST._SelectConfigCustomBar(capturedCustomBarId)
-                        end
-                        ST._ToggleConfigCustomBarMultiSelect(capturedCustomBarId)
-                    else
-                        ST._SelectConfigCustomBar(capturedCustomBarId, { toggle = true })
-                    end
+                    ST._SelectConfigCustomBar(capturedCustomBarId, { toggle = true })
                     CooldownCompanion:RefreshConfigPanel()
-                end,
-                onRightClick = function()
-                    ST._SelectConfigCustomBar(capturedCustomBarId)
-                    CooldownCompanion:RefreshConfigPanel()
-                    if ST._OpenConfigCustomBarMenu then
-                        ST._OpenConfigCustomBarMenu(capturedCustomBarId)
-                    end
                 end,
             }
         end
     end
 
-    ST._SetWideEditingChips(col3, "Not currently shown:", items)
+    -- The cast bar earns a chip only while it is enabled but anchored
+    -- independently, which is exactly when the canvas leaves its slot out.
+    -- Disabled, it belongs to the enable cluster instead.
+    local castSettings = CooldownCompanion:GetCastBarSettings()
+    if castSettings and castSettings.enabled == true and not rendered["cast"] then
+        items[#items + 1] = {
+            label = "Cast Bar",
+            selected = CS.castFramesSelectedItem == "castbar",
+            onClick = function()
+                SelectBarsCastFramesItem("castbar")
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        }
+    end
+
+    return items
 end
 
-local function PrepareResourcesEditingChrome(col3, settings)
+-- Built after the canvas, since it asks the canvas what it drew, and
+-- before the settings surface anchors, since the strip is part of the
+-- chrome that surface is offset by.
+local function SetBarsOffCanvasChips(col3)
+    if not ST._SetWideEditingChips then
+        return
+    end
+    local rendered = ST._GetLayoutPreviewRenderedSelectionKeys
+        and ST._GetLayoutPreviewRenderedSelectionKeys(col3._resourcesPreviewHost)
+        or nil
+    ST._SetWideEditingChips(col3, "Not currently shown:",
+        CollectBarsOffCanvasChipItems(rendered))
+end
+
+local function PrepareResourcesEditingChrome(col3)
     EnsureResourcesAddBox(col3)
     if ST._SetWideEditingHeaderActions then
         ST._SetWideEditingHeaderActions(col3, {
@@ -203,62 +327,128 @@ local function PrepareResourcesEditingChrome(col3, settings)
             },
         })
     end
-    BuildResourcesInactiveChips(col3, settings)
 end
 
-local function PrepareCastEditingChips(col3)
-    if not ST._SetWideEditingChips then return end
-    local rendered = GetRenderedDestinationKeys(col3)
-    local definitions = {
-        { key = "cast", item = "castbar", label = "Cast Bar" },
-        { key = "frame:player", item = "player", label = "Player Frame" },
-        { key = "frame:target", item = "target", label = "Target Frame" },
-    }
-    local items = {}
-    for _, definition in ipairs(definitions) do
-        if not rendered[definition.key] then
-            local captured = definition
-            items[#items + 1] = {
-                label = captured.label,
-                selected = CS.castFramesSelectedItem == captured.item,
-                onClick = function()
-                    if ST._SelectConfigCastFramesItem then
-                        ST._SelectConfigCastFramesItem(captured.item)
-                    else
-                        CS.castFramesSelectedItem = captured.item
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            }
-        end
+------------------------------------------------------------------------
+-- Overview pane: the whole workspace while all three of its modules are
+-- disabled, so the canvas has nothing to draw and no object can be
+-- selected. One centered stack - the workspace heading, then a section
+-- per module carrying its description and its own enable button. Enabling
+-- any of them drops this pane and lands on the live canvas.
+------------------------------------------------------------------------
+local BARS_OVERVIEW_TITLE = "Resources, Cast Bar & Unit Frames"
+local BARS_OVERVIEW_SIDE_INSET = 48
+local BARS_OVERVIEW_BUTTON_WIDTH = 220
+local BARS_OVERVIEW_BUTTON_HEIGHT = 24
+local BARS_OVERVIEW_HEADING_GAP = 18
+local BARS_OVERVIEW_SECTION_GAP = 26
+local BARS_OVERVIEW_TITLE_GAP = 6
+local BARS_OVERVIEW_BODY_GAP = 12
+
+-- Same enable handlers the canvas's enable pills use, so both routes leave
+-- the same state behind and land on the same settings surface.
+local BARS_OVERVIEW_SECTIONS = {
+    {
+        title = "Resources",
+        body = "Class resources displayed as bars, attached to one of your panels or positioned anywhere on screen."
+            .. "\nAdd Custom Bars to track any aura or cooldown you choose.",
+        buttonText = "Enable Resource Bars",
+        onEnable = EnableResourceBarsModule,
+    },
+    {
+        title = "Cast Bar",
+        body = "Skin the Blizzard cast bar and anchor it to a panel, or position it anywhere on screen.",
+        buttonText = "Enable Cast Bar",
+        onEnable = EnableCastBarModule,
+    },
+    {
+        title = "Unit Frames",
+        body = "Anchor your player and target unit frames to your panels.",
+        buttonText = "Enable Frame Anchoring",
+        onEnable = EnableFrameAnchoringModule,
+    },
+}
+
+-- Measures the stack against the pane's current size, then centers it.
+-- Runs on every show and on the pane's own resize, so the wrapped body
+-- text never leaves the stack off-center after a column resize.
+local function LayoutBarsOverviewPane(pane)
+    local heading = pane._cdcHeading
+    local textWidth = math.max(260, (pane:GetWidth() or 0) - BARS_OVERVIEW_SIDE_INSET * 2)
+
+    -- Measure first: the body text wraps against the current column width,
+    -- so the stack's height is only known once the widths are applied.
+    local total = heading:GetStringHeight()
+    local gap = BARS_OVERVIEW_HEADING_GAP
+    for _, section in ipairs(pane._cdcSections) do
+        section.body:SetWidth(textWidth)
+        total = total + gap + section.title:GetStringHeight()
+            + BARS_OVERVIEW_TITLE_GAP + section.body:GetStringHeight()
+            + BARS_OVERVIEW_BODY_GAP + BARS_OVERVIEW_BUTTON_HEIGHT
+        gap = BARS_OVERVIEW_SECTION_GAP
     end
-    ST._SetWideEditingChips(col3, "Not currently shown:", items)
+
+    heading:ClearAllPoints()
+    heading:SetPoint("TOP", pane, "TOP", 0, -math.max(12, ((pane:GetHeight() or 0) - total) * 0.5))
+
+    local previous = heading
+    gap = BARS_OVERVIEW_HEADING_GAP
+    for _, section in ipairs(pane._cdcSections) do
+        section.title:ClearAllPoints()
+        section.title:SetPoint("TOP", previous, "BOTTOM", 0, -gap)
+        section.body:ClearAllPoints()
+        section.body:SetPoint("TOP", section.title, "BOTTOM", 0, -BARS_OVERVIEW_TITLE_GAP)
+        section.button.frame:ClearAllPoints()
+        section.button.frame:SetPoint("TOP", section.body, "BOTTOM", 0, -BARS_OVERVIEW_BODY_GAP)
+        previous = section.button.frame
+        gap = BARS_OVERVIEW_SECTION_GAP
+    end
 end
 
-local function BuildCastIntroLinks(currentItem)
-    local definitions = {
-        { item = "castbar", label = "Cast Bar" },
-        { item = "player", label = "Player Frame" },
-        { item = "target", label = "Target Frame" },
-    }
-    local links = {}
-    for _, definition in ipairs(definitions) do
-        if definition.item ~= currentItem then
-            local captured = definition
-            links[#links + 1] = {
-                label = captured.label,
-                onClick = function()
-                    if ST._SelectConfigCastFramesItem then
-                        ST._SelectConfigCastFramesItem(captured.item)
-                    else
-                        CS.castFramesSelectedItem = captured.item
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
+local function ShowBarsOverviewPane(col3)
+    local pane = col3._barsOverviewPane
+    if not pane then
+        local content = col3.content or col3
+        pane = CreateFrame("Frame", nil, content)
+        pane:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+        pane:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
+
+        pane._cdcHeading = pane:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+        pane._cdcHeading:SetText(BARS_OVERVIEW_TITLE)
+
+        pane._cdcSections = {}
+        for _, definition in ipairs(BARS_OVERVIEW_SECTIONS) do
+            local title = pane:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+            title:SetText(definition.title)
+
+            local body = pane:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+            body:SetJustifyH("CENTER")
+            body:SetSpacing(3)
+            body:SetText(definition.body)
+
+            local button = AceGUI:Create("Button")
+            button:SetText(definition.buttonText)
+            button:SetWidth(BARS_OVERVIEW_BUTTON_WIDTH)
+            button:SetHeight(BARS_OVERVIEW_BUTTON_HEIGHT)
+            button:SetCallback("OnClick", definition.onEnable)
+            button.frame:SetParent(pane)
+            button.frame:Show()
+
+            pane._cdcSections[#pane._cdcSections + 1] = {
+                title = title,
+                body = body,
+                button = button,
             }
         end
+
+        pane:SetScript("OnSizeChanged", function(self)
+            LayoutBarsOverviewPane(self)
+        end)
+        col3._barsOverviewPane = pane
     end
-    return links
+
+    LayoutBarsOverviewPane(pane)
+    pane:Show()
 end
 
 -- Attached-bar tabs join the unified tab row beside the panel tabs, so they
@@ -399,9 +589,7 @@ local function HideResourcesWideSurfaces(col3)
     if ST._ClearWideEditingExtras then
         ST._ClearWideEditingExtras(col3)
     end
-    if col3._resourcesIntroPane then col3._resourcesIntroPane:Hide() end
-    if col3._castBarIntroPane then col3._castBarIntroPane:Hide() end
-    if col3._unitFramesIntroPane then col3._unitFramesIntroPane:Hide() end
+    if col3._barsOverviewPane then col3._barsOverviewPane:Hide() end
     local host = col3._resourcesPreviewHost
     if host then
         if col3.buttonsSplitDivider and col3._cdcActiveWideHost == host then
@@ -491,7 +679,7 @@ end
 -- Targeted preview rebuild (value changes that only affect the layout
 -- preview), without a full config refresh.
 local function RefreshResourcesLayoutPreview()
-    if CS.resourcesEntrySelected or CS.castFramesEntrySelected then
+    if CS.barsEntrySelected then
         local col3 = CS.configFrame and CS.configFrame.col3
         local host = col3 and col3._resourcesPreviewHost
         if host and host:IsShown() and ST._BuildLayoutOrderPanel then
@@ -745,91 +933,43 @@ local function ShowResourcesTabPage(col3, stripOnly)
     ShowStrip(col3, col3._resourcesTabGroup, tabs, tab, "resources:" .. tab, stripOnly)
 end
 
--- Refresh for the Resources home while Resource Bars are enabled (the
--- disabled empty state keeps its wide intro pane in Column3.lua). Pinned
--- preview on top, then exactly one settings surface below the divider.
-local function RefreshResourcesWideColumn(col3)
-    -- Everything restarts hidden; the active surface re-shows below.
-    HideResourcesWideSurfaces(col3)
+-- Settings surfaces for the Resources home: the module tab page, plus the
+-- selected resource's or custom bar's own tabs beside it.
+local function ShowResourcesHomeSurfaces(col3, CustomBarExists)
+    local selectedEntry = CS.selectedCustomBarId and FindSelectedCustomBar()
+    local wantsBarDetail = CS.selectedResourcePowerType ~= nil or selectedEntry ~= nil
 
-    if CooldownCompanion.GetCurrentResourceBarConflict and CooldownCompanion:GetCurrentResourceBarConflict() then
-        ShowResourcesConflictScroll(col3)
-        return
+    -- The module tabs are the left cluster of this home's unified row:
+    -- they stay put while a bar is selected, and the bar's own tabs are
+    -- appended beside them. Built first, since the bar strip is offset
+    -- by their measured width - which is also why the scope is read
+    -- directly here: every strip is still hidden at this point, so
+    -- PrimaryOwnsSurface would report false whatever the scope is.
+    ShowResourcesTabPage(col3, wantsBarDetail and ST._UnifiedRowGetScope() ~= "primary")
+
+    local barShown = false
+    if CS.selectedResourcePowerType then
+        barShown = ShowResourceSettingsPanel(col3) == true
     end
-
-    local settings = CooldownCompanion:GetResourceBarSettings()
-    local function CustomBarExists(customBarId)
-        return FindCustomBarById(settings, customBarId) ~= nil
+    if not barShown and selectedEntry then
+        ShowCustomBarDetail(col3, selectedEntry)
+        barShown = true
     end
-    PruneConfigCustomBarSelection(CustomBarExists, true)
-    if PruneConfigResourceSelection then
-        local RBP = ST._RBP
-        PruneConfigResourceSelection(function(powerType)
-            if not (RBP and RBP.IsResourceEditableInColumn4) then
-                return false
-            end
-            return RBP.IsResourceEditableInColumn4(powerType, settings, true)
-        end)
-    end
-
-    UpdateResourcesPreviewHost(col3)
-    PrepareResourcesEditingChrome(col3, settings)
-
-    local selectedCustomBarIds = {}
-    local selectedCustomBarEntries = {}
-    for customBarId in pairs(CS.selectedCustomBars) do
-        local entry = FindCustomBarById(settings, customBarId)
-        selectedCustomBarIds[#selectedCustomBarIds + 1] = customBarId
-        selectedCustomBarEntries[#selectedCustomBarEntries + 1] = entry
-    end
-    table.sort(selectedCustomBarIds)
-
-    if #selectedCustomBarEntries >= 2 then
-        -- Batch edits replace the surface outright, as panel multi-select
-        -- does in the buttons workspace.
-        ShowCustomBarMultiSelect(col3, selectedCustomBarIds, selectedCustomBarEntries)
-    else
-        local selectedEntry = CS.selectedCustomBarId and FindSelectedCustomBar()
-        local wantsBarDetail = CS.selectedResourcePowerType ~= nil or selectedEntry ~= nil
-
-        -- The module tabs are the left cluster of this home's unified row:
-        -- they stay put while a bar is selected, and the bar's own tabs are
-        -- appended beside them. Built first, since the bar strip is offset
-        -- by their measured width - which is also why the scope is read
-        -- directly here: every strip is still hidden at this point, so
-        -- PrimaryOwnsSurface would report false whatever the scope is.
-        ShowResourcesTabPage(col3, wantsBarDetail and ST._UnifiedRowGetScope() ~= "primary")
-
-        local barShown = false
-        if CS.selectedResourcePowerType then
-            barShown = ShowResourceSettingsPanel(col3) == true
+    if not barShown then
+        if CS.selectedCustomBarId then
+            PruneConfigCustomBarSelection(CustomBarExists, true)
         end
-        if not barShown and selectedEntry then
-            ShowCustomBarDetail(col3, selectedEntry)
-            barShown = true
+        if wantsBarDetail then
+            -- The bar surface did not materialise after all (a resource
+            -- with no applicable specs); the module tabs take the row
+            -- back rather than leaving it empty.
+            ShowResourcesTabPage(col3)
         end
-        if not barShown then
-            if CS.selectedCustomBarId then
-                PruneConfigCustomBarSelection(CustomBarExists, true)
-            end
-            if wantsBarDetail then
-                -- The bar surface did not materialise after all (a resource
-                -- with no applicable specs); the module tabs take the row
-                -- back rather than leaving it empty.
-                ShowResourcesTabPage(col3)
-            end
-        end
-    end
-
-    -- Final height pass: the settings surface just anchored below the
-    -- divider, so re-clamp the persisted split against current overhead.
-    if ST._ReapplyPanelPreviewSplit then
-        ST._ReapplyPanelPreviewSplit()
     end
 end
 
 ------------------------------------------------------------------------
--- Cast Bar & Unit Frames home
+-- Cast Bar & Unit Frames objects
 ------------------------------------------------------------------------
 
 -- Cast Bar settings tabs below the pinned preview.
@@ -920,76 +1060,91 @@ local function ShowUnitFrameSettings(col3, item)
     end
 end
 
--- Refresh for the Cast Bar & Unit Frames home: preview or inactive-chip
--- selection decides what shows beneath the pinned preview. Disabled modules
--- keep their intro pane across the whole wide column instead.
-local function RefreshCastFramesWideColumn(col3)
+------------------------------------------------------------------------
+-- Workspace dispatch
+------------------------------------------------------------------------
+
+-- One refresh for the whole workspace. The pinned canvas draws every
+-- object this destination owns, so it shows for every selection; below the
+-- divider exactly one settings surface does, chosen by whichever object is
+-- selected. A disabled module keeps its own settings surface - the enable
+-- control lives there - so only two states replace the column outright: a
+-- profile conflict (its gate) and all three modules disabled (the
+-- overview pane).
+local function RefreshBarsWideColumn(col3)
     -- Everything restarts hidden; the active surface re-shows below.
     HideResourcesWideSurfaces(col3)
 
-    local item = CS.castFramesSelectedItem
-    if item ~= "castbar" and item ~= "player" and item ~= "target" then
-        item = "castbar"
-        CS.castFramesSelectedItem = item
-    end
-
-    local conflict = CooldownCompanion.GetCurrentResourceBarConflict
-        and CooldownCompanion:GetCurrentResourceBarConflict()
-    if conflict then
+    if CooldownCompanion.GetCurrentResourceBarConflict and CooldownCompanion:GetCurrentResourceBarConflict() then
         ShowResourcesConflictScroll(col3)
         return
     end
 
-    if item == "castbar" then
-        local settings = CooldownCompanion:GetCastBarSettings()
-        if not (settings and settings.enabled) then
-            ST._ShowColumnIntroPane(col3, "_castBarIntroPane", {
-                title = "Cast Bar",
-                body = "Skin the Blizzard cast bar and anchor it to a panel, or position it anywhere on screen.",
-                buttonText = "Enable Cast Bar",
-                links = BuildCastIntroLinks("castbar"),
-                onEnable = function()
-                    local cb = CooldownCompanion:GetCastBarSettings()
-                    if not cb then
-                        return
-                    end
-                    cb.enabled = true
-                    CooldownCompanion:EvaluateCastBar()
-                    CooldownCompanion:UpdateAnchorStacking()
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-            return
-        end
-        UpdateResourcesPreviewHost(col3)
-        PrepareCastEditingChips(col3)
-        ShowCastBarSettings(col3)
-    else
-        local fa = CooldownCompanion:GetFrameAnchoringSettings()
-        if not (fa and fa.enabled) then
-            ST._ShowColumnIntroPane(col3, "_unitFramesIntroPane", {
-                title = "Unit Frames",
-                body = "Anchor your player and target unit frames to your panels.",
-                buttonText = "Enable Frame Anchoring",
-                links = BuildCastIntroLinks(item),
-                onEnable = function()
-                    local settings = CooldownCompanion:GetFrameAnchoringSettings()
-                    if not settings then
-                        return
-                    end
-                    settings.enabled = true
-                    CooldownCompanion:EvaluateFrameAnchoring()
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-            return
-        end
-        UpdateResourcesPreviewHost(col3)
-        PrepareCastEditingChips(col3)
-        ShowUnitFrameSettings(col3, item)
+    if ST._IsBarsOverviewActive and ST._IsBarsOverviewActive() then
+        ShowBarsOverviewPane(col3)
+        return
     end
 
-    -- Final height pass (see RefreshResourcesWideColumn).
+    local item = CS.castFramesSelectedItem
+    if item ~= nil and item ~= "castbar" and item ~= "player" and item ~= "target" then
+        -- Unknown item: fall back to the home rather than inventing a
+        -- selection the canvas would not highlight.
+        item = nil
+        CS.castFramesSelectedItem = nil
+    end
+
+    local settings = CooldownCompanion:GetResourceBarSettings()
+    local function CustomBarExists(customBarId)
+        return FindCustomBarById(settings, customBarId) ~= nil
+    end
+    PruneConfigCustomBarSelection(CustomBarExists, true)
+    if PruneConfigResourceSelection then
+        local RBP = ST._RBP
+        PruneConfigResourceSelection(function(powerType)
+            if not (RBP and RBP.IsResourceEditableInColumn4) then
+                return false
+            end
+            return RBP.IsResourceEditableInColumn4(powerType, settings, true)
+        end)
+    end
+
+    UpdateResourcesPreviewHost(col3)
+
+    -- Whatever objects the canvas left out are offered by the quiet chip
+    -- strip below the divider, for every selection; the modules that are
+    -- off entirely are offered by the canvas's own bottom-right corner.
+    SetBarsOffCanvasChips(col3)
+
+    -- The Custom Bar add box and the import/export actions are the
+    -- Resources home's own chrome, so they ride on the home selection -
+    -- and the add box builds nothing while Resource Bars are disabled.
+    if item == nil and settings and settings.enabled == true then
+        PrepareResourcesEditingChrome(col3)
+    end
+
+    local selectedCustomBarIds = {}
+    local selectedCustomBarEntries = {}
+    for customBarId in pairs(CS.selectedCustomBars) do
+        local entry = FindCustomBarById(settings, customBarId)
+        selectedCustomBarIds[#selectedCustomBarIds + 1] = customBarId
+        selectedCustomBarEntries[#selectedCustomBarEntries + 1] = entry
+    end
+    table.sort(selectedCustomBarIds)
+
+    if #selectedCustomBarEntries >= 2 then
+        -- Batch edits replace the surface outright, as panel multi-select
+        -- does in the buttons workspace.
+        ShowCustomBarMultiSelect(col3, selectedCustomBarIds, selectedCustomBarEntries)
+    elseif item == "castbar" then
+        ShowCastBarSettings(col3)
+    elseif item then
+        ShowUnitFrameSettings(col3, item)
+    else
+        ShowResourcesHomeSurfaces(col3, CustomBarExists)
+    end
+
+    -- Final height pass: the settings surface just anchored below the
+    -- divider, so re-clamp the persisted split against current overhead.
     if ST._ReapplyPanelPreviewSplit then
         ST._ReapplyPanelPreviewSplit()
     end
@@ -998,9 +1153,11 @@ end
 ------------------------------------------------------------------------
 -- ST._ exports
 ------------------------------------------------------------------------
-ST._RefreshResourcesWideColumn = RefreshResourcesWideColumn
-ST._RefreshCastFramesWideColumn = RefreshCastFramesWideColumn
+ST._RefreshResourcesWideColumn = RefreshBarsWideColumn
 ST._HideResourcesWideSurfaces = HideResourcesWideSurfaces
+-- Read by the shared canvas (ConfigSettings/, loaded after this file) while
+-- it builds its bottom-right module-enable cluster.
+ST._CollectBarsEnableItems = CollectBarsEnableItems
 ST._RefreshResourcesLayoutPreview = RefreshResourcesLayoutPreview
 -- The unified anchor preview (buttons view) re-hosts these settings
 -- surfaces below its divider when an attached bar is selected there.

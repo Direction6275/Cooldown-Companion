@@ -102,7 +102,7 @@ local STEP_DATA = {
     },
     view_modes_intro = {
         title = "Resources, Cast Bar & Unit Frames",
-        text = "The Resources button opens resource bar and Custom Bar settings.\n\nThe badge cluster in the top-right corner opens Cast Bar and Unit Frames settings.",
+        text = "This button opens one workspace for your resource bars, Custom Bars, the cast bar, and your unit frames.\n\nClick a bar in the preview, or one of the entries listed below it, to configure it.",
         anchor = "resources_button",
         placement = "above",
     },
