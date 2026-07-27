@@ -462,7 +462,6 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
         else
             self:RefreshAllGroupsForSpellAvailability()
         end
-        self:ApplyCdmAlpha()
         if isFullInit then
             self:RefreshKeybindState()
         end

@@ -1,7 +1,7 @@
 --[[
     CooldownCompanion - Core/Aura.lua: slim aura event handlers (OnUnitAura,
     OnTargetChanged), config-time aura resolution, ABILITY_BUFF_OVERRIDES, CDM
-    viewer system (ApplyCdmAlpha, BuildViewerAuraMap, FindViewerChildForSpell,
+    viewer system (BuildViewerAuraMap, FindViewerChildForSpell,
     FindCooldownViewerChild, OnViewerSpellOverrideUpdated).
     12.1 demolition: runtime aura reading removed pending the AuraContainer rebuild.
 ]]
@@ -21,7 +21,6 @@ local tonumber = tonumber
 local VIEWER_NAMES = ST._VIEWER_NAMES
 local COOLDOWN_VIEWER_NAMES = ST._COOLDOWN_VIEWER_NAMES
 local BUFF_VIEWER_SET = ST._BUFF_VIEWER_SET
-local cdmAlphaGuard = ST._cdmAlphaGuard
 local IsDistinctCDMAuraIdentity = ST.IsDistinctCDMAuraIdentity
 local pendingViewerAuraMapToken = 0
 local FindChildInViewers
@@ -31,15 +30,6 @@ local function IsBuffViewerChild(frame)
     local parent = frame:GetParent()
     local parentName = parent and parent:GetName()
     return BUFF_VIEWER_SET[parentName] == true
-end
-
-local function SetViewerChildrenMouseMotion(enabled, ...)
-    for i = 1, select("#", ...) do
-        local child = select(i, ...)
-        if child then
-            child:SetMouseMotionEnabled(enabled)
-        end
-    end
 end
 
 local function FindMatchingViewerChild(spellID, buffOnly, ...)
@@ -797,29 +787,6 @@ FindChildInViewers = function(viewerNames, spellID, buffOnly)
     return nil
 end
 
-function CooldownCompanion:ApplyCdmAlpha()
-    local hidden = self.db.profile.cdmHidden and not self._cdmPickMode
-    local alpha = hidden and 0 or 1
-    for _, name in ipairs(VIEWER_NAMES) do
-        local viewer = _G[name]
-        if viewer then
-            cdmAlphaGuard[viewer] = true
-            viewer:SetAlpha(alpha)
-            cdmAlphaGuard[viewer] = nil
-            if not InCombatLockdown() then
-                if hidden then
-                    SetViewerChildrenMouseMotion(false, viewer:GetChildren())
-                else
-                    -- Restore tooltip state using Blizzard's own pattern
-                    for itemFrame in viewer.itemFramePool:EnumerateActive() do
-                        itemFrame:SetTooltipsShown(viewer.tooltipsShown)
-                    end
-                end
-            end
-        end
-    end
-end
-
 function CooldownCompanion:QueueBuildViewerAuraMap()
     pendingViewerAuraMapToken = pendingViewerAuraMapToken + 1
     local token = pendingViewerAuraMapToken
@@ -940,16 +907,6 @@ function CooldownCompanion:BuildViewerAuraMap()
 
     -- Rebuild spell -> cooldown alert capability mapping used by per-button sound alerts.
     self:RebuildSoundAlertSpellMap()
-
-    -- Re-enforce mouse state for hidden CDM after map rebuild
-    if self.db.profile.cdmHidden and not self._cdmPickMode then
-        for _, name2 in ipairs(VIEWER_NAMES) do
-            local v = _G[name2]
-            if v then
-                SetViewerChildrenMouseMotion(false, v:GetChildren())
-            end
-        end
-    end
 
     -- Aura candidate sets resolve through this map (linked-aura sets, buff
     -- viewer children), so bound slot filters go stale when it changes —

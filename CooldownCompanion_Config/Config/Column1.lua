@@ -31,6 +31,7 @@ local EncodeExportData = ST._EncodeExportData
 local ContainersHaveForeignSpecs = ST._ContainersHaveForeignSpecs
 local NotifyTutorialAction = ST._NotifyTutorialAction
 local IsConfigFinderActive = ST._IsConfigFinderActive
+local ClearConfigFinderText = ST._ClearConfigFinderText
 local BuildConfigFinderResults = ST._BuildConfigFinderResults
 local SelectConfigFinderResult = ST._SelectConfigFinderResult
 local ClearConfigPrimarySelection = ST._ClearConfigPrimarySelection
@@ -206,6 +207,63 @@ local function UpdateRailDestinations()
             CooldownCompanion:RefreshConfigPanel()
         end,
     })
+
+    local otherClasses = EnsureRailDestinationButton(host, "other-classes")
+    local showOtherClasses = ST._ShouldShowOtherClassNavigatorRow
+        and ST._ShouldShowOtherClassNavigatorRow() or false
+    if showOtherClasses then
+        otherClasses:ClearAllPoints()
+        otherClasses:SetPoint("TOPLEFT", castFrames, "BOTTOMLEFT", 0, 0)
+        otherClasses:SetPoint("TOPRIGHT", castFrames, "BOTTOMRIGHT", 0, 0)
+        ConfigureRailDestinationButton(otherClasses, {
+            label = "Browse Other Classes",
+            atlas = "BattleBar-SwapPetIcon",
+            selected = CS.otherClassLibraryActive == true,
+            onClick = function()
+                if CS.otherClassLibraryActive then
+                    if ClearConfigPrimarySelection then
+                        ClearConfigPrimarySelection()
+                    end
+                    ClearOtherClassBrowseState()
+                    CooldownCompanion:RefreshConfigPanel()
+                    return
+                end
+                -- A destination is somewhere you can always go: this row is
+                -- offered whenever another class has inventory, so the click
+                -- must not re-test that against the search box. It used to,
+                -- and a search matching no foreign container left the row
+                -- visible, undimmed, and silently inert.
+                --
+                -- Leaving the filtered tree behind is what the Resources and
+                -- Cast Bar rows already do (both clear the finder on their
+                -- way in). Cleared BEFORE entering, because stopping a search
+                -- while the library is already active resets straight back
+                -- out of it (SetConfigFinderText) - which would put the dead
+                -- row right back, by a different route.
+                if ClearConfigFinderText then
+                    ClearConfigFinderText({ preservePrimarySelection = true })
+                end
+                if ST._EnterOtherClassLibraryState then
+                    ST._EnterOtherClassLibraryState(nil)
+                end
+                if ClearConfigPrimarySelection then
+                    ClearConfigPrimarySelection()
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+    else
+        otherClasses:Hide()
+    end
+
+    -- Browse availability can flip mid-refresh (RefreshColumn1 runs after
+    -- LayoutColumns sized the bar), so re-lay the columns when it changes.
+    if host._cdcOtherRowShown ~= showOtherClasses then
+        host._cdcOtherRowShown = showOtherClasses
+        if CS.configFrame and CS.configFrame.LayoutColumns then
+            CS.configFrame.LayoutColumns()
+        end
+    end
 
     host:Show()
 end

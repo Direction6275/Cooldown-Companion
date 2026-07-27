@@ -748,12 +748,20 @@ local function BackfillAuraDurationSwipeSettings(profile, savedProfileState)
     return changed
 end
 
-local function ClearRetiredAutoAddPrefs(profile)
-    if type(profile) ~= "table" or profile.autoAddPrefs == nil then
+local RETIRED_PROFILE_FLAGS = { "autoAddPrefs", "cdmHidden" }
+
+local function ClearRetiredProfileFlags(profile)
+    if type(profile) ~= "table" then
         return false
     end
-    profile.autoAddPrefs = nil
-    return true
+    local changed = false
+    for _, key in ipairs(RETIRED_PROFILE_FLAGS) do
+        if profile[key] ~= nil then
+            profile[key] = nil
+            changed = true
+        end
+    end
+    return changed
 end
 
 local function HasSupportedCheckpoint(payload)
@@ -1386,7 +1394,7 @@ function CooldownCompanion:RunAllMigrations()
 
     self:StampImportCheckpoint(self.db and self.db.profile)
     self:MigrateFoldersIntoGroups(self.db and self.db.profile)
-    ClearRetiredAutoAddPrefs(self.db and self.db.profile)
+    ClearRetiredProfileFlags(self.db and self.db.profile)
     NormalizePassiveCooldownButtons(self.db and self.db.profile)
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
     BackfillAuraDurationSwipeSettings(self.db and self.db.profile, checkpointState and checkpointState.auraDurationSwipe)

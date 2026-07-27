@@ -330,7 +330,6 @@ local function BuildDiagnosticSnapshot()
         currentSpecId = CooldownCompanion._currentSpecId,
         currentHeroSpecId = CooldownCompanion._currentHeroSpecId,
         isResting = CooldownCompanion._isResting,
-        cdmHidden = db.profile.cdmHidden,
         assistedSpellID = CooldownCompanion.assistedSpellID,
         viewerAuraSpells = viewerAuraSpells,
         procOverlaySpells = procOverlaySpells,
@@ -755,8 +754,8 @@ local function FormatDiagnosticBugReportAsText(diag)
         tostring(m.charName or "?"), tostring(m.realmName or "?"),
         tostring(m.specName or "?"), tostring(m.className or "?"),
         tostring(m.classID or "?"), tostring(m.specID or "?")))
-    add(("Instance: %s | Resting: %s | CDM Hidden: %s"):format(
-        tostring(m.instanceType or "?"), tostring(r.isResting), tostring(r.cdmHidden)))
+    add(("Instance: %s | Resting: %s"):format(
+        tostring(m.instanceType or "?"), tostring(r.isResting)))
     add(("Timestamp: %s"):format(tostring(m.timestamp or "?")))
     add(("Containers: %s | Panels: %s | Total Buttons: %s"):format(
         tostring(m.containerCount or "?"), tostring(m.groupCount or "?"), tostring(m.totalButtons or "?")))

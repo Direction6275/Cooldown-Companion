@@ -25,8 +25,6 @@ local IsConfigFinderActive = ST._IsConfigFinderActive
 local SetConfigFinderText = ST._SetConfigFinderText
 local ClearConfigFinderText = ST._ClearConfigFinderText
 local ClearHideActiveCurrentClassPanels = ST._ClearOtherClassHideActive
-local ResetOtherClassBrowseState = ST._ResetOtherClassLibraryState
-local EnterOtherClassBrowseState = ST._EnterOtherClassLibraryState
 local InvalidateConfigFinderResults = ST._InvalidateConfigFinderResults
 local BuildConfigFinderResults = ST._BuildConfigFinderResults
 local MaybeAutoStartFirstIconPanelTutorial = ST._MaybeAutoStartFirstIconPanelTutorial
@@ -264,6 +262,64 @@ local function HasOtherClassInventory()
     end
 
     return false, searchFiltered == true, hasOtherInventory
+end
+
+local function ShouldShowOtherClassNavigatorRow()
+    local _, _, hasInventory = HasOtherClassInventory()
+    return hasInventory or CS.otherClassLibraryActive == true
+end
+ST._HasOtherClassInventory = HasOtherClassInventory
+ST._ShouldShowOtherClassNavigatorRow = ShouldShowOtherClassNavigatorRow
+
+-- 8px top offset + 24px per row (+1 slack). The third row appears only when
+-- another class has browsable inventory.
+local function GetNavigatorDestinationsHeight()
+    return ShouldShowOtherClassNavigatorRow() and (NAVIGATOR_DESTINATIONS_HEIGHT + 24) or NAVIGATOR_DESTINATIONS_HEIGHT
+end
+
+-- Title bar buttons share one flat monochrome treatment: desaturated glyphs
+-- in the Navigator's muted label color, tinted to the class color on hover
+-- (destructive buttons pass their own hover color).
+local TITLEBAR_ICON_R, TITLEBAR_ICON_G, TITLEBAR_ICON_B = 0.82, 0.78, 0.70
+
+local function GetTitlebarHoverColor()
+    local _, classKey = UnitClass("player")
+    local color = classKey and C_ClassColor.GetClassColor(classKey)
+    return color and color.r or 0.40, color and color.g or 0.67, color and color.b or 1.0
+end
+
+local function UpdateTitlebarButtonTint(button)
+    local icon = button._cdcTitlebarIcon
+    if not icon then return end
+    if button._cdcTitlebarHovered then
+        if button._cdcTitlebarHoverR then
+            icon:SetVertexColor(button._cdcTitlebarHoverR, button._cdcTitlebarHoverG, button._cdcTitlebarHoverB, 1)
+        else
+            local r, g, b = GetTitlebarHoverColor()
+            icon:SetVertexColor(r, g, b, 1)
+        end
+    else
+        icon:SetVertexColor(TITLEBAR_ICON_R, TITLEBAR_ICON_G, TITLEBAR_ICON_B, 1)
+    end
+end
+
+-- Call after the button's own OnEnter/OnLeave scripts are set: SetScript
+-- replaces hooks, so the tint hooks must be installed last.
+local function SkinTitlebarButton(button, icon, hoverR, hoverG, hoverB)
+    icon:SetDesaturated(true)
+    button._cdcTitlebarIcon = icon
+    button._cdcTitlebarHoverR = hoverR
+    button._cdcTitlebarHoverG = hoverG
+    button._cdcTitlebarHoverB = hoverB
+    button:HookScript("OnEnter", function(self)
+        self._cdcTitlebarHovered = true
+        UpdateTitlebarButtonTint(self)
+    end)
+    button:HookScript("OnLeave", function(self)
+        self._cdcTitlebarHovered = nil
+        UpdateTitlebarButtonTint(self)
+    end)
+    UpdateTitlebarButtonTint(button)
 end
 
 local function GetResourceSettingsColumnTitle()
@@ -1042,70 +1098,35 @@ local function CreateConfigPanel()
     local savedFrameRight, savedFrameTop
     local savedOffsetRight, savedOffsetTop
 
-    -- Title bar buttons: [Gear] [Collapse] [X] at top-right
+    -- Title bar buttons: [Import] [Gear] [Collapse] [X] at top-right
 
     -- X (close) button — rightmost
     local closeBtn = CreateFrame("Button", nil, content)
-    closeBtn:SetSize(19, 19)
-    closeBtn:SetPoint("TOPRIGHT", content, "TOPRIGHT", -10, -5)
+    closeBtn:SetSize(18, 18)
+    closeBtn:SetPoint("TOPRIGHT", content, "TOPRIGHT", -16, -14)
     local closeIcon = closeBtn:CreateTexture(nil, "ARTWORK")
-    closeIcon:SetAtlas("common-icon-redx")
+    closeIcon:SetAtlas("uitools-icon-close")
     closeIcon:SetAllPoints()
-    closeBtn:SetHighlightAtlas("common-icon-redx")
-    closeBtn:GetHighlightTexture():SetAlpha(0.3)
     closeBtn:SetScript("OnClick", function()
         content:Hide()
     end)
+    SkinTitlebarButton(closeBtn, closeIcon, 0.90, 0.30, 0.30)
 
     -- Collapse button — left of X
     local collapseBtn = CreateFrame("Button", nil, content)
-    collapseBtn:SetSize(15, 15)
-    collapseBtn:SetPoint("RIGHT", closeBtn, "LEFT", -4, 0)
+    collapseBtn:SetSize(18, 18)
+    collapseBtn:SetPoint("RIGHT", closeBtn, "LEFT", -6, 0)
     local collapseIcon = collapseBtn:CreateTexture(nil, "ARTWORK")
-    collapseIcon:SetAtlas("common-icon-minus")
+    collapseIcon:SetAtlas("uitools-icon-minus")
     collapseIcon:SetAllPoints()
-    collapseBtn:SetHighlightAtlas("common-icon-minus")
-    collapseBtn:GetHighlightTexture():SetAlpha(0.3)
+    SkinTitlebarButton(collapseBtn, collapseIcon)
 
-    -- CDM Display toggle button — left of the Other Classes button
-    local cdmDisplayBtn = CreateFrame("Button", nil, content)
-    cdmDisplayBtn:SetSize(20, 20)
-    local cdmDisplayIcon = cdmDisplayBtn:CreateTexture(nil, "ARTWORK")
-    cdmDisplayIcon:SetAllPoints()
-
-    local function UpdateCdmDisplayIcon()
-        if CooldownCompanion.db.profile.cdmHidden then
-            cdmDisplayIcon:SetAtlas("GM-icon-visibleDis-pressed", false)
-            cdmDisplayBtn:SetHighlightAtlas("GM-icon-visibleDis-pressed")
-        else
-            cdmDisplayIcon:SetAtlas("GM-icon-visible", false)
-            cdmDisplayBtn:SetHighlightAtlas("GM-icon-visible")
-        end
-        cdmDisplayBtn:GetHighlightTexture():SetAlpha(0.3)
-    end
-    UpdateCdmDisplayIcon()
-
-    cdmDisplayBtn:SetScript("OnClick", function()
-        CooldownCompanion.db.profile.cdmHidden = not CooldownCompanion.db.profile.cdmHidden
-        CooldownCompanion:ApplyCdmAlpha()
-        UpdateCdmDisplayIcon()
-    end)
-    cdmDisplayBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine("Toggle CDM Display")
-        GameTooltip:AddLine("This only toggles the visibility of the Cooldown Manager on your screen.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    cdmDisplayBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-    -- Import button — left of the CDM display toggle
+    -- Import button — left of the Gear button
     local importClusterBtn = CreateFrame("Button", nil, content)
     importClusterBtn:SetSize(18, 18)
     local importClusterIcon = importClusterBtn:CreateTexture(nil, "ARTWORK")
-    importClusterIcon:SetAtlas("streamcinematic-downloadicon", false)
+    importClusterIcon:SetAtlas("uitools-icon-collapse-window", false)
     importClusterIcon:SetAllPoints()
-    importClusterBtn:SetHighlightAtlas("streamcinematic-downloadicon")
-    importClusterBtn:GetHighlightTexture():SetAlpha(0.3)
     importClusterBtn:SetScript("OnClick", function()
         if ST._OpenImportReviewWindow then
             ST._OpenImportReviewWindow()
@@ -1118,162 +1139,19 @@ local function CreateConfigPanel()
         GameTooltip:Show()
     end)
     importClusterBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-    -- Other Classes browse button — between the Changelog and CDM buttons
-    local otherClassBrowseBtn = CreateFrame("Button", nil, content)
-    otherClassBrowseBtn:SetSize(16, 16)
-    if otherClassBrowseBtn.SetMotionScriptsWhileDisabled then
-        otherClassBrowseBtn:SetMotionScriptsWhileDisabled(true)
-    end
-    local otherClassBrowseIcon = otherClassBrowseBtn:CreateTexture(nil, "ARTWORK")
-    otherClassBrowseIcon:SetAtlas("BattleBar-SwapPetIcon", false)
-    otherClassBrowseIcon:SetAllPoints()
-    otherClassBrowseBtn:SetHighlightAtlas("BattleBar-SwapPetIcon")
-    otherClassBrowseBtn:GetHighlightTexture():SetAlpha(0.3)
-
-    local otherClassBrowseBtnBorder = nil
-    local otherClassBrowseAvailable = false
-    local otherClassBrowseActionAvailable = false
-    local otherClassBrowseSearchFiltered = false
-    local otherClassBrowseHasInventory = false
-
-    local function UpdateOtherClassBrowseBtnHighlight()
-        local shouldHighlight = otherClassBrowseActionAvailable and CS.otherClassLibraryActive == true
-        if shouldHighlight then
-            if not otherClassBrowseBtnBorder then
-                otherClassBrowseBtnBorder = otherClassBrowseBtn:CreateTexture(nil, "OVERLAY")
-                otherClassBrowseBtnBorder:SetPoint("TOPLEFT", -1, 1)
-                otherClassBrowseBtnBorder:SetPoint("BOTTOMRIGHT", 1, -1)
-                otherClassBrowseBtnBorder:SetColorTexture(0.85, 0.65, 0.0, 0.6)
-            end
-            otherClassBrowseBtnBorder:Show()
-        elseif otherClassBrowseBtnBorder then
-            otherClassBrowseBtnBorder:Hide()
-        end
-    end
-
-    local function UpdateOtherClassBrowseButtonState()
-        otherClassBrowseAvailable, otherClassBrowseSearchFiltered, otherClassBrowseHasInventory = HasOtherClassInventory()
-        otherClassBrowseActionAvailable = otherClassBrowseAvailable or CS.otherClassLibraryActive == true
-
-        if otherClassBrowseBtn.SetEnabled then
-            otherClassBrowseBtn:SetEnabled(otherClassBrowseActionAvailable)
-        elseif otherClassBrowseActionAvailable and otherClassBrowseBtn.Enable then
-            otherClassBrowseBtn:Enable()
-        elseif otherClassBrowseBtn.Disable then
-            otherClassBrowseBtn:Disable()
-        end
-        if otherClassBrowseIcon.SetDesaturated then
-            otherClassBrowseIcon:SetDesaturated(not otherClassBrowseActionAvailable)
-        end
-        if otherClassBrowseActionAvailable then
-            otherClassBrowseBtn:SetAlpha(1)
-            otherClassBrowseIcon:SetVertexColor(1, 1, 1, 1)
-            if otherClassBrowseBtn:GetHighlightTexture() then
-                otherClassBrowseBtn:GetHighlightTexture():SetAlpha(0.3)
-            end
-        else
-            otherClassBrowseBtn:SetAlpha(0.75)
-            otherClassBrowseIcon:SetVertexColor(0.6, 0.6, 0.6, 1)
-            if otherClassBrowseBtn:GetHighlightTexture() then
-                otherClassBrowseBtn:GetHighlightTexture():SetAlpha(0)
-            end
-        end
-
-        UpdateOtherClassBrowseBtnHighlight()
-    end
-
-    otherClassBrowseBtn:SetScript("OnClick", function()
-        CloseDropDownMenus()
-        if CS.otherClassLibraryActive then
-            if ClearConfigPrimarySelection then
-                ClearConfigPrimarySelection()
-            end
-            ResetOtherClassBrowseState()
-            CooldownCompanion:RefreshConfigPanel()
-            return
-        end
-        if not otherClassBrowseAvailable then
-            return
-        end
-        if EnterOtherClassBrowseState then
-            EnterOtherClassBrowseState(nil)
-        end
-        if ClearConfigPrimarySelection then
-            ClearConfigPrimarySelection()
-        end
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    otherClassBrowseBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine("Browse Other Classes")
-        if CS.otherClassLibraryActive then
-            GameTooltip:AddLine("Class library is open. Click to return to the regular config view.", 1, 1, 1, true)
-        elseif not otherClassBrowseActionAvailable then
-            if otherClassBrowseSearchFiltered and otherClassBrowseHasInventory then
-                GameTooltip:AddLine("No other classes match the current search.", 1, 1, 1, true)
-            else
-                GameTooltip:AddLine("No other classes on this profile currently have groups to browse.", 1, 1, 1, true)
-            end
-        else
-            GameTooltip:AddLine("View and edit groups saved for other classes on this profile.", 1, 1, 1, true)
-        end
-        GameTooltip:Show()
-    end)
-    otherClassBrowseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    SkinTitlebarButton(importClusterBtn, importClusterIcon)
 
     local changelogOverlay
-    local changelogBtn
-    local changelogBtnBorder = nil
-    local function UpdateChangelogBtnHighlight()
-        if changelogOverlay and changelogOverlay:IsShown() then
-            if not changelogBtnBorder then
-                changelogBtnBorder = changelogBtn:CreateTexture(nil, "OVERLAY")
-                changelogBtnBorder:SetPoint("TOPLEFT", -1, 1)
-                changelogBtnBorder:SetPoint("BOTTOMRIGHT", 1, -1)
-                changelogBtnBorder:SetColorTexture(0.85, 0.65, 0.0, 0.6)
-            end
-            changelogBtnBorder:Show()
-        elseif changelogBtnBorder then
-            changelogBtnBorder:Hide()
-        end
-    end
-
-    -- Changelog button — left of Gear
-    changelogBtn = CreateFrame("Button", nil, content)
-    changelogBtn:SetSize(18, 18)
-    local changelogIcon = changelogBtn:CreateTexture(nil, "ARTWORK")
-    changelogIcon:SetAtlas("lorewalking-map-icon", false)
-    changelogIcon:SetAllPoints()
-    changelogBtn:SetHighlightAtlas("lorewalking-map-icon")
-    changelogBtn:GetHighlightTexture():SetAlpha(0.3)
-    changelogBtn:SetScript("OnClick", function()
-        CloseDropDownMenus()
-        if frame.ToggleChangelogOverlay then
-            frame.ToggleChangelogOverlay()
-        end
-    end)
-    changelogBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine("View Changelog")
-        GameTooltip:AddLine("Open the bundled release notes for the latest and older versions.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    changelogBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     -- Gear button — left of Collapse
     local gearBtn = CreateFrame("Button", nil, content)
-    gearBtn:SetSize(20, 20)
-    gearBtn:SetPoint("RIGHT", collapseBtn, "LEFT", -4, 0)
-    changelogBtn:SetPoint("RIGHT", gearBtn, "LEFT", -4, 0)
-    otherClassBrowseBtn:SetPoint("RIGHT", changelogBtn, "LEFT", -4, 0)
-    cdmDisplayBtn:SetPoint("RIGHT", otherClassBrowseBtn, "LEFT", -4, 0)
-    importClusterBtn:SetPoint("RIGHT", cdmDisplayBtn, "LEFT", -4, 0)
+    gearBtn:SetSize(18, 18)
+    gearBtn:SetPoint("RIGHT", collapseBtn, "LEFT", -6, 0)
+    importClusterBtn:SetPoint("RIGHT", gearBtn, "LEFT", -6, 0)
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
-    gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
+    gearIcon:SetAtlas("uitools-icon-settings", false)
     gearIcon:SetAllPoints()
-    gearBtn:SetHighlightTexture("Interface\\WorldMap\\GEAR_64GREY")
-    gearBtn:GetHighlightTexture():SetAlpha(0.3)
+    SkinTitlebarButton(gearBtn, gearIcon)
     -- Fire on mouse down so a second gear click closes the open dropdown instead of reopening it on mouse up.
     gearBtn:RegisterForClicks("LeftButtonDown")
     CS.gearButton = gearBtn
@@ -1406,6 +1284,20 @@ local function CreateConfigPanel()
             end
             UIDropDownMenu_AddButton(info4, level)
 
+            local infoChangelog = UIDropDownMenu_CreateInfo()
+            infoChangelog.text = "  View Changelog"
+            infoChangelog.notCheckable = true
+            infoChangelog.tooltipTitle = "View Changelog"
+            infoChangelog.tooltipText = "Open the bundled release notes for the latest and older versions."
+            infoChangelog.tooltipOnButton = true
+            infoChangelog.func = function()
+                CloseDropDownMenus()
+                if frame.ToggleChangelogOverlay then
+                    frame.ToggleChangelogOverlay()
+                end
+            end
+            UIDropDownMenu_AddButton(infoChangelog, level)
+
             local info6 = UIDropDownMenu_CreateInfo()
             info6.text = "  Replay Tutorial"
             info6.notCheckable = true
@@ -1487,10 +1379,10 @@ local function CreateConfigPanel()
             CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
         end
         isMinimized = false
-        collapseIcon:SetAtlas("common-icon-minus")
+        collapseIcon:SetAtlas("uitools-icon-minus")
         collapseBtn:SetParent(content)
         collapseBtn:ClearAllPoints()
-        collapseBtn:SetPoint("RIGHT", closeBtn, "LEFT", -4, 0)
+        collapseBtn:SetPoint("RIGHT", closeBtn, "LEFT", -6, 0)
     end)
 
     -- ESC handler for mini frame
@@ -1570,7 +1462,7 @@ local function CreateConfigPanel()
             collapseBtn:ClearAllPoints()
             collapseBtn:SetPoint("CENTER")
 
-            collapseIcon:SetAtlas("common-icon-plus")
+            collapseIcon:SetAtlas("uitools-icon-plus")
             isMinimized = true
         end
     end)
@@ -1609,7 +1501,7 @@ local function CreateConfigPanel()
     colParent:SetPoint("BOTTOMRIGHT", contentFrame, "BOTTOMRIGHT", 0, 11)
 
     -- Bundled changelog overlay (kept separate from column refreshes).
-    changelogOverlay = SetupChangelogOverlay(frame, colParent, UpdateChangelogBtnHighlight)
+    changelogOverlay = SetupChangelogOverlay(frame, colParent)
 
     -- Navigator rail (AceGUI InlineGroup)
     local col1 = AceGUI:Create("InlineGroup")
@@ -1794,7 +1686,7 @@ local function CreateConfigPanel()
     local destinationBar = CreateFrame("Frame", nil, col1.content)
     destinationBar:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 30 + CONFIG_FINDER_RESERVED_HEIGHT)
     destinationBar:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30 + CONFIG_FINDER_RESERVED_HEIGHT)
-    destinationBar:SetHeight(NAVIGATOR_DESTINATIONS_HEIGHT)
+    destinationBar:SetHeight(GetNavigatorDestinationsHeight())
     destinationBar:Show()
     CS.col1DestinationBar = destinationBar
 
@@ -1809,7 +1701,7 @@ local function CreateConfigPanel()
         col1.content,
         "BOTTOMRIGHT",
         0,
-        30 + CONFIG_FINDER_RESERVED_HEIGHT + NAVIGATOR_DESTINATIONS_HEIGHT
+        30 + CONFIG_FINDER_RESERVED_HEIGHT + GetNavigatorDestinationsHeight()
     )
     scroll1.frame:Show()
     CS.col1Scroll = scroll1
@@ -2092,7 +1984,7 @@ local function CreateConfigPanel()
             CS.col1DestinationBar:ClearAllPoints()
             CS.col1DestinationBar:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, destinationBottomInset)
             CS.col1DestinationBar:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, destinationBottomInset)
-            CS.col1DestinationBar:SetHeight(NAVIGATOR_DESTINATIONS_HEIGHT)
+            CS.col1DestinationBar:SetHeight(GetNavigatorDestinationsHeight())
             CS.col1DestinationBar:SetShown(showDestinations)
         end
 
@@ -2112,7 +2004,7 @@ local function CreateConfigPanel()
         end
         if CS.col1Scroll and CS.col1Scroll.frame then
             local bottomInset = destinationBottomInset
-                + (showDestinations and NAVIGATOR_DESTINATIONS_HEIGHT or 0)
+                + (showDestinations and GetNavigatorDestinationsHeight() or 0)
             CS.col1Scroll.frame:ClearAllPoints()
             CS.col1Scroll.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
             CS.col1Scroll.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, bottomInset)
@@ -2160,14 +2052,11 @@ local function CreateConfigPanel()
     frame.versionText = versionText
     frame.profileGear = profileGear
     frame.changelogOverlay = changelogOverlay
-    frame.otherClassBrowseButton = otherClassBrowseBtn
     frame.col1 = col1
     frame.col3 = col3
     frame.colParent = colParent
     frame.LayoutColumns = LayoutColumns
     frame.UpdateCompactConfigRows = UpdateCompactConfigRows
-    frame.UpdateOtherClassBrowseButtonState = UpdateOtherClassBrowseButtonState
-    UpdateOtherClassBrowseButtonState()
 
     CS.configFrame = frame
     return frame
@@ -2205,9 +2094,6 @@ function CooldownCompanion:_configRefreshPanelImpl()
         RefreshProfileBar(CS.configFrame.profileBar)
     end
     CS.configFrame.versionText:SetText(GetVersionFooterText())
-    if CS.configFrame.UpdateOtherClassBrowseButtonState then
-        CS.configFrame.UpdateOtherClassBrowseButtonState()
-    end
     if CS.configFrame.LayoutColumns then
         CS.configFrame.LayoutColumns()
     end

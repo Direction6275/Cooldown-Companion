@@ -370,7 +370,6 @@ local PROFILE_DEFAULT_KEYS = {
     auraTextureLibrary = "auraTextureLibrary",
     globalStyle = "globalStyle",
     locked = "locked",
-    cdmHidden = "cdmHidden",
     resourceBarMigration = "resourceBarMigration",
     resourceBars = "resourceBars",
     castBar = "castBar",
@@ -380,6 +379,7 @@ local PROFILE_DEFAULT_KEYS = {
 local RETIRED_PROFILE_KEYS = {
     autoAddPrefs = true,
     hideInfoButtons = true,
+    cdmHidden = true,
 }
 
 local OUTBOUND_ONLY_RETIRED_PROFILE_KEYS = {

@@ -45,8 +45,6 @@ local BUFF_VIEWER_SET = {
 }
 ST._BUFF_VIEWER_SET = BUFF_VIEWER_SET
 
-local cdmAlphaGuard = {}
-ST._cdmAlphaGuard = cdmAlphaGuard
 
 function CooldownCompanion:OnInitialize()
     self._hadSavedVariables = type(_G.CooldownCompanionDB) == "table"
@@ -262,40 +260,16 @@ function CooldownCompanion:OnEnable()
     -- Track spell overrides (transforming spells like Eclipse) to keep viewer map current
     self:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", "OnViewerSpellOverrideUpdated")
 
-    -- Hook SetAlpha on CDM viewers to re-enforce hidden state against
-    -- Blizzard overrides (AnimInManagedFrames, EditMode opacity, etc.)
+    -- Hook RefreshLayout on CDM viewers so pool churn re-queues the viewer
+    -- aura map rebuild.
     for _, name in ipairs(VIEWER_NAMES) do
         local viewer = _G[name]
         if viewer then
-            hooksecurefunc(viewer, "SetAlpha", function(frame, a)
-                if cdmAlphaGuard[frame] then return end
-                if not CooldownCompanion._cdmPickMode
-                   and CooldownCompanion.db
-                   and CooldownCompanion.db.profile.cdmHidden then
-                    cdmAlphaGuard[frame] = true
-                    frame:SetAlpha(0)
-                    cdmAlphaGuard[frame] = nil
-                end
-            end)
-            -- Hook RefreshLayout to re-disable mouse on newly pool-acquired children.
-            -- Blizzard's OnAcquireItemFrame calls SetTooltipsShown(true) on new children.
-            hooksecurefunc(viewer, "RefreshLayout", function(frame)
-                if CooldownCompanion._cdmPickMode then return end
+            hooksecurefunc(viewer, "RefreshLayout", function()
                 CooldownCompanion:QueueBuildViewerAuraMap()
-                if CooldownCompanion.db
-                   and CooldownCompanion.db.profile.cdmHidden then
-                    for _, child in pairs({frame:GetChildren()}) do
-                        child:SetMouseMotionEnabled(false)
-                    end
-                end
             end)
         end
     end
-
-    -- Enforce CDM hidden state immediately after hooks are installed.
-    -- Without this, viewers flash visible for ~1s after /reload until
-    -- the delayed ApplyCdmAlpha() in OnPlayerEnteringWorld fires.
-    self:ApplyCdmAlpha()
 
     -- Keybind text events
     self:RegisterEvent("UPDATE_BINDINGS", "OnBindingsChanged")
@@ -506,7 +480,6 @@ end
 function CooldownCompanion:OnCombatEnd()
     local combatLockSnapshot = self:EndCombatForcedLock()
     self:QueueCooldownRefresh("combat-event")
-    self:ApplyCdmAlpha()
     if self._pendingUnsupportedLegacyHide or self._unsupportedLegacyProfile then
         self._pendingUnsupportedLegacyHide = nil
         self._pendingFullRefresh = nil

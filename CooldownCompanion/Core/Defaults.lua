@@ -457,7 +457,6 @@ local defaults = {
             textHeaderFontColor = {1, 1, 1, 1},
         },
         locked = false,
-        cdmHidden = false,
         resourceBarsByClass = {},
         resourceBarMigration = {
             conflicts = {},
