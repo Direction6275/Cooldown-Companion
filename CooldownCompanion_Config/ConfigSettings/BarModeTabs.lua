@@ -4,7 +4,6 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 -- Imports from Helpers.lua
@@ -16,7 +15,6 @@ local CreateColorPickerPromoteButton = ST._CreateColorPickerPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
-local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
@@ -34,6 +32,7 @@ local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local AddCheckboxRow = ST._AddCheckboxRow
 local AddSliderRow = ST._AddSliderRow
 local AddDropdownRow = ST._AddDropdownRow
+local AddEditBoxRow = ST._AddEditBoxRow
 local AddColorRow = ST._AddColorRow
 local AnchorRowBadge = ST._AnchorRowBadge
 local BeginRowGrid = ST._BeginRowGrid
@@ -90,25 +89,37 @@ local function MakeBarCooldownTextAdvancedDescriptor()
                 return
             end
 
-            local flipTimeCheck = AceGUI:Create("CheckBox")
-            flipTimeCheck:SetLabel("Flip Time Text")
-            flipTimeCheck:SetValue(style.barTimeTextReverse or false)
-            flipTimeCheck:SetFullWidth(true)
-            flipTimeCheck:SetCallback("OnValueChanged", function(widget, event, val)
-                style.barTimeTextReverse = val or nil
-                refreshStyle()
-            end)
-            panel:AddChild(flipTimeCheck)
+            -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow
+            -- column, so every row goes straight onto the panel scroll and each
+            -- shared builder runs with { row = true } and no rightColumn.
+            local flipTimeRow = AddCheckboxRow(panel, {
+                label = "Flip Time Text",
+                value = style.barTimeTextReverse or false,
+                onChange = function(val)
+                    style.barTimeTextReverse = val or nil
+                    refreshStyle()
+                end,
+            })
 
-            -- (?) tooltip for Flip Time Text
-            CreateInfoButton(flipTimeCheck.frame, flipTimeCheck.checkbg, "LEFT", "RIGHT", flipTimeCheck.text:GetStringWidth() + 4, 0, {
+            -- (?) tooltip for Flip Time Text. Anchor args are a placeholder -
+            -- AnchorRowBadge re-points the button onto the end of the label.
+            AnchorRowBadge(flipTimeRow, CreateInfoButton(flipTimeRow.frame, flipTimeRow.frame, "LEFT", "LEFT", 0, 0, {
                 "Flip Time Text",
                 {"Applies to all time-based text, including cooldown time and ready text.", 1, 1, 1, true},
-            }, flipTimeCheck)
+            }, flipTimeRow))
 
-            AddFontControls(panel, style, "cooldown", {sizeMin = 6, sizeMax = 24}, refreshStyle)
-            AddColorPicker(panel, style, "cooldownFontColor", "Font Color", {1, 1, 1, 1}, false, refreshStyle, refreshStyle)
-            AddOffsetSliders(panel, style, "barCdTextOffsetX", "barCdTextOffsetY", {range = 50}, refreshStyle)
+            AddFontControls(panel, style, "cooldown", {sizeMin = 6, sizeMax = 24}, refreshStyle, { row = true })
+            -- deferCommit is deliberately absent, matching the AddColorPicker
+            -- call this row replaced.
+            AddColorRow(panel, {
+                label = "Font Color",
+                tbl = style,
+                key = "cooldownFontColor",
+                default = {1, 1, 1, 1},
+                onConfirm = refreshStyle,
+                onChange = refreshStyle,
+            })
+            AddOffsetSliders(panel, style, "barCdTextOffsetX", "barCdTextOffsetY", {range = 50}, refreshStyle, { row = true })
         end,
     }
 end
@@ -263,51 +274,51 @@ local function BuildBarAppearanceTab(container, group, style)
         end,
     })
 
+    -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
+    -- the rows go straight onto the panel scroll and Icon Size indents under the
+    -- toggle that gates it.
     local function BuildBarIconAdvanced(panel)
-        local flipIconCheck = AceGUI:Create("CheckBox")
-        flipIconCheck:SetLabel("Flip Icon Side")
-        flipIconCheck:SetValue(style.barIconReverse or false)
-        flipIconCheck:SetFullWidth(true)
-        flipIconCheck:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barIconReverse = val or nil
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        panel:AddChild(flipIconCheck)
+        AddCheckboxRow(panel, {
+            label = "Flip Icon Side",
+            value = style.barIconReverse or false,
+            onChange = function(val)
+                style.barIconReverse = val or nil
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
 
-        local iconOffsetSlider = AceGUI:Create("Slider")
-        iconOffsetSlider:SetLabel("Icon Offset")
-        iconOffsetSlider:SetSliderValues(-5, 50, 0.1)
-        iconOffsetSlider:SetValue(style.barIconOffset or 0)
-        iconOffsetSlider:SetFullWidth(true)
-        iconOffsetSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barIconOffset = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        panel:AddChild(iconOffsetSlider)
+        AddSliderRow(panel, {
+            label = "Icon Offset",
+            min = -5, max = 50, step = 0.1,
+            value = style.barIconOffset or 0,
+            onChange = function(val)
+                style.barIconOffset = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end,
+        })
 
-        local customIconSizeCb = AceGUI:Create("CheckBox")
-        customIconSizeCb:SetLabel("Custom Icon Size")
-        customIconSizeCb:SetValue(style.barIconSizeOverride or false)
-        customIconSizeCb:SetFullWidth(true)
-        customIconSizeCb:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barIconSizeOverride = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        panel:AddChild(customIconSizeCb)
+        AddCheckboxRow(panel, {
+            label = "Custom Icon Size",
+            value = style.barIconSizeOverride or false,
+            onChange = function(val)
+                style.barIconSizeOverride = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
 
         if style.barIconSizeOverride then
-            local iconSizeSlider = AceGUI:Create("Slider")
-            iconSizeSlider:SetLabel("Icon Size")
-            iconSizeSlider:SetSliderValues(5, 100, 0.1)
-            iconSizeSlider:SetValue(style.barIconSize or 20)
-            iconSizeSlider:SetFullWidth(true)
-            iconSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                style.barIconSize = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end)
-            panel:AddChild(iconSizeSlider)
+            AddSliderRow(panel, {
+                label = "Icon Size",
+                indent = true,
+                min = 5, max = 100, step = 0.1,
+                value = style.barIconSize or 20,
+                onChange = function(val)
+                    style.barIconSize = val
+                    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                end,
+            })
         end
     end
 
@@ -328,20 +339,30 @@ local function BuildBarAppearanceTab(container, group, style)
         end,
     })
 
+    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
     local function BuildBarNameTextAdvanced(panel)
-        local flipNameCheck = AceGUI:Create("CheckBox")
-        flipNameCheck:SetLabel("Flip Name Text")
-        flipNameCheck:SetValue(style.barNameTextReverse or false)
-        flipNameCheck:SetFullWidth(true)
-        flipNameCheck:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barNameTextReverse = val or nil
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        panel:AddChild(flipNameCheck)
+        AddCheckboxRow(panel, {
+            label = "Flip Name Text",
+            value = style.barNameTextReverse or false,
+            onChange = function(val)
+                style.barNameTextReverse = val or nil
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end,
+        })
 
-        AddFontControls(panel, style, "barName", {sizeMin = 6, sizeMax = 24, size = 10}, refreshStyle)
-        AddColorPicker(panel, style, "barNameFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-        AddOffsetSliders(panel, style, "barNameTextOffsetX", "barNameTextOffsetY", {range = 50}, refreshStyle)
+        AddFontControls(panel, style, "barName", {sizeMin = 6, sizeMax = 24, size = 10}, refreshStyle, { row = true })
+        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- this row replaced.
+        AddColorRow(panel, {
+            label = "Font Color",
+            tbl = style,
+            key = "barNameFontColor",
+            default = {1, 1, 1, 1},
+            hasAlpha = true,
+            onConfirm = refreshStyle,
+            onChange = refreshStyle,
+        })
+        AddOffsetSliders(panel, style, "barNameTextOffsetX", "barNameTextOffsetY", {range = 50}, refreshStyle, { row = true })
     end
 
     local _, nameAdvBtn = AddAdvancedToggle(showNameRow, "barNameText", tabInfoButtons, style.showBarNameText ~= false, {
@@ -385,13 +406,36 @@ local function BuildBarAppearanceTab(container, group, style)
         end,
     })
 
+    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+    --
+    -- The three count colors are the panel's longest labels. They end in a 19px
+    -- swatch, the narrow control the row grammar reserves long labels for, and
+    -- each states itself on hover so a narrower config column cannot silently
+    -- swallow which charge state it names.
+    --
+    -- deferCommit is deliberately absent throughout, matching the AddColorPicker
+    -- calls these rows replaced.
     local function BuildBarChargeTextAdvanced(panel)
-        AddFontControls(panel, style, "charge", {}, refreshStyle)
-        AddColorPicker(panel, style, "chargeFontColor", "Font Color (Max Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-        AddColorPicker(panel, style, "chargeFontColorMissing", "Font Color (Missing Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-        AddColorPicker(panel, style, "chargeFontColorZero", "Font Color (Zero Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-        AddAnchorDropdown(panel, style, "chargeAnchor", "BOTTOMRIGHT", refreshStyle)
-        AddOffsetSliders(panel, style, "chargeXOffset", "chargeYOffset", {x = -2, y = 2}, refreshStyle)
+        AddFontControls(panel, style, "charge", {}, refreshStyle, { row = true })
+
+        local function ChargeColorRow(rowLabel, key)
+            AddColorRow(panel, {
+                label = rowLabel,
+                tooltip = { rowLabel },
+                tbl = style,
+                key = key,
+                default = {1, 1, 1, 1},
+                hasAlpha = true,
+                onConfirm = refreshStyle,
+                onChange = refreshStyle,
+            })
+        end
+        ChargeColorRow("Font Color (Max Charges)", "chargeFontColor")
+        ChargeColorRow("Font Color (Missing Charges)", "chargeFontColorMissing")
+        ChargeColorRow("Font Color (Zero Charges)", "chargeFontColorZero")
+
+        AddAnchorDropdown(panel, style, "chargeAnchor", "BOTTOMRIGHT", refreshStyle, nil, { row = true })
+        AddOffsetSliders(panel, style, "chargeXOffset", "chargeYOffset", {x = -2, y = 2}, refreshStyle, { row = true })
     end
 
     local _, chargeAdvBtn = AddAdvancedToggle(chargeTextRow, "barChargeText", tabInfoButtons, style.showChargeText ~= false, {
@@ -411,20 +455,34 @@ local function BuildBarAppearanceTab(container, group, style)
         end,
     })
 
+    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn. The
+    -- CDC-EditBoxRow embeds a stock EditBox, so the raw frame the Instructions
+    -- text hangs on is still reachable through row.editbox.
     local function BuildBarReadyTextAdvanced(panel)
-        local readyTextBox = AceGUI:Create("EditBox")
-        if readyTextBox.editbox.Instructions then readyTextBox.editbox.Instructions:Hide() end
-        readyTextBox:SetLabel("Ready Text")
-        readyTextBox:SetText(style.barReadyText or "Ready")
-        readyTextBox:SetFullWidth(true)
-        readyTextBox:SetCallback("OnEnterPressed", function(widget, event, val)
-            style.barReadyText = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        panel:AddChild(readyTextBox)
+        local readyRow = AddEditBoxRow(panel, {
+            label = "Ready Text",
+            value = style.barReadyText or "Ready",
+            onEnterPressed = function(val)
+                style.barReadyText = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end,
+        })
+        if readyRow.editbox and readyRow.editbox.Instructions then
+            readyRow.editbox.Instructions:Hide()
+        end
 
-        AddColorPicker(panel, style, "barReadyTextColor", "Ready Text Color", {0.2, 1.0, 0.2, 1.0}, true, refreshStyle, refreshStyle)
-        AddFontControls(panel, style, "barReady", {sizeMin = 6, sizeMax = 24}, refreshStyle)
+        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- this row replaced.
+        AddColorRow(panel, {
+            label = "Ready Text Color",
+            tbl = style,
+            key = "barReadyTextColor",
+            default = {0.2, 1.0, 0.2, 1.0},
+            hasAlpha = true,
+            onConfirm = refreshStyle,
+            onChange = refreshStyle,
+        })
+        AddFontControls(panel, style, "barReady", {sizeMin = 6, sizeMax = 24}, refreshStyle, { row = true })
     end
 
     local _, readyAdvBtn = AddAdvancedToggle(showReadyRow, "barReadyText", tabInfoButtons, style.showBarReadyText, {
@@ -459,9 +517,19 @@ local function BuildBarAppearanceTab(container, group, style)
             end,
         })
 
+        -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- the color row replaced.
         local function BuildBarAuraTextAdvanced(panel)
-            AddFontControls(panel, style, "auraText", { size = 12 }, refreshStyle)
-            AddColorPicker(panel, style, "auraTextFontColor", "Font Color", {0, 0.925, 1, 1}, false, refreshStyle, refreshStyle)
+            AddFontControls(panel, style, "auraText", { size = 12 }, refreshStyle, { row = true })
+            AddColorRow(panel, {
+                label = "Font Color",
+                tbl = style,
+                key = "auraTextFontColor",
+                default = {0, 0.925, 1, 1},
+                onConfirm = refreshStyle,
+                onChange = refreshStyle,
+            })
         end
         AddAdvancedToggle(auraTextRow, "barAuraText", tabInfoButtons, style.showAuraText ~= false, {
             title = "Aura Duration Text Advanced",
@@ -487,11 +555,22 @@ local function BuildBarAppearanceTab(container, group, style)
             end,
         })
 
+        -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
         local function BuildBarAuraStackTextAdvanced(panel)
-            AddFontControls(panel, style, "auraStack", { size = 12 }, refreshStyle)
-            AddColorPicker(panel, style, "auraStackFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-            AddAnchorDropdown(panel, style, "auraStackAnchor", "BOTTOMLEFT", refreshStyle)
-            AddOffsetSliders(panel, style, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle)
+            AddFontControls(panel, style, "auraStack", { size = 12 }, refreshStyle, { row = true })
+            -- deferCommit is deliberately absent, matching the AddColorPicker
+            -- call this row replaced.
+            AddColorRow(panel, {
+                label = "Font Color",
+                tbl = style,
+                key = "auraStackFontColor",
+                default = {1, 1, 1, 1},
+                hasAlpha = true,
+                onConfirm = refreshStyle,
+                onChange = refreshStyle,
+            })
+            AddAnchorDropdown(panel, style, "auraStackAnchor", "BOTTOMLEFT", refreshStyle, nil, { row = true })
+            AddOffsetSliders(panel, style, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle, { row = true })
         end
         AddAdvancedToggle(auraStackRow, "barAuraStackText", tabInfoButtons, style.showAuraStackText ~= false, {
             title = "Aura Stack Text Advanced",
@@ -563,10 +642,14 @@ local function BuildBarActiveAuraSection(container, group, style)
             end,
         })
 
+        -- Single rail (AdvancedSettingsPanel.lua): this builder's row path opens
+        -- its own two-column grid, which a ~330px panel has no room for, so
+        -- opts.singleRail suppresses it and rails the border effect and the two
+        -- fill effects onto the panel scroll in order.
         local function BuildBarActiveAuraAdvanced(panel)
             BuildBarActiveAuraControls(panel, style, function()
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end)
+            end, { row = true, singleRail = true, infoButtons = tabInfoButtons })
         end
 
         AddAdvancedToggle(enableRow, "barActiveAura", tabInfoButtons, indicatorOn, {

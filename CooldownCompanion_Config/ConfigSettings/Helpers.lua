@@ -1159,51 +1159,54 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
         onChange = ApplyCompactLayout,
     })
 
+    -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
+    -- both rows go straight onto the panel scroll and their (?) badges chain off
+    -- the end of each row's label. The row builders are read at CALL time, for
+    -- the load-order reason stated at AddFontControls' row branch below.
     local function BuildCompactAdvanced(panel)
-        local growthDirectionDrop = AceGUI:Create("Dropdown")
-        growthDirectionDrop:SetLabel("Growth Direction")
-        growthDirectionDrop:SetList(GetCompactGrowthDirectionLabels(group), {"start", "center", "end"})
-        growthDirectionDrop:SetValue(NormalizeCompactGrowthDirection(group.compactGrowthDirection))
-        growthDirectionDrop:SetFullWidth(true)
-        growthDirectionDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            group.compactGrowthDirection = NormalizeCompactGrowthDirection(val)
-            local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-            if frame then
-                frame._layoutDirty = true
-                if frame:IsShown() then
-                    CooldownCompanion:UpdateGroupLayout(CS.selectedGroup)
+        local growthRow = ST._AddDropdownRow(panel, {
+            label = "Growth Direction",
+            list = GetCompactGrowthDirectionLabels(group),
+            order = {"start", "center", "end"},
+            value = NormalizeCompactGrowthDirection(group.compactGrowthDirection),
+            onChange = function(val)
+                group.compactGrowthDirection = NormalizeCompactGrowthDirection(val)
+                local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+                if frame then
+                    frame._layoutDirty = true
+                    if frame:IsShown() then
+                        CooldownCompanion:UpdateGroupLayout(CS.selectedGroup)
+                    end
                 end
-            end
-        end)
-        panel:AddChild(growthDirectionDrop)
-
-        CreateInfoButton(growthDirectionDrop.frame, growthDirectionDrop.label, "LEFT", "CENTER", growthDirectionDrop.label:GetStringWidth() / 2 + 4, 0, {
+            end,
+        })
+        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+        -- onto the end of the row's label.
+        ST._AnchorRowBadge(growthRow, CreateInfoButton(growthRow.frame, growthRow.frame, "LEFT", "LEFT", 0, 0, {
             "Growth Direction",
             {"Choose which edge acts as the compact anchor icon/bar as visibility changes. Horizontal uses Left/Center/Right, vertical uses Top/Center/Bottom.", 1, 1, 1, true},
-        }, tabInfoButtons)
+        }, tabInfoButtons))
 
         local totalButtons = #group.buttons
-        local maxVisSlider = AceGUI:Create("Slider")
-        maxVisSlider:SetLabel("Max Visible Buttons")
-        maxVisSlider:SetSliderValues(1, math.max(totalButtons, 1), 1)
-        maxVisSlider:SetValue(group.maxVisibleButtons == 0 and totalButtons or group.maxVisibleButtons)
-        maxVisSlider:SetFullWidth(true)
-        maxVisSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            val = math.floor(val + 0.5)
-            if val >= totalButtons then
-                group.maxVisibleButtons = 0
-            else
-                group.maxVisibleButtons = val
-            end
-            local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-            if frame then frame._layoutDirty = true end
-        end)
-        panel:AddChild(maxVisSlider)
-
-        CreateInfoButton(maxVisSlider.frame, maxVisSlider.label, "LEFT", "CENTER", maxVisSlider.label:GetStringWidth() / 2 + 4, 0, {
+        local maxVisRow = ST._AddSliderRow(panel, {
+            label = "Max Visible Buttons",
+            min = 1, max = math.max(totalButtons, 1), step = 1,
+            value = group.maxVisibleButtons == 0 and totalButtons or group.maxVisibleButtons,
+            onChange = function(val)
+                val = math.floor(val + 0.5)
+                if val >= totalButtons then
+                    group.maxVisibleButtons = 0
+                else
+                    group.maxVisibleButtons = val
+                end
+                local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+                if frame then frame._layoutDirty = true end
+            end,
+        })
+        ST._AnchorRowBadge(maxVisRow, CreateInfoButton(maxVisRow.frame, maxVisRow.frame, "LEFT", "LEFT", 0, 0, {
             "Max Visible Buttons",
             {"Limits how many buttons can appear at once. The first buttons (by group order) that pass visibility checks are shown; the rest are hidden.", 1, 1, 1, true},
-        }, tabInfoButtons)
+        }, tabInfoButtons))
     end
 
     AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout and not stableAnchorLocked, {

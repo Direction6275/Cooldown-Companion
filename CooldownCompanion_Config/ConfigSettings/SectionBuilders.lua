@@ -903,27 +903,30 @@ local TOOLTIP_ANCHOR_LIST = {
 }
 local TOOLTIP_ANCHOR_ORDER = { "default", "above", "below", "left", "right", "cursor" }
 
+-- Row grammar only (RowWidgets.lua), single rail: this is the interior of the
+-- Show Tooltips advanced panel and has no other call site, so it was converted
+-- outright rather than growing an opts.row mode. A panel is one narrow column
+-- (AdvancedSettingsPanel.lua), so both rows go straight onto `container`.
 local function BuildTooltipBehaviorControls(container, styleTable, refreshCallback)
-    local drop = AceGUI:Create("Dropdown")
-    drop:SetLabel("Tooltip Position")
-    drop:SetList(TOOLTIP_ANCHOR_LIST, TOOLTIP_ANCHOR_ORDER)
-    drop:SetValue(styleTable.tooltipAnchor or "default")
-    drop:SetFullWidth(true)
-    drop:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.tooltipAnchor = val
-        refreshCallback()
-    end)
-    container:AddChild(drop)
+    local drop = AddDropdownRow(container, {
+        label = "Tooltip Position",
+        list = TOOLTIP_ANCHOR_LIST,
+        order = TOOLTIP_ANCHOR_ORDER,
+        value = styleTable.tooltipAnchor or "default",
+        onChange = function(val)
+            styleTable.tooltipAnchor = val
+            refreshCallback()
+        end,
+    })
 
-    local combatCb = AceGUI:Create("CheckBox")
-    combatCb:SetLabel("Hide Tooltips in Combat")
-    combatCb:SetValue(styleTable.tooltipHideInCombat == true)
-    combatCb:SetFullWidth(true)
-    combatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.tooltipHideInCombat = val
-        refreshCallback()
-    end)
-    container:AddChild(combatCb)
+    local combatCb = AddCheckboxRow(container, {
+        label = "Hide Tooltips in Combat",
+        value = styleTable.tooltipHideInCombat == true,
+        onChange = function(val)
+            styleTable.tooltipHideInCombat = val
+            refreshCallback()
+        end,
+    })
 
     return drop, combatCb
 end
@@ -1532,9 +1535,13 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
     local iconFillOrientation = styleTable.iconFillOrientation == "horizontal" and "horizontal" or "vertical"
 
     if opts and opts.row then
+        -- On the Overrides tab these rows hang off the Icon Fill Timer toggle
+        -- and indent as its children; in the advanced panel's single rail the
+        -- toggle lives back on the tab, so the caller passes indent = false.
+        local childIndent = opts.indent ~= false
         AddDropdownRow(container, {
             label = "Orientation",
-            indent = true,
+            indent = childIndent,
             list = { vertical = "Vertical", horizontal = "Horizontal" },
             order = { "vertical", "horizontal" },
             value = iconFillOrientation,
@@ -1554,7 +1561,7 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
         end
         AddDropdownRow(container, {
             label = "Anchor Edge",
-            indent = true,
+            indent = childIndent,
             list = edgeList,
             order = edgeOrder,
             value = styleTable.iconFillReverse == true and "reverse" or "default",
@@ -1567,7 +1574,7 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
 
         AddDropdownRow(container, {
             label = "Timer Motion",
-            indent = true,
+            indent = childIndent,
             pulloutWidth = WIDE_PULLOUT_WIDTH,
             list = { drain = "Starts Full (Drain)", fill = "Starts Empty (Fill)" },
             order = { "drain", "fill" },
@@ -1583,7 +1590,7 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
         -- the stock path makes.
         AddColorRow(container, {
             label = "Cooldown Fill Color",
-            indent = true,
+            indent = childIndent,
             tbl = styleTable,
             key = "iconFillCooldownColor",
             default = {0.6, 0.13, 0.18, 0.55},
@@ -1663,28 +1670,31 @@ local function BuildLossOfControlControls(container, styleTable, refreshCallback
     })
 end
 
+-- Row grammar only (RowWidgets.lua), single rail: this is the interior of the
+-- Unusable Visual advanced panel and has no other call site, so it was
+-- converted outright rather than growing an opts.row mode. `container` stays
+-- the panel scroll, which is what keeps RefreshStructuralControls routing to a
+-- panel rebuild rather than a whole-config one.
 local function BuildUnusableVisualModeControls(container, styleTable, refreshCallback)
-    local dimCb = AceGUI:Create("CheckBox")
-    dimCb:SetLabel("Dim Icon")
-    dimCb:SetValue(ST.UnusableVisualUsesDimTint(styleTable))
-    dimCb:SetFullWidth(true)
-    dimCb:SetCallback("OnValueChanged", function(widget, event, val)
-        ST.SetUnusableVisualMode(styleTable, val == true, ST.UnusableVisualUsesDesaturation(styleTable))
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(dimCb)
+    AddCheckboxRow(container, {
+        label = "Dim Icon",
+        value = ST.UnusableVisualUsesDimTint(styleTable),
+        onChange = function(val)
+            ST.SetUnusableVisualMode(styleTable, val == true, ST.UnusableVisualUsesDesaturation(styleTable))
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
 
-    local desatCb = AceGUI:Create("CheckBox")
-    desatCb:SetLabel("Desaturate Icon")
-    desatCb:SetValue(ST.UnusableVisualUsesDesaturation(styleTable))
-    desatCb:SetFullWidth(true)
-    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        ST.SetUnusableVisualMode(styleTable, ST.UnusableVisualUsesDimTint(styleTable), val == true)
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(desatCb)
+    AddCheckboxRow(container, {
+        label = "Desaturate Icon",
+        value = ST.UnusableVisualUsesDesaturation(styleTable),
+        onChange = function(val)
+            ST.SetUnusableVisualMode(styleTable, ST.UnusableVisualUsesDimTint(styleTable), val == true)
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
 end
 
 -- Row grammar only: the toggle is a CDC-CheckBoxRow whose gear chains off the
@@ -2323,9 +2333,18 @@ local FILL_EFFECTS_TOOLTIP = {
 -- opts.row opts into the row grammar (RowWidgets.lua): the builder opens its
 -- own two-column grid on `container` and returns the two columns. LEFT is the
 -- border effect (style, its color, its per-style sliders); RIGHT is the two
--- fill effects and their children. Omitting opts.row keeps the full-width
--- stock widgets the unconverted callers draw (the bar-mode advanced panel and
--- the entry override tab).
+-- fill effects and their children.
+--
+-- opts.singleRail (row mode only) suppresses that grid: an advanced settings
+-- panel is ONE narrow column (AdvancedSettingsPanel.lua), where a two-column
+-- split would leave ~150px per cell, so both halves rail onto `container`
+-- itself in the order they are written. It is additive - the two tab callers
+-- that omit it get byte-identical output - and railing onto the container is
+-- also what keeps the panel's refresh seam intact, since
+-- RefreshStructuralControls only routes to the panel rebuild while it can still
+-- see the scroll's own _isAdvancedSettingsPanel marker.
+--
+-- Omitting opts.row keeps the full-width stock widgets.
 local function BuildBarActiveAuraControls(container, styleTable, refreshCallback, opts)
     local rowMode = opts and opts.row == true
 
@@ -2383,7 +2402,12 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
     end
 
     if rowMode then
-        local effectsLeft, effectsRight = BeginRowGrid(container)
+        local effectsLeft, effectsRight
+        if opts.singleRail then
+            effectsLeft, effectsRight = container, container
+        else
+            effectsLeft, effectsRight = BeginRowGrid(container)
+        end
 
         -- The LEFT column IS the border effect, which is exactly what the
         -- shared glow builder draws - style, its color, its per-style sliders,
@@ -2789,17 +2813,21 @@ end
 local function BuildTextColorsControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
 
+    -- Single rail (AdvancedSettingsPanel.lua): one row straight onto the panel
+    -- scroll. The CDC-EditBoxRow embeds a stock EditBox, so the raw frame the
+    -- Instructions text hangs on is still reachable through row.editbox.
     local function BuildReadyTextAdvanced(panel)
-        local readyTextBox = AceGUI:Create("EditBox")
-        if readyTextBox.editbox.Instructions then readyTextBox.editbox.Instructions:Hide() end
-        readyTextBox:SetLabel("Ready Text")
-        readyTextBox:SetText(styleTable.textReadyText or "Ready")
-        readyTextBox:SetFullWidth(true)
-        readyTextBox:SetCallback("OnEnterPressed", function(widget, event, val)
-            styleTable.textReadyText = val
-            refreshCallback()
-        end)
-        panel:AddChild(readyTextBox)
+        local readyRow = AddEditBoxRow(panel, {
+            label = "Ready Text",
+            value = styleTable.textReadyText or "Ready",
+            onEnterPressed = function(val)
+                styleTable.textReadyText = val
+                refreshCallback()
+            end,
+        })
+        if readyRow.editbox and readyRow.editbox.Instructions then
+            readyRow.editbox.Instructions:Hide()
+        end
     end
 
     -- deferCommit is deliberately absent throughout, matching the

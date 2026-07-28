@@ -16,12 +16,10 @@ local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
-local AddColorPicker = ST._AddColorPicker
 local AddPandemicMarkerControls = ST._AddPandemicMarkerControls
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
-local HookSliderEditBox = ST._HookSliderEditBox
 local BuildAlphaControls = ST._BuildAlphaControls
 local OpenTriggerPanelIconPicker = ST._OpenTriggerPanelIconPicker
 local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
@@ -66,8 +64,8 @@ local AnchorRowBadge = ST._AnchorRowBadge
 
 -- A dropdown sizes its menu from the 140px control it hangs under, which is
 -- too narrow for user-named panels and the longer worded options below.
--- Safe as a file-scope local: only BuildLayoutTab and
--- BuildTexturePanelAppearanceTab capture it, never BuildAppearanceTab (the
+-- Safe as a file-scope local: BuildLayoutTab, BuildTexturePanelAppearanceTab
+-- and the texture indicator section capture it, never BuildAppearanceTab (the
 -- builder sitting on the 60-upvalue ceiling noted above).
 local WIDE_PULLOUT_WIDTH = 300
 
@@ -2167,20 +2165,31 @@ local function RefreshTextureIndicatorConfig()
     CooldownCompanion:RefreshConfigPanel()
 end
 
+-- Row grammar (RowWidgets.lua): a CDC-SliderRow. Both call sites are advanced
+-- panel interiors, so this was converted outright rather than growing an
+-- opts.row mode - and the row's own value box already accepts one decimal
+-- place, which is the whole job the ST._HookSliderEditBox call it replaced did.
 local function BuildTextureIndicatorSpeedSlider(container, config, label)
-    local slider = AceGUI:Create("Slider")
-    slider:SetLabel(label)
-    slider:SetSliderValues(0.1, 2.0, 0.05)
-    slider:SetValue(config.speed or 0.5)
-    slider:SetFullWidth(true)
-    slider:SetCallback("OnValueChanged", function(_, _, value)
-        config.speed = value
-        CooldownCompanion:RefreshAllAuraTextureVisuals()
-    end)
-    HookSliderEditBox(slider)
-    container:AddChild(slider)
+    AddSliderRow(container, {
+        label = label,
+        min = 0.1, max = 2.0, step = 0.05,
+        value = config.speed or 0.5,
+        onChange = function(value)
+            config.speed = value
+            CooldownCompanion:RefreshAllAuraTextureVisuals()
+        end,
+    })
 end
 
+-- Row grammar (RowWidgets.lua): one CDC-CheckBoxRow per indicator, its advanced
+-- gear chained off the label. Called exactly once per indicator from the
+-- textures Effects tab below, so it was converted outright rather than growing
+-- an opts.row mode. `container` is the grid column the row belongs to.
+--
+-- `container` is nil when there is nothing to draw into - the section is
+-- collapsed. The preview reconciliation at the foot still has to run in that
+-- case (the same shape BuildBarActiveAuraSection uses in BarModeTabs): an
+-- indicator that is no longer on must not leave its preview playing.
 local function BuildTextureIndicatorSection(container, group, indicators, sectionKey)
     local config = indicators and indicators[sectionKey]
     local sectionDef = TEXTURE_INDICATOR_SECTION_DEFS[sectionKey]
@@ -2188,59 +2197,72 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
         return
     end
 
-    local enableCb = AceGUI:Create("CheckBox")
-    enableCb:SetLabel(sectionDef.label)
-    enableCb:SetValue(config.enabled)
-    enableCb:SetFullWidth(true)
-    enableCb:SetCallback("OnValueChanged", function(_, _, value)
-        if value then
-            local usedEffects = GetTextureIndicatorUsedEffects(indicators, sectionKey)
-            local firstAvailable = GetFirstAvailableTextureIndicatorEffect(indicators, sectionKey)
-            local currentEffect = config.effectType
-            if currentEffect == "none" or usedEffects[currentEffect] then
-                if firstAvailable then
-                    config.effectType = firstAvailable
-                else
-                    config.enabled = false
-                    CooldownCompanion:Print("All texture indicator effects are already in use by other sections.")
-                    RefreshTextureIndicatorConfig()
-                    return
+    if container then
+    local enableCb = AddCheckboxRow(container, {
+        label = sectionDef.label,
+        value = config.enabled,
+        onChange = function(value)
+            if value then
+                local usedEffects = GetTextureIndicatorUsedEffects(indicators, sectionKey)
+                local firstAvailable = GetFirstAvailableTextureIndicatorEffect(indicators, sectionKey)
+                local currentEffect = config.effectType
+                if currentEffect == "none" or usedEffects[currentEffect] then
+                    if firstAvailable then
+                        config.effectType = firstAvailable
+                    else
+                        config.enabled = false
+                        CooldownCompanion:Print("All texture indicator effects are already in use by other sections.")
+                        RefreshTextureIndicatorConfig()
+                        return
+                    end
                 end
             end
-        end
 
-        config.enabled = value == true
-        RefreshTextureIndicatorConfig()
-    end)
-    container:AddChild(enableCb)
+            config.enabled = value == true
+            RefreshTextureIndicatorConfig()
+        end,
+    })
 
+    -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
+    -- every row goes straight onto the panel scroll. Nothing indents here - the
+    -- effect's color and duration are what Effect Type resolves to, not children
+    -- of a toggle, and the duration row is drawn by a builder the trigger effect
+    -- panel shares, where it heads its own panel.
     local function BuildTextureIndicatorAdvanced(panel)
-        local combatCb = AceGUI:Create("CheckBox")
-        combatCb:SetLabel("Show Only In Combat")
-        combatCb:SetValue(config.combatOnly or false)
-        combatCb:SetFullWidth(true)
-        combatCb:SetCallback("OnValueChanged", function(_, _, value)
-            config.combatOnly = value == true
-            CooldownCompanion:RefreshAllAuraTextureVisuals()
-        end)
-        panel:AddChild(combatCb)
+        AddCheckboxRow(panel, {
+            label = "Show Only In Combat",
+            value = config.combatOnly or false,
+            onChange = function(value)
+                config.combatOnly = value == true
+                CooldownCompanion:RefreshAllAuraTextureVisuals()
+            end,
+        })
 
         local effectList, effectOrder = GetTextureIndicatorEffectList(indicators, sectionKey)
-        local effectDrop = AceGUI:Create("Dropdown")
-        effectDrop:SetLabel("Effect Type")
-        effectDrop:SetList(effectList, effectOrder)
-        effectDrop:SetValue(config.effectType)
-        effectDrop:SetFullWidth(true)
-        effectDrop:SetCallback("OnValueChanged", function(_, _, value)
-            config.effectType = value or "none"
-            RefreshTextureIndicatorConfig()
-        end)
-        panel:AddChild(effectDrop)
+        AddDropdownRow(panel, {
+            label = "Effect Type",
+            pulloutWidth = WIDE_PULLOUT_WIDTH,
+            list = effectList,
+            order = effectOrder,
+            value = config.effectType,
+            onChange = function(value)
+                config.effectType = value or "none"
+                RefreshTextureIndicatorConfig()
+            end,
+        })
 
+        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- this row replaced.
         if config.effectType == "colorShift" then
-            AddColorPicker(panel, config, "color", "Shift Color", { 1, 1, 1, 1 }, true,
-                function() CooldownCompanion:RefreshAllAuraTextureVisuals() end,
-                function() CooldownCompanion:RefreshAllAuraTextureVisuals() end)
+            AddColorRow(panel, {
+                label = "Shift Color",
+                tbl = config,
+                key = "color",
+                default = { 1, 1, 1, 1 },
+                hasAlpha = true,
+                onConfirm = function() CooldownCompanion:RefreshAllAuraTextureVisuals() end,
+                onChange = function() CooldownCompanion:RefreshAllAuraTextureVisuals() end,
+            })
             BuildTextureIndicatorSpeedSlider(panel, config, "Shift Duration")
         elseif config.effectType == "pulse" then
             BuildTextureIndicatorSpeedSlider(panel, config, "Pulse Duration")
@@ -2257,6 +2279,7 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
         title = sectionDef.label .. " Advanced",
         build = BuildTextureIndicatorAdvanced,
     })
+    end -- container
 
     if not config.enabled and CS.selectedGroup then
         CooldownCompanion:SetGroupTextureIndicatorPreview(CS.selectedGroup, sectionKey, false)
@@ -2284,18 +2307,21 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
         end,
     })
 
+    -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
+    -- both rows go straight onto the panel scroll.
     local function BuildTriggerEffectAdvanced(panel)
+        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- this row replaced.
         if effectKey == "colorShift" then
-            AddColorPicker(
-                panel,
-                config,
-                "color",
-                "Shift Color",
-                { 1, 1, 1, 1 },
-                true,
-                function() CooldownCompanion:RefreshAllAuraTextureVisuals() end,
-                function() CooldownCompanion:RefreshAllAuraTextureVisuals() end
-            )
+            AddColorRow(panel, {
+                label = "Shift Color",
+                tbl = config,
+                key = "color",
+                default = { 1, 1, 1, 1 },
+                hasAlpha = true,
+                onConfirm = function() CooldownCompanion:RefreshAllAuraTextureVisuals() end,
+                onChange = function() CooldownCompanion:RefreshAllAuraTextureVisuals() end,
+            })
         end
 
         BuildTextureIndicatorSpeedSlider(panel, config, def.speedLabel)
@@ -2372,12 +2398,25 @@ local function MakeCooldownTextAdvancedDescriptor()
                 return
             end
 
-            AddFontControls(panel, style, "cooldown", { size = 12 }, RefreshSelectedGroupStyle)
-            AddColorPicker(panel, style, "cooldownFontColor", "Font Color", {1, 1, 1, 1}, false, RefreshSelectedGroupStyle, RefreshSelectedGroupStyle)
+            -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow
+            -- column, so every builder is called with { row = true } and no
+            -- rightColumn, and each falls back to `container` for its extras.
+            AddFontControls(panel, style, "cooldown", { size = 12 }, RefreshSelectedGroupStyle, { row = true })
 
-            AddAnchorDropdown(panel, style, "cooldownTextAnchor", "CENTER", RefreshSelectedGroupStyle)
+            -- deferCommit is deliberately absent, matching the AddColorPicker
+            -- call this row replaced.
+            AddColorRow(panel, {
+                label = "Font Color",
+                tbl = style,
+                key = "cooldownFontColor",
+                default = {1, 1, 1, 1},
+                onConfirm = RefreshSelectedGroupStyle,
+                onChange = RefreshSelectedGroupStyle,
+            })
 
-            AddOffsetSliders(panel, style, "cooldownTextXOffset", "cooldownTextYOffset", { x = 0, y = 0 }, RefreshSelectedGroupStyle)
+            AddAnchorDropdown(panel, style, "cooldownTextAnchor", "CENTER", RefreshSelectedGroupStyle, nil, { row = true })
+
+            AddOffsetSliders(panel, style, "cooldownTextXOffset", "cooldownTextYOffset", { x = 0, y = 0 }, RefreshSelectedGroupStyle, { row = true })
         end,
     }
 end
@@ -2393,59 +2432,76 @@ local function MakeCooldownSwipeAdvancedDescriptor()
                 return
             end
 
+            -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow
+            -- column, so the rows go straight onto the panel scroll and the two
+            -- conditional rows indent under the toggles that gate them.
+            --
+            -- The two structural toggles keep calling
+            -- RefreshActiveAdvancedSettingsPanel: this descriptor rebuilds ITS
+            -- OWN panel rather than the whole config, and that is what makes the
+            -- opacity slider and the edge color appear and disappear in place.
+
             -- Reverse Swipe
-            local reverseCb = AceGUI:Create("CheckBox")
-            reverseCb:SetLabel("Reverse Swipe")
-            reverseCb:SetValue(style.cooldownSwipeReverse or false)
-            reverseCb:SetFullWidth(true)
-            reverseCb:SetCallback("OnValueChanged", function(widget, event, val)
-                style.cooldownSwipeReverse = val
-                RefreshSelectedGroupStyle()
-            end)
-            panel:AddChild(reverseCb)
+            AddCheckboxRow(panel, {
+                label = "Reverse Swipe",
+                value = style.cooldownSwipeReverse or false,
+                onChange = function(val)
+                    style.cooldownSwipeReverse = val
+                    RefreshSelectedGroupStyle()
+                end,
+            })
 
             -- Show Swipe Fill
-            local fillCb = AceGUI:Create("CheckBox")
-            fillCb:SetLabel("Show Swipe Fill")
-            fillCb:SetValue(style.showCooldownSwipeFill ~= false)
-            fillCb:SetFullWidth(true)
-            fillCb:SetCallback("OnValueChanged", function(widget, event, val)
-                style.showCooldownSwipeFill = val
-                RefreshSelectedGroupStyle()
-                RefreshActiveAdvancedSettingsPanel()
-            end)
-            panel:AddChild(fillCb)
-
-            -- Swipe Fill Opacity (only when fill is visible)
-            if style.showCooldownSwipeFill ~= false then
-                local alphaSlider = AceGUI:Create("Slider")
-                alphaSlider:SetLabel("Swipe Fill Opacity")
-                alphaSlider:SetSliderValues(0, 1, 0.05)
-                alphaSlider:SetIsPercent(true)
-                alphaSlider:SetValue(style.cooldownSwipeAlpha or 0.8)
-                alphaSlider:SetFullWidth(true)
-                alphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                    style.cooldownSwipeAlpha = val
+            AddCheckboxRow(panel, {
+                label = "Show Swipe Fill",
+                value = style.showCooldownSwipeFill ~= false,
+                onChange = function(val)
+                    style.showCooldownSwipeFill = val
                     RefreshSelectedGroupStyle()
-                end)
-                panel:AddChild(alphaSlider)
+                    RefreshActiveAdvancedSettingsPanel()
+                end,
+            })
+
+            -- Swipe Fill Opacity (only when fill is visible). Row grammar has
+            -- no percent readout, so this reads 0 - 1 rather than the stock
+            -- slider's 0% - 100%; same store, same range.
+            if style.showCooldownSwipeFill ~= false then
+                AddSliderRow(panel, {
+                    label = "Swipe Fill Opacity",
+                    indent = true,
+                    min = 0, max = 1, step = 0.05,
+                    value = style.cooldownSwipeAlpha or 0.8,
+                    onChange = function(val)
+                        style.cooldownSwipeAlpha = val
+                        RefreshSelectedGroupStyle()
+                    end,
+                })
             end
 
             -- Show Swipe Edge
-            local edgeCb = AceGUI:Create("CheckBox")
-            edgeCb:SetLabel("Show Swipe Edge")
-            edgeCb:SetValue(style.showCooldownSwipeEdge ~= false)
-            edgeCb:SetFullWidth(true)
-            edgeCb:SetCallback("OnValueChanged", function(widget, event, val)
-                style.showCooldownSwipeEdge = val
-                RefreshSelectedGroupStyle()
-                RefreshActiveAdvancedSettingsPanel()
-            end)
-            panel:AddChild(edgeCb)
+            AddCheckboxRow(panel, {
+                label = "Show Swipe Edge",
+                value = style.showCooldownSwipeEdge ~= false,
+                onChange = function(val)
+                    style.showCooldownSwipeEdge = val
+                    RefreshSelectedGroupStyle()
+                    RefreshActiveAdvancedSettingsPanel()
+                end,
+            })
 
-            -- Swipe Edge Color (only when edge is visible)
+            -- Swipe Edge Color (only when edge is visible). deferCommit is
+            -- deliberately absent, matching the AddColorPicker call it replaced.
             if style.showCooldownSwipeEdge ~= false then
-                AddColorPicker(panel, style, "cooldownSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, RefreshSelectedGroupStyle, RefreshSelectedGroupStyle)
+                AddColorRow(panel, {
+                    label = "Swipe Edge Color",
+                    indent = true,
+                    tbl = style,
+                    key = "cooldownSwipeEdgeColor",
+                    default = {1, 1, 1, 1},
+                    hasAlpha = true,
+                    onConfirm = RefreshSelectedGroupStyle,
+                    onChange = RefreshSelectedGroupStyle,
+                })
             end
         end,
     }
@@ -2514,14 +2570,38 @@ local function BuildTriggerEffectsTab(container, group)
     end
 end
 
+-- Declared here rather than beside the icons tab's three section constants
+-- below, because the builder that reads it comes first; the gear-to-section map
+-- further down still sees it.
+local EFFECTS_TEXTURE_INDICATORS_SECTION = "effects_textureIndicators"
+
 local function BuildTextureEffectsTab(container, group)
+    -- Function-local, not an upvalue: see the note by the row-grammar imports.
+    local BeginRowGrid = ST._BeginRowGrid
+
     local indicators = GetTextureIndicatorStore(group)
     if not indicators then
         return
     end
 
+    -- One row-grammar section. Its three gears queue advanced keys, so the
+    -- collapse key is declared in ST._INDICATORS_SECTION_BY_ADVANCED_KEY below
+    -- and the preview command center clears it on the way past - a collapsed
+    -- section builds no checkbox, and a queued key with no gear left to consume
+    -- it expires silently.
+    local _, indicatorsCollapsed = BuildCollapsibleSection(container, "Texture Indicators",
+        EFFECTS_TEXTURE_INDICATORS_SECTION, nil, nil, ROW_SECTION)
+
+    -- Three rows, so the fill-LEFT-first rule puts all of them in the left
+    -- column; the right column is deliberately empty. The loop runs even while
+    -- the section is collapsed, with a nil host: each indicator still has to
+    -- reconcile its own preview.
+    local indicatorLeft
+    if not indicatorsCollapsed then
+        indicatorLeft = BeginRowGrid(container)
+    end
     for _, sectionKey in ipairs(CooldownCompanion:GetTextureIndicatorSectionOrder()) do
-        BuildTextureIndicatorSection(container, group, indicators, sectionKey)
+        BuildTextureIndicatorSection(indicatorLeft, group, indicators, sectionKey)
     end
 end
 
@@ -2557,18 +2637,20 @@ local function BuildProcGlowSection(container, group, style)
         end,
     })
 
+    -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
+    -- the shared glow builder runs in row mode with NO rightColumn - its row
+    -- path puts the extras in `container` when none is given.
     local function BuildProcGlowAdvanced(panel)
-        local procCombatCb = AceGUI:Create("CheckBox")
-        procCombatCb:SetLabel("Show Only In Combat")
-        procCombatCb:SetValue(style.procGlowCombatOnly or false)
-        procCombatCb:SetFullWidth(true)
-        procCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
-            style.procGlowCombatOnly = val
-            UpdateSelectedGroupStyle()
-        end)
-        panel:AddChild(procCombatCb)
+        AddCheckboxRow(panel, {
+            label = "Show Only In Combat",
+            value = style.procGlowCombatOnly or false,
+            onChange = function(val)
+                style.procGlowCombatOnly = val
+                UpdateSelectedGroupStyle()
+            end,
+        })
 
-        BuildProcGlowControls(panel, style, UpdateSelectedGroupStyle)
+        BuildProcGlowControls(panel, style, UpdateSelectedGroupStyle, { row = true })
 
     end
 
@@ -2614,8 +2696,9 @@ local function BuildAuraGlowSection(container, group, style)
         end,
     })
 
+    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
     local function BuildAuraGlowAdvanced(panel)
-        BuildAuraGlowControls(panel, style, UpdateSelectedGroupStyle)
+        BuildAuraGlowControls(panel, style, UpdateSelectedGroupStyle, { row = true })
     end
 
     local _, auraAdvBtn = AddAdvancedToggle(auraEnableCb, "auraGlow", tabInfoButtons, auraGlowEnabled, {
@@ -2646,72 +2729,80 @@ local function BuildReadyGlowSection(container, group, style)
         end,
     })
 
+    -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
+    -- every row goes straight onto the panel scroll and the shared glow builder
+    -- runs in row mode with NO rightColumn.
     local function BuildReadyGlowAdvanced(panel)
-        local readyCombatCb = AceGUI:Create("CheckBox")
-        readyCombatCb:SetLabel("Show Only In Combat")
-        readyCombatCb:SetValue(style.readyGlowCombatOnly or false)
-        readyCombatCb:SetFullWidth(true)
-        readyCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
-            style.readyGlowCombatOnly = val
-            UpdateSelectedGroupStyle()
-        end)
-        panel:AddChild(readyCombatCb)
+        AddCheckboxRow(panel, {
+            label = "Show Only In Combat",
+            value = style.readyGlowCombatOnly or false,
+            onChange = function(val)
+                style.readyGlowCombatOnly = val
+                UpdateSelectedGroupStyle()
+            end,
+        })
 
-        local readyChargesCb = AceGUI:Create("CheckBox")
-        readyChargesCb:SetLabel("Glow When Charges Are Capped")
-        readyChargesCb:SetValue(style.readyGlowOnlyAtMaxCharges or false)
-        readyChargesCb:SetFullWidth(true)
-        readyChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
-            style.readyGlowOnlyAtMaxCharges = val == true
-            UpdateSelectedGroupStyle()
-            if (style.readyGlowDuration or 0) > 0 then
-                if val then
-                    PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup)
-                else
-                    PrimeReadyGlowNormalTransitions(CS.selectedGroup)
+        -- The longest label in the panel: it fills the label half of a ~330px
+        -- panel almost exactly, so the row also states it on hover rather than
+        -- risking a silent truncation at a narrower config width.
+        local readyChargesRow = AddCheckboxRow(panel, {
+            label = "Glow When Charges Are Capped",
+            value = style.readyGlowOnlyAtMaxCharges or false,
+            tooltip = { "Glow When Charges Are Capped" },
+            onChange = function(val)
+                style.readyGlowOnlyAtMaxCharges = val == true
+                UpdateSelectedGroupStyle()
+                if (style.readyGlowDuration or 0) > 0 then
+                    if val then
+                        PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup)
+                    else
+                        PrimeReadyGlowNormalTransitions(CS.selectedGroup)
+                    end
                 end
-            end
-            CooldownCompanion:UpdateAllCooldowns()
-        end)
-        panel:AddChild(readyChargesCb)
-        CreateInfoButton(readyChargesCb.frame, readyChargesCb.checkbg, "LEFT", "RIGHT", readyChargesCb.text:GetStringWidth() + 6, 0, {
+                CooldownCompanion:UpdateAllCooldowns()
+            end,
+        })
+        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+        -- onto the end of the row's label.
+        AnchorRowBadge(readyChargesRow, CreateInfoButton(readyChargesRow.frame, readyChargesRow.frame, "LEFT", "LEFT", 0, 0, {
             "Glow When Charges Are Capped",
             {"When this toggle is enabled, the glow will only appear for charge based spells when at max charges.", 1, 1, 1, true},
-        }, tabInfoButtons)
+        }, tabInfoButtons))
 
-        local readyDurCb = AceGUI:Create("CheckBox")
-        readyDurCb:SetLabel("Auto-Hide After Duration")
-        readyDurCb:SetValue((style.readyGlowDuration or 0) > 0)
-        readyDurCb:SetFullWidth(true)
-        readyDurCb:SetCallback("OnValueChanged", function(widget, event, val)
-            style.readyGlowDuration = val and 3 or 0
-            UpdateSelectedGroupStyle()
-            if val then
-                if style.readyGlowOnlyAtMaxCharges then
-                    PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup)
-                else
-                    PrimeReadyGlowNormalTransitions(CS.selectedGroup)
+        AddCheckboxRow(panel, {
+            label = "Auto-Hide After Duration",
+            value = (style.readyGlowDuration or 0) > 0,
+            onChange = function(val)
+                style.readyGlowDuration = val and 3 or 0
+                UpdateSelectedGroupStyle()
+                if val then
+                    if style.readyGlowOnlyAtMaxCharges then
+                        PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup)
+                    else
+                        PrimeReadyGlowNormalTransitions(CS.selectedGroup)
+                    end
                 end
-            end
-            CooldownCompanion:UpdateAllCooldowns()
-            RefreshActiveAdvancedSettingsPanel()
-        end)
-        panel:AddChild(readyDurCb)
+                CooldownCompanion:UpdateAllCooldowns()
+                -- Rebuilds THIS panel, not the whole config, which is what
+                -- makes the duration slider below appear and disappear in place.
+                RefreshActiveAdvancedSettingsPanel()
+            end,
+        })
 
         if (style.readyGlowDuration or 0) > 0 then
-            local readyDurSlider = AceGUI:Create("Slider")
-            readyDurSlider:SetLabel("Duration (seconds)")
-            readyDurSlider:SetSliderValues(0.5, 5, 0.5)
-            readyDurSlider:SetValue(style.readyGlowDuration or 3)
-            readyDurSlider:SetFullWidth(true)
-            readyDurSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                style.readyGlowDuration = val
-                UpdateSelectedGroupStyle()
-            end)
-            panel:AddChild(readyDurSlider)
+            AddSliderRow(panel, {
+                label = "Duration (seconds)",
+                indent = true,
+                min = 0.5, max = 5, step = 0.5,
+                value = style.readyGlowDuration or 3,
+                onChange = function(val)
+                    style.readyGlowDuration = val
+                    UpdateSelectedGroupStyle()
+                end,
+            })
         end
 
-        BuildReadyGlowControls(panel, style, UpdateSelectedGroupStyle)
+        BuildReadyGlowControls(panel, style, UpdateSelectedGroupStyle, { row = true })
 
     end
 
@@ -2742,18 +2833,18 @@ local function BuildKeyPressHighlightSection(container, group, style)
         end,
     })
 
+    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
     local function BuildKeyPressHighlightAdvanced(panel)
-        local kphCombatCb = AceGUI:Create("CheckBox")
-        kphCombatCb:SetLabel("Show Only In Combat")
-        kphCombatCb:SetValue(style.keyPressHighlightCombatOnly or false)
-        kphCombatCb:SetFullWidth(true)
-        kphCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
-            style.keyPressHighlightCombatOnly = val
-            UpdateSelectedGroupStyle()
-        end)
-        panel:AddChild(kphCombatCb)
+        AddCheckboxRow(panel, {
+            label = "Show Only In Combat",
+            value = style.keyPressHighlightCombatOnly or false,
+            onChange = function(val)
+                style.keyPressHighlightCombatOnly = val
+                UpdateSelectedGroupStyle()
+            end,
+        })
 
-        BuildKeyPressHighlightControls(panel, style, UpdateSelectedGroupStyle)
+        BuildKeyPressHighlightControls(panel, style, UpdateSelectedGroupStyle, { row = true })
 
     end
 
@@ -2809,6 +2900,12 @@ ST._INDICATORS_SECTION_BY_ADVANCED_KEY = {
 
     unusableVisual = EFFECTS_STATES_SECTION,
     tooltipBehavior = EFFECTS_STATES_SECTION,
+
+    -- Textures mode's own section (BuildTextureEffectsTab above). Its constant
+    -- is declared beside that builder because the builder reads it.
+    textureIndicator_proc = EFFECTS_TEXTURE_INDICATORS_SECTION,
+    textureIndicator_ready = EFFECTS_TEXTURE_INDICATORS_SECTION,
+    textureIndicator_unusable = EFFECTS_TEXTURE_INDICATORS_SECTION,
 }
 
 local function BuildEffectsTab(container)
@@ -2949,20 +3046,21 @@ local function BuildEffectsTab(container)
         end,
     })
 
+    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn - the
+    -- builder's row path falls back to `container` for its right-hand rows.
     local function BuildAssistedHighlightAdvanced(panel)
-        local assistedCombatCb = AceGUI:Create("CheckBox")
-        assistedCombatCb:SetLabel("Show Only In Combat")
-        assistedCombatCb:SetValue(style.assistedHighlightCombatOnly or false)
-        assistedCombatCb:SetFullWidth(true)
-        assistedCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
-            style.assistedHighlightCombatOnly = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        panel:AddChild(assistedCombatCb)
+        AddCheckboxRow(panel, {
+            label = "Show Only In Combat",
+            value = style.assistedHighlightCombatOnly or false,
+            onChange = function(val)
+                style.assistedHighlightCombatOnly = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end,
+        })
 
         BuildAssistedHighlightControls(panel, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
+        end, { row = true })
     end
 
     AddAdvancedToggle(assistedCb, "assistedHighlight", tabInfoButtons, style.showAssistedHighlight or false, {
@@ -2997,11 +3095,12 @@ local function BuildEffectsTab(container)
             end
         end,
     })
+    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
     local function BuildIconFillAdvanced(panel)
         if BuildIconFillTimerAdvancedControls then
             BuildIconFillTimerAdvancedControls(panel, style, function()
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end)
+            end, { row = true, indent = false })
         end
     end
 
@@ -3055,10 +3154,11 @@ local function BuildEffectsTab(container)
             row = true,
             showAdvancedControlsInline = false,
         })
+        -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
         local function BuildAuraDurationSwipeAdvanced(panel)
             BuildAuraDurationSwipeAdvancedControls(panel, style, function()
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end)
+            end, { row = true })
         end
         local _, auraDurationAdvBtn = AddAdvancedToggle(auraDurationCb, "auraDurationSwipe", tabInfoButtons, style.showAuraDurationSwipe ~= false, {
             title = "Aura Duration Swipe Advanced",
@@ -3879,13 +3979,37 @@ local function BuildAppearanceTab(container)
         end,
     })
 
+    -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
+    -- every builder runs with { row = true } and no rightColumn.
+    --
+    -- The three count colors are the panel's longest labels. They end in a 19px
+    -- swatch, which is the narrow control the row grammar reserves long labels
+    -- for, and each states itself on hover so a narrower config column cannot
+    -- silently swallow which charge state it names.
+    --
+    -- deferCommit is deliberately absent throughout, matching the
+    -- AddColorPicker calls these rows replaced.
     local function BuildChargeTextAdvanced(panel)
-        AddFontControls(panel, style, "charge", { size = 12 }, refreshStyle)
-        AddColorPicker(panel, style, "chargeFontColor", "Font Color (Max Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-        AddColorPicker(panel, style, "chargeFontColorMissing", "Font Color (Missing Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-        AddColorPicker(panel, style, "chargeFontColorZero", "Font Color (Zero Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-        AddAnchorDropdown(panel, style, "chargeAnchor", "BOTTOMRIGHT", refreshStyle)
-        AddOffsetSliders(panel, style, "chargeXOffset", "chargeYOffset", { x = -2, y = 2 }, refreshStyle)
+        AddFontControls(panel, style, "charge", { size = 12 }, refreshStyle, { row = true })
+
+        local function ChargeColorRow(rowLabel, key)
+            AddColorRow(panel, {
+                label = rowLabel,
+                tooltip = { rowLabel },
+                tbl = style,
+                key = key,
+                default = {1, 1, 1, 1},
+                hasAlpha = true,
+                onConfirm = refreshStyle,
+                onChange = refreshStyle,
+            })
+        end
+        ChargeColorRow("Font Color (Max Charges)", "chargeFontColor")
+        ChargeColorRow("Font Color (Missing Charges)", "chargeFontColorMissing")
+        ChargeColorRow("Font Color (Zero Charges)", "chargeFontColorZero")
+
+        AddAnchorDropdown(panel, style, "chargeAnchor", "BOTTOMRIGHT", refreshStyle, nil, { row = true })
+        AddOffsetSliders(panel, style, "chargeXOffset", "chargeYOffset", { x = -2, y = 2 }, refreshStyle, { row = true })
     end
 
     local _, chargeAdvBtn = AddAdvancedToggle(chargeTextRow, "chargeText", tabInfoButtons, style.showChargeText ~= false, {
@@ -3907,32 +4031,47 @@ local function BuildAppearanceTab(container)
             end,
         })
 
+        -- Single rail (AdvancedSettingsPanel.lua): every builder runs with
+        -- { row = true } and no rightColumn, and the position rows the separate
+        -- -positions toggle owns indent as its children.
         local function BuildAuraDurationTextAdvanced(panel)
-            AddFontControls(panel, style, "auraText", { size = 12 }, refreshStyle)
-            AddColorPicker(panel, style, "auraTextFontColor", "Font Color", {0, 0.925, 1, 1}, false, refreshStyle, refreshStyle)
+            AddFontControls(panel, style, "auraText", { size = 12 }, refreshStyle, { row = true })
 
-            local sepPosCb = AceGUI:Create("CheckBox")
-            sepPosCb:SetLabel("Separate Text Positions")
-            sepPosCb:SetValue(style.separateTextPositions or false)
-            sepPosCb:SetFullWidth(true)
-            sepPosCb:SetCallback("OnValueChanged", function(widget, event, val)
-                style.separateTextPositions = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                RefreshActiveAdvancedSettingsPanel()
-            end)
-            panel:AddChild(sepPosCb)
+            -- deferCommit is deliberately absent, matching the AddColorPicker
+            -- call this row replaced.
+            AddColorRow(panel, {
+                label = "Font Color",
+                tbl = style,
+                key = "auraTextFontColor",
+                default = {0, 0.925, 1, 1},
+                onConfirm = refreshStyle,
+                onChange = refreshStyle,
+            })
 
-            CreateInfoButton(sepPosCb.frame, sepPosCb.checkbg, "LEFT", "RIGHT", sepPosCb.text:GetStringWidth() + 4, 0, {
+            local sepPosRow = AddCheckboxRow(panel, {
+                label = "Separate Text Positions",
+                value = style.separateTextPositions or false,
+                onChange = function(val)
+                    style.separateTextPositions = val
+                    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                    -- Rebuilds THIS panel, not the whole config, which is what
+                    -- makes the two position rows appear in place.
+                    RefreshActiveAdvancedSettingsPanel()
+                end,
+            })
+            -- Anchor args are a placeholder - AnchorRowBadge re-points the
+            -- button onto the end of the row's label.
+            AnchorRowBadge(sepPosRow, CreateInfoButton(sepPosRow.frame, sepPosRow.frame, "LEFT", "LEFT", 0, 0, {
                 "Separate Text Positions",
                 {"When enabled, aura duration text and cooldown text use independent positions and can show at the same time. Aura text position controls appear below when toggled on; cooldown text position is in the Cooldown Text section.", 1, 1, 1, true},
-            }, sepPosCb)
+            }, sepPosRow))
 
             if style.separateTextPositions then
-                AddAnchorDropdown(panel, style, "auraTextAnchor", "TOPLEFT", refreshStyle)
-                AddOffsetSliders(panel, style, "auraTextXOffset", "auraTextYOffset", { x = 2, y = -2 }, refreshStyle)
+                AddAnchorDropdown(panel, style, "auraTextAnchor", "TOPLEFT", refreshStyle, nil, { row = true, indent = true })
+                AddOffsetSliders(panel, style, "auraTextXOffset", "auraTextYOffset", { x = 2, y = -2 }, refreshStyle, { row = true, indent = true })
             end
 
-            AddPandemicMarkerControls(panel, style, refreshStyle, RefreshActiveAdvancedSettingsPanel)
+            AddPandemicMarkerControls(panel, style, refreshStyle, RefreshActiveAdvancedSettingsPanel, { row = true })
         end
 
         local _, auraTextAdvBtn = AddAdvancedToggle(auraTextRow, "auraText", tabInfoButtons, style.showAuraText ~= false, {
@@ -3962,11 +4101,22 @@ local function BuildAppearanceTab(container)
             end,
         })
 
+        -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
         local function BuildAuraStackTextAdvanced(panel)
-            AddFontControls(panel, style, "auraStack", { size = 12 }, refreshStyle)
-            AddColorPicker(panel, style, "auraStackFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-            AddAnchorDropdown(panel, style, "auraStackAnchor", "BOTTOMLEFT", refreshStyle)
-            AddOffsetSliders(panel, style, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle)
+            AddFontControls(panel, style, "auraStack", { size = 12 }, refreshStyle, { row = true })
+            -- deferCommit is deliberately absent, matching the AddColorPicker
+            -- call this row replaced.
+            AddColorRow(panel, {
+                label = "Font Color",
+                tbl = style,
+                key = "auraStackFontColor",
+                default = {1, 1, 1, 1},
+                hasAlpha = true,
+                onConfirm = refreshStyle,
+                onChange = refreshStyle,
+            })
+            AddAnchorDropdown(panel, style, "auraStackAnchor", "BOTTOMLEFT", refreshStyle, nil, { row = true })
+            AddOffsetSliders(panel, style, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle, { row = true })
         end
 
         local _, auraStackAdvBtn = AddAdvancedToggle(auraStackRow, "auraStackText", tabInfoButtons, style.showAuraStackText ~= false, {
@@ -3987,27 +4137,38 @@ local function BuildAppearanceTab(container)
         end,
     })
 
+    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
     local function BuildKeybindTextAdvanced(panel)
-        -- Keybind uses a hardcoded 4-point anchor (not the full 9-point list)
-        local kbAnchorDrop = AceGUI:Create("Dropdown")
-        kbAnchorDrop:SetLabel("Anchor")
-        kbAnchorDrop:SetList({
-            TOPRIGHT = "Top Right",
-            TOPLEFT = "Top Left",
-            BOTTOMRIGHT = "Bottom Right",
-            BOTTOMLEFT = "Bottom Left",
+        -- Keybind uses a hardcoded 4-point anchor (not the full 9-point list),
+        -- so this is a dropdown row of its own rather than AddAnchorDropdown.
+        AddDropdownRow(panel, {
+            label = "Anchor",
+            list = {
+                TOPRIGHT = "Top Right",
+                TOPLEFT = "Top Left",
+                BOTTOMRIGHT = "Bottom Right",
+                BOTTOMLEFT = "Bottom Left",
+            },
+            value = style.keybindAnchor or "TOPRIGHT",
+            onChange = function(val)
+                style.keybindAnchor = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end,
         })
-        kbAnchorDrop:SetValue(style.keybindAnchor or "TOPRIGHT")
-        kbAnchorDrop:SetFullWidth(true)
-        kbAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.keybindAnchor = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        panel:AddChild(kbAnchorDrop)
 
-        AddOffsetSliders(panel, style, "keybindXOffset", "keybindYOffset", { x = -2, y = -2 }, refreshStyle)
-        AddFontControls(panel, style, "keybind", { size = 10, sizeMin = 6, sizeMax = 24 }, refreshStyle)
-        AddColorPicker(panel, style, "keybindFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
+        AddOffsetSliders(panel, style, "keybindXOffset", "keybindYOffset", { x = -2, y = -2 }, refreshStyle, { row = true })
+        AddFontControls(panel, style, "keybind", { size = 10, sizeMin = 6, sizeMax = 24 }, refreshStyle, { row = true })
+        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- this row replaced.
+        AddColorRow(panel, {
+            label = "Font Color",
+            tbl = style,
+            key = "keybindFontColor",
+            default = {1, 1, 1, 1},
+            hasAlpha = true,
+            onConfirm = refreshStyle,
+            onChange = refreshStyle,
+        })
     end
 
     local _, kbAdvBtn = AddAdvancedToggle(kbRow, "keybindText", tabInfoButtons, style.showKeybindText, {
