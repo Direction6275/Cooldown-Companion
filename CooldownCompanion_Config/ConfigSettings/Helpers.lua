@@ -994,23 +994,17 @@ local function ValidateIndependentAnchorTarget(frameName)
     return true
 end
 
-local function BuildIndependentAnchorTargetRow(container, anchor, applyFn)
-    local anchorRow = AceGUI:Create("SimpleGroup")
-    anchorRow:SetFullWidth(true)
-    anchorRow:SetLayout("Flow")
+-- opts.row opts into the row grammar (RowWidgets.lua): the frame name takes
+-- the whole 140px control column, so Pick does not share it - it goes to
+-- opts.pickContainer (the head of the grid's other column) instead. Omitting
+-- opts keeps the stock Flow editbox + button pair every other call site draws.
+local function BuildIndependentAnchorTargetRow(container, anchor, applyFn, opts)
+    local currentTargetName = anchor.relativeTo
+    if not currentTargetName or currentTargetName == "UIParent" then
+        currentTargetName = ""
+    end
 
-    local anchorBox = AceGUI:Create("EditBox")
-    if anchorBox.editbox.Instructions then
-        anchorBox.editbox.Instructions:Hide()
-    end
-    anchorBox:SetLabel("Anchor to Frame")
-    local currentRelativeTo = anchor.relativeTo
-    if not currentRelativeTo or currentRelativeTo == "UIParent" then
-        currentRelativeTo = ""
-    end
-    anchorBox:SetText(currentRelativeTo)
-    anchorBox:SetRelativeWidth(0.68)
-    anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
+    local function CommitAnchorTargetText(text)
         if text == "" then
             local wasAnchored = anchor.relativeTo and anchor.relativeTo ~= "UIParent"
             if wasAnchored then
@@ -1033,13 +1027,9 @@ local function BuildIndependentAnchorTargetRow(container, anchor, applyFn)
         end
         applyFn()
         CooldownCompanion:RefreshConfigPanel()
-    end)
-    anchorRow:AddChild(anchorBox)
+    end
 
-    local pickBtn = AceGUI:Create("Button")
-    pickBtn:SetText("Pick")
-    pickBtn:SetRelativeWidth(0.24)
-    pickBtn:SetCallback("OnClick", function()
+    local function StartAnchorTargetPick()
         CS.StartPickFrame(function(name)
             if CS.configFrame then
                 CS.configFrame.frame:Show()
@@ -1058,7 +1048,62 @@ local function BuildIndependentAnchorTargetRow(container, anchor, applyFn)
             end
             CooldownCompanion:RefreshConfigPanel()
         end, nil, { domain = "external" })
+    end
+
+    if opts and opts.row then
+        local targetRow = ST._AddEditBoxRow(container, {
+            label = "Anchor to Frame",
+            indent = opts.indent,
+            value = currentTargetName,
+            onEnterPressed = function(text)
+                CommitAnchorTargetText(text)
+            end,
+        })
+        if targetRow.editbox and targetRow.editbox.Instructions then
+            targetRow.editbox.Instructions:Hide()
+        end
+
+        -- Exactly one grammar row tall so the button's centre lands on the
+        -- editbox's: Flow insets its single row by 3px and the button is 24
+        -- tall, so 3 + 24 + 3 fills the 30px band. noAutoHeight keeps Flow's
+        -- own 27px report from shrinking it back.
+        local pickRow = AceGUI:Create("SimpleGroup")
+        pickRow:SetFullWidth(true)
+        pickRow:SetLayout("Flow")
+        pickRow:SetHeight(ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT or 30)
+        pickRow.noAutoHeight = true
+
+        local rowPickBtn = AceGUI:Create("Button")
+        rowPickBtn:SetText("Pick")
+        rowPickBtn:SetAutoWidth(true)
+        rowPickBtn:SetCallback("OnClick", StartAnchorTargetPick)
+        pickRow:AddChild(rowPickBtn)
+
+        -- Added last so the List-layout column measures a populated row.
+        ;(opts.pickContainer or container):AddChild(pickRow)
+        return targetRow
+    end
+
+    local anchorRow = AceGUI:Create("SimpleGroup")
+    anchorRow:SetFullWidth(true)
+    anchorRow:SetLayout("Flow")
+
+    local anchorBox = AceGUI:Create("EditBox")
+    if anchorBox.editbox.Instructions then
+        anchorBox.editbox.Instructions:Hide()
+    end
+    anchorBox:SetLabel("Anchor to Frame")
+    anchorBox:SetText(currentTargetName)
+    anchorBox:SetRelativeWidth(0.68)
+    anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
+        CommitAnchorTargetText(text)
     end)
+    anchorRow:AddChild(anchorBox)
+
+    local pickBtn = AceGUI:Create("Button")
+    pickBtn:SetText("Pick")
+    pickBtn:SetRelativeWidth(0.24)
+    pickBtn:SetCallback("OnClick", StartAnchorTargetPick)
     anchorRow:AddChild(pickBtn)
     container:AddChild(anchorRow)
 

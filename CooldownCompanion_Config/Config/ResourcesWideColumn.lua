@@ -815,6 +815,11 @@ local function ShowResourceSettingsPanel(col3)
                 label:SetFullWidth(true)
                 scroll:AddChild(label)
             end
+            -- Re-run the layout with final widths: AddChild lays out on every
+            -- insertion, so a row grid added before its siblings measures
+            -- against a stale width and renders clipped until something else
+            -- triggers a layout.
+            scroll:DoLayout()
         end)
         ST._UnifiedRowInstallStrip(tabGroup, "detail")
         col3._resourceSettingsTabGroup = tabGroup
@@ -908,6 +913,11 @@ local function ShowResourcesTabPage(col3, stripOnly)
             elseif tab == "health" then
                 ST._BuildResourceBarHealthStylingPanel(scroll)
             end
+            -- Re-run the layout with final widths: AddChild lays out on every
+            -- insertion, so a row grid added before its siblings measures
+            -- against a stale width and renders clipped until something else
+            -- triggers a layout.
+            scroll:DoLayout()
         end)
         ST._UnifiedRowInstallStrip(tabGroup, "primary")
         col3._resourcesTabGroup = tabGroup

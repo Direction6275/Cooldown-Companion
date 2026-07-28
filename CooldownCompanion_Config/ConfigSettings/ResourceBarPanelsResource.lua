@@ -19,10 +19,32 @@ local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
-local HookSliderEditBox = ST._HookSliderEditBox
 local BuildAlphaControls = ST._BuildAlphaControls
 local BuildIndependentAnchorTargetRow = ST._BuildIndependentAnchorTargetRow
+local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
 local tabInfoButtons = CS.tabInfoButtons
+
+-- Imports from RowWidgets.lua (the row grammar). The rules every row-grammar
+-- section follows are stated once, in the recipe comment at the top of
+-- BuildAppearanceTab's icons path (GroupTabs.lua); this file conforms to them
+-- rather than restating them.
+local AddCheckboxRow = ST._AddCheckboxRow
+local AddSliderRow = ST._AddSliderRow
+local AddDropdownRow = ST._AddDropdownRow
+local AddColorRow = ST._AddColorRow
+local AddEditBoxRow = ST._AddEditBoxRow
+local AddLabelRow = ST._AddLabelRow
+local AnchorRowBadge = ST._AnchorRowBadge
+local BeginRowGrid = ST._BeginRowGrid
+
+-- Row-grammar section headers: caret far left, label, then a class-colored
+-- rule fading right.
+local ROW_SECTION = { leftAligned = true }
+
+-- LibSharedMedia names run well past the 140px control column, and a dropdown
+-- sizes its menu from the control. Without this the texture picker would open
+-- a 140px-wide menu of truncated names.
+local MEDIA_PULLOUT_WIDTH = 300
 
 -- Shared constants from ResourceBarConstants
 local RB = ST._RB
@@ -36,7 +58,6 @@ local DEFAULT_MW_MAX_COLOR = RB.DEFAULT_MW_MAX_COLOR
 local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
 local SupportsResourceAuraStackMode = RB.SupportsResourceAuraStackMode
 local ClassifyAuraSpellUnit = ST._ClassifyAuraSpellUnit
-local AddAuraCandidateRow = ST._AddAuraCandidateRow
 local AddColorPicker = ST._AddColorPicker
 local DEFAULT_RESOURCE_TEXT_FORMAT = RB.DEFAULT_RESOURCE_TEXT_FORMAT
 local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
@@ -253,18 +274,19 @@ local function IsResourceEnabled(settings, powerType)
     return res.enabled ~= false
 end
 
+-- Row grammar has no percent readout (the value box is the readout, and the
+-- range lives in the row tooltip), so this reads 0 - 1 rather than 0% - 100%.
+-- The stored value is unchanged, and Baseline Alpha already reads that way.
 function HealthResource.AddOpacitySlider(container, health, key, label, defaultValue, applyBars)
-    local slider = AceGUI:Create("Slider")
-    slider:SetLabel(label)
-    slider:SetSliderValues(0, 1, 0.05)
-    slider:SetIsPercent(true)
-    slider:SetValue(tonumber(health[key]) or defaultValue)
-    slider:SetFullWidth(true)
-    slider:SetCallback("OnValueChanged", function(widget, event, val)
-        health[key] = val
-        applyBars()
-    end)
-    container:AddChild(slider)
+    AddSliderRow(container, {
+        label = label,
+        min = 0, max = 1, step = 0.05,
+        value = tonumber(health[key]) or defaultValue,
+        onChange = function(val)
+            health[key] = val
+            applyBars()
+        end,
+    })
 end
 
 function HealthResource.AddEffectTextureDropdown(container, health, key, label, applyBars)
@@ -313,11 +335,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
     local rbTextAdvBtns = {}
 
     local textKey = collapsedKey or "rb_text"
-    local textHeading, textCollapsed, textCollapseBtn = BuildCollapsibleSection(container, "Text", textKey, resourceBarCollapsedSections)
-
-    textHeading.right:ClearAllPoints()
-    textHeading.right:SetPoint("RIGHT", textHeading.frame, "RIGHT", -3, 0)
-    textHeading.right:SetPoint("LEFT", textCollapseBtn, "RIGHT", 4, 0)
+    local _, textCollapsed = BuildCollapsibleSection(container, "Text", textKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
     if textCollapsed then
         return
@@ -343,19 +361,23 @@ local function BuildResourceTextControls(container, settings, powerType, display
         showTextEnabled = showTextValue ~= false
     end
 
-    local cb = AceGUI:Create("CheckBox")
-    cb:SetLabel("Show " .. name .. " Text")
-    cb:SetValue(showTextEnabled)
-    cb:SetFullWidth(true)
-    cb:SetCallback("OnValueChanged", function(widget, event, val)
-        resSettings.showText = val == true
-        if isHealthResource and not IsHealthTextFormat(resSettings.textFormat) then
-            resSettings.textFormat = "percent"
-        end
-        CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(cb)
+    -- LEFT column: the resource's own value text. RIGHT column: the recharge
+    -- readout, which only runes have - every other resource leaves it empty,
+    -- and the grid top-aligns its columns, so a short side just ends early.
+    local textLeft, textRight = BeginRowGrid(container)
+
+    local cb = AddCheckboxRow(textLeft, {
+        label = "Show " .. name .. " Text",
+        value = showTextEnabled,
+        onChange = function(val)
+            resSettings.showText = val == true
+            if isHealthResource and not IsHealthTextFormat(resSettings.textFormat) then
+                resSettings.textFormat = "percent"
+            end
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
 
     local function BuildResourceTextAdvanced(panel)
         local textFormatDrop = AceGUI:Create("Dropdown")
@@ -534,16 +556,15 @@ local function BuildResourceTextControls(container, settings, powerType, display
     end
 
     local rechargeEnabled = ReadDisplaySetting(baseSettings, resSettings, "showRechargeText", DEFAULT_RESOURCE_RECHARGE_TEXT_ENABLED) == true
-    local rechargeCb = AceGUI:Create("CheckBox")
-    rechargeCb:SetLabel("Show " .. name .. " Recharge Text")
-    rechargeCb:SetValue(rechargeEnabled)
-    rechargeCb:SetFullWidth(true)
-    rechargeCb:SetCallback("OnValueChanged", function(widget, event, val)
-        resSettings.showRechargeText = val == true
-        CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(rechargeCb)
+    local rechargeCb = AddCheckboxRow(textRight, {
+        label = "Show " .. name .. " Recharge Text",
+        value = rechargeEnabled,
+        onChange = function(val)
+            resSettings.showRechargeText = val == true
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
 
     local function BuildRechargeTextAdvanced(panel)
         local modeValue = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextMode", "recharging")
@@ -680,83 +701,91 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     end
 
     local healthFillKey = "rb_health_fill"
-    local fillHeading, healthFillCollapsed = BuildCollapsibleSection(container, "Health", healthFillKey, resourceBarCollapsedSections)
+    local _, healthFillCollapsed = BuildCollapsibleSection(container, "Health", healthFillKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
     if not healthFillCollapsed then
-        local fillGradientCb = AceGUI:Create("CheckBox")
-        fillGradientCb:SetLabel("Use Health Gradient")
-        fillGradientCb:SetValue(fillGradientEnabled == true)
-        fillGradientCb:SetFullWidth(true)
-        fillGradientCb:SetCallback("OnValueChanged", function(widget, event, val)
-            health.healthBarGradient = val == true
-            applyBars()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(fillGradientCb)
+        -- LEFT column: the gradient choice and the colors it decides - they
+        -- have to be read together, so they stay adjacent and the colors are
+        -- indented children of the toggle above them. RIGHT column: the one
+        -- setting the choice does not touch.
+        local fillLeft, fillRight = BeginRowGrid(container)
+
+        AddCheckboxRow(fillLeft, {
+            label = "Use Health Gradient",
+            value = fillGradientEnabled == true,
+            onChange = function(val)
+                health.healthBarGradient = val == true
+                applyBars()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
 
         if fillGradientEnabled == true then
-            AddColorPicker(container, health, "healthBarFullColor", "Full Health", DEFAULT_HEALTH_BAR_FULL_COLOR, false, applyBars, applyBars)
-            AddColorPicker(container, health, "healthBarHalfColor", "Half Health", DEFAULT_HEALTH_BAR_HALF_COLOR, false, applyBars, applyBars)
-            AddColorPicker(container, health, "healthBarLowColor", "Low Health", DEFAULT_HEALTH_BAR_LOW_COLOR, false, applyBars, applyBars)
+            AddColorRow(fillLeft, { label = "Full Health", indent = true, tbl = health, key = "healthBarFullColor", default = DEFAULT_HEALTH_BAR_FULL_COLOR, onConfirm = applyBars, onChange = applyBars })
+            AddColorRow(fillLeft, { label = "Half Health", indent = true, tbl = health, key = "healthBarHalfColor", default = DEFAULT_HEALTH_BAR_HALF_COLOR, onConfirm = applyBars, onChange = applyBars })
+            AddColorRow(fillLeft, { label = "Low Health", indent = true, tbl = health, key = "healthBarLowColor", default = DEFAULT_HEALTH_BAR_LOW_COLOR, onConfirm = applyBars, onChange = applyBars })
         else
-            AddColorPicker(container, health, "healthBarColor", "Health Color", DEFAULT_HEALTH_BAR_COLOR, false, applyBars, applyBars)
+            AddColorRow(fillLeft, { label = "Health Color", indent = true, tbl = health, key = "healthBarColor", default = DEFAULT_HEALTH_BAR_COLOR, onConfirm = applyBars, onChange = applyBars })
         end
-        HealthResource.AddOpacitySlider(container, health, "healthBarOpacity", "Health Opacity", DEFAULT_HEALTH_BAR_OPACITY, applyBars)
+        HealthResource.AddOpacitySlider(fillRight, health, "healthBarOpacity", "Health Opacity", DEFAULT_HEALTH_BAR_OPACITY, applyBars)
     end
 
     local healthMissingKey = "rb_health_missing"
-    local missingHeading, healthMissingCollapsed, healthMissingCollapseBtn = BuildCollapsibleSection(container, "Missing Health", healthMissingKey, resourceBarCollapsedSections)
-    local missingInfoBtn = CreateInfoButton(missingHeading.frame, healthMissingCollapseBtn, "LEFT", "RIGHT", 4, 0, {
+    local missingHeading, healthMissingCollapsed = BuildCollapsibleSection(container, "Missing Health", healthMissingKey, resourceBarCollapsedSections, nil, ROW_SECTION)
+    local missingInfoBtn = CreateInfoButton(missingHeading.frame, missingHeading.label, "LEFT", "RIGHT", 4, 0, {
         "Missing Health",
         {"Resource Background Color is used by regular resource bars. Health uses Missing Health for its empty region.", 1, 1, 1, true},
     }, missingHeading)
-    missingHeading.right:ClearAllPoints()
-    missingHeading.right:SetPoint("RIGHT", missingHeading.frame, "RIGHT", -3, 0)
-    missingHeading.right:SetPoint("LEFT", missingInfoBtn, "RIGHT", 4, 0)
+    AnchorLeftAlignedHeadingRule(missingHeading, missingInfoBtn)
 
     if not healthMissingCollapsed then
-        local bgGradientCb = AceGUI:Create("CheckBox")
-        bgGradientCb:SetLabel("Use Missing Health Gradient")
-        bgGradientCb:SetValue(gradientEnabled == true)
-        bgGradientCb:SetFullWidth(true)
-        bgGradientCb:SetCallback("OnValueChanged", function(widget, event, val)
-            health.healthBackgroundGradient = val == true
-            applyBars()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(bgGradientCb)
+        -- Same split as the fill section above, for the same reason.
+        local missingLeft, missingRight = BeginRowGrid(container)
+
+        AddCheckboxRow(missingLeft, {
+            label = "Use Missing Health Gradient",
+            value = gradientEnabled == true,
+            onChange = function(val)
+                health.healthBackgroundGradient = val == true
+                applyBars()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
 
         if gradientEnabled == true then
-            AddColorPicker(container, health, "healthBackgroundFullColor", "Missing Health Full", DEFAULT_HEALTH_BACKGROUND_FULL_COLOR, false, applyBars, applyBars)
-            AddColorPicker(container, health, "healthBackgroundHalfColor", "Missing Health Half", DEFAULT_HEALTH_BACKGROUND_HALF_COLOR, false, applyBars, applyBars)
-            AddColorPicker(container, health, "healthBackgroundLowColor", "Missing Health Low", DEFAULT_HEALTH_BACKGROUND_LOW_COLOR, false, applyBars, applyBars)
+            AddColorRow(missingLeft, { label = "Missing Health Full", indent = true, tbl = health, key = "healthBackgroundFullColor", default = DEFAULT_HEALTH_BACKGROUND_FULL_COLOR, onConfirm = applyBars, onChange = applyBars })
+            AddColorRow(missingLeft, { label = "Missing Health Half", indent = true, tbl = health, key = "healthBackgroundHalfColor", default = DEFAULT_HEALTH_BACKGROUND_HALF_COLOR, onConfirm = applyBars, onChange = applyBars })
+            AddColorRow(missingLeft, { label = "Missing Health Low", indent = true, tbl = health, key = "healthBackgroundLowColor", default = DEFAULT_HEALTH_BACKGROUND_LOW_COLOR, onConfirm = applyBars, onChange = applyBars })
         else
-            AddColorPicker(container, health, "healthBackgroundColor", "Missing Health Color", DEFAULT_HEALTH_BACKGROUND_COLOR, false, applyBars, applyBars)
+            AddColorRow(missingLeft, { label = "Missing Health Color", indent = true, tbl = health, key = "healthBackgroundColor", default = DEFAULT_HEALTH_BACKGROUND_COLOR, onConfirm = applyBars, onChange = applyBars })
         end
 
-        HealthResource.AddOpacitySlider(container, health, "healthBackgroundOpacity", "Missing Health Opacity", DEFAULT_HEALTH_BACKGROUND_OPACITY, applyBars)
+        HealthResource.AddOpacitySlider(missingRight, health, "healthBackgroundOpacity", "Missing Health Opacity", DEFAULT_HEALTH_BACKGROUND_OPACITY, applyBars)
     end
 
     BuildResourceTextControls(container, settings, HealthResource.ID, specID, applyBars, "rb_health_text")
 
     local healthEffectsKey = "rb_health_effects"
-    local effectsHeading, healthEffectsCollapsed = BuildCollapsibleSection(container, "Health Effects", healthEffectsKey, resourceBarCollapsedSections)
+    local _, healthEffectsCollapsed = BuildCollapsibleSection(container, "Health Effects", healthEffectsKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
     if healthEffectsCollapsed then
         return
     end
 
-    local absorbsCb = AceGUI:Create("CheckBox")
-    absorbsCb:SetLabel("Show Absorbs")
-    absorbsCb:SetValue(health.showAbsorbs == true)
-    absorbsCb:SetFullWidth(true)
-    absorbsCb:SetCallback("OnValueChanged", function(widget, event, val)
-        health.showAbsorbs = val == true
-        applyBars()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(absorbsCb)
-    HealthResource.AddEffectStyleControls(container, absorbsCb, health, {
+    -- LEFT column: the two shield-shaped effects drawn over the fill. RIGHT
+    -- column: the incoming-heal preview and the alert that recolors the bar.
+    local effectsLeft, effectsRight = BeginRowGrid(container)
+
+    local absorbsCb = AddCheckboxRow(effectsLeft, {
+        label = "Show Absorbs",
+        value = health.showAbsorbs == true,
+        onChange = function(val)
+            health.showAbsorbs = val == true
+            applyBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+    HealthResource.AddEffectStyleControls(effectsLeft, absorbsCb, health, {
         enabledKey = "showAbsorbs",
         advancedKey = "healthAbsorbs",
         colorKey = "healthAbsorbColor",
@@ -766,17 +795,16 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         defaultColor = DEFAULT_HEALTH_ABSORB_COLOR,
     }, applyBars)
 
-    local healAbsorbsCb = AceGUI:Create("CheckBox")
-    healAbsorbsCb:SetLabel("Show Healing Absorbs")
-    healAbsorbsCb:SetValue(health.showHealAbsorbs == true)
-    healAbsorbsCb:SetFullWidth(true)
-    healAbsorbsCb:SetCallback("OnValueChanged", function(widget, event, val)
-        health.showHealAbsorbs = val == true
-        applyBars()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(healAbsorbsCb)
-    HealthResource.AddEffectStyleControls(container, healAbsorbsCb, health, {
+    local healAbsorbsCb = AddCheckboxRow(effectsLeft, {
+        label = "Show Healing Absorbs",
+        value = health.showHealAbsorbs == true,
+        onChange = function(val)
+            health.showHealAbsorbs = val == true
+            applyBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+    HealthResource.AddEffectStyleControls(effectsLeft, healAbsorbsCb, health, {
         enabledKey = "showHealAbsorbs",
         advancedKey = "healthHealAbsorbs",
         colorKey = "healthHealAbsorbColor",
@@ -786,17 +814,16 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         defaultColor = DEFAULT_HEALTH_HEAL_ABSORB_COLOR,
     }, applyBars)
 
-    local incomingHealsCb = AceGUI:Create("CheckBox")
-    incomingHealsCb:SetLabel("Show Incoming Heals")
-    incomingHealsCb:SetValue(health.showIncomingHeals == true)
-    incomingHealsCb:SetFullWidth(true)
-    incomingHealsCb:SetCallback("OnValueChanged", function(widget, event, val)
-        health.showIncomingHeals = val == true
-        applyBars()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(incomingHealsCb)
-    HealthResource.AddEffectStyleControls(container, incomingHealsCb, health, {
+    local incomingHealsCb = AddCheckboxRow(effectsRight, {
+        label = "Show Incoming Heals",
+        value = health.showIncomingHeals == true,
+        onChange = function(val)
+            health.showIncomingHeals = val == true
+            applyBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+    HealthResource.AddEffectStyleControls(effectsRight, incomingHealsCb, health, {
         enabledKey = "showIncomingHeals",
         advancedKey = "healthIncomingHeals",
         colorKey = "healthIncomingHealColor",
@@ -806,17 +833,16 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         defaultColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR,
     }, applyBars)
 
-    local lowHealthAlertCb = AceGUI:Create("CheckBox")
-    lowHealthAlertCb:SetLabel("Show Low Health Alert")
-    lowHealthAlertCb:SetValue(health.showLowHealthAlert == true)
-    lowHealthAlertCb:SetFullWidth(true)
-    lowHealthAlertCb:SetCallback("OnValueChanged", function(widget, event, val)
-        health.showLowHealthAlert = val == true
-        applyBars()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(lowHealthAlertCb)
-    local _, lowHealthAlertAdvancedBtn = HealthResource.AddEffectStyleControls(container, lowHealthAlertCb, health, {
+    local lowHealthAlertCb = AddCheckboxRow(effectsRight, {
+        label = "Show Low Health Alert",
+        value = health.showLowHealthAlert == true,
+        onChange = function(val)
+            health.showLowHealthAlert = val == true
+            applyBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+    HealthResource.AddEffectStyleControls(effectsRight, lowHealthAlertCb, health, {
         enabledKey = "showLowHealthAlert",
         advancedKey = "healthLowHealthAlert",
         colorKey = "healthLowHealthAlertColor",
@@ -836,16 +862,13 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
             panel:AddChild(missingHealthOnlyCb)
         end,
     }, applyBars)
-    local lowHealthAlertInfoAnchor = lowHealthAlertAdvancedBtn
-    local lowHealthAlertInfoOffset = 4
-    if not (lowHealthAlertInfoAnchor and lowHealthAlertInfoAnchor:IsShown()) then
-        lowHealthAlertInfoAnchor = lowHealthAlertCb.checkbg
-        lowHealthAlertInfoOffset = lowHealthAlertCb.text:GetStringWidth() + 4
-    end
-    CreateInfoButton(lowHealthAlertCb.frame, lowHealthAlertInfoAnchor, "LEFT", "RIGHT", lowHealthAlertInfoOffset, 0, {
+    -- Second badge after the gear when the setting is on, first when it is off:
+    -- AddAdvancedToggle only chains a gear it actually shows, so the anchor
+    -- args below are a placeholder - AnchorRowBadge re-points the button.
+    AnchorRowBadge(lowHealthAlertCb, CreateInfoButton(lowHealthAlertCb.frame, lowHealthAlertCb.frame, "LEFT", "LEFT", 0, 0, {
         "Low Health Alert",
         {"Blizzard sets the low-health threshold to 35%. This cannot be configured.", 1, 1, 1, true},
-    }, lowHealthAlertCb)
+    }, lowHealthAlertCb))
 end
 
 CS.healthResourceUI = HealthResource
@@ -874,8 +897,9 @@ local function AddResourceSpecCopyButton(enableCb)
         btn:SetParent(enableCb.frame)
     end
 
-    btn:ClearAllPoints()
-    btn:SetPoint("LEFT", enableCb.checkbg, "RIGHT", enableCb.text:GetStringWidth() + 4, 0)
+    -- A badge on the row's label, chained off the end of the label text like
+    -- every other row-grammar badge. AnchorRowBadge does the ClearAllPoints.
+    AnchorRowBadge(enableCb, btn)
     btn:Show()
 
     btn:SetScript("OnEnter", function(self)
@@ -951,23 +975,80 @@ local function BuildResourceBarAnchoringPanel(container)
     local layout = CooldownCompanion:GetSpecLayoutOrder()
     local thicknessField, thicknessLabel = GetResourceThicknessFieldConfig(settings, layout)
 
-    -- Enable Resource Bars
-    local enableCb = AceGUI:Create("CheckBox")
-    enableCb:SetLabel("Enable Resource Bars")
-    enableCb:SetValue(settings.enabled)
-    enableCb:SetFullWidth(true)
-    enableCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.enabled = val
-        CooldownCompanion:EvaluateResourceBars()
-        CooldownCompanion:UpdateAnchorStacking()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(enableCb)
+    -- ============================================================
+    -- Resource Toggles (the module switch, and which resources show)
+    -- ============================================================
+    -- The module switch lives INSIDE this section rather than above it: every
+    -- row-grammar tab opens on a section header, and a free-standing control
+    -- over the first caret has nowhere to belong. Disabling the module ends
+    -- the section after one row and builds nothing below it, exactly as the
+    -- pre-row tab returned early after the same checkbox.
+    local toggleKey = "rb_toggles"
+    local _, toggleCollapsed = BuildCollapsibleSection(container, "Resource Toggles", toggleKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
-    AddResourceSpecCopyButton(enableCb)
+    local enableCb
+    local togglesRight
+    if not toggleCollapsed then
+        -- LEFT column: the switches that apply to the whole stack. RIGHT
+        -- column: one row per resource this class can show.
+        local togglesLeft
+        togglesLeft, togglesRight = BeginRowGrid(container)
+
+        enableCb = AddCheckboxRow(togglesLeft, {
+            label = "Enable Resource Bars",
+            value = settings.enabled,
+            onChange = function(val)
+                settings.enabled = val
+                CooldownCompanion:EvaluateResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        AddResourceSpecCopyButton(enableCb)
+
+        -- Only show mana toggle for classes that actually use mana
+        local _, _, classID = UnitClass("player")
+        local NO_MANA_CLASSES = { [1] = true, [3] = true, [4] = true, [6] = true, [12] = true }
+        if settings.enabled and classID and not NO_MANA_CLASSES[classID] then
+            AddCheckboxRow(togglesLeft, {
+                label = "Hide Mana for Non-Healer Specs",
+                value = settings.hideManaForNonHealer ~= false,
+                onChange = function(val)
+                    settings.hideManaForNonHealer = val
+                    CooldownCompanion:ApplyResourceBars()
+                    CooldownCompanion:UpdateAnchorStacking()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+        end
+    end
 
     if not settings.enabled then return end
     if not settings.resources then settings.resources = {} end
+
+    if togglesRight then
+        -- Per-resource enable/disable
+        local resources = GetConfigActiveResources()
+        for _, pt in ipairs(resources) do
+            local name = POWER_NAMES[pt] or ("Power " .. pt)
+            local enabled = IsResourceEnabled(settings, pt)
+
+            AddCheckboxRow(togglesRight, {
+                label = "Show " .. name,
+                value = enabled,
+                onChange = function(val)
+                    if not settings.resources[pt] then
+                        settings.resources[pt] = {}
+                    end
+                    settings.resources[pt].enabled = val
+                    CooldownCompanion:ApplyResourceBars()
+                    CooldownCompanion:UpdateAnchorStacking()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+        end
+    end
 
     if not layout then
         local label = AceGUI:Create("Label")
@@ -980,57 +1061,13 @@ local function BuildResourceBarAnchoringPanel(container)
 
     local isIndependentStack = layout.independentAnchorEnabled == true
 
-    -- ============ Resource Toggles Section ============
-    local toggleKey = "rb_toggles"
-    local toggleHeading, toggleCollapsed = BuildCollapsibleSection(container, "Resource Toggles", toggleKey, resourceBarCollapsedSections)
-
-    if not toggleCollapsed then
-        -- Only show mana toggle for classes that actually use mana
-        local _, _, classID = UnitClass("player")
-        local NO_MANA_CLASSES = { [1] = true, [3] = true, [4] = true, [6] = true, [12] = true }
-        if classID and not NO_MANA_CLASSES[classID] then
-            local manaCb = AceGUI:Create("CheckBox")
-            manaCb:SetLabel("Hide Mana for Non-Healer Specs")
-            manaCb:SetValue(settings.hideManaForNonHealer ~= false)
-            manaCb:SetFullWidth(true)
-            manaCb:SetCallback("OnValueChanged", function(widget, event, val)
-                settings.hideManaForNonHealer = val
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            container:AddChild(manaCb)
-        end
-
-        -- Per-resource enable/disable
-        local resources = GetConfigActiveResources()
-        for _, pt in ipairs(resources) do
-            local name = POWER_NAMES[pt] or ("Power " .. pt)
-            local enabled = IsResourceEnabled(settings, pt)
-
-            local resCb = AceGUI:Create("CheckBox")
-            resCb:SetLabel("Show " .. name)
-            resCb:SetValue(enabled)
-            resCb:SetFullWidth(true)
-            resCb:SetCallback("OnValueChanged", function(widget, event, val)
-                if not settings.resources[pt] then
-                    settings.resources[pt] = {}
-                end
-                settings.resources[pt].enabled = val
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            container:AddChild(resCb)
-        end
-    end
-
     -- ============ Alpha Section ============
     local group = db.groups[CS.selectedGroup]
     BuildAlphaControls(container, settings, function()
         CooldownCompanion:ApplyResourceBars()
         CooldownCompanion:RefreshConfigPanel()
     end, "rb_alpha", {
+        row = true,
         isGlobal = group and group.isGlobal,
         disabled = not isIndependentStack and layout.inheritAlpha == true,
     })
@@ -1068,183 +1105,236 @@ local function BuildResourceBarPositioningPanel(container)
     local gapField, gapLabel = GetResourceGapFieldConfig(settings, layout)
     local isIndependentStack = layout.independentAnchorEnabled == true
 
-    -- Anchoring Mode dropdown
-    local anchorModeDrop = AceGUI:Create("Dropdown")
-    anchorModeDrop:SetLabel("Anchoring Mode")
-    anchorModeDrop:SetList({
-        attached = "Attached to Panel",
-        independent = "Independent",
-    }, { "attached", "independent" })
-    anchorModeDrop:SetValue(isIndependentStack and "independent" or "attached")
-    anchorModeDrop:SetFullWidth(true)
-    anchorModeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        layout.independentAnchorEnabled = (val == "independent")
-        CooldownCompanion:EvaluateResourceBars()
-        CooldownCompanion:RepositionCastBar()
-        CooldownCompanion:UpdateAnchorStacking()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(anchorModeDrop)
+    -- ============================================================
+    -- Placement (what the stack hangs off, and which way it runs)
+    -- ============================================================
+    local _, placementCollapsed = BuildCollapsibleSection(container, "Placement", "rb_placement", resourceBarCollapsedSections, nil, ROW_SECTION)
 
-    -- Bar Orientation
-    local orientDrop = AceGUI:Create("Dropdown")
-    orientDrop:SetLabel("Bar Orientation")
-    orientDrop:SetList({
-        horizontal = "Horizontal",
-        vertical = "Vertical",
-    }, { "horizontal", "vertical" })
-    orientDrop:SetValue(layout.orientation or settings.orientation or "horizontal")
-    orientDrop:SetFullWidth(true)
-    orientDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        layout.orientation = val
-        CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:RepositionCastBar()
-        CooldownCompanion:UpdateAnchorStacking()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(orientDrop)
+    if not placementCollapsed then
+        -- LEFT column: the anchoring choice and the two orientation settings
+        -- that read together - the fill direction only means anything for the
+        -- orientation above it, and is disabled otherwise. RIGHT column: the
+        -- one setting that belongs to the choice of anchoring rather than to
+        -- the stack itself - where its alpha comes from. Independent stacks
+        -- have no panel to inherit from, so that side ends early.
+        local placementLeft, placementRight = BeginRowGrid(container)
 
-    -- Vertical Fill Direction
-    local fillDirDrop = AceGUI:Create("Dropdown")
-    fillDirDrop:SetLabel("Vertical Fill Direction")
-    fillDirDrop:SetList({
-        bottom_to_top = "Bottom to Top",
-        top_to_bottom = "Top to Bottom",
-    }, { "bottom_to_top", "top_to_bottom" })
-    fillDirDrop:SetValue(layout.verticalFillDirection or settings.verticalFillDirection or "bottom_to_top")
-    fillDirDrop:SetDisabled(not isVerticalLayout)
-    fillDirDrop:SetFullWidth(true)
-    fillDirDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        layout.verticalFillDirection = val
-        CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:RepositionCastBar()
-        CooldownCompanion:UpdateAnchorStacking()
-    end)
-    container:AddChild(fillDirDrop)
+        AddDropdownRow(placementLeft, {
+            label = "Anchoring Mode",
+            list = {
+                attached = "Attached to Panel",
+                independent = "Independent",
+            },
+            order = { "attached", "independent" },
+            value = isIndependentStack and "independent" or "attached",
+            onChange = function(val)
+                layout.independentAnchorEnabled = (val == "independent")
+                CooldownCompanion:EvaluateResourceBars()
+                CooldownCompanion:RepositionCastBar()
+                CooldownCompanion:UpdateAnchorStacking()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
 
-    -- Bar Spacing
-    local spacingSlider = AceGUI:Create("Slider")
-    spacingSlider:SetLabel("Bar Spacing")
-    spacingSlider:SetSliderValues(0, 20, 0.1)
-    spacingSlider:SetValue(layout.barSpacing or settings.barSpacing or 3.6)
-    spacingSlider:SetFullWidth(true)
-    spacingSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        layout.barSpacing = val
-        CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:RepositionCastBar()
-        CooldownCompanion:UpdateAnchorStacking()
-    end)
-    container:AddChild(spacingSlider)
+        AddDropdownRow(placementLeft, {
+            label = "Bar Orientation",
+            list = {
+                horizontal = "Horizontal",
+                vertical = "Vertical",
+            },
+            order = { "horizontal", "vertical" },
+            value = layout.orientation or settings.orientation or "horizontal",
+            onChange = function(val)
+                layout.orientation = val
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:RepositionCastBar()
+                CooldownCompanion:UpdateAnchorStacking()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
 
-    -- Segment Gap
-    local segGapSlider = AceGUI:Create("Slider")
-    segGapSlider:SetLabel("Segment Gap")
-    segGapSlider:SetSliderValues(0, 20, 0.1)
-    segGapSlider:SetValue(layout.segmentGap or settings.segmentGap or 4)
-    segGapSlider:SetFullWidth(true)
-    segGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        layout.segmentGap = val
-        CooldownCompanion:ApplyResourceBars()
-    end)
-    container:AddChild(segGapSlider)
+        AddDropdownRow(placementLeft, {
+            label = "Vertical Fill Direction",
+            indent = true,
+            list = {
+                bottom_to_top = "Bottom to Top",
+                top_to_bottom = "Top to Bottom",
+            },
+            order = { "bottom_to_top", "top_to_bottom" },
+            value = layout.verticalFillDirection or settings.verticalFillDirection or "bottom_to_top",
+            disabled = not isVerticalLayout,
+            onChange = function(val)
+                layout.verticalFillDirection = val
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:RepositionCastBar()
+                CooldownCompanion:UpdateAnchorStacking()
+            end,
+        })
 
-    -- Bar Height + Custom Heights
-    ST._BuildBarHeightControls(container, settings, layout)
+        if layout.independentAnchorEnabled ~= true then
+            AddCheckboxRow(placementRight, {
+                label = "Inherit panel alpha",
+                value = layout.inheritAlpha,
+                onChange = function(val)
+                    layout.inheritAlpha = val == true
+                    CooldownCompanion:ApplyResourceBars()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+        end
+    end
+
+    -- ============================================================
+    -- Bar Size (how thick each bar is, and how they sit apart)
+    -- ============================================================
+    local _, sizeCollapsed = BuildCollapsibleSection(container, "Bar Size", "rb_bar_size", resourceBarCollapsedSections, nil, ROW_SECTION)
+
+    if not sizeCollapsed then
+        -- LEFT column: the thickness of a bar, shared or per-resource - the
+        -- override toggle disables the shared slider above it, so the two stay
+        -- adjacent. RIGHT column: the gaps between the things being sized.
+        local sizeLeft, sizeRight = BeginRowGrid(container)
+
+        -- Bar Height + Custom Heights
+        ST._BuildBarHeightControls(sizeLeft, settings, layout)
+
+        -- Bar Spacing
+        AddSliderRow(sizeRight, {
+            label = "Bar Spacing",
+            min = 0, max = 20, step = 0.1,
+            value = layout.barSpacing or settings.barSpacing or 3.6,
+            onChange = function(val)
+                layout.barSpacing = val
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:RepositionCastBar()
+                CooldownCompanion:UpdateAnchorStacking()
+            end,
+        })
+
+        -- Segment Gap
+        AddSliderRow(sizeRight, {
+            label = "Segment Gap",
+            min = 0, max = 20, step = 0.1,
+            value = layout.segmentGap or settings.segmentGap or 4,
+            onChange = function(val)
+                layout.segmentGap = val
+                CooldownCompanion:ApplyResourceBars()
+            end,
+        })
+    end
 
     -- ============ Anchor Settings (independent mode only) ============
     if isIndependentStack then
         local stackPosKey = "rb_stack_position"
-        local stackPosHeading, stackPosCollapsed = BuildCollapsibleSection(container, "Anchor Settings", stackPosKey, resourceBarCollapsedSections)
+        local _, stackPosCollapsed = BuildCollapsibleSection(container, "Anchor Settings", stackPosKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
         if not stackPosCollapsed then
             EnsureResourceLayoutAnchor(settings, layout)
             local anchor = layout.independentAnchor
-
-            local unlockCb = AceGUI:Create("CheckBox")
-            unlockCb:SetLabel("Unlock Placement")
-            unlockCb:SetValue(not layout.independentAnchorLocked)
-            unlockCb:SetFullWidth(true)
-            unlockCb:SetCallback("OnValueChanged", function(widget, event, val)
-                layout.independentAnchorLocked = not val
-                CooldownCompanion:ApplyResourceBars()
-            end)
-            container:AddChild(unlockCb)
-
-            local widthSlider = AceGUI:Create("Slider")
-            widthSlider:SetLabel("Bar Width")
-            widthSlider:SetSliderValues(20, 600, 1)
-            widthSlider:SetValue(layout.independentWidth or settings.independentWidth or 200)
-            widthSlider:SetFullWidth(true)
-            widthSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                layout.independentWidth = val
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
-            end)
-            container:AddChild(widthSlider)
 
             local function refreshResourceBarAnchor()
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:UpdateAnchorStacking()
             end
 
-            BuildIndependentAnchorTargetRow(container, anchor, refreshResourceBarAnchor)
+            -- A frame name needs the whole 140px control column to stay
+            -- readable, so Pick does not share it: the editbox row takes a
+            -- grid of its own and Pick sits at the head of that grid's right
+            -- column, immediately across the 16px gutter.
+            local targetLeft, targetRight = BeginRowGrid(container)
+            BuildIndependentAnchorTargetRow(targetLeft, anchor, refreshResourceBarAnchor, {
+                row = true,
+                pickContainer = targetRight,
+            })
 
-            AddAnchorDropdown(container, anchor, "point", "CENTER", refreshResourceBarAnchor, "Anchor Point")
-            AddAnchorDropdown(container, anchor, "relativePoint", "CENTER", refreshResourceBarAnchor, "Relative Point")
+            -- LEFT column: how the stack is placed - the drag toggle and the
+            -- two points that have to be read together (mine, then the
+            -- target's). RIGHT column: its size and the offset applied on top
+            -- of those points.
+            local stackLeft, stackRight = BeginRowGrid(container)
 
-            local xSlider = AceGUI:Create("Slider")
-            xSlider:SetLabel("X Offset")
-            xSlider:SetSliderValues(-2000, 2000, 0.1)
-            xSlider:SetValue(anchor.x or 0)
-            xSlider:SetFullWidth(true)
-            xSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                anchor.x = val
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
-            end)
-            HookSliderEditBox(xSlider)
-            container:AddChild(xSlider)
+            AddCheckboxRow(stackLeft, {
+                label = "Unlock Placement",
+                value = not layout.independentAnchorLocked,
+                onChange = function(val)
+                    layout.independentAnchorLocked = not val
+                    CooldownCompanion:ApplyResourceBars()
+                end,
+            })
 
-            local ySlider = AceGUI:Create("Slider")
-            ySlider:SetLabel("Y Offset")
-            ySlider:SetSliderValues(-2000, 2000, 0.1)
-            ySlider:SetValue(anchor.y or 0)
-            ySlider:SetFullWidth(true)
-            ySlider:SetCallback("OnValueChanged", function(widget, event, val)
-                anchor.y = val
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
-            end)
-            HookSliderEditBox(ySlider)
-            container:AddChild(ySlider)
+            AddAnchorDropdown(stackLeft, anchor, "point", "CENTER", refreshResourceBarAnchor, "Anchor Point", { row = true })
+            AddAnchorDropdown(stackLeft, anchor, "relativePoint", "CENTER", refreshResourceBarAnchor, "Relative Point", { row = true })
+
+            AddSliderRow(stackRight, {
+                label = "Bar Width",
+                min = 20, max = 600, step = 1,
+                value = layout.independentWidth or settings.independentWidth or 200,
+                onChange = function(val)
+                    layout.independentWidth = val
+                    CooldownCompanion:ApplyResourceBars()
+                    CooldownCompanion:UpdateAnchorStacking()
+                end,
+            })
+
+            AddSliderRow(stackRight, {
+                label = "X Offset",
+                min = -2000, max = 2000, step = 0.1,
+                value = anchor.x or 0,
+                onChange = function(val)
+                    anchor.x = val
+                    CooldownCompanion:ApplyResourceBars()
+                    CooldownCompanion:UpdateAnchorStacking()
+                end,
+            })
+
+            AddSliderRow(stackRight, {
+                label = "Y Offset",
+                min = -2000, max = 2000, step = 0.1,
+                value = anchor.y or 0,
+                onChange = function(val)
+                    anchor.y = val
+                    CooldownCompanion:ApplyResourceBars()
+                    CooldownCompanion:UpdateAnchorStacking()
+                end,
+            })
         end
     end
 
     -- ============ Layout Section (attached mode only) ============
     if not isIndependentStack then
         local posKey = "rb_position"
-        local posHeading, posCollapsed = BuildCollapsibleSection(container, "Layout", posKey, resourceBarCollapsedSections)
+        local _, posCollapsed = BuildCollapsibleSection(container, "Layout", posKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
         if not posCollapsed then
-            local gapSlider = AceGUI:Create("Slider")
-            gapSlider:SetLabel(gapLabel)
-            gapSlider:SetSliderValues(-100, 100, 0.1)
-            if gapField == "verticalXOffset" then
-                gapSlider:SetValue(layout.verticalXOffset or layout.yOffset or settings.verticalXOffset or settings.yOffset or 3)
-            else
-                gapSlider:SetValue(layout.yOffset or layout.verticalXOffset or settings.yOffset or settings.verticalXOffset or 3)
-            end
-            gapSlider:SetFullWidth(true)
-            gapSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                layout[gapField] = val
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:RepositionCastBar()
-                CooldownCompanion:UpdateAnchorStacking()
-            end)
-            container:AddChild(gapSlider)
+            -- LEFT column: the gap between this stack and the panel it hangs
+            -- off. RIGHT column: the cast bar's own override of that gap.
+            local posLeft, posRight = BeginRowGrid(container)
 
+            local gapValue
+            if gapField == "verticalXOffset" then
+                gapValue = layout.verticalXOffset or layout.yOffset or settings.verticalXOffset or settings.yOffset or 3
+            else
+                gapValue = layout.yOffset or layout.verticalXOffset or settings.yOffset or settings.verticalXOffset or 3
+            end
+
+            AddSliderRow(posLeft, {
+                label = gapLabel,
+                min = -100, max = 100, step = 0.1,
+                value = gapValue,
+                onChange = function(val)
+                    layout[gapField] = val
+                    CooldownCompanion:ApplyResourceBars()
+                    CooldownCompanion:RepositionCastBar()
+                    CooldownCompanion:UpdateAnchorStacking()
+                end,
+            })
+
+            -- Still stock widgets: this builder lives in CastBarPanels.lua,
+            -- which the next packet converts. Kept inside the right column so
+            -- the section stays a grid rather than a grid with a full-width
+            -- block hanging under it.
             if ST._BuildAttachedCastBarOffsetControls then
-                ST._BuildAttachedCastBarOffsetControls(container, layout)
+                ST._BuildAttachedCastBarOffsetControls(posRight, layout)
             end
         end
     end
@@ -1268,53 +1358,41 @@ local function BuildBarHeightControls(container, settings, layout)
     local thicknessField, thicknessLabel, customThicknessLabel = GetResourceThicknessFieldConfig(settings, layout)
     local customHeightsAdvKey = "customResourceBarHeights"
 
-    local hSlider = AceGUI:Create("Slider")
-    hSlider:SetLabel(thicknessLabel)
-    hSlider:SetSliderValues(4, 40, 0.1)
+    local thicknessValue
     if thicknessField == "barWidth" then
-        hSlider:SetValue(layout.barWidth or layout.barHeight or settings.barWidth or settings.barHeight or 12)
+        thicknessValue = layout.barWidth or layout.barHeight or settings.barWidth or settings.barHeight or 12
     else
-        hSlider:SetValue(layout.barHeight or layout.barWidth or settings.barHeight or settings.barWidth or 12)
+        thicknessValue = layout.barHeight or layout.barWidth or settings.barHeight or settings.barWidth or 12
     end
-    hSlider:SetFullWidth(true)
-    hSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        layout[thicknessField] = val
-        CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:RepositionCastBar()
-        CooldownCompanion:UpdateAnchorStacking()
-    end)
-    hSlider:SetDisabled(layout.customBarHeights or false)
-    container:AddChild(hSlider)
 
-    if layout.independentAnchorEnabled ~= true then
-        local inheritCb = AceGUI:Create("CheckBox")
-        inheritCb:SetLabel("Inherit panel alpha")
-        inheritCb:SetValue(layout.inheritAlpha)
-        inheritCb:SetFullWidth(true)
-        inheritCb:SetCallback("OnValueChanged", function(widget, event, val)
-            layout.inheritAlpha = val == true
+    AddSliderRow(container, {
+        label = thicknessLabel,
+        min = 4, max = 40, step = 0.1,
+        value = thicknessValue,
+        disabled = layout.customBarHeights or false,
+        onChange = function(val)
+            layout[thicknessField] = val
             CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(inheritCb)
-    end
+            CooldownCompanion:RepositionCastBar()
+            CooldownCompanion:UpdateAnchorStacking()
+        end,
+    })
 
-    local customHeightsCb = AceGUI:Create("CheckBox")
-    customHeightsCb:SetLabel(customThicknessLabel)
-    customHeightsCb:SetValue(layout.customBarHeights or false)
-    customHeightsCb:SetFullWidth(true)
-    customHeightsCb:SetCallback("OnValueChanged", function(widget, event, val)
-        local wasEnabled = layout.customBarHeights == true
-        layout.customBarHeights = val
-        if val and not wasEnabled and CS.QueueAdvancedSettingsPanelOpen then
-            CS.QueueAdvancedSettingsPanelOpen(customHeightsAdvKey)
-        end
-        CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:RepositionCastBar()
-        CooldownCompanion:UpdateAnchorStacking()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(customHeightsCb)
+    local customHeightsCb = AddCheckboxRow(container, {
+        label = customThicknessLabel,
+        value = layout.customBarHeights or false,
+        onChange = function(val)
+            local wasEnabled = layout.customBarHeights == true
+            layout.customBarHeights = val
+            if val and not wasEnabled and CS.QueueAdvancedSettingsPanelOpen then
+                CS.QueueAdvancedSettingsPanelOpen(customHeightsAdvKey)
+            end
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RepositionCastBar()
+            CooldownCompanion:UpdateAnchorStacking()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
 
     local function BuildCustomResourceHeightsAdvanced(panel)
         if type(layout.resources) ~= "table" then
@@ -1362,22 +1440,18 @@ local function BuildBarHeightControls(container, settings, layout)
         end
     end
 
-    local _, customHeightsAdvBtn = AddAdvancedToggle(customHeightsCb, customHeightsAdvKey, tabInfoButtons, layout.customBarHeights == true, {
+    AddAdvancedToggle(customHeightsCb, customHeightsAdvKey, tabInfoButtons, layout.customBarHeights == true, {
         title = customThicknessLabel .. " Advanced",
         build = BuildCustomResourceHeightsAdvanced,
     })
 
-    local customHeightsInfoAnchor = customHeightsCb.checkbg
-    local customHeightsInfoOffset = customHeightsCb.text:GetStringWidth() + 4
-    if customHeightsAdvBtn and customHeightsAdvBtn:IsShown() then
-        customHeightsInfoAnchor = customHeightsAdvBtn
-        customHeightsInfoOffset = 4
-    end
-
-    CreateInfoButton(customHeightsCb.frame, customHeightsInfoAnchor, "LEFT", "RIGHT", customHeightsInfoOffset, 0, {
+    -- Second badge after the gear when the setting is on, first when it is off:
+    -- AddAdvancedToggle only chains a gear it actually shows, so the anchor
+    -- args below are a placeholder - AnchorRowBadge re-points the button.
+    AnchorRowBadge(customHeightsCb, CreateInfoButton(customHeightsCb.frame, customHeightsCb.frame, "LEFT", "LEFT", 0, 0, {
         customThicknessLabel,
         {"When enabled, each resource can have its own bar size. Open advanced settings here to configure all resource sizes together.", 1, 1, 1, true},
-    }, customHeightsCb)
+    }, customHeightsCb))
 end
 
 ST._BuildBarHeightControls = BuildBarHeightControls
@@ -1456,30 +1530,38 @@ local function BuildResourceColorControls(container, settings, powerType, specID
     end
 
     local colorKey = "rb_colors_" .. tostring(powerType) .. "_" .. tostring(specID)
-    local colorHeading, colorCollapsed, colorCollapseBtn = BuildCollapsibleSection(container, "Colors", colorKey, resourceBarCollapsedSections)
-
-    colorHeading.right:ClearAllPoints()
-    colorHeading.right:SetPoint("RIGHT", colorHeading.frame, "RIGHT", -3, 0)
-    colorHeading.right:SetPoint("LEFT", colorCollapseBtn, "RIGHT", 4, 0)
+    local _, colorCollapsed = BuildCollapsibleSection(container, "Colors", colorKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
     if colorCollapsed then
         return true
     end
 
-    for _, descriptor in ipairs(descriptors) do
+    -- One list with no internal grouping to split on, so the columns are cut
+    -- purely for balance: the first half reads down the left, the rest down
+    -- the right, in the order the descriptors declare.
+    local colorLeft, colorRight = BeginRowGrid(container)
+    local leftCount = math.ceil(#descriptors / 2)
+
+    for index, descriptor in ipairs(descriptors) do
         local capturedKey = descriptor.key
         local capturedDefault = descriptor.defaultColor
         local proxy = {
             [capturedKey] = ReadSpecOverrideKey(settings, powerType, specID, capturedKey, capturedDefault),
         }
-        AddColorPicker(container, proxy, capturedKey, descriptor.label, capturedDefault, descriptor.hasAlpha,
-            function()
+        AddColorRow(index <= leftCount and colorLeft or colorRight, {
+            label = descriptor.label,
+            tbl = proxy,
+            key = capturedKey,
+            default = capturedDefault,
+            hasAlpha = descriptor.hasAlpha,
+            onConfirm = function()
                 WriteSpecOverrideKey(settings, powerType, specID, capturedKey, proxy[capturedKey])
                 applyBars()
             end,
-            function()
+            onChange = function()
                 WriteSpecOverrideKey(settings, powerType, specID, capturedKey, proxy[capturedKey])
-            end)
+            end,
+        })
     end
 
     return true
@@ -1574,23 +1656,22 @@ end
 
 local function AddThresholdTickEnableCheckbox(container, settings, powerType, specID, settingKey, label, advKey)
     local enabled = ReadSpecOverrideKey(settings, powerType, specID, settingKey, false) == true
-    local checkbox = AceGUI:Create("CheckBox")
-    checkbox:SetLabel(label)
-    checkbox:SetValue(enabled)
-    checkbox:SetFullWidth(true)
-    checkbox:SetCallback("OnValueChanged", function(widget, event, val)
-        local wasEnabled = ReadSpecOverrideKey(settings, powerType, specID, settingKey, false) == true
-        WriteSpecOverrideKey(settings, powerType, specID, settingKey, val == true)
-        if val and not wasEnabled and CS.QueueAdvancedSettingsPanelOpen then
-            CS.QueueAdvancedSettingsPanelOpen(advKey, {
-                selectedResourcePowerType = powerType,
-                resourceSettingsSpecID = specID,
-            })
-        end
-        CooldownCompanion:ApplyResourceBars()
-        C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
-    end)
-    container:AddChild(checkbox)
+    local checkbox = AddCheckboxRow(container, {
+        label = label,
+        value = enabled,
+        onChange = function(val)
+            local wasEnabled = ReadSpecOverrideKey(settings, powerType, specID, settingKey, false) == true
+            WriteSpecOverrideKey(settings, powerType, specID, settingKey, val == true)
+            if val and not wasEnabled and CS.QueueAdvancedSettingsPanelOpen then
+                CS.QueueAdvancedSettingsPanelOpen(advKey, {
+                    selectedResourcePowerType = powerType,
+                    resourceSettingsSpecID = specID,
+                })
+            end
+            CooldownCompanion:ApplyResourceBars()
+            C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
+        end,
+    })
     return checkbox, enabled
 end
 
@@ -1827,18 +1908,16 @@ end
 
 local function BuildResourceAuraOverlaySection(container, settings, powerType, specID, resourceName)
     local sectionKey = "rb_aura_overlay_" .. powerType
-    local heading, collapsed, collapseBtn =
-        BuildCollapsibleSection(container, "Aura Overlay", sectionKey, resourceBarCollapsedSections)
+    local heading, collapsed =
+        BuildCollapsibleSection(container, "Aura Overlay", sectionKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
-    local sectionInfoBtn = CreateInfoButton(heading.frame, collapseBtn, "LEFT", "RIGHT", 4, 0, {
+    local sectionInfoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
         "Aura Overlay",
         {"One aura per resource and specialization. Blizzard shows and hides the overlay with the aura itself, so it keeps working in combat, where the addon cannot read aura state.", 1, 1, 1, true},
         " ",
         {"Buffs can only be tracked on yourself, and your own debuffs only on your target. The tracked unit is set automatically from the aura.", 1, 1, 1, true},
     }, heading)
-    heading.right:ClearAllPoints()
-    heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
-    heading.right:SetPoint("LEFT", sectionInfoBtn, "RIGHT", 4, 0)
+    AnchorLeftAlignedHeadingRule(heading, sectionInfoBtn)
 
     if collapsed then return end
 
@@ -1850,15 +1929,19 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
 
     local enabled = IsResourceAuraOverlayEnabledConfig(settings, powerType, specID)
 
-    local enableCb = AceGUI:Create("CheckBox")
-    enableCb:SetLabel("Enable " .. resourceName .. " Aura Overlay")
-    enableCb:SetValue(enabled)
-    enableCb:SetFullWidth(true)
-    enableCb:SetCallback("OnValueChanged", function(_, _, value)
-        WriteSpecOverrideKey(settings, powerType, specID, "auraOverlayEnabled", value == true)
-        refresh()
-    end)
-    container:AddChild(enableCb)
+    -- LEFT column: which aura is tracked, and on whom. RIGHT column: how the
+    -- overlay draws it. Both halves are gated on the toggle at the head of the
+    -- left one, so the right side is empty until an aura is picked.
+    local auraLeft, auraRight = BeginRowGrid(container)
+
+    AddCheckboxRow(auraLeft, {
+        label = "Enable " .. resourceName .. " Aura Overlay",
+        value = enabled,
+        onChange = function(value)
+            WriteSpecOverrideKey(settings, powerType, specID, "auraOverlayEnabled", value == true)
+            refresh()
+        end,
+    })
 
     if not enabled then return end
 
@@ -1866,40 +1949,54 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
     local spellID = entry and tonumber(entry.auraColorSpellID) or nil
 
     if not spellID then
-        local addBox = AceGUI:Create("EditBox")
-        addBox:SetLabel("Overlay aura by name or ID")
-        addBox:SetText("")
-        addBox:SetFullWidth(true)
-        addBox:SetCallback("OnEnterPressed", function(widget, _, text)
-            local id, blank = ResolveAuraColorSpellIDFromText(text)
-            if not id then
-                -- Enter on an empty box is a no-op, not a failed lookup.
-                if not blank then
-                    CooldownCompanion:Print("No spell found for that name or ID.")
+        AddEditBoxRow(auraLeft, {
+            label = "Overlay aura by name or ID",
+            indent = true,
+            value = "",
+            onEnterPressed = function(text, widget)
+                local id, blank = ResolveAuraColorSpellIDFromText(text)
+                if not id then
+                    -- Enter on an empty box is a no-op, not a failed lookup.
+                    if not blank then
+                        CooldownCompanion:Print("No spell found for that name or ID.")
+                    end
+                    return
                 end
-                return
-            end
-            local target = EnsureResourceAuraOverlayEntry(settings, powerType, specID)
-            if not target then return end
-            target.auraColorSpellID = id
-            -- Store the derived unit so the runtime's fallback starts right
-            -- for spells the client has not cached yet; the rebind pass
-            -- re-derives it from spell polarity every pass regardless.
-            target.auraUnit = ClassifyAuraSpellUnit(id) or "player"
-            widget:SetText("")
-            refresh()
-        end)
-        container:AddChild(addBox)
+                local target = EnsureResourceAuraOverlayEntry(settings, powerType, specID)
+                if not target then return end
+                target.auraColorSpellID = id
+                -- Store the derived unit so the runtime's fallback starts right
+                -- for spells the client has not cached yet; the rebind pass
+                -- re-derives it from spell polarity every pass regardless.
+                target.auraUnit = ClassifyAuraSpellUnit(id) or "player"
+                widget:SetText("")
+                refresh()
+            end,
+        })
         return
     end
 
-    local unit = ClassifyAuraSpellUnit(spellID) or "player"
-    local unitLabel = AceGUI:Create("Label")
-    unitLabel:SetText("|cffffd100Tracked on:|r " .. (unit == "target" and "Target" or "You"))
-    unitLabel:SetFullWidth(true)
-    container:AddChild(unitLabel)
+    -- The tracked aura presents an ITEM, not a setting: a CDC-LabelRow with
+    -- the spell's icon inlined into the label text (the row's label is a
+    -- FontString, so the icon rides an inline texture escape) and a Remove
+    -- link owned by the row's control column. The shared AddAuraCandidateRow
+    -- is a 22px Flow row and would break the rhythm inside a grid column.
+    local spellInfo = C_Spell.GetSpellInfo(spellID)
+    local spellName = spellInfo and spellInfo.name or ("Spell " .. spellID)
+    local spellIcon = C_Spell.GetSpellTexture(spellID) or 134400
+    local auraRow = AddLabelRow(auraLeft, {
+        label = ("|T%d:16:16:0:0|t %s |cff999999(%d)|r"):format(spellIcon, spellName, spellID),
+        indent = true,
+    })
 
-    AddAuraCandidateRow(container, spellID, function()
+    -- Right-justified so the word lands on the control column's right edge
+    -- like every other row's control. SetJustifyH is public API and the stock
+    -- Label resets it to LEFT in OnAcquire, so the pool stays clean.
+    local removeLabel = AceGUI:Create("InteractiveLabel")
+    removeLabel:SetText("|cffff5555Remove|r")
+    removeLabel:SetWidth(60)
+    removeLabel:SetJustifyH("RIGHT")
+    removeLabel:SetCallback("OnClick", function()
         local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
         if target then
             target.auraColorSpellID = nil
@@ -1907,9 +2004,22 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
         end
         refresh()
     end)
+    auraRow:SetControlWidget(removeLabel)
 
-    AddColorPicker(container, entry, "auraActiveColor", "Overlay Color",
-        DEFAULT_RESOURCE_AURA_ACTIVE_COLOR, false, applyBars, nil)
+    local unit = ClassifyAuraSpellUnit(spellID) or "player"
+    AddLabelRow(auraLeft, {
+        label = "Tracked on",
+        indent = true,
+        controlText = unit == "target" and "Target" or "You",
+    })
+
+    AddColorRow(auraRight, {
+        label = "Overlay Color",
+        tbl = entry,
+        key = "auraActiveColor",
+        default = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR,
+        onConfirm = applyBars,
+    })
 
     -- Stack mode only exists where the runtime can draw the lane, so the
     -- dropdown only appears there; everything else is Active by definition
@@ -1918,25 +2028,27 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
 
     local mode = RB.GetResourceOverlayTrackingMode(entry, powerType)
 
-    local modeDrop = AceGUI:Create("Dropdown")
-    modeDrop:SetLabel("Tracking Mode")
-    modeDrop:SetList({ active = "Active", stacks = "Stack Count" }, { "active", "stacks" })
-    modeDrop:SetValue(mode)
-    modeDrop:SetFullWidth(true)
-    modeDrop:SetCallback("OnValueChanged", function(_, _, value)
-        if value ~= "active" and value ~= "stacks" then return end
-        local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
-        if not target then return end
-        target.auraColorTrackingMode = value
-        refresh()
-    end)
-    container:AddChild(modeDrop)
-    CreateInfoButton(modeDrop.frame, modeDrop.label, "LEFT", "RIGHT", 4, 0, {
+    local modeRow = AddDropdownRow(auraRight, {
+        label = "Tracking Mode",
+        list = { active = "Active", stacks = "Stack Count" },
+        order = { "active", "stacks" },
+        value = mode,
+        onChange = function(value)
+            if value ~= "active" and value ~= "stacks" then return end
+            local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
+            if not target then return end
+            target.auraColorTrackingMode = value
+            refresh()
+        end,
+    })
+    -- Anchor args are a placeholder - AnchorRowBadge re-points the button onto
+    -- the end of the row's label.
+    AnchorRowBadge(modeRow, CreateInfoButton(modeRow.frame, modeRow.frame, "LEFT", "LEFT", 0, 0, {
         "Tracking Mode",
         {"Active tints the bar in the overlay colour for as long as the aura is up.", 1, 1, 1, true},
         " ",
         {"Stack Count runs a lane along the bar that fills as stacks build. The maximum comes from the game's spell data, so an aura that does not stack falls back to Active.", 1, 1, 1, true},
-    }, modeDrop)
+    }, modeRow))
 
     if mode ~= "stacks" then return end
 
@@ -2013,119 +2125,169 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     -- stacks can run past the segment count, which is what the overlay
     -- layer exists for, and the other two shapes drop it.
     if showResourceSettings and resourceSettingsPowerType == 100 then
-        local mwStyleDrop = AceGUI:Create("Dropdown")
-        mwStyleDrop:SetLabel("Stack Display")
-        mwStyleDrop:SetList({
-            overlay = "Overlay",
-            segments = "One Segment Per Stack",
-            continuous = "Continuous",
-        }, { "overlay", "segments", "continuous" })
-        mwStyleDrop:SetValue(ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwDisplayStyle", "overlay"))
-        mwStyleDrop:SetFullWidth(true)
-        mwStyleDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwDisplayStyle",
-                val ~= "overlay" and val or nil)
-            applyBars()
-        end)
-        container:AddChild(mwStyleDrop)
+        local _, mwCollapsed = BuildCollapsibleSection(container, "Stack Display", "rb_mw_stack_display", resourceBarCollapsedSections, nil, ROW_SECTION)
+
+        if not mwCollapsed then
+            -- One setting with nothing to pair it against, so the left column
+            -- carries it alone.
+            local mwLeft = BeginRowGrid(container)
+
+            AddDropdownRow(mwLeft, {
+                label = "Stack Display",
+                pulloutWidth = MEDIA_PULLOUT_WIDTH,
+                list = {
+                    overlay = "Overlay",
+                    segments = "One Segment Per Stack",
+                    continuous = "Continuous",
+                },
+                order = { "overlay", "segments", "continuous" },
+                value = ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwDisplayStyle", "overlay"),
+                onChange = function(val)
+                    WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwDisplayStyle",
+                        val ~= "overlay" and val or nil)
+                    applyBars()
+                end,
+            })
+        end
     end
 
     if showBarText then
     if not showResourceSettings then
-    -- Bar Texture
-    local texDrop = AceGUI:Create("Dropdown")
-    texDrop:SetLabel("Bar Texture")
-    CS.SetupBarTextureDropdown(texDrop, { list = GetResourceBarTextureOptions() })
-    texDrop:SetValue(localBarTextureName)
-    texDrop:SetFullWidth(true)
-    CS.SetBarTextureDropdownCallback(texDrop, function(widget, event, val)
+    -- ============================================================
+    -- Bar (the fill itself and what shows behind it)
+    -- ============================================================
+    local _, barCollapsed = BuildCollapsibleSection(container, "Bar", "rb_appearance_bar", resourceBarCollapsedSections, nil, ROW_SECTION)
+
+    if not barCollapsed then
+    -- LEFT column: the texture and the one setting that only exists for one
+    -- texture, so it stays adjacent to it. RIGHT column: how the fill moves,
+    -- and what shows through where it is not.
+    local barLeft, barRight = BeginRowGrid(container)
+
+    -- Bar Texture. LibSharedMedia names run past the control column, so the
+    -- menu is widened - a 140px control would otherwise open a 140px menu.
+    local texRow = AddDropdownRow(barLeft, {
+        label = "Bar Texture",
+        pulloutWidth = MEDIA_PULLOUT_WIDTH,
+    })
+    CS.SetupBarTextureDropdown(texRow, { list = GetResourceBarTextureOptions() })
+    texRow:SetValue(localBarTextureName)
+    CS.SetBarTextureDropdownCallback(texRow, function(widget, event, val)
         displayProfile.barTexture = val
         CooldownCompanion:ApplyResourceBars()
         -- Defer panel rebuild to next frame so it doesn't interfere with current callback
         C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
     end)
-    container:AddChild(texDrop)
 
     -- Brightness slider (only for Blizzard Class texture)
     if effectiveBarTextureName == "blizzard_class" then
-        local brightSlider = AceGUI:Create("Slider")
-        brightSlider:SetLabel("Class Texture Brightness")
-        brightSlider:SetSliderValues(0.5, 2.0, 0.1)
-        brightSlider:SetValue(displayProfile.classBarBrightness or settings.classBarBrightness or 1.3)
-        brightSlider:SetFullWidth(true)
-        brightSlider:SetDisabled(ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked())
-        brightSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            if ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked() then return end
-            displayProfile.classBarBrightness = val
-            CooldownCompanion:ApplyResourceBars()
-        end)
-        container:AddChild(brightSlider)
+        local brightnessLocked = ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked()
+        AddSliderRow(barLeft, {
+            label = "Class Texture Brightness",
+            indent = true,
+            min = 0.5, max = 2.0, step = 0.1,
+            value = displayProfile.classBarBrightness or settings.classBarBrightness or 1.3,
+            disabled = brightnessLocked,
+            onChange = function(val)
+                if ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked() then return end
+                displayProfile.classBarBrightness = val
+                CooldownCompanion:ApplyResourceBars()
+            end,
+        })
     end
 
-    local segmentedSmoothingDrop = AceGUI:Create("Dropdown")
-    segmentedSmoothingDrop:SetLabel("Segmented Smoothing")
-    segmentedSmoothingDrop:SetList({
-        [ST.SEGMENTED_SMOOTHING_ON] = "On",
-        [ST.SEGMENTED_SMOOTHING_OFF] = "Off",
-    }, { ST.SEGMENTED_SMOOTHING_ON, ST.SEGMENTED_SMOOTHING_OFF })
-    segmentedSmoothingDrop:SetValue(ST.NormalizeSegmentedSmoothing(displayProfile.segmentedSmoothing))
-    segmentedSmoothingDrop:SetFullWidth(true)
-    segmentedSmoothingDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        displayProfile.segmentedSmoothing = ST.NormalizeSegmentedSmoothing(val)
-        CooldownCompanion:ApplyResourceBars()
-    end)
-    container:AddChild(segmentedSmoothingDrop)
-    CreateInfoButton(segmentedSmoothingDrop.frame, segmentedSmoothingDrop.label, "LEFT", "RIGHT", 4, 0, {
+    local smoothingRow = AddDropdownRow(barRight, {
+        label = "Segmented Smoothing",
+        list = {
+            [ST.SEGMENTED_SMOOTHING_ON] = "On",
+            [ST.SEGMENTED_SMOOTHING_OFF] = "Off",
+        },
+        order = { ST.SEGMENTED_SMOOTHING_ON, ST.SEGMENTED_SMOOTHING_OFF },
+        value = ST.NormalizeSegmentedSmoothing(displayProfile.segmentedSmoothing),
+        onChange = function(val)
+            displayProfile.segmentedSmoothing = ST.NormalizeSegmentedSmoothing(val)
+            CooldownCompanion:ApplyResourceBars()
+        end,
+    })
+    -- Anchor args are a placeholder - AnchorRowBadge re-points the button onto
+    -- the end of the row's label.
+    AnchorRowBadge(smoothingRow, CreateInfoButton(smoothingRow.frame, smoothingRow.frame, "LEFT", "LEFT", 0, 0, {
         "Segmented Smoothing",
         {"Controls whether segmented resource bars and segmented or overlay custom bars animate smoothly or snap between segment values.", 1, 1, 1, true},
         " ",
         {"Continuous resources and continuous custom bars are not affected.", 1, 1, 1, true},
-    }, segmentedSmoothingDrop)
+    }, smoothingRow))
 
     -- Resource Background Color
-    AddColorPicker(container, displayProfile, "backgroundColor", "Resource Background Color", { 0, 0, 0, 0.5 }, true, applyBars)
+    AddColorRow(barRight, {
+        label = "Resource Background Color",
+        tbl = displayProfile,
+        key = "backgroundColor",
+        default = { 0, 0, 0, 0.5 },
+        hasAlpha = true,
+        onConfirm = applyBars,
+    })
+    end -- not barCollapsed
 
-    -- Border Style
-    local borderDrop = AceGUI:Create("Dropdown")
-    borderDrop:SetLabel("Border Style")
-    borderDrop:SetList({
-        pixel = "Pixel",
-        none = "None",
-    }, { "pixel", "none" })
-    borderDrop:SetValue(displayProfile.borderStyle or settings.borderStyle or "pixel")
-    borderDrop:SetFullWidth(true)
-    borderDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        displayProfile.borderStyle = val
-        CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(borderDrop)
+    -- ============================================================
+    -- Border
+    -- ============================================================
+    local _, borderCollapsed = BuildCollapsibleSection(container, "Border", "rb_appearance_border", resourceBarCollapsedSections, nil, ROW_SECTION)
 
-    if (displayProfile.borderStyle or settings.borderStyle or "pixel") == "pixel" then
-        AddColorPicker(container, displayProfile, "borderColor", "Border Color", { 0, 0, 0, 1 }, true, applyBars)
+    if not borderCollapsed then
+    -- LEFT column: whether there is a border at all, and what colour it is.
+    -- RIGHT column: how thick it is drawn. Both sides are gated on the style
+    -- above, so both end early when the border is off.
+    local borderLeft, borderRight = BeginRowGrid(container)
 
-        local renderMode = ST._AddBorderRenderModeDropdown(container, displayProfile, "borderRenderMode", function()
+    AddDropdownRow(borderLeft, {
+        label = "Border Style",
+        list = {
+            pixel = "Pixel",
+            none = "None",
+        },
+        order = { "pixel", "none" },
+        value = displayProfile.borderStyle or settings.borderStyle or "pixel",
+        onChange = function(val)
+            displayProfile.borderStyle = val
             CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:RefreshConfigPanel()
-        end)
+        end,
+    })
+
+    if (displayProfile.borderStyle or settings.borderStyle or "pixel") == "pixel" then
+        AddColorRow(borderLeft, {
+            label = "Border Color",
+            indent = true,
+            tbl = displayProfile,
+            key = "borderColor",
+            default = { 0, 0, 0, 1 },
+            hasAlpha = true,
+            onConfirm = applyBars,
+        })
+
+        local renderMode = ST._AddBorderRenderModeDropdown(borderRight, displayProfile, "borderRenderMode", function()
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end, nil, { row = true })
         local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
         if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-            local borderSizeSlider = AceGUI:Create("Slider")
-            borderSizeSlider:SetLabel("Border Size")
-            borderSizeSlider:SetSliderValues(0, 4, 0.1)
-            borderSizeSlider:SetValue(displayProfile.borderSize or settings.borderSize or 1)
-            borderSizeSlider:SetIsPercent(false)
-            borderSizeSlider:SetFullWidth(true)
-            borderSizeSlider:SetDisabled(borderThicknessLocked)
-            borderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                if borderThicknessLocked then return end
-                displayProfile.borderSize = val
-                CooldownCompanion:ApplyResourceBars()
-            end)
-            container:AddChild(borderSizeSlider)
+            AddSliderRow(borderRight, {
+                label = "Border Size",
+                indent = true,
+                min = 0, max = 4, step = 0.1,
+                value = displayProfile.borderSize or settings.borderSize or 1,
+                disabled = borderThicknessLocked,
+                onChange = function(val)
+                    if borderThicknessLocked then return end
+                    displayProfile.borderSize = val
+                    CooldownCompanion:ApplyResourceBars()
+                end,
+            })
         end
     end
+    end -- not borderCollapsed
     end
 
     if showResourceText then
@@ -2149,20 +2311,20 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     if showThresholdsTicks then
     -- ============ Thresholds & Ticks Section ============
     local thresholdKey = "rb_thresholds_ticks"
-    local thresholdHeading, thresholdCollapsed, thresholdCollapseBtn = BuildCollapsibleSection(container, "Thresholds & Ticks", thresholdKey, resourceBarCollapsedSections)
+    local thresholdHeading, thresholdCollapsed = BuildCollapsibleSection(container, "Thresholds & Ticks", thresholdKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
-    local thresholdInfoBtn = CreateInfoButton(thresholdHeading.frame, thresholdCollapseBtn, "LEFT", "RIGHT", 4, 0, {
+    local thresholdInfoBtn = CreateInfoButton(thresholdHeading.frame, thresholdHeading.label, "LEFT", "RIGHT", 4, 0, {
         "Thresholds & Ticks",
         {"Segmented resources: recolor when the current value is at/above configured thresholds. The highest crossed threshold wins.", 1, 1, 1, true},
         " ",
         {"Continuous resources: draw up to three static markers by percent or absolute value. Each marker can have its own color.", 1, 1, 1, true},
     }, thresholdHeading)
-
-    thresholdHeading.right:ClearAllPoints()
-    thresholdHeading.right:SetPoint("RIGHT", thresholdHeading.frame, "RIGHT", -3, 0)
-    thresholdHeading.right:SetPoint("LEFT", thresholdInfoBtn, "RIGHT", 4, 0)
+    AnchorLeftAlignedHeadingRule(thresholdHeading, thresholdInfoBtn)
 
     if not thresholdCollapsed then
+        -- One toggle for the one resource this page is about - the values it
+        -- gates all live behind its gear - so the left column carries it alone.
+        local thresholdLeft = BeginRowGrid(container)
         local rbThresholdTickAdvBtns = {}
         local resources = { resourceSettingsPowerType }
         for _, pt in ipairs(resources) do
@@ -2177,7 +2339,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                 if isSegmented then
                     local thresholdAdvKey = "rbSegThreshold_" .. capturedPt .. "_" .. tostring(_colorSpecID)
                     local thresholdEnableCb, _segEnabled = AddThresholdTickEnableCheckbox(
-                        container,
+                        thresholdLeft,
                         settings,
                         capturedPt,
                         _colorSpecID,
@@ -2228,7 +2390,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                     -- Stagger (101) and Health have dedicated coloring; tick markers not applicable
                     local tickAdvKey = "rbTickMarker_" .. capturedPt .. "_" .. tostring(_colorSpecID)
                     local tickEnableCb, _tickEnabled = AddThresholdTickEnableCheckbox(
-                        container,
+                        thresholdLeft,
                         settings,
                         capturedPt,
                         _colorSpecID,
