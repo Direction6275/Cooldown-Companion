@@ -2881,82 +2881,57 @@ end
 ------------------------------------------------------------------------
 -- opts.row: four rows at most, reading top to bottom as background then
 -- border, so they stay in one column (the <4-rows rule).
+-- Row grammar only (RowWidgets.lua): the backdrop and the border that frames
+-- it, in one column. opts.indent makes them child rows. The pre-redesign
+-- full-width stock shape had no call sites left after the conversion packets.
 local function BuildTextBackgroundControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
 
-    if opts.row then
-        local borderThicknessLocked = ST.IsBorderThicknessLocked()
+    local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
-        -- deferCommit is deliberately absent throughout, matching the
-        -- AddColorPicker calls the stock path makes.
-        AddColorRow(container, {
-            label = "Background Color",
-            indent = opts.indent,
-            tbl = styleTable,
-            key = "textBgColor",
-            default = {0, 0, 0, 0},
-            hasAlpha = true,
-            onConfirm = refreshCallback,
-            onChange = refreshCallback,
-        })
-
-        local renderMode = AddBorderRenderModeDropdown(container, styleTable, "textBorderRenderMode", function()
-            refreshCallback()
-            RefreshStructuralControls(container)
-        end, nil, { row = true, indent = opts.indent })
-
-        if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-            AddSliderRow(container, {
-                label = "Border Size",
-                indent = true,
-                min = 0, max = 5, step = 0.1,
-                value = styleTable.textBorderSize or 0,
-                disabled = borderThicknessLocked,
-                onChange = function(val)
-                    if borderThicknessLocked then return end
-                    styleTable.textBorderSize = val
-                    refreshCallback()
-                end,
-            })
-        end
-
-        AddColorRow(container, {
-            label = "Border Color",
-            indent = opts.indent,
-            tbl = styleTable,
-            key = "textBorderColor",
-            default = {0, 0, 0, 1},
-            hasAlpha = true,
-            onConfirm = refreshCallback,
-            onChange = refreshCallback,
-        })
-        return
-    end
-
-    AddColorPicker(container, styleTable, "textBgColor", "Background Color", {0, 0, 0, 0}, true, refreshCallback, refreshCallback)
+    -- deferCommit is deliberately absent throughout, matching the
+    -- AddColorPicker calls this section used to make.
+    AddColorRow(container, {
+        label = "Background Color",
+        indent = opts.indent,
+        tbl = styleTable,
+        key = "textBgColor",
+        default = {0, 0, 0, 0},
+        hasAlpha = true,
+        onConfirm = refreshCallback,
+        onChange = refreshCallback,
+    })
 
     local renderMode = AddBorderRenderModeDropdown(container, styleTable, "textBorderRenderMode", function()
         refreshCallback()
         RefreshStructuralControls(container)
-    end)
-    local borderThicknessLocked = ST.IsBorderThicknessLocked()
+    end, nil, { row = true, indent = opts.indent })
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-        local borderSlider = AceGUI:Create("Slider")
-        borderSlider:SetLabel("Border Size")
-        borderSlider:SetSliderValues(0, 5, 0.1)
-        borderSlider:SetValue(styleTable.textBorderSize or 0)
-        borderSlider:SetFullWidth(true)
-        borderSlider:SetDisabled(borderThicknessLocked)
-        borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            if borderThicknessLocked then return end
-            styleTable.textBorderSize = val
-            refreshCallback()
-        end)
-        container:AddChild(borderSlider)
+        AddSliderRow(container, {
+            label = "Border Size",
+            indent = true,
+            min = 0, max = 5, step = 0.1,
+            value = styleTable.textBorderSize or 0,
+            disabled = borderThicknessLocked,
+            onChange = function(val)
+                if borderThicknessLocked then return end
+                styleTable.textBorderSize = val
+                refreshCallback()
+            end,
+        })
     end
 
-    AddColorPicker(container, styleTable, "textBorderColor", "Border Color", {0, 0, 0, 1}, true, refreshCallback, refreshCallback)
+    AddColorRow(container, {
+        label = "Border Color",
+        indent = opts.indent,
+        tbl = styleTable,
+        key = "textBorderColor",
+        default = {0, 0, 0, 1},
+        hasAlpha = true,
+        onConfirm = refreshCallback,
+        onChange = refreshCallback,
+    })
 end
 
 -- opts.row: LEFT what the text is drawn with, RIGHT how the line is laid out.

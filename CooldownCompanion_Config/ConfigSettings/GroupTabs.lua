@@ -1465,537 +1465,31 @@ local function BuildLayoutTab(container)
     local alphaControlsDisabled, alphaDisabledText = GetPanelAlphaControlDisabledState(CS.selectedGroup, targetMode, panelAlphaInherited)
 
     -- ================================================================
-    -- Icons mode: the row grammar (RowWidgets.lua). The rules every
-    -- row-grammar section follows are stated once, in the recipe comment at
-    -- the top of BuildAppearanceTab's icons path; this tab conforms to them
-    -- rather than restating them. Text and bar mode keep the Flow
-    -- two-column path below.
+    -- The row grammar (RowWidgets.lua). The rules every row-grammar section
+    -- follows are stated once, in the recipe comment at the top of
+    -- BuildAppearanceTab's icons path; this tab conforms to them rather than
+    -- restating them.
+    --
+    -- Every mode that reaches here shares this one layout: anchoring,
+    -- position, alpha and frame strata are panel facts, not display-mode
+    -- facts. Only the Arrangement section and the icons-only strata block
+    -- below vary, and each of those names its own mode gate. (Texture and
+    -- trigger panels returned far above - they anchor a single texture rather
+    -- than a panel of entries.)
     -- ================================================================
-    -- nil displayMode means icons everywhere in the core (`or "icons"`), and
-    -- BuildAppearanceTab's dispatch falls through to its icons path for nil -
-    -- this gate matches that so a legacy group sees one grammar on every tab.
-    if (group.displayMode or "icons") == "icons" then
-        -- Function-locals, not upvalues: see the note by the row-grammar
-        -- imports at the top of this file.
-        local BeginRowGrid = ST._BeginRowGrid
-        local AddEditBoxRow = ST._AddEditBoxRow
+    -- nil displayMode means icons everywhere in the core, so it resolves to
+    -- icons here too - the same fallback BuildAppearanceTab's dispatch makes.
+    local displayMode = group.displayMode or "icons"
+    local isIconsMode = displayMode == "icons"
+    local isBarMode = displayMode == "bars"
+    local isTextMode = displayMode == "text"
 
-        local iconAnchorTargetList = isPanel
-            and {
-                group = "Group",
-                panel = "Panel",
-                frame = "Frame",
-                cursor = "Cursor",
-            }
-            or {
-                group = "Screen",
-                frame = "Frame",
-            }
-        local iconAnchorTargetOrder = isPanel
-            and { "group", "panel", "frame", "cursor" }
-            or { "group", "frame" }
+    -- Function-locals, not upvalues: see the note by the row-grammar
+    -- imports at the top of this file.
+    local BeginRowGrid = ST._BeginRowGrid
+    local AddEditBoxRow = ST._AddEditBoxRow
 
-        -- ============================================================
-        -- Anchor (what this panel hangs off)
-        -- ============================================================
-        local _, anchorCollapsed = BuildCollapsibleSection(container, "Anchor", "layout_anchor", nil, nil, ROW_SECTION)
-
-        if not anchorCollapsed then
-        -- LEFT column: the target itself. RIGHT column: the one setting that
-        -- belongs to the choice of target rather than to this panel - where
-        -- its alpha comes from.
-        local anchorLeft, anchorRight = BeginRowGrid(container)
-
-        AddDropdownRow(anchorLeft, {
-            label = "Anchor Target",
-            list = iconAnchorTargetList,
-            order = iconAnchorTargetOrder,
-            value = targetMode,
-            onChange = function(val, widget)
-                if val == targetMode then return end
-                if val == "group" then
-                    CS.layoutAnchorTargetMode[CS.selectedGroup] = nil
-                    local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= defaultFrame
-                    CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, wasAnchored)
-                    CooldownCompanion:RefreshConfigPanel()
-                elseif val == "cursor" then
-                    CS.layoutAnchorTargetMode[CS.selectedGroup] = nil
-                    if CooldownCompanion:SetGroupAnchor(CS.selectedGroup, cursorAnchorTarget) then
-                        CooldownCompanion:RefreshConfigPanel()
-                    else
-                        widget:SetValue(targetMode)
-                    end
-                elseif val == "frame" or val == "panel" then
-                    CS.layoutAnchorTargetMode[CS.selectedGroup] = val
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-            end,
-        })
-
-        if isPanel and targetMode == "panel" then
-            local panelAnchorRow = AddDropdownRow(anchorLeft, {
-                label = "Anchor to Panel",
-                onChange = function(val, widget)
-                    if not val or val == "" then return end
-                    local targetGroupId = tonumber(val)
-                    if not targetGroupId then return end
-                    local targetFrameName = "CooldownCompanionGroup" .. targetGroupId
-                    if CooldownCompanion:SetGroupAnchor(CS.selectedGroup, targetFrameName) then
-                        CooldownCompanion:RefreshConfigPanel()
-                    else
-                        widget:SetValue(nil)
-                    end
-                end,
-            })
-            -- The populator writes the stock Dropdown's own `list` table
-            -- directly (container headers plus indented panel entries), so it
-            -- takes the embedded child rather than the row wrapper.
-            CooldownCompanion:PopulatePanelAnchorTargetDropdown(panelAnchorRow.dropdown, CS.selectedGroup)
-            if currentAnchorGroupId then
-                panelAnchorRow:SetValue(tostring(currentAnchorGroupId))
-            else
-                panelAnchorRow:SetValue(nil)
-            end
-        end
-
-        if isPanel and (targetMode == "panel" or hasFrameAnchorTarget) then
-            AddDropdownRow(anchorRight, {
-                label = "Panel Alpha",
-                list = {
-                    inherit = targetMode == "frame" and "Inherit Target Frame Alpha" or "Inherit Target Panel Alpha",
-                    custom = "Custom Alpha",
-                },
-                order = { "inherit", "custom" },
-                value = group.inheritPanelAlpha == false and "custom" or "inherit",
-                onChange = function(val)
-                    if val == "custom" then
-                        group.inheritPanelAlpha = false
-                    else
-                        group.inheritPanelAlpha = true
-                    end
-
-                    local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-                    if frame then
-                        CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
-                    end
-                    CooldownCompanion:RebuildPanelAlphaDependencyTargets()
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-        end
-
-        if targetMode == "frame" then
-            -- A frame name needs the whole 140px control column to stay
-            -- readable, so Pick does not share it: the editbox row takes a
-            -- grid of its own and Pick sits at the head of that grid's right
-            -- column. The gutter between columns is 16px, so the button lands
-            -- immediately right of the editbox, and both are on line one of
-            -- their own grid, so nothing above them can knock them apart.
-            local frameLeft, frameRight = BeginRowGrid(container)
-
-            local frameAnchorText = currentAnchor
-            if frameAnchorText == "UIParent" or isCursorAnchor or currentAnchorGroupId then frameAnchorText = "" end
-            if isPanel and frameAnchorText == panelContainerFrame then frameAnchorText = "" end
-
-            local anchorRow = AddEditBoxRow(frameLeft, {
-                label = "Anchor to Frame",
-                value = frameAnchorText,
-                onEnterPressed = function(text, widget)
-                    local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= defaultFrame
-                    if text == "" then
-                        CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, wasAnchored)
-                    else
-                        local target = _G[text]
-                        if not target or type(target) ~= "table" or not target.GetObjectType then
-                            CooldownCompanion:Print("Frame not found: " .. text)
-                            widget:SetText(frameAnchorText)
-                            return
-                        end
-                        CooldownCompanion:SetGroupAnchor(CS.selectedGroup, text)
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-            if anchorRow.editbox.Instructions then anchorRow.editbox.Instructions:Hide() end
-
-            -- Exactly one grammar row tall so the button's centre lands on the
-            -- editbox's: Flow insets its single row by 3px and the button is
-            -- 24 tall, so 3 + 24 + 3 fills the 30px band. noAutoHeight keeps
-            -- Flow's own 27px report from shrinking it back.
-            local pickRow = AceGUI:Create("SimpleGroup")
-            pickRow:SetFullWidth(true)
-            pickRow:SetLayout("Flow")
-            pickRow:SetHeight(ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT or 30)
-            pickRow.noAutoHeight = true
-
-            local pickBtn = AceGUI:Create("Button")
-            pickBtn:SetText("Pick")
-            pickBtn:SetAutoWidth(true)
-            pickBtn:SetCallback("OnClick", function()
-                local grp = CS.selectedGroup
-                CS.StartPickFrame(function(name)
-                    if CS.configFrame then
-                        CS.configFrame.frame:Show()
-                    end
-                    if name then
-                        CooldownCompanion:SetGroupAnchor(grp, name)
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
-                end, grp)
-            end)
-            pickRow:AddChild(pickBtn)
-
-            -- (?) tooltip for anchor picking
-            CreateInfoButton(pickBtn.frame, pickBtn.frame, "LEFT", "RIGHT", 2, 0, {
-                "Pick Frame",
-                {"Hides the config panel and highlights frames under your cursor. Left-click a frame to anchor this group to it, or right-click to cancel.", 1, 1, 1, true},
-                " ",
-                {"You can also type a frame name directly into the editbox.", 1, 1, 1, true},
-                " ",
-                {"Middle-click the draggable header to toggle lock/unlock.", 1, 1, 1, true},
-            }, tabInfoButtons)
-
-            -- Added last so the List-layout column measures a populated row.
-            frameRight:AddChild(pickRow)
-        end
-        end -- not anchorCollapsed
-
-        -- ============================================================
-        -- Position (where the anchor point sits, and the offset from it)
-        -- ============================================================
-        -- Cursor anchoring pins the relative point; it is a stored setting,
-        -- not a rendered control, so it is written whether or not the section
-        -- below is expanded.
-        if targetMode == "cursor" then
-            group.anchor.relativePoint = "CENTER"
-        end
-
-        local function refreshGroupAnchor()
-            local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-            if frame then
-                CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
-            end
-        end
-
-        local _, positionCollapsed = BuildCollapsibleSection(container,
-            targetMode == "cursor" and "Cursor Offset" or "Position",
-            "layout_position", nil, nil, ROW_SECTION)
-
-        if not positionCollapsed then
-        -- LEFT column: the two points that have to be read together (mine,
-        -- then the target's). RIGHT column: the offset pair applied on top of
-        -- them. Cursor mode has no relative point, so the left side ends early.
-        local positionLeft, positionRight = BeginRowGrid(container)
-
-        AddAnchorDropdown(positionLeft, group.anchor, "point",
-            targetMode == "cursor" and "BOTTOMLEFT" or "CENTER",
-            refreshGroupAnchor,
-            targetMode == "cursor" and "Panel Point" or "Anchor Point",
-            { row = true })
-
-        if targetMode ~= "cursor" then
-            AddAnchorDropdown(positionLeft, group.anchor, "relativePoint", "CENTER",
-                refreshGroupAnchor, "Relative Point", { row = true })
-        end
-
-        -- Offsets restyle the live panel on every tick by design: the anchor
-        -- is re-applied from OnValueChanged, not deferred to release.
-        AddSliderRow(positionRight, {
-            label = "X Offset",
-            min = -2000, max = 2000, step = 0.1,
-            value = group.anchor.x or 0,
-            onChange = function(val)
-                group.anchor.x = val
-                refreshGroupAnchor()
-            end,
-        })
-
-        AddSliderRow(positionRight, {
-            label = "Y Offset",
-            min = -2000, max = 2000, step = 0.1,
-            value = group.anchor.y or 0,
-            onChange = function(val)
-                group.anchor.y = val
-                refreshGroupAnchor()
-            end,
-        })
-        end -- not positionCollapsed
-
-        -- ============================================================
-        -- Arrangement (how the icons sit relative to each other)
-        -- ============================================================
-        local _, arrangementCollapsed = BuildCollapsibleSection(container, "Arrangement", "layout_arrangement", nil, nil, ROW_SECTION)
-
-        if not arrangementCollapsed then
-        -- LEFT column: the two settings that read together - growth direction
-        -- is relabelled by the orientation above it. RIGHT column: the wrap
-        -- count and the one setting that is about other panels, not this one.
-        local arrangeLeft, arrangeRight = BeginRowGrid(container)
-
-        AddDropdownRow(arrangeLeft, {
-            label = "Orientation",
-            list = { horizontal = "Horizontal", vertical = "Vertical" },
-            value = style.orientation or "horizontal",
-            onChange = function(val)
-                style.orientation = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end,
-        })
-
-        if #group.buttons > 1 then
-            local orient = style.orientation or "horizontal"
-            local labels
-            if orient == "vertical" then
-                labels = { TOPLEFT = "Down, Right", TOPRIGHT = "Down, Left", BOTTOMLEFT = "Up, Right", BOTTOMRIGHT = "Up, Left" }
-            else
-                labels = { TOPLEFT = "Right, Down", TOPRIGHT = "Left, Down", BOTTOMLEFT = "Right, Up", BOTTOMRIGHT = "Left, Up" }
-            end
-
-            AddDropdownRow(arrangeLeft, {
-                label = "Growth Direction",
-                list = labels,
-                order = { "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT" },
-                value = style.growthOrigin or "TOPLEFT",
-                onChange = function(val)
-                    style.growthOrigin = val
-                    CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-        end
-
-        local numButtons = math.max(1, #group.buttons)
-        AddSliderRow(arrangeRight, {
-            label = "Buttons Per Row/Column",
-            min = 1, max = numButtons, step = 1,
-            value = math.min(style.buttonsPerRow or 12, numButtons),
-            onChange = function(val)
-                style.buttonsPerRow = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end,
-        })
-
-        -- Auto-Anchoring eligibility (icon-like modes only - others are never eligible)
-        if CooldownCompanion:IsIconLikeDisplayMode(group.displayMode) then
-            local anchorEligibleRow = AddCheckboxRow(arrangeRight, {
-                label = "Include in Auto-Anchoring",
-                value = group.anchorEligible ~= false,
-                onChange = function(val)
-                    if val then
-                        group.anchorEligible = nil
-                    else
-                        group.anchorEligible = false
-                    end
-                    CooldownCompanion:EvaluateResourceBars()
-                    CooldownCompanion:UpdateAnchorStacking()
-                    CooldownCompanion:EvaluateCastBar()
-                    CooldownCompanion:EvaluateFrameAnchoring()
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-
-            -- Badge chained off the end of the label; the anchor args below
-            -- are a placeholder - AnchorRowBadge re-points the button.
-            AnchorRowBadge(anchorEligibleRow, CreateInfoButton(anchorEligibleRow.frame, anchorEligibleRow.frame, "LEFT", "LEFT", 0, 0, {
-                "Include in Auto-Anchoring",
-                {"Resource Bars, the Cast Bar, and Unit Frames attach to the first available panel automatically. Uncheck this to skip this panel so they attach to the next eligible one instead.", 1, 1, 1, true},
-            }, tabInfoButtons))
-        end
-        end -- not arrangementCollapsed
-
-        -- ============================================================
-        -- Alpha
-        -- ============================================================
-        BuildAlphaControls(container, group, function()
-            CooldownCompanion:RefreshConfigPanel()
-        end, "layout_alpha", {
-            isGlobal = group.isGlobal,
-            row = true,
-            disabled = alphaControlsDisabled,
-            disabledText = alphaDisabledText,
-            onBaselineChanged = function(val)
-                local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-                if frame and frame:IsShown() then
-                    frame:SetAlpha(val)
-                end
-                local state = CooldownCompanion.alphaState and CooldownCompanion.alphaState[CS.selectedGroup]
-                if state then
-                    state.currentAlpha = val
-                    state.desiredAlpha = val
-                    state.lastAlpha = val
-                    state.fadeDuration = 0
-                end
-            end,
-        })
-
-        -- ============================================================
-        -- Strata
-        -- ============================================================
-        local _, strataCollapsed = BuildCollapsibleSection(container, "Strata", "layout_strata", nil, nil, ROW_SECTION)
-
-        if not strataCollapsed then
-        local customStrataEnabled = type(style.strataOrder) == "table"
-
-        -- LEFT column: the per-icon layer switch. RIGHT column: the whole
-        -- panel's draw layer. One row each - the six layer dropdowns below
-        -- are a block of their own so the indent cannot read as belonging to
-        -- Frame Strata.
-        local strataLeft, strataRight = BeginRowGrid(container)
-
-        local strataToggleRow = AddCheckboxRow(strataLeft, {
-            label = "Custom Icon Strata",
-            value = customStrataEnabled,
-            onChange = function(val)
-                if not val then
-                    style.strataOrder = nil
-                    CS.pendingStrataOrder = nil
-                    CS.pendingStrataGroup = nil
-                    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                else
-                    style.strataOrder = style.strataOrder or {}
-                    CS.pendingStrataOrder = nil
-                    CS.InitPendingStrataOrder(CS.selectedGroup)
-                end
-                local host = CS.groupSettingsActiveHost
-                if host and host.tabGroup then
-                    host.tabGroup:SelectTab(CS.selectedTab)
-                end
-            end,
-        })
-
-        AnchorRowBadge(strataToggleRow, CreateInfoButton(strataToggleRow.frame, strataToggleRow.frame, "LEFT", "LEFT", 0, 0, {
-            "Custom Icon Strata",
-            {"Controls the draw order of visual layers on each icon: Cooldown Swipe, Aura/Pandemic Glow, Ready Glow, Text Overlay, Assisted Highlight, and Proc Glow.", 1, 1, 1, true},
-            {"Layer 6 draws on top, Layer 1 on the bottom. When disabled, the default order is used.", 1, 1, 1, true},
-        }, tabInfoButtons))
-
-        local frameStrataRow = AddDropdownRow(strataRight, {
-            label = "Frame Strata",
-            list = {
-                BACKGROUND = "Background",
-                LOW = "Low",
-                MEDIUM = "Default",
-                HIGH = "High",
-                DIALOG = "Highest",
-            },
-            order = { "BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG" },
-            value = group.frameStrata or "MEDIUM",
-            onChange = function(val)
-                group.frameStrata = (val ~= "MEDIUM") and val or nil
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end,
-        })
-
-        AnchorRowBadge(frameStrataRow, CreateInfoButton(frameStrataRow.frame, frameStrataRow.frame, "LEFT", "LEFT", 0, 0, {
-            "Frame Strata",
-            {"Sets the rendering layer for this group.", 1, 1, 1, true},
-            " ",
-            {"Higher strata groups fully overlap lower ones.", 1, 1, 1, true},
-            " ",
-            {"Only change this if you need one group to overlap another.", 1, 1, 1, true},
-        }, tabInfoButtons))
-
-        if customStrataEnabled then
-            CS.InitPendingStrataOrder(CS.selectedGroup)
-
-            local ELEMENT_COUNT = #ST.DEFAULT_STRATA_ORDER
-
-            -- Build dropdown list with unassigned entries highlighted in green
-            local function BuildStrataList()
-                local assigned = {}
-                for i = 1, ELEMENT_COUNT do
-                    if CS.pendingStrataOrder[i] then
-                        assigned[CS.pendingStrataOrder[i]] = true
-                    end
-                end
-                local list = {}
-                for _, key in ipairs(CS.strataElementKeys) do
-                    if not assigned[key] then
-                        list[key] = "|cff40ff40" .. CS.strataElementLabels[key] .. "|r"
-                    else
-                        list[key] = CS.strataElementLabels[key]
-                    end
-                end
-                return list
-            end
-
-            local strataDropdowns = {}
-
-            -- Refresh all dropdown lists and values
-            local function RefreshAllDropdowns()
-                local list = BuildStrataList()
-                for i = 1, ELEMENT_COUNT do
-                    if strataDropdowns[i] then
-                        strataDropdowns[i]:SetList(list)
-                        strataDropdowns[i]:SetValue(CS.pendingStrataOrder[i])
-                    end
-                end
-            end
-
-            -- The layers are one ordered stack, so they get their own grid and
-            -- fill it top-down: the top half of the stack in the left column,
-            -- the bottom half in the right.
-            local layerLeft, layerRight = BeginRowGrid(container)
-            local splitAt = math.ceil(ELEMENT_COUNT / 2)
-
-            for displayIdx = 1, ELEMENT_COUNT do
-                local pos = ELEMENT_COUNT + 1 - displayIdx
-                local label
-                if pos == ELEMENT_COUNT then
-                    label = "Layer " .. pos .. " (Top)"
-                elseif pos == 1 then
-                    label = "Layer " .. pos .. " (Bottom)"
-                else
-                    label = "Layer " .. pos
-                end
-
-                local drop = AddDropdownRow(displayIdx <= splitAt and layerLeft or layerRight, {
-                    label = label,
-                    indent = true,
-                    list = BuildStrataList(),
-                    value = CS.pendingStrataOrder[pos],
-                    onChange = function(val)
-                        for i = 1, ELEMENT_COUNT do
-                            if i ~= pos and CS.pendingStrataOrder[i] == val then
-                                CS.pendingStrataOrder[i] = nil
-                            end
-                        end
-                        CS.pendingStrataOrder[pos] = val
-
-                        if CS.IsStrataOrderComplete(CS.pendingStrataOrder) then
-                            style.strataOrder = {}
-                            for i = 1, ELEMENT_COUNT do
-                                style.strataOrder[i] = CS.pendingStrataOrder[i]
-                            end
-                        else
-                            style.strataOrder = {}
-                        end
-                        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-
-                        RefreshAllDropdowns()
-                    end,
-                })
-                strataDropdowns[pos] = drop
-            end
-        end -- customStrataEnabled
-        end -- not strataCollapsed
-
-        return
-    end
-
-    -- Two-column layout for every mode sharing this path (texture/trigger
-    -- panels returned above, icons mode returned just now): Flow wraps
-    -- half-width compact widgets into side-by-side pairs; sliders, headings,
-    -- and complex rows stay full width.
-    container:SetLayout("Flow")
-    local function SetCompactWidth(widget)
-        widget:SetRelativeWidth(0.5)
-    end
-
-    local anchorTargetDrop = AceGUI:Create("Dropdown")
-    anchorTargetDrop:SetLabel("Anchor Target")
-    local anchorTargetList = isPanel
+    local iconAnchorTargetList = isPanel
         and {
             group = "Group",
             panel = "Panel",
@@ -2006,69 +1500,146 @@ local function BuildLayoutTab(container)
             group = "Screen",
             frame = "Frame",
         }
-    local anchorTargetOrder = isPanel
+    local iconAnchorTargetOrder = isPanel
         and { "group", "panel", "frame", "cursor" }
         or { "group", "frame" }
-    anchorTargetDrop:SetList(anchorTargetList, anchorTargetOrder)
-    anchorTargetDrop:SetValue(targetMode)
-    SetCompactWidth(anchorTargetDrop)
-    anchorTargetDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        if val == targetMode then return end
-        if val == "group" then
-            CS.layoutAnchorTargetMode[CS.selectedGroup] = nil
-            local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= defaultFrame
-            CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, wasAnchored)
-            CooldownCompanion:RefreshConfigPanel()
-        elseif val == "cursor" then
-            CS.layoutAnchorTargetMode[CS.selectedGroup] = nil
-            if CooldownCompanion:SetGroupAnchor(CS.selectedGroup, cursorAnchorTarget) then
+
+    -- ============================================================
+    -- Anchor (what this panel hangs off)
+    -- ============================================================
+    local _, anchorCollapsed = BuildCollapsibleSection(container, "Anchor", "layout_anchor", nil, nil, ROW_SECTION)
+
+    if not anchorCollapsed then
+    -- LEFT column: the target itself. RIGHT column: the one setting that
+    -- belongs to the choice of target rather than to this panel - where
+    -- its alpha comes from.
+    local anchorLeft, anchorRight = BeginRowGrid(container)
+
+    AddDropdownRow(anchorLeft, {
+        label = "Anchor Target",
+        list = iconAnchorTargetList,
+        order = iconAnchorTargetOrder,
+        value = targetMode,
+        onChange = function(val, widget)
+            if val == targetMode then return end
+            if val == "group" then
+                CS.layoutAnchorTargetMode[CS.selectedGroup] = nil
+                local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= defaultFrame
+                CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, wasAnchored)
                 CooldownCompanion:RefreshConfigPanel()
-            else
-                widget:SetValue(targetMode)
+            elseif val == "cursor" then
+                CS.layoutAnchorTargetMode[CS.selectedGroup] = nil
+                if CooldownCompanion:SetGroupAnchor(CS.selectedGroup, cursorAnchorTarget) then
+                    CooldownCompanion:RefreshConfigPanel()
+                else
+                    widget:SetValue(targetMode)
+                end
+            elseif val == "frame" or val == "panel" then
+                CS.layoutAnchorTargetMode[CS.selectedGroup] = val
+                CooldownCompanion:RefreshConfigPanel()
             end
-        elseif val == "frame" or val == "panel" then
-            CS.layoutAnchorTargetMode[CS.selectedGroup] = val
-            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+
+    if isPanel and targetMode == "panel" then
+        local panelAnchorRow = AddDropdownRow(anchorLeft, {
+            label = "Anchor to Panel",
+            onChange = function(val, widget)
+                if not val or val == "" then return end
+                local targetGroupId = tonumber(val)
+                if not targetGroupId then return end
+                local targetFrameName = "CooldownCompanionGroup" .. targetGroupId
+                if CooldownCompanion:SetGroupAnchor(CS.selectedGroup, targetFrameName) then
+                    CooldownCompanion:RefreshConfigPanel()
+                else
+                    widget:SetValue(nil)
+                end
+            end,
+        })
+        -- The populator writes the stock Dropdown's own `list` table
+        -- directly (container headers plus indented panel entries), so it
+        -- takes the embedded child rather than the row wrapper.
+        CooldownCompanion:PopulatePanelAnchorTargetDropdown(panelAnchorRow.dropdown, CS.selectedGroup)
+        if currentAnchorGroupId then
+            panelAnchorRow:SetValue(tostring(currentAnchorGroupId))
+        else
+            panelAnchorRow:SetValue(nil)
         end
-    end)
-    container:AddChild(anchorTargetDrop)
+    end
+
+    if isPanel and (targetMode == "panel" or hasFrameAnchorTarget) then
+        AddDropdownRow(anchorRight, {
+            label = "Panel Alpha",
+            list = {
+                inherit = targetMode == "frame" and "Inherit Target Frame Alpha" or "Inherit Target Panel Alpha",
+                custom = "Custom Alpha",
+            },
+            order = { "inherit", "custom" },
+            value = group.inheritPanelAlpha == false and "custom" or "inherit",
+            onChange = function(val)
+                if val == "custom" then
+                    group.inheritPanelAlpha = false
+                else
+                    group.inheritPanelAlpha = true
+                end
+
+                local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+                if frame then
+                    CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
+                end
+                CooldownCompanion:RebuildPanelAlphaDependencyTargets()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+    end
 
     if targetMode == "frame" then
-        -- ================================================================
-        -- Anchor to Frame (editbox + pick button row)
-        -- ================================================================
-        local anchorRow = AceGUI:Create("SimpleGroup")
-        anchorRow:SetFullWidth(true)
-        anchorRow:SetLayout("Flow")
+        -- A frame name needs the whole 140px control column to stay
+        -- readable, so Pick does not share it: the editbox row takes a
+        -- grid of its own and Pick sits at the head of that grid's right
+        -- column. The gutter between columns is 16px, so the button lands
+        -- immediately right of the editbox, and both are on line one of
+        -- their own grid, so nothing above them can knock them apart.
+        local frameLeft, frameRight = BeginRowGrid(container)
 
-        local anchorBox = AceGUI:Create("EditBox")
-        if anchorBox.editbox.Instructions then anchorBox.editbox.Instructions:Hide() end
-        anchorBox:SetLabel("Anchor to Frame")
         local frameAnchorText = currentAnchor
         if frameAnchorText == "UIParent" or isCursorAnchor or currentAnchorGroupId then frameAnchorText = "" end
         if isPanel and frameAnchorText == panelContainerFrame then frameAnchorText = "" end
-        anchorBox:SetText(frameAnchorText)
-        anchorBox:SetRelativeWidth(0.68)
-        anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
-            local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= defaultFrame
-            if text == "" then
-                CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, wasAnchored)
-            else
-                local target = _G[text]
-                if not target or type(target) ~= "table" or not target.GetObjectType then
-                    CooldownCompanion:Print("Frame not found: " .. text)
-                    widget:SetText(frameAnchorText)
-                    return
+
+        local anchorRow = AddEditBoxRow(frameLeft, {
+            label = "Anchor to Frame",
+            value = frameAnchorText,
+            onEnterPressed = function(text, widget)
+                local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= defaultFrame
+                if text == "" then
+                    CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, wasAnchored)
+                else
+                    local target = _G[text]
+                    if not target or type(target) ~= "table" or not target.GetObjectType then
+                        CooldownCompanion:Print("Frame not found: " .. text)
+                        widget:SetText(frameAnchorText)
+                        return
+                    end
+                    CooldownCompanion:SetGroupAnchor(CS.selectedGroup, text)
                 end
-                CooldownCompanion:SetGroupAnchor(CS.selectedGroup, text)
-            end
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        anchorRow:AddChild(anchorBox)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+        if anchorRow.editbox.Instructions then anchorRow.editbox.Instructions:Hide() end
+
+        -- Exactly one grammar row tall so the button's centre lands on the
+        -- editbox's: Flow insets its single row by 3px and the button is
+        -- 24 tall, so 3 + 24 + 3 fills the 30px band. noAutoHeight keeps
+        -- Flow's own 27px report from shrinking it back.
+        local pickRow = AceGUI:Create("SimpleGroup")
+        pickRow:SetFullWidth(true)
+        pickRow:SetLayout("Flow")
+        pickRow:SetHeight(ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT or 30)
+        pickRow.noAutoHeight = true
 
         local pickBtn = AceGUI:Create("Button")
         pickBtn:SetText("Pick")
-        pickBtn:SetRelativeWidth(0.24)
+        pickBtn:SetAutoWidth(true)
         pickBtn:SetCallback("OnClick", function()
             local grp = CS.selectedGroup
             CS.StartPickFrame(function(name)
@@ -2081,7 +1652,7 @@ local function BuildLayoutTab(container)
                 CooldownCompanion:RefreshConfigPanel()
             end, grp)
         end)
-        anchorRow:AddChild(pickBtn)
+        pickRow:AddChild(pickBtn)
 
         -- (?) tooltip for anchor picking
         CreateInfoButton(pickBtn.frame, pickBtn.frame, "LEFT", "RIGHT", 2, 0, {
@@ -2093,75 +1664,21 @@ local function BuildLayoutTab(container)
             {"Middle-click the draggable header to toggle lock/unlock.", 1, 1, 1, true},
         }, tabInfoButtons)
 
-        container:AddChild(anchorRow)
-        pickBtn.frame:SetScript("OnUpdate", function(self)
-            self:SetScript("OnUpdate", nil)
-            local p, rel, rp, xOfs, yOfs = self:GetPoint(1)
-            if yOfs then
-                self:SetPoint(p, rel, rp, xOfs, yOfs - 2)
-            end
-        end)
+        -- Added last so the List-layout column measures a populated row.
+        frameRight:AddChild(pickRow)
     end
+    end -- not anchorCollapsed
 
-    if isPanel and targetMode == "panel" then
-        local panelAnchorDrop = AceGUI:Create("Dropdown")
-        panelAnchorDrop:SetLabel("Anchor to Panel")
-        CooldownCompanion:PopulatePanelAnchorTargetDropdown(panelAnchorDrop, CS.selectedGroup)
-        SetCompactWidth(panelAnchorDrop)
-        if currentAnchorGroupId then
-            panelAnchorDrop:SetValue(tostring(currentAnchorGroupId))
-        else
-            panelAnchorDrop:SetValue(nil)
-        end
-        panelAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            if not val or val == "" then return end
-            local targetGroupId = tonumber(val)
-            if not targetGroupId then return end
-            local targetFrameName = "CooldownCompanionGroup" .. targetGroupId
-            if CooldownCompanion:SetGroupAnchor(CS.selectedGroup, targetFrameName) then
-                CooldownCompanion:RefreshConfigPanel()
-            else
-                widget:SetValue(nil)
-            end
-        end)
-        container:AddChild(panelAnchorDrop)
-    end
-
-    if isPanel and (targetMode == "panel" or hasFrameAnchorTarget) then
-        local panelAlphaDrop = AceGUI:Create("Dropdown")
-        panelAlphaDrop:SetLabel("Panel Alpha")
-        panelAlphaDrop:SetList({
-            inherit = targetMode == "frame" and "Inherit Target Frame Alpha" or "Inherit Target Panel Alpha",
-            custom = "Custom Alpha",
-        }, { "inherit", "custom" })
-        panelAlphaDrop:SetValue(group.inheritPanelAlpha == false and "custom" or "inherit")
-        SetCompactWidth(panelAlphaDrop)
-        panelAlphaDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            if val == "custom" then
-                group.inheritPanelAlpha = false
-            else
-                group.inheritPanelAlpha = true
-            end
-
-            local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-            if frame then
-                CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
-            end
-            CooldownCompanion:RebuildPanelAlphaDependencyTargets()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(panelAlphaDrop)
-    end
-
+    -- ============================================================
+    -- Position (where the anchor point sits, and the offset from it)
+    -- ============================================================
+    -- Cursor anchoring pins the relative point; it is a stored setting,
+    -- not a rendered control, so it is written whether or not the section
+    -- below is expanded.
     if targetMode == "cursor" then
-        local heading = AceGUI:Create("Heading")
-        heading:SetText("Cursor Offset")
-        ColorHeading(heading)
-        heading:SetFullWidth(true)
-        container:AddChild(heading)
+        group.anchor.relativePoint = "CENTER"
     end
 
-    -- Anchor Point / Relative Point dropdowns
     local function refreshGroupAnchor()
         local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
         if frame then
@@ -2169,197 +1686,204 @@ local function BuildLayoutTab(container)
         end
     end
 
-    SetCompactWidth(AddAnchorDropdown(container, group.anchor, "point", targetMode == "cursor" and "BOTTOMLEFT" or "CENTER", refreshGroupAnchor, targetMode == "cursor" and "Panel Point" or "Anchor Point"))
-    if targetMode == "cursor" then
-        group.anchor.relativePoint = "CENTER"
-    else
-        SetCompactWidth(AddAnchorDropdown(container, group.anchor, "relativePoint", "CENTER", refreshGroupAnchor, "Relative Point"))
+    local _, positionCollapsed = BuildCollapsibleSection(container,
+        targetMode == "cursor" and "Cursor Offset" or "Position",
+        "layout_position", nil, nil, ROW_SECTION)
+
+    if not positionCollapsed then
+    -- LEFT column: the two points that have to be read together (mine,
+    -- then the target's). RIGHT column: the offset pair applied on top of
+    -- them. Cursor mode has no relative point, so the left side ends early.
+    local positionLeft, positionRight = BeginRowGrid(container)
+
+    AddAnchorDropdown(positionLeft, group.anchor, "point",
+        targetMode == "cursor" and "BOTTOMLEFT" or "CENTER",
+        refreshGroupAnchor,
+        targetMode == "cursor" and "Panel Point" or "Anchor Point",
+        { row = true })
+
+    if targetMode ~= "cursor" then
+        AddAnchorDropdown(positionLeft, group.anchor, "relativePoint", "CENTER",
+            refreshGroupAnchor, "Relative Point", { row = true })
     end
 
-    -- X Offset
-    local xSlider = AceGUI:Create("Slider")
-    xSlider:SetLabel("X Offset")
-    xSlider:SetSliderValues(-2000, 2000, 0.1)
-    xSlider:SetValue(group.anchor.x or 0)
-    xSlider:SetFullWidth(true)
-    xSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        group.anchor.x = val
-        local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-        if frame then
-            CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
-        end
-    end)
-    HookSliderEditBox(xSlider)
-    container:AddChild(xSlider)
+    -- Offsets restyle the live panel on every tick by design: the anchor
+    -- is re-applied from OnValueChanged, not deferred to release.
+    AddSliderRow(positionRight, {
+        label = "X Offset",
+        min = -2000, max = 2000, step = 0.1,
+        value = group.anchor.x or 0,
+        onChange = function(val)
+            group.anchor.x = val
+            refreshGroupAnchor()
+        end,
+    })
 
-    -- Y Offset
-    local ySlider = AceGUI:Create("Slider")
-    ySlider:SetLabel("Y Offset")
-    ySlider:SetSliderValues(-2000, 2000, 0.1)
-    ySlider:SetValue(group.anchor.y or 0)
-    ySlider:SetFullWidth(true)
-    ySlider:SetCallback("OnValueChanged", function(widget, event, val)
-        group.anchor.y = val
-        local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-        if frame then
-            CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
-        end
-    end)
-    HookSliderEditBox(ySlider)
-    container:AddChild(ySlider)
+    AddSliderRow(positionRight, {
+        label = "Y Offset",
+        min = -2000, max = 2000, step = 0.1,
+        value = group.anchor.y or 0,
+        onChange = function(val)
+            group.anchor.y = val
+            refreshGroupAnchor()
+        end,
+    })
+    end -- not positionCollapsed
 
-    -- ================================================================
-    -- Orientation / Layout controls (mode-dependent)
-    -- ================================================================
-    if group.displayMode == "text" then
-        local orientDrop = AceGUI:Create("Dropdown")
-        orientDrop:SetLabel("Orientation")
-        orientDrop:SetList({ horizontal = "Horizontal", vertical = "Vertical" })
-        orientDrop:SetValue(style.orientation or "vertical")
-        SetCompactWidth(orientDrop)
-        orientDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.orientation = val
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(orientDrop)
+    -- ============================================================
+    -- Arrangement (how the entries sit relative to each other)
+    -- ============================================================
+    local _, arrangementCollapsed = BuildCollapsibleSection(container, "Arrangement", "layout_arrangement", nil, nil, ROW_SECTION)
 
-        if #group.buttons > 1 then
-            local bprSlider = AceGUI:Create("Slider")
-            bprSlider:SetLabel("Entries per Row/Column")
-            local numEntries = math.max(1, #group.buttons)
-            bprSlider:SetSliderValues(1, numEntries, 1)
-            bprSlider:SetValue(math.min(style.buttonsPerRow or 12, numEntries))
-            bprSlider:SetFullWidth(true)
-            bprSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                style.buttonsPerRow = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            container:AddChild(bprSlider)
-        end
-    elseif group.displayMode == "bars" then
-        local vertFillCheck = AceGUI:Create("CheckBox")
-        vertFillCheck:SetLabel("Vertical Bar Fill")
-        vertFillCheck:SetValue(style.barFillVertical or false)
-        SetCompactWidth(vertFillCheck)
-        vertFillCheck:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barFillVertical = val or nil
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(vertFillCheck)
+    if not arrangementCollapsed then
+    -- Two settings have to be read together here whatever the mode: growth
+    -- direction is relabelled by the orientation above it, so they always
+    -- share a column and always sit adjacent.
+    --
+    -- LEFT column (most modes): that pair. RIGHT column: the wrap count and
+    -- the one setting that is about other panels rather than this one.
+    --
+    -- Bar panels invert it. They own two rows nothing else has - which way a
+    -- single bar's own fill runs - and a bar's left column is about the bar
+    -- itself, so the fill pair takes the left and the arrangement pair moves
+    -- across to join the wrap count. Either way both columns are populated,
+    -- including the single-bar case where the orientation row is gated away.
+    local arrangeLeft, arrangeRight = BeginRowGrid(container)
+    local arrangeHost = isBarMode and arrangeRight or arrangeLeft
 
-        local reverseFillCheck = AceGUI:Create("CheckBox")
-        reverseFillCheck:SetLabel("Flip Fill/Drain Direction")
-        reverseFillCheck:SetValue(style.barReverseFill or false)
-        SetCompactWidth(reverseFillCheck)
-        reverseFillCheck:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barReverseFill = val or nil
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-        end)
-        container:AddChild(reverseFillCheck)
+    -- Bar panels stack vertically by default; every other mode runs across.
+    -- The same fallback GetCompactGrowthDirectionLabels uses, because the
+    -- Growth Direction labels below have to agree with it.
+    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
 
-        if #group.buttons > 1 then
-            local horzLayoutCheck = AceGUI:Create("CheckBox")
-            horzLayoutCheck:SetLabel("Horizontal Bar Layout")
-            horzLayoutCheck:SetValue((style.orientation or "vertical") == "horizontal")
-            SetCompactWidth(horzLayoutCheck)
-            horzLayoutCheck:SetCallback("OnValueChanged", function(widget, event, val)
-                style.orientation = val and "horizontal" or "vertical"
+    if isBarMode then
+        -- Which way a bar's own fill runs is independent of how the bars are
+        -- arranged, so these lead the section rather than hanging off it.
+        AddCheckboxRow(arrangeLeft, {
+            label = "Vertical Bar Fill",
+            value = style.barFillVertical or false,
+            onChange = function(val)
+                style.barFillVertical = val or nil
                 CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
                 CooldownCompanion:RefreshConfigPanel()
-            end)
-            container:AddChild(horzLayoutCheck)
+            end,
+        })
+
+        AddCheckboxRow(arrangeLeft, {
+            label = "Flip Fill/Drain Direction",
+            value = style.barReverseFill or false,
+            onChange = function(val)
+                style.barReverseFill = val or nil
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            end,
+        })
+
+        -- A bar panel's orientation is one question ("do the bars sit in a
+        -- row?"), so it is a checkbox rather than the horizontal/vertical
+        -- dropdown the other modes show. With a single bar there is nothing
+        -- to lay out.
+        if #group.buttons > 1 then
+            AddCheckboxRow(arrangeHost, {
+                label = "Horizontal Bar Layout",
+                value = orientation == "horizontal",
+                onChange = function(val)
+                    style.orientation = val and "horizontal" or "vertical"
+                    CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
         end
     else
-        local orientDrop = AceGUI:Create("Dropdown")
-        orientDrop:SetLabel("Orientation")
-        orientDrop:SetList({ horizontal = "Horizontal", vertical = "Vertical" })
-        orientDrop:SetValue(style.orientation or "horizontal")
-        SetCompactWidth(orientDrop)
-        orientDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.orientation = val
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(orientDrop)
+        AddDropdownRow(arrangeHost, {
+            label = "Orientation",
+            list = { horizontal = "Horizontal", vertical = "Vertical" },
+            -- PRE-EXISTING MISMATCH, carried over verbatim rather than
+            -- quietly fixed: a text panel with no saved orientation shows
+            -- "Vertical" here, but the core lays it out with the same
+            -- `isBarMode and "vertical" or "horizontal"` fallback the Growth
+            -- Direction labels below use, i.e. HORIZONTAL. Changing the
+            -- displayed default is an owner call, not a conversion.
+            value = isTextMode and (style.orientation or "vertical") or orientation,
+            onChange = function(val)
+                style.orientation = val
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
     end
 
-    -- Growth Direction (all display modes, 2+ buttons)
     if #group.buttons > 1 then
-        local isBarMode = group.displayMode == "bars"
-        local orient = style.orientation or (isBarMode and "vertical" or "horizontal")
-        local labels, order
-        if orient == "vertical" then
+        local labels
+        if orientation == "vertical" then
             labels = { TOPLEFT = "Down, Right", TOPRIGHT = "Down, Left", BOTTOMLEFT = "Up, Right", BOTTOMRIGHT = "Up, Left" }
         else
             labels = { TOPLEFT = "Right, Down", TOPRIGHT = "Left, Down", BOTTOMLEFT = "Right, Up", BOTTOMRIGHT = "Left, Up" }
         end
-        order = {"TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT"}
-        local growthDrop = AceGUI:Create("Dropdown")
-        growthDrop:SetLabel("Growth Direction")
-        growthDrop:SetList(labels, order)
-        growthDrop:SetValue(style.growthOrigin or "TOPLEFT")
-        SetCompactWidth(growthDrop)
-        growthDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.growthOrigin = val
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(growthDrop)
+
+        AddDropdownRow(arrangeHost, {
+            label = "Growth Direction",
+            list = labels,
+            order = { "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT" },
+            value = style.growthOrigin or "TOPLEFT",
+            onChange = function(val)
+                style.growthOrigin = val
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
     end
 
-    -- Buttons Per Row/Column (icon/bar modes only; text mode has its own slider)
-    if group.displayMode ~= "text" then
+    -- Text mode calls its entries entries, and offers the wrap count only
+    -- once there is something to wrap.
+    if not isTextMode or #group.buttons > 1 then
         local numButtons = math.max(1, #group.buttons)
-        local bprSlider = AceGUI:Create("Slider")
-        bprSlider:SetLabel("Buttons Per Row/Column")
-        bprSlider:SetSliderValues(1, numButtons, 1)
-        bprSlider:SetValue(math.min(style.buttonsPerRow or 12, numButtons))
-        bprSlider:SetFullWidth(true)
-        bprSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.buttonsPerRow = val
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-        end)
-        container:AddChild(bprSlider)
+        AddSliderRow(arrangeRight, {
+            label = isTextMode and "Entries per Row/Column" or "Buttons Per Row/Column",
+            min = 1, max = numButtons, step = 1,
+            value = math.min(style.buttonsPerRow or 12, numButtons),
+            onChange = function(val)
+                style.buttonsPerRow = val
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            end,
+        })
     end
 
-    -- ================================================================
-    -- Auto-Anchoring eligibility (icon-like modes only — others are never eligible)
-    -- ================================================================
+    -- Auto-Anchoring eligibility (icon-like modes only - others are never eligible)
     if CooldownCompanion:IsIconLikeDisplayMode(group.displayMode) then
-        local anchorEligibleCheck = AceGUI:Create("CheckBox")
-        anchorEligibleCheck:SetLabel("Include in Auto-Anchoring")
-        anchorEligibleCheck:SetValue(group.anchorEligible ~= false)
-        SetCompactWidth(anchorEligibleCheck)
-        anchorEligibleCheck:SetCallback("OnValueChanged", function(widget, event, val)
-            if val then
-                group.anchorEligible = nil
-            else
-                group.anchorEligible = false
-            end
-            CooldownCompanion:EvaluateResourceBars()
-            CooldownCompanion:UpdateAnchorStacking()
-            CooldownCompanion:EvaluateCastBar()
-            CooldownCompanion:EvaluateFrameAnchoring()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(anchorEligibleCheck)
+        local anchorEligibleRow = AddCheckboxRow(arrangeRight, {
+            label = "Include in Auto-Anchoring",
+            value = group.anchorEligible ~= false,
+            onChange = function(val)
+                if val then
+                    group.anchorEligible = nil
+                else
+                    group.anchorEligible = false
+                end
+                CooldownCompanion:EvaluateResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+                CooldownCompanion:EvaluateCastBar()
+                CooldownCompanion:EvaluateFrameAnchoring()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
 
-        CreateInfoButton(anchorEligibleCheck.frame, anchorEligibleCheck.checkbg, "LEFT", "RIGHT", anchorEligibleCheck.text:GetStringWidth() + 4, 0, {
+        -- Badge chained off the end of the label; the anchor args below
+        -- are a placeholder - AnchorRowBadge re-points the button.
+        AnchorRowBadge(anchorEligibleRow, CreateInfoButton(anchorEligibleRow.frame, anchorEligibleRow.frame, "LEFT", "LEFT", 0, 0, {
             "Include in Auto-Anchoring",
             {"Resource Bars, the Cast Bar, and Unit Frames attach to the first available panel automatically. Uncheck this to skip this panel so they attach to the next eligible one instead.", 1, 1, 1, true},
-        }, tabInfoButtons)
+        }, tabInfoButtons))
     end
+    end -- not arrangementCollapsed
 
-    -- ================================================================
-    -- ADVANCED: Alpha (from Extras)
-    -- ================================================================
+    -- ============================================================
+    -- Alpha
+    -- ============================================================
     BuildAlphaControls(container, group, function()
         CooldownCompanion:RefreshConfigPanel()
     end, "layout_alpha", {
         isGlobal = group.isGlobal,
-        twoColumn = true,
+        row = true,
         disabled = alphaControlsDisabled,
         disabledText = alphaDisabledText,
         onBaselineChanged = function(val)
@@ -2377,82 +1901,78 @@ local function BuildLayoutTab(container)
         end,
     })
 
-    -- ================================================================
-    -- ADVANCED: Strata — Frame Strata (all modes) + Custom Strata (icon mode only)
-    -- ================================================================
-    local strataHeading, strataCollapsed = BuildCollapsibleSection(container, "Strata", "layout_strata")
+    -- ============================================================
+    -- Strata
+    -- ============================================================
+    local _, strataCollapsed = BuildCollapsibleSection(container, "Strata", "layout_strata", nil, nil, ROW_SECTION)
 
     if not strataCollapsed then
+    -- Per-icon layer ordering exists on icon panels only; the other modes
+    -- have no stack of icon layers to reorder.
+    local customStrataEnabled = isIconsMode and type(style.strataOrder) == "table"
 
-    local customStrataEnabled = group.displayMode == "icons"
-        and type(style.strataOrder) == "table"
+    -- LEFT column: the per-icon layer switch. RIGHT column: the whole
+    -- panel's draw layer. One row each - the six layer dropdowns below
+    -- are a block of their own so the indent cannot read as belonging to
+    -- Frame Strata. Without the layer switch the section is a single row, so
+    -- Frame Strata moves left rather than leaving the left column empty.
+    local strataLeft, strataRight = BeginRowGrid(container)
+    local frameStrataHost = isIconsMode and strataRight or strataLeft
 
-    -- Custom Icon Strata toggle (icon mode only) leads the row: short widget
-    -- left of the tall labeled Frame Strata dropdown. Its layer dropdowns
-    -- render after the dropdown so they pair among themselves.
-    if group.displayMode == "icons" then
-    local strataToggle = AceGUI:Create("CheckBox")
-    strataToggle:SetLabel("Custom Icon Strata")
-    strataToggle:SetValue(customStrataEnabled)
-    SetCompactWidth(strataToggle)
-    strataToggle:SetCallback("OnValueChanged", function(widget, event, val)
-        if not val then
-            style.strataOrder = nil
-            CS.pendingStrataOrder = nil
-            CS.pendingStrataGroup = nil
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        else
-            style.strataOrder = style.strataOrder or {}
-            CS.pendingStrataOrder = nil
-            CS.InitPendingStrataOrder(CS.selectedGroup)
-        end
-        local host = CS.groupSettingsActiveHost
-        if host and host.tabGroup then
-            host.tabGroup:SelectTab(CS.selectedTab)
-        end
-    end)
-    container:AddChild(strataToggle)
+    if isIconsMode then
+    local strataToggleRow = AddCheckboxRow(strataLeft, {
+        label = "Custom Icon Strata",
+        value = customStrataEnabled,
+        onChange = function(val)
+            if not val then
+                style.strataOrder = nil
+                CS.pendingStrataOrder = nil
+                CS.pendingStrataGroup = nil
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            else
+                style.strataOrder = style.strataOrder or {}
+                CS.pendingStrataOrder = nil
+                CS.InitPendingStrataOrder(CS.selectedGroup)
+            end
+            local host = CS.groupSettingsActiveHost
+            if host and host.tabGroup then
+                host.tabGroup:SelectTab(CS.selectedTab)
+            end
+        end,
+    })
 
-    CreateInfoButton(strataToggle.frame, strataToggle.checkbg, "LEFT", "RIGHT", strataToggle.text:GetStringWidth() + 4, 0, {
+    AnchorRowBadge(strataToggleRow, CreateInfoButton(strataToggleRow.frame, strataToggleRow.frame, "LEFT", "LEFT", 0, 0, {
         "Custom Icon Strata",
         {"Controls the draw order of visual layers on each icon: Cooldown Swipe, Aura/Pandemic Glow, Ready Glow, Text Overlay, Assisted Highlight, and Proc Glow.", 1, 1, 1, true},
         {"Layer 6 draws on top, Layer 1 on the bottom. When disabled, the default order is used.", 1, 1, 1, true},
-    }, tabInfoButtons)
-    end -- icons (custom strata toggle)
+    }, tabInfoButtons))
+    end -- isIconsMode (custom strata toggle)
 
-    -- Frame Strata dropdown (available for both icon and bar mode)
-    do
-        local frameStrataOrder = {"BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG"}
-        local frameStrataLabels = {
+    local frameStrataRow = AddDropdownRow(frameStrataHost, {
+        label = "Frame Strata",
+        list = {
             BACKGROUND = "Background",
             LOW = "Low",
             MEDIUM = "Default",
             HIGH = "High",
             DIALOG = "Highest",
-        }
-
-        local frameStrataDrop = AceGUI:Create("Dropdown")
-        frameStrataDrop:SetLabel("Frame Strata")
-        frameStrataDrop:SetList(frameStrataLabels, frameStrataOrder)
-        frameStrataDrop:SetValue(group.frameStrata or "MEDIUM")
-        SetCompactWidth(frameStrataDrop)
-        frameStrataDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        },
+        order = { "BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG" },
+        value = group.frameStrata or "MEDIUM",
+        onChange = function(val)
             group.frameStrata = (val ~= "MEDIUM") and val or nil
             CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-        end)
-        container:AddChild(frameStrataDrop)
+        end,
+    })
 
-        -- Anchor to the label text edge, not the label region (which spans the
-        -- whole cell), so the badge hugs the words at half width.
-        CreateInfoButton(frameStrataDrop.frame, frameStrataDrop.label, "LEFT", "LEFT", frameStrataDrop.label:GetStringWidth() + 4, 0, {
-            "Frame Strata",
-            {"Sets the rendering layer for this group.", 1, 1, 1, true},
-            " ",
-            {"Higher strata groups fully overlap lower ones.", 1, 1, 1, true},
-            " ",
-            {"Only change this if you need one group to overlap another.", 1, 1, 1, true},
-        }, tabInfoButtons)
-    end
+    AnchorRowBadge(frameStrataRow, CreateInfoButton(frameStrataRow.frame, frameStrataRow.frame, "LEFT", "LEFT", 0, 0, {
+        "Frame Strata",
+        {"Sets the rendering layer for this group.", 1, 1, 1, true},
+        " ",
+        {"Higher strata groups fully overlap lower ones.", 1, 1, 1, true},
+        " ",
+        {"Only change this if you need one group to overlap another.", 1, 1, 1, true},
+    }, tabInfoButtons))
 
     if customStrataEnabled then
         CS.InitPendingStrataOrder(CS.selectedGroup)
@@ -2491,6 +2011,12 @@ local function BuildLayoutTab(container)
             end
         end
 
+        -- The layers are one ordered stack, so they get their own grid and
+        -- fill it top-down: the top half of the stack in the left column,
+        -- the bottom half in the right.
+        local layerLeft, layerRight = BeginRowGrid(container)
+        local splitAt = math.ceil(ELEMENT_COUNT / 2)
+
         for displayIdx = 1, ELEMENT_COUNT do
             local pos = ELEMENT_COUNT + 1 - displayIdx
             local label
@@ -2502,36 +2028,35 @@ local function BuildLayoutTab(container)
                 label = "Layer " .. pos
             end
 
-            local drop = AceGUI:Create("Dropdown")
-            drop:SetLabel(label)
-            drop:SetList(BuildStrataList())
-            drop:SetValue(CS.pendingStrataOrder[pos])
-            SetCompactWidth(drop)
-            drop:SetCallback("OnValueChanged", function(widget, event, val)
-                for i = 1, ELEMENT_COUNT do
-                    if i ~= pos and CS.pendingStrataOrder[i] == val then
-                        CS.pendingStrataOrder[i] = nil
-                    end
-                end
-                CS.pendingStrataOrder[pos] = val
-
-                if CS.IsStrataOrderComplete(CS.pendingStrataOrder) then
-                    style.strataOrder = {}
+            local drop = AddDropdownRow(displayIdx <= splitAt and layerLeft or layerRight, {
+                label = label,
+                indent = true,
+                list = BuildStrataList(),
+                value = CS.pendingStrataOrder[pos],
+                onChange = function(val)
                     for i = 1, ELEMENT_COUNT do
-                        style.strataOrder[i] = CS.pendingStrataOrder[i]
+                        if i ~= pos and CS.pendingStrataOrder[i] == val then
+                            CS.pendingStrataOrder[i] = nil
+                        end
                     end
-                else
-                    style.strataOrder = {}
-                end
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                    CS.pendingStrataOrder[pos] = val
 
-                RefreshAllDropdowns()
-            end)
-            container:AddChild(drop)
+                    if CS.IsStrataOrderComplete(CS.pendingStrataOrder) then
+                        style.strataOrder = {}
+                        for i = 1, ELEMENT_COUNT do
+                            style.strataOrder[i] = CS.pendingStrataOrder[i]
+                        end
+                    else
+                        style.strataOrder = {}
+                    end
+                    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+
+                    RefreshAllDropdowns()
+                end,
+            })
             strataDropdowns[pos] = drop
         end
     end -- customStrataEnabled
-
     end -- not strataCollapsed
 
 end
@@ -3132,16 +2657,23 @@ local function BuildKeyPressHighlightSection(container, group, style)
     end
 end
 
--- The Indicators tab's three row-grammar sections (icons mode). They collapse
--- like every other row-grammar section, which means the advanced gears inside
--- them only build while their section is open - and a queued advanced key with
--- no gear left to consume it expires silently (ConsumeQueuedAdvancedSettingsPanelOpen).
+-- The Indicators tab's three row-grammar sections. They collapse like every
+-- other row-grammar section, which means the advanced gears inside them only
+-- build while their section is open - and a queued advanced key with no gear
+-- left to consume it expires silently (ConsumeQueuedAdvancedSettingsPanelOpen).
 --
 -- So this file, which owns both the sections and the AddAdvancedToggle keys
 -- below, also states which section each gear sits in. The preview command
 -- center reads the map before it queues and clears that collapse key on the
 -- way past (PreviewCommandCenter's ApplyGearRoute). Keep the two in step: a
 -- gear added to one of these sections belongs here the same day.
+--
+-- BAR MODE SHARES THESE KEYS. BarModeTabs draws its own Glows / Timers /
+-- States sections and deliberately reuses these three collapse keys, so one
+-- entry per advanced key covers both tabs. That is why `barActiveAura` - a
+-- bars-only gear - lives in this icons-owned map: the map is keyed by gear,
+-- and a key reached in a mode that has no such section just clears a collapse
+-- state nothing is reading.
 local EFFECTS_GLOWS_SECTION = "effects_glows"
 local EFFECTS_TIMERS_SECTION = "effects_timers"
 local EFFECTS_STATES_SECTION = "effects_states"
@@ -3152,6 +2684,7 @@ ST._INDICATORS_SECTION_BY_ADVANCED_KEY = {
     keyPressHighlight = EFFECTS_GLOWS_SECTION,
     auraGlow = EFFECTS_GLOWS_SECTION,
     assistedHighlight = EFFECTS_GLOWS_SECTION,
+    barActiveAura = EFFECTS_GLOWS_SECTION,
 
     iconFillTimer = EFFECTS_TIMERS_SECTION,
     cooldownSwipe = EFFECTS_TIMERS_SECTION,
@@ -4095,7 +3628,7 @@ local function BuildAppearanceTab(container)
     end
 
     -- Compact Mode toggle + advanced (growth direction, max visible buttons)
-    BuildCompactModeControls(iconRight, group, tabInfoButtons, nil, { row = true })
+    BuildCompactModeControls(iconRight, group, tabInfoButtons)
     end -- not iconSettingsCollapsed
 
     -- ================================================================
@@ -4500,7 +4033,7 @@ local function BuildAppearanceTab(container)
         end -- not masqueCollapsed
     end
 
-    BuildGroupSettingPresetControls(container, group, "icons", tabInfoButtons, { row = true })
+    BuildGroupSettingPresetControls(container, group, "icons", tabInfoButtons)
 
 end
 

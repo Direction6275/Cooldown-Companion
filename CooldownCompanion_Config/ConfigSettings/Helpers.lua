@@ -1003,10 +1003,10 @@ local function ValidateIndependentAnchorTarget(frameName)
     return true
 end
 
--- opts.row opts into the row grammar (RowWidgets.lua): the frame name takes
--- the whole 140px control column, so Pick does not share it - it goes to
--- opts.pickContainer (the head of the grid's other column) instead. Omitting
--- opts keeps the stock Flow editbox + button pair every other call site draws.
+-- Row grammar only (RowWidgets.lua): the frame name takes the whole 140px
+-- control column, so Pick does not share it - it goes to opts.pickContainer
+-- (the head of the grid's other column) instead. The pre-redesign Flow
+-- editbox + button pair had no call sites left after the conversion packets.
 local function BuildIndependentAnchorTargetRow(container, anchor, applyFn, opts)
     local currentTargetName = anchor.relativeTo
     if not currentTargetName or currentTargetName == "UIParent" then
@@ -1059,70 +1059,37 @@ local function BuildIndependentAnchorTargetRow(container, anchor, applyFn, opts)
         end, nil, { domain = "external" })
     end
 
-    if opts and opts.row then
-        local targetRow = ST._AddEditBoxRow(container, {
-            label = "Anchor to Frame",
-            indent = opts.indent,
-            value = currentTargetName,
-            onEnterPressed = function(text)
-                CommitAnchorTargetText(text)
-            end,
-        })
-        if targetRow.editbox and targetRow.editbox.Instructions then
-            targetRow.editbox.Instructions:Hide()
-        end
-
-        -- Exactly one grammar row tall so the button's centre lands on the
-        -- editbox's: Flow insets its single row by 3px and the button is 24
-        -- tall, so 3 + 24 + 3 fills the 30px band. noAutoHeight keeps Flow's
-        -- own 27px report from shrinking it back.
-        local pickRow = AceGUI:Create("SimpleGroup")
-        pickRow:SetFullWidth(true)
-        pickRow:SetLayout("Flow")
-        pickRow:SetHeight(ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT or 30)
-        pickRow.noAutoHeight = true
-
-        local rowPickBtn = AceGUI:Create("Button")
-        rowPickBtn:SetText("Pick")
-        rowPickBtn:SetAutoWidth(true)
-        rowPickBtn:SetCallback("OnClick", StartAnchorTargetPick)
-        pickRow:AddChild(rowPickBtn)
-
-        -- Added last so the List-layout column measures a populated row.
-        ;(opts.pickContainer or container):AddChild(pickRow)
-        return targetRow
+    local targetRow = ST._AddEditBoxRow(container, {
+        label = "Anchor to Frame",
+        indent = opts and opts.indent,
+        value = currentTargetName,
+        onEnterPressed = function(text)
+            CommitAnchorTargetText(text)
+        end,
+    })
+    if targetRow.editbox and targetRow.editbox.Instructions then
+        targetRow.editbox.Instructions:Hide()
     end
 
-    local anchorRow = AceGUI:Create("SimpleGroup")
-    anchorRow:SetFullWidth(true)
-    anchorRow:SetLayout("Flow")
+    -- Exactly one grammar row tall so the button's centre lands on the
+    -- editbox's: Flow insets its single row by 3px and the button is 24 tall,
+    -- so 3 + 24 + 3 fills the 30px band. noAutoHeight keeps Flow's own 27px
+    -- report from shrinking it back.
+    local pickRow = AceGUI:Create("SimpleGroup")
+    pickRow:SetFullWidth(true)
+    pickRow:SetLayout("Flow")
+    pickRow:SetHeight(ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT or 30)
+    pickRow.noAutoHeight = true
 
-    local anchorBox = AceGUI:Create("EditBox")
-    if anchorBox.editbox.Instructions then
-        anchorBox.editbox.Instructions:Hide()
-    end
-    anchorBox:SetLabel("Anchor to Frame")
-    anchorBox:SetText(currentTargetName)
-    anchorBox:SetRelativeWidth(0.68)
-    anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
-        CommitAnchorTargetText(text)
-    end)
-    anchorRow:AddChild(anchorBox)
+    local rowPickBtn = AceGUI:Create("Button")
+    rowPickBtn:SetText("Pick")
+    rowPickBtn:SetAutoWidth(true)
+    rowPickBtn:SetCallback("OnClick", StartAnchorTargetPick)
+    pickRow:AddChild(rowPickBtn)
 
-    local pickBtn = AceGUI:Create("Button")
-    pickBtn:SetText("Pick")
-    pickBtn:SetRelativeWidth(0.24)
-    pickBtn:SetCallback("OnClick", StartAnchorTargetPick)
-    anchorRow:AddChild(pickBtn)
-    container:AddChild(anchorRow)
-
-    pickBtn.frame:SetScript("OnUpdate", function(self)
-        self:SetScript("OnUpdate", nil)
-        local p, rel, rp, xOfs, yOfs = self:GetPoint(1)
-        if yOfs then
-            self:SetPoint(p, rel, rp, xOfs, yOfs - 2)
-        end
-    end)
+    -- Added last so the List-layout column measures a populated row.
+    ;((opts and opts.pickContainer) or container):AddChild(pickRow)
+    return targetRow
 end
 
 ------------------------------------------------------------------------
@@ -1159,14 +1126,15 @@ local function GetCompactGrowthDirectionLabels(group)
     }
 end
 
--- Builds the compact mode section shared by icon mode (GroupTabs) and
--- bar mode (BarModeTabs): checkbox → advanced toggle → info button →
--- conditional growth-direction + max-visible-buttons controls.
+-- Builds the compact mode section shared by the icon (GroupTabs), bar
+-- (BarModeTabs) and text (TextModeTabs) tabs: a CDC-CheckBoxRow whose gear
+-- and info badge chain off the end of its label, with the growth-direction
+-- and max-visible-buttons controls behind the gear.
 --
--- opts.row opts into the row grammar (RowWidgets.lua): the toggle becomes a
--- CDC-CheckBoxRow and its badges chain off the end of its label. Omitting
--- opts keeps the stock checkbox every other call site draws today.
-local function BuildCompactModeControls(container, group, tabInfoButtons, setWidth, opts)
+-- Row grammar only (RowWidgets.lua) - the pre-redesign full-width/half-width
+-- checkbox shape had no call sites left once the bar and text tabs converted.
+-- opts.indent makes it a child row.
+local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
     local stableAnchorLocked = false
     if CooldownCompanion.NormalizeStableExternalAnchorCompactLayout and CS.selectedGroup then
         stableAnchorLocked = CooldownCompanion:NormalizeStableExternalAnchorCompactLayout(CS.selectedGroup, group) == true
@@ -1184,26 +1152,13 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, setWid
         CooldownCompanion:RefreshConfigPanel()
     end
 
-    local compactCb
-    if opts and opts.row then
-        compactCb = ST._AddCheckboxRow(container, {
-            label = "Compact Mode",
-            value = group.compactLayout or false,
-            disabled = stableAnchorLocked,
-            indent = opts.indent,
-            onChange = ApplyCompactLayout,
-        })
-    else
-        compactCb = AceGUI:Create("CheckBox")
-        compactCb:SetLabel("Compact Mode")
-        compactCb:SetValue(group.compactLayout or false)
-        if setWidth then setWidth(compactCb) else compactCb:SetFullWidth(true) end
-        compactCb:SetDisabled(stableAnchorLocked)
-        compactCb:SetCallback("OnValueChanged", function(widget, event, val)
-            ApplyCompactLayout(val)
-        end)
-        container:AddChild(compactCb)
-    end
+    local compactCb = ST._AddCheckboxRow(container, {
+        label = "Compact Mode",
+        value = group.compactLayout or false,
+        disabled = stableAnchorLocked,
+        indent = opts and opts.indent,
+        onChange = ApplyCompactLayout,
+    })
 
     local function BuildCompactAdvanced(panel)
         local growthDirectionDrop = AceGUI:Create("Dropdown")
@@ -1252,39 +1207,20 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, setWid
         }, tabInfoButtons)
     end
 
-    local _, compactAdvBtn = AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout and not stableAnchorLocked, {
+    AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout and not stableAnchorLocked, {
         title = "Compact Mode Advanced",
         build = BuildCompactAdvanced,
     })
 
-    -- (?) tooltip for compact mode
-    local compactTooltip = {
+    -- (?) tooltip for compact mode. The gear is already chained off the label,
+    -- so this info button lands to its right; the anchor args below are a
+    -- placeholder - AnchorRowBadge re-points the button.
+    local compactInfo = CreateInfoButton(compactCb.frame, compactCb.frame, "LEFT", "LEFT", 0, 0, {
         "Compact Mode",
         {"Compacts visible buttons or bars when hide conditions remove entries, helping centered layouts stay centered.", 1, 1, 1, true},
         {"Does not function when unit frames, resources, or cast bars are anchored to this panel.", 0.7, 0.7, 0.7, true},
-    }
-
-    if compactCb.badgeAnchor then
-        -- Row grammar: the gear is already chained off the label, so this info
-        -- button lands to its right. The anchor args below are a placeholder -
-        -- AnchorRowBadge re-points the button.
-        local compactInfo = CreateInfoButton(compactCb.frame, compactCb.frame, "LEFT", "LEFT", 0, 0,
-            compactTooltip, tabInfoButtons)
-        ST._AnchorRowBadge(compactCb, compactInfo)
-        return
-    end
-
-    -- Stock checkbox: the anchor shifts when the advanced toggle is visible.
-    local compactAnchor, compactXOff
-    if group.compactLayout then
-        compactAnchor = compactAdvBtn
-        compactXOff = 4
-    else
-        compactAnchor = compactCb.checkbg
-        compactXOff = compactCb.text:GetStringWidth() + 6
-    end
-    CreateInfoButton(compactCb.frame, compactAnchor, "LEFT", "RIGHT", compactXOff, 0,
-        compactTooltip, tabInfoButtons)
+    }, tabInfoButtons)
+    ST._AnchorRowBadge(compactCb, compactInfo)
 end
 
 -- Stock AceGUI Button height (AceGUIWidget-Button.lua OnAcquire) and the gutter
@@ -1292,18 +1228,15 @@ end
 local PRESET_ACTION_BUTTON_HEIGHT = 24
 local PRESET_ACTION_GUTTER = 4
 
--- opts.row opts into the row grammar (RowWidgets.lua): a left-aligned
--- non-collapsible section header, the preset picker as a CDC-DropdownRow in
--- a two-column grid, and compact action buttons sharing its line. Omitting
--- opts keeps the centered heading and full-width controls every other call
--- site draws today.
-local function BuildGroupSettingPresetControls(container, group, mode, tabInfoButtons, opts)
+-- Row grammar only (RowWidgets.lua): a left-aligned non-collapsible section
+-- header, the preset picker as a CDC-DropdownRow in a two-column grid, and
+-- compact action buttons sharing its line. The pre-redesign centered heading
+-- and full-width controls had no call sites left once bar mode converted.
+local function BuildGroupSettingPresetControls(container, group, mode, tabInfoButtons)
     if not group then return end
     if mode ~= "bars" then
         mode = "icons"
     end
-
-    local rowMode = opts and opts.row
 
     local presetList, presetOrder = CooldownCompanion:GetGroupSettingPresetList(mode)
     if not CS.groupPresetSelection then
@@ -1325,9 +1258,7 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
     -- No caret: this section has no collapse state, and the left-aligned
     -- shape indents the label as if it had one so it lines up with the
     -- collapsible sections above it.
-    if rowMode then
-        ApplyLeftAlignedHeading(heading)
-    end
+    ApplyLeftAlignedHeading(heading)
 
     local presetModeLabel = mode == "bars" and "Bar Panel Presets" or "Icon Panel Presets"
     local modeSpecificLine = mode == "bars"
@@ -1347,16 +1278,9 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
         {modeSpecificLine, 1, 1, 1},
     }, tabInfoButtons)
 
-    if rowMode then
-        -- The rule fades out after the last badge on the heading line, the
-        -- same as every collapsible section in the row grammar.
-        AnchorLeftAlignedHeadingRule(heading, headingInfoBtn)
-    else
-        -- Keep the info icon inside the heading line by shifting the right segment.
-        heading.right:ClearAllPoints()
-        heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
-        heading.right:SetPoint("LEFT", headingInfoBtn, "RIGHT", 4, 0)
-    end
+    -- The rule fades out after the last badge on the heading line, the same as
+    -- every collapsible section in the row grammar.
+    AnchorLeftAlignedHeadingRule(heading, headingInfoBtn)
 
     local applyBtn
     local deleteBtn
@@ -1373,36 +1297,19 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
         end
     end
 
-    -- Row grammar: the Apply/Save/Delete trio shares the preset's line, in the
-    -- grid's right column. Set below and consumed at the bottom of this
-    -- function, where the trio is finally parented.
-    local presetRight
-
-    if rowMode then
-        -- The picker owns the left column; the action trio goes in the right
-        -- one so the section reads as a single line instead of a dropdown with
-        -- an orphan button bar under it. The grid is top-aligned, so the two
-        -- halves line up without any extra alignment work.
-        local presetLeft
-        presetLeft, presetRight = ST._BeginRowGrid(container)
-        ST._AddDropdownRow(presetLeft, {
-            label = "Preset",
-            list = presetList,
-            order = presetOrder,
-            value = selectedPreset,
-            onChange = OnPresetSelected,
-        })
-    else
-        local presetDrop = AceGUI:Create("Dropdown")
-        presetDrop:SetLabel("Preset")
-        presetDrop:SetList(presetList, presetOrder)
-        presetDrop:SetValue(selectedPreset)
-        presetDrop:SetFullWidth(true)
-        presetDrop:SetCallback("OnValueChanged", function(widget, event, value)
-            OnPresetSelected(value)
-        end)
-        container:AddChild(presetDrop)
-    end
+    -- The picker owns the left column; the Apply/Save/Delete trio goes in the
+    -- right one so the section reads as a single line instead of a dropdown
+    -- with an orphan button bar under it. The grid is top-aligned, so the two
+    -- halves line up without any extra alignment work. presetRight is consumed
+    -- at the bottom of this function, where the trio is finally parented.
+    local presetLeft, presetRight = ST._BeginRowGrid(container)
+    ST._AddDropdownRow(presetLeft, {
+        label = "Preset",
+        list = presetList,
+        order = presetOrder,
+        value = selectedPreset,
+        onChange = OnPresetSelected,
+    })
 
     if #presetOrder == 0 then
         local hintLabel = AceGUI:Create("Label")
@@ -1416,27 +1323,21 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
     buttonRow:SetFullWidth(true)
     buttonRow:SetLayout("Flow")
 
-    if rowMode then
-        -- Occupy exactly one grammar row so the trio's vertical centre lands on
-        -- the Preset dropdown's. Flow insets its single row by 3px from the top
-        -- (AceGUI-3.0.lua:796), and the buttons are 24 tall, so 3 + 24 + 3
-        -- centres inside a 30px band. noAutoHeight keeps Flow's own 27px
-        -- report from shrinking it back.
-        local grammar = ST._RowGrammar
-        buttonRow:SetHeight(grammar and grammar.ROW_HEIGHT or 30)
-        buttonRow.noAutoHeight = true
-    end
+    -- Occupy exactly one grammar row so the trio's vertical centre lands on the
+    -- Preset dropdown's. Flow insets its single row by 3px from the top
+    -- (AceGUI-3.0.lua:796), and the buttons are 24 tall, so 3 + 24 + 3 centres
+    -- inside a 30px band. noAutoHeight keeps Flow's own 27px report from
+    -- shrinking it back.
+    local grammar = ST._RowGrammar
+    buttonRow:SetHeight(grammar and grammar.ROW_HEIGHT or 30)
+    buttonRow.noAutoHeight = true
 
-    -- Row grammar: section actions are compact and left-aligned. SetAutoWidth
-    -- is AceGUI's own "text width + 30px padding" rule, and Flow anchors its
-    -- children from the left, so the trio reads as a button group instead of
-    -- three page-wide banners. Pre-row callers keep their thirds.
+    -- Section actions are compact and left-aligned. SetAutoWidth is AceGUI's
+    -- own "text width + 30px padding" rule, and Flow anchors its children from
+    -- the left, so the trio reads as a button group instead of three page-wide
+    -- banners.
     local function SizePresetActionButton(btn)
-        if rowMode then
-            btn:SetAutoWidth(true)
-        else
-            btn:SetRelativeWidth(0.32)
-        end
+        btn:SetAutoWidth(true)
     end
 
     -- Flow packs siblings at 0px, so the gutter is a fixed-size spacer group -
@@ -1445,7 +1346,6 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
     -- by (its height / 2) relative to the previous one, so a shorter spacer
     -- would make the row step up and down.
     local function AddPresetActionGutter()
-        if not rowMode then return end
         local gutter = AceGUI:Create("SimpleGroup")
         gutter:SetWidth(PRESET_ACTION_GUTTER)
         gutter:SetHeight(PRESET_ACTION_BUTTON_HEIGHT)
@@ -1511,10 +1411,9 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
     deleteBtn:SetDisabled(not hasSelection)
 
     -- Add the row after children are populated so List-layout parent containers
-    -- compute scroll height correctly on first render. In row mode the parent
-    -- is the grid's right column, which puts the trio on the picker's line.
-    local buttonRowParent = presetRight or container
-    buttonRowParent:AddChild(buttonRow)
+    -- compute scroll height correctly on first render. The parent is the grid's
+    -- right column, which puts the trio on the picker's line.
+    presetRight:AddChild(buttonRow)
 
 end
 
@@ -2072,14 +1971,11 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
     local controlsDisabled = opts.disabled == true
     local rowMode = opts.row == true
 
-    -- opts.twoColumn: caller's container uses the Flow layout — pair the
-    -- compact checkboxes side by side. Sliders and long rows stay full width.
+    -- Stock (non-row) hosts lay their controls out one per line. The
+    -- half-width pairing this used to offer went with the group Layout tab's
+    -- Flow half, which was its only caller.
     local function SetCompactWidth(widget)
-        if opts.twoColumn then
-            widget:SetRelativeWidth(0.5)
-        else
-            widget:SetFullWidth(true)
-        end
+        widget:SetFullWidth(true)
     end
 
     local function ApplyAlphaSettingChange(refreshPanel)
