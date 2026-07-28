@@ -606,7 +606,8 @@ local ClassifyAuraSpellUnit = ST._ClassifyAuraSpellUnit
 local GetAuraCandidateList = ST._GetAuraCandidateList
 local TryAddAuraCandidate = ST._TryAddAuraCandidate
 local RemoveAuraCandidate = ST._RemoveAuraCandidate
-local GetAuraStackMaxStatusText = ST._GetAuraStackMaxStatusText
+local AddAuraCandidateRow = ST._AddAuraCandidateRow
+local AddAuraStackMaxStatusLabel = ST._AddAuraStackMaxStatusLabel
 
 -- Candidate-resolution probe: the buttonData shape Core/Aura.lua reads,
 -- synthesized from cabConfig (the same mapping the runtime adapter uses).
@@ -634,35 +635,6 @@ local function SyncCustomBarDerivedAuraUnit(cab)
         cab.auraUnit = unit
         cab.auraUnitExplicit = nil
     end
-end
-
--- A tracked aura presents an ITEM, not a setting: a CDC-LabelRow with the
--- spell's icon inlined into the label text (the row's label is a FontString,
--- so the icon rides an inline texture escape) and a Remove link owned by the
--- row's control column. The shared ST._AddAuraCandidateRow is a 22px Flow row
--- and would break the rhythm inside a grid column.
-local function AddCustomBarCandidateRow(container, cab, spellID)
-    local info = C_Spell.GetSpellInfo(spellID)
-    local name = info and info.name or ("Spell " .. spellID)
-    local icon = C_Spell.GetSpellTexture(spellID) or 134400
-    local row = AddLabelRow(container, {
-        label = ("|T%d:16:16:0:0|t %s |cff999999(%d)|r"):format(icon, name, spellID),
-        indent = true,
-    })
-
-    -- Right-justified so the word lands on the control column's right edge
-    -- like every other row's control. SetJustifyH is public API and the stock
-    -- Label resets it to LEFT in OnAcquire, so the pool stays clean.
-    local removeLabel = AceGUI:Create("InteractiveLabel")
-    removeLabel:SetText("|cffff5555Remove|r")
-    removeLabel:SetWidth(60)
-    removeLabel:SetJustifyH("RIGHT")
-    removeLabel:SetCallback("OnClick", function()
-        if RemoveAuraCandidate(cab, spellID, SyncCustomBarDerivedAuraUnit) then
-            RefreshCustomBarAuraConfig()
-        end
-    end)
-    row:SetControlWidget(removeLabel)
 end
 
 local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, sectionKey)
@@ -707,7 +679,11 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     })
 
     for _, spellID in ipairs(GetAuraCandidateList(cab)) do
-        AddCustomBarCandidateRow(auraLeft, cab, spellID)
+        AddAuraCandidateRow(auraLeft, spellID, function(removedID)
+            if RemoveAuraCandidate(cab, removedID, SyncCustomBarDerivedAuraUnit) then
+                RefreshCustomBarAuraConfig()
+            end
+        end, { row = true })
     end
 
     AddEditBoxRow(auraLeft, {
@@ -764,19 +740,8 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         end
 
         -- What the game resolved (or that combat is hiding it), reported as a
-        -- child of the toggle it explains. It was a stock wrapped Label, which
-        -- is 1-3 lines of unpredictable height between two rows and shoved
-        -- everything below it out of rhythm; as a label row it occupies
-        -- exactly one row slot whether it is there or not. Same three texts,
-        -- same colors, same conditions - the row is just the shape. Row labels
-        -- never wrap, so the sentence also says its piece on hover, the same
-        -- treatment the long locked visibility labels get.
-        local statusText = GetAuraStackMaxStatusText(maxStacks)
-        AddLabelRow(auraRight, {
-            label = statusText,
-            indent = true,
-            tooltip = { { statusText, 1, 1, 1, true } },
-        })
+        -- child of the toggle it explains. The shared helper owns the shape.
+        AddAuraStackMaxStatusLabel(auraRight, maxStacks, { row = true })
     end
 
     -- Pandemic marker per-entry switch. The auto default follows the tracked

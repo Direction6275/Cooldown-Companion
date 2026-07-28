@@ -19,6 +19,7 @@ local AddCheckboxRow = ST._AddCheckboxRow
 local AddSliderRow = ST._AddSliderRow
 local AddDropdownRow = ST._AddDropdownRow
 local AddColorRow = ST._AddColorRow
+local AddLabelRow = ST._AddLabelRow
 local AnchorRowBadge = ST._AnchorRowBadge
 local BeginRowGrid = ST._BeginRowGrid
 
@@ -106,13 +107,40 @@ local function RemoveAuraCandidate(config, spellID, onChanged)
     return false
 end
 
-local function AddAuraCandidateRow(container, spellID, onRemove)
+-- opts.row opts into the row grammar (RowWidgets.lua). A tracked aura presents
+-- an ITEM, not a setting, so it draws as a CDC-LabelRow: the spell's icon
+-- inlined into the label text (the row's label is a FontString, so the icon
+-- rides an inline texture escape) and a Remove link owned by the row's control
+-- column. The stock shape below is a 22px Flow row and would break the 30px
+-- rhythm inside a grid column.
+local function AddAuraCandidateRow(container, spellID, onRemove, opts)
+    local info = C_Spell.GetSpellInfo(spellID)
+    local name = info and info.name or ("Spell " .. spellID)
+
+    if opts and opts.row then
+        local icon = C_Spell.GetSpellTexture(spellID) or 134400
+        local row = AddLabelRow(container, {
+            label = ("|T%d:16:16:0:0|t %s |cff999999(%d)|r"):format(icon, name, spellID),
+            indent = true,
+        })
+
+        -- Right-justified so the word lands on the control column's right edge
+        -- like every other row's control. SetJustifyH is public API and the
+        -- stock Label resets it to LEFT in OnAcquire, so the pool stays clean.
+        local removeLabel = AceGUI:Create("InteractiveLabel")
+        removeLabel:SetText("|cffff5555Remove|r")
+        removeLabel:SetWidth(60)
+        removeLabel:SetJustifyH("RIGHT")
+        removeLabel:SetCallback("OnClick", function()
+            onRemove(spellID)
+        end)
+        row:SetControlWidget(removeLabel)
+        return row
+    end
+
     local row = AceGUI:Create("SimpleGroup")
     row:SetLayout("Flow")
     row:SetFullWidth(true)
-
-    local info = C_Spell.GetSpellInfo(spellID)
-    local name = info and info.name or ("Spell " .. spellID)
 
     local label = AceGUI:Create("Label")
     label:SetImage(C_Spell.GetSpellTexture(spellID) or 134400)
@@ -149,9 +177,26 @@ local function GetAuraStackMaxStatusText(maxStacks)
     end
 end
 
-local function AddAuraStackMaxStatusLabel(container, maxStacks)
+-- opts.row opts into the row grammar (RowWidgets.lua). The stock shape is a
+-- wrapped Label - 1-3 lines of unpredictable height, which between two rows
+-- shoves everything below it out of rhythm; as a label row it occupies exactly
+-- one row slot whether it is there or not. Same three texts, same colors, same
+-- conditions - the row is just the shape. It always indents, because it is
+-- always a child of the stacks toggle it explains, and row labels never wrap,
+-- so the sentence also says its piece on hover.
+local function AddAuraStackMaxStatusLabel(container, maxStacks, opts)
+    local statusText = GetAuraStackMaxStatusText(maxStacks)
+
+    if opts and opts.row then
+        return AddLabelRow(container, {
+            label = statusText,
+            indent = true,
+            tooltip = { { statusText, 1, 1, 1, true } },
+        })
+    end
+
     local statusLabel = AceGUI:Create("Label")
-    statusLabel:SetText(GetAuraStackMaxStatusText(maxStacks))
+    statusLabel:SetText(statusText)
     statusLabel:SetFullWidth(true)
     container:AddChild(statusLabel)
 end
@@ -187,23 +232,44 @@ local function ApplyOverrideCheckboxIndent(checkbox, opts)
     end
 end
 
+-- opts.row opts into the row grammar (RowWidgets.lua); opts.indent makes it a
+-- child row and opts.pulloutWidth widens its menu. No default pullout width:
+-- the longest option ("1:30 / 45.0 / 8.7") is the same list the already
+-- converted group Text tab renders at the stock 140px control width.
 local function AddDurationFormatDropdown(container, settings, refreshCallback, opts)
     if not (container and settings and CooldownCompanion.GetDurationFormatOptions) then
         return nil
     end
 
     local formatOptions, formatOrder = CooldownCompanion:GetDurationFormatOptions()
+
+    local function ApplyDurationFormat(val)
+        settings.durationFormat = CooldownCompanion.NormalizeDurationFormat(val)
+        settings.decimalTimers = nil
+        if refreshCallback then
+            refreshCallback()
+        end
+    end
+
+    if opts and opts.row then
+        return AddDropdownRow(container, {
+            label = "Duration Format",
+            indent = opts.indent,
+            pulloutWidth = opts.pulloutWidth,
+            list = formatOptions,
+            order = formatOrder,
+            value = CooldownCompanion.GetDurationFormat(settings),
+            onChange = ApplyDurationFormat,
+        })
+    end
+
     local durationDrop = AceGUI:Create("Dropdown")
     durationDrop:SetLabel("Duration Format")
     durationDrop:SetList(formatOptions, formatOrder)
     durationDrop:SetValue(CooldownCompanion.GetDurationFormat(settings))
     durationDrop:SetFullWidth(true)
     durationDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.durationFormat = CooldownCompanion.NormalizeDurationFormat(val)
-        settings.decimalTimers = nil
-        if refreshCallback then
-            refreshCallback()
-        end
+        ApplyDurationFormat(val)
     end)
     container:AddChild(durationDrop)
     return durationDrop
@@ -427,44 +493,116 @@ local function BuildChargeTextControls(container, styleTable, refreshCallback)
     end
 end
 
-local function BuildBorderControls(container, styleTable, refreshCallback)
-    local renderMode = AddBorderRenderModeDropdown(container, styleTable, "borderRenderMode", function()
+-- opts.row opts into the row grammar (RowWidgets.lua): the render-mode
+-- dropdown reuses AddBorderRenderModeDropdown's own row mode, the conditional
+-- thickness slider becomes its child row, and the color becomes a color row.
+-- Omitting opts keeps the full-width stock widgets every call site draws today.
+local function BuildBorderControls(container, styleTable, refreshCallback, opts)
+    local rowMode = opts and opts.row == true
+
+    local function ApplyRenderModeChanged()
         refreshCallback()
         RefreshStructuralControls(container)
-    end)
+    end
+    local function ApplyBorderSize(val)
+        styleTable.borderSize = val
+        refreshCallback()
+    end
+
+    local renderMode = AddBorderRenderModeDropdown(container, styleTable, "borderRenderMode",
+        ApplyRenderModeChanged, nil, rowMode and { row = true, indent = opts.indent } or nil)
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-        local borderSlider = AceGUI:Create("Slider")
-        borderSlider:SetLabel("Border Size")
-        borderSlider:SetSliderValues(0, 5, 0.1)
-        borderSlider:SetValue(styleTable.borderSize or ST.DEFAULT_BORDER_SIZE)
-        borderSlider:SetFullWidth(true)
-        borderSlider:SetDisabled(borderThicknessLocked)
-        borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            if borderThicknessLocked then return end
-            styleTable.borderSize = val
-            refreshCallback()
-        end)
-        container:AddChild(borderSlider)
+        if rowMode then
+            AddSliderRow(container, {
+                label = "Border Size",
+                indent = true,
+                min = 0, max = 5, step = 0.1,
+                value = styleTable.borderSize or ST.DEFAULT_BORDER_SIZE,
+                disabled = borderThicknessLocked,
+                onChange = function(val)
+                    if borderThicknessLocked then return end
+                    ApplyBorderSize(val)
+                end,
+            })
+        else
+            local borderSlider = AceGUI:Create("Slider")
+            borderSlider:SetLabel("Border Size")
+            borderSlider:SetSliderValues(0, 5, 0.1)
+            borderSlider:SetValue(styleTable.borderSize or ST.DEFAULT_BORDER_SIZE)
+            borderSlider:SetFullWidth(true)
+            borderSlider:SetDisabled(borderThicknessLocked)
+            borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                if borderThicknessLocked then return end
+                ApplyBorderSize(val)
+            end)
+            container:AddChild(borderSlider)
+        end
+    end
+
+    if rowMode then
+        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- the stock path below makes.
+        AddColorRow(container, {
+            label = "Border Color",
+            indent = opts.indent,
+            tbl = styleTable,
+            key = "borderColor",
+            default = {0, 0, 0, 1},
+            hasAlpha = true,
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
+        return
     end
 
     AddColorPicker(container, styleTable, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshCallback, refreshCallback)
 end
 
-local function BuildBackgroundColorControls(container, styleTable, refreshCallback, setWidth)
+-- setWidth is a stock-only width setter for two-column Flow hosts; opts.row
+-- opts into the row grammar instead, where the row sizes itself.
+local function BuildBackgroundColorControls(container, styleTable, refreshCallback, setWidth, opts)
+    if opts and opts.row then
+        return AddColorRow(container, {
+            label = "Background Color",
+            indent = opts.indent,
+            tbl = styleTable,
+            key = "backgroundColor",
+            default = {0, 0, 0, 0.5},
+            hasAlpha = true,
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
+    end
+
     local picker = AddColorPicker(container, styleTable, "backgroundColor", "Background Color", {0, 0, 0, 0.5}, true, refreshCallback, refreshCallback)
     if setWidth then setWidth(picker) end
 end
 
-local function BuildDesaturationControls(container, styleTable, refreshCallback)
+-- opts.row opts into the row grammar (RowWidgets.lua); every other call site
+-- keeps the full-width stock checkbox.
+local function BuildDesaturationControls(container, styleTable, refreshCallback, opts)
+    local function ApplyDesaturation(val)
+        styleTable.desaturateOnCooldown = val
+        refreshCallback()
+    end
+
+    if opts and opts.row then
+        return AddCheckboxRow(container, {
+            label = "Show Desaturate On Cooldown",
+            value = styleTable.desaturateOnCooldown or false,
+            indent = opts.indent,
+            onChange = ApplyDesaturation,
+        })
+    end
+
     local desatCb = AceGUI:Create("CheckBox")
     desatCb:SetLabel("Show Desaturate On Cooldown")
     desatCb:SetValue(styleTable.desaturateOnCooldown or false)
     desatCb:SetFullWidth(true)
     desatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.desaturateOnCooldown = val
-        refreshCallback()
+        ApplyDesaturation(val)
     end)
     container:AddChild(desatCb)
 end
@@ -556,14 +694,29 @@ local function BuildShowTooltipsControls(container, styleTable, refreshCallback,
     return cb, advBtn
 end
 
-local function BuildShowOutOfRangeControls(container, styleTable, refreshCallback)
+-- opts.row opts into the row grammar (RowWidgets.lua); every other call site
+-- keeps the full-width stock checkbox.
+local function BuildShowOutOfRangeControls(container, styleTable, refreshCallback, opts)
+    local function ApplyShowOutOfRange(val)
+        styleTable.showOutOfRange = val
+        refreshCallback()
+    end
+
+    if opts and opts.row then
+        return AddCheckboxRow(container, {
+            label = "Show Out of Range",
+            value = styleTable.showOutOfRange or false,
+            indent = opts.indent,
+            onChange = ApplyShowOutOfRange,
+        })
+    end
+
     local cb = AceGUI:Create("CheckBox")
     cb:SetLabel("Show Out of Range")
     cb:SetValue(styleTable.showOutOfRange or false)
     cb:SetFullWidth(true)
     cb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showOutOfRange = val
-        refreshCallback()
+        ApplyShowOutOfRange(val)
     end)
     container:AddChild(cb)
     return cb
@@ -575,6 +728,75 @@ local function BuildIconTintControls(container, styleTable, refreshCallback, opt
     -- Two-column reading order: the always-present colors group first, then a
     -- row break, then each tint toggle beside its own color when enabled.
     local setWidth = (opts and opts.setWidth) or function(w) w:SetFullWidth(true) end
+
+    -- The writes both shapes perform, hoisted so neither can wire a different
+    -- store than the other.
+    local function ApplyCooldownTintEnabled(val)
+        styleTable.iconCooldownTintEnabled = val
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end
+    local function ApplyAuraTintEnabled(val)
+        styleTable.iconAuraTintEnabled = val
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end
+
+    -- opts.row opts into the row grammar (RowWidgets.lua). Same order and the
+    -- same conditions as the stock path; each conditional color indents as the
+    -- child of the toggle that reveals it, and the stock row-break spacer has
+    -- no row-grammar equivalent (the grid columns do that work).
+    -- deferCommit is deliberately absent throughout, matching the
+    -- AddColorPicker calls the stock path makes.
+    if opts and opts.row then
+        local function TintColorRow(label, key, default, indent)
+            AddColorRow(container, {
+                label = label,
+                indent = indent,
+                tbl = styleTable,
+                key = key,
+                default = default,
+                hasAlpha = true,
+                onConfirm = refreshCallback,
+                onChange = refreshCallback,
+            })
+        end
+
+        TintColorRow("Base Icon Color", "iconTintColor", {1, 1, 1, 1}, opts.indent)
+
+        if styleTable.showUnusable and ST.UnusableVisualUsesDimTint(styleTable) then
+            TintColorRow("Unusable Dim Color", "iconUnusableTintColor", {0.4, 0.4, 0.4, 1}, opts.indent)
+        end
+
+        if opts.includeBackground then
+            BuildBackgroundColorControls(container, styleTable, refreshCallback, nil, opts)
+        end
+
+        AddCheckboxRow(container, {
+            label = "Use Separate Cooldown Tint",
+            value = styleTable.iconCooldownTintEnabled or false,
+            indent = opts.indent,
+            onChange = ApplyCooldownTintEnabled,
+        })
+
+        if styleTable.iconCooldownTintEnabled then
+            TintColorRow("Cooldown Icon Color", "iconCooldownTintColor", {1, 0, 0.102, 1}, true)
+        end
+
+        if opts.showAuraTint then
+            AddCheckboxRow(container, {
+                label = "Use Separate Aura Tint",
+                value = styleTable.iconAuraTintEnabled or false,
+                indent = opts.indent,
+                onChange = ApplyAuraTintEnabled,
+            })
+
+            if styleTable.iconAuraTintEnabled then
+                TintColorRow("Aura Active Icon Color", "iconAuraTintColor", {0, 0.925, 1, 1}, true)
+            end
+        end
+        return
+    end
 
     setWidth(AddColorPicker(container, styleTable, "iconTintColor", "Base Icon Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback))
 
@@ -600,9 +822,7 @@ local function BuildIconTintControls(container, styleTable, refreshCallback, opt
     cdTintCb:SetValue(styleTable.iconCooldownTintEnabled or false)
     setWidth(cdTintCb)
     cdTintCb:SetCallback("OnValueChanged", function(w, e, val)
-        styleTable.iconCooldownTintEnabled = val
-        refreshCallback()
-        RefreshStructuralControls(container)
+        ApplyCooldownTintEnabled(val)
     end)
     container:AddChild(cdTintCb)
 
@@ -618,9 +838,7 @@ local function BuildIconTintControls(container, styleTable, refreshCallback, opt
         auraTintCb:SetValue(styleTable.iconAuraTintEnabled or false)
         setWidth(auraTintCb)
         auraTintCb:SetCallback("OnValueChanged", function(w, e, val)
-            styleTable.iconAuraTintEnabled = val
-            refreshCallback()
-            RefreshStructuralControls(container)
+            ApplyAuraTintEnabled(val)
         end)
         container:AddChild(auraTintCb)
 
@@ -630,14 +848,29 @@ local function BuildIconTintControls(container, styleTable, refreshCallback, opt
     end
 end
 
-local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback)
+-- opts.row opts into the row grammar (RowWidgets.lua); every other call site
+-- keeps the full-width stock checkbox.
+local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback, opts)
+    local function ApplyShowGCDSwipe(val)
+        styleTable.showGCDSwipe = val
+        refreshCallback()
+    end
+
+    if opts and opts.row then
+        return AddCheckboxRow(container, {
+            label = "Show GCD Swipe",
+            value = styleTable.showGCDSwipe == true,
+            indent = opts.indent,
+            onChange = ApplyShowGCDSwipe,
+        })
+    end
+
     local cb = AceGUI:Create("CheckBox")
     cb:SetLabel("Show GCD Swipe")
     cb:SetValue(styleTable.showGCDSwipe == true)
     cb:SetFullWidth(true)
     cb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showGCDSwipe = val
-        refreshCallback()
+        ApplyShowGCDSwipe(val)
     end)
     container:AddChild(cb)
 end
@@ -654,9 +887,113 @@ end
 
 local BuildIconFillTimerAdvancedControls
 
+-- opts.row opts into the row grammar (RowWidgets.lua). The three follow-on
+-- toggles keep the stock indent rule (children of the first one in override
+-- mode, siblings otherwise); the two conditional controls always indent under
+-- the toggle that reveals them. Omitting opts.row keeps the full-width stock
+-- widgets every call site draws today.
 local function BuildCooldownSwipeControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
     local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
+
+    -- The writes both shapes perform, hoisted so neither can wire a different
+    -- store than the other. RefreshStructuralControls is on exactly the calls
+    -- that change which further controls exist.
+    local function ApplyShowSwipe(val)
+        if disabledByIconFill then return end
+        styleTable.showCooldownSwipe = val
+        refreshCallback()
+    end
+    local function ApplyReverse(val)
+        if disabledByIconFill then return end
+        styleTable.cooldownSwipeReverse = val
+        refreshCallback()
+    end
+    local function ApplyShowFill(val)
+        if disabledByIconFill then return end
+        styleTable.showCooldownSwipeFill = val
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end
+    local function ApplyFillAlpha(val)
+        if disabledByIconFill then return end
+        styleTable.cooldownSwipeAlpha = val
+        refreshCallback()
+    end
+    local function ApplyShowEdge(val)
+        if disabledByIconFill then return end
+        styleTable.showCooldownSwipeEdge = val
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end
+
+    if opts.row then
+        local childIndent = opts.isOverride and true or opts.indent
+
+        local swipeRow = AddCheckboxRow(container, {
+            label = "Show Cooldown Swipe",
+            value = styleTable.showCooldownSwipe ~= false,
+            indent = opts.indent,
+            disabled = disabledByIconFill,
+            onChange = ApplyShowSwipe,
+        })
+
+        AddCheckboxRow(container, {
+            label = "Reverse Swipe",
+            value = styleTable.cooldownSwipeReverse or false,
+            indent = childIndent,
+            disabled = disabledByIconFill,
+            onChange = ApplyReverse,
+        })
+
+        AddCheckboxRow(container, {
+            label = "Show Swipe Fill",
+            value = styleTable.showCooldownSwipeFill ~= false,
+            indent = childIndent,
+            disabled = disabledByIconFill,
+            onChange = ApplyShowFill,
+        })
+
+        if styleTable.showCooldownSwipeFill ~= false then
+            -- Row grammar has no percent readout, so this reads 0 - 1 rather
+            -- than the stock slider's 0% - 100%; same store, same range. The
+            -- resource-bar opacity rows already read that way.
+            AddSliderRow(container, {
+                label = "Swipe Fill Opacity",
+                indent = true,
+                min = 0, max = 1, step = 0.05,
+                value = styleTable.cooldownSwipeAlpha or 0.8,
+                disabled = disabledByIconFill,
+                onChange = ApplyFillAlpha,
+            })
+        end
+
+        AddCheckboxRow(container, {
+            label = "Show Swipe Edge",
+            value = styleTable.showCooldownSwipeEdge ~= false,
+            indent = childIndent,
+            disabled = disabledByIconFill,
+            onChange = ApplyShowEdge,
+        })
+
+        if styleTable.showCooldownSwipeEdge ~= false then
+            -- deferCommit is deliberately absent, matching the AddColorPicker
+            -- call the stock path makes.
+            AddColorRow(container, {
+                label = "Swipe Edge Color",
+                indent = true,
+                tbl = styleTable,
+                key = "cooldownSwipeEdgeColor",
+                default = {1, 1, 1, 1},
+                hasAlpha = true,
+                disabled = disabledByIconFill,
+                onConfirm = refreshCallback,
+                onChange = refreshCallback,
+            })
+        end
+
+        return swipeRow
+    end
 
     local cb = AceGUI:Create("CheckBox")
     cb:SetLabel("Show Cooldown Swipe")
@@ -664,9 +1001,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     cb:SetFullWidth(true)
     cb:SetDisabled(disabledByIconFill)
     cb:SetCallback("OnValueChanged", function(widget, event, val)
-        if disabledByIconFill then return end
-        styleTable.showCooldownSwipe = val
-        refreshCallback()
+        ApplyShowSwipe(val)
     end)
     container:AddChild(cb)
 
@@ -676,9 +1011,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     reverseCb:SetFullWidth(true)
     reverseCb:SetDisabled(disabledByIconFill)
     reverseCb:SetCallback("OnValueChanged", function(widget, event, val)
-        if disabledByIconFill then return end
-        styleTable.cooldownSwipeReverse = val
-        refreshCallback()
+        ApplyReverse(val)
     end)
     container:AddChild(reverseCb)
     ApplyOverrideCheckboxIndent(reverseCb, opts)
@@ -689,10 +1022,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     fillCb:SetFullWidth(true)
     fillCb:SetDisabled(disabledByIconFill)
     fillCb:SetCallback("OnValueChanged", function(widget, event, val)
-        if disabledByIconFill then return end
-        styleTable.showCooldownSwipeFill = val
-        refreshCallback()
-        RefreshStructuralControls(container)
+        ApplyShowFill(val)
     end)
     container:AddChild(fillCb)
     ApplyOverrideCheckboxIndent(fillCb, opts)
@@ -707,9 +1037,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         alphaSlider:SetFullWidth(true)
         if alphaSlider.SetDisabled then alphaSlider:SetDisabled(disabledByIconFill) end
         alphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            if disabledByIconFill then return end
-            styleTable.cooldownSwipeAlpha = val
-            refreshCallback()
+            ApplyFillAlpha(val)
         end)
         container:AddChild(alphaSlider)
     end
@@ -720,10 +1048,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     edgeCb:SetFullWidth(true)
     edgeCb:SetDisabled(disabledByIconFill)
     edgeCb:SetCallback("OnValueChanged", function(widget, event, val)
-        if disabledByIconFill then return end
-        styleTable.showCooldownSwipeEdge = val
-        refreshCallback()
-        RefreshStructuralControls(container)
+        ApplyShowEdge(val)
     end)
     container:AddChild(edgeCb)
     ApplyOverrideCheckboxIndent(edgeCb, opts)
@@ -990,14 +1315,29 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
     AddColorPicker(container, styleTable, "iconFillCooldownColor", "Cooldown Fill Color", {0.6, 0.13, 0.18, 0.55}, true, refreshCallback, refreshCallback)
 end
 
-local function BuildLossOfControlControls(container, styleTable, refreshCallback)
+-- opts.row opts into the row grammar (RowWidgets.lua); every other call site
+-- keeps the full-width stock checkbox.
+local function BuildLossOfControlControls(container, styleTable, refreshCallback, opts)
+    local function ApplyLossOfControl(val)
+        styleTable.showLossOfControl = val
+        refreshCallback()
+    end
+
+    if opts and opts.row then
+        return AddCheckboxRow(container, {
+            label = "Show Loss of Control",
+            value = styleTable.showLossOfControl or false,
+            indent = opts.indent,
+            onChange = ApplyLossOfControl,
+        })
+    end
+
     local locCb = AceGUI:Create("CheckBox")
     locCb:SetLabel("Show Loss of Control")
     locCb:SetValue(styleTable.showLossOfControl or false)
     locCb:SetFullWidth(true)
     locCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showLossOfControl = val
-        refreshCallback()
+        ApplyLossOfControl(val)
     end)
     container:AddChild(locCb)
     return locCb
@@ -1142,200 +1482,126 @@ end
 ------------------------------------------------------------------------
 -- GENERIC GLOW/EFFECT HELPERS
 ------------------------------------------------------------------------
--- Shared slider block used by both glow style controls and bar effect
--- controls. Builds conditional size/thickness/speed sliders based on
--- the current glow style.
+-- ONE SPEC, TWO RENDERERS. Every per-style slider the glow vocabulary can
+-- draw is declared once here. BuildGlowSliders renders an entry as a stock
+-- full-width Slider; BuildBarActiveAuraControls' opts.row path renders the
+-- same entry as a CDC-SliderRow. Neither renderer owns a label, range, step,
+-- store key or fallback of its own, so the two shapes cannot drift apart.
 --
--- keys = { size = "...", thickness = "...", speed = "...", lines = "..." }
+-- keys = { size = "...", thickness = "...", speed = "...", lines = "...",
+--          solidSizeDefault = n } - the calling glow family's store keys.
 -- pixelSizeMin: minimum for the pixel "Line Length" slider (1 for glow
---   style controls, 2 for bar effect controls)
+--   style controls, 2 for bar effect controls).
+--
+-- Entry fields:
+--   label, min, max, step  literal slider setup
+--   keyField               which name in `keys` holds this slider's store key
+--   default                fallback when the store holds nothing
+--   defaultFrom            name in `keys` whose value outranks `default`
+--   minFrom                "pixelSizeMin": the min comes from the parameter
+--   requiresKey            skip the entry when `keys[keyField]` is absent
+--                          (the optional dash count/thickness sliders)
+--   clampToRange           a stored value outside [min, max] falls back to
+--                          `default` (autocast's particle scale)
+--
+-- A style with no list here (color, overlay, none, anything unknown) draws
+-- nothing, exactly as the old if/else chain did by falling through.
+local GLOW_SLIDER_SPEC = {
+    solid = {
+        {label = "Border Size", keyField = "size", min = 1, max = 8, step = 0.1,
+            default = 5, defaultFrom = "solidSizeDefault"},
+    },
+    pulse = {
+        {label = "Border Size", keyField = "size", min = 1, max = 8, step = 0.1,
+            default = 2, defaultFrom = "solidSizeDefault"},
+        {label = "Pulse Duration", keyField = "speed", min = 0.1, max = 2.0, step = 0.05, default = 0.5},
+    },
+    pixel = {
+        {label = "Line Length", keyField = "size", minFrom = "pixelSizeMin", max = 12, step = 0.1, default = 8},
+        {label = "Line Thickness", keyField = "thickness", min = 1, max = 6, step = 0.1, default = 4},
+        {label = "Speed", keyField = "speed", min = 10, max = 200, step = 0.1, default = 50},
+        {label = "Number of Lines", keyField = "lines", min = 1, max = 16, step = 1, default = 8, requiresKey = true},
+    },
+    glow = {
+        {label = "Glow Size", keyField = "size", min = 0, max = 60, step = 0.1, default = 30},
+    },
+    -- Same slider as glow, tighter default: the marching-ants art overhangs
+    -- less than Blizzard's proc glow at the same nominal size.
+    ants = {
+        {label = "Glow Size", keyField = "size", min = 0, max = 60, step = 0.1, default = 23},
+    },
+    colorShift = {
+        {label = "Border Size", keyField = "size", min = 1, max = 8, step = 0.1,
+            default = 2, defaultFrom = "solidSizeDefault"},
+        {label = "Shift Duration", keyField = "speed", min = 0.1, max = 2.0, step = 0.05, default = 0.8},
+    },
+    dashes = {
+        {label = "Dash Length", keyField = "size", min = 2, max = 20, step = 0.5, default = 8},
+        {label = "Dash Thickness", keyField = "thickness", min = 1, max = 8, step = 0.5, default = 4, requiresKey = true},
+        {label = "Number of Dashes", keyField = "lines", min = 1, max = 8, step = 1, default = 2, requiresKey = true},
+        {label = "Lap Duration", keyField = "speed", min = 0.1, max = 2.0, step = 0.05, default = 2},
+    },
+    autocast = {
+        {label = "Particle Scale", keyField = "size", min = 0.2, max = 3, step = 0.05, default = 2, clampToRange = true},
+        {label = "Frequency", keyField = "speed", min = 10, max = 200, step = 0.1, default = 50},
+    },
+}
+-- proc is Blizzard's glow under the aura kit's name, and pulsingBorder is the
+-- legacy spelling of pulse; a saved profile carrying either must draw the same
+-- sliders the modern value does.
+GLOW_SLIDER_SPEC.proc = GLOW_SLIDER_SPEC.glow
+GLOW_SLIDER_SPEC.pulsingBorder = GLOW_SLIDER_SPEC.pulse
+
+-- Resolve one spec entry against a caller's store. Returns false when the
+-- entry is conditional on a key this caller does not have; otherwise the store
+-- key, the resolved minimum and the value to seed the slider with.
+--
+-- storeKey may legitimately come back nil for an entry without requiresKey
+-- (the pixel thickness slider has always been emitted unconditionally); that
+-- reads as nil from the style table exactly as it did before.
+local function ResolveGlowSliderEntry(entry, styleTable, keys, pixelSizeMin)
+    local storeKey = keys[entry.keyField]
+    if entry.requiresKey and not storeKey then
+        return false
+    end
+
+    local minValue = entry.minFrom and pixelSizeMin or entry.min
+    local default = (entry.defaultFrom and keys[entry.defaultFrom]) or entry.default
+    local value = styleTable[storeKey]
+    if entry.clampToRange and (not value or value < minValue or value > entry.max) then
+        value = default
+    end
+
+    return true, storeKey, minValue, value or default
+end
+
+-- The `keys` table BuildGlowSliders reads, assembled from a glow cfg. Shared
+-- so the stock path and the row path can never hand the spec different stores.
+local function GlowSliderKeys(cfg)
+    return {
+        size = cfg.sizeKey,
+        thickness = cfg.thicknessKey,
+        speed = cfg.speedKey,
+        lines = cfg.linesKey,
+        solidSizeDefault = cfg.solidSizeDefault,
+    }
+end
+
 local function BuildGlowSliders(container, styleTable, currentStyle, keys, refreshCallback, pixelSizeMin)
-    if currentStyle == "solid" then
-        local sizeSlider = AceGUI:Create("Slider")
-        sizeSlider:SetLabel("Border Size")
-        sizeSlider:SetSliderValues(1, 8, 0.1)
-        sizeSlider:SetValue(styleTable[keys.size] or keys.solidSizeDefault or 5)
-        sizeSlider:SetFullWidth(true)
-        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.size] = val
-            refreshCallback()
-        end)
-        container:AddChild(sizeSlider)
-    elseif currentStyle == "pulsingBorder" or currentStyle == "pulse" then
-        local sizeSlider = AceGUI:Create("Slider")
-        sizeSlider:SetLabel("Border Size")
-        sizeSlider:SetSliderValues(1, 8, 0.1)
-        sizeSlider:SetValue(styleTable[keys.size] or keys.solidSizeDefault or 2)
-        sizeSlider:SetFullWidth(true)
-        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.size] = val
-            refreshCallback()
-        end)
-        container:AddChild(sizeSlider)
-
-        local speedSlider = AceGUI:Create("Slider")
-        speedSlider:SetLabel("Pulse Duration")
-        speedSlider:SetSliderValues(0.1, 2.0, 0.05)
-        speedSlider:SetValue(styleTable[keys.speed] or 0.5)
-        speedSlider:SetFullWidth(true)
-        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.speed] = val
-            refreshCallback()
-        end)
-        container:AddChild(speedSlider)
-    elseif currentStyle == "pixel" then
-        local sizeSlider = AceGUI:Create("Slider")
-        sizeSlider:SetLabel("Line Length")
-        sizeSlider:SetSliderValues(pixelSizeMin, 12, 0.1)
-        sizeSlider:SetValue(styleTable[keys.size] or 8)
-        sizeSlider:SetFullWidth(true)
-        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.size] = val
-            refreshCallback()
-        end)
-        container:AddChild(sizeSlider)
-
-        local thicknessSlider = AceGUI:Create("Slider")
-        thicknessSlider:SetLabel("Line Thickness")
-        thicknessSlider:SetSliderValues(1, 6, 0.1)
-        thicknessSlider:SetValue(styleTable[keys.thickness] or 4)
-        thicknessSlider:SetFullWidth(true)
-        thicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.thickness] = val
-            refreshCallback()
-        end)
-        container:AddChild(thicknessSlider)
-
-        local speedSlider = AceGUI:Create("Slider")
-        speedSlider:SetLabel("Speed")
-        speedSlider:SetSliderValues(10, 200, 0.1)
-        speedSlider:SetValue(styleTable[keys.speed] or 50)
-        speedSlider:SetFullWidth(true)
-        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.speed] = val
-            refreshCallback()
-        end)
-        container:AddChild(speedSlider)
-
-        if keys.lines then
-            local linesSlider = AceGUI:Create("Slider")
-            linesSlider:SetLabel("Number of Lines")
-            linesSlider:SetSliderValues(1, 16, 1)
-            linesSlider:SetValue(styleTable[keys.lines] or 8)
-            linesSlider:SetFullWidth(true)
-            linesSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                styleTable[keys.lines] = val
+    for _, entry in ipairs(GLOW_SLIDER_SPEC[currentStyle] or {}) do
+        local ok, storeKey, minValue, value = ResolveGlowSliderEntry(entry, styleTable, keys, pixelSizeMin)
+        if ok then
+            local slider = AceGUI:Create("Slider")
+            slider:SetLabel(entry.label)
+            slider:SetSliderValues(minValue, entry.max, entry.step)
+            slider:SetValue(value)
+            slider:SetFullWidth(true)
+            slider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable[storeKey] = val
                 refreshCallback()
             end)
-            container:AddChild(linesSlider)
+            container:AddChild(slider)
         end
-    elseif currentStyle == "glow" or currentStyle == "proc" or currentStyle == "ants" then
-        local sizeSlider = AceGUI:Create("Slider")
-        sizeSlider:SetLabel("Glow Size")
-        sizeSlider:SetSliderValues(0, 60, 0.1)
-        sizeSlider:SetValue(styleTable[keys.size] or (currentStyle == "ants" and 23 or 30))
-        sizeSlider:SetFullWidth(true)
-        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.size] = val
-            refreshCallback()
-        end)
-        container:AddChild(sizeSlider)
-    elseif currentStyle == "colorShift" then
-        local sizeSlider = AceGUI:Create("Slider")
-        sizeSlider:SetLabel("Border Size")
-        sizeSlider:SetSliderValues(1, 8, 0.1)
-        sizeSlider:SetValue(styleTable[keys.size] or keys.solidSizeDefault or 2)
-        sizeSlider:SetFullWidth(true)
-        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.size] = val
-            refreshCallback()
-        end)
-        container:AddChild(sizeSlider)
-
-        local speedSlider = AceGUI:Create("Slider")
-        speedSlider:SetLabel("Shift Duration")
-        speedSlider:SetSliderValues(0.1, 2.0, 0.05)
-        speedSlider:SetValue(styleTable[keys.speed] or 0.8)
-        speedSlider:SetFullWidth(true)
-        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.speed] = val
-            refreshCallback()
-        end)
-        container:AddChild(speedSlider)
-    elseif currentStyle == "dashes" then
-        local sizeSlider = AceGUI:Create("Slider")
-        sizeSlider:SetLabel("Dash Length")
-        sizeSlider:SetSliderValues(2, 20, 0.5)
-        sizeSlider:SetValue(styleTable[keys.size] or 8)
-        sizeSlider:SetFullWidth(true)
-        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.size] = val
-            refreshCallback()
-        end)
-        container:AddChild(sizeSlider)
-
-        if keys.thickness then
-            local thicknessSlider = AceGUI:Create("Slider")
-            thicknessSlider:SetLabel("Dash Thickness")
-            thicknessSlider:SetSliderValues(1, 8, 0.5)
-            thicknessSlider:SetValue(styleTable[keys.thickness] or 4)
-            thicknessSlider:SetFullWidth(true)
-            thicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                styleTable[keys.thickness] = val
-                refreshCallback()
-            end)
-            container:AddChild(thicknessSlider)
-        end
-
-        if keys.lines then
-            local countSlider = AceGUI:Create("Slider")
-            countSlider:SetLabel("Number of Dashes")
-            countSlider:SetSliderValues(1, 8, 1)
-            countSlider:SetValue(styleTable[keys.lines] or 2)
-            countSlider:SetFullWidth(true)
-            countSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                styleTable[keys.lines] = val
-                refreshCallback()
-            end)
-            container:AddChild(countSlider)
-        end
-
-        local speedSlider = AceGUI:Create("Slider")
-        speedSlider:SetLabel("Lap Duration")
-        speedSlider:SetSliderValues(0.1, 2.0, 0.05)
-        speedSlider:SetValue(styleTable[keys.speed] or 2)
-        speedSlider:SetFullWidth(true)
-        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.speed] = val
-            refreshCallback()
-        end)
-        container:AddChild(speedSlider)
-    elseif currentStyle == "autocast" then
-        local sizeSlider = AceGUI:Create("Slider")
-        sizeSlider:SetLabel("Particle Scale")
-        sizeSlider:SetSliderValues(0.2, 3, 0.05)
-        local currentScale = styleTable[keys.size]
-        if not currentScale or currentScale < 0.2 or currentScale > 3 then
-            currentScale = 2
-        end
-        sizeSlider:SetValue(currentScale)
-        sizeSlider:SetFullWidth(true)
-        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.size] = val
-            refreshCallback()
-        end)
-        container:AddChild(sizeSlider)
-
-        local speedSlider = AceGUI:Create("Slider")
-        speedSlider:SetLabel("Frequency")
-        speedSlider:SetSliderValues(10, 200, 0.1)
-        speedSlider:SetValue(styleTable[keys.speed] or 50)
-        speedSlider:SetFullWidth(true)
-        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.speed] = val
-            refreshCallback()
-        end)
-        container:AddChild(speedSlider)
     end
 end
 
@@ -1459,10 +1725,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
         AddColorPicker(container, styleTable, cfg.color2Key, cfg.color2Label or "Second Color", cfg.defaultColor2, true, refreshCallback, refreshCallback)
     end
 
-    BuildGlowSliders(container, styleTable, currentStyle, {
-        size = cfg.sizeKey, thickness = cfg.thicknessKey, speed = cfg.speedKey, lines = cfg.linesKey,
-        solidSizeDefault = cfg.solidSizeDefault,
-    }, refreshCallback, 1)
+    BuildGlowSliders(container, styleTable, currentStyle, GlowSliderKeys(cfg), refreshCallback, 1)
 end
 
 ------------------------------------------------------------------------
@@ -1577,33 +1840,6 @@ local BAR_AURA_EFFECT_CFG = {
         targetStyle.barAuraEffectThickness = 4
     end,
 }
-
--- Row-mode restatement of the per-style sliders BuildGlowSliders emits for
--- these five styles: identical labels, ranges, steps, store keys and fallback
--- values, in the identical order. Only the widget shape differs. "color" has
--- no entry because BuildGlowSliders matches none of its branches for it.
-local BAR_AURA_EFFECT_SLIDER_ROWS = {
-    solid = {
-        {label = "Border Size", key = "barAuraEffectSize", min = 1, max = 8, step = 0.1, default = 2},
-    },
-    pulse = {
-        {label = "Border Size", key = "barAuraEffectSize", min = 1, max = 8, step = 0.1, default = 2},
-        {label = "Pulse Duration", key = "barAuraEffectSpeed", min = 0.1, max = 2.0, step = 0.05, default = 0.5},
-    },
-    colorShift = {
-        {label = "Border Size", key = "barAuraEffectSize", min = 1, max = 8, step = 0.1, default = 2},
-        {label = "Shift Duration", key = "barAuraEffectSpeed", min = 0.1, max = 2.0, step = 0.05, default = 0.8},
-    },
-    dashes = {
-        {label = "Dash Length", key = "barAuraEffectSize", min = 2, max = 20, step = 0.5, default = 8},
-        {label = "Dash Thickness", key = "barAuraEffectThickness", min = 1, max = 8, step = 0.5, default = 4},
-        {label = "Number of Dashes", key = "barAuraEffectLines", min = 1, max = 8, step = 1, default = 2},
-        {label = "Lap Duration", key = "barAuraEffectSpeed", min = 0.1, max = 2.0, step = 0.05, default = 2},
-    },
-}
--- BuildGlowSliders treats the legacy "pulsingBorder" value as "pulse"; a saved
--- profile carrying it must draw the same sliders here.
-BAR_AURA_EFFECT_SLIDER_ROWS.pulsingBorder = BAR_AURA_EFFECT_SLIDER_ROWS.pulse
 
 local FILL_EFFECTS_TOOLTIP = {
     "Fill Effects",
@@ -1723,18 +1959,24 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
             })
         end
 
-        for _, slider in ipairs(BAR_AURA_EFFECT_SLIDER_ROWS[currentStyle] or {}) do
-            local sliderKey = slider.key
-            AddSliderRow(effectsLeft, {
-                label = slider.label,
-                indent = true,
-                min = slider.min, max = slider.max, step = slider.step,
-                value = styleTable[sliderKey] or slider.default,
-                onChange = function(val)
-                    styleTable[sliderKey] = val
-                    refreshCallback()
-                end,
-            })
+        -- Same spec the stock path renders, one row per entry. pixelSizeMin is
+        -- deliberately omitted: only the pixel style reads it and
+        -- BAR_AURA_EFFECT_STYLE_OPTIONS cannot resolve to pixel.
+        local sliderKeys = GlowSliderKeys(cfg)
+        for _, entry in ipairs(GLOW_SLIDER_SPEC[currentStyle] or {}) do
+            local ok, storeKey, minValue, value = ResolveGlowSliderEntry(entry, styleTable, sliderKeys)
+            if ok then
+                AddSliderRow(effectsLeft, {
+                    label = entry.label,
+                    indent = true,
+                    min = minValue, max = entry.max, step = entry.step,
+                    value = value,
+                    onChange = function(val)
+                        styleTable[storeKey] = val
+                        refreshCallback()
+                    end,
+                })
+            end
         end
 
         local pulseRow = AddCheckboxRow(effectsRight, {
