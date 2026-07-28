@@ -1898,13 +1898,12 @@ local function BuildLayoutTab(container)
         AddDropdownRow(arrangeHost, {
             label = "Orientation",
             list = { horizontal = "Horizontal", vertical = "Vertical" },
-            -- PRE-EXISTING MISMATCH, carried over verbatim rather than
-            -- quietly fixed: a text panel with no saved orientation shows
-            -- "Vertical" here, but the core lays it out with the same
-            -- `isBarMode and "vertical" or "horizontal"` fallback the Growth
-            -- Direction labels below use, i.e. HORIZONTAL. Changing the
-            -- displayed default is an owner call, not a conversion.
-            value = isTextMode and (style.orientation or "vertical") or orientation,
+            -- Owner ruling 2026-07-28: the displayed default follows what the
+            -- core actually does (`isBarMode and "vertical" or "horizontal"`,
+            -- the same fallback the Growth Direction labels below use) — the
+            -- old display claimed "Vertical" for unset text panels while the
+            -- game laid them out horizontally.
+            value = orientation,
             onChange = function(val)
                 style.orientation = val
                 CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
