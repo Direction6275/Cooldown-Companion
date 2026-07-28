@@ -8,30 +8,31 @@
 
 ## Working Rules
 
-- Make the smallest task-scoped change. Preserve unrelated user edits; report adjacent cleanup instead of performing it.
+- Make the smallest task-scoped change. Preserve unrelated edits and only report adjacent cleanup.
 - Ask only when a choice would materially change the result or authorize a workaround. Otherwise, state reasonable assumptions and proceed.
-- For non-trivial work, define success and verify proportionately. Distinguish static evidence, observed runtime evidence, and required owner in-game validation.
+- For non-trivial work, define success and verify proportionately. State what is proven statically, observed at runtime, or still needs owner in-game validation.
 
-## Evidence Before Code
+## Evidence and Tool Selection
 
-- Verify correctness-relevant API, data, and runtime assumptions before implementation. Training data and external prose are discovery aids, not proof.
-- Use the smallest authoritative source set that answers the question. `agent-reference/api-sources.md` maps sources and freshness. Use task-relevant parts of `agent-reference/planning-and-verification.md` for test design and confidence labels, not as a mandatory full checklist or plan-approval gate.
-- Prefer current namespaced APIs when a documented equivalent exists. Check deprecations with `wow-api`; use `wago-tools` for shipped DB2 facts.
-- The applicable project hotfix override wins patch-specific conflicts. For 12.1-only APIs and Blizzard internals, use PTR sources rather than live or older generated snapshots.
-- Use `cc-devbridge` and source evidence before asking the user to test. When they cannot establish timing, combat, taint, secret-value, or other runtime behavior, request the smallest focused in-game test. Never fill the gap with theory.
-- If the supported path cannot be established, stop and ask before guessed APIs, `pcall` probes, heuristics, polling, caching, bridge logic, spell-specific exceptions, or other workarounds. Do not use `pcall` for discovery or normal control flow.
+- Inspect task-relevant current code first; consult TOCs, defaults, and migrations when load order, ownership, or persistence matters.
+- Match evidence to the claim: current code establishes implementation; the request and applicable owner rulings establish intent; PTR docs/source establish static API contracts; matching-build, addon-revision, and scenario observations establish only that recorded runtime context. Newer primary evidence beats a local summary.
+- For 12.1 APIs and Blizzard internals, use `blizzard-ui-ptr` or raw PTR source. Use `wow-api` only for discovery and APIs covered by its reported build; verify every 12.1 availability, signature, and deprecation claim in PTR source. Neither presence nor absence in an older database settles the PTR contract.
+- Use `cc-devbridge-ptr` for this checkout. Snapshots are observed persisted/runtime state, not schema authority or proof of forbidden/write-only AuraContainer state.
+- Use `wago-tools` for DB2 identity facts such as spell IDs and textures; corroborate build-sensitive values against PTR evidence.
+- Prefer documented current namespaced APIs. Treat training data, external prose, and community trackers as discovery only.
+- If the supported path is missing, ask before guessed APIs, `pcall` probes, heuristics, polling, caching, bridge logic, spell exceptions, or other workarounds. Do not use `pcall` for discovery or normal control flow.
 
 ## Reference Routing
 
-Read only the references relevant to the task:
+Read only the task-relevant sections below. Other local references are historical or unverified leads, not current authority.
 
-- API/tool selection and verification: `agent-reference/api-sources.md` and, selectively, `agent-reference/planning-and-verification.md`.
-- Combat-facing symptoms: `agent-reference/combat-api-decision-map.md`.
-- Patch, secret-value, cooldown, tooltip, macro, private-aura, or CDM behavior: the applicable `agent-reference/hotfix-overrides*.md`, `agent-reference/secret-values.md`, and `agent-reference/cooldown-viewer.md`.
-- Project structure and recurring implementation hazards: `agent-reference/codebase-map.md` and `agent-reference/patterns-and-gotchas.md`.
-- Spell evidence: `agent-reference/spell-api-reference.md` and `agent-reference/spell-api/`; require both out-of-combat and in-combat baselines for full confidence.
-- Performance work: read `agent-reference/perf-program-2026-06-07-debrief.md` before proposing changes. For 12.1 aura paths, `agent-reference/hotfix-overrides-12.1.md` and `docs/12.1-aura-tracking-research.md` supersede its pre-12.1 aura statements. Use the older refresh matrices only when explicitly in scope.
-- Durable guidance maintenance: `agent-reference/reference-maintenance.md`.
+- Aura work: inspect the current owner, such as `CooldownCompanion/Core/AuraDisplay.lua`, `CooldownCompanion/OtherBars/ResourceBarAuraHost.lua`, or relevant config code, then use PTR docs/source. `docs/12.1-aura-validation-matrix.md` is recorded evidence only for its build, addon revision, and scenario; `agent-reference/hotfix-overrides-12.1.md` is a hazard map. Never infer AuraContainer presence from `_auraActive`.
+- Project hazards and Cooldown Viewer policy: consult relevant sections of `agent-reference/patterns-and-gotchas.md` or `agent-reference/cooldown-viewer.md`, then verify cited paths, symbols, and APIs.
+- Performance: read `agent-reference/perf-program-2026-06-07-debrief.md` before proposing changes. Its non-aura design decisions remain context; measurements and aura statements are historical, so profile the current build.
+- Spell captures in `agent-reference/spell-api-reference.md` and `agent-reference/spell-api/` are historical evidence for their recorded context. Out-of-combat plus in-combat captures do not establish current PTR behavior.
+- Reference maintenance: use the durable promotion principles in `agent-reference/reference-maintenance.md`.
+
+Do not use `agent-reference/refresh-contract-matrix.md`; it describes an abandoned design.
 
 ## Repository Boundaries
 
