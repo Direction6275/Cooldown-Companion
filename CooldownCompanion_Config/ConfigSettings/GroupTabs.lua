@@ -3989,6 +3989,16 @@ local function BuildAppearanceTab(container)
     --    (ST._INDICATORS_SECTION_BY_ADVANCED_KEY) read by the preview command
     --    center; bar mode's text section names its key on the route itself
     --    (`uncollapse`). Either shape is fine; having neither is not.
+    -- 3. When a section's row set comes out of a FILTER - event families, a
+    --    gate, anything that can delete whole groups of rows before they are
+    --    assigned - fill the LEFT column first. A populated right column
+    --    beside an empty left one is never acceptable. A semantic split that
+    --    survives the filter intact still wins (both halves populated), but
+    --    the moment the filter leaves only one of them the survivors split
+    --    themselves across the columns left-first, ceil(n/2) left. The
+    --    custom-bar Sound Alerts tab is the worked example: it splits
+    --    cooldown-family left / aura-family right when a bar has both, and an
+    --    aura-only bar's three dropdowns 2/1 instead of 0/3.
     --
     -- Section headers are left-aligned (ROW_SECTION) and own the vertical air
     -- BEFORE their section, so sections never butt together and nothing here

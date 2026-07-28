@@ -1090,6 +1090,14 @@ local function ApplyObjectRoute(route)
             ST._SetConfigCustomBarSettingsTab(route.auraTab and "aura" or "appearance")
         end
         SetRowScope("detail")
+        -- Both halves of the Aura tab are collapsible and keyed per bar, so a
+        -- route that lands there has to open the two it means: the tracking
+        -- section and the effects this preview is showing.
+        if RBP then
+            local barKey = tostring(route.customBarId)
+            RBP.collapsedSections["cab_aura_" .. barKey] = nil
+            RBP.collapsedSections["cab_aura_effects_" .. barKey] = nil
+        end
     elseif route.object == "resourceAura" then
         -- Always the CURRENT spec: the overlay the preview draws is resolved
         -- for it (GetActiveResourceAuraEntry), so a resource already selected

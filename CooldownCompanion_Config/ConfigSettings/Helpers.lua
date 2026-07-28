@@ -1542,8 +1542,15 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
         btn:SetParent(enableCb.frame)
     end
 
-    btn:ClearAllPoints()
-    btn:SetPoint("LEFT", enableCb.checkbg, "RIGHT", enableCb.text:GetStringWidth() + 4, 0)
+    -- Row-grammar checkboxes have no checkbg/text anatomy: the badge chains
+    -- off the end of the row's label instead, like every other row badge.
+    -- AnchorRowBadge does the SetParent and ClearAllPoints itself.
+    if enableCb.badgeAnchor then
+        ST._AnchorRowBadge(enableCb, btn)
+    else
+        btn:ClearAllPoints()
+        btn:SetPoint("LEFT", enableCb.checkbg, "RIGHT", enableCb.text:GetStringWidth() + 4, 0)
+    end
     btn:Show()
 
     btn:SetScript("OnEnter", function(self)

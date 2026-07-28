@@ -13,6 +13,15 @@ local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 
+-- Imports from RowWidgets.lua (the row grammar). Only BuildBarActiveAuraControls'
+-- opts.row branch uses these today; every other builder here is still stock.
+local AddCheckboxRow = ST._AddCheckboxRow
+local AddSliderRow = ST._AddSliderRow
+local AddDropdownRow = ST._AddDropdownRow
+local AddColorRow = ST._AddColorRow
+local AnchorRowBadge = ST._AnchorRowBadge
+local BeginRowGrid = ST._BeginRowGrid
+
 -- Module-level aliases
 local tabInfoButtons = CS.tabInfoButtons
 
@@ -128,15 +137,21 @@ end
 -- returns the stack maximum as a secret the addon must discard, so claiming
 -- the aura doesn't stack would be a lie the tab tells whenever it is
 -- rebuilt mid-fight.
+-- The three texts live here alone so the stock label below and the row-grammar
+-- label row the custom-bar Aura tab draws cannot word one of them differently.
+local function GetAuraStackMaxStatusText(maxStacks)
+    if maxStacks then
+        return "|cffffd100Stack bar:|r full at " .. maxStacks .. " stacks"
+    elseif InCombatLockdown() then
+        return "|cffff9955The stack maximum can't be read in combat — it resolves when you leave combat.|r"
+    else
+        return "|cffff9955This aura doesn't stack — the bar will show duration.|r"
+    end
+end
+
 local function AddAuraStackMaxStatusLabel(container, maxStacks)
     local statusLabel = AceGUI:Create("Label")
-    if maxStacks then
-        statusLabel:SetText("|cffffd100Stack bar:|r full at " .. maxStacks .. " stacks")
-    elseif InCombatLockdown() then
-        statusLabel:SetText("|cffff9955The stack maximum can't be read in combat — it resolves when you leave combat.|r")
-    else
-        statusLabel:SetText("|cffff9955This aura doesn't stack — the bar will show duration.|r")
-    end
+    statusLabel:SetText(GetAuraStackMaxStatusText(maxStacks))
     statusLabel:SetFullWidth(true)
     container:AddChild(statusLabel)
 end
@@ -1532,26 +1547,103 @@ local BAR_AURA_EFFECT_STYLE_OPTIONS = {
 }
 local BAR_AURA_EFFECT_STYLE_ORDER = {"color", "solid", "pulse", "colorShift", "dashes"}
 
+-- "None (bar color only)" runs 21 characters, past what the row grammar's
+-- 140px control column can size a menu from; every other row-grammar dropdown
+-- with long items widens its pullout to the same 300.
+local BAR_AURA_EFFECT_PULLOUT_WIDTH = 300
+
+-- One spec, both shapes. The stock path hands this straight to
+-- BuildGlowStyleControls; the opts.row path reads the same keys, labels and
+-- defaults out of it, so neither shape can drift from the other's store.
+-- Nothing mutates it (BuildGlowStyleControls only reads cfg, and
+-- onStyleChanged writes through its targetStyle argument), so it is safe as a
+-- shared constant.
+local BAR_AURA_EFFECT_CFG = {
+    styleKey = "barAuraEffect", colorKey = "barAuraEffectColor", colorLabel = "Effect Color",
+    color2Key = "barAuraColorShiftColor", color2Label = "Second Color", defaultColor2 = {1, 1, 1, 1},
+    sizeKey = "barAuraEffectSize", speedKey = "barAuraEffectSpeed", linesKey = "barAuraEffectLines",
+    thicknessKey = "barAuraEffectThickness",
+    defaultStyle = "color", defaultColor = {1, 0.84, 0, 0.9},
+    enableLabel = "Show Active Aura Indicator",
+    enableKey = "barAuraIndicatorEnabled",
+    deriveEnableFromEffect = true, effectKey = "barAuraEffect",
+    styleOptions = BAR_AURA_EFFECT_STYLE_OPTIONS,
+    styleOrder = BAR_AURA_EFFECT_STYLE_ORDER,
+    solidSizeDefault = 2,
+    onStyleChanged = function(targetStyle, val)
+        targetStyle.barAuraEffectSize = AURA_GLOW_SIZE_RESETS[val] or 2
+        targetStyle.barAuraEffectSpeed = AURA_GLOW_SPEED_RESETS[val] or 0.5
+        targetStyle.barAuraEffectLines = 2
+        targetStyle.barAuraEffectThickness = 4
+    end,
+}
+
+-- Row-mode restatement of the per-style sliders BuildGlowSliders emits for
+-- these five styles: identical labels, ranges, steps, store keys and fallback
+-- values, in the identical order. Only the widget shape differs. "color" has
+-- no entry because BuildGlowSliders matches none of its branches for it.
+local BAR_AURA_EFFECT_SLIDER_ROWS = {
+    solid = {
+        {label = "Border Size", key = "barAuraEffectSize", min = 1, max = 8, step = 0.1, default = 2},
+    },
+    pulse = {
+        {label = "Border Size", key = "barAuraEffectSize", min = 1, max = 8, step = 0.1, default = 2},
+        {label = "Pulse Duration", key = "barAuraEffectSpeed", min = 0.1, max = 2.0, step = 0.05, default = 0.5},
+    },
+    colorShift = {
+        {label = "Border Size", key = "barAuraEffectSize", min = 1, max = 8, step = 0.1, default = 2},
+        {label = "Shift Duration", key = "barAuraEffectSpeed", min = 0.1, max = 2.0, step = 0.05, default = 0.8},
+    },
+    dashes = {
+        {label = "Dash Length", key = "barAuraEffectSize", min = 2, max = 20, step = 0.5, default = 8},
+        {label = "Dash Thickness", key = "barAuraEffectThickness", min = 1, max = 8, step = 0.5, default = 4},
+        {label = "Number of Dashes", key = "barAuraEffectLines", min = 1, max = 8, step = 1, default = 2},
+        {label = "Lap Duration", key = "barAuraEffectSpeed", min = 0.1, max = 2.0, step = 0.05, default = 2},
+    },
+}
+-- BuildGlowSliders treats the legacy "pulsingBorder" value as "pulse"; a saved
+-- profile carrying it must draw the same sliders here.
+BAR_AURA_EFFECT_SLIDER_ROWS.pulsingBorder = BAR_AURA_EFFECT_SLIDER_ROWS.pulse
+
+local FILL_EFFECTS_TOOLTIP = {
+    "Fill Effects",
+    {"The bar fill breathes (pulse) or cycles color (color shift) while the aura is active. Use the preview toggle to see them without a live aura.", 1, 1, 1, true},
+}
+
+-- opts.row opts into the row grammar (RowWidgets.lua): the builder opens its
+-- own two-column grid on `container` and returns the two columns. LEFT is the
+-- border effect (style, its color, its per-style sliders); RIGHT is the two
+-- fill effects and their children. Omitting opts.row keeps the full-width
+-- stock widgets the unconverted callers draw (the bar-mode advanced panel and
+-- the entry override tab).
 local function BuildBarActiveAuraControls(container, styleTable, refreshCallback, opts)
-    BuildGlowStyleControls(container, styleTable, refreshCallback, {
-        styleKey = "barAuraEffect", colorKey = "barAuraEffectColor", colorLabel = "Effect Color",
-        color2Key = "barAuraColorShiftColor", color2Label = "Second Color", defaultColor2 = {1, 1, 1, 1},
-        sizeKey = "barAuraEffectSize", speedKey = "barAuraEffectSpeed", linesKey = "barAuraEffectLines",
-        thicknessKey = "barAuraEffectThickness",
-        defaultStyle = "color", defaultColor = {1, 0.84, 0, 0.9},
-        enableLabel = "Show Active Aura Indicator",
-        enableKey = "barAuraIndicatorEnabled",
-        deriveEnableFromEffect = true, effectKey = "barAuraEffect",
-        styleOptions = BAR_AURA_EFFECT_STYLE_OPTIONS,
-        styleOrder = BAR_AURA_EFFECT_STYLE_ORDER,
-        solidSizeDefault = 2,
-        onStyleChanged = function(targetStyle, val)
-            targetStyle.barAuraEffectSize = AURA_GLOW_SIZE_RESETS[val] or 2
-            targetStyle.barAuraEffectSpeed = AURA_GLOW_SPEED_RESETS[val] or 0.5
-            targetStyle.barAuraEffectLines = 2
-            targetStyle.barAuraEffectThickness = 4
-        end,
-    }, opts)
+    local rowMode = opts and opts.row == true
+
+    -- The writes both shapes perform, hoisted so neither can wire a different
+    -- store than the other. RefreshStructuralControls is on exactly the calls
+    -- that change which further controls exist.
+    local function ApplyPulseEnabled(val)
+        styleTable.barAuraPulseEnabled = val
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end
+    local function ApplyPulseSpeed(val)
+        styleTable.barAuraPulseSpeed = val
+        refreshCallback()
+    end
+    local function ApplyColorShiftEnabled(val)
+        styleTable.barAuraColorShiftEnabled = val
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end
+    local function ApplyColorShiftSpeed(val)
+        styleTable.barAuraColorShiftSpeed = val
+        refreshCallback()
+    end
+
+    if not rowMode then
+        BuildGlowStyleControls(container, styleTable, refreshCallback, BAR_AURA_EFFECT_CFG, opts)
+    end
 
     -- Fill effects apply while the indicator is enabled, independent of the
     -- border effect choice. Same enable derivation as the builder above so
@@ -1575,20 +1667,136 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         return
     end
 
+    if rowMode then
+        local cfg = BAR_AURA_EFFECT_CFG
+        local effectsLeft, effectsRight = BeginRowGrid(container)
+
+        -- Same normalization the stock path runs before it draws the dropdown.
+        if styleTable[cfg.styleKey] == "lcgProc" then
+            styleTable[cfg.styleKey] = "glow"
+        end
+        local currentStyle = NormalizeLegacyGlowStyle(styleTable[cfg.styleKey] or cfg.defaultStyle)
+        if currentStyle == "none" then
+            currentStyle = cfg.defaultStyle
+        end
+
+        AddDropdownRow(effectsLeft, {
+            label = "Glow Style",
+            pulloutWidth = BAR_AURA_EFFECT_PULLOUT_WIDTH,
+            list = cfg.styleOptions,
+            order = cfg.styleOrder,
+            value = currentStyle,
+            onChange = function(val)
+                styleTable[cfg.enableKey] = true
+                styleTable[cfg.styleKey] = val
+                cfg.onStyleChanged(styleTable, val)
+                refreshCallback()
+                RefreshStructuralControls(container)
+            end,
+        })
+
+        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- the stock path makes: nothing on this surface re-reads the style
+        -- table mid-drag, so the live value may reach it directly.
+        AddColorRow(effectsLeft, {
+            label = cfg.colorLabel,
+            tbl = styleTable,
+            key = cfg.colorKey,
+            default = cfg.defaultColor,
+            hasAlpha = true,
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
+
+        -- Everything below belongs to the style above it and disappears with
+        -- it, so it indents as its child.
+        if currentStyle == "colorShift" then
+            AddColorRow(effectsLeft, {
+                label = cfg.color2Label,
+                indent = true,
+                tbl = styleTable,
+                key = cfg.color2Key,
+                default = cfg.defaultColor2,
+                hasAlpha = true,
+                onConfirm = refreshCallback,
+                onChange = refreshCallback,
+            })
+        end
+
+        for _, slider in ipairs(BAR_AURA_EFFECT_SLIDER_ROWS[currentStyle] or {}) do
+            local sliderKey = slider.key
+            AddSliderRow(effectsLeft, {
+                label = slider.label,
+                indent = true,
+                min = slider.min, max = slider.max, step = slider.step,
+                value = styleTable[sliderKey] or slider.default,
+                onChange = function(val)
+                    styleTable[sliderKey] = val
+                    refreshCallback()
+                end,
+            })
+        end
+
+        local pulseRow = AddCheckboxRow(effectsRight, {
+            label = "Pulse Bar Fill",
+            value = styleTable.barAuraPulseEnabled == true,
+            onChange = ApplyPulseEnabled,
+        })
+        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+        -- onto the end of the row's label.
+        AnchorRowBadge(pulseRow, CreateInfoButton(pulseRow.frame, pulseRow.frame, "LEFT", "LEFT", 0, 0,
+            FILL_EFFECTS_TOOLTIP, opts.infoButtons))
+
+        if styleTable.barAuraPulseEnabled == true then
+            AddSliderRow(effectsRight, {
+                label = "Pulse Duration",
+                indent = true,
+                min = 0.1, max = 2.0, step = 0.05,
+                value = styleTable.barAuraPulseSpeed or 0.5,
+                onChange = ApplyPulseSpeed,
+            })
+        end
+
+        AddCheckboxRow(effectsRight, {
+            label = "Color Shift Bar Fill",
+            value = styleTable.barAuraColorShiftEnabled == true,
+            onChange = ApplyColorShiftEnabled,
+        })
+
+        if styleTable.barAuraColorShiftEnabled == true then
+            AddSliderRow(effectsRight, {
+                label = "Shift Duration",
+                indent = true,
+                min = 0.1, max = 2.0, step = 0.05,
+                value = styleTable.barAuraColorShiftSpeed or 0.5,
+                onChange = ApplyColorShiftSpeed,
+            })
+
+            AddColorRow(effectsRight, {
+                label = "Shift Color",
+                indent = true,
+                tbl = styleTable,
+                key = "barAuraColorShiftColor",
+                default = {1, 1, 1, 1},
+                hasAlpha = true,
+                onConfirm = refreshCallback,
+                onChange = refreshCallback,
+            })
+        end
+
+        return effectsLeft, effectsRight
+    end
+
     local pulseCb = AceGUI:Create("CheckBox")
     pulseCb:SetLabel("Pulse Bar Fill")
     pulseCb:SetValue(styleTable.barAuraPulseEnabled == true)
     pulseCb:SetFullWidth(true)
     pulseCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.barAuraPulseEnabled = val
-        refreshCallback()
-        RefreshStructuralControls(container)
+        ApplyPulseEnabled(val)
     end)
     container:AddChild(pulseCb)
-    CreateInfoButton(pulseCb.frame, pulseCb.checkbg, "LEFT", "RIGHT", pulseCb.text:GetStringWidth() + 4, 0, {
-        "Fill Effects",
-        {"The bar fill breathes (pulse) or cycles color (color shift) while the aura is active. Use the preview toggle to see them without a live aura.", 1, 1, 1, true},
-    }, pulseCb)
+    CreateInfoButton(pulseCb.frame, pulseCb.checkbg, "LEFT", "RIGHT", pulseCb.text:GetStringWidth() + 4, 0,
+        FILL_EFFECTS_TOOLTIP, pulseCb)
 
     if styleTable.barAuraPulseEnabled == true then
         local pulseSpeed = AceGUI:Create("Slider")
@@ -1597,8 +1805,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         pulseSpeed:SetValue(styleTable.barAuraPulseSpeed or 0.5)
         pulseSpeed:SetFullWidth(true)
         pulseSpeed:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.barAuraPulseSpeed = val
-            refreshCallback()
+            ApplyPulseSpeed(val)
         end)
         container:AddChild(pulseSpeed)
     end
@@ -1608,9 +1815,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
     shiftCb:SetValue(styleTable.barAuraColorShiftEnabled == true)
     shiftCb:SetFullWidth(true)
     shiftCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.barAuraColorShiftEnabled = val
-        refreshCallback()
-        RefreshStructuralControls(container)
+        ApplyColorShiftEnabled(val)
     end)
     container:AddChild(shiftCb)
 
@@ -1621,8 +1826,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         shiftSpeed:SetValue(styleTable.barAuraColorShiftSpeed or 0.5)
         shiftSpeed:SetFullWidth(true)
         shiftSpeed:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.barAuraColorShiftSpeed = val
-            refreshCallback()
+            ApplyColorShiftSpeed(val)
         end)
         container:AddChild(shiftSpeed)
 
@@ -1831,3 +2035,4 @@ ST._TryAddAuraCandidate = TryAddAuraCandidate
 ST._RemoveAuraCandidate = RemoveAuraCandidate
 ST._AddAuraCandidateRow = AddAuraCandidateRow
 ST._AddAuraStackMaxStatusLabel = AddAuraStackMaxStatusLabel
+ST._GetAuraStackMaxStatusText = GetAuraStackMaxStatusText

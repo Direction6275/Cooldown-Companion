@@ -1329,10 +1329,9 @@ local function BuildResourceBarPositioningPanel(container)
                 end,
             })
 
-            -- Still stock widgets: this builder lives in CastBarPanels.lua,
-            -- which the next packet converts. Kept inside the right column so
-            -- the section stays a grid rather than a grid with a full-width
-            -- block hanging under it.
+            -- Row grammar now: the builder lives in CastBarPanels.lua and
+            -- emits CDC rows for both of its call sites, so it drops straight
+            -- into this column.
             if ST._BuildAttachedCastBarOffsetControls then
                 ST._BuildAttachedCastBarOffsetControls(posRight, layout)
             end

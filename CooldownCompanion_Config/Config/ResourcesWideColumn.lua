@@ -1012,6 +1012,11 @@ local function ShowCastBarSettings(col3)
             elseif tab == "layout" then
                 ST._BuildCastBarPositioningPanel(scroll)
             end
+            -- Re-run the layout with final widths: AddChild lays out on every
+            -- insertion, so a row grid added before its siblings measures
+            -- against a stale width and renders clipped until something else
+            -- triggers a layout.
+            scroll:DoLayout()
         end)
         ST._UnifiedRowInstallStrip(tabGroup, "detail")
         col3._castBarHomeTabGroup = tabGroup
@@ -1063,6 +1068,10 @@ local function ShowUnitFrameSettings(col3, item)
     else
         ST._BuildFrameAnchoringTargetPanel(scroll)
     end
+    -- Re-run the layout with final widths: AddChild lays out on every
+    -- insertion, so a row grid added before its siblings measures against a
+    -- stale width and renders clipped until something else triggers a layout.
+    scroll:DoLayout()
     col3._castFramesSettingsScrollKey = currentScrollKey
 
     if savedOffset then
