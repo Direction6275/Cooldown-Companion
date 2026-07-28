@@ -16,7 +16,7 @@
 
 - Inspect task-relevant current code first; consult TOCs, defaults, and migrations when load order, ownership, or persistence matters.
 - Match evidence to the claim: current code establishes implementation; the request and applicable owner rulings establish intent; PTR docs/source establish static API contracts; matching-build, addon-revision, and scenario observations establish only that recorded runtime context. Newer primary evidence beats a local summary.
-- For 12.1 APIs and Blizzard internals, use `blizzard-ui-ptr` or raw PTR source. Use `wow-api` only for discovery and APIs covered by its reported build; verify every 12.1 availability, signature, and deprecation claim in PTR source. Neither presence nor absence in an older database settles the PTR contract.
+- For API selection, verify the exact function, event, enum, type, nilability, defaults, and secret/access annotations in the active lane's `Blizzard_APIDocumentationGenerated`; use `warcraft-wiki` for behavioral details, timing warnings, deprecations, replacements, and discovery. Use `blizzard-ui-ptr` for Blizzard implementations, templates, mixins, and call sites—it does not currently index generated API records. `wow-api` is optional mixed-version discovery only; neither presence nor absence there settles the PTR contract.
 - Use `cc-devbridge-ptr` for this checkout. Snapshots are observed persisted/runtime state, not schema authority or proof of forbidden/write-only AuraContainer state.
 - Use `wago-tools` for DB2 identity facts such as spell IDs and textures; corroborate build-sensitive values against PTR evidence.
 - Prefer documented current namespaced APIs. Treat training data, external prose, and community trackers as discovery only.
