@@ -70,6 +70,50 @@ local function CollectSelectedEntryData(db, sourceGroupId, indices)
     return entries[1] and entries or nil
 end
 
+-- Row-grammar action strip: compact buttons sharing one grammar-height line
+-- (the preset-trio shape in Helpers.lua). Flow insets its single row by 3px top
+-- and bottom, so 3 + 24 + 3 centres inside the 30px band, and noAutoHeight
+-- keeps Flow's own 27px report from shrinking it back.
+local ACTION_STRIP_HEIGHT = (ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT) or 30
+local ACTION_STRIP_BUTTON_HEIGHT = 24
+local ACTION_STRIP_GUTTER = 4
+
+-- actions: an ordered list of { text = , onClick = }. SetAutoWidth is AceGUI's
+-- own "text width + 30px padding" rule and Flow anchors its children from the
+-- left, so the buttons read as a group instead of a stack of page-wide
+-- banners. Flow packs siblings at 0px, so the gutter between them is a
+-- fixed-size spacer group - the same idiom the preset trio uses. It matches the
+-- buttons' height on purpose: Flow offsets each child by (its height / 2)
+-- relative to the previous one, so a shorter spacer would make the line step.
+local function AddActionStrip(scroll, actions)
+    local strip = AceGUI:Create("SimpleGroup")
+    strip:SetFullWidth(true)
+    strip:SetLayout("Flow")
+    strip:SetHeight(ACTION_STRIP_HEIGHT)
+    strip.noAutoHeight = true
+
+    for index, action in ipairs(actions) do
+        if index > 1 then
+            local gutter = AceGUI:Create("SimpleGroup")
+            gutter:SetWidth(ACTION_STRIP_GUTTER)
+            gutter:SetHeight(ACTION_STRIP_BUTTON_HEIGHT)
+            gutter.noAutoHeight = true
+            strip:AddChild(gutter)
+        end
+
+        local btn = AceGUI:Create("Button")
+        btn:SetText(action.text)
+        btn:SetAutoWidth(true)
+        btn:SetCallback("OnClick", action.onClick)
+        strip:AddChild(btn)
+    end
+
+    -- Added once populated so the List-layout parent computes scroll height
+    -- correctly on first render.
+    scroll:AddChild(strip)
+    return strip
+end
+
 function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, uniformType)
     for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
         btn:ClearAllPoints()
@@ -78,6 +122,8 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
     end
     wipe(CS.buttonSettingsInfoButtons)
 
+    -- Informational, not a collapsible section: it names the selection rather
+    -- than opening one, so it keeps the centered heading shape.
     local heading = AceGUI:Create("Heading")
     heading:SetText(multiCount .. " Selected")
     ColorHeading(heading)
@@ -87,10 +133,7 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     local isTriggerPanel = GroupUsesTriggerPanelEntries(group)
 
-    local dupBtn = AceGUI:Create("Button")
-    dupBtn:SetText("Duplicate Selected")
-    dupBtn:SetFullWidth(true)
-    dupBtn:SetCallback("OnClick", function()
+    local function DuplicateSelected()
         local sourceGroupId = CS.selectedGroup
         local sourceGroup = CooldownCompanion.db.profile.groups[sourceGroupId]
         if not sourceGroup then return end
@@ -106,20 +149,9 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
         CooldownCompanion:RefreshGroupFrame(sourceGroupId)
         ClearConfigButtonSelection()
         CooldownCompanion:RefreshConfigPanel()
-    end)
-    scroll:AddChild(dupBtn)
+    end
 
-    local spacer1 = AceGUI:Create("Label")
-    spacer1:SetText(" ")
-    spacer1:SetFullWidth(true)
-    local font, _, flags = spacer1.label:GetFont()
-    spacer1:SetFont(font, 3, flags or "")
-    scroll:AddChild(spacer1)
-
-    local moveBtn = AceGUI:Create("Button")
-    moveBtn:SetText("Move Selected")
-    moveBtn:SetFullWidth(true)
-    moveBtn:SetCallback("OnClick", function()
+    local function ShowMoveMenu()
         local moveMenuFrame = _G["CDCMoveMenu"]
         if not moveMenuFrame then
             moveMenuFrame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
@@ -172,35 +204,36 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
         end, "MENU")
         moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
         ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
-    end)
-    scroll:AddChild(moveBtn)
+    end
 
-    local spacer2 = AceGUI:Create("Label")
-    spacer2:SetText(" ")
-    spacer2:SetFullWidth(true)
-    local font2, _, flags2 = spacer2.label:GetFont()
-    spacer2:SetFont(font2, 3, flags2 or "")
-    scroll:AddChild(spacer2)
+    -- Both of these copy or relocate the selection, so they share a line.
+    AddActionStrip(scroll, {
+        { text = "Duplicate Selected", onClick = DuplicateSelected },
+        { text = "Move Selected", onClick = ShowMoveMenu },
+    })
 
-    local delBtn = AceGUI:Create("Button")
-    delBtn:SetText("Delete Selected")
-    delBtn:SetFullWidth(true)
-    delBtn:SetCallback("OnClick", function()
-        CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_BUTTONS", multiCount, {
-            groupId = CS.selectedGroup,
-            indices = multiIndices,
-        })
-    end)
-    scroll:AddChild(delBtn)
+    -- Destructive, so it gets its own line rather than sitting a gutter away
+    -- from the two harmless actions above.
+    AddActionStrip(scroll, {
+        {
+            text = "Delete Selected",
+            onClick = function()
+                CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_BUTTONS", multiCount, {
+                    groupId = CS.selectedGroup,
+                    indices = multiIndices,
+                })
+            end,
+        },
+    })
 
     if uniformType and group and not isTriggerPanel then
-        local visSpacer = AceGUI:Create("Label")
-        visSpacer:SetText(" ")
-        visSpacer:SetFullWidth(true)
-        scroll:AddChild(visSpacer)
-
         local repData = group.buttons[multiIndices[1]]
         if repData then
+            -- The same row-grammar Show Conditions / Talent Conditions sections
+            -- the entry Settings tab draws, in batch mode: the representative
+            -- entry seeds the tri-state reads and the builder's ApplyTo*
+            -- helpers fan every write out across the selection. Its ROW_SECTION
+            -- header owns the air above it, so nothing spaces it here.
             ST._BuildVisibilitySettings(scroll, repData, CS.buttonSettingsInfoButtons, {
                 group = group,
                 uniformType = uniformType,
@@ -213,20 +246,12 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
     local db = CooldownCompanion.db.profile
     local containerId = CS.selectedContainer
 
+    -- Informational, not a collapsible section.
     local heading = AceGUI:Create("Heading")
     heading:SetText(multiCount .. " Panels Selected")
     ColorHeading(heading)
     heading:SetFullWidth(true)
     scroll:AddChild(heading)
-
-    local function AddSpacer()
-        local sp = AceGUI:Create("Label")
-        sp:SetText(" ")
-        sp:SetFullWidth(true)
-        local f, _, fl = sp.label:GetFont()
-        sp:SetFont(f, 3, fl or "")
-        scroll:AddChild(sp)
-    end
 
     local anyDisabled = false
     for _, pid in ipairs(multiPanelIds) do
@@ -236,22 +261,6 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
             break
         end
     end
-    local enableBtn = AceGUI:Create("Button")
-    enableBtn:SetText(anyDisabled and "Enable All" or "Disable All")
-    enableBtn:SetFullWidth(true)
-    enableBtn:SetCallback("OnClick", function()
-        for _, pid in ipairs(multiPanelIds) do
-            local panel = db.groups[pid]
-            if panel then
-                panel.enabled = anyDisabled and nil or false
-                CooldownCompanion:RefreshGroupFrame(pid)
-            end
-        end
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    scroll:AddChild(enableBtn)
-
-    AddSpacer()
 
     local anyUnlocked = false
     for _, pid in ipairs(multiPanelIds) do
@@ -263,37 +272,37 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
             break
         end
     end
-    local lockBtn = AceGUI:Create("Button")
-    lockBtn:SetText(anyUnlocked and "Lock All" or "Unlock All")
-    lockBtn:SetFullWidth(true)
-    lockBtn:SetCallback("OnClick", function()
-        for _, pid in ipairs(multiPanelIds) do
-            local panel = db.groups[pid]
-            if panel
-                and not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel)) then
-                panel.locked = anyUnlocked and nil or false
-                CooldownCompanion:RefreshGroupFrame(pid)
-            end
-        end
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    scroll:AddChild(lockBtn)
 
-    AddSpacer()
-
-    local dupBtn = AceGUI:Create("Button")
-    dupBtn:SetText("Duplicate Selected")
-    dupBtn:SetFullWidth(true)
-    dupBtn:SetCallback("OnClick", function()
-        for _, pid in ipairs(multiPanelIds) do
-            CooldownCompanion:DuplicatePanel(containerId, pid)
-        end
-        ClearConfigPanelMultiSelection()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    scroll:AddChild(dupBtn)
-
-    AddSpacer()
+    -- Panel state: the two toggles that flip a flag on every selected panel.
+    AddActionStrip(scroll, {
+        {
+            text = anyDisabled and "Enable All" or "Disable All",
+            onClick = function()
+                for _, pid in ipairs(multiPanelIds) do
+                    local panel = db.groups[pid]
+                    if panel then
+                        panel.enabled = anyDisabled and nil or false
+                        CooldownCompanion:RefreshGroupFrame(pid)
+                    end
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        },
+        {
+            text = anyUnlocked and "Lock All" or "Unlock All",
+            onClick = function()
+                for _, pid in ipairs(multiPanelIds) do
+                    local panel = db.groups[pid]
+                    if panel
+                        and not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel)) then
+                        panel.locked = anyUnlocked and nil or false
+                        CooldownCompanion:RefreshGroupFrame(pid)
+                    end
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        },
+    })
 
     local hasOtherContainer = false
     for cid in pairs(db.groupContainers) do
@@ -302,55 +311,45 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
             break
         end
     end
-    if hasOtherContainer then
-        local moveBtn = AceGUI:Create("Button")
-        moveBtn:SetText("Move to Group")
-        moveBtn:SetFullWidth(true)
-        moveBtn:SetCallback("OnClick", function()
-            local moveMenuFrame = _G["CDCPanelMultiMoveMenu"]
-            if not moveMenuFrame then
-                moveMenuFrame = CreateFrame("Frame", "CDCPanelMultiMoveMenu", UIParent, "UIDropDownMenuTemplate")
-            end
-            UIDropDownMenu_Initialize(moveMenuFrame, function(self, level)
-                local containers = db.groupContainers or {}
-                local destinations = {}
-                for cid, ctr in pairs(containers) do
-                    if cid ~= containerId and CanAllPanelsMoveToContainer(multiPanelIds, cid) then
-                        table.insert(destinations, {
-                            id = cid,
-                            name = ctr.name or ("Group " .. cid),
-                            order = CooldownCompanion:GetOrderForSpec(ctr, CooldownCompanion._currentSpecId, cid),
-                        })
-                    end
-                end
-                table.sort(destinations, function(a, b) return a.order < b.order end)
-                for _, container in ipairs(destinations) do
-                    local info = UIDropDownMenu_CreateInfo()
-                    info.text = container.name
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        for _, pid in ipairs(multiPanelIds) do
-                            CooldownCompanion:MovePanel(pid, container.id)
-                        end
-                        ClearConfigPanelMultiSelection({ selectContainerId = container.id })
-                        CooldownCompanion:RefreshConfigPanel()
-                    end
-                    UIDropDownMenu_AddButton(info, level)
-                end
-            end, "MENU")
-            moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
-            ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
-        end)
-        scroll:AddChild(moveBtn)
 
-        AddSpacer()
+    local function ShowPanelMoveMenu()
+        local moveMenuFrame = _G["CDCPanelMultiMoveMenu"]
+        if not moveMenuFrame then
+            moveMenuFrame = CreateFrame("Frame", "CDCPanelMultiMoveMenu", UIParent, "UIDropDownMenuTemplate")
+        end
+        UIDropDownMenu_Initialize(moveMenuFrame, function(self, level)
+            local containers = db.groupContainers or {}
+            local destinations = {}
+            for cid, ctr in pairs(containers) do
+                if cid ~= containerId and CanAllPanelsMoveToContainer(multiPanelIds, cid) then
+                    table.insert(destinations, {
+                        id = cid,
+                        name = ctr.name or ("Group " .. cid),
+                        order = CooldownCompanion:GetOrderForSpec(ctr, CooldownCompanion._currentSpecId, cid),
+                    })
+                end
+            end
+            table.sort(destinations, function(a, b) return a.order < b.order end)
+            for _, container in ipairs(destinations) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = container.name
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    for _, pid in ipairs(multiPanelIds) do
+                        CooldownCompanion:MovePanel(pid, container.id)
+                    end
+                    ClearConfigPanelMultiSelection({ selectContainerId = container.id })
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        end, "MENU")
+        moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+        ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
     end
 
-    local exportBtn = AceGUI:Create("Button")
-    exportBtn:SetText("Export Selected")
-    exportBtn:SetFullWidth(true)
-    exportBtn:SetCallback("OnClick", function()
+    local function ExportSelected()
         local containerData = BuildContainerExportData(db.groupContainers[containerId])
         local exportPanels = {}
         for _, pid in ipairs(multiPanelIds) do
@@ -370,23 +369,40 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
         }
         local exportString = EncodeExportData(payload)
         CS.ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
-    end)
-    scroll:AddChild(exportBtn)
+    end
 
-    AddSpacer()
+    -- Everything that produces a copy or relocates the selection, on one line.
+    -- Move only appears when there is somewhere to move to, so this strip is
+    -- two or three wide.
+    local copyActions = {
+        { text = "Duplicate Selected", onClick = function()
+            for _, pid in ipairs(multiPanelIds) do
+                CooldownCompanion:DuplicatePanel(containerId, pid)
+            end
+            ClearConfigPanelMultiSelection()
+            CooldownCompanion:RefreshConfigPanel()
+        end },
+    }
+    if hasOtherContainer then
+        copyActions[#copyActions + 1] = { text = "Move to Group", onClick = ShowPanelMoveMenu }
+    end
+    copyActions[#copyActions + 1] = { text = "Export Selected", onClick = ExportSelected }
+    AddActionStrip(scroll, copyActions)
 
-    local delBtn = AceGUI:Create("Button")
-    delBtn:SetText("Delete Selected")
-    delBtn:SetFullWidth(true)
-    delBtn:SetCallback("OnClick", function()
-        local ids = {}
-        for _, pid in ipairs(multiPanelIds) do
-            ids[#ids + 1] = pid
-        end
-        CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_PANELS", multiCount, {
-            containerId = containerId,
-            panelIds = ids,
-        })
-    end)
-    scroll:AddChild(delBtn)
+    -- Destructive, so it gets its own line.
+    AddActionStrip(scroll, {
+        {
+            text = "Delete Selected",
+            onClick = function()
+                local ids = {}
+                for _, pid in ipairs(multiPanelIds) do
+                    ids[#ids + 1] = pid
+                end
+                CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_PANELS", multiCount, {
+                    containerId = containerId,
+                    panelIds = ids,
+                })
+            end,
+        },
+    })
 end

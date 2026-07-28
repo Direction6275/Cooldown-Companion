@@ -14,10 +14,10 @@ local AttachCollapseButton = ST._AttachCollapseButton
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
 local CreateInfoButton = ST._CreateInfoButton
-local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 
--- Imports from RowWidgets.lua (the row grammar). The Visibility tabs are
--- converted; every other builder in this file still draws stock widgets.
+-- Imports from RowWidgets.lua (the row grammar). The Visibility tabs and the
+-- per-entry Show Conditions / Talent Conditions builder are converted; every
+-- other builder in this file still draws stock widgets.
 local AddCheckboxRow = ST._AddCheckboxRow
 local AddDropdownRow = ST._AddDropdownRow
 local AddLabelRow = ST._AddLabelRow
@@ -44,6 +44,14 @@ local REMOVE_BADGE_WIDGET_TYPE = "CDCEligibilityRemoveBadge"
 -- "Death Knight: Blood", so these four pickers widen their pullout past their
 -- host. The pullout floats, so it may overhang the grid column it opens in.
 local ELIGIBILITY_PULLOUT_WIDTH = 300
+-- Row-grammar action strip: compact buttons sharing one grammar-height line
+-- (the preset-trio shape in Helpers.lua). Flow insets its single row by 3px
+-- top and bottom, so 3 + 24 + 3 centres inside the 30px band. The gutter's
+-- height MATCHES the buttons on purpose - Flow offsets each child by half its
+-- own height, so a shorter spacer makes the line step.
+local ACTION_STRIP_HEIGHT = (ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT) or 30
+local ACTION_STRIP_BUTTON_HEIGHT = 24
+local ACTION_STRIP_GUTTER = 4
 local VIEW_TRAIT_CONFIG_ID = (Constants and Constants.TraitConsts and Constants.TraitConsts.VIEW_TRAIT_CONFIG_ID) or -3
 
 if AceGUI and not AceGUI:GetWidgetVersion(REMOVE_BADGE_WIDGET_TYPE) then
@@ -239,11 +247,11 @@ local function GetActiveInheritedLabel(sources, key, optionDefault)
     return nil
 end
 
--- rowMode: draw the section header in the row-grammar shape (caret far left,
--- label, rule fading right). The summary body stays a full-width wrapped
--- prose label either way - it is not a setting, so it is not a row, and it
--- sits above the grids rather than inside one.
-local function AddInheritedLoadSummary(container, sources, collapsedKey, rowMode)
+-- The section header takes the row-grammar shape (caret far left, label, rule
+-- fading right). The summary body stays a full-width wrapped prose label - it
+-- is not a setting, so it is not a row, and it sits above the grids rather
+-- than inside one.
+local function AddInheritedLoadSummary(container, sources, collapsedKey)
     local labelsBySource = {}
     local hasAny = false
 
@@ -264,27 +272,11 @@ local function AddInheritedLoadSummary(container, sources, collapsedKey, rowMode
 
     if not hasAny then return end
 
-    local collapsed
-    if rowMode and collapsedKey then
-        local _, rowCollapsed = BuildCollapsibleSection(container, "Inherited Visibility Rules",
+    if collapsedKey then
+        local _, collapsed = BuildCollapsibleSection(container, "Inherited Visibility Rules",
             collapsedKey, nil, nil, ROW_SECTION)
-        collapsed = rowCollapsed
-    else
-        local heading = AceGUI:Create("Heading")
-        heading:SetText("Inherited Visibility Rules")
-        ColorHeading(heading)
-        heading:SetFullWidth(true)
-        container:AddChild(heading)
-
-        collapsed = collapsedKey and CS.collapsedSections[collapsedKey]
-        if collapsedKey then
-            AttachCollapseButton(heading, collapsed, function()
-                CS.collapsedSections[collapsedKey] = not CS.collapsedSections[collapsedKey]
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-        end
+        if collapsed then return end
     end
-    if collapsed then return end
 
     local inherited = {}
     for _, source in ipairs(sources or {}) do
@@ -301,14 +293,12 @@ local function AddInheritedLoadSummary(container, sources, collapsedKey, rowMode
     container:AddChild(label)
 end
 
--- opts.row opts into the row grammar (RowWidgets.lua): a left-aligned
--- collapsible header and the environment toggles as CDC-CheckBoxRows in a
--- two-column grid. Returns that grid's two columns so the caller can park a
--- section action in the shorter one. Omitting opts.row keeps the centered
--- heading and the Flow half-width checkboxes the unconverted callers draw
--- (custom bars).
+-- Row grammar (RowWidgets.lua): a left-aligned collapsible header and the
+-- environment toggles as CDC-CheckBoxRows in a two-column grid. Returns that
+-- grid's two columns so the caller can park a section action in the shorter
+-- one. Every caller passes opts.row = true, which is why there is no stock
+-- shape here any more.
 local function AddScopedLoadConditionToggles(container, opts)
-    local rowMode = opts.row == true
     local target = opts.target
     if not target.loadConditions and not opts.preserveMissing then
         target.loadConditions = {}
@@ -329,53 +319,28 @@ local function AddScopedLoadConditionToggles(container, opts)
     -- opts.skipInheritedSummary: the caller already emitted the summary above
     -- its own sections (the panel/entry tabs lead with it).
     if not opts.skipInheritedSummary then
-        AddInheritedLoadSummary(container, inheritedSources, opts.inheritedCollapsedKey, rowMode)
+        AddInheritedLoadSummary(container, inheritedSources, opts.inheritedCollapsedKey)
     end
 
     local headingText = (inheritedAny and opts.headingTextWhenInherited) or opts.headingText or "Hide When In"
-    local heading, localCollapsed, collapseBtn
+    local heading, localCollapsed = BuildCollapsibleSection(container, headingText,
+        opts.localCollapsedKey, nil, nil, ROW_SECTION)
 
-    if rowMode then
-        heading, localCollapsed, collapseBtn = BuildCollapsibleSection(container, headingText,
-            opts.localCollapsedKey, nil, nil, ROW_SECTION)
-    else
-        heading = AceGUI:Create("Heading")
-        heading:SetText(headingText)
-        ColorHeading(heading)
-        heading:SetFullWidth(true)
-        container:AddChild(heading)
-
-        localCollapsed = opts.localCollapsedKey and CS.collapsedSections[opts.localCollapsedKey]
-        if opts.localCollapsedKey then
-            collapseBtn = AttachCollapseButton(heading, localCollapsed, function()
-                CS.collapsedSections[opts.localCollapsedKey] = not CS.collapsedSections[opts.localCollapsedKey]
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-        end
-    end
-
-    -- opts.infoTooltipLines: the "?" anchors right of whatever already decorates
-    -- the label, then takes over the heading's right line. The row-grammar
-    -- header parks its caret to the LEFT of the label instead, so the badge
-    -- chains off the label there and the fading rule restarts after it.
+    -- opts.infoTooltipLines: the row-grammar header parks its caret to the LEFT
+    -- of the label, so the "?" chains off the end of the label and the fading
+    -- rule restarts after it.
     if opts.infoTooltipLines then
         local infoBtn = CreateInfoButton(
             heading.frame,
-            rowMode and heading.label or (collapseBtn or heading.label),
+            heading.label,
             "LEFT",
             "RIGHT",
-            (not rowMode and collapseBtn) and 2 or 4,
+            4,
             0,
             opts.infoTooltipLines,
             opts.infoButtons
         )
-        if rowMode then
-            AnchorLeftAlignedHeadingRule(heading, infoBtn)
-        else
-            heading.right:ClearAllPoints()
-            heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
-            heading.right:SetPoint("LEFT", infoBtn, "RIGHT", 4, 0)
-        end
+        AnchorLeftAlignedHeadingRule(heading, infoBtn)
     end
     if localCollapsed then return end
 
@@ -398,72 +363,38 @@ local function AddScopedLoadConditionToggles(container, opts)
         if onChanged then onChanged() end
     end
 
-    if rowMode then
-        -- LEFT column: the instanced content. RIGHT column: everything else,
-        -- ending with the two that ship pre-checked. Nine options split 5/4,
-        -- which is as even as an odd list gets. Locked rows keep their long
-        -- "(locked by ...)" suffix: a row label runs the full width of its
-        -- cell minus the 140px control column, which is far more room than
-        -- the half-width checkbox they replace had.
-        local togglesLeft, togglesRight = BeginRowGrid(container)
-        local splitAt = math.ceil(#LOAD_CONDITION_OPTIONS / 2)
+    -- LEFT column: the instanced content. RIGHT column: everything else,
+    -- ending with the two that ship pre-checked. Nine options split 5/4, which
+    -- is as even as an odd list gets. Locked rows keep their long "(locked by
+    -- ...)" suffix: a row label runs the full width of its cell minus the
+    -- 140px control column, which is far more room than the half-width
+    -- checkbox they replaced had.
+    local togglesLeft, togglesRight = BeginRowGrid(container)
+    local splitAt = math.ceil(#LOAD_CONDITION_OPTIONS / 2)
 
-        for index, cond in ipairs(LOAD_CONDITION_OPTIONS) do
-            local inheritedLabel = GetActiveInheritedLabel(inheritedSources, cond.key, cond.default)
-            AddCheckboxRow(index <= splitAt and togglesLeft or togglesRight, {
-                label = inheritedLabel
-                    and (cond.label .. " |cff888888(locked by " .. inheritedLabel .. ")|r")
-                    or cond.label,
-                -- The locked suffix is the one label here long enough to clip
-                -- against the control column, so it also says its piece on
-                -- hover. Row labels do not word-wrap by design.
-                tooltip = inheritedLabel and {
-                    cond.label,
-                    { "Locked by " .. inheritedLabel .. ".", 1, 1, 1, true },
-                } or nil,
-                value = inheritedLabel and true
-                    or GetLoadConditionValue(loadConditions, cond.key, defaults, cond.default),
-                disabled = inheritedLabel ~= nil,
-                onChange = not inheritedLabel and function(newVal)
-                    SetCondition(cond, newVal)
-                end or nil,
-            })
-        end
-
-        return togglesLeft, togglesRight
-    end
-
-    -- opts.twoColumn: pair the short toggles inside a Flow sub-row (the outer
-    -- container keeps its own layout). Locked rows carry a long "(locked by
-    -- ...)" suffix that would truncate at half width, so they stay full width.
-    local toggleHost = container
-    if opts.twoColumn then
-        toggleHost = AceGUI:Create("SimpleGroup")
-        toggleHost:SetFullWidth(true)
-        toggleHost:SetLayout("Flow")
-        container:AddChild(toggleHost)
-    end
-
-    for _, cond in ipairs(LOAD_CONDITION_OPTIONS) do
+    for index, cond in ipairs(LOAD_CONDITION_OPTIONS) do
         local inheritedLabel = GetActiveInheritedLabel(inheritedSources, cond.key, cond.default)
-        local cb = AceGUI:Create("CheckBox")
-        cb:SetLabel(inheritedLabel and (cond.label .. " |cff888888(locked by " .. inheritedLabel .. ")|r") or cond.label)
-        if opts.twoColumn and not inheritedLabel then
-            cb:SetRelativeWidth(0.5)
-        else
-            cb:SetFullWidth(true)
-        end
-        if inheritedLabel then
-            cb:SetValue(true)
-            cb:SetDisabled(true)
-        else
-            cb:SetValue(GetLoadConditionValue(loadConditions, cond.key, defaults, cond.default))
-            cb:SetCallback("OnValueChanged", function(widget, event, newVal)
+        AddCheckboxRow(index <= splitAt and togglesLeft or togglesRight, {
+            label = inheritedLabel
+                and (cond.label .. " |cff888888(locked by " .. inheritedLabel .. ")|r")
+                or cond.label,
+            -- The locked suffix is the one label here long enough to clip
+            -- against the control column, so it also says its piece on
+            -- hover. Row labels do not word-wrap by design.
+            tooltip = inheritedLabel and {
+                cond.label,
+                { "Locked by " .. inheritedLabel .. ".", 1, 1, 1, true },
+            } or nil,
+            value = inheritedLabel and true
+                or GetLoadConditionValue(loadConditions, cond.key, defaults, cond.default),
+            disabled = inheritedLabel ~= nil,
+            onChange = not inheritedLabel and function(newVal)
                 SetCondition(cond, newVal)
-            end)
-        end
-        toggleHost:AddChild(cb)
+            end or nil,
+        })
     end
+
+    return togglesLeft, togglesRight
 end
 
 local function NormalizeAllowlistKey(kind, key)
@@ -2020,11 +1951,26 @@ end
 ------------------------------------------------------------------------
 -- PER-BUTTON VISIBILITY SETTINGS
 ------------------------------------------------------------------------
+-- Seven of the Show Conditions toggles gate the same fallback child, so its
+-- tooltip is stated once here rather than seven times inside the builder.
+local BASELINE_ALPHA_FALLBACK_TOOLTIP = {
+    "Use Baseline Alpha Fallback",
+    {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
+}
+
 -- insertBeforeTalents: optional callback run between the Show Conditions and
 -- Talent Conditions sections. Talent Conditions is the last section of the
 -- entry Settings tab by owner ruling, so everything the caller wants above it
 -- goes through here rather than after the call.
+--
+-- Both call sites (the entry Settings tab and the batch surface) draw the row
+-- grammar, so this builder was converted outright rather than growing an
+-- opts.row mode.
 local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchContext, insertBeforeTalents)
+    -- Function-local, not upvalues: see the note by the row-grammar imports.
+    local AddCheckboxRow = ST._AddCheckboxRow
+    local AnchorRowBadge = ST._AnchorRowBadge
+    local BeginRowGrid = ST._BeginRowGrid
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
     local isTexturePanel = group.displayMode == "textures"
@@ -2194,10 +2140,44 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     local visKey = isBatch
         and (CS.selectedGroup .. "_batch_visibility")
         or  (CS.selectedGroup .. "_" .. CS.selectedButton .. "_visibility")
-    local heading, visCollapsed = BuildCollapsibleSection(scroll, "Show Conditions", visKey)
-
+    local _, visCollapsed = BuildCollapsibleSection(scroll, "Show Conditions", visKey, nil, nil, ROW_SECTION)
 
     if not visCollapsed then
+    -- One row shape for the whole section: a CDC-CheckBoxRow reading and
+    -- writing through the same batch-aware helpers the stock checkboxes used,
+    -- so the store side of this section is untouched. opts.filter scopes the
+    -- batch read to the write filter, opts.indent marks a child row, and
+    -- opts.tooltip chains a "?" badge off the end of the label.
+    local function AddVisibilityRow(column, label, field, opts)
+        local row = AddCheckboxRow(column, {
+            label = label,
+            indent = opts.indent,
+        })
+        SetCheckboxValue(row, field, opts.filter)
+        WrapBatchCallback(row, opts.onChanged)
+        if opts.tooltip then
+            -- Anchor args are a placeholder - AnchorRowBadge re-points the
+            -- button onto the end of the row's label.
+            AnchorRowBadge(row, CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0,
+                opts.tooltip, infoButtons))
+        end
+        return row
+    end
+
+    -- Every toggle here belongs to a FAMILY: one parent condition plus the
+    -- fallback/refinement children it gates. Which families survive depends on
+    -- the entry type and on what is already checked, so this is a FILTERED row
+    -- set (see the fill rule in the recipe comment at the top of
+    -- BuildAppearanceTab's icons path): the families are collected first, then
+    -- poured into the grid LEFT column first until it holds half the rows. A
+    -- family is never split across the columns - a child that only exists
+    -- while its parent is checked has to sit directly under it.
+    local families, totalRows = {}, 0
+    local function AddFamily(rows, build)
+        families[#families + 1] = { rows = rows, build = build }
+        totalRows = totalRows + rows
+    end
+
     -- Show Only While Aura Active (aura entries). 12.1: applied statically —
     -- the aura display composes the whole button over an invisible CC shell,
     -- so this needs a restyle + rebind, not the per-tick visibility bits.
@@ -2225,17 +2205,18 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     -- display at all.
     local displayMode = group.displayMode or "icons"
     if anyAuraEntry and (displayMode == "icons" or displayMode == "bars") then
-        local showOnlyAuraCb = AceGUI:Create("CheckBox")
-        showOnlyAuraCb:SetLabel("Show Only While Aura Active")
-        SetCheckboxValue(showOnlyAuraCb, "hideWhileAuraNotActive", FilterAuraEntry)
-        showOnlyAuraCb:SetFullWidth(true)
-        WrapBatchCallback(showOnlyAuraCb, function(widget, event, val)
-            ApplyToAuraEntries("hideWhileAuraNotActive", val or nil)
-            CooldownCompanion:RefreshAllGroups()
-            CooldownCompanion:RefreshConfigPanel()
+        AddFamily(1, function(column)
+            AddVisibilityRow(column, "Show Only While Aura Active", "hideWhileAuraNotActive", {
+                filter = FilterAuraEntry,
+                onChanged = function(widget, event, val)
+                    ApplyToAuraEntries("hideWhileAuraNotActive", val or nil)
+                    CooldownCompanion:RefreshAllGroups()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
         end)
-        scroll:AddChild(showOnlyAuraCb)
     end
+
     -- Hide While On Cooldown (skip for passives — no cooldown)
     -- Batch: show if not ALL selected are passive
     local allPassive
@@ -2247,63 +2228,41 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     local allNeverUnusable
     if isBatch then allNeverUnusable = AllSelectedNeverUnusable(group)
     else allNeverUnusable = IsNeverUnusableButton(buttonData) end
-    if not allPassive and not allNoCooldown then
-    local hideCDCb = AceGUI:Create("CheckBox")
-    hideCDCb:SetLabel("Hide While On Cooldown")
-    SetCheckboxValue(hideCDCb, "hideWhileOnCooldown")
-    hideCDCb:SetFullWidth(true)
-    WrapBatchCallback(hideCDCb, function(widget, event, val)
-        ApplyToSelected("hideWhileOnCooldown", val or nil)
-        if val then
-            ApplyToSelected("hideWhileNotOnCooldown", nil)
-            ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", nil)
-            ApplyToChargeSpell("showOnlyAtZeroCharges", nil)
-        else
-            ApplyToSelected("useBaselineAlphaFallbackOnCooldown", nil)
-        end
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    scroll:AddChild(hideCDCb)
 
+    if not allPassive and not allNoCooldown then
     -- Baseline Alpha Fallback (nested under hideWhileOnCooldown)
     local showFallbackOnCooldown
     if isBatch then showFallbackOnCooldown = AnySelectedHas(group, "hideWhileOnCooldown")
     else showFallbackOnCooldown = buttonData.hideWhileOnCooldown end
-    if showFallbackOnCooldown and not isTexturePanel then
-        local fallbackOnCDCb = AceGUI:Create("CheckBox")
-        fallbackOnCDCb:SetLabel("Use Baseline Alpha Fallback")
-        SetCheckboxValue(fallbackOnCDCb, "useBaselineAlphaFallbackOnCooldown")
-        fallbackOnCDCb:SetFullWidth(true)
-        ApplyCheckboxIndent(fallbackOnCDCb, 20)
-        WrapBatchCallback(fallbackOnCDCb, function(widget, event, val)
-            ApplyToSelected("useBaselineAlphaFallbackOnCooldown", val or nil)
-        end)
-        scroll:AddChild(fallbackOnCDCb)
+    showFallbackOnCooldown = showFallbackOnCooldown and not isTexturePanel
 
-        CreateInfoButton(fallbackOnCDCb.frame, fallbackOnCDCb.checkbg, "LEFT", "RIGHT", fallbackOnCDCb.text:GetStringWidth() + 4, 0, {
-            "Use Baseline Alpha Fallback",
-            {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-        }, infoButtons)
-    end
+    AddFamily(showFallbackOnCooldown and 2 or 1, function(column)
+        AddVisibilityRow(column, "Hide While On Cooldown", "hideWhileOnCooldown", {
+            onChanged = function(widget, event, val)
+                ApplyToSelected("hideWhileOnCooldown", val or nil)
+                if val then
+                    ApplyToSelected("hideWhileNotOnCooldown", nil)
+                    ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", nil)
+                    ApplyToChargeSpell("showOnlyAtZeroCharges", nil)
+                else
+                    ApplyToSelected("useBaselineAlphaFallbackOnCooldown", nil)
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
 
-    -- Hide While Not On Cooldown
-    local hideNotCDCb = AceGUI:Create("CheckBox")
-    hideNotCDCb:SetLabel("Hide While Not On Cooldown")
-    SetCheckboxValue(hideNotCDCb, "hideWhileNotOnCooldown")
-    hideNotCDCb:SetFullWidth(true)
-    WrapBatchCallback(hideNotCDCb, function(widget, event, val)
-        ApplyToSelected("hideWhileNotOnCooldown", val or nil)
-        if val then
-            ApplyToSelected("hideWhileOnCooldown", nil)
-            ApplyToSelected("useBaselineAlphaFallbackOnCooldown", nil)
-        else
-            ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", nil)
-            ApplyToChargeSpell("showOnlyAtZeroCharges", nil)
+        if showFallbackOnCooldown then
+            AddVisibilityRow(column, "Use Baseline Alpha Fallback", "useBaselineAlphaFallbackOnCooldown", {
+                indent = true,
+                tooltip = BASELINE_ALPHA_FALLBACK_TOOLTIP,
+                onChanged = function(widget, event, val)
+                    ApplyToSelected("useBaselineAlphaFallbackOnCooldown", val or nil)
+                end,
+            })
         end
-        CooldownCompanion:RefreshConfigPanel()
     end)
-    scroll:AddChild(hideNotCDCb)
 
+    -- Hide While Not On Cooldown, with its charge refinement and fallback
     local showOnlyAtZeroCharges
     if isBatch then
         showOnlyAtZeroCharges = AnySelectedMatch(FilterChargeSpellNotOnCooldown)
@@ -2311,93 +2270,96 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         showOnlyAtZeroCharges = buttonData.hideWhileNotOnCooldown
             and FilterChargeSpell(buttonData)
     end
-    if showOnlyAtZeroCharges then
-        local showOnlyAtZeroCb = AceGUI:Create("CheckBox")
-        showOnlyAtZeroCb:SetLabel("Only Show At Zero Charges")
-        SetCheckboxValue(showOnlyAtZeroCb, "showOnlyAtZeroCharges", FilterChargeSpellNotOnCooldown)
-        showOnlyAtZeroCb:SetFullWidth(true)
-        ApplyCheckboxIndent(showOnlyAtZeroCb, 20)
-        WrapBatchCallback(showOnlyAtZeroCb, function(widget, event, val)
-            ApplyToChargeSpellNotOnCooldown("showOnlyAtZeroCharges", val or nil)
-            if val then
-                ApplyToChargeSpellNotOnCooldownOnly("useBaselineAlphaFallbackNotOnCooldown", nil)
-                ApplyToChargeSpellNotOnCooldownOnly("hideWhileZeroCharges", nil)
-                ApplyToChargeSpellNotOnCooldownOnly("useBaselineAlphaFallbackZeroCharges", nil)
-            end
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        scroll:AddChild(showOnlyAtZeroCb)
-    end
-
-    -- Baseline Alpha Fallback (nested under hideWhileNotOnCooldown)
     local showFallbackNotOnCooldown
     if isBatch then showFallbackNotOnCooldown = AnySelectedHas(group, "hideWhileNotOnCooldown")
     else showFallbackNotOnCooldown = buttonData.hideWhileNotOnCooldown end
-    if showFallbackNotOnCooldown and not isTexturePanel then
-        local fallbackNotOnCDCb = AceGUI:Create("CheckBox")
-        fallbackNotOnCDCb:SetLabel("Use Baseline Alpha Fallback")
-        SetCheckboxValue(fallbackNotOnCDCb, "useBaselineAlphaFallbackNotOnCooldown")
-        fallbackNotOnCDCb:SetFullWidth(true)
-        ApplyCheckboxIndent(fallbackNotOnCDCb, 20)
-        WrapBatchCallback(fallbackNotOnCDCb, function(widget, event, val)
-            ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", val or nil)
-            if val then
-                ApplyToChargeSpellNotOnCooldownOnly("showOnlyAtZeroCharges", nil)
-            end
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        scroll:AddChild(fallbackNotOnCDCb)
+    showFallbackNotOnCooldown = showFallbackNotOnCooldown and not isTexturePanel
 
-        CreateInfoButton(fallbackNotOnCDCb.frame, fallbackNotOnCDCb.checkbg, "LEFT", "RIGHT", fallbackNotOnCDCb.text:GetStringWidth() + 4, 0, {
-            "Use Baseline Alpha Fallback",
-            {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-        }, infoButtons)
-    end
+    local notOnCooldownRows = 1
+    if showOnlyAtZeroCharges then notOnCooldownRows = notOnCooldownRows + 1 end
+    if showFallbackNotOnCooldown then notOnCooldownRows = notOnCooldownRows + 1 end
+
+    AddFamily(notOnCooldownRows, function(column)
+        AddVisibilityRow(column, "Hide While Not On Cooldown", "hideWhileNotOnCooldown", {
+            onChanged = function(widget, event, val)
+                ApplyToSelected("hideWhileNotOnCooldown", val or nil)
+                if val then
+                    ApplyToSelected("hideWhileOnCooldown", nil)
+                    ApplyToSelected("useBaselineAlphaFallbackOnCooldown", nil)
+                else
+                    ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", nil)
+                    ApplyToChargeSpell("showOnlyAtZeroCharges", nil)
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        if showOnlyAtZeroCharges then
+            AddVisibilityRow(column, "Only Show At Zero Charges", "showOnlyAtZeroCharges", {
+                indent = true,
+                filter = FilterChargeSpellNotOnCooldown,
+                onChanged = function(widget, event, val)
+                    ApplyToChargeSpellNotOnCooldown("showOnlyAtZeroCharges", val or nil)
+                    if val then
+                        ApplyToChargeSpellNotOnCooldownOnly("useBaselineAlphaFallbackNotOnCooldown", nil)
+                        ApplyToChargeSpellNotOnCooldownOnly("hideWhileZeroCharges", nil)
+                        ApplyToChargeSpellNotOnCooldownOnly("useBaselineAlphaFallbackZeroCharges", nil)
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+        end
+
+        if showFallbackNotOnCooldown then
+            AddVisibilityRow(column, "Use Baseline Alpha Fallback", "useBaselineAlphaFallbackNotOnCooldown", {
+                indent = true,
+                tooltip = BASELINE_ALPHA_FALLBACK_TOOLTIP,
+                onChanged = function(widget, event, val)
+                    ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", val or nil)
+                    if val then
+                        ApplyToChargeSpellNotOnCooldownOnly("showOnlyAtZeroCharges", nil)
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+        end
+    end)
 
     end -- not allPassive and not allNoCooldown
 
     if not allPassive then
     if not allNeverUnusable then
     -- Hide While Unusable
-    local hideUnusableCb = AceGUI:Create("CheckBox")
-    hideUnusableCb:SetLabel("Hide While Unusable")
-    SetCheckboxValue(hideUnusableCb, "hideWhileUnusable")
-    hideUnusableCb:SetFullWidth(true)
-    WrapBatchCallback(hideUnusableCb, function(widget, event, val)
-        ApplyToSelected("hideWhileUnusable", val or nil)
-        if not val then
-            ApplyToSelected("useBaselineAlphaFallbackUnusable", nil)
-        end
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    scroll:AddChild(hideUnusableCb)
-
-    -- (?) tooltip
-    CreateInfoButton(hideUnusableCb.frame, hideUnusableCb.checkbg, "LEFT", "RIGHT", hideUnusableCb.text:GetStringWidth() + 4, 0, {
-        "Hide While Unusable",
-        {"Uses the same logic as Unusable Visual, but completely hides the button instead of changing the icon.", 1, 1, 1, true},
-    }, infoButtons)
-
-    -- Baseline Alpha Fallback (nested under hideWhileUnusable)
     local showFallbackUnusable
     if isBatch then showFallbackUnusable = AnySelectedHas(group, "hideWhileUnusable")
     else showFallbackUnusable = buttonData.hideWhileUnusable end
-    if showFallbackUnusable and not isTexturePanel then
-        local fallbackUnusableCb = AceGUI:Create("CheckBox")
-        fallbackUnusableCb:SetLabel("Use Baseline Alpha Fallback")
-        SetCheckboxValue(fallbackUnusableCb, "useBaselineAlphaFallbackUnusable")
-        fallbackUnusableCb:SetFullWidth(true)
-        ApplyCheckboxIndent(fallbackUnusableCb, 20)
-        WrapBatchCallback(fallbackUnusableCb, function(widget, event, val)
-            ApplyToSelected("useBaselineAlphaFallbackUnusable", val or nil)
-        end)
-        scroll:AddChild(fallbackUnusableCb)
+    showFallbackUnusable = showFallbackUnusable and not isTexturePanel
 
-        CreateInfoButton(fallbackUnusableCb.frame, fallbackUnusableCb.checkbg, "LEFT", "RIGHT", fallbackUnusableCb.text:GetStringWidth() + 4, 0, {
-            "Use Baseline Alpha Fallback",
-            {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-        }, infoButtons)
-    end
+    AddFamily(showFallbackUnusable and 2 or 1, function(column)
+        AddVisibilityRow(column, "Hide While Unusable", "hideWhileUnusable", {
+            tooltip = {
+                "Hide While Unusable",
+                {"Uses the same logic as Unusable Visual, but completely hides the button instead of changing the icon.", 1, 1, 1, true},
+            },
+            onChanged = function(widget, event, val)
+                ApplyToSelected("hideWhileUnusable", val or nil)
+                if not val then
+                    ApplyToSelected("useBaselineAlphaFallbackUnusable", nil)
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        if showFallbackUnusable then
+            AddVisibilityRow(column, "Use Baseline Alpha Fallback", "useBaselineAlphaFallbackUnusable", {
+                indent = true,
+                tooltip = BASELINE_ALPHA_FALLBACK_TOOLTIP,
+                onChanged = function(widget, event, val)
+                    ApplyToSelected("useBaselineAlphaFallbackUnusable", val or nil)
+                end,
+            })
+        end
+    end)
     end -- not allNeverUnusable
 
     -- Hide While No Proc (spell entries only, not aura entries)
@@ -2412,39 +2374,32 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             and not buttonData.isPassiveCooldown
     end
     if showNoProcToggle then
-        local hideNoProcCb = AceGUI:Create("CheckBox")
-        hideNoProcCb:SetLabel("Hide While No Proc")
-        SetCheckboxValue(hideNoProcCb, "hideWhileNoProc")
-        hideNoProcCb:SetFullWidth(true)
-        WrapBatchCallback(hideNoProcCb, function(widget, event, val)
-            ApplyToSelected("hideWhileNoProc", val or nil)
-            if not val then
-                ApplyToSelected("useBaselineAlphaFallbackNoProc", nil)
-            end
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        scroll:AddChild(hideNoProcCb)
-
-        -- Baseline Alpha Fallback (nested under hideWhileNoProc)
         local showFallbackNoProc
         if isBatch then showFallbackNoProc = AnySelectedHas(group, "hideWhileNoProc")
         else showFallbackNoProc = buttonData.hideWhileNoProc end
-        if showFallbackNoProc and not isTexturePanel then
-            local fallbackNoProcCb = AceGUI:Create("CheckBox")
-            fallbackNoProcCb:SetLabel("Use Baseline Alpha Fallback")
-            SetCheckboxValue(fallbackNoProcCb, "useBaselineAlphaFallbackNoProc")
-            fallbackNoProcCb:SetFullWidth(true)
-            ApplyCheckboxIndent(fallbackNoProcCb, 20)
-            WrapBatchCallback(fallbackNoProcCb, function(widget, event, val)
-                ApplyToSelected("useBaselineAlphaFallbackNoProc", val or nil)
-            end)
-            scroll:AddChild(fallbackNoProcCb)
+        showFallbackNoProc = showFallbackNoProc and not isTexturePanel
 
-            CreateInfoButton(fallbackNoProcCb.frame, fallbackNoProcCb.checkbg, "LEFT", "RIGHT", fallbackNoProcCb.text:GetStringWidth() + 4, 0, {
-                "Use Baseline Alpha Fallback",
-                {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-            }, infoButtons)
-        end
+        AddFamily(showFallbackNoProc and 2 or 1, function(column)
+            AddVisibilityRow(column, "Hide While No Proc", "hideWhileNoProc", {
+                onChanged = function(widget, event, val)
+                    ApplyToSelected("hideWhileNoProc", val or nil)
+                    if not val then
+                        ApplyToSelected("useBaselineAlphaFallbackNoProc", nil)
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+
+            if showFallbackNoProc then
+                AddVisibilityRow(column, "Use Baseline Alpha Fallback", "useBaselineAlphaFallbackNoProc", {
+                    indent = true,
+                    tooltip = BASELINE_ALPHA_FALLBACK_TOOLTIP,
+                    onChanged = function(widget, event, val)
+                        ApplyToSelected("useBaselineAlphaFallbackNoProc", val or nil)
+                    end,
+                })
+            end
+        end)
     end
 
     end -- not allPassive (unusable + no proc)
@@ -2460,71 +2415,65 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     end
     if showChargeSection then
         -- Hide While At Zero Charges
-        local hideZeroChargesCb = AceGUI:Create("CheckBox")
-        hideZeroChargesCb:SetLabel("Hide While At Zero Charges")
-        SetCheckboxValue(hideZeroChargesCb, "hideWhileZeroCharges", FilterChargeCapable)
-        hideZeroChargesCb:SetFullWidth(true)
-        WrapBatchCallback(hideZeroChargesCb, function(widget, event, val)
-            ApplyToChargeCapable("hideWhileZeroCharges", val or nil)
-            if val then
-                ApplyToChargeCapable("desaturateWhileZeroCharges", nil)
-                ApplyToChargeSpell("showOnlyAtZeroCharges", nil)
-            else
-                ApplyToChargeCapable("useBaselineAlphaFallbackZeroCharges", nil)
-            end
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        scroll:AddChild(hideZeroChargesCb)
-
-        -- Baseline Alpha Fallback (nested under hideWhileZeroCharges)
-        -- Batch: show if any selected has it on
+        -- Batch: the nested fallback shows if any selected has it on
         local showFallbackZeroCharges
         if isBatch then showFallbackZeroCharges = AnySelectedHasFiltered(group, "hideWhileZeroCharges", FilterChargeCapable)
         else showFallbackZeroCharges = buttonData.hideWhileZeroCharges end
-        if showFallbackZeroCharges and not isTexturePanel then
-            local fallbackZeroChargesCb = AceGUI:Create("CheckBox")
-            fallbackZeroChargesCb:SetLabel("Use Baseline Alpha Fallback")
-            SetCheckboxValue(fallbackZeroChargesCb, "useBaselineAlphaFallbackZeroCharges", FilterChargeCapable)
-            fallbackZeroChargesCb:SetFullWidth(true)
-            ApplyCheckboxIndent(fallbackZeroChargesCb, 20)
-            WrapBatchCallback(fallbackZeroChargesCb, function(widget, event, val)
-                ApplyToChargeCapable("useBaselineAlphaFallbackZeroCharges", val or nil)
-            end)
-            scroll:AddChild(fallbackZeroChargesCb)
+        showFallbackZeroCharges = showFallbackZeroCharges and not isTexturePanel
 
-            -- (?) tooltip
-            CreateInfoButton(fallbackZeroChargesCb.frame, fallbackZeroChargesCb.checkbg, "LEFT", "RIGHT", fallbackZeroChargesCb.text:GetStringWidth() + 4, 0, {
-                "Use Baseline Alpha Fallback",
-                {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-            }, infoButtons)
-        end
+        AddFamily(showFallbackZeroCharges and 2 or 1, function(column)
+            AddVisibilityRow(column, "Hide While At Zero Charges", "hideWhileZeroCharges", {
+                filter = FilterChargeCapable,
+                onChanged = function(widget, event, val)
+                    ApplyToChargeCapable("hideWhileZeroCharges", val or nil)
+                    if val then
+                        ApplyToChargeCapable("desaturateWhileZeroCharges", nil)
+                        ApplyToChargeSpell("showOnlyAtZeroCharges", nil)
+                    else
+                        ApplyToChargeCapable("useBaselineAlphaFallbackZeroCharges", nil)
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+
+            if showFallbackZeroCharges then
+                AddVisibilityRow(column, "Use Baseline Alpha Fallback", "useBaselineAlphaFallbackZeroCharges", {
+                    indent = true,
+                    filter = FilterChargeCapable,
+                    tooltip = BASELINE_ALPHA_FALLBACK_TOOLTIP,
+                    onChanged = function(widget, event, val)
+                        ApplyToChargeCapable("useBaselineAlphaFallbackZeroCharges", val or nil)
+                    end,
+                })
+            end
+        end)
 
         -- Desaturate While At Zero Charges
         if not isTexturePanel then
-            local desatZeroChargesCb = AceGUI:Create("CheckBox")
-            desatZeroChargesCb:SetLabel("Desaturate While At Zero Charges")
-            SetCheckboxValue(desatZeroChargesCb, "desaturateWhileZeroCharges", FilterChargeCapable)
-            desatZeroChargesCb:SetFullWidth(true)
-            WrapBatchCallback(desatZeroChargesCb, function(widget, event, val)
-                ApplyToChargeCapable("desaturateWhileZeroCharges", val or nil)
-                if val then
-                    ApplyToChargeCapable("hideWhileZeroCharges", nil)
-                    ApplyToChargeCapable("useBaselineAlphaFallbackZeroCharges", nil)
-                end
-                CooldownCompanion:RefreshConfigPanel()
+            AddFamily(1, function(column)
+                AddVisibilityRow(column, "Desaturate While At Zero Charges", "desaturateWhileZeroCharges", {
+                    filter = FilterChargeCapable,
+                    onChanged = function(widget, event, val)
+                        ApplyToChargeCapable("desaturateWhileZeroCharges", val or nil)
+                        if val then
+                            ApplyToChargeCapable("hideWhileZeroCharges", nil)
+                            ApplyToChargeCapable("useBaselineAlphaFallbackZeroCharges", nil)
+                        end
+                        CooldownCompanion:RefreshConfigPanel()
+                    end,
+                })
             end)
-            scroll:AddChild(desatZeroChargesCb)
         end
 
         -- Hide Cooldown While Charges Remain
-        local hideCdChargesCb = AceGUI:Create("CheckBox")
-        hideCdChargesCb:SetLabel("Hide Cooldown While Charges Remain")
-        SetCheckboxValue(hideCdChargesCb, "hideCooldownWithCharges", FilterChargeCapable)
-        hideCdChargesCb:SetFullWidth(true)
-        WrapBatchCallback(hideCdChargesCb, function(widget, event, val)
-            ApplyToChargeCapable("hideCooldownWithCharges", val or nil)
+        AddFamily(1, function(column)
+            AddVisibilityRow(column, "Hide Cooldown While Charges Remain", "hideCooldownWithCharges", {
+                filter = FilterChargeCapable,
+                onChanged = function(widget, event, val)
+                    ApplyToChargeCapable("hideCooldownWithCharges", val or nil)
+                end,
+            })
         end)
-        scroll:AddChild(hideCdChargesCb)
     end
 
     -- Stack-based visibility toggles (non-equippable items without charges)
@@ -2539,59 +2488,56 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         else hasStacks = HasItemFallbacks(buttonData) or not UsesChargeBehavior(buttonData) end
         if hasStacks then
             local fallbackItemUses = isBatch and AnySelectedHasItemFallbacks(group) or HasItemFallbacks(buttonData)
-            -- Hide While At Zero Stacks
-            local hideZeroStacksCb = AceGUI:Create("CheckBox")
-            hideZeroStacksCb:SetLabel(fallbackItemUses and "Hide While No Uses Available" or "Hide While At Zero Stacks")
-            SetCheckboxValue(hideZeroStacksCb, "hideWhileZeroStacks", FilterNonEquippable)
-            hideZeroStacksCb:SetFullWidth(true)
-            WrapBatchCallback(hideZeroStacksCb, function(widget, event, val)
-                ApplyToNonEquippable("hideWhileZeroStacks", val or nil)
-                if val then
-                    ApplyToNonEquippable("desaturateWhileZeroStacks", nil)
-                else
-                    ApplyToNonEquippable("useBaselineAlphaFallbackZeroStacks", nil)
-                end
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            scroll:AddChild(hideZeroStacksCb)
+            local zeroStacksLabel = fallbackItemUses and "Hide While No Uses Available" or "Hide While At Zero Stacks"
+            local desatStacksLabel = fallbackItemUses and "Desaturate While No Uses Available" or "Desaturate While At Zero Stacks"
 
-            -- Baseline Alpha Fallback (nested under hideWhileZeroStacks)
+            -- Hide While At Zero Stacks
             local showFallbackZeroStacks
             if isBatch then showFallbackZeroStacks = AnySelectedHasFiltered(group, "hideWhileZeroStacks", FilterNonEquippable)
             else showFallbackZeroStacks = buttonData.hideWhileZeroStacks end
-            if showFallbackZeroStacks and not isTexturePanel then
-                local fallbackZeroStacksCb = AceGUI:Create("CheckBox")
-                fallbackZeroStacksCb:SetLabel("Use Baseline Alpha Fallback")
-                SetCheckboxValue(fallbackZeroStacksCb, "useBaselineAlphaFallbackZeroStacks", FilterNonEquippable)
-                fallbackZeroStacksCb:SetFullWidth(true)
-                ApplyCheckboxIndent(fallbackZeroStacksCb, 20)
-                WrapBatchCallback(fallbackZeroStacksCb, function(widget, event, val)
-                    ApplyToNonEquippable("useBaselineAlphaFallbackZeroStacks", val or nil)
-                end)
-                scroll:AddChild(fallbackZeroStacksCb)
+            showFallbackZeroStacks = showFallbackZeroStacks and not isTexturePanel
 
-                -- (?) tooltip
-                CreateInfoButton(fallbackZeroStacksCb.frame, fallbackZeroStacksCb.checkbg, "LEFT", "RIGHT", fallbackZeroStacksCb.text:GetStringWidth() + 4, 0, {
-                    "Use Baseline Alpha Fallback",
-                    {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-                }, infoButtons)
-            end
+            AddFamily(showFallbackZeroStacks and 2 or 1, function(column)
+                AddVisibilityRow(column, zeroStacksLabel, "hideWhileZeroStacks", {
+                    filter = FilterNonEquippable,
+                    onChanged = function(widget, event, val)
+                        ApplyToNonEquippable("hideWhileZeroStacks", val or nil)
+                        if val then
+                            ApplyToNonEquippable("desaturateWhileZeroStacks", nil)
+                        else
+                            ApplyToNonEquippable("useBaselineAlphaFallbackZeroStacks", nil)
+                        end
+                        CooldownCompanion:RefreshConfigPanel()
+                    end,
+                })
+
+                if showFallbackZeroStacks then
+                    AddVisibilityRow(column, "Use Baseline Alpha Fallback", "useBaselineAlphaFallbackZeroStacks", {
+                        indent = true,
+                        filter = FilterNonEquippable,
+                        tooltip = BASELINE_ALPHA_FALLBACK_TOOLTIP,
+                        onChanged = function(widget, event, val)
+                            ApplyToNonEquippable("useBaselineAlphaFallbackZeroStacks", val or nil)
+                        end,
+                    })
+                end
+            end)
 
             -- Desaturate While At Zero Stacks
             if not isTexturePanel then
-                local desatZeroStacksCb = AceGUI:Create("CheckBox")
-                desatZeroStacksCb:SetLabel(fallbackItemUses and "Desaturate While No Uses Available" or "Desaturate While At Zero Stacks")
-                SetCheckboxValue(desatZeroStacksCb, "desaturateWhileZeroStacks", FilterNonEquippable)
-                desatZeroStacksCb:SetFullWidth(true)
-                WrapBatchCallback(desatZeroStacksCb, function(widget, event, val)
-                    ApplyToNonEquippable("desaturateWhileZeroStacks", val or nil)
-                    if val then
-                        ApplyToNonEquippable("hideWhileZeroStacks", nil)
-                        ApplyToNonEquippable("useBaselineAlphaFallbackZeroStacks", nil)
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
+                AddFamily(1, function(column)
+                    AddVisibilityRow(column, desatStacksLabel, "desaturateWhileZeroStacks", {
+                        filter = FilterNonEquippable,
+                        onChanged = function(widget, event, val)
+                            ApplyToNonEquippable("desaturateWhileZeroStacks", val or nil)
+                            if val then
+                                ApplyToNonEquippable("hideWhileZeroStacks", nil)
+                                ApplyToNonEquippable("useBaselineAlphaFallbackZeroStacks", nil)
+                            end
+                            CooldownCompanion:RefreshConfigPanel()
+                        end,
+                    })
                 end)
-                scroll:AddChild(desatZeroStacksCb)
             end
         end
     end
@@ -2602,42 +2548,47 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     if isBatch then showEquipSection = isItem and AnySelectedEquippable(group)
     else showEquipSection = isItem and CooldownCompanion.IsItemEquippable(buttonData) end
     if showEquipSection then
-        local hideNotEquippedCb = AceGUI:Create("CheckBox")
-        hideNotEquippedCb:SetLabel("Hide While Not Equipped")
-        SetCheckboxValue(hideNotEquippedCb, "hideWhileNotEquipped", FilterEquippable)
-        hideNotEquippedCb:SetFullWidth(true)
-        WrapBatchCallback(hideNotEquippedCb, function(widget, event, val)
-            ApplyToEquippable("hideWhileNotEquipped", val or nil)
-            if not val then
-                ApplyToEquippable("useBaselineAlphaFallbackNotEquipped", nil)
-            end
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        scroll:AddChild(hideNotEquippedCb)
-
-        -- Baseline Alpha Fallback (nested under hideWhileNotEquipped)
         local showFallbackEquip
         if isBatch then showFallbackEquip = AnySelectedHasFiltered(group, "hideWhileNotEquipped", FilterEquippable)
         else showFallbackEquip = buttonData.hideWhileNotEquipped end
-        if showFallbackEquip and not isTexturePanel then
-            local fallbackNotEquippedCb = AceGUI:Create("CheckBox")
-            fallbackNotEquippedCb:SetLabel("Use Baseline Alpha Fallback")
-            SetCheckboxValue(fallbackNotEquippedCb, "useBaselineAlphaFallbackNotEquipped", FilterEquippable)
-            fallbackNotEquippedCb:SetFullWidth(true)
-            ApplyCheckboxIndent(fallbackNotEquippedCb, 20)
-            WrapBatchCallback(fallbackNotEquippedCb, function(widget, event, val)
-                ApplyToEquippable("useBaselineAlphaFallbackNotEquipped", val or nil)
-            end)
-            scroll:AddChild(fallbackNotEquippedCb)
+        showFallbackEquip = showFallbackEquip and not isTexturePanel
 
-            -- (?) tooltip
-            CreateInfoButton(fallbackNotEquippedCb.frame, fallbackNotEquippedCb.checkbg, "LEFT", "RIGHT", fallbackNotEquippedCb.text:GetStringWidth() + 4, 0, {
-                "Use Baseline Alpha Fallback",
-                {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-            }, infoButtons)
-        end
+        AddFamily(showFallbackEquip and 2 or 1, function(column)
+            AddVisibilityRow(column, "Hide While Not Equipped", "hideWhileNotEquipped", {
+                filter = FilterEquippable,
+                onChanged = function(widget, event, val)
+                    ApplyToEquippable("hideWhileNotEquipped", val or nil)
+                    if not val then
+                        ApplyToEquippable("useBaselineAlphaFallbackNotEquipped", nil)
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+
+            if showFallbackEquip then
+                AddVisibilityRow(column, "Use Baseline Alpha Fallback", "useBaselineAlphaFallbackNotEquipped", {
+                    indent = true,
+                    filter = FilterEquippable,
+                    tooltip = BASELINE_ALPHA_FALLBACK_TOOLTIP,
+                    onChanged = function(widget, event, val)
+                        ApplyToEquippable("useBaselineAlphaFallbackNotEquipped", val or nil)
+                    end,
+                })
+            end
+        end)
     end
 
+    -- An entry type can filter every family away (a passive with no cooldown
+    -- in a texture panel), and an empty grid is still a widget - so only open
+    -- one when there is something to pour into it.
+    if totalRows > 0 then
+        local visLeft, visRight = BeginRowGrid(scroll)
+        local placed, half = 0, math.ceil(totalRows / 2)
+        for _, family in ipairs(families) do
+            family.build(placed < half and visLeft or visRight)
+            placed = placed + family.rows
+        end
+    end
 
     end -- not visCollapsed
 
@@ -2652,15 +2603,16 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     local talentKey = isBatch
         and (CS.selectedGroup .. "_batch_talentcondition")
         or  (CS.selectedGroup .. "_" .. CS.selectedButton .. "_talentcondition")
-    local talentHeading, talentCollapsed, talentCollapseBtn = BuildCollapsibleSection(scroll, "Talent Conditions", talentKey)
+    local talentHeading, talentCollapsed = BuildCollapsibleSection(scroll, "Talent Conditions", talentKey,
+        nil, nil, ROW_SECTION)
 
-    local talentInfoBtn = CreateInfoButton(talentHeading.frame, talentCollapseBtn, "LEFT", "RIGHT", 2, 0, {
+    -- The heading's "?" chains off the end of its label; the fading rule
+    -- restarts after that badge.
+    local talentInfoBtn = CreateInfoButton(talentHeading.frame, talentHeading.label, "LEFT", "RIGHT", 4, 0, {
         "Talent Conditions",
         {"Show or hide this button based on which talents you have selected. If you add multiple conditions, all of them must pass.", 1, 1, 1, true},
     }, infoButtons)
-    talentHeading.right:ClearAllPoints()
-    talentHeading.right:SetPoint("RIGHT", talentHeading.frame, "RIGHT", -3, 0)
-    talentHeading.right:SetPoint("LEFT", talentInfoBtn, "RIGHT", 4, 0)
+    AnchorLeftAlignedHeadingRule(talentHeading, talentInfoBtn)
 
     -- Determine current talent condition state
     local conditions = buttonData.talentConditions
@@ -2752,14 +2704,18 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         scroll:AddChild(emptyLabel)
     end
 
-    -- Button row: side-by-side Pick + Clear using Flow layout
+    -- Section actions on one grammar-height line: compact (SetAutoWidth) and
+    -- flush left, never page-wide. The talent summary above is wrapped prose,
+    -- so it stays a full-width label on the tab surface rather than a row.
     local talentBtnRow = AceGUI:Create("SimpleGroup")
     talentBtnRow:SetFullWidth(true)
     talentBtnRow:SetLayout("Flow")
+    talentBtnRow:SetHeight(ACTION_STRIP_HEIGHT)
+    talentBtnRow.noAutoHeight = true
 
     local pickBtn = AceGUI:Create("Button")
     pickBtn:SetText(condCount > 0 and "Edit" or "Pick Talents")
-    pickBtn:SetRelativeWidth(hasTalent and 0.5 or 1)
+    pickBtn:SetAutoWidth(true)
     pickBtn:SetCallback("OnClick", function()
         local initialConditions = not isBatch and buttonData.talentConditions or nil
         CooldownCompanion:OpenTalentPicker(function(results)
@@ -2834,11 +2790,20 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     end)
     talentBtnRow:AddChild(pickBtn)
 
-    -- Clear All button (only when conditions exist)
+    -- Clear All button (only when conditions exist). Destructive, so it shares
+    -- the line with the picker that owns what it clears.
     if hasTalent then
+        -- Flow packs siblings at 0px, so the gutter is a fixed-size spacer
+        -- group - the same idiom the preset trio uses.
+        local gutter = AceGUI:Create("SimpleGroup")
+        gutter:SetWidth(ACTION_STRIP_GUTTER)
+        gutter:SetHeight(ACTION_STRIP_BUTTON_HEIGHT)
+        gutter.noAutoHeight = true
+        talentBtnRow:AddChild(gutter)
+
         local clearBtn = AceGUI:Create("Button")
         clearBtn:SetText("Clear")
-        clearBtn:SetRelativeWidth(0.5)
+        clearBtn:SetAutoWidth(true)
         clearBtn:SetCallback("OnClick", function()
             ApplyToSelected("talentConditions", nil)
             ApplyToSelected("talentNodeID", nil)
@@ -2911,7 +2876,7 @@ local function BuildLoadConditionsTab(container)
     -- throughout - see the recipe comment at the top of BuildAppearanceTab's
     -- icons path in GroupTabs.lua. Nothing on this tab carries a gear, so
     -- there is no advanced-panel queue to keep uncollapsed.
-    AddInheritedLoadSummary(container, inheritedSources, "loadconditions_panel_inherited", true)
+    AddInheritedLoadSummary(container, inheritedSources, "loadconditions_panel_inherited")
 
     local _, whoCollapsed = BuildCollapsibleSection(container, "Who Can Use This",
         "loadconditions_panel_who", nil, nil, ROW_SECTION)

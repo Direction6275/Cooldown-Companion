@@ -7,8 +7,8 @@ local math_pi = math.pi
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
+local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
 local CreateInfoButton = ST._CreateInfoButton
-local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local CleanRecycledEntry = ST._CleanRecycledEntry
 local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
@@ -16,6 +16,27 @@ local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local NormalizeItemFallbacks = CooldownCompanion.NormalizeItemFallbacks
 local UpdateItemChargeMetadata = CooldownCompanion.UpdateItemChargeMetadata
+
+-- Imports from RowWidgets.lua (the row grammar). Sound Alerts, Item Settings,
+-- Custom Name and Custom Keybind Text are converted; the trigger-panel
+-- surfaces and the fallback item rows still draw stock widgets.
+-- ST._BeginRowGrid stays a function-local at each builder, the convention
+-- every converted surface follows.
+local AddSliderRow = ST._AddSliderRow
+local AddDropdownRow = ST._AddDropdownRow
+local AddEditBoxRow = ST._AddEditBoxRow
+local AddColorRow = ST._AddColorRow
+local AnchorRowBadge = ST._AnchorRowBadge
+
+-- Row-grammar section headers: caret far left, label, then a class-colored
+-- rule fading right.
+local ROW_SECTION = { leftAligned = true }
+
+-- Sound option labels read "Category - Name" and LibSharedMedia font names run
+-- well past the 140px control column, and a dropdown sizes its menu from the
+-- control.
+local SOUND_PULLOUT_WIDTH = 300
+local FONT_PULLOUT_WIDTH = 300
 
 local RefreshButtonSettingsMultiSelect = ST._RefreshButtonSettingsMultiSelect
 local RefreshPanelMultiSelect = ST._RefreshPanelMultiSelect
@@ -296,24 +317,29 @@ local function SoundAlertsCollapseKey()
     return tostring(CS.selectedGroup) .. "_" .. tostring(CS.selectedButton) .. "_soundalerts"
 end
 
--- Expects a Flow container: the per-event sound rows pair side by side, while
--- the heading and helper labels stay full width.
+-- Row grammar (RowWidgets.lua): one CDC-DropdownRow per alertable event in a
+-- two-column grid. Expects the tab's ScrollFrame (a "List") directly.
 local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
-    local soundHeading, soundCollapsed, soundCollapseBtn =
-        BuildCollapsibleSection(scroll, "Sound Alerts", SoundAlertsCollapseKey())
+    -- Function-local, not an upvalue: see the note by the row-grammar imports.
+    local BeginRowGrid = ST._BeginRowGrid
 
-    local soundInfoBtn = CreateInfoButton(soundHeading.frame, soundCollapseBtn, "LEFT", "RIGHT", 2, 0, {
+    local soundHeading, soundCollapsed =
+        BuildCollapsibleSection(scroll, "Sound Alerts", SoundAlertsCollapseKey(), nil, nil, ROW_SECTION)
+
+    -- The heading's "?" chains off the end of its label; the fading rule
+    -- restarts after that badge.
+    local soundInfoBtn = CreateInfoButton(soundHeading.frame, soundHeading.label, "LEFT", "RIGHT", 4, 0, {
         "Sound Alerts",
         {"Sound alerts are played through the Master channel and follow your game's Master volume setting.", 1, 1, 1, true},
     }, infoButtons)
-    soundHeading.right:ClearAllPoints()
-    soundHeading.right:SetPoint("RIGHT", soundHeading.frame, "RIGHT", -3, 0)
-    soundHeading.right:SetPoint("LEFT", soundInfoBtn, "RIGHT", 4, 0)
+    AnchorLeftAlignedHeadingRule(soundHeading, soundInfoBtn)
 
     if soundCollapsed then return end
 
     local validEvents = CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData)
     if not validEvents then
+        -- A transient state of the entry's tracking, not a setting, so it stays
+        -- a full-width wrapped label under the heading rather than a row.
         local noEvents = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(noEvents)
         noEvents:SetText("|cff888888No alertable sound events are available for this button under its current entry type, tracking mode, and Blizzard Cooldown Manager mapping.|r")
@@ -334,33 +360,32 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
         auraSoundOptionOrder = BuildSortedSoundOptionOrder(auraSoundOptions)
     end
 
+    -- This row set is FILTERED (see the fill rule in the recipe comment): an
+    -- entry carries only the event families its type and Cooldown Manager
+    -- mapping allow. So the family split - LEFT the cooldown-side events, RIGHT
+    -- the aura-side ones (the native C_UnitAuras triggers) - only runs when
+    -- BOTH families survive. When one family is all that is left it splits
+    -- itself across the columns left-first, so the left column is never the
+    -- empty one. Same shape as the custom-bar Sound Alerts tab.
+    local cooldownEvents, auraEvents = {}, {}
     for _, eventKey in ipairs(eventOrder) do
         if validEvents[eventKey] then
-            local isAuraEvent = CooldownCompanion:IsAuraSoundAlertEvent(eventKey)
-            local row = AceGUI:Create("SimpleGroup")
-            row:SetRelativeWidth(0.5)
-            row:SetLayout("Flow")
+            local family = CooldownCompanion:IsAuraSoundAlertEvent(eventKey) and auraEvents or cooldownEvents
+            family[#family + 1] = eventKey
+        end
+    end
 
-            local soundDrop = AceGUI:Create("Dropdown")
-            soundDrop:SetLabel(CooldownCompanion:GetSoundAlertEventLabelForButton(buttonData, eventKey))
-            if isAuraEvent then
-                soundDrop:SetList(auraSoundOptions, auraSoundOptionOrder)
-            else
-                soundDrop:SetList(soundOptions, soundOptionOrder)
-            end
-            soundDrop:SetValue(CooldownCompanion:GetButtonSoundAlertSelection(buttonData, eventKey))
-            soundDrop:SetFullWidth(true)
-            soundDrop:SetCallback("OnOpened", function(widget)
-                if not widget.pullout then return end
+    local soundLeft, soundRight = BeginRowGrid(scroll)
 
-                -- Inline preview: click the sound icon on a row to test that sound
-                -- without selecting it or closing the dropdown.
-                for _, item in widget.pullout:IterateItems() do
-                    ConfigureSoundPreviewRow(item, buttonData)
-                end
-            end)
-
-            soundDrop:SetCallback("OnValueChanged", function(widget, event, val)
+    local function AddSoundEventRow(column, eventKey)
+        local isAuraEvent = CooldownCompanion:IsAuraSoundAlertEvent(eventKey)
+        local row = AddDropdownRow(column, {
+            label = CooldownCompanion:GetSoundAlertEventLabelForButton(buttonData, eventKey),
+            pulloutWidth = SOUND_PULLOUT_WIDTH,
+            list = isAuraEvent and auraSoundOptions or soundOptions,
+            order = isAuraEvent and auraSoundOptionOrder or soundOptionOrder,
+            value = CooldownCompanion:GetButtonSoundAlertSelection(buttonData, eventKey),
+            onChange = function(val)
                 CooldownCompanion:SetButtonSoundAlertEvent(buttonData, eventKey, val)
                 if isAuraEvent then
                     -- The registration lives on the aura display binding.
@@ -370,19 +395,46 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
                 if ST._RefreshButtonsPreviewMirror then
                     ST._RefreshButtonsPreviewMirror()
                 end
-            end)
+            end,
+        })
 
-            if eventKey == "onAuraApplied" then
-                -- Anchor to the label text edge, not the label region (which
-                -- spans the whole cell), so the badge hugs the words.
-                CreateInfoButton(soundDrop.frame, soundDrop.label, "LEFT", "LEFT", soundDrop.label:GetStringWidth() + 4, 0, {
-                    "Aura Sounds",
-                    {"Aura Applied, Aura Stack Gained, and Aura Removed play when the tracked aura is gained, gains a stack, or is removed. Handled by the game so they work everywhere.", 1, 1, 1, true},
-                }, infoButtons)
+        -- Inline preview: click the sound icon on a pullout row to test that
+        -- sound without selecting it or closing the dropdown. CDC-DropdownRow
+        -- forwards its embedded dropdown's OnOpened with self = the row and
+        -- aliases row.pullout, so this registers on the ROW only - registering
+        -- on the child as well would configure every item twice.
+        row:SetCallback("OnOpened", function(widget)
+            if not widget.pullout then return end
+            for _, item in widget.pullout:IterateItems() do
+                ConfigureSoundPreviewRow(item, buttonData)
             end
+        end)
 
-            row:AddChild(soundDrop)
-            scroll:AddChild(row)
+        if eventKey == "onAuraApplied" then
+            -- Anchor args are a placeholder - AnchorRowBadge re-points the
+            -- button onto the end of the row's label.
+            AnchorRowBadge(row, CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0, {
+                "Aura Sounds",
+                {"Aura Applied, Aura Stack Gained, and Aura Removed play when the tracked aura is gained, gains a stack, or is removed. Handled by the game so they work everywhere.", 1, 1, 1, true},
+            }, infoButtons))
+        end
+
+        return row
+    end
+
+    if #cooldownEvents > 0 and #auraEvents > 0 then
+        for _, eventKey in ipairs(cooldownEvents) do
+            AddSoundEventRow(soundLeft, eventKey)
+        end
+        for _, eventKey in ipairs(auraEvents) do
+            AddSoundEventRow(soundRight, eventKey)
+        end
+    else
+        -- ceil(n/2) left, the rest right - the per-resource Colors precedent.
+        local survivors = (#cooldownEvents > 0) and cooldownEvents or auraEvents
+        local splitAt = math.ceil(#survivors / 2)
+        for index, eventKey in ipairs(survivors) do
+            AddSoundEventRow(index <= splitAt and soundLeft or soundRight, eventKey)
         end
     end
 end
@@ -447,14 +499,9 @@ local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButto
 
     if not (buttonData and buttonData.type == "spell") then return end
 
-    -- The event rows pair two-across, so they get their own Flow host: the
-    -- Settings tab's scroll is a List and must stay one. Layout is set before
-    -- AddChild so the first layout pass already flows.
-    local host = AceGUI:Create("SimpleGroup")
-    host:SetFullWidth(true)
-    host:SetLayout("Flow")
-    scroll:AddChild(host)
-    BuildSpellSoundAlertsSection(host, buttonData, infoButtons)
+    -- Row grammar: the event rows sit in a BeginRowGrid the section opens on
+    -- the scroll itself, so no Flow host is interposed any more.
+    BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
 end
 
 local function CreateCenteredSubHeading(text)
@@ -589,6 +636,9 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
 end
 
 local function BuildItemSettings(scroll, buttonData, infoButtons)
+    -- Function-local, not an upvalue: see the note by the row-grammar imports.
+    local BeginRowGrid = ST._BeginRowGrid
+
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
 
@@ -596,49 +646,67 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     if UsesChargeBehavior(buttonData) then return end
 
     local itemKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_itemsettings"
-    local itemHeading, itemCollapsed = BuildCollapsibleSection(scroll, "Item Settings", itemKey)
+    local _, itemCollapsed = BuildCollapsibleSection(scroll, "Item Settings", itemKey, nil, nil, ROW_SECTION)
+    if itemCollapsed then return end
 
-
-    if not itemCollapsed then
-    -- Item count font size
-    local itemFontSizeSlider = AceGUI:Create("Slider")
-    itemFontSizeSlider:SetLabel("Item Stack Font Size")
-    itemFontSizeSlider:SetSliderValues(8, 32, 1)
-    itemFontSizeSlider:SetValue(buttonData.itemCountFontSize or 12)
-    itemFontSizeSlider:SetFullWidth(true)
-    itemFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        buttonData.itemCountFontSize = val
-        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-    end)
-    scroll:AddChild(itemFontSizeSlider)
-
-    -- Item count font
-    local itemFontDrop = AceGUI:Create("Dropdown")
-    itemFontDrop:SetLabel("Font")
-    CS.SetupFontDropdown(itemFontDrop)
-    itemFontDrop:SetValue(buttonData.itemCountFont or "Friz Quadrata TT")
-    itemFontDrop:SetFullWidth(true)
-    CS.SetFontDropdownCallback(itemFontDrop, function(widget, event, val)
-        buttonData.itemCountFont = val
-        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-    end)
-    scroll:AddChild(itemFontDrop)
-
-    -- Item count font outline
-    local itemOutlineDrop = AceGUI:Create("Dropdown")
-    itemOutlineDrop:SetLabel("Font Outline")
-    CS.SetupFontOutlineDropdown(itemOutlineDrop)
-    itemOutlineDrop:SetValue(buttonData.itemCountFontOutline or "OUTLINE")
-    itemOutlineDrop:SetFullWidth(true)
-    CS.SetFontOutlineDropdownCallback(itemOutlineDrop, function(widget, event, val)
-        buttonData.itemCountFontOutline = val
-        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-    end)
-    scroll:AddChild(itemOutlineDrop)
-
-    -- Item count font color
     local refreshGroup = function() CooldownCompanion:RefreshGroupFrame(CS.selectedGroup) end
-    AddColorPicker(scroll, buttonData, "itemCountFontColor", "Font Color", {1, 1, 1, 1}, true, refreshGroup)
+
+    -- LEFT column: what the stack count is drawn WITH - size, face, outline.
+    -- RIGHT column: what it looks like and where it lands - color, anchor, and
+    -- the two offsets that only mean anything once the anchor is picked.
+    local itemLeft, itemRight = BeginRowGrid(scroll)
+
+    AddSliderRow(itemLeft, {
+        label = "Item Stack Font Size",
+        min = 8, max = 32, step = 1,
+        value = buttonData.itemCountFontSize or 12,
+        onChange = function(val)
+            buttonData.itemCountFontSize = val
+            refreshGroup()
+        end,
+    })
+
+    -- FONT ROW PILOT. The row is created with a label and a widened pullout but
+    -- NO list and NO onChange, then handed to the shared font helpers exactly
+    -- as a stock Dropdown would be: CDC-DropdownRow forwards SetList and
+    -- SetDisabled to its embedded child and forwards the child's OnOpened with
+    -- self = the row (aliasing row.pullout), which is everything
+    -- CS.SetupFontDropdown touches. AddDropdownRow registers OnValueChanged
+    -- only when opts.onChange is given, so SetFontDropdownCallback is the one
+    -- registration and the profile-wide font lock still gates every write.
+    -- The value is set AFTER SetupFontDropdown, because SetList rebuilds the
+    -- list the displayed text is read from.
+    local itemFontRow = AddDropdownRow(itemLeft, {
+        label = "Font",
+        pulloutWidth = FONT_PULLOUT_WIDTH,
+    })
+    CS.SetupFontDropdown(itemFontRow)
+    itemFontRow:SetValue(buttonData.itemCountFont or "Friz Quadrata TT")
+    CS.SetFontDropdownCallback(itemFontRow, function(widget, event, val)
+        buttonData.itemCountFont = val
+        refreshGroup()
+    end)
+
+    local itemOutlineRow = AddDropdownRow(itemLeft, {
+        label = "Font Outline",
+    })
+    CS.SetupFontOutlineDropdown(itemOutlineRow)
+    itemOutlineRow:SetValue(buttonData.itemCountFontOutline or "OUTLINE")
+    CS.SetFontOutlineDropdownCallback(itemOutlineRow, function(widget, event, val)
+        buttonData.itemCountFontOutline = val
+        refreshGroup()
+    end)
+
+    -- Item count font color. No deferCommit: this call site never had one, and
+    -- nothing here re-reads the bound table per tick.
+    AddColorRow(itemRight, {
+        label = "Font Color",
+        tbl = buttonData,
+        key = "itemCountFontColor",
+        default = {1, 1, 1, 1},
+        hasAlpha = true,
+        onConfirm = refreshGroup,
+    })
 
     -- Item count anchor point
     local barNoIcon = group.displayMode == "bars" and not (group.style.showBarIcon ~= false)
@@ -646,34 +714,28 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     local defItemX = barNoIcon and 0 or -2
     local defItemY = 2
 
-    AddAnchorDropdown(scroll, buttonData, "itemCountAnchor", defItemAnchor, refreshGroup, "Anchor Point")
+    AddAnchorDropdown(itemRight, buttonData, "itemCountAnchor", defItemAnchor, refreshGroup,
+        "Anchor Point", { row = true })
 
-    -- Item count X offset
-    local itemXSlider = AceGUI:Create("Slider")
-    itemXSlider:SetLabel("X Offset")
-    itemXSlider:SetSliderValues(-20, 20, 0.1)
-    itemXSlider:SetValue(buttonData.itemCountXOffset or defItemX)
-    itemXSlider:SetFullWidth(true)
-    itemXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        buttonData.itemCountXOffset = val
-        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-    end)
-    scroll:AddChild(itemXSlider)
+    AddSliderRow(itemRight, {
+        label = "X Offset",
+        min = -20, max = 20, step = 0.1,
+        value = buttonData.itemCountXOffset or defItemX,
+        onChange = function(val)
+            buttonData.itemCountXOffset = val
+            refreshGroup()
+        end,
+    })
 
-    -- Item count Y offset
-    local itemYSlider = AceGUI:Create("Slider")
-    itemYSlider:SetLabel("Y Offset")
-    itemYSlider:SetSliderValues(-20, 20, 0.1)
-    itemYSlider:SetValue(buttonData.itemCountYOffset or defItemY)
-    itemYSlider:SetFullWidth(true)
-    itemYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        buttonData.itemCountYOffset = val
-        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-    end)
-    scroll:AddChild(itemYSlider)
-
-    end -- not itemCollapsed
-
+    AddSliderRow(itemRight, {
+        label = "Y Offset",
+        min = -20, max = 20, step = 0.1,
+        value = buttonData.itemCountYOffset or defItemY,
+        onChange = function(val)
+            buttonData.itemCountYOffset = val
+            refreshGroup()
+        end,
+    })
 end
 
 local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
@@ -1015,10 +1077,12 @@ local function BuildItemFallbacksSection(scroll, buttonData, infoButtons)
 
     NormalizeItemFallbacks(buttonData)
 
-    local heading, collapsed, collapseBtn =
-        BuildCollapsibleSection(scroll, "Item Fallbacks", ItemFallbacksCollapseKey())
+    local heading, collapsed =
+        BuildCollapsibleSection(scroll, "Item Fallbacks", ItemFallbacksCollapseKey(), nil, nil, ROW_SECTION)
 
-    local infoBtn = CreateInfoButton(heading.frame, collapseBtn, "LEFT", "RIGHT", 2, 0, {
+    -- The heading's "?" chains off the end of its label; the fading rule
+    -- restarts after that badge.
+    local infoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
         "Item Fallbacks",
         {"Use arrows to set item priority.", 1, 1, 1, true},
         {"If a higher-priority item is unavailable, the next available fallback can appear instead.", 1, 1, 1, true},
@@ -1026,12 +1090,14 @@ local function BuildItemFallbacksSection(scroll, buttonData, infoButtons)
         {"Settings apply to whichever item is currently shown from this priority list.", 1, 1, 1, true},
         {"This includes options like zero-use visibility and desaturation.", 1, 1, 1, true},
     }, infoButtons)
-    heading.right:ClearAllPoints()
-    heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
-    heading.right:SetPoint("LEFT", infoBtn, "RIGHT", 4, 0)
+    AnchorLeftAlignedHeadingRule(heading, infoBtn)
 
     if collapsed then return end
 
+    -- The fallback item rows below are ITEMS, not settings: an icon, a priority
+    -- label, reorder arrows and a right-click menu. They stay full-width
+    -- InteractiveLabels on the tab surface until that interaction set gets a
+    -- row shape of its own.
     local primaryID = tonumber(buttonData.id)
     CreateFallbackItemRow(scroll, buttonData, primaryID, 0, true)
 
@@ -1042,6 +1108,11 @@ local function BuildItemFallbacksSection(scroll, buttonData, infoButtons)
         end
     end
 
+    -- Kept as a stock full-width EditBox: CS.ShowAutocompleteResults anchors its
+    -- results popup to the widget's FRAME, which on a CDC-EditBoxRow is the
+    -- whole cell, so the list would open under the label instead of under the
+    -- 140px input. Converting it needs an anchor contract the row does not have
+    -- yet, and hacking one in is not worth it here.
     local addBox = AceGUI:Create("EditBox")
     addBox:SetLabel("Search Bag Consumables")
     addBox:SetText("")
@@ -1252,6 +1323,9 @@ local function ConfigureInlineEditBoxInstructions(editBoxWidget, placeholderText
 end
 
 local function BuildCustomNameSection(scroll, buttonData)
+    -- Function-local, not an upvalue: see the note by the row-grammar imports.
+    local BeginRowGrid = ST._BeginRowGrid
+
     if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
         return
     end
@@ -1259,29 +1333,37 @@ local function BuildCustomNameSection(scroll, buttonData)
     if not group or group.displayMode ~= "bars" then return end
 
     local customNameKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_customname"
-    local customNameHeading, customNameCollapsed = BuildCollapsibleSection(scroll, "Custom Name", customNameKey)
+    local _, customNameCollapsed =
+        BuildCollapsibleSection(scroll, "Custom Name", customNameKey, nil, nil, ROW_SECTION)
+    if customNameCollapsed then return end
 
-    if not customNameCollapsed then
-        local customNameBox = AceGUI:Create("EditBox")
-        customNameBox:SetLabel("")
-        customNameBox:SetText(buttonData.customName or "")
-        customNameBox:SetFullWidth(true)
-        customNameBox:SetCallback("OnEnterPressed", function(widget, event, text)
+    -- One setting, so the grid keeps its left column only.
+    local customNameLeft = BeginRowGrid(scroll)
+    local customNameRow = AddEditBoxRow(customNameLeft, {
+        label = "Custom Name",
+        value = buttonData.customName or "",
+        onEnterPressed = function(text)
             text = strtrim(text)
             buttonData.customName = text ~= "" and text or nil
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        scroll:AddChild(customNameBox)
+        end,
+    })
 
-        ConfigureInlineEditBoxInstructions(
-            customNameBox,
-            "add custom name here, leave blank for default",
-            buttonData.customName
-        )
-    end -- not customNameCollapsed
+    -- The helper only touches the widget's .editbox frame and its own callback
+    -- registry, both of which CDC-EditBoxRow exposes, so it composes as-is. The
+    -- placeholder prose is shortened: the row's label already names the
+    -- setting, and the old sentence cannot fit a 140px control.
+    ConfigureInlineEditBoxInstructions(
+        customNameRow,
+        "leave blank for default",
+        buttonData.customName
+    )
 end
 
 local function BuildCustomKeybindSection(scroll, buttonData)
+    -- Function-local, not an upvalue: see the note by the row-grammar imports.
+    local BeginRowGrid = ST._BeginRowGrid
+
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group or group.displayMode ~= "icons" then return end
 
@@ -1291,26 +1373,26 @@ local function BuildCustomKeybindSection(scroll, buttonData)
     end
 
     local collapseKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_customkeybind"
-    local heading, isCollapsed = BuildCollapsibleSection(scroll, "Custom Keybind Text", collapseKey)
+    local _, isCollapsed =
+        BuildCollapsibleSection(scroll, "Custom Keybind Text", collapseKey, nil, nil, ROW_SECTION)
+    if isCollapsed then return end
 
-    if not isCollapsed then
-        local customKeybindBox = AceGUI:Create("EditBox")
-        customKeybindBox:SetLabel("")
-        customKeybindBox:SetText(buttonData.customKeybindText or "")
-        customKeybindBox:SetFullWidth(true)
-        customKeybindBox:SetCallback("OnEnterPressed", function(widget, event, text)
+    local keybindLeft = BeginRowGrid(scroll)
+    local customKeybindRow = AddEditBoxRow(keybindLeft, {
+        label = "Custom Keybind Text",
+        value = buttonData.customKeybindText or "",
+        onEnterPressed = function(text)
             text = strtrim(text)
             buttonData.customKeybindText = text ~= "" and text or nil
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        scroll:AddChild(customKeybindBox)
+        end,
+    })
 
-        ConfigureInlineEditBoxInstructions(
-            customKeybindBox,
-            "add custom keybind text here, leave blank for default",
-            buttonData.customKeybindText
-        )
-    end
+    ConfigureInlineEditBoxInstructions(
+        customKeybindRow,
+        "leave blank for default",
+        buttonData.customKeybindText
+    )
 end
 
 -- Expose for Config.lua

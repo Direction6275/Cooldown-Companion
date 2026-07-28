@@ -1726,6 +1726,10 @@ local function RefreshButtonsWideColumn()
         col3._panelMultiSelectScroll:ReleaseChildren()
         col3._panelMultiSelectScroll.frame:Show()
         ST._RefreshPanelMultiSelect(col3._panelMultiSelectScroll, panelMultiCount, multiPanelIds)
+        -- Re-run the layout with final widths, the same as the entry settings
+        -- host: AddChild lays out on every insertion, so width overrides applied
+        -- after a builder returns are invisible until the next layout.
+        col3._panelMultiSelectScroll:DoLayout()
         return
     end
     if col3._panelMultiSelectScroll then
