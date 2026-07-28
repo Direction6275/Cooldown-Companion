@@ -706,11 +706,20 @@ end
 local function CreateRevertButton(headingWidget, buttonData, sectionId)
     local revertBtn = CreateFrame("Button", nil, headingWidget.frame)
     revertBtn:SetSize(16, 16)
+    -- Left-aligned row-grammar headings put the caret first and the label
+    -- second, so badges follow the label and push the fading rule right. The
+    -- stock `right` texture is hidden on those headings - leave it alone.
+    -- Same branch CreatePromoteButton takes, for the same reason.
+    if headingWidget.frame._cdcHeadingRule and headingWidget.frame._cdcHeadingRule:IsShown() then
+        revertBtn:SetPoint("LEFT", headingWidget.label, "RIGHT", 4, 0)
+        AnchorLeftAlignedHeadingRule(headingWidget, revertBtn)
+    else
     local anchorAfter = headingWidget.frame._cdcCollapseBtn or headingWidget.label
     revertBtn:SetPoint("LEFT", anchorAfter, "RIGHT", 4, 0)
     headingWidget.right:ClearAllPoints()
     headingWidget.right:SetPoint("RIGHT", headingWidget.frame, "RIGHT", -3, 0)
     headingWidget.right:SetPoint("LEFT", revertBtn, "RIGHT", 4, 0)
+    end
 
     local icon = revertBtn:CreateTexture(nil, "OVERLAY")
     icon:SetSize(12, 12)
@@ -1743,13 +1752,76 @@ local function AddAnchorDropdown(container, tbl, key, default, refreshFn, label,
     return drop
 end
 
+-- LibSharedMedia font names run well past the 140px control column, and a
+-- dropdown sizes its menu from the control it hangs under.
+local FONT_ROW_PULLOUT_WIDTH = 300
+
 -- Create Font Size slider + Font dropdown + Font Outline dropdown.
 -- prefix: key prefix (e.g. "cooldown" reads cooldownFont, cooldownFontSize, cooldownFontOutline).
 -- defaults: {size, sizeMin, sizeMax, sizeStep, font, outline} — all optional with sane fallbacks.
-local function AddFontControls(container, tbl, prefix, defaults, refreshFn)
+--
+-- opts.row opts into the row grammar (RowWidgets.lua); opts.indent makes them
+-- child rows. Omitting opts keeps the stock full-width trio every other call
+-- site draws today.
+--
+-- The row builders are read at CALL time rather than hoisted to file scope:
+-- Helpers.lua loads BEFORE RowWidgets.lua (TOC 46 vs 47), so ST._AddSliderRow
+-- does not exist yet while this file is being read. Same rule the alpha and
+-- anchor-target row modes above follow.
+local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts)
     local fontKey = prefix .. "Font"
     local sizeKey = prefix .. "FontSize"
     local outlineKey = prefix .. "FontOutline"
+
+    if opts and opts.row then
+        ST._AddSliderRow(container, {
+            label = "Font Size",
+            indent = opts.indent,
+            min = defaults.sizeMin or 8,
+            max = defaults.sizeMax or 32,
+            step = defaults.sizeStep or 1,
+            value = tbl[sizeKey] or defaults.size or 12,
+            onChange = function(val)
+                tbl[sizeKey] = val
+                refreshFn()
+            end,
+        })
+
+        -- FONT ROW (the Item Settings pilot's rule, stated at that call site):
+        -- the row is created with a label and a widened pullout but NO list and
+        -- NO onChange, then handed to the shared font helpers exactly as a
+        -- stock Dropdown would be. CDC-DropdownRow forwards SetList/SetDisabled
+        -- to its embedded child and forwards the child's OnOpened with
+        -- self = the row (aliasing row.pullout), which is everything
+        -- CS.SetupFontDropdown touches. AddDropdownRow registers OnValueChanged
+        -- only when opts.onChange is given, so SetFontDropdownCallback is the
+        -- one registration and the profile-wide font lock still gates every
+        -- write. The value is set AFTER SetupFontDropdown, because SetList
+        -- rebuilds the list the displayed text is read from.
+        local fontRow = ST._AddDropdownRow(container, {
+            label = "Font",
+            indent = opts.indent,
+            pulloutWidth = FONT_ROW_PULLOUT_WIDTH,
+        })
+        CS.SetupFontDropdown(fontRow)
+        fontRow:SetValue(tbl[fontKey] or defaults.font or "Friz Quadrata TT")
+        CS.SetFontDropdownCallback(fontRow, function(widget, event, val)
+            tbl[fontKey] = val
+            refreshFn()
+        end)
+
+        local outlineRow = ST._AddDropdownRow(container, {
+            label = "Font Outline",
+            indent = opts.indent,
+        })
+        CS.SetupFontOutlineDropdown(outlineRow)
+        outlineRow:SetValue(tbl[outlineKey] or defaults.outline or "OUTLINE")
+        CS.SetFontOutlineDropdownCallback(outlineRow, function(widget, event, val)
+            tbl[outlineKey] = val
+            refreshFn()
+        end)
+        return
+    end
 
     local fontSizeSlider = AceGUI:Create("Slider")
     fontSizeSlider:SetLabel("Font Size")
@@ -1787,9 +1859,38 @@ end
 
 -- Create X Offset + Y Offset slider pair.
 -- defaults: {x, y, range (default 20), step (default 0.1)}
-local function AddOffsetSliders(container, tbl, xKey, yKey, defaults, refreshFn)
+--
+-- opts.row opts into the row grammar (RowWidgets.lua); opts.indent makes them
+-- child rows. Same call-time row-builder read as AddFontControls above, and
+-- for the same load-order reason.
+local function AddOffsetSliders(container, tbl, xKey, yKey, defaults, refreshFn, opts)
     local range = defaults.range or 20
     local step = defaults.step or 0.1
+
+    if opts and opts.row then
+        ST._AddSliderRow(container, {
+            label = "X Offset",
+            indent = opts.indent,
+            min = -range, max = range, step = step,
+            value = tbl[xKey] or defaults.x or 0,
+            onChange = function(val)
+                tbl[xKey] = val
+                refreshFn()
+            end,
+        })
+
+        ST._AddSliderRow(container, {
+            label = "Y Offset",
+            indent = opts.indent,
+            min = -range, max = range, step = step,
+            value = tbl[yKey] or defaults.y or 0,
+            onChange = function(val)
+                tbl[yKey] = val
+                refreshFn()
+            end,
+        })
+        return
+    end
 
     local xSlider = AceGUI:Create("Slider")
     xSlider:SetLabel("X Offset")

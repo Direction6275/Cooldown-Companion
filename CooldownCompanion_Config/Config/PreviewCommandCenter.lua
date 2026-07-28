@@ -1127,6 +1127,19 @@ local function ApplyGearRoute(route, queueKey)
     if route.overrideSection then
         SetRowScope("detail")
         CS.buttonSettingsTab = "overrides"
+        -- Every override section is a collapsible row-grammar section keyed
+        -- per entry, so landing on the tab with this one collapsed would show
+        -- the user a header and nothing else - the same rule the object routes
+        -- above follow. The context is still the one ResolveGearRoute read the
+        -- route from (nothing between them touches the selection), and it only
+        -- produces an overrideSection route with an entry selected, so
+        -- CS.selectedButton is set and the key resolves to this entry's copy of
+        -- the section. There is no advanced key to queue here: the tab carries
+        -- the section inline, which is why the route has no `key`.
+        if CS.selectedGroup and CS.selectedButton and type(CS.collapsedSections) == "table" then
+            CS.collapsedSections[CS.selectedGroup .. "_" .. CS.selectedButton
+                .. "_override_" .. route.overrideSection] = nil
+        end
         return BUTTONS_SURFACE
     end
 
