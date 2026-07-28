@@ -3,7 +3,6 @@ local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
-local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local IsNoCooldownSpellID = ST.IsNoCooldownSpell
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
@@ -1954,29 +1953,22 @@ local function HookSliderEditBox(sliderWidget)
 end
 ST._HookSliderEditBox = HookSliderEditBox
 
--- Shared alpha UI builder for groups, resource bars, and other shared alpha consumers.
+-- Shared alpha UI builder for groups, containers, resource bars, and other
+-- shared alpha consumers.
 -- container: AceGUI parent widget
 -- config: table with alpha fields (baselineAlpha, forceAlpha*, forceHide*, fade*, etc.)
 -- refreshFn: function called after value changes (typically RefreshConfigPanel)
 -- collapseKey: string key for CS.collapsedSections
 -- opts (optional): { onBaselineChanged = fn(val), isGlobal = bool, disabled = bool, disabledText = string, infoButtons = table, hideHeading = bool }
 --
--- opts.row opts into the row grammar (RowWidgets.lua): a collapsible
--- left-aligned section header and a two-column grid of fixed-height rows.
--- Omitting it keeps the centered heading and full-width controls every other
--- call site draws today.
+-- Row grammar only (RowWidgets.lua): a collapsible left-aligned section header
+-- and a two-column grid of fixed-height rows. Every caller opts in, so there is
+-- no stock shape left to draw; opts.row is accepted and ignored for callers
+-- that still state it.
 local function BuildAlphaControls(container, config, refreshFn, collapseKey, opts)
     opts = opts or {}
     local tabInfoBtns = opts.infoButtons or CS.tabInfoButtons
     local controlsDisabled = opts.disabled == true
-    local rowMode = opts.row == true
-
-    -- Stock (non-row) hosts lay their controls out one per line. The
-    -- half-width pairing this used to offer went with the group Layout tab's
-    -- Flow half, which was its only caller.
-    local function SetCompactWidth(widget)
-        widget:SetFullWidth(true)
-    end
 
     local function ApplyAlphaSettingChange(refreshPanel)
         if CooldownCompanion.RefreshAlphaUpdateDriver then
@@ -1993,35 +1985,17 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
     }
 
     if opts.hideHeading ~= true then
-        if rowMode then
-            local alphaHeading, alphaCollapsed = BuildCollapsibleSection(container, "Alpha", collapseKey, nil, nil, { leftAligned = true })
+        local alphaHeading, alphaCollapsed = BuildCollapsibleSection(container, "Alpha", collapseKey, nil, nil, { leftAligned = true })
 
-            -- The tooltip describes the whole section (the tri-state force
-            -- conditions above all), so it rides the header rather than
-            -- badging the Baseline Alpha row: a slider row's track starts
-            -- exactly where a badge chain would run into it.
-            local headingInfoBtn = CreateInfoButton(alphaHeading.frame, alphaHeading.label, "LEFT", "RIGHT", 4, 0,
-                ALPHA_TOOLTIP, tabInfoBtns)
-            AnchorLeftAlignedHeadingRule(alphaHeading, headingInfoBtn)
+        -- The tooltip describes the whole section (the tri-state force
+        -- conditions above all), so it rides the header rather than badging
+        -- the Baseline Alpha row: a slider row's track starts exactly where a
+        -- badge chain would run into it.
+        local headingInfoBtn = CreateInfoButton(alphaHeading.frame, alphaHeading.label, "LEFT", "RIGHT", 4, 0,
+            ALPHA_TOOLTIP, tabInfoBtns)
+        AnchorLeftAlignedHeadingRule(alphaHeading, headingInfoBtn)
 
-            if alphaCollapsed then return end
-        else
-            local alphaHeading = AceGUI:Create("Heading")
-            alphaHeading:SetText("Alpha")
-            ColorHeading(alphaHeading)
-            alphaHeading:SetFullWidth(true)
-            container:AddChild(alphaHeading)
-
-            local alphaCollapsed = collapseKey and CS.collapsedSections[collapseKey] or false
-            AttachCollapseButton(alphaHeading, alphaCollapsed, function()
-                if collapseKey then
-                    CS.collapsedSections[collapseKey] = not CS.collapsedSections[collapseKey]
-                end
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-
-            if alphaCollapsed then return end
-        end
+        if alphaCollapsed then return end
     end
 
     if controlsDisabled and opts.disabledText and opts.disabledText ~= "" then
@@ -2034,16 +2008,11 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         container:AddChild(disabledLabel)
     end
 
-    -- Row grammar: LEFT column holds the baseline and the four combat/mount
-    -- force conditions, RIGHT the unit and mouseover conditions plus the fade
+    -- LEFT column holds the baseline and the four combat/mount force
+    -- conditions, RIGHT the unit and mouseover conditions plus the fade
     -- behaviour they all share. Both halves are top-aligned, so the gated
     -- child rows on either side just end their column early.
-    local alphaLeft, alphaRight
-    if rowMode then
-        alphaLeft, alphaRight = ST._BeginRowGrid(container)
-    end
-    local leftTarget = alphaLeft or container
-    local rightTarget = alphaRight or container
+    local leftTarget, rightTarget = ST._BeginRowGrid(container)
 
     local function ApplyBaselineAlpha(val)
         if controlsDisabled then return end
@@ -2054,29 +2023,13 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         ApplyAlphaSettingChange(false)
     end
 
-    if rowMode then
-        ST._AddSliderRow(leftTarget, {
-            label = "Baseline Alpha",
-            min = 0, max = 1, step = 0.1,
-            value = config.baselineAlpha or 1,
-            disabled = controlsDisabled,
-            onChange = ApplyBaselineAlpha,
-        })
-    else
-        local baseAlphaSlider = AceGUI:Create("Slider")
-        baseAlphaSlider:SetLabel("Baseline Alpha")
-        baseAlphaSlider:SetSliderValues(0, 1, 0.1)
-        baseAlphaSlider:SetValue(config.baselineAlpha or 1)
-        baseAlphaSlider:SetFullWidth(true)
-        baseAlphaSlider:SetDisabled(controlsDisabled)
-        baseAlphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            ApplyBaselineAlpha(val)
-        end)
-        container:AddChild(baseAlphaSlider)
-
-        CreateInfoButton(baseAlphaSlider.frame, baseAlphaSlider.label, "LEFT", "CENTER", baseAlphaSlider.label:GetStringWidth() / 2 + 4, 0,
-            ALPHA_TOOLTIP, tabInfoBtns)
-    end
+    ST._AddSliderRow(leftTarget, {
+        label = "Baseline Alpha",
+        min = 0, max = 1, step = 0.1,
+        value = config.baselineAlpha or 1,
+        disabled = controlsDisabled,
+        onChange = ApplyBaselineAlpha,
+    })
 
     do
         local function GetTriState(visibleKey, hiddenKey)
@@ -2103,29 +2056,15 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
 
         local function AddTriStateToggle(parent, label, visibleKey, hiddenKey)
             local val = GetTriState(visibleKey, hiddenKey)
-            if rowMode then
-                return ST._AddCheckboxRow(parent, {
-                    label = TriStateLabel(label, val),
-                    tristate = true,
-                    value = val,
-                    disabled = controlsDisabled,
-                    onChange = function(newVal)
-                        ApplyTriState(visibleKey, hiddenKey, newVal)
-                    end,
-                })
-            end
-
-            local cb = AceGUI:Create("CheckBox")
-            cb:SetTriState(true)
-            cb:SetLabel(TriStateLabel(label, val))
-            cb:SetValue(val)
-            SetCompactWidth(cb)
-            cb:SetDisabled(controlsDisabled)
-            cb:SetCallback("OnValueChanged", function(widget, event, newVal)
-                ApplyTriState(visibleKey, hiddenKey, newVal)
-            end)
-            parent:AddChild(cb)
-            return cb
+            return ST._AddCheckboxRow(parent, {
+                label = TriStateLabel(label, val),
+                tristate = true,
+                value = val,
+                disabled = controlsDisabled,
+                onChange = function(newVal)
+                    ApplyTriState(visibleKey, hiddenKey, newVal)
+                end,
+            })
         end
 
         AddTriStateToggle(leftTarget, "In Combat", "forceAlphaInCombat", "forceHideInCombat")
@@ -2146,27 +2085,15 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
                 ApplyAlphaSettingChange(false)
             end
 
-            if rowMode then
-                -- Child of the two mount toggles above it, so it is indented
-                -- and stays in their column.
-                ST._AddCheckboxRow(leftTarget, {
-                    label = "Include Druid Travel Form (applies to both)",
-                    indent = true,
-                    value = travelVal,
-                    disabled = controlsDisabled,
-                    onChange = ApplyTravelForm,
-                })
-            else
-                local travelCb = AceGUI:Create("CheckBox")
-                travelCb:SetLabel("Include Druid Travel Form (applies to both)")
-                travelCb:SetValue(travelVal)
-                travelCb:SetFullWidth(true)
-                travelCb:SetDisabled(controlsDisabled)
-                travelCb:SetCallback("OnValueChanged", function(widget, event, val)
-                    ApplyTravelForm(val)
-                end)
-                container:AddChild(travelCb)
-            end
+            -- Child of the two mount toggles above it, so it is indented and
+            -- stays in their column.
+            ST._AddCheckboxRow(leftTarget, {
+                label = "Include Druid Travel Form (applies to both)",
+                indent = true,
+                value = travelVal,
+                disabled = controlsDisabled,
+                onChange = ApplyTravelForm,
+            })
         end
 
         local function ApplyForceFlag(key, val, refreshPanel)
@@ -2177,101 +2104,46 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
 
         local targetVal = config.forceAlphaTargetExists or false
         local targetLabel = targetVal and "Target Exists - |cff00ff00Fully Visible|r" or "Target Exists"
-        if rowMode then
-            ST._AddCheckboxRow(rightTarget, {
-                label = targetLabel,
-                value = targetVal,
-                disabled = controlsDisabled,
-                onChange = function(val) ApplyForceFlag("forceAlphaTargetExists", val, true) end,
-            })
-        else
-            local targetCb = AceGUI:Create("CheckBox")
-            targetCb:SetLabel(targetLabel)
-            targetCb:SetValue(targetVal)
-            SetCompactWidth(targetCb)
-            targetCb:SetDisabled(controlsDisabled)
-            targetCb:SetCallback("OnValueChanged", function(widget, event, val)
-                ApplyForceFlag("forceAlphaTargetExists", val, true)
-            end)
-            container:AddChild(targetCb)
-        end
+        ST._AddCheckboxRow(rightTarget, {
+            label = targetLabel,
+            value = targetVal,
+            disabled = controlsDisabled,
+            onChange = function(val) ApplyForceFlag("forceAlphaTargetExists", val, true) end,
+        })
 
         if targetVal then
-            local enemyOnlyVal = config.forceAlphaTargetEnemyOnly or false
-            if rowMode then
-                ST._AddCheckboxRow(rightTarget, {
-                    label = "Enemy Only",
-                    indent = true,
-                    value = enemyOnlyVal,
-                    disabled = controlsDisabled,
-                    onChange = function(val) ApplyForceFlag("forceAlphaTargetEnemyOnly", val, true) end,
-                })
-            else
-                local enemyOnlyCb = AceGUI:Create("CheckBox")
-                enemyOnlyCb:SetLabel("Enemy Only")
-                enemyOnlyCb:SetValue(enemyOnlyVal)
-                SetCompactWidth(enemyOnlyCb)
-                enemyOnlyCb:SetDisabled(controlsDisabled)
-                enemyOnlyCb:SetCallback("OnValueChanged", function(widget, event, val)
-                    ApplyForceFlag("forceAlphaTargetEnemyOnly", val, true)
-                end)
-                container:AddChild(enemyOnlyCb)
-                ApplyCheckboxIndent(enemyOnlyCb, 20)
-            end
+            ST._AddCheckboxRow(rightTarget, {
+                label = "Enemy Only",
+                indent = true,
+                value = config.forceAlphaTargetEnemyOnly or false,
+                disabled = controlsDisabled,
+                onChange = function(val) ApplyForceFlag("forceAlphaTargetEnemyOnly", val, true) end,
+            })
         end
 
         local focusVal = config.forceAlphaFocusExists or false
         local focusLabel = focusVal and "Focus Exists - |cff00ff00Fully Visible|r" or "Focus Exists"
-        if rowMode then
-            ST._AddCheckboxRow(rightTarget, {
-                label = focusLabel,
-                value = focusVal,
-                disabled = controlsDisabled,
-                onChange = function(val) ApplyForceFlag("forceAlphaFocusExists", val, true) end,
-            })
-        else
-            local focusCb = AceGUI:Create("CheckBox")
-            focusCb:SetLabel(focusLabel)
-            focusCb:SetValue(focusVal)
-            SetCompactWidth(focusCb)
-            focusCb:SetDisabled(controlsDisabled)
-            focusCb:SetCallback("OnValueChanged", function(widget, event, val)
-                ApplyForceFlag("forceAlphaFocusExists", val, true)
-            end)
-            container:AddChild(focusCb)
-        end
+        ST._AddCheckboxRow(rightTarget, {
+            label = focusLabel,
+            value = focusVal,
+            disabled = controlsDisabled,
+            onChange = function(val) ApplyForceFlag("forceAlphaFocusExists", val, true) end,
+        })
 
         local mouseoverVal = config.forceAlphaMouseover or false
         local mouseoverLabel = mouseoverVal and "Mouseover - |cff00ff00Fully Visible|r" or "Mouseover"
-        local mouseoverTooltip = {
+        local mouseoverRow = ST._AddCheckboxRow(rightTarget, {
+            label = mouseoverLabel,
+            value = mouseoverVal,
+            disabled = controlsDisabled,
+            onChange = function(val) ApplyForceFlag("forceAlphaMouseover", val, true) end,
+        })
+        -- Row grammar: the badge hangs off the end of the label. The anchor
+        -- args below are a placeholder - AnchorRowBadge re-points it.
+        ST._AnchorRowBadge(mouseoverRow, CreateInfoButton(mouseoverRow.frame, mouseoverRow.frame, "LEFT", "LEFT", 0, 0, {
             "Mouseover",
             {"When enabled, mousing over forces full visibility. Like all |cff00ff00Force Visible|r conditions, this overrides |cffff0000Force Hidden|r.", 1, 1, 1, true},
-        }
-        if rowMode then
-            local mouseoverRow = ST._AddCheckboxRow(rightTarget, {
-                label = mouseoverLabel,
-                value = mouseoverVal,
-                disabled = controlsDisabled,
-                onChange = function(val) ApplyForceFlag("forceAlphaMouseover", val, true) end,
-            })
-            -- Row grammar: the badge hangs off the end of the label. The anchor
-            -- args below are a placeholder - AnchorRowBadge re-points it.
-            ST._AnchorRowBadge(mouseoverRow, CreateInfoButton(mouseoverRow.frame, mouseoverRow.frame, "LEFT", "LEFT", 0, 0,
-                mouseoverTooltip, tabInfoBtns))
-        else
-            local mouseoverCb = AceGUI:Create("CheckBox")
-            mouseoverCb:SetLabel(mouseoverLabel)
-            mouseoverCb:SetValue(mouseoverVal)
-            SetCompactWidth(mouseoverCb)
-            mouseoverCb:SetDisabled(controlsDisabled)
-            mouseoverCb:SetCallback("OnValueChanged", function(widget, event, val)
-                ApplyForceFlag("forceAlphaMouseover", val, true)
-            end)
-            container:AddChild(mouseoverCb)
-
-            CreateInfoButton(mouseoverCb.frame, mouseoverCb.checkbg, "LEFT", "RIGHT", mouseoverCb.text:GetStringWidth() + 4, 0,
-                mouseoverTooltip, tabInfoBtns)
-        end
+        }, tabInfoBtns))
 
         local function ApplyCustomFade(val)
             if controlsDisabled then return end
@@ -2279,55 +2151,27 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
             ApplyAlphaSettingChange(true)
         end
 
-        if rowMode then
-            ST._AddCheckboxRow(rightTarget, {
-                label = "Custom Fade Settings",
-                value = config.customFade or false,
-                disabled = controlsDisabled,
-                onChange = ApplyCustomFade,
-            })
-        else
-            local fadeCb = AceGUI:Create("CheckBox")
-            fadeCb:SetLabel("Custom Fade Settings")
-            fadeCb:SetValue(config.customFade or false)
-            SetCompactWidth(fadeCb)
-            fadeCb:SetDisabled(controlsDisabled)
-            fadeCb:SetCallback("OnValueChanged", function(widget, event, val)
-                ApplyCustomFade(val)
-            end)
-            container:AddChild(fadeCb)
-        end
+        ST._AddCheckboxRow(rightTarget, {
+            label = "Custom Fade Settings",
+            value = config.customFade or false,
+            disabled = controlsDisabled,
+            onChange = ApplyCustomFade,
+        })
 
         if config.customFade then
         local function AddFadeSlider(label, key, default)
-            local function ApplyFade(val)
-                if controlsDisabled then return end
-                config[key] = val
-                ApplyAlphaSettingChange(false)
-            end
-
-            if rowMode then
-                ST._AddSliderRow(rightTarget, {
-                    label = label,
-                    indent = true,
-                    min = 0, max = 5, step = 0.1,
-                    value = config[key] or default,
-                    disabled = controlsDisabled,
-                    onChange = ApplyFade,
-                })
-                return
-            end
-
-            local slider = AceGUI:Create("Slider")
-            slider:SetLabel(label)
-            slider:SetSliderValues(0, 5, 0.1)
-            slider:SetValue(config[key] or default)
-            slider:SetFullWidth(true)
-            slider:SetDisabled(controlsDisabled)
-            slider:SetCallback("OnValueChanged", function(widget, event, val)
-                ApplyFade(val)
-            end)
-            container:AddChild(slider)
+            ST._AddSliderRow(rightTarget, {
+                label = label,
+                indent = true,
+                min = 0, max = 5, step = 0.1,
+                value = config[key] or default,
+                disabled = controlsDisabled,
+                onChange = function(val)
+                    if controlsDisabled then return end
+                    config[key] = val
+                    ApplyAlphaSettingChange(false)
+                end,
+            })
         end
 
         AddFadeSlider("Fade Delay (seconds)", "fadeDelay", 1)

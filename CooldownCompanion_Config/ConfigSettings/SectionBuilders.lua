@@ -6,7 +6,6 @@ local CS = ST._configState
 -- Imports from Helpers.lua
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
-local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
@@ -235,12 +234,6 @@ local function RefreshStructuralControls(container)
         CS.RefreshAdvancedSettingsPanel()
     elseif CooldownCompanion.RefreshConfigPanel then
         CooldownCompanion:RefreshConfigPanel()
-    end
-end
-
-local function ApplyOverrideCheckboxIndent(checkbox, opts)
-    if opts and opts.isOverride then
-        ApplyCheckboxIndent(checkbox, 20)
     end
 end
 
@@ -697,12 +690,15 @@ local function BuildAuraStackTextControls(container, styleTable, refreshCallback
     end
 end
 
--- opts.row: same split as Cooldown Text - LEFT the toggle and the font trio,
--- RIGHT the color, anchor and offsets.
+-- Row grammar only: LEFT column (the container the caller hands over) the
+-- toggle and the font trio, RIGHT column (opts.rightColumn) the color, anchor
+-- and offsets. opts.label / opts.tooltip let the rotation assistant name this
+-- "Show Keybind Text" - it has no custom-text form.
 local function BuildKeybindTextControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
     local label = opts.label or KEYBIND_CUSTOM_LABEL
     local tooltip = opts.tooltip or KEYBIND_CUSTOM_TOOLTIP
+    local right = opts.rightColumn or container
 
     local function ApplyShowKeybindText(val)
         styleTable.showKeybindText = val
@@ -710,60 +706,35 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback, 
         RefreshStructuralControls(container)
     end
 
-    if opts.row then
-        local right = opts.rightColumn or container
-
-        local kbRow = AddCheckboxRow(container, {
-            label = label,
-            value = styleTable.showKeybindText or false,
-            indent = opts.indent,
-            onChange = ApplyShowKeybindText,
-        })
-        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
-        -- onto the end of the row's label.
-        AnchorRowBadge(kbRow, CreateInfoButton(kbRow.frame, kbRow.frame, "LEFT", "LEFT", 0, 0,
-            tooltip, kbRow))
-
-        if styleTable.showKeybindText then
-            AddFontControls(container, styleTable, "keybind", {size = 10, sizeMin = 6, sizeMax = 24},
-                refreshCallback, { row = true, indent = true })
-            -- deferCommit is deliberately absent, matching the AddColorPicker
-            -- call the stock path makes.
-            AddColorRow(right, {
-                label = "Font Color",
-                tbl = styleTable,
-                key = "keybindFontColor",
-                default = {1, 1, 1, 1},
-                hasAlpha = true,
-                onConfirm = refreshCallback,
-                onChange = refreshCallback,
-            })
-            AddAnchorDropdown(right, styleTable, "keybindAnchor", "TOPRIGHT", refreshCallback,
-                nil, { row = true })
-            AddOffsetSliders(right, styleTable, "keybindXOffset", "keybindYOffset", {x = -2, y = -2},
-                refreshCallback, { row = true })
-        end
-        return
-    end
-
-    local kbCb = AceGUI:Create("CheckBox")
-    kbCb:SetLabel(label)
-    kbCb:SetValue(styleTable.showKeybindText or false)
-    kbCb:SetFullWidth(true)
-    kbCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showKeybindText = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(kbCb)
-
-    CreateInfoButton(kbCb.frame, kbCb.checkbg, "LEFT", "RIGHT", kbCb.text:GetStringWidth() + 4, 0, tooltip, kbCb)
+    local kbRow = AddCheckboxRow(container, {
+        label = label,
+        value = styleTable.showKeybindText or false,
+        indent = opts.indent,
+        onChange = ApplyShowKeybindText,
+    })
+    -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+    -- onto the end of the row's label.
+    AnchorRowBadge(kbRow, CreateInfoButton(kbRow.frame, kbRow.frame, "LEFT", "LEFT", 0, 0,
+        tooltip, kbRow))
 
     if styleTable.showKeybindText then
-        AddAnchorDropdown(container, styleTable, "keybindAnchor", "TOPRIGHT", refreshCallback)
-        AddOffsetSliders(container, styleTable, "keybindXOffset", "keybindYOffset", {x = -2, y = -2}, refreshCallback)
-        AddFontControls(container, styleTable, "keybind", {size = 10, sizeMin = 6, sizeMax = 24}, refreshCallback)
-        AddColorPicker(container, styleTable, "keybindFontColor", "Font Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+        AddFontControls(container, styleTable, "keybind", {size = 10, sizeMin = 6, sizeMax = 24},
+            refreshCallback, { row = true, indent = true })
+        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- this row replaced.
+        AddColorRow(right, {
+            label = "Font Color",
+            tbl = styleTable,
+            key = "keybindFontColor",
+            default = {1, 1, 1, 1},
+            hasAlpha = true,
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
+        AddAnchorDropdown(right, styleTable, "keybindAnchor", "TOPRIGHT", refreshCallback,
+            nil, { row = true })
+        AddOffsetSliders(right, styleTable, "keybindXOffset", "keybindYOffset", {x = -2, y = -2},
+            refreshCallback, { row = true })
     end
 end
 
@@ -838,12 +809,12 @@ local function BuildChargeTextControls(container, styleTable, refreshCallback, o
     end
 end
 
--- opts.row opts into the row grammar (RowWidgets.lua): the render-mode
--- dropdown reuses AddBorderRenderModeDropdown's own row mode, the conditional
--- thickness slider becomes its child row, and the color becomes a color row.
--- Omitting opts keeps the full-width stock widgets every call site draws today.
+-- Row grammar only: the render-mode dropdown reuses
+-- AddBorderRenderModeDropdown's own row mode, the conditional thickness slider
+-- is its child row, and the color is a color row. Three rows in one column -
+-- splitting a parent from its children would orphan the indent.
 local function BuildBorderControls(container, styleTable, refreshCallback, opts)
-    local rowMode = opts and opts.row == true
+    opts = opts or {}
 
     local function ApplyRenderModeChanged()
         refreshCallback()
@@ -855,54 +826,35 @@ local function BuildBorderControls(container, styleTable, refreshCallback, opts)
     end
 
     local renderMode = AddBorderRenderModeDropdown(container, styleTable, "borderRenderMode",
-        ApplyRenderModeChanged, nil, rowMode and { row = true, indent = opts.indent } or nil)
+        ApplyRenderModeChanged, nil, { row = true, indent = opts.indent })
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-        if rowMode then
-            AddSliderRow(container, {
-                label = "Border Size",
-                indent = true,
-                min = 0, max = 5, step = 0.1,
-                value = styleTable.borderSize or ST.DEFAULT_BORDER_SIZE,
-                disabled = borderThicknessLocked,
-                onChange = function(val)
-                    if borderThicknessLocked then return end
-                    ApplyBorderSize(val)
-                end,
-            })
-        else
-            local borderSlider = AceGUI:Create("Slider")
-            borderSlider:SetLabel("Border Size")
-            borderSlider:SetSliderValues(0, 5, 0.1)
-            borderSlider:SetValue(styleTable.borderSize or ST.DEFAULT_BORDER_SIZE)
-            borderSlider:SetFullWidth(true)
-            borderSlider:SetDisabled(borderThicknessLocked)
-            borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        AddSliderRow(container, {
+            label = "Border Size",
+            indent = true,
+            min = 0, max = 5, step = 0.1,
+            value = styleTable.borderSize or ST.DEFAULT_BORDER_SIZE,
+            disabled = borderThicknessLocked,
+            onChange = function(val)
                 if borderThicknessLocked then return end
                 ApplyBorderSize(val)
-            end)
-            container:AddChild(borderSlider)
-        end
-    end
-
-    if rowMode then
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
-        -- the stock path below makes.
-        AddColorRow(container, {
-            label = "Border Color",
-            indent = opts.indent,
-            tbl = styleTable,
-            key = "borderColor",
-            default = {0, 0, 0, 1},
-            hasAlpha = true,
-            onConfirm = refreshCallback,
-            onChange = refreshCallback,
+            end,
         })
-        return
     end
 
-    AddColorPicker(container, styleTable, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshCallback, refreshCallback)
+    -- deferCommit is deliberately absent, matching the AddColorPicker call this
+    -- row replaced.
+    AddColorRow(container, {
+        label = "Border Color",
+        indent = opts.indent,
+        tbl = styleTable,
+        key = "borderColor",
+        default = {0, 0, 0, 1},
+        hasAlpha = true,
+        onConfirm = refreshCallback,
+        onChange = refreshCallback,
+    })
 end
 
 -- setWidth is a stock-only width setter for two-column Flow hosts; opts.row
@@ -925,31 +877,17 @@ local function BuildBackgroundColorControls(container, styleTable, refreshCallba
     if setWidth then setWidth(picker) end
 end
 
--- opts.row opts into the row grammar (RowWidgets.lua); every other call site
--- keeps the full-width stock checkbox.
+-- Row grammar only: one checkbox row.
 local function BuildDesaturationControls(container, styleTable, refreshCallback, opts)
-    local function ApplyDesaturation(val)
-        styleTable.desaturateOnCooldown = val
-        refreshCallback()
-    end
-
-    if opts and opts.row then
-        return AddCheckboxRow(container, {
-            label = "Show Desaturate On Cooldown",
-            value = styleTable.desaturateOnCooldown or false,
-            indent = opts.indent,
-            onChange = ApplyDesaturation,
-        })
-    end
-
-    local desatCb = AceGUI:Create("CheckBox")
-    desatCb:SetLabel("Show Desaturate On Cooldown")
-    desatCb:SetValue(styleTable.desaturateOnCooldown or false)
-    desatCb:SetFullWidth(true)
-    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        ApplyDesaturation(val)
-    end)
-    container:AddChild(desatCb)
+    return AddCheckboxRow(container, {
+        label = "Show Desaturate On Cooldown",
+        value = styleTable.desaturateOnCooldown or false,
+        indent = opts and opts.indent,
+        onChange = function(val)
+            styleTable.desaturateOnCooldown = val
+            refreshCallback()
+        end,
+    })
 end
 
 -- Tooltip position + combat hide (tracker D-C1). Group-level only (owner
@@ -992,36 +930,22 @@ end
 
 -- opts.advanced: attach the gear that opens Tooltip Position / Hide in Combat
 -- (group-level tabs only — those keys are group style, with no per-entry
--- override section, so the override editor calls this without opts).
+-- override section, so the override editor calls this without it).
 --
--- opts.row opts into the row grammar (RowWidgets.lua): the toggle becomes a
--- CDC-CheckBoxRow whose gear chains off the label. Omitting it keeps the
--- full-width stock checkbox every other call site draws today.
+-- Row grammar only: the toggle is a CDC-CheckBoxRow whose gear chains off the
+-- label.
 local function BuildShowTooltipsControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
 
-    local cb
-    if opts.row then
-        cb = ST._AddCheckboxRow(container, {
-            label = "Show Tooltips",
-            value = styleTable.showTooltips == true,
-            indent = opts.indent,
-            onChange = function(val)
-                styleTable.showTooltips = val
-                refreshCallback()
-            end,
-        })
-    else
-        cb = AceGUI:Create("CheckBox")
-        cb:SetLabel("Show Tooltips")
-        cb:SetValue(styleTable.showTooltips == true)
-        cb:SetFullWidth(true)
-        cb:SetCallback("OnValueChanged", function(widget, event, val)
+    local cb = AddCheckboxRow(container, {
+        label = "Show Tooltips",
+        value = styleTable.showTooltips == true,
+        indent = opts.indent,
+        onChange = function(val)
             styleTable.showTooltips = val
             refreshCallback()
-        end)
-        container:AddChild(cb)
-    end
+        end,
+    })
 
     if not opts.advanced then
         return cb
@@ -1039,32 +963,17 @@ local function BuildShowTooltipsControls(container, styleTable, refreshCallback,
     return cb, advBtn
 end
 
--- opts.row opts into the row grammar (RowWidgets.lua); every other call site
--- keeps the full-width stock checkbox.
+-- Row grammar only: one checkbox row.
 local function BuildShowOutOfRangeControls(container, styleTable, refreshCallback, opts)
-    local function ApplyShowOutOfRange(val)
-        styleTable.showOutOfRange = val
-        refreshCallback()
-    end
-
-    if opts and opts.row then
-        return AddCheckboxRow(container, {
-            label = "Show Out of Range",
-            value = styleTable.showOutOfRange or false,
-            indent = opts.indent,
-            onChange = ApplyShowOutOfRange,
-        })
-    end
-
-    local cb = AceGUI:Create("CheckBox")
-    cb:SetLabel("Show Out of Range")
-    cb:SetValue(styleTable.showOutOfRange or false)
-    cb:SetFullWidth(true)
-    cb:SetCallback("OnValueChanged", function(widget, event, val)
-        ApplyShowOutOfRange(val)
-    end)
-    container:AddChild(cb)
-    return cb
+    return AddCheckboxRow(container, {
+        label = "Show Out of Range",
+        value = styleTable.showOutOfRange or false,
+        indent = opts and opts.indent,
+        onChange = function(val)
+            styleTable.showOutOfRange = val
+            refreshCallback()
+        end,
+    })
 end
 
 local function BuildIconTintControls(container, styleTable, refreshCallback, opts)
@@ -1193,31 +1102,17 @@ local function BuildIconTintControls(container, styleTable, refreshCallback, opt
     end
 end
 
--- opts.row opts into the row grammar (RowWidgets.lua); every other call site
--- keeps the full-width stock checkbox.
+-- Row grammar only: one checkbox row.
 local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback, opts)
-    local function ApplyShowGCDSwipe(val)
-        styleTable.showGCDSwipe = val
-        refreshCallback()
-    end
-
-    if opts and opts.row then
-        return AddCheckboxRow(container, {
-            label = "Show GCD Swipe",
-            value = styleTable.showGCDSwipe == true,
-            indent = opts.indent,
-            onChange = ApplyShowGCDSwipe,
-        })
-    end
-
-    local cb = AceGUI:Create("CheckBox")
-    cb:SetLabel("Show GCD Swipe")
-    cb:SetValue(styleTable.showGCDSwipe == true)
-    cb:SetFullWidth(true)
-    cb:SetCallback("OnValueChanged", function(widget, event, val)
-        ApplyShowGCDSwipe(val)
-    end)
-    container:AddChild(cb)
+    return AddCheckboxRow(container, {
+        label = "Show GCD Swipe",
+        value = styleTable.showGCDSwipe == true,
+        indent = opts and opts.indent,
+        onChange = function(val)
+            styleTable.showGCDSwipe = val
+            refreshCallback()
+        end,
+    })
 end
 
 local function IsIconFillTimerEnabled(styleTable, opts)
@@ -1232,11 +1127,10 @@ end
 
 local BuildIconFillTimerAdvancedControls
 
--- opts.row opts into the row grammar (RowWidgets.lua). The three follow-on
--- toggles keep the stock indent rule (children of the first one in override
--- mode, siblings otherwise); the two conditional controls always indent under
--- the toggle that reveals them. Omitting opts.row keeps the full-width stock
--- widgets every call site draws today.
+-- Row grammar only. The three follow-on toggles keep the indent rule (children
+-- of the first one in override mode, siblings otherwise); the two conditional
+-- controls always indent under the toggle that reveals them. One parent chain,
+-- so it stays in a single column.
 local function BuildCooldownSwipeControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
     local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
@@ -1272,137 +1166,71 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         RefreshStructuralControls(container)
     end
 
-    if opts.row then
-        local childIndent = opts.isOverride and true or opts.indent
+    local childIndent = opts.isOverride and true or opts.indent
 
-        local swipeRow = AddCheckboxRow(container, {
-            label = "Show Cooldown Swipe",
-            value = styleTable.showCooldownSwipe ~= false,
-            indent = opts.indent,
-            disabled = disabledByIconFill,
-            onChange = ApplyShowSwipe,
-        })
+    local swipeRow = AddCheckboxRow(container, {
+        label = "Show Cooldown Swipe",
+        value = styleTable.showCooldownSwipe ~= false,
+        indent = opts.indent,
+        disabled = disabledByIconFill,
+        onChange = ApplyShowSwipe,
+    })
 
-        AddCheckboxRow(container, {
-            label = "Reverse Swipe",
-            value = styleTable.cooldownSwipeReverse or false,
-            indent = childIndent,
-            disabled = disabledByIconFill,
-            onChange = ApplyReverse,
-        })
+    AddCheckboxRow(container, {
+        label = "Reverse Swipe",
+        value = styleTable.cooldownSwipeReverse or false,
+        indent = childIndent,
+        disabled = disabledByIconFill,
+        onChange = ApplyReverse,
+    })
 
-        AddCheckboxRow(container, {
-            label = "Show Swipe Fill",
-            value = styleTable.showCooldownSwipeFill ~= false,
-            indent = childIndent,
-            disabled = disabledByIconFill,
-            onChange = ApplyShowFill,
-        })
+    AddCheckboxRow(container, {
+        label = "Show Swipe Fill",
+        value = styleTable.showCooldownSwipeFill ~= false,
+        indent = childIndent,
+        disabled = disabledByIconFill,
+        onChange = ApplyShowFill,
+    })
 
-        if styleTable.showCooldownSwipeFill ~= false then
-            -- Row grammar has no percent readout, so this reads 0 - 1 rather
-            -- than the stock slider's 0% - 100%; same store, same range. The
-            -- resource-bar opacity rows already read that way.
-            AddSliderRow(container, {
-                label = "Swipe Fill Opacity",
-                indent = true,
-                min = 0, max = 1, step = 0.05,
-                value = styleTable.cooldownSwipeAlpha or 0.8,
-                disabled = disabledByIconFill,
-                onChange = ApplyFillAlpha,
-            })
-        end
-
-        AddCheckboxRow(container, {
-            label = "Show Swipe Edge",
-            value = styleTable.showCooldownSwipeEdge ~= false,
-            indent = childIndent,
-            disabled = disabledByIconFill,
-            onChange = ApplyShowEdge,
-        })
-
-        if styleTable.showCooldownSwipeEdge ~= false then
-            -- deferCommit is deliberately absent, matching the AddColorPicker
-            -- call the stock path makes.
-            AddColorRow(container, {
-                label = "Swipe Edge Color",
-                indent = true,
-                tbl = styleTable,
-                key = "cooldownSwipeEdgeColor",
-                default = {1, 1, 1, 1},
-                hasAlpha = true,
-                disabled = disabledByIconFill,
-                onConfirm = refreshCallback,
-                onChange = refreshCallback,
-            })
-        end
-
-        return swipeRow
-    end
-
-    local cb = AceGUI:Create("CheckBox")
-    cb:SetLabel("Show Cooldown Swipe")
-    cb:SetValue(styleTable.showCooldownSwipe ~= false)
-    cb:SetFullWidth(true)
-    cb:SetDisabled(disabledByIconFill)
-    cb:SetCallback("OnValueChanged", function(widget, event, val)
-        ApplyShowSwipe(val)
-    end)
-    container:AddChild(cb)
-
-    local reverseCb = AceGUI:Create("CheckBox")
-    reverseCb:SetLabel("Reverse Swipe")
-    reverseCb:SetValue(styleTable.cooldownSwipeReverse or false)
-    reverseCb:SetFullWidth(true)
-    reverseCb:SetDisabled(disabledByIconFill)
-    reverseCb:SetCallback("OnValueChanged", function(widget, event, val)
-        ApplyReverse(val)
-    end)
-    container:AddChild(reverseCb)
-    ApplyOverrideCheckboxIndent(reverseCb, opts)
-
-    local fillCb = AceGUI:Create("CheckBox")
-    fillCb:SetLabel("Show Swipe Fill")
-    fillCb:SetValue(styleTable.showCooldownSwipeFill ~= false)
-    fillCb:SetFullWidth(true)
-    fillCb:SetDisabled(disabledByIconFill)
-    fillCb:SetCallback("OnValueChanged", function(widget, event, val)
-        ApplyShowFill(val)
-    end)
-    container:AddChild(fillCb)
-    ApplyOverrideCheckboxIndent(fillCb, opts)
-
-    -- Swipe Fill Opacity (only when fill is visible)
     if styleTable.showCooldownSwipeFill ~= false then
-        local alphaSlider = AceGUI:Create("Slider")
-        alphaSlider:SetLabel("Swipe Fill Opacity")
-        alphaSlider:SetSliderValues(0, 1, 0.05)
-        alphaSlider:SetIsPercent(true)
-        alphaSlider:SetValue(styleTable.cooldownSwipeAlpha or 0.8)
-        alphaSlider:SetFullWidth(true)
-        if alphaSlider.SetDisabled then alphaSlider:SetDisabled(disabledByIconFill) end
-        alphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            ApplyFillAlpha(val)
-        end)
-        container:AddChild(alphaSlider)
+        -- Row grammar has no percent readout, so this reads 0 - 1 rather
+        -- than the pre-redesign slider's 0% - 100%; same store, same range.
+        -- The resource-bar opacity rows already read that way.
+        AddSliderRow(container, {
+            label = "Swipe Fill Opacity",
+            indent = true,
+            min = 0, max = 1, step = 0.05,
+            value = styleTable.cooldownSwipeAlpha or 0.8,
+            disabled = disabledByIconFill,
+            onChange = ApplyFillAlpha,
+        })
     end
 
-    local edgeCb = AceGUI:Create("CheckBox")
-    edgeCb:SetLabel("Show Swipe Edge")
-    edgeCb:SetValue(styleTable.showCooldownSwipeEdge ~= false)
-    edgeCb:SetFullWidth(true)
-    edgeCb:SetDisabled(disabledByIconFill)
-    edgeCb:SetCallback("OnValueChanged", function(widget, event, val)
-        ApplyShowEdge(val)
-    end)
-    container:AddChild(edgeCb)
-    ApplyOverrideCheckboxIndent(edgeCb, opts)
+    AddCheckboxRow(container, {
+        label = "Show Swipe Edge",
+        value = styleTable.showCooldownSwipeEdge ~= false,
+        indent = childIndent,
+        disabled = disabledByIconFill,
+        onChange = ApplyShowEdge,
+    })
 
-    -- Swipe Edge Color (only when edge is visible)
     if styleTable.showCooldownSwipeEdge ~= false then
-        local edgeColor = AddColorPicker(container, styleTable, "cooldownSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
-        if edgeColor.SetDisabled then edgeColor:SetDisabled(disabledByIconFill) end
+        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- this row replaced.
+        AddColorRow(container, {
+            label = "Swipe Edge Color",
+            indent = true,
+            tbl = styleTable,
+            key = "cooldownSwipeEdgeColor",
+            default = {1, 1, 1, 1},
+            hasAlpha = true,
+            disabled = disabledByIconFill,
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
     end
+
+    return swipeRow
 end
 
 -- Aura duration swipe (12.1 compositing): the swipe is a slot-kit region that
@@ -1526,7 +1354,6 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
     end)
     container:AddChild(blizzardCb)
     CreateInfoButton(blizzardCb.frame, blizzardCb.checkbg, "LEFT", "RIGHT", blizzardCb.text:GetStringWidth() + 4, 0, AURA_BLIZZARD_SWIPE_TOOLTIP, blizzardCb)
-    ApplyOverrideCheckboxIndent(blizzardCb, opts)
 
     local reverseCb = AceGUI:Create("CheckBox")
     reverseCb:SetLabel("Reverse Swipe")
@@ -1539,7 +1366,6 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
         refreshCallback()
     end)
     container:AddChild(reverseCb)
-    ApplyOverrideCheckboxIndent(reverseCb, opts)
 
     local fillCb = AceGUI:Create("CheckBox")
     fillCb:SetLabel("Show Swipe Fill")
@@ -1553,7 +1379,6 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
         RefreshStructuralControls(container)
     end)
     container:AddChild(fillCb)
-    ApplyOverrideCheckboxIndent(fillCb, opts)
 
     if styleTable.showAuraDurationSwipeFill ~= false then
         local alphaSlider = AceGUI:Create("Slider")
@@ -1583,7 +1408,6 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
         RefreshStructuralControls(container)
     end)
     container:AddChild(edgeCb)
-    ApplyOverrideCheckboxIndent(edgeCb, opts)
 
     if styleTable.showAuraDurationSwipeEdge ~= false then
         AddColorPicker(container, styleTable, "auraDurationSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
@@ -1826,32 +1650,17 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
     AddColorPicker(container, styleTable, "iconFillCooldownColor", "Cooldown Fill Color", {0.6, 0.13, 0.18, 0.55}, true, refreshCallback, refreshCallback)
 end
 
--- opts.row opts into the row grammar (RowWidgets.lua); every other call site
--- keeps the full-width stock checkbox.
+-- Row grammar only: one checkbox row.
 local function BuildLossOfControlControls(container, styleTable, refreshCallback, opts)
-    local function ApplyLossOfControl(val)
-        styleTable.showLossOfControl = val
-        refreshCallback()
-    end
-
-    if opts and opts.row then
-        return AddCheckboxRow(container, {
-            label = "Show Loss of Control",
-            value = styleTable.showLossOfControl or false,
-            indent = opts.indent,
-            onChange = ApplyLossOfControl,
-        })
-    end
-
-    local locCb = AceGUI:Create("CheckBox")
-    locCb:SetLabel("Show Loss of Control")
-    locCb:SetValue(styleTable.showLossOfControl or false)
-    locCb:SetFullWidth(true)
-    locCb:SetCallback("OnValueChanged", function(widget, event, val)
-        ApplyLossOfControl(val)
-    end)
-    container:AddChild(locCb)
-    return locCb
+    return AddCheckboxRow(container, {
+        label = "Show Loss of Control",
+        value = styleTable.showLossOfControl or false,
+        indent = opts and opts.indent,
+        onChange = function(val)
+            styleTable.showLossOfControl = val
+            refreshCallback()
+        end,
+    })
 end
 
 local function BuildUnusableVisualModeControls(container, styleTable, refreshCallback)
@@ -1878,35 +1687,21 @@ local function BuildUnusableVisualModeControls(container, styleTable, refreshCal
     container:AddChild(desatCb)
 end
 
--- opts.row opts into the row grammar (RowWidgets.lua). The advanced gear and
--- its Dim/Desaturate panel are unchanged either way.
+-- Row grammar only: the toggle is a CDC-CheckBoxRow whose gear chains off the
+-- label. The advanced Dim/Desaturate panel it opens is unchanged.
 local function BuildUnusableDimmingControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
 
-    local unusableCb
-    if opts.row then
-        unusableCb = ST._AddCheckboxRow(container, {
-            label = "Show Unusable Visual",
-            value = styleTable.showUnusable == true,
-            indent = opts.indent,
-            onChange = function(val)
-                styleTable.showUnusable = val == true
-                refreshCallback()
-                RefreshStructuralControls(container)
-            end,
-        })
-    else
-        unusableCb = AceGUI:Create("CheckBox")
-        unusableCb:SetLabel("Show Unusable Visual")
-        unusableCb:SetValue(styleTable.showUnusable == true)
-        unusableCb:SetFullWidth(true)
-        unusableCb:SetCallback("OnValueChanged", function(widget, event, val)
+    local unusableCb = AddCheckboxRow(container, {
+        label = "Show Unusable Visual",
+        value = styleTable.showUnusable == true,
+        indent = opts.indent,
+        onChange = function(val)
             styleTable.showUnusable = val == true
             refreshCallback()
             RefreshStructuralControls(container)
-        end)
-        container:AddChild(unusableCb)
-    end
+        end,
+    })
 
     local _, unusableAdvBtn = AddAdvancedToggle(unusableCb,
         opts.advancedKey or "unusableVisual",
@@ -2007,7 +1802,6 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
         refreshCallback()
     end)
     container:AddChild(hostileOnlyCb)
-    ApplyOverrideCheckboxIndent(hostileOnlyCb, opts)
 
     local styleDrop = AceGUI:Create("Dropdown")
     styleDrop:SetLabel("Highlight Style")
@@ -2989,11 +2783,10 @@ local function BuildTextFontControls(container, styleTable, refreshCallback, opt
     container:AddChild(shadowCb)
 end
 
--- setWidth stays the fourth argument for the group Text tab's two-column Flow
--- host; opts.row (fifth) opts into the row grammar instead, where the row
--- sizes itself and the Ready Color gear rides the row's badge chain rather
--- than a hand-placed anchor. Three rows, so they stay in one column.
-local function BuildTextColorsControls(container, styleTable, refreshCallback, setWidth, opts)
+-- Row grammar only: the row sizes itself and the Ready Color gear rides the
+-- row's badge chain rather than a hand-placed anchor. Three rows, so they stay
+-- in one column.
+local function BuildTextColorsControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
 
     local function BuildReadyTextAdvanced(panel)
@@ -3009,53 +2802,32 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback, s
         panel:AddChild(readyTextBox)
     end
 
-    if opts.row then
-        -- deferCommit is deliberately absent throughout, matching the
-        -- AddColorPicker calls the stock path makes.
-        local function TextColorRow(rowLabel, key, default)
-            return AddColorRow(container, {
-                label = rowLabel,
-                indent = opts.indent,
-                tbl = styleTable,
-                key = key,
-                default = default,
-                hasAlpha = true,
-                onConfirm = refreshCallback,
-                onChange = refreshCallback,
-            })
-        end
-
-        TextColorRow("Text Color", "textFontColor", {1, 1, 1, 1})
-        TextColorRow("Cooldown Color", "textCooldownColor", {1, 0.3, 0.3, 1})
-        local readyRow = TextColorRow("Ready Color", "textReadyColor", {0.2, 1.0, 0.2, 1})
-
-        -- AddAnchorRowBadge handles the placement: the gear chains off the end
-        -- of the row's label, so no manual re-anchor is needed here.
-        AddAdvancedToggle(readyRow, opts.advancedKey or "textReadyText",
-            opts.infoButtons or tabInfoButtons, nil, {
-                title = "Ready Color Advanced",
-                build = BuildReadyTextAdvanced,
-            })
-        return
+    -- deferCommit is deliberately absent throughout, matching the
+    -- AddColorPicker calls these rows replaced.
+    local function TextColorRow(rowLabel, key, default)
+        return AddColorRow(container, {
+            label = rowLabel,
+            indent = opts.indent,
+            tbl = styleTable,
+            key = key,
+            default = default,
+            hasAlpha = true,
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
     end
 
-    local textColorPicker = AddColorPicker(container, styleTable, "textFontColor", "Text Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
-    local cdColorPicker = AddColorPicker(container, styleTable, "textCooldownColor", "Cooldown Color", {1, 0.3, 0.3, 1}, true, refreshCallback, refreshCallback)
+    TextColorRow("Text Color", "textFontColor", {1, 1, 1, 1})
+    TextColorRow("Cooldown Color", "textCooldownColor", {1, 0.3, 0.3, 1})
+    local readyRow = TextColorRow("Ready Color", "textReadyColor", {0.2, 1.0, 0.2, 1})
 
-    local readyColorPicker = AddColorPicker(container, styleTable, "textReadyColor", "Ready Color", {0.2, 1.0, 0.2, 1}, true, refreshCallback, refreshCallback)
-    -- Guarded on type: the fourth argument is a width setter, and a caller that
-    -- has opts but no setWidth passes nil rather than something callable.
-    if type(setWidth) == "function" then
-        setWidth(textColorPicker)
-        setWidth(cdColorPicker)
-        setWidth(readyColorPicker)
-    end
-
-    local _, readyAdvBtn = AddAdvancedToggle(readyColorPicker, "textReadyText", tabInfoButtons, nil, {
-        title = "Ready Color Advanced",
-        build = BuildReadyTextAdvanced,
-    })
-    readyAdvBtn:SetPoint("LEFT", readyColorPicker.colorSwatch, "RIGHT", readyColorPicker.text:GetStringWidth() + 8, 0)
+    -- AnchorRowBadge handles the placement: the gear chains off the end of the
+    -- row's label, so no manual re-anchor is needed here.
+    AddAdvancedToggle(readyRow, opts.advancedKey or "textReadyText",
+        opts.infoButtons or tabInfoButtons, nil, {
+            title = "Ready Color Advanced",
+            build = BuildReadyTextAdvanced,
+        })
 end
 
 ------------------------------------------------------------------------

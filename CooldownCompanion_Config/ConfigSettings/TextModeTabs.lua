@@ -262,7 +262,7 @@ local function BuildTextAppearanceTab(container, group, style)
     -- Three colors of one thing, so they stay in one column. The right column
     -- is deliberately empty.
     local colorsLeft = BeginRowGrid(container)
-    BuildTextColorsControls(colorsLeft, style, refreshStyle, nil, { row = true })
+    BuildTextColorsControls(colorsLeft, style, refreshStyle)
     end -- not colorsCollapsed
 
     -- ================================================================

@@ -480,13 +480,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         barNameText = BuildBarNameTextControls,
         barReadyText = BuildBarReadyTextControls,
         textFont = BuildTextFontControls,
-        textColors = function(container, styleTable, onChange, builderOpts)
-            -- This builder's fourth argument is the group Text tab's width
-            -- setter, not an opts table; the row options go fifth. (Passing
-            -- them fourth is what used to reach `setWidth(picker)` here with a
-            -- table on the other end.)
-            BuildTextColorsControls(container, styleTable, onChange, nil, builderOpts)
-        end,
+        textColors = BuildTextColorsControls,
         textBackground = BuildTextBackgroundControls,
     }
 

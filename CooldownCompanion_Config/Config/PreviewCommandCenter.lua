@@ -355,10 +355,15 @@ local GROUP_READOUTS = "Text & Timers"
 -- the tab list without it), so they land on Appearance - which is where a
 -- text panel's state styling lives anyway.
 local function StateRoute(advancedKey)
+    -- With an advanced key the queue resolves the section for us
+    -- (ST._INDICATORS_SECTION_BY_ADVANCED_KEY maps it to "effects_states");
+    -- with none there is nothing to resolve from, so name the section on the
+    -- route or the gear lands on a collapsed header with nothing under it.
+    local statesSection = (advancedKey == nil) and "effects_states" or nil
     return {
-        icons = { tab = "effects", key = advancedKey },
-        bars = { tab = "effects", key = advancedKey },
-        rotationAssistant = { tab = "effects", key = advancedKey },
+        icons = { tab = "effects", key = advancedKey, uncollapse = statesSection },
+        bars = { tab = "effects", key = advancedKey, uncollapse = statesSection },
+        rotationAssistant = { tab = "effects", key = advancedKey, uncollapse = statesSection },
         text = { tab = "appearance" },
     }
 end
@@ -438,7 +443,9 @@ end
 -- Bars mode lands on Appearance, where the bar's cooldown text lives (inside
 -- the "Text & Icon" collapsible, hence the uncollapse). Text and rotation
 -- assistant panels have no advanced panel for cooldown visuals at all, so
--- those routes stay tab-only.
+-- those routes carry no key - but the rotation assistant's cooldown settings
+-- sit inside its collapsible "Timers" section (which reuses the icons Effects
+-- key), so that one still has a section to open on the way past.
 --
 -- `key` names the one panel whose gear is on the destination tab: it rides
 -- the shipped queue seam so that gear ends up gold exactly as a settings-side
@@ -451,7 +458,7 @@ local COOLDOWN_ROUTE = {
         panels = CooldownAdvancedPanels,
         uncollapse = BAR_TEXT_SECTION,
     },
-    rotationAssistant = { tab = "effects" },
+    rotationAssistant = { tab = "effects", uncollapse = "effects_timers" },
     text = { tab = "appearance" },
 }
 
@@ -539,9 +546,10 @@ local CONTROLS = {
         group = GROUP_EFFECTS,
         modes = { trigger = true },
         requiresTriggerEffect = true,
-        -- Tab only: the preview plays every enabled trigger effect at once,
-        -- and each has its own advanced panel.
-        settings = { tab = "effects" },
+        -- No key: the preview plays every enabled trigger effect at once, and
+        -- each has its own advanced panel. The tab draws them inside one
+        -- collapsible section, so the gear opens that on the way past.
+        settings = { tab = "effects", uncollapse = "effects_triggerEffects" },
         preview = TriggerEffectsPreview,
     },
 

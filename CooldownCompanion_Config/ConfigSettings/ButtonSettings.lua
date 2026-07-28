@@ -5,7 +5,6 @@ local CS = ST._configState
 local math_pi = math.pi
 
 -- Imports from Helpers.lua
-local ColorHeading = ST._ColorHeading
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
 local CreateInfoButton = ST._CreateInfoButton
@@ -18,14 +17,15 @@ local NormalizeItemFallbacks = CooldownCompanion.NormalizeItemFallbacks
 local UpdateItemChargeMetadata = CooldownCompanion.UpdateItemChargeMetadata
 
 -- Imports from RowWidgets.lua (the row grammar). Sound Alerts, Item Settings,
--- Custom Name and Custom Keybind Text are converted; the trigger-panel
--- surfaces and the fallback item rows still draw stock widgets.
+-- Custom Name, Custom Keybind Text and the trigger-panel surfaces are
+-- converted; the fallback item rows still draw stock widgets.
 -- ST._BeginRowGrid stays a function-local at each builder, the convention
 -- every converted surface follows.
 local AddSliderRow = ST._AddSliderRow
 local AddDropdownRow = ST._AddDropdownRow
 local AddEditBoxRow = ST._AddEditBoxRow
 local AddColorRow = ST._AddColorRow
+local AddLabelRow = ST._AddLabelRow
 local AnchorRowBadge = ST._AnchorRowBadge
 
 -- Row-grammar section headers: caret far left, label, then a class-colored
@@ -34,9 +34,11 @@ local ROW_SECTION = { leftAligned = true }
 
 -- Sound option labels read "Category - Name" and LibSharedMedia font names run
 -- well past the 140px control column, and a dropdown sizes its menu from the
--- control.
+-- control. Trigger condition labels ("Player has a target", the state phrases)
+-- run past it too.
 local SOUND_PULLOUT_WIDTH = 300
 local FONT_PULLOUT_WIDTH = 300
+local CONDITION_PULLOUT_WIDTH = 300
 
 local RefreshButtonSettingsMultiSelect = ST._RefreshButtonSettingsMultiSelect
 local RefreshPanelMultiSelect = ST._RefreshPanelMultiSelect
@@ -439,48 +441,57 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
     end
 end
 
+-- Row grammar (RowWidgets.lua): the same shape as the spell section above,
+-- with a single panel-level event instead of a filtered set. One row, so it
+-- takes the left column and the right one stays empty.
 local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, infoButtons)
+    -- Function-local, not an upvalue: see the note by the row-grammar imports.
+    local BeginRowGrid = ST._BeginRowGrid
+
     if not (group and group.displayMode == "trigger") then
         return
     end
 
-    local soundHeading, soundCollapsed, soundCollapseBtn =
-        BuildCollapsibleSection(scroll, "Sound Alerts", SoundAlertsCollapseKey())
+    local soundHeading, soundCollapsed =
+        BuildCollapsibleSection(scroll, "Sound Alerts", SoundAlertsCollapseKey(), nil, nil, ROW_SECTION)
 
-    local soundInfoBtn = CreateInfoButton(soundHeading.frame, soundCollapseBtn, "LEFT", "RIGHT", 2, 0, {
+    -- The heading's "?" chains off the end of its label; the fading rule
+    -- restarts after that badge.
+    local soundInfoBtn = CreateInfoButton(soundHeading.frame, soundHeading.label, "LEFT", "RIGHT", 4, 0, {
         "Sound Alerts",
         {"Plays when the trigger texture appears. This is panel-level and not tied to any one condition. Uses the Master channel and follows your game's Master volume setting.", 1, 1, 1, true},
     }, infoButtons)
-    soundHeading.right:ClearAllPoints()
-    soundHeading.right:SetPoint("RIGHT", soundHeading.frame, "RIGHT", -3, 0)
-    soundHeading.right:SetPoint("LEFT", soundInfoBtn, "RIGHT", 4, 0)
+    AnchorLeftAlignedHeadingRule(soundHeading, soundInfoBtn)
 
     if soundCollapsed then return end
 
     local soundOptions = CooldownCompanion:GetSoundAlertOptions()
     local soundOptionOrder = BuildSortedSoundOptionOrder(soundOptions)
 
-    local row = AceGUI:Create("SimpleGroup")
-    row:SetFullWidth(true)
-    row:SetLayout("Flow")
+    local soundLeft = BeginRowGrid(scroll)
 
-    local soundDrop = AceGUI:Create("Dropdown")
-    soundDrop:SetLabel(CooldownCompanion:GetTriggerPanelSoundAlertEventLabel("onShow"))
-    soundDrop:SetList(soundOptions, soundOptionOrder)
-    soundDrop:SetValue(CooldownCompanion:GetTriggerPanelSoundAlertSelection(group, "onShow"))
-    soundDrop:SetFullWidth(true)
-    soundDrop:SetCallback("OnOpened", function(widget)
+    local row = AddDropdownRow(soundLeft, {
+        label = CooldownCompanion:GetTriggerPanelSoundAlertEventLabel("onShow"),
+        pulloutWidth = SOUND_PULLOUT_WIDTH,
+        list = soundOptions,
+        order = soundOptionOrder,
+        value = CooldownCompanion:GetTriggerPanelSoundAlertSelection(group, "onShow"),
+        onChange = function(value)
+            CooldownCompanion:SetTriggerPanelSoundAlertEvent(group, "onShow", value)
+        end,
+    })
+
+    -- Inline preview: click the sound icon on a pullout row to test that sound
+    -- without selecting it. CDC-DropdownRow forwards its embedded dropdown's
+    -- OnOpened with self = the row and aliases row.pullout, so this registers
+    -- on the ROW only - registering on the child as well would configure every
+    -- item twice.
+    row:SetCallback("OnOpened", function(widget)
         if not widget.pullout then return end
         for _, item in widget.pullout:IterateItems() do
             ConfigureSoundPreviewRow(item, buttonData, group)
         end
     end)
-    soundDrop:SetCallback("OnValueChanged", function(_, _, value)
-        CooldownCompanion:SetTriggerPanelSoundAlertEvent(group, "onShow", value)
-    end)
-
-    row:AddChild(soundDrop)
-    scroll:AddChild(row)
 end
 
 -- Sound alerts sit at the foot of the entry's Settings tab ("Condition" on
@@ -504,24 +515,21 @@ local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButto
     BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
 end
 
-local function CreateCenteredSubHeading(text)
-    local heading = AceGUI:Create("Heading")
-    heading:SetText(text)
-    ColorHeading(heading)
-    heading:SetHeight(22)
-    heading:SetFullWidth(true)
-    heading.label:ClearAllPoints()
-    heading.label:SetPoint("CENTER", heading.frame, "CENTER", 0, 2)
-    heading.left:ClearAllPoints()
-    heading.left:SetPoint("LEFT", heading.frame, "LEFT", 3, 0)
-    heading.left:SetPoint("RIGHT", heading.label, "LEFT", -5, 0)
-    heading.right:ClearAllPoints()
-    heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
-    heading.right:SetPoint("LEFT", heading.label, "RIGHT", 5, 0)
-    return heading
-end
-
+-- Row grammar (RowWidgets.lua). A clause is an ITEM, not a setting, so it
+-- heads its own CDC-LabelRow carrying the Remove link in the control column -
+-- the tracked-aura candidate shape - and its two dropdowns indent under it as
+-- the settings that describe it.
+--
+-- The clause set is FILTERED (each clause's Check list excludes the keys the
+-- other clauses already use, and the whole tab only exists for trigger
+-- entries), so clauses fill the LEFT column first: ceil(n/2) left, the rest
+-- right. The Add block tails the right column, where the shorter side is -
+-- except with no clauses at all, where the right column would otherwise be the
+-- only populated one.
 local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
+    -- Function-local, not an upvalue: see the note by the row-grammar imports.
+    local BeginRowGrid = ST._BeginRowGrid
+
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then
         return
@@ -530,12 +538,38 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
     CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
     local clauses = CooldownCompanion:GetTriggerConditionClauses(buttonData)
 
-    for clauseIndex, clause in ipairs(clauses) do
-        scroll:AddChild(CreateCenteredSubHeading("Condition " .. clauseIndex))
+    local conditionsKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_triggerconditions"
+    local _, conditionsCollapsed =
+        BuildCollapsibleSection(scroll, "Conditions", conditionsKey, nil, nil, ROW_SECTION)
+    if conditionsCollapsed then return end
 
-        local row = AceGUI:Create("SimpleGroup")
-        row:SetFullWidth(true)
-        row:SetLayout("Flow")
+    local conditionLeft, conditionRight = BeginRowGrid(scroll)
+    local splitAt = math.ceil(#clauses / 2)
+
+    for clauseIndex, clause in ipairs(clauses) do
+        local column = clauseIndex <= splitAt and conditionLeft or conditionRight
+
+        local clauseRow = AddLabelRow(column, {
+            label = "Condition " .. clauseIndex,
+        })
+
+        -- Removing the only clause would leave the entry with no condition at
+        -- all, so the link is drawn on every clause once there are two or more,
+        -- and on none while there is a single one - the same gate the
+        -- pre-redesign Remove button had.
+        if #clauses > 1 then
+            local removeLabel = AceGUI:Create("InteractiveLabel")
+            removeLabel:SetText("|cffff5555Remove|r")
+            removeLabel:SetWidth(60)
+            removeLabel:SetJustifyH("RIGHT")
+            removeLabel:SetCallback("OnClick", function()
+                if CooldownCompanion:RemoveTriggerConditionClause(buttonData, clauseIndex) then
+                    CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+            end)
+            clauseRow:SetControlWidget(removeLabel)
+        end
 
         local excludedKeys = {}
         for otherIndex, otherClause in ipairs(clauses) do
@@ -545,59 +579,36 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
         end
 
         local checkOptions, checkOrder = CooldownCompanion:GetTriggerConditionTypeOptions(buttonData, excludedKeys)
-        local checkDrop = AceGUI:Create("Dropdown")
-        checkDrop:SetLabel("Check")
-        checkDrop:SetList(checkOptions, checkOrder)
-        checkDrop:SetValue(clause.key)
-        checkDrop:SetFullWidth(true)
-        checkDrop:SetCallback("OnValueChanged", function(_, _, value)
-            CooldownCompanion:SetTriggerConditionKey(buttonData, clauseIndex, value)
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        row:AddChild(checkDrop)
+        AddDropdownRow(column, {
+            label = "Check",
+            indent = true,
+            pulloutWidth = CONDITION_PULLOUT_WIDTH,
+            list = checkOptions,
+            order = checkOrder,
+            value = clause.key,
+            onChange = function(value)
+                CooldownCompanion:SetTriggerConditionKey(buttonData, clauseIndex, value)
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
 
         local expectedOptions, expectedOrder = CooldownCompanion:GetTriggerConditionExpectedOptions(clause.key)
-        local stateDrop = AceGUI:Create("Dropdown")
-        stateDrop:SetLabel("State")
-        stateDrop:SetList(expectedOptions, expectedOrder)
-        stateDrop:SetValue(CooldownCompanion:GetTriggerConditionStateValue(buttonData, clauseIndex))
-        stateDrop:SetFullWidth(true)
-        stateDrop:SetCallback("OnValueChanged", function(_, _, value)
-            CooldownCompanion:SetTriggerConditionStateValue(buttonData, value, clauseIndex)
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        row:AddChild(stateDrop)
-
-        scroll:AddChild(row)
-
-        local function AddRemoveConditionRow()
-            local removeRow = AceGUI:Create("SimpleGroup")
-            removeRow:SetFullWidth(true)
-            removeRow:SetLayout("Flow")
-
-            local removeBtn = AceGUI:Create("Button")
-            removeBtn:SetText("Remove Condition")
-            removeBtn:SetFullWidth(true)
-            removeBtn:SetCallback("OnClick", function()
-                if CooldownCompanion:RemoveTriggerConditionClause(buttonData, clauseIndex) then
-                    CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-            end)
-            removeRow:AddChild(removeBtn)
-            scroll:AddChild(removeRow)
-        end
-
-        if #clauses > 1 then
-            AddRemoveConditionRow()
-        end
-
-        local conditionSpacer = AceGUI:Create("Label")
-        conditionSpacer:SetText(" ")
-        conditionSpacer:SetFullWidth(true)
-        scroll:AddChild(conditionSpacer)
+        AddDropdownRow(column, {
+            label = "State",
+            indent = true,
+            pulloutWidth = CONDITION_PULLOUT_WIDTH,
+            list = expectedOptions,
+            order = expectedOrder,
+            value = CooldownCompanion:GetTriggerConditionStateValue(buttonData, clauseIndex),
+            onChange = function(value)
+                -- Note the argument order: the state setter takes the value
+                -- before the clause index, the key setter after it.
+                CooldownCompanion:SetTriggerConditionStateValue(buttonData, value, clauseIndex)
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
     end
 
     local usedKeys = {}
@@ -606,31 +617,42 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
     end
     local addOptions, addOrder = CooldownCompanion:GetTriggerConditionTypeOptions(buttonData, usedKeys)
     if #addOrder > 0 then
-        scroll:AddChild(CreateCenteredSubHeading("Add Condition"))
+        -- An entry can carry no clauses at all, in which case the loop above
+        -- added nothing and the Add block is the whole tab: it heads the LEFT
+        -- column, because a populated right beside an empty left is the one
+        -- shape the two-column grid must never show.
+        local addColumn = #clauses > 0 and conditionRight or conditionLeft
 
-        local addRow = AceGUI:Create("SimpleGroup")
-        addRow:SetFullWidth(true)
-        addRow:SetLayout("Flow")
+        -- Read at CLICK time, exactly as before: the dropdown has no onChange
+        -- and the button reads the row's current value, so picking a check and
+        -- then changing your mind before pressing Add costs nothing.
+        local addRow = AddDropdownRow(addColumn, {
+            label = "New Condition",
+            pulloutWidth = CONDITION_PULLOUT_WIDTH,
+            list = addOptions,
+            order = addOrder,
+            value = addOrder[1],
+        })
 
-        local addDrop = AceGUI:Create("Dropdown")
-        addDrop:SetLabel("New Condition")
-        addDrop:SetList(addOptions, addOrder)
-        addDrop:SetValue(addOrder[1])
-        addDrop:SetFullWidth(true)
-        addRow:AddChild(addDrop)
+        local addStrip = AceGUI:Create("SimpleGroup")
+        addStrip:SetFullWidth(true)
+        addStrip:SetLayout("Flow")
+        addStrip:SetHeight(ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT or 30)
+        addStrip.noAutoHeight = true
 
         local addBtn = AceGUI:Create("Button")
         addBtn:SetText("Add Condition")
-        addBtn:SetFullWidth(true)
+        addBtn:SetAutoWidth(true)
         addBtn:SetCallback("OnClick", function()
-            if CooldownCompanion:AddTriggerConditionClause(buttonData, addDrop:GetValue()) then
+            if CooldownCompanion:AddTriggerConditionClause(buttonData, addRow:GetValue()) then
                 CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
                 CooldownCompanion:RefreshConfigPanel()
             end
         end)
-        addRow:AddChild(addBtn)
+        addStrip:AddChild(addBtn)
 
-        scroll:AddChild(addRow)
+        -- Added last so the List-layout column measures a populated row.
+        addColumn:AddChild(addStrip)
     end
 
 end
