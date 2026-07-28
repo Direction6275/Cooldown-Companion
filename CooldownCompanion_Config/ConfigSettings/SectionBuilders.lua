@@ -495,18 +495,35 @@ end
 -- opts.advanced: attach the gear that opens Tooltip Position / Hide in Combat
 -- (group-level tabs only — those keys are group style, with no per-entry
 -- override section, so the override editor calls this without opts).
+--
+-- opts.row opts into the row grammar (RowWidgets.lua): the toggle becomes a
+-- CDC-CheckBoxRow whose gear chains off the label. Omitting it keeps the
+-- full-width stock checkbox every other call site draws today.
 local function BuildShowTooltipsControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
 
-    local cb = AceGUI:Create("CheckBox")
-    cb:SetLabel("Show Tooltips")
-    cb:SetValue(styleTable.showTooltips == true)
-    cb:SetFullWidth(true)
-    cb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showTooltips = val
-        refreshCallback()
-    end)
-    container:AddChild(cb)
+    local cb
+    if opts.row then
+        cb = ST._AddCheckboxRow(container, {
+            label = "Show Tooltips",
+            value = styleTable.showTooltips == true,
+            indent = opts.indent,
+            onChange = function(val)
+                styleTable.showTooltips = val
+                refreshCallback()
+            end,
+        })
+    else
+        cb = AceGUI:Create("CheckBox")
+        cb:SetLabel("Show Tooltips")
+        cb:SetValue(styleTable.showTooltips == true)
+        cb:SetFullWidth(true)
+        cb:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.showTooltips = val
+            refreshCallback()
+        end)
+        container:AddChild(cb)
+    end
 
     if not opts.advanced then
         return cb
@@ -798,16 +815,32 @@ local function BuildAuraDurationSwipeControls(container, styleTable, refreshCall
         showAuraDurationSwipe = opts.fallbackStyle.showAuraDurationSwipe
     end
 
-    local auraCb = AceGUI:Create("CheckBox")
-    auraCb:SetLabel("Show Aura Duration Swipe")
-    auraCb:SetValue(showAuraDurationSwipe ~= false)
-    auraCb:SetFullWidth(true)
-    auraCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showAuraDurationSwipe = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(auraCb)
+    -- opts.row opts into the row grammar (RowWidgets.lua); every other call
+    -- site keeps the full-width stock checkbox.
+    local auraCb
+    if opts.row then
+        auraCb = ST._AddCheckboxRow(container, {
+            label = "Show Aura Duration Swipe",
+            value = showAuraDurationSwipe ~= false,
+            indent = opts.indent,
+            onChange = function(val)
+                styleTable.showAuraDurationSwipe = val
+                refreshCallback()
+                RefreshStructuralControls(container)
+            end,
+        })
+    else
+        auraCb = AceGUI:Create("CheckBox")
+        auraCb:SetLabel("Show Aura Duration Swipe")
+        auraCb:SetValue(showAuraDurationSwipe ~= false)
+        auraCb:SetFullWidth(true)
+        auraCb:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.showAuraDurationSwipe = val
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end)
+        container:AddChild(auraCb)
+    end
 
     if opts.showAdvancedControlsInline ~= false and showAuraDurationSwipe ~= false then
         BuildAuraDurationSwipeAdvancedControls(container, styleTable, refreshCallback, opts)
@@ -816,16 +849,15 @@ local function BuildAuraDurationSwipeControls(container, styleTable, refreshCall
     return auraCb
 end
 
+-- opts.row opts into the row grammar (RowWidgets.lua). The masque note is a
+-- row tooltip there rather than an inline gray line: a wrapped sentence does
+-- not fit a grid cell, and the row's own (?) badge already carries the same
+-- sentence. Non-row callers keep the inline label unchanged.
 local function BuildIconFillTimerControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
     local disabledByMasque = opts.masqueEnabled == true
 
-    local cb = AceGUI:Create("CheckBox")
-    cb:SetLabel("Icon Fill Timer")
-    cb:SetValue(styleTable.iconFillEnabled == true)
-    cb:SetFullWidth(true)
-    cb:SetDisabled(disabledByMasque)
-    cb:SetCallback("OnValueChanged", function(widget, event, val)
+    local function ApplyIconFillEnabled(val)
         if disabledByMasque then return end
         styleTable.iconFillEnabled = val == true
         if styleTable.iconFillEnabled and type(opts.onEnabled) == "function" then
@@ -834,10 +866,37 @@ local function BuildIconFillTimerControls(container, styleTable, refreshCallback
         refreshCallback()
         CooldownCompanion:UpdateAllCooldowns()
         CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(cb)
+    end
+
+    local cb
+    if opts.row then
+        cb = ST._AddCheckboxRow(container, {
+            label = "Icon Fill Timer",
+            value = styleTable.iconFillEnabled == true,
+            disabled = disabledByMasque,
+            indent = opts.indent,
+            tooltip = disabledByMasque and {
+                "Icon Fill Timer",
+                {"Unavailable while Masque skinning is enabled for this group.", 1, 1, 1, true},
+            } or nil,
+            onChange = ApplyIconFillEnabled,
+        })
+    else
+        cb = AceGUI:Create("CheckBox")
+        cb:SetLabel("Icon Fill Timer")
+        cb:SetValue(styleTable.iconFillEnabled == true)
+        cb:SetFullWidth(true)
+        cb:SetDisabled(disabledByMasque)
+        cb:SetCallback("OnValueChanged", function(widget, event, val)
+            ApplyIconFillEnabled(val)
+        end)
+        container:AddChild(cb)
+    end
 
     if disabledByMasque then
+        if opts.row then
+            return cb
+        end
         local note = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(note)
         note:SetText("|cff888888Unavailable while Masque skinning is enabled for this group.|r")
@@ -953,19 +1012,35 @@ local function BuildUnusableVisualModeControls(container, styleTable, refreshCal
     container:AddChild(desatCb)
 end
 
+-- opts.row opts into the row grammar (RowWidgets.lua). The advanced gear and
+-- its Dim/Desaturate panel are unchanged either way.
 local function BuildUnusableDimmingControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
 
-    local unusableCb = AceGUI:Create("CheckBox")
-    unusableCb:SetLabel("Show Unusable Visual")
-    unusableCb:SetValue(styleTable.showUnusable == true)
-    unusableCb:SetFullWidth(true)
-    unusableCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showUnusable = val == true
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(unusableCb)
+    local unusableCb
+    if opts.row then
+        unusableCb = ST._AddCheckboxRow(container, {
+            label = "Show Unusable Visual",
+            value = styleTable.showUnusable == true,
+            indent = opts.indent,
+            onChange = function(val)
+                styleTable.showUnusable = val == true
+                refreshCallback()
+                RefreshStructuralControls(container)
+            end,
+        })
+    else
+        unusableCb = AceGUI:Create("CheckBox")
+        unusableCb:SetLabel("Show Unusable Visual")
+        unusableCb:SetValue(styleTable.showUnusable == true)
+        unusableCb:SetFullWidth(true)
+        unusableCb:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.showUnusable = val == true
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end)
+        container:AddChild(unusableCb)
+    end
 
     local _, unusableAdvBtn = AddAdvancedToggle(unusableCb,
         opts.advancedKey or "unusableVisual",

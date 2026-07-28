@@ -12,8 +12,21 @@ local CS = ST._configState
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
+local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
+
+-- Imports from RowWidgets.lua (the row grammar). The Visibility tabs are
+-- converted; every other builder in this file still draws stock widgets.
+local AddCheckboxRow = ST._AddCheckboxRow
+local AddDropdownRow = ST._AddDropdownRow
+local AddLabelRow = ST._AddLabelRow
+local AnchorRowBadge = ST._AnchorRowBadge
+local BeginRowGrid = ST._BeginRowGrid
+
+-- Row-grammar section headers: caret far left, label, then a class-colored
+-- rule fading right.
+local ROW_SECTION = { leftAligned = true }
 
 local IsNoCooldownSpellID = ST.IsNoCooldownSpell
 local HasUsageRequirement = ST.HasUsageRequirement
@@ -25,7 +38,12 @@ local appearanceTabElements = CS.appearanceTabElements
 
 local LOAD_CONDITION_OPTIONS = ST.LOAD_CONDITION_OPTIONS
 local REMOVE_BADGE_WIDGET_TYPE = "CDCEligibilityRemoveBadge"
-local ACTIVE_FILTER_ROW_HEIGHT = 22
+-- AceGUI sizes a dropdown's pullout from the dropdown frame itself
+-- (AceGUIWidget-DropDown.lua:381), and the row grammar's control column is
+-- 140px. Eligibility entries carry a spec/hero icon and can read
+-- "Death Knight: Blood", so these four pickers widen their pullout past their
+-- host. The pullout floats, so it may overhang the grid column it opens in.
+local ELIGIBILITY_PULLOUT_WIDTH = 300
 local VIEW_TRAIT_CONFIG_ID = (Constants and Constants.TraitConsts and Constants.TraitConsts.VIEW_TRAIT_CONFIG_ID) or -3
 
 if AceGUI and not AceGUI:GetWidgetVersion(REMOVE_BADGE_WIDGET_TYPE) then
@@ -221,7 +239,11 @@ local function GetActiveInheritedLabel(sources, key, optionDefault)
     return nil
 end
 
-local function AddInheritedLoadSummary(container, sources, collapsedKey)
+-- rowMode: draw the section header in the row-grammar shape (caret far left,
+-- label, rule fading right). The summary body stays a full-width wrapped
+-- prose label either way - it is not a setting, so it is not a row, and it
+-- sits above the grids rather than inside one.
+local function AddInheritedLoadSummary(container, sources, collapsedKey, rowMode)
     local labelsBySource = {}
     local hasAny = false
 
@@ -242,18 +264,25 @@ local function AddInheritedLoadSummary(container, sources, collapsedKey)
 
     if not hasAny then return end
 
-    local heading = AceGUI:Create("Heading")
-    heading:SetText("Inherited Visibility Rules")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    container:AddChild(heading)
+    local collapsed
+    if rowMode and collapsedKey then
+        local _, rowCollapsed = BuildCollapsibleSection(container, "Inherited Visibility Rules",
+            collapsedKey, nil, nil, ROW_SECTION)
+        collapsed = rowCollapsed
+    else
+        local heading = AceGUI:Create("Heading")
+        heading:SetText("Inherited Visibility Rules")
+        ColorHeading(heading)
+        heading:SetFullWidth(true)
+        container:AddChild(heading)
 
-    local collapsed = collapsedKey and CS.collapsedSections[collapsedKey]
-    if collapsedKey then
-        AttachCollapseButton(heading, collapsed, function()
-            CS.collapsedSections[collapsedKey] = not CS.collapsedSections[collapsedKey]
-            CooldownCompanion:RefreshConfigPanel()
-        end)
+        collapsed = collapsedKey and CS.collapsedSections[collapsedKey]
+        if collapsedKey then
+            AttachCollapseButton(heading, collapsed, function()
+                CS.collapsedSections[collapsedKey] = not CS.collapsedSections[collapsedKey]
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+        end
     end
     if collapsed then return end
 
@@ -272,7 +301,14 @@ local function AddInheritedLoadSummary(container, sources, collapsedKey)
     container:AddChild(label)
 end
 
+-- opts.row opts into the row grammar (RowWidgets.lua): a left-aligned
+-- collapsible header and the environment toggles as CDC-CheckBoxRows in a
+-- two-column grid. Returns that grid's two columns so the caller can park a
+-- section action in the shorter one. Omitting opts.row keeps the centered
+-- heading and the Flow half-width checkboxes the unconverted callers draw
+-- (custom bars).
 local function AddScopedLoadConditionToggles(container, opts)
+    local rowMode = opts.row == true
     local target = opts.target
     if not target.loadConditions and not opts.preserveMissing then
         target.loadConditions = {}
@@ -293,40 +329,53 @@ local function AddScopedLoadConditionToggles(container, opts)
     -- opts.skipInheritedSummary: the caller already emitted the summary above
     -- its own sections (the panel/entry tabs lead with it).
     if not opts.skipInheritedSummary then
-        AddInheritedLoadSummary(container, inheritedSources, opts.inheritedCollapsedKey)
+        AddInheritedLoadSummary(container, inheritedSources, opts.inheritedCollapsedKey, rowMode)
     end
 
-    local heading = AceGUI:Create("Heading")
-    heading:SetText((inheritedAny and opts.headingTextWhenInherited) or opts.headingText or "Hide When In")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    container:AddChild(heading)
+    local headingText = (inheritedAny and opts.headingTextWhenInherited) or opts.headingText or "Hide When In"
+    local heading, localCollapsed, collapseBtn
 
-    local localCollapsed = opts.localCollapsedKey and CS.collapsedSections[opts.localCollapsedKey]
-    local collapseBtn
-    if opts.localCollapsedKey then
-        collapseBtn = AttachCollapseButton(heading, localCollapsed, function()
-            CS.collapsedSections[opts.localCollapsedKey] = not CS.collapsedSections[opts.localCollapsedKey]
-            CooldownCompanion:RefreshConfigPanel()
-        end)
+    if rowMode then
+        heading, localCollapsed, collapseBtn = BuildCollapsibleSection(container, headingText,
+            opts.localCollapsedKey, nil, nil, ROW_SECTION)
+    else
+        heading = AceGUI:Create("Heading")
+        heading:SetText(headingText)
+        ColorHeading(heading)
+        heading:SetFullWidth(true)
+        container:AddChild(heading)
+
+        localCollapsed = opts.localCollapsedKey and CS.collapsedSections[opts.localCollapsedKey]
+        if opts.localCollapsedKey then
+            collapseBtn = AttachCollapseButton(heading, localCollapsed, function()
+                CS.collapsedSections[opts.localCollapsedKey] = not CS.collapsedSections[opts.localCollapsedKey]
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+        end
     end
 
     -- opts.infoTooltipLines: the "?" anchors right of whatever already decorates
-    -- the label, then takes over the heading's right line.
+    -- the label, then takes over the heading's right line. The row-grammar
+    -- header parks its caret to the LEFT of the label instead, so the badge
+    -- chains off the label there and the fading rule restarts after it.
     if opts.infoTooltipLines then
         local infoBtn = CreateInfoButton(
             heading.frame,
-            collapseBtn or heading.label,
+            rowMode and heading.label or (collapseBtn or heading.label),
             "LEFT",
             "RIGHT",
-            collapseBtn and 2 or 4,
+            (not rowMode and collapseBtn) and 2 or 4,
             0,
             opts.infoTooltipLines,
             opts.infoButtons
         )
-        heading.right:ClearAllPoints()
-        heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
-        heading.right:SetPoint("LEFT", infoBtn, "RIGHT", 4, 0)
+        if rowMode then
+            AnchorLeftAlignedHeadingRule(heading, infoBtn)
+        else
+            heading.right:ClearAllPoints()
+            heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
+            heading.right:SetPoint("LEFT", infoBtn, "RIGHT", 4, 0)
+        end
     end
     if localCollapsed then return end
 
@@ -336,6 +385,52 @@ local function AddScopedLoadConditionToggles(container, opts)
         inheritedLabel:SetText("|cff888888Inherited rules are locked here. You can only add more places to hide this.|r")
         inheritedLabel:SetFullWidth(true)
         container:AddChild(inheritedLabel)
+    end
+
+    -- The one write every toggle performs, shared so both shapes wire the
+    -- identical behaviour onto the identical store.
+    local function SetCondition(cond, newVal)
+        if not target.loadConditions then
+            target.loadConditions = {}
+            loadConditions = target.loadConditions
+        end
+        SetLoadConditionValue(loadConditions, cond.key, newVal, defaults, cond.default)
+        if onChanged then onChanged() end
+    end
+
+    if rowMode then
+        -- LEFT column: the instanced content. RIGHT column: everything else,
+        -- ending with the two that ship pre-checked. Nine options split 5/4,
+        -- which is as even as an odd list gets. Locked rows keep their long
+        -- "(locked by ...)" suffix: a row label runs the full width of its
+        -- cell minus the 140px control column, which is far more room than
+        -- the half-width checkbox they replace had.
+        local togglesLeft, togglesRight = BeginRowGrid(container)
+        local splitAt = math.ceil(#LOAD_CONDITION_OPTIONS / 2)
+
+        for index, cond in ipairs(LOAD_CONDITION_OPTIONS) do
+            local inheritedLabel = GetActiveInheritedLabel(inheritedSources, cond.key, cond.default)
+            AddCheckboxRow(index <= splitAt and togglesLeft or togglesRight, {
+                label = inheritedLabel
+                    and (cond.label .. " |cff888888(locked by " .. inheritedLabel .. ")|r")
+                    or cond.label,
+                -- The locked suffix is the one label here long enough to clip
+                -- against the control column, so it also says its piece on
+                -- hover. Row labels do not word-wrap by design.
+                tooltip = inheritedLabel and {
+                    cond.label,
+                    { "Locked by " .. inheritedLabel .. ".", 1, 1, 1, true },
+                } or nil,
+                value = inheritedLabel and true
+                    or GetLoadConditionValue(loadConditions, cond.key, defaults, cond.default),
+                disabled = inheritedLabel ~= nil,
+                onChange = not inheritedLabel and function(newVal)
+                    SetCondition(cond, newVal)
+                end or nil,
+            })
+        end
+
+        return togglesLeft, togglesRight
     end
 
     -- opts.twoColumn: pair the short toggles inside a Flow sub-row (the outer
@@ -364,12 +459,7 @@ local function AddScopedLoadConditionToggles(container, opts)
         else
             cb:SetValue(GetLoadConditionValue(loadConditions, cond.key, defaults, cond.default))
             cb:SetCallback("OnValueChanged", function(widget, event, newVal)
-                if not target.loadConditions then
-                    target.loadConditions = {}
-                    loadConditions = target.loadConditions
-                end
-                SetLoadConditionValue(loadConditions, cond.key, newVal, defaults, cond.default)
-                if onChanged then onChanged() end
+                SetCondition(cond, newVal)
             end)
         end
         toggleHost:AddChild(cb)
@@ -626,26 +716,23 @@ local function BuildCharacterChoice(charKey, fallbackInfo)
     }
 end
 
-local function AttachEligibilityTooltip(widget, title, text)
-    if not (widget and text and text ~= "") then return end
-    widget:SetCallback("OnEnter", function(hoveredWidget)
-        if not (hoveredWidget and hoveredWidget.frame) then return end
-        GameTooltip:SetOwner(hoveredWidget.frame, "ANCHOR_RIGHT")
-        GameTooltip:AddLine(title or "")
-        GameTooltip:AddLine(text, 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    widget:SetCallback("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    widget:SetCallback("OnRelease", function()
-        GameTooltip:Hide()
-    end)
+-- Row-grammar tooltip payload for a selected-eligibility row: a title line
+-- plus the wrapped body line, matching what the pre-row InteractiveLabel put
+-- on GameTooltip. Returns nil when there is nothing to say, so the row stays
+-- tooltip-less exactly as before.
+local function BuildEligibilityRowTooltip(title, text)
+    if not (text and text ~= "") then return nil end
+    return { title or "", { text, 1, 1, 1, true } }
 end
 
-local function AddDropdownInfoButton(dropdown, tooltipLines)
-    if not (dropdown and dropdown.frame and dropdown.label and tooltipLines) then return end
-    CreateInfoButton(dropdown.frame, dropdown.label, "LEFT", "RIGHT", 4, 0, tooltipLines, dropdown)
+-- The picker's "?" is a badge on the row's label, chained off the end of the
+-- label text like every other row-grammar badge. The anchor args are a
+-- placeholder - AnchorRowBadge re-points the button. The row widget doubles as
+-- the cleanup owner: CreateInfoButton chains its OnRelease.
+local function AddDropdownInfoButton(dropdownRow, tooltipLines)
+    if not (dropdownRow and dropdownRow.frame and tooltipLines) then return end
+    AnchorRowBadge(dropdownRow, CreateInfoButton(
+        dropdownRow.frame, dropdownRow.frame, "LEFT", "LEFT", 0, 0, tooltipLines, dropdownRow))
 end
 
 local function GetEligibilitySubjectLabel(opts)
@@ -847,39 +934,22 @@ local function CreateEligibilityRemoveBadge(onRemove)
     return removeBadge
 end
 
+-- One selected character / class / spec / hero talent, as a row-grammar row
+-- INDENTED under the picker that added it: the name on the left, the remove X
+-- right-aligned in the control column (or the word "locked" where the
+-- selection is inherited and cannot be removed here).
 local function AddEligibilitySelectedRow(container, rowInfo, onRemove)
-    local row = AceGUI:Create("SimpleGroup")
-    row:SetFullWidth(true)
-    row:SetLayout("Flow")
-    row:SetHeight(ACTIVE_FILTER_ROW_HEIGHT)
-
-    local hasTooltip = rowInfo.tooltipText and rowInfo.tooltipText ~= ""
-    local label = AceGUI:Create(hasTooltip and "InteractiveLabel" or "Label")
-    label:SetText(rowInfo.label)
-    label:SetRelativeWidth(0.92)
-    label:SetHeight(ACTIVE_FILTER_ROW_HEIGHT)
-    if label.SetFontObject and GameFontHighlight then
-        label:SetFontObject(GameFontHighlight)
-    end
-    AttachEligibilityTooltip(label, rowInfo.tooltipTitle or rowInfo.label, rowInfo.tooltipText)
-    row:AddChild(label)
+    local row = AddLabelRow(container, {
+        label = rowInfo.label,
+        indent = true,
+        tooltip = BuildEligibilityRowTooltip(rowInfo.tooltipTitle or rowInfo.label, rowInfo.tooltipText),
+    })
 
     if rowInfo.disabled then
-        local locked = AceGUI:Create("Label")
-        locked:SetText("|cff888888locked|r")
-        locked:SetRelativeWidth(0.1)
-        locked:SetHeight(ACTIVE_FILTER_ROW_HEIGHT)
-        if locked.SetFontObject and GameFontHighlight then
-            locked:SetFontObject(GameFontHighlight)
-        end
-        row:AddChild(locked)
+        row:SetControlText("|cff888888locked|r")
     else
-        local removeBtn = CreateEligibilityRemoveBadge(onRemove)
-        removeBtn:SetHeight(ACTIVE_FILTER_ROW_HEIGHT)
-        row:AddChild(removeBtn)
+        row:SetControlWidget(CreateEligibilityRemoveBadge(onRemove))
     end
-
-    container:AddChild(row)
 end
 
 -- omitCategory: rows rendered directly under their own picker don't need the
@@ -964,22 +1034,20 @@ local function AddCharacterEligibilityControls(container, opts)
         return tostring(dropdownSortLabels[a] or a) < tostring(dropdownSortLabels[b] or b)
     end)
 
-    local picker = AceGUI:Create("Dropdown")
-    picker:SetLabel("Add Character")
-    picker:SetFullWidth(true)
-    picker:SetList(dropdownValues, dropdownOrder)
-    AddDropdownInfoButton(picker, BuildCharacterEligibilityTooltip(subjectLabel))
-    if #dropdownOrder == 0 then
-        picker:SetDisabled(true)
-    else
-        picker:SetCallback("OnValueChanged", function(widget, event, value)
+    local picker = AddDropdownRow(container, {
+        label = "Add Character",
+        pulloutWidth = ELIGIBILITY_PULLOUT_WIDTH,
+        list = dropdownValues,
+        order = dropdownOrder,
+        disabled = #dropdownOrder == 0,
+        onChange = #dropdownOrder > 0 and function(value)
             if value ~= nil and not selectedByKey[value] then
                 SetAllowlistValue(target, "characterAllowlist", "character", value, true)
                 if opts.onChanged then opts.onChanged() end
             end
-        end)
-    end
-    container:AddChild(picker)
+        end or nil,
+    })
+    AddDropdownInfoButton(picker, BuildCharacterEligibilityTooltip(subjectLabel))
 
     if opts.showSelectedRows then
         local rows = {}
@@ -1334,20 +1402,18 @@ local function AddClassSpecEligibilityControls(container, opts)
             return tostring(classSortLabels[a] or a) < tostring(classSortLabels[b] or b)
         end)
 
-        local classPicker = AceGUI:Create("Dropdown")
-        classPicker:SetLabel("Add Class")
-        classPicker:SetFullWidth(true)
-        classPicker:SetList(classValues, classOrder)
-        AddDropdownInfoButton(classPicker, BuildClassEligibilityTooltip(subjectLabel))
-        if #classOrder == 0 then
-            classPicker:SetDisabled(true)
-        else
-            classPicker:SetCallback("OnValueChanged", function(widget, event, value)
+        local classPicker = AddDropdownRow(container, {
+            label = "Add Class",
+            pulloutWidth = ELIGIBILITY_PULLOUT_WIDTH,
+            list = classValues,
+            order = classOrder,
+            disabled = #classOrder == 0,
+            onChange = #classOrder > 0 and function(value)
                 SetAllowlistValue(target, "classAllowlist", "class", value, true)
                 if opts.onChanged then opts.onChanged() end
-            end)
-        end
-        container:AddChild(classPicker)
+            end or nil,
+        })
+        AddDropdownInfoButton(classPicker, BuildClassEligibilityTooltip(subjectLabel))
         AddEligibilitySelectedRows(container, selectedClassRows)
     end
 
@@ -1386,20 +1452,18 @@ local function AddClassSpecEligibilityControls(container, opts)
     end)
 
     if #specChoices > 0 then
-        local specPicker = AceGUI:Create("Dropdown")
-        specPicker:SetLabel("Add Specialization")
-        specPicker:SetFullWidth(true)
-        specPicker:SetList(specValues, specOrder)
-        AddDropdownInfoButton(specPicker, BuildSpecializationEligibilityTooltip(subjectLabel))
-        if #specOrder == 0 then
-            specPicker:SetDisabled(true)
-        else
-            specPicker:SetCallback("OnValueChanged", function(widget, event, value)
+        local specPicker = AddDropdownRow(container, {
+            label = "Add Specialization",
+            pulloutWidth = ELIGIBILITY_PULLOUT_WIDTH,
+            list = specValues,
+            order = specOrder,
+            disabled = #specOrder == 0,
+            onChange = #specOrder > 0 and function(value)
                 SetSpecEligibilityValue(target, value, true, useSpecAllowlist)
                 if opts.onChanged then opts.onChanged() end
-            end)
-        end
-        container:AddChild(specPicker)
+            end or nil,
+        })
+        AddDropdownInfoButton(specPicker, BuildSpecializationEligibilityTooltip(subjectLabel))
         AddEligibilitySelectedRows(container, selectedSpecRows)
     end
 
@@ -1429,20 +1493,18 @@ local function AddClassSpecEligibilityControls(container, opts)
     end)
 
     if #heroChoices > 0 and mutableHeroTalents then
-        local heroPicker = AceGUI:Create("Dropdown")
-        heroPicker:SetLabel("Add Hero Talent")
-        heroPicker:SetFullWidth(true)
-        heroPicker:SetList(heroValues, heroOrder)
-        AddDropdownInfoButton(heroPicker, BuildHeroTalentEligibilityTooltip(subjectLabel))
-        if #heroOrder == 0 then
-            heroPicker:SetDisabled(true)
-        else
-            heroPicker:SetCallback("OnValueChanged", function(widget, event, value)
+        local heroPicker = AddDropdownRow(container, {
+            label = "Add Hero Talent",
+            pulloutWidth = ELIGIBILITY_PULLOUT_WIDTH,
+            list = heroValues,
+            order = heroOrder,
+            disabled = #heroOrder == 0,
+            onChange = #heroOrder > 0 and function(value)
                 SetHeroTalentValue(target, value, true)
                 if opts.onChanged then opts.onChanged() end
-            end)
-        end
-        container:AddChild(heroPicker)
+            end or nil,
+        })
+        AddDropdownInfoButton(heroPicker, BuildHeroTalentEligibilityTooltip(subjectLabel))
     elseif opts.disableHeroTalents and type(heroTalentsSource) == "table" and next(heroTalentsSource) then
         local inheritedLabel = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(inheritedLabel)
@@ -2845,10 +2907,14 @@ local function BuildLoadConditionsTab(container)
     end
 
     -- The tab reads as two halves under an optional inherited summary: who the
-    -- panel is for, then where it stays hidden.
-    AddInheritedLoadSummary(container, inheritedSources, "loadconditions_panel_inherited")
+    -- panel is for, then where it stays hidden. Row grammar (RowWidgets.lua)
+    -- throughout - see the recipe comment at the top of BuildAppearanceTab's
+    -- icons path in GroupTabs.lua. Nothing on this tab carries a gear, so
+    -- there is no advanced-panel queue to keep uncollapsed.
+    AddInheritedLoadSummary(container, inheritedSources, "loadconditions_panel_inherited", true)
 
-    local _, whoCollapsed = BuildCollapsibleSection(container, "Who Can Use This", "loadconditions_panel_who")
+    local _, whoCollapsed = BuildCollapsibleSection(container, "Who Can Use This",
+        "loadconditions_panel_who", nil, nil, ROW_SECTION)
 
     if not whoCollapsed then
         if inheritedSpecFilter or inheritedHeroFilter then
@@ -2878,8 +2944,14 @@ local function BuildLoadConditionsTab(container)
             onChanged = RefreshPanelLoadConditions,
         }
 
-        AddCharacterEligibilityControls(container, eligibilityOpts)
-        AddClassSpecEligibilityControls(container, eligibilityOpts)
+        -- LEFT column: who, by person. RIGHT column: who, by what they play -
+        -- class, spec and hero talent read as one chain (hero talents are only
+        -- offered for a spec already picked), so they cannot be split off from
+        -- each other. Each picker carries its own selections as indented rows
+        -- directly beneath it.
+        local whoLeft, whoRight = BeginRowGrid(container)
+        AddCharacterEligibilityControls(whoLeft, eligibilityOpts)
+        AddClassSpecEligibilityControls(whoRight, eligibilityOpts)
     end -- not whoCollapsed
 
     AddScopedLoadConditionToggles(container, {
@@ -2889,7 +2961,7 @@ local function BuildLoadConditionsTab(container)
         skipInheritedSummary = true,
         headingText = "Where To Hide It",
         localCollapsedKey = "loadconditions_panel_local",
-        twoColumn = true,
+        row = true,
         infoTooltipLines = BuildWhereToHideTooltip("panel", true),
         infoButtons = tabInfoButtons,
         onChanged = RefreshPanelLoadConditions,
@@ -2902,7 +2974,9 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
     local group = CooldownCompanion.db.profile.groups[groupId]
     if not group then return end
 
-    AddScopedLoadConditionToggles(container, {
+    -- Entry scope mirrors the panel tab, minus the eligibility half: an entry
+    -- inherits who its panel is for and can only add places to hide.
+    local _, togglesRight = AddScopedLoadConditionToggles(container, {
         target = buttonData,
         defaults = CooldownCompanion:GetLocalLoadConditionDefaults(),
         inheritedSources = CooldownCompanion:GetLoadConditionSourcesForGroup(group),
@@ -2910,7 +2984,7 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
         inheritedCollapsedKey = "loadconditions_entry_inherited",
         localCollapsedKey = "loadconditions_entry_local",
         preserveMissing = true,
-        twoColumn = true,
+        row = true,
         infoTooltipLines = BuildWhereToHideTooltip("entry", false),
         infoButtons = infoButtons,
         onChanged = function()
@@ -2923,15 +2997,19 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
     })
 
     if CooldownCompanion:HasLocalLoadConditions(buttonData) then
+        -- Compact and flush left, filling the shorter (4-row) right column's
+        -- tail. With the section collapsed there is no grid to sit in, so it
+        -- falls back to the tab surface - still reachable, still compact.
+        local clearHost = togglesRight or container
         local clearBtn = AceGUI:Create("Button")
         clearBtn:SetText("Clear Entry Visibility Rules")
-        clearBtn:SetFullWidth(true)
+        clearBtn:SetAutoWidth(true)
         clearBtn:SetCallback("OnClick", function()
             buttonData.loadConditions = nil
             CooldownCompanion:RefreshGroupFrame(groupId)
             CooldownCompanion:RefreshConfigPanel()
         end)
-        container:AddChild(clearBtn)
+        clearHost:AddChild(clearBtn)
     end
 end
 

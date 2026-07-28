@@ -1112,7 +1112,10 @@ local function ApplyObjectRoute(route)
     return RESOURCES_SURFACE
 end
 
-local function ApplyGearRoute(route)
+-- `queueKey` is the key that is about to ride the queue, already resolved by
+-- the caller - passed in so the uncollapse below only opens the section whose
+-- gear actually has to build, not one the route merely names.
+local function ApplyGearRoute(route, queueKey)
     if route.overrideSection then
         SetRowScope("detail")
         CS.buttonSettingsTab = "overrides"
@@ -1128,8 +1131,21 @@ local function ApplyGearRoute(route)
     CS.panelSettingsTab = route.tab
     -- A collapsed section never builds its checkbox, and a queued key with
     -- no gear to consume it expires silently.
-    if route.uncollapse and type(CS.collapsedSections) == "table" then
-        CS.collapsedSections[route.uncollapse] = nil
+    if type(CS.collapsedSections) == "table" then
+        if route.uncollapse then
+            CS.collapsedSections[route.uncollapse] = nil
+        end
+        -- Same rule, read off the key rather than named on the route: the
+        -- Indicators tab collapses all three of its sections, and which one
+        -- holds a given gear is GroupTabs' fact to state - it owns both the
+        -- sections and the advanced keys - so the map lives there. Keys
+        -- reached in a display mode that has no such section just clear one
+        -- nothing uses.
+        local sectionByKey = queueKey and ST._INDICATORS_SECTION_BY_ADVANCED_KEY
+        local sectionKey = sectionByKey and sectionByKey[queueKey]
+        if sectionKey then
+            CS.collapsedSections[sectionKey] = nil
+        end
     end
     return BUTTONS_SURFACE
 end
@@ -1255,7 +1271,7 @@ local function NavigateToPreviewSettings(bar)
         CS.CancelPickAuraTexture()
     end
 
-    local destination = ApplyGearRoute(route)
+    local destination = ApplyGearRoute(route, queueKey)
 
     -- Queued last, with every navigation write already made, so the context
     -- it snapshots is the one the rebuild will consume it under. The
