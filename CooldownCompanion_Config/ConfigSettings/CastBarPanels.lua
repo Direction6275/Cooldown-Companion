@@ -7,8 +7,8 @@ local CS = ST._configState
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateCharacterCopyButton = ST._CreateCharacterCopyButton
-local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
+local AddFontControls = ST._AddFontControls
 local BuildIndependentAnchorTargetRow = ST._BuildIndependentAnchorTargetRow
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 
@@ -483,93 +483,89 @@ local function BuildCastBarStylingPanel(container)
         end,
     })
 
+    -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
+    -- every row goes straight onto the panel scroll. All of these hang off the
+    -- Icon Offset toggle, which lives in the same panel, so they indent as its
+    -- children.
     local function BuildIconOffsetAdvanced(panel)
-        -- Icon Size slider (offset mode only)
-        local iconSizeSlider = AceGUI:Create("Slider")
-        iconSizeSlider:SetLabel("Icon Size")
-        iconSizeSlider:SetSliderValues(8, 64, 0.1)
-        iconSizeSlider:SetValue(settings.iconSize or 16)
-        iconSizeSlider:SetFullWidth(true)
-        iconSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.iconSize = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(iconSizeSlider)
+        AddSliderRow(panel, {
+            label = "Icon Size",
+            indent = true,
+            min = 8, max = 64, step = 0.1,
+            value = settings.iconSize or 16,
+            onChange = function(val)
+                settings.iconSize = val
+                CooldownCompanion:ApplyCastBarSettings()
+            end,
+        })
 
-        -- Icon X Offset slider
-        local iconXSlider = AceGUI:Create("Slider")
-        iconXSlider:SetLabel("Icon X Offset")
-        iconXSlider:SetSliderValues(-50, 50, 0.1)
-        iconXSlider:SetValue(settings.iconOffsetX or 0)
-        iconXSlider:SetFullWidth(true)
-        iconXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.iconOffsetX = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(iconXSlider)
+        AddSliderRow(panel, {
+            label = "Icon X Offset",
+            indent = true,
+            min = -50, max = 50, step = 0.1,
+            value = settings.iconOffsetX or 0,
+            onChange = function(val)
+                settings.iconOffsetX = val
+                CooldownCompanion:ApplyCastBarSettings()
+            end,
+        })
 
-        -- Icon Y Offset slider
-        local iconYSlider = AceGUI:Create("Slider")
-        iconYSlider:SetLabel("Icon Y Offset")
-        iconYSlider:SetSliderValues(-50, 50, 0.1)
-        iconYSlider:SetValue(settings.iconOffsetY or 0)
-        iconYSlider:SetFullWidth(true)
-        iconYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.iconOffsetY = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(iconYSlider)
+        AddSliderRow(panel, {
+            label = "Icon Y Offset",
+            indent = true,
+            min = -50, max = 50, step = 0.1,
+            value = settings.iconOffsetY or 0,
+            onChange = function(val)
+                settings.iconOffsetY = val
+                CooldownCompanion:ApplyCastBarSettings()
+            end,
+        })
 
-        -- Icon Border Size slider (offset mode only)
         local iconRenderMode = AddBorderRenderModeDropdown(panel, settings, "iconBorderRenderMode", function()
             CooldownCompanion:ApplyCastBarSettings()
             if CS.RefreshAdvancedSettingsPanel then
                 CS.RefreshAdvancedSettingsPanel()
             end
-        end)
+        end, nil, { row = true, indent = true })
         local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
         if iconRenderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-            local iconBorderSlider = AceGUI:Create("Slider")
-            iconBorderSlider:SetLabel("Icon Border Size")
-            iconBorderSlider:SetSliderValues(0, 4, 0.1)
-            iconBorderSlider:SetValue(settings.iconBorderSize or 1)
-            iconBorderSlider:SetFullWidth(true)
-            iconBorderSlider:SetDisabled(borderThicknessLocked)
-            iconBorderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                if borderThicknessLocked then return end
-                settings.iconBorderSize = val
-                CooldownCompanion:ApplyCastBarSettings()
-            end)
-            panel:AddChild(iconBorderSlider)
+            AddSliderRow(panel, {
+                label = "Icon Border Size",
+                indent = true,
+                min = 0, max = 4, step = 0.1,
+                value = settings.iconBorderSize or 1,
+                disabled = borderThicknessLocked,
+                onChange = function(val)
+                    if borderThicknessLocked then return end
+                    settings.iconBorderSize = val
+                    CooldownCompanion:ApplyCastBarSettings()
+                end,
+            })
         end
     end
 
     local function BuildIconAdvanced(panel)
-        -- Icon on Right Side
-        local iconFlipCb = AceGUI:Create("CheckBox")
-        iconFlipCb:SetLabel("Icon on Right Side")
-        iconFlipCb:SetValue(settings.iconFlipSide or false)
-        iconFlipCb:SetFullWidth(true)
-        iconFlipCb:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.iconFlipSide = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(iconFlipCb)
+        AddCheckboxRow(panel, {
+            label = "Icon on Right Side",
+            value = settings.iconFlipSide or false,
+            onChange = function(val)
+                settings.iconFlipSide = val
+                CooldownCompanion:ApplyCastBarSettings()
+            end,
+        })
 
-        -- Icon Offset toggle
-        local iconOffsetCb = AceGUI:Create("CheckBox")
-        iconOffsetCb:SetLabel("Icon Offset")
-        iconOffsetCb:SetValue(settings.iconOffset or false)
-        iconOffsetCb:SetFullWidth(true)
-        iconOffsetCb:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.iconOffset = val
-            CooldownCompanion:ApplyCastBarSettings()
-            if CS.RefreshAdvancedSettingsPanel then
-                CS.RefreshAdvancedSettingsPanel()
-            end
-        end)
-        panel:AddChild(iconOffsetCb)
+        AddCheckboxRow(panel, {
+            label = "Icon Offset",
+            value = settings.iconOffset or false,
+            onChange = function(val)
+                settings.iconOffset = val
+                CooldownCompanion:ApplyCastBarSettings()
+                if CS.RefreshAdvancedSettingsPanel then
+                    CS.RefreshAdvancedSettingsPanel()
+                end
+            end,
+        })
 
         if settings.iconOffset then
             BuildIconOffsetAdvanced(panel)
@@ -600,45 +596,24 @@ local function BuildCastBarStylingPanel(container)
         end,
     })
 
+    -- Single rail: the font trio comes from the shared helper (its keys are
+    -- exactly nameFont / nameFontSize / nameFontOutline) and the color follows.
     local function BuildNameTextAdvanced(panel)
-        -- Font
-        local nameFontDrop = AceGUI:Create("Dropdown")
-        nameFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(nameFontDrop)
-        nameFontDrop:SetValue(settings.nameFont or "Friz Quadrata TT")
-        nameFontDrop:SetFullWidth(true)
-        CS.SetFontDropdownCallback(nameFontDrop, function(widget, event, val)
-            settings.nameFont = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(nameFontDrop)
+        AddFontControls(panel, settings, "name", {
+            size = 10, sizeMin = 6, sizeMax = 24, sizeStep = 0.1,
+            font = "Friz Quadrata TT", outline = "OUTLINE",
+        }, applyCastBar, { row = true })
 
-        -- Size
-        local nameSizeSlider = AceGUI:Create("Slider")
-        nameSizeSlider:SetLabel("Font Size")
-        nameSizeSlider:SetSliderValues(6, 24, 0.1)
-        nameSizeSlider:SetValue(settings.nameFontSize or 10)
-        nameSizeSlider:SetFullWidth(true)
-        nameSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.nameFontSize = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(nameSizeSlider)
-
-        -- Outline
-        local nameOutlineDrop = AceGUI:Create("Dropdown")
-        nameOutlineDrop:SetLabel("Outline")
-        CS.SetupFontOutlineDropdown(nameOutlineDrop)
-        nameOutlineDrop:SetValue(settings.nameFontOutline or "OUTLINE")
-        nameOutlineDrop:SetFullWidth(true)
-        CS.SetFontOutlineDropdownCallback(nameOutlineDrop, function(widget, event, val)
-            settings.nameFontOutline = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(nameOutlineDrop)
-
-        -- Color
-        AddColorPicker(panel, settings, "nameFontColor", "Font Color", {1, 1, 1, 1}, true, applyCastBar)
+        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- this row replaced.
+        AddColorRow(panel, {
+            label = "Font Color",
+            tbl = settings,
+            key = "nameFontColor",
+            default = {1, 1, 1, 1},
+            hasAlpha = true,
+            onConfirm = applyCastBar,
+        })
     end
 
     AddAdvancedToggle(nameRow, "castbarNameText", cbAdvBtns, settings.showNameText ~= false, {
@@ -656,69 +631,45 @@ local function BuildCastBarStylingPanel(container)
         end,
     })
 
+    -- Single rail. The two offsets are hand-written rather than routed through
+    -- AddOffsetSliders: that helper takes ONE symmetric range, and this pair is
+    -- deliberately +/-50 across and only +/-20 up the bar.
     local function BuildCastTimeAdvanced(panel)
-        -- Font
-        local ctFontDrop = AceGUI:Create("Dropdown")
-        ctFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(ctFontDrop)
-        ctFontDrop:SetValue(settings.castTimeFont or "Friz Quadrata TT")
-        ctFontDrop:SetFullWidth(true)
-        CS.SetFontDropdownCallback(ctFontDrop, function(widget, event, val)
-            settings.castTimeFont = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(ctFontDrop)
+        AddFontControls(panel, settings, "castTime", {
+            size = 10, sizeMin = 6, sizeMax = 24, sizeStep = 0.1,
+            font = "Friz Quadrata TT", outline = "OUTLINE",
+        }, applyCastBar, { row = true })
 
-        -- Size
-        local ctSizeSlider = AceGUI:Create("Slider")
-        ctSizeSlider:SetLabel("Font Size")
-        ctSizeSlider:SetSliderValues(6, 24, 0.1)
-        ctSizeSlider:SetValue(settings.castTimeFontSize or 10)
-        ctSizeSlider:SetFullWidth(true)
-        ctSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.castTimeFontSize = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(ctSizeSlider)
+        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- this row replaced.
+        AddColorRow(panel, {
+            label = "Font Color",
+            tbl = settings,
+            key = "castTimeFontColor",
+            default = {1, 1, 1, 1},
+            hasAlpha = true,
+            onConfirm = applyCastBar,
+        })
 
-        -- Outline
-        local ctOutlineDrop = AceGUI:Create("Dropdown")
-        ctOutlineDrop:SetLabel("Outline")
-        CS.SetupFontOutlineDropdown(ctOutlineDrop)
-        ctOutlineDrop:SetValue(settings.castTimeFontOutline or "OUTLINE")
-        ctOutlineDrop:SetFullWidth(true)
-        CS.SetFontOutlineDropdownCallback(ctOutlineDrop, function(widget, event, val)
-            settings.castTimeFontOutline = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(ctOutlineDrop)
+        AddSliderRow(panel, {
+            label = "X Offset",
+            min = -50, max = 50, step = 0.1,
+            value = settings.castTimeXOffset or 0,
+            onChange = function(val)
+                settings.castTimeXOffset = val
+                CooldownCompanion:ApplyCastBarSettings()
+            end,
+        })
 
-        -- Color
-        AddColorPicker(panel, settings, "castTimeFontColor", "Font Color", {1, 1, 1, 1}, true, applyCastBar)
-
-        -- X Offset
-        local ctXSlider = AceGUI:Create("Slider")
-        ctXSlider:SetLabel("X Offset")
-        ctXSlider:SetSliderValues(-50, 50, 0.1)
-        ctXSlider:SetValue(settings.castTimeXOffset or 0)
-        ctXSlider:SetFullWidth(true)
-        ctXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.castTimeXOffset = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(ctXSlider)
-
-        -- Y Offset
-        local ctYSlider = AceGUI:Create("Slider")
-        ctYSlider:SetLabel("Y Offset")
-        ctYSlider:SetSliderValues(-20, 20, 0.1)
-        ctYSlider:SetValue(settings.castTimeYOffset or 0)
-        ctYSlider:SetFullWidth(true)
-        ctYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.castTimeYOffset = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(ctYSlider)
+        AddSliderRow(panel, {
+            label = "Y Offset",
+            min = -20, max = 20, step = 0.1,
+            value = settings.castTimeYOffset or 0,
+            onChange = function(val)
+                settings.castTimeYOffset = val
+                CooldownCompanion:ApplyCastBarSettings()
+            end,
+        })
     end
 
     AddAdvancedToggle(castTimeRow, "castbarCastTime", cbAdvBtns, settings.showCastTimeText ~= false, {

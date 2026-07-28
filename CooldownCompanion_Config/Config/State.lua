@@ -2645,16 +2645,6 @@ local function ClearCol1PreviewHost()
 end
 
 ------------------------------------------------------------------------
--- Shared helper: apply checkbox indentation for pooled AceGUI checkboxes.
-------------------------------------------------------------------------
-local function ApplyCheckboxIndent(checkbox, offsetX)
-    if not (checkbox and checkbox.checkbg) then return end
-    -- AceGUI checkboxes are pooled; normalize anchor state before applying offset.
-    checkbox.checkbg:ClearAllPoints()
-    checkbox.checkbg:SetPoint("TOPLEFT", offsetX or 0, 0)
-end
-
-------------------------------------------------------------------------
 -- Shared selection / spec helpers (consumed by Popups, Panel, Column*, DragReorder)
 ------------------------------------------------------------------------
 
@@ -3563,7 +3553,6 @@ ST._ActivateConfigShiftTooltip = ActivateConfigShiftTooltip
 ST._ConfigureWrappedHelperLabel = ConfigureWrappedHelperLabel
 ST._ClearConfigShiftTooltipHover = ClearConfigShiftTooltipHover
 ST._COLUMN_PADDING = COLUMN_PADDING
-ST._ApplyCheckboxIndent = ApplyCheckboxIndent
 ST._ClearConfigButtonSelection = ClearConfigButtonSelection
 ST._ClearConfigPanelSelection = ClearConfigPanelSelection
 ST._ClearConfigContainerSelection = ClearConfigContainerSelection

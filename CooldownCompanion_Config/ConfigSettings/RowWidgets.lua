@@ -511,9 +511,10 @@ do
         Row_OnLeave(frame.obj.frame)
     end
 
-    -- Same accept/round behaviour as ST._HookSliderEditBox: one decimal place,
-    -- clamped to the slider range, and both OnValueChanged and OnMouseUp fire
-    -- so mirror-first call sites apply typed values live.
+    -- The accept/round behaviour the stock slider's edit-box hook used to
+    -- provide, built in here: one decimal place, clamped to the slider range,
+    -- and both OnValueChanged and OnMouseUp fire so mirror-first call sites
+    -- apply typed values live.
     local function EditBox_OnEnterPressed(frame)
         local self = frame.obj
         local value = tonumber(frame:GetText())

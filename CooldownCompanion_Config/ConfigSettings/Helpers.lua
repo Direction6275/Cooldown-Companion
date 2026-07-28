@@ -1619,38 +1619,28 @@ local function AddColorPicker(container, tbl, key, label, default, hasAlpha, onC
     return picker
 end
 
--- Create an anchor-point Dropdown using the pre-built list from State.lua.
+-- Create an anchor-point row using the pre-built list from State.lua.
 -- Optional label param overrides the default "Anchor" label.
 --
--- opts.row opts into the row grammar (RowWidgets.lua); opts.indent makes it a
--- child row. Omitting opts keeps the stock labeled Dropdown every other call
--- site draws today.
+-- Row grammar only (RowWidgets.lua); opts.indent makes it a child row. The
+-- pre-redesign full-width stock Dropdown had no call sites left after the
+-- conversion packets.
+--
+-- The row builder is read at CALL time rather than hoisted to file scope:
+-- Helpers.lua loads BEFORE RowWidgets.lua (TOC 46 vs 47), so ST._AddDropdownRow
+-- does not exist yet while this file is being read.
 local function AddAnchorDropdown(container, tbl, key, default, refreshFn, label, opts)
-    if opts and opts.row then
-        return ST._AddDropdownRow(container, {
-            label = label or "Anchor",
-            indent = opts.indent,
-            list = CS.anchorDropdownList,
-            order = CS.anchorPoints,
-            value = tbl[key] or default,
-            onChange = function(val)
-                tbl[key] = val
-                refreshFn()
-            end,
-        })
-    end
-
-    local drop = AceGUI:Create("Dropdown")
-    drop:SetLabel(label or "Anchor")
-    drop:SetList(CS.anchorDropdownList, CS.anchorPoints)
-    drop:SetValue(tbl[key] or default)
-    drop:SetFullWidth(true)
-    drop:SetCallback("OnValueChanged", function(widget, event, val)
-        tbl[key] = val
-        refreshFn()
-    end)
-    container:AddChild(drop)
-    return drop
+    return ST._AddDropdownRow(container, {
+        label = label or "Anchor",
+        indent = opts and opts.indent,
+        list = CS.anchorDropdownList,
+        order = CS.anchorPoints,
+        value = tbl[key] or default,
+        onChange = function(val)
+            tbl[key] = val
+            refreshFn()
+        end,
+    })
 end
 
 -- LibSharedMedia font names run well past the 140px control column, and a
@@ -1661,159 +1651,101 @@ local FONT_ROW_PULLOUT_WIDTH = 300
 -- prefix: key prefix (e.g. "cooldown" reads cooldownFont, cooldownFontSize, cooldownFontOutline).
 -- defaults: {size, sizeMin, sizeMax, sizeStep, font, outline} — all optional with sane fallbacks.
 --
--- opts.row opts into the row grammar (RowWidgets.lua); opts.indent makes them
--- child rows. Omitting opts keeps the stock full-width trio every other call
--- site draws today.
+-- Row grammar only (RowWidgets.lua); opts.indent makes them child rows. The
+-- pre-redesign full-width stock trio had no call sites left after the
+-- conversion packets.
 --
 -- The row builders are read at CALL time rather than hoisted to file scope:
 -- Helpers.lua loads BEFORE RowWidgets.lua (TOC 46 vs 47), so ST._AddSliderRow
 -- does not exist yet while this file is being read. Same rule the alpha and
--- anchor-target row modes above follow.
+-- anchor-target builders above follow.
 local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts)
     local fontKey = prefix .. "Font"
     local sizeKey = prefix .. "FontSize"
     local outlineKey = prefix .. "FontOutline"
+    local indent = opts and opts.indent
 
-    if opts and opts.row then
-        ST._AddSliderRow(container, {
-            label = "Font Size",
-            indent = opts.indent,
-            min = defaults.sizeMin or 8,
-            max = defaults.sizeMax or 32,
-            step = defaults.sizeStep or 1,
-            value = tbl[sizeKey] or defaults.size or 12,
-            onChange = function(val)
-                tbl[sizeKey] = val
-                refreshFn()
-            end,
-        })
-
-        -- FONT ROW (the Item Settings pilot's rule, stated at that call site):
-        -- the row is created with a label and a widened pullout but NO list and
-        -- NO onChange, then handed to the shared font helpers exactly as a
-        -- stock Dropdown would be. CDC-DropdownRow forwards SetList/SetDisabled
-        -- to its embedded child and forwards the child's OnOpened with
-        -- self = the row (aliasing row.pullout), which is everything
-        -- CS.SetupFontDropdown touches. AddDropdownRow registers OnValueChanged
-        -- only when opts.onChange is given, so SetFontDropdownCallback is the
-        -- one registration and the profile-wide font lock still gates every
-        -- write. The value is set AFTER SetupFontDropdown, because SetList
-        -- rebuilds the list the displayed text is read from.
-        local fontRow = ST._AddDropdownRow(container, {
-            label = "Font",
-            indent = opts.indent,
-            pulloutWidth = FONT_ROW_PULLOUT_WIDTH,
-        })
-        CS.SetupFontDropdown(fontRow)
-        fontRow:SetValue(tbl[fontKey] or defaults.font or "Friz Quadrata TT")
-        CS.SetFontDropdownCallback(fontRow, function(widget, event, val)
-            tbl[fontKey] = val
+    ST._AddSliderRow(container, {
+        label = "Font Size",
+        indent = indent,
+        min = defaults.sizeMin or 8,
+        max = defaults.sizeMax or 32,
+        step = defaults.sizeStep or 1,
+        value = tbl[sizeKey] or defaults.size or 12,
+        onChange = function(val)
+            tbl[sizeKey] = val
             refreshFn()
-        end)
+        end,
+    })
 
-        local outlineRow = ST._AddDropdownRow(container, {
-            label = "Font Outline",
-            indent = opts.indent,
-        })
-        CS.SetupFontOutlineDropdown(outlineRow)
-        outlineRow:SetValue(tbl[outlineKey] or defaults.outline or "OUTLINE")
-        CS.SetFontOutlineDropdownCallback(outlineRow, function(widget, event, val)
-            tbl[outlineKey] = val
-            refreshFn()
-        end)
-        return
-    end
-
-    local fontSizeSlider = AceGUI:Create("Slider")
-    fontSizeSlider:SetLabel("Font Size")
-    fontSizeSlider:SetSliderValues(defaults.sizeMin or 8, defaults.sizeMax or 32, defaults.sizeStep or 1)
-    fontSizeSlider:SetValue(tbl[sizeKey] or defaults.size or 12)
-    fontSizeSlider:SetFullWidth(true)
-    fontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        tbl[sizeKey] = val
-        refreshFn()
-    end)
-    container:AddChild(fontSizeSlider)
-
-    local fontDrop = AceGUI:Create("Dropdown")
-    fontDrop:SetLabel("Font")
-    CS.SetupFontDropdown(fontDrop)
-    fontDrop:SetValue(tbl[fontKey] or defaults.font or "Friz Quadrata TT")
-    fontDrop:SetFullWidth(true)
-    CS.SetFontDropdownCallback(fontDrop, function(widget, event, val)
+    -- FONT ROW (the Item Settings pilot's rule, stated at that call site):
+    -- the row is created with a label and a widened pullout but NO list and
+    -- NO onChange, then handed to the shared font helpers exactly as a
+    -- stock Dropdown would be. CDC-DropdownRow forwards SetList/SetDisabled
+    -- to its embedded child and forwards the child's OnOpened with
+    -- self = the row (aliasing row.pullout), which is everything
+    -- CS.SetupFontDropdown touches. AddDropdownRow registers OnValueChanged
+    -- only when opts.onChange is given, so SetFontDropdownCallback is the
+    -- one registration and the profile-wide font lock still gates every
+    -- write. The value is set AFTER SetupFontDropdown, because SetList
+    -- rebuilds the list the displayed text is read from.
+    local fontRow = ST._AddDropdownRow(container, {
+        label = "Font",
+        indent = indent,
+        pulloutWidth = FONT_ROW_PULLOUT_WIDTH,
+    })
+    CS.SetupFontDropdown(fontRow)
+    fontRow:SetValue(tbl[fontKey] or defaults.font or "Friz Quadrata TT")
+    CS.SetFontDropdownCallback(fontRow, function(widget, event, val)
         tbl[fontKey] = val
         refreshFn()
     end)
-    container:AddChild(fontDrop)
 
-    local outlineDrop = AceGUI:Create("Dropdown")
-    outlineDrop:SetLabel("Font Outline")
-    CS.SetupFontOutlineDropdown(outlineDrop)
-    outlineDrop:SetValue(tbl[outlineKey] or defaults.outline or "OUTLINE")
-    outlineDrop:SetFullWidth(true)
-    CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
+    local outlineRow = ST._AddDropdownRow(container, {
+        label = "Font Outline",
+        indent = indent,
+    })
+    CS.SetupFontOutlineDropdown(outlineRow)
+    outlineRow:SetValue(tbl[outlineKey] or defaults.outline or "OUTLINE")
+    CS.SetFontOutlineDropdownCallback(outlineRow, function(widget, event, val)
         tbl[outlineKey] = val
         refreshFn()
     end)
-    container:AddChild(outlineDrop)
 end
 
 -- Create X Offset + Y Offset slider pair.
 -- defaults: {x, y, range (default 20), step (default 0.1)}
 --
--- opts.row opts into the row grammar (RowWidgets.lua); opts.indent makes them
--- child rows. Same call-time row-builder read as AddFontControls above, and
--- for the same load-order reason.
+-- Row grammar only (RowWidgets.lua); opts.indent makes them child rows. Same
+-- call-time row-builder read as AddFontControls above, and for the same
+-- load-order reason. The pre-redesign full-width stock pair had no call sites
+-- left after the conversion packets.
 local function AddOffsetSliders(container, tbl, xKey, yKey, defaults, refreshFn, opts)
     local range = defaults.range or 20
     local step = defaults.step or 0.1
+    local indent = opts and opts.indent
 
-    if opts and opts.row then
-        ST._AddSliderRow(container, {
-            label = "X Offset",
-            indent = opts.indent,
-            min = -range, max = range, step = step,
-            value = tbl[xKey] or defaults.x or 0,
-            onChange = function(val)
-                tbl[xKey] = val
-                refreshFn()
-            end,
-        })
+    ST._AddSliderRow(container, {
+        label = "X Offset",
+        indent = indent,
+        min = -range, max = range, step = step,
+        value = tbl[xKey] or defaults.x or 0,
+        onChange = function(val)
+            tbl[xKey] = val
+            refreshFn()
+        end,
+    })
 
-        ST._AddSliderRow(container, {
-            label = "Y Offset",
-            indent = opts.indent,
-            min = -range, max = range, step = step,
-            value = tbl[yKey] or defaults.y or 0,
-            onChange = function(val)
-                tbl[yKey] = val
-                refreshFn()
-            end,
-        })
-        return
-    end
-
-    local xSlider = AceGUI:Create("Slider")
-    xSlider:SetLabel("X Offset")
-    xSlider:SetSliderValues(-range, range, step)
-    xSlider:SetValue(tbl[xKey] or defaults.x or 0)
-    xSlider:SetFullWidth(true)
-    xSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        tbl[xKey] = val
-        refreshFn()
-    end)
-    container:AddChild(xSlider)
-
-    local ySlider = AceGUI:Create("Slider")
-    ySlider:SetLabel("Y Offset")
-    ySlider:SetSliderValues(-range, range, step)
-    ySlider:SetValue(tbl[yKey] or defaults.y or 0)
-    ySlider:SetFullWidth(true)
-    ySlider:SetCallback("OnValueChanged", function(widget, event, val)
-        tbl[yKey] = val
-        refreshFn()
-    end)
-    container:AddChild(ySlider)
+    ST._AddSliderRow(container, {
+        label = "Y Offset",
+        indent = indent,
+        min = -range, max = range, step = step,
+        value = tbl[yKey] or defaults.y or 0,
+        onChange = function(val)
+            tbl[yKey] = val
+            refreshFn()
+        end,
+    })
 end
 
 local BORDER_THICKNESS_MODE_TOOLTIPS = {
@@ -1847,9 +1779,9 @@ local function AddDropdownItemTooltips(dropdown, tooltipByValue)
     end
 end
 
--- opts.row opts into the row grammar (RowWidgets.lua); opts.indent makes it a
--- child row. Omitting opts keeps the stock labeled Dropdown every other call
--- site draws today.
+-- Row grammar only (RowWidgets.lua); opts.indent makes it a child row. The
+-- pre-redesign full-width stock Dropdown had no call sites left after the
+-- conversion packets.
 local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disabled, opts)
     key = key or "borderRenderMode"
     local controlsDisabled = disabled == true or ST.IsBorderThicknessLocked()
@@ -1867,41 +1799,21 @@ local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disab
         end
     end
 
-    if opts and opts.row then
-        local modeRow = ST._AddDropdownRow(container, {
-            label = "Border Thickness",
-            indent = opts.indent,
-            list = modeList,
-            order = modeOrder,
-            value = ST.GetBorderRenderMode(tbl, key),
-            disabled = controlsDisabled,
-            onChange = ApplyRenderMode,
-        })
-        AddDropdownItemTooltips(modeRow, BORDER_THICKNESS_MODE_TOOLTIPS)
-        modeRow:SetCallback("OnClosed", function()
-            GameTooltip:Hide()
-        end)
-        return ST.GetBorderRenderMode(tbl, key), modeRow
-    end
-
-    local modeDrop = AceGUI:Create("Dropdown")
-    modeDrop:SetLabel("Border Thickness")
-    modeDrop:SetList(modeList, modeOrder)
-    AddDropdownItemTooltips(modeDrop, BORDER_THICKNESS_MODE_TOOLTIPS)
-    modeDrop:SetValue(ST.GetBorderRenderMode(tbl, key))
-    if modeDrop.SetDisabled then
-        modeDrop:SetDisabled(controlsDisabled)
-    end
-    modeDrop:SetCallback("OnClosed", function()
+    local modeRow = ST._AddDropdownRow(container, {
+        label = "Border Thickness",
+        indent = opts and opts.indent,
+        list = modeList,
+        order = modeOrder,
+        value = ST.GetBorderRenderMode(tbl, key),
+        disabled = controlsDisabled,
+        onChange = ApplyRenderMode,
+    })
+    AddDropdownItemTooltips(modeRow, BORDER_THICKNESS_MODE_TOOLTIPS)
+    modeRow:SetCallback("OnClosed", function()
         GameTooltip:Hide()
     end)
-    modeDrop:SetFullWidth(true)
-    modeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        ApplyRenderMode(val)
-    end)
-    container:AddChild(modeDrop)
 
-    return ST.GetBorderRenderMode(tbl, key), modeDrop
+    return ST.GetBorderRenderMode(tbl, key), modeRow
 end
 
 -- Expose helpers for other ConfigSettings files
@@ -1926,35 +1838,6 @@ ST._AddAnchorDropdown = AddAnchorDropdown
 -- Exposed so the row-grammar color row can bind the exact same
 -- commit-on-close contract AddColorPicker uses (see RowWidgets.lua).
 ST._SetupColorCallbacks = SetupColorCallbacks
-
--- Allow decimal input from editbox while keeping slider/wheel at 1px steps.
--- Reusable across any AceGUI Slider widget that needs sub-integer precision.
-local function HookSliderEditBox(sliderWidget)
-    local editbox = sliderWidget.editbox
-    local origHandler = editbox:GetScript("OnEnterPressed")
-    editbox:SetScript("OnEnterPressed", function(eb)
-        local widget = eb.obj
-        local value = tonumber(eb:GetText())
-        if value then
-            value = math.floor(value * 10 + 0.5) / 10
-            value = math.max(widget.min, math.min(widget.max, value))
-            PlaySound(856)
-            widget:SetValue(value)
-            widget:Fire("OnValueChanged", value)
-            widget:Fire("OnMouseUp", value)
-        end
-    end)
-
-    -- Restore original AceGUI handler on release so recycled sliders aren't permanently modified
-    local prevOnRelease = sliderWidget.events and sliderWidget.events["OnRelease"]
-    sliderWidget:SetCallback("OnRelease", function()
-        if prevOnRelease then
-            prevOnRelease(sliderWidget, "OnRelease")
-        end
-        editbox:SetScript("OnEnterPressed", origHandler)
-    end)
-end
-ST._HookSliderEditBox = HookSliderEditBox
 
 -- Shared alpha UI builder for groups, containers, resource bars, and other
 -- shared alpha consumers.

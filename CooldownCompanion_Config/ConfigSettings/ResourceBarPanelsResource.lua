@@ -14,10 +14,10 @@ local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
+local ApplyLeftAlignedHeading = ST._ApplyLeftAlignedHeading
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
-local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local BuildAlphaControls = ST._BuildAlphaControls
 local BuildIndependentAnchorTargetRow = ST._BuildIndependentAnchorTargetRow
@@ -58,7 +58,6 @@ local DEFAULT_MW_MAX_COLOR = RB.DEFAULT_MW_MAX_COLOR
 local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
 local SupportsResourceAuraStackMode = RB.SupportsResourceAuraStackMode
 local ClassifyAuraSpellUnit = ST._ClassifyAuraSpellUnit
-local AddColorPicker = ST._AddColorPicker
 local DEFAULT_RESOURCE_TEXT_FORMAT = RB.DEFAULT_RESOURCE_TEXT_FORMAT
 local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
 local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
@@ -290,22 +289,37 @@ function HealthResource.AddOpacitySlider(container, health, key, label, defaultV
 end
 
 function HealthResource.AddEffectTextureDropdown(container, health, key, label, applyBars)
-    local drop = AceGUI:Create("Dropdown")
-    drop:SetLabel(label)
-    drop:SetList(HealthResource.GetEffectTextureOptions())
-    drop:SetValue(health[key] or DEFAULT_HEALTH_EFFECT_TEXTURE)
-    drop:SetFullWidth(true)
-    drop:SetCallback("OnValueChanged", function(widget, event, val)
-        health[key] = val or DEFAULT_HEALTH_EFFECT_TEXTURE
-        applyBars()
-    end)
-    container:AddChild(drop)
+    local textureOptions, textureOrder = HealthResource.GetEffectTextureOptions()
+    return AddDropdownRow(container, {
+        label = label,
+        pulloutWidth = MEDIA_PULLOUT_WIDTH,
+        list = textureOptions,
+        order = textureOrder,
+        value = health[key] or DEFAULT_HEALTH_EFFECT_TEXTURE,
+        onChange = function(val)
+            health[key] = val or DEFAULT_HEALTH_EFFECT_TEXTURE
+            applyBars()
+        end,
+    })
 end
 
 function HealthResource.AddEffectStyleControls(container, checkbox, health, options, applyBars)
     local enabled = health[options.enabledKey] == true
+    -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
+    -- both rows go straight onto the panel scroll. The toggle these belong to
+    -- lives back on the tab, so neither indents.
     local function BuildEffectStyleAdvanced(panel)
-        AddColorPicker(panel, health, options.colorKey, options.colorLabel, options.defaultColor, true, applyBars, applyBars)
+        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- this row replaced.
+        AddColorRow(panel, {
+            label = options.colorLabel,
+            tbl = health,
+            key = options.colorKey,
+            default = options.defaultColor,
+            hasAlpha = true,
+            onConfirm = applyBars,
+            onChange = applyBars,
+        })
         HealthResource.AddEffectTextureDropdown(panel, health, options.textureKey, options.textureLabel, applyBars)
         if type(options.buildExtra) == "function" then
             options.buildExtra(panel)
@@ -379,9 +393,15 @@ local function BuildResourceTextControls(container, settings, powerType, display
         end,
     })
 
+    -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
+    -- every row goes straight onto the panel scroll. The Show <resource> Text
+    -- toggle these belong to lives back on the tab, so none of them indents.
+    --
+    -- The font trio is hand-written rather than routed through AddFontControls:
+    -- these values read through ReadDisplaySetting (spec override first, then
+    -- the base resource table), which the shared helper's plain tbl[key] read
+    -- cannot express.
     local function BuildResourceTextAdvanced(panel)
-        local textFormatDrop = AceGUI:Create("Dropdown")
-        textFormatDrop:SetLabel("Text Format")
         local textFormatOptions
         local textFormatOrder
         if isHealthResource then
@@ -415,7 +435,6 @@ local function BuildResourceTextControls(container, settings, powerType, display
             }
             textFormatOrder = { "current", "current_max", "percent" }
         end
-        textFormatDrop:SetList(textFormatOptions, textFormatOrder)
         local textFormatValue = ReadDisplaySetting(baseSettings, resSettings, "textFormat", isHealthResource and "percent" or DEFAULT_RESOURCE_TEXT_FORMAT)
         if isHealthResource then
             if not IsHealthTextFormat(textFormatValue) then
@@ -430,114 +449,128 @@ local function BuildResourceTextControls(container, settings, powerType, display
                 textFormatValue = DEFAULT_RESOURCE_TEXT_FORMAT
             end
         end
-        textFormatDrop:SetValue(textFormatValue)
-        textFormatDrop:SetFullWidth(true)
-        textFormatDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            if isHealthResource then
-                if IsHealthTextFormat(val) then
-                    resSettings.textFormat = val
+        AddDropdownRow(panel, {
+            label = "Text Format",
+            pulloutWidth = MEDIA_PULLOUT_WIDTH,
+            list = textFormatOptions,
+            order = textFormatOrder,
+            value = textFormatValue,
+            onChange = function(val)
+                if isHealthResource then
+                    if IsHealthTextFormat(val) then
+                        resSettings.textFormat = val
+                    else
+                        resSettings.textFormat = "percent"
+                    end
+                elseif isSegmentedResource then
+                    if val == "current" or val == "current_max" then
+                        resSettings.textFormat = val
+                    else
+                        resSettings.textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
+                    end
                 else
-                    resSettings.textFormat = "percent"
+                    if val == "current" or val == "current_max" or val == "percent" then
+                        resSettings.textFormat = val
+                    else
+                        resSettings.textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
+                    end
                 end
-            elseif isSegmentedResource then
-                if val == "current" or val == "current_max" then
-                    resSettings.textFormat = val
-                else
-                    resSettings.textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
-                end
-            else
-                if val == "current" or val == "current_max" or val == "percent" then
-                    resSettings.textFormat = val
-                else
-                    resSettings.textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
-                end
-            end
-            CooldownCompanion:ApplyResourceBars()
-        end)
-        panel:AddChild(textFormatDrop)
+                CooldownCompanion:ApplyResourceBars()
+            end,
+        })
 
-        local fontDrop = AceGUI:Create("Dropdown")
-        fontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(fontDrop)
-        fontDrop:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textFont", DEFAULT_RESOURCE_TEXT_FONT))
-        fontDrop:SetFullWidth(true)
-        CS.SetFontDropdownCallback(fontDrop, function(widget, event, val)
+        -- Font Size / Font / Font Outline, in that order and with those
+        -- labels: the shape AddFontControls emits in every other popout. The
+        -- trio stays hand-written here because these values read through
+        -- ReadDisplaySetting (spec override first, then the base resource
+        -- table), which the shared helper's flat tbl[key] read cannot express.
+        AddSliderRow(panel, {
+            label = "Font Size",
+            min = 6, max = 24, step = 1,
+            value = ReadDisplaySetting(baseSettings, resSettings, "textFontSize", DEFAULT_RESOURCE_TEXT_SIZE),
+            onChange = function(val)
+                resSettings.textFontSize = val
+                CooldownCompanion:ApplyResourceBars()
+            end,
+        })
+
+        -- FONT ROW: created with a label and a widened pullout but NO list and
+        -- NO onChange, then handed to the shared font helpers exactly as a
+        -- stock Dropdown would be. The value is set AFTER SetupFontDropdown,
+        -- because SetList rebuilds the list the displayed text is read from.
+        local fontRow = AddDropdownRow(panel, {
+            label = "Font",
+            pulloutWidth = MEDIA_PULLOUT_WIDTH,
+        })
+        CS.SetupFontDropdown(fontRow)
+        fontRow:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textFont", DEFAULT_RESOURCE_TEXT_FONT))
+        CS.SetFontDropdownCallback(fontRow, function(widget, event, val)
             resSettings.textFont = val
             CooldownCompanion:ApplyResourceBars()
         end)
-        panel:AddChild(fontDrop)
 
-        local sizeDrop = AceGUI:Create("Slider")
-        sizeDrop:SetLabel("Font Size")
-        sizeDrop:SetSliderValues(6, 24, 1)
-        sizeDrop:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textFontSize", DEFAULT_RESOURCE_TEXT_SIZE))
-        sizeDrop:SetFullWidth(true)
-        sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            resSettings.textFontSize = val
-            CooldownCompanion:ApplyResourceBars()
-        end)
-        panel:AddChild(sizeDrop)
-
-        local outlineDrop = AceGUI:Create("Dropdown")
-        outlineDrop:SetLabel("Outline")
-        CS.SetupFontOutlineDropdown(outlineDrop)
-        outlineDrop:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textFontOutline", DEFAULT_RESOURCE_TEXT_OUTLINE))
-        outlineDrop:SetFullWidth(true)
-        CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
+        local outlineRow = AddDropdownRow(panel, { label = "Font Outline" })
+        CS.SetupFontOutlineDropdown(outlineRow)
+        outlineRow:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textFontOutline", DEFAULT_RESOURCE_TEXT_OUTLINE))
+        CS.SetFontOutlineDropdownCallback(outlineRow, function(widget, event, val)
             resSettings.textFontOutline = val
             CooldownCompanion:ApplyResourceBars()
         end)
-        panel:AddChild(outlineDrop)
 
-        AddColorPicker(panel, resSettings, "textFontColor", "Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, applyBars)
+        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- this row replaced; so is onChange, which that call never supplied.
+        AddColorRow(panel, {
+            label = "Text Color",
+            tbl = resSettings,
+            key = "textFontColor",
+            default = DEFAULT_RESOURCE_TEXT_COLOR,
+            hasAlpha = true,
+            onConfirm = applyBars,
+        })
 
-        local textAnchorDrop = AceGUI:Create("Dropdown")
-        textAnchorDrop:SetLabel("Text Anchor")
-        local textAnchorValues = {}
-        for _, pt in ipairs(CS.anchorPoints) do
-            textAnchorValues[pt] = CS.anchorPointLabels[pt]
-        end
-        textAnchorDrop:SetList(textAnchorValues, CS.anchorPoints)
-        textAnchorDrop:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textAnchor", DEFAULT_RESOURCE_TEXT_ANCHOR))
-        textAnchorDrop:SetFullWidth(true)
-        textAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            resSettings.textAnchor = val
-            CooldownCompanion:ApplyResourceBars()
-        end)
-        panel:AddChild(textAnchorDrop)
+        -- CS.anchorDropdownList is built from CS.anchorPointLabels over exactly
+        -- CS.anchorPoints (State.lua), which is the table this call site used to
+        -- rebuild by hand on every render.
+        AddDropdownRow(panel, {
+            label = "Text Anchor",
+            list = CS.anchorDropdownList,
+            order = CS.anchorPoints,
+            value = ReadDisplaySetting(baseSettings, resSettings, "textAnchor", DEFAULT_RESOURCE_TEXT_ANCHOR),
+            onChange = function(val)
+                resSettings.textAnchor = val
+                CooldownCompanion:ApplyResourceBars()
+            end,
+        })
 
-        local textXSlider = AceGUI:Create("Slider")
-        textXSlider:SetLabel("Text X Offset")
-        textXSlider:SetSliderValues(-50, 50, 0.1)
-        textXSlider:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET))
-        textXSlider:SetFullWidth(true)
-        textXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            resSettings.textXOffset = val
-            CooldownCompanion:ApplyResourceBars()
-        end)
-        panel:AddChild(textXSlider)
+        AddSliderRow(panel, {
+            label = "Text X Offset",
+            min = -50, max = 50, step = 0.1,
+            value = ReadDisplaySetting(baseSettings, resSettings, "textXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET),
+            onChange = function(val)
+                resSettings.textXOffset = val
+                CooldownCompanion:ApplyResourceBars()
+            end,
+        })
 
-        local textYSlider = AceGUI:Create("Slider")
-        textYSlider:SetLabel("Text Y Offset")
-        textYSlider:SetSliderValues(-50, 50, 0.1)
-        textYSlider:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET))
-        textYSlider:SetFullWidth(true)
-        textYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            resSettings.textYOffset = val
-            CooldownCompanion:ApplyResourceBars()
-        end)
-        panel:AddChild(textYSlider)
+        AddSliderRow(panel, {
+            label = "Text Y Offset",
+            min = -50, max = 50, step = 0.1,
+            value = ReadDisplaySetting(baseSettings, resSettings, "textYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET),
+            onChange = function(val)
+                resSettings.textYOffset = val
+                CooldownCompanion:ApplyResourceBars()
+            end,
+        })
 
         if HIDE_AT_ZERO_ELIGIBLE[capturedPt] then
-            local hideAtZeroCb = AceGUI:Create("CheckBox")
-            hideAtZeroCb:SetLabel("Hide at 0")
-            hideAtZeroCb:SetValue(ReadDisplaySetting(baseSettings, resSettings, "hideTextAtZero", false) == true)
-            hideAtZeroCb:SetFullWidth(true)
-            hideAtZeroCb:SetCallback("OnValueChanged", function(widget, event, val)
-                resSettings.hideTextAtZero = val == true
-                CooldownCompanion:ApplyResourceBars()
-            end)
-            panel:AddChild(hideAtZeroCb)
+            AddCheckboxRow(panel, {
+                label = "Hide at 0",
+                value = ReadDisplaySetting(baseSettings, resSettings, "hideTextAtZero", false) == true,
+                onChange = function(val)
+                    resSettings.hideTextAtZero = val == true
+                    CooldownCompanion:ApplyResourceBars()
+                end,
+            })
         end
     end
 
@@ -566,107 +599,111 @@ local function BuildResourceTextControls(container, settings, powerType, display
         end,
     })
 
+    -- Single rail, same read/write contract as the value-text panel above.
+    --
+    -- The mode is a dropdown row rather than the pre-redesign pair of radio
+    -- checkboxes: the row grammar has no radio row, and one row naming the
+    -- choice says the same thing two mutually exclusive rows did. Same store,
+    -- same two values, same rebuild on change.
+    local RECHARGE_TEXT_MODES = {
+        recharging = "Recharging Segments Only",
+        all = "All Segments",
+    }
+    local RECHARGE_TEXT_MODE_ORDER = { "recharging", "all" }
+
     local function BuildRechargeTextAdvanced(panel)
         local modeValue = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextMode", "recharging")
         if modeValue ~= "all" then
             modeValue = "recharging"
         end
-        local modeOptions = {
-            { value = "recharging", label = "Recharging Segments Only" },
-            { value = "all", label = "All Segments" },
-        }
-        for _, option in ipairs(modeOptions) do
-            local optionValue = option.value
-            local modeRadio = AceGUI:Create("CheckBox")
-            modeRadio:SetType("radio")
-            modeRadio:SetLabel(option.label)
-            modeRadio:SetValue(modeValue == optionValue)
-            modeRadio:SetFullWidth(true)
-            modeRadio:SetCallback("OnValueChanged", function(widget, event, val)
-                if val ~= true then
-                    widget:SetValue(true)
-                    return
-                end
-                resSettings.rechargeTextMode = optionValue
+
+        AddDropdownRow(panel, {
+            label = "Show Recharge Text On",
+            pulloutWidth = MEDIA_PULLOUT_WIDTH,
+            list = RECHARGE_TEXT_MODES,
+            order = RECHARGE_TEXT_MODE_ORDER,
+            value = modeValue,
+            onChange = function(val)
+                resSettings.rechargeTextMode = (val == "all") and "all" or "recharging"
                 CooldownCompanion:ApplyResourceBars()
                 if CS.RefreshAdvancedSettingsPanel then
                     CS.RefreshAdvancedSettingsPanel()
                 end
-            end)
-            panel:AddChild(modeRadio)
-        end
+            end,
+        })
 
-        local fontDrop = AceGUI:Create("Dropdown")
-        fontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(fontDrop)
-        fontDrop:SetValue(ReadDisplaySetting(baseSettings, resSettings, "rechargeTextFont", DEFAULT_RESOURCE_TEXT_FONT))
-        fontDrop:SetFullWidth(true)
-        CS.SetFontDropdownCallback(fontDrop, function(widget, event, val)
+        -- Same canonical trio order and labels as the resource text popout
+        -- above, and hand-written for the same ReadDisplaySetting reason.
+        AddSliderRow(panel, {
+            label = "Font Size",
+            min = 6, max = 24, step = 1,
+            value = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextFontSize", DEFAULT_RESOURCE_TEXT_SIZE),
+            onChange = function(val)
+                resSettings.rechargeTextFontSize = val
+                CooldownCompanion:ApplyResourceBars()
+            end,
+        })
+
+        local fontRow = AddDropdownRow(panel, {
+            label = "Font",
+            pulloutWidth = MEDIA_PULLOUT_WIDTH,
+        })
+        CS.SetupFontDropdown(fontRow)
+        fontRow:SetValue(ReadDisplaySetting(baseSettings, resSettings, "rechargeTextFont", DEFAULT_RESOURCE_TEXT_FONT))
+        CS.SetFontDropdownCallback(fontRow, function(widget, event, val)
             resSettings.rechargeTextFont = val
             CooldownCompanion:ApplyResourceBars()
         end)
-        panel:AddChild(fontDrop)
 
-        local sizeDrop = AceGUI:Create("Slider")
-        sizeDrop:SetLabel("Font Size")
-        sizeDrop:SetSliderValues(6, 24, 1)
-        sizeDrop:SetValue(ReadDisplaySetting(baseSettings, resSettings, "rechargeTextFontSize", DEFAULT_RESOURCE_TEXT_SIZE))
-        sizeDrop:SetFullWidth(true)
-        sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            resSettings.rechargeTextFontSize = val
-            CooldownCompanion:ApplyResourceBars()
-        end)
-        panel:AddChild(sizeDrop)
-
-        local outlineDrop = AceGUI:Create("Dropdown")
-        outlineDrop:SetLabel("Outline")
-        CS.SetupFontOutlineDropdown(outlineDrop)
-        outlineDrop:SetValue(ReadDisplaySetting(baseSettings, resSettings, "rechargeTextFontOutline", DEFAULT_RESOURCE_TEXT_OUTLINE))
-        outlineDrop:SetFullWidth(true)
-        CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
+        local outlineRow = AddDropdownRow(panel, { label = "Font Outline" })
+        CS.SetupFontOutlineDropdown(outlineRow)
+        outlineRow:SetValue(ReadDisplaySetting(baseSettings, resSettings, "rechargeTextFontOutline", DEFAULT_RESOURCE_TEXT_OUTLINE))
+        CS.SetFontOutlineDropdownCallback(outlineRow, function(widget, event, val)
             resSettings.rechargeTextFontOutline = val
             CooldownCompanion:ApplyResourceBars()
         end)
-        panel:AddChild(outlineDrop)
 
-        AddColorPicker(panel, resSettings, "rechargeTextFontColor", "Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, applyBars)
+        -- deferCommit and onChange are deliberately absent, matching the
+        -- AddColorPicker call this row replaced.
+        AddColorRow(panel, {
+            label = "Text Color",
+            tbl = resSettings,
+            key = "rechargeTextFontColor",
+            default = DEFAULT_RESOURCE_TEXT_COLOR,
+            hasAlpha = true,
+            onConfirm = applyBars,
+        })
 
-        local anchorDrop = AceGUI:Create("Dropdown")
-        anchorDrop:SetLabel("Text Anchor")
-        local anchorValues = {}
-        for _, pt in ipairs(CS.anchorPoints) do
-            anchorValues[pt] = CS.anchorPointLabels[pt]
-        end
-        anchorDrop:SetList(anchorValues, CS.anchorPoints)
-        anchorDrop:SetValue(ReadDisplaySetting(baseSettings, resSettings, "rechargeTextAnchor", DEFAULT_RESOURCE_TEXT_ANCHOR))
-        anchorDrop:SetFullWidth(true)
-        anchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            resSettings.rechargeTextAnchor = val
-            CooldownCompanion:ApplyResourceBars()
-        end)
-        panel:AddChild(anchorDrop)
+        AddDropdownRow(panel, {
+            label = "Text Anchor",
+            list = CS.anchorDropdownList,
+            order = CS.anchorPoints,
+            value = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextAnchor", DEFAULT_RESOURCE_TEXT_ANCHOR),
+            onChange = function(val)
+                resSettings.rechargeTextAnchor = val
+                CooldownCompanion:ApplyResourceBars()
+            end,
+        })
 
-        local xSlider = AceGUI:Create("Slider")
-        xSlider:SetLabel("Text X Offset")
-        xSlider:SetSliderValues(-50, 50, 0.1)
-        xSlider:SetValue(ReadDisplaySetting(baseSettings, resSettings, "rechargeTextXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET))
-        xSlider:SetFullWidth(true)
-        xSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            resSettings.rechargeTextXOffset = val
-            CooldownCompanion:ApplyResourceBars()
-        end)
-        panel:AddChild(xSlider)
+        AddSliderRow(panel, {
+            label = "Text X Offset",
+            min = -50, max = 50, step = 0.1,
+            value = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET),
+            onChange = function(val)
+                resSettings.rechargeTextXOffset = val
+                CooldownCompanion:ApplyResourceBars()
+            end,
+        })
 
-        local ySlider = AceGUI:Create("Slider")
-        ySlider:SetLabel("Text Y Offset")
-        ySlider:SetSliderValues(-50, 50, 0.1)
-        ySlider:SetValue(ReadDisplaySetting(baseSettings, resSettings, "rechargeTextYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET))
-        ySlider:SetFullWidth(true)
-        ySlider:SetCallback("OnValueChanged", function(widget, event, val)
-            resSettings.rechargeTextYOffset = val
-            CooldownCompanion:ApplyResourceBars()
-        end)
-        panel:AddChild(ySlider)
+        AddSliderRow(panel, {
+            label = "Text Y Offset",
+            min = -50, max = 50, step = 0.1,
+            value = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET),
+            onChange = function(val)
+                resSettings.rechargeTextYOffset = val
+                CooldownCompanion:ApplyResourceBars()
+            end,
+        })
     end
 
     local rechargeAdvKey = "rbRechargeText_" .. capturedPt .. "_" .. tostring(displaySpecID)
@@ -851,15 +888,14 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         textureLabel = "Low Health Alert Texture",
         defaultColor = DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR,
         buildExtra = function(panel)
-            local missingHealthOnlyCb = AceGUI:Create("CheckBox")
-            missingHealthOnlyCb:SetLabel("Pulse Missing Health Only")
-            missingHealthOnlyCb:SetValue(health.healthLowHealthAlertMissingHealthOnly == true)
-            missingHealthOnlyCb:SetFullWidth(true)
-            missingHealthOnlyCb:SetCallback("OnValueChanged", function(widget, event, val)
-                health.healthLowHealthAlertMissingHealthOnly = val == true
-                applyBars()
-            end)
-            panel:AddChild(missingHealthOnlyCb)
+            AddCheckboxRow(panel, {
+                label = "Pulse Missing Health Only",
+                value = health.healthLowHealthAlertMissingHealthOnly == true,
+                onChange = function(val)
+                    health.healthLowHealthAlertMissingHealthOnly = val == true
+                    applyBars()
+                end,
+            })
         end,
     }, applyBars)
     -- Second badge after the gear when the setting is on, first when it is off:
@@ -1393,6 +1429,11 @@ local function BuildBarHeightControls(container, settings, layout)
         end,
     })
 
+    -- Single rail (AdvancedSettingsPanel.lua): one slider row per active
+    -- resource, straight onto the panel scroll. The toggle they belong to lives
+    -- back on the tab, so none of them indents. "<Resource> <thickness label>"
+    -- runs long against a slider track, so the full label rides the row
+    -- tooltip too.
     local function BuildCustomResourceHeightsAdvanced(panel)
         if type(layout.resources) ~= "table" then
             layout.resources = {}
@@ -1405,37 +1446,35 @@ local function BuildBarHeightControls(container, settings, layout)
             local enabled = IsResourceEnabled(settings, pt)
             local resLayout = type(layout.resources[capturedPt]) == "table" and layout.resources[capturedPt] or {}
 
-            local resHeightSlider = AceGUI:Create("Slider")
-            resHeightSlider:SetLabel(name .. " " .. thicknessLabel)
-            resHeightSlider:SetSliderValues(4, 40, 0.1)
+            local resThickness
             if thicknessField == "barWidth" then
-                resHeightSlider:SetValue(
-                    resLayout.barWidth or resLayout.barHeight
+                resThickness = resLayout.barWidth or resLayout.barHeight
                     or layout.barWidth or layout.barHeight or settings.barWidth or settings.barHeight or 12
-                )
             else
-                resHeightSlider:SetValue(
-                    resLayout.barHeight or resLayout.barWidth
+                resThickness = resLayout.barHeight or resLayout.barWidth
                     or layout.barHeight or layout.barWidth or settings.barHeight or settings.barWidth or 12
-                )
             end
-            resHeightSlider:SetFullWidth(true)
-            if resHeightSlider.SetDisabled then
-                resHeightSlider:SetDisabled(not enabled)
-            end
-            resHeightSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                if not enabled then
-                    return
-                end
-                if type(layout.resources[capturedPt]) ~= "table" then
-                    layout.resources[capturedPt] = {}
-                end
-                layout.resources[capturedPt][thicknessField] = val
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:RepositionCastBar()
-                CooldownCompanion:UpdateAnchorStacking()
-            end)
-            panel:AddChild(resHeightSlider)
+
+            local rowLabel = name .. " " .. thicknessLabel
+            AddSliderRow(panel, {
+                label = rowLabel,
+                tooltip = { rowLabel },
+                min = 4, max = 40, step = 0.1,
+                value = resThickness,
+                disabled = not enabled,
+                onChange = function(val)
+                    if not enabled then
+                        return
+                    end
+                    if type(layout.resources[capturedPt]) ~= "table" then
+                        layout.resources[capturedPt] = {}
+                    end
+                    layout.resources[capturedPt][thicknessField] = val
+                    CooldownCompanion:ApplyResourceBars()
+                    CooldownCompanion:RepositionCastBar()
+                    CooldownCompanion:UpdateAnchorStacking()
+                end,
+            })
         end
     end
 
@@ -1623,34 +1662,56 @@ local function AddThresholdTickHelperLabel(container, text)
     container:AddChild(label)
 end
 
+-- No caret: this sub-section has no collapse state, and the left-aligned shape
+-- indents the label as if it had one so it lines up with the rows beneath it.
+-- Same call the preset section makes (Helpers.lua).
 local function AddThresholdTickSubHeading(container, text)
     local heading = AceGUI:Create("Heading")
     heading:SetText(text)
     ColorHeading(heading)
     heading:SetFullWidth(true)
     container:AddChild(heading)
+    ApplyLeftAlignedHeading(heading)
 end
 
+-- A value and the button that removes (or abandons) it. In a single rail the
+-- editbox row's control column is fully taken by the editbox, so the button
+-- takes the line below it - the same shape BuildIndependentAnchorTargetRow
+-- falls back to when it has no second column to put Pick in. The button row is
+-- exactly one grammar row tall (Flow insets its single row by 3px and the
+-- button is 24 tall, so 3 + 24 + 3 fills the band) and noAutoHeight keeps
+-- Flow's own 27px report from shrinking it back.
+--
+-- onEnter takes AddEditBoxRow's (text, widget) contract; the widget it hands
+-- back is the row, which forwards SetText to the embedded stock EditBox.
 local function AddThresholdTickValueRow(panel, label, text, buttonText, onEnter, onButton)
-    local row = AceGUI:Create("SimpleGroup")
-    row:SetFullWidth(true)
-    row:SetLayout("Flow")
+    local valueRow = AddEditBoxRow(panel, {
+        label = label,
+        -- Value labels name their resource ("Fury Threshold Value (>=)"), which
+        -- can outrun the label side of a narrow panel row.
+        tooltip = { label },
+        value = text,
+        onEnterPressed = onEnter,
+    })
+    valueRow:DisableButton(true)
+    if valueRow.editbox and valueRow.editbox.Instructions then
+        valueRow.editbox.Instructions:Hide()
+    end
 
-    local valueEdit = AceGUI:Create("EditBox")
-    if valueEdit.editbox.Instructions then valueEdit.editbox.Instructions:Hide() end
-    valueEdit:SetLabel(label)
-    valueEdit:SetText(text)
-    valueEdit:SetRelativeWidth(0.68)
-    valueEdit:DisableButton(true)
-    valueEdit:SetCallback("OnEnterPressed", onEnter)
-    row:AddChild(valueEdit)
+    local buttonRow = AceGUI:Create("SimpleGroup")
+    buttonRow:SetFullWidth(true)
+    buttonRow:SetLayout("Flow")
+    buttonRow:SetHeight(ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT or 30)
+    buttonRow.noAutoHeight = true
 
     local button = AceGUI:Create("Button")
     button:SetText(buttonText)
-    button:SetRelativeWidth(0.3)
+    button:SetAutoWidth(true)
     button:SetCallback("OnClick", onButton)
-    row:AddChild(button)
-    panel:AddChild(row)
+    buttonRow:AddChild(button)
+
+    -- Added after its child so the List-layout panel measures a populated row.
+    panel:AddChild(buttonRow)
 end
 
 local function AddThresholdTickEnableCheckbox(container, settings, powerType, specID, settingKey, label, advKey)
@@ -1774,7 +1835,7 @@ local function AddThresholdTickEntryEditor(panel, options)
     for index, entry in ipairs(entries) do
         local errorKey = options.errorPrefix .. "_" .. tostring(index)
         AddThresholdTickValueRow(panel, options.valueLabel, tostring(entry.value), "Remove",
-            function(widget, event, text)
+            function(text, widget)
                 commitValue(index, text, widget)
             end,
             function()
@@ -1794,8 +1855,17 @@ local function AddThresholdTickEntryEditor(panel, options)
         local proxy = {
             [proxyKey] = type(entry.color) == "table" and CopyTable(entry.color) or CopyTable(options.defaultColor),
         }
-        AddColorPicker(panel, proxy, proxyKey, options.colorLabel, options.defaultColor, options.hasAlpha,
-            function()
+        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- this row replaced: the bound table IS the throwaway proxy, so a drag
+        -- value resting in it cannot reach a live renderer.
+        AddColorRow(panel, {
+            label = options.colorLabel,
+            tooltip = { options.colorLabel },
+            tbl = proxy,
+            key = proxyKey,
+            default = options.defaultColor,
+            hasAlpha = options.hasAlpha,
+            onConfirm = function()
                 local updated = CopyThresholdTickEntryList(entries)
                 if updated[index] then
                     updated[index].color = proxy[proxyKey]
@@ -1803,19 +1873,20 @@ local function AddThresholdTickEntryEditor(panel, options)
                     options.applyBars()
                 end
             end,
-            function()
+            onChange = function()
                 local updated = CopyThresholdTickEntryList(entries)
                 if updated[index] then
                     updated[index].color = proxy[proxyKey]
                     options.writeEntries(updated)
                 end
-            end)
+            end,
+        })
     end
 
     if draftActive then
         local errorKey = options.errorPrefix .. "_new"
         AddThresholdTickValueRow(panel, "New " .. options.valueLabel, "", "Cancel",
-            function(widget, event, text)
+            function(text, widget)
                 commitValue(nil, text, widget)
             end,
             function()
@@ -1830,9 +1901,17 @@ local function AddThresholdTickEntryEditor(panel, options)
         AddThresholdTickHelperLabel(panel, "|cff888888Enter a valid value to unlock color settings for this row.|r")
     end
 
+    -- Same compact shape the Remove/Cancel buttons above take, so the section's
+    -- actions read as buttons rather than page-wide banners.
+    local addRow = AceGUI:Create("SimpleGroup")
+    addRow:SetFullWidth(true)
+    addRow:SetLayout("Flow")
+    addRow:SetHeight(ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT or 30)
+    addRow.noAutoHeight = true
+
     local addBtn = AceGUI:Create("Button")
     addBtn:SetText(options.addText)
-    addBtn:SetFullWidth(true)
+    addBtn:SetAutoWidth(true)
     local addDisabled = rowCount >= MAX_RESOURCE_THRESHOLD_TICK_ENTRIES or draftActive
     if addBtn.SetDisabled then
         addBtn:SetDisabled(addDisabled)
@@ -1845,7 +1924,8 @@ local function AddThresholdTickEntryEditor(panel, options)
         thresholdTickEditorErrors[options.errorPrefix .. "_new"] = nil
         RefreshAdvancedSettingsPanelSoon()
     end)
-    panel:AddChild(addBtn)
+    addRow:AddChild(addBtn)
+    panel:AddChild(addRow)
 
     if rowCount >= MAX_RESOURCE_THRESHOLD_TICK_ENTRIES then
         AddThresholdTickHelperLabel(panel, "|cff888888Maximum of 3 entries configured.|r")
@@ -1978,8 +2058,12 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
     -- The tracked aura presents an ITEM, not a setting: a CDC-LabelRow with
     -- the spell's icon inlined into the label text (the row's label is a
     -- FontString, so the icon rides an inline texture escape) and a Remove
-    -- link owned by the row's control column. The shared AddAuraCandidateRow
-    -- is a 22px Flow row and would break the rhythm inside a grid column.
+    -- link owned by the row's control column. This draws the same shape the
+    -- shared AddAuraCandidateRow now draws; it stays inline because the
+    -- overlay tracks ONE spell on auraColorSpellID rather than a candidate
+    -- list, so only what Remove clears differs. Worth folding into the shared
+    -- helper (it takes the remove action as a callback) if this file is opened
+    -- for other reasons.
     local spellInfo = C_Spell.GetSpellInfo(spellID)
     local spellName = spellInfo and spellInfo.name or ("Spell " .. spellID)
     local spellIcon = C_Spell.GetSpellTexture(spellID) or 134400
@@ -2398,41 +2482,44 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                         tickAdvKey
                     )
 
+                    -- Single rail (AdvancedSettingsPanel.lua): every row goes
+                    -- straight onto the panel scroll. The Enable ... Tick
+                    -- Markers toggle lives back on the tab, so none of them
+                    -- indents.
                     local function BuildTickMarkerAdvanced(panel)
-                        local tickCombatCb = AceGUI:Create("CheckBox")
-                        tickCombatCb:SetLabel("Show Only In Combat")
-                        tickCombatCb:SetValue(ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickCombatOnly", false))
-                        tickCombatCb:SetFullWidth(true)
-                        tickCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
-                            WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickCombatOnly", val == true)
-                            CooldownCompanion:ApplyResourceBars()
-                        end)
-                        panel:AddChild(tickCombatCb)
+                        AddCheckboxRow(panel, {
+                            label = "Show Only In Combat",
+                            value = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickCombatOnly", false),
+                            onChange = function(val)
+                                WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickCombatOnly", val == true)
+                                CooldownCompanion:ApplyResourceBars()
+                            end,
+                        })
 
                         local tickMode = GetContinuousTickModeConfig({
                             continuousTickMode = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickMode", nil),
                         })
-                        local modeDrop = AceGUI:Create("Dropdown")
-                        modeDrop:SetLabel("Tick Mode")
-                        modeDrop:SetList({
-                            percent = "Percent",
-                            absolute = "Absolute Value",
-                        }, { "percent", "absolute" })
-                        modeDrop:SetValue(tickMode)
-                        modeDrop:SetFullWidth(true)
-                        modeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                            if val ~= "percent" and val ~= "absolute" then
-                                val = DEFAULT_CONTINUOUS_TICK_MODE
-                            end
-                            WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickMode", val)
-                            CooldownCompanion:ApplyResourceBars()
-                            C_Timer.After(0, function()
-                                if CS.RefreshAdvancedSettingsPanel then
-                                    CS.RefreshAdvancedSettingsPanel()
+                        AddDropdownRow(panel, {
+                            label = "Tick Mode",
+                            list = {
+                                percent = "Percent",
+                                absolute = "Absolute Value",
+                            },
+                            order = { "percent", "absolute" },
+                            value = tickMode,
+                            onChange = function(val)
+                                if val ~= "percent" and val ~= "absolute" then
+                                    val = DEFAULT_CONTINUOUS_TICK_MODE
                                 end
-                            end)
-                        end)
-                        panel:AddChild(modeDrop)
+                                WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickMode", val)
+                                CooldownCompanion:ApplyResourceBars()
+                                C_Timer.After(0, function()
+                                    if CS.RefreshAdvancedSettingsPanel then
+                                        CS.RefreshAdvancedSettingsPanel()
+                                    end
+                                end)
+                            end,
+                        })
 
                         local tickEntries = GetConfigContinuousTickEntries(settings, capturedPt, _colorSpecID, tickMode)
                         local tickEntriesKey = tickMode == "absolute" and "continuousTickAbsoluteEntries" or "continuousTickPercentEntries"
@@ -2461,16 +2548,17 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                         })
 
                         local _tickWidthVal = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickWidth", nil)
-                        local tickWidthSlider = AceGUI:Create("Slider")
-                        tickWidthSlider:SetLabel(resourceName .. " Tick Width")
-                        tickWidthSlider:SetSliderValues(1, 10, 1)
-                        tickWidthSlider:SetValue(tonumber(_tickWidthVal) or DEFAULT_CONTINUOUS_TICK_WIDTH)
-                        tickWidthSlider:SetFullWidth(true)
-                        tickWidthSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                            WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickWidth", val)
-                            CooldownCompanion:ApplyResourceBars()
-                        end)
-                        panel:AddChild(tickWidthSlider)
+                        local tickWidthLabel = resourceName .. " Tick Width"
+                        AddSliderRow(panel, {
+                            label = tickWidthLabel,
+                            tooltip = { tickWidthLabel },
+                            min = 1, max = 10, step = 1,
+                            value = tonumber(_tickWidthVal) or DEFAULT_CONTINUOUS_TICK_WIDTH,
+                            onChange = function(val)
+                                WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickWidth", val)
+                                CooldownCompanion:ApplyResourceBars()
+                            end,
+                        })
                     end
 
                     AddAdvancedToggle(

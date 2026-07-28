@@ -19,7 +19,7 @@ local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
-local AddColorPicker = ST._AddColorPicker
+local AddFontControls = ST._AddFontControls
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 
 -- Imports from RowWidgets.lua (the row grammar). The rules every row-grammar
@@ -1073,12 +1073,13 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
             BuildCustomBarAuraTrackingSection(container, cab, infoButtons, capturedKey)
 
             -- Shared builder (SectionBuilders): the cabConfig speaks the
-            -- same barAura* key family as the panel bar style tables. Its
-            -- opts.row branch opens its own grid on this container - LEFT the
-            -- border effect, RIGHT the two fill effects - so this section
-            -- reads like every other one on the tab. The bar-mode advanced
-            -- panel and the entry override tab omit opts.row and keep the
-            -- stock full-width widgets.
+            -- same barAura* key family as the panel bar style tables. The
+            -- builder is row-only now and opens its own grid on this
+            -- container - LEFT the border effect, RIGHT the two fill effects -
+            -- so this section reads like every other one on the tab. Only a
+            -- caller passing opts.singleRail suppresses that grid: the
+            -- bar-mode advanced panel, whose popout is too narrow for two
+            -- columns.
             local isAuraTracked = (not isSpellCustomBar) or cab.auraTracking == true
             if isAuraTracked and ST._BuildBarActiveAuraControls then
                 local _, effectsCollapsed = AddCustomBarSettingsHeading(container, "Effects",
@@ -1255,43 +1256,37 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
 
                     local showDuration = showDurationControls and cab.showDurationText == true
                     local showStack = (stackVal == true)
+                    -- The font trio's store keys are exactly durationTextFont /
+                    -- durationTextFontSize / durationTextFontOutline, so the
+                    -- shared helper owns it; it writes the same table `cab`
+                    -- aliases and applies the bars, which is what the three
+                    -- hand-written callbacks did.
+                    local cabApplyBarsOnly = function() CooldownCompanion:ApplyResourceBars() end
+
+                    -- Single rail (AdvancedSettingsPanel.lua): a panel is one
+                    -- narrow column, so every row goes straight onto the panel
+                    -- scroll.
                     local function BuildDurationTextAdvanced(panel)
-                        local fontDrop = AceGUI:Create("Dropdown")
-                        fontDrop:SetLabel("Duration Font")
-                        CS.SetupFontDropdown(fontDrop)
-                        fontDrop:SetValue(cab.durationTextFont or DEFAULT_RESOURCE_TEXT_FONT)
-                        fontDrop:SetFullWidth(true)
-                        CS.SetFontDropdownCallback(fontDrop, function(widget, event, val)
-                            customBars[cabIdx].durationTextFont = val
-                            CooldownCompanion:ApplyResourceBars()
-                        end)
-                        panel:AddChild(fontDrop)
+                        AddFontControls(panel, customBars[cabIdx], "durationText", {
+                            size = DEFAULT_RESOURCE_TEXT_SIZE, sizeMin = 6, sizeMax = 24, sizeStep = 1,
+                            font = DEFAULT_RESOURCE_TEXT_FONT, outline = DEFAULT_RESOURCE_TEXT_OUTLINE,
+                        }, cabApplyBarsOnly, { row = true })
 
-                        local sizeDrop = AceGUI:Create("Slider")
-                        sizeDrop:SetLabel("Duration Font Size")
-                        sizeDrop:SetSliderValues(6, 24, 1)
-                        sizeDrop:SetValue(cab.durationTextFontSize or DEFAULT_RESOURCE_TEXT_SIZE)
-                        sizeDrop:SetFullWidth(true)
-                        sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                            customBars[cabIdx].durationTextFontSize = val
-                            CooldownCompanion:ApplyResourceBars()
-                        end)
-                        panel:AddChild(sizeDrop)
+                        -- deferCommit stays true: the Layout & Order canvas
+                        -- re-reads this table on every repaint, so a drag value
+                        -- may only exist in it while that repaint runs.
+                        AddColorRow(panel, {
+                            label = "Duration Text Color",
+                            tbl = customBars[cabIdx],
+                            key = "durationTextFontColor",
+                            default = DEFAULT_RESOURCE_TEXT_COLOR,
+                            hasAlpha = true,
+                            onConfirm = cabApplyBars,
+                            onChange = cabPreviewOnly,
+                            deferCommit = true,
+                        })
 
-                        local outlineDrop = AceGUI:Create("Dropdown")
-                        outlineDrop:SetLabel("Duration Outline")
-                        CS.SetupFontOutlineDropdown(outlineDrop)
-                        outlineDrop:SetValue(cab.durationTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE)
-                        outlineDrop:SetFullWidth(true)
-                        CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
-                            customBars[cabIdx].durationTextFontOutline = val
-                            CooldownCompanion:ApplyResourceBars()
-                        end)
-                        panel:AddChild(outlineDrop)
-
-                        AddColorPicker(panel, customBars[cabIdx], "durationTextFontColor", "Duration Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, cabApplyBars, cabPreviewOnly, true)
-
-                        AddDurationFormatDropdown(panel, customBars[cabIdx], cabApplyBars)
+                        AddDurationFormatDropdown(panel, customBars[cabIdx], cabApplyBars, { row = true })
                     end
 
                     if showDurationControls then
@@ -1302,40 +1297,23 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                     end
 
                     local function BuildStackTextAdvanced(panel)
-                        local fontDrop = AceGUI:Create("Dropdown")
-                        fontDrop:SetLabel("Charge Font")
-                        CS.SetupFontDropdown(fontDrop)
-                        fontDrop:SetValue(cab.stackTextFont or DEFAULT_RESOURCE_TEXT_FONT)
-                        fontDrop:SetFullWidth(true)
-                        CS.SetFontDropdownCallback(fontDrop, function(widget, event, val)
-                            customBars[cabIdx].stackTextFont = val
-                            CooldownCompanion:ApplyResourceBars()
-                        end)
-                        panel:AddChild(fontDrop)
+                        AddFontControls(panel, customBars[cabIdx], "stackText", {
+                            size = DEFAULT_RESOURCE_TEXT_SIZE, sizeMin = 6, sizeMax = 24, sizeStep = 1,
+                            font = DEFAULT_RESOURCE_TEXT_FONT, outline = DEFAULT_RESOURCE_TEXT_OUTLINE,
+                        }, cabApplyBarsOnly, { row = true })
 
-                        local sizeDrop = AceGUI:Create("Slider")
-                        sizeDrop:SetLabel("Charge Font Size")
-                        sizeDrop:SetSliderValues(6, 24, 1)
-                        sizeDrop:SetValue(cab.stackTextFontSize or DEFAULT_RESOURCE_TEXT_SIZE)
-                        sizeDrop:SetFullWidth(true)
-                        sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                            customBars[cabIdx].stackTextFontSize = val
-                            CooldownCompanion:ApplyResourceBars()
-                        end)
-                        panel:AddChild(sizeDrop)
-
-                        local outlineDrop = AceGUI:Create("Dropdown")
-                        outlineDrop:SetLabel("Charge Outline")
-                        CS.SetupFontOutlineDropdown(outlineDrop)
-                        outlineDrop:SetValue(cab.stackTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE)
-                        outlineDrop:SetFullWidth(true)
-                        CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
-                            customBars[cabIdx].stackTextFontOutline = val
-                            CooldownCompanion:ApplyResourceBars()
-                        end)
-                        panel:AddChild(outlineDrop)
-
-                        AddColorPicker(panel, customBars[cabIdx], "stackTextFontColor", "Stack Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, cabApplyBars, cabPreviewOnly, true)
+                        -- deferCommit stays true, for the same reason as the
+                        -- duration text color above.
+                        AddColorRow(panel, {
+                            label = "Stack Text Color",
+                            tbl = customBars[cabIdx],
+                            key = "stackTextFontColor",
+                            default = DEFAULT_RESOURCE_TEXT_COLOR,
+                            hasAlpha = true,
+                            onConfirm = cabApplyBars,
+                            onChange = cabPreviewOnly,
+                            deferCommit = true,
+                        })
                     end
 
                     AddAdvancedToggle(stackTextRow, "rbCabStackText_" .. capturedKey, rbCabTextAdvBtns, showStack, {

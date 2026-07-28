@@ -29,7 +29,6 @@ local AddScopedLoadConditionToggles = ST._AddScopedLoadConditionToggles
 local BuildWhereToHideTooltip = ST._BuildWhereToHideTooltip
 local AddCharacterEligibilityControls = ST._AddCharacterEligibilityControls
 local AddClassSpecEligibilityControls = ST._AddClassSpecEligibilityControls
-local BuildEligibilityBadgeMap = ST._BuildEligibilityBadgeMap
 
 -- Imports from SectionBuilders.lua
 local BuildKeybindTextControls = ST._BuildKeybindTextControls
@@ -2166,9 +2165,9 @@ local function RefreshTextureIndicatorConfig()
 end
 
 -- Row grammar (RowWidgets.lua): a CDC-SliderRow. Both call sites are advanced
--- panel interiors, so this was converted outright rather than growing an
--- opts.row mode - and the row's own value box already accepts one decimal
--- place, which is the whole job the ST._HookSliderEditBox call it replaced did.
+-- panel interiors, so this was converted outright - and the row's own value box
+-- already accepts one decimal place, which is the whole job the pre-redesign
+-- editbox hook it replaced did.
 local function BuildTextureIndicatorSpeedSlider(container, config, label)
     AddSliderRow(container, {
         label = label,
