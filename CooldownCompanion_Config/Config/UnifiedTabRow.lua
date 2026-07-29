@@ -312,17 +312,45 @@ local function PrimaryOwnsSurface()
     return GetScope() == "primary" and GetPrimaryStrip() ~= nil
 end
 
+-- A pane is only ever dropped by this file, so this file is the only thing
+-- that has to put it back: the colours are recorded on the way down and
+-- restored verbatim on the way up. Naming AceGUI's own constructor values
+-- here instead would repaint the pane in stock colours on every layout
+-- pass, which is wrong for anyone skinning the config - a skin replaces the
+-- backdrop AND its colours on this same border frame, and the group
+-- settings tabs (the one tab group outside this row) keep whatever it set.
+-- Nothing recorded means the pane was never dropped, so it is left exactly
+-- as its owner painted it.
+--
+-- Accepted edge: a skin that re-applies its template while a strip is down
+-- leaves the record stale until the next drop.
+local function CaptureStripPaneColors(tabGroup)
+    if tabGroup._cdcPaneColors then return end
+    local border = tabGroup.border
+    -- No backdrop to recolour (a skin may have cleared it): capture nothing,
+    -- and the drop below is a no-op rather than an error.
+    if not (border.GetBackdrop and border:GetBackdrop()) then return end
+    local r, g, b, a = border:GetBackdropColor()
+    local er, eg, eb, ea = border:GetBackdropBorderColor()
+    tabGroup._cdcPaneColors = { r, g, b, a, er, eg, eb, ea }
+end
+
 local function SetStripActive(tabGroup, active)
     if not tabGroup then return end
     if active then
         tabGroup.content:Show()
-        tabGroup.border:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
-        tabGroup.border:SetBackdropBorderColor(0.4, 0.4, 0.4)
+        local colors = tabGroup._cdcPaneColors
+        if colors then
+            tabGroup.border:SetBackdropColor(colors[1], colors[2], colors[3], colors[4])
+            tabGroup.border:SetBackdropBorderColor(colors[5], colors[6], colors[7], colors[8])
+            tabGroup._cdcPaneColors = nil
+        end
         return
     end
     -- Tabs are children of the border frame, so the pane is dropped by
     -- clearing its backdrop and hiding the content frame rather than by
     -- hiding the border itself.
+    CaptureStripPaneColors(tabGroup)
     tabGroup.content:Hide()
     tabGroup.border:SetBackdropColor(0, 0, 0, 0)
     tabGroup.border:SetBackdropBorderColor(0, 0, 0, 0)
