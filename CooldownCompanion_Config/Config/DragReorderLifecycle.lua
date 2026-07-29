@@ -23,11 +23,8 @@ local GetDropIndex = DR.GetDropIndex
 local HideDragIndicator = DR.HideDragIndicator
 local ShowDragIndicator = DR.ShowDragIndicator
 local ResetDragIndicatorStyle = DR.ResetDragIndicatorStyle
-local ClearCol1AnimatedPreview = DR.ClearCol1AnimatedPreview
-local RenderCol1AnimatedPreview = DR.RenderCol1AnimatedPreview
-local ShouldAnimateCol1PreviewForDrop = DR.ShouldAnimateCol1PreviewForDrop
-local ShouldShowCol1StaticReorderIndicator = DR.ShouldShowCol1StaticReorderIndicator
-local ResolveCol1LoadedUnloadedPlaceholderTarget = DR.ResolveCol1LoadedUnloadedPlaceholderTarget
+local ShowCol1DropIndicator = DR.ShowCol1DropIndicator
+local ShowRailPanelDropIndicator = DR.ShowRailPanelDropIndicator
 local GetCol1DropTarget = DR.GetCol1DropTarget
 local PerformGroupReorder = DR.PerformGroupReorder
 local IsCol1GroupDropNoOp = DR.IsCol1GroupDropNoOp
@@ -40,6 +37,79 @@ local PartitionSelectedContainersByLoadBucket = DR.PartitionSelectedContainersBy
 local GetRailPanelDropTarget = DR.GetRailPanelDropTarget
 
 local RAIL_PANEL_SPRING_DELAY = 0.45
+
+-- Owner-tunable feel values: how deep into the column edge the cursor must sit
+-- before the list starts scrolling, and how fast it scrolls at full depth.
+local COL1_AUTOSCROLL_EDGE_ZONE = 48
+local COL1_AUTOSCROLL_MAX_SPEED = 300
+
+-- Without this, drop targets that are scrolled off-screen are simply
+-- unreachable: the Navigator has no other way to scroll mid-drag.
+--
+-- No autoscroll state is stored anywhere. Each tick reads the scrollbar's
+-- current value, so scrolling the wheel by hand mid-drag is preserved rather
+-- than fought, and the distance is multiplied by `elapsed` so the speed is
+-- frame-rate independent.
+local function UpdateCol1DragAutoscroll(scrollWidget, cursorX, cursorY, elapsed)
+    if not (scrollWidget and scrollWidget.content and scrollWidget.scrollframe and scrollWidget.scrollbar) then
+        return
+    end
+
+    -- Scroll only where a drop could actually land. Without this the list keeps
+    -- moving at full speed while the cursor sits over another column, showing no
+    -- line and applying nothing on release, and leaves the Navigator scrolled
+    -- somewhere the user never asked for. Same horizontal gate the drop-target
+    -- resolvers already apply, so the two cannot disagree about "in the column".
+    local scrollFrame = scrollWidget.scrollframe
+    local left, right = scrollFrame:GetLeft(), scrollFrame:GetRight()
+    if not (cursorX and left and right and cursorX >= left and cursorX <= right) then
+        return
+    end
+
+    local contentHeight = scrollWidget.content:GetHeight()
+    local viewportHeight = scrollWidget.scrollframe:GetHeight()
+    local scrollRange = contentHeight - viewportHeight
+    if scrollRange <= 0 then
+        return
+    end
+
+    local viewportTop = scrollWidget.scrollframe:GetTop()
+    local viewportBottom = scrollWidget.scrollframe:GetBottom()
+    if not viewportTop or not viewportBottom then
+        return
+    end
+
+    -- Depth is normalised 0..1 from the VIEWPORT edges, so speed scales with how
+    -- far into the edge zone the cursor has pushed.
+    local topDepth = (cursorY - (viewportTop - COL1_AUTOSCROLL_EDGE_ZONE))
+        / COL1_AUTOSCROLL_EDGE_ZONE
+    local bottomDepth = ((viewportBottom + COL1_AUTOSCROLL_EDGE_ZONE) - cursorY)
+        / COL1_AUTOSCROLL_EDGE_ZONE
+    local direction
+    local depth
+    if topDepth > 0 and topDepth >= bottomDepth then
+        direction = -1
+        depth = math.min(topDepth, 1)
+    elseif bottomDepth > 0 then
+        direction = 1
+        depth = math.min(bottomDepth, 1)
+    else
+        return
+    end
+
+    local currentValue = scrollWidget.scrollbar:GetValue()
+    local pixelDelta = direction * COL1_AUTOSCROLL_MAX_SPEED * depth * elapsed
+    -- Pixels to the widget's 0..1000 units: the exact inverse of SetScroll's
+    -- `offset = (height - viewheight) / 1000 * value`.
+    local valueDelta = pixelDelta / scrollRange * 1000
+    local targetValue = math.max(0, math.min(1000, currentValue + valueDelta))
+    -- Applied via the same public path MoveScroll uses, so the thumb stays in
+    -- sync, and only when the value actually changes so it does not spam at the
+    -- clamps.
+    if targetValue ~= currentValue then
+        scrollWidget.scrollbar:SetValue(targetValue)
+    end
+end
 
 local function IsCol1OwnershipMoveAllowed(sourceSection, targetSection)
     if not targetSection or sourceSection == targetSection then
@@ -314,13 +384,51 @@ end
 ------------------------------------------------------------------------
 -- Drag lifecycle
 ------------------------------------------------------------------------
-local function SetDraggedWidgetAlpha(widget, alpha)
-    if not widget then return end
-    if widget.frame and widget.frame.SetAlpha then
-        widget.frame:SetAlpha(alpha)
-    elseif widget.SetAlpha then
-        widget:SetAlpha(alpha)
+local DRAGGED_ALPHA = 0.4
+
+-- A group row's widget is only its header label; the InlineGroup shell is what
+-- actually spans the group AND its panel rows. Dim the shell so the whole block
+-- reads as "in hand" rather than just its title.
+local function ResolveDragDimTarget(row)
+    if not row then return nil end
+    if row.dragShellFrame and row.dragShellFrame.SetAlpha then
+        return row.dragShellFrame
     end
+    local widget = row.widget
+    if not widget then return nil end
+    return (widget.frame and widget.frame.SetAlpha and widget.frame) or widget
+end
+
+-- The pre-drag alpha is recorded rather than assumed: inactive groups already
+-- sit at 0.58, so restoring to a flat 1 would silently un-dim them.
+-- Keyed by frame, so re-dimming an already-dimmed target is a constant-time
+-- no-op instead of a scan -- and, more importantly, so the recorded alpha is
+-- always the pre-drag one and can never be overwritten with DRAGGED_ALPHA.
+local function DimDragTarget(state, target)
+    if not (state and target and target.SetAlpha) then return end
+    state.dimmedTargets = state.dimmedTargets or {}
+    if state.dimmedTargets[target] ~= nil then return end
+    state.dimmedTargets[target] = (target.GetAlpha and target:GetAlpha()) or 1
+    target:SetAlpha(DRAGGED_ALPHA)
+end
+
+local function DimDraggedRow(state, row)
+    DimDragTarget(state, ResolveDragDimTarget(row))
+end
+
+local function DimDraggedWidget(state, widget)
+    if not widget then return end
+    DimDragTarget(state, (widget.frame and widget.frame.SetAlpha and widget.frame) or widget)
+end
+
+local function RestoreDragDimming(state)
+    if not state then return end
+    for target, alpha in pairs(state.dimmedTargets or {}) do
+        if target.SetAlpha then
+            target:SetAlpha(alpha)
+        end
+    end
+    state.dimmedTargets = nil
 end
 
 local function CancelDrag(opts)
@@ -333,19 +441,9 @@ local function CancelDrag(opts)
             CS.dragState.layoutDrag.onCancel(CS.dragState)
         end
     end
-    ClearCol1AnimatedPreview()
-    if CS.dragState then
-        if CS.dragState.dimmedWidgets then
-            for _, w in ipairs(CS.dragState.dimmedWidgets) do
-                SetDraggedWidgetAlpha(w, 1)
-            end
-        elseif CS.dragState.widget then
-            SetDraggedWidgetAlpha(CS.dragState.widget, 1)
-        end
-    end
+    RestoreDragDimming(CS.dragState)
     CS.dragState = nil
     HideDragIndicator()
-    ResetDragIndicatorStyle()
     if CS.dragTracker then
         CS.dragTracker:SetScript("OnUpdate", nil)
     end
@@ -370,7 +468,6 @@ local function FinishLayoutSlotDrag(state)
         state.layoutDrag.applyDrop(state)
     end
     CancelDrag()
-    ResetDragIndicatorStyle()
 end
 
 local function FinishLegacyGroupDrag(state)
@@ -534,6 +631,12 @@ local function AssignPanelOrder(containerId, orderedPanelIds)
     end
 end
 
+-- Published on DR so the drop indicator can ask exactly the question the drop
+-- itself asks. DragReorderTargets loads first, so it reaches these through DR
+-- at call time rather than capturing them as upvalues.
+DR.BuildRailPanelFinalOrder = BuildRailPanelFinalOrder
+DR.RailPanelDropIsNoOp = RailPanelDropIsNoOp
+
 local function FinishRailPanelDrag(state)
     local dropTarget = state.dropTarget
     local finalOrder = BuildRailPanelFinalOrder(state, dropTarget)
@@ -607,14 +710,21 @@ local function RefreshRailPanelDragRows(state)
     if not ST._RefreshColumn1 then
         return
     end
-    ClearCol1AnimatedPreview()
+    -- The rebuild releases every row widget, including whatever the indicator is
+    -- anchored to. HideDragIndicator detaches to UIParent before fading, so the
+    -- line finishes where it was rather than following a recycled row; the next
+    -- tracker tick re-resolves against the fresh rows and shows it again.
+    HideDragIndicator()
     ST._RefreshColumn1(true)
     state.railPanelRows = CS.lastCol1RenderedRows
-    state.dimmedWidgets = {}
+    -- The rebuild replaced every row widget, so the previous dim targets are
+    -- gone with them. Group shells get their alpha re-asserted by
+    -- RenderContainerRow; panel rows get theirs reset by CleanRecycledEntry on
+    -- re-acquire. Nothing is left stranded at DRAGGED_ALPHA either way.
+    state.dimmedTargets = nil
     for _, row in ipairs(state.railPanelRows or {}) do
         if row.kind == "aux-block" and row.rowType == "panel" and state.sourcePanelIds[row.id] then
-            SetDraggedWidgetAlpha(row.widget, 0.4)
-            state.dimmedWidgets[#state.dimmedWidgets + 1] = row.widget
+            DimDraggedRow(state, row)
         end
     end
 end
@@ -657,7 +767,6 @@ local function FinishDrag()
     end
     CS.showPhantomSections = false  -- clear before CancelDrag to avoid redundant deferred refresh
     CancelDrag({ skipSpringRefresh = true })
-    ResetDragIndicatorStyle()
     if state.kind == "group" and state.groupIds then
         FinishLegacyGroupDrag(state)
     elseif state.kind == "group" or state.kind == "multi-group" then
@@ -673,7 +782,7 @@ local function StartDragTracking()
     if not CS.dragTracker then
         CS.dragTracker = CreateFrame("Frame", nil, UIParent)
     end
-    CS.dragTracker:SetScript("OnUpdate", function()
+    CS.dragTracker:SetScript("OnUpdate", function(_, elapsed)
         if not CS.dragState then
             CS.dragTracker:SetScript("OnUpdate", nil)
             return
@@ -706,25 +815,28 @@ local function StartDragTracking()
                 end
                 -- Dim source widget(s)
                 if CS.dragState.kind == "multi-group" and CS.dragState.sourceGroupIds then
-                    CS.dragState.dimmedWidgets = {}
                     for _, row in ipairs(CS.dragState.col1RenderedRows) do
                         if row.kind == "container" and CS.dragState.sourceGroupIds[row.id] then
-                            SetDraggedWidgetAlpha(row.widget, 0.4)
-                            table.insert(CS.dragState.dimmedWidgets, row.widget)
+                            DimDraggedRow(CS.dragState, row)
                         end
                     end
                 elseif CS.dragState.kind == "rail-panel" and CS.dragState.sourcePanelIds then
-                    CS.dragState.dimmedWidgets = {}
                     for _, row in ipairs(CS.dragState.railPanelRows or {}) do
                         if row.kind == "aux-block"
                             and row.rowType == "panel"
                             and CS.dragState.sourcePanelIds[row.id] then
-                            SetDraggedWidgetAlpha(row.widget, 0.4)
-                            table.insert(CS.dragState.dimmedWidgets, row.widget)
+                            DimDraggedRow(CS.dragState, row)
+                        end
+                    end
+                elseif CS.dragState.kind == "group" and CS.dragState.col1RenderedRows then
+                    for _, row in ipairs(CS.dragState.col1RenderedRows) do
+                        if row.kind == "container" and row.id == CS.dragState.sourceGroupId then
+                            DimDraggedRow(CS.dragState, row)
+                            break
                         end
                     end
                 elseif CS.dragState.widget then
-                    SetDraggedWidgetAlpha(CS.dragState.widget, 0.4)
+                    DimDraggedWidget(CS.dragState, CS.dragState.widget)
                 end
                 -- Check if we need phantom sections for cross-section drops
                 if CS.dragState.col1RenderedRows and not CS.showPhantomSections then
@@ -758,18 +870,16 @@ local function StartDragTracking()
                         }
                         -- Dim the source widget(s) in the new rows
                         if savedKind == "multi-group" and savedSourceGroupIds then
-                            CS.dragState.dimmedWidgets = {}
                             for _, row in ipairs(CS.dragState.col1RenderedRows) do
                                 if row.kind == "container" and savedSourceGroupIds[row.id] then
-                                    SetDraggedWidgetAlpha(row.widget, 0.4)
-                                    table.insert(CS.dragState.dimmedWidgets, row.widget)
+                                    DimDraggedRow(CS.dragState, row)
                                 end
                             end
                         else
                             for _, row in ipairs(CS.dragState.col1RenderedRows) do
                                 if savedKind == "group" and row.kind == "container" and row.id == savedSourceGroupId then
                                     CS.dragState.widget = row.widget
-                                    SetDraggedWidgetAlpha(row.widget, 0.4)
+                                    DimDraggedRow(CS.dragState, row)
                                     break
                                 end
                             end
@@ -779,6 +889,14 @@ local function StartDragTracking()
             end
         end
         if CS.dragState.phase == "active" then
+            -- Scroll BEFORE resolving a target, so the target reflects the
+            -- geometry the user is actually looking at this frame.
+            local dragKind = CS.dragState.kind
+            if (dragKind == "group" or dragKind == "multi-group" or dragKind == "rail-panel")
+                and (CS.dragState.col1RenderedRows or CS.dragState.railPanelRows)
+            then
+                UpdateCol1DragAutoscroll(CS.dragState.scrollWidget, cursorX, cursorY, elapsed or 0)
+            end
             if CS.dragState.kind == "layout-slot" then
                 local dropTarget = CS.dragState.layoutDrag
                     and CS.dragState.layoutDrag.resolveDropTarget
@@ -801,26 +919,11 @@ local function StartDragTracking()
                 )
                 CS.dragState.dropTarget = dropTarget
                 if UpdateRailPanelSpringOpen(CS.dragState, dropTarget) then
+                    -- Mid spring-open the destination is still expanding, so the
+                    -- rows the line would anchor to are not settled yet.
                     HideDragIndicator()
-                elseif dropTarget then
-                    ResetDragIndicatorStyle()
-                    HideDragIndicator()
-                    if not RenderCol1AnimatedPreview({
-                        kind = "rail-panel",
-                        sourcePanelIds = CS.dragState.sourcePanelIds,
-                        sourcePanelOrder = CS.dragState.sourcePanelOrder,
-                        dropTarget = dropTarget,
-                    }) then
-                        ClearCol1AnimatedPreview()
-                        ShowDragIndicator(
-                            dropTarget.anchorFrame,
-                            dropTarget.anchorAbove,
-                            CS.dragState.scrollWidget
-                        )
-                    end
                 else
-                    ClearCol1AnimatedPreview()
-                    HideDragIndicator()
+                    ShowRailPanelDropIndicator(CS.dragState)
                 end
             elseif CS.dragState.col1RenderedRows then
                 local dropTarget = GetCol1DropTarget(
@@ -832,56 +935,18 @@ local function StartDragTracking()
                     CS.dragState.sourceLoadBucket
                 )
                 CS.dragState.dropTarget = dropTarget
-                if dropTarget then
-                    ResetDragIndicatorStyle()
-                    HideDragIndicator()
-                    local shouldAnimatePreview = ShouldAnimateCol1PreviewForDrop(
-                        CS.dragState.sourceLoadBucket,
-                        dropTarget,
-                        CS.dragState.col1RenderedRows
-                    )
-                    if not shouldAnimatePreview or not RenderCol1AnimatedPreview({
-                        kind = CS.dragState.kind,
-                        sourceGroupId = CS.dragState.sourceGroupId,
-                        sourceGroupIds = CS.dragState.sourceGroupIds,
-                        dropTarget = dropTarget,
-                    }) then
-                        ClearCol1AnimatedPreview()
-                        local unloadedPlaceholderTarget = ResolveCol1LoadedUnloadedPlaceholderTarget(
-                            CS.dragState.col1RenderedRows,
-                            CS.dragState.sourceLoadBucket,
-                            dropTarget
-                        )
-                        if unloadedPlaceholderTarget then
-                            HideDragIndicator()
-                        elseif ShouldShowCol1StaticReorderIndicator(
-                            CS.dragState.sourceLoadBucket,
-                            dropTarget
-                        )
-                            and dropTarget.action == "reorder-before"
-                        then
-                            ShowDragIndicator(dropTarget.anchorFrame, true, CS.dragState.scrollWidget)
-                        elseif ShouldShowCol1StaticReorderIndicator(
-                            CS.dragState.sourceLoadBucket,
-                            dropTarget
-                        ) then
-                            ShowDragIndicator(dropTarget.anchorFrame, false, CS.dragState.scrollWidget)
-                        else
-                            HideDragIndicator()
-                        end
-                    end
-                else
-                    ClearCol1AnimatedPreview()
-                    HideDragIndicator()
-                end
+                ShowCol1DropIndicator(CS.dragState)
             else
-                ClearCol1AnimatedPreview()
                 local dropIndex, anchorFrame, anchorAbove = GetDropIndex(
                     CS.dragState.scrollWidget, cursorY,
                     CS.dragState.childOffset or 0,
                     CS.dragState.totalDraggable
                 )
                 CS.dragState.dropIndex = dropIndex
+                -- Colour is asserted at show time, not torn down after a drag:
+                -- resetting it on teardown would recolour the line part-way
+                -- through its fade-out.
+                ResetDragIndicatorStyle()
                 ShowDragIndicator(anchorFrame, anchorAbove, CS.dragState.scrollWidget)
             end
         end

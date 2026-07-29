@@ -16,7 +16,6 @@ local ApplyConfigTextRow = ST._ApplyConfigTextRow
 local CompactUntitledInlineGroupConfig = ST._CompactUntitledInlineGroupConfig
 local SetupGroupRowIndicators = ST._SetupGroupRowIndicators
 local GetConfigRowBadgeReserve = ST._GetConfigRowBadgeReserve
-local SetupColumn1MarkerRow = ST._SetupColumn1MarkerRow
 local GetContainerIcon = ST._GetContainerIcon
 local GetButtonIcon = ST._GetButtonIcon
 local OpenContainerIconPicker = ST._OpenContainerIconPicker
@@ -42,7 +41,6 @@ local ToggleConfigPanelMultiSelect = ST._ToggleConfigPanelMultiSelect
 local GetConfigPanelTypeBadgeAtlas = ST._GetConfigPanelTypeBadgeAtlas
 local GetConfigPanelEntryCount = ST._GetConfigPanelEntryCount
 local ConfigPanelHasWarning = ST._ConfigPanelHasWarning
-local AddClassAccentSpacer = ST._AddClassAccentSpacer
 local SetHideActiveCurrentClassPanels = ST._SetHideActiveCurrentClassPanels
 local ClearOtherClassBrowseState = ST._ResetOtherClassLibraryState
 local TryReceiveCursorDrop = ST._TryReceiveCursorDrop
@@ -1255,6 +1253,137 @@ end
 ------------------------------------------------------------------------
 -- COLUMN 1: Groups
 ------------------------------------------------------------------------
+local COL1_BOTTOM_SCROLL_SLACK = 20
+
+-- Mirrors of ApplyLeftAlignedHeading's private layout values
+-- (ConfigSettings/Helpers.lua), which it does not export.
+local COL1_HEADING_RULE_ALPHA = 0.35
+-- The shared helper reserves 22px at the left for a collapse caret so that
+-- collapsible and plain section titles line up inside a tab. The Navigator has
+-- no carets at all, so that slot is only dead space here; pull the title out to
+-- the column edge instead.
+local COL1_HEADING_LABEL_INSET = 3
+-- The header line sits half of the helper's 10px top pad below the frame's
+-- vertical centre. Any point taken against the FRAME has to carry this same
+-- offset -- a LEFT point also declares a vertical centre, and two anchors
+-- declaring different centres on one region is over-constrained.
+local COL1_HEADING_LINE_Y = -5
+-- Stock AceGUI Heading height, i.e. the helper's height minus its top pad.
+local COL1_HEADING_STOCK_HEIGHT = 18
+local COL1_HEADING_RIGHT_INSET = 3
+
+-- The canonical row-grammar section header. Its helpers live in
+-- ConfigSettings/Helpers.lua, which the TOC loads AFTER this file, so they can
+-- only be reached lazily at call time -- a file-scope upvalue would capture nil.
+--
+-- BuildCollapsibleSection is deliberately NOT used: it always attaches a caret,
+-- and it reads CS.collapsedSections with the opposite truthiness convention this
+-- file uses, which would corrupt the class-section collapse state.
+--
+-- ColorHeading and ApplyLeftAlignedHeading both hard-code the player class
+-- colour. The Navigator's headings are semantic instead (blue for Global, grey
+-- for Unloaded), so the label and the rule gradient are re-tinted afterwards.
+-- The rule is cached on heading.frame._cdcHeadingRule, so this needs no change
+-- to the shared helper.
+-- isFirstRow is stated by the caller, which owns render order and knows it, not
+-- re-derived here from AceGUI's internal child list.
+local function AddColumn1SectionHeading(text, color, isFirstRow)
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(text)
+    heading:SetFullWidth(true)
+
+    if ST._ColorHeading then
+        ST._ColorHeading(heading)
+    end
+    CS.col1Scroll:AddChild(heading)
+
+    -- Everything below re-shapes what ApplyLeftAlignedHeading produced, so it is
+    -- all conditional on that helper having actually run. Re-anchoring a stock
+    -- centred heading instead would over-constrain its label and leave the
+    -- flanking textures shown -- worse than simply falling back to stock.
+    if not ST._ApplyLeftAlignedHeading then
+        return heading
+    end
+    ST._ApplyLeftAlignedHeading(heading)
+
+    -- The helper reserves 10px of air ABOVE every section title so that stacked
+    -- sections in a tab do not butt together. The first row in the column has
+    -- nothing above it to separate from, so that pad reads as dead space under
+    -- the "Navigator" title; drop it there and let the title sit at the top.
+    --
+    -- Everything the helper offsets by its half-pad has to come back to zero in
+    -- step -- the label's TOP and LEFT, and the rule's frame-anchored RIGHT.
+    -- Leaving any one of them behind over-constrains the region with two
+    -- disagreeing vertical centres, which resolves by luck rather than by rule.
+    local lineY = isFirstRow and 0 or COL1_HEADING_LINE_Y
+    if isFirstRow then
+        heading:SetHeight(COL1_HEADING_STOCK_HEIGHT)
+    end
+
+    local r = (color and color[1]) or 1
+    local g = (color and color[2]) or 1
+    local b = (color and color[3]) or 1
+    if heading.label then
+        heading.label:SetTextColor(r, g, b)
+        -- Replaces the helper's LEFT point, closing its caret gap. The rule
+        -- follows for free: it anchors to the label's RIGHT edge, not the frame.
+        heading.label:SetPoint("LEFT", heading.frame, "LEFT", COL1_HEADING_LABEL_INSET, lineY)
+        if isFirstRow then
+            heading.label:SetPoint("TOP", heading.frame, "TOP", 0, 0)
+        end
+
+        -- The AceGUI Heading pool is shared with every other addon, and
+        -- ApplyLeftAlignedHeading's own release handler restores anchors and
+        -- height but NOT colour -- so a heading released carrying the Unloaded
+        -- grey would hand that grey to the next acquirer. Chain (never replace)
+        -- a restore, since the helper already installed a handler here.
+        local previousOnRelease = heading.events and heading.events["OnRelease"]
+        heading:SetCallback("OnRelease", function(widget, event, ...)
+            if previousOnRelease then
+                previousOnRelease(widget, event, ...)
+            end
+            if widget.label then
+                widget.label:SetTextColor(1, 0.82, 0)
+            end
+        end)
+    end
+
+    local rule = heading.frame and heading.frame._cdcHeadingRule
+    if rule then
+        rule:SetGradient(
+            "HORIZONTAL",
+            CreateColor(r, g, b, COL1_HEADING_RULE_ALPHA),
+            CreateColor(r, g, b, 0)
+        )
+        if isFirstRow then
+            rule:SetPoint("RIGHT", heading.frame, "RIGHT", -COL1_HEADING_RIGHT_INSET, 0)
+        end
+    end
+
+    return heading
+end
+
+-- Two jobs, both load-bearing.
+--
+-- 1. AceGUI's LayoutFinished reads `self.content:SetHeight(height or 0 + 20)` --
+--    operator precedence makes that `height or 20`, so the slack it intends has
+--    never applied and the last group clips against the bottom edge.
+-- 2. An InlineGroup added to the outer List reports only its empty compact
+--    height at add time; its children arrive afterwards and do NOT relayout the
+--    parent. Because the unloaded bucket renders last, nothing later repairs
+--    that stale sum. Adding a child AFTER the groups forces one final parent
+--    layout once they have settled.
+--
+-- A Label was rejected for this: its OnWidthSet remeasures and overwrites the
+-- explicit height. Never passed to TrackRenderedRow, so it is not a drop target.
+local function AddColumn1BottomSpacer()
+    local spacer = AceGUI:Create("SimpleGroup")
+    spacer:SetFullWidth(true)
+    spacer:SetHeight(COL1_BOTTOM_SCROLL_SLACK)
+    spacer.noAutoHeight = true
+    CS.col1Scroll:AddChild(spacer)
+end
+
 local function RefreshColumn1(preserveDrag)
     if not CS.col1Scroll then return end
 
@@ -1319,6 +1448,7 @@ local function RefreshColumn1(preserveDrag)
         desc.label:SetNonSpaceWrap(true)
         desc.label:SetMaxLines(0)
         CS.col1Scroll:AddChild(desc)
+        AddColumn1BottomSpacer()
         return
     end
 
@@ -1486,7 +1616,6 @@ local function RefreshColumn1(preserveDrag)
     end
 
     -- Helper: render a framed Group unit and its visible Panel rows.
-    local lastRenderedGroupSection
     local function RenderContainerRow(containerId, sectionTag, loadBucket, options)
         local container = db.groupContainers[containerId]
         if not container then return end
@@ -1500,11 +1629,6 @@ local function RefreshColumn1(preserveDrag)
         local allowPanelRows = searchResults ~= nil or browsePanels or not (options and options.disableDrag == true)
         local searchPanels = searchPanelResultsByContainer[containerId]
         local classColor = GetContainerClassColor(containerId, container)
-
-        if loadBucket == "loaded" and lastRenderedGroupSection == sectionTag then
-            AddClassAccentSpacer(CS.col1Scroll, classColor)
-        end
-        lastRenderedGroupSection = loadBucket == "loaded" and sectionTag or nil
 
         local groupUnit = AceGUI:Create("InlineGroup")
         groupUnit:SetTitle("")
@@ -1628,7 +1752,6 @@ local function RefreshColumn1(preserveDrag)
             loadBucket = loadBucket or "loaded",
             acceptsDrop = not disableDrag,
             previewDraggable = not disableDrag,
-            previewProxy = true,
             isExpanded = isExpanded,
             dragShellFrame = groupUnit.frame,
         })
@@ -1850,7 +1973,6 @@ local function RefreshColumn1(preserveDrag)
                     loadBucket = "aux",
                     acceptsDrop = false,
                     previewDraggable = false,
-                    previewProxy = true,
                     ownerKind = "container",
                     ownerId = containerId,
                     panelIndex = panelInfo.group and panelInfo.group.order or nil,
@@ -1899,7 +2021,6 @@ local function RefreshColumn1(preserveDrag)
                         loadBucket = "aux",
                         acceptsDrop = false,
                         previewDraggable = false,
-                        previewProxy = true,
                         ownerKind = "container",
                         ownerId = containerId,
                         ownerPanelId = panelId,
@@ -1931,6 +2052,22 @@ local function RefreshColumn1(preserveDrag)
     end
 
     -- Render a section (global, current class, or another class)
+    -- Only the topmost row in the column drops its top pad. RefreshColumn1 owns
+    -- render order, so it states this rather than having the heading helper
+    -- infer it from AceGUI's internal child list.
+    --
+    -- A heading is NOT automatically first: the other-class library adds a
+    -- "Back" navigation row and then calls RenderSection without classSection,
+    -- and a truncated search adds its summary label before any section. Both
+    -- must consume the flag, or their heading loses the 10px of air that exists
+    -- precisely so a title never butts against the row above it.
+    local col1FirstRowPending = true
+    local function TakeCol1FirstRow()
+        local isFirst = col1FirstRowPending
+        col1FirstRowPending = false
+        return isFirst
+    end
+
     local function RenderSection(section, sectionGroupIds, headingText, headingColor, options)
         local items = BuildSectionItems(section, sectionGroupIds)
         local isClassSection = options and options.classSection == true
@@ -1978,9 +2115,6 @@ local function RefreshColumn1(preserveDrag)
                 section = section,
                 loadBucket = "marker",
                 acceptsDrop = false,
-                keepVisibleDuringPreview = true,
-                previewProxy = true,
-                isMarker = true,
                 stableCount = stableCount,
             })
             if isCollapsed and not searchResults then
@@ -2016,14 +2150,11 @@ local function RefreshColumn1(preserveDrag)
             and #unloadedItems > 0
 
         if not isClassSection then
-            local heading = AceGUI:Create("Label")
-            heading:SetFullWidth(true)
-            heading:SetHeight(18)
-            CS.col1Scroll:AddChild(heading)
-            SetupColumn1MarkerRow(heading, {
-                text = useUnloadedOnlyHeading and "Unloaded Groups" or headingText,
-                color = useUnloadedOnlyHeading and { 0.53, 0.53, 0.53 } or headingColor,
-            })
+            local heading = AddColumn1SectionHeading(
+                useUnloadedOnlyHeading and "Unloaded Groups" or headingText,
+                useUnloadedOnlyHeading and { 0.53, 0.53, 0.53 } or headingColor,
+                TakeCol1FirstRow()
+            )
 
             TrackRenderedRow({
                 kind = "section-header",
@@ -2031,9 +2162,6 @@ local function RefreshColumn1(preserveDrag)
                 section = section,
                 loadBucket = "marker",
                 acceptsDrop = false,
-                keepVisibleDuringPreview = true,
-                previewProxy = true,
-                isMarker = true,
             })
         end
 
@@ -2053,16 +2181,9 @@ local function RefreshColumn1(preserveDrag)
                 section = section,
                 loadBucket = "marker",
                 acceptsDrop = true,
-                keepVisibleDuringPreview = true,
-                previewProxy = true,
-                layoutOnly = section == "global",
             })
             return
         end
-
-        -- Class color for accent bars
-        local classColor = options and options.classKey and C_ClassColor.GetClassColor(options.classKey)
-            or C_ClassColor.GetClassColor(select(2, UnitClass("player")))
 
         local function RenderItems(itemList, loadBucket)
             for _, containerId in ipairs(itemList) do
@@ -2078,14 +2199,7 @@ local function RefreshColumn1(preserveDrag)
         RenderItems(loadedItems, "loaded")
 
         if #unloadedItems > 0 and not useUnloadedOnlyHeading then
-            local sep = AceGUI:Create("Label")
-            sep:SetFullWidth(true)
-            sep:SetHeight(18)
-            CS.col1Scroll:AddChild(sep)
-            SetupColumn1MarkerRow(sep, {
-                text = "Unloaded Groups",
-                color = { 0.53, 0.53, 0.53 },
-            })
+            local sep = AddColumn1SectionHeading("Unloaded Groups", { 0.53, 0.53, 0.53 }, TakeCol1FirstRow())
 
             TrackRenderedRow({
                 kind = "unloaded-divider",
@@ -2093,9 +2207,6 @@ local function RefreshColumn1(preserveDrag)
                 section = section,
                 loadBucket = "marker",
                 acceptsDrop = false,
-                keepVisibleDuringPreview = true,
-                previewProxy = true,
-                isMarker = true,
             })
         end
 
@@ -2212,6 +2323,7 @@ local function RefreshColumn1(preserveDrag)
             row:SetColor(0, 1, 0)
         end
         CS.col1Scroll:AddChild(row)
+        TakeCol1FirstRow()
         TrackRenderedRow({
             kind = kind,
             widget = row,
@@ -2219,9 +2331,6 @@ local function RefreshColumn1(preserveDrag)
             classKey = options and options.classKey or nil,
             loadBucket = "marker",
             acceptsDrop = false,
-            keepVisibleDuringPreview = true,
-            previewProxy = true,
-            isMarker = true,
             stableCount = options and options.stableCount or nil,
         })
         return row
@@ -2391,6 +2500,7 @@ local function RefreshColumn1(preserveDrag)
             ))
             summary:SetFullWidth(true)
             CS.col1Scroll:AddChild(summary)
+            TakeCol1FirstRow()
         end
 
         local statsContainerIds = {}
@@ -2438,7 +2548,7 @@ local function RefreshColumn1(preserveDrag)
 
             if #globalIds > 0 or CS.showPhantomSections then
                 if hasGlobalContent or CS.showPhantomSections then
-                    RenderSection("global", globalIds, "Global Groups", { 0.4, 0.67, 1.0 })
+                    RenderSection("global", globalIds, "Global Groups", ST._COL1_GLOBAL_SECTION_COLOR)
                 end
             end
 
@@ -2479,6 +2589,7 @@ local function RefreshColumn1(preserveDrag)
         end
     end
 
+    AddColumn1BottomSpacer()
     UpdateRailDestinations()
 
     CS.lastCol1RenderedRows = col1RenderedRows

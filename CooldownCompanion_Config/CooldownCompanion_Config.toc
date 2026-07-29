@@ -29,7 +29,6 @@ Config\TalentPicker.lua
 Config\SpellItemAdd.lua
 Config\CooldownManagerPanels.lua
 Config\DragReorderTargets.lua
-Config\DragReorderPreview.lua
 Config\DragReorderLifecycle.lua
 Config\DragReorder.lua
 Config\Column1.lua

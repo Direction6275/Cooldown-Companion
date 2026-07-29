@@ -261,7 +261,6 @@ ST._configState = {
     dragTracker = nil,
     showPhantomSections = false,
     lastCol1RenderedRows = nil,
-    col1Preview = nil,
 
     -- Pending strata order state
     pendingStrataOrder = nil,
@@ -533,6 +532,11 @@ local function NormalizeConfigFinderText(text)
         :gsub("^%s*(.-)%s*$", "%1")
     return strlower(text)
 end
+
+-- The Global section's identity colour. Shared so the Navigator heading and the
+-- drag insertion line cannot drift apart: consumed by Column1's RenderSection
+-- call and by DragReorderTargets' GetCol1SectionColor.
+ST._COL1_GLOBAL_SECTION_COLOR = { 0.4, 0.67, 1.0 }
 
 local CONFIG_FINDER_MIN_QUERY_LENGTH = 2
 local CONFIG_FINDER_MAX_PANEL_RESULTS = 80
@@ -1161,31 +1165,6 @@ local function ConfigPanelHasWarning(panel)
         end
     end
     return false
-end
-
-local function AddClassAccentSpacer(scroll, classColor)
-    local spacer = AceGUI:Create("Label")
-    spacer:SetText(" ")
-    spacer:SetFullWidth(true)
-    spacer:SetHeight(2)
-    local accentBar = spacer.frame._cdcAccentBar
-    if not accentBar then
-        accentBar = spacer.frame:CreateTexture(nil, "ARTWORK")
-        spacer.frame._cdcAccentBar = accentBar
-    end
-    accentBar:SetHeight(1.5)
-    accentBar:ClearAllPoints()
-    local inset = math.floor(spacer.frame:GetWidth() * 0.10 + 0.5)
-    accentBar:SetPoint("LEFT", spacer.frame, "LEFT", inset, 1)
-    accentBar:SetPoint("RIGHT", spacer.frame, "RIGHT", -inset, 1)
-    if classColor then
-        accentBar:SetColorTexture(classColor.r, classColor.g, classColor.b, 0.8)
-    else
-        accentBar:SetColorTexture(1, 1, 1, 0.3)
-    end
-    accentBar:Show()
-    spacer:SetCallback("OnRelease", function() accentBar:Hide() end)
-    scroll:AddChild(spacer)
 end
 
 ------------------------------------------------------------------------
@@ -2073,8 +2052,6 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcPriorityDownBtn then entry.frame._cdcPriorityDownBtn:Hide() end
     if entry.frame._cdcFallbackUpBtn then entry.frame._cdcFallbackUpBtn:Hide() end
     if entry.frame._cdcFallbackDownBtn then entry.frame._cdcFallbackDownBtn:Hide() end
-    if entry.frame._cdcMarkerLeft then entry.frame._cdcMarkerLeft:Hide() end
-    if entry.frame._cdcMarkerRight then entry.frame._cdcMarkerRight:Hide() end
     entry._cdcAfterConfigRowLayout = nil
     entry.frame:SetScript("OnMouseUp", nil)
     entry.frame:SetScript("OnReceiveDrag", nil)
@@ -2333,315 +2310,6 @@ local function GetConfigRowBadgeReserve(frame)
     end
 
     return reserve
-end
-
-local function EnsureColumn1MarkerParts(frame)
-    if not frame._cdcMarkerLeft then
-        local left = frame:CreateTexture(nil, "ARTWORK")
-        left:SetHeight(1)
-        frame._cdcMarkerLeft = left
-    end
-    if not frame._cdcMarkerRight then
-        local right = frame:CreateTexture(nil, "ARTWORK")
-        right:SetHeight(1)
-        frame._cdcMarkerRight = right
-    end
-end
-
-local function ClearColumn1MarkerAppearance(target)
-    local frame = target and target.frame
-    if not frame then
-        return
-    end
-    if frame._cdcMarkerLeft then
-        frame._cdcMarkerLeft:Hide()
-        frame._cdcMarkerLeft:ClearAllPoints()
-    end
-    if frame._cdcMarkerRight then
-        frame._cdcMarkerRight:Hide()
-        frame._cdcMarkerRight:ClearAllPoints()
-    end
-end
-
-local function ApplyColumn1MarkerAppearance(target, opts)
-    opts = opts or {}
-    local frame = target and target.frame
-    local label = target and (target.label or target._cdcLabel)
-    if not (frame and label) then
-        return
-    end
-
-    ClearColumn1MarkerAppearance(target)
-    EnsureColumn1MarkerParts(frame)
-
-    if frame._cdcBadges then
-        for _, badge in ipairs(frame._cdcBadges) do
-            badge:Hide()
-        end
-    end
-
-    local text = opts.text or ""
-    local color = opts.color or { 0.8, 0.8, 0.8 }
-    local inset = opts.inset or 8
-    local gap = opts.gap or 6
-    local lineAlpha = opts.lineAlpha or 0.55
-    local lineYOffset = opts.lineYOffset or 0
-
-    label:SetText(text)
-    if label.SetFontObject then
-        label:SetFontObject(GameFontHighlight)
-    end
-    if label.SetWordWrap then
-        label:SetWordWrap(false)
-    end
-    label:SetJustifyH("CENTER")
-    label:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1)
-    label:ClearAllPoints()
-    label:SetPoint("CENTER", frame, "CENTER", opts.textOffsetX or 0, opts.textOffsetY or 0)
-    if label.SetWidth then
-        local frameWidth = frame.GetWidth and frame:GetWidth() or 0
-        local desiredWidth = math.max(1, (label.GetStringWidth and label:GetStringWidth() or 0) + 2)
-        if frameWidth > 0 then
-            desiredWidth = math.min(desiredWidth, math.max(1, frameWidth - ((inset + gap) * 2)))
-        end
-        label:SetWidth(desiredWidth)
-    end
-
-    if target.image then
-        target.image:Hide()
-    end
-    if target._cdcIcon then
-        target._cdcIcon:Hide()
-    end
-
-    frame._cdcMarkerLeft:SetColorTexture(color[1] or 1, color[2] or 1, color[3] or 1, lineAlpha)
-    frame._cdcMarkerLeft:ClearAllPoints()
-    frame._cdcMarkerRight:SetColorTexture(color[1] or 1, color[2] or 1, color[3] or 1, lineAlpha)
-    frame._cdcMarkerRight:ClearAllPoints()
-    local frameWidth = frame.GetWidth and frame:GetWidth() or 0
-    local textWidth = label.GetStringWidth and label:GetStringWidth() or 0
-    local textOffsetX = opts.textOffsetX or 0
-    if frameWidth > 0 and textWidth > 0 then
-        local centerX = (frameWidth / 2) + textOffsetX
-        local leftWidth = math.max(0, centerX - (textWidth / 2) - gap - inset)
-        local rightStart = centerX + (textWidth / 2) + gap
-        local rightWidth = math.max(0, frameWidth - inset - rightStart)
-
-        frame._cdcMarkerLeft:SetPoint("LEFT", frame, "LEFT", inset, lineYOffset)
-        frame._cdcMarkerLeft:SetWidth(leftWidth)
-        frame._cdcMarkerLeft:Show()
-
-        frame._cdcMarkerRight:SetPoint("LEFT", frame, "LEFT", rightStart, lineYOffset)
-        frame._cdcMarkerRight:SetWidth(rightWidth)
-        frame._cdcMarkerRight:Show()
-    else
-        frame._cdcMarkerLeft:SetPoint("LEFT", frame, "LEFT", inset, lineYOffset)
-        frame._cdcMarkerLeft:SetPoint("RIGHT", label, "LEFT", -gap, lineYOffset)
-        frame._cdcMarkerLeft:SetPoint("CENTER", frame, "CENTER", 0, lineYOffset)
-        frame._cdcMarkerLeft:Show()
-
-        frame._cdcMarkerRight:SetPoint("LEFT", label, "RIGHT", gap, lineYOffset)
-        frame._cdcMarkerRight:SetPoint("RIGHT", frame, "RIGHT", -inset, lineYOffset)
-        frame._cdcMarkerRight:SetPoint("CENTER", frame, "CENTER", 0, lineYOffset)
-        frame._cdcMarkerRight:Show()
-    end
-end
-
-local function SetupColumn1MarkerRow(widget, opts)
-    if not widget then
-        return
-    end
-    if not widget._cdcMarkerWidthHooked then
-        local previousOnWidthSet = widget.OnWidthSet
-        widget.OnWidthSet = function(self, width)
-            if previousOnWidthSet then
-                previousOnWidthSet(self, width)
-            end
-            if self._cdcMarkerOpts then
-                ApplyColumn1MarkerAppearance(self, self._cdcMarkerOpts)
-            end
-        end
-        widget._cdcMarkerWidthHooked = true
-    end
-    if not widget._cdcMarkerReleaseHooked then
-        local previousOnRelease = widget.OnRelease
-        widget.OnRelease = function(self, ...)
-            self._cdcMarkerOpts = nil
-            ClearColumn1MarkerAppearance(self)
-            if previousOnRelease then
-                previousOnRelease(self, ...)
-            end
-        end
-        widget._cdcMarkerReleaseHooked = true
-    end
-    if widget.SetFullWidth then
-        widget:SetFullWidth(true)
-    end
-    if widget.SetHeight then
-        widget:SetHeight((opts and opts.height) or 18)
-    elseif widget.frame and widget.frame.SetHeight then
-        widget.frame:SetHeight((opts and opts.height) or 18)
-    end
-    if widget.SetText then
-        widget:SetText((opts and opts.text) or "")
-    end
-    widget._cdcMarkerOpts = opts
-    ApplyColumn1MarkerAppearance(widget, opts)
-end
-
-------------------------------------------------------------------------
--- Shared helper: persistent overlay host for column drag/drop previews
-------------------------------------------------------------------------
-local function EnsureColumnPreviewHost(previewKey, scrollWidget)
-    local preview = CS[previewKey]
-    if not preview then
-        preview = {
-            rows = {},
-            panels = {},
-            hiddenFrames = {},
-            hiddenRegions = {},
-            tweens = {},
-        }
-        CS[previewKey] = preview
-    end
-
-    if not preview.root then
-        local root = CreateFrame("Frame", nil, UIParent)
-        root:SetFrameStrata("FULLSCREEN_DIALOG")
-        root:EnableMouse(false)
-        root:SetClipsChildren(false)
-        root:Hide()
-        preview.root = root
-    end
-
-    if not preview.ghost then
-        local ghost = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
-        ghost:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 1,
-        })
-        ghost:SetBackdropColor(0.10, 0.115, 0.16, 0.92)
-        ghost:SetBackdropBorderColor(0.24, 0.27, 0.33, 1)
-        ghost:SetFrameStrata("TOOLTIP")
-        ghost:EnableMouse(false)
-        ghost.icon = ghost:CreateTexture(nil, "ARTWORK")
-        ghost.icon:SetSize(24, 24)
-        ghost.icon:SetPoint("LEFT", ghost, "LEFT", 8, 0)
-        ghost.label = ghost:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        ghost.label:SetPoint("LEFT", ghost.icon, "RIGHT", 8, 0)
-        ghost.label:SetPoint("RIGHT", ghost, "RIGHT", -8, 0)
-        ghost.label:SetJustifyH("LEFT")
-        ghost:Hide()
-        preview.ghost = ghost
-    end
-
-    local content = scrollWidget and scrollWidget.content
-    if content then
-        preview.root:SetParent(content)
-        preview.root:ClearAllPoints()
-        preview.root:SetAllPoints(content)
-        preview.root:SetFrameLevel((content:GetFrameLevel() or 1) + 100)
-    else
-        preview.root:SetParent(UIParent)
-    end
-
-    return preview
-end
-
-local function ClearColumnPreviewHost(previewKey)
-    local preview = CS[previewKey]
-    if not preview then
-        return
-    end
-
-    local function ResetMotionFrame(frame)
-        if not frame then return end
-        frame._cdcDisplayX = nil
-        frame._cdcDisplayY = nil
-        frame._cdcDisplayW = nil
-        frame._cdcDisplayH = nil
-        frame._cdcDisplayA = nil
-    end
-
-    if preview.hiddenFrames then
-        for frame, alpha in pairs(preview.hiddenFrames) do
-            if frame and frame.SetAlpha then
-                frame:SetAlpha(alpha)
-            end
-            preview.hiddenFrames[frame] = nil
-        end
-    end
-
-    if preview.hiddenRegions then
-        for region, alpha in pairs(preview.hiddenRegions) do
-            if region and region.SetAlpha then
-                region:SetAlpha(alpha)
-            end
-            preview.hiddenRegions[region] = nil
-        end
-    end
-
-    if preview.rows then
-        for _, row in ipairs(preview.rows) do
-            if row.frame then
-                row.frame:Hide()
-                ResetMotionFrame(row.frame)
-            end
-        end
-    end
-
-    if preview.panels then
-        for _, panel in ipairs(preview.panels) do
-            if panel.frame then
-                panel.frame:Hide()
-                ResetMotionFrame(panel.frame)
-            end
-            for _, row in ipairs(panel.rows or {}) do
-                if row.frame then
-                    row.frame:Hide()
-                    ResetMotionFrame(row.frame)
-                end
-            end
-        end
-    end
-
-    if preview.dropGap then
-        preview.dropGap:Hide()
-        ResetMotionFrame(preview.dropGap)
-    end
-
-    if preview.tweens then
-        for frame in pairs(preview.tweens) do
-            preview.tweens[frame] = nil
-        end
-    end
-
-    if preview.root then
-        preview.root:Hide()
-        preview.root:SetScript("OnUpdate", nil)
-    end
-
-    if preview.ghost then
-        preview.ghost:Hide()
-    end
-
-    preview.ghostActive = false
-    preview.mode = nil
-    preview.compactEntries = nil
-    preview.centerGhostOnCursor = nil
-end
-
-local function EnsureCol1PreviewHost()
-    local preview = EnsureColumnPreviewHost("col1Preview", CS.col1Scroll)
-    if preview and preview.root then
-        preview.root:SetClipsChildren(true)
-    end
-    return preview
-end
-
-local function ClearCol1PreviewHost()
-    ClearColumnPreviewHost("col1Preview")
 end
 
 ------------------------------------------------------------------------
@@ -3519,10 +3187,6 @@ ST._RefreshVisibleConfigCompactRows = RefreshVisibleConfigCompactRows
 ST._BuildEligibilityBadgeMap = BuildEligibilityBadgeMap
 ST._SetupGroupRowIndicators = SetupGroupRowIndicators
 ST._GetConfigRowBadgeReserve = GetConfigRowBadgeReserve
-ST._ApplyColumn1MarkerAppearance = ApplyColumn1MarkerAppearance
-ST._SetupColumn1MarkerRow = SetupColumn1MarkerRow
-ST._EnsureCol1PreviewHost = EnsureCol1PreviewHost
-ST._ClearCol1PreviewHost = ClearCol1PreviewHost
 ST._GetButtonIcon = GetButtonIcon
 ST._GetConfigEntryDisplayName = GetConfigEntryDisplayName
 ST._IsConfigFinderAvailable = IsConfigFinderAvailable
@@ -3541,7 +3205,6 @@ ST._GetConfigPanelTypeBadgeAtlas = GetConfigPanelTypeBadgeAtlas
 ST._GetConfigPanelEntryCount = GetConfigPanelEntryCount
 ST._IsConfigPanelEntryUsable = IsConfigPanelEntryUsable
 ST._ConfigPanelHasWarning = ConfigPanelHasWarning
-ST._AddClassAccentSpacer = AddClassAccentSpacer
 ST._OpenButtonIconPicker = OpenButtonIconPicker
 ST._OpenTriggerPanelIconPicker = OpenTriggerPanelIconPicker
 ST._OpenContainerIconPicker = OpenContainerIconPicker
