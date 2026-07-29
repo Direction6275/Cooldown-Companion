@@ -17,8 +17,30 @@
     AceGUI recycles widgets from pools that are SHARED WITH EVERY OTHER ADDON,
     so these are new widget types with their own pools rather than mutations of
     the stock CheckBox/Slider/Dropdown/ColorPicker anatomy. Where a row needs
-    real stock behaviour (dropdown menus, the color picker bridge) it embeds a
-    stock widget as a child and releases it again in OnRelease.
+    real stock behaviour it embeds a stock widget as a child, under one of two
+    ownership models:
+
+      BORROWED (Dropdown, EditBox, ColorPicker): acquired in OnAcquire,
+      released in OnRelease, only ever touched through its public API, so it
+      goes back to the shared pool exactly as it came out.
+
+      OWNED (CheckBox): created once in the Constructor and never released.
+      That is what makes it legal to size, anchor and repair the child - the
+      no-re-plumbing rule exists because of RELEASE, not because of embedding.
+      Two reasons the checkbox needs this model. Stock CheckBox:OnWidthSet does
+      desc:SetWidth(width - 30), and desc is created lazily by SetDescription
+      and never destroyed (SetDescription(nil) only blanks and hides it), so a
+      checkbox drawn from the shared pool can arrive carrying one and our 24px
+      control width would drive it negative. Owning the child lets the
+      Constructor drop that desc once instead of every acquire. And the
+      settings surface is released and rebuilt wholesale on every tab switch
+      and every RefreshConfigPanel, so borrowing would churn ~185 pooled
+      checkboxes per refresh; owning keeps the footprint identical to the raw
+      Buttons these rows used to hold.
+
+    Embedding the stock widget is also what lets a UI skin find the control:
+    skins such as ElvUI dispatch on an exact widget.type match, so a "CDC-" row
+    type is never skinned but the stock child sitting inside it is.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -45,9 +67,10 @@ local LABEL_CONTROL_GAP      = 8     -- gap between label text and the control c
 local CHILD_INDENT           = 22    -- extra left inset for SetIndent(true) rows
 
 local CHECK_SIZE             = 24    -- matches stock AceGUI CheckBox check art
--- track 90 + CONTROL_GAP 6 + value box 44 = CONTROL_COLUMN_WIDTH exactly.
+-- track 90 + CONTROL_GAP 6 + value box 44 = CONTROL_COLUMN_WIDTH exactly. The
+-- track's HEIGHT is deliberately not a constant here: it is the stock Slider's
+-- own 15, or whatever a skin compressed it to (ElvUI uses 12).
 local SLIDER_TRACK_WIDTH     = 90
-local SLIDER_TRACK_HEIGHT    = 15
 local SLIDER_VALUE_WIDTH     = 44
 local SLIDER_VALUE_HEIGHT    = 16
 local DROPDOWN_WIDTH         = 140   -- fills the control column
@@ -90,20 +113,6 @@ local ROW_WIDGET_VERSION = 1
 -- the resize bug this template was hardened against was never reproduced from
 -- the sources alone, so the next sighting should be captured, not re-theorised.
 local DEBUG_ROW_GRID = false
-
--- Stock AceGUI Slider art, copied verbatim so rows read as native sliders.
-local SliderBackdrop = {
-    bgFile = "Interface\\Buttons\\UI-SliderBar-Background",
-    edgeFile = "Interface\\Buttons\\UI-SliderBar-Border",
-    tile = true, tileSize = 8, edgeSize = 8,
-    insets = { left = 3, right = 3, top = 6, bottom = 6 },
-}
-
-local EditBoxBackdrop = {
-    bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-    edgeFile = "Interface\\ChatFrame\\ChatFrameBackground",
-    tile = true, edgeSize = 1, tileSize = 5,
-}
 
 ------------------------------------------------------------------------
 -- SHARED ROW SCAFFOLDING
@@ -299,7 +308,9 @@ local function BuildRowBase(widgetType)
 end
 
 -- Build the stock check art (UI-CheckBox-Up / -Check / -Highlight) on a button
--- of our own, so no pooled stock CheckBox is ever re-plumbed.
+-- of our own. CDC-CheckBoxRow embeds a real stock CheckBox instead, so a skin
+-- can find it; this is left for CDC-ColorRow's optional enable toggle, which
+-- has no callers today.
 local function BuildCheckButton(parent)
     local button = CreateFrame("Button", nil, parent)
     button:SetSize(CHECK_SIZE, CHECK_SIZE)
@@ -325,96 +336,65 @@ end
 
 ------------------------------------------------------------------------
 -- CDC-CheckBoxRow
+--
+-- The control is a stock AceGUI CheckBox, so the tristate cycle, the check
+-- sounds and the disabled/desaturate handling are the native ones, and any UI
+-- skin that keys on widget.type == "CheckBox" finds it. The child is OWNED
+-- rather than borrowed - see the ownership note in the file header.
 ------------------------------------------------------------------------
 do
-    -- Stock CheckBox tristate semantics: true -> nil -> false -> true.
-    local function ApplyCheckState(self)
-        local checkMark = self.check.checkMark
-        if self.checked then
-            checkMark:SetDesaturated(false)
-            checkMark:Show()
-        elseif self.tristate and self.checked == nil then
-            checkMark:SetDesaturated(true)
-            checkMark:Show()
-        else
-            checkMark:SetDesaturated(false)
-            checkMark:Hide()
-        end
+    local function ForwardValueChanged(child, event, ...)
+        local row = child:GetUserData("cdcRow")
+        if row then row:Fire("OnValueChanged", ...) end
     end
 
-    local function Check_OnClick(button)
-        local self = button.obj
-        if self.disabled then return end
-        self:ToggleChecked()
-        if self.checked then
-            PlaySound(856) -- SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON
-        else
-            PlaySound(857) -- SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF
-        end
-        self:Fire("OnValueChanged", self.checked)
+    -- Entering the child fires the row frame's own OnLeave first, so without
+    -- these the row tooltip drops the moment the pointer reaches the check.
+    local function ForwardEnter(child)
+        local row = child:GetUserData("cdcRow")
+        if row then Row_OnEnter(row.frame) end
     end
 
-    local function Check_OnEnter(button)
-        Row_OnEnter(button.obj.frame)
-    end
-
-    local function Check_OnLeave(button)
-        Row_OnLeave(button.obj.frame)
+    local function ForwardLeave(child)
+        local row = child:GetUserData("cdcRow")
+        if row then Row_OnLeave(row.frame) end
     end
 
     local methods = {
         ["OnAcquire"] = function(self)
             ResetRowBase(self)
-            self.tristate = nil
-            self:SetValue(false)
+            self.checkBox:SetTriState(nil)
+            self.checkBox:SetValue(false)
             self:SetDisabled(false)
         end,
 
         ["OnRelease"] = function(self)
-            self.checked = nil
-            self.tristate = nil
             self.tooltipLines = nil
+            -- ButtonConditions.SetupBatchCheckbox parks the previous batch
+            -- value on the row and nothing else clears it, so it would
+            -- otherwise survive pooling.
+            self._batchPrev = nil
         end,
 
         ["SetValue"] = function(self, value)
-            self.checked = value
-            ApplyCheckState(self)
-            self:SetDisabled(self.disabled)
+            self.checkBox:SetValue(value)
         end,
 
         ["GetValue"] = function(self)
-            return self.checked
+            return self.checkBox:GetValue()
         end,
 
         ["SetTriState"] = function(self, enabled)
-            self.tristate = enabled
-            self:SetValue(self:GetValue())
+            self.checkBox:SetTriState(enabled)
         end,
 
         ["ToggleChecked"] = function(self)
-            local value = self:GetValue()
-            if self.tristate then
-                if value then
-                    self:SetValue(nil)
-                elseif value == nil then
-                    self:SetValue(false)
-                else
-                    self:SetValue(true)
-                end
-            else
-                self:SetValue(not value)
-            end
+            self.checkBox:ToggleChecked()
         end,
 
         ["SetDisabled"] = function(self, disabled)
             self.disabled = disabled and true or false
-            if self.disabled then
-                self.check:Disable()
-                self.check.checkMark:SetDesaturated(true)
-            else
-                self.check:Enable()
-                ApplyCheckState(self)
-            end
+            self.checkBox:SetDisabled(self.disabled)
             ApplyLabelColor(self)
         end,
     }
@@ -422,13 +402,59 @@ do
     local function Constructor()
         local widget, _, controlColumn = BuildRowBase(CHECKBOX_ROW_TYPE)
 
-        local check = BuildCheckButton(controlColumn)
-        check:SetPoint("RIGHT", controlColumn, "RIGHT", 0, 0)
-        check:SetScript("OnClick", Check_OnClick)
-        check:SetScript("OnEnter", Check_OnEnter)
-        check:SetScript("OnLeave", Check_OnLeave)
-        check.obj = widget
-        widget.check = check
+        local check = AceGUI:Create("CheckBox")
+
+        -- Blank the label. A skin may hook SetDisabled and rewrite the label
+        -- when its text matches the localized "Enable" string; AceGUI:Create
+        -- has already run one OnAcquire (SetValue -> SetDisabled) against
+        -- whatever label a pooled child carried, so that hook can fire once on
+        -- stale text before this line. The outcome is still right because the
+        -- row supplies the label itself and the child's stays empty for good.
+        check:SetLabel(nil)
+
+        -- Stock drives the toggle from a frame-level OnMouseUp that ignores
+        -- which button was pressed, so every mouse button would commit a value
+        -- and a press released off the box would too. The check this replaced
+        -- was a plain Button on OnClick, i.e. left-only, and the batch rows in
+        -- ButtonConditions write their result to EVERY selected button - so
+        -- gate the stock handler rather than inherit it. OnMouseDown is left
+        -- alone: its AceGUI:ClearFocus() should still run on any press.
+        local stockMouseUp = check.frame:GetScript("OnMouseUp")
+        check.frame:SetScript("OnMouseUp", function(f, button, ...)
+            if button == "LeftButton" then
+                stockMouseUp(f, button, ...)
+            end
+        end)
+
+        -- The child may have come out of the shared pool carrying a desc
+        -- fontstring, whose width OnWidthSet derives as (width - 30) - which
+        -- our 24px control column would drive negative. Rows never use
+        -- descriptions and this child is never released, so drop it once here.
+        if check.desc then
+            check.desc:SetText("")
+            check.desc:Hide()
+            check.desc = nil
+        end
+
+        check:SetHeight(CHECK_SIZE)
+        check:SetWidth(CHECK_SIZE)
+
+        check:SetUserData("cdcRow", widget)
+        check:SetCallback("OnValueChanged", ForwardValueChanged)
+        check:SetCallback("OnEnter", ForwardEnter)
+        check:SetCallback("OnLeave", ForwardLeave)
+
+        check.frame:SetParent(controlColumn)
+        check.frame:ClearAllPoints()
+        check.frame:SetPoint("RIGHT", controlColumn, "RIGHT", 0, 0)
+        check.frame:Show()
+
+        -- Named like the other rows' children rather than "check", which on a
+        -- stock CheckBox is the check-mark TEXTURE. The row deliberately does
+        -- not mirror the child's checkbg/text fields onto itself: the badge
+        -- helpers in Helpers.lua fall back to those names for widgets that
+        -- have no badgeAnchor.
+        widget.checkBox = check
 
         for method, func in pairs(methods) do
             widget[method] = func
@@ -442,9 +468,21 @@ end
 
 ------------------------------------------------------------------------
 -- CDC-SliderRow
+--
+-- The control is a stock AceGUI Slider, OWNED rather than borrowed - see the
+-- ownership note in the file header. Owning it is what makes it legal to hide
+-- the stock stacked regions (centered label over track over endpoint labels
+-- over value box, 44px tall in total) and re-anchor just the track and the
+-- value box into a 30px row. Embedding is also what lets a skin find them:
+-- ElvUI's HandleSliderFrame runs on widget.slider at construction time.
 ------------------------------------------------------------------------
 do
-    -- Stock AceGUI Slider display rounding.
+    local function RowOf(child)
+        return child and child:GetUserData("cdcRow")
+    end
+
+    -- Stock AceGUI Slider display rounding. Operates on the stock child, which
+    -- is where the value lives.
     local function UpdateValueText(self)
         local value = self.value or 0
         self.editbox:SetText(floor(value * 100 + 0.5) / 100)
@@ -462,61 +500,42 @@ do
         self.rangeTooltip = FormatRangeValue(self.min) .. " – " .. FormatRangeValue(self.max)
     end
 
-    local function Slider_OnValueChanged(frame, newvalue)
-        local self = frame.obj
-        if frame.setup then return end
-        if self.step and self.step > 0 then
-            local minValue = self.min or 0
-            newvalue = floor((newvalue - minValue) / self.step + 0.5) * self.step + minValue
-        end
-        if newvalue ~= self.value and not self.disabled then
-            self.value = newvalue
-            self:Fire("OnValueChanged", newvalue)
-        end
-        if self.value then
-            UpdateValueText(self)
-        end
+    -- The stock child fires these; hand them on to the row so call sites keep
+    -- the same contract (OnMouseUp is what opts.onRelease rides).
+    local function ForwardValueChanged(child, event, value)
+        local row = RowOf(child)
+        if row then row:Fire("OnValueChanged", value) end
     end
 
-    local function Slider_OnMouseUp(frame)
-        local self = frame.obj
-        self:Fire("OnMouseUp", self.value)
+    local function ForwardMouseUp(child, event, value)
+        local row = RowOf(child)
+        if row then row:Fire("OnMouseUp", value) end
+    end
+
+    local function ForwardEnter(child)
+        local row = RowOf(child)
+        if row then Row_OnEnter(row.frame) end
+    end
+
+    local function ForwardLeave(child)
+        local row = RowOf(child)
+        if row then Row_OnLeave(row.frame) end
     end
 
     -- Stock keeps the wheel disabled until the widget is clicked so a slider
     -- can't steal scrolling from the surrounding ScrollFrame. Rows live in a
-    -- ScrollFrame too, so the same rule applies here.
-    local function Slider_OnMouseWheel(frame, delta)
-        local self = frame.obj
-        if self.disabled then return end
-        local value = self.value or self.min or 0
-        if delta > 0 then
-            value = min(value + (self.step or 1), self.max)
-        else
-            value = max(value - (self.step or 1), self.min)
-        end
-        self.slider:SetValue(value)
-    end
-
+    -- ScrollFrame too, so the row frame arms it the same way.
     local function Row_OnMouseDown(frame)
         frame.obj.slider:EnableMouseWheel(true)
         AceGUI:ClearFocus()
     end
 
-    local function Slider_OnEnter(frame)
-        Row_OnEnter(frame.obj.frame)
-    end
-
-    local function Slider_OnLeave(frame)
-        Row_OnLeave(frame.obj.frame)
-    end
-
-    -- The accept/round behaviour the stock slider's edit-box hook used to
-    -- provide, built in here: one decimal place, clamped to the slider range,
-    -- and both OnValueChanged and OnMouseUp fire so mirror-first call sites
-    -- apply typed values live.
+    -- Typed values keep the row's own accept behaviour rather than the stock
+    -- widget's: one decimal place, clamped to the range, and BOTH
+    -- OnValueChanged and OnMouseUp fire so mirror-first call sites apply them
+    -- live. (Stock snaps to the step instead and fires only OnMouseUp here.)
     local function EditBox_OnEnterPressed(frame)
-        local self = frame.obj
+        local self = frame.obj -- the stock child; it owns the value
         local value = tonumber(frame:GetText())
         if value then
             value = floor(value * 10 + 0.5) / 10
@@ -536,14 +555,34 @@ do
         frame:ClearFocus()
     end
 
+    -- Stock tints the value box's border on hover and restores a HARDCODED
+    -- stock colour on leave, which would wipe whatever border a skin gave it.
+    -- Read the colour on the way IN instead of caching one: a skin can
+    -- recolour the box at any time (ElvUI registers every SetTemplate'd frame
+    -- and re-runs them when its border colour changes), and a child drawn from
+    -- a warm pool can arrive still tinted from a previous owner's hover - so a
+    -- colour captured once at construction is never trustworthy. The hover
+    -- flag keeps a second OnEnter from capturing the tint as the resting
+    -- colour. Forwarding keeps the row tooltip up across the control.
     local function EditBox_OnEnter(frame)
-        frame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
-        Row_OnEnter(frame.obj.frame)
+        if not frame.cdcHovered and frame.GetBackdropBorderColor then
+            local r, g, b, a = frame:GetBackdropBorderColor()
+            if r then
+                frame.cdcRestingBorder = { r, g, b, a }
+                frame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+            end
+        end
+        frame.cdcHovered = true
+        ForwardEnter(frame.obj)
     end
 
     local function EditBox_OnLeave(frame)
-        frame:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
-        Row_OnLeave(frame.obj.frame)
+        frame.cdcHovered = nil
+        local resting = frame.cdcRestingBorder
+        if resting then
+            frame:SetBackdropBorderColor(resting[1], resting[2], resting[3], resting[4])
+        end
+        ForwardLeave(frame.obj)
     end
 
     local methods = {
@@ -558,53 +597,32 @@ do
         ["OnRelease"] = function(self)
             self.editbox:ClearFocus()
             self.slider:EnableMouseWheel(false)
-            self.value = nil
             self.min = nil
             self.max = nil
-            self.step = nil
             self.rangeTooltip = nil
             self.tooltipLines = nil
         end,
 
         ["SetSliderValues"] = function(self, minValue, maxValue, step)
-            local slider = self.slider
-            slider.setup = true
+            -- The row keeps min/max only for the range tooltip; the child is
+            -- the authority on all three.
             self.min = minValue or 0
             self.max = maxValue or 100
-            self.step = step
-            slider:SetMinMaxValues(self.min, self.max)
-            slider:SetValueStep(step or 1)
-            if self.value then
-                slider:SetValue(self.value)
-            end
-            slider.setup = nil
+            self.sliderWidget:SetSliderValues(self.min, self.max, step)
             UpdateRangeTooltip(self)
         end,
 
         ["SetValue"] = function(self, value)
-            self.slider.setup = true
-            self.slider:SetValue(value)
-            self.value = value
-            UpdateValueText(self)
-            self.slider.setup = nil
+            self.sliderWidget:SetValue(value)
         end,
 
         ["GetValue"] = function(self)
-            return self.value
+            return self.sliderWidget:GetValue()
         end,
 
         ["SetDisabled"] = function(self, disabled)
             self.disabled = disabled and true or false
-            if self.disabled then
-                self.slider:EnableMouse(false)
-                self.editbox:SetTextColor(0.5, 0.5, 0.5)
-                self.editbox:EnableMouse(false)
-                self.editbox:ClearFocus()
-            else
-                self.slider:EnableMouse(true)
-                self.editbox:SetTextColor(1, 1, 1)
-                self.editbox:EnableMouse(true)
-            end
+            self.sliderWidget:SetDisabled(self.disabled)
             ApplyLabelColor(self)
         end,
     }
@@ -613,40 +631,53 @@ do
         local widget, frame, controlColumn = BuildRowBase(SLIDER_ROW_TYPE)
         frame:SetScript("OnMouseDown", Row_OnMouseDown)
 
-        local editbox = CreateFrame("EditBox", nil, controlColumn, "BackdropTemplate")
-        editbox:SetAutoFocus(false)
-        editbox:SetFontObject(GameFontHighlightSmall)
-        editbox:SetJustifyH("CENTER")
+        local child = AceGUI:Create("Slider")
+        child:SetUserData("cdcRow", widget)
+        child:SetCallback("OnValueChanged", ForwardValueChanged)
+        child:SetCallback("OnMouseUp", ForwardMouseUp)
+        child:SetCallback("OnEnter", ForwardEnter)
+        child:SetCallback("OnLeave", ForwardLeave)
+
+        -- A 30px row has no room for the stock stacked shape. The range lives
+        -- in the row tooltip and the value box is the readout.
+        child.label:Hide()
+        child.lowtext:Hide()
+        child.hightext:Hide()
+
+        -- The child's frame is only a carrier for the two controls: the row
+        -- owns the hover and the mouse-down that arms the wheel, so leave it
+        -- transparent rather than letting it swallow the control column.
+        child.frame:SetParent(controlColumn)
+        child.frame:ClearAllPoints()
+        child.frame:SetAllPoints(controlColumn)
+        child.frame:EnableMouse(false)
+        child.frame:Show()
+
+        local editbox, slider = child.editbox, child.slider
+
+        editbox:ClearAllPoints()
         editbox:SetSize(SLIDER_VALUE_WIDTH, SLIDER_VALUE_HEIGHT)
         editbox:SetPoint("RIGHT", controlColumn, "RIGHT", 0, 0)
-        editbox:EnableMouse(true)
-        editbox:SetBackdrop(EditBoxBackdrop)
-        editbox:SetBackdropColor(0, 0, 0, 0.5)
-        editbox:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
         editbox:SetScript("OnEnter", EditBox_OnEnter)
         editbox:SetScript("OnLeave", EditBox_OnLeave)
         editbox:SetScript("OnEnterPressed", EditBox_OnEnterPressed)
         editbox:SetScript("OnEscapePressed", EditBox_OnEscapePressed)
 
-        -- Compact native track. No endpoint labels - the range lives in the
-        -- row tooltip and the value box is the readout.
-        local slider = CreateFrame("Slider", nil, controlColumn, "BackdropTemplate")
-        slider:SetOrientation("HORIZONTAL")
-        slider:SetSize(SLIDER_TRACK_WIDTH, SLIDER_TRACK_HEIGHT)
+        -- Width only: the track keeps the height the stock widget or the
+        -- active skin gave it.
+        slider:ClearAllPoints()
+        slider:SetWidth(SLIDER_TRACK_WIDTH)
         slider:SetHitRectInsets(0, 0, -4, -4)
-        slider:SetBackdrop(SliderBackdrop)
-        slider:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
         slider:SetPoint("RIGHT", editbox, "LEFT", -CONTROL_GAP, 0)
-        slider:SetValue(0)
-        slider:SetScript("OnValueChanged", Slider_OnValueChanged)
-        slider:SetScript("OnMouseUp", Slider_OnMouseUp)
-        slider:SetScript("OnMouseWheel", Slider_OnMouseWheel)
-        slider:SetScript("OnEnter", Slider_OnEnter)
-        slider:SetScript("OnLeave", Slider_OnLeave)
 
-        widget.slider = slider
-        widget.editbox = editbox
-        slider.obj, editbox.obj = widget, widget
+        -- slider.obj/editbox.obj stay pointed at the stock child because its
+        -- own scripts read them. GroupTabs' staged texture sliders need the
+        -- ROW from the raw frame, so publish it separately.
+        slider.cdcRow = widget
+
+        widget.sliderWidget = child
+        widget.slider = slider   -- raw Slider frame, reached by call sites
+        widget.editbox = editbox -- raw EditBox frame, reached by call sites
 
         for method, func in pairs(methods) do
             widget[method] = func

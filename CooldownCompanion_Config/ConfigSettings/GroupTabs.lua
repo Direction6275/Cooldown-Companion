@@ -471,6 +471,9 @@ local function AttachTexturePreviewSliderRefresh(sliderWidget, applyValue, previ
 
     sliderFrame._ccLiveTextureSliderHooked = true
 
+    -- The row's track is a stock AceGUI Slider's frame, so frame.obj is that
+    -- stock child, not the row. RowWidgets publishes the row as frame.cdcRow;
+    -- the frame.obj fallback covers any plain slider widget.
     sliderFrame:HookScript("OnMouseDown", function(frame)
         frame._ccLiveTextureSliderActive = true
         frame:SetScript("OnUpdate", function(self)
@@ -479,7 +482,7 @@ local function AttachTexturePreviewSliderRefresh(sliderWidget, applyValue, previ
                 return
             end
 
-            local widget = self.obj
+            local widget = self.cdcRow or self.obj
             if widget then
                 pushValue(widget, widget:GetValue())
             end
@@ -489,7 +492,7 @@ local function AttachTexturePreviewSliderRefresh(sliderWidget, applyValue, previ
     sliderFrame:HookScript("OnMouseUp", function(frame)
         frame._ccLiveTextureSliderActive = nil
         frame:SetScript("OnUpdate", nil)
-        local widget = frame.obj
+        local widget = frame.cdcRow or frame.obj
         if widget then
             widget._ccLastLiveTextureValue = nil
         end
@@ -498,7 +501,7 @@ local function AttachTexturePreviewSliderRefresh(sliderWidget, applyValue, previ
     sliderFrame:HookScript("OnHide", function(frame)
         frame._ccLiveTextureSliderActive = nil
         frame:SetScript("OnUpdate", nil)
-        local widget = frame.obj
+        local widget = frame.cdcRow or frame.obj
         if widget then
             local cancelValue = widget._ccCancelTextureValue
             if type(cancelValue) == "function" then
