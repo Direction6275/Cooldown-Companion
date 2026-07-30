@@ -381,6 +381,9 @@ local function CloseCompetingEditors()
     if ST._CloseFormatEditor then
         ST._CloseFormatEditor()
     end
+    if CS.CloseSpellbookPanel then
+        CS.CloseSpellbookPanel()
+    end
 end
 
 local function OpenPanelForDescriptor(descriptor)

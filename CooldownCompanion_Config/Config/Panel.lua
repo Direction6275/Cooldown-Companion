@@ -176,6 +176,9 @@ local function OpenProfileWideFontWindow()
     if ST._CloseFormatEditor then
         ST._CloseFormatEditor()
     end
+    if CS.CloseSpellbookPanel then
+        CS.CloseSpellbookPanel()
+    end
     CloseProfileWideBarTextureWindow()
 
     local window = PrepareProfileWideSideWindow("profileWideFontWindow", "Profile-wide Font + Outline", PROFILE_WIDE_FONT_WINDOW_HEIGHT)
@@ -215,6 +218,9 @@ local function OpenProfileWideBarTextureWindow()
     end
     if ST._CloseFormatEditor then
         ST._CloseFormatEditor()
+    end
+    if CS.CloseSpellbookPanel then
+        CS.CloseSpellbookPanel()
     end
     CloseProfileWideFontWindow()
 
@@ -1047,6 +1053,9 @@ local function CreateConfigPanel()
         if CS.CloseAdvancedSettingsPanel then
             CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
         end
+        if CS.CloseSpellbookPanel then
+            CS.CloseSpellbookPanel()
+        end
         ClearTransientConfigPreviewState()
         -- Release the panel-preview mirror: stops its conditional ticker
         -- and disarms override targeting while the config is closed.
@@ -1381,6 +1390,9 @@ local function CreateConfigPanel()
         if CS.CloseAdvancedSettingsPanel then
             CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
         end
+        if CS.CloseSpellbookPanel then
+            CS.CloseSpellbookPanel()
+        end
         isMinimized = false
         collapseIcon:SetAtlas("uitools-icon-minus")
         collapseBtn:SetParent(content)
@@ -1438,6 +1450,9 @@ local function CreateConfigPanel()
             CloseProfileWideBarTextureWindow()
             if CS.CloseAdvancedSettingsPanel then
                 CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+            end
+            if CS.CloseSpellbookPanel then
+                CS.CloseSpellbookPanel()
             end
 
             savedFrameRight = content:GetRight()
@@ -2157,6 +2172,9 @@ function CooldownCompanion:_configToggleImpl()
         end
         if CS.CloseAdvancedSettingsPanel then
             CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+        end
+        if CS.CloseSpellbookPanel then
+            CS.CloseSpellbookPanel()
         end
         ClearTransientConfigPreviewState()
         CS.configFrame._miniFrame:Hide()

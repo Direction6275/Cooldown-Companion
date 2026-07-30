@@ -50,6 +50,15 @@ local CHEVRON_ATLAS = "uitools-icon-chevron-down"
 -- this file.
 local GEAR_ATLAS = "QuestLog-icon-setting"
 local GEAR_GAP = 4
+-- Blizzard's own small inline book glyph (the quest log's campaign lore book),
+-- the only one that still reads as a book at this size. Unlike the flat gear
+-- beside it this is coloured art, and it keeps its own colours at rest for
+-- readability; ApplySpellbookTint desaturates it only under the gold open
+-- tint, so the two states still read apart at a glance.
+local SPELLBOOK_ATLAS = "campaign-questlog-lorebook"
+local SPELLBOOK_ICON_WIDTH = 15
+local SPELLBOOK_ICON_HEIGHT = 13
+local SPELLBOOK_RIGHT_INSET = 4
 
 -- Vertical band the bar claims inside the host. The preview renderers
 -- read this off the host and keep their content above it.
@@ -1528,6 +1537,31 @@ local function ApplyGearTint(bar)
     end
 end
 
+-- Same rule for the spellbook toggle, read off its window handle for the same
+-- reason: it opens and closes without rebuilding this bar.
+local function IsSpellbookWindowShown()
+    local window = CS.spellbookPanelWindow
+    local frame = window and window.frame
+    return frame ~= nil and frame:IsShown() == true
+end
+
+-- Unlike the other badges on the band, this one keeps the atlas's own colours at
+-- rest: greyed out it was hard to read. The open state is what desaturates, so
+-- the flat gold still tells the two apart at a glance.
+local function ApplySpellbookTint(bar)
+    local toggle = bar and bar.spellbook
+    if not toggle then
+        return
+    end
+    if IsSpellbookWindowShown() then
+        toggle._icon:SetDesaturated(true)
+        toggle._icon:SetVertexColor(1, 0.82, 0, 1)
+    else
+        toggle._icon:SetDesaturated(false)
+        toggle._icon:SetVertexColor(1, 1, 1, 1)
+    end
+end
+
 local function EnsureBar(host, surface)
     local bar = host._cdcPreviewCommandCenter
     if bar then
@@ -1654,6 +1688,42 @@ local function EnsureBar(host, surface)
     end)
     bar.gear = gear
 
+    -- Drag spells in from the addon's own list instead of opening Blizzard's
+    -- book. Pinned to the opposite end of the band, clear of the controls above.
+    local spellbook = CreateFrame("Button", nil, bar)
+    spellbook:SetSize(PLAY_SIZE, PLAY_SIZE)
+    spellbook:SetPoint("RIGHT", bar, "RIGHT", -SPELLBOOK_RIGHT_INSET, 0)
+    spellbook._icon = spellbook:CreateTexture(nil, "ARTWORK")
+    spellbook._icon:SetSize(SPELLBOOK_ICON_WIDTH, SPELLBOOK_ICON_HEIGHT)
+    spellbook._icon:SetPoint("CENTER")
+    spellbook._icon:SetAtlas(SPELLBOOK_ATLAS, false)
+    -- Desaturation and colour both belong to ApplySpellbookTint, which
+    -- ApplyBarState runs right after this bar is built.
+
+    spellbook:SetScript("OnEnter", function(self)
+        self._icon:SetDesaturated(false)
+        self._icon:SetVertexColor(1, 1, 1, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        if IsSpellbookWindowShown() then
+            GameTooltip:AddLine("Close spellbook")
+            GameTooltip:AddLine("Close the spell list beside the config.", 0.7, 0.7, 0.7)
+        else
+            GameTooltip:AddLine("Open spellbook")
+            GameTooltip:AddLine("Drag a spell from the list onto a panel to add it.", 0.7, 0.7, 0.7)
+        end
+        GameTooltip:Show()
+    end)
+    spellbook:SetScript("OnLeave", function()
+        ApplySpellbookTint(bar)
+        GameTooltip:Hide()
+    end)
+    spellbook:SetScript("OnClick", function()
+        if CS.ToggleSpellbookPanel then
+            CS.ToggleSpellbookPanel()
+        end
+    end)
+    bar.spellbook = spellbook
+
     bar._surface = surface
     host._cdcPreviewCommandCenter = bar
     return bar
@@ -1664,6 +1734,8 @@ local function ApplyBarState(bar, control, running, gearRoute)
     bar._gearRoute = gearRoute
     bar.play._running = running
 
+    bar.chooser:Show()
+    bar.play:Show()
     bar.chooser.label:SetText(control.label)
     bar.chooser:SetWidth(bar.chooser.label:GetStringWidth() + LABEL_GAP + CHEVRON_SIZE)
 
@@ -1675,6 +1747,11 @@ local function ApplyBarState(bar, control, running, gearRoute)
         end
     end
     bar.chooser._refreshColors()
+
+    -- The buttons workspace only: the Resources / Cast home configures bar
+    -- objects, and there is nothing there to drop a spell on.
+    bar.spellbook:SetShown(bar._surface == BUTTONS_SURFACE)
+    ApplySpellbookTint(bar)
 
     if running then
         bar.chooser.chevron:SetVertexColor(1, 0.82, 0, 1)
@@ -1692,6 +1769,18 @@ local function ApplyBarState(bar, control, running, gearRoute)
     end
     ApplyGearTint(bar)
     bar.gear:Show()
+end
+
+local function ShowSpellbookOnlyBar(host)
+    local bar = EnsureBar(host, BUTTONS_SURFACE)
+    bar.chooser:Hide()
+    bar.play:Hide()
+    bar.gear:Hide()
+    bar.spellbook:Show()
+    ApplySpellbookTint(bar)
+    host._cdcPreviewReserveBottom = BAR_RESERVE
+    bar:Show()
+    activeBar = bar
 end
 
 local function HideBar(host)
@@ -1731,6 +1820,15 @@ local function RefreshPreviewCommandCenterGear()
     local bar = activeBar
     if bar and bar._gearRoute and bar:IsShown() then
         ApplyGearTint(bar)
+    end
+end
+
+-- The same hook for the spellbook toggle, called by the spellbook window as it
+-- opens and closes.
+local function RefreshPreviewCommandCenterSpellbook()
+    local bar = activeBar
+    if bar and bar:IsShown() and bar.spellbook and bar.spellbook:IsShown() then
+        ApplySpellbookTint(bar)
     end
 end
 
@@ -1817,7 +1915,8 @@ local function UpdatePreviewCommandCenter(host)
     -- Cast Bar & Unit Frames home that configures those objects.
 
     if #applicable == 0 then
-        HideBar(host)
+        ShowSpellbookOnlyBar(host)
+        CS.previewCommandCenterWasRunning = false
         return
     end
 
@@ -1869,5 +1968,6 @@ end
 ST._UpdatePreviewCommandCenter = UpdatePreviewCommandCenter
 ST._UpdateResourcesPreviewCommandCenter = UpdateResourcesPreviewCommandCenter
 ST._RefreshPreviewCommandCenterGear = RefreshPreviewCommandCenterGear
+ST._RefreshPreviewCommandCenterSpellbook = RefreshPreviewCommandCenterSpellbook
 -- Read by the bars canvas while it places its bottom-right enable cluster.
 ST._GetPreviewCommandCenterOccupiedWidth = GetPreviewCommandCenterOccupiedWidth

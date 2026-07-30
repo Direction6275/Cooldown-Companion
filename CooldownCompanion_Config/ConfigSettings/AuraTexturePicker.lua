@@ -684,6 +684,9 @@ local function OpenBrowser(opts)
     if CS.CloseProfileWideBarTextureWindow then
         CS.CloseProfileWideBarTextureWindow()
     end
+    if CS.CloseSpellbookPanel then
+        CS.CloseSpellbookPanel()
+    end
 
     currentGroupId = opts.groupId or CS.selectedGroup
     currentButtonIndex = opts.buttonIndex
