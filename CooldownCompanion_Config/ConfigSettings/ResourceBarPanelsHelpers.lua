@@ -33,7 +33,8 @@ local auraBarAutocompleteCache = nil
 local auraBarAutocompleteSource = nil
 
 local function IsSharedAuraAutocompleteEntry(entry)
-    return type(entry) == "table" and entry.isItem ~= true
+    return type(entry) == "table"
+        and (entry.autocompleteKind == "spell" or entry.autocompleteKind == "aura")
 end
 
 local function BuildAuraBarAutocompleteCache()

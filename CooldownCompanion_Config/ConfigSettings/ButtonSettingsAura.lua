@@ -40,6 +40,27 @@ local TryAddAuraCandidate = ST._TryAddAuraCandidate
 local RemoveAuraCandidate = ST._RemoveAuraCandidate
 local AddAuraCandidateRow = ST._AddAuraCandidateRow
 local AddAuraStackMaxStatusLabel = ST._AddAuraStackMaxStatusLabel
+local BuildAuraBarAutocompleteCache = ST._RBP.BuildAuraBarAutocompleteCache
+
+local trackedAuraAutocompleteCache
+local trackedAuraAutocompleteSource
+
+local function BuildTrackedAuraAutocompleteCache()
+    local sharedCache = BuildAuraBarAutocompleteCache()
+    if trackedAuraAutocompleteCache and trackedAuraAutocompleteSource == sharedCache then
+        return trackedAuraAutocompleteCache
+    end
+
+    local cache = {}
+    for _, entry in ipairs(sharedCache) do
+        if entry.autocompleteKind == "aura" then
+            cache[#cache + 1] = entry
+        end
+    end
+    trackedAuraAutocompleteCache = cache
+    trackedAuraAutocompleteSource = sharedCache
+    return cache
+end
 
 -- Full group refresh, not just a rebind: aura config changes can flip the
 -- CC-side static composition too (shell alpha, countdown text hosting),
@@ -226,17 +247,45 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
         AddCandidateRow(auraLeft, buttonData, spellID)
     end
 
-    AddEditBoxRow(auraLeft, {
+    local auraAddBox
+    local function OnAuraAutocompleteSelect(entry)
+        CS.HideAutocomplete()
+        if entry and TryAddAuraCandidate(
+            buttonData,
+            tostring(entry.id),
+            GetEntryAuraUnit(buttonData),
+            OnCandidateListChanged
+        ) then
+            auraAddBox:SetText("")
+            RefreshAuraConfig()
+        end
+    end
+
+    auraAddBox = AddEditBoxRow(auraLeft, {
         label = "Add aura by name or ID",
         indent = true,
         value = "",
         onEnterPressed = function(text, widget)
+            if CS.ConsumeAutocompleteEnter() then return end
+            CS.HideAutocomplete()
             if TryAddAuraCandidate(buttonData, text, GetEntryAuraUnit(buttonData), OnCandidateListChanged) then
                 widget:SetText("")
                 RefreshAuraConfig()
             end
         end,
     })
+    auraAddBox:SetCallback("OnTextChanged", function(widget, _, text)
+        if text and #text >= 1 then
+            local results = CS.SearchAutocompleteInCache(text, BuildTrackedAuraAutocompleteCache())
+            CS.ShowAutocompleteResults(results, widget.editBoxWidget, OnAuraAutocompleteSelect, {
+                requireExactNumericEnter = true,
+                widthMultiplier = 2,
+            })
+        else
+            CS.HideAutocomplete()
+        end
+    end)
+    CS.SetupAutocompleteKeyHandler(auraAddBox)
 
     -- Bar fill mode (tracker C2): bar hosts can fill the aura bar by stack
     -- count instead of draining with time. Max stacks is automatic (game
