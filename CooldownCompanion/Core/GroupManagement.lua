@@ -1792,6 +1792,32 @@ local function FindDisplaySpell(matcher)
     return nil
 end
 
+-- Add-time eligibility check only; do not call from per-frame or combat paths.
+function CooldownCompanion:CanPlayerEverCastSpell(spellID)
+    local id = tonumber(spellID)
+    if not id or not C_Spell.DoesSpellExist(id) then return false end
+
+    if C_SpellBook.IsSpellKnownOrInSpellBook(id, Enum.SpellBookSpellBank.Player) then
+        return true
+    end
+    if C_SpellBook.IsSpellKnownOrInSpellBook(id, Enum.SpellBookSpellBank.Pet) then
+        return true
+    end
+
+    local slotIndex = C_SpellBook.FindSpellBookSlotForSpell(id, true, true, true, true)
+    if slotIndex then return true end
+
+    if WalkTalentTree(function(defInfo)
+        return defInfo.spellID == id
+    end) then
+        return true
+    end
+
+    return FindDisplaySpell(function(displaySpellID)
+        return displaySpellID == id
+    end) == true
+end
+
 -- Search the off-spec spellbook for a spell by name or ID.
 -- Returns spellID, name if found; nil otherwise.
 local function FindOffSpecSpell(spellIdentifier)

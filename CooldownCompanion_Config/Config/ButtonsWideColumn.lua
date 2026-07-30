@@ -20,6 +20,8 @@ local CleanRecycledEntry = ST._CleanRecycledEntry
 local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
 local StartDragTracking = ST._StartDragTracking
 local GetScaledCursorPosition = ST._GetScaledCursorPosition
+local ShouldSubmitRawAddOnEnter = ST._ShouldSubmitRawAddOnEnter
+local CreateAddBoxInfoButton = ST._CreateAddBoxInfoButton
 
 local PREVIEW_GAP = 4
 -- The one destination that owns resources, custom bars, the cast bar, and
@@ -1195,11 +1197,14 @@ local function EnsureAddBox(col3)
     instructions:SetTextColor(0.5, 0.5, 0.5)
     instructions:SetText("Add spell, item, trinket slot, or ID")
     addBox._cdcInstructions = instructions
+    editFrame:SetPoint("BOTTOMRIGHT", addBox.frame, "BOTTOMRIGHT", -18, 0)
+    addBox._cdcInfoButton = CreateAddBoxInfoButton(addBox.frame, addBox.frame)
 
     addBox:SetCallback("OnEnterPressed", function(widget, event, text)
         if CS.ConsumeAutocompleteEnter() then return end
-        CS.HideAutocomplete()
         text = text or ""
+        if not ShouldSubmitRawAddOnEnter(text) then return end
+        CS.HideAutocomplete()
         if text == "" or not CS.selectedGroup then return end
         -- The workspace box always targets the selected panel; a stale
         -- inline-add target left over from browse mode must not win.

@@ -79,13 +79,15 @@ end
 -- Store the derived unit whenever tracking config changes, so the runtime's
 -- fallback (uncached spells at login) starts from the right value.
 local function SyncDerivedAuraUnit(buttonData)
-    local unit = ClassifyAuraSpellUnit(CooldownCompanion:ResolveAuraSpellID(buttonData))
+    local primaryAuraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
+    local unit = ClassifyAuraSpellUnit(primaryAuraSpellID)
     if unit then
         buttonData.auraUnit = unit
-        -- Group scope is buff-only: the runtime resolves debuffs to your target
-        -- unconditionally and ignores the flag. Drop it rather than leaving a
-        -- stored setting that silently does nothing.
-        if unit == "target" then
+        -- Group scope is limited to buffs the player can cast: debuffs resolve
+        -- to your target and ignore the flag, while foreign buffs are own-cast
+        -- filtered on every unit, including you. Drop a stored setting that
+        -- would silently do nothing or make the entry match nowhere.
+        if unit == "target" or not CooldownCompanion:CanPlayerEverCastSpell(primaryAuraSpellID) then
             buttonData.auraTrackGroup = nil
         end
     end
@@ -209,14 +211,18 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
     -- Derived polarity line (read-only by design; the heading's "?" explains
     -- why). Only the buff/debuff split is automatic — a buff's scope is the
     -- one part the user chooses, in the row below.
-    local unit = GetEntryAuraUnit(buttonData)
+    local primaryAuraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
+    local classifiedUnit = ClassifyAuraSpellUnit(primaryAuraSpellID)
+    local unit = classifiedUnit or buttonData.auraUnit or "player"
     local isBuff = unit ~= "target"
-    -- GetEntryAuraUnit falls back to the stored auraUnit (then "player") when the
-    -- spell's data is not cached yet, so `isBuff` can be a guess. The scope row is
-    -- gated on a CONFIRMED polarity: offering it off the fallback lets the user
-    -- tick a box on what turns out to be a debuff, where the runtime resolves to
-    -- the target unconditionally and the setting does nothing.
-    local polarityKnown = ClassifyAuraSpellUnit(CooldownCompanion:ResolveAuraSpellID(buttonData)) ~= nil
+    -- The derived unit falls back to the stored auraUnit (then "player") when
+    -- the spell's data is not cached yet, so `isBuff` can be a guess. The scope
+    -- row is gated on a CONFIRMED polarity: offering it off the fallback lets
+    -- the user tick a box on what turns out to be a debuff, where the runtime
+    -- resolves to the target unconditionally and the setting does nothing.
+    local polarityKnown = classifiedUnit ~= nil
+    local canTrackGroup = isBuff and polarityKnown
+        and CooldownCompanion:CanPlayerEverCastSpell(primaryAuraSpellID)
     AddLabelRow(auraLeft, {
         label = "Tracked on",
         indent = not isStandalone,
@@ -224,11 +230,11 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
             or (buttonData.auraTrackGroup and "You and your group" or "You"),
     })
 
-    -- Buffs only. Blizzard permits spell-ID matching for helpful auras on any
-    -- unit you can assist, so a buff entry can follow its aura across the
-    -- group; debuffs resolve to your target unconditionally and the runtime
-    -- ignores this flag for them, so offering it would be a lie.
-    if isBuff and polarityKnown then
+    -- Castable buffs only. Blizzard permits spell-ID matching for helpful auras
+    -- across the group, but group scope applies its own-cast filter on every
+    -- unit, including you. A foreign buff would never match anywhere; debuffs
+    -- resolve to your target and ignore the flag, so offering either would lie.
+    if canTrackGroup then
         AddCheckboxRow(auraLeft, {
             label = "Track on group members",
             indent = not isStandalone,

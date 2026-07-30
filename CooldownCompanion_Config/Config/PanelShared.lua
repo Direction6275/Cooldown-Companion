@@ -20,6 +20,8 @@ local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local TryAdd = ST._TryAdd
 local OnAutocompleteSelect = ST._OnAutocompleteSelect
 local SearchAutocomplete = ST._SearchAutocomplete
+local ShouldSubmitRawAddOnEnter = ST._ShouldSubmitRawAddOnEnter
+local CreateAddBoxInfoButton = ST._CreateAddBoxInfoButton
 local ResolveViewerChildForSpellDisplay = ST.ResolveViewerChildForSpellDisplay
 local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
 local NotifyTutorialAction = ST._NotifyTutorialAction
@@ -469,8 +471,11 @@ local function BuildInlineAddControls(panelContainer, panelMeta, panel, panelId,
     inputBox:SetFullWidth(true)
     panelMeta.addInputFrame = inputBox.frame
     local updatePlaceholder = ConfigureInlineAddInstructions(inputBox, "Add spell, item, trinket slot, or ID")
+    inputBox.editbox:SetPoint("BOTTOMRIGHT", inputBox.frame, "BOTTOMRIGHT", -18, 0)
+    CreateAddBoxInfoButton(inputBox.frame, inputBox.frame, inputBox)
     inputBox:SetCallback("OnEnterPressed", function(widget, event, text)
         if CS.ConsumeAutocompleteEnter() then return end
+        if not ShouldSubmitRawAddOnEnter(text) then return end
         CS.HideAutocomplete()
         SubmitInlineAdd(text)
     end)
@@ -486,7 +491,6 @@ local function BuildInlineAddControls(panelContainer, panelMeta, panel, panelId,
             CS.HideAutocomplete()
         end
     end)
-    inputBox.editbox:SetPoint("BOTTOMRIGHT", 1, 0)
     CS.SetupAutocompleteKeyHandler(inputBox)
     panelContainer:AddChild(inputBox)
 
