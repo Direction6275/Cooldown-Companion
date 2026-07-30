@@ -22,6 +22,9 @@ local MIN_ROW_HEIGHT = 84
 local SCROLL_STEP = 64
 local SCROLL_RESERVE = 8
 local SCROLL_TRACK_WIDTH = 3
+local RESOURCE_BADGE_SIZE = 24
+local RESOURCE_BADGE_INSET = 4
+local RESOURCE_BADGE_ATLAS = "Waypoint-MapPin-Tracked"
 local TILE_BORDER_COLOR = { 0.24, 0.34, 0.46, 0.85 }
 local TILE_HOVER_BORDER_COLOR = { 0.32, 0.82, 1, 1 }
 
@@ -161,6 +164,18 @@ local function EnsureTile(overview, index)
     label.text:SetJustifyH("LEFT")
     label.text:SetWordWrap(false)
 
+    local resourceBadge = CreateFrame("Frame", nil, tile)
+    resourceBadge:SetSize(RESOURCE_BADGE_SIZE, RESOURCE_BADGE_SIZE)
+    resourceBadge:SetPoint("TOPRIGHT", tile, "TOPRIGHT",
+        -RESOURCE_BADGE_INSET, -RESOURCE_BADGE_INSET)
+    resourceBadge:SetFrameLevel(tile:GetFrameLevel() + 4)
+    resourceBadge:EnableMouse(false)
+    resourceBadge.icon = resourceBadge:CreateTexture(nil, "OVERLAY")
+    resourceBadge.icon:SetAllPoints()
+    resourceBadge.icon:SetAtlas(RESOURCE_BADGE_ATLAS, false)
+    resourceBadge:Hide()
+    tile.resourceBadge = resourceBadge
+
     tile:SetScript("OnClick", function(self, button)
         local record = self._cdcOverviewRecord
         if not record then return end
@@ -181,6 +196,11 @@ local function EnsureTile(overview, index)
         GameTooltip:SetText(record.name, 1, 1, 1)
         GameTooltip:AddLine("Click to configure", 0.72, 0.82, 0.92)
         GameTooltip:AddLine("Right-click for options", 0.62, 0.72, 0.82)
+        if record.hasAttachedResources then
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Resource Bars are attached to this panel.",
+                1, 1, 1, true)
+        end
         GameTooltip:Show()
     end)
     tile:SetScript("OnLeave", function(self)
@@ -290,6 +310,7 @@ local function ResetOverview(overview)
             ST._ReleaseReadOnlyPanelPreview(tile.visualHost)
         end
         tile._cdcOverviewRecord = nil
+        tile.resourceBadge:Hide()
         tile:Hide()
     end
     overview.usedTiles = 0
@@ -319,6 +340,14 @@ function ST._BuildGroupPanelOverview(host, containerId)
         return
     end
 
+    local attachedResourcePanelId
+    if ST._GetResourcesEntryPlacement then
+        local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
+        if placement == "attached" then
+            attachedResourcePanelId = anchorPanelId
+        end
+    end
+
     local records = {}
     for index, panelInfo in ipairs(panels) do
         local tile = EnsureTile(overview, index)
@@ -331,6 +360,7 @@ function ST._BuildGroupPanelOverview(host, containerId)
             name = panelInfo.group.name or ("Panel " .. tostring(panelInfo.groupId)),
             naturalWidth = math_max(1, tonumber(naturalWidth) or 220),
             naturalHeight = math_max(1, tonumber(naturalHeight) or 90),
+            hasAttachedResources = attachedResourcePanelId == panelInfo.groupId,
         }
         -- Row height is intentionally standardized by the overview. Horizontal
         -- allocation should therefore follow the Panel's saved-design width,
@@ -400,12 +430,20 @@ function ST._BuildGroupPanelOverview(host, containerId)
                 tile.label:SetPoint("TOPLEFT", tile, "TOPLEFT", 1, -1)
                 tile.label:SetPoint("TOPRIGHT", tile, "TOPRIGHT", -1, -1)
                 tile.label:SetHeight(labelHeight)
+                tile.label.text:ClearAllPoints()
+                tile.label.text:SetPoint("LEFT", tile.label, "LEFT", 5, 0)
+                local labelRightInset = record.hasAttachedResources
+                    and (RESOURCE_BADGE_SIZE + RESOURCE_BADGE_INSET + 2)
+                    or 5
+                tile.label.text:SetPoint("RIGHT", tile.label, "RIGHT",
+                    -labelRightInset, 0)
                 tile.label.text:SetText(record.name)
                 tile.label:Show()
             else
                 tile.label:Hide()
             end
 
+            tile.resourceBadge:SetShown(record.hasAttachedResources)
             tile.visualHost:ClearAllPoints()
             tile.visualHost:SetPoint("CENTER", tile, "CENTER", 0, -(labelHeight / 2))
             tile.visualHost:SetSize(visualWidth, visualHeight)
