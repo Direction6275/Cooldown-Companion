@@ -76,6 +76,10 @@ local function GetEntryAuraUnit(buttonData)
     return ClassifyAuraSpellUnit(resolved) or buttonData.auraUnit or "player"
 end
 
+local function EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
+    return CooldownCompanion:EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
+end
+
 -- Store the derived unit whenever tracking config changes, so the runtime's
 -- fallback (uncached spells at login) starts from the right value.
 local function SyncDerivedAuraUnit(buttonData)
@@ -87,7 +91,7 @@ local function SyncDerivedAuraUnit(buttonData)
         -- to your target and ignore the flag, while foreign buffs are own-cast
         -- filtered on every unit, including you. Drop a stored setting that
         -- would silently do nothing or make the entry match nowhere.
-        if unit == "target" or not CooldownCompanion:CanPlayerEverCastSpell(primaryAuraSpellID) then
+        if unit == "target" or not EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID) then
             buttonData.auraTrackGroup = nil
         end
     end
@@ -222,7 +226,7 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
     -- resolves to the target unconditionally and the setting does nothing.
     local polarityKnown = classifiedUnit ~= nil
     local canTrackGroup = isBuff and polarityKnown
-        and CooldownCompanion:CanPlayerEverCastSpell(primaryAuraSpellID)
+        and EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
     AddLabelRow(auraLeft, {
         label = "Tracked on",
         indent = not isStandalone,

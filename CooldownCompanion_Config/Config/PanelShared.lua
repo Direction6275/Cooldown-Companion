@@ -486,6 +486,7 @@ local function BuildInlineAddControls(panelContainer, panelMeta, panel, panelId,
             local results = SearchAutocomplete(text)
             CS.ShowAutocompleteResults(results, widget, OnAutocompleteSelect, {
                 requireExactNumericEnter = true,
+                requireExplicitChoice = true,
             })
         else
             CS.HideAutocomplete()

@@ -1227,6 +1227,7 @@ local function EnsureAddBox(col3)
     end)
     addBox:SetCallback("OnTextChanged", function(widget, event, text)
         instructions:SetShown((text or "") == "")
+        CS.addingToPanelId = nil
         if text and #text >= 1 then
             local results = ST._SearchAutocomplete(text)
             -- This box is persistent (not rebuilt from CS.newInput like the
@@ -1242,6 +1243,7 @@ local function EnsureAddBox(col3)
                 end
             end, {
                 requireExactNumericEnter = true,
+                requireExplicitChoice = true,
             })
         else
             CS.HideAutocomplete()

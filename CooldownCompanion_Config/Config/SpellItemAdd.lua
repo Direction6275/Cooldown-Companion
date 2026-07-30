@@ -39,16 +39,47 @@ local function SelectNewButton(panelId, buttonIndex)
     SelectConfigButton(panelId, buttonIndex, { force = true })
 end
 
-local function IsTriggerPanelTarget(groupId)
-    local group = groupId and CooldownCompanion.db
+local function GetTargetGroup(groupId)
+    groupId = groupId or CS.addingToPanelId or CS.selectedGroup
+    return groupId and CooldownCompanion.db
         and CooldownCompanion.db.profile
         and CooldownCompanion.db.profile.groups
         and CooldownCompanion.db.profile.groups[groupId]
+end
+
+local function IsTriggerPanelTarget(groupId)
+    local group = GetTargetGroup(groupId)
     return group and group.displayMode == "trigger"
+end
+
+local function TargetPanelAcceptsAuraEntries(groupId)
+    local group = GetTargetGroup(groupId)
+    local displayMode = group and (group.displayMode or "icons")
+    return displayMode == "icons" or displayMode == "bars"
 end
 
 -- File-local state
 local autocompleteDropdown
+local canPlayerEverCastSpellMemoByCache = setmetatable({}, { __mode = "k" })
+
+local function CanPlayerEverCastSpellCached(spellId)
+    local cache = CS.autocompleteCache
+    if not cache then
+        return CooldownCompanion:CanPlayerEverCastSpell(spellId)
+    end
+
+    local memo = canPlayerEverCastSpellMemoByCache[cache]
+    if not memo then
+        memo = {}
+        canPlayerEverCastSpellMemoByCache[cache] = memo
+    end
+    local canCast = memo[spellId]
+    if canCast == nil then
+        canCast = CooldownCompanion:CanPlayerEverCastSpell(spellId) and true or false
+        memo[spellId] = canCast
+    end
+    return canCast
+end
 
 -- Autocomplete constants
 local AUTOCOMPLETE_MAX_ROWS = 8
@@ -91,30 +122,38 @@ local function GetAutocompleteTypeDisplay(entry)
 end
 
 local function CreateAddBoxInfoButton(parentFrame, anchorFrame, cleanup)
-    local btn = CreateFrame("Button", nil, parentFrame)
-    btn:SetSize(16, 16)
-    btn:SetPoint("RIGHT", anchorFrame, "RIGHT", -1, 0)
-    local icon = btn:CreateTexture(nil, "OVERLAY")
-    icon:SetSize(12, 12)
-    icon:SetPoint("CENTER")
-    icon:SetAtlas("QuestRepeatableTurnin")
-    btn:SetScript("OnEnter", function(self)
-        GameTooltip:SetMinimumWidth(0)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        for _, line in ipairs(ADD_BOX_TRACKABILITY_TOOLTIP) do
-            if type(line) == "table" then
-                GameTooltip:AddLine(line[1], line[2], line[3], line[4], line[5])
-            else
-                GameTooltip:AddLine(line)
+    local btn = parentFrame._cdcAddBoxInfoButton
+    if not btn then
+        btn = CreateFrame("Button", nil, parentFrame)
+        btn:SetSize(16, 16)
+        local icon = btn:CreateTexture(nil, "OVERLAY")
+        icon:SetSize(12, 12)
+        icon:SetPoint("CENTER")
+        icon:SetAtlas("QuestRepeatableTurnin")
+        btn:SetScript("OnEnter", function(self)
+            GameTooltip:SetMinimumWidth(0)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            for _, line in ipairs(ADD_BOX_TRACKABILITY_TOOLTIP) do
+                if type(line) == "table" then
+                    GameTooltip:AddLine(line[1], line[2], line[3], line[4], line[5])
+                else
+                    GameTooltip:AddLine(line)
+                end
             end
-        end
-        GameTooltip:SetMinimumWidth(270)
-        GameTooltip:Show()
-    end)
-    btn:SetScript("OnLeave", function()
-        GameTooltip:SetMinimumWidth(0)
-        GameTooltip:Hide()
-    end)
+            GameTooltip:SetMinimumWidth(270)
+            GameTooltip:Show()
+        end)
+        btn:SetScript("OnLeave", function()
+            GameTooltip:SetMinimumWidth(0)
+            GameTooltip:Hide()
+        end)
+        parentFrame._cdcAddBoxInfoButton = btn
+    end
+
+    btn:SetParent(parentFrame)
+    btn:ClearAllPoints()
+    btn:SetPoint("RIGHT", anchorFrame, "RIGHT", -1, 0)
+    btn:Show()
 
     if cleanup and cleanup.SetCallback then
         local prevOnRelease = cleanup.events and cleanup.events["OnRelease"]
@@ -137,7 +176,7 @@ local function IsBlockedSpellForTracking(spellId)
     return spellId and IsNeverTrackableSpell(spellId)
 end
 
-local function ResolveNonBlockedSpellInput(input)
+local function ResolveNonBlockedSpellInput(input, skipTalentSearch)
     if not input or input == "" then return nil end
 
     local spellId = tonumber(input)
@@ -152,7 +191,7 @@ local function ResolveNonBlockedSpellInput(input)
         if spellInfo then
             spellId = spellInfo.spellID
             spellName = spellInfo.name
-        else
+        elseif not skipTalentSearch then
             spellId, spellName = CooldownCompanion:FindTalentSpellByName(input)
             spellInfo = spellId and C_Spell.GetSpellInfo(spellId)
         end
@@ -167,6 +206,28 @@ end
 local function PrintBlockedSpellMessage(spellName)
     local shownName = spellName or "that spell"
     CooldownCompanion:Print("Cannot track " .. shownName .. ".")
+end
+
+local function PrintCannotTrackAsAura(spellName)
+    CooldownCompanion:Print("Cannot track " .. spellName .. " as an aura.")
+end
+
+local function PrintAuraPanelUnsupported()
+    CooldownCompanion:Print("Auras can only be tracked in icon or bar groups.")
+end
+
+local function IsExactNumericSpellInput(input, spellId)
+    local exactID = input and input:match("^%s*(%d+)%s*$")
+    return exactID and tonumber(exactID) == spellId or false
+end
+
+local function GetSpellOfferability(input, spellId)
+    local canEverCast = CanPlayerEverCastSpellCached(spellId)
+    local isHarmful = C_Spell.IsSpellHarmful(spellId)
+    local canOfferSpell = canEverCast and not IsPassiveOrProc(spellId)
+    local canOfferAura = not isHarmful
+        or (IsExactNumericSpellInput(input, spellId) and canEverCast)
+    return canOfferSpell, canOfferAura
 end
 
 ------------------------------------------------------------------------
@@ -206,7 +267,11 @@ local function TryAddSpell(input, isPetSpell, forceAura)
         -- comes from "Aura" autocomplete suggestions (tracked buff/bar rows).
         local addAsAura = forceAura == true or IsPassiveOrProc(spellId)
         local routedToAura
-        if not addAsAura and not CooldownCompanion:CanPlayerEverCastSpell(spellId) then
+        if not addAsAura and not CanPlayerEverCastSpellCached(spellId) then
+            if C_Spell.IsSpellHarmful(spellId) then
+                PrintCannotTrackAsAura(spellName)
+                return false
+            end
             addAsAura = true
             forceAura = true
             routedToAura = true
@@ -215,10 +280,8 @@ local function TryAddSpell(input, isPetSpell, forceAura)
         -- rebind pass); refuse aura adds elsewhere instead of adding an entry
         -- that can never display anything.
         if addAsAura then
-            local group = CooldownCompanion.db and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-            local displayMode = group and (group.displayMode or "icons")
-            if displayMode ~= "icons" and displayMode ~= "bars" then
-                CooldownCompanion:Print("Auras can only be tracked in icon or bar groups.")
+            if not TargetPanelAcceptsAuraEntries(CS.selectedGroup) then
+                PrintAuraPanelUnsupported()
                 return false
             end
         end
@@ -402,7 +465,7 @@ local function TryAdd(input)
 
         -- Non-passive spell → add it
         if spellFound and not passiveOrProc then
-            if not CooldownCompanion:CanPlayerEverCastSpell(id) then
+            if not CanPlayerEverCastSpellCached(id) then
                 return TryAddSpell(tostring(id))
             end
             local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", id, spellInfo.name)
@@ -478,7 +541,7 @@ local function TryAdd(input)
             if passiveOrProc then
                 return TryAddSpell(tostring(spellId))
             else
-                if not CooldownCompanion:CanPlayerEverCastSpell(spellId) then
+                if not CanPlayerEverCastSpellCached(spellId) then
                     return TryAddSpell(tostring(spellId))
                 end
                 local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName)
@@ -808,7 +871,7 @@ local function CreateSynthesizedAuraRow(spellId, spellName, icon)
     }
 end
 
-local function AddUniqueSpellAuraTwin(results, isTriggerTarget)
+local function AddUniqueSpellAuraTwin(results, targetAcceptsAuraEntries)
     local uniqueSpell
     for _, entry in ipairs(results) do
         if entry.autocompleteKind == "spell" then
@@ -816,7 +879,7 @@ local function AddUniqueSpellAuraTwin(results, isTriggerTarget)
             uniqueSpell = entry
         end
     end
-    if not uniqueSpell or isTriggerTarget then return end
+    if not uniqueSpell or not targetAcceptsAuraEntries then return end
 
     local spellId = tonumber(uniqueSpell.id)
     if not spellId or C_Spell.IsSpellHarmful(spellId) then return end
@@ -837,14 +900,17 @@ local function AddUniqueSpellAuraTwin(results, isTriggerTarget)
     results[#results + 1] = CreateSynthesizedAuraRow(spellId, uniqueSpell.name, uniqueSpell.icon)
 end
 
-local function SearchAutocomplete(query)
+local function SearchAutocomplete(query, allowTalentSearch)
     local cache = CS.autocompleteCache or BuildAutocompleteCache()
     local groupId = CS.addingToPanelId or CS.selectedGroup
     local isTriggerTarget = IsTriggerPanelTarget(groupId)
-    if isTriggerTarget then
+    local targetAcceptsAuraEntries = TargetPanelAcceptsAuraEntries(groupId)
+    if isTriggerTarget or not targetAcceptsAuraEntries then
         local filtered = {}
         for _, entry in ipairs(cache) do
-            if not entry.isEquipmentSlot and entry.autocompleteKind ~= "aura" then
+            local keepEquipment = not isTriggerTarget or not entry.isEquipmentSlot
+            local keepAura = targetAcceptsAuraEntries or entry.autocompleteKind ~= "aura"
+            if keepEquipment and keepAura then
                 filtered[#filtered + 1] = entry
             end
         end
@@ -852,15 +918,14 @@ local function SearchAutocomplete(query)
     end
 
     local results = SearchAutocompleteInCache(query, cache) or {}
-    local spellId, spellName, spellInfo = ResolveNonBlockedSpellInput(query)
+    local spellId, spellName, spellInfo = ResolveNonBlockedSpellInput(query, not allowTalentSearch)
     if not spellId then
-        AddUniqueSpellAuraTwin(results, isTriggerTarget)
+        AddUniqueSpellAuraTwin(results, targetAcceptsAuraEntries)
         return #results > 0 and results or nil
     end
 
-    local canOfferSpell = CooldownCompanion:CanPlayerEverCastSpell(spellId)
-        and not IsPassiveOrProc(spellId)
-    local canSynthesizeAura = not isTriggerTarget and not C_Spell.IsSpellHarmful(spellId)
+    local canOfferSpell, canOfferAura = GetSpellOfferability(query, spellId)
+    local canSynthesizeAura = targetAcceptsAuraEntries and canOfferAura
     local seenExactKinds = {}
     local filteredResults = {}
     for _, entry in ipairs(results) do
@@ -1069,8 +1134,11 @@ end
 local function ShowAutocompleteResults(results, anchorWidget, onSelect, options)
     local dropdown = GetOrCreateAutocompleteDropdown()
     dropdown._onSelect = onSelect
+    dropdown._anchorWidget = anchorWidget
+    dropdown._options = options
     dropdown._editbox = anchorWidget.editbox
     dropdown._requireExactNumericEnter = options and options.requireExactNumericEnter == true
+    dropdown._requireExplicitChoice = options and options.requireExplicitChoice == true
 
     if not results then
         dropdown:Hide()
@@ -1092,7 +1160,7 @@ local function ShowAutocompleteResults(results, anchorWidget, onSelect, options)
     end
 
     local numResults = #results
-    dropdown._highlightIndex = 1
+    dropdown._highlightIndex = dropdown._requireExplicitChoice and numResults > 1 and 0 or 1
     dropdown._userNavigated = nil
     dropdown._numResults = numResults
     dropdown:SetHeight((numResults * AUTOCOMPLETE_ROW_HEIGHT) + 2)
@@ -1141,28 +1209,39 @@ local function HandleAutocompleteKeyDown(key)
         UpdateAutocompleteHighlight()
     elseif key == "ENTER" then
         local idx
-        if maxIdx == 1 then
-            idx = 1
-        elseif autocompleteDropdown._userNavigated then
-            idx = autocompleteDropdown._highlightIndex or 0
-        elseif autocompleteDropdown._requireExactNumericEnter then
-            local editText = autocompleteDropdown._editbox and autocompleteDropdown._editbox:GetText()
-            local exactID = editText and editText:match("^%s*(%d+)%s*$")
-            exactID = exactID and tonumber(exactID) or nil
+        local editText = autocompleteDropdown._editbox and autocompleteDropdown._editbox:GetText()
+        local exactID = editText and editText:match("^%s*(%d+)%s*$")
+        exactID = exactID and tonumber(exactID) or nil
+        if autocompleteDropdown._requireExactNumericEnter and exactID then
             local exactIndex
             local exactCount = 0
-            if exactID then
-                for rowIndex = 1, maxIdx do
-                    local row = autocompleteDropdown.rows[rowIndex]
-                    if row and row.entry and tonumber(row.entry.id) == exactID then
+            for rowIndex = 1, maxIdx do
+                local row = autocompleteDropdown.rows[rowIndex]
+                if row and row.entry and tonumber(row.entry.id) == exactID then
+                    if not exactIndex then
                         exactIndex = rowIndex
-                        exactCount = exactCount + 1
                     end
+                    exactCount = exactCount + 1
                 end
             end
-            if exactCount == 1 then
+            if autocompleteDropdown._requireExplicitChoice then
+                if exactCount == 1 then
+                    idx = exactIndex
+                end
+            elseif exactIndex then
                 idx = exactIndex
+            else
+                autocompleteDropdown:Hide()
+                return
             end
+        elseif autocompleteDropdown._requireExplicitChoice then
+            if maxIdx == 1 then
+                idx = 1
+            elseif autocompleteDropdown._userNavigated then
+                idx = autocompleteDropdown._highlightIndex or 0
+            end
+        else
+            idx = autocompleteDropdown._highlightIndex or 0
         end
         if idx and idx > 0 and autocompleteDropdown.rows[idx] and autocompleteDropdown.rows[idx].entry then
             autocompleteDropdown._enterConsumed = true
@@ -1184,14 +1263,16 @@ local function ConsumeAutocompleteEnter()
     return false
 end
 
-local function HasPendingAutocompleteSpellChoice()
+local function HasPendingAutocompleteSpellChoice(resolvedSpellId)
     if not autocompleteDropdown or not autocompleteDropdown:IsShown() then
         return false
     end
     for rowIndex = 1, autocompleteDropdown._numResults or 0 do
         local row = autocompleteDropdown.rows[rowIndex]
         local kind = row and row.entry and row.entry.autocompleteKind
-        if kind == "spell" or kind == "aura" then
+        local entryId = row and row.entry and tonumber(row.entry.id)
+        if (kind == "spell" or kind == "aura")
+            and (not resolvedSpellId or entryId == resolvedSpellId) then
             return true
         end
     end
@@ -1199,18 +1280,31 @@ local function HasPendingAutocompleteSpellChoice()
 end
 
 local function ShouldSubmitRawAddOnEnter(input)
-    if HasPendingAutocompleteSpellChoice() then return false end
-
     local spellId, spellName = ResolveNonBlockedSpellInput(input)
+    if HasPendingAutocompleteSpellChoice(spellId) then return false end
     if not spellId then return true end
 
-    local canOfferSpell = CooldownCompanion:CanPlayerEverCastSpell(spellId)
-        and not IsPassiveOrProc(spellId)
-    local canOfferAura = not C_Spell.IsSpellHarmful(spellId)
+    local canOfferSpell, canOfferAura = GetSpellOfferability(input, spellId)
     if not canOfferSpell and not canOfferAura then
-        CooldownCompanion:Print("Cannot track " .. spellName .. " as an aura.")
+        PrintCannotTrackAsAura(spellName)
+        return false
     end
-    return false
+    if not canOfferSpell and canOfferAura and not TargetPanelAcceptsAuraEntries() then
+        PrintAuraPanelUnsupported()
+        return false
+    end
+
+    local results = SearchAutocomplete(input, true)
+    if results and autocompleteDropdown and autocompleteDropdown._anchorWidget then
+        ShowAutocompleteResults(
+            results,
+            autocompleteDropdown._anchorWidget,
+            autocompleteDropdown._onSelect,
+            autocompleteDropdown._options
+        )
+        return false
+    end
+    return true
 end
 
 ------------------------------------------------------------------------

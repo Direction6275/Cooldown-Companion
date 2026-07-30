@@ -1013,6 +1013,50 @@ local function MigrateAuraTrackingRebuild(self, profile)
     end
 end
 
+-- Clear group scope only when the primary aura proves target polarity or the
+-- corrected castable identity proves the aura foreign. The second predicate
+-- result distinguishes a known foreign spell from spell data that is not
+-- available yet; indeterminate entries remain untouched.
+local function MigrateAuraGroupScopeIdentity(self, profile)
+    if type(profile) ~= "table" or profile._cdcAuraGroupScopeMigrated then return end
+
+    -- Castability clears additionally require a readable talent config:
+    -- WalkTalentTree matches nothing when the active config is unavailable
+    -- (early login), which would read as determinately foreign and wrongly
+    -- clear a valid flag on an unlearned-talent entry. Polarity clears do not
+    -- depend on talents; the sentinel only stamps once talents were readable
+    -- so a too-early run retries on a later login.
+    local talentDataReady = C_ClassTalents.GetActiveConfigID() ~= nil
+
+    local groups = profile.groups
+    if type(groups) == "table" then
+        for _, group in pairs(groups) do
+            local buttons = type(group) == "table" and group.buttons or nil
+            if type(buttons) == "table" then
+                for _, buttonData in ipairs(buttons) do
+                    if type(buttonData) == "table" and buttonData.auraTrackGroup == true then
+                        local primaryAuraSpellID = self:ResolveAuraSpellID(buttonData)
+                        local unit = ClassifyAuraSpellUnit(primaryAuraSpellID)
+                        if unit == "target" then
+                            buttonData.auraTrackGroup = nil
+                        elseif unit == "player" and talentDataReady then
+                            local ownsAura, ownershipKnown =
+                                self:EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
+                            if ownershipKnown and not ownsAura then
+                                buttonData.auraTrackGroup = nil
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if talentDataReady then
+        profile._cdcAuraGroupScopeMigrated = true
+    end
+end
+
 -- Aura glow rebuild migration (Phase 4): the aura glow renders on the aura
 -- slot kit now, with styles none/solid/pulse/colorShift/dashes/ants/proc/
 -- overlay. The old default "pixel" and the LCG styles cannot run there
@@ -1399,6 +1443,7 @@ function CooldownCompanion:RunAllMigrations()
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
     BackfillAuraDurationSwipeSettings(self.db and self.db.profile, checkpointState and checkpointState.auraDurationSwipe)
     MigrateAuraTrackingRebuild(self, self.db and self.db.profile)
+    MigrateAuraGroupScopeIdentity(self, self.db and self.db.profile)
     MigrateAuraGlowRebuild(self, self.db and self.db.profile)
     MigrateLcgGlowStyles(self, self.db and self.db.profile)
     MigrateBarAuraEffectStyles(self, self.db and self.db.profile)
@@ -1421,6 +1466,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     local profile = self.db and self.db.profile
     if type(profile) == "table" then
         profile._cdcAuraRebuildMigrated = nil
+        profile._cdcAuraGroupScopeMigrated = nil
         profile._cdcAuraGlowMigrated = nil
         profile._cdcLcgGlowMigrated = nil
         profile._cdcBarAuraGlowMigrated = nil

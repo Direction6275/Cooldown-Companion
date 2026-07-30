@@ -1795,27 +1795,53 @@ end
 -- Add-time eligibility check only; do not call from per-frame or combat paths.
 function CooldownCompanion:CanPlayerEverCastSpell(spellID)
     local id = tonumber(spellID)
-    if not id or not C_Spell.DoesSpellExist(id) then return false end
+    if not id then return false, false end
 
-    if C_SpellBook.IsSpellKnownOrInSpellBook(id, Enum.SpellBookSpellBank.Player) then
-        return true
+    -- Resolve at call time: SpellQueries.lua loads before this file, and keeping
+    -- the lookup here avoids capturing an unavailable helper at file scope.
+    local baseID = ST.ResolveToBaseSpell(id)
+    local hasBaseVariant = baseID ~= id
+    local spellExists = C_Spell.DoesSpellExist(id)
+        or (hasBaseVariant and C_Spell.DoesSpellExist(baseID))
+    if not spellExists then return false, false end
+
+    if C_SpellBook.IsSpellKnownOrInSpellBook(id, Enum.SpellBookSpellBank.Player)
+        or (hasBaseVariant and C_SpellBook.IsSpellKnownOrInSpellBook(baseID, Enum.SpellBookSpellBank.Player)) then
+        return true, true
     end
-    if C_SpellBook.IsSpellKnownOrInSpellBook(id, Enum.SpellBookSpellBank.Pet) then
-        return true
+    if C_SpellBook.IsSpellKnownOrInSpellBook(id, Enum.SpellBookSpellBank.Pet)
+        or (hasBaseVariant and C_SpellBook.IsSpellKnownOrInSpellBook(baseID, Enum.SpellBookSpellBank.Pet)) then
+        return true, true
     end
 
     local slotIndex = C_SpellBook.FindSpellBookSlotForSpell(id, true, true, true, true)
-    if slotIndex then return true end
+    if not slotIndex and hasBaseVariant then
+        slotIndex = C_SpellBook.FindSpellBookSlotForSpell(baseID, true, true, true, true)
+    end
+    if slotIndex then return true, true end
 
     if WalkTalentTree(function(defInfo)
-        return defInfo.spellID == id
+        return defInfo.spellID == id or (hasBaseVariant and defInfo.spellID == baseID)
     end) then
-        return true
+        return true, true
     end
 
     return FindDisplaySpell(function(displaySpellID)
-        return displaySpellID == id
-    end) == true
+        return displaySpellID == id or (hasBaseVariant and displaySpellID == baseID)
+    end) == true, true
+end
+
+-- Group-scoped aura tracking is owned by the spell entry's castable identity.
+-- Standalone aura entries have no separate castable identity, so their primary
+-- aura remains the ownership probe. The castability primitive normalizes both.
+function CooldownCompanion:EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
+    if type(buttonData) ~= "table" then return false, false end
+
+    if buttonData.type == "spell" and buttonData.addedAs ~= "aura" then
+        return self:CanPlayerEverCastSpell(buttonData.id)
+    end
+    if not primaryAuraSpellID then return false, false end
+    return self:CanPlayerEverCastSpell(primaryAuraSpellID)
 end
 
 -- Search the off-spec spellbook for a spell by name or ID.
