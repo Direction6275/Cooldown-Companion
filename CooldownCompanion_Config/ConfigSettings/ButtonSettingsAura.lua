@@ -61,6 +61,12 @@ local function SyncDerivedAuraUnit(buttonData)
     local unit = ClassifyAuraSpellUnit(CooldownCompanion:ResolveAuraSpellID(buttonData))
     if unit then
         buttonData.auraUnit = unit
+        -- Group scope is buff-only: the runtime resolves debuffs to your target
+        -- unconditionally and ignores the flag. Drop it rather than leaving a
+        -- stored setting that silently does nothing.
+        if unit == "target" then
+            buttonData.auraTrackGroup = nil
+        end
     end
 end
 
@@ -86,9 +92,22 @@ local AURA_TRACKING_TOOLTIP = {
     "Aura Tracking",
     {"Blizzard tracks the aura and drives the display directly; the addon never reads aura state in combat.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Buffs can only be tracked on yourself, and your own debuffs only on your target. This is a Blizzard restriction. The tracked unit is set automatically from the aura.", 1, 1, 1, true},
+    {"Your own debuffs can only be tracked on your target — a Blizzard restriction. Buffs can be tracked on you, or on you and your group. Whether an entry is a buff or a debuff is set automatically from the aura.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"With no auras listed, the entry tracks its own aura. Added aura IDs override that; for spell entries the entry's own aura is always kept as a fallback.", 1, 1, 1, true},
+}
+
+local GROUP_SCOPE_TOOLTIP = {
+    "Track on Group Members",
+    {"Follows the buff onto anyone in your party or raid, not just you. Useful for a buff you cast on other people and need to keep up — a healer's Lifebloom on a tank.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Your group only. A buff on a friendly player outside your group can't be tracked, because the game gives the addon no way to refer to them.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Best for buffs that sit on one person at a time. Blizzard never tells the addon who holds the aura, so a buff on several people at once draws one display per person in the same spot, overlapping.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Aura sounds stop working once you're in a group: they fire per person, so moving the buff would sound like it dropped. On your own they still work, because there is only you to track.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Group size is read out of combat, so someone joining mid-fight is covered from the next quiet moment rather than immediately.", 1, 1, 1, true},
 }
 
 local BAR_SHOWS_STACKS_TOOLTIP = {
@@ -166,13 +185,40 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
         return
     end
 
-    -- Derived unit line (read-only by design; the heading's "?" explains why).
+    -- Derived polarity line (read-only by design; the heading's "?" explains
+    -- why). Only the buff/debuff split is automatic — a buff's scope is the
+    -- one part the user chooses, in the row below.
     local unit = GetEntryAuraUnit(buttonData)
+    local isBuff = unit ~= "target"
+    -- GetEntryAuraUnit falls back to the stored auraUnit (then "player") when the
+    -- spell's data is not cached yet, so `isBuff` can be a guess. The scope row is
+    -- gated on a CONFIRMED polarity: offering it off the fallback lets the user
+    -- tick a box on what turns out to be a debuff, where the runtime resolves to
+    -- the target unconditionally and the setting does nothing.
+    local polarityKnown = ClassifyAuraSpellUnit(CooldownCompanion:ResolveAuraSpellID(buttonData)) ~= nil
     AddLabelRow(auraLeft, {
         label = "Tracked on",
         indent = not isStandalone,
-        controlText = unit == "target" and "Target" or "You",
+        controlText = (not isBuff) and "Target"
+            or (buttonData.auraTrackGroup and "You and your group" or "You"),
     })
+
+    -- Buffs only. Blizzard permits spell-ID matching for helpful auras on any
+    -- unit you can assist, so a buff entry can follow its aura across the
+    -- group; debuffs resolve to your target unconditionally and the runtime
+    -- ignores this flag for them, so offering it would be a lie.
+    if isBuff and polarityKnown then
+        AddCheckboxRow(auraLeft, {
+            label = "Track on group members",
+            indent = not isStandalone,
+            value = buttonData.auraTrackGroup == true,
+            tooltip = GROUP_SCOPE_TOOLTIP,
+            onChange = function(value)
+                buttonData.auraTrackGroup = value and true or nil
+                RefreshAuraConfig()
+            end,
+        })
+    end
 
     -- Tracked aura list (empty = tracking the entry's own aura; the heading's
     -- "?" explains the default and override behavior).

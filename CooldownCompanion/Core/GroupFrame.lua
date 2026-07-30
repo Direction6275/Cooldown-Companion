@@ -914,6 +914,12 @@ local function AcquireButtonFromPool(frame, poolKey, buttonData)
         pick = pick or free
         if not pick then return nil end
     else
+        -- No aura-slot lock needed out of combat: the rebind pass parks every
+        -- record unconditionally before it binds, so no pooled frame can still be
+        -- carrying a live slot by the time one is handed out. (An earlier ally-gate
+        -- design did leave blocked records bound through a pass, which required a
+        -- lock here; that gate was measured unnecessary and removed.)
+        --
         -- Prefer the frame that already hosts this entry: repeated repopulates
         -- (config refreshes) then converge on a stable entry<->frame mapping
         -- instead of reversing it each pass, which flip-flopped the statically

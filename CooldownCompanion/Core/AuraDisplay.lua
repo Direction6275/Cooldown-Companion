@@ -15,13 +15,18 @@
 
     PTR 7 (tracker D-A0): aura buttons carry a permanent ChangeParent
     forbidden aspect — SetParent on a slot button errors even out of combat.
-    The display therefore uses ONE AuraContainer PER HOST BUTTON, created as
+    The display therefore uses ONE AuraContainer PER (HOST BUTTON, UNIT
+    TOKEN) — a host needs more than one only when an entry is tracked on
+    several units at once — created as
     a child of that button's auraLayer (containers are plain CC frames; the
     parent is set at CreateFrame and never changed — only the BUTTONS carry
     the forbidden aspects), with the slot button anchored once inside
     initializeFrame and never moved, re-leveled, or reparented afterwards.
-    Bind and park are container-mutator filter swaps (park = polarity-crossed
-    sentinel; V25 Q4: Blizzard hides an unmatched slot button entirely).
+    Bind is a container-mutator filter swap. Park is a polarity-crossed
+    sentinel filter PLUS container:Hide() — the sentinel is applied inside
+    Blizzard's identity gate and stops being applied at all once a unit is not
+    assistable, so hiding the container is what actually guarantees a parked
+    display renders nothing (and drops it out of the aura event path).
     Host Show/Hide, alpha fades, and strata changes reach the slot through
     plain parentage again, and a re-shown container re-registers its events
     and refreshes itself (AuraContainerPrivateMixin:OnShow_Intrinsic).
@@ -35,30 +40,84 @@ local CooldownCompanion = ST.Addon
 local ipairs = ipairs
 local pairs = pairs
 local InCombatLockdown = InCombatLockdown
-local UnitExists = UnitExists
-local UnitAffectingCombat = UnitAffectingCombat
 local CreateFrame = CreateFrame
+local IsInRaid = IsInRaid
+local GetNumGroupMembers = GetNumGroupMembers
+local GetNumSubgroupMembers = GetNumSubgroupMembers
 
--- Parking (P1b/P1c + V25 Q4): slots can never be removed; unbound slots get a
--- sentinel candidate filter, and Blizzard hides an unmatched slot button
--- entirely — a parked slot renders nothing even though it stays anchored on
--- its host. Empty includeSpellIDs is BANNED — it wedges the slot permanently.
+-- Parking (P1b/P1c + V25 Q4): slots can never be removed, so an unbound slot is
+-- given a sentinel candidate filter that cannot match, and Blizzard hides an
+-- unmatched slot button. Empty includeSpellIDs is BANNED — it wedges the slot
+-- permanently.
+--
 -- Sentinels are POLARITY-CROSSED so they are structurally never-match: a
--- HELPFUL slot parked on a debuff spellID (debuffs can never appear in
--- HELPFUL results) and a HARMFUL slot parked on a buff spellID.
+-- HELPFUL slot parked on a debuff spellID (debuffs can never appear in HELPFUL
+-- results) and a HARMFUL slot parked on a buff spellID. Hence the keying by
+-- POLARITY rather than by unit — polarity stops being derivable from the unit
+-- once ally units are tracked, since buffs on you and buffs on a party member
+-- are both HELPFUL. Get this wrong and a HELPFUL slot parked on a buff sentinel
+-- MATCHES and shows the wrong aura.
+--
+-- The sentinel is NOT sufficient on its own; see ParkDisplay for why the
+-- container is also hidden.
 local PARK_SENTINEL = {
-    player = 155722, -- Rake (a bleed debuff; never matches a HELPFUL filter)
-    target = 5217,   -- Tiger's Fury (a self buff; never matches a HARMFUL filter)
+    HELPFUL = 155722, -- Rake (a bleed debuff; never matches a HELPFUL filter)
+    HARMFUL = 5217,   -- Tiger's Fury (a self buff; never matches a HARMFUL filter)
 }
 
-local UNIT_FILTER = { player = "HELPFUL", target = "HARMFUL" }
+-- The per-unit slot contract: aura polarity (which picks the park sentinel),
+-- the filter string handed to Blizzard, and whether the slot is restricted to
+-- auras the player cast. One table so the sentinel, the filter string, and the
+-- caster filter can never disagree.
+--
+-- A plain self-buff entry keeps a bare HELPFUL filter on `player` — it tracks
+-- buffs from ANY caster (Power Word: Fortitude, Blessing of the Bronze), which
+-- is shipped behavior and must not narrow. Group scope is the opposite: it means
+-- "my own buff, wherever I put it", so every unit in a group-scoped set carries
+-- PLAYER and the isFromPlayerOrPlayerPet candidate filter. That candidate filter
+-- is evaluated OUTSIDE Blizzard's identity gate
+-- (Blizzard_AuraContainerUtil.lua:85-87), so it is the one restriction that
+-- survives when a unit stops being assistable.
+local ALLY_CONTRACT = { polarity = "HELPFUL", filter = "HELPFUL|PLAYER", ownOnly = true }
+local SLOT_CONTRACT = {
+    player = { polarity = "HELPFUL", filter = "HELPFUL", ownOnly = false },
+    target = { polarity = "HARMFUL", filter = "HARMFUL", ownOnly = true },
+}
 
--- Module state. One display record (container + slot + kit) per host button,
--- living only here — no slot-button references are ever stored on CC buttons,
--- so no sweep or diagnostic walk can reach the forbidden subtree by accident.
--- Records are keyed by host button and permanent (buttons are pooled, never
--- destroyed; slots can never be removed).
-local displays = {}       -- host button -> display record
+-- The contract depends on the ENTRY'S SCOPE as well as the unit, not on the unit
+-- alone. It has to: in a party a group-scoped set contains `player`, but in a
+-- raid the player is covered by their own raidN index instead
+-- (GroupAuraTokens). Keying off the token alone therefore made the same entry
+-- match any caster's buff on you in a party and only your own in a raid — the
+-- exact narrowing the note above forbids. Scope decides, so all three group
+-- sizes agree.
+--
+-- The unknown-token fallback is deliberate: a token must never yield a nil
+-- sentinel, because an empty includeSpellIDs set wedges a slot permanently.
+local function SlotContract(unit, groupScoped)
+    if groupScoped and unit ~= "target" then
+        return ALLY_CONTRACT
+    end
+    return SLOT_CONTRACT[unit] or ALLY_CONTRACT
+end
+
+-- Module state. Display records (container + slot + kit) live only here — no
+-- slot-button references are ever stored on CC buttons, so no sweep or
+-- diagnostic walk can reach the forbidden subtree by accident.
+--
+-- One record per (host button, unit token). A host needs more than one only
+-- when an entry tracks the same aura across several units — an ally-scope
+-- entry watching you and each group member — because a container tracks
+-- exactly one unit (AuraContainerSharedMixin:SetUnit) and there is no way to
+-- ask which one currently holds the aura. Coincident records with mutually
+-- exclusive tokens are what make that read as a single display.
+--
+-- `records` is the iteration list and is append-only: records are permanent
+-- (buttons are pooled and never destroyed; slots can never be removed), so
+-- nothing is ever taken out of it. Iterate `records`; index `displays` only to
+-- find or create a specific (button, unit) pair.
+local displays = {}       -- host button -> { [unitToken] = record }
+local records = {}        -- flat, append-only list of every record
 local slotCounter = 0
 local pendingRebind = false
 local rebindQueued = false
@@ -70,6 +129,14 @@ local rebindQueued = false
 -- harmless; PLAYER_TARGET_CHANGED retries live on the target watcher.
 local rebindDeferFrame = CreateFrame("Frame")
 
+-- `anyUnit` widens UNIT_FLAGS from target-only to unfiltered. Ally tokens can
+-- block a pass, and RegisterUnitEvent accepts at most two units, so there is no
+-- way to filter party1..raid40 — an ally's combat ENDING would otherwise produce
+-- no event at all (PLAYER_REGEN_ENABLED cannot fire for a player who never
+-- entered combat), leaving the retry armed with no trigger. Blizzard registers
+-- unfiltered UNIT_FLAGS for exactly this purpose in
+-- Blizzard_CompactRaidFrames/Mainline/Blizzard_CompactRaidFrameManager.lua:80.
+-- The handler disarms and re-checks the gate first, so extra fires are harmless.
 local function ArmRebindRetry()
     pendingRebind = true
     rebindDeferFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -86,24 +153,80 @@ end
 ------------------------------------------------------------------------
 
 local targetWatcher
+local groupWatcher
 local RunAuraRebind
 
-local function HasTargetDisplays()
-    for _, record in pairs(displays) do
-        if record.unit == "target" then return true end
-    end
-    return false
+-- The player's own combat is the ONLY gate. There is deliberately no per-unit
+-- rebind gate — do not re-add one.
+--
+-- P11 assumed aura secrecy follows each unit's own state, so a slot on a fighting
+-- ally would be untouchable even with the player at rest. That extrapolated from
+-- aura-DATA secrecy (which may well be per-unit) to slot-ACCESS (which is not),
+-- and CC never reads aura data — the rebind pass only writes filters and styling.
+--
+-- Measured in game 2026-07-29 (`/ccat g2 write`), three states, writes chosen to
+-- mirror this file's own bind calls (a container mutator, two slot-button
+-- methods, and a write to a region under the slot button):
+--   * player OOC, ally OOC          -> all succeed
+--   * player IN COMBAT              -> slot-button and kit-region writes ERROR
+--     ("Attempt to access forbidden object"), proving the test detects failure
+--   * player OOC, ALLY IN COMBAT    -> all succeed, and the slot kept being
+--     shown and hidden by Blizzard afterwards
+-- So slot forbidden-ness is player-scoped, consistent with PTR 5 ("AuraButtons
+-- are forbidden whenever auras are secret") and with the restriction windows
+-- — combat, encounter, challenge mode, PvP — all being conditions about the
+-- player. `slotButton:CanBeAccessedInContext()` agrees: it flips with the
+-- player's combat state and reported accessible for an ally slot while that ally
+-- fought.
+--
+-- Not covered by that probe: whether an encounter/M+/PvP restriction window
+-- restricts while the player is out of combat. That would affect the player token
+-- too, so it is a question about this function, not about ally units.
+local function CanRunRebindNow()
+    return not InCombatLockdown()
 end
 
-local function CanRunRebindNow()
-    if InCombatLockdown() then return false end
-    -- P11 (conservative): secrecy follows the unit's state, so target slots
-    -- are only touchable while the target is also out of combat.
-    if HasTargetDisplays() and UnitExists("target") and UnitAffectingCombat("target") then
-        return false
+-- The friendly units an ally-scope entry watches, in bind order. Chosen so no
+-- two tokens can ever resolve to the SAME person: coincident slots only read as
+-- a single display while at most one of them can match.
+--
+-- In a raid, raid1..raidN ALREADY includes the player's own slot, so "player"
+-- must not be added or a self-cast would light two slots at once. In a party,
+-- party1..partyN are the other members only — Blizzard's own roster code uses
+-- index 0 for "player" (SecureGroupHeaders.lua:290-296) — so "player" is added
+-- explicitly. "target" is deliberately absent: it aliases whichever group
+-- member happens to be targeted, and would double-draw.
+local function GroupAuraTokens()
+    local tokens = {}
+    if IsInRaid() then
+        for index = 1, GetNumGroupMembers() do
+            tokens[#tokens + 1] = "raid" .. index
+        end
+    else
+        tokens[1] = "player"
+        for index = 1, GetNumSubgroupMembers() do
+            tokens[#tokens + 1] = "party" .. index
+        end
     end
-    return true
+    -- Never return an empty set: an entry with no tokens would bind nothing and
+    -- go silently dark instead of falling back to tracking the aura on you.
+    if #tokens == 0 then tokens[1] = "player" end
+    return tokens
 end
+
+-- Container-level refresh for records whose token may now resolve to a different
+-- person. Combat-safe (V13, re-validated V18). Shared by both watchers so a
+-- change to the refresh shape can never apply to only one token family.
+local function RefreshRecordsForToken(isMatch)
+    for _, record in ipairs(records) do
+        if isMatch(record.unit) then
+            record.container:UpdateAllAuras()
+        end
+    end
+end
+
+local function IsTargetToken(unit) return unit == "target" end
+local function IsAllyToken(unit) return unit ~= "player" and unit ~= "target" end
 
 local function EnsureTargetWatcher()
     if targetWatcher then return end
@@ -115,17 +238,40 @@ local function EnsureTargetWatcher()
         -- Hidden hosts self-heal instead: OnShow_Intrinsic re-runs
         -- UpdateAllAuras, so a container that missed swaps while hidden
         -- catches up the moment its host shows again.
-        for _, record in pairs(displays) do
-            if record.unit == "target" then
-                record.container:UpdateAllAuras()
-            end
-        end
-        -- A deferred rebind may have been blocked only by target combat.
+        RefreshRecordsForToken(IsTargetToken)
+        -- Opportunistic: service a rebind that was deferred by player combat if we
+        -- are already out of it. PLAYER_REGEN_ENABLED normally gets there first, so
+        -- this is a cheap extra wake rather than the primary path.
         if pendingRebind and CanRunRebindNow() then
             pendingRebind = false
             DisarmRebindRetry()
             RunAuraRebind()
         end
+    end)
+end
+
+-- Ally-scope entries derive their token set from group size, so the set changes
+-- whenever the roster does — and joining a raid switches the whole set from
+-- party* to raid*. Slots can only be created out of combat, so a mid-fight join
+-- is covered from the next OOC pass, not immediately.
+-- Armed from the ENTRY'S OPT-IN, not from ally record creation: while solo a
+-- group-scoped entry resolves to { "player" } only, so waiting for a party/raid
+-- record meant the watcher never existed and joining a group did nothing until
+-- some unrelated rebind happened. GROUP_ROSTER_UPDATE has no other handler in
+-- the addon.
+local function EnsureGroupWatcher()
+    if groupWatcher then return end
+    groupWatcher = CreateFrame("Frame")
+    groupWatcher:RegisterEvent("GROUP_ROSTER_UPDATE")
+    groupWatcher:SetScript("OnEvent", function()
+        -- Same same-token problem the target watcher solves: raid indices are
+        -- roster-ordered, so raidN can start meaning a different person without
+        -- the token changing, and the container would keep the old parse.
+        -- Container-level call, combat-safe (V13/V18) — the rebind below is
+        -- combat-deferred and cannot cover a mid-fight reshuffle.
+        RefreshRecordsForToken(IsAllyToken)
+        -- Not "config"/"style", so this never prints a combat-defer note.
+        CooldownCompanion:RequestAuraRebind("roster")
     end)
 end
 
@@ -1441,13 +1587,20 @@ end
 -- Slot lifecycle
 ------------------------------------------------------------------------
 
-local function BuildCandidateFilters(unit, spellSet)
+local function BuildCandidateFilters(unit, spellSet, groupScoped)
     local filters = { includeSpellIDs = spellSet }
-    if unit == "target" then
-        -- Match today's behavior: only the player's own debuffs.
+    if SlotContract(unit, groupScoped).ownOnly then
         filters.isFromPlayerOrPlayerPet = true
     end
     return filters
+end
+
+-- The never-match filter set for a parked slot. Scope is deliberately omitted:
+-- the sentinel is chosen by POLARITY, which scope never changes, and a park set
+-- can never match either way — so parking does not need to know which entry (if
+-- any) last owned the record.
+local function BuildParkFilters(unit)
+    return BuildCandidateFilters(unit, { [PARK_SENTINEL[SlotContract(unit).polarity]] = true })
 end
 
 -- The auraLayer is the CC-owned mount point for the display subtree. It (and
@@ -1506,12 +1659,27 @@ end
 -- coordination is unchanged). Visibility, alpha, and strata all reach the
 -- slot through plain parentage; a hidden container is inert (P1a) and
 -- re-registers + refreshes itself on show (OnShow_Intrinsic).
-local function EnsureDisplay(button, unit)
-    local record = displays[button]
-    if record then return record end
+-- Keyed by (button, unit), which makes record.unit IMMUTABLE: a record is for
+-- one unit for its whole life, and the container's SetUnit is only ever called
+-- once, here. The alternative — one record per button whose unit is swapped at
+-- bind — cannot represent an entry tracked on several units at once.
+--
+-- Consequence: a pooled button re-acquired for an entry of the other polarity
+-- now gains a second record rather than mutating its first. The first is parked
+-- (hidden, deregistered, rendering nothing), so this is invisible; the cost is
+-- at most one extra container per polarity that button has ever hosted.
+local function EnsureDisplay(button, unit, groupScoped)
+    local byUnit = displays[button]
+    if byUnit then
+        local existing = byUnit[unit]
+        if existing then return existing end
+    else
+        byUnit = {}
+        displays[button] = byUnit
+    end
     local layer = EnsureAuraLayer(button)
     slotCounter = slotCounter + 1
-    record = { button = button, key = "cc" .. slotCounter, unit = unit }
+    local record = { button = button, key = "cc" .. slotCounter, unit = unit }
     -- Direct calls, no pcall: the TOC pins this client generation, so the
     -- AuraContainer API always exists — a failure here is a real setup error
     -- that must surface, not read as "feature unavailable".
@@ -1519,8 +1687,8 @@ local function EnsureDisplay(button, unit)
     container:SetAllPoints(layer)
     container:SetFrameLevel(layer:GetFrameLevel())
     container:SetUnit(unit)
-    local slotButton = container:AddAuraSlot(record.key, UNIT_FILTER[unit], {
-        candidateFilters = BuildCandidateFilters(unit, { [PARK_SENTINEL[unit]] = true }),
+    local slotButton = container:AddAuraSlot(record.key, SlotContract(unit, groupScoped).filter, {
+        candidateFilters = BuildParkFilters(unit),
         initializeFrame = function(frame)
             -- The ONLY place the slot button is ever positioned.
             frame:SetAllPoints(container)
@@ -1533,28 +1701,64 @@ local function EnsureDisplay(button, unit)
     end
     record.slotButton = slotButton
     record.container = container
-    displays[button] = record
+    byUnit[unit] = record
+    records[#records + 1] = record
     if unit == "target" then
         EnsureTargetWatcher()
     end
+    -- No group-watcher arming here: the rebind pass arms it from the entry's
+    -- opt-in, which covers strictly more cases (it runs for blocked wants too,
+    -- and while solo where no ally record is created at all).
     return record
 end
 
--- Park = sentinel filter swap, nothing else. The slot stays anchored on its
--- host; Blizzard hides an unmatched slot button entirely (V25 Q4), so a
--- parked display renders nothing.
+-- Park = sentinel filter swap PLUS hiding the container.
+--
+-- The sentinel alone is not a park. It works by handing Blizzard a spell ID
+-- that can never match, but that filter is applied INSIDE the identity gate
+-- (Blizzard_AuraContainerUtil.lua:43-55), and the gate stops applying spell-ID
+-- filters entirely for a helpful aura on a unit the player cannot assist
+-- (:31-33). A charmed ally therefore makes a sentinel-parked slot match the
+-- next aura the player has on that unit — wrong icon, wrong timer, on a display
+-- the user has switched off. Slots can never be removed, so that state would
+-- persist until /reload.
+--
+-- Hiding the container is unconditional: the slot's AuraButton is a direct
+-- child of the container (Blizzard_CustomAuraContainer.lua:656 ->
+-- Blizzard_AuraContainerFrameProviders.lua:73), so Hide() clears the button and
+-- every kit region inside it regardless of Blizzard's secret shown state, and
+-- it also drops the container out of the aura event path entirely
+-- (ShouldRegisterForDynamicEvents requires IsVisible(), Blizzard_AuraContainer
+-- .lua:158) — which is what makes a parked container cost nothing.
+--
+-- Validated in game 2026-07-29: SetEnabled(false) is NOT sufficient (it stops
+-- updates but leaves a stale icon with a frozen timer, because ParseAllAuras
+-- never consults IsEnabled()); Hide()/Show() clears and restores cleanly.
+--
+-- Do NOT split this into "sentinel now, Hide() later". An earlier attempt did, so
+-- that a record could be half-neutralised while its unit was in combat, and it was
+-- wrong in both directions: it leaves a VISIBLE container carrying a sentinel
+-- filter, and the sentinel is exactly what the identity gate stops applying on a
+-- non-assistable unit — a charmed ally would light that visible slot with an
+-- unrelated buff of yours. And clearing `boundEntry` while the container is still
+-- shown makes the pass's token reconciliation treat the host as slot-free,
+-- releasing the pool lock on a live visible slot. The two halves must stay
+-- together; there is no longer any caller that needs them apart.
+--
+-- `_auraSlotHostToken` is deliberately NOT cleared here. A host can carry
+-- several records, and clearing the shared token while a sibling keeps a live
+-- binding would release the pool lock protecting a visible slot. The pass
+-- reconciles the token once, after binding.
 local function ParkDisplay(record)
-    record.button._auraSlotHostToken = nil
     if not record.parked then
         record.parked = true
         record.boundEntry = nil
-        -- CC-side tag only: parking is container-mutator-only and never
-        -- touches the slot subtree, so the registered max stays whatever the
-        -- last bind wrote (the fill is alpha-0; the next bind converges it).
+        -- CC-side tag only: the registered max stays whatever the last bind
+        -- wrote (the fill is alpha-0; the next bind converges it).
         record.boundStackMax = nil
         ReleaseSlotAuraSounds(record)
-        record.container:SetAuraSlotCandidateFilters(record.key,
-            BuildCandidateFilters(record.unit, { [PARK_SENTINEL[record.unit]] = true }))
+        record.container:SetAuraSlotCandidateFilters(record.key, BuildParkFilters(record.unit))
+        record.container:Hide()
     end
 end
 
@@ -1570,25 +1774,44 @@ local AURA_TOOLTIP_ANCHORS = {
     cursor = "ANCHOR_CURSOR",
 }
 
-local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMax)
+local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMax, soundsAllowed, groupScoped)
     local button = record.button
+    local wasParked = record.parked
     local layer = EnsureAuraLayer(button)
+    -- Undo the park's Hide() before any slot writes, so the deferred re-parse
+    -- sees the finished state. OnShow_Intrinsic re-registers the container's
+    -- events and refreshes it on its own.
+    --
+    -- The pass parks everything then rebinds, so a record that stays bound is
+    -- hidden and re-shown every pass. That is free rather than clever: nothing
+    -- renders between the two calls (both happen inside one RunAuraRebind), and
+    -- each only sets the same FullAuraRebuild dirty flag that the
+    -- SetAuraSlotCandidateFilters below sets anyway, so it coalesces to the one
+    -- rebuild the bind already required. The guard exists only to skip a
+    -- pointless Show() on a first bind, where the container is already shown
+    -- from creation and was never parked.
+    if wasParked then
+        record.container:Show()
+    end
     -- Re-pin after the layer's level dance: the cascade keeps the subtree's
     -- relative levels on its own; this heals any drift without ever touching
     -- the slot button.
     record.container:SetFrameLevel(layer:GetFrameLevel())
-    if record.unit ~= unit then
-        -- Polarity swap (player <-> target): container-level mutators only.
-        -- SetAuraSlotFilterString self-refreshes (RebuildAuraParseFilters +
-        -- UpdateAllAuras).
-        record.container:SetUnit(unit)
-        record.container:SetAuraSlotFilterString(record.key, UNIT_FILTER[unit])
-        record.unit = unit
-        if unit == "target" then
-            EnsureTargetWatcher()
-        end
-    end
-    record.container:SetAuraSlotCandidateFilters(record.key, BuildCandidateFilters(unit, spellSet))
+    -- No unit swap here: records are keyed by (button, unit), so record.unit is
+    -- immutable and always equals `unit`. SetUnit is called once, in
+    -- EnsureDisplay. A host that needs a different unit gets its own record.
+    --
+    -- Converge the whole contract every bind rather than only on a unit change.
+    -- The filter string is baked at AddAuraSlot, so writing it from the same
+    -- source as the sentinel and the caster filter here is what keeps the three
+    -- from drifting apart — it removes the fragile invariant that the string is
+    -- only ever rewritten when the unit changes. Blizzard's setter early-outs
+    -- when unchanged (Blizzard_CustomAuraContainer.lua:427), so it costs nothing
+    -- in the common case; SetAuraSlotFilterString self-refreshes otherwise
+    -- (RebuildAuraParseFilters + UpdateAllAuras).
+    record.container:SetAuraSlotFilterString(record.key, SlotContract(unit, groupScoped).filter)
+    record.container:SetAuraSlotCandidateFilters(record.key,
+        BuildCandidateFilters(unit, spellSet, groupScoped))
     -- Stack fill re-call (tracker C2): converge the registered max to this
     -- bind before styling — always a number (ApplyApplicationBar hazard),
     -- 1 = duration-only bind. Same per-bind re-call pattern as the C9
@@ -1630,7 +1853,12 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     if button._isBar and not button._ccAuraHostKind and ST._UpdateBarStackBlocks then
         ST._UpdateBarStackBlocks(button, style)
     end
-    RegisterSlotAuraSounds(record, buttonData, spellSet)
+    -- Skipped for multi-unit (ally-scope) entries; see the caller. ParkDisplay
+    -- still calls ReleaseSlotAuraSounds unconditionally, which no-ops when
+    -- nothing was registered.
+    if soundsAllowed then
+        RegisterSlotAuraSounds(record, buttonData, spellSet)
+    end
     -- Tooltip suppression follows the click-through sweep's recorded motion
     -- state (the sweep itself never reaches the slot subtree). P7-validated.
     record.slotButton:SetMouseMotionEnabled(not button._cdcClickThroughMotion)
@@ -1655,15 +1883,28 @@ end
 -- currently materialized as a button.
 ------------------------------------------------------------------------
 
--- Derive the tracked unit from spell polarity every pass (the anti-cheat gate
--- allows only buffs-on-player and own-debuffs-on-target); the stored auraUnit
--- is a fallback for uncached spells, so config/migration/runtime can't drift.
-local function ResolveEntryAuraUnit(self, buttonData)
+-- The units an entry is tracked on, in bind order.
+--
+-- Polarity is still derived from the spell every pass (Blizzard's identity gate
+-- permits spell-ID matching only for helpful auras on assistable units and
+-- harmful auras on non-assistable ones); the stored auraUnit is a fallback for
+-- uncached spells, so config, migration and runtime can't drift.
+--
+-- Harmful entries resolve to the target UNCONDITIONALLY and ignore the group
+-- opt-in. That is what keeps an illegal pairing — your debuff on an ally, which
+-- the gate would silently refuse to filter — unrepresentable at runtime even if
+-- stored config drifts.
+local function ResolveEntryAuraUnits(self, buttonData)
     local first = self:ResolveAuraSpellID(buttonData)
+    local harmful
     if first and C_Spell.DoesSpellExist(first) then
-        return C_Spell.IsSpellHarmful(first) and "target" or "player"
+        harmful = C_Spell.IsSpellHarmful(first)
+    else
+        harmful = buttonData.auraUnit == "target"
     end
-    return buttonData.auraUnit == "target" and "target" or "player"
+    if harmful then return { "target" } end
+    if buttonData.auraTrackGroup then return GroupAuraTokens() end
+    return { "player" }
 end
 
 -- One combat-defer note per deferral window: config edits made in combat keep
@@ -1672,8 +1913,19 @@ end
 -- aura visuals lag. Cleared when a rebind actually runs.
 local deferNoteShown = false
 
+-- A host is only slot-free once none of its records holds a binding. Several
+-- records share one button, so this must be asked per host, not per record.
+local function HostHoldsBinding(byUnit)
+    for _, record in pairs(byUnit) do
+        if record.boundEntry then
+            return true
+        end
+    end
+    return false
+end
+
 local function HasBoundSlots(groupId)
-    for _, record in pairs(displays) do
+    for _, record in ipairs(records) do
         if record.boundEntry then
             if groupId == nil then return true end
             if record.button._groupId == groupId then return true end
@@ -1742,45 +1994,57 @@ function RunAuraRebind()
         collectCustomWants(wanted)
     end
 
-    -- Shared unit resolution: every want derives its unit from spell
-    -- polarity the same way (custom-bar wants arrive with unit unset).
-    local anyTargetWant = false
+    -- Shared unit resolution: every want derives its token set the same way
+    -- (custom-bar wants arrive with unit unset). One want fans out to one
+    -- record per token.
     for _, want in ipairs(wanted) do
-        if not want.unit then
-            want.unit = ResolveEntryAuraUnit(self, want.buttonData)
+        want.units = want.unit and { want.unit } or ResolveEntryAuraUnits(self, want.buttonData)
+        want.groupScoped = want.buttonData.auraTrackGroup == true and want.units[1] ~= "target"
+        -- Armed from the opt-in, not from a resolved ally token: solo the set is
+        -- { "player" } and there would be no ally record to trigger it.
+        if want.groupScoped then
+            EnsureGroupWatcher()
         end
-        anyTargetWant = anyTargetWant or want.unit == "target"
     end
 
-    -- Authoritative P11 gate: CanRunRebindNow only sees EXISTING target
-    -- displays, so the very first target bind could otherwise slip into the
-    -- forbidden window (target fighting while the player is OOC). Existing
-    -- target displays can't reach here blocked — every caller checks
-    -- CanRunRebindNow first — so skipping target wants skips only the
-    -- first-bind case; player binds proceed and the armed retry re-runs the
-    -- full pass. (Parking below is container-mutator-only and never touches
-    -- the slot subtree, so it needs no unit gate.)
-    local targetBlocked = anyTargetWant
-        and UnitExists("target") and UnitAffectingCombat("target")
-
-    -- Park everything first (also clears host tokens), then bind fresh —
-    -- simple and idempotent; runs at config-change frequency, never per tick.
-    for _, record in pairs(displays) do
+    -- Park everything, then bind fresh — simple and idempotent; runs at
+    -- config-change frequency, never per tick. No per-unit gate: the player's
+    -- combat state is the only thing that can make a slot untouchable (see
+    -- CanRunRebindNow), and every caller has already checked it.
+    for _, record in ipairs(records) do
         ParkDisplay(record)
     end
     for _, want in ipairs(wanted) do
-        if not (want.unit == "target" and targetBlocked) then
-            local record = EnsureDisplay(want.button, want.unit)
+        -- Aura sounds are registered per unit token, so a multi-unit set would
+        -- register one per member and fire a removed+applied pair every time the
+        -- aura moved between people — a false "it dropped" alert. Single-unit
+        -- entries keep today's behavior exactly.
+        local soundsAllowed = #want.units == 1
+        for _, unit in ipairs(want.units) do
+            local record = EnsureDisplay(want.button, unit, want.groupScoped)
             if record then
-                BindDisplay(record, want.buttonData, want.spellSet, want.unit,
-                    want.style, want.stackBarMax)
+                BindDisplay(record, want.buttonData, want.spellSet, unit,
+                    want.style, want.stackBarMax, soundsAllowed, want.groupScoped)
             end
         end
     end
 
-    if targetBlocked then
-        ArmRebindRetry()
+    -- Reconcile the shared pool lock once, after binding: a host is only
+    -- slot-free when NONE of its records holds a binding. ParkDisplay must not
+    -- do this per record — several records share one button, and clearing the
+    -- token while a sibling is still bound and visible would release the lock
+    -- that stops the pool handing this host to a different entry.
+    for button, byUnit in pairs(displays) do
+        if not HostHoldsBinding(byUnit) then
+            button._auraSlotHostToken = nil
+        end
     end
+
+    -- A pass that reaches here bound everything it wanted: nothing is deferred, so
+    -- close any retry state a caller left armed rather than leaving pendingRebind
+    -- set (which would suppress later RequestAuraRebind bookkeeping).
+    DisarmRebindRetry()
+    pendingRebind = false
 end
 
 rebindDeferFrame:SetScript("OnEvent", function()
@@ -1789,11 +2053,9 @@ rebindDeferFrame:SetScript("OnEvent", function()
     DisarmRebindRetry()
     pendingRebind = false
     if CanRunRebindNow() then
-        -- RunAuraRebind re-arms itself if a first target bind is still blocked.
         RunAuraRebind()
     else
-        -- Still blocked (target fighting while we left combat): re-arm; the
-        -- target watcher also retries on target changes.
+        -- Still in combat lockdown (a pull started before the retry landed).
         ArmRebindRetry()
     end
 end)
@@ -1829,15 +2091,20 @@ function CooldownCompanion:GetAuraDisplayStatus()
         auraSoundCount = auraSoundCount + 1
     end
     local status = { pendingRebind = pendingRebind, auraSounds = auraSoundCount, units = {} }
+    -- Seeded so the two always-present units report zeroes rather than going
+    -- missing; any other tracked token is added on demand, so ally records
+    -- can't silently vanish from diagnostics.
     status.units.player = { slots = 0, bound = 0, stackBound = 0 }
     status.units.target = { slots = 0, bound = 0, stackBound = 0 }
-    for _, record in pairs(displays) do
+    for _, record in ipairs(records) do
         local unitStatus = status.units[record.unit]
-        if unitStatus then
-            unitStatus.slots = unitStatus.slots + 1
-            if record.boundEntry then unitStatus.bound = unitStatus.bound + 1 end
-            if record.boundStackMax then unitStatus.stackBound = unitStatus.stackBound + 1 end
+        if not unitStatus then
+            unitStatus = { slots = 0, bound = 0, stackBound = 0 }
+            status.units[record.unit] = unitStatus
         end
+        unitStatus.slots = unitStatus.slots + 1
+        if record.boundEntry then unitStatus.bound = unitStatus.bound + 1 end
+        if record.boundStackMax then unitStatus.stackBound = unitStatus.stackBound + 1 end
     end
     return status
 end
