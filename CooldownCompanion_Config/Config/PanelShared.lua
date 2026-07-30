@@ -23,7 +23,6 @@ local SearchAutocomplete = ST._SearchAutocomplete
 local ResolveViewerChildForSpellDisplay = ST.ResolveViewerChildForSpellDisplay
 local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
 local NotifyTutorialAction = ST._NotifyTutorialAction
-local PerformButtonReorder = ST._PerformButtonReorder
 local SelectConfigPanel = ST._SelectConfigPanel
 local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
 local ClearConfigPanelSelection = ST._ClearConfigPanelSelection
@@ -970,32 +969,6 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                     CooldownCompanion:RefreshConfigPanel()
                 end
                 UIDropDownMenu_AddButton(resetIconInfo, level)
-            end
-
-            local entryCount = sourceGroup and sourceGroup.buttons and #sourceGroup.buttons or 0
-            if sourceIndex > 1 then
-                local upInfo = UIDropDownMenu_CreateInfo()
-                upInfo.text = "Move Up"
-                upInfo.notCheckable = true
-                upInfo.func = function()
-                    CloseDropDownMenus()
-                    PerformButtonReorder(sourceGroupId, sourceIndex, sourceIndex - 1)
-                    CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-                UIDropDownMenu_AddButton(upInfo, level)
-            end
-            if sourceIndex < entryCount then
-                local downInfo = UIDropDownMenu_CreateInfo()
-                downInfo.text = "Move Down"
-                downInfo.notCheckable = true
-                downInfo.func = function()
-                    CloseDropDownMenus()
-                    PerformButtonReorder(sourceGroupId, sourceIndex, sourceIndex + 2)
-                    CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-                UIDropDownMenu_AddButton(downInfo, level)
             end
 
             local moveInfo = UIDropDownMenu_CreateInfo()
