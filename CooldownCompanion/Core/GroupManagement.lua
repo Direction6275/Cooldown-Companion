@@ -1621,7 +1621,6 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         if buttonType == "spell" then
             local newButton = group.buttons[buttonIndex]
             local viewerFrame
-            local foundViaAbilityBuffOverride = false
             local resolvedAuraId = C_UnitAuras.GetCooldownAuraBySpellID(id)
             viewerFrame = (resolvedAuraId and resolvedAuraId ~= 0
                     and self.viewerAuraFrames[resolvedAuraId])
@@ -1633,18 +1632,6 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                     viewerFrame = child
                 end
             end
-            if not viewerFrame then
-                local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[id]
-                if overrideBuffs then
-                    for buffId in overrideBuffs:gmatch("%d+") do
-                        viewerFrame = self.viewerAuraFrames[tonumber(buffId)]
-                        if viewerFrame then
-                            foundViaAbilityBuffOverride = true
-                            break
-                        end
-                    end
-                end
-            end
             local hasViewerFrame = false
             if viewerFrame and GetCVarBool("cooldownViewerEnabled") then
                 local parent = viewerFrame:GetParent()
@@ -1652,7 +1639,6 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                 hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
             end
             if hasViewerFrame
-                and not foundViaAbilityBuffOverride
                 and IsDistinctAuraViewerFrameForSpell(newButton, viewerFrame) then
                 newButton.auraTracking = false
                 newButton.auraIndicatorEnabled = false
@@ -1661,10 +1647,6 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             if hasViewerFrame then
                 newButton.auraTracking = true
                 newButton.auraIndicatorEnabled = true
-                local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[id]
-                if overrideBuffs and newButton.addedAs ~= "aura" then
-                    newButton.auraSpellID = overrideBuffs
-                end
             end
         end
     end

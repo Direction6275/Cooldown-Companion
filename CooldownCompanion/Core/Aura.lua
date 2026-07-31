@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - Core/Aura.lua: slim aura event handlers (OnUnitAura,
-    OnTargetChanged), config-time aura resolution, ABILITY_BUFF_OVERRIDES, CDM
+    OnTargetChanged), config-time aura resolution, CDM
     viewer system (BuildViewerAuraMap, FindViewerChildForSpell,
     FindCooldownViewerChild, OnViewerSpellOverrideUpdated).
     12.1 demolition: runtime aura reading removed pending the AuraContainer rebuild.
@@ -247,11 +247,6 @@ local function BuildStandaloneOriginalAuraCandidateIDs(buttonData)
 
     AppendCdmLinkedAuraIDs(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData, baseId)
 
-    local overrideBuffs = CooldownCompanion.ABILITY_BUFF_OVERRIDES and CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
-    if overrideBuffs then
-        AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, overrideBuffs)
-    end
-
     return orderedCandidateIDs, candidateIDs, orderedCandidateSet
 end
 
@@ -318,13 +313,6 @@ local function BuildOrderedAuraCandidateIDs(buttonData)
     else
         AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.auraSpellID)
         AppendSpellAssociationAuraIDs()
-    end
-
-    local overrideBuffs = buttonData.addedAs ~= "aura"
-        and CooldownCompanion.ABILITY_BUFF_OVERRIDES
-        and CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
-    if overrideBuffs then
-        AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, overrideBuffs)
     end
 
     return orderedCandidateIDs, candidateIDs, orderedCandidateSet
@@ -411,11 +399,6 @@ function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
 
     if buttonData.auraSpellID then
         return tostring(buttonData.auraSpellID)
-    end
-
-    local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[buttonData.id]
-    if overrideBuffs then
-        return overrideBuffs
     end
 
     local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
@@ -758,16 +741,6 @@ function CooldownCompanion:GetAuraStackBarMax(buttonData)
 end
 
 
--- Hardcoded ability → buff overrides for spells whose ability ID and buff IDs
--- are completely unlinked by any API (GetCooldownAuraBySpellID returns 0).
--- Format: [abilitySpellID] = "comma-separated buff spell IDs"
-CooldownCompanion.ABILITY_BUFF_OVERRIDES = {
-    -- Legacy compatibility only: older saved Eclipse buttons may still use
-    -- the ability IDs, but new adds must choose the specific CDM aura row.
-    [1233346] = "48517,48518",  -- Solar Eclipse legacy ability -> Eclipse buffs
-    [1233272] = "48517,48518",  -- Lunar Eclipse legacy ability -> Eclipse buffs
-}
-
 -------------------------------------------------------------------------------
 -- CDM Viewer System (merged from Core/ViewerAura.lua)
 -------------------------------------------------------------------------------
@@ -852,59 +825,6 @@ function CooldownCompanion:BuildViewerAuraMap()
     -- buttonData.id is a non-current override form of a transforming spell.
     self:MapButtonSpellsToViewers()
 
-    -- Map hardcoded overrides: ability IDs and buff IDs → viewer child.
-    -- Group by buff string so sibling abilities can cross-map to the same
-    -- viewer child even if only one form is current.
-    local groupsByBuffs = {}
-    for abilityID, buffIDStr in pairs(self.ABILITY_BUFF_OVERRIDES) do
-        if not groupsByBuffs[buffIDStr] then
-            groupsByBuffs[buffIDStr] = {}
-        end
-        groupsByBuffs[buffIDStr][#groupsByBuffs[buffIDStr] + 1] = abilityID
-    end
-    for buffIDStr, abilityIDs in pairs(groupsByBuffs) do
-        -- Prefer a BuffIcon/BuffBar child (tracks aura duration) over
-        -- Essential/Utility (tracks cooldown only). Check buff IDs first
-        -- since the initial scan maps them to the correct viewer type.
-        local child
-        for id in buffIDStr:gmatch("%d+") do
-            local c = self.viewerAuraFrames[tonumber(id)]
-            if c then
-                local p = c:GetParent()
-                local pn = p and p:GetName()
-                if pn == "BuffIconCooldownViewer" or pn == "BuffBarCooldownViewer" then
-                    child = c
-                    break
-                end
-            end
-        end
-        if not child then
-            for _, abilityID in ipairs(abilityIDs) do
-                child = self.viewerAuraFrames[abilityID]
-                if child then break end
-            end
-        end
-        if not child then
-            for _, abilityID in ipairs(abilityIDs) do
-                child = self:FindViewerChildForSpell(abilityID)
-                if child then break end
-            end
-        end
-        if child then
-            for _, abilityID in ipairs(abilityIDs) do
-                self.viewerAuraFrames[abilityID] = child
-            end
-            -- Map buff IDs only if they aren't already mapped by the initial scan.
-            -- Each buff may have its own viewer child (e.g. Solar vs Lunar Eclipse).
-            for id in buffIDStr:gmatch("%d+") do
-                local numID = tonumber(id)
-                if not self.viewerAuraFrames[numID] then
-                    self.viewerAuraFrames[numID] = child
-                end
-            end
-        end
-    end
-
     -- Rebuild spell -> cooldown alert capability mapping used by per-button sound alerts.
     self:RebuildSoundAlertSpellMap()
 
@@ -945,20 +865,6 @@ function CooldownCompanion:FindViewerChildForSpell(spellID)
         child = self.viewerAuraFrames[baseSpellID]
         if child then return child end
     end
-    -- Override table: check buff IDs and sibling abilities
-    local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[spellID]
-    if overrideBuffs then
-        for id in overrideBuffs:gmatch("%d+") do
-            child = self.viewerAuraFrames[tonumber(id)]
-            if child then return child end
-        end
-        for sibID, sibBuffs in pairs(self.ABILITY_BUFF_OVERRIDES) do
-            if sibBuffs == overrideBuffs and sibID ~= spellID then
-                child = self.viewerAuraFrames[sibID]
-                if child then return child end
-            end
-        end
-    end
     return nil
 end
 
@@ -972,16 +878,6 @@ function CooldownCompanion:FindCooldownViewerChild(spellID)
     local baseSpellID = C_Spell.GetBaseSpell(spellID)
     if baseSpellID and baseSpellID ~= spellID then
         return self:FindCooldownViewerChild(baseSpellID)
-    end
-    -- Try sibling abilities from override table
-    local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[spellID]
-    if overrideBuffs then
-        for sibID, sibBuffs in pairs(self.ABILITY_BUFF_OVERRIDES) do
-            if sibBuffs == overrideBuffs and sibID ~= spellID then
-                child = FindChildInViewers(COOLDOWN_VIEWER_NAMES, sibID)
-                if child then return child end
-            end
-        end
     end
     return nil
 end
