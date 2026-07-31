@@ -1867,7 +1867,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
 
     local ALPHA_TOOLTIP = {
         "Alpha",
-        {"Controls transparency. Alpha = 1 is fully visible. Alpha = 0 means completely hidden.\n\nThe first four options (In Combat, Out of Combat, Regular Mount, Skyriding) are 3-way toggles — click to cycle through Disabled, |cff00ff00Fully Visible|r, and |cffff0000Fully Hidden|r.\n\n|cff00ff00Fully Visible|r overrides alpha to 1 when the condition is met.\n\n|cffff0000Fully Hidden|r overrides alpha to 0 when the condition is met.\n\nIf both apply simultaneously, |cff00ff00Fully Visible|r takes priority.", 1, 1, 1, true},
+        {"Controls transparency: 1 is fully visible, 0 is hidden.\n\nThe first four options (In Combat, Out of Combat, Regular Mount, Skyriding) cycle on click through Disabled, |cff00ff00Fully Visible|r, and |cffff0000Fully Hidden|r.\n\n|cff00ff00Fully Visible|r forces the display fully shown while its condition applies; |cffff0000Fully Hidden|r hides it.\n\nIf both apply at once, |cff00ff00Fully Visible|r wins.", 1, 1, 1, true},
     }
 
     if opts.hideHeading ~= true then

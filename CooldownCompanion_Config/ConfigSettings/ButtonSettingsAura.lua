@@ -117,47 +117,53 @@ end
 
 local AURA_TRACKING_TOOLTIP = {
     "Aura Tracking",
-    {"Blizzard tracks the aura and drives the display directly; the addon never reads aura state in combat.", 1, 1, 1, true},
+    {"Blizzard tracks the aura and drives the display; the addon never reads aura state in combat.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Your own debuffs can only be tracked on your target — a Blizzard restriction. Buffs can be tracked on you, or on you and your group. Whether an entry is a buff or a debuff is set automatically from the aura.", 1, 1, 1, true},
+    {"Buffs are tracked on you, or on you and your group. Your own debuffs are tracked on your target. This is a Blizzard restriction.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"With no auras listed, the entry tracks its own aura. Added aura IDs override that; for spell entries the entry's own aura is always kept as a fallback.", 1, 1, 1, true},
+    {"Whether an entry is a buff or a debuff is detected automatically.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"With no auras listed, the entry tracks its own aura. Added aura IDs override that; spell entries always keep their own aura as a fallback.", 1, 1, 1, true},
 }
 
 local GROUP_SCOPE_TOOLTIP = {
     "Track on Group Members",
-    {"Follows the buff onto anyone in your party or raid, not just you. Useful for a buff you cast on other people and need to keep up — a healer's Lifebloom on a tank.", 1, 1, 1, true},
+    {"Follows the buff onto anyone in your party or raid, like a healer's Lifebloom on a tank.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Your group only. A buff on a friendly player outside your group can't be tracked, because the game gives the addon no way to refer to them.", 1, 1, 1, true},
+    {"Group members only. The game gives the addon no way to track buffs on friendly players outside your group.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Best for buffs that sit on one person at a time. Blizzard never tells the addon who holds the aura, so a buff on several people at once draws one display per person in the same spot, overlapping.", 1, 1, 1, true},
+    {"Best for buffs that sit on one person at a time. The addon is never told who holds the aura, so a buff on several people draws overlapping displays, one per person.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Aura sounds stop working once you're in a group: they fire per person, so moving the buff would sound like it dropped. On your own they still work, because there is only you to track.", 1, 1, 1, true},
+    {"Aura sounds only work while you're ungrouped. In a group they fire per person, so moving the buff would sound like it dropped.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Group size is read out of combat, so someone joining mid-fight is covered from the next quiet moment rather than immediately.", 1, 1, 1, true},
+    {"Group size is read out of combat, so someone joining mid-fight is picked up at the next quiet moment.", 1, 1, 1, true},
 }
 
 local BAR_SHOWS_STACKS_TOOLTIP = {
     "Bar Shows Stacks",
-    {"The bar shows the stack count instead of draining with time. Blizzard drives the fill and the maximum comes from the game's spell data — nothing to configure.", 1, 1, 1, true},
+    {"The bar fills by stack count instead of draining with time. Blizzard drives the fill, and the maximum comes from the game's spell data.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Stack Style picks the look: Segmented renders per-stack pieces — aura entries as individual bordered bars with real gaps, spell entries as a single bar with painted dividers (adjustable gap; the cooldown bar underneath needs a solid backdrop). Continuous is one plain bar that fills as stacks build.", 1, 1, 1, true},
+    {"Stack Style picks the look. Segmented shows one piece per stack; on spell entries the pieces are painted dividers, so the cooldown bar underneath needs a solid backdrop. Continuous is one plain bar that fills as stacks build.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"If the tracked aura doesn't stack, the bar keeps the normal duration fill.", 1, 1, 1, true},
+    {"If the aura doesn't stack, the bar keeps the normal duration fill.", 1, 1, 1, true},
 }
 
 local SEGMENTED_SMOOTHING_TOOLTIP = {
     "Segmented Smoothing",
-    {"Segmented stack bars animate smoothly between stack counts, or snap instantly. The same control as the resource bar option.", 1, 1, 1, true},
+    {"Segmented stack bars animate smoothly between stack counts, or snap instantly. Same control as the resource bar option.", 1, 1, 1, true},
     " ",
-    {"Continuous stack bars always animate smoothly. Gaining the aura fresh or losing it entirely always snaps — the game animates stack changes only.", 1, 1, 1, true},
+    {"Continuous stack bars always animate smoothly.", 1, 1, 1, true},
+    " ",
+    {"Gaining or losing the aura entirely always snaps; the game only animates stack changes.", 1, 1, 1, true},
 }
 
 local PANDEMIC_MARKER_TOOLTIP = {
     "Pandemic Marker",
-    {"Marks the aura duration text during the last 30% of the aura's duration — the refresh window where recasting extends the remaining time instead of wasting it. Blizzard evaluates the timing; the addon never reads combat values.", 1, 1, 1, true},
+    {"Marks the duration text during the last 30% of the aura. Recasting in that window adds to the remaining time instead of wasting it.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"On by default for debuffs on your target, off by default for your own buffs. Marker text and color are in the group's Aura Duration Text settings.", 1, 1, 1, true},
+    {"On by default for debuffs on your target, off for your own buffs.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Marker text and color are in the group's Aura Duration Text settings.", 1, 1, 1, true},
 }
 
 local function BuildAuraTab(scroll, group, buttonData, infoButtons)

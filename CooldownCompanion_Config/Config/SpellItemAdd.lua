@@ -92,12 +92,13 @@ local AUTOCOMPLETE_TYPE_GAP = 4
 
 local ADD_BOX_TRACKABILITY_TOOLTIP = {
     "What Can Be Tracked",
-    {"Spells: anything your class can cast or learn. These track cooldowns and charges.", 1, 1, 1, true},
-    {"Auras: anything that can appear as a buff on you — your own buffs, other players' buffs, trinket procs, encounter effects. Your own damage-over-time effects are tracked on your target.", 1, 1, 1, true},
+    {"Spells: anything your class can cast or learn. Tracks cooldowns and charges.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"The suggestions only offer what can actually work. An aura that isn't suggested can still be added by typing its spell ID.", 1, 1, 1, true},
+    {"Auras: anything that can appear as a buff on you, including other players' buffs, trinket procs, and encounter effects. Your own damage-over-time effects are tracked on your target.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Specific debuffs that enemies put on YOU can't be tracked — the game hides which debuffs you have from addons.", 1, 1, 1, true},
+    {"Suggestions only offer what can actually work. An aura that isn't suggested can still be added by typing its spell ID.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Debuffs that enemies put on you can't be tracked; the game hides those from addons.", 1, 1, 1, true},
 }
 
 local AUTOCOMPLETE_TYPE_DISPLAY = {
@@ -291,7 +292,7 @@ local function TryAddSpell(input, isPetSpell, forceAura)
         end
         SelectNewButton(CS.selectedGroup, idx)
         if routedToAura then
-            CooldownCompanion:Print("You can't cast " .. spellName .. " — tracking it as a buff on you.")
+            CooldownCompanion:Print("You can't cast " .. spellName .. ", so it's tracked as a buff on you.")
         elseif not notified then
             CooldownCompanion:Print((addAsAura and "Added aura: " or "Added spell: ") .. spellName)
         end

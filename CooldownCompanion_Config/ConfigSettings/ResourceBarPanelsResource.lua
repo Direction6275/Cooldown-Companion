@@ -2141,7 +2141,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
     if maxStacks then
         statusLabel:SetText("|cffffd100Stack lane:|r full at " .. maxStacks .. " stacks")
     elseif InCombatLockdown() then
-        statusLabel:SetText("|cffff9955The stack maximum can't be read in combat — it resolves when you leave combat.|r")
+        statusLabel:SetText("|cffff9955The stack maximum can't be read in combat; it resolves when you leave combat.|r")
     else
         statusLabel:SetText("|cffff9955This aura doesn't stack, so the bar will tint instead.|r")
     end

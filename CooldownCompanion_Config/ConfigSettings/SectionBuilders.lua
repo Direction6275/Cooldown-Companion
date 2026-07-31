@@ -158,9 +158,9 @@ local function GetAuraStackMaxStatusText(maxStacks)
     if maxStacks then
         return "|cffffd100Stack bar:|r full at " .. maxStacks .. " stacks"
     elseif InCombatLockdown() then
-        return "|cffff9955The stack maximum can't be read in combat — it resolves when you leave combat.|r"
+        return "|cffff9955The stack maximum can't be read in combat; it resolves when you leave combat.|r"
     else
-        return "|cffff9955This aura doesn't stack — the bar will show duration.|r"
+        return "|cffff9955This aura doesn't stack; the bar will show duration.|r"
     end
 end
 
@@ -302,9 +302,11 @@ local PANDEMIC_COLOR_MODE_ORDER = { "off", "marker", "whole" }
 
 local PANDEMIC_MARKER_TOOLTIP_LINES = {
     "Pandemic Marker",
-    {"Marks the aura duration text during the last 30% of the aura's duration — the refresh window where recasting extends the remaining time instead of wasting it. Blizzard evaluates the timing; the addon never reads combat values.", 1, 1, 1, true},
+    {"Marks the duration text during the last 30% of the aura. Recasting in that window adds to the remaining time instead of wasting it.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"On by default for debuffs on your target; each entry's Aura tab has the per-entry switch. If a game update ever breaks this display, turn it off here to restore standard duration text.", 1, 1, 1, true},
+    {"On by default for debuffs on your target. Each entry's Aura tab has its own switch.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"If a game update ever breaks this display, turn it off here to restore standard duration text.", 1, 1, 1, true},
 }
 
 -- Row grammar only (RowWidgets.lua); the marker text, the color mode and the

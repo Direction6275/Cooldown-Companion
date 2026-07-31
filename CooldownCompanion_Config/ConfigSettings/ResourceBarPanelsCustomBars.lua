@@ -641,9 +641,11 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     local isSpellBar = IsSpellCustomBarConfig(cab)
 
     local _, collapsed = AddCustomBarSettingsHeading(container, "Aura Tracking", "aura", sectionKey, infoButtons, {
-        "Blizzard tracks the aura and drives the bar directly; the addon never reads aura state in combat.",
-        "Buffs can only be tracked on yourself, and your own debuffs only on your target. This is a Blizzard restriction. The tracked unit is set automatically from the aura.",
-        "With no auras listed, the bar tracks its own aura. Added aura IDs override that; for spell bars the spell's own aura is always kept as a fallback.",
+        "Blizzard tracks the aura and drives the bar; the addon never reads aura state in combat.",
+        " ",
+        "Buffs are tracked on you, and your own debuffs on your target. This is a Blizzard restriction. The tracked unit is set automatically.",
+        " ",
+        "With no auras listed, the bar tracks its own aura. Added aura IDs override that; spell bars always keep their own aura as a fallback.",
     })
 
     if collapsed then return end
@@ -716,11 +718,11 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     -- the end of the row's label.
     AnchorRowBadge(stacksRow, CreateInfoButton(stacksRow.frame, stacksRow.frame, "LEFT", "LEFT", 0, 0, {
         "Bar Shows Stacks",
-        {"The bar shows the stack count instead of draining with time. Blizzard drives the fill and the maximum comes from the game's spell data — nothing to configure.", 1, 1, 1, true},
+        {"The bar fills by stack count instead of draining with time. Blizzard drives the fill, and the maximum comes from the game's spell data.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
-        {"Stack Style picks the look: Segmented renders each stack as its own bordered piece with real gaps; Continuous is one plain bar that fills as stacks build. Segment gap and smoothing follow the Resource Bars settings.", 1, 1, 1, true},
+        {"Stack Style picks the look. Segmented shows one bordered piece per stack; Continuous is one plain bar that fills as stacks build. Segment gap and smoothing follow the Resource Bars settings.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
-        {"If the tracked aura doesn't stack, the bar keeps the normal duration fill.", 1, 1, 1, true},
+        {"If the aura doesn't stack, the bar keeps the normal duration fill.", 1, 1, 1, true},
     }, infoButtons))
 
     if mode == "stacks" then
@@ -764,9 +766,9 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     })
     AnchorRowBadge(pandemicRow, CreateInfoButton(pandemicRow.frame, pandemicRow.frame, "LEFT", "LEFT", 0, 0, {
         "Pandemic Marker",
-        {"Marks the aura duration text during the last 30% of the aura's duration — the refresh window where recasting extends the remaining time instead of wasting it. Blizzard evaluates the timing; the addon never reads combat values.", 1, 1, 1, true},
+        {"Marks the duration text during the last 30% of the aura. Recasting in that window adds to the remaining time instead of wasting it.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
-        {"On by default for debuffs on your target, off by default for your own buffs.", 1, 1, 1, true},
+        {"On by default for debuffs on your target, off for your own buffs.", 1, 1, 1, true},
     }, infoButtons))
 
     local shellRow = AddCheckboxRow(auraRight, {
@@ -779,7 +781,9 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     })
     AnchorRowBadge(shellRow, CreateInfoButton(shellRow.frame, shellRow.frame, "LEFT", "LEFT", 0, 0, {
         "Show Only While Aura Active",
-        {"The bar renders only while the aura is running. Its slot in the bar stack stays reserved — bars cannot reflow around it in combat.", 1, 1, 1, true},
+        {"The bar shows only while the aura is running.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Its slot in the bar stack stays reserved; bars cannot reflow around it in combat.", 1, 1, 1, true},
     }, infoButtons))
 end
 

@@ -727,7 +727,7 @@ local function BuildWhereToHideTooltip(subjectLabel, includePreCheckedNote)
         "Where To Hide It",
         {"Checked places hide this " .. subjectLabel .. " there. Leave everything unchecked to show it everywhere.", 1, 1, 1, true},
         " ",
-        {"Rested Area means inns and cities, and can change while you play — no loading screen needed.", 1, 1, 1, true},
+        {"Rested Area means inns and cities. It can change while you play, with no loading screen.", 1, 1, 1, true},
         " ",
         {"Open World also covers scenarios.", 1, 1, 1, true},
     }
@@ -2657,7 +2657,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     if isBatch and hasTalent == nil then
         local mixedLabel = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(mixedLabel)
-        mixedLabel:SetText("|cff888888Multiple conditions — pick or clear to unify.|r")
+        mixedLabel:SetText("|cff888888Multiple conditions; pick or clear to unify.|r")
         mixedLabel:SetFullWidth(true)
         scroll:AddChild(mixedLabel)
     elseif condCount > 0 then
