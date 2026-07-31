@@ -174,9 +174,21 @@ local function UpdateRailDestinations()
     host._cdcDividerOrnament:SetPoint("CENTER", host, "TOP", 0, -4)
 
     local bars = EnsureRailDestinationButton(host, "bars-frames")
+    local otherClasses = EnsureRailDestinationButton(host, "other-classes")
+    local showOtherClasses = ST._ShouldShowOtherClassNavigatorRow
+        and ST._ShouldShowOtherClassNavigatorRow() or false
+
     bars:ClearAllPoints()
-    bars:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -8)
-    bars:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -8)
+    otherClasses:ClearAllPoints()
+    if showOtherClasses then
+        otherClasses:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -8)
+        otherClasses:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -8)
+        bars:SetPoint("TOPLEFT", otherClasses, "BOTTOMLEFT", 0, 0)
+        bars:SetPoint("TOPRIGHT", otherClasses, "BOTTOMRIGHT", 0, 0)
+    else
+        bars:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -8)
+        bars:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -8)
+    end
     ConfigureRailDestinationButton(bars, {
         label = "Resources, Cast Bar & Unit Frames",
         atlas = "ui_adv_health",
@@ -193,13 +205,7 @@ local function UpdateRailDestinations()
     })
     CS.col1ResourcesButton = bars
 
-    local otherClasses = EnsureRailDestinationButton(host, "other-classes")
-    local showOtherClasses = ST._ShouldShowOtherClassNavigatorRow
-        and ST._ShouldShowOtherClassNavigatorRow() or false
     if showOtherClasses then
-        otherClasses:ClearAllPoints()
-        otherClasses:SetPoint("TOPLEFT", bars, "BOTTOMLEFT", 0, 0)
-        otherClasses:SetPoint("TOPRIGHT", bars, "BOTTOMRIGHT", 0, 0)
         ConfigureRailDestinationButton(otherClasses, {
             label = "Browse Other Classes",
             atlas = "BattleBar-SwapPetIcon",
