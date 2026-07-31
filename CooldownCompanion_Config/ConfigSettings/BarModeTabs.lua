@@ -26,6 +26,7 @@ local BuildBorderControls = ST._BuildBorderControls
 local BuildLossOfControlControls = ST._BuildLossOfControlControls
 local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
+local BuildAllowPingsControls = ST._BuildAllowPingsControls
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 
 -- Imports from RowWidgets.lua (the row grammar)
@@ -747,6 +748,10 @@ local function BuildBarEffectsTab(container, group, style)
             CooldownCompanion:RefreshConfigPanel()
         end, { row = true, advanced = true, infoButtons = tabInfoButtons })
         CreateCheckboxPromoteButton(tooltipRow, tooltipAdvBtn, "showTooltips", group, style)
+
+        BuildAllowPingsControls(stateRight, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end, { row = true })
         end -- not statesCollapsed
     end
 

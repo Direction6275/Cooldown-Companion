@@ -759,6 +759,33 @@ local function BuildShowOutOfRangeControls(container, styleTable, refreshCallbac
     })
 end
 
+local ALLOW_PINGS_TOOLTIP_LINES = {
+    "Allow Pings",
+    {"Ping an entry to your group like a Cooldown Manager icon: hold the ping keybind and click it.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"The ping shows the spell or item and whether it is ready.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Works with tooltips off. Entries added as auras cannot be pinged.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Bars ping from the bar icon.", 1, 1, 1, true},
+}
+
+-- Row grammar only: one checkbox row with a "?" badge.
+local function BuildAllowPingsControls(container, styleTable, refreshCallback, opts)
+    local cb = AddCheckboxRow(container, {
+        label = "Allow Pings",
+        value = styleTable.allowPings == true,
+        indent = opts and opts.indent,
+        onChange = function(val)
+            styleTable.allowPings = val
+            refreshCallback()
+        end,
+    })
+    AnchorRowBadge(cb, CreateInfoButton(cb.frame, cb.frame, "LEFT", "LEFT", 0, 0,
+        ALLOW_PINGS_TOOLTIP_LINES, cb))
+    return cb
+end
+
 -- Row grammar only (RowWidgets.lua). Each conditional color indents as the
 -- child of the toggle that reveals it; the pre-redesign shape's row-break
 -- spacer has no equivalent here, because the grid columns do that work.
@@ -2143,6 +2170,7 @@ ST._BuildBackgroundColorControls = BuildBackgroundColorControls
 ST._BuildDesaturationControls = BuildDesaturationControls
 ST._BuildShowTooltipsControls = BuildShowTooltipsControls
 ST._BuildShowOutOfRangeControls = BuildShowOutOfRangeControls
+ST._BuildAllowPingsControls = BuildAllowPingsControls
 ST._BuildShowGCDSwipeControls = BuildShowGCDSwipeControls
 ST._BuildCooldownSwipeControls = BuildCooldownSwipeControls
 ST._BuildIconFillTimerControls = BuildIconFillTimerControls

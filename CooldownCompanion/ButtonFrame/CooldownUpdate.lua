@@ -77,6 +77,7 @@ local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
 local IsEquipmentSlotEntry = CooldownCompanion.IsEquipmentSlotEntry
 local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
+local SetEntryPingReceiver = ST.SetEntryPingReceiver
 local ResolveEffectiveItem = CooldownCompanion.ResolveEffectiveItem
 local HasCastCountText = CooldownCompanion.HasCastCountText
 local GetCastCountSpellID = CooldownCompanion.GetCastCountSpellID
@@ -1482,6 +1483,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if button._lastVisAlpha ~= 0 then
                 button:SetAlpha(0)
                 button._lastVisAlpha = 0
+                -- An alpha-0 frame still hit-tests; disarm the ping receiver
+                -- so pings pass through to the world instead of announcing an
+                -- invisible entry. Edge-guarded: runs only on the hide flip.
+                if button._ccPingSurface then
+                    SetEntryPingReceiver(button._ccPingSurface, false, button)
+                end
             end
             DispatchStandaloneTextureVisual(button, group)
             if shouldCaptureVisualState then
@@ -1497,6 +1504,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
             if button._lastVisAlpha ~= targetAlpha then
+                -- Re-arm the ping receiver on the hidden-to-visible flip only
+                -- (not on ordinary alpha-override changes).
+                if button._lastVisAlpha == 0 and targetAlpha ~= 0 and button._ccPingSurface then
+                    SetEntryPingReceiver(button._ccPingSurface, true, button)
+                end
                 button:SetAlpha(targetAlpha)
                 button._lastVisAlpha = targetAlpha
             end

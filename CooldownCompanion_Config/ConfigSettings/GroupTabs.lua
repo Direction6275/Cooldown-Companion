@@ -36,6 +36,7 @@ local BuildBorderControls = ST._BuildBorderControls
 local BuildDesaturationControls = ST._BuildDesaturationControls
 local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
 local BuildShowOutOfRangeControls = ST._BuildShowOutOfRangeControls
+local BuildAllowPingsControls = ST._BuildAllowPingsControls
 local BuildShowGCDSwipeControls = ST._BuildShowGCDSwipeControls
 local BuildCooldownSwipeControls = ST._BuildCooldownSwipeControls
 local BuildAuraDurationSwipeControls = ST._BuildAuraDurationSwipeControls
@@ -2986,6 +2987,9 @@ local function BuildEffectsTab(container)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end, { row = true, advanced = true })
+        BuildAllowPingsControls(raStateRight, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end, { row = true })
         end -- not raStatesCollapsed
         return
     end
@@ -3241,6 +3245,10 @@ local function BuildEffectsTab(container)
         CooldownCompanion:RefreshConfigPanel()
     end, { row = true, advanced = true, infoButtons = tabInfoButtons })
     CreateCheckboxPromoteButton(tooltipCb, tooltipAdvBtn, "showTooltips", group, style)
+
+    BuildAllowPingsControls(stateRight, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end, { row = true })
     end -- not statesCollapsed
 
 end

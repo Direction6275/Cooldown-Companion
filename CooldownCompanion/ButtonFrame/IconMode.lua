@@ -66,9 +66,22 @@ local function IsCursorAnchoredButton(button)
         or false
 end
 
+-- Texture/Trigger panels drive alpha-0 icon buttons through this file; those
+-- invisible frames must never become ping receivers (their config tabs do not
+-- expose the toggle, and a converted panel keeps its old style keys).
+local function IsStandaloneTexturePanelButton(button)
+    local groups = CooldownCompanion.db and CooldownCompanion.db.profile.groups
+    local group = groups and button._groupId and groups[button._groupId]
+    return group ~= nil
+        and CooldownCompanion.IsStandaloneTexturePanelGroup ~= nil
+        and CooldownCompanion:IsStandaloneTexturePanelGroup(group)
+end
+
 -- Shared helpers from ButtonFrame/Helpers.lua
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
 local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
+local IsEntryPingEligible = CooldownCompanion.IsEntryPingEligible
+local SetEntryPingReceiver = ST.SetEntryPingReceiver
 local ResolveEffectiveItem = CooldownCompanion.ResolveEffectiveItem
 local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
 local ApplyDurationFormatToCooldown = CooldownCompanion.ApplyDurationFormatToCooldown
@@ -793,10 +806,14 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     end
 
     -- Click-through is always enabled (clicks always pass through for camera movement)
-    -- Motion (hover) is only enabled when tooltips are on
-    local showTooltips = style.showTooltips == true and not IsCursorAnchoredButton(button)
+    -- Motion (hover) is only enabled when tooltips or entry pings are on
+    local cursorAnchored = IsCursorAnchoredButton(button)
+    local showTooltips = style.showTooltips == true and not cursorAnchored
+    local allowPings = style.allowPings == true and not cursorAnchored
+        and IsEntryPingEligible(buttonData)
+        and not IsStandaloneTexturePanelButton(button)
     local disableClicks = true
-    local disableMotion = not showTooltips
+    local disableMotion = not (showTooltips or allowPings)
 
     -- Apply to the button frame and all children recursively
     SetFrameClickThroughRecursive(button, disableClicks, disableMotion)
@@ -852,7 +869,18 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
     if showTooltips then
         SetupTooltipScripts(button)
+    elseif allowPings then
+        -- Motion is on for pings only; keep tooltip scripts off.
+        button:SetScript("OnEnter", nil)
+        button:SetScript("OnLeave", nil)
     end
+    -- Tooltip intent for the aura slot bind (AuraDisplay). Kept separate from
+    -- the click-through motion state, which entry pings widen without wanting
+    -- tooltips.
+    button._ccTooltipMotion = showTooltips
+    -- Visibility hide/show edges (CooldownUpdate) arm and disarm this surface.
+    button._ccPingSurface = allowPings and button or nil
+    SetEntryPingReceiver(button, allowPings and button._visibilityHidden ~= true)
 
     ApplyAuraShellVisuals(button, buttonData)
 
@@ -1417,10 +1445,14 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     CooldownCompanion:UpdateAuraTextureVisual(button)
 
     -- Click-through is always enabled (clicks always pass through for camera movement)
-    -- Motion (hover) is only enabled when tooltips are on
-    local showTooltips = style.showTooltips == true and not IsCursorAnchoredButton(button)
+    -- Motion (hover) is only enabled when tooltips or entry pings are on
+    local cursorAnchored = IsCursorAnchoredButton(button)
+    local showTooltips = style.showTooltips == true and not cursorAnchored
+    local allowPings = style.allowPings == true and not cursorAnchored
+        and IsEntryPingEligible(button.buttonData)
+        and not IsStandaloneTexturePanelButton(button)
     local disableClicks = true
-    local disableMotion = not showTooltips
+    local disableMotion = not (showTooltips or allowPings)
 
     -- Apply to the button frame and all children recursively
     SetFrameClickThroughRecursive(button, disableClicks, disableMotion)
@@ -1494,6 +1526,21 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
     if showTooltips then
         SetupTooltipScripts(button)
+    elseif allowPings then
+        -- Motion is on for pings only; keep tooltip scripts off.
+        button:SetScript("OnEnter", nil)
+        button:SetScript("OnLeave", nil)
+    end
+    -- Tooltip intent for the aura slot bind (AuraDisplay). Kept separate from
+    -- the click-through motion state, which entry pings widen without wanting
+    -- tooltips.
+    button._ccTooltipMotion = showTooltips
+    -- Visibility hide/show edges (CooldownUpdate) arm and disarm this surface.
+    button._ccPingSurface = allowPings and button or nil
+    SetEntryPingReceiver(button, allowPings and button._visibilityHidden ~= true)
+    -- A button restyled from bar mode may still carry the bar icon's receiver.
+    if button._iconBounds then
+        SetEntryPingReceiver(button._iconBounds, false)
     end
 
     ApplyAuraShellVisuals(button, button.buttonData)

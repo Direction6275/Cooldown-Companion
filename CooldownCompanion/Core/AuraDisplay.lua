@@ -1859,9 +1859,12 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     if soundsAllowed then
         RegisterSlotAuraSounds(record, buttonData, spellSet)
     end
-    -- Tooltip suppression follows the click-through sweep's recorded motion
-    -- state (the sweep itself never reaches the slot subtree). P7-validated.
-    record.slotButton:SetMouseMotionEnabled(not button._cdcClickThroughMotion)
+    -- Tooltip suppression follows the button's recorded tooltip intent
+    -- (_ccTooltipMotion, written by the same style passes that run the
+    -- click-through sweep; the sweep itself never reaches the slot subtree).
+    -- Not the sweep's motion state: entry pings widen motion without wanting
+    -- tooltips. P7-validated shape.
+    record.slotButton:SetMouseMotionEnabled(button._ccTooltipMotion == true)
     -- Tooltip position + combat hide (tracker D-C1): plain per-bind mixin
     -- state on the slot button, same OOC re-call pattern as the motion line
     -- above; Blizzard's OnEnter path reads it. ANCHOR_NONE with zero offsets

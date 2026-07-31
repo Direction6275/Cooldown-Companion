@@ -67,6 +67,8 @@ end
 -- Shared helpers from ButtonFrame/Helpers.lua
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
 local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
+local IsEntryPingEligible = CooldownCompanion.IsEntryPingEligible
+local SetEntryPingReceiver = ST.SetEntryPingReceiver
 local ResolveEffectiveItem = CooldownCompanion.ResolveEffectiveItem
 local FormatTime = CooldownCompanion.FormatTime
 local BindDurationText = CooldownCompanion.BindDurationText or function() return false end
@@ -757,8 +759,12 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     end
 
     -- Click-through
-    local showTooltips = style.showTooltips == true and not IsCursorAnchoredButton(button)
+    local cursorAnchored = IsCursorAnchoredButton(button)
+    local showTooltips = style.showTooltips == true and not cursorAnchored
     local iconTooltips = showTooltips and showIcon
+    -- Pings share the icon-only hover surface; the bar body stays pass-through.
+    local iconPings = style.allowPings == true and not cursorAnchored and showIcon
+        and IsEntryPingEligible(buttonData)
 
     -- Disable hover on the full bar; tooltip hover is icon-only via _iconBounds.
     SetFrameClickThroughRecursive(button, true, true)
@@ -784,11 +790,19 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     end
 
     if button._iconBounds then
-        SetFrameClickThroughRecursive(button._iconBounds, true, not iconTooltips)
+        SetFrameClickThroughRecursive(button._iconBounds, true, not (iconTooltips or iconPings))
+        SetEntryPingReceiver(button._iconBounds, iconPings and button._visibilityHidden ~= true, button)
     end
     SetBarIconTooltipScripts(button, iconTooltips)
     button:SetScript("OnEnter", nil)
     button:SetScript("OnLeave", nil)
+    -- Tooltip intent for the aura slot bind (AuraDisplay): bar-mode slot
+    -- tooltips stay off; hover tooltips are CC's own scripts on _iconBounds.
+    button._ccTooltipMotion = false
+    -- Visibility hide/show edges (CooldownUpdate) arm and disarm this surface.
+    button._ccPingSurface = iconPings and button._iconBounds or nil
+    -- A button restyled from icon mode may still carry its own receiver.
+    SetEntryPingReceiver(button, false)
 
     ApplyBarAuraShellVisuals(button, buttonData)
     UpdateBarStackBlocks(button, style)
@@ -1056,8 +1070,12 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     end
 
     -- Update click-through
-    local showTooltips = newStyle.showTooltips == true and not IsCursorAnchoredButton(button)
+    local cursorAnchored = IsCursorAnchoredButton(button)
+    local showTooltips = newStyle.showTooltips == true and not cursorAnchored
     local iconTooltips = showTooltips and showIcon
+    -- Pings share the icon-only hover surface; the bar body stays pass-through.
+    local iconPings = newStyle.allowPings == true and not cursorAnchored and showIcon
+        and IsEntryPingEligible(button.buttonData)
 
     -- Disable hover on the full bar; tooltip hover is icon-only via _iconBounds.
     SetFrameClickThroughRecursive(button, true, true)
@@ -1083,11 +1101,19 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     end
 
     if button._iconBounds then
-        SetFrameClickThroughRecursive(button._iconBounds, true, not iconTooltips)
+        SetFrameClickThroughRecursive(button._iconBounds, true, not (iconTooltips or iconPings))
+        SetEntryPingReceiver(button._iconBounds, iconPings and button._visibilityHidden ~= true, button)
     end
     SetBarIconTooltipScripts(button, iconTooltips)
     button:SetScript("OnEnter", nil)
     button:SetScript("OnLeave", nil)
+    -- Tooltip intent for the aura slot bind (AuraDisplay): bar-mode slot
+    -- tooltips stay off; hover tooltips are CC's own scripts on _iconBounds.
+    button._ccTooltipMotion = false
+    -- Visibility hide/show edges (CooldownUpdate) arm and disarm this surface.
+    button._ccPingSurface = iconPings and button._iconBounds or nil
+    -- A button restyled from icon mode may still carry its own receiver.
+    SetEntryPingReceiver(button, false)
 
     ApplyBarAuraShellVisuals(button, button.buttonData)
     UpdateBarStackBlocks(button, newStyle)

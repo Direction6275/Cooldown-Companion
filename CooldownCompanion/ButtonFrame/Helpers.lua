@@ -77,6 +77,121 @@ local function IsEntryItemLike(buttonData)
 end
 CooldownCompanion.IsEntryItemLike = IsEntryItemLike
 
+--------------------------------------------------------------------------------
+-- Entry Pings (12.1 ping system)
+--
+-- Mirrors Blizzard's PingableType contract (Blizzard_SharedXML/PingableType.lua):
+-- the hover surface carries a "ping-receiver" attribute and implements
+-- GetIsPingable / GetAllowRadialWheel / GetTargetInfo. Blizzard's PingManager
+-- finds the surface via a secure hit test, then calls these methods insecurely
+-- (securecallfunction) and performs the secure send itself, so no C_PingSecure
+-- access is needed. Target info is plain config-owned IDs; nothing secret
+-- crosses the boundary.
+--------------------------------------------------------------------------------
+
+-- Cooldown-style entries only: aura declarations are not pingable, mirroring
+-- the Cooldown Manager, which pings its Essential/Utility viewers but never
+-- tracked buffs (owner ruling 2026-07-31). Spell entries that also track their
+-- aura keep their cooldown identity and stay pingable.
+local function IsEntryPingEligible(buttonData)
+    if not buttonData or buttonData.addedAs == "aura" then
+        return false
+    end
+    return buttonData.type == "spell" or IsEntryItemLike(buttonData)
+end
+CooldownCompanion.IsEntryPingEligible = IsEntryPingEligible
+
+-- Same resolution the tooltip path uses (Glows.lua ShowButtonTooltip): the
+-- ping should name what the tooltip shows.
+local function ResolvePingTarget(owner)
+    local buttonData = owner.buttonData
+    if not IsEntryPingEligible(buttonData) then
+        return nil
+    end
+    -- A Rotation Assistant placeholder stores the fallback action spell as its
+    -- id; never announce that while no recommendation exists.
+    if buttonData._rotationAssistantMissing then
+        return nil
+    end
+    if buttonData.type == "spell" then
+        local spellID = tonumber(owner._displaySpellId or buttonData.id)
+        if spellID then
+            return "spellID", spellID
+        end
+        return nil
+    end
+    local itemID = tonumber(owner._resolvedItemId or buttonData.id)
+    if itemID then
+        return "itemID", itemID
+    end
+    return nil
+end
+
+-- Live pingability, re-read at ping time (same pattern as
+-- PrepareButtonTooltip). Answering false here does NOT pass the ping through
+-- to the world: Blizzard treats a found receiver that declines as blocking UI
+-- and shows its ping-failed message. Pass-through requires the attribute to
+-- be absent, which the style passes and visibility edges manage; these checks
+-- are the backstop for any stale window between those passes.
+local function IsPingAllowedForButton(owner)
+    local groups = CooldownCompanion.db and CooldownCompanion.db.profile.groups
+    local group = groups and owner._groupId and groups[owner._groupId]
+    local style = group and group.style
+    if not (style ~= nil and style.allowPings == true) then
+        return false
+    end
+    if owner._visibilityHidden then
+        return false
+    end
+    if CooldownCompanion.IsStandaloneTexturePanelGroup ~= nil
+        and CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
+        return false
+    end
+    return true
+end
+
+local function Ping_GetIsPingable(self)
+    local owner = self._ccPingOwner or self
+    return IsPingAllowedForButton(owner) and ResolvePingTarget(owner) ~= nil
+end
+
+local function Ping_GetAllowRadialWheel(self)
+    -- Contextual pings only, matching Cooldown Manager items.
+    return false
+end
+
+local function Ping_GetTargetInfo(self)
+    local owner = self._ccPingOwner or self
+    local info = {}
+    local key, id = ResolvePingTarget(owner)
+    if key then
+        info[key] = id
+    end
+    return info
+end
+
+-- Install or remove the ping receiver on a hover surface. `owner` is the entry
+-- button carrying buttonData; omit it when the surface is the button itself
+-- (icon mode). Bar mode passes its _iconBounds child as the surface.
+function ST.SetEntryPingReceiver(surface, enabled, owner)
+    if not surface or not surface.SetAttribute then
+        return
+    end
+    if enabled then
+        surface._ccPingOwner = (owner ~= nil and owner ~= surface) and owner or nil
+        surface.GetIsPingable = Ping_GetIsPingable
+        surface.GetAllowRadialWheel = Ping_GetAllowRadialWheel
+        surface.GetTargetInfo = Ping_GetTargetInfo
+        surface:SetAttribute("ping-receiver", true)
+    elseif surface.GetIsPingable ~= nil then
+        surface._ccPingOwner = nil
+        surface.GetIsPingable = nil
+        surface.GetAllowRadialWheel = nil
+        surface.GetTargetInfo = nil
+        surface:SetAttribute("ping-receiver", nil)
+    end
+end
+
 -- Format remaining seconds for time display (shared across bar, text, and preview modes).
 local DURATION_FORMAT_CLOCK = "clock"
 local DURATION_FORMAT_UNITS = "units"
