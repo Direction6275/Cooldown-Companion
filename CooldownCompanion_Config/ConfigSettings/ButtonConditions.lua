@@ -2208,6 +2208,12 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         AddFamily(1, function(column)
             AddVisibilityRow(column, "Show Only While Aura Active", "hideWhileAuraNotActive", {
                 filter = FilterAuraEntry,
+                tooltip = {
+                    "Show Only While Aura Active",
+                    {"Hides this entry until its tracked aura is active.", 1, 1, 1, true},
+                    {" ", 1, 1, 1},
+                    {"In Compact Mode panels the aura still reserves its space while hidden. The game hides whether auras are active from addons, so other entries cannot close the gap.", 1, 1, 1, true},
+                },
                 onChanged = function(widget, event, val)
                     ApplyToAuraEntries("hideWhileAuraNotActive", val or nil)
                     CooldownCompanion:RefreshAllGroups()

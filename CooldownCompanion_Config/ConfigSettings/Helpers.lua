@@ -1220,7 +1220,10 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
     local compactInfo = CreateInfoButton(compactCb.frame, compactCb.frame, "LEFT", "LEFT", 0, 0, {
         "Compact Mode",
         {"Compacts visible buttons or bars when hide conditions remove entries, helping centered layouts stay centered.", 1, 1, 1, true},
-        {"Does not function when unit frames, resources, or cast bars are anchored to this panel.", 0.7, 0.7, 0.7, true},
+        {" ", 1, 1, 1},
+        {"Auras set to |cffffd100Show Only While Aura Active|r always keep their space reserved. The game hides whether auras are active from addons, so the panel cannot tighten around a hidden aura.", 1, 1, 1, true},
+        {" ", 1, 1, 1},
+        {"Does not function when unit frames, resources, or cast bars are anchored to this panel.", 1, 1, 1, true},
     }, tabInfoButtons)
     ST._AnchorRowBadge(compactCb, compactInfo)
 end
