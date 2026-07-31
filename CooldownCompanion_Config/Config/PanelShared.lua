@@ -34,6 +34,7 @@ local PopulateCDMPanelFromSource = ST._PopulateCDMPanelFromSource
 local ApplyCDMStarterPanelLayout = ST._ApplyCDMStarterPanelLayout
 local IsCDMPanelSourceKey = ST._IsCDMPanelSourceKey
 local GetCDMPanelSourceDisplayMode = ST._GetCDMPanelSourceDisplayMode
+local IsConfigPanelEntryUsable = ST._IsConfigPanelEntryUsable
 
 local IsTriggerPanelGroup
 local RefreshCDMPanelFromSource

@@ -1123,8 +1123,7 @@ local function UpdatePanelPreview(col3)
 
     if not panelId and (not container
         or hasGroupMulti
-        or hasPanelMulti
-        or CS.otherClassLibraryActive) then
+        or hasPanelMulti) then
         HidePanelPreview(col3)
         return
     end
@@ -1743,26 +1742,13 @@ local function RefreshButtonsWideColumn()
         col3._panelMultiSelectScroll.frame:Hide()
     end
 
-    -- Other Class browsing shares this merged column but skips the pinned
-    -- preview cluster: browsed panels render live in the world, and column
-    -- 2 keeps its entry rows there.
-    local browse = CS.otherClassLibraryActive
-
     -- The inline texture browser is scoped to its own panel; drop a stale flag
-    -- when the selection moved away or Other-Class browsing took over, so
-    -- IsAuraTexturePickerOpen never reports it open over the wrong surface.
+    -- when the selection moved away, so IsAuraTexturePickerOpen never reports
+    -- it open over the wrong surface.
     if CS.inlineTextureBrowserOpen
-        and (browse or CS.inlineTextureBrowserOpen ~= CS.selectedGroup)
+        and CS.inlineTextureBrowserOpen ~= CS.selectedGroup
     then
         CloseInlineTextureBrowser(col3)
-    end
-
-    if browse and CS.selectedGroup and not IsEntrySelectionActive() then
-        local browseGroup = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-        if browseGroup then
-            RefreshBrowseEntryList(col3, browseGroup)
-            return
-        end
     end
 
     -- Inline texture browser takeover: while open for the selected standalone
@@ -1793,7 +1779,7 @@ local function RefreshButtonsWideColumn()
 
     -- Attached bar selected in the unified anchor preview: that bar's
     -- settings own the settings area
-    local unifiedBarKind = not browse and GetValidatedUnifiedBarKind() or nil
+    local unifiedBarKind = GetValidatedUnifiedBarKind()
     if unifiedBarKind then
         HideEntrySurfaces(col3)
         UpdatePanelPreview(col3)
@@ -1842,34 +1828,20 @@ local function RefreshButtonsWideColumn()
     -- Entry selected: the entry tabs join the panel tabs in one row, and
     -- whichever scope owns the surface builds its content there.
     if IsEntrySelectionActive() then
-        if browse then
-            HidePanelPreview(col3)
-        else
-            UpdatePanelPreview(col3)
-            UpdateAddBox(col3)
-            UpdateQuietRow(col3)
-            UpdateEditingContext(col3)
-            -- Final height pass: the add box just settled its visibility,
-            -- which feeds the settings-minimum clamp.
-            ReapplyPanelPreviewSplit()
-        end
+        UpdatePanelPreview(col3)
+        UpdateAddBox(col3)
+        UpdateQuietRow(col3)
+        UpdateEditingContext(col3)
+        -- Final height pass: the add box just settled its visibility,
+        -- which feeds the settings-minimum clamp.
+        ReapplyPanelPreviewSplit()
 
-        if browse then
-            -- Other Class browsing has no panel-settings surface to offer,
-            -- so the entry cluster owns the whole row. The remembered scope
-            -- is left alone rather than forced: with no primary strip in
-            -- the row the entry cluster owns the surface anyway, and
-            -- overwriting it here would lose the panel tab the owner was on
-            -- when they come back from browsing.
-            if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
-        else
-            local host = EnsureGroupSettingsHost(col3)
-            AnchorButtonsContentFrame(col3, host)
-            host:Show()
-            -- Panel tabs first: the entry strip is offset by their measured
-            -- width, and only one of the two builds content.
-            ST._RefreshGroupSettingsHost(host, nil, ST._UnifiedRowGetScope() ~= "primary")
-        end
+        local host = EnsureGroupSettingsHost(col3)
+        AnchorButtonsContentFrame(col3, host)
+        host:Show()
+        -- Panel tabs first: the entry strip is offset by their measured
+        -- width, and only one of the two builds content.
+        ST._RefreshGroupSettingsHost(host, nil, ST._UnifiedRowGetScope() ~= "primary")
 
         if col3.bsTabGroup then
             AnchorButtonsContentFrame(col3, col3.bsTabGroup.frame)
@@ -1881,16 +1853,12 @@ local function RefreshButtonsWideColumn()
     -- Otherwise the group-side surfaces (panel and Group settings,
     -- placeholders) own the settings area
     HideEntrySurfaces(col3)
-    if browse then
-        HidePanelPreview(col3)
-    else
-        UpdatePanelPreview(col3)
-        UpdateAddBox(col3)
-        UpdateQuietRow(col3)
-        UpdateEditingContext(col3)
-        -- Final height pass (see the entry branch above).
-        ReapplyPanelPreviewSplit()
-    end
+    UpdatePanelPreview(col3)
+    UpdateAddBox(col3)
+    UpdateQuietRow(col3)
+    UpdateEditingContext(col3)
+    -- Final height pass (see the entry branch above).
+    ReapplyPanelPreviewSplit()
 
     local host = EnsureGroupSettingsHost(col3)
     AnchorButtonsContentFrame(col3, host)
@@ -1901,9 +1869,9 @@ local function RefreshButtonsWideColumn()
 end
 
 -- The mirror owns a panel's config previews only while the wide buttons
--- view is showing that panel's pinned preview. Anywhere else - Other
--- Class browsing being the reachable case, where browsed panels render
--- live in the world - the live buttons are the only preview surface.
+-- view is showing that panel's pinned preview. That now includes Other
+-- Class browsing, which shares the full workspace; only the bars
+-- workspace and the talent picker route around the mirror.
 local function IsPanelMirrorPreviewActive(groupId)
     if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then return false end
     return groupId ~= nil and groupId == CS.selectedGroup

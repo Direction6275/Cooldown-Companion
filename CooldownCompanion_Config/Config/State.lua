@@ -632,6 +632,11 @@ local function SnapshotOtherClassLibraryState()
         newInput = CS.newInput,
         expandedContainer = CS.expandedContainer,
         peekedContainers = CopyConfigStateMap(CS.peekedContainers),
+        selectedTab = CS.selectedTab,
+        panelSettingsTab = CS.panelSettingsTab,
+        selectedContainerTab = CS.selectedContainerTab,
+        buttonSettingsTab = CS.buttonSettingsTab,
+        unifiedRowScope = CS.unifiedRowScope,
     }
 end
 
@@ -664,6 +669,11 @@ local function RestoreOtherClassLibrarySnapshot()
     CS.expandedContainer = snapshot.expandedContainer
     wipe(CS.peekedContainers)
     for id, expanded in pairs(snapshot.peekedContainers or {}) do CS.peekedContainers[id] = expanded end
+    CS.selectedTab = snapshot.selectedTab
+    CS.panelSettingsTab = snapshot.panelSettingsTab
+    CS.selectedContainerTab = snapshot.selectedContainerTab
+    CS.buttonSettingsTab = snapshot.buttonSettingsTab
+    CS.unifiedRowScope = snapshot.unifiedRowScope
     CS.otherClassLibrarySnapshot = nil
 end
 
@@ -2853,13 +2863,13 @@ local function IsBarsOverviewActive()
     return true
 end
 
--- True for the normal panel workspace. Browse, the bars workspace, and the
--- talent picker have their own workspace routing even though the cutover
--- now gives every non-picker view the same Navigator + workspace frame.
+-- True for the normal panel workspace, including Other Class browsing,
+-- which shares it wholesale. The bars workspace and the talent picker have
+-- their own workspace routing even though the cutover now gives every
+-- non-picker view the same Navigator + workspace frame.
 local function IsButtonsWideViewActive()
     return not (CS.barsEntrySelected
-        or CS.talentPickerMode
-        or CS.otherClassLibraryActive)
+        or CS.talentPickerMode)
 end
 
 -- Every cutover view uses the merged workspace except the talent picker,

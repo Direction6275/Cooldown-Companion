@@ -183,9 +183,9 @@ ST._IsStoredPreviewFlagActive = IsActivePreviewFlagStored
 -- (trigger, texture, rotation assistant - the config shows a selection
 -- strip for these) keep live previews as their only surface. The mirror
 -- must also actually be the active surface for this panel (wide buttons
--- view, panel selected) - Other Class browsing renders browsed panels
--- live in the world with no mirror, so previews route live there. Clear
--- paths stay unconditional: clearing a live button is always safe.
+-- view, panel selected) - that includes Other Class browsing, which
+-- shares the full workspace and its pinned mirror. Clear paths stay
+-- unconditional: clearing a live button is always safe.
 local function IsMirrorPreviewSurface(groupId)
     local isMirrorActive = ST._IsPanelMirrorPreviewActive
     if not (isMirrorActive and isMirrorActive(groupId)) then
