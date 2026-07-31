@@ -70,48 +70,71 @@ local function CollectSelectedEntryData(db, sourceGroupId, indices)
     return entries[1] and entries or nil
 end
 
--- Row-grammar action strip: compact buttons sharing one grammar-height line
--- (the preset-trio shape in Helpers.lua). Flow insets its single row by 3px top
+-- Row-grammar action strips: compact buttons on grammar-height lines (the
+-- preset-trio shape in Helpers.lua). Flow insets its single row by 3px top
 -- and bottom, so 3 + 24 + 3 centres inside the 30px band, and noAutoHeight
 -- keeps Flow's own 27px report from shrinking it back.
 local ACTION_STRIP_HEIGHT = (ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT) or 30
 local ACTION_STRIP_BUTTON_HEIGHT = 24
 local ACTION_STRIP_GUTTER = 4
+-- AceGUI Button's own SetAutoWidth rule is "text width + 30px padding"; the
+-- shared-width measure below reuses it so the widest button lands exactly
+-- where auto width would have put it.
+local ACTION_STRIP_TEXT_PAD = 30
 
--- actions: an ordered list of { text = , onClick = }. SetAutoWidth is AceGUI's
--- own "text width + 30px padding" rule and Flow anchors its children from the
--- left, so the buttons read as a group instead of a stack of page-wide
--- banners. Flow packs siblings at 0px, so the gutter between them is a
--- fixed-size spacer group - the same idiom the preset trio uses. It matches the
--- buttons' height on purpose: Flow offsets each child by (its height / 2)
+-- rows: an ordered list of strips, each an ordered list of { text = ,
+-- onClick = }. Every button in the block gets the width of the widest label,
+-- so consecutive strips read as aligned columns instead of ragged left-packed
+-- lines that look like accidental wrapping. Flow anchors its children from the
+-- left, so the block reads as a group instead of a stack of page-wide
+-- banners. Flow packs siblings at 0px, so the gutter between buttons is a
+-- fixed-size spacer group - the same idiom the preset trio uses. It matches
+-- the buttons' height on purpose: Flow offsets each child by (its height / 2)
 -- relative to the previous one, so a shorter spacer would make the line step.
-local function AddActionStrip(scroll, actions)
-    local strip = AceGUI:Create("SimpleGroup")
-    strip:SetFullWidth(true)
-    strip:SetLayout("Flow")
-    strip:SetHeight(ACTION_STRIP_HEIGHT)
-    strip.noAutoHeight = true
+local function AddActionStrips(scroll, rows)
+    -- Every button is created and labelled up front so the shared width is
+    -- known before any strip is assembled; each one is parented below.
+    local buttons = {}
+    local maxTextWidth = 0
+    for _, actions in ipairs(rows) do
+        for _, action in ipairs(actions) do
+            local btn = AceGUI:Create("Button")
+            btn:SetText(action.text)
+            btn:SetCallback("OnClick", action.onClick)
+            buttons[action] = btn
+            local textWidth = btn.text:GetStringWidth()
+            if textWidth > maxTextWidth then
+                maxTextWidth = textWidth
+            end
+        end
+    end
+    local buttonWidth = math.ceil(maxTextWidth) + ACTION_STRIP_TEXT_PAD
 
-    for index, action in ipairs(actions) do
-        if index > 1 then
-            local gutter = AceGUI:Create("SimpleGroup")
-            gutter:SetWidth(ACTION_STRIP_GUTTER)
-            gutter:SetHeight(ACTION_STRIP_BUTTON_HEIGHT)
-            gutter.noAutoHeight = true
-            strip:AddChild(gutter)
+    for _, actions in ipairs(rows) do
+        local strip = AceGUI:Create("SimpleGroup")
+        strip:SetFullWidth(true)
+        strip:SetLayout("Flow")
+        strip:SetHeight(ACTION_STRIP_HEIGHT)
+        strip.noAutoHeight = true
+
+        for index, action in ipairs(actions) do
+            if index > 1 then
+                local gutter = AceGUI:Create("SimpleGroup")
+                gutter:SetWidth(ACTION_STRIP_GUTTER)
+                gutter:SetHeight(ACTION_STRIP_BUTTON_HEIGHT)
+                gutter.noAutoHeight = true
+                strip:AddChild(gutter)
+            end
+
+            local btn = buttons[action]
+            btn:SetWidth(buttonWidth)
+            strip:AddChild(btn)
         end
 
-        local btn = AceGUI:Create("Button")
-        btn:SetText(action.text)
-        btn:SetAutoWidth(true)
-        btn:SetCallback("OnClick", action.onClick)
-        strip:AddChild(btn)
+        -- Added once populated so the List-layout parent computes scroll
+        -- height correctly on first render.
+        scroll:AddChild(strip)
     end
-
-    -- Added once populated so the List-layout parent computes scroll height
-    -- correctly on first render.
-    scroll:AddChild(strip)
-    return strip
 end
 
 function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, uniformType)
@@ -206,23 +229,24 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
         ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
     end
 
-    -- Both of these copy or relocate the selection, so they share a line.
-    AddActionStrip(scroll, {
-        { text = "Duplicate Selected", onClick = DuplicateSelected },
-        { text = "Move Selected", onClick = ShowMoveMenu },
-    })
-
-    -- Destructive, so it gets its own line rather than sitting a gutter away
-    -- from the two harmless actions above.
-    AddActionStrip(scroll, {
+    -- Duplicate and Move share a line because both copy or relocate the
+    -- selection. Delete is destructive, so it gets its own line rather than
+    -- sitting a gutter away from the two harmless actions.
+    AddActionStrips(scroll, {
         {
-            text = "Delete Selected",
-            onClick = function()
-                CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_BUTTONS", multiCount, {
-                    groupId = CS.selectedGroup,
-                    indices = multiIndices,
-                })
-            end,
+            { text = "Duplicate Selected", onClick = DuplicateSelected },
+            { text = "Move Selected", onClick = ShowMoveMenu },
+        },
+        {
+            {
+                text = "Delete Selected",
+                onClick = function()
+                    CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_BUTTONS", multiCount, {
+                        groupId = CS.selectedGroup,
+                        indices = multiIndices,
+                    })
+                end,
+            },
         },
     })
 
@@ -274,7 +298,9 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
     end
 
     -- Panel state: the two toggles that flip a flag on every selected panel.
-    AddActionStrip(scroll, {
+    -- Assembled with the other strips at the bottom of this function so the
+    -- whole block shares one button width.
+    local stateActions = {
         {
             text = anyDisabled and "Enable All" or "Disable All",
             onClick = function()
@@ -302,7 +328,7 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
                 CooldownCompanion:RefreshConfigPanel()
             end,
         },
-    })
+    }
 
     local hasOtherContainer = false
     for cid in pairs(db.groupContainers) do
@@ -387,22 +413,26 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
         copyActions[#copyActions + 1] = { text = "Move to Group", onClick = ShowPanelMoveMenu }
     end
     copyActions[#copyActions + 1] = { text = "Export Selected", onClick = ExportSelected }
-    AddActionStrip(scroll, copyActions)
 
-    -- Destructive, so it gets its own line.
-    AddActionStrip(scroll, {
+    -- One aligned block: state toggles, then the copy/relocate line, then
+    -- Delete - destructive, so it keeps its own line.
+    AddActionStrips(scroll, {
+        stateActions,
+        copyActions,
         {
-            text = "Delete Selected",
-            onClick = function()
-                local ids = {}
-                for _, pid in ipairs(multiPanelIds) do
-                    ids[#ids + 1] = pid
-                end
-                CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_PANELS", multiCount, {
-                    containerId = containerId,
-                    panelIds = ids,
-                })
-            end,
+            {
+                text = "Delete Selected",
+                onClick = function()
+                    local ids = {}
+                    for _, pid in ipairs(multiPanelIds) do
+                        ids[#ids + 1] = pid
+                    end
+                    CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_PANELS", multiCount, {
+                        containerId = containerId,
+                        panelIds = ids,
+                    })
+                end,
+            },
         },
     })
 end
