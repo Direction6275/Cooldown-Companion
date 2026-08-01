@@ -1014,7 +1014,7 @@ local function ResetCopiedStandalonePanelAnchor(panel, groups, sourceGroupId, so
     end
 end
 
-function CooldownCompanion:DuplicateContainer(containerId)
+function CooldownCompanion:DuplicateContainer(containerId, skipFinalize)
     local db = self.db.profile
     local sourceContainer = db.groupContainers[containerId]
     if not sourceContainer then return nil end
@@ -1076,12 +1076,30 @@ function CooldownCompanion:DuplicateContainer(containerId)
     if self.CreateContainerFrame then
         self:CreateContainerFrame(newContainerId)
     end
-    if self.FinalizeContainerAnchorsToScreenOffsets then
-        self:FinalizeContainerAnchorsToScreenOffsets()
+    if not skipFinalize then
+        if self.FinalizeContainerAnchorsToScreenOffsets then
+            self:FinalizeContainerAnchorsToScreenOffsets()
+        end
+        RefreshPanelAlphaDependencyTargets(self)
     end
-    RefreshPanelAlphaDependencyTargets(self)
 
     return newContainerId
+end
+
+-- Batch duplicate: one global anchor-finalize pass instead of one per copy.
+function CooldownCompanion:DuplicateContainers(containerIds)
+    local duplicatedAny = false
+    for _, containerId in ipairs(containerIds) do
+        if self:DuplicateContainer(containerId, true) then
+            duplicatedAny = true
+        end
+    end
+    if duplicatedAny then
+        if self.FinalizeContainerAnchorsToScreenOffsets then
+            self:FinalizeContainerAnchorsToScreenOffsets()
+        end
+        RefreshPanelAlphaDependencyTargets(self)
+    end
 end
 
 ------------------------------------------------------------------------

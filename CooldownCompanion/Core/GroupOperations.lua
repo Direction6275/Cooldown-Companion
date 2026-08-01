@@ -3286,6 +3286,23 @@ function CooldownCompanion:UpdateAllGroupLayouts()
     end
 end
 
+-- Shared by the group context menu and the group multi-select surface;
+-- callers own the config-panel refresh.
+function CooldownCompanion:SetContainerEnabled(containerId, enabled)
+    local container = self.db.profile.groupContainers[containerId]
+    if not container then return end
+    container.enabled = enabled
+    self:RefreshContainerPanels(containerId)
+end
+
+function CooldownCompanion:SetContainerLocked(containerId, locked)
+    local container = self.db.profile.groupContainers[containerId]
+    if not container then return end
+    container.locked = locked
+    self:UpdateContainerDragHandle(containerId, locked)
+    self:RefreshContainerPanels(containerId)
+end
+
 -- Refresh all panel frames belonging to a container.
 function CooldownCompanion:RefreshContainerPanels(containerId)
     for gid, group in pairs(self.db.profile.groups) do

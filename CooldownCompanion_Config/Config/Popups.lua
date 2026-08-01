@@ -806,7 +806,11 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_GROUPS"] = {
     OnAccept = function(self, data)
         if data and data.groupIds then
             for _, gid in ipairs(data.groupIds) do
-                CooldownCompanion:DeleteGroup(gid)
+                -- Ids freeze at popup-show time; a container deleted while the
+                -- popup was open must not fall through DeleteGroup's panel-id path.
+                if CooldownCompanion.db.profile.groupContainers[gid] then
+                    CooldownCompanion:DeleteGroup(gid)
+                end
             end
             ResetConfigSelection(true)
             CooldownCompanion:RefreshConfigPanel()

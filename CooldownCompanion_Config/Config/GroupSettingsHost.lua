@@ -34,26 +34,8 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
         stripOnly = false
     end
 
-    -- Multi-group selection: show placeholder
-    local multiGroupCount = 0
-    for _ in pairs(CS.selectedGroups) do multiGroupCount = multiGroupCount + 1 end
-    if multiGroupCount >= 2 then
-        if not container.placeholderLabel then
-            container.placeholderLabel = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            container.placeholderLabel:SetPoint("TOPLEFT", -1, 0)
-        end
-        container.placeholderLabel:SetText("Select a single group to configure")
-        container.placeholderLabel:Show()
-        if container.tabGroup then
-            container.tabGroup.frame:Hide()
-        end
-        if container.containerTabGroup then
-            container.containerTabGroup.frame:Hide()
-        end
-        return
-    end
-
-    -- Panel multi-select: show placeholder
+    -- Panel multi-select: show placeholder. (Group multi-select never reaches
+    -- this host: RefreshButtonsWideColumn early-returns to the batch surface.)
     local panelMultiCount = 0
     for _ in pairs(CS.selectedPanels) do panelMultiCount = panelMultiCount + 1 end
     if panelMultiCount >= 2 then

@@ -6,9 +6,11 @@ local CS = ST._configState
 local ColorHeading = ST._ColorHeading
 local BuildGroupExportData = ST._BuildGroupExportData
 local BuildContainerExportData = ST._BuildContainerExportData
+local BuildSelectedContainersExportPayload = ST._BuildSelectedContainersExportPayload
 local EncodeExportData = ST._EncodeExportData
 local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
 local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
+local ClearConfigContainerMultiSelection = ST._ClearConfigContainerMultiSelection
 
 local function IsContainerVisibleInConfig(containerOrContainerId)
     if CooldownCompanion.ResolveContainerClassScope then
@@ -264,6 +266,108 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
             })
         end
     end
+end
+
+function ST._RefreshGroupMultiSelect(scroll, multiCount, multiGroupIds)
+    local db = CooldownCompanion.db.profile
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(multiCount .. " Groups Selected")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    scroll:AddChild(heading)
+
+    local anyDisabled = false
+    local anyUnlocked = false
+    for _, containerId in ipairs(multiGroupIds) do
+        local container = db.groupContainers[containerId]
+        if container then
+            if container.enabled == false then
+                anyDisabled = true
+            end
+            if not container.locked then
+                anyUnlocked = true
+            end
+        end
+    end
+
+    local stateActions = {
+        {
+            text = anyDisabled and "Enable All" or "Disable All",
+            onClick = function()
+                for _, containerId in ipairs(multiGroupIds) do
+                    CooldownCompanion:SetContainerEnabled(containerId, anyDisabled)
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        },
+        {
+            text = anyUnlocked and "Lock All" or "Unlock All",
+            onClick = function()
+                for _, containerId in ipairs(multiGroupIds) do
+                    CooldownCompanion:SetContainerLocked(containerId, anyUnlocked)
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        },
+    }
+
+    local function ExportSelected()
+        local selectedGroups = {}
+        for _, containerId in ipairs(multiGroupIds) do
+            selectedGroups[containerId] = true
+        end
+        local payload = BuildSelectedContainersExportPayload(db, selectedGroups)
+        local exportString = EncodeExportData(payload)
+        CS.ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
+    end
+
+    AddActionStrips(scroll, {
+        stateActions,
+        {
+            {
+                text = "Duplicate Selected",
+                onClick = function()
+                    -- Duplicate in display order (multiGroupIds carries hash
+                    -- order); the existence check also keeps a stale id from
+                    -- falling through to a panel-id interpretation.
+                    local ordered = {}
+                    for _, containerId in ipairs(multiGroupIds) do
+                        local container = db.groupContainers[containerId]
+                        if container then
+                            ordered[#ordered + 1] = {
+                                cid = containerId,
+                                order = CooldownCompanion:GetOrderForSpec(container, CooldownCompanion._currentSpecId, containerId),
+                            }
+                        end
+                    end
+                    table.sort(ordered, function(a, b) return a.order < b.order end)
+                    local orderedIds = {}
+                    for i, item in ipairs(ordered) do
+                        orderedIds[i] = item.cid
+                    end
+                    CooldownCompanion:DuplicateContainers(orderedIds)
+                    ClearConfigContainerMultiSelection()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            },
+            { text = "Export Selected", onClick = ExportSelected },
+        },
+        {
+            {
+                text = "Delete Selected",
+                onClick = function()
+                    local ids = {}
+                    for _, containerId in ipairs(multiGroupIds) do
+                        ids[#ids + 1] = containerId
+                    end
+                    CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_GROUPS", multiCount, {
+                        groupIds = ids,
+                    })
+                end,
+            },
+        },
+    })
 end
 
 function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)

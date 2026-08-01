@@ -536,6 +536,9 @@ local function BuildSelectedContainersExportPayload(db, selectedGroups)
     }
 end
 
+-- Shared by the Group context menu and the Group multi-select action surface.
+ST._BuildSelectedContainersExportPayload = BuildSelectedContainersExportPayload
+
 local function CanPanelMoveToContainer(panelId, containerId)
     if CooldownCompanion.ResolveContainerClassScope then
         local scope = CooldownCompanion:ResolveContainerClassScope(containerId)
@@ -899,8 +902,7 @@ local function ShowContainerContextMenu(db, containerId, container)
             info.notCheckable = true
             info.func = function()
                 CloseDropDownMenus()
-                container.enabled = not (container.enabled ~= false)
-                CooldownCompanion:RefreshContainerPanels(containerId)
+                CooldownCompanion:SetContainerEnabled(containerId, container.enabled == false)
                 CooldownCompanion:RefreshConfigPanel()
             end
             UIDropDownMenu_AddButton(info, level)
@@ -936,9 +938,7 @@ local function ShowContainerContextMenu(db, containerId, container)
             info.notCheckable = true
             info.func = function()
                 CloseDropDownMenus()
-                container.locked = not container.locked
-                CooldownCompanion:UpdateContainerDragHandle(containerId, container.locked)
-                CooldownCompanion:RefreshContainerPanels(containerId)
+                CooldownCompanion:SetContainerLocked(containerId, not container.locked)
                 CooldownCompanion:RefreshConfigPanel()
             end
             UIDropDownMenu_AddButton(info, level)

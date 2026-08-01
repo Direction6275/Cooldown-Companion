@@ -1696,6 +1696,37 @@ local function EnsureInlineTextureBrowserHost(col3)
     return host
 end
 
+local function ShowMultiSelectActions(col3, refreshFn, multiCount, selectedIds)
+    HideEntrySurfaces(col3)
+    HidePanelPreview(col3)
+    if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
+
+    if not col3._multiSelectActionsScroll then
+        local scroll = AceGUI:Create("ScrollFrame")
+        scroll:SetLayout("List")
+        scroll.frame:SetParent(col3.content)
+        scroll.frame:ClearAllPoints()
+        scroll.frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
+        scroll.frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+        col3._multiSelectActionsScroll = scroll
+    end
+    col3._multiSelectActionsScroll:ReleaseChildren()
+    col3._multiSelectActionsScroll.frame:Show()
+    refreshFn(col3._multiSelectActionsScroll, multiCount, selectedIds)
+    -- AddChild lays out on every insertion, so width overrides applied after a
+    -- builder returns are invisible until one final layout pass.
+    col3._multiSelectActionsScroll:DoLayout()
+end
+
+local function CollectSelection(set)
+    local count, ids = 0, {}
+    for id in pairs(set) do
+        count = count + 1
+        ids[#ids + 1] = id
+    end
+    return count, ids
+end
+
 local function RefreshButtonsWideColumn()
     local col3 = CS.configFrame and CS.configFrame.col3
     if not col3 then return end
@@ -1708,38 +1739,23 @@ local function RefreshButtonsWideColumn()
     if col3._browseEntryScroll then col3._browseEntryScroll.frame:Hide() end
     if col3._inlineTextureBrowserHost then col3._inlineTextureBrowserHost:Hide() end
 
-    -- Panel multi-select: batch operations replace everything else
-    local panelMultiCount = 0
-    local multiPanelIds = {}
-    for pid in pairs(CS.selectedPanels) do
-        panelMultiCount = panelMultiCount + 1
-        multiPanelIds[#multiPanelIds + 1] = pid
-    end
-    if panelMultiCount >= 2 and CS.selectedContainer then
-        HideEntrySurfaces(col3)
-        HidePanelPreview(col3)
-        if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
-
-        if not col3._panelMultiSelectScroll then
-            local scroll = AceGUI:Create("ScrollFrame")
-            scroll:SetLayout("List")
-            scroll.frame:SetParent(col3.content)
-            scroll.frame:ClearAllPoints()
-            scroll.frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
-            scroll.frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
-            col3._panelMultiSelectScroll = scroll
-        end
-        col3._panelMultiSelectScroll:ReleaseChildren()
-        col3._panelMultiSelectScroll.frame:Show()
-        ST._RefreshPanelMultiSelect(col3._panelMultiSelectScroll, panelMultiCount, multiPanelIds)
-        -- Re-run the layout with final widths, the same as the entry settings
-        -- host: AddChild lays out on every insertion, so width overrides applied
-        -- after a builder returns are invisible until the next layout.
-        col3._panelMultiSelectScroll:DoLayout()
+    -- Group multi-select: batch operations replace everything else.
+    local groupMultiCount, multiGroupIds = CollectSelection(CS.selectedGroups)
+    if groupMultiCount >= 2 then
+        ShowMultiSelectActions(col3, ST._RefreshGroupMultiSelect,
+            groupMultiCount, multiGroupIds)
         return
     end
-    if col3._panelMultiSelectScroll then
-        col3._panelMultiSelectScroll.frame:Hide()
+
+    -- Panel multi-select uses the same batch-action host.
+    local panelMultiCount, multiPanelIds = CollectSelection(CS.selectedPanels)
+    if panelMultiCount >= 2 and CS.selectedContainer then
+        ShowMultiSelectActions(col3, ST._RefreshPanelMultiSelect,
+            panelMultiCount, multiPanelIds)
+        return
+    end
+    if col3._multiSelectActionsScroll then
+        col3._multiSelectActionsScroll.frame:Hide()
     end
 
     -- The inline texture browser is scoped to its own panel; drop a stale flag

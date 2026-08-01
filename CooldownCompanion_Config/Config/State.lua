@@ -2443,6 +2443,7 @@ local function SelectConfigPanel(panelId, opts)
         CS.selectedContainer = opts.containerId
     end
     wipe(CS.selectedPanels)
+    wipe(CS.selectedGroups)
 
     if opts and opts.toggle
         and CS.selectedGroup == panelId
@@ -2474,6 +2475,7 @@ local function ToggleConfigPanelMultiSelect(panelId)
     CS.barsEntrySelected = false
     CS.castFramesSelectedItem = nil
     ClearSelectedButton()
+    wipe(CS.selectedGroups)
     CS.addingToPanelId = nil
     RefreshAlphaDriverForConfigSelection()
 end
@@ -2494,6 +2496,7 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
         ClearSelectedButton()
     end
     wipe(CS.selectedPanels)
+    wipe(CS.selectedGroups)
 
     if opts and opts.multi then
         if CS.selectedButtons[buttonIndex] then
@@ -2527,6 +2530,7 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
         CS.selectedContainer = opts.containerId
     end
     wipe(CS.selectedPanels)
+    wipe(CS.selectedGroups)
 
     CS.selectedGroup = panelId
     CS.selectedButton = nil

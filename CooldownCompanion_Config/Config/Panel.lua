@@ -438,6 +438,9 @@ local function GetColumn3HeaderMode(selection)
         end
         return "resources_panel"
     end
+    if selection.groupMultiCount >= 2 then
+        return "group_actions"
+    end
     if selection.panelMultiCount >= 2 then
         return "panel_actions"
     end
@@ -486,6 +489,8 @@ local function GetColumn3HeaderTitle(selection)
         return "Player Frame"
     elseif mode == "target_frame" then
         return "Target Frame"
+    elseif mode == "group_actions" then
+        return "Group Actions"
     elseif mode == "panel_actions" then
         return "Panel Actions"
     end
@@ -1661,7 +1666,12 @@ local function CreateConfigPanel()
         else
             local selection = GetConfigSelectionSummary()
             local mode = GetColumn3HeaderMode(selection)
-            if mode == "panel_actions" then
+            if mode == "group_actions" then
+                GameTooltip:AddLine("Group Actions")
+                GameTooltip:AddLine("Select multiple groups to batch-manage them here.", 1, 1, 1, true)
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("Select a single group to configure it here instead.", 1, 1, 1, true)
+            elseif mode == "panel_actions" then
                 GameTooltip:AddLine("Panel Actions")
                 GameTooltip:AddLine("Select multiple panels to batch-manage them here.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
