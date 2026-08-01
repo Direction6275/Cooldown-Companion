@@ -66,20 +66,20 @@ local STEP_DATA = {
     },
     create_group = {
         title = "Create a Group",
-        text = "Click Create..., then choose New Group.",
+        text = "Click New Group.",
         anchor = "new_group_button",
         placement = "above",
     },
     panels_column_intro = {
         title = "Panels in the Navigator",
-        text = "Panels live inside groups and contain the things you want to track, like spells and items. A panel's type determines how those entries are displayed.\n\nThe Create menu describes the available panel types.",
+        text = "Panels live inside groups and contain the things you want to track, like spells and items. A panel's type determines how those entries are displayed.",
         anchor = "panels_column_area",
         placement = "right",
     },
     create_panel = {
         title = "Create an Icon Panel",
-        text = "With your new group selected, click Create... and choose New Icon Panel.",
-        anchor = "icon_panel_button",
+        text = "Click Icon Panel to create your first panel.",
+        anchor = "empty_state_icon_button",
         placement = "above",
     },
     add_one_spell = {
@@ -677,11 +677,21 @@ local function RebuildTutorialAnchors()
         anchors.panels_column_area = CS.configFrame.col1.frame
     end
 
-    local col1Widgets = CS.col1BarWidgets or {}
-    local firstCol1Button = col1Widgets[1]
-    if firstCol1Button and firstCol1Button.frame then
-        anchors.new_group_button = firstCol1Button.frame
-        anchors.icon_panel_button = firstCol1Button.frame
+    -- Named handle, not a bar position: Browse Other Classes swaps the New
+    -- Group button out for its own toggle, and only the named field goes nil
+    -- there.
+    local createButton = CS.col1CreateButton
+    if createButton and createButton.frame then
+        anchors.new_group_button = createButton.frame
+    end
+    -- The empty state's Icon Panel card exists only while the Group overview is
+    -- on screen for an empty Group that can take a new Panel. Anywhere else the
+    -- anchor stays unset, which centers the tutorial box with no highlight
+    -- instead of pointing at the wrong control.
+    local emptyStateIconCard = ST._GetEmptyPickerCardFrame
+        and ST._GetEmptyPickerCardFrame("icons")
+    if emptyStateIconCard then
+        anchors.empty_state_icon_button = emptyStateIconCard
     end
     local resourcesButton = CS.col1ResourcesButton
     local resourcesFrame = resourcesButton and (resourcesButton.frame or resourcesButton)

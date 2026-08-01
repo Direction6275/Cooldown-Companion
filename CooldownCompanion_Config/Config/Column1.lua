@@ -486,15 +486,6 @@ local function ConfigureGenericGroupRenameBadge(entry, container, containerId, r
     return 18
 end
 
-local PANEL_CREATION_MODES = {
-    { mode = "icons", label = "Icon Panel" },
-    { mode = "bars", label = "Bar Panel" },
-    { mode = "text", label = "Text Panel" },
-    { mode = "textures", label = "Texture Panel" },
-    { mode = "trigger", label = "Trigger Panel" },
-    { mode = ST.DISPLAY_MODE_ROTATION_ASSISTANT, label = ST.ROTATION_ASSISTANT_NAME or "Assistant Panel" },
-}
-
 local function BuildContainerExportPayload(db, containerId, container)
     local sortedPanels = CooldownCompanion:GetPanels(containerId)
     local panels = {}
@@ -833,6 +824,45 @@ local function BuildColumn1ContainerStats(db, containerIds)
     return statsByContainer
 end
 
+local function IsCreateTargetContainer(containerId)
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    local container = db and db.groupContainers and db.groupContainers[containerId]
+    if not container then
+        return false
+    end
+    if CooldownCompanion.ResolveContainerClassScope then
+        local scope = CooldownCompanion:ResolveContainerClassScope(container)
+        return scope and not scope.isInvalid and not scope.isOtherClass
+    end
+    return true
+end
+
+-- Exported so every create surface answers "can this Group take a new Panel?"
+-- with the same class-scope rule.
+ST._IsCreateTargetContainer = IsCreateTargetContainer
+
+-- The only panel-create path the overview's add tile and the Group context
+-- menu use, so a panel gets the same per-type defaults whichever surface
+-- created it.
+-- PanelShared loads after this file, so the ST lookups stay at call time.
+local function CreatePanelInContainer(containerId, displayMode)
+    if not (containerId and ST._CreatePanelInSelectedContainer) then
+        return
+    end
+    if not IsCreateTargetContainer(containerId) then
+        return
+    end
+    local opts = ST._BuildPanelCreateOptions and ST._BuildPanelCreateOptions(displayMode) or nil
+    ST._CreatePanelInSelectedContainer(displayMode, opts, containerId)
+end
+
+-- Exported so the Group overview's add tile creates panels through the same
+-- path as the Group context menu.
+ST._CreatePanelInContainer = CreatePanelInContainer
+
+-- The two everyday panel types lead each create menu; specialists start here.
+local FIRST_SPECIALIST_PANEL_TYPE = 3
+
 local function ShowContainerContextMenu(db, containerId, container)
     if not CS.groupContextMenu then
         CS.groupContextMenu = CreateFrame("Frame", "CDCGroupContextMenu", UIParent, "UIDropDownMenuTemplate")
@@ -978,12 +1008,14 @@ local function ShowContainerContextMenu(db, containerId, container)
                 UIDropDownMenu_AddButton(info, level)
             end
 
-            info = UIDropDownMenu_CreateInfo()
-            info.text = "Add Panel"
-            info.notCheckable = true
-            info.hasArrow = true
-            info.menuList = "ADD_PANEL"
-            UIDropDownMenu_AddButton(info, level)
+            if IsCreateTargetContainer(containerId) then
+                info = UIDropDownMenu_CreateInfo()
+                info.text = "Add Panel"
+                info.notCheckable = true
+                info.hasArrow = true
+                info.menuList = "ADD_PANEL"
+                UIDropDownMenu_AddButton(info, level)
+            end
 
             info = UIDropDownMenu_CreateInfo()
             info.text = "|cffff4444Delete|r"
@@ -994,31 +1026,17 @@ local function ShowContainerContextMenu(db, containerId, container)
             end
             UIDropDownMenu_AddButton(info, level)
         elseif menuList == "ADD_PANEL" then
-            for _, modeInfo in ipairs(PANEL_CREATION_MODES) do
+            for index, panelType in ipairs(ST._PANEL_TYPES or {}) do
+                if index == FIRST_SPECIALIST_PANEL_TYPE then
+                    UIDropDownMenu_AddSeparator(level)
+                end
                 local info = UIDropDownMenu_CreateInfo()
-                info.text = modeInfo.label
+                info.text = panelType.label
                 info.notCheckable = true
-                local targetMode = modeInfo.mode
+                local targetMode = panelType.mode
                 info.func = function()
                     CloseDropDownMenus()
-                    local newPanelId = CooldownCompanion:CreatePanel(containerId, targetMode)
-                    if newPanelId then
-                        SelectConfigPanel(newPanelId, {
-                            containerId = containerId,
-                            keepPanelMulti = true,
-                        })
-                        local newPanel = CooldownCompanion.db.profile.groups[newPanelId]
-                        local acceptsManualEntries = not CooldownCompanion.CanPanelAcceptManualEntry
-                            or CooldownCompanion:CanPanelAcceptManualEntry(newPanel)
-                        if acceptsManualEntries then
-                            CS.addingToPanelId = newPanelId
-                            CS.pendingEditBoxFocus = true
-                        else
-                            CS.addingToPanelId = nil
-                            CS.pendingEditBoxFocus = false
-                        end
-                        CooldownCompanion:RefreshConfigPanel()
-                    end
+                    CreatePanelInContainer(containerId, targetMode)
                 end
                 UIDropDownMenu_AddButton(info, level)
             end
@@ -1048,146 +1066,94 @@ local function ClearColumn1ButtonBar()
     end
 end
 
-local function IsCreateTargetContainer(containerId)
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    local container = db and db.groupContainers and db.groupContainers[containerId]
-    if not container then
-        return false
-    end
-    if CooldownCompanion.ResolveContainerClassScope then
-        local scope = CooldownCompanion:ResolveContainerClassScope(container)
-        return scope and not scope.isInvalid and not scope.isOtherClass
-    end
-    return true
-end
-
-local function ResolveCreateTargetContainer()
-    if IsCreateTargetContainer(CS.selectedContainer) then
-        return CS.selectedContainer
-    end
-    if IsCreateTargetContainer(CS.lastActiveContainer) then
-        return CS.lastActiveContainer
-    end
-
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    local ordered = db and BuildFlatContainerOrder(db) or {}
-    for _, item in ipairs(ordered) do
-        if IsCreateTargetContainer(item.id) then
-            return item.id
-        end
-    end
-    return nil
-end
-
 local function CreateGroupFromRail()
-    local containerId, groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
+    local containerId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
     SelectConfigContainer(containerId)
     CooldownCompanion:RefreshConfigPanel()
     if NotifyTutorialAction then
         NotifyTutorialAction("group_created", {
             containerId = containerId,
-            groupId = groupId,
         })
     end
 end
 
-local function CreatePanelFromRail(containerId, displayMode, opts)
-    if not (containerId and ST._CreatePanelInSelectedContainer) then
-        return
+local function EnsurePanelTypeMenu()
+    if not CS.panelTypeMenu then
+        CS.panelTypeMenu = CreateFrame("Frame", "CDCPanelTypeMenu", UIParent, "UIDropDownMenuTemplate")
     end
-    ST._CreatePanelInSelectedContainer(displayMode, opts, containerId)
+    return CS.panelTypeMenu
 end
 
-local function EnsureRailCreateMenu()
-    if not CS.railCreateMenu then
-        CS.railCreateMenu = CreateFrame("Frame", "CDCRailCreateMenu", UIParent, "UIDropDownMenuTemplate")
+-- The menu can outlive the Group that opened it, so every item re-answers the
+-- create gate before acting. `lastIndex` defaults to the end of the descriptor,
+-- so a caller can ask for "everything from here on".
+local function AddPanelTypeCreateItems(level, containerId, firstIndex, lastIndex)
+    local panelTypes = ST._PANEL_TYPES or {}
+    for index = firstIndex, math.min(lastIndex or #panelTypes, #panelTypes) do
+        local panelType = panelTypes[index]
+        if panelType then
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = "New " .. panelType.label
+            info.notCheckable = true
+            local displayMode = panelType.mode
+            if ST._AddPanelTypeMenuTooltip then
+                ST._AddPanelTypeMenuTooltip(info, displayMode)
+            end
+            info.func = function()
+                CloseDropDownMenus()
+                if not IsCreateTargetContainer(containerId) then return end
+                CreatePanelInContainer(containerId, displayMode)
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
     end
-    return CS.railCreateMenu
 end
 
-local function ShowRailCreateMenu()
-    local targetId = ResolveCreateTargetContainer()
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    local target = targetId and db and db.groupContainers and db.groupContainers[targetId]
-    local targetName = target and target.name or nil
-    local targetSuffix = targetName and (" in " .. targetName) or ""
-    local menu = EnsureRailCreateMenu()
+local function AddCDMStarterCreateItem(level, containerId)
+    local info = UIDropDownMenu_CreateInfo()
+    info.text = "Add Missing CDM Panels"
+    info.notCheckable = true
+    if ST._AddCDMStarterMenuTooltip then
+        ST._AddCDMStarterMenuTooltip(info)
+    end
+    info.func = function()
+        CloseDropDownMenus()
+        if not IsCreateTargetContainer(containerId) then return end
+        if ST._CreateMissingCDMPanelsInSelectedContainer then
+            ST._CreateMissingCDMPanelsInSelectedContainer(containerId)
+        end
+    end
+    UIDropDownMenu_AddButton(info, level)
+end
 
-    UIDropDownMenu_Initialize(menu, function(_, level, menuList)
+-- Opened by the Group overview's add tile. The everyday types, specialists,
+-- and Cooldown Manager starter share one list, separated into visual groups.
+-- It uses the create surfaces' own dropdown frame rather than the Group context
+-- menu's, so opening it never toggles or re-initializes that one, and it opens
+-- at the cursor because the tile it belongs to moves with the grid.
+local function ShowPanelTypeMenuForContainer(containerId)
+    if not IsCreateTargetContainer(containerId) then return end
+
+    local menu = EnsurePanelTypeMenu()
+
+    UIDropDownMenu_Initialize(menu, function(_, level)
         level = level or 1
         if level == 1 then
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = "New Group"
-            info.notCheckable = true
-            info.func = function()
-                CloseDropDownMenus()
-                CreateGroupFromRail()
-            end
-            UIDropDownMenu_AddButton(info, level)
-
-            for _, modeInfo in ipairs({ PANEL_CREATION_MODES[1], PANEL_CREATION_MODES[2] }) do
-                info = UIDropDownMenu_CreateInfo()
-                info.text = "New " .. modeInfo.label .. targetSuffix
-                info.notCheckable = true
-                info.disabled = targetId == nil
-                local displayMode = modeInfo.mode
-                if ST._AddPanelTypeMenuTooltip then
-                    ST._AddPanelTypeMenuTooltip(info, displayMode)
-                end
-                info.func = function()
-                    CloseDropDownMenus()
-                    CreatePanelFromRail(targetId, displayMode, {
-                        verticalStyle = displayMode == "bars",
-                        notifyTutorial = displayMode == "icons",
-                    })
-                end
-                UIDropDownMenu_AddButton(info, level)
-            end
-
-            info = UIDropDownMenu_CreateInfo()
-            info.text = "More Panel Types..."
-            info.notCheckable = true
-            info.hasArrow = true
-            info.disabled = targetId == nil
-            info.menuList = "MORE_PANEL_TYPES"
-            UIDropDownMenu_AddButton(info, level)
-        elseif menuList == "MORE_PANEL_TYPES" then
-            for index = 3, #PANEL_CREATION_MODES do
-                local modeInfo = PANEL_CREATION_MODES[index]
-                local info = UIDropDownMenu_CreateInfo()
-                info.text = "New " .. modeInfo.label .. targetSuffix
-                info.notCheckable = true
-                local displayMode = modeInfo.mode
-                if ST._AddPanelTypeMenuTooltip then
-                    ST._AddPanelTypeMenuTooltip(info, displayMode)
-                end
-                info.func = function()
-                    CloseDropDownMenus()
-                    CreatePanelFromRail(targetId, displayMode, {
-                        verticalStyle = displayMode == "text",
-                    })
-                end
-                UIDropDownMenu_AddButton(info, level)
-            end
-
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = "Add Missing CDM Panels" .. targetSuffix
-            info.notCheckable = true
-            if ST._AddCDMStarterMenuTooltip then
-                ST._AddCDMStarterMenuTooltip(info)
-            end
-            info.func = function()
-                CloseDropDownMenus()
-                if ST._CreateMissingCDMPanelsInSelectedContainer then
-                    ST._CreateMissingCDMPanelsInSelectedContainer(targetId)
-                end
-            end
-            UIDropDownMenu_AddButton(info, level)
+            AddPanelTypeCreateItems(level, containerId, 1,
+                FIRST_SPECIALIST_PANEL_TYPE - 1)
+            UIDropDownMenu_AddSeparator(level)
+            AddPanelTypeCreateItems(level, containerId,
+                FIRST_SPECIALIST_PANEL_TYPE)
+            UIDropDownMenu_AddSeparator(level)
+            AddCDMStarterCreateItem(level, containerId)
         end
     end, "MENU")
     menu:SetFrameStrata("FULLSCREEN_DIALOG")
     ToggleDropDownMenu(1, nil, menu, "cursor", 0, 0)
 end
+
+-- Exported for the Group overview's add tile.
+ST._ShowPanelTypeMenuForContainer = ShowPanelTypeMenuForContainer
 
 local function PopulateColumn1ButtonBar()
     if not CS.col1ButtonBar then
@@ -1197,8 +1163,8 @@ local function PopulateColumn1ButtonBar()
     ClearColumn1ButtonBar()
 
     local createBtn = AceGUI:Create("Button")
-    createBtn:SetText("Create...")
-    createBtn:SetCallback("OnClick", ShowRailCreateMenu)
+    createBtn:SetText("New Group")
+    createBtn:SetCallback("OnClick", CreateGroupFromRail)
     createBtn.frame:SetParent(CS.col1ButtonBar)
     createBtn.frame:ClearAllPoints()
     createBtn.frame:SetPoint("TOPLEFT", CS.col1ButtonBar, "TOPLEFT", 0, -1)
@@ -2485,7 +2451,7 @@ local function RefreshColumn1(preserveDrag)
         CS.col1Scroll:AddChild(descSpacer)
 
         local desc = AceGUI:Create("Label")
-        desc:SetText("A group holds one or more panels so you can organize related cooldowns together. Use the buttons below to create your first group.")
+        desc:SetText("A group holds one or more panels so you can organize related cooldowns together. Use the New Group button below.")
         desc:SetFullWidth(true)
         desc:SetJustifyH("CENTER")
         desc:SetFont((GameFontNormal:GetFont()), 12, "")

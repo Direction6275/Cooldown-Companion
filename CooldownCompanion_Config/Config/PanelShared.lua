@@ -51,45 +51,92 @@ local ROW_BADGE_SIZE = 16
 local OVERRIDE_BADGE_ICON_SIZE = 12
 local ROW_BADGE_SPACING = 2
 local ROW_BADGE_RIGHT_PAD = 4
-local PANEL_TYPE_TOOLTIPS = {
-    icons = {
-        title = "Icon Panel",
+
+-- The one cyan accent every "make something new" affordance wears, so the add
+-- tile, the empty-Group type cards, and anything that joins them later cannot
+-- drift to slightly different blues. Idle is the hover hue held back to a
+-- whisper; hover is the hue at full strength. The fills put a subtle cool tint
+-- over a mostly opaque dark plate, with a lighter response under the cursor.
+local CREATE_ACCENT = {
+    idleBorder = { 0.32, 0.82, 1, 0.35 },
+    hoverBorder = { 0.32, 0.82, 1, 1 },
+    idleFill = { 0.10, 0.14, 0.19, 0.80 },
+    hoverFill = { 0.13, 0.18, 0.24, 0.85 },
+}
+
+-- Single source of truth for the creatable panel types: menu order, menu
+-- label, tooltip copy, and the per-type defaults a create menu applies.
+-- Every create surface reads this so the two menus cannot drift apart.
+-- Descriptor order is the menu split: the two everyday types lead, and the
+-- create menus draw their separator before the third.
+-- `primary` marks those same two everyday types. The empty-Group picker sizes
+-- its tiers by this flag alone, and the menus' separator split matches it, so
+-- one edit here moves a type on every create surface at once.
+local PANEL_TYPES = {
+    {
+        mode = "icons",
+        label = "Icon Panel",
         description = "Shows spells or items as classic cooldown icons.",
+        primary = true,
+        -- The tutorial's create-panel step only advances on an Icon Panel.
+        notifyTutorial = true,
     },
-    bars = {
-        title = "Bar Panel",
+    {
+        mode = "bars",
+        label = "Bar Panel",
         description = "Shows spells or items as timer bars with names and durations.",
+        primary = true,
+        verticalStyle = true,
     },
-    text = {
-        title = "Text Panel",
+    {
+        mode = "text",
+        label = "Text Panel",
         description = "Shows text-only entries for compact readouts and status lists.",
+        verticalStyle = true,
     },
-    textures = {
-        title = "Texture Panel",
+    {
+        mode = "textures",
+        label = "Texture Panel",
         description = "Shows one standalone texture for a single spell or item.",
     },
-    trigger = {
-        title = "Trigger Panel",
+    {
+        mode = "trigger",
+        label = "Trigger Panel",
         description = "Add spell or item entries, then set conditions on each one. The display appears only when every enabled entry meets its conditions.",
     },
-    rotationAssistant = {
-        title = "Assistant Panel",
+    {
+        mode = ST.DISPLAY_MODE_ROTATION_ASSISTANT,
+        label = ST.ROTATION_ASSISTANT_NAME or "Assistant Panel",
         description = "Shows one locked recommendation icon from the in-game assistant.",
     },
 }
 
-local function GetPanelTypeTooltip(displayMode)
-    return PANEL_TYPE_TOOLTIPS[displayMode] or PANEL_TYPE_TOOLTIPS.icons
+local PANEL_TYPE_BY_MODE = {}
+for _, panelType in ipairs(PANEL_TYPES) do
+    PANEL_TYPE_BY_MODE[panelType.mode] = panelType
+end
+
+local function GetPanelTypeInfo(displayMode)
+    return PANEL_TYPE_BY_MODE[displayMode] or PANEL_TYPE_BY_MODE.icons
 end
 local function AddPanelTypeMenuTooltip(info, displayMode)
-    local tooltip = GetPanelTypeTooltip(displayMode)
-    if not tooltip then
+    local panelType = GetPanelTypeInfo(displayMode)
+    if not panelType then
         return
     end
 
-    info.tooltipTitle = tooltip.title
-    info.tooltipText = tooltip.description
+    info.tooltipTitle = panelType.label
+    info.tooltipText = panelType.description
     info.tooltipOnButton = true
+end
+
+-- Creation options a menu passes to CreatePanelInSelectedContainer.
+local function BuildPanelCreateOptions(displayMode)
+    local panelType = GetPanelTypeInfo(displayMode)
+    return {
+        verticalStyle = panelType.verticalStyle,
+        notifyTutorial = panelType.notifyTutorial,
+    }
 end
 local function AddCDMStarterMenuTooltip(info)
     info.tooltipTitle = "Add Missing CDM Panels"
@@ -1017,6 +1064,11 @@ ST._ShowEntryContextMenu = ShowEntryContextMenu
 ST._ConfigureConfigEntryRow = ConfigureConfigEntryRow
 ST._AddPanelTypeMenuTooltip = AddPanelTypeMenuTooltip
 ST._AddCDMStarterMenuTooltip = AddCDMStarterMenuTooltip
+-- Ordered creatable panel types, shared by every panel-create surface.
+ST._PANEL_TYPES = PANEL_TYPES
+-- Shared create accent, so no surface hand-writes its own cyan.
+ST._CREATE_ACCENT = CREATE_ACCENT
+ST._BuildPanelCreateOptions = BuildPanelCreateOptions
 ST._CreatePanelInSelectedContainer = CreatePanelInSelectedContainer
 ST._CreateMissingCDMPanelsInSelectedContainer = CreateMissingCDMPanelsInSelectedContainer
 ST._BuildInlineAddControls = BuildInlineAddControls

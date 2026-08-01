@@ -272,7 +272,6 @@ ST._configState = {
     expandedContainer = nil,
     peekedContainers = {},
     springOpenContainer = nil,
-    lastActiveContainer = nil,
     configFinderExpansionSnapshot = nil,
     configFinderNavigated = nil,
     configFinderRestoredCollapsedContainerId = nil,
@@ -1053,7 +1052,6 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
         EnterOtherClassLibraryState(selectedScope.ownerClassKey)
     else
         ResetOtherClassLibraryState({ skipRefresh = true })
-        CS.lastActiveContainer = containerId or CS.lastActiveContainer
     end
     wipe(CS.selectedGroups)
     wipe(CS.selectedPanels)
@@ -2405,11 +2403,6 @@ local function SelectConfigContainer(containerId, opts)
         CS.selectedGroup = nil
     end
 
-    local selectedScope = ResolveConfigContainerClassScope(CS.selectedContainer)
-    if CS.selectedContainer and not (selectedScope and selectedScope.isOtherClass) then
-        CS.lastActiveContainer = CS.selectedContainer
-    end
-
     CS.barsEntrySelected = false
     CS.castFramesSelectedItem = nil
     ClearSelectedButton()
@@ -2449,9 +2442,7 @@ local function SelectConfigPanel(panelId, opts)
     if opts and opts.containerId ~= nil then
         CS.selectedContainer = opts.containerId
     end
-    if not (opts and opts.keepPanelMulti) then
-        wipe(CS.selectedPanels)
-    end
+    wipe(CS.selectedPanels)
 
     if opts and opts.toggle
         and CS.selectedGroup == panelId
@@ -2460,18 +2451,6 @@ local function SelectConfigPanel(panelId, opts)
         CS.selectedGroup = nil
     else
         CS.selectedGroup = panelId
-    end
-
-    local selectedPanel = panelId
-        and CooldownCompanion.db
-        and CooldownCompanion.db.profile
-        and CooldownCompanion.db.profile.groups
-        and CooldownCompanion.db.profile.groups[panelId]
-        or nil
-    local activeContainerId = (opts and opts.containerId) or (selectedPanel and selectedPanel.parentContainerId)
-    local activeScope = ResolveConfigContainerClassScope(activeContainerId)
-    if activeContainerId and not (activeScope and activeScope.isOtherClass) then
-        CS.lastActiveContainer = activeContainerId
     end
 
     CS.barsEntrySelected = false
@@ -2514,9 +2493,7 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
         CS.selectedGroup = panelId
         ClearSelectedButton()
     end
-    if not (opts and opts.keepPanelMulti) then
-        wipe(CS.selectedPanels)
-    end
+    wipe(CS.selectedPanels)
 
     if opts and opts.multi then
         if CS.selectedButtons[buttonIndex] then
@@ -2549,9 +2526,7 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
     if opts and opts.containerId ~= nil then
         CS.selectedContainer = opts.containerId
     end
-    if not (opts and opts.keepPanelMulti) then
-        wipe(CS.selectedPanels)
-    end
+    wipe(CS.selectedPanels)
 
     CS.selectedGroup = panelId
     CS.selectedButton = nil
