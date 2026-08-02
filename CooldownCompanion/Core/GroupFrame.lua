@@ -1962,7 +1962,6 @@ local function EndPanelResizeGesture(grip, applyFinal)
     if applyFinal and groupId then
         ApplyPanelResizeFromCursor(grip)
         CooldownCompanion:UpdateGroupStyle(groupId)
-        UpdateResizedPanelContainerWrapper(groupId)
         RefreshConfigPanelIfShown()
     elseif restylePending then
         CooldownCompanion._pendingFullRefresh = true
@@ -1999,7 +1998,6 @@ local function UpdatePanelResizeGesture(grip, elapsed)
         if grip._resizeRestylePending then
             grip._resizeRestylePending = nil
             CooldownCompanion:UpdateGroupStyle(grip._resizeGroupId)
-            UpdateResizedPanelContainerWrapper(grip._resizeGroupId)
         end
     end
 end
@@ -2186,7 +2184,6 @@ local function OnUnlockedPanelMouseWheel(frame, delta)
 
     if changed then
         CooldownCompanion:UpdateGroupStyle(groupId)
-        UpdateResizedPanelContainerWrapper(groupId)
     end
 end
 
@@ -4450,6 +4447,7 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
     local entries, buttonUsabilityOptions = GetStyleUpdateEntries(self, groupId, frame, group)
     if not entries then
         self:PopulateGroupButtons(groupId)
+        UpdateResizedPanelContainerWrapper(groupId)
         return
     end
 
@@ -4472,6 +4470,12 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
     local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
     ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
     FinishGroupButtonRefresh(self, groupId, frame, group)
+
+    -- The frame has its final size now, so the container unlock preview's
+    -- border can re-fit on the same tick — config size sliders restyle
+    -- through here, and the border must track them as tightly as it tracks
+    -- the mover grip.
+    UpdateResizedPanelContainerWrapper(groupId)
 
     -- Style-only fast path skips PopulateGroupButtons, but the aura slot kit
     -- consumes style keys at bind time — re-request the (coalesced) rebind so

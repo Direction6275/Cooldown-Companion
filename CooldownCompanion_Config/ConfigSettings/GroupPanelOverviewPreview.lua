@@ -927,63 +927,12 @@ local function ResetOverview(overview)
     overview.scrollTrack:Hide()
 end
 
--- The Group overview currently on screen. Only one is ever built at a time, so
--- a module-local handle lets read-only callers find its create controls without
--- reaching into the preview host's private state.
-local activeOverview
-
-function ST._BuildGroupPanelOverview(host, containerId)
-    if not (host and containerId) then return end
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    local container = db and db.groupContainers and db.groupContainers[containerId]
-    if not container then return end
-
-    local overview = EnsureOverview(host)
-    activeOverview = overview
-    ResetOverview(overview)
-    local sameContainer = overview.containerId == containerId
-    overview.containerId = containerId
-    overview.root:Show()
-    overview.scroll:Show()
-
-    local panels = CooldownCompanion:GetPanels(containerId) or {}
-    if #panels == 0 then
-        BuildEmptyGroupState(overview, host, containerId, sameContainer)
-        return
-    end
-
-    local attachedResourcePanelId
-    if ST._GetResourcesEntryPlacement then
-        local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
-        if placement == "attached" then
-            attachedResourcePanelId = anchorPanelId
-        end
-    end
-
-    local records = {}
-    for index, panelInfo in ipairs(panels) do
-        local tile = EnsureTile(overview, index)
-        local naturalWidth, naturalHeight =
-            ST._GetReadOnlyPanelPreviewNaturalSize(panelInfo.groupId)
-        local record = {
-            tile = tile,
-            containerId = containerId,
-            panelId = panelInfo.groupId,
-            name = panelInfo.group.name or ("Panel " .. tostring(panelInfo.groupId)),
-            naturalWidth = math_max(1, tonumber(naturalWidth) or 220),
-            naturalHeight = math_max(1, tonumber(naturalHeight) or 90),
-            hasAttachedResources = attachedResourcePanelId == panelInfo.groupId,
-        }
-        -- Row height is intentionally standardized by the overview. Horizontal
-        -- allocation should therefore follow the Panel's saved-design width,
-        -- not its area (which over-rewards tall, narrow Panels).
-        record.weight = record.naturalWidth
-        records[index] = record
-        tile._cdcOverviewRecord = record
-        ApplyTileBorder(tile, TILE_BORDER_COLOR)
-    end
-    overview.usedTiles = #records
-
+-- The tile grid's whole geometry pass: row layout, tile placement, labels,
+-- scroll bookkeeping, and the add tile's lane. Shared between the full build
+-- and the divider-drag reflow so the two can never disagree about where a
+-- tile lands. `full` additionally re-renders each tile's read-only panel
+-- preview — the expensive half a per-frame caller must skip.
+local function LayoutPanelTileGrid(overview, host, records, full)
     local hostWidth = host:GetWidth() or 0
     local hostHeight = host:GetHeight() or 0
     if hostWidth < 100 then hostWidth = 700 end
@@ -1007,7 +956,7 @@ function ST._BuildGroupPanelOverview(host, containerId)
     -- would leave the Panels themselves too narrow to read.
     local gridWidth = layoutWidth - ADD_TILE_WIDTH - TILE_GAP
     local showAddTile = ST._IsCreateTargetContainer
-        and ST._IsCreateTargetContainer(containerId)
+        and ST._IsCreateTargetContainer(overview.containerId)
         and gridWidth >= ADD_TILE_MIN_GRID_WIDTH
     local rows = BuildRowLayouts(records, columns, layoutWidth,
         showAddTile and gridWidth or nil)
@@ -1072,7 +1021,9 @@ function ST._BuildGroupPanelOverview(host, containerId)
             tile.visualHost:SetPoint("CENTER", tile, "CENTER", 0, -(labelHeight / 2))
             tile.visualHost:SetSize(visualWidth, visualHeight)
             tile:Show()
-            ST._BuildReadOnlyPanelPreview(tile.visualHost, record.panelId)
+            if full then
+                ST._BuildReadOnlyPanelPreview(tile.visualHost, record.panelId)
+            end
         end
         -- Overwritten each pass, so after the loop these describe the last
         -- row: the lane BuildRowLayouts just reserved sits right of its last
@@ -1087,14 +1038,112 @@ function ST._BuildGroupPanelOverview(host, containerId)
 
     if showAddTile and addTileX then
         local addTile = EnsureAddTile(overview)
-        addTile._cdcAddContainerId = containerId
+        addTile._cdcAddContainerId = overview.containerId
         PlaceAddTile(overview, addTile, addTileX, addTileTop,
             ADD_TILE_WIDTH, rowHeight)
+    elseif overview.addTile then
+        -- A reflow can flip the lane ineligible (the scroll reserve narrowing
+        -- the grid) with no reset having hidden the tile first.
+        overview.addTile._cdcAddContainerId = nil
+        overview.addTile:Hide()
     end
+end
+
+-- The Group overview currently on screen. Only one is ever built at a time, so
+-- a module-local handle lets read-only callers find its create controls without
+-- reaching into the preview host's private state.
+local activeOverview
+
+function ST._BuildGroupPanelOverview(host, containerId)
+    if not (host and containerId) then return end
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    local container = db and db.groupContainers and db.groupContainers[containerId]
+    if not container then return end
+
+    local overview = EnsureOverview(host)
+    activeOverview = overview
+    ResetOverview(overview)
+    local sameContainer = overview.containerId == containerId
+    overview.containerId = containerId
+    overview.root:Show()
+    overview.scroll:Show()
+
+    local panels = CooldownCompanion:GetPanels(containerId) or {}
+    if #panels == 0 then
+        BuildEmptyGroupState(overview, host, containerId, sameContainer)
+        return
+    end
+
+    local attachedResourcePanelId
+    if ST._GetResourcesEntryPlacement then
+        local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
+        if placement == "attached" then
+            attachedResourcePanelId = anchorPanelId
+        end
+    end
+
+    local records = {}
+    for index, panelInfo in ipairs(panels) do
+        local tile = EnsureTile(overview, index)
+        local naturalWidth, naturalHeight =
+            ST._GetReadOnlyPanelPreviewNaturalSize(panelInfo.groupId)
+        local record = {
+            tile = tile,
+            containerId = containerId,
+            panelId = panelInfo.groupId,
+            name = panelInfo.group.name or ("Panel " .. tostring(panelInfo.groupId)),
+            naturalWidth = math_max(1, tonumber(naturalWidth) or 220),
+            naturalHeight = math_max(1, tonumber(naturalHeight) or 90),
+            hasAttachedResources = attachedResourcePanelId == panelInfo.groupId,
+        }
+        -- Row height is intentionally standardized by the overview. Horizontal
+        -- allocation should therefore follow the Panel's saved-design width,
+        -- not its area (which over-rewards tall, narrow Panels).
+        record.weight = record.naturalWidth
+        records[index] = record
+        tile._cdcOverviewRecord = record
+        ApplyTileBorder(tile, TILE_BORDER_COLOR)
+    end
+    overview.usedTiles = #records
+
+    LayoutPanelTileGrid(overview, host, records, true)
 
     if not sameContainer then
         overview.scrollOffset = 0
     end
+    SetScrollOffset(overview, overview.scrollOffset or 0)
+end
+
+-- Per-frame geometry catch-up for live host resizes (the preview split
+-- divider). Re-flows the tiles the last build produced against the host's
+-- current size without touching the previews inside them, so the tile
+-- borders track the divider at frame rate; the throttled full rebuild
+-- re-scales the preview contents moments later. Same split the unlock
+-- movers use: anchored chrome at frame rate, restyle on the throttle.
+function ST._ReflowGroupPanelOverview(host)
+    local overview = host and host._cdcGroupPanelOverview
+    if not (overview and overview.containerId and overview.root:IsShown()) then
+        return
+    end
+
+    if overview.usedTiles == 0 then
+        -- The empty-Group create surface is pure layout (pooled cards, no
+        -- panel previews), so its own build pass is cheap enough to re-run.
+        if overview.emptyBlock and overview.emptyBlock:IsShown() then
+            BuildEmptyGroupState(overview, host, overview.containerId, true)
+        end
+        return
+    end
+
+    local records = {}
+    for index = 1, overview.usedTiles do
+        local record = overview.tiles[index]
+            and overview.tiles[index]._cdcOverviewRecord
+        if not record then return end
+        records[index] = record
+    end
+
+    LayoutPanelTileGrid(overview, host, records, false)
     SetScrollOffset(overview, overview.scrollOffset or 0)
 end
 

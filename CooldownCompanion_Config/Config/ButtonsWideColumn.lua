@@ -75,15 +75,19 @@ end
 -- The split divider, persisted fraction, and height clamps below are
 -- shared; each view registers its host frame and rebuild function while
 -- its preview is showing, and clears the registration when it hides.
-local function SetActiveWidePreview(col3, host, rebuild)
+-- `refit` is optional: a cheap geometry-only pass the divider drag can
+-- afford every frame, where the full rebuild only runs on its throttle.
+local function SetActiveWidePreview(col3, host, rebuild, refit)
     col3._cdcActiveWideHost = host
     col3._cdcActiveWideRebuild = rebuild
+    col3._cdcActiveWideRefit = refit
 end
 
 local function ClearActiveWidePreview(col3, host)
     if col3._cdcActiveWideHost == host then
         col3._cdcActiveWideHost = nil
         col3._cdcActiveWideRebuild = nil
+        col3._cdcActiveWideRefit = nil
     end
 end
 
@@ -831,6 +835,7 @@ local function EnsurePreviewDivider(col3)
         if not (host and host:IsShown()) then return end
         self._dragging = true
         self._rebuildElapsed = 0
+        self._lastRefitHeight = host:GetHeight() or 0
         SetHot(true)
         self:SetScript("OnUpdate", function(dividerSelf, elapsed)
             local contentTop = col3.content:GetTop()
@@ -844,6 +849,14 @@ local function EnsurePreviewDivider(col3)
             local desired = (contentTop - cursorY) - (DIVIDER_HEIGHT / 2)
             desired = math.max(PREVIEW_MIN_HEIGHT, math.min(desired, maxHeight))
             host:SetHeight(desired)
+            -- Cheap geometry-only catch-up every frame the height actually
+            -- moves, so anchored chrome (tile borders) tracks the divider at
+            -- frame rate even though the full rebuild below is throttled.
+            local refit = col3._cdcActiveWideRefit
+            if refit and math.abs(dividerSelf._lastRefitHeight - desired) >= 0.5 then
+                dividerSelf._lastRefitHeight = desired
+                refit(host)
+            end
             -- Rescale the preview as the host resizes, throttled.
             dividerSelf._rebuildElapsed = dividerSelf._rebuildElapsed + elapsed
             if dividerSelf._rebuildElapsed >= 0.08 then
@@ -1167,7 +1180,16 @@ local function UpdatePanelPreview(col3)
             ST._BuildGroupPanelOverview(hostFrame, activeContainerId)
         end
     end
-    SetActiveWidePreview(col3, host, BuildPreview)
+    -- The group overview alone offers a cheap per-frame refit: its tile
+    -- geometry re-flows without re-rendering the panel previews inside. The
+    -- panel mirror has no such split, so it keeps the throttled rebuild only.
+    local function RefitPreview(hostFrame)
+        if CS.selectedGroup then return end
+        if ST._ReflowGroupPanelOverview then
+            ST._ReflowGroupPanelOverview(hostFrame)
+        end
+    end
+    SetActiveWidePreview(col3, host, BuildPreview, RefitPreview)
     host:SetHeight(ComputePreviewHostHeight(col3))
     host:Show()
     BuildPreview(host)
