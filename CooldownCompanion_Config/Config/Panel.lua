@@ -1158,30 +1158,6 @@ local function CreateConfigPanel()
     importClusterBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     SkinTitlebarButton(importClusterBtn, importClusterIcon)
 
-    -- Arrange button — leftmost in the stable title-bar cluster
-    local arrangeBtn = CreateFrame("Button", nil, content)
-    arrangeBtn:SetSize(18, 18)
-    arrangeBtn:SetPoint("RIGHT", importClusterBtn, "LEFT", -6, 0)
-    local arrangeIcon = arrangeBtn:CreateTexture(nil, "ARTWORK")
-    arrangeIcon:SetAtlas("questlog-questtypeicon-lock", false)
-    arrangeIcon:SetAllPoints()
-    arrangeBtn:SetScript("OnClick", function()
-        if CooldownCompanion.IsArrangeModeActive and CooldownCompanion:IsArrangeModeActive() then
-            CooldownCompanion:ExitArrangeMode()
-        else
-            CooldownCompanion:EnterArrangeMode()
-        end
-    end)
-    arrangeBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine("Arrange panels")
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Unlocks everything for moving.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    arrangeBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    SkinTitlebarButton(arrangeBtn, arrangeIcon)
-
     local changelogOverlay
 
     -- Gear button — left of Collapse
@@ -1628,6 +1604,38 @@ local function CreateConfigPanel()
         GameTooltip:Show()
     end)
     groupInfoBtn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    -- Arrange toggle in the Navigator header corner
+    local arrangeBtn = CreateFrame("Button", nil, col1.frame)
+    arrangeBtn:SetSize(16, 16)
+    -- Share the info button's baseline: it is centred on the title text, and
+    -- both buttons are the same size, so TOP-to-TOP puts them on one line.
+    arrangeBtn:SetPoint("TOP", groupInfoBtn, "TOP", 0, 0)
+    arrangeBtn:SetPoint("RIGHT", col1.frame, "RIGHT", -10, 0)
+    local arrangeIcon = arrangeBtn:CreateTexture(nil, "OVERLAY")
+    arrangeIcon:SetSize(12, 12)
+    arrangeIcon:SetPoint("CENTER")
+    arrangeIcon:SetAtlas("questlog-questtypeicon-lock", false)
+    arrangeIcon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+    arrangeBtn:SetScript("OnClick", function()
+        if CooldownCompanion.IsArrangeModeActive and CooldownCompanion:IsArrangeModeActive() then
+            CooldownCompanion:ExitArrangeMode()
+        else
+            CooldownCompanion:EnterArrangeMode()
+        end
+    end)
+    arrangeBtn:SetScript("OnEnter", function(self)
+        arrangeIcon:SetVertexColor(1, 1, 1, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Arrange panels")
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Unlocks everything for moving.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    arrangeBtn:SetScript("OnLeave", function()
+        arrangeIcon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
         GameTooltip:Hide()
     end)
 
