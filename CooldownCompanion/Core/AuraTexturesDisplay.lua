@@ -1330,6 +1330,7 @@ function CooldownCompanion:HideAuraTextureVisual(button)
     host._activeTextureGeometry = nil
     host._dragEnabled = nil
     host._wrapperManaged = nil
+    host._unlockGhost = nil
     SetTextureHostMouseEnabled(host, false)
     host:SetAlpha(1)
     SetAuraTextureOutlineShown(host, false)
@@ -1728,7 +1729,8 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
 
     local alphaModuleId = GetTexturePanelAlphaModuleId(driverButton._groupId)
     local layoutPreviewAlpha = GetTexturePanelLayoutPreviewAlpha(driverButton)
-    local bypassAlpha = layoutPreviewAlpha ~= nil and layoutPreviewAlpha or (frame and frame._unlockGhost and 0.4 or 1)
+    host._unlockGhost = frame and frame._unlockGhost or nil
+    local bypassAlpha = layoutPreviewAlpha ~= nil and layoutPreviewAlpha or (host._unlockGhost and 0.4 or 1)
     local visibilityAlpha = Clamp(driverButton._rawVisibilityAlphaOverride or 1, 0, 1)
     local panelAlphaTarget = GetStandalonePanelAlphaTargetFrame(group, sharedSettings, driverButton._groupId)
     local containerAlphaId, containerAlphaConfig
@@ -1809,7 +1811,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
     )
     if host.dragHandle and host.coordLabel then
         host.dragHandle.text:SetText(group and group.name or "Texture Panel")
-        if visibilityState.isGroupedPreview then
+        if visibilityState.isGroupedPreview and not HasStandaloneAnchorTarget(sharedSettings) then
             local displayX, displayY = GetTextureHostDisplayCoords(
                 host,
                 sharedSettings.point or "CENTER",
@@ -1826,7 +1828,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
                 end
             end
             UpdateTextureHostCoordLabel(host, displayX, displayY)
-        elseif host._isDragging then
+        elseif not visibilityState.isGroupedPreview and host._isDragging then
             local _, _, _, currentX, currentY = host:GetPoint()
             UpdateTextureHostCoordLabel(host, currentX, currentY)
         else

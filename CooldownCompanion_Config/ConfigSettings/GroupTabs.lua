@@ -4439,6 +4439,8 @@ local function BuildContainerGeneralTab(scroll, containerId)
             CooldownCompanion:RefreshConfigPanel()
             if not value and ST.CollapseConfigForUnlock then
                 ST.CollapseConfigForUnlock()
+            elseif value then
+                CooldownCompanion:CheckArrangeModeAutoExit()
             end
         end,
     })

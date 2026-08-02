@@ -467,12 +467,17 @@ function CooldownCompanion:OnCombatStart()
     end
     -- Hide config panel during combat to avoid protected frame errors
     local configFrame = self:GetConfigFrame()
-    if configFrame and configFrame.frame:IsShown() then
+    local miniFrame = configFrame and configFrame._miniFrame
+    if configFrame
+        and (configFrame.frame:IsShown() or (miniFrame and miniFrame:IsShown())) then
         self._pendingConfigIntent = {
             action = "toggle",
             entryPoint = "combat reopen",
         }
         configFrame.frame:Hide()
+        if miniFrame and miniFrame:IsShown() then
+            miniFrame:Hide()
+        end
         self:Print("Config closed for combat. It will reopen when combat ends.")
     end
 end

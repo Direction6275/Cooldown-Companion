@@ -636,6 +636,18 @@ function CooldownCompanion:IsContainerUnlockPreviewActive(containerOrContainerId
     return true
 end
 
+function CooldownCompanion:IsPanelUnlockPreviewActive(groupOrGroupId)
+    local group = groupOrGroupId
+    if type(groupOrGroupId) == "number" then
+        group = self.db.profile.groups[groupOrGroupId]
+    end
+    return group
+        and group.locked == false
+        and not self._combatForcedLock
+        and not (self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group))
+        or false
+end
+
 local function ForceCombatMouseLock(frame)
     if not frame then
         return
@@ -704,8 +716,9 @@ function CooldownCompanion:CheckArrangeModeAutoExit()
         return
     end
 
-    for _, container in pairs(self.db.profile.groupContainers or {}) do
-        if container.locked == false then
+    for containerId, container in pairs(self.db.profile.groupContainers or {}) do
+        if self:IsContainerVisibleToCurrentChar(containerId)
+            and container.locked == false then
             return
         end
     end
@@ -825,6 +838,44 @@ local function GetArrangeModePill(addon)
     return pill
 end
 
+local function CancelActiveMoverDrag(addon, frame, activeField)
+    if not (frame and frame[activeField]) then
+        return
+    end
+
+    frame._dragCancelPending = true
+    if not (InCombatLockdown() and frame:IsProtected()) then
+        frame:StopMovingOrSizing()
+    end
+    if addon.EndDragSnapSession then
+        addon:EndDragSnapSession(frame, false)
+    end
+    frame[activeField] = nil
+end
+
+local function CancelActiveMoverGestures(addon)
+    if addon.ResetMoverChromeFade then
+        addon:ResetMoverChromeFade()
+    end
+    if addon.CancelIndependentCastBarDrag then
+        addon:CancelIndependentCastBarDrag()
+    end
+    if addon.CancelIndependentResourceStackDrag then
+        addon:CancelIndependentResourceStackDrag()
+    end
+
+    for _, frame in pairs(addon.groupFrames or {}) do
+        CancelActiveMoverDrag(addon, frame, "_dragInProgress")
+        for _, button in ipairs(frame.buttons or {}) do
+            CancelActiveMoverDrag(addon, button and button.auraTextureHost, "_isDragging")
+        end
+    end
+
+    for _, frame in pairs(addon.containerFrames or {}) do
+        CancelActiveMoverDrag(addon, frame, "_dragInProgress")
+    end
+end
+
 function CooldownCompanion:BeginCombatForcedLock()
     if self._combatForcedLock then
         return false
@@ -863,20 +914,12 @@ function CooldownCompanion:BeginCombatForcedLock()
     if self._arrangeModePill then
         self._arrangeModePill:Hide()
     end
-    if self.ResetMoverChromeFade then
-        self:ResetMoverChromeFade()
-    end
-
-    if self.CancelIndependentCastBarDrag then
-        self:CancelIndependentCastBarDrag()
-    end
-    if self.CancelIndependentResourceStackDrag then
-        self:CancelIndependentResourceStackDrag()
-    end
+    CancelActiveMoverGestures(self)
 
     for groupId, frame in pairs(self.groupFrames or {}) do
         local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
         frame._containerUnlockPreviewActive = nil
+        frame._panelUnlockPreviewActive = nil
         frame._unlockGhost = nil
         local active = group and self:IsGroupActive(groupId, {
             group = group,
@@ -885,16 +928,6 @@ function CooldownCompanion:BeginCombatForcedLock()
             requireButtons = true,
         }) or false
 
-        if frame._dragInProgress then
-            frame._dragCancelPending = true
-            if not frame:IsProtected() then
-                frame:StopMovingOrSizing()
-            end
-            if self.EndDragSnapSession then
-                self:EndDragSnapSession(frame, false)
-            end
-            frame._dragInProgress = nil
-        end
         frame._combatForcedHidden = not active or nil
         SuppressFrameVisibilityForCombat(frame.dragHandle)
         SuppressFrameVisibilityForCombat(frame.coordLabel)
@@ -917,16 +950,7 @@ function CooldownCompanion:BeginCombatForcedLock()
             end
             local host = button and button.auraTextureHost or nil
             if host then
-                if host._isDragging then
-                    host._dragCancelPending = true
-                    if not host:IsProtected() then
-                        host:StopMovingOrSizing()
-                    end
-                    if self.EndDragSnapSession then
-                        self:EndDragSnapSession(host, false)
-                    end
-                    host._isDragging = nil
-                end
+                host._unlockGhost = nil
                 host._dragEnabled = false
                 ForceCombatMouseLock(host)
                 SuppressFrameVisibilityForCombat(host.dragHandle)
@@ -959,16 +983,6 @@ function CooldownCompanion:BeginCombatForcedLock()
 
     if self.containerFrames then
         for containerId, frame in pairs(self.containerFrames) do
-            if frame._dragInProgress then
-                frame._dragCancelPending = true
-                if not frame:IsProtected() then
-                    frame:StopMovingOrSizing()
-                end
-                if self.EndDragSnapSession then
-                    self:EndDragSnapSession(frame, false)
-                end
-                frame._dragInProgress = nil
-            end
             self:UpdateContainerDragHandle(containerId, true)
         end
     end
@@ -1010,13 +1024,29 @@ function CooldownCompanion:EndCombatForcedLock()
         end
     end
 
-    if self._arrangeModeActive then
-        if self.ApplyCastBarSettings then
-            self:ApplyCastBarSettings()
-        end
-        if self.ApplyResourceBars then
-            self:ApplyResourceBars()
-        end
+    local arrangeModeActive = self._arrangeModeActive == true
+    local castSettings = self.GetCastBarSettings and self:GetCastBarSettings()
+    local restoreCastMover = arrangeModeActive
+        or (castSettings
+            and castSettings.enabled == true
+            and castSettings.independentAnchorEnabled == true
+            and not castSettings.independentAnchorLocked)
+    if restoreCastMover and self.ApplyCastBarSettings then
+        self:ApplyCastBarSettings()
+    end
+
+    local resourceSettings = self.GetResourceBarSettings and self:GetResourceBarSettings()
+    local resourceLayout = resourceSettings
+        and self.GetSpecLayoutOrder
+        and self:GetSpecLayoutOrder()
+    local restoreResourceMover = arrangeModeActive
+        or (resourceSettings
+            and resourceSettings.enabled == true
+            and resourceLayout
+            and resourceLayout.independentAnchorEnabled == true
+            and not resourceLayout.independentAnchorLocked)
+    if restoreResourceMover and self.ApplyResourceBars then
+        self:ApplyResourceBars()
     end
 
     if self._arrangeModeActive and self._arrangeModePill then
@@ -1030,13 +1060,23 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
     opts = opts or {}
 
     local group = opts.group or self.db.profile.groups[groupId]
-    if not (group and group.parentContainerId) then
+    if not group then
         return false
     end
 
-    local container = opts.container or self:GetParentContainer(group)
-    if not opts.assumeContainerUnlocked and not self:IsContainerUnlockPreviewActive(container) then
-        return false
+    if opts.panelUnlockPreview then
+        if not self:IsPanelUnlockPreviewActive(group) then
+            return false
+        end
+    else
+        if not group.parentContainerId then
+            return false
+        end
+
+        local container = opts.container or self:GetParentContainer(group)
+        if not opts.assumeContainerUnlocked and not self:IsContainerUnlockPreviewActive(container) then
+            return false
+        end
     end
 
     local isRotationAssistant = self:IsRotationAssistantGroup(group)
@@ -1065,14 +1105,22 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
         return false
     end
 
-    if self.IsGroupEligibilityMet and not self:IsGroupEligibilityMet(group) then
+    if not opts.ignoreOtherClassBrowseSuppression
+        and groupId
+        and self:IsGroupSuppressedForOtherClassBrowse(groupId, group) then
         return false
     end
 
-    local effectiveSpecs, _, hasSpecFilter = self:GetEffectiveSpecs(group)
-    if hasSpecFilter then
-        if not (self._currentSpecId and effectiveSpecs[self._currentSpecId]) then
+    if not opts.panelUnlockPreview then
+        if self.IsGroupEligibilityMet and not self:IsGroupEligibilityMet(group) then
             return false
+        end
+
+        local effectiveSpecs, _, hasSpecFilter = self:GetEffectiveSpecs(group)
+        if hasSpecFilter then
+            if not (self._currentSpecId and effectiveSpecs[self._currentSpecId]) then
+                return false
+            end
         end
     end
 
@@ -1407,6 +1455,10 @@ local CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS = {
     selectionDrivenConfigPreview = true,
 }
 
+local UNLOCK_PREVIEW_BUTTON_USABILITY_OPTIONS = {
+    checkLoadConditions = false,
+}
+
 local function IsGroupEnabledForConfigPreview(addon, group)
     if not group then return false end
 
@@ -1500,21 +1552,23 @@ local function GroupHasConfigPreviewButtons(addon, groupId, group)
 end
 
 function CooldownCompanion:GetGroupButtonUsabilityOptions(groupId, group)
-    if not (groupId and IsSelectionDrivenConfigPreviewScope(self, groupId)) then
-        return nil
+    if groupId and IsSelectionDrivenConfigPreviewScope(self, groupId) then
+        local db = self.db and self.db.profile
+        group = group or (db and db.groups and db.groups[groupId])
+        if IsGroupEnabledForConfigPreview(self, group)
+            and GroupHasConfigPreviewButtons(self, groupId, group) then
+            return CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS
+        end
     end
 
-    local db = self.db and self.db.profile
-    group = group or (db and db.groups and db.groups[groupId])
-    if not IsGroupEnabledForConfigPreview(self, group) then
-        return nil
+    local frame = groupId and self.groupFrames and self.groupFrames[groupId]
+    if frame
+        and (frame._containerUnlockPreviewActive == true
+            or frame._panelUnlockPreviewActive == true) then
+        return UNLOCK_PREVIEW_BUTTON_USABILITY_OPTIONS
     end
 
-    if not GroupHasConfigPreviewButtons(self, groupId, group) then
-        return nil
-    end
-
-    return CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS
+    return nil
 end
 
 function CooldownCompanion:GetGroupLayoutButtonUsabilityOptions(groupId, group)
@@ -1534,6 +1588,15 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
             group = group,
             container = container,
             checkCharVisibility = opts.checkCharVisibility,
+            ignoreOtherClassBrowseSuppression = opts.ignoreOtherClassBrowseSuppression,
+        })
+    end
+    if not opts.ignoreUnlockPreview and self:IsPanelUnlockPreviewActive(group) then
+        return self:IsGroupVisibleInUnlockPreview(groupId, {
+            group = group,
+            panelUnlockPreview = true,
+            checkCharVisibility = opts.checkCharVisibility,
+            ignoreOtherClassBrowseSuppression = opts.ignoreOtherClassBrowseSuppression,
         })
     end
     if container then
@@ -1702,6 +1765,7 @@ function CooldownCompanion:IsGroupSuppressedForOtherClassBrowse(groupId, group)
         checkCharVisibility = false,
         checkLoadConditions = true,
         requireButtons = true,
+        ignoreOtherClassBrowseSuppression = true,
     }) == true
 end
 
@@ -3188,15 +3252,12 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                     else
                         frame:Show()
                     end
-                    -- Resolve locked from container (panels defer to container lock)
-                    local container = self:GetParentContainer(group)
-                    local isLocked
+                    local isLocked = not (
+                        frame._containerUnlockPreviewActive == true
+                        or frame._panelUnlockPreviewActive == true
+                    )
                     if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then
                         isLocked = true
-                    elseif container then
-                        isLocked = container.locked ~= false
-                    else
-                        isLocked = group.locked
                     end
                     -- Keep unlocked panels fully visible, except unlock ghosts.
                     if not isLocked then
@@ -3642,6 +3703,7 @@ end
 
 function CooldownCompanion:ExitArrangeMode()
     self._arrangeModeActive = nil
+    CancelActiveMoverGestures(self)
     self:LockAllFrames()
     if self.SetIndependentCastBarLocked then
         self:SetIndependentCastBarLocked(true)

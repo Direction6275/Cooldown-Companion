@@ -374,8 +374,9 @@ local function IsAuraShellHidden(button, buttonData)
     local frame = button and button:GetParent()
     local unlockPreviewActive = not CooldownCompanion._combatForcedLock
         and (
-            CooldownCompanion:IsArrangeModeActive()
-            or (frame and frame._containerUnlockPreviewActive == true)
+            frame
+            and (frame._containerUnlockPreviewActive == true
+                or frame._panelUnlockPreviewActive == true)
         )
     return IsAuraShellEntry(buttonData) and not unlockPreviewActive
 end

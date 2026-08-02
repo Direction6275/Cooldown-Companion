@@ -1295,6 +1295,9 @@ local function BuildResourceBarPositioningPanel(container)
                 onChange = function(val)
                     layout.independentAnchorLocked = not val
                     CooldownCompanion:ApplyResourceBars()
+                    if not val then
+                        CooldownCompanion:CheckArrangeModeAutoExit()
+                    end
                 end,
             })
 

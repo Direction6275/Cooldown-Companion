@@ -342,7 +342,7 @@ local lastAppliedBarThickness = nil
 local independentWrapperFrame = nil
 
 function CooldownCompanion:GetIndependentResourceStackSnapFrame()
-    return independentWrapperFrame
+    return independentWrapperFrame and independentWrapperFrame._dragSnapRectFrame
 end
 
 function CooldownCompanion:GetIndependentResourceStackMoverChrome()
@@ -731,6 +731,8 @@ local function CreateIndependentWrapperFrame()
     frame:SetSize(1, 1)
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
+    frame._dragSnapRectFrame = CreateFrame("Frame", nil, frame)
+    frame._dragSnapRectFrame:Hide()
 
     -- Drag handle (full-width, anchored to containers by UpdateIndependentStackChrome)
     local dragHandle = CreateFrame("Frame", nil, frame, "BackdropTemplate")
@@ -888,7 +890,7 @@ local function CreateIndependentWrapperFrame()
         frame:StartMoving()
         CooldownCompanion:BeginMoverChromeFade(frame)
         CooldownCompanion:BeginDragSnapSession(frame, function(candidateFrame)
-            return candidateFrame == frame
+            return candidateFrame == frame or candidateFrame == frame._dragSnapRectFrame
         end)
         StartIndependentStackCoordUpdates(frame, placementSettings.independentAnchor)
     end)
@@ -1008,6 +1010,26 @@ local function UpdateIndependentStackChrome(isVerticalLayout, placementSettings)
     -- When all bars are on one side, the empty container is hidden (height/width=1).
     local aboveShown = containerFrameAbove:IsShown()
     local belowShown = containerFrameBelow:IsShown()
+
+    local snapRect = frame._dragSnapRectFrame
+    if snapRect then
+        snapRect:ClearAllPoints()
+        if not aboveShown and not belowShown then
+            snapRect:Hide()
+        elseif isVerticalLayout then
+            local leftRef = aboveShown and containerFrameAbove or containerFrameBelow
+            local rightRef = belowShown and containerFrameBelow or containerFrameAbove
+            snapRect:SetPoint("TOPLEFT", leftRef, "TOPLEFT")
+            snapRect:SetPoint("BOTTOMRIGHT", rightRef, "BOTTOMRIGHT")
+            snapRect:Show()
+        else
+            local topRef = aboveShown and containerFrameAbove or containerFrameBelow
+            local bottomRef = belowShown and containerFrameBelow or containerFrameAbove
+            snapRect:SetPoint("TOPLEFT", topRef, "TOPLEFT")
+            snapRect:SetPoint("BOTTOMRIGHT", bottomRef, "BOTTOMRIGHT")
+            snapRect:Show()
+        end
+    end
 
     local dragHandle = frame._dragHandle
     if dragHandle then

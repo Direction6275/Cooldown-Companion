@@ -1525,6 +1525,14 @@ local function CreateConfigPanel()
             return
         end
 
+        if InCombatLockdown() then
+            CooldownCompanion:RunConfigIntent({
+                action = "open",
+                entryPoint = "puck expand",
+            })
+            return
+        end
+
         local expandRight, expandTop
         if miniWasDragged then
             -- User dragged mini frame — apply saved offset to new mini frame position

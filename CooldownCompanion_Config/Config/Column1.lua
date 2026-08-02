@@ -945,6 +945,8 @@ local function ShowContainerContextMenu(db, containerId, container)
                 CooldownCompanion:RefreshConfigPanel()
                 if isLocked and ST.CollapseConfigForUnlock then
                     ST.CollapseConfigForUnlock()
+                elseif not isLocked then
+                    CooldownCompanion:CheckArrangeModeAutoExit()
                 end
             end
             UIDropDownMenu_AddButton(info, level)
@@ -1688,6 +1690,8 @@ local function RefreshColumn1(preserveDrag)
                 CooldownCompanion:RefreshConfigPanel()
                 if isLocked and ST.CollapseConfigForUnlock then
                     ST.CollapseConfigForUnlock()
+                elseif not isLocked then
+                    CooldownCompanion:CheckArrangeModeAutoExit()
                 end
             end
         end)

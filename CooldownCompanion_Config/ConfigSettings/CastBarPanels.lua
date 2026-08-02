@@ -282,6 +282,9 @@ local function BuildCastBarPositioningPanel(container)
         onChange = function(val)
             settings.independentAnchorLocked = not val
             CooldownCompanion:ApplyCastBarSettings()
+            if not val then
+                CooldownCompanion:CheckArrangeModeAutoExit()
+            end
         end,
     })
 

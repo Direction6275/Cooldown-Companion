@@ -310,6 +310,8 @@ function ST._RefreshGroupMultiSelect(scroll, multiCount, multiGroupIds)
                 CooldownCompanion:RefreshConfigPanel()
                 if not anyUnlocked and ST.CollapseConfigForUnlock then
                     ST.CollapseConfigForUnlock()
+                elseif anyUnlocked then
+                    CooldownCompanion:CheckArrangeModeAutoExit()
                 end
             end,
         },

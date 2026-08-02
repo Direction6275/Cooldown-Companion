@@ -566,8 +566,9 @@ local function IsUnlockPreviewExposingShell(button)
     local frame = button and button:GetParent()
     return not CooldownCompanion._combatForcedLock
         and (
-            CooldownCompanion:IsArrangeModeActive()
-            or (frame and frame._containerUnlockPreviewActive == true)
+            frame
+            and (frame._containerUnlockPreviewActive == true
+                or frame._panelUnlockPreviewActive == true)
         )
 end
 

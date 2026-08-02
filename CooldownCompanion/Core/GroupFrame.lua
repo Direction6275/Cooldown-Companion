@@ -142,6 +142,49 @@ function CooldownCompanion:EndMoverChromeFade(activeMover)
     self:ApplyMoverChromeFadeState()
 end
 
+function CooldownCompanion:EndMoverChromeFadeIfOwnedByContainer(containerId)
+    if not moverChromeFadeState.active then
+        return
+    end
+
+    local activeMover = moverChromeFadeState.activeMover
+    if not activeMover then
+        self:EndMoverChromeFade()
+        return
+    end
+
+    local containerFrame = self.containerFrames and self.containerFrames[containerId]
+    if activeMover == containerFrame
+        or (containerFrame and activeMover == containerFrame.nudger) then
+        self:EndMoverChromeFade(activeMover)
+        return
+    end
+
+    local groups = self.db
+        and self.db.profile
+        and self.db.profile.groups
+        or {}
+    for groupId, group in pairs(groups) do
+        if group.parentContainerId == containerId then
+            local groupFrame = self.groupFrames and self.groupFrames[groupId]
+            if groupFrame and groupFrame._containerUnlockPreviewActive == true then
+                local textureHost = self.GetAuraTextureHostForGroupFrame
+                    and self:GetAuraTextureHostForGroupFrame(groupFrame)
+                    or nil
+                if activeMover == groupFrame
+                    or activeMover == groupFrame.nudger
+                    or activeMover == groupFrame.resizeGrip
+                    or activeMover._resizeFrame == groupFrame
+                    or activeMover == textureHost
+                    or (textureHost and activeMover == textureHost.nudger) then
+                    self:EndMoverChromeFade(activeMover)
+                    return
+                end
+            end
+        end
+    end
+end
+
 function CooldownCompanion:VerifyMoverChromeHoverFade(pad)
     if not moverChromeFadeState.active or moverChromeFadeState.activeMover ~= pad then
         return false
@@ -243,7 +286,7 @@ local function GetContainerState(groupId)
     end
 
     -- Legacy path (no container)
-    return group.locked or false, group.baselineAlpha or 1
+    return group.locked ~= false, group.baselineAlpha or 1
 end
 
 local function IsSecretValue(value)
@@ -1843,17 +1886,19 @@ local function ApplyPanelResizeFromCursor(grip)
 
     local dx = cursorX - grip._resizeStartX
     local dy = cursorY - grip._resizeStartY
+    local perButtonDW = dx / (grip._resizeCols * grip._resizeKX)
+    local perButtonDH = -dy / (grip._resizeRows * grip._resizeKY)
     local changed = false
 
     if grip._resizeKind == "square" then
-        local newSize = RoundAndClampPanelSize(grip._resizeStartPrimary + ((dx - dy) / 2), 10, 150)
+        local newSize = RoundAndClampPanelSize(grip._resizeStartPrimary + ((perButtonDW + perButtonDH) / 2), 10, 150)
         if style.buttonSize ~= newSize then
             style.buttonSize = newSize
             changed = true
         end
     elseif grip._resizeKind == "icon" then
-        local newWidth = RoundAndClampPanelSize(grip._resizeStartPrimary + dx, 10, 150)
-        local newHeight = RoundAndClampPanelSize(grip._resizeStartSecondary - dy, 10, 150)
+        local newWidth = RoundAndClampPanelSize(grip._resizeStartPrimary + perButtonDW, 10, 150)
+        local newHeight = RoundAndClampPanelSize(grip._resizeStartSecondary + perButtonDH, 10, 150)
         if style.iconWidth ~= newWidth then
             style.iconWidth = newWidth
             changed = true
@@ -1866,11 +1911,11 @@ local function ApplyPanelResizeFromCursor(grip)
         local newLength
         local newHeight
         if grip._resizeBarFillVertical then
-            newLength = RoundAndClampPanelSize(grip._resizeStartPrimary - dy, 10, 500)
-            newHeight = RoundAndClampPanelSize(grip._resizeStartSecondary + dx, 5, 100)
+            newLength = RoundAndClampPanelSize(grip._resizeStartPrimary + perButtonDH, 10, 500)
+            newHeight = RoundAndClampPanelSize(grip._resizeStartSecondary + perButtonDW, 5, 100)
         else
-            newLength = RoundAndClampPanelSize(grip._resizeStartPrimary + dx, 10, 500)
-            newHeight = RoundAndClampPanelSize(grip._resizeStartSecondary - dy, 5, 100)
+            newLength = RoundAndClampPanelSize(grip._resizeStartPrimary + perButtonDW, 10, 500)
+            newHeight = RoundAndClampPanelSize(grip._resizeStartSecondary + perButtonDH, 5, 100)
         end
         if style.barLength ~= newLength then
             style.barLength = newLength
@@ -1932,6 +1977,10 @@ local function EndPanelResizeGesture(grip, applyFinal)
     grip._resizeStartPrimary = nil
     grip._resizeStartSecondary = nil
     grip._resizeBarFillVertical = nil
+    grip._resizeCols = nil
+    grip._resizeRows = nil
+    grip._resizeKX = nil
+    grip._resizeKY = nil
     grip._resizeElapsed = nil
     grip._resizeRestylePending = nil
     CooldownCompanion:EndMoverChromeFade(grip)
@@ -1981,6 +2030,49 @@ local function BeginPanelResizeGesture(grip)
     grip._resizeStartY = cursorY
     grip._resizeElapsed = 0
     grip._resizeRestylePending = nil
+
+    local isBarMode = group.displayMode == "bars"
+    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
+    local buttonsPerRow = style.buttonsPerRow or 12
+    local numButtons = frame.visibleButtonCount
+        or (CooldownCompanion:IsRotationAssistantGroup(group) and 1)
+        or #group.buttons
+    if group.parentContainerId and not group.compactLayout and frame.layoutButtonCount then
+        numButtons = math_max(numButtons, frame.layoutButtonCount)
+    end
+    if orientation == "horizontal" then
+        grip._resizeCols = math_max(1, math_min(numButtons, buttonsPerRow))
+        grip._resizeRows = math_max(1, math_ceil(numButtons / buttonsPerRow))
+    else
+        grip._resizeRows = math_max(1, math_min(numButtons, buttonsPerRow))
+        grip._resizeCols = math_max(1, math_ceil(numButtons / buttonsPerRow))
+    end
+
+    local compactGrowthDirection = NormalizeCompactGrowthDirection(group.compactGrowthDirection)
+    local factorPoint = group.compactLayout
+        and GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, style.growthOrigin)
+        or nil
+    factorPoint = factorPoint or ((group.anchor and group.anchor.point) or "CENTER")
+    if factorPoint:find("LEFT", 1, true) then
+        grip._resizeKX = 1
+    elseif factorPoint:find("RIGHT", 1, true) then
+        grip._resizeKX = 0
+    else
+        grip._resizeKX = 0.5
+    end
+    if factorPoint:find("TOP", 1, true) then
+        grip._resizeKY = 1
+    elseif factorPoint:find("BOTTOM", 1, true) then
+        grip._resizeKY = 0
+    else
+        grip._resizeKY = 0.5
+    end
+    if grip._resizeKX == 0 then
+        grip._resizeKX = 1
+    end
+    if grip._resizeKY == 0 then
+        grip._resizeKY = 1
+    end
 
     if group.displayMode == "bars" then
         grip._resizeKind = "bar"
@@ -2930,6 +3022,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame._containerUnlockPreviewActive = group.parentContainerId
         and self:IsContainerUnlockPreviewActive(group.parentContainerId)
         or nil
+    frame._panelUnlockPreviewActive = self:IsPanelUnlockPreviewActive(group) or nil
     
     -- Set initial size (will be updated when buttons are added)
     frame:SetSize(100, 50)
@@ -4013,6 +4106,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         frame._containerUnlockPreviewActive = group.parentContainerId
             and self:IsContainerUnlockPreviewActive(group.parentContainerId)
             or nil
+        frame._panelUnlockPreviewActive = self:IsPanelUnlockPreviewActive(group) or nil
         self:PopulateGroupButtons(groupId)
     end
 
@@ -4027,9 +4121,10 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         and IsCursorAnchorLayoutPreviewSelected(self, groupId)
         or false
     local containerPreviewActive = frame._containerUnlockPreviewActive == true
+    local panelPreviewActive = frame._panelUnlockPreviewActive == true
     local selectedInContainer = containerPreviewActive and self:IsContainerPanelSelected(group.parentContainerId, groupId)
     local isActive = ShouldShowGroupFrameForRuntimeOrPreview(self, groupId, group)
-    if containerPreviewActive and isActive then
+    if (containerPreviewActive or panelPreviewActive) and isActive then
         local normallyActive = self:IsGroupActive(groupId, {
             group = group,
             checkCharVisibility = true,
@@ -4806,11 +4901,16 @@ function CooldownCompanion:StopContainerMemberPreviewTracking(containerId)
         tracker._elapsed = 0
         tracker:SetScript("OnUpdate", nil)
     end
-    self:EndMoverChromeFade(textureHost or groupFrame)
+    if groupFrame then
+        self:EndMoverChromeFade(groupFrame)
+    end
+    if textureHost then
+        self:EndMoverChromeFade(textureHost)
+    end
 end
 
 function CooldownCompanion:ClearContainerUnlockState(containerId)
-    self:ResetMoverChromeFade()
+    self:EndMoverChromeFadeIfOwnedByContainer(containerId)
     local frame = self.containerFrames and self.containerFrames[containerId]
     if not frame then
         return
