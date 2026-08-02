@@ -21,9 +21,6 @@ local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
 local BuildAlphaControls = ST._BuildAlphaControls
-local OpenTriggerPanelIconPicker = ST._OpenTriggerPanelIconPicker
-local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
-local ApplyIconTexCoord = ST._ApplyIconTexCoord
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 local AddScopedLoadConditionToggles = ST._AddScopedLoadConditionToggles
 local BuildWhereToHideTooltip = ST._BuildWhereToHideTooltip
@@ -615,6 +612,21 @@ local function RefreshStandaloneTriggerDisplay(groupId)
     end
 end
 
+-- Repaint the pinned Live Preview after a trigger display setting changes.
+-- Prefers the display-only repaint: these callbacks fire on every tick of a
+-- slider drag, and a full mirror rebuild would re-run per-entry usability and
+-- load-condition queries and re-wire every selection-strip slot each frame.
+-- Falls back to the full rebuild when there is no live mirror yet (the first
+-- build of a tab, or a preview that is not showing).
+local function RefreshTriggerPreviewMirror(groupId)
+    if ST._RefreshTriggerDisplayVisual and ST._RefreshTriggerDisplayVisual(groupId) then
+        return
+    end
+    if ST._RefreshButtonsPreviewMirror then
+        ST._RefreshButtonsPreviewMirror(groupId)
+    end
+end
+
 local function AddTriggerDisplayTypeDropdown(container, group)
     local displayDrop = AceGUI:Create("Dropdown")
     displayDrop:SetLabel("Display Type")
@@ -632,44 +644,8 @@ local function AddTriggerDisplayTypeDropdown(container, group)
     container:AddChild(displayDrop)
 end
 
-local function CreateTriggerPreviewCanvas(container, height)
-    local previewGroup = AceGUI:Create("SimpleGroup")
-    previewGroup:SetFullWidth(true)
-    previewGroup:SetHeight(height)
-    previewGroup:SetLayout("Fill")
-    container:AddChild(previewGroup)
-
-    local previewFrame = CreateFrame("Frame", nil, previewGroup.frame)
-    previewFrame:SetPoint("TOP", previewGroup.frame, "TOP", 0, -2)
-    previewFrame:SetSize(TEXTURE_PREVIEW_WIDTH, height - 4)
-    appearanceTabElements[#appearanceTabElements + 1] = previewFrame
-
-    local previewShade = previewFrame:CreateTexture(nil, "BACKGROUND")
-    previewShade:SetAllPoints()
-    previewShade:SetColorTexture(0, 0, 0, 0.42)
-
-    return previewFrame
-end
-
-local function FitPreviewContentToCanvas(contentFrame, canvasFrame, contentWidth, contentHeight, padding)
-    if not contentFrame or not canvasFrame then
-        return
-    end
-
-    padding = padding or 8
-    local canvasWidth = canvasFrame:GetWidth() or TEXTURE_PREVIEW_WIDTH
-    local canvasHeight = canvasFrame:GetHeight() or 0
-    local availableWidth = math_max(1, canvasWidth - (padding * 2))
-    local availableHeight = math_max(1, canvasHeight - (padding * 2))
-    local widthScale = availableWidth / math_max(1, contentWidth or 1)
-    local heightScale = availableHeight / math_max(1, contentHeight or 1)
-    local scale = math_min(1, widthScale, heightScale)
-    contentFrame:SetScale(scale)
-end
-
--- Row grammar (RowWidgets.lua): one collapsible section. The preview canvas
--- and the picker buttons are not settings, so they stay full-width on the
--- container above the section's grid and survive a collapse.
+-- Row grammar (RowWidgets.lua): one collapsible section. The icon itself is
+-- shown and picked in the Live Preview above, so the tab is settings rows only.
 local function BuildTriggerIconAppearanceTab(container, group)
     -- Function-local, not an upvalue: see the note by the row-grammar imports.
     local BeginRowGrid = ST._BeginRowGrid
@@ -680,101 +656,21 @@ local function BuildTriggerIconAppearanceTab(container, group)
     local _, iconCollapsed = BuildCollapsibleSection(container, "Trigger Icon",
         "appearance_triggerIcon", nil, nil, ROW_SECTION)
 
-    local previewFrame = CreateTriggerPreviewCanvas(container, TEXTURE_PREVIEW_HEIGHT + 4)
-    local iconHolder = CreateFrame("Frame", nil, previewFrame)
-    iconHolder:SetPoint("CENTER")
-    iconHolder:SetSize(DEFAULT_TEXTURE_PREVIEW_SIZE, DEFAULT_TEXTURE_PREVIEW_SIZE)
-
-    local previewBg = iconHolder:CreateTexture(nil, "BACKGROUND")
-    previewBg:SetAllPoints()
-
-    local previewIcon = iconHolder:CreateTexture(nil, "ARTWORK")
-    local previewBorders = {}
-    for index = 1, 4 do
-        previewBorders[index] = iconHolder:CreateTexture(nil, "OVERLAY")
-    end
-    local clearBtn
-
-    local placeholder = previewFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    placeholder:SetPoint("CENTER")
-    placeholder:SetJustifyH("CENTER")
-    placeholder:SetText("No icon selected")
-    placeholder:SetTextColor(0.65, 0.65, 0.65, 1)
-
+    -- The icon renders in the Live Preview, which is also the picker: clicking
+    -- it opens the icon picker and right-click clears. This tab holds only the
+    -- settings rows, so a refresh repaints the runtime panel and that mirror.
     local function RefreshIconPreview()
-        local width = settings.maintainAspectRatio and (settings.buttonSize or ST.BUTTON_SIZE)
-            or (settings.iconWidth or settings.buttonSize or ST.BUTTON_SIZE)
-        local height = settings.maintainAspectRatio and (settings.buttonSize or ST.BUTTON_SIZE)
-            or (settings.iconHeight or settings.buttonSize or ST.BUTTON_SIZE)
-        local borderSize = settings.borderSize or ST.DEFAULT_BORDER_SIZE
-        local borderRenderMode = ST.GetBorderRenderMode(settings)
-        local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(iconHolder, borderSize, borderRenderMode)
-        local bgColor = settings.backgroundColor or { 0, 0, 0, 0.5 }
-        local borderColor = settings.borderColor or { 0, 0, 0, 1 }
-        local tintColor = settings.iconTintColor or { 1, 1, 1, 1 }
-        local hasIcon = ST._IsValidIconTexture(settings.manualIcon)
-
-        iconHolder:SetSize(width, height)
-        previewIcon:ClearAllPoints()
-        previewIcon:SetPoint("TOPLEFT", borderLayoutSize, -borderLayoutSize)
-        previewIcon:SetPoint("BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
-
-        if hasIcon then
-            previewBg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] ~= nil and bgColor[4] or 0.5)
-            previewBg:Show()
-            for _, border in ipairs(previewBorders) do
-                border:SetColorTexture(borderColor[1] or 0, borderColor[2] or 0, borderColor[3] or 0, borderColor[4] ~= nil and borderColor[4] or 1)
-                border:Show()
-            end
-            ApplyBorderEdgePositions(previewBorders, iconHolder, borderSize, borderRenderMode)
-            previewIcon:SetTexture(settings.manualIcon)
-            previewIcon:SetVertexColor(tintColor[1] or 1, tintColor[2] or 1, tintColor[3] or 1, tintColor[4] ~= nil and tintColor[4] or 1)
-            ApplyIconTexCoord(previewIcon, width, height)
-            previewIcon:Show()
-            placeholder:Hide()
-        else
-            previewBg:Hide()
-            for _, border in ipairs(previewBorders) do
-                border:Hide()
-            end
-            previewIcon:Hide()
-            placeholder:Show()
-        end
-
-        if clearBtn then
-            clearBtn:SetDisabled(not hasIcon)
-        end
-
         RefreshStandaloneTriggerDisplay(groupId)
+        RefreshTriggerPreviewMirror(groupId)
     end
 
-    -- Compact action strip under the canvas: these act on the picture above
-    -- them, not on the section below, so they stay on the container.
-    local actionRow = AceGUI:Create("SimpleGroup")
-    actionRow:SetFullWidth(true)
-    actionRow:SetLayout("Flow")
-    actionRow:SetHeight(ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT or 30)
-    actionRow.noAutoHeight = true
-    container:AddChild(actionRow)
-
-    local browseBtn = AceGUI:Create("Button")
-    browseBtn:SetText("Choose Icon")
-    browseBtn:SetAutoWidth(true)
-    browseBtn:SetCallback("OnClick", function()
-        OpenTriggerPanelIconPicker(groupId)
-    end)
-    actionRow:AddChild(browseBtn)
-
-    clearBtn = AceGUI:Create("Button")
-    clearBtn:SetText("Clear")
-    clearBtn:SetAutoWidth(true)
-    clearBtn:SetDisabled(not ST._IsValidIconTexture(settings.manualIcon))
-    clearBtn:SetCallback("OnClick", function()
-        settings.manualIcon = nil
-        RefreshIconPreview()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    actionRow:AddChild(clearBtn)
+    if not ST._IsValidIconTexture(settings.manualIcon) then
+        local emptyLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(emptyLabel)
+        emptyLabel:SetFullWidth(true)
+        emptyLabel:SetText("|cff888888Click the preview above to choose an icon.|r")
+        container:AddChild(emptyLabel)
+    end
 
     if not iconCollapsed then
     -- LEFT column: the icon itself - its shape, its size, and the two colors
@@ -879,10 +775,9 @@ local function BuildTriggerIconAppearanceTab(container, group)
     RefreshIconPreview()
 end
 
--- Row grammar (RowWidgets.lua): one collapsible section. The preview canvas
--- and the multi-line text box stay full-width on the container above it - the
--- canvas is not a setting, and the text itself is prose-shaped, so neither has
--- a row form.
+-- Row grammar (RowWidgets.lua): one collapsible section. The rendered text is
+-- shown in the Live Preview above; the multi-line text box stays full-width on
+-- the container because the text itself is prose-shaped, not a row form.
 local function BuildTriggerTextAppearanceTab(container, group)
     -- Function-local, not an upvalue: see the note by the row-grammar imports.
     local BeginRowGrid = ST._BeginRowGrid
@@ -895,72 +790,9 @@ local function BuildTriggerTextAppearanceTab(container, group)
     local _, textCollapsed = BuildCollapsibleSection(container, "Trigger Text",
         "appearance_triggerText", nil, nil, ROW_SECTION)
 
-    local previewFrame = CreateTriggerPreviewCanvas(container, 120)
-    local textHolder = CreateFrame("Frame", nil, previewFrame)
-    textHolder:SetPoint("CENTER")
-    textHolder:SetSize(1, 1)
-
-    local previewBg = textHolder:CreateTexture(nil, "BACKGROUND")
-    previewBg:SetAllPoints()
-
-    local previewBorders = {}
-    for index = 1, 4 do
-        previewBorders[index] = textHolder:CreateTexture(nil, "OVERLAY")
-    end
-
-    local previewText = textHolder:CreateFontString(nil, "OVERLAY")
-    previewText:SetJustifyV("MIDDLE")
-    previewText:SetJustifyH("CENTER")
-    previewText:SetWordWrap(false)
-    previewText:SetMaxLines(0)
-
-    local placeholder = previewFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    placeholder:SetPoint("CENTER")
-    placeholder:SetJustifyH("CENTER")
-    placeholder:SetText("No text entered")
-    placeholder:SetTextColor(0.65, 0.65, 0.65, 1)
-
     local function RefreshTextPreview()
-        local bgColor = settings.textBgColor or { 0, 0, 0, 0 }
-        local fontColor = settings.textFontColor or { 1, 1, 1, 1 }
-        local textAlignment = settings.textAlignment or "CENTER"
-        local hasText = CooldownCompanion.HasTriggerTextValue(settings)
-        local insetX = 2
-        local insetY = 1
-
-        textHolder:SetScale(1)
-        if hasText then
-            local frameWidth, frameHeight, textWidth, textHeight, lineCount
-            frameWidth, frameHeight, insetX, insetY, textWidth, textHeight, lineCount = CooldownCompanion.GetTriggerTextDisplayMetrics(previewText, settings)
-            textHolder:SetSize(frameWidth, frameHeight)
-            textHolder:ClearAllPoints()
-            textHolder:SetPoint("CENTER", previewFrame, "CENTER", 0, 0)
-            previewText:SetSize(textWidth or math_max(1, frameWidth - (insetX * 2)), textHeight or math_max(1, frameHeight - (insetY * 2)))
-            previewText:SetWordWrap((lineCount or 1) > 1)
-            previewText:SetJustifyV((lineCount or 1) > 1 and "TOP" or "MIDDLE")
-            FitPreviewContentToCanvas(textHolder, previewFrame, frameWidth, frameHeight, 8)
-        else
-            textHolder:SetSize(1, 1)
-            textHolder:ClearAllPoints()
-            textHolder:SetPoint("CENTER", previewFrame, "CENTER", 0, 0)
-            previewText:SetSize(1, 1)
-            previewText:SetWordWrap(false)
-            previewText:SetJustifyV("MIDDLE")
-        end
-        previewBg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] ~= nil and bgColor[4] or 0)
-        for _, border in ipairs(previewBorders) do
-            border:Hide()
-        end
-
-        previewText:ClearAllPoints()
-        previewText:SetPoint("TOPLEFT", textHolder, "TOPLEFT", insetX, -insetY)
-        previewText:SetPoint("BOTTOMRIGHT", textHolder, "BOTTOMRIGHT", -insetX, insetY)
-        previewText:SetJustifyH(textAlignment)
-        previewText:SetTextColor(fontColor[1] or 1, fontColor[2] or 1, fontColor[3] or 1, fontColor[4] ~= nil and fontColor[4] or 1)
-        previewText:SetShown(hasText)
-        placeholder:SetShown(not hasText)
-
         RefreshStandaloneTriggerDisplay(groupId)
+        RefreshTriggerPreviewMirror(groupId)
     end
 
     local textBox = AceGUI:Create("MultiLineEditBox")
@@ -3249,9 +3081,9 @@ local function BuildEffectsTab(container)
 
 end
 
--- Row grammar (RowWidgets.lua): one collapsible section, plus a preview canvas
--- and picker buttons that are not settings and so stay full-width on the
--- container above it.
+-- Row grammar (RowWidgets.lua): one collapsible section of display rows. The
+-- texture itself is shown and picked in the Live Preview above for both panel
+-- kinds, so the tab holds no preview canvas or picker buttons.
 --
 -- Lives at file scope rather than inline in BuildAppearanceTab because that
 -- builder sits on Lua 5.1's hard 60-upvalue ceiling; the captures this branch
@@ -3279,7 +3111,6 @@ local function BuildTexturePanelAppearanceTab(container, group)
         CS.textureConfigPreviewStage = nil
     end
     local buttonData = group.buttons and group.buttons[1] or nil
-    local previewWidget = nil
 
     -- Runtime refreshes read the saved settings table directly, so texture
     -- panels need a separate config-only copy while an interaction is in
@@ -3311,9 +3142,6 @@ local function BuildTexturePanelAppearanceTab(container, group)
     end
 
     local function RefreshTexturePreview()
-        if previewWidget then
-            UpdateTexturePanelPreview(previewWidget, previewSettings)
-        end
         if not isTriggerPanel and ST._RefreshButtonsPreviewMirror then
             CS.textureConfigPreviewStage = {
                 groupId = groupId,
@@ -3335,10 +3163,13 @@ local function BuildTexturePanelAppearanceTab(container, group)
 
     local function RefreshTextureVisual()
         ClearTextureConfigPreviewStage()
-        if previewWidget then
-            UpdateTexturePanelPreview(previewWidget, settings)
-        end
-        if not isTriggerPanel and ST._RefreshButtonsPreviewMirror then
+        -- Both panel kinds repaint the pinned mirror. Trigger drag ticks route
+        -- here directly (their sliders write the saved table live), so they
+        -- take the display-only repaint; texture panels have no strip to spare
+        -- and rebuild the mirror outright.
+        if isTriggerPanel then
+            RefreshTriggerPreviewMirror(groupId)
+        elseif ST._RefreshButtonsPreviewMirror then
             ST._RefreshButtonsPreviewMirror(groupId)
         end
         RefreshTextureRuntime()
@@ -3352,9 +3183,10 @@ local function BuildTexturePanelAppearanceTab(container, group)
         end
     end
 
-    -- Trigger panels keep their existing in-tab live behavior. Texture
-    -- panels use the pinned mirror during continuous edits and touch the
-    -- runtime panel only when the interaction is confirmed.
+    -- Trigger panels keep their existing live-write behavior (saved table +
+    -- runtime + mirror every tick). Texture panels use the pinned mirror
+    -- during continuous edits and touch the runtime panel only when the
+    -- interaction is confirmed.
     local textureValueChanged = isTriggerPanel and RefreshTextureVisual or RefreshTexturePreview
 
     local function AttachTextureValueSlider(slider, key)
@@ -3411,81 +3243,14 @@ local function BuildTexturePanelAppearanceTab(container, group)
 
     local selectionLabel = GetStandaloneTextureSelectionLabel(group, settings)
 
-    -- Trigger panels do not use the selectable Texture Panel Live Preview,
-    -- so keep their existing in-tab preview and picker controls.
-    if isTriggerPanel then
-        local previewGroup = AceGUI:Create("SimpleGroup")
-        previewGroup:SetFullWidth(true)
-        previewGroup:SetHeight(TEXTURE_PREVIEW_HEIGHT + 4)
-        previewGroup:SetLayout("Fill")
-        container:AddChild(previewGroup)
-
-        local previewFrame = CreateFrame("Frame", nil, previewGroup.frame)
-        previewFrame:SetPoint("TOP", previewGroup.frame, "TOP", 0, -2)
-        previewFrame:SetSize(TEXTURE_PREVIEW_WIDTH, TEXTURE_PREVIEW_HEIGHT)
-        appearanceTabElements[#appearanceTabElements + 1] = previewFrame
-
-        local previewShade = previewFrame:CreateTexture(nil, "BACKGROUND")
-        previewShade:SetAllPoints()
-        previewShade:SetColorTexture(0, 0, 0, 0.42)
-
-        local previewAnchor = CreateFrame("Frame", nil, previewFrame)
-        previewAnchor:SetPoint("CENTER")
-        previewAnchor:SetSize(TEXTURE_PREVIEW_WIDTH - 8, TEXTURE_PREVIEW_HEIGHT - 8)
-
-        local previewPrimary = previewFrame:CreateTexture(nil, "ARTWORK")
-        local previewSecondary = previewFrame:CreateTexture(nil, "ARTWORK")
-
-        local placeholder = previewFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        placeholder:SetPoint("CENTER")
-        placeholder:SetJustifyH("CENTER")
-        placeholder:SetText("No texture selected")
-        placeholder:SetTextColor(0.65, 0.65, 0.65, 1)
-
-        previewWidget = {
-            primary = previewPrimary,
-            secondary = previewSecondary,
-            placeholder = placeholder,
-            anchor = previewAnchor,
-        }
-        UpdateTexturePanelPreview(previewWidget, settings)
-
-        -- Compact action strip under the canvas: these act on the picture
-        -- above them, not on the section below, so they stay on the container.
-        local actionRow = AceGUI:Create("SimpleGroup")
-        actionRow:SetFullWidth(true)
-        actionRow:SetLayout("Flow")
-        actionRow:SetHeight(ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT or 30)
-        actionRow.noAutoHeight = true
-        container:AddChild(actionRow)
-
-        local browseBtn = AceGUI:Create("Button")
-        browseBtn:SetText("Browse / Change")
-        browseBtn:SetAutoWidth(true)
-        browseBtn:SetCallback("OnClick", function()
-            OpenOrRebindStandaloneTexturePicker(group, settings, true)
-        end)
-        actionRow:AddChild(browseBtn)
-
-        local clearBtn = AceGUI:Create("Button")
-        clearBtn:SetText("Clear")
-        clearBtn:SetDisabled(not selectionLabel)
-        clearBtn:SetAutoWidth(true)
-        clearBtn:SetCallback("OnClick", function()
-            CooldownCompanion:ClearAllAuraTexturePickerPreviews()
-            GetStandaloneTextureCommitCallback(group)(nil)
-        end)
-        actionRow:AddChild(clearBtn)
-    end
-
     if not selectionLabel then
-        if not isTriggerPanel then
-            local emptyStateLabel = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(emptyStateLabel)
-            emptyStateLabel:SetFullWidth(true)
-            emptyStateLabel:SetText("|cff888888Select a texture from the Live Preview to show the display controls.|r")
-            container:AddChild(emptyStateLabel)
-        end
+        local emptyStateLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(emptyStateLabel)
+        emptyStateLabel:SetFullWidth(true)
+        emptyStateLabel:SetText(isTriggerPanel
+            and "|cff888888Click the preview above to choose a texture.|r"
+            or "|cff888888Select a texture from the Live Preview to show the display controls.|r")
+        container:AddChild(emptyStateLabel)
 
         local shouldOpenPicker = CS.pendingTexturePickerOpen == CS.selectedGroup
         if shouldOpenPicker then

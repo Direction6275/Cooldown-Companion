@@ -123,7 +123,7 @@ local function UsesRuntimePickerPreview()
         return false
     end
     local group = CooldownCompanion.db.profile.groups[currentGroupId]
-    return not CooldownCompanion:IsTexturePanelGroup(group)
+    return not CooldownCompanion:IsStandaloneTexturePanelGroup(group)
 end
 
 -- Drop the staged texture from the active preview surface and repaint the
@@ -141,9 +141,10 @@ local function ClearStagedPreview()
     end
 end
 
--- Stage a hovered entry. Texture panels use the selectable pinned mirror as
--- their only continuous preview; trigger panels still need the live-world
--- preview because their pinned panel preview is not a texture canvas.
+-- Stage a hovered entry. Texture and trigger panels use the pinned mirror as
+-- their only continuous preview; other picker clients still need the
+-- live-world preview because their pinned panel preview is not a texture
+-- canvas.
 local function StageEntryPreview(entry)
     if not currentGroupId then
         return

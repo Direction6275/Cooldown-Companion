@@ -662,10 +662,14 @@ local function SetPreviewMessage(preview, message)
         label:SetJustifyH("CENTER")
         label:SetJustifyV("MIDDLE")
         label:SetWordWrap(true)
-        label:SetPoint("TOPLEFT", preview.root, "TOPLEFT", 18, -18)
-        label:SetPoint("BOTTOMRIGHT", preview.root, "BOTTOMRIGHT", -18, 18)
         preview.messageLabel = label
     end
+    -- Re-anchored on every call: the trigger preview tucks this label into its
+    -- bottom band after calling here, so the full-area default must come back
+    -- for every other caller on a shared host.
+    label:ClearAllPoints()
+    label:SetPoint("TOPLEFT", preview.root, "TOPLEFT", 18, -18)
+    label:SetPoint("BOTTOMRIGHT", preview.root, "BOTTOMRIGHT", -18, 18)
     label:SetText(message or "")
     label:Show()
 end
@@ -3049,6 +3053,71 @@ local STRIP_ICON_SIZE = 36
 local STRIP_SPACING = 4
 local STRIP_PER_ROW = 8
 
+-- Trigger panels stack their display visual above the selection strip inside
+-- one preview: the strip may claim at most this share of the fit height, and
+-- the band between the two reuses the preview's own padding rhythm.
+local TRIGGER_PREVIEW_STRIP_MAX_SHARE = 0.35
+-- Bottom band reserved for the "no entries yet" message when there is no strip.
+local TRIGGER_PREVIEW_EMPTY_BAND = 44
+
+local function GetStripNaturalSize(count)
+    if count <= 0 then
+        return 0, 0
+    end
+    local cols = math_min(count, STRIP_PER_ROW)
+    local rows = math_ceil(count / STRIP_PER_ROW)
+    return (cols - 1) * (STRIP_ICON_SIZE + STRIP_SPACING) + STRIP_ICON_SIZE,
+        (rows - 1) * (STRIP_ICON_SIZE + STRIP_SPACING) + STRIP_ICON_SIZE
+end
+
+-- Hidden scratch FontString for measuring trigger text natural size; the
+-- metrics helper sets its own font, so no template styling matters here.
+local triggerTextMeasure
+local function GetTriggerTextMeasureFontString()
+    if not triggerTextMeasure then
+        local holder = CreateFrame("Frame", nil, UIParent)
+        holder:Hide()
+        triggerTextMeasure = holder:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    end
+    return triggerTextMeasure
+end
+
+-- Natural (unscaled) size of a trigger panel's display visual, or 0,0 when
+-- that visual is empty. Mirrors the runtime RenderStandaloneDisplay dispatch.
+local function GetTriggerDisplayNaturalSize(group)
+    local displayType = CooldownCompanion.GetStandaloneDisplayType(group)
+    if displayType == "icon" then
+        local settings = CooldownCompanion:GetTriggerPanelIconSettings(group)
+        if settings and ST._IsValidIconTexture and ST._IsValidIconTexture(settings.manualIcon) then
+            return CooldownCompanion.GetTriggerIconDimensions(settings)
+        end
+        return 0, 0
+    end
+    if displayType == "text" then
+        local settings = CooldownCompanion:GetTriggerPanelTextSettings(group)
+        if settings and CooldownCompanion.HasTriggerTextValue(settings) then
+            local width, height = CooldownCompanion.GetTriggerTextDisplayMetrics(
+                GetTriggerTextMeasureFontString(), settings)
+            return width, height
+        end
+        return 0, 0
+    end
+    local settings = CooldownCompanion:GetTriggerPanelSignalSettings(group)
+    if type(settings) == "table" and settings.sourceType ~= nil and settings.sourceValue ~= nil then
+        local scale = tonumber(settings.scale) or 1
+        local sourceWidth = (tonumber(settings.width) or 128) * scale
+        local sourceHeight = (tonumber(settings.height) or 128) * scale
+        local geometry = CooldownCompanion.BuildTexturePanelGeometry
+            and CooldownCompanion:BuildTexturePanelGeometry(settings, sourceWidth, sourceHeight)
+        if geometry then
+            return math_max(1, geometry.boundsWidth or sourceWidth),
+                math_max(1, geometry.boundsHeight or sourceHeight)
+        end
+        return sourceWidth, sourceHeight
+    end
+    return 0, 0
+end
+
 local function GetPanelPreviewNaturalSize(group)
     if type(group) ~= "table" then
         return 220, 90
@@ -3071,6 +3140,21 @@ local function GetPanelPreviewNaturalSize(group)
             end
         end
         return 128, 128
+    end
+
+    -- Natural size feeds Group Overview tiles only, and a trigger tile renders
+    -- the display alone with the entry strip standing in when no display is
+    -- configured (see BuildTriggerPanelPreview) - so measure exactly that.
+    if CooldownCompanion:IsTriggerPanelGroup(group) then
+        local dispW, dispH = GetTriggerDisplayNaturalSize(group)
+        if dispW > 0 then
+            return dispW, dispH
+        end
+        local stripW, stripH = GetStripNaturalSize(#(group.buttons or {}))
+        if stripW <= 0 then
+            return 220, 90
+        end
+        return stripW, stripH
     end
 
     local isBarMode = group.displayMode == "bars"
@@ -3110,7 +3194,10 @@ local function GetPanelPreviewNaturalSize(group)
         (rows - 1) * (STRIP_ICON_SIZE + STRIP_SPACING) + STRIP_ICON_SIZE
 end
 
-local function BuildSelectionStrip(preview, host, panelId, group, readOnly)
+-- layout (optional) is the trigger preview's band placement: scaleOverride
+-- replaces the fit-to-host scale (the display visual above owns most of the
+-- height) and anchorPoint = "BOTTOM" parks the strip along the bottom edge.
+local function BuildSelectionStrip(preview, host, panelId, group, readOnly, layout)
     StopConditionalTicker(preview)
     local isRA = group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
     local entries = {}
@@ -3144,7 +3231,8 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly)
     local rows = math_ceil(count / STRIP_PER_ROW)
     local contentWidth = (cols - 1) * (w + STRIP_SPACING) + w
     local contentHeight = (rows - 1) * (h + STRIP_SPACING) + h
-    local scale = GetHostFitScale(host, contentWidth, contentHeight, readOnly)
+    local scale = layout and layout.scaleOverride
+        or GetHostFitScale(host, contentWidth, contentHeight, readOnly)
 
     local content = preview.content
     content:SetSize(contentWidth, contentHeight)
@@ -3232,7 +3320,14 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly)
 
     content:SetScale(scale)
     content:ClearAllPoints()
-    content:SetPoint("CENTER", preview.root, "CENTER", 0, 0)
+    if layout and layout.anchorPoint == "BOTTOM" then
+        -- Offset in content-local units so the strip clears the fit-box
+        -- padding by exactly PANEL_PREVIEW_PADDING on screen at any scale.
+        content:SetPoint("BOTTOM", preview.root, "BOTTOM", 0,
+            PANEL_PREVIEW_PADDING / math_max(scale, 0.01))
+    else
+        content:SetPoint("CENTER", preview.root, "CENTER", 0, 0)
+    end
 
     FinalizePreviewState(preview)
 end
@@ -3346,12 +3441,12 @@ local function StyleBarEntry(slot, buttonData, group, effectiveStyle)
     ApplyBorderEdgePositions(slot.borderTextures, slot.barBounds, borderSize, borderRenderMode)
 end
 
--- Texture-panel Live Preview: draws the panel's actual chosen texture (the
--- saved one, or the picker's hover/click-staged selection) fit to the host,
--- instead of the entry-icon selection strip. For a texture panel the texture
--- IS the visual, so a spell icon here would show something that never renders
+-- Standalone-display Live Preview: draws the panel's actual chosen visual fit
+-- to the host, instead of (texture panels) or above (trigger panels) the
+-- entry-icon selection strip. For these panels the chosen texture/icon/text IS
+-- the visual, so a spell icon alone would show something that never renders
 -- in-game. Reuses GroupTabs' fit-to-box renderer (ST._UpdateTexturePanelPreview)
--- and its "No texture selected" empty state.
+-- for textures; icon and text visuals are drawn by the render helpers below.
 local function EnsureTextureMirror(preview)
     local mirror = preview.textureMirror
     if mirror then
@@ -3365,6 +3460,7 @@ local function EnsureTextureMirror(preview)
     mirror = {
         root = root,
         anchor = root,
+        clickMode = "texture",
         primary = root:CreateTexture(nil, "ARTWORK"),
         secondary = root:CreateTexture(nil, "ARTWORK"),
         placeholder = root:CreateFontString(nil, "OVERLAY", "GameFontDisableLarge"),
@@ -3372,11 +3468,11 @@ local function EnsureTextureMirror(preview)
     mirror.placeholder:SetPoint("CENTER")
     mirror.placeholder:SetText("No texture selected")
 
-    -- Click the rendered texture to open the inline browser. root is a raw,
+    -- Click the rendered visual to open its picker (inline texture browser or
+    -- the trigger icon picker, per the build's clickMode). root is a raw,
     -- module-owned frame, so attaching scripts here is safe (not an AceGUI
-    -- underlying frame). Mouse is enabled per build (only when the panel has an
-    -- entry) so it never steals drop-to-add on an empty panel; the guard skips
-    -- while the browser is already open for this panel.
+    -- underlying frame). Mouse is enabled per build; the browse guard skips
+    -- while the inline browser is already open for this panel.
     local hoverCue = root:CreateTexture(nil, "OVERLAY")
     hoverCue:SetAllPoints()
     hoverCue:SetColorTexture(1, 1, 1, 0.06)
@@ -3387,18 +3483,57 @@ local function EnsureTextureMirror(preview)
         return CS.inlineTextureBrowserOpen ~= nil
             and CS.inlineTextureBrowserOpen == CS.selectedGroup
     end
-    root:SetScript("OnEnter", function(self)
-        if IsBrowsingThisPanel() then return end
+    -- Named so the in-place clear below can re-present it: clearing rebuilds
+    -- the config under a cursor that never leaves the frame, so OnEnter will
+    -- not fire again on its own and the hover would strand a cue with no
+    -- tooltip and a stale "Right-click to clear" line.
+    local function ShowMirrorHover(self)
+        if not mirror.clickMode then return end
+        if mirror.clickMode == "texture" and IsBrowsingThisPanel() then return end
         hoverCue:Show()
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine("Click to browse textures")
+        if mirror.clickMode == "icon" then
+            GameTooltip:AddLine("Click to choose an icon")
+            if mirror.hasIcon then
+                GameTooltip:AddLine("Right-click to clear", 0.7, 0.7, 0.7)
+            end
+        else
+            GameTooltip:AddLine("Click to browse textures")
+        end
         GameTooltip:Show()
-    end)
+    end
+    root:SetScript("OnEnter", ShowMirrorHover)
     root:SetScript("OnLeave", function()
         hoverCue:Hide()
         GameTooltip:Hide()
     end)
-    root:SetScript("OnMouseUp", function()
+    root:SetScript("OnMouseUp", function(self, mouseButton)
+        if mirror.clickMode == "icon" then
+            local group = CS.selectedGroup
+                and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+            if not group then return end
+            if mouseButton == "RightButton" then
+                local settings = CooldownCompanion:GetTriggerPanelIconSettings(group)
+                if settings and settings.manualIcon ~= nil then
+                    settings.manualIcon = nil
+                    GameTooltip:Hide()
+                    CooldownCompanion:RefreshAllAuraTextureVisuals()
+                    CooldownCompanion:RefreshConfigPanel()
+                    if self:IsMouseOver() then
+                        ShowMirrorHover(self)
+                    else
+                        hoverCue:Hide()
+                    end
+                end
+                return
+            end
+            if mouseButton ~= "LeftButton" then return end
+            if ST._OpenTriggerPanelIconPicker then
+                ST._OpenTriggerPanelIconPicker(CS.selectedGroup)
+            end
+            return
+        end
+        if mirror.clickMode ~= "texture" then return end
         if IsBrowsingThisPanel() then return end
         if ST._OpenStandaloneTexturePicker and CS.selectedGroup then
             ST._OpenStandaloneTexturePicker(CS.selectedGroup)
@@ -3409,12 +3544,215 @@ local function EnsureTextureMirror(preview)
     return mirror
 end
 
+-- Hosts are shared across selections and the trigger preview reserves a bottom
+-- band for its strip, so the mirror's extent must be re-anchored every build.
+local function ApplyMirrorBand(mirror, previewRoot, bottomReserve)
+    local root = mirror.root
+    root:ClearAllPoints()
+    root:SetPoint("TOPLEFT", previewRoot, "TOPLEFT", 0, 0)
+    root:SetPoint("BOTTOMRIGHT", previewRoot, "BOTTOMRIGHT", 0, bottomReserve or 0)
+end
+
+-- Lazy per-type visuals: children of mirror.root, so the stale-mirror hide in
+-- _BuildButtonPanelPreview and the readOnly release cover them automatically.
+local function EnsureMirrorIconVisual(mirror)
+    local visual = mirror.iconVisual
+    if visual then
+        return visual
+    end
+    local holder = CreateFrame("Frame", nil, mirror.root)
+    holder:SetPoint("CENTER", mirror.root, "CENTER", 0, 0)
+    holder:SetSize(STRIP_ICON_SIZE, STRIP_ICON_SIZE)
+    visual = {
+        holder = holder,
+        bg = holder:CreateTexture(nil, "BACKGROUND"),
+        icon = holder:CreateTexture(nil, "ARTWORK"),
+        borders = {},
+    }
+    visual.bg:SetAllPoints()
+    for index = 1, 4 do
+        visual.borders[index] = holder:CreateTexture(nil, "OVERLAY")
+    end
+    mirror.iconVisual = visual
+    return visual
+end
+
+local function EnsureMirrorTextVisual(mirror)
+    local visual = mirror.textVisual
+    if visual then
+        return visual
+    end
+    local holder = CreateFrame("Frame", nil, mirror.root)
+    holder:SetPoint("CENTER", mirror.root, "CENTER", 0, 0)
+    holder:SetSize(1, 1)
+    visual = {
+        holder = holder,
+        bg = holder:CreateTexture(nil, "BACKGROUND"),
+        text = holder:CreateFontString(nil, "OVERLAY"),
+    }
+    visual.bg:SetAllPoints()
+    visual.text:SetJustifyV("MIDDLE")
+    visual.text:SetJustifyH("CENTER")
+    visual.text:SetWordWrap(false)
+    visual.text:SetMaxLines(0)
+    mirror.textVisual = visual
+    return visual
+end
+
+-- Config-side twin of the runtime ApplyTriggerIconVisual: the saved icon with
+-- its background, tint, and border, scaled to fit the display band.
+local function RenderTriggerIconMirror(mirror, settings, boxWidth, boxHeight)
+    local visual = EnsureMirrorIconVisual(mirror)
+    local holder = visual.holder
+    local hasIcon = settings and ST._IsValidIconTexture
+        and ST._IsValidIconTexture(settings.manualIcon)
+    mirror.hasIcon = hasIcon and true or false
+    if not hasIcon then
+        holder:Hide()
+        mirror.placeholder:SetText("No icon selected")
+        mirror.placeholder:Show()
+        return
+    end
+    mirror.placeholder:Hide()
+
+    local width, height = CooldownCompanion.GetTriggerIconDimensions(settings)
+    holder:SetScale(1)
+    holder:SetSize(width, height)
+
+    local borderSize = settings.borderSize or ST.DEFAULT_BORDER_SIZE
+    local borderRenderMode = ST.GetBorderRenderMode(settings)
+    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(holder, borderSize, borderRenderMode)
+    local bgColor = settings.backgroundColor or { 0, 0, 0, 0.5 }
+    local borderColor = settings.borderColor or { 0, 0, 0, 1 }
+    local tintColor = settings.iconTintColor or { 1, 1, 1, 1 }
+
+    visual.bg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0,
+        bgColor[4] ~= nil and bgColor[4] or 0.5)
+    visual.bg:Show()
+    for _, border in ipairs(visual.borders) do
+        border:SetColorTexture(borderColor[1] or 0, borderColor[2] or 0, borderColor[3] or 0,
+            borderColor[4] ~= nil and borderColor[4] or 1)
+        border:Show()
+    end
+    ApplyBorderEdgePositions(visual.borders, holder, borderSize, borderRenderMode)
+
+    local icon = visual.icon
+    icon:ClearAllPoints()
+    icon:SetPoint("TOPLEFT", borderLayoutSize, -borderLayoutSize)
+    icon:SetPoint("BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
+    icon:SetTexture(settings.manualIcon)
+    icon:SetVertexColor(tintColor[1] or 1, tintColor[2] or 1, tintColor[3] or 1,
+        tintColor[4] ~= nil and tintColor[4] or 1)
+    local applyTexCoord = ST._ApplyIconTexCoord
+    if applyTexCoord then
+        applyTexCoord(icon, width, height)
+    end
+    icon:Show()
+
+    holder:SetScale(math_min(1, boxWidth / math_max(1, width), boxHeight / math_max(1, height)))
+    holder:Show()
+end
+
+-- Config-side twin of the runtime ApplyTriggerTextVisual: the display text at
+-- its real metrics (font, alignment, background), scaled to fit the band.
+local function RenderTriggerTextMirror(mirror, settings, boxWidth, boxHeight)
+    local visual = EnsureMirrorTextVisual(mirror)
+    local holder = visual.holder
+    local hasText = settings and CooldownCompanion.HasTriggerTextValue(settings)
+    if not hasText then
+        holder:Hide()
+        mirror.placeholder:SetText("No text entered")
+        mirror.placeholder:Show()
+        return
+    end
+    mirror.placeholder:Hide()
+
+    local bgColor = settings.textBgColor or { 0, 0, 0, 0 }
+    local fontColor = settings.textFontColor or { 1, 1, 1, 1 }
+    local text = visual.text
+
+    holder:SetScale(1)
+    local frameWidth, frameHeight, insetX, insetY, textWidth, textHeight, lineCount =
+        CooldownCompanion.GetTriggerTextDisplayMetrics(text, settings)
+    holder:SetSize(frameWidth, frameHeight)
+
+    visual.bg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0,
+        bgColor[4] ~= nil and bgColor[4] or 0)
+    text:SetSize(textWidth or math_max(1, frameWidth - (insetX * 2)),
+        textHeight or math_max(1, frameHeight - (insetY * 2)))
+    text:SetWordWrap((lineCount or 1) > 1)
+    text:SetJustifyV((lineCount or 1) > 1 and "TOP" or "MIDDLE")
+    text:ClearAllPoints()
+    text:SetPoint("TOPLEFT", holder, "TOPLEFT", insetX, -insetY)
+    text:SetPoint("BOTTOMRIGHT", holder, "BOTTOMRIGHT", -insetX, insetY)
+    text:SetJustifyH(settings.textAlignment or "CENTER")
+    text:SetTextColor(fontColor[1] or 1, fontColor[2] or 1, fontColor[3] or 1,
+        fontColor[4] ~= nil and fontColor[4] or 1)
+    text:Show()
+
+    holder:SetScale(math_min(1, boxWidth / math_max(1, frameWidth), boxHeight / math_max(1, frameHeight)))
+    holder:Show()
+end
+
+-- Paint a trigger panel's display visual into the mirror: the config-side twin
+-- of the runtime RenderStandaloneDisplay dispatch. Split out of the builder so
+-- a settings change can repaint just this, leaving the selection strip's slots
+-- and their wiring alone.
+local function RenderTriggerDisplayVisual(mirror, group, panelId, boxWidth, boxHeight, readOnly)
+    local displayType = CooldownCompanion.GetStandaloneDisplayType(group)
+    -- Explicit branches: an and/or chain can't yield nil for the text case.
+    if displayType == "icon" then
+        mirror.clickMode = "icon"
+    elseif displayType == "text" then
+        mirror.clickMode = nil
+    else
+        mirror.clickMode = "texture"
+    end
+
+    mirror.primary:Hide()
+    mirror.secondary:Hide()
+    if mirror.iconVisual then mirror.iconVisual.holder:Hide() end
+    if mirror.textVisual then mirror.textVisual.holder:Hide() end
+
+    if displayType == "icon" then
+        RenderTriggerIconMirror(mirror,
+            CooldownCompanion:GetTriggerPanelIconSettings(group), boxWidth, boxHeight)
+        return
+    end
+    if displayType == "text" then
+        RenderTriggerTextMirror(mirror,
+            CooldownCompanion:GetTriggerPanelTextSettings(group), boxWidth, boxHeight)
+        return
+    end
+
+    mirror.placeholder:SetText("No texture selected")
+    -- Same staged-selection precedence as BuildTextureMirror. Trigger panels
+    -- have no config staging copy: their sliders write the saved table live
+    -- (owner-validated), so saved is always current here.
+    local staged = CS.textureMirrorStage
+    local settings = readOnly and CooldownCompanion:GetTriggerPanelSignalSettings(group)
+        or (staged and staged.groupId == panelId and staged.selection)
+        or CooldownCompanion:GetTriggerPanelSignalSettings(group)
+    local render = ST._UpdateTexturePanelPreview
+    if render then
+        render(mirror, settings, boxWidth, boxHeight)
+    end
+end
+
 local function BuildTextureMirror(preview, host, panelId, group, readOnly)
     -- No animated slots on a texture panel; mirror BuildSelectionStrip's setup.
     StopConditionalTicker(preview)
 
     local mirror = EnsureTextureMirror(preview)
     mirror.root:Show()
+    ApplyMirrorBand(mirror, preview.root, 0)
+
+    -- The mirror is shared with the trigger preview on this host, so restore
+    -- the texture-panel presentation before rendering.
+    mirror.clickMode = "texture"
+    mirror.placeholder:SetText("No texture selected")
+    if mirror.iconVisual then mirror.iconVisual.holder:Hide() end
+    if mirror.textVisual then mirror.textVisual.holder:Hide() end
 
     -- Only make the rendered texture clickable when the panel has its entry.
     -- An empty texture panel still offers drop-to-add on the preview host, and
@@ -3445,6 +3783,113 @@ local function BuildTextureMirror(preview, host, panelId, group, readOnly)
     end
 
     FinalizePreviewState(preview)
+end
+
+-- Trigger-panel Live Preview: the panel's actual display visual (texture,
+-- icon, or text) renders large on top, with the entry selection strip in a
+-- band along the bottom keeping all of its picker behavior. Unlike texture
+-- panels, the mirror stays clickable with zero entries: trigger appearance is
+-- configurable without entries and the bottom tab has no picker buttons, so
+-- the preview click is the only path into the pickers. Drop-to-add is safe
+-- either way - the payload drop overlay sits above the mirror whenever a
+-- spell or item is on the cursor. Read-only Group Overview tiles do not
+-- stack; see the branch below.
+local function BuildTriggerPanelPreview(preview, host, panelId, group, readOnly)
+    StopConditionalTicker(preview)
+
+    local mirror = EnsureTextureMirror(preview)
+    local boxWidth, boxHeight = GetHostFitBox(host, readOnly)
+
+    -- Group Overview tiles stand on a standardized row height with only ~36px
+    -- of fit box left, and the strip is an editing affordance a tile cannot be
+    -- clicked in anyway. A tile therefore shows the panel's real display
+    -- alone, the way a texture panel's tile does, rather than splitting that
+    -- band two ways and rendering both halves too small to read. With no
+    -- display configured yet the entry strip is the only informative thing
+    -- left, so it stands in.
+    if readOnly then
+        preview.triggerStripReserve = 0
+        if GetTriggerDisplayNaturalSize(group) <= 0 then
+            mirror.root:Hide()
+            return BuildSelectionStrip(preview, host, panelId, group, readOnly)
+        end
+        mirror.root:Show()
+        mirror.root:EnableMouse(false)
+        mirror.hoverCue:Hide()
+        ApplyMirrorBand(mirror, preview.root, 0)
+        RenderTriggerDisplayVisual(mirror, group, panelId, boxWidth, boxHeight, true)
+        FinalizePreviewState(preview)
+        return
+    end
+
+    mirror.root:Show()
+
+    local count = #(group.buttons or {})
+    local reserve, stripLayout
+    if count > 0 then
+        local stripW, stripH = GetStripNaturalSize(count)
+        local stripScale = math_min(1, boxWidth / math_max(1, stripW),
+            (boxHeight * TRIGGER_PREVIEW_STRIP_MAX_SHARE) / math_max(1, stripH))
+        reserve = (stripH * stripScale) + PANEL_PREVIEW_PADDING
+        stripLayout = { anchorPoint = "BOTTOM", scaleOverride = stripScale }
+    else
+        reserve = TRIGGER_PREVIEW_EMPTY_BAND
+    end
+
+    ApplyMirrorBand(mirror, preview.root, reserve)
+    -- Recorded for ST._RefreshTriggerDisplayVisual: the band depends only on
+    -- the entry count and the host, so a display setting cannot move it.
+    preview.triggerStripReserve = reserve
+
+    RenderTriggerDisplayVisual(mirror, group, panelId, boxWidth,
+        math_max(1, boxHeight - reserve), false)
+    mirror.root:EnableMouse(mirror.clickMode ~= nil)
+    if not mirror.clickMode then
+        mirror.hoverCue:Hide()
+    end
+
+    if count > 0 then
+        return BuildSelectionStrip(preview, host, panelId, group, readOnly, stripLayout)
+    end
+
+    SetPreviewMessage(preview,
+        "This panel has no entries yet. Add spells or items in the Panels column.")
+    -- Tuck the message into the reserved bottom band so it never overlaps the
+    -- display visual; SetPreviewMessage restores the default anchors for the
+    -- next build.
+    local label = preview.messageLabel
+    label:ClearAllPoints()
+    label:SetPoint("BOTTOMLEFT", preview.root, "BOTTOMLEFT", 18, PANEL_PREVIEW_PADDING)
+    label:SetPoint("BOTTOMRIGHT", preview.root, "BOTTOMRIGHT", -18, PANEL_PREVIEW_PADDING)
+    FinalizePreviewState(preview)
+end
+
+-- Repaint ONLY a trigger panel's display visual in the pinned mirror, leaving
+-- the selection strip's slots and their wiring untouched. The appearance tabs
+-- call this on every tick of a slider drag, where a full preview rebuild would
+-- re-run per-entry usability and load-condition queries and re-wire every
+-- strip slot each frame. Returns false when there is no live trigger mirror to
+-- repaint so callers can fall back to the full rebuild.
+function ST._RefreshTriggerDisplayVisual(groupId)
+    if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then return false end
+    if not groupId or groupId ~= CS.selectedGroup then return false end
+    local col3 = CS.configFrame and CS.configFrame.col3
+    local host = col3 and col3.buttonsPreviewHost
+    if not (host and host:IsShown() and col3._cdcActiveWideHost == host) then return false end
+    local preview = host._cdcPanelPreview
+    local mirror = preview and preview.textureMirror
+    if not (mirror and mirror.root:IsShown()) then return false end
+    local group = CooldownCompanion.db.profile.groups[groupId]
+    if not (group and CooldownCompanion:IsTriggerPanelGroup(group)) then return false end
+
+    local boxWidth, boxHeight = GetHostFitBox(host, false)
+    RenderTriggerDisplayVisual(mirror, group, groupId, boxWidth,
+        math_max(1, boxHeight - (preview.triggerStripReserve or 0)), false)
+    mirror.root:EnableMouse(mirror.clickMode ~= nil)
+    if not mirror.clickMode then
+        mirror.hoverCue:Hide()
+    end
+    return true
 end
 
 function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost, options)
@@ -3505,10 +3950,14 @@ function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost, options
     local isBarMode = group.displayMode == "bars"
     local isTextMode = group.displayMode == "text"
     if not isBarMode and not isTextMode and not IsIconModePanel(group) then
-        -- Texture panels render their real texture; trigger and rotation-
-        -- assistant panels keep the entry-icon selection strip.
+        -- Texture panels render their real texture; trigger panels stack
+        -- their display visual above the strip; rotation-assistant panels
+        -- keep the entry-icon selection strip alone.
         if CooldownCompanion:IsTexturePanelGroup(group) then
             return BuildTextureMirror(preview, host, panelId, group, readOnly)
+        end
+        if CooldownCompanion:IsTriggerPanelGroup(group) then
+            return BuildTriggerPanelPreview(preview, host, panelId, group, readOnly)
         end
         return BuildSelectionStrip(preview, host, panelId, group, readOnly)
     end
