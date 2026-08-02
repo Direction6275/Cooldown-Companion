@@ -782,17 +782,31 @@ local function EnsurePreviewDivider(col3)
     rightLine:SetPoint("LEFT", divider, "CENTER", 11, 0)
     rightLine:SetPoint("RIGHT", divider, "RIGHT", 0, 0)
 
+    -- The diamond layers are flat color squares clipped by Blizzard's
+    -- pre-antialiased diamond mask instead of SetRotation(45°): rotated
+    -- hard-edged quads rasterize asymmetrically depending on where the
+    -- panel sits on the physical pixel grid, while the mask's baked-in
+    -- edge smoothing stays symmetric at any subpixel position. Sizes are
+    -- the old squares' point-to-point diagonals (7 and 3 times root 2).
+    local DIAMOND_MASK = "Interface\\Common\\common-mask-diamond"
+
     local diamond = divider:CreateTexture(nil, "OVERLAY")
     diamond:SetColorTexture(0.62, 0.48, 0.28, 0.72)
-    diamond:SetSize(7, 7)
+    diamond:SetSize(10, 10)
     diamond:SetPoint("CENTER")
-    diamond:SetRotation(math.rad(45))
+    local diamondMask = divider:CreateMaskTexture()
+    diamondMask:SetTexture(DIAMOND_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    diamondMask:SetAllPoints(diamond)
+    diamond:AddMaskTexture(diamondMask)
 
     local diamondCore = divider:CreateTexture(nil, "OVERLAY", nil, 1)
     diamondCore:SetColorTexture(0.12, 0.08, 0.04, 0.95)
-    diamondCore:SetSize(3, 3)
+    diamondCore:SetSize(4, 4)
     diamondCore:SetPoint("CENTER")
-    diamondCore:SetRotation(math.rad(45))
+    local coreMask = divider:CreateMaskTexture()
+    coreMask:SetTexture(DIAMOND_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    coreMask:SetAllPoints(diamondCore)
+    diamondCore:AddMaskTexture(coreMask)
     divider._grip = diamond
 
     local function SetHot(hot)
