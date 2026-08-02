@@ -1322,25 +1322,29 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
     return true, sourceDeleted
 end
 
-function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
+local DISPLAY_MODE_CHANGE_REFUSALS = {
+    assistant = "Assistant Panels cannot be converted. Create a new Assistant Panel instead.",
+    trigger = "Trigger Panels cannot be converted. Create a new Trigger Panel instead.",
+    ["texture-entry-limit"] = "Texture Panels can only hold one entry. Remove extra entries first, or create a new Texture Panel.",
+    ["aura-entries"] = "This panel contains aura entries, which can only be tracked in icon or bar panels. Remove them first, or convert to icons or bars.",
+}
+
+function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
     local group = self.db.profile.groups[groupId]
-    if not group then return end
+    if not group then return false end
 
     local oldMode = group.displayMode
     if oldMode ~= newMode
         and (ST.IsRotationAssistantDisplayMode(oldMode) or ST.IsRotationAssistantDisplayMode(newMode)) then
-        self:Print("Assistant Panels cannot be converted. Create a new Assistant Panel instead.")
-        return false
+        return false, "assistant"
     end
 
     if oldMode ~= newMode and (oldMode == "trigger" or newMode == "trigger") then
-        self:Print("Trigger Panels cannot be converted. Create a new Trigger Panel instead.")
-        return false
+        return false, "trigger"
     end
 
-    if newMode == "textures" and #group.buttons > 1 then
-        self:Print("Texture Panels can only hold one entry. Remove extra entries first, or create a new Texture Panel.")
-        return false
+    if newMode == "textures" and #(group.buttons or {}) > 1 then
+        return false, "texture-entry-limit"
     end
 
     -- Primary aura entries only display through the aura system, which binds
@@ -1348,12 +1352,27 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     if oldMode ~= newMode and newMode ~= "icons" and newMode ~= "bars" and newMode ~= nil then
         for _, bd in ipairs(group.buttons or {}) do
             if bd.addedAs == "aura" then
-                self:Print("This panel contains aura entries, which can only be tracked in icon or bar panels. Remove them first, or convert to icons or bars.")
-                return false
+                return false, "aura-entries"
             end
         end
     end
 
+    return true
+end
+
+function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
+    local group = self.db.profile.groups[groupId]
+    if not group then return end
+
+    local ok, reason = self:CanChangePanelDisplayMode(groupId, newMode)
+    if not ok then
+        if DISPLAY_MODE_CHANGE_REFUSALS[reason] then
+            self:Print(DISPLAY_MODE_CHANGE_REFUSALS[reason])
+        end
+        return false
+    end
+
+    local oldMode = group.displayMode
     if (oldMode == "textures" or oldMode == "trigger") and newMode ~= oldMode then
         -- Leaving texture mode should carry the standalone texture position
         -- back into the normal panel anchor so the panel does not jump back.

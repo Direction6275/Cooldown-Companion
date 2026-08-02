@@ -638,7 +638,8 @@ local function ShowPanelContextMenu(panelId, containerId)
                     { mode = "textures", label = "Textures" },
                 }
                 for _, modeInfo in ipairs(switchModes) do
-                    if panel.displayMode ~= modeInfo.mode then
+                    if panel.displayMode ~= modeInfo.mode
+                        and CooldownCompanion:CanChangePanelDisplayMode(panelId, modeInfo.mode) then
                         info = UIDropDownMenu_CreateInfo()
                         info.text = "Switch to " .. modeInfo.label
                         info.notCheckable = true
