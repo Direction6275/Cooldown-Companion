@@ -1400,6 +1400,7 @@ local function CreateConfigPanel()
         end
         miniWasDragged = false
         isMinimized = false
+        frame._collapsedForUnlock = nil
         collapseIcon:SetAtlas("uitools-icon-minus")
         collapseBtn:SetParent(content)
         collapseBtn:ClearAllPoints()
@@ -1415,19 +1416,19 @@ local function CreateConfigPanel()
         miniFrame:Hide()
     end
 
-    local function ShowMiniFrameTooltip(owner)
-        if not isMinimized then return end
-        GameTooltip:SetOwner(owner, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine("Left-click restores.")
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Right-click closes.")
-        GameTooltip:Show()
-    end
-
     -- ESC handler for mini frame
     miniFrame:EnableKeyboard(true)
     miniFrame:SetScript("OnKeyDown", function(self, key)
-        if key == "ESCAPE" and CooldownCompanion.db.profile.escClosesConfig then
+        -- While arranging, Escape belongs to the arrange pill: it cancels the
+        -- session, which locks everything and re-expands this config. Closing
+        -- here would consume the press and leave nothing to expand. Standing
+        -- down means the first Escape restores the window and a second one
+        -- closes it.
+        local arranging = CooldownCompanion.IsArrangeModeActive
+            and CooldownCompanion:IsArrangeModeActive()
+        if key == "ESCAPE"
+            and CooldownCompanion.db.profile.escClosesConfig
+            and not arranging then
             if not InCombatLockdown() then
                 self:SetPropagateKeyboardInput(false)
             end
@@ -1481,26 +1482,8 @@ local function CreateConfigPanel()
         isMinimized = true
     end
 
-    frame.CollapseConfigWindow = CollapseConfigWindow
-
-    collapseBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    collapseBtn:HookScript("OnEnter", ShowMiniFrameTooltip)
-    collapseBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
-
-    -- Collapse button callback
-    collapseBtn:SetScript("OnClick", function(_, button)
-        if button == "RightButton" then
-            if isMinimized then
-                CloseMinimizedConfig()
-            end
-            return
-        end
-
-        if not isMinimized then
-            CollapseConfigWindow()
-            return
-        end
-
+    local function ExpandConfigWindow()
+        if not isMinimized then return end
         if InCombatLockdown() then
             CooldownCompanion:RunConfigIntent({
                 action = "open",
@@ -1530,6 +1513,21 @@ local function CreateConfigPanel()
         -- A dragged mini frame moves the expanded window too.
         SaveConfigWindowGeometry(content)
         CooldownCompanion:RefreshConfigPanel()
+    end
+
+    frame.CollapseConfigWindow = CollapseConfigWindow
+    frame.ExpandConfigWindow = ExpandConfigWindow
+
+    collapseBtn:RegisterForClicks("LeftButtonUp")
+
+    -- Collapse button callback
+    collapseBtn:SetScript("OnClick", function()
+        if not isMinimized then
+            CollapseConfigWindow()
+            return
+        end
+
+        ExpandConfigWindow()
     end)
 
     -- Profile gear icon next to version/profile text at bottom-left
@@ -2164,6 +2162,19 @@ function ST.CollapseConfigForUnlock()
     if frame._miniFrame and frame._miniFrame:IsShown() then return end
     if frame.CollapseConfigWindow then
         frame.CollapseConfigWindow()
+        if frame._miniFrame and frame._miniFrame:IsShown() then
+            frame._collapsedForUnlock = true
+        end
+    end
+end
+
+function ST.ExpandConfigAfterLock()
+    local frame = CS.configFrame
+    if not frame then return end
+    if not frame._collapsedForUnlock then return end
+    if not (frame._miniFrame and frame._miniFrame:IsShown()) then return end
+    if frame.ExpandConfigWindow then
+        frame.ExpandConfigWindow()
     end
 end
 

@@ -951,13 +951,62 @@ local function RestoreArrangeSnapshot(addon, snapshot)
     if addon.RefreshConfigPanel then
         addon:RefreshConfigPanel()
     end
+    addon:CheckConfigReExpandAfterLock()
 end
 
 function CooldownCompanion:IsArrangeModeActive()
     return self._arrangeModeActive == true
 end
 
+function CooldownCompanion:IsAnyFrameUnlocked()
+    for _, container in pairs(self.db.profile.groupContainers or {}) do
+        if container.locked == false then
+            return true
+        end
+    end
+
+    for _, group in pairs(self.db.profile.groups or {}) do
+        if group.locked == false then
+            return true
+        end
+    end
+
+    local castSettings = self.GetCastBarSettings and self:GetCastBarSettings()
+    if castSettings
+        and castSettings.enabled == true
+        and castSettings.independentAnchorEnabled == true
+        and not castSettings.independentAnchorLocked then
+        return true
+    end
+
+    local resourceSettings = self.GetResourceBarSettings and self:GetResourceBarSettings()
+    local resourceLayout = resourceSettings and self.GetSpecLayoutOrder and self:GetSpecLayoutOrder()
+    if resourceSettings
+        and resourceSettings.enabled == true
+        and resourceLayout
+        and resourceLayout.independentAnchorEnabled == true
+        and not resourceLayout.independentAnchorLocked then
+        return true
+    end
+
+    return false
+end
+
+function CooldownCompanion:CheckConfigReExpandAfterLock()
+    if InCombatLockdown() or self._combatForcedLock then
+        return
+    end
+    if self:IsAnyFrameUnlocked() then
+        return
+    end
+    if ST.ExpandConfigAfterLock then
+        ST.ExpandConfigAfterLock()
+    end
+end
+
 function CooldownCompanion:CheckArrangeModeAutoExit()
+    self:CheckConfigReExpandAfterLock()
+
     if not self:IsArrangeModeActive() then
         return
     end
@@ -3828,6 +3877,13 @@ function CooldownCompanion:SetPanelLocked(panelId, locked)
         group.locked = false
     end
     self:RefreshGroupFrame(panelId)
+    -- Panels are not part of the arrange-managed set (arrange unlocks containers,
+    -- and panel padlocks hide while their container is unlocked), so this must not
+    -- be the broader CheckArrangeModeAutoExit: a bulk multi-select lock would then
+    -- evaluate an arrange exit once per panel and could exit partway through.
+    if locked then
+        self:CheckConfigReExpandAfterLock()
+    end
 end
 
 -- Refresh all panel frames belonging to a container.
@@ -3976,6 +4032,9 @@ function CooldownCompanion:ExitArrangeMode(opts)
     if not (opts and opts.silent) then
         self:Print("All frames locked.")
     end
+    if not (opts and opts.skipConfigReExpand) then
+        self:CheckConfigReExpandAfterLock()
+    end
 end
 
 function CooldownCompanion:CancelArrangeMode()
@@ -3989,7 +4048,7 @@ function CooldownCompanion:CancelArrangeMode()
 
     local snapshot = self._arrangeSnapshot
     self._arrangeSnapshot = nil
-    self:ExitArrangeMode({ silent = true })
+    self:ExitArrangeMode({ silent = true, skipConfigReExpand = true })
     if snapshot then
         RestoreArrangeSnapshot(self, snapshot)
     end
