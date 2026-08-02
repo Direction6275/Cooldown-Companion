@@ -1337,24 +1337,6 @@ local function EnsureQuietRow(col3)
     row:SetHeight(ADD_BOX_HEIGHT)
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
 
-    local classColor = C_ClassColor and C_ClassColor.GetClassColor(select(2, UnitClass("player")))
-    local cr, cg, cb = 1, 0.82, 0
-    if classColor then cr, cg, cb = classColor.r, classColor.g, classColor.b end
-
-    local wash = row:CreateTexture(nil, "BACKGROUND")
-    wash:SetAllPoints()
-    wash:SetColorTexture(cr, cg, cb, 0.14)
-    wash:Hide()
-    row.wash = wash
-
-    local accent = row:CreateTexture(nil, "BORDER")
-    accent:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
-    accent:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
-    accent:SetWidth(3)
-    accent:SetColorTexture(cr, cg, cb, 0.9)
-    accent:Hide()
-    row.accent = accent
-
     -- HIGHLIGHT layer on a Button is mouse-gated automatically.
     local hover = row:CreateTexture(nil, "HIGHLIGHT")
     hover:SetAllPoints()
@@ -1387,7 +1369,9 @@ local function EnsureQuietRow(col3)
 
     row:SetScript("OnClick", function(_, mouseButton)
         if mouseButton == "LeftButton" and ST._SelectConfigButton and CS.selectedGroup then
-            ST._SelectConfigButton(CS.selectedGroup, 1)
+            -- force: the lone texture entry stays selected, so a repeat
+            -- click must not run the deselect half of the toggle.
+            ST._SelectConfigButton(CS.selectedGroup, 1, { force = true })
             CooldownCompanion:RefreshConfigPanel()
         elseif (mouseButton == "RightButton" or mouseButton == "MiddleButton")
             and ST._ShowEntryContextMenu and CS.selectedGroup
@@ -1435,11 +1419,6 @@ local function UpdateQuietRow(col3)
     row.icon:SetTexture((ST._GetLayoutPreviewIcon and ST._GetLayoutPreviewIcon(buttonData)) or 134400)
     row.nameText:SetText((ST._GetConfigEntryDisplayName and ST._GetConfigEntryDisplayName(buttonData))
         or buttonData.name or "")
-
-    -- Paint the selection wash + accent only while this entry is selected.
-    local selected = CS.selectedButton == 1
-    row.wash:SetShown(selected)
-    row.accent:SetShown(selected)
 
     local header = EnsureEditingSurface(col3)._cdcHeader
     row:ClearAllPoints()

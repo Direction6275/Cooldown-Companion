@@ -1270,7 +1270,17 @@ local function RefreshButtonSettingsColumn()
     if not entryTabs then
         bsCol.bsTabGroup.frame:Hide()
         if bsCol.bsPlaceholder then
-            bsCol.bsPlaceholder:SetText(GroupUsesTriggerPanelEntries(group) and "Select an entry to configure" or "Select a spell or item to configure")
+            local placeholderText
+            if GroupUsesTriggerPanelEntries(group) then
+                placeholderText = "Select an entry to configure"
+            elseif GroupUsesTexturePanelEntries(group) then
+                -- Reachable only while the panel is empty: a texture panel's
+                -- lone entry is auto-selected whenever it exists.
+                placeholderText = "Add a texture to configure"
+            else
+                placeholderText = "Select a spell or item to configure"
+            end
+            bsCol.bsPlaceholder:SetText(placeholderText)
             bsCol.bsPlaceholder:Show()
         end
         ST._UnifiedRowApply()
