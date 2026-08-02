@@ -688,6 +688,7 @@ local function LockIndependentStackFromMover(frame)
     SaveIndependentStackAnchor(true)
     CooldownCompanion:EndMoverChromeFade(frame)
     UpdateIndependentStackDragState(settings, placementSettings)
+    CooldownCompanion:CaptureArrangeResourceRecord()
     CooldownCompanion:CheckArrangeModeAutoExit()
 end
 

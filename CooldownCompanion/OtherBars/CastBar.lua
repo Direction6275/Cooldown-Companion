@@ -392,6 +392,7 @@ local function LockIndependentCastBarFromMover(frame)
     SaveIndependentCastBarAnchor(true)
     CooldownCompanion:EndMoverChromeFade(frame)
     UpdateIndependentCastBarDragState(settings)
+    CooldownCompanion:CaptureArrangeCastBarRecord()
     CooldownCompanion:CheckArrangeModeAutoExit()
 end
 

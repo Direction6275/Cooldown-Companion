@@ -2225,6 +2225,7 @@ local function LockPanelFromMover(groupId)
 
     -- Lock this specific group/panel
     CooldownCompanion:SetPanelLocked(groupId, true)
+    CooldownCompanion:CaptureArrangePanelRecord(groupId)
     CooldownCompanion:RefreshConfigPanel()
     CooldownCompanion:Print(group.name .. " locked.")
 end
@@ -5490,6 +5491,7 @@ local function LockContainerFromMover(containerId)
         CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId)
     end
     CooldownCompanion:SetContainerLocked(containerId, true)
+    CooldownCompanion:CaptureArrangeContainerRecord(containerId)
     CooldownCompanion:RefreshConfigPanel()
     CooldownCompanion:Print(container.name .. " locked.")
     CooldownCompanion:CheckArrangeModeAutoExit()

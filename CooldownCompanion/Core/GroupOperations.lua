@@ -707,6 +707,252 @@ local function RestoreFrameVisibilityAfterCombat(frame)
     frame._combatForcedAlpha = nil
 end
 
+local ARRANGE_PANEL_SIZE_KEYS = {
+    "buttonSize",
+    "iconWidth",
+    "iconHeight",
+    "barLength",
+    "barHeight",
+}
+local ARRANGE_TEXTURE_POSITION_KEYS = {
+    "point",
+    "relativePoint",
+    "relativeTo",
+    "x",
+    "y",
+    "buttonSize",
+}
+
+local function CopyArrangeTable(source)
+    if type(source) ~= "table" then
+        return nil
+    end
+
+    local copy = {}
+    for key, value in pairs(source) do
+        copy[key] = value
+    end
+    return copy
+end
+
+local function CaptureArrangeFields(source, keys)
+    if type(source) ~= "table" then
+        return nil
+    end
+
+    local record = { values = {}, present = {} }
+    for _, key in ipairs(keys) do
+        if rawget(source, key) ~= nil then
+            record.values[key] = source[key]
+            record.present[key] = true
+        end
+    end
+    return record
+end
+
+local function RestoreArrangeTable(owner, key, record)
+    if record == nil then
+        owner[key] = nil
+        return
+    end
+
+    local target = owner[key]
+    if type(target) ~= "table" then
+        target = {}
+        owner[key] = target
+    end
+    for existingKey in pairs(target) do
+        target[existingKey] = nil
+    end
+    for recordKey, value in pairs(record) do
+        target[recordKey] = value
+    end
+end
+
+local function RestoreArrangeFields(target, record, keys)
+    for _, key in ipairs(keys) do
+        if record.present[key] then
+            target[key] = record.values[key]
+        else
+            target[key] = nil
+        end
+    end
+end
+
+function CooldownCompanion:CaptureArrangePanelRecord(groupId)
+    local snapshot = self._arrangeSnapshot
+    if not snapshot then
+        return
+    end
+
+    local group = self.db.profile.groups[groupId]
+    if not group then
+        return
+    end
+
+    snapshot.panels[groupId] = {
+        anchor = CopyArrangeTable(group.anchor),
+        size = CaptureArrangeFields(group.style, ARRANGE_PANEL_SIZE_KEYS),
+        texture = CaptureArrangeFields(group.textureSettings, ARRANGE_TEXTURE_POSITION_KEYS),
+        signal = CaptureArrangeFields(
+            group.triggerSettings and group.triggerSettings.signal,
+            ARRANGE_TEXTURE_POSITION_KEYS
+        ),
+        locked = group.locked,
+    }
+end
+
+function CooldownCompanion:CaptureArrangeContainerRecord(containerId)
+    local snapshot = self._arrangeSnapshot
+    if not snapshot then
+        return
+    end
+
+    local container = self.db.profile.groupContainers[containerId]
+    if not container then
+        return
+    end
+
+    snapshot.containers[containerId] = {
+        anchor = CopyArrangeTable(container.anchor),
+        locked = container.locked,
+    }
+    for groupId, group in pairs(self.db.profile.groups) do
+        if group.parentContainerId == containerId then
+            self:CaptureArrangePanelRecord(groupId)
+        end
+    end
+end
+
+function CooldownCompanion:CaptureArrangeCastBarRecord()
+    local snapshot = self._arrangeSnapshot
+    if not snapshot then
+        return
+    end
+
+    local settings = self.GetCastBarSettings and self:GetCastBarSettings()
+    if not settings then
+        snapshot.castBar = nil
+        return
+    end
+
+    snapshot.castBar = {
+        settings = settings,
+        anchor = CopyArrangeTable(settings.independentAnchor),
+        locked = settings.independentAnchorLocked,
+        width = settings.independentWidth,
+    }
+end
+
+function CooldownCompanion:CaptureArrangeResourceRecord()
+    local snapshot = self._arrangeSnapshot
+    if not snapshot then
+        return
+    end
+
+    local resourceBar = ST._RB
+    local settings = resourceBar
+        and resourceBar.GetResourceBarSettings
+        and resourceBar.GetResourceBarSettings()
+    local placementSettings = settings
+        and resourceBar.GetSpecLayoutOrder
+        and resourceBar.GetSpecLayoutOrder(settings)
+    if not placementSettings then
+        snapshot.resource = nil
+        return
+    end
+
+    snapshot.resource = {
+        settings = placementSettings,
+        anchor = CopyArrangeTable(placementSettings.independentAnchor),
+        locked = placementSettings.independentAnchorLocked,
+        width = placementSettings.independentWidth,
+    }
+end
+
+function CooldownCompanion:CaptureArrangeSnapshot()
+    self._arrangeSnapshot = {
+        panels = {},
+        containers = {},
+    }
+
+    for groupId in pairs(self.db.profile.groups) do
+        self:CaptureArrangePanelRecord(groupId)
+    end
+    for containerId in pairs(self.db.profile.groupContainers or {}) do
+        self:CaptureArrangeContainerRecord(containerId)
+    end
+    self:CaptureArrangeCastBarRecord()
+    self:CaptureArrangeResourceRecord()
+end
+
+local function RestoreArrangeSnapshot(addon, snapshot)
+    if not snapshot then
+        return
+    end
+
+    for groupId, record in pairs(snapshot.panels or {}) do
+        local group = addon.db.profile.groups[groupId]
+        if group then
+            RestoreArrangeTable(group, "anchor", record.anchor)
+            if record.size then
+                group.style = type(group.style) == "table" and group.style or {}
+                RestoreArrangeFields(group.style, record.size, ARRANGE_PANEL_SIZE_KEYS)
+            end
+            if record.texture then
+                group.textureSettings = type(group.textureSettings) == "table" and group.textureSettings or {}
+                RestoreArrangeFields(group.textureSettings, record.texture, ARRANGE_TEXTURE_POSITION_KEYS)
+            end
+            if record.signal then
+                group.triggerSettings = type(group.triggerSettings) == "table" and group.triggerSettings or {}
+                group.triggerSettings.signal = type(group.triggerSettings.signal) == "table"
+                    and group.triggerSettings.signal
+                    or {}
+                RestoreArrangeFields(group.triggerSettings.signal, record.signal, ARRANGE_TEXTURE_POSITION_KEYS)
+            end
+            group.locked = record.locked
+        end
+    end
+
+    for containerId, record in pairs(snapshot.containers or {}) do
+        local container = addon.db.profile.groupContainers[containerId]
+        if container then
+            RestoreArrangeTable(container, "anchor", record.anchor)
+            container.locked = record.locked
+            -- Push the restored anchor back onto the frame directly. The refresh
+            -- pass below only re-anchors a container when normalization changes
+            -- its anchor, and a restored anchor is already normalized, so nothing
+            -- else moves the frame off the position the drag left it at. Panels
+            -- anchor relative to their container, so they follow from here.
+            local frame = addon.containerFrames and addon.containerFrames[containerId]
+            if frame and type(container.anchor) == "table" then
+                addon:AnchorContainerFrame(frame, container.anchor)
+            end
+        end
+    end
+
+    if snapshot.castBar and snapshot.castBar.settings then
+        local record = snapshot.castBar
+        RestoreArrangeTable(record.settings, "independentAnchor", record.anchor)
+        record.settings.independentAnchorLocked = record.locked
+        record.settings.independentWidth = record.width
+    end
+    if snapshot.resource and snapshot.resource.settings then
+        local record = snapshot.resource
+        RestoreArrangeTable(record.settings, "independentAnchor", record.anchor)
+        record.settings.independentAnchorLocked = record.locked
+        record.settings.independentWidth = record.width
+    end
+
+    addon:UnlockAllFrames()
+    addon:ApplyCastBarSettings()
+    addon:ApplyResourceBars()
+    addon:RefreshAllAuraTextureVisuals()
+    if addon.RefreshConfigPanel then
+        addon:RefreshConfigPanel()
+    end
+end
+
 function CooldownCompanion:IsArrangeModeActive()
     return self._arrangeModeActive == true
 end
@@ -757,38 +1003,45 @@ local function GetArrangeModePill(addon)
     pill:EnableMouse(true)
     pill:RegisterForDrag("LeftButton")
     pill:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    pill:SetBackdropColor(0.2, 0.2, 0.2, 0.9)
-    ST.CreatePixelBorders(pill)
+    pill:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
+    -- Gold accents tie the pill to the snap guides shown while arranging.
+    ST.CreatePixelBorders(pill, 1, 0.82, 0, 0.45)
 
     local icon = pill:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(14, 14)
-    icon:SetPoint("LEFT", pill, "LEFT", 7, 0)
+    icon:SetSize(16, 16)
+    icon:SetPoint("LEFT", pill, "LEFT", 10, 0)
     icon:SetAtlas("questlog-questtypeicon-lock", false)
-    icon:SetVertexColor(0.9, 0.9, 0.9, 1)
+    icon:SetVertexColor(1, 0.82, 0, 0.9)
 
-    local label = pill:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    label:SetPoint("LEFT", icon, "RIGHT", 5, 0)
-    label:SetText("Arranging panels")
-    label:SetTextColor(1, 1, 1, 1)
+    local title = pill:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOPLEFT", pill, "TOPLEFT", 34, -6)
+    title:SetText("Arranging panels")
+    title:SetTextColor(1, 0.82, 0, 1)
+
+    local hint = pill:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    hint:SetPoint("BOTTOMLEFT", pill, "BOTTOMLEFT", 34, 6)
+    hint:SetText("Esc cancels. Clicking Done, a padlock, or /cdc lock saves.")
+    hint:SetTextColor(0.72, 0.72, 0.72, 1)
 
     local doneButton = CreateFrame("Button", nil, pill, "BackdropTemplate")
-    doneButton:SetSize(42, 18)
-    doneButton:SetPoint("LEFT", label, "RIGHT", 8, 0)
+    doneButton:SetSize(52, 20)
+    doneButton:SetPoint("RIGHT", pill, "RIGHT", -10, 0)
     doneButton:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    doneButton:SetBackdropColor(0.2, 0.2, 0.2, 0.95)
-    ST.CreatePixelBorders(doneButton, 0, 0, 0, 1)
+    doneButton:SetBackdropColor(0.16, 0.16, 0.16, 1)
+    ST.CreatePixelBorders(doneButton, 1, 0.82, 0, 0.55)
     local doneText = doneButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     doneText:SetPoint("CENTER")
     doneText:SetText("Done")
     doneText:SetTextColor(1, 1, 1, 1)
 
-    pill:SetSize(math.ceil(7 + 14 + 5 + label:GetStringWidth() + 8 + 42 + 7), 26)
+    local textWidth = math.max(title:GetStringWidth(), hint:GetStringWidth())
+    pill:SetSize(math.ceil(10 + 16 + 8 + textWidth + 10 + 52 + 10), 40)
 
     doneButton:SetScript("OnClick", function()
         CooldownCompanion:ExitArrangeMode()
     end)
     doneButton:SetScript("OnEnter", function(self)
-        self:SetBackdropColor(0.32, 0.32, 0.32, 1)
+        self:SetBackdropColor(0.3, 0.25, 0.09, 1)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
         GameTooltip:AddLine("Lock everything")
         GameTooltip:AddLine(" ")
@@ -796,7 +1049,7 @@ local function GetArrangeModePill(addon)
         GameTooltip:Show()
     end)
     doneButton:SetScript("OnLeave", function(self)
-        self:SetBackdropColor(0.2, 0.2, 0.2, 0.95)
+        self:SetBackdropColor(0.16, 0.16, 0.16, 1)
         GameTooltip:Hide()
     end)
 
@@ -815,7 +1068,7 @@ local function GetArrangeModePill(addon)
             if not InCombatLockdown() then
                 self:SetPropagateKeyboardInput(false)
             end
-            CooldownCompanion:ExitArrangeMode()
+            CooldownCompanion:CancelArrangeMode()
         elseif not InCombatLockdown() then
             self:SetPropagateKeyboardInput(true)
         end
@@ -3666,7 +3919,8 @@ function CooldownCompanion:UnlockAllFrames()
     if self.containerFrames then
         for containerId in pairs(self.containerFrames) do
             local container = self.db.profile.groupContainers[containerId]
-            self:UpdateContainerDragHandle(containerId, not container or container.locked)
+            -- nil means locked; only an explicit false unlocks a container.
+            self:UpdateContainerDragHandle(containerId, not container or container.locked ~= false)
         end
     end
     self:RefreshAllGroups()
@@ -3681,6 +3935,7 @@ function CooldownCompanion:EnterArrangeMode()
         return
     end
 
+    self:CaptureArrangeSnapshot()
     self._arrangeModeActive = true
     for containerId in pairs(self.db.profile.groupContainers or {}) do
         if self:IsContainerVisibleToCurrentChar(containerId)
@@ -3701,7 +3956,8 @@ function CooldownCompanion:EnterArrangeMode()
     self:Print("All frames unlocked. Drag to move.")
 end
 
-function CooldownCompanion:ExitArrangeMode()
+function CooldownCompanion:ExitArrangeMode(opts)
+    self._arrangeSnapshot = nil
     self._arrangeModeActive = nil
     CancelActiveMoverGestures(self)
     self:LockAllFrames()
@@ -3717,7 +3973,27 @@ function CooldownCompanion:ExitArrangeMode()
     if self.RefreshConfigPanel then
         self:RefreshConfigPanel()
     end
-    self:Print("All frames locked.")
+    if not (opts and opts.silent) then
+        self:Print("All frames locked.")
+    end
+end
+
+function CooldownCompanion:CancelArrangeMode()
+    if not self._arrangeModeActive then
+        return
+    end
+    if InCombatLockdown() or self._combatForcedLock then
+        self:Print("Cannot cancel arranging during combat.")
+        return
+    end
+
+    local snapshot = self._arrangeSnapshot
+    self._arrangeSnapshot = nil
+    self:ExitArrangeMode({ silent = true })
+    if snapshot then
+        RestoreArrangeSnapshot(self, snapshot)
+    end
+    self:Print("Arranging cancelled. Unsaved changes reverted.")
 end
 
 -- TALENT NODE CACHE (for per-button talent conditions)
