@@ -1378,8 +1378,6 @@ local function BuildLayoutTab(container)
                 {"Hides the config panel and highlights frames under your cursor. Left-click a frame to anchor this panel to it, or right-click to cancel.", 1, 1, 1, true},
                 " ",
                 {"You can also type a frame name directly into the editbox.", 1, 1, 1, true},
-                " ",
-                {"Middle-click the draggable header to lock.", 1, 1, 1, true},
             }, tabInfoButtons)
 
             -- Added last so the List-layout column measures a populated row.
@@ -1762,8 +1760,6 @@ local function BuildLayoutTab(container)
             {"Hides the config panel and highlights frames under your cursor. Left-click a frame to anchor this group to it, or right-click to cancel.", 1, 1, 1, true},
             " ",
             {"You can also type a frame name directly into the editbox.", 1, 1, 1, true},
-            " ",
-            {"Middle-click the draggable header to lock.", 1, 1, 1, true},
         }, tabInfoButtons)
 
         -- Added last so the List-layout column measures a populated row.

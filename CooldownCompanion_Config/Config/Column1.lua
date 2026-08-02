@@ -1684,15 +1684,6 @@ local function RefreshColumn1(preserveDrag)
                 end
             elseif button == "RightButton" then
                 ShowContainerContextMenu(db, containerId, container)
-            elseif button == "MiddleButton" then
-                local isLocked = container.locked ~= false
-                CooldownCompanion:SetContainerLocked(containerId, not isLocked)
-                CooldownCompanion:RefreshConfigPanel()
-                if isLocked and ST.CollapseConfigForUnlock then
-                    ST.CollapseConfigForUnlock()
-                elseif not isLocked then
-                    CooldownCompanion:CheckArrangeModeAutoExit()
-                end
             end
         end)
 
@@ -1928,22 +1919,6 @@ local function RefreshColumn1(preserveDrag)
                                 toggle = true,
                             })
                             CooldownCompanion:RefreshConfigPanel()
-                        end
-                    elseif button == "MiddleButton" then
-                        if CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel) then
-                            CooldownCompanion:Print("Cursor-anchored panels are edited from Layout.")
-                            return
-                        end
-                        local isLocked = panel.locked ~= false
-                        CooldownCompanion:SetPanelLocked(panelId, not isLocked)
-                        if isLocked then
-                            CooldownCompanion:Print((panel.name or "Panel") .. " unlocked. Drag to reposition.")
-                        else
-                            CooldownCompanion:Print((panel.name or "Panel") .. " locked.")
-                        end
-                        CooldownCompanion:RefreshConfigPanel()
-                        if isLocked and ST.CollapseConfigForUnlock then
-                            ST.CollapseConfigForUnlock()
                         end
                     elseif button == "RightButton" and ST._ShowPanelContextMenu then
                         ST._ShowPanelContextMenu(panelId, containerId)

@@ -694,7 +694,7 @@ end
 local function CreateResourceBarLockButton(parent, onLock)
     local button = CreateFrame("Button", nil, parent)
     button:SetSize(INDEPENDENT_NUDGE_BTN_SIZE, INDEPENDENT_NUDGE_BTN_SIZE)
-    button:RegisterForClicks("LeftButtonUp", "MiddleButtonUp")
+    button:RegisterForClicks("LeftButtonUp")
 
     local icon = button:CreateTexture(nil, "OVERLAY")
     icon:SetSize(INDEPENDENT_NUDGE_BTN_SIZE - 2, INDEPENDENT_NUDGE_BTN_SIZE - 2)
@@ -707,8 +707,6 @@ local function CreateResourceBarLockButton(parent, onLock)
         self.icon:SetVertexColor(1, 1, 1, 1)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:AddLine("Lock")
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Middle-click the header also locks.", 1, 1, 1, false)
         GameTooltip:Show()
     end)
     button:SetScript("OnLeave", function(self)
@@ -913,11 +911,6 @@ local function CreateIndependentWrapperFrame()
         end
         SaveIndependentStackAnchor(true)
         CooldownCompanion:EndMoverChromeFade(frame)
-    end)
-    dragHandle:SetScript("OnMouseUp", function(_, button)
-        if button == "MiddleButton" then
-            LockIndependentStackFromMover(frame)
-        end
     end)
 
     frame._dragHandle = dragHandle

@@ -1659,7 +1659,7 @@ local PropagateFrameStrata
 local function CreateMoverLockButton(parent, buttonSize, idleColor, onLock)
     local button = CreateFrame("Button", nil, parent)
     button:SetSize(buttonSize, buttonSize)
-    button:RegisterForClicks("LeftButtonUp", "MiddleButtonUp")
+    button:RegisterForClicks("LeftButtonUp")
 
     local icon = button:CreateTexture(nil, "OVERLAY")
     icon:SetSize(buttonSize - 2, buttonSize - 2)
@@ -1672,8 +1672,6 @@ local function CreateMoverLockButton(parent, buttonSize, idleColor, onLock)
         self.icon:SetVertexColor(1, 1, 1, 1)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:AddLine("Lock")
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Middle-click the header also locks.", 1, 1, 1, false)
         GameTooltip:Show()
     end)
     button:SetScript("OnLeave", function(self)
@@ -2192,7 +2190,7 @@ local function OnUnlockedPanelMouseWheel(frame, delta)
     end
 end
 
-local function AddPanelDragHelpTooltipLines(tooltip, isContainerPreview, isCursorPreview, isResizable)
+local function AddPanelDragHelpTooltipLines(tooltip, isCursorPreview, isResizable)
     if isCursorPreview then
         tooltip:AddLine("Cursor Offset")
         tooltip:AddLine("Drag this panel to set its saved offset from the dummy cursor.", 1, 1, 1, true)
@@ -2210,10 +2208,6 @@ local function AddPanelDragHelpTooltipLines(tooltip, isContainerPreview, isCurso
     tooltip:AddLine(" ")
     if isResizable then
         tooltip:AddLine("Drag the corner grip or mouse wheel to resize.", 1, 1, 1, false)
-        tooltip:AddLine(" ")
-    end
-    if not isContainerPreview then
-        tooltip:AddLine("Middle-click the header to lock this panel.", 1, 1, 1, false)
         tooltip:AddLine(" ")
     end
     tooltip:AddLine("Click the coordinates below to type exact values.", 1, 1, 1, false)
@@ -2249,11 +2243,10 @@ local function CreatePanelDragHelpButton(frame, groupId)
         0,
         function(tooltip)
             local group = CooldownCompanion.db.profile.groups[groupId]
-            local previewActive = GetContainerPreviewSelectionState(groupId)
             local cursorPreviewActive = CooldownCompanion.IsCursorAnchorLayoutPreviewSelected
                 and CooldownCompanion:IsCursorAnchorLayoutPreviewSelected(groupId)
                 or false
-            AddPanelDragHelpTooltipLines(tooltip, previewActive, cursorPreviewActive, IsGroupPanelResizable(group))
+            AddPanelDragHelpTooltipLines(tooltip, cursorPreviewActive, IsGroupPanelResizable(group))
         end
     )
 end
@@ -4579,11 +4572,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
             SetFrameClickThrough(frame.dragHandle, false, false)
             frame.dragHandle:EnableMouse(true)
             frame.dragHandle:RegisterForDrag("LeftButton")
-            frame.dragHandle:SetScript("OnMouseUp", function(_, btn)
-                if btn == "MiddleButton" then
-                    LockPanelFromMover(groupId)
-                end
-            end)
+            frame.dragHandle:SetScript("OnMouseUp", nil)
         end
         if frame.nudger then
             SetFrameClickThrough(frame.nudger, false, false)
@@ -4613,7 +4602,6 @@ local CONTAINER_MOVER_COLORS = {
     memberB = 1,
     memberHoverAlpha = 0.10,
     memberSelectedAlpha = 0.18,
-    memberHairlineAlpha = 0.35,
     wrapperBorderAlpha = 0.7,
 }
 
@@ -5275,11 +5263,9 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         overlay:SetShown(true)
 
         local fillAlpha = 0
-        local showHairline = false
         if not isStandaloneDisplay then
             if isSelected then
                 fillAlpha = CONTAINER_MOVER_COLORS.memberSelectedAlpha
-                showHairline = true
             elseif isHovered then
                 fillAlpha = CONTAINER_MOVER_COLORS.memberHoverAlpha
             end
@@ -5290,11 +5276,7 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
             CONTAINER_MOVER_COLORS.memberB,
             fillAlpha
         )
-        if showHairline then
-            EnsureContainerWrapperBorder(overlay, 1, 1, 1, CONTAINER_MOVER_COLORS.memberHairlineAlpha, 1)
-        else
-            HideContainerWrapperBorder(overlay)
-        end
+        HideContainerWrapperBorder(overlay)
 
         local showLabel = hoveredGroupId ~= nil and isHovered and not isSelected
 
@@ -5713,13 +5695,7 @@ function CooldownCompanion:CreateContainerFrame(containerId)
         CooldownCompanion:EndMoverChromeFade(frame)
     end)
 
-    -- Middle-click to lock
     frame.dragHandle.header:SetScript("OnMouseUp", function(_, btn)
-        if btn == "MiddleButton" then
-            LockContainerFromMover(containerId)
-            return
-        end
-
         if btn == "LeftButton" then
             if frame.dragHandle.header._suppressClick then
                 frame.dragHandle.header._suppressClick = nil

@@ -398,7 +398,7 @@ end
 local function CreateCastBarLockButton(parent, onLock)
     local button = CreateFrame("Button", nil, parent)
     button:SetSize(CAST_NUDGE_BTN_SIZE, CAST_NUDGE_BTN_SIZE)
-    button:RegisterForClicks("LeftButtonUp", "MiddleButtonUp")
+    button:RegisterForClicks("LeftButtonUp")
 
     local icon = button:CreateTexture(nil, "OVERLAY")
     icon:SetSize(CAST_NUDGE_BTN_SIZE - 2, CAST_NUDGE_BTN_SIZE - 2)
@@ -411,8 +411,6 @@ local function CreateCastBarLockButton(parent, onLock)
         self.icon:SetVertexColor(1, 1, 1, 1)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:AddLine("Lock")
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Middle-click the header also locks.", 1, 1, 1, false)
         GameTooltip:Show()
     end)
     button:SetScript("OnLeave", function(self)
@@ -613,11 +611,6 @@ local function CreateCastBarMoverFrame()
         end
         SaveIndependentCastBarAnchor(true)
         CooldownCompanion:EndMoverChromeFade(frame)
-    end)
-    dragHandle:SetScript("OnMouseUp", function(_, button)
-        if button == "MiddleButton" then
-            LockIndependentCastBarFromMover(frame)
-        end
     end)
 
     frame._dragHandle = dragHandle

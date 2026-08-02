@@ -871,23 +871,19 @@ local function EnsureAuraTextureNudger(host)
     host.nudger = nudger
 end
 
-local function AddTexturePanelDragHelpTooltipLines(tooltip, isGroupedPreview)
+local function AddTexturePanelDragHelpTooltipLines(tooltip)
     tooltip:AddLine("Panel Controls")
     tooltip:AddLine("Drag anywhere on the panel to move it.", 1, 1, 1, false)
     tooltip:AddLine(" ")
     tooltip:AddLine("Use the arrow pad to nudge by 1 pixel.", 1, 1, 1, false)
     tooltip:AddLine(" ")
-    if not isGroupedPreview then
-        tooltip:AddLine("Middle-click the header to lock this panel.", 1, 1, 1, false)
-        tooltip:AddLine(" ")
-    end
     tooltip:AddLine("Click the coordinates below to type exact values.", 1, 1, 1, false)
 end
 
 local function CreateAuraTextureLockButton(parent, onLock)
     local button = CreateFrame("Button", nil, parent)
     button:SetSize(12, 12)
-    button:RegisterForClicks("LeftButtonUp", "MiddleButtonUp")
+    button:RegisterForClicks("LeftButtonUp")
 
     local icon = button:CreateTexture(nil, "OVERLAY")
     icon:SetSize(10, 10)
@@ -900,8 +896,6 @@ local function CreateAuraTextureLockButton(parent, onLock)
         self.icon:SetVertexColor(1, 1, 1, 1)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:AddLine("Lock")
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Middle-click the header also locks.", 1, 1, 1, false)
         GameTooltip:Show()
     end)
     button:SetScript("OnLeave", function(self)
@@ -954,7 +948,7 @@ local function CreateAuraTextureDragHelpButton(host, dragHandle)
         -2,
         0,
         function(tooltip)
-            AddTexturePanelDragHelpTooltipLines(tooltip, IsTextureHostGroupedPreviewActive(host))
+            AddTexturePanelDragHelpTooltipLines(tooltip)
         end
     )
 end
@@ -1011,11 +1005,6 @@ local function EnsureAuraTextureDragHandle(host)
     end)
     dragHandle:SetScript("OnDragStop", function()
         FinishTextureHostDrag(host)
-    end)
-    dragHandle:SetScript("OnMouseUp", function(_, button)
-        if button == "MiddleButton" then
-            LockAuraTexturePanelFromMover(host)
-        end
     end)
 
     host.dragHandle = dragHandle

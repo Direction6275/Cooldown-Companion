@@ -523,14 +523,12 @@ function CooldownCompanion:SlashCommand(input)
     input = tostring(input or ""):lower()
     input = input:match("^%s*(.-)%s*$")
 
-    if input == "unlock" then
+    if input == "unlock" or input == "lock" then
         if self:IsArrangeModeActive() then
             self:ExitArrangeMode()
         else
             self:EnterArrangeMode()
         end
-    elseif input == "lock" then
-        self:ExitArrangeMode()
     elseif input == "minimap" then
         self.db.profile.minimap.hide = not self.db.profile.minimap.hide
         if self.db.profile.minimap.hide then
@@ -543,8 +541,7 @@ function CooldownCompanion:SlashCommand(input)
     elseif input == "help" then
         self:Print("Cooldown Companion commands:")
         self:Print("/cdc - Open settings")
-        self:Print("/cdc unlock - Arrange mode: unlock everything to move it")
-        self:Print("/cdc lock - Lock all frames")
+        self:Print("/cdc lock - Toggle arrange mode (/cdc unlock does the same)")
         self:Print("/cdc minimap - Toggle minimap icon")
         self:Print("/cdc reset - Reset profile to defaults")
     elseif input == "reset" then
