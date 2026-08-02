@@ -1614,26 +1614,41 @@ local function CreateConfigPanel()
     arrangeIcon:SetSize(12, 12)
     arrangeIcon:SetPoint("CENTER")
     arrangeIcon:SetAtlas("questlog-questtypeicon-lock", false)
-    arrangeIcon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+    local function UpdateArrangeBadgeTint()
+        if CooldownCompanion.IsArrangeModeActive and CooldownCompanion:IsArrangeModeActive() then
+            arrangeIcon:SetVertexColor(1, 0.82, 0, 0.9)
+        else
+            arrangeIcon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+        end
+    end
+    ST.UpdateArrangeBadge = UpdateArrangeBadgeTint
+    UpdateArrangeBadgeTint()
     arrangeBtn:SetScript("OnClick", function()
         if CooldownCompanion.IsArrangeModeActive and CooldownCompanion:IsArrangeModeActive() then
             CooldownCompanion:ExitArrangeMode()
         else
             CooldownCompanion:EnterArrangeMode()
         end
+        UpdateArrangeBadgeTint()
     end)
     arrangeBtn:SetScript("OnEnter", function(self)
         arrangeIcon:SetVertexColor(1, 1, 1, 1)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Arrange panels")
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Unlocks everything for moving.", 1, 1, 1, true)
+        if CooldownCompanion.IsArrangeModeActive and CooldownCompanion:IsArrangeModeActive() then
+            GameTooltip:AddLine("Finish arranging")
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Locks everything and saves your changes.", 1, 1, 1, true)
+        else
+            GameTooltip:AddLine("Arrange panels")
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Unlocks everything for moving.", 1, 1, 1, true)
+        end
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Typing /cdc lock does the same thing.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     arrangeBtn:SetScript("OnLeave", function()
-        arrangeIcon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+        UpdateArrangeBadgeTint()
         GameTooltip:Hide()
     end)
 
@@ -2238,6 +2253,9 @@ function CooldownCompanion:_configRefreshPanelImpl()
     CS.configRefreshInProgress = false
     if CS.RefreshAdvancedSettingsPanel then
         CS.RefreshAdvancedSettingsPanel()
+    end
+    if ST.UpdateArrangeBadge then
+        ST.UpdateArrangeBadge()
     end
 
 end

@@ -58,11 +58,18 @@ local minimapButton = LDB:NewDataObject(ADDON_NAME, {
                 action = "toggle",
                 entryPoint = "minimap",
             })
+        elseif button == "RightButton" then
+            if CooldownCompanion.IsArrangeModeActive and CooldownCompanion:IsArrangeModeActive() then
+                CooldownCompanion:ExitArrangeMode()
+            elseif CooldownCompanion.EnterArrangeMode then
+                CooldownCompanion:EnterArrangeMode()
+            end
         end
     end,
     OnTooltipShow = function(tooltip)
         tooltip:AddLine("Cooldown Companion")
         tooltip:AddLine("|cffeda55fLeft-Click|r to open options", 0.2, 1, 0.2)
+        tooltip:AddLine("|cffeda55fRight-Click|r to arrange panels", 0.2, 1, 0.2)
     end,
 })
 ST._minimapButton = minimapButton
