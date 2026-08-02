@@ -726,6 +726,12 @@ local function BuildTriggerIconAppearanceTab(container, group)
         })
     end
 
+    ST._BuildIconZoomControls(iconLeft, settings, RefreshIconPreview, {
+        previewRefresh = function()
+            RefreshTriggerPreviewMirror(groupId)
+        end,
+    })
+
     -- deferCommit is deliberately absent throughout, matching the
     -- AddColorPicker calls these rows replace: the callbacks repaint the
     -- canvas, they do not re-read the bound table every tick.
@@ -3523,6 +3529,14 @@ local function BuildAppearanceTab(container)
             end)
         end
 
+        ST._BuildIconZoomControls(assistLeft, style, refreshStyle, {
+            previewRefresh = function()
+                if ST._RefreshButtonsPreviewMirror then
+                    ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
+                end
+            end,
+        })
+
         -- The border builder has no second-column split of its own, so its
         -- whole block heads the right column.
         BuildBorderControls(assistRight, style, refreshStyle, { row = true })
@@ -3674,6 +3688,17 @@ local function BuildAppearanceTab(container)
             style.iconHeight = val
         end)
     end
+
+    ST._BuildIconZoomControls(iconLeft, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end, {
+        disabled = group.masqueEnabled == true,
+        previewRefresh = function()
+            if ST._RefreshButtonsPreviewMirror then
+                ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
+            end
+        end,
+    })
 
     if group.buttons and #group.buttons > 1 then
         AddSliderRow(iconRight, {

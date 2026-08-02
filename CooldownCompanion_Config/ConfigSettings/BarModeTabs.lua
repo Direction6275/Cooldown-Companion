@@ -321,6 +321,16 @@ local function BuildBarAppearanceTab(container, group, style)
                 end,
             })
         end
+
+        ST._BuildIconZoomControls(panel, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end, {
+            previewRefresh = function()
+                if ST._RefreshButtonsPreviewMirror then
+                    ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
+                end
+            end,
+        })
     end
 
     local _, iconAdvBtn = AddAdvancedToggle(showIconRow, "barIcon", tabInfoButtons, style.showBarIcon ~= false, {

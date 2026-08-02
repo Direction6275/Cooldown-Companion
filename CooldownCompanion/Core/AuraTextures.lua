@@ -870,6 +870,7 @@ function CooldownCompanion.NormalizeTriggerIconSettings(settings)
             and settings.manualIcon
         or nil
     settings.maintainAspectRatio = settings.maintainAspectRatio ~= false
+    settings.iconZoom = Clamp(tonumber(settings.iconZoom) or 0, 0, 50)
     settings.buttonSize = Clamp(tonumber(settings.buttonSize) or 36, 10, 150)
     settings.iconWidth = Clamp(tonumber(settings.iconWidth) or settings.buttonSize, 10, 150)
     settings.iconHeight = Clamp(tonumber(settings.iconHeight) or settings.buttonSize, 10, 150)
@@ -971,6 +972,7 @@ function CooldownCompanion:GetTriggerPanelIconSettings(groupOrId, createIfMissin
         group.triggerSettings.icon = {
             manualIcon = nil,
             maintainAspectRatio = true,
+            iconZoom = 0,
             buttonSize = 36,
             iconWidth = 36,
             iconHeight = 36,

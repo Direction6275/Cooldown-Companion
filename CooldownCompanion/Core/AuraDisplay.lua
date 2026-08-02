@@ -999,8 +999,8 @@ local function StyleSlotKit(slot, button, buttonData, style)
         local ApplyIconTexCoord = ST._ApplyIconTexCoord
         if ApplyIconTexCoord then
             local cropW, cropH = button:GetWidth(), button:GetHeight()
-            ApplyIconTexCoord(kit.iconCover, cropW, cropH)
-            ApplyIconTexCoord(kit.auraIcon, cropW, cropH)
+            ApplyIconTexCoord(kit.iconCover, cropW, cropH, style.iconZoom)
+            ApplyIconTexCoord(kit.auraIcon, cropW, cropH, style.iconZoom)
         end
         if buttonData.type == "spell" and buttonData.id then
             kit.iconCover:SetTexture(C_Spell.GetSpellTexture(buttonData.id))

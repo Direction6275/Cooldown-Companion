@@ -107,6 +107,10 @@ function CooldownCompanion:ToggleGroupMasque(groupId, enable)
         -- Force square icons when Masque is enabled (non-square causes stretching)
         group.style.maintainAspectRatio = true
 
+        -- Zero out icon zoom: Masque skins own the icon's texture coordinates,
+        -- so a CC-side crop would fight the skin.
+        group.style.iconZoom = 0
+
         -- Create Masque group if it doesn't exist
         if not MasqueGroups[groupId] then
             self:CreateMasqueGroup(groupId)

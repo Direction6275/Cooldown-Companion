@@ -98,6 +98,7 @@ local defaults = {
                         pandemicMarkerColor = {1, 0.5, 0, 1},
                         iconWidthRatio = 1.0, -- 1.0 = square, <1 = taller, >1 = wider
                         maintainAspectRatio = true, -- Prevent icon image stretching
+                        iconZoom = 0, -- % the artwork is cropped toward center (WeakAuras-style zoom)
                         showTooltips = false,
                         tooltipAnchor = "default", -- "default"/"above"/"below"/"left"/"right"/"cursor"
                         tooltipHideInCombat = false,
@@ -593,6 +594,7 @@ local defaults = {
             barTexture = "Solid",
             showIcon = true,
             iconSize = 16,
+            iconZoom = 0,
             iconFlipSide = false,
             iconOffset = false,
             iconOffsetX = 0,
@@ -935,6 +937,12 @@ ST.OVERRIDE_SECTIONS = {
         label = "Icon Tint",
         keys = {"iconTintColor", "iconCooldownTintEnabled", "iconCooldownTintColor", "iconAuraTintEnabled", "iconAuraTintColor", "backgroundColor"},
         modes = {icons = true, bars = true},
+    },
+    iconZoom = {
+        label = "Icon Zoom",
+        keys = {"iconZoom"},
+        modes = {icons = true, bars = true, rotationAssistant = true},
+        defaults = {iconZoom = 0},
     },
     iconFillTimer = {
         label = "Icon Fill Timer",

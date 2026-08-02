@@ -549,6 +549,10 @@ local function BuildCastBarStylingPanel(container)
     end
 
     local function BuildIconAdvanced(panel)
+        ST._BuildIconZoomControls(panel, settings, function()
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+
         AddCheckboxRow(panel, {
             label = "Icon on Right Side",
             value = settings.iconFlipSide or false,

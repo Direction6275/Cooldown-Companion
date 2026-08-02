@@ -657,7 +657,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.icon:SetPoint("TOPLEFT", borderLayoutSize, -borderLayoutSize)
     button.icon:SetPoint("BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
 
-    ApplyIconTexCoord(button.icon, width, height)
+    ApplyIconTexCoord(button.icon, width, height, style.iconZoom)
 
     button.iconFill = CreateFrame("StatusBar", button:GetName() .. "IconFill", button)
     button.iconFill._owner = button
@@ -1332,7 +1332,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button.icon:SetPoint("TOPLEFT", borderLayoutSize, -borderLayoutSize)
     button.icon:SetPoint("BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
 
-    ApplyIconTexCoord(button.icon, width, height)
+    ApplyIconTexCoord(button.icon, width, height, style.iconZoom)
 
     if button.iconFill then
         AnchorIconFill(button)

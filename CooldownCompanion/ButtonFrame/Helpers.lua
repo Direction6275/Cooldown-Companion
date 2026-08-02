@@ -1168,9 +1168,15 @@ end
 
 -- Apply aspect-ratio-aware texture cropping to an icon.
 -- Crops the narrower dimension so the icon image stays undistorted.
-local function ApplyIconTexCoord(icon, width, height)
+-- zoom (0-100, optional) shrinks the crop window toward the center on top of
+-- the standard 0.08-0.92 border trim: the frame keeps its size, the artwork
+-- enlarges. Clamped below 100 so the window can never collapse to a point.
+local function ApplyIconTexCoord(icon, width, height, zoom)
+    zoom = tonumber(zoom) or 0
+    if zoom < 0 then zoom = 0 elseif zoom > 99 then zoom = 99 end
+    local halfRange = 0.42 * (1 - zoom / 100)
+    local texMin, texMax = 0.5 - halfRange, 0.5 + halfRange
     if width ~= height then
-        local texMin, texMax = 0.08, 0.92
         local texRange = texMax - texMin
         local aspectRatio = width / height
         if aspectRatio > 1.0 then
@@ -1181,7 +1187,7 @@ local function ApplyIconTexCoord(icon, width, height)
             icon:SetTexCoord(texMin + crop, texMax - crop, texMin, texMax)
         end
     else
-        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        icon:SetTexCoord(texMin, texMax, texMin, texMax)
     end
 end
 

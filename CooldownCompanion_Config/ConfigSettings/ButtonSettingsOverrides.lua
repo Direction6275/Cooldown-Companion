@@ -349,7 +349,7 @@ end
 local OVERRIDE_SECTION_ORDER = {
     "borderSettings", "cooldownText", "auraText", "auraStackText",
     "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "showOutOfRange", "showTooltips",
-    "lossOfControl", "unusableDimming", "iconTint", "assistedHighlight", "procGlow", "auraIndicator", "readyGlow", "keyPressHighlight",
+    "lossOfControl", "unusableDimming", "iconTint", "iconZoom", "assistedHighlight", "procGlow", "auraIndicator", "readyGlow", "keyPressHighlight",
     "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText",
     "textFont", "textColors", "textBackground",
 }
@@ -466,6 +466,9 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
             BuildBackgroundColorControls(backgroundHost, styleTable, onChange, nil,
                 rowMode and { row = true } or nil)
         end,
+        -- Referenced through ST, not a file-top import: _BuildOverridesTab is
+        -- close to Lua's 60-upvalue ceiling (see the note at the top of it).
+        iconZoom = ST._BuildIconZoomControls,
         assistedHighlight = BuildAssistedHighlightControls,
         procGlow = BuildProcGlowControls,
         auraIndicator = BuildAuraGlowControls,

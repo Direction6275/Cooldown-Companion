@@ -1155,7 +1155,7 @@ local function DeferredReapply()
         if cb.Icon then
             cb.Icon:SetShown(s.showIcon ~= false)
             if s.showIcon then
-                cb.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                ST._ApplyIconTexCoord(cb.Icon, 1, 1, s.iconZoom)
                 if s.iconOffset then
                     local iSize = s.iconSize or 16
                     cb.Icon:SetSize(iSize, iSize)
@@ -1543,7 +1543,7 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
         if cb.Icon then
             cb.Icon:SetShown(settings.showIcon ~= false)
             if settings.showIcon then
-                cb.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                ST._ApplyIconTexCoord(cb.Icon, 1, 1, settings.iconZoom)
                 if settings.iconOffset then
                     -- Offset mode: custom size, positioned outside bar with X/Y offsets
                     local iSize = settings.iconSize or 16

@@ -1493,7 +1493,7 @@ function CooldownCompanion.ApplyTriggerIconVisual(host, settings)
         iconTint[3] or 1,
         iconTint[4] ~= nil and iconTint[4] or 1
     )
-    ST._ApplyIconTexCoord(iconFrame.icon, width, height)
+    ST._ApplyIconTexCoord(iconFrame.icon, width, height, settings.iconZoom)
 
     for _, border in ipairs(iconFrame.borderTextures) do
         border:SetColorTexture(

@@ -657,6 +657,36 @@ local function BuildBackgroundColorControls(container, styleTable, refreshCallba
     })
 end
 
+-- Row grammar only: one slider row. WeakAuras-style zoom: crops the icon
+-- artwork toward its center without changing the frame's size.
+-- Mirror-first when opts.previewRefresh is given: drag ticks save the value
+-- and repaint only that preview, and refreshCallback restyles the live
+-- surface once on release (the slider's edit box fires the release path on
+-- Enter too, so typed values also apply live).
+local function BuildIconZoomControls(container, styleTable, refreshCallback, opts)
+    -- Masque skins own the icon's texture coordinates, so the row locks
+    -- whenever the panel is skinned (mirrors the Square Icons row).
+    local locked = opts and (opts.disabled or opts.masqueEnabled) or false
+    local previewRefresh = opts and opts.previewRefresh
+    return AddSliderRow(container, {
+        label = "Icon Zoom",
+        indent = opts and opts.indent,
+        disabled = locked,
+        min = 0, max = 50, step = 1,
+        value = styleTable.iconZoom or 0,
+        onChange = function(val)
+            if locked then return end
+            styleTable.iconZoom = val
+            if previewRefresh then previewRefresh() else refreshCallback() end
+        end,
+        onRelease = previewRefresh and function(val)
+            if locked then return end
+            styleTable.iconZoom = val
+            refreshCallback()
+        end or nil,
+    })
+end
+
 -- Row grammar only: one checkbox row.
 local function BuildDesaturationControls(container, styleTable, refreshCallback, opts)
     return AddCheckboxRow(container, {
@@ -2168,6 +2198,7 @@ ST._BuildChargeTextControls = BuildChargeTextControls
 ST._BuildBorderControls = BuildBorderControls
 ST._BuildBackgroundColorControls = BuildBackgroundColorControls
 ST._BuildDesaturationControls = BuildDesaturationControls
+ST._BuildIconZoomControls = BuildIconZoomControls
 ST._BuildShowTooltipsControls = BuildShowTooltipsControls
 ST._BuildShowOutOfRangeControls = BuildShowOutOfRangeControls
 ST._BuildAllowPingsControls = BuildAllowPingsControls

@@ -3365,7 +3365,7 @@ local function StyleBarEntry(slot, buttonData, group, effectiveStyle)
 
     if showIcon then
         SetIconAreaPoints(slot.icon, slot, isVertical, iconReverse, iconSize, borderLayoutSize)
-        slot.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        ST._ApplyIconTexCoord(slot.icon, iconSize, iconSize, style.iconZoom)
         slot.icon:SetTexture(GetConfigOnlyBarPreviewIcon(buttonData))
         slot.icon:Show()
         SetIconAreaPoints(slot.iconBg, slot, isVertical, iconReverse, iconSize, 0)
@@ -3645,7 +3645,7 @@ local function RenderTriggerIconMirror(mirror, settings, boxWidth, boxHeight)
         tintColor[4] ~= nil and tintColor[4] or 1)
     local applyTexCoord = ST._ApplyIconTexCoord
     if applyTexCoord then
-        applyTexCoord(icon, width, height)
+        applyTexCoord(icon, width, height, settings.iconZoom)
     end
     icon:Show()
 

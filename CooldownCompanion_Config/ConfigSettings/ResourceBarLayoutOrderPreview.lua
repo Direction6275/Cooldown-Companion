@@ -406,7 +406,7 @@ local function StyleMirroredIconFrame(iconFrame, button, group)
     if button and button.icon and button.icon.GetTexCoord then
         iconFrame.icon:SetTexCoord(button.icon:GetTexCoord())
     else
-        ApplyIconTexCoord(iconFrame.icon, iconFrame:GetWidth(), iconFrame:GetHeight())
+        ApplyIconTexCoord(iconFrame.icon, iconFrame:GetWidth(), iconFrame:GetHeight(), style.iconZoom)
     end
 
     if showBorder then
@@ -1831,6 +1831,10 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
         iconFrame:SetSize(iconSize, iconSize)
         iconFrame:Show()
         icon:SetTexture(slot.icon or LAYOUT_PREVIEW_ICON_FALLBACK)
+        -- Zoom is a styling-layer setting like everything else here: with
+        -- Styling off the live bar wears Blizzard visuals, so the facsimile
+        -- falls back to the plain trim.
+        ApplyIconTexCoord(icon, 1, 1, styled and settings.iconZoom or 0)
         if settings.iconFlipSide then
             iconFrame:ClearAllPoints()
             iconFrame:SetPoint("TOPRIGHT", root, "TOPRIGHT", 0, 0)

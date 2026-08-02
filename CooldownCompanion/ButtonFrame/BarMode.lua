@@ -526,7 +526,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.icon = button:CreateTexture(nil, "ARTWORK")
     if showIcon then
         SetIconAreaPoints(button.icon, button, isVertical, iconReverse, iconSize, ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode))
-        button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        ST._ApplyIconTexCoord(button.icon, iconSize, iconSize, style.iconZoom)
     else
         -- Hidden 1x1 icon (still needed for UpdateButtonIcon)
         button.icon:SetPoint("TOPLEFT", 0, 0)
@@ -896,7 +896,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button.icon:ClearAllPoints()
     if showIcon then
         SetIconAreaPoints(button.icon, button, isVertical, iconReverse, iconSize, borderLayoutSize)
-        button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        ST._ApplyIconTexCoord(button.icon, iconSize, iconSize, newStyle.iconZoom)
         button.icon:SetAlpha(1)
     else
         button.icon:SetPoint("TOPLEFT", 0, 0)
