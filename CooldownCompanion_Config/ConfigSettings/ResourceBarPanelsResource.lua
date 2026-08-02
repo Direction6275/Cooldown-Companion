@@ -37,9 +37,38 @@ local AddLabelRow = ST._AddLabelRow
 local AnchorRowBadge = ST._AnchorRowBadge
 local BeginRowGrid = ST._BeginRowGrid
 
+-- The workspace Live Preview does not rebuild with the settings column, so
+-- rows whose effect is visible on the canvas re-render it directly (the
+-- custom-bars panel's pattern). Late-bound: the helper self-gates on view
+-- state and may not exist in every load order.
+local function RefreshLayoutOrderPreview()
+    if ST._RefreshResourcesLayoutPreview then
+        ST._RefreshResourcesLayoutPreview()
+    end
+end
+
 -- Row-grammar section headers: caret far left, label, then a class-colored
 -- rule fading right.
 local ROW_SECTION = { leftAligned = true }
+
+-- Per-style slider rows shared with every other glow surface
+-- (SectionBuilders GLOW_SLIDER_SPEC): the border styles draw the same
+-- sliders everywhere, only the store differs.
+local AddGlowSliderRows = ST._AddGlowSliderRows
+local AURA_BORDER_SLIDER_KEYS = {
+    size = "auraBorderSize",
+    thickness = "auraBorderThickness",
+    speed = "auraBorderSpeed",
+    lines = "auraBorderLines",
+    solidSizeDefault = 2,
+}
+local MW_BORDER_SLIDER_KEYS = {
+    size = "mwMaxStackBorderSize",
+    thickness = "mwMaxStackBorderThickness",
+    speed = "mwMaxStackBorderSpeed",
+    lines = "mwMaxStackBorderLines",
+    solidSizeDefault = 2,
+}
 
 -- LibSharedMedia names run well past the 140px control column, and a dropdown
 -- sizes its menu from the control. Without this the texture picker would open
@@ -937,6 +966,21 @@ local function AddResourceSpecCopyButton(enableCb)
     -- every other row-grammar badge. AnchorRowBadge does the ClearAllPoints.
     AnchorRowBadge(enableCb, btn)
     btn:Show()
+
+    -- The singleton is a plain child of a pooled row frame: without this it
+    -- survives the row's release and surfaces on whatever row the pool hands
+    -- that frame next (the badge-leak class). Same OnRelease chain as
+    -- CreateInfoButton's AceGUI cleanup path; AceGUI wipes events on
+    -- release, so the chain never stacks across pool cycles.
+    local prevOnRelease = enableCb.events and enableCb.events["OnRelease"]
+    enableCb:SetCallback("OnRelease", function()
+        if prevOnRelease then
+            prevOnRelease(enableCb, "OnRelease")
+        end
+        btn:ClearAllPoints()
+        btn:Hide()
+        btn:SetParent(nil)
+    end)
 
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -1936,10 +1980,13 @@ local function AddThresholdTickEntryEditor(panel, options)
 end
 
 ------------------------------------------------------------------------
--- Resource aura overlays (the aura pass, Phase 2). One tracked aura per
--- resource per specialization, in one of two modes. Blizzard shows and
--- hides the overlay with the aura itself, so it survives combat, where
--- the addon cannot read aura state at all.
+-- Resource aura borders (the aura pass, Phase 2; border redesign
+-- 2026-08-02). One tracked aura per resource per specialization. The
+-- border is the aura-present visual, wrapping the whole bar rect on
+-- every shape, and Stack Count mode adds the lane. Blizzard shows and
+-- hides everything with the aura itself, so it survives combat, where
+-- the addon cannot read aura state at all. Stored keys keep their
+-- auraOverlay* names: labels renamed, no migration.
 ------------------------------------------------------------------------
 
 local function GetResourceAuraOverlayEntry(settings, powerType, specID)
@@ -1991,11 +2038,11 @@ end
 local function BuildResourceAuraOverlaySection(container, settings, powerType, specID, resourceName)
     local sectionKey = "rb_aura_overlay_" .. powerType
     local heading, collapsed =
-        BuildCollapsibleSection(container, "Aura Overlay", sectionKey, resourceBarCollapsedSections, nil, ROW_SECTION)
+        BuildCollapsibleSection(container, "Aura Border", sectionKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
     local sectionInfoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
-        "Aura Overlay",
-        {"One aura per resource and specialization. Blizzard shows and hides the overlay with the aura itself, so it keeps working in combat, where the addon cannot read aura state.", 1, 1, 1, true},
+        "Aura Border",
+        {"One aura per resource and specialization. Blizzard shows and hides the border with the aura itself, so it keeps working in combat, where the addon cannot read aura state.", 1, 1, 1, true},
         " ",
         {"Buffs can only be tracked on yourself, and your own debuffs only on your target. The tracked unit is set automatically from the aura.", 1, 1, 1, true},
     }, heading)
@@ -2003,7 +2050,13 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
 
     if collapsed then return end
 
-    local applyBars = function() CooldownCompanion:ApplyResourceBars() end
+    -- Every handler in this section funnels through here: the border and
+    -- lane render on the workspace Live Preview, which does not rebuild
+    -- with the settings column, so the canvas re-renders on every edit.
+    local applyBars = function()
+        CooldownCompanion:ApplyResourceBars()
+        RefreshLayoutOrderPreview()
+    end
     local function refresh()
         applyBars()
         C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
@@ -2017,7 +2070,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
     local auraLeft, auraRight = BeginRowGrid(container)
 
     AddCheckboxRow(auraLeft, {
-        label = "Enable " .. resourceName .. " Aura Overlay",
+        label = "Enable " .. resourceName .. " Aura Border",
         value = enabled,
         onChange = function(value)
             WriteSpecOverrideKey(settings, powerType, specID, "auraOverlayEnabled", value == true)
@@ -2032,7 +2085,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
 
     if not spellID then
         AddEditBoxRow(auraLeft, {
-            label = "Overlay aura by name or ID",
+            label = "Aura by name or ID",
             indent = true,
             value = "",
             onEnterPressed = function(text, widget)
@@ -2099,13 +2152,44 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
         controlText = unit == "target" and "Target" or "You",
     })
 
+    local borderStyle = RB.GetResourceOverlayBorderStyle(entry)
+    AddDropdownRow(auraRight, {
+        label = "Border Style",
+        list = { solid = "Solid Border", pixel = "Pixel Glow" },
+        order = { "solid", "pixel" },
+        value = borderStyle,
+        onChange = function(value)
+            if value ~= "solid" and value ~= "pixel" then return end
+            local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
+            if not target then return end
+            target.auraBorderStyle = value
+            -- Size and speed change meaning per style (border px vs dash
+            -- length; lap seconds), so a style switch resets the per-style
+            -- keys to that style's defaults, like every glow dropdown.
+            target.auraBorderSize = value == "pixel" and 8 or 2
+            target.auraBorderSpeed = value == "pixel" and 2 or 0.5
+            target.auraBorderLines = 2
+            target.auraBorderThickness = 4
+            refresh()
+        end,
+    })
+
+    -- One colour, every shape: the border, and the stack lane when Stack
+    -- Count mode runs one.
     AddColorRow(auraRight, {
-        label = "Overlay Color",
+        label = "Aura Color",
         tbl = entry,
         key = "auraActiveColor",
         default = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR,
         onConfirm = applyBars,
     })
+
+    -- The style's own sliders, the same rows every other glow surface
+    -- draws ("pixel" renders as the kit's dashes shape, so it takes that
+    -- spec).
+    AddGlowSliderRows(auraRight, entry,
+        borderStyle == "pixel" and "dashes" or "solid",
+        AURA_BORDER_SLIDER_KEYS, applyBars, 1, true)
 
     -- Stack mode only exists where the runtime can draw the lane, so the
     -- dropdown only appears there; everything else is Active by definition
@@ -2131,9 +2215,9 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
     -- the end of the row's label.
     AnchorRowBadge(modeRow, CreateInfoButton(modeRow.frame, modeRow.frame, "LEFT", "LEFT", 0, 0, {
         "Tracking Mode",
-        {"Active tints the bar in the overlay colour for as long as the aura is up.", 1, 1, 1, true},
+        {"Active shows the border for as long as the aura is up.", 1, 1, 1, true},
         " ",
-        {"Stack Count runs a lane along the bar that fills as stacks build. The maximum comes from the game's spell data, so an aura that does not stack falls back to Active.", 1, 1, 1, true},
+        {"Stack Count adds a lane along the bar that fills as stacks build. The maximum comes from the game's spell data, so an aura that does not stack falls back to Active.", 1, 1, 1, true},
     }, modeRow))
 
     if mode ~= "stacks" then return end
@@ -2146,7 +2230,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
     elseif InCombatLockdown() then
         statusLabel:SetText("|cffff9955The stack maximum can't be read in combat; it resolves when you leave combat.|r")
     else
-        statusLabel:SetText("|cffff9955This aura doesn't stack, so the bar will tint instead.|r")
+        statusLabel:SetText("|cffff9955This aura doesn't stack, so only the border will show.|r")
     end
     statusLabel:SetFullWidth(true)
     container:AddChild(statusLabel)
@@ -2214,9 +2298,18 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         local _, mwCollapsed = BuildCollapsibleSection(container, "Stack Display", "rb_mw_stack_display", resourceBarCollapsedSections, nil, ROW_SECTION)
 
         if not mwCollapsed then
-            -- One setting with nothing to pair it against, so the left column
-            -- carries it alone.
-            local mwLeft = BeginRowGrid(container)
+            -- LEFT column: the shape. RIGHT column: the max-stack border
+            -- (owner ruling 2026-08-02) — CC-driven off MW's readable
+            -- stacks, so it works in combat where aura-driven borders on
+            -- other resources can only follow aura presence.
+            local mwLeft, mwRight = BeginRowGrid(container)
+
+            -- Everything in this section renders on the workspace Live
+            -- Preview, which does not rebuild with the settings column.
+            local applyMWBars = function()
+                applyBars()
+                RefreshLayoutOrderPreview()
+            end
 
             AddDropdownRow(mwLeft, {
                 label = "Stack Display",
@@ -2231,9 +2324,62 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                 onChange = function(val)
                     WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwDisplayStyle",
                         val ~= "overlay" and val or nil)
-                    applyBars()
+                    applyMWBars()
                 end,
             })
+
+            local mwResource = settings.resources and settings.resources[100]
+            local mwBorderOn = type(mwResource) == "table"
+                and mwResource.mwMaxStackBorderEnabled == true
+            local borderToggleRow = AddCheckboxRow(mwRight, {
+                label = "Max Stack Border",
+                value = mwBorderOn,
+                onChange = function(value)
+                    if type(settings.resources[100]) ~= "table" then
+                        settings.resources[100] = {}
+                    end
+                    settings.resources[100].mwMaxStackBorderEnabled = value == true or nil
+                    applyMWBars()
+                    C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
+                end,
+            })
+            AnchorRowBadge(borderToggleRow, CreateInfoButton(borderToggleRow.frame, borderToggleRow.frame, "LEFT", "LEFT", 0, 0, {
+                "Max Stack Border",
+                {"Shows a border while Maelstrom Weapon is at full stacks.", 1, 1, 1, true},
+            }, borderToggleRow))
+
+            if mwBorderOn then
+                local mwBorderStyle = mwResource.mwMaxStackBorderStyle == "pixel" and "pixel" or "solid"
+                AddDropdownRow(mwRight, {
+                    label = "Border Style",
+                    indent = true,
+                    list = { solid = "Solid Border", pixel = "Pixel Glow" },
+                    order = { "solid", "pixel" },
+                    value = mwBorderStyle,
+                    onChange = function(value)
+                        if value ~= "solid" and value ~= "pixel" then return end
+                        mwResource.mwMaxStackBorderStyle = value
+                        -- Per-style key resets, like every glow dropdown.
+                        mwResource.mwMaxStackBorderSize = value == "pixel" and 8 or 2
+                        mwResource.mwMaxStackBorderSpeed = value == "pixel" and 2 or 0.5
+                        mwResource.mwMaxStackBorderLines = 2
+                        mwResource.mwMaxStackBorderThickness = 4
+                        applyMWBars()
+                        C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
+                    end,
+                })
+                AddColorRow(mwRight, {
+                    label = "Border Color",
+                    indent = true,
+                    tbl = mwResource,
+                    key = "mwMaxStackBorderColor",
+                    default = RB.DEFAULT_MW_MAX_STACK_BORDER_COLOR,
+                    onConfirm = applyMWBars,
+                })
+                AddGlowSliderRows(mwRight, mwResource,
+                    mwBorderStyle == "pixel" and "dashes" or "solid",
+                    MW_BORDER_SLIDER_KEYS, applyMWBars, 1, true)
+            end
         end
     end
 

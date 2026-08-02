@@ -310,11 +310,11 @@ ST._RB = {
     DEFAULT_MW_BASE_COLOR = DEFAULT_MW_BASE_COLOR,
     DEFAULT_MW_OVERLAY_COLOR = DEFAULT_MW_OVERLAY_COLOR,
     DEFAULT_MW_MAX_COLOR = DEFAULT_MW_MAX_COLOR,
+    -- Max-stack border default. Deliberately NOT the max fill colour: the
+    -- border draws on top of the at-max fill, and matching it would make
+    -- the border invisible. Written inline: 200-local ceiling.
+    DEFAULT_MW_MAX_STACK_BORDER_COLOR = { 1, 1, 1, 1 },
     DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR,
-    -- How strong the overlay's whole-bar tint is when the entry's colour
-    -- carries no alpha of its own. Written inline: this chunk sits at the
-    -- 200-local ceiling.
-    RESOURCE_OVERLAY_TINT_ALPHA = 0.35,
     -- How far above a resource bar its aura overlay mounts. Clear of every
     -- layer the bar draws: segment children at bar+3, MW overlay segments
     -- at +4, the CC-side aura lane pool at +7, the text layer at +8. Frame

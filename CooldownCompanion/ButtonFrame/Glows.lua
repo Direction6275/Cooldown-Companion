@@ -237,8 +237,14 @@ end
 -- corner squares (strips never overlap), so the pieces never double-draw.
 -- Shared by the live kit renderer and its CC-side preview twin: both store
 -- dashes as { pieces = { {tex, ag, trs} x4 } } plus a shared 4-mask set.
-local function StyleDashPerimeter(dashList, masks, anchorFrame, length, thickness, lap, count, r, g, b, a)
-    local w, h = anchorFrame:GetSize()
+local function StyleDashPerimeter(dashList, masks, anchorFrame, length, thickness, lap, count, r, g, b, a, width, height)
+    -- Explicit dims when the anchor is a freshly-anchored frame (aura-host
+    -- holders, per-segment bounds): its own GetSize would report last
+    -- frame's geometry. CC buttons carry explicit sizes and pass nothing.
+    local w, h = width, height
+    if not w or not h then
+        w, h = anchorFrame:GetSize()
+    end
     local T = math_max(1, thickness or DEFAULT_AURA_GLOW_DASH_THICKNESS)
     local L = math_max(2, length or BAR_AURA_GLOW_SIZES.dashes)
 
@@ -1457,11 +1463,15 @@ local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, s
 
     if kitStyle == "dashes" then
         count = math_min(math_max(count or 2, 1), MAX_AURA_GLOW_DASHES)
+        -- _ccKitRectW/H: rect dims stamped by the aura-host anchor pass for
+        -- holder-anchored kits (fresh anchors report stale sizes); nil on CC
+        -- buttons, which fall back to their own explicit size.
         StyleDashPerimeter(glowKit.dashes, glowKit.dashMasks, anchorFrame,
             size or BAR_AURA_GLOW_SIZES.dashes,
             thickness or DEFAULT_AURA_GLOW_DASH_THICKNESS,
             speed or AURA_GLOW_SPEED_DEFAULTS.dashes,
-            count, r, g, b, a)
+            count, r, g, b, a,
+            anchorFrame._ccKitRectW, anchorFrame._ccKitRectH)
         return
     end
 
@@ -1554,6 +1564,122 @@ local function StyleKitBarGlowRegions(glowKit, styleTable, anchorFrame, enabled)
         styleTable and styleTable.barAuraEffectThickness)
 end
 
+------------------------------------------------------------------------
+-- Per-segment borders: one border unit per segment widget of a segmented
+-- bar. Sole consumer today is the Maelstrom Weapon max-stack border
+-- (ResourceBar.lua) — the resource AURA border wraps the whole bar rect
+-- instead (owner ruling 2026-08-02, reversing the brief per-segment aura
+-- design). The builders stay pure (no host coupling), so any surface can
+-- run them on plain CC frames.
+------------------------------------------------------------------------
+
+-- Pool ceiling in segments. The deepest segmented bar is the Maelstrom
+-- Weapon per-stack shape at 10 (with Raging Maelstrom); a bar somehow
+-- past the cap borders its first 10 segments.
+ST.RESOURCE_SEGMENT_BORDER_MAX = 10
+
+-- Dash pool ceiling per segment. The pool is prebuilt (cap × segments × 4
+-- pieces with AnimationGroups), so this is a real per-pool cost; the
+-- Number of Dashes slider is clamped here on segment shapes.
+local SEG_BORDER_MAX_DASHES = 4
+
+-- One border unit (4 solid edges + a small masked dash pool) per segment,
+-- all under a single host frame. Pure like BuildKitGlowRegions: no stored
+-- refs, no host coupling.
+local function BuildKitSegmentBorderPool(parent, maxSegments)
+    local host = CreateFrame("Frame", nil, parent)
+    host:EnableMouse(false)
+    host:SetAlpha(0)
+    local pool = { host = host, units = {} }
+    for s = 1, maxSegments do
+        local unit = { edges = {} }
+        for i = 1, 4 do
+            local tex = host:CreateTexture(nil, "OVERLAY", nil, 2)
+            tex:SetAlpha(0)
+            unit.edges[i] = tex
+        end
+        unit.masks = CreateDashMasks(host)
+        unit.dashes = {}
+        CreateDashRegions(host, unit.dashes, unit.masks, SEG_BORDER_MAX_DASHES)
+        pool.units[s] = unit
+    end
+    return pool
+end
+
+-- Style the pool over `rects` — an array of stable CC anchor frames (the
+-- MW bar's own segment frames), each carrying its rect size in _ccW/_ccH
+-- because a freshly re-anchored
+-- frame reports last frame's geometry (the lane lesson). Units past
+-- `count` (and every unit when disabled) fully reset. Bar vocabulary:
+-- barAuraEffect "pixel"→dashes / "solid"; anything else that reaches here
+-- falls back to the solid border.
+local function StyleKitSegmentBorders(pool, styleTable, rects, count, enabled)
+    local kitStyle = "none"
+    if enabled and IsBarAuraIndicatorEnabled(styleTable) then
+        kitStyle = NormalizeKitBarEffectStyle(styleTable and styleTable.barAuraEffect)
+        if kitStyle ~= "none" and kitStyle ~= "dashes" then
+            kitStyle = "solid"
+        end
+    end
+
+    local units = pool.units
+    local n = 0
+    if kitStyle ~= "none" and rects then
+        n = math_min(count or 0, #units)
+    end
+
+    local color = (styleTable and styleTable.barAuraEffectColor) or DEFAULT_AURA_GLOW_COLOR
+    local r, g, b, a = color[1], color[2], color[3], color[4] or 0.9
+    local speed = styleTable and styleTable.barAuraEffectSpeed
+    -- Same legacy pixel-scale speed guard as the whole-bar resolvers.
+    if not speed or speed <= 0 or speed > 2 then
+        speed = AURA_GLOW_SPEED_DEFAULTS.dashes
+    end
+    -- Same stores and defaults as the whole-bar dashes leg; only the
+    -- per-segment pool ceiling clamps the dash count.
+    local dashLength = (styleTable and styleTable.barAuraEffectSize)
+        or BAR_AURA_GLOW_SIZES.dashes
+    local dashThickness = (styleTable and styleTable.barAuraEffectThickness)
+        or DEFAULT_AURA_GLOW_DASH_THICKNESS
+    local dashCount = math_min(math_max((styleTable and styleTable.barAuraEffectLines) or 2, 1),
+        SEG_BORDER_MAX_DASHES)
+
+    for s = 1, #units do
+        local unit = units[s]
+        for i = 1, 4 do
+            unit.edges[i]:SetAlpha(0)
+        end
+        for _, d in ipairs(unit.dashes) do
+            for _, piece in ipairs(d.pieces) do
+                piece.ag:Stop()
+                piece.tex:SetAlpha(0)
+                piece.tex:Hide()
+            end
+        end
+        local rect = s <= n and rects[s] or nil
+        if rect then
+            if kitStyle == "dashes" then
+                StyleDashPerimeter(unit.dashes, unit.masks, rect,
+                    dashLength, dashThickness,
+                    speed, dashCount, r, g, b, a,
+                    rect._ccW, rect._ccH)
+            else
+                ApplyEdgePositions(unit.edges, rect,
+                    (styleTable and styleTable.barAuraEffectSize) or BAR_AURA_GLOW_SIZES.solid)
+                for i = 1, 4 do
+                    -- Color first, alpha after: the color write carries its
+                    -- own alpha channel (the SetVertexColor-family gotcha).
+                    unit.edges[i]:SetColorTexture(r, g, b, a)
+                    unit.edges[i]:SetAlpha(1)
+                    unit.edges[i]:Show()
+                end
+            end
+        end
+    end
+
+    pool.host:SetAlpha(n > 0 and 1 or 0)
+end
+
 local SetBarAuraEffect = MakeGlowSetter({
     containerKey       = "barAuraEffect",
     hasPandemic        = true,
@@ -1607,6 +1733,8 @@ ST._SetBarAuraEffect = SetBarAuraEffect
 ST._BuildKitGlowRegions = BuildKitGlowRegions
 ST._StyleKitGlowRegions = StyleKitGlowRegions
 ST._StyleKitBarGlowRegions = StyleKitBarGlowRegions
+ST._BuildKitSegmentBorderPool = BuildKitSegmentBorderPool
+ST._StyleKitSegmentBorders = StyleKitSegmentBorders
 ST._StyleDashPerimeter = StyleDashPerimeter
 ST._CreateDashMasks = CreateDashMasks
 ST._CreateDashRegions = CreateDashRegions

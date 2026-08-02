@@ -2181,6 +2181,10 @@ ST._BuildIconTintControls = BuildIconTintControls
 ST._BuildAssistedHighlightControls = BuildAssistedHighlightControls
 ST._BuildProcGlowControls = BuildProcGlowControls
 ST._BuildAuraGlowControls = BuildAuraGlowControls
+-- The bare per-style slider renderer, for surfaces that own their style
+-- dropdown but must draw the same sliders (resource aura border, MW
+-- max-stack border). Callers hand a keys table in GlowSliderKeys' shape.
+ST._AddGlowSliderRows = AddGlowSliderRows
 ST._BuildBarActiveAuraControls = BuildBarActiveAuraControls
 ST._BuildReadyGlowControls = BuildReadyGlowControls
 ST._BuildKeyPressHighlightControls = BuildKeyPressHighlightControls

@@ -63,7 +63,6 @@ function RB.CreateResourceBarAuraHostModule(deps)
     local IsVerticalResourceLayout = RB.IsVerticalResourceLayout
     local IsVerticalFillReversed = RB.IsVerticalFillReversed
     local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
-    local RESOURCE_OVERLAY_TINT_ALPHA = RB.RESOURCE_OVERLAY_TINT_ALPHA
 
     local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
     local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
@@ -147,6 +146,15 @@ function RB.CreateResourceBarAuraHostModule(deps)
         -- MEDIUM strata.
         holder:SetFrameLevel(frame:GetFrameLevel() + (levelOffset or 3))
         holder._ccAnchoredFrame = frame
+        -- The holder's rect dims, from the bar's explicit size: dash-based
+        -- kit effects bake geometry at style time, and a freshly-anchored
+        -- holder reports last frame's rect (the lane lesson). Read by the
+        -- kit glow's dashes leg via _ccKitRectW/H.
+        local fw, fh = frame:GetSize()
+        local w = (fw or 0) - inset * 2
+        local h = (fh or 0) - inset * 2
+        holder._ccKitRectW = w > 1 and w or 1
+        holder._ccKitRectH = h > 1 and h or 1
     end
 
     ------------------------------------------------------------------------
@@ -514,7 +522,11 @@ function RB.CreateResourceBarAuraHostModule(deps)
 
     -- Bar shapes drawn as a row of separate segment widgets. They have no
     -- whole-bar border ring for the holder to sit inside (each segment
-    -- carries its own), and the tint must span the whole cluster.
+    -- carries its own) and the stack lane must span the whole cluster, so
+    -- they mount at the full rect — which is also what makes the aura
+    -- border wrap the entire cluster as one rect (owner ruling 2026-08-02,
+    -- reversing the same day's per-segment ruling: the border runs over
+    -- the whole bar as if it were continuous, on every shape).
     local SEGMENT_CLUSTER_BAR_TYPES = {
         segmented = true,
         mw_segmented = true,
@@ -542,8 +554,8 @@ function RB.CreateResourceBarAuraHostModule(deps)
     -- pixel-border ring inside the bar rect, so the holder insets to keep
     -- the ring visible (the panel statusBar-mount contract). Segment
     -- clusters draw their rings per segment — the cluster frame has no ring
-    -- of its own, and the tint must span the whole cluster (owner ruling),
-    -- so those mount at the full rect.
+    -- of its own, and the stack lane must span the whole cluster (owner
+    -- ruling), so those mount at the full rect.
     local function GetResourceHolderInset(barInfo, borderInset)
         if SEGMENT_CLUSTER_BAR_TYPES[barInfo.barType] then
             return 0
@@ -551,18 +563,32 @@ function RB.CreateResourceBarAuraHostModule(deps)
         return borderInset
     end
 
-    -- Which overlay shape an entry renders. The two modes mirror live's
-    -- Tracking Mode and stay mutually exclusive: "active" recolors the
-    -- resource while the aura runs — dead in combat on 12.1, so the
-    -- combat-grade replacement is the whole-bar tint — and "stacks" runs
-    -- the stack lane. Stack mode is offered on the same resources live
-    -- offers it on; anything else falls back to the tint.
+    -- Which overlay shapes an entry renders. The BORDER is the aura-present
+    -- visual and always runs (owner ruling 2026-08-02: the tint wash is
+    -- gone — it obstructed the resource; the border rides the same
+    -- Blizzard-driven slot visibility). live's "active" recolor stays dead
+    -- in combat on 12.1, so the border is its combat-grade stand-in.
+    -- "stacks" ADDS the stack lane, on the same resources live offers it
+    -- on. The border always wraps the WHOLE bar rect — one rect on segment
+    -- clusters too, as if the bar were continuous (owner ruling, reversing
+    -- the brief per-segment design).
     local function ResolveResourceOverlayShapes(entry, powerType)
+        local shapes = { border = true }
         if GetResourceAuraTrackingMode(entry) == "stacks"
             and SupportsResourceAuraStackMode(powerType) then
-            return { stackLane = true }
+            shapes.stackLane = true
         end
-        return { tint = true }
+        return shapes
+    end
+
+    -- The border style an entry renders ("solid" | "pixel"). Solid is the
+    -- default — the calmer of the two launch styles. Shared with the config
+    -- panel so its dropdown reads back what the runtime will draw.
+    function RB.GetResourceOverlayBorderStyle(entry)
+        if type(entry) == "table" and entry.auraBorderStyle == "pixel" then
+            return "pixel"
+        end
+        return "solid"
     end
 
     -- Overlay entry -> the buttonData vocabulary Core/Aura.lua reads. The
@@ -587,9 +613,8 @@ function RB.CreateResourceBarAuraHostModule(deps)
 
     -- Overlay entry + resource settings -> the StyleSlotKit vocabulary,
     -- plus the resourceShapes table the kit's resource branch lays shapes
-    -- from. No barAura* effect keys: resource overlays carry no glow/pulse
-    -- family (border glow declined by ruling), and the absent indicator
-    -- key reads as effects-off.
+    -- from. The aura border rides the barAura* effect family the kit glow
+    -- reads natively, wrapping the whole bar rect on every shape.
     local function BuildResourceOverlayStyleAdapter(entry, settings, shapes)
         local style = {}
 
@@ -605,11 +630,15 @@ function RB.CreateResourceBarAuraHostModule(deps)
         if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
             color = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
         end
+        -- One colour, two consumers: the stack lane fill and the border.
         style.barAuraColor = color
-        -- The tint's strength when the colour carries no alpha. Handed over
-        -- as style rather than read from RB by the kit: the style adapter is
-        -- where this module and Core/AuraDisplay meet.
-        style.resourceTintAlpha = RESOURCE_OVERLAY_TINT_ALPHA
+        style.barAuraIndicatorEnabled = true
+        style.barAuraEffect = RB.GetResourceOverlayBorderStyle(entry)
+        style.barAuraEffectColor = color
+        style.barAuraEffectSize = tonumber(entry.auraBorderSize)
+        style.barAuraEffectThickness = tonumber(entry.auraBorderThickness)
+        style.barAuraEffectSpeed = tonumber(entry.auraBorderSpeed)
+        style.barAuraEffectLines = tonumber(entry.auraBorderLines)
         -- Overwritten by the collector from the live frame's fill direction.
         style.barReverseFill = false
 
@@ -742,15 +771,15 @@ function RB.CreateResourceBarAuraHostModule(deps)
                             -- Stack lane fill max: automatic, game-data
                             -- resolved, OOC (owner ruling — no manual max
                             -- anywhere). A nil resolve means "not a
-                            -- stacking aura", and stack mode falls back to
-                            -- the tint exactly as live's falls back to the
-                            -- recolor when no max is configured.
+                            -- stacking aura": the lane comes off and the
+                            -- ever-present border carries the active state,
+                            -- exactly as live falls back to the recolor
+                            -- when no max is configured.
                             local stackBarMax
                             if shapes.stackLane then
                                 stackBarMax = CooldownCompanion:GetAuraStackBarMax(buttonData)
                                 if not stackBarMax then
                                     shapes.stackLane = false
-                                    shapes.tint = true
                                     buttonData.auraBar.mode = "duration"
                                 end
                             end

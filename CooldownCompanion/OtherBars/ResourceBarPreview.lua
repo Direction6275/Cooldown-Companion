@@ -39,7 +39,6 @@ local CreateFrame = CreateFrame
 
 local RB = ST._RB
 local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
-local RESOURCE_OVERLAY_TINT_ALPHA = RB.RESOURCE_OVERLAY_TINT_ALPHA
 local RESOURCE_OVERLAY_HOLDER_LEVEL = RB.RESOURCE_OVERLAY_HOLDER_LEVEL
 local PREVIEW_FILL = RB.CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL
 local PREVIEW_STACKS = RB.CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS
@@ -128,21 +127,20 @@ end
 -- demand and reused. They hang off a child frame rather than the bar
 -- itself because a segmented resource's segments are child FRAMES: frame
 -- level beats draw layer, so a texture on the bar would sit behind them
--- however high its draw layer.
+-- however high its draw layer. The aura border renders through the SAME
+-- pure glow builder the kit runs on a live slot, wrapping the whole bar
+-- rect on every shape; layer.glow is grown on first use.
 local function EnsureResourceAuraOverlayStandIn(frame)
     local layer = frame._ccResourceAuraPreview
     if not layer then
         local host = CreateFrame("Frame", nil, frame)
         host:EnableMouse(false)
-        local tint = host:CreateTexture(nil, "ARTWORK", nil, 0)
-        tint:SetAllPoints(host)
-        tint:Hide()
         -- A StatusBar, like the kit's lane, so orientation and reverse fill
         -- come from the widget instead of being recomputed here.
         local lane = CreateFrame("StatusBar", nil, host)
         lane:SetMinMaxValues(0, 1)
         lane:Hide()
-        layer = { host = host, tint = tint, lane = lane }
+        layer = { host = host, lane = lane }
         frame._ccResourceAuraPreview = layer
     end
     return layer
@@ -150,7 +148,9 @@ end
 
 local function HideResourceAuraOverlayStandIn(layer)
     if not layer then return end
-    layer.tint:Hide()
+    if layer.glow then
+        ST._StyleKitBarGlowRegions(layer.glow, nil, layer.host, false)
+    end
     layer.lane:Hide()
     layer.host:Hide()
 end
@@ -172,6 +172,7 @@ function RB.CreateResourceBarPreviewModule(deps)
     -- file loads but before this module is created.
     local GetResourceOverlayHolderInset = RB.GetResourceOverlayHolderInset
     local GetResourceOverlayTrackingMode = RB.GetResourceOverlayTrackingMode
+    local GetResourceOverlayBorderStyle = RB.GetResourceOverlayBorderStyle
     local ResolveResourceOverlayStackMax = RB.ResolveResourceOverlayStackMax
 
     ------------------------------------------------------------------------
@@ -345,21 +346,42 @@ function RB.CreateResourceBarPreviewModule(deps)
                 auraColor = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
             end
 
+            -- The aura border — the always-on active visual, in both
+            -- tracking modes, wrapping the whole bar rect on every shape
+            -- (segment clusters included, as if the bar were continuous).
+            -- Rendered through the same pure builder the kit runs on a
+            -- live slot, in the bar vocabulary the resolvers read.
+            local borderStyle = {
+                barAuraIndicatorEnabled = true,
+                barAuraEffect = GetResourceOverlayBorderStyle(auraEntry),
+                barAuraEffectColor = auraColor,
+                barAuraEffectSize = tonumber(auraEntry.auraBorderSize),
+                barAuraEffectThickness = tonumber(auraEntry.auraBorderThickness),
+                barAuraEffectSpeed = tonumber(auraEntry.auraBorderSpeed),
+                barAuraEffectLines = tonumber(auraEntry.auraBorderLines),
+            }
+            if not layer.glow then
+                layer.glow = ST._BuildKitGlowRegions(layer.host)
+            end
+            -- Same stale-rect rule as the lane below: dims off the BAR
+            -- minus the inset, never off the freshly-anchored host.
+            local fw, fh = frame:GetSize()
+            local rw = (fw or 0) - inset * 2
+            local rh = (fh or 0) - inset * 2
+            layer.host._ccKitRectW = rw > 1 and rw or 1
+            layer.host._ccKitRectH = rh > 1 and rh or 1
+            ST._StyleKitBarGlowRegions(layer.glow, borderStyle, layer.host, true)
+
             local stackMax = GetResourceOverlayTrackingMode(auraEntry, powerType) == "stacks"
                 and ResolveResourceOverlayStackMax(auraEntry, powerType)
                 or nil
             if not stackMax then
-                -- Active mode: the whole-bar wash, at the kit's strength.
                 layer.lane:Hide()
-                layer.tint:SetColorTexture(auraColor[1], auraColor[2], auraColor[3],
-                    auraColor[4] or RESOURCE_OVERLAY_TINT_ALPHA)
-                layer.tint:Show()
                 return
             end
 
             -- Stack mode: the lane, at a fabricated stack count rather than
             -- full, so it reads as a lane filling rather than a solid strip.
-            layer.tint:Hide()
             local vertical = IsVerticalResourceLayout(settings) == true
             -- Measured off the BAR, which carries an explicit SetSize, minus
             -- the inset the host sits at. The host itself is anchored and has
@@ -500,6 +522,9 @@ function RB.CreateResourceBarPreviewModule(deps)
                 barInfo.frame.overlaySegments[i]:SetStatusBarColor(mwMaxColor[1], mwMaxColor[2], mwMaxColor[3], 1)
             end
             SetSegmentedText(barInfo.frame, maxStacks, maxStacks)
+            -- The canvas bar is at max by construction, so the max-stack
+            -- border previews lit (and clears when the toggle goes off).
+            RB.UpdateMWMaxStackBorder(barInfo.frame, settings, barInfo.barType, true)
         elseif barInfo.barType == "mw_segments" then
             -- One segment per stack, all full at rest.
             local maxStacks = GetMWMaxStacks()
@@ -509,6 +534,7 @@ function RB.CreateResourceBarPreviewModule(deps)
                 seg:SetStatusBarColor(mwMaxColor[1], mwMaxColor[2], mwMaxColor[3], 1)
             end
             SetSegmentedText(barInfo.frame, maxStacks, maxStacks)
+            RB.UpdateMWMaxStackBorder(barInfo.frame, settings, barInfo.barType, true)
         elseif barInfo.barType == "mw_continuous" then
             local maxStacks = GetMWMaxStacks()
             local _, _, mwMaxColor = GetResourceColors(100, settings)
@@ -528,6 +554,7 @@ function RB.CreateResourceBarPreviewModule(deps)
                     barInfo.frame.text:SetFormattedText("%d / %d", maxStacks, maxStacks)
                 end
             end
+            RB.UpdateMWMaxStackBorder(barInfo.frame, settings, barInfo.barType, true)
         elseif barInfo.barType == "custom_cooldown" then
             -- Spell custom bar, ready: full fill in the bar's own color
             -- (StyleCustomAuraBar already applied it), no cooldown or aura
