@@ -482,9 +482,20 @@ local function GetContainerPreviewSelectionState(groupId)
     return true, selected, containerId
 end
 
+-- Frame creation anchors before the coord label exists, so a position that
+-- arrives early is held on the frame. Call with no coordinates once the label
+-- is built to replay it; otherwise the label stays blank until the first move.
 local function UpdateCoordLabel(frame, x, y)
+    x = x or frame._pendingCoordX
+    y = y or frame._pendingCoordY
+    if not (x and y) then
+        return
+    end
     if frame.coordLabel then
+        frame._pendingCoordX, frame._pendingCoordY = nil, nil
         frame.coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x, y))
+    else
+        frame._pendingCoordX, frame._pendingCoordY = x, y
     end
 end
 
@@ -3098,6 +3109,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
             return frame._dragInProgress == true
         end
     )
+    UpdateCoordLabel(frame)
 
     local isCursorAnchored = IsCursorAnchor(group.anchor)
     local hasDragEntry = self:IsRotationAssistantGroup(group) or #group.buttons > 0
@@ -5588,6 +5600,7 @@ function CooldownCompanion:CreateContainerFrame(containerId)
             return frame._dragInProgress == true
         end
     )
+    UpdateCoordLabel(frame)
 
     -- Start hidden (drag handle shows only when unlocked)
     if container.locked then
