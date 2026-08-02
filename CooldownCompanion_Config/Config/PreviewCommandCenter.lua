@@ -1562,6 +1562,23 @@ local function ApplySpellbookTint(bar)
     end
 end
 
+-- The spellbook exists to drag entries in, so it only appears where a drop
+-- could land. Same rule as the inline add box (PanelShared's
+-- BuildInlineAddControls): assistant panels never take user entries, and a
+-- texture panel holds exactly one, so once set there is nothing to add.
+local function PanelAcceptsNewEntries(group)
+    if not group then
+        return false
+    end
+    if CooldownCompanion:IsRotationAssistantGroup(group) then
+        return false
+    end
+    if group.displayMode == "textures" and #(group.buttons or {}) >= 1 then
+        return false
+    end
+    return true
+end
+
 local function EnsureBar(host, surface)
     local bar = host._cdcPreviewCommandCenter
     if bar then
@@ -1729,7 +1746,7 @@ local function EnsureBar(host, surface)
     return bar
 end
 
-local function ApplyBarState(bar, control, running, gearRoute)
+local function ApplyBarState(bar, control, running, gearRoute, group)
     bar._selected = control
     bar._gearRoute = gearRoute
     bar.play._running = running
@@ -1749,8 +1766,10 @@ local function ApplyBarState(bar, control, running, gearRoute)
     bar.chooser._refreshColors()
 
     -- The buttons workspace only: the Resources / Cast home configures bar
-    -- objects, and there is nothing there to drop a spell on.
-    bar.spellbook:SetShown(bar._surface == BUTTONS_SURFACE)
+    -- objects, and there is nothing there to drop a spell on. Within the
+    -- workspace, only panels that can still take an entry.
+    bar.spellbook:SetShown(bar._surface == BUTTONS_SURFACE
+        and PanelAcceptsNewEntries(group))
     ApplySpellbookTint(bar)
 
     if running then
@@ -1873,7 +1892,7 @@ local function UpdateBar(host, surface, applicable, group, displayMode)
     local bar = EnsureBar(host, surface)
     bar._applicable = applicable
     ApplyBarState(bar, selected, running,
-        ResolveGearRoute(selected, group, displayMode, buttonIndex))
+        ResolveGearRoute(selected, group, displayMode, buttonIndex), group)
 
     host._cdcPreviewReserveBottom = BAR_RESERVE
     bar:Show()
@@ -1915,7 +1934,14 @@ local function UpdatePreviewCommandCenter(host)
     -- Cast Bar & Unit Frames home that configures those objects.
 
     if #applicable == 0 then
-        ShowSpellbookOnlyBar(host)
+        -- Zero controls means a texture panel. Empty, the band still earns
+        -- its keep as a drag target; full, there is nothing to offer at
+        -- all, so the band gives its reserve back to the preview.
+        if PanelAcceptsNewEntries(group) then
+            ShowSpellbookOnlyBar(host)
+        else
+            HideBar(host)
+        end
         CS.previewCommandCenterWasRunning = false
         return
     end
