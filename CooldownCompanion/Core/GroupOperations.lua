@@ -18,6 +18,10 @@ local UnitCanAttack = UnitCanAttack
 local InCombatLockdown = InCombatLockdown
 local C_CVar_GetCVarBool = C_CVar.GetCVarBool
 
+local function GetUnlockedPanelAlpha(frame)
+    return frame and frame._unlockGhost and 0.4 or 1
+end
+
 local function ClearButtonVisualState(button)
     local clear = ST._ClearButtonVisualState
     if clear then
@@ -691,6 +695,136 @@ local function RestoreFrameVisibilityAfterCombat(frame)
     frame._combatForcedAlpha = nil
 end
 
+function CooldownCompanion:IsArrangeModeActive()
+    return self._arrangeModeActive == true
+end
+
+function CooldownCompanion:CheckArrangeModeAutoExit()
+    if not self:IsArrangeModeActive() then
+        return
+    end
+
+    for _, container in pairs(self.db.profile.groupContainers or {}) do
+        if container.locked == false then
+            return
+        end
+    end
+
+    local castSettings = self.GetCastBarSettings and self:GetCastBarSettings()
+    if castSettings
+        and castSettings.enabled == true
+        and castSettings.independentAnchorEnabled == true
+        and not castSettings.independentAnchorLocked then
+        return
+    end
+
+    local resourceSettings = self.GetResourceBarSettings and self:GetResourceBarSettings()
+    local resourceLayout = resourceSettings and self.GetSpecLayoutOrder and self:GetSpecLayoutOrder()
+    if resourceSettings
+        and resourceSettings.enabled == true
+        and resourceLayout
+        and resourceLayout.independentAnchorEnabled == true
+        and not resourceLayout.independentAnchorLocked then
+        return
+    end
+
+    self:ExitArrangeMode()
+end
+
+local function GetArrangeModePill(addon)
+    if addon._arrangeModePill then
+        return addon._arrangeModePill
+    end
+
+    local pill = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    pill:SetPoint("TOP", UIParent, "TOP", 0, -80)
+    pill:SetFrameStrata("FULLSCREEN_DIALOG")
+    pill:SetClampedToScreen(true)
+    pill:SetMovable(true)
+    pill:EnableMouse(true)
+    pill:RegisterForDrag("LeftButton")
+    pill:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    pill:SetBackdropColor(0.2, 0.2, 0.2, 0.9)
+    ST.CreatePixelBorders(pill)
+
+    local icon = pill:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(14, 14)
+    icon:SetPoint("LEFT", pill, "LEFT", 7, 0)
+    icon:SetAtlas("questlog-questtypeicon-lock", false)
+    icon:SetVertexColor(0.9, 0.9, 0.9, 1)
+
+    local label = pill:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("LEFT", icon, "RIGHT", 5, 0)
+    label:SetText("Arranging panels")
+    label:SetTextColor(1, 1, 1, 1)
+
+    local doneButton = CreateFrame("Button", nil, pill, "BackdropTemplate")
+    doneButton:SetSize(42, 18)
+    doneButton:SetPoint("LEFT", label, "RIGHT", 8, 0)
+    doneButton:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    doneButton:SetBackdropColor(0.2, 0.2, 0.2, 0.95)
+    ST.CreatePixelBorders(doneButton, 0, 0, 0, 1)
+    local doneText = doneButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    doneText:SetPoint("CENTER")
+    doneText:SetText("Done")
+    doneText:SetTextColor(1, 1, 1, 1)
+
+    pill:SetSize(math.ceil(7 + 14 + 5 + label:GetStringWidth() + 8 + 42 + 7), 26)
+
+    doneButton:SetScript("OnClick", function()
+        CooldownCompanion:ExitArrangeMode()
+    end)
+    doneButton:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(0.32, 0.32, 0.32, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Lock everything")
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Esc also ends arranging.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    doneButton:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(0.2, 0.2, 0.2, 0.95)
+        GameTooltip:Hide()
+    end)
+
+    pill:SetScript("OnDragStart", function(self)
+        if InCombatLockdown() then return end
+        self._dragInProgress = true
+        self:StartMoving()
+    end)
+    pill:SetScript("OnDragStop", function(self)
+        self._dragInProgress = nil
+        self:StopMovingOrSizing()
+    end)
+    pill:EnableKeyboard(true)
+    pill:SetScript("OnKeyDown", function(self, key)
+        if key == "ESCAPE" then
+            if not InCombatLockdown() then
+                self:SetPropagateKeyboardInput(false)
+            end
+            CooldownCompanion:ExitArrangeMode()
+        elseif not InCombatLockdown() then
+            self:SetPropagateKeyboardInput(true)
+        end
+    end)
+    pill:SetScript("OnShow", function(self)
+        if not InCombatLockdown() then
+            self:SetPropagateKeyboardInput(true)
+        end
+    end)
+    pill:SetScript("OnHide", function(self)
+        if self._dragInProgress then
+            self._dragInProgress = nil
+            self:StopMovingOrSizing()
+        end
+        GameTooltip:Hide()
+    end)
+    pill:Hide()
+
+    addon._arrangeModePill = pill
+    return pill
+end
+
 function CooldownCompanion:BeginCombatForcedLock()
     if self._combatForcedLock then
         return false
@@ -726,8 +860,24 @@ function CooldownCompanion:BeginCombatForcedLock()
     self._combatForcedLock = true
     self._combatForcedLockSnapshot = snapshot
 
+    if self._arrangeModePill then
+        self._arrangeModePill:Hide()
+    end
+    if self.ResetMoverChromeFade then
+        self:ResetMoverChromeFade()
+    end
+
+    if self.CancelIndependentCastBarDrag then
+        self:CancelIndependentCastBarDrag()
+    end
+    if self.CancelIndependentResourceStackDrag then
+        self:CancelIndependentResourceStackDrag()
+    end
+
     for groupId, frame in pairs(self.groupFrames or {}) do
         local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
+        frame._containerUnlockPreviewActive = nil
+        frame._unlockGhost = nil
         local active = group and self:IsGroupActive(groupId, {
             group = group,
             checkCharVisibility = true,
@@ -739,6 +889,9 @@ function CooldownCompanion:BeginCombatForcedLock()
             frame._dragCancelPending = true
             if not frame:IsProtected() then
                 frame:StopMovingOrSizing()
+            end
+            if self.EndDragSnapSession then
+                self:EndDragSnapSession(frame, false)
             end
             frame._dragInProgress = nil
         end
@@ -752,12 +905,25 @@ function CooldownCompanion:BeginCombatForcedLock()
         ForceCombatMouseLock(frame.dragHelpButton)
         ForceCombatMouseLock(frame.nudger)
         for _, button in ipairs(frame.buttons or {}) do
+            local buttonData = button and button.buttonData
+            if buttonData
+                and (buttonData.auraTracking or buttonData.addedAs == "aura")
+                and buttonData.hideWhileAuraNotActive == true then
+                if button._isBar and ST._ApplyBarAuraShellVisuals then
+                    ST._ApplyBarAuraShellVisuals(button, buttonData)
+                elseif not button._isBar and ST._ApplyAuraShellVisuals then
+                    ST._ApplyAuraShellVisuals(button, buttonData)
+                end
+            end
             local host = button and button.auraTextureHost or nil
             if host then
                 if host._isDragging then
                     host._dragCancelPending = true
                     if not host:IsProtected() then
                         host:StopMovingOrSizing()
+                    end
+                    if self.EndDragSnapSession then
+                        self:EndDragSnapSession(host, false)
                     end
                     host._isDragging = nil
                 end
@@ -797,6 +963,9 @@ function CooldownCompanion:BeginCombatForcedLock()
                 frame._dragCancelPending = true
                 if not frame:IsProtected() then
                     frame:StopMovingOrSizing()
+                end
+                if self.EndDragSnapSession then
+                    self:EndDragSnapSession(frame, false)
                 end
                 frame._dragInProgress = nil
             end
@@ -841,6 +1010,19 @@ function CooldownCompanion:EndCombatForcedLock()
         end
     end
 
+    if self._arrangeModeActive then
+        if self.ApplyCastBarSettings then
+            self:ApplyCastBarSettings()
+        end
+        if self.ApplyResourceBars then
+            self:ApplyResourceBars()
+        end
+    end
+
+    if self._arrangeModeActive and self._arrangeModePill then
+        self._arrangeModePill:Show()
+    end
+
     return snapshot
 end
 
@@ -853,12 +1035,17 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
     end
 
     local container = opts.container or self:GetParentContainer(group)
-    if not self:IsContainerUnlockPreviewActive(container) then
+    if not opts.assumeContainerUnlocked and not self:IsContainerUnlockPreviewActive(container) then
         return false
     end
 
     local isRotationAssistant = self:IsRotationAssistantGroup(group)
     if not isRotationAssistant and not (group.buttons and #group.buttons > 0) then
+        return false
+    end
+    if not isRotationAssistant and not self:GroupHasUsableButtons(group, {
+        checkLoadConditions = false,
+    }) then
         return false
     end
 
@@ -905,6 +1092,20 @@ function CooldownCompanion:GetContainerUnlockPreviewPanels(containerId, panels)
         end
     end
     return previewPanels
+end
+
+function CooldownCompanion:ContainerHasArrangeEligiblePanel(containerId)
+    for _, panelInfo in ipairs(self:GetPanels(containerId)) do
+        if not self:IsGroupSuppressedForOtherClassBrowse(panelInfo.groupId, panelInfo.group)
+            and self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
+                group = panelInfo.group,
+                checkCharVisibility = true,
+                assumeContainerUnlocked = true,
+            }) then
+            return true
+        end
+    end
+    return false
 end
 
 function CooldownCompanion:GetEffectiveSpecs(group)
@@ -1328,7 +1529,7 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
 
     -- If this panel has a parent container, check container-level state first
     local container = self:GetParentContainer(group)
-    if container and self:IsContainerUnlockPreviewActive(container) then
+    if container and not opts.ignoreUnlockPreview and self:IsContainerUnlockPreviewActive(container) then
         return self:IsGroupVisibleInUnlockPreview(groupId, {
             group = group,
             container = container,
@@ -2997,9 +3198,9 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                     else
                         isLocked = group.locked
                     end
-                    -- Force 100% alpha while unlocked for easier positioning
+                    -- Keep unlocked panels fully visible, except unlock ghosts.
                     if not isLocked then
-                        frame:SetAlpha(1)
+                        frame:SetAlpha(GetUnlockedPanelAlpha(frame))
                     -- Apply current alpha from the alpha fade system so frame
                     -- doesn't flash at 1.0 when baseline alpha is configured.
                     else
@@ -3303,6 +3504,18 @@ function CooldownCompanion:SetContainerLocked(containerId, locked)
     self:RefreshContainerPanels(containerId)
 end
 
+function CooldownCompanion:SetPanelLocked(panelId, locked)
+    local group = self.db.profile.groups[panelId]
+    if not group then return end
+    if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then return end
+    if locked then
+        group.locked = nil
+    else
+        group.locked = false
+    end
+    self:RefreshGroupFrame(panelId)
+end
+
 -- Refresh all panel frames belonging to a container.
 function CooldownCompanion:RefreshContainerPanels(containerId)
     for gid, group in pairs(self.db.profile.groups) do
@@ -3339,6 +3552,10 @@ function CooldownCompanion:UpdateContainerDragHandle(containerId, locked)
 end
 
 function CooldownCompanion:LockAllFrames()
+    -- Lock every container, including containers hidden for this character.
+    for containerId in pairs(self.db.profile.groupContainers or {}) do
+        self:SetContainerLocked(containerId, true)
+    end
     -- Also lock any individually-unlocked panels
     for groupId, group in pairs(self.db.profile.groups) do
         if group.locked == false then
@@ -3380,7 +3597,7 @@ function CooldownCompanion:UnlockAllFrames()
                 frame.dragHandle:Show()
             end
             if panelUnlocked then
-                frame:SetAlpha(1)
+                frame:SetAlpha(GetUnlockedPanelAlpha(frame))
             end
         end
     end
@@ -3392,6 +3609,53 @@ function CooldownCompanion:UnlockAllFrames()
         end
     end
     self:RefreshAllGroups()
+end
+
+function CooldownCompanion:EnterArrangeMode()
+    if InCombatLockdown() or self._combatForcedLock then
+        self:Print("Cannot arrange during combat.")
+        return
+    end
+    if self._arrangeModeActive then
+        return
+    end
+
+    self._arrangeModeActive = true
+    for containerId in pairs(self.db.profile.groupContainers or {}) do
+        if self:IsContainerVisibleToCurrentChar(containerId)
+            and self:ContainerHasArrangeEligiblePanel(containerId) then
+            self:SetContainerLocked(containerId, false)
+        end
+    end
+    if self.SetIndependentCastBarLocked then
+        self:SetIndependentCastBarLocked(false)
+    end
+    if self.SetIndependentResourceStackLocked then
+        self:SetIndependentResourceStackLocked(false)
+    end
+    if ST.CollapseConfigForUnlock then
+        ST.CollapseConfigForUnlock()
+    end
+    GetArrangeModePill(self):Show()
+    self:Print("All frames unlocked. Drag to move.")
+end
+
+function CooldownCompanion:ExitArrangeMode()
+    self._arrangeModeActive = nil
+    self:LockAllFrames()
+    if self.SetIndependentCastBarLocked then
+        self:SetIndependentCastBarLocked(true)
+    end
+    if self.SetIndependentResourceStackLocked then
+        self:SetIndependentResourceStackLocked(true)
+    end
+    if self._arrangeModePill then
+        self._arrangeModePill:Hide()
+    end
+    if self.RefreshConfigPanel then
+        self:RefreshConfigPanel()
+    end
+    self:Print("All frames locked.")
 end
 
 -- TALENT NODE CACHE (for per-button talent conditions)

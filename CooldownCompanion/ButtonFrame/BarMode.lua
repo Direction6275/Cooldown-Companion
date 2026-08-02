@@ -370,8 +370,19 @@ local function IsAuraShellEntry(buttonData)
         and buttonData.hideWhileAuraNotActive == true
 end
 
+local function IsAuraShellHidden(button, buttonData)
+    local frame = button and button:GetParent()
+    local unlockPreviewActive = not CooldownCompanion._combatForcedLock
+        and (
+            CooldownCompanion:IsArrangeModeActive()
+            or (frame and frame._containerUnlockPreviewActive == true)
+        )
+    return IsAuraShellEntry(buttonData) and not unlockPreviewActive
+end
+
 local function ApplyBarAuraShellVisuals(button, buttonData)
-    local alpha = IsAuraShellEntry(buttonData) and 0 or 1
+    local alpha = IsAuraShellHidden(button, buttonData) and 0 or 1
+    button._auraShellActive = alpha == 0
     button.bg:SetAlpha(alpha)
     if button.iconBg then button.iconBg:SetAlpha(alpha) end
     -- The icon must be hidden by shown-state, not alpha: the per-tick tint
@@ -462,7 +473,7 @@ local function UpdateBarStackBlocks(button, style)
         -- Restore shell-aware: ApplyBarAuraShellVisuals runs before this and
         -- owns the shell alpha; a plain 1 here would resurrect a shell's bg
         -- or border ring.
-        local restoreAlpha = IsAuraShellEntry(buttonData) and 0 or 1
+        local restoreAlpha = IsAuraShellHidden(button, buttonData) and 0 or 1
         button.bg:SetAlpha(restoreAlpha)
         if button.borderTextures then
             for _, tex in ipairs(button.borderTextures) do

@@ -154,6 +154,10 @@ local function GetFrameAlphaWithContainerMultiplier(frame, alpha)
     return alpha
 end
 
+local function GetUnlockedPanelAlpha(frame)
+    return frame and frame._unlockGhost and 0.4 or 1
+end
+
 local function ContainerAlphaIsUnlocked(self, container)
     return container and container.locked == false and not self._combatForcedLock
 end
@@ -170,7 +174,7 @@ local function ApplyContainerAlphaFrame(self, frame, groupId, alpha, naturalAlph
         frameAlpha = GetFrameAlphaWithContainerMultiplier(frame, frameAlpha)
     elseif unlocked then
         frame._naturalAlpha = nil
-        frameAlpha = 1
+        frameAlpha = GetUnlockedPanelAlpha(frame)
     elseif configSelected then
         frame._naturalAlpha = naturalAlpha
         frameAlpha = 1
@@ -315,7 +319,9 @@ local function ContainerAlphaNeedsUpdate(self, containerId, container, entries)
             return true
         end
         if ContainerAlphaEntryIsUnlocked(self, container, entry) then
-            if entry.frame and (entry.frame._naturalAlpha ~= nil or FrameAlphaDiffers(entry.frame, 1)) then
+            if entry.frame
+                and (entry.frame._naturalAlpha ~= nil
+                    or FrameAlphaDiffers(entry.frame, GetUnlockedPanelAlpha(entry.frame))) then
                 return true
             end
         elseif FrameAlphaDiffers(entry.frame, GetFrameAlphaWithContainerMultiplier(entry.frame, 1)) then
@@ -572,15 +578,18 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
         locked = true
     end
 
-    -- Force 100% alpha while group is unlocked for easier positioning
+    -- Keep unlocked panels fully visible, except unlock ghosts.
     if not locked then
+        local unlockedAlpha = GetUnlockedPanelAlpha(frame)
         frame._naturalAlpha = nil
-        if state.currentAlpha ~= 1 or state.lastAlpha ~= 1 or FrameAlphaDiffers(frame, 1) then
-            frame:SetAlpha(1)
-            state.currentAlpha = 1
-            state.desiredAlpha = 1
+        if state.currentAlpha ~= unlockedAlpha
+            or state.lastAlpha ~= unlockedAlpha
+            or FrameAlphaDiffers(frame, unlockedAlpha) then
+            frame:SetAlpha(unlockedAlpha)
+            state.currentAlpha = unlockedAlpha
+            state.desiredAlpha = unlockedAlpha
             state.fadeDuration = 0
-            state.lastAlpha = 1
+            state.lastAlpha = unlockedAlpha
         end
         return
     end

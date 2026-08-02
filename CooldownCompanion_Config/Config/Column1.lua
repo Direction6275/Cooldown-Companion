@@ -616,15 +616,17 @@ local function ShowPanelContextMenu(panelId, containerId)
                 info.notCheckable = true
                 info.func = function()
                     CloseDropDownMenus()
-                    if panel.locked == false then
-                        panel.locked = nil
-                        CooldownCompanion:Print((panel.name or "Panel") .. " locked.")
-                    else
-                        panel.locked = false
+                    local isLocked = panel.locked ~= false
+                    CooldownCompanion:SetPanelLocked(panelId, not isLocked)
+                    if isLocked then
                         CooldownCompanion:Print((panel.name or "Panel") .. " unlocked. Drag to reposition.")
+                    else
+                        CooldownCompanion:Print((panel.name or "Panel") .. " locked.")
                     end
-                    CooldownCompanion:RefreshGroupFrame(panelId)
                     CooldownCompanion:RefreshConfigPanel()
+                    if isLocked and ST.CollapseConfigForUnlock then
+                        ST.CollapseConfigForUnlock()
+                    end
                 end
                 UIDropDownMenu_AddButton(info, level)
             end
@@ -934,12 +936,16 @@ local function ShowContainerContextMenu(db, containerId, container)
             UIDropDownMenu_AddButton(info, level)
 
             info = UIDropDownMenu_CreateInfo()
-            info.text = container.locked and "Unlock" or "Lock"
+            info.text = container.locked ~= false and "Unlock" or "Lock"
             info.notCheckable = true
             info.func = function()
                 CloseDropDownMenus()
-                CooldownCompanion:SetContainerLocked(containerId, not container.locked)
+                local isLocked = container.locked ~= false
+                CooldownCompanion:SetContainerLocked(containerId, not isLocked)
                 CooldownCompanion:RefreshConfigPanel()
+                if isLocked and ST.CollapseConfigForUnlock then
+                    ST.CollapseConfigForUnlock()
+                end
             end
             UIDropDownMenu_AddButton(info, level)
 
@@ -1677,10 +1683,12 @@ local function RefreshColumn1(preserveDrag)
             elseif button == "RightButton" then
                 ShowContainerContextMenu(db, containerId, container)
             elseif button == "MiddleButton" then
-                container.locked = not container.locked
-                CooldownCompanion:UpdateContainerDragHandle(containerId, container.locked)
-                CooldownCompanion:RefreshContainerPanels(containerId)
+                local isLocked = container.locked ~= false
+                CooldownCompanion:SetContainerLocked(containerId, not isLocked)
                 CooldownCompanion:RefreshConfigPanel()
+                if isLocked and ST.CollapseConfigForUnlock then
+                    ST.CollapseConfigForUnlock()
+                end
             end
         end)
 
@@ -1922,15 +1930,17 @@ local function RefreshColumn1(preserveDrag)
                             CooldownCompanion:Print("Cursor-anchored panels are edited from Layout.")
                             return
                         end
-                        if panel.locked == false then
-                            panel.locked = nil
-                            CooldownCompanion:Print((panel.name or "Panel") .. " locked.")
-                        else
-                            panel.locked = false
+                        local isLocked = panel.locked ~= false
+                        CooldownCompanion:SetPanelLocked(panelId, not isLocked)
+                        if isLocked then
                             CooldownCompanion:Print((panel.name or "Panel") .. " unlocked. Drag to reposition.")
+                        else
+                            CooldownCompanion:Print((panel.name or "Panel") .. " locked.")
                         end
-                        CooldownCompanion:RefreshGroupFrame(panelId)
                         CooldownCompanion:RefreshConfigPanel()
+                        if isLocked and ST.CollapseConfigForUnlock then
+                            ST.CollapseConfigForUnlock()
+                        end
                     elseif button == "RightButton" and ST._ShowPanelContextMenu then
                         ST._ShowPanelContextMenu(panelId, containerId)
                     end

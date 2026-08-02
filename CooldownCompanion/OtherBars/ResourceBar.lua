@@ -83,6 +83,211 @@ local GetResourceDisplayConfig = RB.GetResourceDisplayConfig
 local GetAnchorOffset = RB.GetAnchorOffset
 local RoundToTenths = RB.RoundToTenths
 local ClampIndependentDimension = RB.ClampIndependentDimension
+local UpdateIndependentStackDragState
+
+local function UpdateIndependentStackCoordLabel(frame, x, y)
+    if frame and frame._coordLabel then
+        frame._coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x or 0, y or 0))
+    end
+end
+
+local function CancelCoordinateEdit(coordLabel)
+    if not (coordLabel and coordLabel.xEdit and coordLabel.yEdit) then
+        return
+    end
+
+    coordLabel._editGeneration = (coordLabel._editGeneration or 0) + 1
+    coordLabel._editing = nil
+    coordLabel.xEdit:ClearFocus()
+    coordLabel.yEdit:ClearFocus()
+    coordLabel.xLabel:Hide()
+    coordLabel.yLabel:Hide()
+    coordLabel.xEdit:Hide()
+    coordLabel.yEdit:Hide()
+    coordLabel.text:Show()
+end
+
+local function CreateEditableCoordLabel(coordLabel, getCoordinates, applyCoordinates, isDragging)
+    local xLabel = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    xLabel:SetText("x:")
+    xLabel:SetTextColor(1, 1, 1, 0.8)
+    xLabel:SetPoint("LEFT", coordLabel, "LEFT", 2, 0)
+    xLabel:Hide()
+
+    local xEdit = CreateFrame("EditBox", nil, coordLabel)
+    xEdit:SetAutoFocus(false)
+    xEdit:SetFontObject(GameFontNormalSmall)
+    xEdit:SetTextColor(1, 1, 1, 1)
+    xEdit:SetJustifyH("CENTER")
+    xEdit:SetPoint("LEFT", xLabel, "RIGHT", 1, 0)
+    xEdit:SetPoint("RIGHT", coordLabel, "CENTER", -1, 0)
+    xEdit:SetHeight(13)
+    xEdit:Hide()
+
+    local yLabel = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    yLabel:SetText("y:")
+    yLabel:SetTextColor(1, 1, 1, 0.8)
+    yLabel:SetPoint("LEFT", coordLabel, "CENTER", 1, 0)
+    yLabel:Hide()
+
+    local yEdit = CreateFrame("EditBox", nil, coordLabel)
+    yEdit:SetAutoFocus(false)
+    yEdit:SetFontObject(GameFontNormalSmall)
+    yEdit:SetTextColor(1, 1, 1, 1)
+    yEdit:SetJustifyH("CENTER")
+    yEdit:SetPoint("LEFT", yLabel, "RIGHT", 1, 0)
+    yEdit:SetPoint("RIGHT", coordLabel, "RIGHT", -2, 0)
+    yEdit:SetHeight(13)
+    yEdit:Hide()
+
+    coordLabel.xLabel = xLabel
+    coordLabel.yLabel = yLabel
+    coordLabel.xEdit = xEdit
+    coordLabel.yEdit = yEdit
+    coordLabel:EnableMouse(true)
+
+    local function CommitEdit()
+        if not coordLabel._editing then
+            return
+        end
+
+        local newX = tonumber(xEdit:GetText())
+        local newY = tonumber(yEdit:GetText())
+        if newX == nil or newY == nil then
+            CancelCoordinateEdit(coordLabel)
+            return
+        end
+
+        newX = RoundToTenths(newX)
+        newY = RoundToTenths(newY)
+        local oldX, oldY = getCoordinates()
+        oldX = RoundToTenths(tonumber(oldX) or 0)
+        oldY = RoundToTenths(tonumber(oldY) or 0)
+        CancelCoordinateEdit(coordLabel)
+        if newX ~= oldX or newY ~= oldY then
+            applyCoordinates(newX, newY)
+        end
+    end
+
+    local function BeginEdit()
+        if coordLabel._editing or (isDragging and isDragging()) then
+            return
+        end
+
+        local x, y = getCoordinates()
+        coordLabel._editGeneration = (coordLabel._editGeneration or 0) + 1
+        coordLabel._editing = true
+        coordLabel.text:Hide()
+        xEdit:SetText(("%.1f"):format(tonumber(x) or 0))
+        yEdit:SetText(("%.1f"):format(tonumber(y) or 0))
+        xLabel:Show()
+        yLabel:Show()
+        xEdit:Show()
+        yEdit:Show()
+        xEdit:SetFocus()
+        xEdit:HighlightText()
+    end
+
+    local function HandleFocusLost(self)
+        self:HighlightText(0, 0)
+        local generation = coordLabel._editGeneration
+        C_Timer.After(0, function()
+            if coordLabel._editing
+                and coordLabel._editGeneration == generation
+                and not xEdit:HasFocus()
+                and not yEdit:HasFocus() then
+                CommitEdit()
+            end
+        end)
+    end
+
+    xEdit:SetScript("OnEnterPressed", CommitEdit)
+    yEdit:SetScript("OnEnterPressed", CommitEdit)
+    xEdit:SetScript("OnEscapePressed", function() CancelCoordinateEdit(coordLabel) end)
+    yEdit:SetScript("OnEscapePressed", function() CancelCoordinateEdit(coordLabel) end)
+    xEdit:SetScript("OnTabPressed", function()
+        yEdit:SetFocus()
+        yEdit:HighlightText()
+    end)
+    yEdit:SetScript("OnTabPressed", function()
+        xEdit:SetFocus()
+        xEdit:HighlightText()
+    end)
+    xEdit:SetScript("OnEditFocusLost", HandleFocusLost)
+    yEdit:SetScript("OnEditFocusLost", HandleFocusLost)
+    xEdit:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+    yEdit:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+
+    coordLabel:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(0.3, 0.3, 0.3, 0.9)
+    end)
+    coordLabel:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    end)
+    coordLabel:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" then
+            BeginEdit()
+        end
+    end)
+    coordLabel:SetScript("OnHide", function(self)
+        self:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+        CancelCoordinateEdit(self)
+    end)
+end
+
+local function ComputeIndependentStackCoordinates(frame, anchor)
+    local cx, cy = frame:GetCenter()
+    local fw, fh = frame:GetSize()
+    local relFrame = UIParent
+    if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
+        relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
+    end
+    local tcx, tcy = relFrame:GetCenter()
+    local tw, th = relFrame:GetSize()
+    if not (cx and cy and fw and fh and tcx and tcy and tw and th) then return nil, nil end
+
+    local fax, fay = GetAnchorOffset(anchor.point, fw, fh)
+    local tax, tay = GetAnchorOffset(anchor.relativePoint, tw, th)
+    return RoundToTenths((cx + fax) - (tcx + tax)), RoundToTenths((cy + fay) - (tcy + tay))
+end
+
+local function StopIndependentStackCoordUpdates(frame)
+    frame._coordDragElapsed = nil
+    frame._coordDragAnchor = nil
+    frame:SetScript("OnUpdate", nil)
+    if CooldownCompanion.EndDragSnapSession then
+        CooldownCompanion:EndDragSnapSession(frame, false)
+    end
+end
+
+local function IndependentStackCoordOnUpdate(self, elapsed)
+    if not self._dragInProgress then
+        StopIndependentStackCoordUpdates(self)
+        return
+    end
+
+    self._coordDragElapsed = (self._coordDragElapsed or 0) + elapsed
+    if self._coordDragElapsed < 0.05 then
+        return
+    end
+
+    self._coordDragElapsed = 0
+    local anchor = self._coordDragAnchor
+    if anchor then
+        local x, y = ComputeIndependentStackCoordinates(self, anchor)
+        if x ~= nil and y ~= nil then
+            UpdateIndependentStackCoordLabel(self, x, y)
+        end
+    end
+    CooldownCompanion:UpdateDragSnapSession(self)
+end
+
+local function StartIndependentStackCoordUpdates(frame, anchor)
+    frame._coordDragElapsed = 0
+    frame._coordDragAnchor = anchor
+    frame:SetScript("OnUpdate", IndependentStackCoordOnUpdate)
+end
+
 local DetermineActiveResources = RB.DetermineActiveResources
 local GetResourceColors = RB.GetResourceColors
 local IsUnitPowerSecret = RB.IsUnitPowerSecret
@@ -135,6 +340,39 @@ local alphaSyncFrame = nil
 local lastAppliedBarSpacing = nil
 local lastAppliedBarThickness = nil
 local independentWrapperFrame = nil
+
+function CooldownCompanion:GetIndependentResourceStackSnapFrame()
+    return independentWrapperFrame
+end
+
+function CooldownCompanion:GetIndependentResourceStackMoverChrome()
+    local frame = independentWrapperFrame
+    return frame and frame._dragHandle, frame and frame._coordLabel, frame and frame._nudger
+end
+
+function CooldownCompanion:SetIndependentResourceStackLocked(locked)
+    local settings = GetResourceBarSettings()
+    if not settings then return end
+    local placementSettings = GetSpecLayoutOrder(settings)
+    if not placementSettings then return end
+    placementSettings.independentAnchorLocked = locked == true
+    self:ApplyResourceBars()
+end
+
+function CooldownCompanion:CancelIndependentResourceStackDrag()
+    local frame = independentWrapperFrame
+    if not frame then return end
+    if frame._dragInProgress then
+        frame._dragCancelPending = true
+        frame:StopMovingOrSizing()
+        frame._dragInProgress = nil
+        StopIndependentStackCoordUpdates(frame)
+        self:EndMoverChromeFade(frame)
+    end
+    local settings = GetResourceBarSettings()
+    UpdateIndependentStackDragState(settings, settings and GetSpecLayoutOrder(settings))
+end
+
 local activeCustomAuraBarActivePreviews = {}
 -- Resource aura overlay previews, keyed by POWER TYPE. Never by barInfo or
 -- frame: a form change rebuilds the positional bar array, and the power
@@ -407,31 +645,83 @@ local function SaveIndependentStackAnchor(refreshConfig)
     local frame = independentWrapperFrame
     local anchor = placementSettings.independentAnchor
 
-    local cx, cy = frame:GetCenter()
-    local fw, fh = frame:GetSize()
-    local relFrame = UIParent
-    if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
-        relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
-    end
-    local tcx, tcy = relFrame:GetCenter()
-    local tw, th = relFrame:GetSize()
-    if not (cx and cy and fw and fh and tcx and tcy and tw and th) then return end
-
-    local fax, fay = GetAnchorOffset(anchor.point, fw, fh)
-    local tax, tay = GetAnchorOffset(anchor.relativePoint, tw, th)
-    anchor.x = RoundToTenths((cx + fax) - (tcx + tax))
-    anchor.y = RoundToTenths((cy + fay) - (tcy + tay))
-
-    if frame._coordLabel then
-        frame._coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(anchor.x, anchor.y))
-    end
+    local x, y = ComputeIndependentStackCoordinates(frame, anchor)
+    if x == nil or y == nil then return end
+    anchor.x = x
+    anchor.y = y
+    UpdateIndependentStackCoordLabel(frame, x, y)
 
     if refreshConfig and IsBarsConfigActive() and CooldownCompanion.RefreshConfigPanel then
         CooldownCompanion:RefreshConfigPanel()
     end
 end
 
-local UpdateIndependentStackDragState
+local function ApplyIndependentStackCoordinates(frame, x, y)
+    local settings = GetResourceBarSettings()
+    if not settings then return end
+    local placementSettings = GetSpecLayoutOrder(settings)
+    if not placementSettings then return end
+    EnsureIndependentStackConfig(settings, placementSettings)
+
+    local anchor = placementSettings.independentAnchor
+    anchor.x = x
+    anchor.y = y
+    local relFrame = UIParent
+    if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
+        relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
+    end
+    frame:ClearAllPoints()
+    frame:SetPoint(anchor.point, relFrame, anchor.relativePoint, x, y)
+    UpdateIndependentStackCoordLabel(frame, x, y)
+    SaveIndependentStackAnchor(true)
+end
+
+local function LockIndependentStackFromMover(frame)
+    local settings = GetResourceBarSettings()
+    if not settings then return end
+    local placementSettings = GetSpecLayoutOrder(settings)
+    if not placementSettings then return end
+    placementSettings.independentAnchorLocked = true
+    frame._dragInProgress = nil
+    StopIndependentStackCoordUpdates(frame)
+    frame:StopMovingOrSizing()
+    SaveIndependentStackAnchor(true)
+    CooldownCompanion:EndMoverChromeFade(frame)
+    UpdateIndependentStackDragState(settings, placementSettings)
+    CooldownCompanion:CheckArrangeModeAutoExit()
+end
+
+local function CreateResourceBarLockButton(parent, onLock)
+    local button = CreateFrame("Button", nil, parent)
+    button:SetSize(INDEPENDENT_NUDGE_BTN_SIZE, INDEPENDENT_NUDGE_BTN_SIZE)
+    button:RegisterForClicks("LeftButtonUp", "MiddleButtonUp")
+
+    local icon = button:CreateTexture(nil, "OVERLAY")
+    icon:SetSize(INDEPENDENT_NUDGE_BTN_SIZE - 2, INDEPENDENT_NUDGE_BTN_SIZE - 2)
+    icon:SetPoint("CENTER")
+    icon:SetAtlas("questlog-questtypeicon-lock", false)
+    icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+    button.icon = icon
+
+    button:SetScript("OnEnter", function(self)
+        self.icon:SetVertexColor(1, 1, 1, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Lock")
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Middle-click the header also locks.", 1, 1, 1, false)
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function(self)
+        self.icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+        GameTooltip:Hide()
+    end)
+    button:SetScript("OnClick", function(self)
+        self.icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+        onLock()
+    end)
+
+    return button
+end
 
 local function CreateIndependentWrapperFrame()
     if independentWrapperFrame then return end
@@ -460,6 +750,15 @@ local function CreateIndependentWrapperFrame()
     dragHandle.text:SetText("Resource Bars")
     dragHandle.text:SetTextColor(1, 1, 1, 1)
 
+    dragHandle.lockButton = CreateResourceBarLockButton(dragHandle, function()
+        LockIndependentStackFromMover(frame)
+    end)
+    dragHandle.lockButton:SetPoint("RIGHT", dragHandle, "RIGHT", -2, 0)
+    dragHandle.text:ClearAllPoints()
+    dragHandle.text:SetPoint("LEFT", dragHandle, "LEFT", 16, 0)
+    dragHandle.text:SetPoint("RIGHT", dragHandle, "RIGHT", -16, 0)
+    dragHandle.text:SetJustifyH("CENTER")
+
     -- Nudger (4-direction pixel nudge, same pattern as custom aura bars)
     local NUDGE_GAP = 2
     local nudger = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
@@ -474,6 +773,17 @@ local function CreateIndependentWrapperFrame()
     nudger:SetBackdropBorderColor(0, 0, 0, 1)
     nudger:EnableMouse(false)
     nudger._cdcButtons = {}
+    nudger:SetScript("OnEnter", function(self)
+        CooldownCompanion:BeginMoverChromeHoverFade(self)
+    end)
+    nudger:SetScript("OnLeave", function(self)
+        if not self:IsMouseOver() then
+            CooldownCompanion:EndMoverChromeFade(self)
+        end
+    end)
+    nudger:SetScript("OnHide", function(self)
+        CooldownCompanion:EndMoverChromeFade(self)
+    end)
 
     local directions = {
         { atlas = "common-dropdown-icon-back", rotation = -math.pi / 2, anchor = "BOTTOM", dx = 0, dy = 1, ox = 0, oy = NUDGE_GAP },
@@ -508,19 +818,25 @@ local function CreateIndependentWrapperFrame()
                 EnsureIndependentStackConfig(settings, placementSettings)
                 placementSettings.independentAnchor.x = RoundToTenths(x)
                 placementSettings.independentAnchor.y = RoundToTenths(y)
-                if frame._coordLabel then
-                    frame._coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x, y))
-                end
+                UpdateIndependentStackCoordLabel(frame, x, y)
             end
         end
 
-        btn:SetScript("OnEnter", function(self) self.arrow:SetVertexColor(1, 1, 1, 1) end)
+        btn:SetScript("OnEnter", function(self)
+            self.arrow:SetVertexColor(1, 1, 1, 1)
+            CooldownCompanion:BeginMoverChromeHoverFade(nudger)
+        end)
         btn:SetScript("OnLeave", function(self)
             self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
             SaveIndependentStackAnchor(true)
+            if not nudger:IsMouseOver() then
+                CooldownCompanion:EndMoverChromeFade(nudger)
+            end
         end)
         btn:SetScript("OnMouseDown", function(self)
+            CancelCoordinateEdit(frame._coordLabel)
             DoNudge()
+            CooldownCompanion:VerifyMoverChromeHoverFade(nudger)
         end)
         btn:SetScript("OnMouseUp", function(self)
             SaveIndependentStackAnchor(true)
@@ -539,48 +855,87 @@ local function CreateIndependentWrapperFrame()
     })
     coordLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
     coordLabel:SetBackdropBorderColor(0, 0, 0, 1)
-    coordLabel:EnableMouse(false)
     coordLabel.text = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     coordLabel.text:SetPoint("CENTER")
     coordLabel.text:SetTextColor(1, 1, 1, 1)
+    CreateEditableCoordLabel(
+        coordLabel,
+        function()
+            local settings = GetResourceBarSettings()
+            local placementSettings = settings and GetSpecLayoutOrder(settings)
+            local anchor = placementSettings and placementSettings.independentAnchor
+            return anchor and anchor.x or 0, anchor and anchor.y or 0
+        end,
+        function(x, y)
+            ApplyIndependentStackCoordinates(frame, x, y)
+        end,
+        function()
+            return frame._dragInProgress == true
+        end
+    )
 
     dragHandle:RegisterForDrag("LeftButton")
     dragHandle:SetScript("OnDragStart", function()
+        CancelCoordinateEdit(coordLabel)
         local settings = GetResourceBarSettings()
         if not settings then return end
         local placementSettings = GetSpecLayoutOrder(settings)
         if not placementSettings then return end
         if placementSettings.independentAnchorLocked then return end
         if InCombatLockdown() then return end
+        frame._dragCancelPending = nil
+        frame._dragInProgress = true
         frame:StartMoving()
+        CooldownCompanion:BeginMoverChromeFade(frame)
+        CooldownCompanion:BeginDragSnapSession(frame, function(candidateFrame)
+            return candidateFrame == frame
+        end)
+        StartIndependentStackCoordUpdates(frame, placementSettings.independentAnchor)
     end)
     dragHandle:SetScript("OnDragStop", function()
+        local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
+        frame._dragCancelPending = nil
+        frame._dragInProgress = nil
         frame:StopMovingOrSizing()
+        if not cancelSave then
+            CooldownCompanion:UpdateDragSnapSession(frame)
+        end
+        local snapDX, snapDY = CooldownCompanion:EndDragSnapSession(frame, not cancelSave)
+        if snapDX ~= nil or snapDY ~= nil then
+            frame:AdjustPointsOffset(snapDX or 0, snapDY or 0)
+        end
+        StopIndependentStackCoordUpdates(frame)
+        if cancelSave then
+            CooldownCompanion:EndMoverChromeFade(frame)
+            return
+        end
         SaveIndependentStackAnchor(true)
+        CooldownCompanion:EndMoverChromeFade(frame)
     end)
     dragHandle:SetScript("OnMouseUp", function(_, button)
-        if button ~= "MiddleButton" then return end
-        local settings = GetResourceBarSettings()
-        if not settings then return end
-        local placementSettings = GetSpecLayoutOrder(settings)
-        if not placementSettings then return end
-        placementSettings.independentAnchorLocked = true
-        frame:StopMovingOrSizing()
-        SaveIndependentStackAnchor(true)
-        UpdateIndependentStackDragState(settings, placementSettings)
+        if button == "MiddleButton" then
+            LockIndependentStackFromMover(frame)
+        end
     end)
 
     frame._dragHandle = dragHandle
     frame._nudger = nudger
     frame._coordLabel = coordLabel
     independentWrapperFrame = frame
+    CooldownCompanion:ApplyMoverChromeFadeToFrames(dragHandle, coordLabel, nudger)
 end
 
 UpdateIndependentStackDragState = function(settings, placementSettings)
     if not independentWrapperFrame then return end
     local frame = independentWrapperFrame
     placementSettings = placementSettings or (settings and GetSpecLayoutOrder(settings)) or settings
-    local unlocked = placementSettings and placementSettings.independentAnchorEnabled == true and not placementSettings.independentAnchorLocked
+    local unlocked = placementSettings
+        and placementSettings.independentAnchorEnabled == true
+        and not placementSettings.independentAnchorLocked
+        and not CooldownCompanion._combatForcedLock
+    if not unlocked and frame._dragInProgress then
+        CooldownCompanion:CancelIndependentResourceStackDrag()
+    end
 
     frame:SetMovable(unlocked or false)
 
@@ -607,6 +962,7 @@ UpdateIndependentStackDragState = function(settings, placementSettings)
     if frame._coordLabel then
         frame._coordLabel:SetShown(unlocked or false)
     end
+    CooldownCompanion:ApplyMoverChromeFadeToFrames(frame._dragHandle, frame._coordLabel, frame._nudger)
 
     -- Force the bars visible while unlocked so they can be dragged. Their
     -- contents stay real — a health bar shows your health, a shell bar shows
@@ -622,6 +978,9 @@ end
 
 local function HideIndependentWrapperFrame()
     if not independentWrapperFrame then return end
+    CooldownCompanion:CancelIndependentResourceStackDrag()
+    independentWrapperFrame._dragInProgress = nil
+    StopIndependentStackCoordUpdates(independentWrapperFrame)
     independentWrapperFrame:Hide()
     if independentWrapperFrame._dragHandle then
         independentWrapperFrame._dragHandle:Hide()
@@ -685,10 +1044,11 @@ local function UpdateIndependentStackChrome(isVerticalLayout, placementSettings)
         local settings = GetResourceBarSettings()
         placementSettings = placementSettings or (settings and GetSpecLayoutOrder(settings)) or settings
         if placementSettings and placementSettings.independentAnchor then
-            coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(
-                placementSettings.independentAnchor.x or 0,
-                placementSettings.independentAnchor.y or 0
-            ))
+            UpdateIndependentStackCoordLabel(
+                frame,
+                placementSettings.independentAnchor.x,
+                placementSettings.independentAnchor.y
+            )
         end
     end
 end

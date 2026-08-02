@@ -285,7 +285,7 @@ function ST._RefreshGroupMultiSelect(scroll, multiCount, multiGroupIds)
             if container.enabled == false then
                 anyDisabled = true
             end
-            if not container.locked then
+            if container.locked == false then
                 anyUnlocked = true
             end
         end
@@ -308,6 +308,9 @@ function ST._RefreshGroupMultiSelect(scroll, multiCount, multiGroupIds)
                     CooldownCompanion:SetContainerLocked(containerId, anyUnlocked)
                 end
                 CooldownCompanion:RefreshConfigPanel()
+                if not anyUnlocked and ST.CollapseConfigForUnlock then
+                    ST.CollapseConfigForUnlock()
+                end
             end,
         },
     }
@@ -425,11 +428,13 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
                     local panel = db.groups[pid]
                     if panel
                         and not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel)) then
-                        panel.locked = anyUnlocked and nil or false
-                        CooldownCompanion:RefreshGroupFrame(pid)
+                        CooldownCompanion:SetPanelLocked(pid, anyUnlocked)
                     end
                 end
                 CooldownCompanion:RefreshConfigPanel()
+                if not anyUnlocked and ST.CollapseConfigForUnlock then
+                    ST.CollapseConfigForUnlock()
+                end
             end,
         },
     }

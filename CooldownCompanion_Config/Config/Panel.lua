@@ -1115,7 +1115,7 @@ local function CreateConfigPanel()
     local savedFrameRight, savedFrameTop
     local savedOffsetRight, savedOffsetTop
 
-    -- Title bar buttons: [Import] [Gear] [Collapse] [X] at top-right
+    -- Title bar buttons: [Arrange] [Import] [Gear] [Collapse] [X] at top-right
 
     -- X (close) button — rightmost
     local closeBtn = CreateFrame("Button", nil, content)
@@ -1157,6 +1157,30 @@ local function CreateConfigPanel()
     end)
     importClusterBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     SkinTitlebarButton(importClusterBtn, importClusterIcon)
+
+    -- Arrange button — leftmost in the stable title-bar cluster
+    local arrangeBtn = CreateFrame("Button", nil, content)
+    arrangeBtn:SetSize(18, 18)
+    arrangeBtn:SetPoint("RIGHT", importClusterBtn, "LEFT", -6, 0)
+    local arrangeIcon = arrangeBtn:CreateTexture(nil, "ARTWORK")
+    arrangeIcon:SetAtlas("questlog-questtypeicon-lock", false)
+    arrangeIcon:SetAllPoints()
+    arrangeBtn:SetScript("OnClick", function()
+        if CooldownCompanion.IsArrangeModeActive and CooldownCompanion:IsArrangeModeActive() then
+            CooldownCompanion:ExitArrangeMode()
+        else
+            CooldownCompanion:EnterArrangeMode()
+        end
+    end)
+    arrangeBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Arrange panels")
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Unlocks everything for moving.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    arrangeBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    SkinTitlebarButton(arrangeBtn, arrangeIcon)
 
     local changelogOverlay
 
@@ -1398,12 +1422,31 @@ local function CreateConfigPanel()
         if CS.CloseSpellbookPanel then
             CS.CloseSpellbookPanel()
         end
+        miniWasDragged = false
         isMinimized = false
         collapseIcon:SetAtlas("uitools-icon-minus")
         collapseBtn:SetParent(content)
         collapseBtn:ClearAllPoints()
         collapseBtn:SetPoint("RIGHT", closeBtn, "LEFT", -6, 0)
     end)
+
+    local function CloseMinimizedConfig()
+        GameTooltip:Hide()
+        if frame.HideChangelogOverlay then
+            frame.HideChangelogOverlay()
+        end
+        ClearTransientConfigPreviewState()
+        miniFrame:Hide()
+    end
+
+    local function ShowMiniFrameTooltip(owner)
+        if not isMinimized then return end
+        GameTooltip:SetOwner(owner, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Left-click restores.")
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Right-click closes.")
+        GameTooltip:Show()
+    end
 
     -- ESC handler for mini frame
     miniFrame:EnableKeyboard(true)
@@ -1412,11 +1455,7 @@ local function CreateConfigPanel()
             if not InCombatLockdown() then
                 self:SetPropagateKeyboardInput(false)
             end
-            if frame.HideChangelogOverlay then
-                frame.HideChangelogOverlay()
-            end
-            ClearTransientConfigPreviewState()
-            self:Hide()
+            CloseMinimizedConfig()
         elseif not InCombatLockdown() then
             self:SetPropagateKeyboardInput(true)
         end
@@ -1424,70 +1463,89 @@ local function CreateConfigPanel()
 
     frame._miniFrame = miniFrame
 
-    -- Collapse button callback
-    collapseBtn:SetScript("OnClick", function()
-        if isMinimized then
-            local expandRight, expandTop
-            if miniWasDragged then
-                -- User dragged mini frame — apply saved offset to new mini frame position
-                expandRight = miniFrame:GetLeft() + savedOffsetRight
-                expandTop = miniFrame:GetTop() + savedOffsetTop
-            else
-                -- No drag — restore exact saved position
-                expandRight = savedFrameRight
-                expandTop = savedFrameTop
-            end
-            miniFrame:Hide() -- OnHide resets state and reparents collapse button
-            miniWasDragged = false
+    local function CollapseConfigWindow()
+        if isMinimized or not content:IsShown() then return end
 
-            content:ClearAllPoints()
-            content:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", expandRight, expandTop)
-            content:SetHeight(fullHeight)
-            content:SetWidth(fullWidth)
-            content:Show()
-            -- A dragged mini frame moves the expanded window too.
-            SaveConfigWindowGeometry(content)
-            CooldownCompanion:RefreshConfigPanel()
-        else
-            -- Collapse: save main frame position, then show mini frame at collapse button position
-            CloseDropDownMenus()
-            CloseProfileWideFontWindow()
-            CloseProfileWideBarTextureWindow()
-            if CS.CloseAdvancedSettingsPanel then
-                CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
-            end
-            if CS.CloseSpellbookPanel then
-                CS.CloseSpellbookPanel()
-            end
-
-            savedFrameRight = content:GetRight()
-            savedFrameTop = content:GetTop()
-
-            local btnLeft = collapseBtn:GetLeft()
-            local btnBottom = collapseBtn:GetBottom()
-
-            isCollapsing = true
-            content:Hide()
-            isCollapsing = false
-            ClearTransientConfigPreviewState()
-
-            ApplyMiniFrameBackdrop()
-            miniFrame:ClearAllPoints()
-            miniFrame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", btnLeft - 18, btnBottom - 17)
-            miniFrame:Show()
-
-            -- Save offset between main frame TOPRIGHT and mini frame position (for drag expand)
-            savedOffsetRight = savedFrameRight - miniFrame:GetLeft()
-            savedOffsetTop = savedFrameTop - miniFrame:GetTop()
-
-            -- Reparent collapse button to mini frame
-            collapseBtn:SetParent(miniFrame)
-            collapseBtn:ClearAllPoints()
-            collapseBtn:SetPoint("CENTER")
-
-            collapseIcon:SetAtlas("uitools-icon-plus")
-            isMinimized = true
+        CloseDropDownMenus()
+        CloseProfileWideFontWindow()
+        CloseProfileWideBarTextureWindow()
+        if CS.CloseAdvancedSettingsPanel then
+            CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
         end
+        if CS.CloseSpellbookPanel then
+            CS.CloseSpellbookPanel()
+        end
+
+        savedFrameRight = content:GetRight()
+        savedFrameTop = content:GetTop()
+
+        local btnLeft = collapseBtn:GetLeft()
+        local btnBottom = collapseBtn:GetBottom()
+
+        isCollapsing = true
+        content:Hide()
+        isCollapsing = false
+        ClearTransientConfigPreviewState()
+
+        ApplyMiniFrameBackdrop()
+        miniFrame:ClearAllPoints()
+        miniFrame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", btnLeft - 18, btnBottom - 17)
+        miniFrame:Show()
+
+        -- Save offset between main frame TOPRIGHT and mini frame position (for drag expand)
+        savedOffsetRight = savedFrameRight - miniFrame:GetLeft()
+        savedOffsetTop = savedFrameTop - miniFrame:GetTop()
+
+        -- Reparent collapse button to mini frame
+        collapseBtn:SetParent(miniFrame)
+        collapseBtn:ClearAllPoints()
+        collapseBtn:SetPoint("CENTER")
+
+        collapseIcon:SetAtlas("uitools-icon-plus")
+        isMinimized = true
+    end
+
+    frame.CollapseConfigWindow = CollapseConfigWindow
+
+    collapseBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    collapseBtn:HookScript("OnEnter", ShowMiniFrameTooltip)
+    collapseBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
+
+    -- Collapse button callback
+    collapseBtn:SetScript("OnClick", function(_, button)
+        if button == "RightButton" then
+            if isMinimized then
+                CloseMinimizedConfig()
+            end
+            return
+        end
+
+        if not isMinimized then
+            CollapseConfigWindow()
+            return
+        end
+
+        local expandRight, expandTop
+        if miniWasDragged then
+            -- User dragged mini frame — apply saved offset to new mini frame position
+            expandRight = miniFrame:GetLeft() + savedOffsetRight
+            expandTop = miniFrame:GetTop() + savedOffsetTop
+        else
+            -- No drag — restore exact saved position
+            expandRight = savedFrameRight
+            expandTop = savedFrameTop
+        end
+        miniFrame:Hide() -- OnHide resets state and reparents collapse button
+        miniWasDragged = false
+
+        content:ClearAllPoints()
+        content:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", expandRight, expandTop)
+        content:SetHeight(fullHeight)
+        content:SetWidth(fullWidth)
+        content:Show()
+        -- A dragged mini frame moves the expanded window too.
+        SaveConfigWindowGeometry(content)
+        CooldownCompanion:RefreshConfigPanel()
     end)
 
     -- Profile gear icon next to version/profile text at bottom-left
@@ -2082,6 +2140,15 @@ local function CreateConfigPanel()
 
     CS.configFrame = frame
     return frame
+end
+
+function ST.CollapseConfigForUnlock()
+    local frame = CS.configFrame
+    if not (frame and frame.frame and frame.frame:IsShown()) then return end
+    if frame._miniFrame and frame._miniFrame:IsShown() then return end
+    if frame.CollapseConfigWindow then
+        frame.CollapseConfigWindow()
+    end
 end
 
 ------------------------------------------------------------------------

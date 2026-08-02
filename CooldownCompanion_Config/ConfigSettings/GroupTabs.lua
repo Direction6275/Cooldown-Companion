@@ -1379,7 +1379,7 @@ local function BuildLayoutTab(container)
                 " ",
                 {"You can also type a frame name directly into the editbox.", 1, 1, 1, true},
                 " ",
-                {"Middle-click the draggable header to toggle lock/unlock.", 1, 1, 1, true},
+                {"Middle-click the draggable header to lock.", 1, 1, 1, true},
             }, tabInfoButtons)
 
             -- Added last so the List-layout column measures a populated row.
@@ -1763,7 +1763,7 @@ local function BuildLayoutTab(container)
             " ",
             {"You can also type a frame name directly into the editbox.", 1, 1, 1, true},
             " ",
-            {"Middle-click the draggable header to toggle lock/unlock.", 1, 1, 1, true},
+            {"Middle-click the draggable header to lock.", 1, 1, 1, true},
         }, tabInfoButtons)
 
         -- Added last so the List-layout column measures a populated row.
@@ -4433,12 +4433,13 @@ local function BuildContainerGeneralTab(scroll, containerId)
 
     AddCheckboxRow(masterRight, {
         label = "Locked",
-        value = container.locked == true,
+        value = container.locked ~= false,
         onChange = function(value)
-            container.locked = value
-            CooldownCompanion:UpdateContainerDragHandle(containerId, value)
-            RefreshPanels()
+            CooldownCompanion:SetContainerLocked(containerId, value)
             CooldownCompanion:RefreshConfigPanel()
+            if not value and ST.CollapseConfigForUnlock then
+                ST.CollapseConfigForUnlock()
+            end
         end,
     })
 

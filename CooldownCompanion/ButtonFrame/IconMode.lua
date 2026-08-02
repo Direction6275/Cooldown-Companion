@@ -562,8 +562,20 @@ local function IsAuraPreviewExposingShell(button)
         or kind == "aura_duration_swipe"
 end
 
+local function IsUnlockPreviewExposingShell(button)
+    local frame = button and button:GetParent()
+    return not CooldownCompanion._combatForcedLock
+        and (
+            CooldownCompanion:IsArrangeModeActive()
+            or (frame and frame._containerUnlockPreviewActive == true)
+        )
+end
+
 local function ApplyAuraShellVisuals(button, buttonData)
-    local alpha = (IsAuraShellEntry(buttonData) and not IsAuraPreviewExposingShell(button)) and 0 or 1
+    local alpha = (IsAuraShellEntry(buttonData)
+        and not IsUnlockPreviewExposingShell(button)
+        and not IsAuraPreviewExposingShell(button)) and 0 or 1
+    button._auraShellActive = alpha == 0
     button.bg:SetAlpha(alpha)
     -- The icon must be hidden by shown-state, not alpha: the per-tick tint
     -- pipeline writes icon:SetVertexColor(r,g,b,a) on every intent change,
