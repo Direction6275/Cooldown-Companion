@@ -770,49 +770,81 @@ local function EnsurePreviewDivider(col3)
     -- pixels above and below it.
     divider:SetHitRectInsets(0, 0, -DIVIDER_HIT_EXTEND, -DIVIDER_HIT_EXTEND)
 
+    -- All ornament geometry is specified in whole physical pixels via
+    -- the same one-physical-pixel unit the profile one-pixel-border
+    -- feature uses (PixelUtil with size 0 / minPixels 1). Sizes given
+    -- in UI units are fractional in physical pixels, and that fraction
+    -- is what made earlier lines change thickness with panel position
+    -- and earlier diamonds shimmer: exact-integer pixel sizes plus the
+    -- engine's default grid snapping render identically everywhere.
+    -- The lines are 2 pixels because exact 1-pixel hairlines can round
+    -- to zero rows and vanish at some positions.
     local leftLine = divider:CreateTexture(nil, "ARTWORK")
     leftLine:SetColorTexture(0.52, 0.44, 0.34, 0.42)
-    leftLine:SetHeight(1)
-    leftLine:SetPoint("LEFT", divider, "LEFT", 0, 0)
-    leftLine:SetPoint("RIGHT", divider, "CENTER", -11, 0)
-
     local rightLine = divider:CreateTexture(nil, "ARTWORK")
     rightLine:SetColorTexture(0.52, 0.44, 0.34, 0.42)
-    rightLine:SetHeight(1)
-    rightLine:SetPoint("LEFT", divider, "CENTER", 11, 0)
-    rightLine:SetPoint("RIGHT", divider, "RIGHT", 0, 0)
 
-    -- The diamond layers are flat color squares clipped by Blizzard's
-    -- pre-antialiased diamond mask instead of SetRotation(45°): rotated
-    -- hard-edged quads rasterize asymmetrically depending on where the
-    -- panel sits on the physical pixel grid, while the mask's baked-in
-    -- edge smoothing stays symmetric at any subpixel position. Sizes are
-    -- the old squares' point-to-point diagonals (7 and 3 times root 2).
-    local DIAMOND_MASK = "Interface\\Common\\common-mask-diamond"
-
+    -- Two-tone diamond ornament (the original design): a gold diamond
+    -- with a dark core, each a flat color square clipped by Blizzard's
+    -- pre-antialiased diamond mask, revived on the pixel-exact recipe
+    -- above after the UI-unit-sized version wobbled.
     local diamond = divider:CreateTexture(nil, "OVERLAY")
     diamond:SetColorTexture(0.62, 0.48, 0.28, 0.72)
-    diamond:SetSize(10, 10)
     diamond:SetPoint("CENTER")
     local diamondMask = divider:CreateMaskTexture()
-    diamondMask:SetTexture(DIAMOND_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    diamondMask:SetTexture("Interface\\Common\\common-mask-diamond",
+        "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
     diamondMask:SetAllPoints(diamond)
     diamond:AddMaskTexture(diamondMask)
 
     local diamondCore = divider:CreateTexture(nil, "OVERLAY", nil, 1)
     diamondCore:SetColorTexture(0.12, 0.08, 0.04, 0.95)
-    diamondCore:SetSize(4, 4)
     diamondCore:SetPoint("CENTER")
     local coreMask = divider:CreateMaskTexture()
-    coreMask:SetTexture(DIAMOND_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    coreMask:SetTexture("Interface\\Common\\common-mask-diamond",
+        "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
     coreMask:SetAllPoints(diamondCore)
     diamondCore:AddMaskTexture(coreMask)
-    divider._grip = diamond
 
-    local function SetHot(hot)
-        if hot then
-            leftLine:SetColorTexture(0.85, 0.62, 0.22, 0.62)
-            rightLine:SetColorTexture(0.85, 0.62, 0.22, 0.62)
+    local LINE_HEIGHT_PIXELS = 2
+    local DIAMOND_PIXELS = 12
+    local CORE_PIXELS = 4 -- keeps the original 7:3 outer-to-core feel
+    -- Center to each line's inner end: the 6px half-diamond plus the
+    -- ~6px of clearance the original pre-pixel-recipe design had.
+    local LINE_GAP_PIXELS = 12
+
+    local function ApplyOrnamentLayout()
+        local onePx = PixelUtil.GetNearestPixelSize(0, divider:GetEffectiveScale(), 1)
+        leftLine:SetHeight(onePx * LINE_HEIGHT_PIXELS)
+        rightLine:SetHeight(onePx * LINE_HEIGHT_PIXELS)
+        diamond:SetSize(onePx * DIAMOND_PIXELS, onePx * DIAMOND_PIXELS)
+        diamondCore:SetSize(onePx * CORE_PIXELS, onePx * CORE_PIXELS)
+        local gap = onePx * LINE_GAP_PIXELS
+        leftLine:ClearAllPoints()
+        leftLine:SetPoint("LEFT", divider, "LEFT", 0, 0)
+        leftLine:SetPoint("RIGHT", divider, "CENTER", -gap, 0)
+        rightLine:ClearAllPoints()
+        rightLine:SetPoint("LEFT", divider, "CENTER", gap, 0)
+        rightLine:SetPoint("RIGHT", divider, "RIGHT", 0, 0)
+    end
+    ApplyOrnamentLayout()
+
+    local OPEN_HAND_CURSOR = "Interface\\CURSOR\\openhand"
+
+    -- The engine's mouse-focus list is the same source of truth that
+    -- drives OnEnter/OnLeave (hit rect extension included). A plain
+    -- IsMouseOver() rect test disagrees with it here.
+    local function IsMouseOnDivider()
+        return DoesAncestryIncludeAny(divider, GetMouseFoci())
+    end
+
+    -- Hover affordance is the open-hand cursor plus the normal instant
+    -- tooltip; the gold light-up is reserved for active drags (owner
+    -- ruling: no hover highlight, no delays).
+    local function SetDragLit(lit)
+        if lit then
+            leftLine:SetColorTexture(1, 0.72, 0.18, 0.85)
+            rightLine:SetColorTexture(1, 0.72, 0.18, 0.85)
             diamond:SetColorTexture(1, 0.72, 0.18, 0.92)
         else
             leftLine:SetColorTexture(0.52, 0.44, 0.34, 0.42)
@@ -821,6 +853,46 @@ local function EnsurePreviewDivider(col3)
         end
     end
 
+    -- The preview rebuild at the end of every drag hides and re-shows
+    -- the divider, which can break the engine's OnEnter/OnLeave pairing
+    -- and strand the open-hand cursor. While the cursor is claimed, this
+    -- watcher rechecks real mouse state every frame and releases it the
+    -- moment the mouse is gone; it is hidden (free) otherwise. It is
+    -- parented to UIParent, not the divider: a child of a hidden frame
+    -- gets no OnUpdate, so a divider-parented watcher would go dead on
+    -- exactly the hide paths it has to clean up after.
+    local cursorWatch = CreateFrame("Frame", nil, UIParent)
+    cursorWatch:Hide()
+
+    local function ReleaseCursor()
+        cursorWatch:Hide()
+        SetCursor(nil)
+    end
+
+    cursorWatch:SetScript("OnUpdate", function()
+        if divider._dragging then return end
+        if not (divider:IsVisible() and IsMouseOnDivider()) then
+            ReleaseCursor()
+        end
+    end)
+
+    divider:SetScript("OnShow", function()
+        -- Re-derive pixel-exact geometry on every show so UI scale
+        -- changes made while hidden can't leave stale fractional sizes.
+        ApplyOrnamentLayout()
+    end)
+    -- Hiding a frame under the cursor does not reliably deliver OnLeave,
+    -- so release the open hand here rather than trusting the pairing.
+    divider:SetScript("OnHide", ReleaseCursor)
+
+    -- Scale and resolution changes alter the physical-pixel factor, so
+    -- the ornament has to be rebuilt even while it stays visible -
+    -- otherwise its sizes silently go fractional again.
+    local scaleWatch = CreateFrame("Frame", nil, UIParent)
+    scaleWatch:RegisterEvent("UI_SCALE_CHANGED")
+    scaleWatch:RegisterEvent("DISPLAY_SIZE_CHANGED")
+    scaleWatch:SetScript("OnEvent", ApplyOrnamentLayout)
+
     -- View switches and config close can hide the divider mid-drag; the
     -- OnUpdate persists on hidden frames and would resume on re-show with
     -- no mouse button down, so every hide path must cancel the drag.
@@ -828,19 +900,25 @@ local function EnsurePreviewDivider(col3)
         if not self._dragging then return end
         self._dragging = false
         self:SetScript("OnUpdate", nil)
-        SetHot(false)
+        SetDragLit(false)
+        -- Hide paths can cancel the drag while the cursor is elsewhere;
+        -- only release the open hand if the mouse has actually left.
+        if not IsMouseOnDivider() then
+            ReleaseCursor()
+        end
     end
 
-    divider:SetScript("OnEnter", function(self)
-        SetHot(true)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Drag to resize the preview")
-        GameTooltip:AddLine("Double-click to reset", 0.7, 0.7, 0.7)
-        GameTooltip:Show()
+    -- No tooltip here by design: the open-hand cursor is the only hover
+    -- indicator, and the drag/double-click help lives in the workspace
+    -- header's (?) Settings tooltip.
+    divider:SetScript("OnEnter", function()
+        SetCursor(OPEN_HAND_CURSOR)
+        cursorWatch:Show()
     end)
     divider:SetScript("OnLeave", function(self)
-        if not self._dragging then SetHot(false) end
-        GameTooltip:Hide()
+        if not self._dragging then
+            ReleaseCursor()
+        end
     end)
 
     divider:SetScript("OnMouseDown", function(self, button)
@@ -850,7 +928,7 @@ local function EnsurePreviewDivider(col3)
         self._dragging = true
         self._rebuildElapsed = 0
         self._lastRefitHeight = host:GetHeight() or 0
-        SetHot(true)
+        SetDragLit(true)
         self:SetScript("OnUpdate", function(dividerSelf, elapsed)
             local contentTop = col3.content:GetTop()
             local columnHeight = col3.content:GetHeight() or 0

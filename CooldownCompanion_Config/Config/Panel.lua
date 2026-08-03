@@ -1770,6 +1770,8 @@ local function CreateConfigPanel()
                 GameTooltip:AddLine("Panel settings apply to every button in the panel. Selecting a button shows that entry's own settings; deselect it to return to the panel settings.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine("To override a panel setting for one button, click the |A:Crosshair_VehichleCursor_32:14:14|a badge next to that setting while the button is selected.", 1, 1, 1, true)
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("Drag the line under the preview to resize it. Double-click to reset.", 1, 1, 1, true)
             end
         end
         GameTooltip:Show()
