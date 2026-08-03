@@ -525,14 +525,21 @@ do
     end
 
     -- Typed values keep the row's own accept behaviour rather than the stock
-    -- widget's: one decimal place, clamped to the range, and BOTH
-    -- OnValueChanged and OnMouseUp fire so mirror-first call sites apply them
-    -- live. (Stock snaps to the step instead and fires only OnMouseUp here.)
+    -- widget's: snapped to the slider's declared step, clamped to the range,
+    -- and BOTH OnValueChanged and OnMouseUp fire so mirror-first call sites
+    -- apply them live. (Stock fires only OnMouseUp here.) Integer-step values
+    -- reach floor/modulo layout math, so a fractional store is never safe.
     local function EditBox_OnEnterPressed(frame)
         local self = frame.obj -- the stock child; it owns the value
         local value = tonumber(frame:GetText())
         if value then
-            value = floor(value * 10 + 0.5) / 10
+            local step = self.step
+            if step and step > 0 then
+                value = floor((value - self.min) / step + 0.5) * step + self.min
+                value = floor(value * 100 + 0.5) / 100 -- float dust; the finest step is 0.01
+            else
+                value = floor(value * 10 + 0.5) / 10
+            end
             value = max(self.min, min(self.max, value))
             PlaySound(856) -- SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON
             self:SetValue(value)
