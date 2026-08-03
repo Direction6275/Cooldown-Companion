@@ -108,8 +108,17 @@ function CooldownCompanion:ToggleGroupMasque(groupId, enable)
         group.style.maintainAspectRatio = true
 
         -- Zero out icon zoom: Masque skins own the icon's texture coordinates,
-        -- so a CC-side crop would fight the skin.
+        -- so a CC-side crop would fight the skin. Entry-level overrides shadow
+        -- the group value through the effective style, so they are zeroed too;
+        -- the config locks both zoom rows while Masque is on.
         group.style.iconZoom = 0
+        if group.buttons then
+            for _, buttonData in ipairs(group.buttons) do
+                if buttonData.styleOverrides and buttonData.styleOverrides.iconZoom then
+                    buttonData.styleOverrides.iconZoom = 0
+                end
+            end
+        end
 
         -- Create Masque group if it doesn't exist
         if not MasqueGroups[groupId] then
