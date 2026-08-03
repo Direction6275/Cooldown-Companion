@@ -56,6 +56,30 @@ local function BuildAuraBarAutocompleteCache()
     return cache
 end
 
+-- The AURA-only slice of the cache above, for fields that track an aura
+-- rather than name a bar: a resource overlay and an icon entry's tracked-aura
+-- list both want buffs and debuffs, never plain spells. Cached off the same
+-- shared source and invalidated by its identity, exactly like its parent.
+local trackedAuraAutocompleteCache = nil
+local trackedAuraAutocompleteSource = nil
+
+local function BuildTrackedAuraAutocompleteCache()
+    local sharedCache = BuildAuraBarAutocompleteCache()
+    if trackedAuraAutocompleteCache and trackedAuraAutocompleteSource == sharedCache then
+        return trackedAuraAutocompleteCache
+    end
+
+    local cache = {}
+    for _, entry in ipairs(sharedCache) do
+        if entry.autocompleteKind == "aura" then
+            cache[#cache + 1] = entry
+        end
+    end
+    trackedAuraAutocompleteCache = cache
+    trackedAuraAutocompleteSource = sharedCache
+    return cache
+end
+
 local function FindAuraBarAutocompleteEntryByID(spellID)
     if not spellID then
         return nil
@@ -605,6 +629,7 @@ ST._RBP = {
     ResolveAuraBarAutocompleteEntry = ResolveAuraBarAutocompleteEntry,
     ShowAuraBarAutocompleteResults = ShowAuraBarAutocompleteResults,
     BuildAuraBarAutocompleteCache = BuildAuraBarAutocompleteCache,
+    BuildTrackedAuraAutocompleteCache = BuildTrackedAuraAutocompleteCache,
     IsResourceBarVerticalConfig = IsResourceBarVerticalConfig,
     GetResourceThicknessFieldConfig = GetResourceThicknessFieldConfig,
     GetResourceGapFieldConfig = GetResourceGapFieldConfig,

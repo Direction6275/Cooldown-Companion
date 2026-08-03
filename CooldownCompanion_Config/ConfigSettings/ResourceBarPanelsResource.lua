@@ -170,6 +170,7 @@ local IsResourceBarVerticalConfig = RBP.IsResourceBarVerticalConfig
 local GetResourceThicknessFieldConfig = RBP.GetResourceThicknessFieldConfig
 local GetResourceGapFieldConfig = RBP.GetResourceGapFieldConfig
 local ResolveAuraColorSpellIDFromText = RBP.ResolveAuraColorSpellIDFromText
+local BuildTrackedAuraAutocompleteCache = RBP.BuildTrackedAuraAutocompleteCache
 
 local function EnsureResourceLayoutAnchor(settings, layout)
     if type(layout.independentAnchor) ~= "table" then
@@ -2087,11 +2088,28 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
     local spellID = entry and tonumber(entry.auraColorSpellID) or nil
 
     if not spellID then
-        AddEditBoxRow(auraLeft, {
+        -- Commit one aura onto the entry. Shared by the autocomplete pick and
+        -- the typed Enter, so both land the same derived state.
+        local function CommitTrackedAura(id)
+            local target = EnsureResourceAuraOverlayEntry(settings, powerType, specID)
+            if not target then return false end
+            target.auraColorSpellID = id
+            -- Store the derived unit so the runtime's fallback starts right
+            -- for spells the client has not cached yet; the rebind pass
+            -- re-derives it from spell polarity every pass regardless.
+            target.auraUnit = ClassifyAuraSpellUnit(id) or "player"
+            return true
+        end
+
+        local auraAddBox
+        auraAddBox = AddEditBoxRow(auraLeft, {
             label = "Aura by name or ID",
             indent = true,
             value = "",
             onEnterPressed = function(text, widget)
+                -- The dropdown owns Enter while it has a highlighted row.
+                if CS.ConsumeAutocompleteEnter() then return end
+                CS.HideAutocomplete()
                 local id, blank = ResolveAuraColorSpellIDFromText(text)
                 if not id then
                     -- Enter on an empty box is a no-op, not a failed lookup.
@@ -2100,17 +2118,33 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
                     end
                     return
                 end
-                local target = EnsureResourceAuraOverlayEntry(settings, powerType, specID)
-                if not target then return end
-                target.auraColorSpellID = id
-                -- Store the derived unit so the runtime's fallback starts right
-                -- for spells the client has not cached yet; the rebind pass
-                -- re-derives it from spell polarity every pass regardless.
-                target.auraUnit = ClassifyAuraSpellUnit(id) or "player"
+                if not CommitTrackedAura(id) then return end
                 widget:SetText("")
                 refresh()
             end,
         })
+
+        -- Same aura-only suggestion list the icon entry's tracked-aura field
+        -- draws (RBP.BuildTrackedAuraAutocompleteCache): this field tracks an
+        -- aura, so plain spells would be noise.
+        auraAddBox:SetCallback("OnTextChanged", function(widget, _, text)
+            if text and #text >= 1 then
+                local results = CS.SearchAutocompleteInCache(text, BuildTrackedAuraAutocompleteCache())
+                CS.ShowAutocompleteResults(results, widget.editBoxWidget, function(entry)
+                    CS.HideAutocomplete()
+                    local id = entry and tonumber(entry.id) or nil
+                    if not id or not CommitTrackedAura(id) then return end
+                    auraAddBox:SetText("")
+                    refresh()
+                end, {
+                    requireExactNumericEnter = true,
+                    widthMultiplier = 2,
+                })
+            else
+                CS.HideAutocomplete()
+            end
+        end)
+        CS.SetupAutocompleteKeyHandler(auraAddBox)
         return
     end
 

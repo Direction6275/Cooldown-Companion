@@ -40,27 +40,9 @@ local TryAddAuraCandidate = ST._TryAddAuraCandidate
 local RemoveAuraCandidate = ST._RemoveAuraCandidate
 local AddAuraCandidateRow = ST._AddAuraCandidateRow
 local AddAuraStackMaxStatusLabel = ST._AddAuraStackMaxStatusLabel
-local BuildAuraBarAutocompleteCache = ST._RBP.BuildAuraBarAutocompleteCache
-
-local trackedAuraAutocompleteCache
-local trackedAuraAutocompleteSource
-
-local function BuildTrackedAuraAutocompleteCache()
-    local sharedCache = BuildAuraBarAutocompleteCache()
-    if trackedAuraAutocompleteCache and trackedAuraAutocompleteSource == sharedCache then
-        return trackedAuraAutocompleteCache
-    end
-
-    local cache = {}
-    for _, entry in ipairs(sharedCache) do
-        if entry.autocompleteKind == "aura" then
-            cache[#cache + 1] = entry
-        end
-    end
-    trackedAuraAutocompleteCache = cache
-    trackedAuraAutocompleteSource = sharedCache
-    return cache
-end
+-- Shared with the resource overlay's aura field, so both tracked-aura
+-- surfaces suggest the same list (it used to be defined here alone).
+local BuildTrackedAuraAutocompleteCache = ST._RBP.BuildTrackedAuraAutocompleteCache
 
 -- Full group refresh, not just a rebind: aura config changes can flip the
 -- CC-side static composition too (shell alpha, countdown text hosting),
