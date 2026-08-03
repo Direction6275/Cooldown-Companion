@@ -670,6 +670,25 @@ do
         slider:SetHitRectInsets(0, 0, -4, -4)
         slider:SetPoint("RIGHT", editbox, "LEFT", -CONTROL_GAP, 0)
 
+        -- A wheel tick is a discrete commit like a typed value, not a drag, so
+        -- it obeys the same rule: stock reaches the value through SetValue and
+        -- fires OnValueChanged alone, never the frame-level OnMouseUp, which
+        -- left mirror-first call sites repainting the preview and never
+        -- applying to the live display. Compare the child's value across the
+        -- stock handler because it clamps at the endpoints - a tick that moved
+        -- nothing must not re-apply. Wrapping belongs here and not in
+        -- OnAcquire: AceGUI pools by type, so the constructor runs once per
+        -- physical widget and cannot stack wrappers on reuse.
+        local stockMouseWheel = slider:GetScript("OnMouseWheel")
+        slider:SetScript("OnMouseWheel", function(f, delta, ...)
+            local self = f.obj -- the stock child; it owns the value
+            local before = self.value
+            stockMouseWheel(f, delta, ...)
+            if not self.disabled and self.value ~= before then
+                self:Fire("OnMouseUp", self.value)
+            end
+        end)
+
         -- slider.obj/editbox.obj stay pointed at the stock child because its
         -- own scripts read them. GroupTabs' staged texture sliders need the
         -- ROW from the raw frame, so publish it separately.
