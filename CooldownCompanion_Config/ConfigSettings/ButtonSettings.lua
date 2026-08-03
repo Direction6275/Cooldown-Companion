@@ -559,6 +559,10 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
         -- pre-redesign Remove button had.
         if #clauses > 1 then
             local removeLabel = AceGUI:Create("InteractiveLabel")
+            -- Clean-on-acquire: the shared pool also serves the Navigator,
+            -- whose plain-child frame badges survive release (badge-leak
+            -- class).
+            CleanRecycledEntry(removeLabel)
             removeLabel:SetText("|cffff5555Remove|r")
             removeLabel:SetWidth(60)
             removeLabel:SetJustifyH("RIGHT")

@@ -1231,12 +1231,15 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- would resurrect the region).
     if isBar and isResourceHost then
         -- Resource overlay composition: occlusion-free by construction (the
-        -- live resource bar IS the absent state). The aura-present visual
-        -- is a BORDER (owner ruling 2026-08-02, replacing the tint wash)
+        -- live resource bar IS the absent state). Two INDEPENDENT visuals
+        -- (owner rulings 2026-08-02): a BORDER (replacing the tint wash)
         -- wrapping the whole bar rect on every shape — segment clusters
         -- included, as if the bar were continuous — via the shared glow
-        -- kit call below. Stack mode adds the lane strip; never the
-        -- whole-rect fills the other bar hosts run.
+        -- kit call below, gated there by barAuraIndicatorEnabled; and the
+        -- stack LANE strip. Never the whole-rect fills the other bar hosts
+        -- run. The lane fills CONTINUOUS (match the preview) — the painted
+        -- stack separators are a bar-panel look, so the shared stripe
+        -- painter stays off here.
         kit.barBackdrop:SetAlpha(0)
         ST.HideStackBlocks(kit.stackBgBlocks)
         ST.HideStackBlockBorders(kit.stackBlockBorders)
@@ -1259,7 +1262,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
                 RestBarFill(kit.stackFill, kit.stackFillTexture, kit.stackFillPulseAG, kit.stackFillCsAG)
             end
         end
-        StyleStackSegments(kit, button, buttonData, style, slot.boundStackMax, stackLaneOn)
+        StyleStackSegments(kit, button, buttonData, style, nil, false)
     elseif isBar then
         -- Fill mode (tracker C2): a stack-mode bind carries boundStackMax
         -- (resolved by the rebind pass, re-called onto the registered stack

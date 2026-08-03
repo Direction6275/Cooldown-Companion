@@ -55,6 +55,7 @@ local ROW_SECTION = { leftAligned = true }
 -- (SectionBuilders GLOW_SLIDER_SPEC): the border styles draw the same
 -- sliders everywhere, only the store differs.
 local AddGlowSliderRows = ST._AddGlowSliderRows
+local CleanRecycledEntry = ST._CleanRecycledEntry
 local AURA_BORDER_SLIDER_KEYS = {
     size = "auraBorderSize",
     thickness = "auraBorderThickness",
@@ -2038,11 +2039,11 @@ end
 local function BuildResourceAuraOverlaySection(container, settings, powerType, specID, resourceName)
     local sectionKey = "rb_aura_overlay_" .. powerType
     local heading, collapsed =
-        BuildCollapsibleSection(container, "Aura Border", sectionKey, resourceBarCollapsedSections, nil, ROW_SECTION)
+        BuildCollapsibleSection(container, "Aura Tracking", sectionKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
     local sectionInfoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
-        "Aura Border",
-        {"One aura per resource and specialization. Blizzard shows and hides the border with the aura itself, so it keeps working in combat, where the addon cannot read aura state.", 1, 1, 1, true},
+        "Aura Tracking",
+        {"One aura per resource and specialization. Blizzard shows and hides the visuals with the aura itself, so they keep working in combat, where the addon cannot read aura state.", 1, 1, 1, true},
         " ",
         {"Buffs can only be tracked on yourself, and your own debuffs only on your target. The tracked unit is set automatically from the aura.", 1, 1, 1, true},
     }, heading)
@@ -2064,13 +2065,15 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
 
     local enabled = IsResourceAuraOverlayEnabledConfig(settings, powerType, specID)
 
-    -- LEFT column: which aura is tracked, and on whom. RIGHT column: how the
-    -- overlay draws it. Both halves are gated on the toggle at the head of the
-    -- left one, so the right side is empty until an aura is picked.
+    -- LEFT column: which aura is tracked, on whom, and the Stack Lane
+    -- toggle. RIGHT column: the shared colour and the Border toggle with its
+    -- styling. Border and lane are INDEPENDENT (owner ruling 2026-08-02);
+    -- both halves are gated on the toggle at the head of the left one, so
+    -- the right side is empty until an aura is picked.
     local auraLeft, auraRight = BeginRowGrid(container)
 
     AddCheckboxRow(auraLeft, {
-        label = "Enable " .. resourceName .. " Aura Border",
+        label = "Enable " .. resourceName .. " Aura Tracking",
         value = enabled,
         onChange = function(value)
             WriteSpecOverrideKey(settings, powerType, specID, "auraOverlayEnabled", value == true)
@@ -2132,6 +2135,12 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
     -- like every other row's control. SetJustifyH is public API and the stock
     -- Label resets it to LEFT in OnAcquire, so the pool stays clean.
     local removeLabel = AceGUI:Create("InteractiveLabel")
+    -- The shared InteractiveLabel pool also serves the Navigator, whose rows
+    -- hang plain-child badges off the label FRAME (expand button, warning
+    -- meta, rename badge). Nothing hides those on release, so a reacquired
+    -- frame arrives wearing its previous tenant's badges — the badge-leak
+    -- class. Same clean-on-acquire call every Navigator site makes.
+    CleanRecycledEntry(removeLabel)
     removeLabel:SetText("|cffff5555Remove|r")
     removeLabel:SetWidth(60)
     removeLabel:SetJustifyH("RIGHT")
@@ -2152,9 +2161,96 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
         controlText = unit == "target" and "Target" or "You",
     })
 
+    -- The Stack Lane is a fact about the TRACKING, so it lives with the
+    -- aura rows on the left, independent of the border (owner ruling
+    -- 2026-08-02: separate systems, any combination). It only exists where
+    -- the runtime can draw the lane; the stored key stays
+    -- auraColorTrackingMode ("stacks"/"active") so no config migrates.
+    if SupportsResourceAuraStackMode(powerType) then
+        local laneOn = RB.GetResourceOverlayTrackingMode(entry, powerType) == "stacks"
+
+        local laneRow = AddCheckboxRow(auraLeft, {
+            label = "Stack Lane",
+            indent = true,
+            value = laneOn,
+            onChange = function(value)
+                local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
+                if not target then return end
+                target.auraColorTrackingMode = value == true and "stacks" or "active"
+                refresh()
+            end,
+        })
+        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+        -- onto the end of the row's label.
+        AnchorRowBadge(laneRow, CreateInfoButton(laneRow.frame, laneRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Stack Lane",
+            {"Fills a lane along the bar as the aura's stacks build.", 1, 1, 1, true},
+            " ",
+            {"The maximum comes from the game's spell data. An aura that does not stack shows no lane.", 1, 1, 1, true},
+        }, laneRow))
+
+        if laneOn then
+            local maxStacks = RB.ResolveResourceOverlayStackMax(entry, powerType)
+            local inCombat = InCombatLockdown()
+
+            -- Own colour per system (owner ruling 2026-08-02). New key;
+            -- unset falls back to the border colour at render time, so the
+            -- swatch shows the effective colour as its default.
+            --
+            -- Only where a lane can actually render. A nil max OUT of combat
+            -- is a definitive "this aura doesn't stack" and the collector
+            -- drops the lane, so the swatch would edit nothing. In combat a
+            -- nil max only means UNREADABLE — the runtime still draws from
+            -- its OOC cache — so the control has to stay.
+            if maxStacks or inCombat then
+                AddColorRow(auraLeft, {
+                    label = "Lane Color",
+                    indent = true,
+                    tbl = entry,
+                    key = "auraLaneColor",
+                    default = RB.GetResourceOverlayLaneColor(entry),
+                    onConfirm = applyBars,
+                })
+            end
+
+            local statusLabel = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(statusLabel)
+            if maxStacks then
+                statusLabel:SetText("|cffffd100Stack lane:|r full at " .. maxStacks .. " stacks")
+            elseif inCombat then
+                statusLabel:SetText("|cffff9955The stack maximum can't be read in combat; it resolves when you leave combat.|r")
+            else
+                statusLabel:SetText("|cffff9955This aura doesn't stack, so the lane won't show.|r")
+            end
+            statusLabel:SetFullWidth(true)
+            auraLeft:AddChild(statusLabel)
+        end
+    end
+
+    local borderOn = RB.IsResourceOverlayBorderEnabled(entry)
+    AddCheckboxRow(auraRight, {
+        label = "Border",
+        value = borderOn,
+        onChange = function(value)
+            local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
+            if not target then return end
+            -- nil = on, so pre-toggle configs never carry the key. Written
+            -- with an if: `x and nil or false` collapses to false both ways.
+            if value == true then
+                target.auraBorderEnabled = nil
+            else
+                target.auraBorderEnabled = false
+            end
+            refresh()
+        end,
+    })
+
+    if not borderOn then return end
+
     local borderStyle = RB.GetResourceOverlayBorderStyle(entry)
     AddDropdownRow(auraRight, {
         label = "Border Style",
+        indent = true,
         list = { solid = "Solid Border", pixel = "Pixel Glow" },
         order = { "solid", "pixel" },
         value = borderStyle,
@@ -2174,10 +2270,12 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
         end,
     })
 
-    -- One colour, every shape: the border, and the stack lane when Stack
-    -- Count mode runs one.
+    -- Own colour per system (owner ruling 2026-08-02): this key stays
+    -- auraActiveColor — pre-split configs keep their border colour — and
+    -- the lane's own key falls back to it.
     AddColorRow(auraRight, {
-        label = "Aura Color",
+        label = "Border Color",
+        indent = true,
         tbl = entry,
         key = "auraActiveColor",
         default = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR,
@@ -2190,50 +2288,6 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
     AddGlowSliderRows(auraRight, entry,
         borderStyle == "pixel" and "dashes" or "solid",
         AURA_BORDER_SLIDER_KEYS, applyBars, 1, true)
-
-    -- Stack mode only exists where the runtime can draw the lane, so the
-    -- dropdown only appears there; everything else is Active by definition
-    -- and a lone-option dropdown would just be furniture.
-    if not SupportsResourceAuraStackMode(powerType) then return end
-
-    local mode = RB.GetResourceOverlayTrackingMode(entry, powerType)
-
-    local modeRow = AddDropdownRow(auraRight, {
-        label = "Tracking Mode",
-        list = { active = "Active", stacks = "Stack Count" },
-        order = { "active", "stacks" },
-        value = mode,
-        onChange = function(value)
-            if value ~= "active" and value ~= "stacks" then return end
-            local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
-            if not target then return end
-            target.auraColorTrackingMode = value
-            refresh()
-        end,
-    })
-    -- Anchor args are a placeholder - AnchorRowBadge re-points the button onto
-    -- the end of the row's label.
-    AnchorRowBadge(modeRow, CreateInfoButton(modeRow.frame, modeRow.frame, "LEFT", "LEFT", 0, 0, {
-        "Tracking Mode",
-        {"Active shows the border for as long as the aura is up.", 1, 1, 1, true},
-        " ",
-        {"Stack Count adds a lane along the bar that fills as stacks build. The maximum comes from the game's spell data, so an aura that does not stack falls back to Active.", 1, 1, 1, true},
-    }, modeRow))
-
-    if mode ~= "stacks" then return end
-
-    local maxStacks = RB.ResolveResourceOverlayStackMax(entry, powerType)
-    local statusLabel = AceGUI:Create("Label")
-    ST._ConfigureWrappedHelperLabel(statusLabel)
-    if maxStacks then
-        statusLabel:SetText("|cffffd100Stack lane:|r full at " .. maxStacks .. " stacks")
-    elseif InCombatLockdown() then
-        statusLabel:SetText("|cffff9955The stack maximum can't be read in combat; it resolves when you leave combat.|r")
-    else
-        statusLabel:SetText("|cffff9955This aura doesn't stack, so only the border will show.|r")
-    end
-    statusLabel:SetFullWidth(true)
-    container:AddChild(statusLabel)
 end
 
 local function BuildResourceBarStylingPanel(container, sectionMode, opts)

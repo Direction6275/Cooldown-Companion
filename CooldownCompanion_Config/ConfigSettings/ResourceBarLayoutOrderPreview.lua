@@ -3568,6 +3568,37 @@ function ST._ResourcesPreviewRendersCastSlot()
     return ResolveLayoutPreviewSourcePanel() ~= nil
 end
 
+-- Which resource power types the canvas draws lanes for right now: the SAME
+-- three-way choice CollectPreviewSlots makes, exported so the preview command
+-- center can offer a resource-aura toggle exactly when its destination lane is
+-- on screen. Re-deriving the list over there is what put the two out of step
+-- in BOTH directions — the runtime list is form-dependent (a druid out of cat
+-- form has no Combo Points bar) while the config list is spec-based, and each
+-- is the right answer for a different anchor mode.
+--
+-- Offer test only, like the cast-slot sibling above: a nil layout is the
+-- transient spec-change state, not a reason to stop a running preview.
+function ST._ResourcesPreviewResourceLanePowerTypes()
+    local rbSettings = CooldownCompanion:GetResourceBarSettings()
+    if not (rbSettings and rbSettings.enabled == true) then
+        return {}
+    end
+    local layout = CooldownCompanion:GetSpecLayoutOrder()
+    if not layout then
+        -- "Specialization data loading..." - the canvas is a message.
+        return {}
+    end
+    if IsTruthyConfigFlag(layout.independentAnchorEnabled) then
+        -- An independent stack is drawn on the bars workspace alone, and
+        -- from the runtime-eligible list; anywhere else it has no lanes.
+        if not IsBarsWorkspaceActive() then
+            return {}
+        end
+        return RB.DetermineActiveResources and RB.DetermineActiveResources() or {}
+    end
+    return GetConfigActiveResources()
+end
+
 -- The selection keys the canvas drew on its most recent build for `host`.
 -- Read by the bars workspace as it builds the "Not currently shown:" chip
 -- strip below the editing divider, so the strip and the canvas can never

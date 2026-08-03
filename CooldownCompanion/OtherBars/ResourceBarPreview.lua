@@ -173,6 +173,8 @@ function RB.CreateResourceBarPreviewModule(deps)
     local GetResourceOverlayHolderInset = RB.GetResourceOverlayHolderInset
     local GetResourceOverlayTrackingMode = RB.GetResourceOverlayTrackingMode
     local GetResourceOverlayBorderStyle = RB.GetResourceOverlayBorderStyle
+    local IsResourceOverlayBorderEnabled = RB.IsResourceOverlayBorderEnabled
+    local GetResourceOverlayLaneColor = RB.GetResourceOverlayLaneColor
     local ResolveResourceOverlayStackMax = RB.ResolveResourceOverlayStackMax
 
     ------------------------------------------------------------------------
@@ -346,13 +348,15 @@ function RB.CreateResourceBarPreviewModule(deps)
                 auraColor = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
             end
 
-            -- The aura border — the always-on active visual, in both
-            -- tracking modes, wrapping the whole bar rect on every shape
-            -- (segment clusters included, as if the bar were continuous).
-            -- Rendered through the same pure builder the kit runs on a
-            -- live slot, in the bar vocabulary the resolvers read.
+            -- The aura border — its own toggle, independent of the lane
+            -- (owner ruling 2026-08-02), wrapping the whole bar rect on
+            -- every shape (segment clusters included, as if the bar were
+            -- continuous). Rendered through the same pure builder the kit
+            -- runs on a live slot, in the bar vocabulary the resolvers
+            -- read; the enable flag styles the regions off when the border
+            -- is switched off, mirroring the runtime adapter.
             local borderStyle = {
-                barAuraIndicatorEnabled = true,
+                barAuraIndicatorEnabled = IsResourceOverlayBorderEnabled(auraEntry),
                 barAuraEffect = GetResourceOverlayBorderStyle(auraEntry),
                 barAuraEffectColor = auraColor,
                 barAuraEffectSize = tonumber(auraEntry.auraBorderSize),
@@ -407,7 +411,10 @@ function RB.CreateResourceBarPreviewModule(deps)
                 ST.GetEffectiveBarTextureName(GetResourceDisplayValue(settings, "barTexture", "Solid"))))
             layer.lane:SetOrientation(vertical and "VERTICAL" or "HORIZONTAL")
             layer.lane:SetReverseFill(vertical and IsVerticalFillReversed(settings) == true or false)
-            layer.lane:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], 1)
+            -- Own colour per system: the lane resolves its key with the
+            -- border-colour fallback, exactly as the runtime adapter does.
+            local laneColor = GetResourceOverlayLaneColor(auraEntry)
+            layer.lane:SetStatusBarColor(laneColor[1], laneColor[2], laneColor[3], 1)
             SetStatusBarSmoothRange(layer.lane, 0, stackMax)
             SetStatusBarImmediateValue(layer.lane, math_min(PREVIEW_STACKS, stackMax))
             layer.lane:Show()

@@ -28,6 +28,7 @@ local AddColorRow = ST._AddColorRow
 local AddLabelRow = ST._AddLabelRow
 local AnchorRowBadge = ST._AnchorRowBadge
 local BeginRowGrid = ST._BeginRowGrid
+local CleanRecycledEntry = ST._CleanRecycledEntry
 
 -- Dropdown items past ~16 characters need a menu wider than the 140px control
 -- column can size ("Color the Whole Text", the override section labels).
@@ -137,6 +138,11 @@ local function AddAuraCandidateRow(container, spellID, onRemove, opts)
     -- like every other row's control. SetJustifyH is public API and the
     -- stock Label resets it to LEFT in OnAcquire, so the pool stays clean.
     local removeLabel = AceGUI:Create("InteractiveLabel")
+    -- The shared InteractiveLabel pool also serves the Navigator, whose rows
+    -- hang plain-child badges off the label FRAME; nothing hides those on
+    -- release, so a reacquired frame arrives wearing its previous tenant's
+    -- badges. Same clean-on-acquire call every Navigator site makes.
+    CleanRecycledEntry(removeLabel)
     removeLabel:SetText("|cffff5555Remove|r")
     removeLabel:SetWidth(60)
     removeLabel:SetJustifyH("RIGHT")

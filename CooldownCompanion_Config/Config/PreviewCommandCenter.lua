@@ -931,14 +931,19 @@ local function CollectObjectControls(objects)
 
     -- Per-resource groups (the aura pass, Phase 2): one group per resource
     -- whose overlay is configured, built the same way as the custom-bar
-    -- groups above. Enumerated from the runtime's own active-resource list,
-    -- so a form change adds and drops entries with the bars themselves, and
-    -- keyed by power type — the identity that survives that rebuild.
+    -- groups above, and keyed by power type — the identity that survives
+    -- rebuilds. The CANVAS owns which resources have a lane on screen (its
+    -- choice of list depends on the anchor mode), so ask it rather than
+    -- re-derive: enumerating independently here put the menu out of step
+    -- with the canvas in both directions, offering toggles whose lane was
+    -- absent and dropping toggles whose lane was drawn.
     if objects.resourceAuras then
         local settings = CooldownCompanion.GetResourceBarSettings
             and CooldownCompanion:GetResourceBarSettings()
-        if settings and settings.enabled == true and RB.DetermineActiveResources then
-            for _, powerType in ipairs(RB.DetermineActiveResources()) do
+        -- Lazy: this file loads before the ConfigSettings modules.
+        local LanePowerTypes = ST._ResourcesPreviewResourceLanePowerTypes
+        if settings and settings.enabled == true and LanePowerTypes then
+            for _, powerType in ipairs(LanePowerTypes()) do
                 if ResourceAuraOverlayConfigured(settings, powerType) then
                     applicable[#applicable + 1] = {
                         id = "resourceAura_" .. tostring(powerType),

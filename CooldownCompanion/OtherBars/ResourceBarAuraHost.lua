@@ -563,17 +563,43 @@ function RB.CreateResourceBarAuraHostModule(deps)
         return borderInset
     end
 
-    -- Which overlay shapes an entry renders. The BORDER is the aura-present
-    -- visual and always runs (owner ruling 2026-08-02: the tint wash is
-    -- gone — it obstructed the resource; the border rides the same
-    -- Blizzard-driven slot visibility). live's "active" recolor stays dead
-    -- in combat on 12.1, so the border is its combat-grade stand-in.
-    -- "stacks" ADDS the stack lane, on the same resources live offers it
-    -- on. The border always wraps the WHOLE bar rect — one rect on segment
-    -- clusters too, as if the bar were continuous (owner ruling, reversing
-    -- the brief per-segment design).
+    -- Whether the entry draws the aura border. On unless explicitly
+    -- switched off (nil = on), so pre-toggle configs keep their border with
+    -- no migration. Shared with the config panel and the preview stand-in.
+    function RB.IsResourceOverlayBorderEnabled(entry)
+        return not (type(entry) == "table" and entry.auraBorderEnabled == false)
+    end
+
+    -- The stack lane's fill colour. Its own key (owner ruling 2026-08-02:
+    -- border and lane are separate systems, each with its own colour),
+    -- falling back to the border colour so pre-split configs keep their
+    -- look with no migration. Shared with the config panel and the preview
+    -- stand-in.
+    function RB.GetResourceOverlayLaneColor(entry)
+        local color = type(entry) == "table" and entry.auraLaneColor or nil
+        if type(color) == "table" and color[1] ~= nil and color[2] ~= nil and color[3] ~= nil then
+            return color
+        end
+        color = type(entry) == "table" and entry.auraActiveColor or nil
+        if type(color) == "table" and color[1] ~= nil and color[2] ~= nil and color[3] ~= nil then
+            return color
+        end
+        return DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
+    end
+
+    -- Which overlay shapes an entry renders. The BORDER and the STACK LANE
+    -- are INDEPENDENT toggles (owner ruling 2026-08-02: they are separate
+    -- systems — any combination, including neither). The border is the
+    -- aura-present visual riding Blizzard-driven slot visibility (live's
+    -- "active" recolor stays dead in combat on 12.1, so it is the
+    -- combat-grade stand-in), wrapping the WHOLE bar rect — one rect on
+    -- segment clusters too, as if the bar were continuous. The lane fills
+    -- with stacks on the same resources live offers it on.
     local function ResolveResourceOverlayShapes(entry, powerType)
-        local shapes = { border = true }
+        local shapes = {}
+        if RB.IsResourceOverlayBorderEnabled(entry) then
+            shapes.border = true
+        end
         if GetResourceAuraTrackingMode(entry) == "stacks"
             and SupportsResourceAuraStackMode(powerType) then
             shapes.stackLane = true
@@ -630,9 +656,12 @@ function RB.CreateResourceBarAuraHostModule(deps)
         if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
             color = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
         end
-        -- One colour, two consumers: the stack lane fill and the border.
-        style.barAuraColor = color
-        style.barAuraIndicatorEnabled = true
+        -- Each system carries its own colour: barAuraColor feeds the lane
+        -- fill (own key, border-colour fallback), barAuraEffectColor the
+        -- border. The enable flag is the border's whole gate: the glow
+        -- builders style off when it is false.
+        style.barAuraColor = RB.GetResourceOverlayLaneColor(entry)
+        style.barAuraIndicatorEnabled = shapes.border == true
         style.barAuraEffect = RB.GetResourceOverlayBorderStyle(entry)
         style.barAuraEffectColor = color
         style.barAuraEffectSize = tonumber(entry.auraBorderSize)
@@ -771,10 +800,15 @@ function RB.CreateResourceBarAuraHostModule(deps)
                             -- Stack lane fill max: automatic, game-data
                             -- resolved, OOC (owner ruling — no manual max
                             -- anywhere). A nil resolve means "not a
-                            -- stacking aura": the lane comes off and the
-                            -- ever-present border carries the active state,
-                            -- exactly as live falls back to the recolor
-                            -- when no max is configured.
+                            -- stacking aura", so the lane comes off and the
+                            -- border alone carries the active state — live's
+                            -- own fallback to the recolor when no max is
+                            -- configured. The border is a separate toggle
+                            -- since 2026-08-02, so it is NOT guaranteed to
+                            -- be there: an entry with both off is legal
+                            -- (owner ruling) and renders nothing while still
+                            -- holding its slot. Nothing downstream may
+                            -- assume a want draws at least one shape.
                             local stackBarMax
                             if shapes.stackLane then
                                 stackBarMax = CooldownCompanion:GetAuraStackBarMax(buttonData)
