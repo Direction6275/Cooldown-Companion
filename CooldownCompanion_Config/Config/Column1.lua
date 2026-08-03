@@ -620,12 +620,31 @@ local function ShowPanelContextMenu(panelId, containerId)
                 info.notCheckable = true
                 info.func = function()
                     CloseDropDownMenus()
-                    panel.anchorEligible = panel.anchorEligible ~= false and false or nil
+                    if panel.anchorEligible ~= false then
+                        panel.anchorEligible = false
+                    else
+                        panel.anchorEligible = nil
+                    end
                     CooldownCompanion:EvaluateResourceBars()
                     CooldownCompanion:UpdateAnchorStacking()
                     CooldownCompanion:EvaluateCastBar()
                     CooldownCompanion:EvaluateFrameAnchoring()
                     CooldownCompanion:RefreshConfigPanel()
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+
+            if ST._IsActiveCDMPanelSource and ST._IsActiveCDMPanelSource(panel) then
+                info = UIDropDownMenu_CreateInfo()
+                info.text = "Refresh from Cooldown Manager"
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    ShowPopupAboveConfig("CDC_REFRESH_CDM_PANEL", panel.name or "Panel", {
+                        panelId = panelId,
+                        containerId = containerId,
+                        sourceKey = panel.cdmPanelSource,
+                    })
                 end
                 UIDropDownMenu_AddButton(info, level)
             end

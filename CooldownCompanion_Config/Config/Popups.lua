@@ -426,6 +426,28 @@ StaticPopupDialogs["CDC_DELETE_EMPTY_CDM_PANEL"] = {
     preferredIndex = 3,
 }
 
+StaticPopupDialogs["CDC_REFRESH_CDM_PANEL"] = {
+    text = "Replace the entries in '%s' with its Cooldown Manager section? Per-entry settings will be lost.",
+    button1 = "Replace",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if not data then
+            return
+        end
+        local panel = CooldownCompanion.db.profile.groups[data.panelId]
+        if panel
+            and panel.parentContainerId == data.containerId
+            and panel.cdmPanelSource == data.sourceKey
+            and ST._RefreshCDMPanelFromSource then
+            ST._RefreshCDMPanelFromSource(data.panelId, panel, data.containerId)
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 StaticPopupDialogs["CDC_RENAME_GROUP"] = {
     text = "Rename group '%s' to:",
     button1 = "Rename",

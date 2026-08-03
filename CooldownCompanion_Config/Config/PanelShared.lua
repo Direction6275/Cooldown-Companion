@@ -415,6 +415,8 @@ RefreshCDMPanelFromSource = function(panelId, panel, containerId)
         added == 1 and "y" or "ies"
     ))
 end
+ST._RefreshCDMPanelFromSource = RefreshCDMPanelFromSource
+ST._IsActiveCDMPanelSource = IsActiveCDMPanelSource
 local function ResolveEntryTooltipSpellId(buttonData)
     if not (buttonData and buttonData.type == "spell") then
         return nil
