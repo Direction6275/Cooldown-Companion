@@ -1525,7 +1525,13 @@ end
 -- draw one style's sliders differently. Everything that varies is already in
 -- GLOW_SLIDER_SPEC and the caller's `keys`; this function owns nothing but the
 -- row shape.
-local function AddGlowSliderRows(container, styleTable, currentStyle, keys, refreshCallback, pixelSizeMin, indent)
+--
+-- `previewRefresh` is the mirror-first opt-in (the resources surfaces, owner
+-- ruling 2026-08-02): with it supplied the drag tick repaints only the caller's
+-- preview and `refreshCallback` runs once on release, exactly the split
+-- BuildIconZoomControls already offers. Omitted - which is every non-resource
+-- caller - the rows keep applying on every tick, unchanged.
+local function AddGlowSliderRows(container, styleTable, currentStyle, keys, refreshCallback, pixelSizeMin, indent, previewRefresh)
     for _, entry in ipairs(GLOW_SLIDER_SPEC[currentStyle] or {}) do
         local ok, storeKey, minValue, value = ResolveGlowSliderEntry(entry, styleTable, keys, pixelSizeMin)
         if ok then
@@ -1536,8 +1542,13 @@ local function AddGlowSliderRows(container, styleTable, currentStyle, keys, refr
                 value = value,
                 onChange = function(val)
                     styleTable[storeKey] = val
-                    refreshCallback()
+                    local notify = previewRefresh or refreshCallback
+                    notify()
                 end,
+                onRelease = previewRefresh and function(val)
+                    styleTable[storeKey] = val
+                    refreshCallback()
+                end or nil,
             })
         end
     end
@@ -1675,7 +1686,10 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
     })
 
     -- deferCommit is deliberately absent, matching the AddColorPicker calls
-    -- these rows replaced.
+    -- these rows replaced. opts.previewRefresh (the mirror-first opt-in) moves
+    -- the picker-open path onto the caller's preview and leaves the commit on
+    -- refreshCallback; without it both stay on refreshCallback as before.
+    local pickerOpenRefresh = opts.previewRefresh or refreshCallback
     if not opts.hidePrimaryColorPicker then
         AddColorRow(container, {
             label = cfg.colorLabel,
@@ -1685,7 +1699,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
             default = cfg.defaultColor,
             hasAlpha = true,
             onConfirm = refreshCallback,
-            onChange = refreshCallback,
+            onChange = pickerOpenRefresh,
         })
     end
 
@@ -1698,11 +1712,12 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
             default = cfg.defaultColor2,
             hasAlpha = true,
             onConfirm = refreshCallback,
-            onChange = refreshCallback,
+            onChange = pickerOpenRefresh,
         })
     end
 
-    AddGlowSliderRows(container, styleTable, currentStyle, GlowSliderKeys(cfg), refreshCallback, 1, true)
+    AddGlowSliderRows(container, styleTable, currentStyle, GlowSliderKeys(cfg), refreshCallback, 1, true,
+        opts.previewRefresh)
 end
 
 ------------------------------------------------------------------------
@@ -1878,6 +1893,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         isOverride = opts.isOverride,
         fallbackStyle = opts.fallbackStyle,
         infoButtons = opts.infoButtons,
+        previewRefresh = opts.previewRefresh,
     })
 
     if overrideDisabled then
@@ -1898,6 +1914,11 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
     AnchorRowBadge(pulseRow, CreateInfoButton(pulseRow.frame, pulseRow.frame, "LEFT", "LEFT", 0, 0,
         FILL_EFFECTS_TOOLTIP, opts.infoButtons))
 
+    -- Same mirror-first opt-in the delegated glow rows above take: with a
+    -- preview to drive, the drag tick stays on it and the live apply lands on
+    -- release. Nil for every caller that has not opted in.
+    local previewRefresh = opts.previewRefresh
+
     if styleTable.barAuraPulseEnabled == true then
         AddSliderRow(effectsRight, {
             label = "Pulse Duration",
@@ -1906,8 +1927,13 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
             value = styleTable.barAuraPulseSpeed or 0.5,
             onChange = function(val)
                 styleTable.barAuraPulseSpeed = val
-                refreshCallback()
+                local notify = previewRefresh or refreshCallback
+                notify()
             end,
+            onRelease = previewRefresh and function(val)
+                styleTable.barAuraPulseSpeed = val
+                refreshCallback()
+            end or nil,
         })
     end
 
@@ -1929,8 +1955,13 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
             value = styleTable.barAuraColorShiftSpeed or 0.5,
             onChange = function(val)
                 styleTable.barAuraColorShiftSpeed = val
-                refreshCallback()
+                local notify = previewRefresh or refreshCallback
+                notify()
             end,
+            onRelease = previewRefresh and function(val)
+                styleTable.barAuraColorShiftSpeed = val
+                refreshCallback()
+            end or nil,
         })
 
         AddColorRow(effectsRight, {
@@ -1941,7 +1972,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
             default = {1, 1, 1, 1},
             hasAlpha = true,
             onConfirm = refreshCallback,
-            onChange = refreshCallback,
+            onChange = previewRefresh or refreshCallback,
         })
     end
 

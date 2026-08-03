@@ -30,6 +30,28 @@ local ROW_SECTION = { leftAligned = true }
 -- the 140px control column, and a dropdown sizes its menu from the control.
 local WIDE_PULLOUT_WIDTH = 300
 
+-- The workspace Live Preview draws the attached cast bar's own facsimile from
+-- these settings and does NOT rebuild with the settings column, so every row
+-- whose effect lands there repaints it directly. ResourceBarPanelsHelpers.lua
+-- publishes the three helpers and loads AFTER this file (TOC), so they are read
+-- at call time rather than aliased at file scope - the same rule Helpers.lua
+-- follows for the row builders.
+local function RefreshBarsCanvas()
+    if ST._RefreshResourcesCanvas then
+        ST._RefreshResourcesCanvas()
+    end
+end
+
+local function RefreshBarsCanvasForDrag()
+    if ST._RefreshResourcesCanvasForDrag then
+        ST._RefreshResourcesCanvasForDrag()
+    end
+end
+
+local function AddMirrorFirstSliderRow(container, opts)
+    return ST._AddMirrorFirstSliderRow(container, opts)
+end
+
 ------------------------------------------------------------------------
 -- CAST BAR SETTINGS PANEL
 ------------------------------------------------------------------------
@@ -324,7 +346,14 @@ end
 
 local function BuildCastBarStylingPanel(container)
     local settings = CooldownCompanion:GetCastBarSettings()
-    local applyCastBar = function() CooldownCompanion:ApplyCastBarSettings() end
+    -- Everything on this panel is the cast bar's LOOK, and the canvas draws
+    -- that look; so the commit path applies to the live bar and repaints the
+    -- canvas together, and the drag/picker-open path stays on the canvas alone.
+    local applyCastBar = function()
+        CooldownCompanion:ApplyCastBarSettings()
+        RefreshBarsCanvas()
+    end
+    local castPreviewOnly = RefreshBarsCanvasForDrag
     local cbAdvBtns = {}
 
     -- ================================================================
@@ -368,17 +397,17 @@ local function BuildCastBarStylingPanel(container)
             texRow:SetValue(settings.barTexture or "Solid")
             CS.SetBarTextureDropdownCallback(texRow, function(widget, event, val)
                 settings.barTexture = val
-                CooldownCompanion:ApplyCastBarSettings()
+                applyCastBar()
             end)
 
-            AddSliderRow(barLeft, {
+            -- The canvas sizes the cast slot from this value, so the whole
+            -- stack reflows under the drag; the live bar restyles on release.
+            AddMirrorFirstSliderRow(barLeft, {
                 label = "Height",
                 min = 4, max = 40, step = 0.1,
                 value = settings.height or 15,
-                onChange = function(val)
-                    settings.height = val
-                    CooldownCompanion:ApplyCastBarSettings()
-                end,
+                set = function(val) settings.height = val end,
+                apply = applyCastBar,
             })
 
             AddColorRow(barRight, {
@@ -388,6 +417,7 @@ local function BuildCastBarStylingPanel(container)
                 default = {1.0, 0.7, 0.0, 1.0},
                 hasAlpha = true,
                 onConfirm = applyCastBar,
+                onChange = castPreviewOnly,
             })
 
             AddColorRow(barRight, {
@@ -397,6 +427,7 @@ local function BuildCastBarStylingPanel(container)
                 default = {0, 0, 0, 0.5},
                 hasAlpha = true,
                 onConfirm = applyCastBar,
+                onChange = castPreviewOnly,
             })
         end
     end
@@ -440,6 +471,7 @@ local function BuildCastBarStylingPanel(container)
                 default = {0, 0, 0, 1},
                 hasAlpha = true,
                 onConfirm = applyCastBar,
+                onChange = castPreviewOnly,
             })
 
             local renderMode = AddBorderRenderModeDropdown(borderRight, settings, "borderRenderMode", function()
@@ -449,17 +481,17 @@ local function BuildCastBarStylingPanel(container)
             local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
             if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-                AddSliderRow(borderRight, {
+                AddMirrorFirstSliderRow(borderRight, {
                     label = "Border Size",
                     indent = true,
                     min = 0, max = 5, step = 0.1,
                     value = settings.borderSize or 1,
                     disabled = borderThicknessLocked,
-                    onChange = function(val)
+                    set = function(val)
                         if borderThicknessLocked then return end
                         settings.borderSize = val
-                        CooldownCompanion:ApplyCastBarSettings()
                     end,
+                    apply = applyCastBar,
                 })
             end
         end
@@ -491,17 +523,19 @@ local function BuildCastBarStylingPanel(container)
     -- Icon Offset toggle, which lives in the same panel, so they indent as its
     -- children.
     local function BuildIconOffsetAdvanced(panel)
-        AddSliderRow(panel, {
+        -- The canvas reserves the icon's square out of the bar's length, so
+        -- the fill re-measures under the drag.
+        AddMirrorFirstSliderRow(panel, {
             label = "Icon Size",
             indent = true,
             min = 8, max = 64, step = 0.1,
             value = settings.iconSize or 16,
-            onChange = function(val)
-                settings.iconSize = val
-                CooldownCompanion:ApplyCastBarSettings()
-            end,
+            set = function(val) settings.iconSize = val end,
+            apply = applyCastBar,
         })
 
+        -- The two offsets below are NOT on the canvas: the facsimile pins its
+        -- icon flush to the slot's edge and never reads them.
         AddSliderRow(panel, {
             label = "Icon X Offset",
             indent = true,
@@ -524,8 +558,10 @@ local function BuildCastBarStylingPanel(container)
             end,
         })
 
+        -- Only the advanced panel rebuilds here, not the config column, so the
+        -- canvas repaint has to be asked for.
         local iconRenderMode = AddBorderRenderModeDropdown(panel, settings, "iconBorderRenderMode", function()
-            CooldownCompanion:ApplyCastBarSettings()
+            applyCastBar()
             if CS.RefreshAdvancedSettingsPanel then
                 CS.RefreshAdvancedSettingsPanel()
             end
@@ -533,32 +569,32 @@ local function BuildCastBarStylingPanel(container)
         local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
         if iconRenderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-            AddSliderRow(panel, {
+            AddMirrorFirstSliderRow(panel, {
                 label = "Icon Border Size",
                 indent = true,
                 min = 0, max = 4, step = 0.1,
                 value = settings.iconBorderSize or 1,
                 disabled = borderThicknessLocked,
-                onChange = function(val)
+                set = function(val)
                     if borderThicknessLocked then return end
                     settings.iconBorderSize = val
-                    CooldownCompanion:ApplyCastBarSettings()
                 end,
+                apply = applyCastBar,
             })
         end
     end
 
     local function BuildIconAdvanced(panel)
-        ST._BuildIconZoomControls(panel, settings, function()
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
+        ST._BuildIconZoomControls(panel, settings, applyCastBar, {
+            previewRefresh = castPreviewOnly,
+        })
 
         AddCheckboxRow(panel, {
             label = "Icon on Right Side",
             value = settings.iconFlipSide or false,
             onChange = function(val)
                 settings.iconFlipSide = val
-                CooldownCompanion:ApplyCastBarSettings()
+                applyCastBar()
             end,
         })
 
@@ -567,7 +603,7 @@ local function BuildCastBarStylingPanel(container)
             value = settings.iconOffset or false,
             onChange = function(val)
                 settings.iconOffset = val
-                CooldownCompanion:ApplyCastBarSettings()
+                applyCastBar()
                 if CS.RefreshAdvancedSettingsPanel then
                     CS.RefreshAdvancedSettingsPanel()
                 end
@@ -589,7 +625,7 @@ local function BuildCastBarStylingPanel(container)
         value = settings.showSpark ~= false,
         onChange = function(val)
             settings.showSpark = val
-            CooldownCompanion:ApplyCastBarSettings()
+            applyCastBar()
         end,
     })
 
@@ -609,7 +645,7 @@ local function BuildCastBarStylingPanel(container)
         AddFontControls(panel, settings, "name", {
             size = 10, sizeMin = 6, sizeMax = 24, sizeStep = 0.1,
             font = "Friz Quadrata TT", outline = "OUTLINE",
-        }, applyCastBar, { row = true })
+        }, applyCastBar, { row = true, previewRefresh = castPreviewOnly })
 
         -- deferCommit is deliberately absent, matching the AddColorPicker call
         -- this row replaced.
@@ -620,6 +656,7 @@ local function BuildCastBarStylingPanel(container)
             default = {1, 1, 1, 1},
             hasAlpha = true,
             onConfirm = applyCastBar,
+            onChange = castPreviewOnly,
         })
     end
 
@@ -645,7 +682,7 @@ local function BuildCastBarStylingPanel(container)
         AddFontControls(panel, settings, "castTime", {
             size = 10, sizeMin = 6, sizeMax = 24, sizeStep = 0.1,
             font = "Friz Quadrata TT", outline = "OUTLINE",
-        }, applyCastBar, { row = true })
+        }, applyCastBar, { row = true, previewRefresh = castPreviewOnly })
 
         -- deferCommit is deliberately absent, matching the AddColorPicker call
         -- this row replaced.
@@ -656,26 +693,24 @@ local function BuildCastBarStylingPanel(container)
             default = {1, 1, 1, 1},
             hasAlpha = true,
             onConfirm = applyCastBar,
+            onChange = castPreviewOnly,
         })
 
-        AddSliderRow(panel, {
+        -- Both offsets place the countdown on the canvas facsimile too.
+        AddMirrorFirstSliderRow(panel, {
             label = "X Offset",
             min = -50, max = 50, step = 0.1,
             value = settings.castTimeXOffset or 0,
-            onChange = function(val)
-                settings.castTimeXOffset = val
-                CooldownCompanion:ApplyCastBarSettings()
-            end,
+            set = function(val) settings.castTimeXOffset = val end,
+            apply = applyCastBar,
         })
 
-        AddSliderRow(panel, {
+        AddMirrorFirstSliderRow(panel, {
             label = "Y Offset",
             min = -20, max = 20, step = 0.1,
             value = settings.castTimeYOffset or 0,
-            onChange = function(val)
-                settings.castTimeYOffset = val
-                CooldownCompanion:ApplyCastBarSettings()
-            end,
+            set = function(val) settings.castTimeYOffset = val end,
+            apply = applyCastBar,
         })
     end
 

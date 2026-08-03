@@ -74,7 +74,6 @@ local LAYOUT_PREVIEW_DRAG_KIND = "layout-slot"
 local LAYOUT_PREVIEW_ICON_FALLBACK = "Interface\\Icons\\INV_Misc_QuestionMark"
 local LAYOUT_PREVIEW_ANIM_DURATION = 0.08
 local LAYOUT_PREVIEW_EMPTY_DROP_SIZE = 8
-local LAYOUT_PREVIEW_MAX_REAL_ICONS = 4
 
 -- The cast facsimile. A cast bar has no ready state, so the resting slot
 -- shows a cast frozen part-way — enough to judge and to drag. The preview
@@ -217,7 +216,6 @@ local function EnsurePreviewState(host)
         pools = {
             containers = {},
             labels = {},
-            icons = {},
             slots = {},
             gaps = {},
             pills = {},
@@ -257,7 +255,6 @@ end
 local function ResetPreviewState(preview)
     preview.used.containers = 0
     preview.used.labels = 0
-    preview.used.icons = 0
     preview.used.slots = 0
     preview.used.gaps = 0
     preview.used.pills = 0
@@ -319,32 +316,6 @@ local function AcquireLabel(preview, parent, fontObject)
     if fontObject then
         frame.text:SetFontObject(fontObject)
     end
-    return frame
-end
-
-local function AcquireIcon(preview, parent)
-    local pool = preview.pools.icons
-    local index = (preview.used.icons or 0) + 1
-    preview.used.icons = index
-    local frame = pool[index]
-    if not frame then
-        frame = CreateFrame("Frame", nil, parent)
-        frame.bg = frame:CreateTexture(nil, "BACKGROUND")
-        frame.bg:SetAllPoints()
-        frame.icon = frame:CreateTexture(nil, "ARTWORK")
-        frame.countText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-        frame.countText:SetPoint("CENTER")
-        frame.countText:SetJustifyH("CENTER")
-        frame.countText:SetJustifyV("MIDDLE")
-        frame.borderTextures = {}
-        for i = 1, 4 do
-            local tex = frame:CreateTexture(nil, "OVERLAY")
-            frame.borderTextures[i] = tex
-        end
-        pool[index] = frame
-    end
-    frame:SetParent(parent)
-    frame:Show()
     return frame
 end
 
@@ -415,13 +386,6 @@ local function StyleMirroredIconFrame(iconFrame, button, group)
     else
         HidePreviewEdgeBorder(iconFrame)
     end
-end
-
-local function StyleSummaryIconFrame(iconFrame, templateButton, group, extraCount)
-    StyleMirroredIconFrame(iconFrame, templateButton, group)
-    iconFrame.icon:Hide()
-    iconFrame.countText:SetText("+" .. tostring(extraCount or 0))
-    iconFrame.countText:Show()
 end
 
 local function CreateSlotFrame(parent)
@@ -686,41 +650,6 @@ GetLayoutPreviewIcon = function(buttonData)
     return icon or LAYOUT_PREVIEW_ICON_FALLBACK
 end
 
-local function BuildPreviewIconEntries(visibleButtons)
-    local entries = {}
-    local total = #visibleButtons
-    local visibleCount = math_min(total, LAYOUT_PREVIEW_MAX_REAL_ICONS)
-
-    for i = 1, visibleCount do
-        entries[#entries + 1] = {
-            kind = "button",
-            button = visibleButtons[i],
-        }
-    end
-
-    if total > LAYOUT_PREVIEW_MAX_REAL_ICONS then
-        entries[#entries + 1] = {
-            kind = "summary",
-            extraCount = total - LAYOUT_PREVIEW_MAX_REAL_ICONS,
-            templateButton = visibleButtons[visibleCount + 1] or visibleButtons[visibleCount] or visibleButtons[1],
-        }
-    end
-
-    return entries
-end
-
-local function GetPreviewButtonSize(button, fallbackWidth, fallbackHeight)
-    local width = fallbackWidth
-    local height = fallbackHeight
-    if button and type(button.GetWidth) == "function" then
-        width = button:GetWidth() or width
-    end
-    if button and type(button.GetHeight) == "function" then
-        height = button:GetHeight() or height
-    end
-    return width, height
-end
-
 local function GetConfiguredPreviewIconSize(group)
     local style = group and group.style or {}
 
@@ -779,7 +708,15 @@ local function GetSavedPreviewButtons(group)
     return buttons
 end
 
-local function BuildSourcePanelData(groupId, group, visibleButtons, frame)
+-- Two questions, and only two: is there an icon panel worth wrapping (and if
+-- not, which message says so), and which panel is it. The canvas used to draw
+-- its own facsimile of that panel from this table, so it carried a full grid
+-- description; every owner now lends the real read-only mirror instead and
+-- builds it from `groupId` alone. `iconHeight` survives that as the fallback
+-- bar thickness for the one case with no configured resource thickness to
+-- read - the configured size rather than the live frame's measured one,
+-- which is also what the mirror lays itself out from.
+local function BuildSourcePanelData(groupId, group, visibleButtons)
     if not group or not CooldownCompanion:IsIconLikeDisplayMode(group.displayMode) then
         return nil, "The current attached anchor panel is not an icon-like panel, so there is no icon row to mirror."
     end
@@ -788,46 +725,11 @@ local function BuildSourcePanelData(groupId, group, visibleButtons, frame)
         return nil, "The current anchor panel has no saved icon buttons to mirror."
     end
 
-    local style = group.style or {}
-    local orientation = style.orientation or "horizontal"
-    local buttonsPerRow = style.buttonsPerRow or 12
-    local spacing = style.buttonSpacing or ST.BUTTON_SPACING or 4
-    local sampleButton = frame and visibleButtons[1]
-    local iconWidth, iconHeight = GetConfiguredPreviewIconSize(group)
-    if sampleButton then
-        iconWidth, iconHeight = GetPreviewButtonSize(sampleButton, iconWidth, iconHeight)
-    end
-    local previewIcons = BuildPreviewIconEntries(visibleButtons)
-    local previewCount = #previewIcons
-
-    local rows, cols
-    if orientation == "vertical" then
-        rows = math_min(previewCount, buttonsPerRow)
-        cols = math.ceil(previewCount / buttonsPerRow)
-    else
-        cols = math_min(previewCount, buttonsPerRow)
-        rows = math.ceil(previewCount / buttonsPerRow)
-    end
-
-    local frameWidth = (cols * iconWidth) + (math_max(0, cols - 1) * spacing)
-    local frameHeight = (rows * iconHeight) + (math_max(0, rows - 1) * spacing)
+    local _, iconHeight = GetConfiguredPreviewIconSize(group)
 
     return {
         groupId = groupId,
-        group = group,
-        panelName = (group.name and group.name ~= "" and group.name) or ("Panel " .. tostring(groupId)),
-        frame = frame,
-        buttons = visibleButtons,
-        previewIcons = previewIcons,
-        orientation = orientation,
-        buttonsPerRow = buttonsPerRow,
-        spacing = spacing,
-        iconWidth = iconWidth,
         iconHeight = iconHeight,
-        rows = rows,
-        cols = cols,
-        width = frameWidth,
-        height = frameHeight,
     }
 end
 
@@ -898,7 +800,7 @@ local function ResolveLayoutPreviewSourcePanel()
                 end
             end
             if #liveButtons > 0 then
-                return BuildSourcePanelData(liveGroupId, liveGroup, liveButtons, liveFrame)
+                return BuildSourcePanelData(liveGroupId, liveGroup, liveButtons)
             end
         end
     end
@@ -914,7 +816,7 @@ local function ResolveLayoutPreviewSourcePanel()
         return nil, "The current attached anchor panel has no saved icon buttons to mirror."
     end
 
-    return BuildSourcePanelData(groupId, group, savedButtons, nil)
+    return BuildSourcePanelData(groupId, group, savedButtons)
 end
 
 local function GetShortLabel(label)
@@ -1966,11 +1868,12 @@ local function ConfigureGhostSlotPreview(frame, slot, preview, width, height, is
     end
 end
 
-local function RenderMirroredPanel(preview, parent, panelData)
-    local frame = AcquireContainer(preview, parent)
-    ApplyBackdrop(frame, { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, 1)
-    frame:SetSize(panelData.width, panelData.height)
-
+-- This canvas arranges BARS; the icon row inside it is scenery. Every frame
+-- that stands in for that row - the real button-panel mirror an owner lends
+-- us, or the placeholder rect below when there is nothing to lend - wears the
+-- same refusal, so the answer to "can I drag an icon here" never depends on
+-- which one happens to be on screen.
+local function ApplyIconPanelClickShield(frame)
     frame:EnableMouse(true)
     frame:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -1986,53 +1889,75 @@ local function RenderMirroredPanel(preview, parent, panelData)
             UIErrorsFrame:AddMessage("Icons are fixed. Drag the bars around them.", 1, 0.25, 0.25, 1)
         end
     end)
+end
 
-    for index, entry in ipairs(panelData.previewIcons or {}) do
-        local iconFrame = AcquireIcon(preview, frame)
-        local button = entry.button or entry.templateButton
-        local buttonWidth, buttonHeight = GetPreviewButtonSize(button, panelData.iconWidth, panelData.iconHeight)
-        iconFrame:SetSize(buttonWidth, buttonHeight)
+-- The defensive leg, NOT a supported render mode. The lanes have to wrap
+-- something, and every owner that reaches this renderer has already agreed
+-- there is a panel worth wrapping, so an owner that answers "no frame" has
+-- disagreed with the canvas about an emptied panel between one build and the
+-- next. There is nothing honest to draw for that, so this draws nothing:
+-- a neutral rect at the buttons view's message-state minimum, wearing the
+-- same click refusal a real mirror wears, that the lanes size themselves to.
+-- Degenerate by design - the next build that is not a reuse recovers.
+local LAYOUT_PREVIEW_PLACEHOLDER_WIDTH = 220
+local LAYOUT_PREVIEW_PLACEHOLDER_HEIGHT = 90
 
-        local row
-        local col
-        if panelData.orientation == "vertical" then
-            col = math_floor((index - 1) / panelData.buttonsPerRow)
-            row = (index - 1) % panelData.buttonsPerRow
-        else
-            row = math_floor((index - 1) / panelData.buttonsPerRow)
-            col = (index - 1) % panelData.buttonsPerRow
-        end
-        local x = col * (panelData.iconWidth + panelData.spacing)
-        local y = -(row * (panelData.iconHeight + panelData.spacing))
-
-        iconFrame:ClearAllPoints()
-        iconFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", x, y)
-        if entry.kind == "summary" then
-            StyleSummaryIconFrame(iconFrame, entry.templateButton, panelData.group, entry.extraCount)
-        else
-            StyleMirroredIconFrame(iconFrame, button, panelData.group)
-        end
-        iconFrame:EnableMouse(false)
-        iconFrame:SetScript("OnEnter", nil)
-        iconFrame:SetScript("OnLeave", nil)
-        iconFrame:SetScript("OnMouseDown", nil)
-    end
-
+local function RenderPanelPlaceholder(preview, parent)
+    local frame = AcquireContainer(preview, parent)
+    ApplyBackdrop(frame, preview.skin.slotBg, preview.skin.slotBorder, 1)
+    frame:SetSize(LAYOUT_PREVIEW_PLACEHOLDER_WIDTH, LAYOUT_PREVIEW_PLACEHOLDER_HEIGHT)
+    ApplyIconPanelClickShield(frame)
     return frame
 end
 
--- The unified anchor preview (buttons view) injects the real button-panel
--- mirror as the primary panel frame; the facsimile renders everywhere else
--- (and for the vertical layout's separate cast-bar section, which needs a
--- second copy of the panel).
-local function AcquirePrimaryPanelFrame(preview, parent, panelData)
-    local external = preview.externalPanelFrame
+-- Lent panel frames belong to whoever handed them over, not to this canvas's
+-- pools, so FinalizePreviewState cannot put them away. Every build therefore
+-- starts by hiding what the last build borrowed: the message-only states
+-- render no panel at all, and a lent frame left showing would float over the
+-- message.
+local function ReleaseLentPanelFrames(preview)
+    local lent = preview.lentPanelFrames
+    if not lent then
+        preview.lentPanelFrames = {}
+        return
+    end
+    for index = #lent, 1, -1 do
+        lent[index]:Hide()
+        lent[index] = nil
+    end
+end
+
+-- Panel-frame injection, and the only way this canvas gets an icon panel to
+-- wrap. An owner lends the REAL read-only button-panel mirror, so the
+-- previewed panel width - and every attached bar that inherits it - matches
+-- the panel the bars actually anchor to. Instance 1 is the panel the primary
+-- lanes wrap; instance 2 is the second copy the vertical layout's cast
+-- section draws its own lane around, because one frame cannot sit in two
+-- places.
+--
+-- Two ways in, and they compose: `opts.externalPanel` lends instance 1 as an
+-- already-built frame, while `opts.panelFrameProvider(index, panelData)` is
+-- asked for whichever instance is still unclaimed. The provider is called
+-- from the render path that wraps a panel and nowhere else, which is the
+-- point of it: a message-only build asks for nothing, so an owner never pays
+-- to mirror a panel this canvas was not going to wrap. Returning nil is the
+-- defensive leg only (see RenderPanelPlaceholder).
+local function AcquirePanelFrame(preview, parent, panelData, index)
+    local external
+    if index == 1 then
+        external = preview.externalPanelFrame
+    end
+    if not external and preview.panelFrameProvider then
+        external = preview.panelFrameProvider(index, panelData)
+    end
     if external then
         external:SetParent(parent)
         external:Show()
+        local lent = preview.lentPanelFrames
+        lent[#lent + 1] = external
         return external
     end
-    return RenderMirroredPanel(preview, parent, panelData)
+    return RenderPanelPlaceholder(preview, parent)
 end
 
 -- Bars are not all the same thickness: the layout supports a per-slot
@@ -2436,7 +2361,7 @@ local function GetLaneExtent(preview, slots, slotSize)
 end
 
 local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel, slots, slotHeight)
-    local panelFrame = AcquirePrimaryPanelFrame(preview, content, sourcePanel)
+    local panelFrame = AcquirePanelFrame(preview, content, sourcePanel, 1)
     local panelWidth = panelFrame:GetWidth()
     local panelHeight = panelFrame:GetHeight()
     local aboveSlots = SortSlotsForSide(slots, "above", true)
@@ -2445,8 +2370,8 @@ local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel,
     local aboveHeight = GetLaneExtent(preview, aboveSlots, slotFrameHeight)
     local belowHeight = GetLaneExtent(preview, belowSlots, slotFrameHeight)
     -- Live attached bars stretch to the anchor frame's width, so slots
-    -- follow the acquired panel frame (the real mirror when injected),
-    -- not the facsimile's precomputed size.
+    -- follow the acquired panel frame's measured width rather than any
+    -- size this canvas precomputed for itself.
     local slotWidth = panelWidth
 
     local aboveLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, aboveHeight, "y", "above", true, aboveSlots, slotWidth, slotFrameHeight, nil)
@@ -2520,7 +2445,9 @@ end
 
 local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, primarySlots, castSlots, horizontalBarHeight, verticalBarWidth)
     if #primarySlots == 0 and #castSlots > 0 then
-        local castPanel = AcquirePrimaryPanelFrame(preview, content, sourcePanel)
+        -- The cast section is the ONLY section here, so it takes the primary
+        -- instance rather than the second copy.
+        local castPanel = AcquirePanelFrame(preview, content, sourcePanel, 1)
         local panelWidth = castPanel:GetWidth()
         local panelHeight = castPanel:GetHeight()
         local castSlotFrameHeight = math_max(8, horizontalBarHeight)
@@ -2549,7 +2476,7 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
         return panelWidth, castAboveHeight + panelHeight + castBelowHeight + (LAYOUT_PREVIEW_GAP * 2), iconCenterOffsetY
     end
 
-    local panelFrame = AcquirePrimaryPanelFrame(preview, content, sourcePanel)
+    local panelFrame = AcquirePanelFrame(preview, content, sourcePanel, 1)
     local panelWidth = panelFrame:GetWidth()
     local panelHeight = panelFrame:GetHeight()
     local leftSlots = SortSlotsForSide(primarySlots, "left", true)
@@ -2578,7 +2505,9 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
     local totalHeight = panelHeight
 
     if #castSlots > 0 then
-        local castPanel = RenderMirroredPanel(preview, content, sourcePanel)
+        -- The vertical layout draws the cast lane around its own copy of the
+        -- panel below the primary section, so this is instance 2.
+        local castPanel = AcquirePanelFrame(preview, content, sourcePanel, 2)
         local castSlotFrameHeight = math_max(8, horizontalBarHeight)
         local castAbove = SortSlotsForSide(castSlots, "above", true)
         local castBelow = SortSlotsForSide(castSlots, "below", false)
@@ -3245,10 +3174,14 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
 
     local preview = EnsurePreviewState(container)
     preview.host = container
-    -- Unified anchor preview: the caller supplies the real button-panel
-    -- mirror to use as the primary panel frame. Hidden until the render
-    -- path re-shows it, so message-only builds don't leave it floating.
+    -- Panel-frame injection (see AcquirePanelFrame): the caller either hands
+    -- over the real button-panel mirror outright, or stands ready to build
+    -- one per instance the render path asks for. Everything lent is hidden
+    -- up front and re-shown only by the render path that uses it, so
+    -- message-only builds don't leave a mirror floating.
     preview.externalPanelFrame = opts and opts.externalPanel or nil
+    preview.panelFrameProvider = opts and opts.panelFrameProvider or nil
+    ReleaseLentPanelFrames(preview)
     if preview.externalPanelFrame then
         preview.externalPanelFrame:Hide()
     end
@@ -3614,3 +3547,8 @@ end
 -- button as { buttonData = ... } to style purely from saved settings.
 ST._GetLayoutPreviewIcon = GetLayoutPreviewIcon
 ST._StyleMirroredIconFrame = StyleMirroredIconFrame
+
+-- Owners that lend this canvas a real mirror wear the same "icons stay in
+-- place" refusal the canvas's own placeholder wears, so the strings have one
+-- home.
+ST._ApplyLayoutPreviewIconPanelClickShield = ApplyIconPanelClickShield

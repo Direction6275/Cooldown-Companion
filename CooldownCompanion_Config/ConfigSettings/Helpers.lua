@@ -1667,6 +1667,12 @@ local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts
     local sizeKey = prefix .. "FontSize"
     local outlineKey = prefix .. "FontOutline"
     local indent = opts and opts.indent
+    -- Mirror-first opt-in for the one control here with a drag phase (the
+    -- resources surfaces, owner ruling 2026-08-02): the drag tick drives the
+    -- caller's preview and refreshFn applies once on release. Omitted - which
+    -- is every caller that has not opted in - the slider applies per tick as
+    -- before. The two dropdowns have no drag phase and stay on refreshFn.
+    local previewRefresh = opts and opts.previewRefresh
 
     ST._AddSliderRow(container, {
         label = "Font Size",
@@ -1677,8 +1683,13 @@ local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts
         value = tbl[sizeKey] or defaults.size or 12,
         onChange = function(val)
             tbl[sizeKey] = val
-            refreshFn()
+            local notify = previewRefresh or refreshFn
+            notify()
         end,
+        onRelease = previewRefresh and function(val)
+            tbl[sizeKey] = val
+            refreshFn()
+        end or nil,
     })
 
     -- FONT ROW (the Item Settings pilot's rule, stated at that call site):

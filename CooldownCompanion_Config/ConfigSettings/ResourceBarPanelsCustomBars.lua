@@ -27,7 +27,6 @@ local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 -- BuildAppearanceTab's icons path (GroupTabs.lua); this file conforms to them
 -- rather than restating them.
 local AddCheckboxRow = ST._AddCheckboxRow
-local AddSliderRow = ST._AddSliderRow
 local AddDropdownRow = ST._AddDropdownRow
 local AddColorRow = ST._AddColorRow
 local AddEditBoxRow = ST._AddEditBoxRow
@@ -50,6 +49,12 @@ local function RefreshLayoutOrderPreview()
         ST._RefreshResourcesLayoutPreview()
     end
 end
+
+-- Mirror-first slider wiring and its drag-tick repaint (owner ruling
+-- 2026-08-02, contract stated once in ResourceBarPanelsHelpers.lua). That file
+-- loads before this one, so both alias at file scope.
+local AddMirrorFirstSliderRow = ST._AddMirrorFirstSliderRow
+local RefreshLayoutOrderPreviewForDrag = ST._RefreshResourcesCanvasForDrag
 
 local function BlockCustomBarExportForResourceBarConflict()
     if CooldownCompanion.GetCurrentResourceBarConflictExportMessage then
@@ -1092,9 +1097,17 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         "Use the preview in the command center below the bar list to see them without a live aura.",
                     })
                 if not effectsCollapsed then
-                    ST._BuildBarActiveAuraControls(container, cab, function() CooldownCompanion:ApplyResourceBars() end, {
+                    -- These effects render on the canvas too (its Active Aura
+                    -- stand-in draws them), and nothing here rebuilds the
+                    -- settings column - so the commit path repaints it and
+                    -- previewRefresh keeps drags and open pickers on it alone.
+                    ST._BuildBarActiveAuraControls(container, cab, function()
+                        CooldownCompanion:ApplyResourceBars()
+                        RefreshLayoutOrderPreview()
+                    end, {
                         row = true,
                         infoButtons = infoButtons,
+                        previewRefresh = RefreshLayoutOrderPreviewForDrag,
                     })
                 end
             end
@@ -1119,16 +1132,21 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         thicknessValue = slotLayout.barHeight or slotLayout.barWidth or layout.barHeight or layout.barWidth or settings.barHeight or settings.barWidth or 12
                     end
                     local cabIdx = capturedIdx
-                    AddSliderRow(sizeLeft, {
+                    -- This bar's slot on the canvas is drawn at this thickness,
+                    -- so the stack reflows under the drag and the live bars
+                    -- resize once, on release.
+                    AddMirrorFirstSliderRow(sizeLeft, {
                         label = thicknessLabel,
                         min = 4, max = 40, step = 0.1,
                         value = thicknessValue,
-                        onChange = function(val)
+                        set = function(val)
                             local customBar = customBars[cabIdx]
                             local customLayout = EnsureCustomBarLayout(settings, layoutSpecID, customBar and customBar.customBarId, 1000 + cabIdx)
                             if customLayout then
                                 customLayout[thicknessField] = val
                             end
+                        end,
+                        apply = function()
                             CooldownCompanion:ApplyResourceBars()
                             CooldownCompanion:RepositionCastBar()
                             CooldownCompanion:UpdateAnchorStacking()
@@ -1148,8 +1166,10 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                 end
                 -- Drag path: uncommitted edits belong to the config canvas
                 -- only — the live display keeps its committed style until the
-                -- picker closes.
-                local cabPreviewOnly = RefreshLayoutOrderPreview
+                -- picker closes. The drag-flavoured repaint reuses the built
+                -- panel mirror: nothing a bar colour or font can change
+                -- reaches the icon panel the lanes wrap.
+                local cabPreviewOnly = RefreshLayoutOrderPreviewForDrag
                 local isAuraTracked = (not isSpellCustomBar) or cab.auraTracking == true
 
                 local _, colorsCollapsed = AddCustomBarSettingsHeading(container, "Colors", "colors", capturedKey)
@@ -1264,8 +1284,9 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                     -- durationTextFontSize / durationTextFontOutline, so the
                     -- shared helper owns it; it writes the same table `cab`
                     -- aliases and applies the bars, which is what the three
-                    -- hand-written callbacks did.
-                    local cabApplyBarsOnly = function() CooldownCompanion:ApplyResourceBars() end
+                    -- hand-written callbacks did. The canvas draws these texts,
+                    -- so the commit path is cabApplyBars (apply + repaint) and
+                    -- previewRefresh keeps the size slider's drag on the canvas.
 
                     -- Single rail (AdvancedSettingsPanel.lua): a panel is one
                     -- narrow column, so every row goes straight onto the panel
@@ -1274,7 +1295,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         AddFontControls(panel, customBars[cabIdx], "durationText", {
                             size = DEFAULT_RESOURCE_TEXT_SIZE, sizeMin = 6, sizeMax = 24, sizeStep = 1,
                             font = DEFAULT_RESOURCE_TEXT_FONT, outline = DEFAULT_RESOURCE_TEXT_OUTLINE,
-                        }, cabApplyBarsOnly, { row = true })
+                        }, cabApplyBars, { row = true, previewRefresh = cabPreviewOnly })
 
                         -- deferCommit stays true: the Layout & Order canvas
                         -- re-reads this table on every repaint, so a drag value
@@ -1304,7 +1325,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         AddFontControls(panel, customBars[cabIdx], "stackText", {
                             size = DEFAULT_RESOURCE_TEXT_SIZE, sizeMin = 6, sizeMax = 24, sizeStep = 1,
                             font = DEFAULT_RESOURCE_TEXT_FONT, outline = DEFAULT_RESOURCE_TEXT_OUTLINE,
-                        }, cabApplyBarsOnly, { row = true })
+                        }, cabApplyBars, { row = true, previewRefresh = cabPreviewOnly })
 
                         -- deferCommit stays true, for the same reason as the
                         -- duration text color above.

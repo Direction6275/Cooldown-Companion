@@ -550,6 +550,60 @@ local function GetResourceGapFieldConfig(settings, layout)
     return "yOffset", "Y Offset"
 end
 
+------------------------------------------------------------------------
+-- Mirror-first slider wiring (owner ruling 2026-08-02)
+--
+-- While a slider on a resources surface is DRAGGED, only the saved value and
+-- the workspace's pinned canvas move; the live display restyles once, on
+-- release. The canvas wraps the real read-only panel mirror, so it is an
+-- honest stand-in for the edit - and driving the live bars from every
+-- OnValueChanged tick was what made these sliders feel heavy.
+--
+-- CDC-SliderRow's edit box deliberately fires BOTH OnValueChanged and
+-- OnMouseUp on Enter (RowWidgets.lua), so a typed value repaints the canvas
+-- and applies live in the same breath with no extra handling here.
+--
+-- Call sites supply two closures instead of onChange/onRelease:
+--   opts.set(value)  writes the saved value (and carries whatever guard the
+--                    row had - a locked border, a disabled resource)
+--   opts.apply()     the row's own live-display chain, verbatim: whatever it
+--                    used to run on every drag tick, now run once on release
+-- Every other field is AddSliderRow's own contract.
+------------------------------------------------------------------------
+
+-- Late-bound on purpose: Config/ResourcesWideColumn.lua publishes this and
+-- self-gates on view state (Resources workspace -> the pinned canvas, the
+-- buttons view -> the unified preview's mirror), so this side neither knows
+-- nor decides which surface is listening.
+local function RefreshResourcesCanvas(mirrorReuse)
+    if ST._RefreshResourcesLayoutPreview then
+        ST._RefreshResourcesLayoutPreview(mirrorReuse)
+    end
+end
+
+-- The drag tick asks for mirror reuse; nothing else does. A bar value cannot
+-- change the icon panel the lanes wrap, so the mirror inside the canvas is
+-- still correct and only the lanes need redrawing.
+local function RefreshResourcesCanvasForDrag()
+    RefreshResourcesCanvas(true)
+end
+
+local function AddMirrorFirstSliderRow(container, opts)
+    local set = opts.set
+    local apply = opts.apply
+    opts.set = nil
+    opts.apply = nil
+    opts.onChange = function(value)
+        set(value)
+        RefreshResourcesCanvasForDrag()
+    end
+    opts.onRelease = function(value)
+        set(value)
+        apply()
+    end
+    return ST._AddSliderRow(container, opts)
+end
+
 local function OpenResourceBarConflictChooser(force)
     local classKey = CooldownCompanion.GetCurrentResourceBarClassKey and CooldownCompanion:GetCurrentResourceBarClassKey()
     local showChooser = ST._ShowResourceBarConflictChooser
@@ -635,3 +689,9 @@ ST._RBP = {
     GetResourceGapFieldConfig = GetResourceGapFieldConfig,
     BuildResourceBarConflictGate = BuildResourceBarConflictGate,
 }
+
+-- Top-level rather than inside ST._RBP: CastBarPanels.lua loads BEFORE this
+-- file (TOC), so it reads these at call time and never aliases _RBP at all.
+ST._RefreshResourcesCanvas = RefreshResourcesCanvas
+ST._RefreshResourcesCanvasForDrag = RefreshResourcesCanvasForDrag
+ST._AddMirrorFirstSliderRow = AddMirrorFirstSliderRow

@@ -47,6 +47,12 @@ local function RefreshLayoutOrderPreview()
     end
 end
 
+-- Mirror-first slider wiring and its drag-tick repaint (owner ruling
+-- 2026-08-02, contract stated once in ResourceBarPanelsHelpers.lua). That file
+-- loads before this one, so both alias at file scope.
+local AddMirrorFirstSliderRow = ST._AddMirrorFirstSliderRow
+local RefreshLayoutOrderPreviewForDrag = ST._RefreshResourcesCanvasForDrag
+
 -- Row-grammar section headers: caret far left, label, then a class-colored
 -- rule fading right.
 local ROW_SECTION = { leftAligned = true }
@@ -308,14 +314,14 @@ end
 -- range lives in the row tooltip), so this reads 0 - 1 rather than 0% - 100%.
 -- The stored value is unchanged, and Baseline Alpha already reads that way.
 function HealthResource.AddOpacitySlider(container, health, key, label, defaultValue, applyBars)
-    AddSliderRow(container, {
+    -- The canvas draws the health bar with the real health styler, so both
+    -- opacities land there; applyBars is the caller's commit chain.
+    AddMirrorFirstSliderRow(container, {
         label = label,
         min = 0, max = 1, step = 0.05,
         value = tonumber(health[key]) or defaultValue,
-        onChange = function(val)
-            health[key] = val
-            applyBars()
-        end,
+        set = function(val) health[key] = val end,
+        apply = applyBars,
     })
 end
 
@@ -506,7 +512,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
                         resSettings.textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
                     end
                 end
-                CooldownCompanion:ApplyResourceBars()
+                applyBars()
             end,
         })
 
@@ -515,14 +521,15 @@ local function BuildResourceTextControls(container, settings, powerType, display
         -- trio stays hand-written here because these values read through
         -- ReadDisplaySetting (spec override first, then the base resource
         -- table), which the shared helper's flat tbl[key] read cannot express.
-        AddSliderRow(panel, {
+        -- Every row from here down draws on the canvas: it renders these bars
+        -- with the real bar styler, which sets the value text's font, colour,
+        -- anchor and offsets from exactly these keys.
+        AddMirrorFirstSliderRow(panel, {
             label = "Font Size",
             min = 6, max = 24, step = 1,
             value = ReadDisplaySetting(baseSettings, resSettings, "textFontSize", DEFAULT_RESOURCE_TEXT_SIZE),
-            onChange = function(val)
-                resSettings.textFontSize = val
-                CooldownCompanion:ApplyResourceBars()
-            end,
+            set = function(val) resSettings.textFontSize = val end,
+            apply = applyBars,
         })
 
         -- FONT ROW: created with a label and a widened pullout but NO list and
@@ -537,7 +544,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
         fontRow:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textFont", DEFAULT_RESOURCE_TEXT_FONT))
         CS.SetFontDropdownCallback(fontRow, function(widget, event, val)
             resSettings.textFont = val
-            CooldownCompanion:ApplyResourceBars()
+            applyBars()
         end)
 
         local outlineRow = AddDropdownRow(panel, { label = "Font Outline" })
@@ -545,11 +552,12 @@ local function BuildResourceTextControls(container, settings, powerType, display
         outlineRow:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textFontOutline", DEFAULT_RESOURCE_TEXT_OUTLINE))
         CS.SetFontOutlineDropdownCallback(outlineRow, function(widget, event, val)
             resSettings.textFontOutline = val
-            CooldownCompanion:ApplyResourceBars()
+            applyBars()
         end)
 
         -- deferCommit is deliberately absent, matching the AddColorPicker call
-        -- this row replaced; so is onChange, which that call never supplied.
+        -- this row replaced. onChange is new: it is the only path that fires
+        -- while the picker is open, and the canvas tracks the colour there.
         AddColorRow(panel, {
             label = "Text Color",
             tbl = resSettings,
@@ -557,6 +565,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
             default = DEFAULT_RESOURCE_TEXT_COLOR,
             hasAlpha = true,
             onConfirm = applyBars,
+            onChange = RefreshLayoutOrderPreviewForDrag,
         })
 
         -- CS.anchorDropdownList is built from CS.anchorPointLabels over exactly
@@ -569,28 +578,24 @@ local function BuildResourceTextControls(container, settings, powerType, display
             value = ReadDisplaySetting(baseSettings, resSettings, "textAnchor", DEFAULT_RESOURCE_TEXT_ANCHOR),
             onChange = function(val)
                 resSettings.textAnchor = val
-                CooldownCompanion:ApplyResourceBars()
+                applyBars()
             end,
         })
 
-        AddSliderRow(panel, {
+        AddMirrorFirstSliderRow(panel, {
             label = "Text X Offset",
             min = -50, max = 50, step = 0.1,
             value = ReadDisplaySetting(baseSettings, resSettings, "textXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET),
-            onChange = function(val)
-                resSettings.textXOffset = val
-                CooldownCompanion:ApplyResourceBars()
-            end,
+            set = function(val) resSettings.textXOffset = val end,
+            apply = applyBars,
         })
 
-        AddSliderRow(panel, {
+        AddMirrorFirstSliderRow(panel, {
             label = "Text Y Offset",
             min = -50, max = 50, step = 0.1,
             value = ReadDisplaySetting(baseSettings, resSettings, "textYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET),
-            onChange = function(val)
-                resSettings.textYOffset = val
-                CooldownCompanion:ApplyResourceBars()
-            end,
+            set = function(val) resSettings.textYOffset = val end,
+            apply = applyBars,
         })
 
         if HIDE_AT_ZERO_ELIGIBLE[capturedPt] then
@@ -599,7 +604,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
                 value = ReadDisplaySetting(baseSettings, resSettings, "hideTextAtZero", false) == true,
                 onChange = function(val)
                     resSettings.hideTextAtZero = val == true
-                    CooldownCompanion:ApplyResourceBars()
+                    applyBars()
                 end,
             })
         end
@@ -1250,6 +1255,9 @@ local function BuildResourceBarPositioningPanel(container)
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:RepositionCastBar()
                 CooldownCompanion:UpdateAnchorStacking()
+                -- The canvas fills its vertical bars in this direction too,
+                -- and nothing here rebuilds the settings column.
+                RefreshLayoutOrderPreview()
             end,
         })
 
@@ -1280,13 +1288,15 @@ local function BuildResourceBarPositioningPanel(container)
         -- Bar Height + Custom Heights
         ST._BuildBarHeightControls(sizeLeft, settings, layout)
 
-        -- Bar Spacing
-        AddSliderRow(sizeRight, {
+        -- Bar Spacing. The canvas takes its lane gap straight from this value,
+        -- so the whole stack re-spaces under the drag and the live bars
+        -- reposition once, on release.
+        AddMirrorFirstSliderRow(sizeRight, {
             label = "Bar Spacing",
             min = 0, max = 20, step = 0.1,
             value = layout.barSpacing or settings.barSpacing or 3.6,
-            onChange = function(val)
-                layout.barSpacing = val
+            set = function(val) layout.barSpacing = val end,
+            apply = function()
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:RepositionCastBar()
                 CooldownCompanion:UpdateAnchorStacking()
@@ -1294,12 +1304,12 @@ local function BuildResourceBarPositioningPanel(container)
         })
 
         -- Segment Gap
-        AddSliderRow(sizeRight, {
+        AddMirrorFirstSliderRow(sizeRight, {
             label = "Segment Gap",
             min = 0, max = 20, step = 0.1,
             value = layout.segmentGap or settings.segmentGap or 4,
-            onChange = function(val)
-                layout.segmentGap = val
+            set = function(val) layout.segmentGap = val end,
+            apply = function()
                 CooldownCompanion:ApplyResourceBars()
             end,
         })
@@ -1350,17 +1360,20 @@ local function BuildResourceBarPositioningPanel(container)
             AddAnchorDropdown(stackLeft, anchor, "point", "CENTER", refreshResourceBarAnchor, "Anchor Point", { row = true })
             AddAnchorDropdown(stackLeft, anchor, "relativePoint", "CENTER", refreshResourceBarAnchor, "Relative Point", { row = true })
 
-            AddSliderRow(stackRight, {
+            -- The canvas sizes an independent stack's slots from this value.
+            AddMirrorFirstSliderRow(stackRight, {
                 label = "Bar Width",
                 min = 20, max = 600, step = 1,
                 value = layout.independentWidth or settings.independentWidth or 200,
-                onChange = function(val)
-                    layout.independentWidth = val
+                set = function(val) layout.independentWidth = val end,
+                apply = function()
                     CooldownCompanion:ApplyResourceBars()
                     CooldownCompanion:UpdateAnchorStacking()
                 end,
             })
 
+            -- The two offsets below place the stack on SCREEN, which the canvas
+            -- does not draw; they stay on the live display alone.
             AddSliderRow(stackRight, {
                 label = "X Offset",
                 min = -2000, max = 2000, step = 0.1,
@@ -1449,13 +1462,15 @@ local function BuildBarHeightControls(container, settings, layout)
         thicknessValue = layout.barHeight or layout.barWidth or settings.barHeight or settings.barWidth or 12
     end
 
-    AddSliderRow(container, {
+    -- Every bar on the canvas is drawn at this thickness (or its per-resource
+    -- override below), so the stack resizes under the drag.
+    AddMirrorFirstSliderRow(container, {
         label = thicknessLabel,
         min = 4, max = 40, step = 0.1,
         value = thicknessValue,
         disabled = layout.customBarHeights or false,
-        onChange = function(val)
-            layout[thicknessField] = val
+        set = function(val) layout[thicknessField] = val end,
+        apply = function()
             CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:RepositionCastBar()
             CooldownCompanion:UpdateAnchorStacking()
@@ -1505,13 +1520,13 @@ local function BuildBarHeightControls(container, settings, layout)
             end
 
             local rowLabel = name .. " " .. thicknessLabel
-            AddSliderRow(panel, {
+            AddMirrorFirstSliderRow(panel, {
                 label = rowLabel,
                 tooltip = { rowLabel },
                 min = 4, max = 40, step = 0.1,
                 value = resThickness,
                 disabled = not enabled,
-                onChange = function(val)
+                set = function(val)
                     if not enabled then
                         return
                     end
@@ -1519,6 +1534,8 @@ local function BuildBarHeightControls(container, settings, layout)
                         layout.resources[capturedPt] = {}
                     end
                     layout.resources[capturedPt][thicknessField] = val
+                end,
+                apply = function()
                     CooldownCompanion:ApplyResourceBars()
                     CooldownCompanion:RepositionCastBar()
                     CooldownCompanion:UpdateAnchorStacking()
@@ -1645,8 +1662,12 @@ local function BuildResourceColorControls(container, settings, powerType, specID
                 WriteSpecOverrideKey(settings, powerType, specID, capturedKey, proxy[capturedKey])
                 applyBars()
             end,
+            -- The picker-open path already writes the override (the proxy is a
+            -- throwaway, so the store is the only place the canvas can read
+            -- it from); repainting here is what makes the swatch track live.
             onChange = function()
                 WriteSpecOverrideKey(settings, powerType, specID, capturedKey, proxy[capturedKey])
+                RefreshLayoutOrderPreviewForDrag()
             end,
         })
     end
@@ -1922,11 +1943,19 @@ local function AddThresholdTickEntryEditor(panel, options)
                     options.applyBars()
                 end
             end,
+            -- options.previewRefresh is supplied only by the editor whose
+            -- markers actually render on the canvas (tick markers; threshold
+            -- colours only show below maximum, and the canvas previews every
+            -- bar at maximum). The entry is already written above, so the
+            -- repaint has something to read.
             onChange = function()
                 local updated = CopyThresholdTickEntryList(entries)
                 if updated[index] then
                     updated[index].color = proxy[proxyKey]
                     options.writeEntries(updated)
+                    if options.previewRefresh then
+                        options.previewRefresh()
+                    end
                 end
             end,
         })
@@ -2059,6 +2088,8 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
         CooldownCompanion:ApplyResourceBars()
         RefreshLayoutOrderPreview()
     end
+    -- Uncommitted edits (picker open, slider held) stop at the canvas.
+    local previewOnly = RefreshLayoutOrderPreviewForDrag
     local function refresh()
         applyBars()
         C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
@@ -2244,6 +2275,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
                     key = "auraLaneColor",
                     default = RB.GetResourceOverlayLaneColor(entry),
                     onConfirm = applyBars,
+                    onChange = previewOnly,
                 })
             end
 
@@ -2314,14 +2346,16 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
         key = "auraActiveColor",
         default = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR,
         onConfirm = applyBars,
+        onChange = previewOnly,
     })
 
     -- The style's own sliders, the same rows every other glow surface
     -- draws ("pixel" renders as the kit's dashes shape, so it takes that
-    -- spec).
+    -- spec). Mirror-first here and nowhere else: the last argument is the
+    -- opt-in, and every non-resource caller leaves it off.
     AddGlowSliderRows(auraRight, entry,
         borderStyle == "pixel" and "dashes" or "solid",
-        AURA_BORDER_SLIDER_KEYS, applyBars, 1, true)
+        AURA_BORDER_SLIDER_KEYS, applyBars, 1, true, previewOnly)
 end
 
 local function BuildResourceBarStylingPanel(container, sectionMode, opts)
@@ -2348,7 +2382,19 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     local showResourceText = showResourceSettings
     local showThresholdsTicks = false
 
-    local applyBars = function() CooldownCompanion:ApplyResourceBars() end
+    -- The commit path for every styling row this panel builds, directly and
+    -- through the section builders it hands this closure to (colors, text,
+    -- health, threshold/tick editors). The canvas renders these bars with the
+    -- REAL bar code and does not rebuild with the settings column, so applying
+    -- and repainting belong together - one closure, so no section can end up
+    -- with only half of it.
+    local applyBars = function()
+        CooldownCompanion:ApplyResourceBars()
+        RefreshLayoutOrderPreview()
+    end
+    -- Uncommitted edits (a picker still open, a slider still held) belong to
+    -- the canvas alone; the live bars keep their committed look.
+    local previewOnly = RefreshLayoutOrderPreviewForDrag
     local healthResourceID = RESOURCE_HEALTH
     if showResourceSettings then
         -- Same split the section itself makes below, and the runtime makes
@@ -2463,10 +2509,11 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                     key = "mwMaxStackBorderColor",
                     default = RB.DEFAULT_MW_MAX_STACK_BORDER_COLOR,
                     onConfirm = applyMWBars,
+                    onChange = previewOnly,
                 })
                 AddGlowSliderRows(mwRight, mwResource,
                     mwBorderStyle == "pixel" and "dashes" or "solid",
-                    MW_BORDER_SLIDER_KEYS, applyMWBars, 1, true)
+                    MW_BORDER_SLIDER_KEYS, applyMWBars, 1, true, previewOnly)
             end
         end
     end
@@ -2502,17 +2549,17 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     -- Brightness slider (only for Blizzard Class texture)
     if effectiveBarTextureName == "blizzard_class" then
         local brightnessLocked = ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked()
-        AddSliderRow(barLeft, {
+        AddMirrorFirstSliderRow(barLeft, {
             label = "Class Texture Brightness",
             indent = true,
             min = 0.5, max = 2.0, step = 0.1,
             value = displayProfile.classBarBrightness or settings.classBarBrightness or 1.3,
             disabled = brightnessLocked,
-            onChange = function(val)
+            set = function(val)
                 if ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked() then return end
                 displayProfile.classBarBrightness = val
-                CooldownCompanion:ApplyResourceBars()
             end,
+            apply = applyBars,
         })
     end
 
@@ -2526,7 +2573,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         value = ST.NormalizeSegmentedSmoothing(displayProfile.segmentedSmoothing),
         onChange = function(val)
             displayProfile.segmentedSmoothing = ST.NormalizeSegmentedSmoothing(val)
-            CooldownCompanion:ApplyResourceBars()
+            applyBars()
         end,
     })
     -- Anchor args are a placeholder - AnchorRowBadge re-points the button onto
@@ -2546,6 +2593,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         default = { 0, 0, 0, 0.5 },
         hasAlpha = true,
         onConfirm = applyBars,
+        onChange = previewOnly,
     })
     end -- not barCollapsed
 
@@ -2584,6 +2632,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
             default = { 0, 0, 0, 1 },
             hasAlpha = true,
             onConfirm = applyBars,
+            onChange = previewOnly,
         })
 
         local renderMode = ST._AddBorderRenderModeDropdown(borderRight, displayProfile, "borderRenderMode", function()
@@ -2593,17 +2642,17 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
         if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-            AddSliderRow(borderRight, {
+            AddMirrorFirstSliderRow(borderRight, {
                 label = "Border Size",
                 indent = true,
                 min = 0, max = 4, step = 0.1,
                 value = displayProfile.borderSize or settings.borderSize or 1,
                 disabled = borderThicknessLocked,
-                onChange = function(val)
+                set = function(val)
                     if borderThicknessLocked then return end
                     displayProfile.borderSize = val
-                    CooldownCompanion:ApplyResourceBars()
                 end,
+                apply = applyBars,
             })
         end
     end
@@ -2723,13 +2772,16 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                     -- straight onto the panel scroll. The Enable ... Tick
                     -- Markers toggle lives back on the tab, so none of them
                     -- indents.
+                    -- Tick markers ARE drawn on the canvas: the real continuous
+                    -- styler the canvas runs places them, so every row in this
+                    -- popout repaints it.
                     local function BuildTickMarkerAdvanced(panel)
                         AddCheckboxRow(panel, {
                             label = "Show Only In Combat",
                             value = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickCombatOnly", false),
                             onChange = function(val)
                                 WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickCombatOnly", val == true)
-                                CooldownCompanion:ApplyResourceBars()
+                                applyBars()
                             end,
                         })
 
@@ -2749,7 +2801,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                                     val = DEFAULT_CONTINUOUS_TICK_MODE
                                 end
                                 WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickMode", val)
-                                CooldownCompanion:ApplyResourceBars()
+                                applyBars()
                                 C_Timer.After(0, function()
                                     if CS.RefreshAdvancedSettingsPanel then
                                         CS.RefreshAdvancedSettingsPanel()
@@ -2782,19 +2834,20 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                                 WriteThresholdTickEntries(settings, capturedPt, _colorSpecID, tickEntriesKey, tickClearedKey, updated)
                             end,
                             applyBars = applyBars,
+                            previewRefresh = previewOnly,
                         })
 
                         local _tickWidthVal = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickWidth", nil)
                         local tickWidthLabel = resourceName .. " Tick Width"
-                        AddSliderRow(panel, {
+                        AddMirrorFirstSliderRow(panel, {
                             label = tickWidthLabel,
                             tooltip = { tickWidthLabel },
                             min = 1, max = 10, step = 1,
                             value = tonumber(_tickWidthVal) or DEFAULT_CONTINUOUS_TICK_WIDTH,
-                            onChange = function(val)
+                            set = function(val)
                                 WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickWidth", val)
-                                CooldownCompanion:ApplyResourceBars()
                             end,
+                            apply = applyBars,
                         })
                     end
 
