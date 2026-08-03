@@ -416,7 +416,7 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
                 for _, pid in ipairs(multiPanelIds) do
                     local panel = db.groups[pid]
                     if panel then
-                        panel.enabled = anyDisabled and nil or false
+                        panel.enabled = anyDisabled and true or false
                         CooldownCompanion:RefreshGroupFrame(pid)
                     end
                 end
