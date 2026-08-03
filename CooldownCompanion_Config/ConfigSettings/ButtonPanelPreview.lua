@@ -131,8 +131,6 @@ local function GetStoredBarPreviewState(panelId, index)
     }
 end
 
-ST._GetStoredBarPreviewState = GetStoredBarPreviewState
-
 local function HasStoredBarEffectPreview(effectFlags)
     if type(effectFlags) ~= "table" then
         return false
@@ -331,8 +329,6 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
         underlyingReasons = reasons,
     }
 end
-
-ST._ResolveBarPreviewVisibility = ResolveBarPreviewVisibility
 
 -- Bar mirrors must not follow the currently equipped item in an equipment
 -- slot. Manual icons and configured spell/item identities are stable inputs;

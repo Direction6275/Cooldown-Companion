@@ -17,6 +17,7 @@ local type = type
 
 -- Color constants
 local DEFAULT_BAR_AURA_COLOR = {0.2, 1.0, 0.2, 1.0}
+-- Unreferenced while the pandemic bar stays unwired; this is its default color.
 local DEFAULT_BAR_PANDEMIC_COLOR = {1.0, 0.5, 0.0, 1.0}
 local DEFAULT_BAR_CHARGE_COLOR = {1.0, 0.82, 0.0, 1.0}
 local HEALTHSTONE_ITEM_ID = 5512
@@ -1237,7 +1238,6 @@ end
 
 -- Exports
 ST._DEFAULT_BAR_AURA_COLOR = DEFAULT_BAR_AURA_COLOR
-ST._DEFAULT_BAR_PANDEMIC_COLOR = DEFAULT_BAR_PANDEMIC_COLOR
 ST._DEFAULT_BAR_CHARGE_COLOR = DEFAULT_BAR_CHARGE_COLOR
 ST._SetIconAreaPoints = SetIconAreaPoints
 ST._SetBarAreaPoints = SetBarAreaPoints

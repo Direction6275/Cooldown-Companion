@@ -590,7 +590,6 @@ local function AddResourceBarsDisabledLabel(container, text)
     label:SetFullWidth(true)
     container:AddChild(label)
 end
-ST._AddResourceBarsDisabledLabel = AddResourceBarsDisabledLabel
 
 ------------------------------------------------------------------------
 -- Aura tracking section (the aura pass): the panel Aura-tab vocabulary on

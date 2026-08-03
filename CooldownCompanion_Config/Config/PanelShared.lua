@@ -10,20 +10,9 @@ local CS = ST._configState
 local RB = ST._RB
 local RESOURCE_HEALTH = RB and RB.RESOURCE_HEALTH or -1
 
-local AceGUI = LibStub("AceGUI-3.0")
-
 -- Imports from earlier Config/ files
-local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
-local GetButtonIcon = ST._GetButtonIcon
-local GetConfigEntryDisplayName = ST._GetConfigEntryDisplayName
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
-local TryAdd = ST._TryAdd
-local OnAutocompleteSelect = ST._OnAutocompleteSelect
-local SearchAutocomplete = ST._SearchAutocomplete
-local ShouldSubmitRawAddOnEnter = ST._ShouldSubmitRawAddOnEnter
-local CreateAddBoxInfoButton = ST._CreateAddBoxInfoButton
 local ResolveViewerChildForSpellDisplay = ST.ResolveViewerChildForSpellDisplay
-local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
 local NotifyTutorialAction = ST._NotifyTutorialAction
 local SelectConfigPanel = ST._SelectConfigPanel
 local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
@@ -34,9 +23,7 @@ local PopulateCDMPanelFromSource = ST._PopulateCDMPanelFromSource
 local ApplyCDMStarterPanelLayout = ST._ApplyCDMStarterPanelLayout
 local IsCDMPanelSourceKey = ST._IsCDMPanelSourceKey
 local GetCDMPanelSourceDisplayMode = ST._GetCDMPanelSourceDisplayMode
-local IsConfigPanelEntryUsable = ST._IsConfigPanelEntryUsable
 
-local IsTriggerPanelGroup
 local RefreshCDMPanelFromSource
 local function CanMoveEntryToGroup(sourceGroupId, targetGroupId)
     if CooldownCompanion.CanMoveEntryToGroup then
@@ -46,11 +33,6 @@ local function CanMoveEntryToGroup(sourceGroupId, targetGroupId)
 end
 local tonumber = tonumber
 local ipairs = ipairs
-
-local ROW_BADGE_SIZE = 16
-local OVERRIDE_BADGE_ICON_SIZE = 12
-local ROW_BADGE_SPACING = 2
-local ROW_BADGE_RIGHT_PAD = 4
 
 -- The one cyan accent every "make something new" affordance wears, so the add
 -- tile, the empty-Group type cards, and anything that joins them later cannot
@@ -433,231 +415,6 @@ RefreshCDMPanelFromSource = function(panelId, panel, containerId)
         added == 1 and "y" or "ies"
     ))
 end
-local function NotifyTutorialInlineAddSuccess(addTargetGroupId, rawInput)
-    if not NotifyTutorialAction then
-        return
-    end
-    local selectedButton = CS.selectedButton
-    if addTargetGroupId and selectedButton then
-        NotifyTutorialAction("inline_add_succeeded", {
-            groupId = addTargetGroupId,
-            buttonIndex = selectedButton,
-            rawInput = rawInput,
-        })
-    end
-end
-
-local function SubmitInlineAdd(rawInput)
-    CS.newInput = rawInput
-    if CS.newInput == "" or not CS.addingToPanelId then
-        return false
-    end
-
-    local addTargetGroupId = CS.addingToPanelId
-    CS.selectedGroup = addTargetGroupId
-    if not TryAdd(CS.newInput) then
-        return false
-    end
-
-    NotifyTutorialInlineAddSuccess(addTargetGroupId, CS.newInput)
-    CS.newInput = ""
-    local targetGroup = CooldownCompanion.db.profile.groups[addTargetGroupId]
-    if not (targetGroup and targetGroup.displayMode == "textures") then
-        CS.pendingEditBoxFocus = true
-    end
-    CooldownCompanion:RefreshConfigPanel()
-    return true
-end
-
-local function ConfigureInlineAddInstructions(inputBox, placeholderText)
-    local editFrame = inputBox and inputBox.editbox
-    if not editFrame then
-        return function() end
-    end
-
-    local instructions = editFrame._cdcInlineAddInstructions
-    if not instructions then
-        instructions = editFrame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-        instructions:SetPoint("LEFT", editFrame, "LEFT", 6, 0)
-        instructions:SetPoint("RIGHT", editFrame, "RIGHT", -6, 0)
-        instructions:SetJustifyH("LEFT")
-        instructions:SetTextColor(0.5, 0.5, 0.5)
-        editFrame._cdcInlineAddInstructions = instructions
-    end
-    instructions:SetText(placeholderText)
-
-    local function Update(text)
-        instructions:SetShown((text or "") == "")
-    end
-
-    local prevOnRelease = inputBox.events and inputBox.events["OnRelease"]
-    inputBox:SetCallback("OnRelease", function(widget)
-        if prevOnRelease then
-            prevOnRelease(widget, "OnRelease")
-        end
-        instructions:Hide()
-        instructions:SetText("")
-    end)
-
-    Update(editFrame:GetText())
-    return Update
-end
-
-local function BuildInlineAddControls(panelContainer, panelMeta, panel, panelId, btnCount, opts)
-    if panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
-        or (CS.addingToPanelId ~= panelId and not (opts and opts.force == true))
-        or (panel.displayMode == "textures" and btnCount >= 1) then
-        return
-    end
-
-    panelMeta.hasInlineAdd = true
-    local inputBox = AceGUI:Create("EditBox")
-    if inputBox.editbox.Instructions then inputBox.editbox.Instructions:Hide() end
-    inputBox:SetLabel("")
-    inputBox:SetText(CS.newInput)
-    inputBox:DisableButton(true)
-    inputBox:SetFullWidth(true)
-    panelMeta.addInputFrame = inputBox.frame
-    local updatePlaceholder = ConfigureInlineAddInstructions(inputBox, "Add spell, item, trinket slot, or ID")
-    inputBox.editbox:SetPoint("BOTTOMRIGHT", inputBox.frame, "BOTTOMRIGHT", -18, 0)
-    CreateAddBoxInfoButton(inputBox.frame, inputBox.frame, inputBox)
-    inputBox:SetCallback("OnEnterPressed", function(widget, event, text)
-        if CS.ConsumeAutocompleteEnter() then return end
-        if not ShouldSubmitRawAddOnEnter(text) then return end
-        CS.HideAutocomplete()
-        SubmitInlineAdd(text)
-    end)
-    inputBox:SetCallback("OnTextChanged", function(widget, event, text)
-        updatePlaceholder(text)
-        CS.newInput = text
-        if text and #text >= 1 then
-            local results = SearchAutocomplete(text)
-            CS.ShowAutocompleteResults(results, widget, OnAutocompleteSelect, {
-                requireExactNumericEnter = true,
-                requireExplicitChoice = true,
-            })
-        else
-            CS.HideAutocomplete()
-        end
-    end)
-    CS.SetupAutocompleteKeyHandler(inputBox)
-    panelContainer:AddChild(inputBox)
-
-    if CS.pendingEditBoxFocus then
-        CS.pendingEditBoxFocus = false
-        C_Timer.After(0, function()
-            if inputBox.editbox then
-                inputBox:SetFocus()
-            end
-        end)
-    end
-
-end
-local function EnsureRowBadge(frame, key, atlas, iconSize)
-    local badge = frame[key]
-    if not badge then
-        badge = CreateFrame("Button", nil, frame)
-        badge:SetSize(ROW_BADGE_SIZE, ROW_BADGE_SIZE)
-        badge.icon = badge:CreateTexture(nil, "OVERLAY")
-        badge.icon:SetAllPoints()
-        badge:SetScript("OnEnter", function(self)
-            if not self._cdcTooltipText then return end
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine(
-                self._cdcTooltipText,
-                self._cdcTooltipR or 1,
-                self._cdcTooltipG or 1,
-                self._cdcTooltipB or 1,
-                true
-            )
-            GameTooltip:Show()
-        end)
-        badge:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-        frame[key] = badge
-    end
-
-    badge:SetSize(ROW_BADGE_SIZE, ROW_BADGE_SIZE)
-    badge.icon:ClearAllPoints()
-    if iconSize then
-        badge.icon:SetSize(iconSize, iconSize)
-        badge.icon:SetPoint("CENTER", badge, "CENTER", 0, 0)
-    else
-        badge.icon:SetAllPoints()
-    end
-    badge.icon:SetAtlas(atlas, false)
-    badge.icon:SetVertexColor(1, 1, 1, 1)
-    badge._cdcTooltipText = nil
-    badge._cdcTooltipR, badge._cdcTooltipG, badge._cdcTooltipB = nil, nil, nil
-    badge:Hide()
-    return badge
-end
-
-local function SetRowBadgeTooltip(badge, text, r, g, b)
-    badge._cdcTooltipText = text
-    badge._cdcTooltipR = r or 1
-    badge._cdcTooltipG = g or 1
-    badge._cdcTooltipB = b or 1
-end
-
-local function PlaceRowBadge(frame, badge, offsetX)
-    if not (badge and badge:IsShown()) then
-        return offsetX
-    end
-    badge:ClearAllPoints()
-    badge:SetPoint("RIGHT", frame, "RIGHT", offsetX, 0)
-    return offsetX - ROW_BADGE_SIZE - ROW_BADGE_SPACING
-end
-
-local function LayoutRowBadges(frame, ...)
-    local offsetX = -ROW_BADGE_RIGHT_PAD
-    for index = 1, select("#", ...) do
-        local badge = select(index, ...)
-        offsetX = PlaceRowBadge(frame, badge, offsetX)
-    end
-end
-
-IsTriggerPanelGroup = function(group)
-    return group and group.displayMode == "trigger"
-end
-
-local function GetTriggerRowDisplayText(buttonData)
-    local targetText
-    if buttonData and buttonData.type == "spell" then
-        targetText = GetConfigEntryDisplayName(buttonData)
-            or buttonData.name
-            or ("Unknown " .. tostring(buttonData.type))
-
-        local addedAs = buttonData.addedAs
-        if addedAs ~= "spell" and addedAs ~= "aura" then
-            addedAs = buttonData.isPassive and "aura" or "spell"
-        end
-
-        local icons = ""
-        if addedAs ~= "aura" then
-            icons = icons .. "|A:ui_adv_atk:15:15|a"
-        else
-            icons = icons .. "|A:ui_adv_health:15:15|a"
-        end
-        if icons ~= "" then
-            targetText = targetText .. "  " .. icons
-        end
-    else
-        targetText = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
-            or buttonData.name
-            or ("Unknown " .. tostring(buttonData.type))
-    end
-
-    if CooldownCompanion.GetCompactTriggerConditionSummary then
-        local summary = CooldownCompanion:GetCompactTriggerConditionSummary(buttonData, 2)
-        if summary and summary ~= "" then
-            return targetText .. "  |cff888888" .. summary .. "|r"
-        end
-    end
-    return targetText
-end
-
 local function ResolveEntryTooltipSpellId(buttonData)
     if not (buttonData and buttonData.type == "spell") then
         return nil
@@ -680,122 +437,6 @@ local function ResolveEntryTooltipSpellId(buttonData)
     end
 
     return buttonData.id
-end
-
--- Shared entry-row presentation for the Other Class browse list and other
--- workspace entry surfaces. Interaction is owned by each surface; identity,
--- dimming, tooltips, and status badges stay consistent here.
-local function ConfigureConfigEntryRow(entry, panel, panelId, buttonData, buttonIndex)
-    local usable = IsConfigPanelEntryUsable(panel, buttonData)
-    local loadAllowed = CooldownCompanion:IsButtonLoadConditionMet(buttonData, panel)
-    local entryName = IsTriggerPanelGroup(panel)
-        and GetTriggerRowDisplayText(buttonData)
-        or GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
-
-    entry:SetText(entryName or ("Unknown " .. tostring(buttonData.type)))
-    entry:SetFullWidth(true)
-    entry:SetFontObject(GameFontHighlight)
-    ApplyConfigRowIcon(entry, GetButtonIcon(buttonData), {
-        desaturated = not usable,
-        texCoord = { 0.08, 0.92, 0.08, 0.92 },
-    })
-    entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-
-    if buttonData.type == "spell" then
-        BindConfigShiftTooltip(entry, "spell", ResolveEntryTooltipSpellId(buttonData), entry.frame, "ANCHOR_RIGHT")
-    elseif buttonData.type == "item" then
-        BindConfigShiftTooltip(entry, "item", buttonData.id, entry.frame, "ANCHOR_RIGHT")
-    elseif CooldownCompanion.IsEquipmentSlotEntry
-        and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
-        local effectiveItem = CooldownCompanion.ResolveEffectiveItem
-            and CooldownCompanion.ResolveEffectiveItem(buttonData, true) or nil
-        if effectiveItem and effectiveItem.trackable and effectiveItem.itemID then
-            BindConfigShiftTooltip(entry, "item", effectiveItem.itemID, entry.frame, "ANCHOR_RIGHT")
-        end
-    end
-    entry:SetUserData(
-        "cdcShiftTooltipExtraLine",
-        CooldownCompanion:HasLocalLoadConditions(buttonData)
-            and "This entry adds visibility rules."
-            or nil
-    )
-
-    if CS.selectedGroup == panelId then
-        if CS.selectedButtons[buttonIndex] or CS.selectedButton == buttonIndex then
-            entry:SetColor(0.4, 0.7, 1.0)
-        elseif not usable then
-            entry:SetColor(0.5, 0.5, 0.5)
-        end
-    elseif not usable then
-        entry:SetColor(0.5, 0.5, 0.5)
-    end
-
-    local rowFrame = entry.frame
-    local rowBadgeLevel = rowFrame:GetFrameLevel() + 5
-    local warnBadge, overrideBadge, soundBadge, fallbackBadge
-
-    if not usable and buttonData.enabled ~= false then
-        warnBadge = EnsureRowBadge(rowFrame, "_cdcWarnBtn", "Ping_Marker_Icon_Warning")
-        warnBadge:SetFrameLevel(rowBadgeLevel)
-        if not loadAllowed then
-            SetRowBadgeTooltip(warnBadge, "Hidden by visibility rules", 1, 0.3, 0.3)
-        else
-            SetRowBadgeTooltip(warnBadge, "Spell/item unavailable", 1, 0.3, 0.3)
-        end
-        warnBadge:Show()
-    end
-
-    if CooldownCompanion:HasStyleOverrides(buttonData) then
-        overrideBadge = EnsureRowBadge(
-            rowFrame,
-            "_cdcOverrideBadge",
-            "Crosshair_VehichleCursor_32",
-            OVERRIDE_BADGE_ICON_SIZE
-        )
-        overrideBadge:SetFrameLevel(rowBadgeLevel)
-        SetRowBadgeTooltip(overrideBadge, "Has appearance overrides")
-        overrideBadge:Show()
-    end
-
-    if CooldownCompanion.HasItemFallbacks(buttonData) then
-        fallbackBadge = EnsureRowBadge(rowFrame, "_cdcFallbackBadge", "banker")
-        fallbackBadge:SetFrameLevel(rowBadgeLevel)
-        SetRowBadgeTooltip(fallbackBadge, "Uses item fallbacks")
-        fallbackBadge:Show()
-    end
-
-    if buttonData.type == "spell" then
-        local enabledSoundEvents = CooldownCompanion:GetEnabledSoundAlertEventsForButton(buttonData)
-        if not enabledSoundEvents
-            and (buttonData.auraTracking or buttonData.addedAs == "aura")
-            and CooldownCompanion:HasAnyAuraSoundForButton(buttonData) then
-            enabledSoundEvents = true
-        end
-        if enabledSoundEvents then
-            soundBadge = EnsureRowBadge(rowFrame, "_cdcSoundBadge", "common-icon-sound")
-            soundBadge:SetFrameLevel(rowBadgeLevel)
-            SetRowBadgeTooltip(soundBadge, "Sound alerts enabled")
-            soundBadge:Show()
-        end
-    end
-
-    local talentBadge = EnsureRowBadge(rowFrame, "_cdcTalentBadge", "UI-HUD-MicroMenu-SpecTalents-Mouseover")
-    talentBadge:SetFrameLevel(rowBadgeLevel)
-    if buttonData.talentConditions and #buttonData.talentConditions > 0 then
-        SetRowBadgeTooltip(talentBadge, "Has talent conditions")
-        talentBadge:Show()
-    end
-
-    local disabledBadge
-    if buttonData.enabled == false then
-        disabledBadge = EnsureRowBadge(rowFrame, "_cdcDisabledBadge", "GM-icon-visibleDis-pressed")
-        disabledBadge:SetFrameLevel(rowBadgeLevel)
-        SetRowBadgeTooltip(disabledBadge, "Disabled", 0.6, 0.6, 0.6)
-        disabledBadge:Show()
-    end
-
-    LayoutRowBadges(rowFrame, disabledBadge, warnBadge, overrideBadge, fallbackBadge, soundBadge, talentBadge)
-    return entryName, usable
 end
 
 local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGroupId, entryData)
@@ -1061,7 +702,6 @@ end
 -- ST._ exports
 ------------------------------------------------------------------------
 ST._ShowEntryContextMenu = ShowEntryContextMenu
-ST._ConfigureConfigEntryRow = ConfigureConfigEntryRow
 ST._AddPanelTypeMenuTooltip = AddPanelTypeMenuTooltip
 ST._AddCDMStarterMenuTooltip = AddCDMStarterMenuTooltip
 -- Ordered creatable panel types, shared by every panel-create surface.
@@ -1071,7 +711,6 @@ ST._CREATE_ACCENT = CREATE_ACCENT
 ST._BuildPanelCreateOptions = BuildPanelCreateOptions
 ST._CreatePanelInSelectedContainer = CreatePanelInSelectedContainer
 ST._CreateMissingCDMPanelsInSelectedContainer = CreateMissingCDMPanelsInSelectedContainer
-ST._BuildInlineAddControls = BuildInlineAddControls
 -- Shared with the panel preview mirror: entry tooltips resolve the
 -- currently-active override spell, not the stored base ID.
 ST._ResolveEntryTooltipSpellId = ResolveEntryTooltipSpellId

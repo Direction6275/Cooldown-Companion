@@ -16,10 +16,6 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CS = ST._configState
 local AceGUI = LibStub("AceGUI-3.0")
-local CleanRecycledEntry = ST._CleanRecycledEntry
-local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
-local StartDragTracking = ST._StartDragTracking
-local GetScaledCursorPosition = ST._GetScaledCursorPosition
 local ShouldSubmitRawAddOnEnter = ST._ShouldSubmitRawAddOnEnter
 local CreateAddBoxInfoButton = ST._CreateAddBoxInfoButton
 
@@ -1644,126 +1640,6 @@ local function IsEntrySelectionActive()
     return CS.selectedButton ~= nil and group.buttons[CS.selectedButton] ~= nil
 end
 
-local function RefreshBrowseEntryList(col3, group)
-    HideEntrySurfaces(col3)
-    HidePanelPreview(col3)
-    if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
-
-    local scroll = col3._browseEntryScroll
-    if not scroll then
-        scroll = AceGUI:Create("ScrollFrame")
-        scroll:SetLayout("List")
-        scroll.frame:SetParent(col3.content)
-        scroll.frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
-        scroll.frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
-        col3._browseEntryScroll = scroll
-    end
-    scroll:ReleaseChildren()
-    scroll.frame:Show()
-
-    local heading = AceGUI:Create("Label")
-    heading:SetText((group.name or "Panel") .. " Entries")
-    heading:SetFullWidth(true)
-    heading:SetFontObject(GameFontNormal)
-    scroll:AddChild(heading)
-
-    local function AddInlineEntryBox()
-        if ST._BuildInlineAddControls then
-            CS.addingToPanelId = CS.selectedGroup
-            ST._BuildInlineAddControls(
-                scroll,
-                {},
-                group,
-                CS.selectedGroup,
-                #(group.buttons or {}),
-                { force = true }
-            )
-        end
-    end
-
-    if CooldownCompanion:IsRotationAssistantGroup(group) then
-        local entry = AceGUI:Create("InteractiveLabel")
-        CleanRecycledEntry(entry)
-        entry:SetText(ST.ROTATION_ASSISTANT_NAME)
-        entry:SetFullWidth(true)
-        entry:SetFontObject(GameFontHighlight)
-        ApplyConfigRowIcon(entry, CooldownCompanion:GetRotationAssistantFallbackIcon())
-        entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-        entry:SetCallback("OnClick", function()
-            if ST._SelectConfigRotationAssistantEntry then
-                ST._SelectConfigRotationAssistantEntry(CS.selectedGroup, {
-                    containerId = CS.selectedContainer,
-                })
-                CooldownCompanion:RefreshConfigPanel()
-            end
-        end)
-        scroll:AddChild(entry)
-        return
-    end
-
-    if #(group.buttons or {}) == 0 then
-        local empty = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(empty)
-        empty:SetText("|cff888888This panel has no entries.|r")
-        empty:SetFullWidth(true)
-        scroll:AddChild(empty)
-        AddInlineEntryBox()
-        return
-    end
-
-    for buttonIndex, buttonData in ipairs(group.buttons or {}) do
-        local entry = AceGUI:Create("InteractiveLabel")
-        CleanRecycledEntry(entry)
-        if ST._ConfigureConfigEntryRow then
-            ST._ConfigureConfigEntryRow(entry, group, CS.selectedGroup, buttonData, buttonIndex)
-        else
-            entry:SetText(buttonData.name or ("Unknown " .. tostring(buttonData.type)))
-            entry:SetFullWidth(true)
-            entry:SetFontObject(GameFontHighlight)
-            ApplyConfigRowIcon(entry, ST._GetButtonIcon and ST._GetButtonIcon(buttonData) or 134400)
-            entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-        end
-
-        local panelId = CS.selectedGroup
-        entry:SetCallback("OnClick", function(_, _, mouseButton)
-            if mouseButton ~= "LeftButton"
-                or IsControlKeyDown()
-                or GetCursorInfo()
-            then
-                return
-            end
-            local cursorX, cursorY = GetScaledCursorPosition(scroll)
-            CS.dragState = {
-                kind = "button",
-                phase = "pending",
-                sourceIndex = buttonIndex,
-                groupId = panelId,
-                scrollWidget = scroll,
-                widget = entry,
-                startX = cursorX,
-                startY = cursorY,
-                childOffset = 1,
-                totalDraggable = #(group.buttons or {}),
-            }
-            StartDragTracking()
-        end)
-        entry.frame:SetScript("OnMouseUp", function(_, mouseButton)
-            if CS.dragState and CS.dragState.phase == "active" then return end
-            if mouseButton == "LeftButton" and ST._SelectConfigButton then
-                ST._SelectConfigButton(panelId, buttonIndex, { multi = IsControlKeyDown() })
-                CooldownCompanion:RefreshConfigPanel()
-            elseif mouseButton == "RightButton" and ST._ShowEntryContextMenu then
-                if ST._SelectConfigButtonPanel then
-                    ST._SelectConfigButtonPanel(panelId, { clearPanelMulti = true })
-                end
-                ST._ShowEntryContextMenu(panelId, buttonIndex, buttonData)
-            end
-        end)
-        scroll:AddChild(entry)
-    end
-    AddInlineEntryBox()
-end
-
 -- Raw host for the panel-scope settings surfaces. It carries the panel half
 -- of the unified tab row, so it is shown for an entry selection too - the
 -- entry cluster is appended beside those tabs rather than replacing them.
@@ -1829,7 +1705,6 @@ local function RefreshButtonsWideColumn()
     col3._customAuraSubScroll = nil
     if col3._customAuraScroll then col3._customAuraScroll.frame:Hide() end
     if ST._HideResourcesWideSurfaces then ST._HideResourcesWideSurfaces(col3) end
-    if col3._browseEntryScroll then col3._browseEntryScroll.frame:Hide() end
     if col3._inlineTextureBrowserHost then col3._inlineTextureBrowserHost:Hide() end
 
     -- Group multi-select: batch operations replace everything else.
@@ -1893,6 +1768,7 @@ local function RefreshButtonsWideColumn()
         HideEntrySurfaces(col3)
         UpdatePanelPreview(col3)
         UpdateAddBox(col3)
+        UpdateQuietRow(col3)
         UpdateEditingContext(col3)
         ReapplyPanelPreviewSplit()
 

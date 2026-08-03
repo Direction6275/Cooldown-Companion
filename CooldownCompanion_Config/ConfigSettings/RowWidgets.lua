@@ -88,12 +88,6 @@ local ROW_GRID_COLUMN_GAP    = 16    -- gutter between the two grid columns
 -- degenerate-width note on the layout itself.
 local ROW_GRID_MIN_WIDTH     = 64
 
-local HEADING_CARET_INSET    = 2     -- left-aligned heading: caret inset from the frame's left
-local HEADING_CARET_GAP      = 4     -- caret -> label gap
-local HEADING_RULE_GAP       = 8     -- label -> fading rule gap
-local HEADING_RULE_HEIGHT    = 1
-local HEADING_RULE_ALPHA     = 0.35
-
 -- Hierarchy comes from position, size and color - never boxes or backdrops.
 local LABEL_COLOR            = { 1, 1, 1 }
 local LABEL_CHILD_COLOR      = { 0.749, 0.714, 0.612 }  -- #bfb69c

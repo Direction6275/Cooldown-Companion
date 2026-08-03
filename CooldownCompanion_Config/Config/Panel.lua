@@ -11,7 +11,6 @@ local AceGUI = LibStub("AceGUI-3.0")
 
 -- Imports from earlier Config/ files
 local ResetConfigSelection = ST._ResetConfigSelection
-local ClearConfigPrimarySelection = ST._ClearConfigPrimarySelection
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local COLUMN_PADDING = ST._COLUMN_PADDING
 local RefreshColumn1 = ST._RefreshColumn1
@@ -274,7 +273,6 @@ local function ShouldShowOtherClassNavigatorRow()
     local _, _, hasInventory = HasOtherClassInventory()
     return hasInventory or CS.otherClassLibraryActive == true
 end
-ST._HasOtherClassInventory = HasOtherClassInventory
 ST._ShouldShowOtherClassNavigatorRow = ShouldShowOtherClassNavigatorRow
 
 -- 8px top offset + 24px per row (+1 slack). The second row appears only when

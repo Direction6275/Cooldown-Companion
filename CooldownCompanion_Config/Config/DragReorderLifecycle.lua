@@ -26,7 +26,6 @@ local ResetDragIndicatorStyle = DR.ResetDragIndicatorStyle
 local ShowCol1DropIndicator = DR.ShowCol1DropIndicator
 local ShowRailPanelDropIndicator = DR.ShowRailPanelDropIndicator
 local GetCol1DropTarget = DR.GetCol1DropTarget
-local PerformGroupReorder = DR.PerformGroupReorder
 local IsCol1GroupDropNoOp = DR.IsCol1GroupDropNoOp
 local IsUnloadedTopLevelDrop = DR.IsUnloadedTopLevelDrop
 local IsCol1MixedDragSource = DR.IsCol1MixedDragSource
@@ -470,26 +469,6 @@ local function FinishLayoutSlotDrag(state)
     CancelDrag()
 end
 
-local function FinishLegacyGroupDrag(state)
-    PerformGroupReorder(state.sourceIndex, state.dropIndex or state.sourceIndex, state.groupIds)
-    CooldownCompanion:EvaluateResourceBars()
-    CooldownCompanion:UpdateAnchorStacking()
-    CooldownCompanion:EvaluateCastBar()
-    CooldownCompanion:RefreshConfigPanel()
-end
-
-local function FinishButtonDrag(state)
-    PerformButtonReorder(
-        state.groupId,
-        state.sourceIndex,
-        state.dropIndex or state.sourceIndex
-    )
-    CooldownCompanion:RefreshGroupFrame(state.groupId)
-    CooldownCompanion:ClearAllConfigPreviews()
-    ClearConfigButtonSelection()
-    CooldownCompanion:RefreshConfigPanel()
-end
-
 local function FinishCol1GroupDrag(state)
     local dropTarget = state.dropTarget
     local changed = true
@@ -767,14 +746,10 @@ local function FinishDrag()
     end
     CS.showPhantomSections = false  -- clear before CancelDrag to avoid redundant deferred refresh
     CancelDrag({ skipSpringRefresh = true })
-    if state.kind == "group" and state.groupIds then
-        FinishLegacyGroupDrag(state)
-    elseif state.kind == "group" or state.kind == "multi-group" then
+    if state.kind == "group" or state.kind == "multi-group" then
         FinishCol1GroupDrag(state)
     elseif state.kind == "rail-panel" then
         FinishRailPanelDrag(state)
-    elseif state.kind == "button" then
-        FinishButtonDrag(state)
     end
 end
 
@@ -904,8 +879,6 @@ local function StartDragTracking()
                 CS.dragState.dropTarget = dropTarget
                 if CS.dragState.layoutDrag and CS.dragState.layoutDrag.onUpdate then
                     CS.dragState.layoutDrag.onUpdate(CS.dragState, cursorX, cursorY, dropTarget)
-                elseif dropTarget and CS.dragState.layoutDrag.showIndicator then
-                    CS.dragState.layoutDrag.showIndicator(dropTarget)
                 else
                     HideDragIndicator()
                 end

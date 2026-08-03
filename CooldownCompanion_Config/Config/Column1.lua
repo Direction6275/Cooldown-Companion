@@ -1439,10 +1439,6 @@ local function RefreshColumn1(preserveDrag)
         return { scope = "invalid", sectionKey = "invalid", runtimeVisible = false }
     end
 
-    local function ScopeMatchesSection(scope, section)
-        return scope and scope.sectionKey == section
-    end
-
     -- Build the flat Group order for a section.
     local function BuildSectionItems(section, sectionContainerIds)
         local items = {}

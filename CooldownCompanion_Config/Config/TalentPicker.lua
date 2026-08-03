@@ -1005,7 +1005,6 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
     if col3.bsPlaceholder then col3.bsPlaceholder:Hide() end
     if col3._customAuraTabGroup then col3._customAuraTabGroup.frame:Hide() end
     if col3._multiSelectActionsScroll then col3._multiSelectActionsScroll.frame:Hide() end
-    if col3._browseEntryScroll then col3._browseEntryScroll.frame:Hide() end
     if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
     if ST._HideButtonsPanelPreviewSurfaces then ST._HideButtonsPanelPreviewSurfaces(col3) end
     if ST._HideResourcesWideSurfaces then ST._HideResourcesWideSurfaces(col3) end

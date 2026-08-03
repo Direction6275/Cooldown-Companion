@@ -395,20 +395,6 @@ local function IsCol1GroupDropNoOp(state)
 end
 
 
-local function PerformGroupReorder(sourceIndex, dropIndex, groupIds)
-    if dropIndex > sourceIndex then dropIndex = dropIndex - 1 end
-    if sourceIndex == dropIndex then return end
-    local db = CooldownCompanion.db.profile
-    local id = table.remove(groupIds, sourceIndex)
-    table.insert(groupIds, dropIndex, id)
-    -- Reassign .order based on new list position
-    for i, gid in ipairs(groupIds) do
-        if db.groups[gid] then
-            db.groups[gid].order = i
-        end
-    end
-end
-
 ------------------------------------------------------------------------
 -- Navigator Group drop targeting
 ------------------------------------------------------------------------
@@ -1274,7 +1260,6 @@ DR.ShowCol1DropIndicator = ShowCol1DropIndicator
 DR.ShowRailPanelDropIndicator = ShowRailPanelDropIndicator
 DR.SetDragIndicatorColor = SetDragIndicatorColor
 DR.GetCol1SectionColor = GetCol1SectionColor
-DR.PerformGroupReorder = PerformGroupReorder
 DR.GetCol1DropTarget = GetCol1DropTarget
 DR.ResetDragIndicatorStyle = ResetDragIndicatorStyle
 DR.IsCol1GroupDropNoOp = IsCol1GroupDropNoOp

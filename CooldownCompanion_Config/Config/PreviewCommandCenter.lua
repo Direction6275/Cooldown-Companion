@@ -1568,8 +1568,8 @@ local function ApplySpellbookTint(bar)
 end
 
 -- The spellbook exists to drag entries in, so it only appears where a drop
--- could land. Same rule as the inline add box (PanelShared's
--- BuildInlineAddControls): assistant panels never take user entries, and a
+-- could land. Same rule as the workspace add box (ButtonsWideColumn's
+-- UpdateAddBox): assistant panels never take user entries, and a
 -- texture panel holds exactly one, so once set there is nothing to add.
 local function PanelAcceptsNewEntries(group)
     if not group then

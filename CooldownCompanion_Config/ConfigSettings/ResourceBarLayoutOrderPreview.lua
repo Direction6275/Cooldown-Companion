@@ -215,7 +215,6 @@ local function EnsurePreviewState(host)
         buildId = 1,
         pools = {
             containers = {},
-            labels = {},
             slots = {},
             gaps = {},
             pills = {},
@@ -254,7 +253,6 @@ end
 
 local function ResetPreviewState(preview)
     preview.used.containers = 0
-    preview.used.labels = 0
     preview.used.slots = 0
     preview.used.gaps = 0
     preview.used.pills = 0
@@ -295,27 +293,6 @@ local function AcquireContainer(preview, parent)
     end
     frame:SetParent(parent)
     frame:Show()
-    return frame
-end
-
-local function AcquireLabel(preview, parent, fontObject)
-    local pool = preview.pools.labels
-    local index = (preview.used.labels or 0) + 1
-    preview.used.labels = index
-    local frame = pool[index]
-    if not frame then
-        frame = CreateFrame("Frame", nil, parent)
-        frame.text = frame:CreateFontString(nil, "OVERLAY", fontObject or "GameFontNormal")
-        frame.text:SetAllPoints()
-        frame.text:SetJustifyH("LEFT")
-        frame.text:SetJustifyV("MIDDLE")
-        pool[index] = frame
-    end
-    frame:SetParent(parent)
-    frame:Show()
-    if fontObject then
-        frame.text:SetFontObject(fontObject)
-    end
     return frame
 end
 
