@@ -56,17 +56,6 @@ end
 local AddMirrorFirstSliderRow = ST._AddMirrorFirstSliderRow
 local RefreshLayoutOrderPreviewForDrag = ST._RefreshResourcesCanvasForDrag
 
-local function BlockCustomBarExportForResourceBarConflict()
-    if CooldownCompanion.GetCurrentResourceBarConflictExportMessage then
-        local message = CooldownCompanion:GetCurrentResourceBarConflictExportMessage()
-        if message then
-            CooldownCompanion:Print(message)
-            return true
-        end
-    end
-    return false
-end
-
 -- Shared constants from ResourceBarConstants
 local RB = ST._RB
 local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
@@ -343,25 +332,6 @@ local function OpenCustomBarRowMenu(customBars, specID, customBarId, entry)
             })
         end
         UIDropDownMenu_AddButton(duplicateInfo, level)
-
-        local exportInfo = UIDropDownMenu_CreateInfo()
-        exportInfo.text = "Export"
-        exportInfo.notCheckable = true
-        exportInfo.func = function()
-            CloseDropDownMenus()
-            if BlockCustomBarExportForResourceBarConflict() then
-                return
-            end
-            local exportSettings = CooldownCompanion:GetResourceBarSettings()
-            local payload = RB.BuildCustomBarsExportPayload and RB.BuildCustomBarsExportPayload(exportSettings, { entry })
-            local exportString = payload and ST._EncodeExportData and ST._EncodeExportData(payload)
-            if exportString then
-                ShowPopupAboveConfig("CDC_EXPORT_CUSTOM_BARS", nil, { exportString = exportString })
-            else
-                CooldownCompanion:Print("Export failed: Custom Bar data was unavailable.")
-            end
-        end
-        UIDropDownMenu_AddButton(exportInfo, level)
 
         local removeInfo = UIDropDownMenu_CreateInfo()
         removeInfo.text = "Remove"

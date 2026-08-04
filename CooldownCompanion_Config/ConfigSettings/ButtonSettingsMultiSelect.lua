@@ -4,10 +4,6 @@ local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 local ColorHeading = ST._ColorHeading
-local BuildGroupExportData = ST._BuildGroupExportData
-local BuildContainerExportData = ST._BuildContainerExportData
-local BuildSelectedContainersExportPayload = ST._BuildSelectedContainersExportPayload
-local EncodeExportData = ST._EncodeExportData
 local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
 local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
 local ClearConfigContainerMultiSelection = ST._ClearConfigContainerMultiSelection
@@ -317,16 +313,6 @@ function ST._RefreshGroupMultiSelect(scroll, multiCount, multiGroupIds)
         },
     }
 
-    local function ExportSelected()
-        local selectedGroups = {}
-        for _, containerId in ipairs(multiGroupIds) do
-            selectedGroups[containerId] = true
-        end
-        local payload = BuildSelectedContainersExportPayload(db, selectedGroups)
-        local exportString = EncodeExportData(payload)
-        CS.ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
-    end
-
     AddActionStrips(scroll, {
         stateActions,
         {
@@ -356,7 +342,6 @@ function ST._RefreshGroupMultiSelect(scroll, multiCount, multiGroupIds)
                     CooldownCompanion:RefreshConfigPanel()
                 end,
             },
-            { text = "Export Selected", onClick = ExportSelected },
         },
         {
             {
@@ -486,31 +471,9 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
         ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
     end
 
-    local function ExportSelected()
-        local containerData = BuildContainerExportData(db.groupContainers[containerId])
-        local exportPanels = {}
-        for _, pid in ipairs(multiPanelIds) do
-            local panel = db.groups[pid]
-            if panel then
-                local panelData = BuildGroupExportData(panel)
-                panelData._originalGroupId = pid
-                exportPanels[#exportPanels + 1] = panelData
-            end
-        end
-        local payload = {
-            type = "container",
-            version = 1,
-            container = containerData,
-            panels = exportPanels,
-            _originalContainerId = containerId,
-        }
-        local exportString = EncodeExportData(payload)
-        CS.ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
-    end
-
     -- Everything that produces a copy or relocates the selection, on one line.
     -- Move only appears when there is somewhere to move to, so this strip is
-    -- two or three wide.
+    -- one or two wide.
     local copyActions = {
         { text = "Duplicate Selected", onClick = function()
             for _, pid in ipairs(multiPanelIds) do
@@ -523,7 +486,6 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
     if hasOtherContainer then
         copyActions[#copyActions + 1] = { text = "Move to Group", onClick = ShowPanelMoveMenu }
     end
-    copyActions[#copyActions + 1] = { text = "Export Selected", onClick = ExportSelected }
 
     -- One aligned block: state toggles, then the copy/relocate line, then
     -- Delete - destructive, so it keeps its own line.

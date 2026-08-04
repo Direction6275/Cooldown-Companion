@@ -550,6 +550,16 @@ local function GetColumn3HeaderTitle(selection)
 end
 
 local function ApplyConfigColumnTitles(frame)
+    if CS.exportMode then
+        frame.col1:SetTitle("|cffffd100Export Mode|r")
+        frame.col3:SetTitle("|cffffd100Export Summary|r")
+        return
+    end
+    if CS.importMode then
+        frame.col1:SetTitle("|cffffd100Import Mode|r")
+        frame.col3:SetTitle("|cffffd100Import Summary|r")
+        return
+    end
     frame.col1:SetTitle("Navigator")
 
     local selection = GetConfigSelectionSummary()
@@ -789,6 +799,15 @@ local function ResetConfigForProfileChange()
     CloseProfileWideBarTextureWindow()
     if CancelFirstIconPanelTutorial then
         CancelFirstIconPanelTutorial("profile_changed")
+    end
+    -- Export/import selections name entities in the OUTGOING profile; left
+    -- standing they would resolve against the new profile's ids and export
+    -- or import something the user never picked. A refresh follows this.
+    if CS.exportMode and ST._ExitExportMode then
+        ST._ExitExportMode({ skipRefresh = true })
+    end
+    if CS.importMode and ST._ExitImportMode then
+        ST._ExitImportMode({ skipRefresh = true })
     end
     ResetConfigSelection(true)
     wipe(CS.collapsedPanels)
@@ -1155,6 +1174,26 @@ local function CreateConfigPanel()
                 CooldownCompanion:CloseTalentPicker()
                 return
             end
+            -- Export mode: Escape cancels the mode instead of the panel
+            if CS.exportMode then
+                if not InCombatLockdown() then
+                    self:SetPropagateKeyboardInput(false)
+                end
+                if ST._ExitExportMode then
+                    ST._ExitExportMode()
+                end
+                return
+            end
+            -- Import mode: same deal
+            if CS.importMode then
+                if not InCombatLockdown() then
+                    self:SetPropagateKeyboardInput(false)
+                end
+                if ST._ExitImportMode then
+                    ST._ExitImportMode()
+                end
+                return
+            end
             if CooldownCompanion.db.profile.escClosesConfig then
                 if not InCombatLockdown() then
                     self:SetPropagateKeyboardInput(false)
@@ -1204,25 +1243,80 @@ local function CreateConfigPanel()
     collapseIcon:SetAllPoints()
     SkinTitlebarButton(collapseBtn, collapseIcon)
 
-    -- Import button — left of the Gear button
+    -- Import button — left of the Gear button; gold while import mode is active
     local importClusterBtn = CreateFrame("Button", nil, content)
     importClusterBtn:SetSize(18, 18)
     local importClusterIcon = importClusterBtn:CreateTexture(nil, "ARTWORK")
     importClusterIcon:SetAtlas("uitools-icon-collapse-window", false)
     importClusterIcon:SetAllPoints()
+    local function UpdateImportModeTitleButton()
+        if importClusterBtn._cdcTitlebarHovered then return end
+        if CS.importMode then
+            importClusterIcon:SetVertexColor(1, 0.82, 0, 1)
+        else
+            importClusterIcon:SetVertexColor(TITLEBAR_ICON_R, TITLEBAR_ICON_G, TITLEBAR_ICON_B, 1)
+        end
+    end
+    ST._UpdateImportModeTitleButton = UpdateImportModeTitleButton
     importClusterBtn:SetScript("OnClick", function()
-        if ST._OpenImportReviewWindow then
-            ST._OpenImportReviewWindow()
+        if ST._ToggleImportMode then
+            ST._ToggleImportMode()
         end
     end)
     importClusterBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
         GameTooltip:AddLine("Import")
-        GameTooltip:AddLine("Paste an export string to import groups, panels, or bars.", 1, 1, 1, true)
+        if CS.importMode then
+            GameTooltip:AddLine("Leave import mode.", 1, 1, 1, true)
+        else
+            GameTooltip:AddLine("Paste any export string to review and import it.", 1, 1, 1, true)
+        end
         GameTooltip:Show()
     end)
     importClusterBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     SkinTitlebarButton(importClusterBtn, importClusterIcon)
+    -- Installed after the skin's own OnLeave tint hook so the active-gold
+    -- state survives hover round trips.
+    importClusterBtn:HookScript("OnLeave", UpdateImportModeTitleButton)
+    UpdateImportModeTitleButton()
+
+    -- Export button — left of Import; gold while export mode is active
+    local exportClusterBtn = CreateFrame("Button", nil, content)
+    exportClusterBtn:SetSize(18, 18)
+    exportClusterBtn:SetPoint("RIGHT", importClusterBtn, "LEFT", -6, 0)
+    local exportClusterIcon = exportClusterBtn:CreateTexture(nil, "ARTWORK")
+    exportClusterIcon:SetAtlas("uitools-icon-external-window", false)
+    exportClusterIcon:SetAllPoints()
+    local function UpdateExportModeTitleButton()
+        if exportClusterBtn._cdcTitlebarHovered then return end
+        if CS.exportMode then
+            exportClusterIcon:SetVertexColor(1, 0.82, 0, 1)
+        else
+            exportClusterIcon:SetVertexColor(TITLEBAR_ICON_R, TITLEBAR_ICON_G, TITLEBAR_ICON_B, 1)
+        end
+    end
+    ST._UpdateExportModeTitleButton = UpdateExportModeTitleButton
+    exportClusterBtn:SetScript("OnClick", function()
+        if ST._ToggleExportMode then
+            ST._ToggleExportMode()
+        end
+    end)
+    exportClusterBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Export")
+        if CS.exportMode then
+            GameTooltip:AddLine("Leave export mode.", 1, 1, 1, true)
+        else
+            GameTooltip:AddLine("Pick groups, panels, Resources, and Custom Bars to share as one string.", 1, 1, 1, true)
+        end
+        GameTooltip:Show()
+    end)
+    exportClusterBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    SkinTitlebarButton(exportClusterBtn, exportClusterIcon)
+    -- Installed after the skin's own OnLeave tint hook so the active-gold
+    -- state survives hover round trips.
+    exportClusterBtn:HookScript("OnLeave", UpdateExportModeTitleButton)
+    UpdateExportModeTitleButton()
 
     local changelogOverlay
 
@@ -1650,6 +1744,22 @@ local function CreateConfigPanel()
     groupInfoIcon:SetAtlas("QuestRepeatableTurnin")
     groupInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if CS.exportMode then
+            GameTooltip:AddLine("Export Mode")
+            GameTooltip:AddLine("Click rows to choose what the string will contain.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Escape or Cancel leaves without exporting.", 1, 1, 1, true)
+            GameTooltip:Show()
+            return
+        end
+        if CS.importMode then
+            GameTooltip:AddLine("Import Mode")
+            GameTooltip:AddLine("Paste a string on the right to review what it contains.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Escape or Cancel leaves without importing.", 1, 1, 1, true)
+            GameTooltip:Show()
+            return
+        end
         GameTooltip:AddLine("Navigator")
         GameTooltip:AddLine("Groups contain panels; panels contain entries.", 1, 1, 1)
         GameTooltip:AddLine(" ")
@@ -1681,6 +1791,8 @@ local function CreateConfigPanel()
     arrangeIcon:SetPoint("CENTER")
     arrangeIcon:SetAtlas("questlog-questtypeicon-lock", false)
     local function UpdateArrangeBadgeTint()
+        -- The modes own the Navigator; arranging is parked until they end.
+        arrangeBtn:SetShown(not CS.exportMode and not CS.importMode)
         if CooldownCompanion.IsArrangeModeActive and CooldownCompanion:IsArrangeModeActive() then
             arrangeIcon:SetVertexColor(1, 0.82, 0, 0.9)
         else
@@ -1690,6 +1802,7 @@ local function CreateConfigPanel()
     ST.UpdateArrangeBadge = UpdateArrangeBadgeTint
     UpdateArrangeBadgeTint()
     arrangeBtn:SetScript("OnClick", function()
+        if CS.exportMode or CS.importMode then return end
         if CooldownCompanion.IsArrangeModeActive and CooldownCompanion:IsArrangeModeActive() then
             CooldownCompanion:ExitArrangeMode()
         else
@@ -2154,8 +2267,10 @@ local function CreateConfigPanel()
         local col1Width = math.min(NAVIGATOR_WIDTH, math.max(260, w - 600 - pad))
         local col3Width = math.max(1, w - col1Width - pad)
         local finderAvailable = IsConfigFinderAvailable and IsConfigFinderAvailable()
+            and not CS.exportMode and not CS.importMode
         local destinationBottomInset = finderAvailable and (30 + CONFIG_FINDER_RESERVED_HEIGHT) or 30
         local showDestinations = not CooldownCompanion._unsupportedLegacyProfile
+            and not CS.exportMode and not CS.importMode
 
         if CS.col1DestinationBar then
             CS.col1DestinationBar:ClearAllPoints()

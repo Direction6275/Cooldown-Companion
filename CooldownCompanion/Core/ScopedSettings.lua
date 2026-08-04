@@ -1959,6 +1959,75 @@ function CooldownCompanion:GetResourceBarSettings()
     return settings
 end
 
+-- True when the class has a saved Resources bucket that differs from defaults.
+-- Read-only: never creates a bucket. This is the "does the importer have a
+-- Resources setup to lose" predicate for setup imports.
+function CooldownCompanion:IsResourceBarClassConfigured(classKey)
+    local profile = self.db and self.db.profile
+    classKey = NormalizeClassKey(classKey)
+    if type(profile) ~= "table" or not classKey then
+        return false
+    end
+    local classStore = rawget(profile, RESOURCE_BAR_CLASS_STORE_KEY)
+    local settings = type(classStore) == "table" and classStore[classKey] or nil
+    if type(settings) ~= "table" then
+        return false
+    end
+    return not IsDefaultResourceBarClassSettings(settings, classKey)
+end
+
+-- Resolves (creating from defaults when missing) the Resources bucket for any
+-- class. Import paths only: reads that must not persist a bucket should go
+-- through the raw class store instead. The current class delegates to
+-- GetResourceBarSettings so conflict-fallback semantics stay in one place.
+function CooldownCompanion:EnsureResourceBarSettingsForClass(classKey)
+    local profile = self.db and self.db.profile
+    classKey = NormalizeClassKey(classKey)
+    if type(profile) ~= "table" or not classKey then
+        return nil
+    end
+
+    if classKey == GetCurrentResourceBarClassKey(self) then
+        return self:GetResourceBarSettings()
+    end
+
+    local classStore = EnsureResourceBarClassStore(profile)
+    local settings = classStore[classKey]
+    if type(settings) ~= "table" then
+        settings = CopySubsystemDefaults("resourceBars")
+        NormalizeResourceBarSettingsForClass(settings, classKey)
+        SanitizeResourceBarAnchors(settings, classKey)
+        classStore[classKey] = settings
+    elseif ResourceBarSettingsNeedsNormalizationForClass(settings, classKey) then
+        NormalizeResourceBarSettingsForClass(settings, classKey)
+    end
+    return settings
+end
+
+-- Replaces the class's whole Resources bucket with imported settings. The
+-- import IS the request to see the module, so enabled is forced on. Callers
+-- must clear any pending conflict for the class before replacing.
+function CooldownCompanion:ReplaceResourceBarClassSettings(classKey, settings)
+    local profile = self.db and self.db.profile
+    classKey = NormalizeClassKey(classKey)
+    if type(profile) ~= "table" or not classKey or type(settings) ~= "table" then
+        return nil
+    end
+
+    local classStore = EnsureResourceBarClassStore(profile)
+    local replaced = CopyTable(settings)
+    NormalizeResourceBarSettingsForClass(replaced, classKey)
+    SanitizeResourceBarAnchors(replaced, classKey)
+    replaced.enabled = true
+    classStore[classKey] = replaced
+    return replaced
+end
+
+ST._NormalizeResourceBarClassKey = NormalizeClassKey
+ST._GetResourceBarClassKeyFromClassID = GetClassKeyFromClassID
+ST._GetClassIDFromResourceBarClassKey = GetClassIDFromClassKey
+ST._GetResourceBarClassSpecInfo = GetClassSpecInfo
+
 function CooldownCompanion:GetCastBarSettings()
     return self:GetCharacterScopedSettings("castBar")
 end

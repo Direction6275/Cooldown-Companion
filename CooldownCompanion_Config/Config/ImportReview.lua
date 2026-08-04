@@ -1,123 +1,30 @@
 --[[
     CooldownCompanion - Config/ImportReview
-    Universal import paste, preview, classification, and accept flow.
+    Universal import classification and accept flow. Rendering lives in
+    Config/ImportMode.lua (the wide-column paste-and-review surface); this
+    file owns what a string IS and what applying it does.
 ]]
 
 local _, ST = ...
 local CooldownCompanion = ST.Addon
 
-local AceGUI = LibStub("AceGUI-3.0")
-
 local PrepareSharedImportText = ST._PrepareSharedImportText
 local DecodeSharedPayload = ST._DecodeSharedPayload
 local ApplyGroupImportData = ST._ApplyGroupImportData
 local ApplyCustomBarsImportData = ST._ApplyCustomBarsImportData
+local ApplySetupImportData = ST._ApplySetupImportData
 local ApplyFullProfileImport = ST._ApplyFullProfileImport
 local BuildProfileImportPiecesReview = ST._BuildProfileImportPiecesReview
 local RecountProfileImportPiecesSelection = ST._RecountProfileImportPiecesSelection
-local SetProfileImportPieceSelected = ST._SetProfileImportPieceSelected
 local ApplyProfileImportPieces = ST._ApplyProfileImportPieces
-local CS = ST._configState
 
+-- One ceiling for every string type. Custom Bars once carried their own
+-- smaller 100k limit from when they were a separate import path; a setup
+-- export could wrap the same bars and bypass it, and nothing recorded what
+-- the smaller number protected against, so it was retired rather than
+-- duplicated across payload shapes.
 local MAX_IMPORT_LENGTH = 500000
-local MAX_CUSTOM_BARS_IMPORT_LENGTH = 100000
 local DIAGNOSTIC_PREFIX = "CDCdiag:"
-local IMPORT_REVIEW_CONFIRM_POPUP = "CDC_IMPORT_REVIEW_CONFIRM"
-local IMPORT_TEXT_LINES = 8
-local IMPORT_TEXT_HEIGHT = 160
-local IMPORT_ACTION_HEIGHT = 30
-local IMPORT_WINDOW_WIDTH = 640
-local IMPORT_WINDOW_HEIGHT = 500
-local IMPORT_WINDOW_FRAME_STRATA = "TOOLTIP"
-local ACE_WINDOW_DEFAULT_MIN_WIDTH = 240
-local ACE_WINDOW_DEFAULT_MIN_HEIGHT = 240
-local IMPORT_WINDOW_MIN_WIDTH = 420
-local IMPORT_WINDOW_MIN_HEIGHT = 380
-local IMPORT_LAYOUT = "CDC_IMPORT_REVIEW"
-local IMPORT_LAYOUT_GAP = 8
-local IMPORT_REVIEW_MIN_HEIGHT = 110
-local IMPORT_REVIEW_FONT_SIZE = 14
-local IMPORT_REVIEW_SHADOW_ALPHA = 0.9
-local IMPORT_REVIEW_SHADOW_X = 1
-local IMPORT_REVIEW_SHADOW_Y = -1
-local IMPORT_REVIEW_SECTION_GAP = 10
-local IMPORT_REVIEW_COLLAPSED_GAP = 1
-local IMPORT_MODE_LABELS = {
-    selected = "Import selected pieces",
-    restore = "Restore backup",
-}
-local IMPORT_MODE_ORDER = { "selected", "restore" }
-local IMPORT_MODE_OPTION_WIDTHS = {
-    selected = 190,
-    restore = 150,
-}
-
-if not AceGUI:GetLayout(IMPORT_LAYOUT) then
-    local function LayoutImportBand(group, width, height)
-        if not group then
-            return nil
-        end
-
-        group:SetWidth(width)
-        group:SetHeight(height)
-        group.frame:ClearAllPoints()
-        group.frame:Show()
-        if group.DoLayout then
-            group:DoLayout()
-        end
-        return group.frame
-    end
-
-    AceGUI:RegisterLayout(IMPORT_LAYOUT, function(content, children)
-        local width = content.width or content:GetWidth() or 0
-        local height = content.height or content:GetHeight() or 0
-        local pasteGroup = children[1]
-        local reviewScroll = children[2]
-        local buttonGroup = children[3]
-        local reviewHeight = height - IMPORT_TEXT_HEIGHT - IMPORT_ACTION_HEIGHT - (IMPORT_LAYOUT_GAP * 2)
-
-        if reviewHeight < IMPORT_REVIEW_MIN_HEIGHT then
-            reviewHeight = IMPORT_REVIEW_MIN_HEIGHT
-        end
-
-        local pasteFrame = LayoutImportBand(pasteGroup, width, IMPORT_TEXT_HEIGHT)
-        if pasteFrame then
-            pasteFrame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
-            pasteFrame:SetPoint("RIGHT", content, "RIGHT", 0, 0)
-        end
-
-        local buttonFrame = LayoutImportBand(buttonGroup, width, IMPORT_ACTION_HEIGHT)
-        if buttonFrame then
-            buttonFrame:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 0, 0)
-            buttonFrame:SetPoint("RIGHT", content, "RIGHT", 0, 0)
-        end
-
-        if reviewScroll then
-            reviewScroll:SetWidth(width)
-            reviewScroll:SetHeight(reviewHeight)
-            reviewScroll.frame:ClearAllPoints()
-            if pasteFrame then
-                reviewScroll.frame:SetPoint("TOPLEFT", pasteFrame, "BOTTOMLEFT", 0, -IMPORT_LAYOUT_GAP)
-            else
-                reviewScroll.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
-            end
-            if buttonFrame then
-                reviewScroll.frame:SetPoint("BOTTOMRIGHT", buttonFrame, "TOPRIGHT", 0, IMPORT_LAYOUT_GAP)
-            else
-                reviewScroll.frame:SetPoint("RIGHT", content, "RIGHT", 0, 0)
-            end
-            reviewScroll.frame:Show()
-            if reviewScroll.DoLayout then
-                reviewScroll:DoLayout()
-            end
-        end
-    end)
-end
-
-local importReviewFrame = nil
-local activeReview = nil
-local pendingReviewImport = nil
-local importReviewFontObject = nil
 
 local function CountPairs(tbl)
     local count = 0
@@ -165,21 +72,6 @@ local function BuildReview(kind, data, title, acceptText, summaryLines, extra)
     return review
 end
 
-local function RaiseImportReviewWindow(widget)
-    local frame = widget and widget.frame
-    if frame and frame.SetFrameStrata then
-        frame:SetFrameStrata(IMPORT_WINDOW_FRAME_STRATA)
-    end
-end
-
-local function ShowPopupOverConfig(which, textArg1, data)
-    local showFn = (CS and CS.ShowPopupAboveConfig) or ST._ShowPopupAboveConfig
-    if showFn then
-        return showFn(which, textArg1, data)
-    end
-    return StaticPopup_Show(which, textArg1, nil, data)
-end
-
 local function IsUnsupportedPayload(data)
     return CooldownCompanion.IsUnsupportedImportPayload
         and CooldownCompanion:IsUnsupportedImportPayload(data)
@@ -217,6 +109,9 @@ local function GetPayloadDataLabel(data, isDiagnostic)
     end
     if type(data) == "table" and data.type == "customBars" then
         return "custom bars import"
+    end
+    if type(data) == "table" and data.type == "setup" then
+        return "setup import"
     end
     if type(data) == "table" and data.type then
         return "group import"
@@ -371,6 +266,52 @@ local function DefaultProfileImportMode(pieces)
     return "restore"
 end
 
+-- Class identity of any class-tagged payload or setup section. Shared by
+-- the standalone Custom Bars payload (which is tagged the same way) and by
+-- the setup sections.
+local function GetSetupSectionClassKey(section)
+    if type(section) ~= "table" then
+        return nil
+    end
+    local normalize = ST._NormalizeResourceBarClassKey
+    local classKey = normalize and normalize(section.classFilename) or nil
+    if classKey then
+        return classKey
+    end
+    if section.classID and ST._GetResourceBarClassKeyFromClassID then
+        return ST._GetResourceBarClassKeyFromClassID(section.classID)
+    end
+    return nil
+end
+
+local function GetPlayerClassKey()
+    local normalize = ST._NormalizeResourceBarClassKey
+    local classFilename = select(2, UnitClass("player"))
+    return normalize and normalize(classFilename) or classFilename
+end
+
+-- The class a payload imports INTO: nil means the importing character's own
+-- class (the legacy same-class contract), a class key means a cross-class
+-- import that lands in that class's bucket.
+local function GetForeignImportClassKey(data)
+    local classKey = GetSetupSectionClassKey(data)
+    local playerClassKey = GetPlayerClassKey()
+    if classKey and playerClassKey and classKey ~= playerClassKey then
+        return classKey, playerClassKey
+    end
+    return nil, playerClassKey
+end
+
+local function AddForeignClassNotice(lines, foreignClassKey, playerClassKey, what)
+    if not foreignClassKey then
+        return
+    end
+    AddLine(lines, "This " .. what .. " is for " .. tostring(foreignClassKey)
+        .. ". You are playing a " .. tostring(playerClassKey) .. ".")
+    AddLine(lines, "It imports for " .. tostring(foreignClassKey)
+        .. " and is waiting the next time you play a " .. tostring(foreignClassKey) .. " character.")
+end
+
 local function BuildCustomBarsSummaryLines(data)
     local lines = {
         "Custom Bars export",
@@ -378,6 +319,66 @@ local function BuildCustomBarsSummaryLines(data)
         FormatCount("Layout specs", CountPairs(data.layouts)),
     }
     AddLine(lines, data.classFilename and "Class: " .. tostring(data.classFilename))
+    local foreignClassKey, playerClassKey = GetForeignImportClassKey(data)
+    AddForeignClassNotice(lines, foreignClassKey, playerClassKey, "Custom Bars export")
+    AddCharacterEligibilityNotice(lines, data)
+    return lines
+end
+
+local function GetSetupSections(data)
+    local hasContainers = type(data.containers) == "table" and #data.containers > 0
+    local customBars = type(data.customBars) == "table"
+        and type(data.customBars.bars) == "table"
+        and #data.customBars.bars > 0
+        and data.customBars
+        or nil
+    local resources = type(data.resources) == "table"
+        and type(data.resources.settings) == "table"
+        and data.resources
+        or nil
+    return hasContainers, customBars, resources
+end
+
+local function BuildSetupSummaryLines(data, hasContainers, customBars, resources)
+    local lines = {}
+    AddLine(lines, "Setup export")
+
+    if hasContainers then
+        AddLine(lines, FormatCount("Groups", #data.containers))
+        AddLine(lines, FormatCount("Panels", CountContainerPanels(data.containers)))
+    end
+
+    local playerClassKey = GetPlayerClassKey()
+    local foreignClassKey = nil
+
+    if resources then
+        local classKey = GetSetupSectionClassKey(resources)
+        AddLine(lines, "Resources setup: " .. tostring(classKey or "Unknown class"))
+        if classKey and CooldownCompanion.IsResourceBarClassConfigured
+            and CooldownCompanion:IsResourceBarClassConfigured(classKey) then
+            AddLine(lines, "This replaces your current " .. tostring(classKey) .. " Resources settings.")
+        end
+        if classKey and playerClassKey and classKey ~= playerClassKey then
+            foreignClassKey = classKey
+        end
+    end
+
+    if customBars then
+        local classKey = GetSetupSectionClassKey(customBars)
+        AddLine(lines, FormatCount("Custom Bars", #customBars.bars)
+            .. (classKey and (" (" .. tostring(classKey) .. ")") or ""))
+        if classKey and playerClassKey and classKey ~= playerClassKey then
+            foreignClassKey = foreignClassKey or classKey
+        end
+    end
+
+    if foreignClassKey then
+        AddForeignClassNotice(lines, foreignClassKey, playerClassKey, "setup")
+        if hasContainers and resources then
+            AddLine(lines, "The Resources anchor does not carry across classes; re-pick it on that character.")
+        end
+    end
+
     AddCharacterEligibilityNotice(lines, data)
     return lines
 end
@@ -482,16 +483,22 @@ local function ClassifyDiagnosticPayload(data)
     })
 end
 
-local function ClassifyEntityPayload(data, compactLength)
+local function ClassifyEntityPayload(data)
     if data.type == "customBars" then
-        if compactLength > MAX_CUSTOM_BARS_IMPORT_LENGTH then
-            return BuildError("too_large", "Import string too large (" .. compactLength .. " characters).")
-        end
         if type(data.bars) ~= "table" or #data.bars == 0 then
             return BuildError("empty_custom_bars", "Import failed: no Custom Bars were found.")
         end
         return BuildReview("customBars", data, "Custom Bars Import",
             "Import Custom Bars", BuildCustomBarsSummaryLines(data))
+    end
+
+    if data.type == "setup" then
+        local hasContainers, customBars, resources = GetSetupSections(data)
+        if not hasContainers and not customBars and not resources then
+            return BuildError("empty_setup", "Import failed: this setup export is empty.")
+        end
+        return BuildReview("setup", data, "Setup Import", "Import Setup",
+            BuildSetupSummaryLines(data, hasContainers, customBars, resources))
     end
 
     if data.type == "group" and data.group then
@@ -501,7 +508,13 @@ local function ClassifyEntityPayload(data, compactLength)
         return BuildLegacyError("group import")
     end
 
+    -- A group payload carrying no groups is reported as the empty string it
+    -- is, the same way setup and Custom Bars payloads are. Accepting it
+    -- would render a review whose Import button can never enable.
     if data.type == "containers" and type(data.containers) == "table" then
+        if #data.containers == 0 then
+            return BuildError("empty_groups", "Import failed: this export contains no groups.")
+        end
         return BuildReview("groups", data, "Groups Import",
             "Import Groups", BuildContainersSummaryLines(data))
     end
@@ -509,6 +522,9 @@ local function ClassifyEntityPayload(data, compactLength)
     if data.type == "folder" and type(data.folder) == "table" then
         if data.groups then
             return BuildLegacyError("folder import")
+        end
+        if type(data.containers) ~= "table" or #data.containers == 0 then
+            return BuildError("empty_groups", "Import failed: this export contains no groups.")
         end
         return BuildReview("groups", data, "Group Import",
             "Import Groups", BuildLegacyGroupBundleSummaryLines(data))
@@ -558,7 +574,7 @@ function CooldownCompanion:ClassifyImportReviewText(text)
         return ClassifyDiagnosticPayload(data)
     end
     if data.type then
-        return ClassifyEntityPayload(data, #compactText)
+        return ClassifyEntityPayload(data)
     end
     return ClassifyProfilePayload(data)
 end
@@ -596,7 +612,19 @@ function CooldownCompanion:ApplyReviewedImport(review)
     end
 
     if review.kind == "customBars" then
-        return ApplyCustomBarsImportData and ApplyCustomBarsImportData(review.data) == true
+        if not ApplyCustomBarsImportData then
+            return false
+        end
+        -- Cross-class bars land in the payload class's bucket instead of
+        -- being rejected, the same contract a setup export's bars get.
+        local foreignClassKey = GetForeignImportClassKey(review.data)
+        return ApplyCustomBarsImportData(review.data, foreignClassKey and {
+            targetClassKey = foreignClassKey,
+        } or nil) == true
+    end
+
+    if review.kind == "setup" then
+        return ApplySetupImportData and ApplySetupImportData(review.data) == true
     end
 
     if review.kind == "group" or review.kind == "groups" then
@@ -607,114 +635,6 @@ function CooldownCompanion:ApplyReviewedImport(review)
     return false
 end
 
-local function ConfigureWrappedLabel(label)
-    if ST._ConfigureWrappedHelperLabel then
-        ST._ConfigureWrappedHelperLabel(label)
-    end
-    label:SetFullWidth(true)
-end
-
-local function GetImportReviewFontObject()
-    if importReviewFontObject then
-        return importReviewFontObject
-    end
-    if not CreateFont then
-        return GameFontHighlight
-    end
-
-    local fontObject = _G and _G.CooldownCompanionImportReviewTextFont
-    if not fontObject then
-        fontObject = CreateFont("CooldownCompanionImportReviewTextFont")
-    end
-    if fontObject.CopyFontObject and GameFontHighlight then
-        fontObject:CopyFontObject(GameFontHighlight)
-    end
-    if fontObject.SetFont and GameFontHighlight and GameFontHighlight.GetFont then
-        local fontPath, _, fontFlags = GameFontHighlight:GetFont()
-        if fontPath then
-            fontObject:SetFont(fontPath, IMPORT_REVIEW_FONT_SIZE, fontFlags or "")
-        end
-    end
-    if fontObject.SetShadowColor then
-        fontObject:SetShadowColor(0, 0, 0, IMPORT_REVIEW_SHADOW_ALPHA)
-    end
-    if fontObject.SetShadowOffset then
-        fontObject:SetShadowOffset(IMPORT_REVIEW_SHADOW_X, IMPORT_REVIEW_SHADOW_Y)
-    end
-
-    importReviewFontObject = fontObject
-    return importReviewFontObject
-end
-
-local function ConfigureImportReviewTextLabel(widget)
-    ConfigureWrappedLabel(widget)
-    local fontObject = GetImportReviewFontObject()
-    if widget.SetFontObject and fontObject then
-        widget:SetFontObject(fontObject)
-    end
-end
-
-local function AddVerticalSpacer(group)
-    local spacer = AceGUI:Create("SimpleGroup")
-    spacer:SetFullWidth(true)
-    spacer:SetHeight(IMPORT_REVIEW_COLLAPSED_GAP)
-    spacer.noAutoHeight = true
-    spacer:SetLayout("Fill")
-    group:AddChild(spacer)
-    return spacer
-end
-
-local function SetSpacerHeight(spacer, height)
-    if spacer and spacer.SetHeight then
-        spacer:SetHeight(height or IMPORT_REVIEW_COLLAPSED_GAP)
-    end
-end
-
-local function AddFooterButton(group, text)
-    local button = AceGUI:Create("Button")
-    button:SetText(text)
-    button:SetRelativeWidth(0.5)
-    group:AddChild(button)
-    return button
-end
-
-local function SetWindowResizeBounds(widget, minWidth, minHeight)
-    if widget and widget.frame and widget.frame.SetResizeBounds then
-        widget.frame:SetResizeBounds(minWidth, minHeight)
-    end
-end
-
-local function RelayoutImportWindow(frame)
-    if frame and frame.DoLayout then
-        frame:DoLayout()
-    end
-end
-
-local function CloseImportReviewFrame(widget)
-    activeReview = nil
-    if pendingReviewImport and pendingReviewImport.frame == widget then
-        pendingReviewImport = nil
-        if StaticPopup_Hide then
-            StaticPopup_Hide(IMPORT_REVIEW_CONFIRM_POPUP)
-        end
-    end
-    if importReviewFrame == widget then
-        importReviewFrame = nil
-    end
-    if widget then
-        SetWindowResizeBounds(widget, ACE_WINDOW_DEFAULT_MIN_WIDTH, ACE_WINDOW_DEFAULT_MIN_HEIGHT)
-        AceGUI:Release(widget)
-    end
-end
-
-local function ApplyReviewAndClose(review, frame)
-    if CooldownCompanion:ApplyReviewedImport(review) then
-        CloseImportReviewFrame(frame)
-        return true
-    end
-    return false
-end
-
 local function GetDestructiveConfirmText(review)
     if review and review.kind == "diagnostic" then
         return "Restore this diagnostic profile? Your current profile will be overwritten."
@@ -722,41 +642,9 @@ local function GetDestructiveConfirmText(review)
     return "Restore this profile backup? Your current profile will be overwritten."
 end
 
-local function ConfirmOrApplyReview(review, frame)
-    if ReviewIsDestructive(review) then
-        pendingReviewImport = {
-            review = review,
-            frame = frame,
-        }
-        ShowPopupOverConfig(IMPORT_REVIEW_CONFIRM_POPUP, GetDestructiveConfirmText(review))
-        return
-    end
-
-    ApplyReviewAndClose(review, frame)
-end
-
-StaticPopupDialogs[IMPORT_REVIEW_CONFIRM_POPUP] = {
-    text = "%s",
-    button1 = "Restore",
-    button2 = "Cancel",
-    OnAccept = function()
-        local pending = pendingReviewImport
-        pendingReviewImport = nil
-        if pending then
-            ApplyReviewAndClose(pending.review, pending.frame)
-        end
-    end,
-    OnCancel = function()
-        pendingReviewImport = nil
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
-local function FormatReviewText(review, selectedCount)
-    local lines = {}
+-- The one presentation truth: import mode renders these as its sectioned
+-- column surface.
+local function GetReviewPresentation(review, selectedCount)
     local title = review.title
     local warning = review.warning
     local summaryLines = review.summaryLines
@@ -765,248 +653,21 @@ local function FormatReviewText(review, selectedCount)
         warning = nil
         summaryLines = BuildSelectedPiecesSummaryLines(review, selectedCount)
     end
-
-    AddLine(lines, title and "|cffffd100" .. title .. "|r")
-    AddLine(lines, warning and "|cffff6666" .. warning .. "|r")
-    for _, line in ipairs(summaryLines or {}) do
-        AddLine(lines, line)
-    end
-    return table.concat(lines, "\n")
+    return title, warning, summaryLines
 end
 
-local function ReleaseChildren(group)
-    if not group then
-        return
-    end
-    if group.ReleaseChildren then
-        group:ReleaseChildren()
-    else
-        group.children = {}
-    end
-end
-
-local function RenderModeControl(group, review, refresh)
-    ReleaseChildren(group)
-    if not (IsProfileReviewKind(review) and review.pieces) then
-        return
-    end
-
-    local currentMode = review.mode == "selected" and "selected" or "restore"
-    for _, mode in ipairs(IMPORT_MODE_ORDER) do
-        local optionMode = mode
-        local option = AceGUI:Create("CheckBox")
-        option:SetType("radio")
-        option:SetLabel(IMPORT_MODE_LABELS[optionMode])
-        option:SetValue(optionMode == currentMode)
-        option:SetWidth(IMPORT_MODE_OPTION_WIDTHS[optionMode] or 160)
-        option:SetCallback("OnValueChanged", function(widget, event, value)
-            if value ~= true then
-                widget:SetValue(true)
-                return
-            end
-            review.mode = optionMode
-            refresh()
-        end)
-        group:AddChild(option)
-    end
-end
-
-local function RenderPieceRows(group, review, refresh)
-    ReleaseChildren(group)
-    if not ReviewUsesSelectedPieces(review) then
-        return
-    end
-
-    local pieces = review.pieces
-    local rows = type(pieces) == "table" and type(pieces.rows) == "table" and pieces.rows or nil
-    if not rows then
-        local emptyLabel = AceGUI:Create("Label")
-        ConfigureWrappedLabel(emptyLabel)
-        emptyLabel:SetText("|cff888888No profile pieces are available for selected import.|r")
-        group:AddChild(emptyLabel)
-        return
-    end
-
-    local visibleRows = 0
-    for _, row in ipairs(rows) do
-        if row.eligible then
-            visibleRows = visibleRows + 1
-            local cb = AceGUI:Create("CheckBox")
-            cb:SetFullWidth(true)
-            cb:SetLabel(row.label or "Profile piece")
-            cb:SetValue(row.selected == true)
-            cb:SetCallback("OnValueChanged", function(widget, event, value)
-                if SetProfileImportPieceSelected then
-                    SetProfileImportPieceSelected(pieces, row, value == true)
-                else
-                    row.selected = value == true
-                    row.userChanged = true
-                end
-                refresh()
-            end)
-            group:AddChild(cb)
-        end
-    end
-
-    if visibleRows == 0 then
-        local emptyLabel = AceGUI:Create("Label")
-        ConfigureWrappedLabel(emptyLabel)
-        emptyLabel:SetText("|cff888888No pieces compatible with your current class are available.|r")
-        group:AddChild(emptyLabel)
-    end
-
-end
-
-local function ShowImportReviewWindow(context)
-    if importReviewFrame then
-        importReviewFrame:Show()
-        RaiseImportReviewWindow(importReviewFrame)
-        return
-    end
-
-    local frame = AceGUI:Create("Window")
-    frame:SetTitle("Import")
-    frame:SetWidth(IMPORT_WINDOW_WIDTH)
-    frame:SetHeight(IMPORT_WINDOW_HEIGHT)
-    SetWindowResizeBounds(frame, IMPORT_WINDOW_MIN_WIDTH, IMPORT_WINDOW_MIN_HEIGHT)
-    frame:SetLayout(IMPORT_LAYOUT)
-    importReviewFrame = frame
-    activeReview = nil
-
-    local pasteGroup = AceGUI:Create("SimpleGroup")
-    pasteGroup:SetFullWidth(true)
-    pasteGroup:SetHeight(IMPORT_TEXT_HEIGHT)
-    pasteGroup.noAutoHeight = true
-    pasteGroup:SetLayout("Fill")
-    frame:AddChild(pasteGroup)
-
-    local inputBox = AceGUI:Create("MultiLineEditBox")
-    inputBox:SetLabel("Paste import string:")
-    inputBox:SetNumLines(IMPORT_TEXT_LINES)
-    inputBox:DisableButton(true)
-    pasteGroup:AddChild(inputBox)
-
-    local reviewScroll = AceGUI:Create("ScrollFrame")
-    reviewScroll:SetFullWidth(true)
-    reviewScroll:SetHeight(IMPORT_REVIEW_MIN_HEIGHT)
-    reviewScroll:SetLayout("List")
-    frame:AddChild(reviewScroll)
-
-    local modeGroup = AceGUI:Create("SimpleGroup")
-    modeGroup:SetFullWidth(true)
-    modeGroup:SetLayout("Flow")
-    reviewScroll:AddChild(modeGroup)
-
-    local disclaimerLabel = AceGUI:Create("Label")
-    ConfigureWrappedLabel(disclaimerLabel)
-    if disclaimerLabel.SetFontObject and GameFontNormal then
-        disclaimerLabel:SetFontObject(GameFontNormal)
-    end
-    disclaimerLabel:SetText("")
-    reviewScroll:AddChild(disclaimerLabel)
-
-    local summaryTopSpacer = AddVerticalSpacer(reviewScroll)
-
-    local statusLabel = AceGUI:Create("Label")
-    ConfigureImportReviewTextLabel(statusLabel)
-    statusLabel:SetText("|cff888888No import string reviewed.|r")
-    reviewScroll:AddChild(statusLabel)
-
-    local summaryBottomSpacer = AddVerticalSpacer(reviewScroll)
-
-    local pieceGroup = AceGUI:Create("SimpleGroup")
-    pieceGroup:SetFullWidth(true)
-    pieceGroup:SetLayout("List")
-    reviewScroll:AddChild(pieceGroup)
-
-    local buttonGroup = AceGUI:Create("SimpleGroup")
-    buttonGroup:SetFullWidth(true)
-    buttonGroup:SetHeight(IMPORT_ACTION_HEIGHT)
-    buttonGroup.noAutoHeight = true
-    buttonGroup:SetLayout("Flow")
-
-    local acceptButton = AddFooterButton(buttonGroup, "Import")
-    acceptButton:SetDisabled(true)
-    local cancelButton = AddFooterButton(buttonGroup, "Cancel")
-
-    frame:AddChild(buttonGroup)
-
-    local function RefreshPresentation()
-        RenderModeControl(modeGroup, activeReview, RefreshPresentation)
-        RenderPieceRows(pieceGroup, activeReview, RefreshPresentation)
-        local selectedCount = ReviewUsesSelectedPieces(activeReview) and RecountSelectedPieces(activeReview) or nil
-        local disclaimerText = GetProfileImportDisclaimer(activeReview) or ""
-        acceptButton:SetText(GetReviewAcceptText(activeReview))
-        acceptButton:SetDisabled(not CanApplyReview(activeReview, selectedCount))
-        disclaimerLabel:SetText(disclaimerText)
-        SetSpacerHeight(summaryTopSpacer, disclaimerText ~= "" and IMPORT_REVIEW_SECTION_GAP
-            or IMPORT_REVIEW_COLLAPSED_GAP)
-        SetSpacerHeight(summaryBottomSpacer, ReviewUsesSelectedPieces(activeReview) and IMPORT_REVIEW_SECTION_GAP
-            or IMPORT_REVIEW_COLLAPSED_GAP)
-        if activeReview then
-            statusLabel:SetText(FormatReviewText(activeReview, selectedCount))
-        end
-        RelayoutImportWindow(frame)
-    end
-
-    local function ClearReview(statusText)
-        activeReview = nil
-        acceptButton:SetDisabled(true)
-        acceptButton:SetText("Import")
-        disclaimerLabel:SetText("")
-        SetSpacerHeight(summaryTopSpacer, IMPORT_REVIEW_COLLAPSED_GAP)
-        SetSpacerHeight(summaryBottomSpacer, IMPORT_REVIEW_COLLAPSED_GAP)
-        ReleaseChildren(modeGroup)
-        ReleaseChildren(pieceGroup)
-        if statusText then
-            statusLabel:SetText(statusText)
-        end
-        RelayoutImportWindow(frame)
-    end
-
-    local function ReviewInput()
-        local review = CooldownCompanion:ClassifyImportReviewText(inputBox:GetText())
-        if not review.ok then
-            ClearReview("|cffff6666" .. (review.message or "Import failed.") .. "|r")
-            return
-        end
-
-        activeReview = review
-        if reviewScroll.SetScroll then
-            reviewScroll:SetScroll(0)
-        end
-        RefreshPresentation()
-    end
-
-    inputBox:SetCallback("OnTextChanged", ReviewInput)
-    acceptButton:SetCallback("OnClick", function()
-        if not activeReview then
-            ReviewInput()
-        end
-        if not activeReview then
-            return
-        end
-        ConfirmOrApplyReview(activeReview, frame)
-    end)
-    cancelButton:SetCallback("OnClick", function()
-        CloseImportReviewFrame(frame)
-    end)
-
-    frame:SetCallback("OnClose", function(widget)
-        CloseImportReviewFrame(widget)
-    end)
-
-    if type(context) == "table" and type(context.initialText) == "string" then
-        inputBox:SetText(context.initialText)
-        ReviewInput()
-    end
-
-    RaiseImportReviewWindow(frame)
-    inputBox:SetFocus()
-end
-
-function CooldownCompanion:OpenImportReviewWindow(context)
-    ShowImportReviewWindow(context)
-end
-
-ST._OpenImportReviewWindow = function(context) return CooldownCompanion:OpenImportReviewWindow(context) end
+------------------------------------------------------------------------
+-- Review helpers shared with import mode (Config/ImportMode.lua), which
+-- owns all rendering of these classifications.
+------------------------------------------------------------------------
+ST._IsProfileImportReviewKind = IsProfileReviewKind
+ST._ImportReviewUsesSelectedPieces = ReviewUsesSelectedPieces
+ST._RecountImportReviewSelectedPieces = RecountSelectedPieces
+ST._CanApplyImportReview = CanApplyReview
+ST._ImportReviewIsDestructive = ReviewIsDestructive
+ST._GetImportReviewAcceptText = GetReviewAcceptText
+ST._GetImportReviewDisclaimer = GetProfileImportDisclaimer
+ST._GetImportReviewConfirmText = GetDestructiveConfirmText
+ST._GetImportReviewPresentation = GetReviewPresentation
+ST._GetSetupImportSections = GetSetupSections
+ST._GetSetupImportSectionClassKey = GetSetupSectionClassKey

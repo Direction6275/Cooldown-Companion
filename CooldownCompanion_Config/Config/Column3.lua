@@ -11,6 +11,34 @@ local CS = ST._configState
 -- Workspace: button settings / Resources, Cast Bar & Unit Frames home
 ------------------------------------------------------------------------
 local function RefreshColumn3()
+    -- Export and import modes own the whole workspace with their flat
+    -- surfaces. Those surfaces are unknown to the normal dispatchers, so
+    -- they are also hidden here whenever their mode is off.
+    local modeCol3 = CS.configFrame and CS.configFrame.col3
+    if modeCol3 and modeCol3._exportSummaryScroll and not CS.exportMode then
+        modeCol3._exportSummaryScroll.frame:Hide()
+    end
+    if modeCol3 and not CS.importMode then
+        if modeCol3._importPasteBox then
+            modeCol3._importPasteBox.frame:Hide()
+        end
+        if modeCol3._importReviewScroll then
+            modeCol3._importReviewScroll.frame:Hide()
+        end
+    end
+    if CS.exportMode then
+        if modeCol3 and ST._RenderExportModeSummary then
+            ST._RenderExportModeSummary(modeCol3)
+        end
+        return
+    end
+    if CS.importMode then
+        if modeCol3 and ST._RenderImportModeSurface then
+            ST._RenderImportModeSurface(modeCol3)
+        end
+        return
+    end
+
     -- Plain buttons view: the workspace owns the editing surface.
     if ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() then
         return ST._RefreshButtonsWideColumn()

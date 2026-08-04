@@ -928,7 +928,54 @@ local function EncodeExportData(payload)
             return nil
         end
     end
+    if type(payload) == "table" and payload.type == "setup"
+        and (payload.resources or payload.customBars) then
+        local blocked = BlockCustomBarExportForResourceBarConflict()
+        if blocked then
+            return nil
+        end
+    end
     return EncodeSharedPayload(payload, "entity")
+end
+
+-- Assembles the one-string setup payload from its sections. Any section may
+-- be nil. `customBars` accepts the standalone customBars payload shape (the
+-- `type` marker is dropped; sections carry no type of their own). A Resources
+-- section already contains its class's Custom Bars, so callers must not pass
+-- both for the same class.
+local function BuildSetupExportPayload(sections)
+    if type(sections) ~= "table" then
+        return nil
+    end
+    local payload = { type = "setup", version = 1 }
+    local hasAny = false
+
+    if type(sections.containers) == "table" and #sections.containers > 0 then
+        payload.containers = sections.containers
+        hasAny = true
+    end
+    if type(sections.customBars) == "table"
+        and type(sections.customBars.bars) == "table"
+        and #sections.customBars.bars > 0 then
+        payload.customBars = {
+            version = sections.customBars.version or 1,
+            classID = sections.customBars.classID,
+            classFilename = sections.customBars.classFilename,
+            bars = sections.customBars.bars,
+            layouts = sections.customBars.layouts,
+        }
+        hasAny = true
+    end
+    if type(sections.resources) == "table"
+        and type(sections.resources.settings) == "table" then
+        payload.resources = sections.resources
+        hasAny = true
+    end
+
+    if not hasAny then
+        return nil
+    end
+    return payload
 end
 
 local function BuildContainerExportData(container)
@@ -1001,7 +1048,7 @@ end
 ST._BuildGroupExportData = BuildGroupExportData
 ST._BuildContainerExportData = BuildContainerExportData
 ST._EncodeExportData = EncodeExportData
-ST._BlockCustomBarExportForResourceBarConflict = BlockCustomBarExportForResourceBarConflict
+ST._BuildSetupExportPayload = BuildSetupExportPayload
 
 local function BuildImportedRootAnchor(relativeTo)
     return {
@@ -1498,12 +1545,16 @@ StaticPopupDialogs["CDC_EXPORT_GROUP"] = {
     preferredIndex = 3,
 }
 
-local function BlockCustomBarsImportForResourceBarConflict()
-    local classKey = CooldownCompanion.GetCurrentResourceBarClassKey
-        and CooldownCompanion:GetCurrentResourceBarClassKey()
+-- classKey defaults to the current class. Setup imports pass the class the
+-- payload targets, so a cross-class import respects THAT class's pending
+-- conflict, not the importing character's.
+local function BlockCustomBarsImportForResourceBarConflict(classKey)
+    classKey = classKey
+        or (CooldownCompanion.GetCurrentResourceBarClassKey
+            and CooldownCompanion:GetCurrentResourceBarClassKey())
         or nil
-    local conflict = CooldownCompanion.GetCurrentResourceBarConflict
-        and CooldownCompanion:GetCurrentResourceBarConflict()
+    local conflict = CooldownCompanion.GetResourceBarConflict
+        and CooldownCompanion:GetResourceBarConflict(classKey)
         or nil
     if not conflict then
         return false
@@ -1530,17 +1581,25 @@ local function ApplyCustomBarsImportData(data, options)
     if RejectUnsupportedImportPayload(data, "custom bars import") then
         return false
     end
-    if BlockCustomBarsImportForResourceBarConflict() then
+    local targetClassKey = options and options.targetClassKey or nil
+    if BlockCustomBarsImportForResourceBarConflict(targetClassKey) then
         return false
     end
     local importState = options and options.importState or NewGroupImportState()
     StripImportCharacterEligibility(data, importState)
 
     local rb = ST._RB
-    local settings = CooldownCompanion:GetResourceBarSettings()
+    local settings
+    if targetClassKey and CooldownCompanion.EnsureResourceBarSettingsForClass then
+        settings = CooldownCompanion:EnsureResourceBarSettingsForClass(targetClassKey)
+    else
+        settings = CooldownCompanion:GetResourceBarSettings()
+    end
     local ok, message
     if rb and rb.ImportCustomBarsPayload then
-        ok, message = rb.ImportCustomBarsPayload(settings, data)
+        ok, message = rb.ImportCustomBarsPayload(settings, data, targetClassKey and {
+            targetClassKey = targetClassKey,
+        } or nil)
     end
     if not ok then
         CooldownCompanion:Print(message or "Import failed.")
@@ -1557,35 +1616,154 @@ local function ApplyCustomBarsImportData(data, options)
     return true
 end
 
+local function GetSetupSectionClassKey(section)
+    if type(section) ~= "table" then
+        return nil
+    end
+    local normalize = ST._NormalizeResourceBarClassKey
+    local classKey = normalize and normalize(section.classFilename) or nil
+    if classKey then
+        return classKey
+    end
+    if section.classID and ST._GetResourceBarClassKeyFromClassID then
+        return ST._GetResourceBarClassKeyFromClassID(section.classID)
+    end
+    return nil
+end
+
+-- Applies a `setup` payload: groups additively, then the Resources section as
+-- a whole-bucket replace for its class, then any Custom Bars section
+-- additively. Order matters: groups first so the Resources anchor can remap
+-- onto the groups imported from the same string.
+local function ApplySetupImportData(data)
+    if type(data) ~= "table" or data.type ~= "setup" then
+        CooldownCompanion:Print("Import failed: this is not a setup export.")
+        return false
+    end
+    if RejectUnsupportedImportPayload(data, "setup import") then
+        return false
+    end
+
+    local hasContainers = type(data.containers) == "table" and #data.containers > 0
+    local customBarsSection = type(data.customBars) == "table"
+        and type(data.customBars.bars) == "table"
+        and #data.customBars.bars > 0
+        and data.customBars
+        or nil
+    local resourcesSection = type(data.resources) == "table"
+        and type(data.resources.settings) == "table"
+        and data.resources
+        or nil
+    if not hasContainers and not customBarsSection and not resourcesSection then
+        CooldownCompanion:Print("Import failed: this setup export is empty.")
+        return false
+    end
+
+    local resourcesClassKey = resourcesSection and GetSetupSectionClassKey(resourcesSection) or nil
+    if resourcesSection and not resourcesClassKey then
+        CooldownCompanion:Print("Import failed: the Resources setup does not name its class.")
+        return false
+    end
+    local barsClassKey = customBarsSection and GetSetupSectionClassKey(customBarsSection) or nil
+    if customBarsSection and not barsClassKey then
+        CooldownCompanion:Print("Import failed: the Custom Bars do not name their class.")
+        return false
+    end
+
+    if resourcesClassKey and BlockCustomBarsImportForResourceBarConflict(resourcesClassKey) then
+        return false
+    end
+    if barsClassKey and barsClassKey ~= resourcesClassKey
+        and BlockCustomBarsImportForResourceBarConflict(barsClassKey) then
+        return false
+    end
+
+    local batchToken = ST._BeginGroupImportBatch()
+    local applied = false
+    local failed = false
+    local containersApplied = false
+
+    if hasContainers then
+        local containersPayload = {
+            type = "containers",
+            containers = data.containers,
+            _cdcImportCheckpoint = data._cdcImportCheckpoint,
+        }
+        ST._AttachGroupImportBatch(containersPayload, batchToken)
+        containersApplied = ApplyGroupImportData(containersPayload) == true
+        applied = containersApplied or applied
+        failed = failed or not containersApplied
+    end
+
+    local importState = activeGroupImportBatches[batchToken]
+
+    if resourcesSection then
+        local settings = CopyTable(resourcesSection.settings)
+        local anchorId = tonumber(settings.anchorGroupId)
+        if anchorId then
+            -- The exporter's group ids mean nothing here; keep the anchor only
+            -- when it remaps onto a group imported from this same string.
+            settings.anchorGroupId = importState
+                and importState.groupIdMap
+                and importState.groupIdMap[anchorId]
+                or nil
+        end
+        local replaced = CooldownCompanion.ReplaceResourceBarClassSettings
+            and CooldownCompanion:ReplaceResourceBarClassSettings(resourcesClassKey, settings)
+        if replaced then
+            applied = true
+            CooldownCompanion:Print("Imported Resources setup for " .. tostring(resourcesClassKey) .. ".")
+        else
+            failed = true
+        end
+    end
+
+    -- A Resources section already carries its class's Custom Bars; a separate
+    -- bars section for that same class would double-import them. Export mode
+    -- never builds both, so only apply bars aimed at a different class.
+    if customBarsSection and barsClassKey ~= resourcesClassKey then
+        local barsPayload = {
+            type = "customBars",
+            version = customBarsSection.version or 1,
+            classID = customBarsSection.classID,
+            classFilename = customBarsSection.classFilename,
+            bars = customBarsSection.bars,
+            layouts = customBarsSection.layouts,
+            _cdcImportCheckpoint = data._cdcImportCheckpoint,
+        }
+        local ok = ApplyCustomBarsImportData(barsPayload, {
+            targetClassKey = barsClassKey,
+        }) == true
+        applied = ok or applied
+        failed = failed or not ok
+    end
+
+    ST._FinishGroupImportBatch(batchToken, containersApplied)
+    -- The batch remaps container and panel anchors, and that runs AFTER
+    -- ApplyGroupImportData's own RefreshAllGroups - so without this the
+    -- remapped anchors never reach the live frames (same reason
+    -- ApplyProfileImportPieces refreshes after finishing its batch).
+    if containersApplied and CooldownCompanion.RefreshAllGroups then
+        CooldownCompanion:RefreshAllGroups()
+    end
+
+    if resourcesSection then
+        CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end
+
+    if failed then
+        CooldownCompanion:Print(applied
+            and "Import finished: some parts of this setup could not be imported."
+            or "Import failed: this setup could not be imported.")
+    end
+    return applied
+end
+
 ST._BlockCustomBarsImportForResourceBarConflict = BlockCustomBarsImportForResourceBarConflict
 ST._ApplyCustomBarsImportData = ApplyCustomBarsImportData
-
-StaticPopupDialogs["CDC_EXPORT_CUSTOM_BARS"] = {
-    text = "Export Custom Bars string (Ctrl+C to copy):",
-    button1 = "Close",
-    hasEditBox = true,
-    OnShow = function(self)
-        local blocked, blockMessage = BlockCustomBarExportForResourceBarConflict()
-        if blocked then
-            self.EditBox:SetText(blockMessage or "Resolve pending Resource Bar conflicts before exporting Custom Bars.")
-            self.EditBox:HighlightText()
-            self.EditBox:SetFocus()
-            return
-        end
-        if self.data and self.data.exportString then
-            self.EditBox:SetText(self.data.exportString)
-            self.EditBox:HighlightText()
-            self.EditBox:SetFocus()
-        end
-    end,
-    EditBoxOnEscapePressed = function(self)
-        self:GetParent():Hide()
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
+ST._ApplySetupImportData = ApplySetupImportData
 
 StaticPopupDialogs["CDC_SAVE_GROUP_SETTINGS_PRESET"] = {
     text = "Save current group settings as preset:",

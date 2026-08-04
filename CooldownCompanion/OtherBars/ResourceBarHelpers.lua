@@ -1111,20 +1111,97 @@ local function BuildCustomBarsExportPayload(settings, entries)
     return payload
 end
 
-local function ImportCustomBarsPayload(settings, payload)
+local function NormalizePayloadClassKey(value)
+    if type(value) ~= "string" or value == "" then
+        return nil
+    end
+    return string.upper(value)
+end
+
+local function GetPayloadClassKey(payload)
+    local classKey = NormalizePayloadClassKey(payload.classFilename)
+    if classKey then
+        return classKey
+    end
+    if payload.classID and ST._GetResourceBarClassKeyFromClassID then
+        return ST._GetResourceBarClassKeyFromClassID(payload.classID)
+    end
+    return nil
+end
+
+local function GetFirstClassSpecID(classKey)
+    local specInfo = ST._GetResourceBarClassSpecInfo
+    local specIDs = specInfo and specInfo(classKey) or nil
+    if type(specIDs) ~= "table" then
+        return nil
+    end
+    local firstSpecID
+    for specID in pairs(specIDs) do
+        if not firstSpecID or specID < firstSpecID then
+            firstSpecID = specID
+        end
+    end
+    return firstSpecID
+end
+
+-- The "Resources" piece of a setup export: the whole class bucket, tagged with
+-- the class it belongs to. Replaces the target class's bucket on import.
+local function BuildResourcesSetupSection(settings, classKey)
+    if type(settings) ~= "table" then
+        return nil
+    end
+    classKey = NormalizePayloadClassKey(classKey)
+    if not classKey then
+        local _, playerClassFilename = UnitClass("player")
+        classKey = NormalizePayloadClassKey(playerClassFilename)
+    end
+    if not classKey then
+        return nil
+    end
+    local classID = ST._GetClassIDFromResourceBarClassKey
+        and ST._GetClassIDFromResourceBarClassKey(classKey)
+        or nil
+    return {
+        classID = classID,
+        classFilename = classKey,
+        settings = CopyTable(settings),
+    }
+end
+
+-- options.targetClassKey: the class whose bucket `settings` belongs to. When
+-- set, the payload's class must match IT (cross-class import lands in that
+-- class's bucket); the spec fallback for spec-less bars comes from that class,
+-- never from the character doing the importing. Without options the original
+-- same-class-as-player contract holds.
+local function ImportCustomBarsPayload(settings, payload, options)
     if type(settings) ~= "table" or type(payload) ~= "table" or payload.type ~= "customBars" then
         return false, "Import failed: this is not a Custom Bars export."
     end
 
-    local _, classFilename, classID = UnitClass("player")
-    if payload.classID and payload.classID ~= classID then
-        return false, "Import failed: Custom Bars can only be imported on the same class."
-    end
-    if payload.classFilename and classFilename and payload.classFilename ~= classFilename then
-        return false, "Import failed: Custom Bars can only be imported on the same class."
+    local targetClassKey = options and NormalizePayloadClassKey(options.targetClassKey) or nil
+    local payloadClassKey = GetPayloadClassKey(payload)
+    if targetClassKey then
+        if payloadClassKey and payloadClassKey ~= targetClassKey then
+            return false, "Import failed: these Custom Bars belong to another class."
+        end
+    else
+        local _, classFilename, classID = UnitClass("player")
+        if payload.classID and payload.classID ~= classID then
+            return false, "Import failed: Custom Bars can only be imported on the same class."
+        end
+        if payload.classFilename and classFilename and payload.classFilename ~= classFilename then
+            return false, "Import failed: Custom Bars can only be imported on the same class."
+        end
     end
     if type(payload.bars) ~= "table" or #payload.bars == 0 then
         return false, "Import failed: no Custom Bars were found."
+    end
+
+    local fallbackSpecID
+    if targetClassKey then
+        fallbackSpecID = GetFirstClassSpecID(targetClassKey)
+    else
+        fallbackSpecID = GetCurrentSpecID()
     end
 
     local importedCount = 0
@@ -1133,7 +1210,7 @@ local function ImportCustomBarsPayload(settings, payload)
         if IsConfiguredCustomBar(exportedEntry) then
             local oldId = exportedEntry.customBarId
             local specIDs = CollectCustomBarSpecIDs(exportedEntry)
-            local firstSpecID = specIDs[1] or GetCurrentSpecID()
+            local firstSpecID = specIDs[1] or fallbackSpecID
             if firstSpecID then
                 local entry = CopyTable(exportedEntry)
                 entry.customBarId = nil
@@ -2047,6 +2124,7 @@ RB.CustomBarHasExplicitSpec = CustomBarHasExplicitSpec
 RB.AddCustomBarToSpec = AddCustomBarToSpec
 RB.RemoveCustomBarFromSpec = RemoveCustomBarFromSpec
 RB.BuildCustomBarsExportPayload = BuildCustomBarsExportPayload
+RB.BuildResourcesSetupSection = BuildResourcesSetupSection
 RB.ImportCustomBarsPayload = ImportCustomBarsPayload
 RB.EnsureCustomBarId = EnsureCustomBarId
 RB.GetCustomBarLayout = GetCustomBarLayout

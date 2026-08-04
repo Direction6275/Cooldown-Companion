@@ -180,6 +180,14 @@ local function StripCharacterEligibilityFromPayload(payload)
             stripped = stripped + StripCharacterEligibilityFromEntity(bar)
         end
     end
+    if type(payload.customBars) == "table" and type(payload.customBars.bars) == "table" then
+        for _, bar in ipairs(payload.customBars.bars) do
+            stripped = stripped + StripCharacterEligibilityFromEntity(bar)
+        end
+    end
+    if type(payload.resources) == "table" then
+        stripped = stripped + StripCharacterEligibilityFromResourceBarSettings(payload.resources.settings)
+    end
     return stripped
 end
 
@@ -1243,6 +1251,9 @@ local function CompactEntityPayload(payload, formatVersion)
             compact.containers[index] = compactEntry
         end
     end
+    if type(compact.resources) == "table" and type(compact.resources.settings) == "table" then
+        compact.resources.settings = CompactScopedSettings(compact.resources.settings, "resourceBars", true, formatVersion)
+    end
     return compact
 end
 
@@ -1291,6 +1302,9 @@ local function RehydrateEntityPayload(payload, formatVersion)
                 end
             end
         end
+    end
+    if type(payload.resources) == "table" and type(payload.resources.settings) == "table" then
+        payload.resources.settings = RehydrateScopedSettings(payload.resources.settings, "resourceBars", formatVersion)
     end
 
     return payload

@@ -3936,7 +3936,13 @@ function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost, options
     -- ticker reads lives outside the ticker, so a stop/re-arm is seamless.
     StopConditionalTicker(preview)
 
-    local group = panelId and CooldownCompanion.db.profile.groups[panelId]
+    -- options.groupData renders a detached panel table (an import payload's
+    -- incoming panel) instead of a saved panel. Read-only paths never touch
+    -- panelId after this resolution, so a nil id is safe with data supplied.
+    local group = options and type(options.groupData) == "table" and options.groupData or nil
+    if not group then
+        group = panelId and CooldownCompanion.db.profile.groups[panelId]
+    end
     if not group then
         SetPreviewMessage(preview, "Select a panel to preview it here.")
         FinalizePreviewState(preview)
@@ -4134,6 +4140,20 @@ function ST._BuildReadOnlyPanelPreview(host, panelId)
     local naturalWidth, naturalHeight =
         ST._GetReadOnlyPanelPreviewNaturalSize(panelId)
     ST._BuildButtonPanelPreview(host, panelId, nil, { readOnly = true })
+    local preview = host._cdcPanelPreview
+    return preview and preview.root or nil, naturalWidth, naturalHeight
+end
+
+-- Detached-data variants for import mode's incoming-panel tiles: the panel
+-- exists only inside a decoded (rehydrated) payload, not in the profile.
+function ST._GetReadOnlyPanelPreviewNaturalSizeFromData(groupData)
+    return GetPanelPreviewNaturalSize(groupData)
+end
+
+function ST._BuildReadOnlyPanelPreviewFromData(host, groupData)
+    if not host then return nil, 220, 90 end
+    local naturalWidth, naturalHeight = GetPanelPreviewNaturalSize(groupData)
+    ST._BuildButtonPanelPreview(host, nil, nil, { readOnly = true, groupData = groupData })
     local preview = host._cdcPanelPreview
     return preview and preview.root or nil, naturalWidth, naturalHeight
 end

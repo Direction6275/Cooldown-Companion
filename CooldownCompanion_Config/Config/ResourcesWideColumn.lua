@@ -21,7 +21,6 @@ local SetConfigCustomBarSettingsTab = ST._SetConfigCustomBarSettingsTab
 local PruneConfigCustomBarSelection = ST._PruneConfigCustomBarSelection
 local SetConfigResourceSettingsSpecID = ST._SetConfigResourceSettingsSpecID
 local PruneConfigResourceSelection = ST._PruneConfigResourceSelection
-local BlockCustomBarExportForResourceBarConflict = ST._BlockCustomBarExportForResourceBarConflict
 
 local function ClearInfoButtons(buttons)
     if type(buttons) ~= "table" then
@@ -65,23 +64,6 @@ end
 
 local function FindSelectedCustomBar()
     return FindCustomBarById(CooldownCompanion:GetResourceBarSettings(), CS.selectedCustomBarId)
-end
-
-local function ExportAllCustomBars()
-    if BlockCustomBarExportForResourceBarConflict and BlockCustomBarExportForResourceBarConflict() then
-        return
-    end
-    local settings = CooldownCompanion:GetResourceBarSettings()
-    local customBars = RB and RB.GetAllCustomBars and RB.GetAllCustomBars(settings)
-        or CooldownCompanion:GetSpecCustomAuraBars()
-    local payload = RB and RB.BuildCustomBarsExportPayload
-        and RB.BuildCustomBarsExportPayload(settings, customBars)
-    local exportString = payload and ST._EncodeExportData and ST._EncodeExportData(payload)
-    if exportString then
-        ST._ShowPopupAboveConfig("CDC_EXPORT_CUSTOM_BARS", nil, { exportString = exportString })
-    else
-        CooldownCompanion:Print("Export failed: Custom Bar data was unavailable.")
-    end
 end
 
 local function EnsureResourcesAddBox(col3)
@@ -317,13 +299,10 @@ local function PrepareResourcesEditingChrome(col3)
                 text = "Import",
                 width = 58,
                 onClick = function()
-                    ST._OpenImportReviewWindow()
+                    if ST._EnterImportMode then
+                        ST._EnterImportMode()
+                    end
                 end,
-            },
-            {
-                text = "Export All",
-                width = 72,
-                onClick = ExportAllCustomBars,
             },
         })
     end
@@ -886,26 +865,6 @@ local function ShowCustomBarMultiSelect(col3, selectedIds, selectedEntries)
         CooldownCompanion:RefreshConfigPanel()
     end)
     scroll:AddChild(enableBtn)
-
-    AddSpacer()
-
-    local exportBtn = AceGUI:Create("Button")
-    exportBtn:SetText("Export Selected")
-    exportBtn:SetFullWidth(true)
-    exportBtn:SetCallback("OnClick", function()
-        if BlockCustomBarExportForResourceBarConflict and BlockCustomBarExportForResourceBarConflict() then
-            return
-        end
-        local settings = CooldownCompanion:GetResourceBarSettings()
-        local payload = ST._RB.BuildCustomBarsExportPayload and ST._RB.BuildCustomBarsExportPayload(settings, selectedEntries)
-        local exportString = payload and ST._EncodeExportData and ST._EncodeExportData(payload)
-        if exportString then
-            CS.ShowPopupAboveConfig("CDC_EXPORT_CUSTOM_BARS", nil, { exportString = exportString })
-        else
-            CooldownCompanion:Print("Export failed: Custom Bar data was unavailable.")
-        end
-    end)
-    scroll:AddChild(exportBtn)
 
     AddSpacer()
 

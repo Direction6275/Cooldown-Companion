@@ -24,9 +24,6 @@ local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local CancelDrag = ST._CancelDrag
 local StartDragTracking = ST._StartDragTracking
 local GetScaledCursorPosition = ST._GetScaledCursorPosition
-local BuildGroupExportData = ST._BuildGroupExportData
-local BuildContainerExportData = ST._BuildContainerExportData
-local EncodeExportData = ST._EncodeExportData
 local ContainersHaveForeignSpecs = ST._ContainersHaveForeignSpecs
 local NotifyTutorialAction = ST._NotifyTutorialAction
 local IsConfigFinderActive = ST._IsConfigFinderActive
@@ -469,59 +466,6 @@ local function ConfigureGenericGroupRenameBadge(entry, container, containerId, r
     return 18
 end
 
-local function BuildContainerExportPayload(db, containerId, container)
-    local sortedPanels = CooldownCompanion:GetPanels(containerId)
-    local panels = {}
-    for _, entry in ipairs(sortedPanels) do
-        local panelData = BuildGroupExportData(entry.group)
-        panelData._originalGroupId = entry.groupId
-        panels[#panels + 1] = panelData
-    end
-    return {
-        type = "container",
-        version = 1,
-        container = BuildContainerExportData(container),
-        panels = panels,
-        _originalContainerId = containerId,
-    }
-end
-
-local function BuildSelectedContainersExportPayload(db, selectedGroups)
-    local orderedCids = {}
-    for cid in pairs(selectedGroups) do
-        local container = db.groupContainers[cid]
-        if container then
-            orderedCids[#orderedCids + 1] = {
-                cid = cid,
-                order = CooldownCompanion:GetOrderForSpec(container, CooldownCompanion._currentSpecId, cid),
-            }
-        end
-    end
-    table.sort(orderedCids, function(a, b) return a.order < b.order end)
-
-    local exportContainers = {}
-    for _, item in ipairs(orderedCids) do
-        local container = db.groupContainers[item.cid]
-        if container then
-            local payload = BuildContainerExportPayload(db, item.cid, container)
-            exportContainers[#exportContainers + 1] = {
-                container = payload.container,
-                panels = payload.panels,
-                _originalContainerId = payload._originalContainerId,
-            }
-        end
-    end
-
-    return {
-        type = "containers",
-        version = 1,
-        containers = exportContainers,
-    }
-end
-
--- Shared by the Group context menu and the Group multi-select action surface.
-ST._BuildSelectedContainersExportPayload = BuildSelectedContainersExportPayload
-
 local function CanPanelMoveToContainer(panelId, containerId)
     if CooldownCompanion.ResolveContainerClassScope then
         local scope = CooldownCompanion:ResolveContainerClassScope(containerId)
@@ -719,24 +663,6 @@ local function ShowPanelContextMenu(panelId, containerId)
             end
 
             info = UIDropDownMenu_CreateInfo()
-            info.text = "Export"
-            info.notCheckable = true
-            info.func = function()
-                CloseDropDownMenus()
-                local containerData = BuildContainerExportData(container)
-                containerData.name = panel.name or "Panel"
-                local payload = {
-                    type = "container",
-                    version = 1,
-                    container = containerData,
-                    panels = { BuildGroupExportData(panel) },
-                    _originalContainerId = containerId,
-                }
-                ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = EncodeExportData(payload) })
-            end
-            UIDropDownMenu_AddButton(info, level)
-
-            info = UIDropDownMenu_CreateInfo()
             info.text = "|cffff4444Delete|r"
             info.notCheckable = true
             info.func = function()
@@ -923,19 +849,6 @@ local function ShowContainerContextMenu(db, containerId, container)
                     SelectConfigContainer(newContainerId)
                     CooldownCompanion:RefreshConfigPanel()
                 end
-            end
-            UIDropDownMenu_AddButton(info, level)
-
-            info = UIDropDownMenu_CreateInfo()
-            info.text = next(CS.selectedGroups) and "Export Selected" or "Export"
-            info.notCheckable = true
-            info.func = function()
-                CloseDropDownMenus()
-                local payload = next(CS.selectedGroups)
-                    and BuildSelectedContainersExportPayload(db, CS.selectedGroups)
-                    or BuildContainerExportPayload(db, containerId, container)
-                local exportString = EncodeExportData(payload)
-                ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
             end
             UIDropDownMenu_AddButton(info, level)
 
@@ -1368,6 +1281,474 @@ local function AddColumn1BottomSpacer()
     CS.col1Scroll:AddChild(spacer)
 end
 
+------------------------------------------------------------------------
+-- EXPORT MODE: the Navigator re-presents as a pick-what-to-export
+-- checklist. Clicks toggle inclusion using the multi-select blue; the
+-- normal selection state underneath is never touched, so leaving the
+-- mode restores the config exactly as it was.
+------------------------------------------------------------------------
+
+local function PopulateExportModeButtonBar()
+    if not CS.col1ButtonBar then
+        return
+    end
+    ClearColumn1ButtonBar()
+
+    local exportBtn = AceGUI:Create("Button")
+    local nothingChecked = (ST._CountExportSelection and ST._CountExportSelection() or 0) == 0
+    exportBtn:SetText(nothingChecked and "Export" or "|cff33ff33Export|r")
+    exportBtn:SetDisabled(nothingChecked)
+    exportBtn:SetCallback("OnClick", function()
+        if ST._ConfirmExportMode then ST._ConfirmExportMode() end
+    end)
+    exportBtn.frame:SetParent(CS.col1ButtonBar)
+    exportBtn.frame:ClearAllPoints()
+    exportBtn.frame:SetPoint("TOPLEFT", CS.col1ButtonBar, "TOPLEFT", 0, -1)
+    exportBtn.frame:SetHeight(28)
+    exportBtn.frame:Show()
+    table.insert(CS.col1BarWidgets, exportBtn)
+
+    local cancelBtn = AceGUI:Create("Button")
+    cancelBtn:SetText("|cffff4444Cancel|r")
+    cancelBtn:SetCallback("OnClick", function()
+        if ST._ExitExportMode then ST._ExitExportMode() end
+    end)
+    cancelBtn.frame:SetParent(CS.col1ButtonBar)
+    cancelBtn.frame:ClearAllPoints()
+    cancelBtn.frame:SetPoint("TOPRIGHT", CS.col1ButtonBar, "TOPRIGHT", 0, -1)
+    cancelBtn.frame:SetHeight(28)
+    cancelBtn.frame:Show()
+    table.insert(CS.col1BarWidgets, cancelBtn)
+
+    local function SizeExportBarButtons(width)
+        local half = math.max(1, math.floor(((width or 0) - 4) / 2))
+        exportBtn.frame:SetWidth(half)
+        cancelBtn.frame:SetWidth(half)
+    end
+    CS.col1ButtonBar._topRowBtns = { exportBtn.frame, cancelBtn.frame }
+    CS.col1ButtonBar:SetScript("OnSizeChanged", function(_, w)
+        SizeExportBarButtons(w)
+    end)
+    SizeExportBarButtons(CS.col1ButtonBar:GetWidth())
+    CS.col1ButtonBar:Show()
+end
+
+local function SetExportRowTooltip(entry, title, body)
+    entry:SetCallback("OnEnter", function(widget)
+        GameTooltip:SetOwner(widget.frame, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(title)
+        if body then
+            GameTooltip:AddLine(body, 1, 1, 1, true)
+        end
+        GameTooltip:Show()
+    end)
+    entry:SetCallback("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+end
+
+local function AddExportModeRowShell()
+    local groupUnit = AceGUI:Create("InlineGroup")
+    groupUnit:SetTitle("")
+    groupUnit:SetLayout("List")
+    groupUnit:SetFullWidth(true)
+    CompactUntitledInlineGroupConfig(groupUnit)
+    -- Recycled shells can arrive still dimmed from the resting navigator's
+    -- inactive-group treatment; export rows are never dimmed.
+    groupUnit.frame:SetAlpha(1)
+    CS.col1Scroll:AddChild(groupUnit)
+    return groupUnit
+end
+
+local function AcquireExportModeRow(text)
+    local entry = AceGUI:Create("InteractiveLabel")
+    CleanRecycledEntry(entry)
+    entry:SetText(text)
+    entry:SetFullWidth(true)
+    entry:SetFontObject(GameFontHighlight)
+    entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+    return entry
+end
+
+local function RenderExportModeGroups(db, selection, mode)
+    local ordered = {}
+    for cid, container in pairs(db.groupContainers or {}) do
+        local scope = CooldownCompanion.ResolveContainerClassScope
+            and CooldownCompanion:ResolveContainerClassScope(container)
+            or nil
+        if not scope or scope.runtimeVisible == true then
+            ordered[#ordered + 1] = {
+                cid = cid,
+                container = container,
+                order = CooldownCompanion:GetOrderForSpec(container, CooldownCompanion._currentSpecId, cid),
+            }
+        end
+    end
+    table.sort(ordered, function(a, b) return a.order < b.order end)
+    if #ordered == 0 then
+        return 0
+    end
+
+    AddColumn1SectionHeading("Groups", nil, true)
+    for _, item in ipairs(ordered) do
+        local cid = item.cid
+        local container = item.container
+        local panels = CooldownCompanion:GetPanels(cid)
+        local total = #panels
+        local checkedCount = 0
+        for _, panelInfo in ipairs(panels) do
+            if selection.panels[panelInfo.groupId] then
+                checkedCount = checkedCount + 1
+            end
+        end
+        local isChecked = selection.containers[cid] == true
+
+        local countText
+        if total == 0 then
+            countText = "empty"
+        elseif isChecked and checkedCount < total then
+            countText = checkedCount .. " of " .. total
+        else
+            countText = total .. (total == 1 and " panel" or " panels")
+        end
+
+        local groupUnit = AddExportModeRowShell()
+        local entry = AcquireExportModeRow(
+            (container.name or ("Group " .. tostring(cid))) .. "  |cff777777(" .. countText .. ")|r")
+        ApplyConfigRowIcon(entry, GetContainerIcon(cid, db), {
+            indent = 2,
+            iconSize = TREE.GROUP_ICON_SIZE,
+            iconGap = TREE.ICON_GAP,
+            rowHeight = TREE.GROUP_ROW_HEIGHT,
+            compactRowHeight = 30,
+            texCoord = { 0.08, 0.92, 0.08, 0.92 },
+            rightPad = 30,
+        })
+        groupUnit:AddChild(entry)
+        if isChecked then
+            entry:SetColor(0.4, 0.7, 1.0)
+        end
+
+        if total > 0 then
+            ConfigureTreeExpandButton(entry, mode.expanded[cid] == true, false, function()
+                if mode.expanded[cid] then
+                    mode.expanded[cid] = nil
+                else
+                    mode.expanded[cid] = true
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+        end
+
+        entry:SetCallback("OnClick", function(_, _, mouseButton)
+            if mouseButton ~= "LeftButton" then return end
+            if isChecked then
+                selection.containers[cid] = nil
+                for _, panelInfo in ipairs(panels) do
+                    selection.panels[panelInfo.groupId] = nil
+                end
+            else
+                selection.containers[cid] = true
+                for _, panelInfo in ipairs(panels) do
+                    selection.panels[panelInfo.groupId] = true
+                end
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+
+        if mode.expanded[cid] then
+            for _, panelInfo in ipairs(panels) do
+                local panelId = panelInfo.groupId
+                local panel = panelInfo.group
+                local panelEntry = AcquireExportModeRow(panel.name or ("Panel " .. tostring(panelId)))
+                local iconTexture = 134400
+                local iconAtlas
+                local iconVertexColor
+                local iconDesaturated = false
+                local iconTexCoord
+                if panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+                    iconTexture = CooldownCompanion:GetRotationAssistantFallbackIcon()
+                    iconTexCoord = { 0.08, 0.92, 0.08, 0.92 }
+                else
+                    iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
+                    if panel.displayMode == "trigger" then
+                        iconVertexColor = { 1.0, 0.18, 0.78, 1 }
+                        iconDesaturated = true
+                    end
+                end
+                ApplyConfigRowIcon(panelEntry, iconTexture, {
+                    atlas = iconAtlas,
+                    desaturated = iconDesaturated,
+                    indent = TREE.PANEL_INDENT,
+                    iconSize = TREE.PANEL_ICON_SIZE,
+                    iconGap = TREE.ICON_GAP,
+                    rowHeight = TREE.PANEL_ROW_HEIGHT,
+                    compactRowHeight = 24,
+                    texCoord = iconTexCoord,
+                    vertexColor = iconVertexColor,
+                })
+                if selection.panels[panelId] then
+                    panelEntry:SetColor(0.4, 0.7, 1.0)
+                end
+                panelEntry:SetCallback("OnClick", function(_, _, mouseButton)
+                    if mouseButton ~= "LeftButton" then return end
+                    if selection.panels[panelId] then
+                        selection.panels[panelId] = nil
+                        local anyLeft = false
+                        for _, other in ipairs(panels) do
+                            if selection.panels[other.groupId] then
+                                anyLeft = true
+                                break
+                            end
+                        end
+                        if not anyLeft then
+                            selection.containers[cid] = nil
+                        end
+                    else
+                        selection.panels[panelId] = true
+                        selection.containers[cid] = true
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+                groupUnit:AddChild(panelEntry)
+            end
+        end
+    end
+    return #ordered
+end
+
+local function RenderExportModeResources(selection, isFirstSection)
+    if not (ST._IsResourcesExportable and ST._IsResourcesExportable()) then
+        return
+    end
+
+    AddColumn1SectionHeading("Resources", nil, isFirstSection)
+    local shell = AddExportModeRowShell()
+    local entry = AcquireExportModeRow("Resources")
+    ApplyConfigRowIcon(entry, 134400, {
+        atlas = "ui_adv_health",
+        indent = 2,
+        iconSize = TREE.GROUP_ICON_SIZE,
+        iconGap = TREE.ICON_GAP,
+        rowHeight = TREE.GROUP_ROW_HEIGHT,
+        compactRowHeight = 30,
+    })
+    shell:AddChild(entry)
+    if selection.resources then
+        entry:SetColor(0.4, 0.7, 1.0)
+    end
+    SetExportRowTooltip(entry, "Resources",
+        "Your whole Resources setup: resources, styling, layout order, and Custom Bars.")
+    entry:SetCallback("OnClick", function(_, _, mouseButton)
+        if mouseButton ~= "LeftButton" then return end
+        selection.resources = not selection.resources
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+end
+
+local function RenderExportModeCustomBars(selection, mode, isFirstSection)
+    local bars = ST._GetExportableCustomBars and ST._GetExportableCustomBars() or {}
+    if #bars == 0 then
+        return
+    end
+
+    local includedByResources = selection.resources == true
+    local checkedCount = 0
+    for _, info in ipairs(bars) do
+        if selection.customBars[info.customBarId] then
+            checkedCount = checkedCount + 1
+        end
+    end
+
+    AddColumn1SectionHeading("Custom Bars", nil, isFirstSection)
+    local shell = AddExportModeRowShell()
+    if includedByResources then
+        shell.frame:SetAlpha(0.58)
+    end
+
+    local countText
+    if includedByResources then
+        countText = "with Resources"
+    elseif checkedCount > 0 and checkedCount < #bars then
+        countText = checkedCount .. " of " .. #bars
+    else
+        countText = tostring(#bars)
+    end
+    local entry = AcquireExportModeRow("Custom Bars  |cff777777(" .. countText .. ")|r")
+    ApplyConfigRowIcon(entry, bars[1].icon, {
+        indent = 2,
+        iconSize = TREE.GROUP_ICON_SIZE,
+        iconGap = TREE.ICON_GAP,
+        rowHeight = TREE.GROUP_ROW_HEIGHT,
+        compactRowHeight = 30,
+        texCoord = { 0.08, 0.92, 0.08, 0.92 },
+        rightPad = 30,
+    })
+    shell:AddChild(entry)
+    if includedByResources or checkedCount > 0 then
+        entry:SetColor(0.4, 0.7, 1.0)
+    end
+
+    ConfigureTreeExpandButton(entry, mode.expanded.customBars == true, false, function()
+        if mode.expanded.customBars then
+            mode.expanded.customBars = nil
+        else
+            mode.expanded.customBars = true
+        end
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if includedByResources then
+        SetExportRowTooltip(entry, "Custom Bars", "Included in the Resources setup.")
+    else
+        entry:SetCallback("OnClick", function(_, _, mouseButton)
+            if mouseButton ~= "LeftButton" then return end
+            local allChecked = checkedCount == #bars
+            for _, info in ipairs(bars) do
+                selection.customBars[info.customBarId] = (not allChecked) and true or nil
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+    end
+
+    if mode.expanded.customBars then
+        for _, info in ipairs(bars) do
+            local barEntry = AcquireExportModeRow(info.label)
+            ApplyConfigRowIcon(barEntry, info.icon, {
+                indent = TREE.PANEL_INDENT,
+                iconSize = TREE.PANEL_ICON_SIZE,
+                iconGap = TREE.ICON_GAP,
+                rowHeight = TREE.PANEL_ROW_HEIGHT,
+                compactRowHeight = 24,
+                texCoord = { 0.08, 0.92, 0.08, 0.92 },
+            })
+            if includedByResources or selection.customBars[info.customBarId] then
+                barEntry:SetColor(0.4, 0.7, 1.0)
+            end
+            if includedByResources then
+                SetExportRowTooltip(barEntry, info.label, "Included in the Resources setup.")
+            else
+                local customBarId = info.customBarId
+                barEntry:SetCallback("OnClick", function(_, _, mouseButton)
+                    if mouseButton ~= "LeftButton" then return end
+                    if selection.customBars[customBarId] then
+                        selection.customBars[customBarId] = nil
+                    else
+                        selection.customBars[customBarId] = true
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+            end
+            shell:AddChild(barEntry)
+        end
+    end
+end
+
+local function RenderExportModeNavigator(db)
+    if CS.col1DestinationBar then
+        CS.col1DestinationBar:Hide()
+    end
+
+    local mode = CS.exportMode
+    local selection = mode.selection
+
+    local groupCount = RenderExportModeGroups(db, selection, mode)
+    RenderExportModeResources(selection, groupCount == 0)
+    RenderExportModeCustomBars(selection, mode, false)
+
+    AddColumn1BottomSpacer()
+    PopulateExportModeButtonBar()
+end
+
+------------------------------------------------------------------------
+-- IMPORT MODE: the whole flow lives in the wide column's paste-and-review
+-- surface, so the Navigator goes quiet and carries only the mode's
+-- confirm/cancel pills. The Import pill mirrors the review: its label is
+-- the review's accept verb and it only goes green when the paste can
+-- actually apply.
+------------------------------------------------------------------------
+
+local function PopulateImportModeButtonBar()
+    if not CS.col1ButtonBar then
+        return
+    end
+    ClearColumn1ButtonBar()
+
+    local importBtn = AceGUI:Create("Button")
+    local function UpdateImportPill()
+        local canConfirm = ST._CanConfirmImportMode and ST._CanConfirmImportMode() or false
+        local acceptText = ST._GetImportModeAcceptText and ST._GetImportModeAcceptText() or "Import"
+        importBtn:SetText(canConfirm and ("|cff33ff33" .. acceptText .. "|r") or acceptText)
+        importBtn:SetDisabled(not canConfirm)
+    end
+    importBtn:SetCallback("OnClick", function()
+        if ST._ConfirmImportMode then ST._ConfirmImportMode() end
+    end)
+    importBtn.frame:SetParent(CS.col1ButtonBar)
+    importBtn.frame:ClearAllPoints()
+    importBtn.frame:SetPoint("TOPLEFT", CS.col1ButtonBar, "TOPLEFT", 0, -1)
+    importBtn.frame:SetHeight(28)
+    importBtn.frame:Show()
+    table.insert(CS.col1BarWidgets, importBtn)
+
+    local cancelBtn = AceGUI:Create("Button")
+    cancelBtn:SetText("|cffff4444Cancel|r")
+    cancelBtn:SetCallback("OnClick", function()
+        if ST._ExitImportMode then ST._ExitImportMode() end
+    end)
+    cancelBtn.frame:SetParent(CS.col1ButtonBar)
+    cancelBtn.frame:ClearAllPoints()
+    cancelBtn.frame:SetPoint("TOPRIGHT", CS.col1ButtonBar, "TOPRIGHT", 0, -1)
+    cancelBtn.frame:SetHeight(28)
+    cancelBtn.frame:Show()
+    table.insert(CS.col1BarWidgets, cancelBtn)
+
+    local function SizeImportBarButtons(width)
+        local half = math.max(1, math.floor(((width or 0) - 4) / 2))
+        importBtn.frame:SetWidth(half)
+        cancelBtn.frame:SetWidth(half)
+    end
+    CS.col1ButtonBar._topRowBtns = { importBtn.frame, cancelBtn.frame }
+    CS.col1ButtonBar:SetScript("OnSizeChanged", function(_, w)
+        SizeImportBarButtons(w)
+    end)
+    SizeImportBarButtons(CS.col1ButtonBar:GetWidth())
+    CS.col1ButtonBar:Show()
+
+    -- Reclassifying a paste only re-renders the wide column's review area;
+    -- the mode pokes this so the pill tracks it without a full refresh.
+    if CS.importMode then
+        CS.importMode._updatePill = UpdateImportPill
+    end
+    UpdateImportPill()
+end
+
+local function RenderImportModeNavigator()
+    if CS.col1DestinationBar then
+        CS.col1DestinationBar:Hide()
+    end
+
+    local spacer = AceGUI:Create("SimpleGroup")
+    spacer:SetFullWidth(true)
+    spacer:SetHeight(20)
+    spacer.noAutoHeight = true
+    CS.col1Scroll:AddChild(spacer)
+
+    local header = AceGUI:Create("Label")
+    header:SetText("Paste an import string on the right.")
+    header:SetFullWidth(true)
+    header:SetJustifyH("CENTER")
+    header:SetFont((GameFontNormal:GetFont()), 12, "")
+    header:SetColor(0.7, 0.7, 0.7)
+    header.label:SetWordWrap(true)
+    header.label:SetNonSpaceWrap(true)
+    header.label:SetMaxLines(0)
+    CS.col1Scroll:AddChild(header)
+
+    AddColumn1BottomSpacer()
+    PopulateImportModeButtonBar()
+end
+
 local function RefreshColumn1(preserveDrag)
     if not CS.col1Scroll then return end
 
@@ -1393,6 +1774,13 @@ local function RefreshColumn1(preserveDrag)
             searchPanelResultsByContainer[result.containerId] = byPanel
         end
         byPanel[result.panelId] = result
+    end
+
+    -- Import mode forks ahead of the unsupported-profile screen on
+    -- purpose: restoring a backup is the way out of one.
+    if CS.importMode then
+        RenderImportModeNavigator()
+        return
     end
 
     if CooldownCompanion._unsupportedLegacyProfile then
@@ -1433,6 +1821,11 @@ local function RefreshColumn1(preserveDrag)
         desc.label:SetMaxLines(0)
         CS.col1Scroll:AddChild(desc)
         AddColumn1BottomSpacer()
+        return
+    end
+
+    if CS.exportMode then
+        RenderExportModeNavigator(db)
         return
     end
 
