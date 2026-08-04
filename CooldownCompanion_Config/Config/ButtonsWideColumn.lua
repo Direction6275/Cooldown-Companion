@@ -41,7 +41,6 @@ local EDIT_CHIPS_HEIGHT = 18
 local EDIT_CHIPS_GAP = 4
 local EDIT_CHIPS_SCROLL_STEP = 80
 local EDIT_CHIPS_SCROLL_BUTTON_WIDTH = 18
-local EDIT_HEADER_ACTION_GAP = 3
 
 -- The preview/settings split is owner-adjustable via the drag divider below;
 -- the chosen fraction persists per profile.
@@ -174,28 +173,6 @@ local function SetWideEditingAddBox(col3, widget)
     if widget and widget.frame then
         widget.frame._cdcEditingHeight = widget.frame._cdcEditingHeight or ADD_BOX_HEIGHT
         widget.frame:Show()
-    end
-end
-
-local function SetWideEditingHeaderActions(col3, actions)
-    local headerLine = EnsureEditingSurface(col3)._cdcHeader
-    headerLine.actionButtons = headerLine.actionButtons or {}
-    for index, action in ipairs(actions or {}) do
-        local button = headerLine.actionButtons[index]
-        if not button then
-            button = CreateFrame("Button", nil, headerLine, "UIPanelButtonTemplate")
-            button:SetHeight(18)
-            button:SetNormalFontObject(GameFontNormalSmall)
-            button:SetHighlightFontObject(GameFontHighlightSmall)
-            headerLine.actionButtons[index] = button
-        end
-        button:SetText(action.text or "")
-        button:SetWidth(action.width or 64)
-        button:SetScript("OnClick", action.onClick)
-        button:Show()
-    end
-    for index = #(actions or {}) + 1, #headerLine.actionButtons do
-        headerLine.actionButtons[index]:Hide()
     end
 end
 
@@ -362,7 +339,6 @@ local function ClearWideEditingExtras(col3)
     if col3._cdcEditingChips then
         col3._cdcEditingChips:Hide()
     end
-    SetWideEditingHeaderActions(col3, nil)
 end
 
 local function AcquireEditingHeaderBadge(headerLine, index)
@@ -499,21 +475,9 @@ local function UpdateEditingHeader(col3)
     local parent, leaf = GetEditingHeaderPath()
     local context = col3._cdcEditingContext
 
+    -- Status badges fill the header's right edge, chaining leftward.
     local shown = 0
     local rightAnchor
-    local actionButtons = headerLine.actionButtons or {}
-    for index = #actionButtons, 1, -1 do
-        local button = actionButtons[index]
-        if button:IsShown() then
-            button:ClearAllPoints()
-            if rightAnchor then
-                button:SetPoint("RIGHT", rightAnchor, "LEFT", -EDIT_HEADER_ACTION_GAP, 0)
-            else
-                button:SetPoint("RIGHT", headerLine, "RIGHT", 0, 0)
-            end
-            rightAnchor = button
-        end
-    end
     local badgeStatus = context and context.badgeStatus
     if badgeStatus and ST._EntryStatusBadges then
         for _, desc in ipairs(ST._EntryStatusBadges) do
@@ -1914,7 +1878,6 @@ ST._IsPanelMirrorPreviewActive = IsPanelMirrorPreviewActive
 ST._ReapplyPanelPreviewSplit = ReapplyPanelPreviewSplit
 ST._ClearWideAddBoxAfterAdd = ClearWideAddBoxAfterAdd
 ST._SetWideEditingAddBox = SetWideEditingAddBox
-ST._SetWideEditingHeaderActions = SetWideEditingHeaderActions
 ST._SetWideEditingChips = SetWideEditingChips
 ST._ClearWideEditingExtras = ClearWideEditingExtras
 -- Divider + editing-surface hide for view branches that release the split
