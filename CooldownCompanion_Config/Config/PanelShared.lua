@@ -404,6 +404,10 @@ RefreshCDMPanelFromSource = function(panelId, panel, containerId)
         return
     end
 
+    -- Same rule as the empty-section delete above: previews are keyed by
+    -- entry position, so a replacement entry must not inherit the simulated
+    -- state of whatever used to sit at its index.
+    CooldownCompanion:ClearAllConfigPreviews()
     local added = PopulateCDMPanelFromSource and PopulateCDMPanelFromSource(panelId, source) or 0
     if CS.selectedGroup == panelId and ClearConfigButtonSelection then
         ClearConfigButtonSelection()
