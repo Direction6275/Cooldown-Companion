@@ -628,10 +628,9 @@ end
 ------------------------------------------------------------------------
 
 -- Both corners of the anchored side, so the list spans the config's full
--- height and follows a resize of it. The right side is home; when the screen
--- leaves it no room the window tries the left side, and as a last resort it
--- slides just far enough left to stay reachable, overlapping the config's
--- right edge.
+-- height and follows a resize of it. The side comes from the shared config
+-- side-placement rule (Panel.lua); the config's geometry hooks re-run this
+-- whenever the window's side choice could go stale.
 local function AnchorWindow()
     local configFrame = CS.configFrame
     if not (window and configFrame and configFrame.frame and configFrame.frame:IsShown()) then
@@ -641,34 +640,19 @@ local function AnchorWindow()
     local wf = window.frame
     wf:ClearAllPoints()
 
-    local cfScale = cf:GetEffectiveScale()
-    local wfScale = wf:GetEffectiveScale()
-    local cfLeft = cf:GetLeft()
-    local cfRight = cf:GetRight()
-    if not (cfLeft and cfRight and wfScale and wfScale > 0) then
-        wf:SetPoint("TOPLEFT", cf, "TOPRIGHT", WINDOW_GAP, 0)
-        wf:SetPoint("BOTTOMLEFT", cf, "BOTTOMRIGHT", WINDOW_GAP, 0)
-        return
+    local side, xOff = "right", WINDOW_GAP
+    if ST._ComputeConfigSidePlacement then
+        side, xOff = ST._ComputeConfigSidePlacement(wf, WINDOW_WIDTH)
     end
-
-    -- Measured in physical coordinates so the config and window scales can
-    -- differ; the screen spans 0 to UIParent's right edge. Anchor offsets are
-    -- in the window's own scale.
-    local screenRight = UIParent:GetRight() * UIParent:GetEffectiveScale()
-    local needed = (WINDOW_WIDTH + WINDOW_GAP) * wfScale
-    local spaceRight = screenRight - cfRight * cfScale
-    local spaceLeft = cfLeft * cfScale
-
-    if spaceRight >= needed or spaceLeft < needed then
-        local overflow = needed - spaceRight
-        local xOff = WINDOW_GAP - (overflow > 0 and overflow / wfScale or 0)
+    if side == "left" then
+        wf:SetPoint("TOPRIGHT", cf, "TOPLEFT", xOff, 0)
+        wf:SetPoint("BOTTOMRIGHT", cf, "BOTTOMLEFT", xOff, 0)
+    else
         wf:SetPoint("TOPLEFT", cf, "TOPRIGHT", xOff, 0)
         wf:SetPoint("BOTTOMLEFT", cf, "BOTTOMRIGHT", xOff, 0)
-    else
-        wf:SetPoint("TOPRIGHT", cf, "TOPLEFT", -WINDOW_GAP, 0)
-        wf:SetPoint("BOTTOMRIGHT", cf, "BOTTOMLEFT", -WINDOW_GAP, 0)
     end
 end
+ST._ReanchorSpellbookPanelWindow = AnchorWindow
 
 local function CleanupWindow(widget)
     -- Dropped first, so the re-entrant OnClose that AceGUI:Release can fire

@@ -99,6 +99,39 @@ local function GetProfileWideSideWindowWidth()
     return math.floor((narrowestWidth or PROFILE_WIDE_FONT_WINDOW_FALLBACK_WIDTH) + 0.5)
 end
 
+-- One placement rule for every window that hangs off the config's side:
+-- right when it fits, left when only the left has room, and otherwise a
+-- right anchor slid just far enough left to stay on-screen over the config.
+-- Positions are measured in physical coordinates so the config and side
+-- window scales can differ; the returned x offset is in the side window's
+-- own scale, for the anchor point the returned side implies (TOPLEFT to
+-- TOPRIGHT when "right", TOPRIGHT to TOPLEFT when "left").
+local SIDE_WINDOW_GAP = 4
+
+local function ComputeConfigSidePlacement(sideFrame, windowWidth)
+    local configFrame = CS.configFrame
+    local cf = configFrame and configFrame.frame
+    if not (cf and cf:IsShown() and sideFrame) then
+        return "right", SIDE_WINDOW_GAP
+    end
+    local wfScale = sideFrame:GetEffectiveScale()
+    local cfScale = cf:GetEffectiveScale()
+    local cfLeft, cfRight = cf:GetLeft(), cf:GetRight()
+    if not (cfLeft and cfRight and wfScale and wfScale > 0) then
+        return "right", SIDE_WINDOW_GAP
+    end
+    local screenRight = UIParent:GetRight() * UIParent:GetEffectiveScale()
+    local needed = (windowWidth + SIDE_WINDOW_GAP) * wfScale
+    local spaceRight = screenRight - cfRight * cfScale
+    local spaceLeft = cfLeft * cfScale
+    if spaceRight >= needed or spaceLeft < needed then
+        local overflow = needed - spaceRight
+        return "right", SIDE_WINDOW_GAP - (overflow > 0 and overflow / wfScale or 0)
+    end
+    return "left", -SIDE_WINDOW_GAP
+end
+ST._ComputeConfigSidePlacement = ComputeConfigSidePlacement
+
 local function CleanupProfileWideSideWindow(widget, stateKey)
     if CS.UnregisterConfigDragAlphaFrame then
         CS.UnregisterConfigDragAlphaFrame(widget.frame)
@@ -120,8 +153,18 @@ end
 local function AnchorProfileWideSideWindow(window)
     local configFrame = CS.configFrame
     if configFrame and configFrame.frame and configFrame.frame:IsShown() then
-        window.frame:ClearAllPoints()
-        window.frame:SetPoint("TOPLEFT", configFrame.frame, "TOPRIGHT", 4, 0)
+        local wf = window.frame
+        wf:ClearAllPoints()
+        local width = wf:GetWidth()
+        if not width or width <= 0 then
+            width = GetProfileWideSideWindowWidth()
+        end
+        local side, xOff = ComputeConfigSidePlacement(wf, width)
+        if side == "left" then
+            wf:SetPoint("TOPRIGHT", configFrame.frame, "TOPLEFT", xOff, 0)
+        else
+            wf:SetPoint("TOPLEFT", configFrame.frame, "TOPRIGHT", xOff, 0)
+        end
     end
 end
 
@@ -788,6 +831,26 @@ local CONFIG_WINDOW_DEFAULT_HEIGHT = 780
 local CONFIG_WINDOW_MIN_WIDTH = 993
 local CONFIG_WINDOW_MIN_HEIGHT = 400
 
+-- Every side window follows the config's settled geometry; run from
+-- SaveConfigWindowGeometry so any move, resize, or reset re-picks their side.
+local function ReanchorConfigSideWindows()
+    for _, stateKey in ipairs({ "profileWideFontWindow", "profileWideBarTextureWindow" }) do
+        local sideWindow = CS[stateKey]
+        if sideWindow then
+            AnchorProfileWideSideWindow(sideWindow)
+        end
+    end
+    if ST._ReanchorSpellbookPanelWindow then
+        ST._ReanchorSpellbookPanelWindow()
+    end
+    if ST._ReanchorAdvancedSettingsPanels then
+        ST._ReanchorAdvancedSettingsPanels()
+    end
+    if ST._ReanchorFormatEditorWindow then
+        ST._ReanchorFormatEditorWindow()
+    end
+end
+
 local function SaveConfigWindowGeometry(content)
     local db = CooldownCompanion.db
     local global = db and db.global
@@ -802,6 +865,7 @@ local function SaveConfigWindowGeometry(content)
     geo.height = content:GetHeight()
     geo.left = content:GetLeft()
     geo.top = content:GetTop()
+    ReanchorConfigSideWindows()
 end
 
 -- Apply saved (or default) window size, clamped to the current screen: at
@@ -1003,6 +1067,10 @@ local function CreateConfigPanel()
             math.min(CONFIG_WINDOW_DEFAULT_HEIGHT, screenHeight * 0.9))
         local left, top = content:GetLeft(), content:GetTop()
         if left and top then
+            -- Reclamp the kept corner against the restored size, so a config
+            -- parked near the right or bottom edge cannot grow off-screen.
+            left = math.max(0, math.min(left, screenWidth - width))
+            top = math.min(screenHeight, math.max(top, height))
             content:ClearAllPoints()
             content:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
         end

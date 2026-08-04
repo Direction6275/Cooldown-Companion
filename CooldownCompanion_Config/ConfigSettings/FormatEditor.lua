@@ -16,6 +16,31 @@ local AddColorPicker = ST._AddColorPicker
 -- Module-level reference for lifecycle management
 local formatEditorFrame = nil
 
+local FORMAT_EDITOR_WINDOW_WIDTH = 400
+
+-- Follows the shared config side-placement rule (Panel.lua): right when it
+-- fits, left when only the left has room, else slid on-screen over the
+-- config. The config's geometry hooks re-run this after a move or resize.
+local function AnchorFormatEditorWindow()
+    local windowWidget = CS.formatEditorFrame
+    local configFrame = CS.configFrame
+    if not (windowWidget and configFrame and configFrame.frame and configFrame.frame:IsShown()) then
+        return
+    end
+    local wf = windowWidget.frame
+    wf:ClearAllPoints()
+    local side, xOff = "right", 4
+    if ST._ComputeConfigSidePlacement then
+        side, xOff = ST._ComputeConfigSidePlacement(wf, FORMAT_EDITOR_WINDOW_WIDTH)
+    end
+    if side == "left" then
+        wf:SetPoint("TOPRIGHT", configFrame.frame, "TOPLEFT", xOff, 0)
+    else
+        wf:SetPoint("TOPLEFT", configFrame.frame, "TOPRIGHT", xOff, 0)
+    end
+end
+ST._ReanchorFormatEditorWindow = AnchorFormatEditorWindow
+
 -- Token list for insert buttons
 local TOKEN_LIST = {"name", "time", "charges", "maxcharges", "stacks", "keybind", "status", "icon", "br"}
 
@@ -670,7 +695,7 @@ local function OpenFormatEditor(style, groupId, opts)
 
     local window = AceGUI:Create("Window")
     window:SetTitle((opts and opts.title) or "Format String Editor")
-    window:SetWidth(400)
+    window:SetWidth(FORMAT_EDITOR_WINDOW_WIDTH)
     window:SetHeight(600)
     window:SetLayout("List")
     window:EnableResize(false)
@@ -681,12 +706,7 @@ local function OpenFormatEditor(style, groupId, opts)
         CS.RegisterConfigDragAlphaFrame(window.frame)
     end
 
-    -- Anchor to the right of the config panel
-    local configFrame = CS.configFrame
-    if configFrame and configFrame.frame and configFrame.frame:IsShown() then
-        window.frame:ClearAllPoints()
-        window.frame:SetPoint("TOPLEFT", configFrame.frame, "TOPRIGHT", 4, 0)
-    end
+    AnchorFormatEditorWindow()
 
     -- ================================================================
     -- EDIT BOX (MultiLineEditBox) with inline syntax coloring

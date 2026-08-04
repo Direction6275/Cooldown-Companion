@@ -179,10 +179,47 @@ end
 
 -- The first panel hangs off the config frame; every later one stacks beneath
 -- the one before it, so two panels read as one column rather than a pile.
+-- The side comes from the shared config side-placement rule (Panel.lua), and
+-- the whole column shifts up when it would run off the bottom of the screen.
 local function AnchorPanelsToConfig()
     local configFrame = CS.configFrame
     if not (configFrame and configFrame.frame and configFrame.frame:IsShown()) then
         return
+    end
+    local first = openPanels[1] and openPanels[1].window.frame
+    if not first then
+        return
+    end
+
+    local widest, totalHeight = 0, 0
+    for index, panel in ipairs(openPanels) do
+        local frame = panel.window.frame
+        widest = math.max(widest, frame:GetWidth() or 0)
+        totalHeight = totalHeight + (frame:GetHeight() or 0)
+        if index > 1 then
+            totalHeight = totalHeight + PANEL_STACK_GAP
+        end
+    end
+
+    local side, xOff = "right", 4
+    if ST._ComputeConfigSidePlacement then
+        side, xOff = ST._ComputeConfigSidePlacement(first, widest)
+    end
+
+    -- Raise the column just enough to keep its bottom on-screen, without
+    -- pushing its top past the top edge. Physical coordinates, offset in the
+    -- first panel's scale (it carries the anchor).
+    local cf = configFrame.frame
+    local yOff = 0
+    local firstScale = first:GetEffectiveScale()
+    local cfTop = cf:GetTop()
+    if cfTop and firstScale and firstScale > 0 then
+        local cfTopPx = cfTop * cf:GetEffectiveScale()
+        local overflowPx = totalHeight * firstScale - cfTopPx
+        if overflowPx > 0 then
+            local maxRaisePx = UIParent:GetTop() * UIParent:GetEffectiveScale() - cfTopPx
+            yOff = math.min(overflowPx, math.max(maxRaisePx, 0)) / firstScale
+        end
     end
 
     local previousFrame
@@ -191,12 +228,15 @@ local function AnchorPanelsToConfig()
         frame:ClearAllPoints()
         if previousFrame then
             frame:SetPoint("TOPLEFT", previousFrame, "BOTTOMLEFT", 0, -PANEL_STACK_GAP)
+        elseif side == "left" then
+            frame:SetPoint("TOPRIGHT", cf, "TOPLEFT", xOff, yOff)
         else
-            frame:SetPoint("TOPLEFT", configFrame.frame, "TOPRIGHT", 4, 0)
+            frame:SetPoint("TOPLEFT", cf, "TOPRIGHT", xOff, yOff)
         end
         previousFrame = frame
     end
 end
+ST._ReanchorAdvancedSettingsPanels = AnchorPanelsToConfig
 
 -- The handle the rest of the config reads: the preview command center tints
 -- its gear gold while a window is up, and nothing else repaints that bar.
