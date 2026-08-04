@@ -459,6 +459,17 @@ end
 -- card itself because the scripts are installed once and the look changes per
 -- build. A nil hover fill means "keep the idle fill", which is how the starter
 -- answers the cursor with its border alone.
+-- While the first-run tutorial waits for the player to create an Icon Panel,
+-- every other create card stands down so the guided path cannot dead-end.
+-- Checked live in the handlers (the tutorial can end without a rebuild); the
+-- build pass reads it once for the dimmed look.
+local function IsCardTutorialLocked(create)
+    if not create or create.mode == "icons" then
+        return false
+    end
+    return (ST._IsTutorialAwaitingIconPanel and ST._IsTutorialAwaitingIconPanel()) == true
+end
+
 local function EnsurePickerCard(overview, block, index)
     local card = overview.cards[index]
     if card then return card end
@@ -478,7 +489,7 @@ local function EnsurePickerCard(overview, block, index)
 
     card:SetScript("OnClick", function(self)
         local create = self._cdcOverviewCreate
-        if not create then return end
+        if not create or IsCardTutorialLocked(create) then return end
         local containerId = create.containerId
         -- The click lands after the build pass, so the Group may already be
         -- gone or out of scope. Re-answer the create gate before acting.
@@ -495,7 +506,8 @@ local function EnsurePickerCard(overview, block, index)
         end
     end)
     card:SetScript("OnEnter", function(self)
-        if not self._cdcOverviewCreate then return end
+        local create = self._cdcOverviewCreate
+        if not create or IsCardTutorialLocked(create) then return end
         ApplyTileBorder(self, self._cdcHoverBorder or self._cdcIdleBorder)
         ApplyCardFill(self, self._cdcHoverFill or self._cdcIdleFill)
     end)
@@ -634,6 +646,7 @@ local function PlacePickerTier(overview, block, firstIndex, entries, metrics,
                 mode = entry.mode,
                 cdmStarter = entry.cdmStarter,
             }
+            card:SetAlpha(IsCardTutorialLocked(card._cdcOverviewCreate) and 0.35 or 1)
             ApplyPickerCardAccent(card, accent)
             card:ClearAllPoints()
             card:SetPoint("TOPLEFT", block, "TOP", x, -y)

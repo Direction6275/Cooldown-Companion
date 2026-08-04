@@ -656,6 +656,12 @@ local function CancelFirstIconPanelTutorial(reason)
         CS.tutorialFrame:Hide()
     end
     HideHighlight()
+
+    -- The empty picker locks its non-icon cards while the tutorial waits for
+    -- an Icon Panel; if it is the surface on screen, a rebuild hands them back.
+    if ST._GetEmptyPickerCardFrame and ST._GetEmptyPickerCardFrame("icons") then
+        CooldownCompanion:RefreshConfigPanel()
+    end
 end
 
 local function RebuildTutorialAnchors()
@@ -796,6 +802,17 @@ local function NotifyTutorialAction(action, payload)
     end
 end
 
+-- The empty picker's non-icon create cards stand down while this is true, so
+-- the guided first-panel path cannot dead-end: creating any other panel type
+-- removes the picker (the create_panel step's anchor) without advancing the
+-- tutorial.
+local function IsTutorialAwaitingIconPanel()
+    local runtime = GetRuntime()
+    return (runtime and runtime.active
+        and (runtime.step == "panels_column_intro" or runtime.step == "create_panel")) == true
+end
+
+ST._IsTutorialAwaitingIconPanel = IsTutorialAwaitingIconPanel
 ST._MaybeAutoStartFirstIconPanelTutorial = MaybeAutoStartFirstIconPanelTutorial
 ST._StartFirstIconPanelTutorial = StartFirstIconPanelTutorial
 ST._CancelFirstIconPanelTutorial = CancelFirstIconPanelTutorial
