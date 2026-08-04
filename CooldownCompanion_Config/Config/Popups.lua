@@ -435,9 +435,14 @@ StaticPopupDialogs["CDC_REFRESH_CDM_PANEL"] = {
             return
         end
         local panel = CooldownCompanion.db.profile.groups[data.panelId]
+        -- Same class-scope rule as the menu: the refresh reads the logged-in
+        -- character's CDM data, so another class's browsed panel must never
+        -- accept it.
         if panel
             and panel.parentContainerId == data.containerId
             and panel.cdmPanelSource == data.sourceKey
+            and ST._IsCreateTargetContainer
+            and ST._IsCreateTargetContainer(data.containerId)
             and ST._RefreshCDMPanelFromSource then
             ST._RefreshCDMPanelFromSource(data.panelId, panel, data.containerId)
         end

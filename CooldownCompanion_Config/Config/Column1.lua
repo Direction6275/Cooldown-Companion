@@ -634,7 +634,8 @@ local function ShowPanelContextMenu(panelId, containerId)
                 UIDropDownMenu_AddButton(info, level)
             end
 
-            if ST._IsActiveCDMPanelSource and ST._IsActiveCDMPanelSource(panel) then
+            if ST._IsActiveCDMPanelSource and ST._IsActiveCDMPanelSource(panel)
+                and ST._IsCreateTargetContainer and ST._IsCreateTargetContainer(containerId) then
                 info = UIDropDownMenu_CreateInfo()
                 info.text = "Refresh from Cooldown Manager"
                 info.notCheckable = true
