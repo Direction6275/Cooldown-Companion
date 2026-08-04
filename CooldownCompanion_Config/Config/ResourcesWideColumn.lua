@@ -293,19 +293,6 @@ end
 
 local function PrepareResourcesEditingChrome(col3)
     EnsureResourcesAddBox(col3)
-    if ST._SetWideEditingHeaderActions then
-        ST._SetWideEditingHeaderActions(col3, {
-            {
-                text = "Import",
-                width = 58,
-                onClick = function()
-                    if ST._EnterImportMode then
-                        ST._EnterImportMode()
-                    end
-                end,
-            },
-        })
-    end
 end
 
 ------------------------------------------------------------------------
