@@ -1264,14 +1264,8 @@ function CooldownCompanion:BeginCombatForcedLock()
         ForceCombatMouseLock(frame.nudger)
         for _, button in ipairs(frame.buttons or {}) do
             local buttonData = button and button.buttonData
-            if buttonData
-                and (buttonData.auraTracking or buttonData.addedAs == "aura")
-                and buttonData.hideWhileAuraNotActive == true then
-                if button._isBar and ST._ApplyBarAuraShellVisuals then
-                    ST._ApplyBarAuraShellVisuals(button, buttonData)
-                elseif not button._isBar and ST._ApplyAuraShellVisuals then
-                    ST._ApplyAuraShellVisuals(button, buttonData)
-                end
+            if CooldownCompanion:IsAuraShellEntry(buttonData) then
+                ST._ApplyShellVisualsForButton(button, buttonData)
             end
             local host = button and button.auraTextureHost or nil
             if host then

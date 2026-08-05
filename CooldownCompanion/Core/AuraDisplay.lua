@@ -955,7 +955,9 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- occlusion, no shell, no glow; the bar itself is the absent state.
     local isResourceHost = button._ccAuraHostKind == "resourceBar"
     local resShapes = isResourceHost and (style.resourceShapes or {}) or nil
-    local shellEntry = buttonData.hideWhileAuraNotActive == true
+    -- Hidden and dimmed shells alike: the kit composes the full active
+    -- visual either way (the dim key stands alone on 12.1).
+    local shellEntry = CooldownCompanion:IsAuraShellEntry(buttonData)
     local barIconShown = isBar and style.showBarIcon ~= false and button.icon ~= nil
     local showAuraIcon = ShouldShowAuraIcon(buttonData)
 

@@ -248,6 +248,44 @@ local function DeleteCustomBarById(settings, specID, customBars, customBarId)
     return false
 end
 
+-- What a Custom Bar is called in prose the owner reads (popup text, tooltips):
+-- its own label, else the tracked spell's name, else a generic fallback.
+local function GetCustomBarDisplayName(entry)
+    if type(entry) ~= "table" then
+        return "Custom Bar"
+    end
+    local name = entry.label
+    if not name or name == "" then
+        local spellID = tonumber(entry.spellID)
+        name = spellID and C_Spell.GetSpellName(spellID) or nil
+    end
+    if not name or name == "" then
+        return "Custom Bar"
+    end
+    return name
+end
+
+-- The Delete menu item's confirmed half. Ids freeze when the popup opens, so
+-- everything this needs is re-resolved here rather than captured: the bar may
+-- already be gone, or the config may have moved on, by the time it runs.
+local function DeleteConfigCustomBar(customBarId)
+    local settings = CooldownCompanion:GetResourceBarSettings()
+    local customBars = RB.GetAllCustomBars and RB.GetAllCustomBars(settings)
+        or CooldownCompanion:GetSpecCustomAuraBars()
+    if DeleteCustomBarById(settings, GetCurrentConfigSpecID(), customBars, customBarId) then
+        if CS.selectedCustomBarId == customBarId then
+            ClearConfigCustomBarSelection()
+        end
+        if CS.customBarSpecExpandedId == customBarId then
+            CS.customBarSpecExpandedId = nil
+        end
+    end
+    ApplyCustomAuraBarPanelChanges({
+        updateAnchors = true,
+        refreshConfig = true,
+    })
+end
+
 local function DuplicateCustomBarById(settings, specID, customBars, customBarId)
     local sourceIndex = FindCustomBarIndexById(customBars, customBarId)
     local sourceEntry = sourceIndex and customBars[sourceIndex]
@@ -333,26 +371,17 @@ local function OpenCustomBarRowMenu(customBars, specID, customBarId, entry)
         end
         UIDropDownMenu_AddButton(duplicateInfo, level)
 
-        local removeInfo = UIDropDownMenu_CreateInfo()
-        removeInfo.text = "Remove"
-        removeInfo.notCheckable = true
-        removeInfo.func = function()
+        -- Red "Delete" behind a confirmation, matching how the navigator's
+        -- group and panel menus spend the same destructive gesture.
+        local deleteInfo = UIDropDownMenu_CreateInfo()
+        deleteInfo.text = "|cffff4444Delete|r"
+        deleteInfo.notCheckable = true
+        deleteInfo.func = function()
             CloseDropDownMenus()
-            local settings = CooldownCompanion:GetResourceBarSettings()
-            if DeleteCustomBarById(settings, specID, customBars, customBarId) then
-                if CS.selectedCustomBarId == customBarId then
-                    ClearConfigCustomBarSelection()
-                end
-                if CS.customBarSpecExpandedId == customBarId then
-                    CS.customBarSpecExpandedId = nil
-                end
-            end
-            ApplyCustomAuraBarPanelChanges({
-                updateAnchors = true,
-                refreshConfig = true,
-            })
+            ShowPopupAboveConfig("CDC_DELETE_CUSTOM_BAR", GetCustomBarDisplayName(entry),
+                { customBarId = customBarId })
         end
-        UIDropDownMenu_AddButton(removeInfo, level)
+        UIDropDownMenu_AddButton(deleteInfo, level)
     end, "MENU")
 
     CS.customBarContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -414,6 +443,14 @@ local function BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
     local soundOptionOrder = BuildSortedCustomBarSoundOptionOrder(soundOptions)
     local eventOrder = CooldownCompanion:GetSoundAlertEventOrder()
 
+    -- The aura sounds play through Blizzard's aura system, which accepts
+    -- sound files only — offer the file-backed options (panel parity).
+    local auraSoundOptions, auraSoundOptionOrder
+    if validEvents.onAuraApplied or validEvents.onAuraStackGained or validEvents.onAuraRemoved then
+        auraSoundOptions = CooldownCompanion:GetAuraSoundAlertOptions()
+        auraSoundOptionOrder = BuildSortedCustomBarSoundOptionOrder(auraSoundOptions)
+    end
+
     -- This row set is FILTERED (see the fill rule in the recipe comment): a
     -- Custom Bar carries only the event families its entry type allows, and an
     -- aura bar has no cooldown events at all. So the family split - LEFT the
@@ -433,11 +470,12 @@ local function BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
     local soundLeft, soundRight = BeginRowGrid(container)
 
     local function AddSoundEventRow(column, eventKey)
+        local isAuraEvent = CooldownCompanion:IsAuraSoundAlertEvent(eventKey)
         AddDropdownRow(column, {
             label = CooldownCompanion:GetCustomBarSoundAlertEventLabel(cab, eventKey),
             pulloutWidth = SOUND_PULLOUT_WIDTH,
-            list = soundOptions,
-            order = soundOptionOrder,
+            list = isAuraEvent and auraSoundOptions or soundOptions,
+            order = isAuraEvent and auraSoundOptionOrder or soundOptionOrder,
             value = CooldownCompanion:GetCustomBarSoundAlertSelection(cab, eventKey),
             onChange = function(val)
                 CooldownCompanion:SetCustomBarSoundAlertEvent(cab, eventKey, val)
@@ -1456,6 +1494,7 @@ end
 -- Expose for ButtonSettings.lua and Config.lua
 ST._BuildCustomBarWorkspaceAddBox = BuildCustomBarWorkspaceAddBox
 ST._OpenConfigCustomBarMenu = OpenConfigCustomBarMenu
+ST._DeleteConfigCustomBar = DeleteConfigCustomBar
 ST._BuildCustomAuraBarPanel = BuildCustomAuraBarPanel
 ST._BuildCustomBarSoundAlertsTab = BuildCustomBarSoundAlertsTab
 ST._BuildCustomBarLoadConditionsTab = BuildCustomBarLoadConditionsTab

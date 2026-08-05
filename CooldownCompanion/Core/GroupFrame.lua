@@ -861,7 +861,11 @@ local function GroupFrameRendersVisibleSnapTarget(frame, groupId)
 
     for _, button in ipairs(frame.buttons or {}) do
         local isShown = button:IsShown()
-        if not IsSecretValue(isShown) and isShown and not button._auraShellActive then
+        -- Shell alpha 0 = the button renders nothing CC-side (icon hidden,
+        -- every region alpha-0) while button:GetAlpha() still reports 1, so
+        -- it must not count as a visible snap target. Dim shells (0.4) and
+        -- never-styled buttons (nil) do render.
+        if not IsSecretValue(isShown) and isShown and button._auraShellIconAlpha ~= 0 then
             local alpha = button:GetAlpha()
             if not IsSecretValue(alpha) and alpha ~= nil and alpha > SNAP_VISIBLE_ALPHA_THRESHOLD then
                 return true

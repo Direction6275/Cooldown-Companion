@@ -44,13 +44,16 @@ local HIDE_REASON_NAMES = {
     { bit = HIDE_UNUSABLE,         name = "unusable" },
 }
 
--- Baseline alpha fallback descriptors: each entry maps a hide reason bit
--- to the buttonData config key that enables "dim instead of hide" when
--- that reason is the ONLY active hide reason.
--- IMPORTANT: Every HIDE_* constant that supports a fallback MUST have an
--- entry here. A missing entry will silently cause full hide instead of dim.
--- Fallbacks do not compose: multiple active reasons = full hide even if
--- each individually has its fallback enabled.
+-- Dim-instead-of-hide descriptors: each entry maps a hide reason bit to the
+-- buttonData config key that dims to DIM_FALLBACK_ALPHA instead of hiding,
+-- when that reason is the ONLY active hide reason.
+-- IMPORTANT: Every HIDE_* constant that supports dimming MUST have an entry
+-- here. A missing entry will silently cause full hide instead of dim.
+-- Dim rules do not compose: multiple active reasons = full hide even if
+-- each individually has its dim rule enabled.
+-- The key names still carry the retired "useBaselineAlphaFallback" prefix;
+-- they are stored profile data and renaming them would cost a migration for
+-- no user-visible gain. The dim strength no longer comes from Baseline Alpha.
 local BASELINE_FALLBACKS = {
     { bit = HIDE_ZERO_CHARGES,    key = "useBaselineAlphaFallbackZeroCharges" },
     { bit = HIDE_ZERO_STACKS,     key = "useBaselineAlphaFallbackZeroStacks" },
@@ -226,9 +229,9 @@ local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
         end
     end
 
-    -- Phase 2: Baseline alpha fallback.
-    -- If exactly one hide reason fired and its fallback is enabled,
-    -- dim to baselineAlpha instead of fully hiding the button.
+    -- Phase 2: Dim instead of hide.
+    -- If exactly one hide reason fired and its dim rule is enabled, render
+    -- at DIM_FALLBACK_ALPHA instead of fully hiding the button.
     -- hideReasons == entry.bit is true iff no other bit is set,
     -- which is equivalent to "this is the only active hide reason."
     if hideReasons ~= 0 then
@@ -238,10 +241,8 @@ local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
                     and bit_band(hideReasons, entry.bit) ~= 0
                     and buttonData[entry.key] then
                 if hideReasons == entry.bit then
-                    local groupId = button._groupId
-                    local group = groupId and CooldownCompanion.db.profile.groups[groupId]
                     button._visibilityHidden = false
-                    button._visibilityAlphaOverride = group and group.baselineAlpha or 0.3
+                    button._visibilityAlphaOverride = CooldownCompanion.DIM_FALLBACK_ALPHA
                     button._visibilityReasonBits = hideReasons
                     button._visibilityReasonMode = "dimmed"
                     return

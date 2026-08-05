@@ -28,7 +28,6 @@ local DEFAULT_CONTINUOUS_TICK_PERCENT = RB.DEFAULT_CONTINUOUS_TICK_PERCENT
 local DEFAULT_CONTINUOUS_TICK_ABSOLUTE = RB.DEFAULT_CONTINUOUS_TICK_ABSOLUTE
 local DEFAULT_CONTINUOUS_TICK_WIDTH = RB.DEFAULT_CONTINUOUS_TICK_WIDTH
 local DEFAULT_CONTINUOUS_TICK_COLOR = RB.DEFAULT_CONTINUOUS_TICK_COLOR
-local DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT = RB.DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local CLASS_RESOURCES = RB.CLASS_RESOURCES
 local SPEC_RESOURCES = RB.SPEC_RESOURCES
@@ -1285,9 +1284,18 @@ local function GetDefaultSpellCustomBarAuraUnit(cabConfig, spellID)
     resolvedSpellID = tonumber(resolvedSpellID)
 
     if CooldownCompanion and CooldownCompanion.ResolveStandaloneAuraDefaultUnit then
+        -- The synthetic must classify the same way the live slot adapter
+        -- does (ResourceBarAuraHost's BuildEntryAdapter): the resolver
+        -- branches on addedAs, and an aura bar left unmarked takes the
+        -- plain-spell branch, resolving a unit the bound candidate list
+        -- disagrees with.
+        local isAuraEntry = type(cabConfig) == "table"
+            and not IsSpellCustomBarConfig(cabConfig)
         return CooldownCompanion:ResolveStandaloneAuraDefaultUnit({
             type = "spell",
             id = resolvedSpellID,
+            addedAs = isAuraEntry and "aura" or nil,
+            auraTracking = true,
             auraSpellID = type(cabConfig) == "table" and cabConfig.auraSpellID or nil,
         })
     end
@@ -1311,10 +1319,10 @@ local function GetResolvedCustomAuraBarAuraUnit(cabConfig, spellID)
         return cabConfig.auraUnit
     end
 
-    if type(cabConfig) == "table" and (cabConfig.entryType == nil or cabConfig.entryType == "aura") then
-        return GetDefaultCustomAuraUnit(resolvedSpellID)
-    end
-
+    -- Both entry types resolve candidate-aware (the tracked aura list can
+    -- carry a different polarity than the base spell); the helper falls
+    -- back to base-spell polarity when no candidate resolves. The migration
+    -- and config derive the stored auraUnit from this same identity.
     return GetDefaultSpellCustomBarAuraUnit(cabConfig, resolvedSpellID)
 end
 
@@ -1618,13 +1626,6 @@ end
 ------------------------------------------------------------------------
 -- Resource Detection
 ------------------------------------------------------------------------
-
-local function NormalizeCustomAuraStackTextFormat(textFormat)
-    if textFormat == "current" or textFormat == "current_max" then
-        return textFormat
-    end
-    return DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT
-end
 
 local function IsHealerSpec()
     local specIdx = C_SpecializationInfo.GetSpecialization()
@@ -2151,7 +2152,6 @@ RB.RoundToTenths = RoundToTenths
 RB.ClampIndependentDimension = ClampIndependentDimension
 RB.IsBarsConfigActive = IsBarsConfigActive
 RB.IsTruthyConfigFlag = IsTruthyConfigFlag
-RB.NormalizeCustomAuraStackTextFormat = NormalizeCustomAuraStackTextFormat
 RB.IsAstralPowerAvailableForCurrentDruidSpec = IsAstralPowerAvailableForCurrentDruidSpec
 RB.DetermineActiveResources = DetermineActiveResources
 RB.GetResourceColors = GetResourceColors

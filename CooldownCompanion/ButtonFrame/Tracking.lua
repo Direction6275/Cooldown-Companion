@@ -300,6 +300,14 @@ local function UpdateIconTint(button, buttonData, style)
     ResolveIconTintIntent(button, buttonData, style, intent)
 
     local r, g, b, a = intent.r, intent.g, intent.b, intent.a
+    -- Dimmed aura shells ride the vertex alpha: SetVertexColor's 4-arg form
+    -- overwrites the texture alpha, so the shell's stamp must be folded into
+    -- every tint write. Folded BEFORE the memo compare so the memo stores
+    -- what was actually drawn.
+    local shellAlpha = button._auraShellIconAlpha
+    if shellAlpha and shellAlpha < 1 then
+        a = (a or 1) * shellAlpha
+    end
     button._unusableTintActive = intent.unusableActive == true
     if button._vertexR ~= r or button._vertexG ~= g or button._vertexB ~= b or button._vertexA ~= a then
         button._vertexR, button._vertexG, button._vertexB, button._vertexA = r, g, b, a

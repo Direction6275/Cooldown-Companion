@@ -65,7 +65,10 @@ local function DurationObjectShowsCooldown(durationObj)
 end
 EntryRuntime.DurationObjectShowsCooldown = DurationObjectShowsCooldown
 
-local function SetAuraStackCountText(fontString, value, maxStacks, stackTextFormat)
+-- Plain count only, matching the live kit's stack readout (the retired
+-- current/max stackTextFormat vocabulary is gone; the migration clears the
+-- stored key).
+local function SetAuraStackCountText(fontString, value)
     if not fontString then return end
     if value == nil then
         fontString:SetText("")
@@ -81,11 +84,7 @@ local function SetAuraStackCountText(fontString, value, maxStacks, stackTextForm
         end
     end
 
-    if stackTextFormat == "current_max" then
-        fontString:SetFormattedText("%d / %d", displayValue, maxStacks or 1)
-    else
-        fontString:SetFormattedText("%d", displayValue)
-    end
+    fontString:SetFormattedText("%d", displayValue)
 end
 EntryRuntime.SetAuraStackCountText = SetAuraStackCountText
 

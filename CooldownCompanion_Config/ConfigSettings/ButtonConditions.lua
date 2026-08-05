@@ -1951,11 +1951,11 @@ end
 ------------------------------------------------------------------------
 -- PER-BUTTON VISIBILITY SETTINGS
 ------------------------------------------------------------------------
--- Seven of the Show Conditions toggles gate the same fallback child, so its
+-- Seven of the Show Conditions toggles gate the same dim child, so its
 -- tooltip is stated once here rather than seven times inside the builder.
-local BASELINE_ALPHA_FALLBACK_TOOLTIP = {
-    "Use Baseline Alpha Fallback",
-    {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
+local DIM_INSTEAD_OF_HIDE_TOOLTIP = {
+    "Dim Instead Of Hide",
+    {"Instead of fully hiding, shows the button dimmed. It keeps its layout position.", 1, 1, 1, true},
 }
 
 -- insertBeforeTalents: optional callback run between the Show Conditions and
@@ -2205,7 +2205,12 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     -- display at all.
     local displayMode = group.displayMode or "icons"
     if anyAuraEntry and (displayMode == "icons" or displayMode == "bars") then
-        AddFamily(1, function(column)
+        -- Two mutually exclusive inactive-state presentations, stored as
+        -- independent single keys. The dim key is auraShellDim, new in 12.1
+        -- and deliberately not main's useBaselineAlphaFallback: that key's
+        -- presence could not be told apart from residue, so the migration
+        -- had to guess and guessed away live settings.
+        AddFamily(2, function(column)
             AddVisibilityRow(column, "Show Only While Aura Active", "hideWhileAuraNotActive", {
                 filter = FilterAuraEntry,
                 tooltip = {
@@ -2216,6 +2221,25 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
                 },
                 onChanged = function(widget, event, val)
                     ApplyToAuraEntries("hideWhileAuraNotActive", val or nil)
+                    if val then
+                        ApplyToAuraEntries("auraShellDim", nil)
+                    end
+                    CooldownCompanion:RefreshAllGroups()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+
+            AddVisibilityRow(column, "Dim While Aura Inactive", "auraShellDim", {
+                filter = FilterAuraEntry,
+                tooltip = {
+                    "Dim While Aura Inactive",
+                    {"Shows this entry dimmed until its tracked aura is active, then at full strength while it runs.", 1, 1, 1, true},
+                },
+                onChanged = function(widget, event, val)
+                    ApplyToAuraEntries("auraShellDim", val or nil)
+                    if val then
+                        ApplyToAuraEntries("hideWhileAuraNotActive", nil)
+                    end
                     CooldownCompanion:RefreshAllGroups()
                     CooldownCompanion:RefreshConfigPanel()
                 end,
@@ -2236,7 +2260,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     else allNeverUnusable = IsNeverUnusableButton(buttonData) end
 
     if not allPassive and not allNoCooldown then
-    -- Baseline Alpha Fallback (nested under hideWhileOnCooldown)
+    -- Dim Instead Of Hide (nested under hideWhileOnCooldown)
     local showFallbackOnCooldown
     if isBatch then showFallbackOnCooldown = AnySelectedHas(group, "hideWhileOnCooldown")
     else showFallbackOnCooldown = buttonData.hideWhileOnCooldown end
@@ -2258,9 +2282,9 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         })
 
         if showFallbackOnCooldown then
-            AddVisibilityRow(column, "Use Baseline Alpha Fallback", "useBaselineAlphaFallbackOnCooldown", {
+            AddVisibilityRow(column, "Dim Instead Of Hide", "useBaselineAlphaFallbackOnCooldown", {
                 indent = true,
-                tooltip = BASELINE_ALPHA_FALLBACK_TOOLTIP,
+                tooltip = DIM_INSTEAD_OF_HIDE_TOOLTIP,
                 onChanged = function(widget, event, val)
                     ApplyToSelected("useBaselineAlphaFallbackOnCooldown", val or nil)
                 end,
@@ -2317,9 +2341,9 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         end
 
         if showFallbackNotOnCooldown then
-            AddVisibilityRow(column, "Use Baseline Alpha Fallback", "useBaselineAlphaFallbackNotOnCooldown", {
+            AddVisibilityRow(column, "Dim Instead Of Hide", "useBaselineAlphaFallbackNotOnCooldown", {
                 indent = true,
-                tooltip = BASELINE_ALPHA_FALLBACK_TOOLTIP,
+                tooltip = DIM_INSTEAD_OF_HIDE_TOOLTIP,
                 onChanged = function(widget, event, val)
                     ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", val or nil)
                     if val then
@@ -2357,9 +2381,9 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         })
 
         if showFallbackUnusable then
-            AddVisibilityRow(column, "Use Baseline Alpha Fallback", "useBaselineAlphaFallbackUnusable", {
+            AddVisibilityRow(column, "Dim Instead Of Hide", "useBaselineAlphaFallbackUnusable", {
                 indent = true,
-                tooltip = BASELINE_ALPHA_FALLBACK_TOOLTIP,
+                tooltip = DIM_INSTEAD_OF_HIDE_TOOLTIP,
                 onChanged = function(widget, event, val)
                     ApplyToSelected("useBaselineAlphaFallbackUnusable", val or nil)
                 end,
@@ -2397,9 +2421,9 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             })
 
             if showFallbackNoProc then
-                AddVisibilityRow(column, "Use Baseline Alpha Fallback", "useBaselineAlphaFallbackNoProc", {
+                AddVisibilityRow(column, "Dim Instead Of Hide", "useBaselineAlphaFallbackNoProc", {
                     indent = true,
-                    tooltip = BASELINE_ALPHA_FALLBACK_TOOLTIP,
+                    tooltip = DIM_INSTEAD_OF_HIDE_TOOLTIP,
                     onChanged = function(widget, event, val)
                         ApplyToSelected("useBaselineAlphaFallbackNoProc", val or nil)
                     end,
@@ -2443,10 +2467,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             })
 
             if showFallbackZeroCharges then
-                AddVisibilityRow(column, "Use Baseline Alpha Fallback", "useBaselineAlphaFallbackZeroCharges", {
+                AddVisibilityRow(column, "Dim Instead Of Hide", "useBaselineAlphaFallbackZeroCharges", {
                     indent = true,
                     filter = FilterChargeCapable,
-                    tooltip = BASELINE_ALPHA_FALLBACK_TOOLTIP,
+                    tooltip = DIM_INSTEAD_OF_HIDE_TOOLTIP,
                     onChanged = function(widget, event, val)
                         ApplyToChargeCapable("useBaselineAlphaFallbackZeroCharges", val or nil)
                     end,
@@ -2518,10 +2542,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
                 })
 
                 if showFallbackZeroStacks then
-                    AddVisibilityRow(column, "Use Baseline Alpha Fallback", "useBaselineAlphaFallbackZeroStacks", {
+                    AddVisibilityRow(column, "Dim Instead Of Hide", "useBaselineAlphaFallbackZeroStacks", {
                         indent = true,
                         filter = FilterNonEquippable,
-                        tooltip = BASELINE_ALPHA_FALLBACK_TOOLTIP,
+                        tooltip = DIM_INSTEAD_OF_HIDE_TOOLTIP,
                         onChanged = function(widget, event, val)
                             ApplyToNonEquippable("useBaselineAlphaFallbackZeroStacks", val or nil)
                         end,
@@ -2572,10 +2596,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             })
 
             if showFallbackEquip then
-                AddVisibilityRow(column, "Use Baseline Alpha Fallback", "useBaselineAlphaFallbackNotEquipped", {
+                AddVisibilityRow(column, "Dim Instead Of Hide", "useBaselineAlphaFallbackNotEquipped", {
                     indent = true,
                     filter = FilterEquippable,
-                    tooltip = BASELINE_ALPHA_FALLBACK_TOOLTIP,
+                    tooltip = DIM_INSTEAD_OF_HIDE_TOOLTIP,
                     onChanged = function(widget, event, val)
                         ApplyToEquippable("useBaselineAlphaFallbackNotEquipped", val or nil)
                     end,

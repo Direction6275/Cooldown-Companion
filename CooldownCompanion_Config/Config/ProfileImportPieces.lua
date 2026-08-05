@@ -92,7 +92,8 @@ local function CopyContainerForImport(container)
     data.createdBy = nil
     data.order = nil
     data.specOrders = nil
-    data.isGlobal = nil
+    -- isGlobal rides so the landing decision keeps a global piece global
+    -- (same rule as BuildContainerExportData).
     return data
 end
 
@@ -916,9 +917,14 @@ local function AddContainerEntry(entries, containerInfo, selectedPanels, deselec
     end
 end
 
+-- Both sections defer their migration run to the single one this door takes
+-- after finishing its batch, the same contract the setup door uses. Without
+-- it each section walked the whole profile again on one click.
+local DEFER_TO_PIECES_RUN = { deferMigrations = true }
+
 local function ApplyPayload(payload)
     local apply = ST._ApplyGroupImportData
-    return apply and apply(payload) == true
+    return apply and apply(payload, DEFER_TO_PIECES_RUN) == true
 end
 
 local function AddCheckpoint(payload, profile)
@@ -990,6 +996,7 @@ local function ApplyCustomBarsPayload(profile, payload)
     end
     return ApplyCustomBarsImportData(AddCheckpoint(payload, profile), {
         silentSuccess = true,
+        deferMigrations = true,
     }) == true
 end
 
@@ -1040,6 +1047,7 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
     local batchToken = BeginImportBatch()
     local applied = false
     local failed = false
+    local barsApplied = false
 
     local looseEntries = {}
     for _, containerInfo in ipairs(model.containers or {}) do
@@ -1068,6 +1076,7 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
         failed = true
     elseif selectedCustomBarsPayload then
         local ok = ApplyCustomBarsPayload(profile, selectedCustomBarsPayload)
+        barsApplied = ok
         applied = ok or applied
         failed = failed or not ok
     elseif CountPairs(selectedCustomBars) > 0 then
@@ -1075,9 +1084,28 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
     end
 
     FinishImportBatch(batchToken, applied)
+
+    -- The single migration run for every section this click inserted, taken
+    -- once the batch has remapped anchors and before the refresh below, so
+    -- the frames that refresh builds come from migrated entries.
+    if applied then
+        local runMigrations = ST._RunPostImportMigrations
+        if runMigrations and not runMigrations() then
+            failed = true
+        end
+    end
+
     if applied then
         if self.RefreshAllGroups then
             self:RefreshAllGroups()
+        end
+        -- The bars above were built before that deferred run, so rebuild
+        -- them from the migrated entries.
+        if barsApplied and self.ApplyResourceBars then
+            self:ApplyResourceBars()
+            if self.UpdateAnchorStacking then
+                self:UpdateAnchorStacking()
+            end
         end
     end
 

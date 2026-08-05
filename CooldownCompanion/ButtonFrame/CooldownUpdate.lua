@@ -267,11 +267,10 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
         if not host then return end
         local startTime, duration, remaining = GetConditionalPreviewTiming(preview, now)
         if not startTime then return end
-        -- Icon shells hide the overlayFrame this preview draws on; expose
-        -- while the preview runs (the preview clear path restores).
-        if not button._isBar and ST._ApplyAuraShellVisuals then
-            ST._ApplyAuraShellVisuals(button, buttonData)
-        end
+        -- Shells hide the overlayFrame this preview draws on; expose while
+        -- the preview runs (the preview clear path restores). Bars host this
+        -- preview too.
+        ST._ApplyShellVisualsForButton(button, buttonData)
         if not fs then
             fs = host:CreateFontString(nil, "OVERLAY")
             button._auraTextPreviewFS = fs
@@ -292,13 +291,9 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
         if button.auraStackCount then
             button.auraStackCount:SetText(style.showAuraStackText ~= false and (preview.stackText or "3") or "")
         end
-        if button._isBar and ST._ApplyBarAuraShellVisuals then
-            -- Bar shells hide the text frame this preview writes to.
-            ST._ApplyBarAuraShellVisuals(button, buttonData)
-        elseif not button._isBar and ST._ApplyAuraShellVisuals then
-            -- Icon shells hide the overlayFrame hosting auraStackCount.
-            ST._ApplyAuraShellVisuals(button, buttonData)
-        end
+        -- Shells hide the frame this preview writes to (bar text frame /
+        -- icon overlayFrame hosting auraStackCount); expose while it runs.
+        ST._ApplyShellVisualsForButton(button, buttonData)
         return
     end
 
@@ -487,6 +482,14 @@ local function ClearRotationAssistantMissingState(button, buttonData, style)
     if button.icon then
         button.icon:SetDesaturated(false)
         button.icon:SetVertexColor(1, 1, 1, 1)
+        -- Writing the texture directly leaves UpdateIconTint's memo holding
+        -- the pre-reset tint, so when the entry comes back and resolves to
+        -- that same tint the write is skipped as a no-op and the icon stays
+        -- flat white — visible with stock defaults, where an unusable spell
+        -- should be dimmed. Clear the memo so the next tint pass writes.
+        -- No shell alpha to fold in here: rotation-assistant virtual entries
+        -- carry neither auraTracking nor addedAs, so they are never shells.
+        button._vertexR, button._vertexG, button._vertexB, button._vertexA = nil, nil, nil, nil
     end
     if button.count then
         button.count:SetText("")

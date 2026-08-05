@@ -359,37 +359,22 @@ local function BarModeOnUpdate(self, elapsed)
     end
 end
 
--- Show-only-while-active bar entries (12.1 compositing): the aura display
--- slot renders the entire visible bar, so the CC frame stays shown as the
--- layout shell and slot host but every visual it owns goes transparent.
+-- Aura shell bar entries (12.1 compositing): the aura display slot renders
+-- the active visual, so the CC frame stays shown as the layout shell and
+-- slot host while the visuals it owns go transparent (hide) or dim.
 -- Static by design — no aura state exists to read at runtime. Mirror of
--- IconMode's ApplyAuraShellVisuals.
-local function IsAuraShellEntry(buttonData)
-    return buttonData
-        and (buttonData.auraTracking or buttonData.addedAs == "aura")
-        and buttonData.hideWhileAuraNotActive == true
-end
-
-local function IsAuraShellHidden(button, buttonData)
-    local frame = button and button:GetParent()
-    local unlockPreviewActive = not CooldownCompanion._combatForcedLock
-        and (
-            frame
-            and (frame._containerUnlockPreviewActive == true
-                or frame._panelUnlockPreviewActive == true)
-        )
-    return IsAuraShellEntry(buttonData) and not unlockPreviewActive
-end
-
+-- IconMode's ApplyAuraShellVisuals; the predicate, alpha decision, and
+-- exposure rules live in Core/Aura.lua.
 local function ApplyBarAuraShellVisuals(button, buttonData)
-    local alpha = IsAuraShellHidden(button, buttonData) and 0 or 1
-    button._auraShellActive = alpha == 0
+    local alpha = CooldownCompanion:GetAuraShellAlpha(button, buttonData)
     button.bg:SetAlpha(alpha)
     if button.iconBg then button.iconBg:SetAlpha(alpha) end
     -- The icon must be hidden by shown-state, not alpha: the per-tick tint
     -- pipeline's 4-arg SetVertexColor overwrites the texture's alpha through
     -- a non-SetAlpha C path (Phase 2 gotcha). Nothing else Shows the icon.
-    button.icon:SetShown(alpha == 1)
+    -- Dimmed shells keep it shown; the tint pipeline applies the stamp.
+    button._auraShellIconAlpha = alpha
+    button.icon:SetShown(alpha > 0)
     if button.borderTextures then
         for _, tex in ipairs(button.borderTextures) do
             tex:SetAlpha(alpha)
@@ -419,9 +404,21 @@ end
 local function UpdateBarStackBlocks(button, style)
     if InCombatLockdown() then return end
     local buttonData = button.buttonData
+    -- Two alphas, deliberately. The per-stack widgets follow the entry's
+    -- RESTING alpha and ignore preview exposure entirely: no aura preview
+    -- draws on them, and this function is their only teardown but cannot
+    -- run in combat. Deciding from the live alpha let a preview-exposed
+    -- hidden shell build blocks that then survived into combat fully
+    -- opaque on a bar meant to render nothing. bg and the whole-bar ring
+    -- are ordinary shell-owned regions, so their restore below follows the
+    -- live alpha that ApplyBarAuraShellVisuals also writes.
+    local liveAlpha = CooldownCompanion:GetAuraShellAlpha(button, buttonData)
+    local shellAlpha = CooldownCompanion:IsAuraShellEntry(buttonData)
+        and CooldownCompanion:GetAuraShellRestingAlpha(buttonData)
+        or 1
     local max
     if buttonData and buttonData.addedAs == "aura"
-        and not IsAuraShellEntry(buttonData)
+        and shellAlpha > 0
         and CooldownCompanion.IsBarPanelAuraStackDisplay
         and CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData)
         and CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) == "segmented" then
@@ -458,6 +455,19 @@ local function UpdateBarStackBlocks(button, style)
         ST.LayoutStackBlocks(blocks, button.statusBar or button, max,
             button._isVertical, style.barBgColor or { 0.1, 0.1, 0.1, 0.8 })
         ST.LayoutStackBlockBorders(borders, blocks, max, style)
+        -- Both layout helpers stamp alpha on every piece (1 shown, 0 hidden
+        -- — the border helper hides all of them when the style has no
+        -- border), so a dimmed shell SCALES what they decided rather than
+        -- overwriting it, which would resurrect suppressed rings.
+        if shellAlpha < 1 then
+            for i = 1, max do
+                local block = blocks[i]
+                if block then block:SetAlpha(block:GetAlpha() * shellAlpha) end
+                for _, tex in ipairs(borders[i] or {}) do
+                    tex:SetAlpha(tex:GetAlpha() * shellAlpha)
+                end
+            end
+        end
         button.bg:SetAlpha(0)
         -- Whole-bar ring off: one ring wrapping all stacks is exactly the
         -- look the ruling rejected.
@@ -471,14 +481,13 @@ local function UpdateBarStackBlocks(button, style)
         button._stackBlocksActive = nil
         ST.HideStackBlocks(button._stackBgBlocks)
         ST.HideStackBlockBorders(button._stackBlockBorders)
-        -- Restore shell-aware: ApplyBarAuraShellVisuals runs before this and
-        -- owns the shell alpha; a plain 1 here would resurrect a shell's bg
-        -- or border ring.
-        local restoreAlpha = IsAuraShellHidden(button, buttonData) and 0 or 1
-        button.bg:SetAlpha(restoreAlpha)
+        -- Restore through the live shell alpha: ApplyBarAuraShellVisuals
+        -- runs before this and owns these two regions. A binary 0-or-1 here
+        -- wiped a dimmed shell's bg and ring outright.
+        button.bg:SetAlpha(liveAlpha)
         if button.borderTextures then
             for _, tex in ipairs(button.borderTextures) do
-                tex:SetAlpha(restoreAlpha)
+                tex:SetAlpha(liveAlpha)
             end
         end
     end

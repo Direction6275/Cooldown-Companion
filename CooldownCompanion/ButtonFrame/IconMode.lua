@@ -530,16 +530,14 @@ local function ApplyCountTextStyle(button, style)
     button._countTextLaneStyled = buttonData and UsesChargeTextLane(buttonData) or false
 end
 
--- Show-only-while-active entries (12.1 compositing): the aura display slot
--- renders the entire visible button, so the CC frame stays shown as the
--- layout shell and slot host but every visual it owns goes transparent.
--- Static by design — no aura state exists to read at runtime.
-local function IsAuraShellEntry(buttonData)
-    return buttonData
-        and (buttonData.auraTracking or buttonData.addedAs == "aura")
-        and buttonData.hideWhileAuraNotActive == true
-end
-
+-- Shell entries (12.1 compositing): the aura display slot renders the
+-- entire visible button while the aura runs, so the CC frame stays shown as
+-- the layout shell and slot host but every visual it owns goes transparent
+-- (hideWhileAuraNotActive, Show Only While Aura Active) or dims to
+-- DIM_FALLBACK_ALPHA (auraShellDim, Dim While Aura Inactive — a standalone
+-- key on 12.1; the toggles are mutually exclusive). Static by design — no
+-- aura state exists to read at runtime. The predicate, the alpha decision,
+-- and the preview/unlock exposure rules all live in Core/Aura.lua.
 local function SetGlowContainerShellAlpha(container, alpha)
     if not container then return end
     -- Stamp the shell alpha so glow state changes can't resurrect the
@@ -550,40 +548,17 @@ local function SetGlowContainerShellAlpha(container, alpha)
     if container.blizzardFrame then container.blizzardFrame:SetAlpha(alpha) end
 end
 
--- Aura config previews render on CC-side regions — the exact ones a
--- show-only-while-active shell hides (the text preview FontString lives on
--- overlayFrame) — so the shell exposes while one runs. Restored by the
--- preview clear path (Preview.lua) and every restyle.
-local function IsAuraPreviewExposingShell(button)
-    local preview = button._conditionalVisualPreview
-    local kind = preview and preview.kind
-    return kind == "aura_duration_text"
-        or kind == "aura_stack_text"
-        or kind == "aura_duration_swipe"
-end
-
-local function IsUnlockPreviewExposingShell(button)
-    local frame = button and button:GetParent()
-    return not CooldownCompanion._combatForcedLock
-        and (
-            frame
-            and (frame._containerUnlockPreviewActive == true
-                or frame._panelUnlockPreviewActive == true)
-        )
-end
-
 local function ApplyAuraShellVisuals(button, buttonData)
-    local alpha = (IsAuraShellEntry(buttonData)
-        and not IsUnlockPreviewExposingShell(button)
-        and not IsAuraPreviewExposingShell(button)) and 0 or 1
-    button._auraShellActive = alpha == 0
+    local alpha = CooldownCompanion:GetAuraShellAlpha(button, buttonData)
     button.bg:SetAlpha(alpha)
     -- The icon must be hidden by shown-state, not alpha: the per-tick tint
     -- pipeline writes icon:SetVertexColor(r,g,b,a) on every intent change,
     -- and the 4-arg form overwrites the texture's alpha through a different
     -- C entry point than SetAlpha — it silently undid an alpha-0 shell on
-    -- the next tick. Nothing else Shows the icon.
-    button.icon:SetShown(alpha == 1)
+    -- the next tick. Nothing else Shows the icon. Dimmed shells keep the
+    -- icon shown and hand the tint pipeline this multiplier instead.
+    button._auraShellIconAlpha = alpha
+    button.icon:SetShown(alpha > 0)
     if button.borderTextures then
         for _, tex in ipairs(button.borderTextures) do
             tex:SetAlpha(alpha)

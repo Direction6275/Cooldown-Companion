@@ -755,6 +755,36 @@ function CooldownCompanion:GetAuraSoundAlertOptions()
     return options
 end
 
+-- The native aura event keys, for callers that must stay in step with the
+-- registration path (the migration strip) rather than keeping a duplicated
+-- list a future trigger could be missed from. Copied per call: the source
+-- set drives registration, GetAuraSoundFileForButton and
+-- HasAnyAuraSoundForButton, so handing out the live table would let any
+-- consumer that treats it as scratch space break aura sounds for the session.
+function CooldownCompanion:GetNativeAuraSoundEventKeys()
+    local keys = {}
+    for eventKey in pairs(AURA_SOUND_ALERT_EVENTS) do
+        keys[eventKey] = true
+    end
+    return keys
+end
+
+-- Is a stored aura-event selection provably unplayable through the native
+-- path? Only two forms prove it: a Blizzard soundkit or text-to-speech
+-- sentinel, and shared media that resolves to a numeric SoundKit. A name
+-- that resolves to nothing is deliberately NOT unplayable here -- the media
+-- addon that registers it may simply not have loaded yet, and a migration
+-- must never delete a selection on load-order timing.
+function CooldownCompanion:IsAuraSoundSelectionUnplayable(soundName)
+    if type(soundName) ~= "string" or soundName == "" or soundName == SOUND_NONE_KEY then
+        return false
+    end
+    if ParseBlizzardSoundSelection(soundName) then
+        return true
+    end
+    return type(LSM:Fetch("sound", soundName, true)) == "number"
+end
+
 -- Resolve the entry's configured sound for one native aura event to what
 -- C_UnitAuras.AddAuraSound accepts. Returns (soundFileName, channel)
 -- or nil when unset or not file-backed.

@@ -678,15 +678,26 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
             moveInfo.menuList = "MOVE_TO_GROUP"
             UIDropDownMenu_AddButton(moveInfo, level)
 
-            local removeInfo = UIDropDownMenu_CreateInfo()
-            removeInfo.text = "Remove"
-            removeInfo.notCheckable = true
-            removeInfo.func = function()
+            -- Red "Delete" behind the confirmation popup, the same way every
+            -- other destructive menu item in the config reads.
+            local deleteInfo = UIDropDownMenu_CreateInfo()
+            deleteInfo.text = "|cffff4444Delete|r"
+            deleteInfo.notCheckable = true
+            deleteInfo.func = function()
                 CloseDropDownMenus()
-                local name = entryData.name or "this entry"
+                -- The same resolver the entry row uses (customName first,
+                -- then the CDM/override display spell). The confirmation now
+                -- carries the name as the whole identity of what is about to
+                -- be destroyed, so the raw stored name would show a renamed
+                -- entry under its old name and an unnamed one as "this entry"
+                -- while its own row names it correctly.
+                local name = (ST._GetConfigEntryDisplayName
+                    and ST._GetConfigEntryDisplayName(entryData))
+                    or entryData.name
+                    or "this entry"
                 ShowPopupAboveConfig("CDC_DELETE_BUTTON", name, { groupId = sourceGroupId, buttonIndex = sourceIndex })
             end
-            UIDropDownMenu_AddButton(removeInfo, level)
+            UIDropDownMenu_AddButton(deleteInfo, level)
         elseif menuList == "MOVE_TO_GROUP"
             or ParseEntryMoveContainerId(menuList)
         then

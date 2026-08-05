@@ -10,6 +10,14 @@ ST.ROTATION_ASSISTANT_NAME = "Assistant Panel"
 ST.ROTATION_ASSISTANT_ACTION_SPELL_ID = 1229376
 ST.ROTATION_ASSISTANT_FALLBACK_ICON = 6718291
 
+-- The one dim strength every "dim instead of hide" rule renders at: the
+-- aura-inactive shell and the seven cooldown-family rules alike. These used
+-- to read the panel's Baseline Alpha, which defaults to 1 and therefore made
+-- the toggles do nothing on a stock panel. Baseline Alpha still governs panel
+-- alpha fade; it no longer governs dimming. Lives here so it is defined
+-- before Aura.lua and Visibility.lua and readable from the config addon.
+CooldownCompanion.DIM_FALLBACK_ALPHA = 0.4
+
 -- Default database structure
 local defaults = {
     global = {

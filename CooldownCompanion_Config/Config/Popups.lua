@@ -498,8 +498,8 @@ StaticPopupDialogs["CDC_RENAME_GROUP"] = {
 }
 
 StaticPopupDialogs["CDC_DELETE_BUTTON"] = {
-    text = "Remove '%s' from this group?",
-    button1 = "Remove",
+    text = "Are you sure you want to delete '%s'?",
+    button1 = "Delete",
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.groupId and data.buttonIndex then
@@ -515,8 +515,8 @@ StaticPopupDialogs["CDC_DELETE_BUTTON"] = {
 }
 
 StaticPopupDialogs["CDC_DELETE_SELECTED_BUTTONS"] = {
-    text = "Remove %d selected entries from this group?",
-    button1 = "Remove",
+    text = "Delete %d selected entries?",
+    button1 = "Delete",
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.groupId and data.indices then
@@ -872,6 +872,21 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_CUSTOM_BARS"] = {
     preferredIndex = 3,
 }
 
+StaticPopupDialogs["CDC_DELETE_CUSTOM_BAR"] = {
+    text = "Are you sure you want to delete Custom Bar '%s'?",
+    button1 = "Delete",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.customBarId and ST._DeleteConfigCustomBar then
+            ST._DeleteConfigCustomBar(data.customBarId)
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
     text = "Some selected groups have foreign eligibility filters. Moving to your current class will remove those filters. Continue?",
     button1 = "Continue",
@@ -983,7 +998,9 @@ local function BuildContainerExportData(container)
     data.createdBy = nil
     data.order = nil
     data.specOrders = nil
-    data.isGlobal = nil
+    -- isGlobal deliberately rides: the import landing decision reads it to
+    -- keep an originally-global group global. Stripping it here forced a
+    -- _sourceGlobal side-channel that restated the same fact.
     return data
 end
 
@@ -1146,6 +1163,13 @@ local function ImportContainerEntries(db, entries, charKey, importState, options
     local firstContainerIndex = #importState.importedContainerIds + 1
     local startContainerCount = importState.containerCount
     local startPanelCount = importState.panelCount
+    local _, _, importerClassID = UnitClass("player")
+    -- Once for this whole door, before any landing decision: the hero-talent
+    -- sweep behind those decisions costs ~40 view-loadout builds and must be
+    -- retried across imports but never repeated within one.
+    if ST._ResetHeroTalentSweepAttempt then
+        ST._ResetHeroTalentSweepAttempt()
+    end
 
     for _, entry in ipairs(entries) do
         local containerId = db.nextContainerId
@@ -1156,10 +1180,41 @@ local function ImportContainerEntries(db, entries, charKey, importState, options
         end
 
         local container = CopyTable(entry.container)
-        local importAsGlobal = options.forceGlobalScope == true
-            or ContainerEntryHasPortableEligibility(entry)
-        container.createdBy = charKey
+        -- Landing scope: an originally-global piece stays global; everything
+        -- else goes through the SAME decision the full-profile door uses
+        -- (ST._ResolveEntityTreeLanding), so one policy owns both doors.
+        -- Only content no class section can represent (cross-class mixes,
+        -- class allowlists) moves the piece to Global.
+        local sourceWasGlobal = container.isGlobal == true
+            or container.section == "global"
+        local importAsGlobal = options.forceGlobalScope == true or sourceWasGlobal
+        local landingCharKey
+        if not importAsGlobal
+            and ContainerEntryHasPortableEligibility(entry)
+            and ST._ResolveEntityTreeLanding
+        then
+            local entities = { entry.container }
+            for _, panel in ipairs(entry.panels or {}) do
+                entities[#entities + 1] = panel
+            end
+            -- importerClassID nil (UnitClass gave nothing) means "cannot
+            -- tell", and the shared rule then keeps the importer as owner
+            -- rather than re-homing every piece onto a placeholder.
+            local mustGlobalize
+            landingCharKey, mustGlobalize = ST._ResolveEntityTreeLanding(entities, importerClassID)
+            if mustGlobalize then
+                importAsGlobal = true
+                landingCharKey = nil
+            end
+        end
+        container.createdBy = landingCharKey or charKey
         container.isGlobal = importAsGlobal
+        if not importAsGlobal and ST._FoldSpecAllowlistIntoSpecs then
+            ST._FoldSpecAllowlistIntoSpecs(container)
+            for _, panel in ipairs(entry.panels or {}) do
+                ST._FoldSpecAllowlistIntoSpecs(panel)
+            end
+        end
         if type(options.legacyFolder) == "table" then
             -- Decode-only compatibility: apply the retired Folder's inherited
             -- restrictions through the canonical migration, without ever
@@ -1176,8 +1231,10 @@ local function ImportContainerEntries(db, entries, charKey, importState, options
         container.order = containerId
         container.specOrders = nil
         container.locked = true
-        if importAsGlobal then
+        if importAsGlobal and not sourceWasGlobal then
             importState.globalizedEligibilityImports = (importState.globalizedEligibilityImports or 0) + 1
+        elseif landingCharKey then
+            importState.sortedEligibilityImports = (importState.sortedEligibilityImports or 0) + 1
         end
         db.groupContainers[containerId] = container
         CooldownCompanion:CreateContainerFrame(containerId)
@@ -1244,6 +1301,9 @@ local function PrintImportSanitizerNotes(importState)
     end
     if (importState.characterEligibilityStripped or 0) > 0 then
         CooldownCompanion:Print("Character eligibility is local and was not imported.")
+    end
+    if (importState.sortedEligibilityImports or 0) > 0 then
+        CooldownCompanion:Print("Imported groups were sorted into class sections by their eligibility (x" .. importState.sortedEligibilityImports .. ").")
     end
     if (importState.globalizedEligibilityImports or 0) > 0 then
         CooldownCompanion:Print("Class, specialization, and hero talent eligibility were preserved in Global Groups.")
@@ -1353,7 +1413,48 @@ ST._AttachGroupImportBatch = function(payload, token)
     end
 end
 
-local function ApplyGroupImportData(data)
+-- Import doors insert entries that can carry main-era keys AFTER the
+-- migration sentinels stamped, so the chain re-runs over the profile (it is
+-- idempotent by contract). Centralized because getting it right has three
+-- parts every door needs:
+--   * While a group-import batch is open, imported anchors still hold the
+--     exporter's frame references. SanitizeCursorAnchorPolicy runs inside
+--     the chain and would judge them before FinishGroupImportBatch remaps
+--     them, detaching imported groups to the screen root — so it is
+--     deferred, and the batch sanitizes once anchors are correct.
+--   * A multi-section import (setup, pieces) would otherwise walk the whole
+--     profile once per section. Those doors pass options.deferMigrations and
+--     take one run themselves after finishing their batch. Deferral is a
+--     per-call argument, deliberately not shared state: an earlier version
+--     used a module-level counter, and a Lua error thrown between its
+--     increment and decrement left it raised for the rest of the session,
+--     after which every import silently skipped the chain and still
+--     reported success.
+--   * The failure return is the caller's to honor; reporting success over a
+--     profile whose migration bailed is how unmigrated data ships silently.
+--     Doors still refresh after a failed run: the entries are already
+--     committed with no rollback, so leaving the UI showing the pre-import
+--     profile only hides that fact.
+local function RunPostImportMigrations()
+    CooldownCompanion:ClearMigrationSentinels()
+    local previousDefer = CooldownCompanion._deferCursorAnchorPolicySanitizer
+    if next(activeGroupImportBatches) ~= nil then
+        CooldownCompanion._deferCursorAnchorPolicySanitizer = true
+    end
+    local ok = CooldownCompanion:RunAllMigrations()
+    CooldownCompanion._deferCursorAnchorPolicySanitizer = previousDefer
+    if not ok then
+        CooldownCompanion:Print("Import failed: this profile could not be migrated to 12.1.")
+    end
+    return ok
+end
+
+-- Exported for the pieces door, the other multi-section import: it lives in
+-- ProfileImportPieces.lua, defers its sections the same way, and so needs to
+-- take the single run itself.
+ST._RunPostImportMigrations = RunPostImportMigrations
+
+local function ApplyGroupImportData(data, options)
     if type(data) ~= "table" then
         return false
     end
@@ -1486,6 +1587,11 @@ local function ApplyGroupImportData(data)
         end
         CooldownCompanion:Print("Imported " .. count .. " groups.")
 
+    -- Legacy single-group strings (pre-Export-mode). No current producer
+    -- emits this shape. The old exporter stripped isGlobal, so an
+    -- originally-global group cannot prove it was global and lands by
+    -- content like everything else; current payloads carry isGlobal in the
+    -- container itself, where the landing decision reads it.
     elseif data.type == "container" and data.container and data.panels then
         local importState, _, panelCount, containerId = ImportContainerEntries(db, {{
             container = data.container,
@@ -1504,23 +1610,22 @@ local function ApplyGroupImportData(data)
         return false
     end
 
-    CooldownCompanion:ClearMigrationSentinels()
-    local previousDeferCursorAnchorPolicySanitizer = CooldownCompanion._deferCursorAnchorPolicySanitizer
-    if deferAnchorRemap then
-        CooldownCompanion._deferCursorAnchorPolicySanitizer = true
-    end
-    local migrationsOk = CooldownCompanion:RunAllMigrations()
-    CooldownCompanion._deferCursorAnchorPolicySanitizer = previousDeferCursorAnchorPolicySanitizer
-    if not migrationsOk then
-        return false
+    local migrationOk = true
+    if not (options and options.deferMigrations) then
+        migrationOk = RunPostImportMigrations()
     end
 
+    -- Refresh even when the migration failed: the groups above are already
+    -- written and there is no rollback, so returning early would only leave
+    -- the config and the live frames describing a profile that no longer
+    -- exists. The failure is reported by RunPostImportMigrations and carried
+    -- out in the return value.
     CooldownCompanion:RefreshConfigPanel()
     CooldownCompanion:RefreshAllGroups()
     if not deferAnchorRemap then
         PrintImportSanitizerNotes(rootImportState)
     end
-    return true
+    return migrationOk
 end
 
 ST._ApplyGroupImportData = ApplyGroupImportData
@@ -1610,10 +1715,20 @@ local function ApplyCustomBarsImportData(data, options)
         CooldownCompanion:Print(message)
     end
     PrintImportSanitizerNotes(importState)
+    local migrationOk = true
+    if not (options and options.deferMigrations) then
+        migrationOk = RunPostImportMigrations()
+    end
+
+    -- Apply and refresh even when the migration failed: the bars are already
+    -- written into the live settings table with no rollback, and the success
+    -- message above has already gone out. Returning before this left the
+    -- caller parked in Import mode with bars in the profile and none on
+    -- screen until a reload.
     CooldownCompanion:ApplyResourceBars()
     CooldownCompanion:UpdateAnchorStacking()
     CooldownCompanion:RefreshConfigPanel()
-    return true
+    return migrationOk
 end
 
 local function GetSetupSectionClassKey(section)
@@ -1682,6 +1797,14 @@ local function ApplySetupImportData(data)
     local applied = false
     local failed = false
     local containersApplied = false
+    local customBarsApplied = false
+
+    -- One migration run owns this whole click: each section would otherwise
+    -- walk the entire profile again, and the runs nested inside the open
+    -- batch would sanitize anchors that are not remapped yet. Every section
+    -- is handed this and the single run is taken below, once the batch has
+    -- closed.
+    local deferToSetupRun = { deferMigrations = true }
 
     if hasContainers then
         local containersPayload = {
@@ -1690,7 +1813,7 @@ local function ApplySetupImportData(data)
             _cdcImportCheckpoint = data._cdcImportCheckpoint,
         }
         ST._AttachGroupImportBatch(containersPayload, batchToken)
-        containersApplied = ApplyGroupImportData(containersPayload) == true
+        containersApplied = ApplyGroupImportData(containersPayload, deferToSetupRun) == true
         applied = containersApplied or applied
         failed = failed or not containersApplied
     end
@@ -1733,12 +1856,29 @@ local function ApplySetupImportData(data)
         }
         local ok = ApplyCustomBarsImportData(barsPayload, {
             targetClassKey = barsClassKey,
+            deferMigrations = true,
         }) == true
+        customBarsApplied = ok
         applied = ok or applied
         failed = failed or not ok
     end
 
     ST._FinishGroupImportBatch(batchToken, containersApplied)
+
+    -- The single migration run for every section this setup inserted, taken
+    -- once the batch has remapped anchors so the chain's cursor-anchor
+    -- sanitizer judges final data -- and BEFORE the refresh below, because
+    -- every section deferred its own run and the frames built by that
+    -- refresh must come from migrated entries. Running it after meant a
+    -- setup carrying main-era data rendered with retired keys still live
+    -- until the next spec change or reload, under a chat line announcing
+    -- the migration had happened.
+    local migrationOk = true
+    if applied then
+        migrationOk = RunPostImportMigrations()
+        failed = failed or not migrationOk
+    end
+
     -- The batch remaps container and panel anchors, and that runs AFTER
     -- ApplyGroupImportData's own RefreshAllGroups - so without this the
     -- remapped anchors never reach the live frames (same reason
@@ -1747,7 +1887,12 @@ local function ApplySetupImportData(data)
         CooldownCompanion:RefreshAllGroups()
     end
 
-    if resourcesSection then
+    -- Rebuild bars after the migration for either section that can hold
+    -- them. A Custom Bars section builds its own bars on the way in, but it
+    -- deferred the migration to this function, so those bars came from
+    -- pre-migration entries and have to be rebuilt here just as a Resources
+    -- section does.
+    if resourcesSection or customBarsApplied then
         CooldownCompanion:ApplyResourceBars()
         CooldownCompanion:UpdateAnchorStacking()
         CooldownCompanion:RefreshConfigPanel()
@@ -1758,7 +1903,10 @@ local function ApplySetupImportData(data)
             and "Import finished: some parts of this setup could not be imported."
             or "Import failed: this setup could not be imported.")
     end
-    return applied
+    -- A failed final migration is a failed import even though the sections
+    -- landed: the caller uses this to decide whether to leave Import mode,
+    -- and treating unmigrated data as a clean import is how it ships.
+    return applied and migrationOk
 end
 
 ST._BlockCustomBarsImportForResourceBarConflict = BlockCustomBarsImportForResourceBarConflict

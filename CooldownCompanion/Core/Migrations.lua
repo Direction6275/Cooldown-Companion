@@ -123,6 +123,31 @@ local function GetEntitySpecRestriction(entity)
     return ReadRestrictionMap(entity.specs, NormalizeNumericRestrictionKey)
 end
 
+-- Class-scope landing needs an entity's spec gating expressed where class
+-- scope reads it (entity.specs). The allowlist is a SECOND gate that
+-- dominates entity.specs at runtime, so the canonical single-map form is
+-- that dominant restriction — never the union of the two, which would drop
+-- the gate and widen eligibility. An allowlist with nothing enabled means
+-- "never eligible" and stays never through EncodeRestrictionMap's sentinel.
+function CooldownCompanion:CanonicalizeEntitySpecRestriction(entity)
+    if type(entity) ~= "table" then
+        return
+    end
+    local specs, hasSpecs = GetEntitySpecRestriction(entity)
+    local loadConditions = entity.loadConditions
+    if type(loadConditions) == "table" and loadConditions.specAllowlist ~= nil then
+        if hasSpecs then
+            entity.specs = EncodeRestrictionMap(specs)
+        end
+        loadConditions.specAllowlist = nil
+    end
+end
+
+-- Read-only companion: the effective spec gate without mutating anything.
+function CooldownCompanion:GetEntitySpecRestriction(entity)
+    return GetEntitySpecRestriction(entity)
+end
+
 local function EnsureLoadConditions(entity)
     if type(entity.loadConditions) == "table" then
         return entity.loadConditions
@@ -366,9 +391,14 @@ local function CollectOrderingSpecIds(profile, folders)
     return sortedSpecIds
 end
 
+-- Void on purpose: the flattened-folder count travels ONLY through the
+-- profile stash below. An earlier version also returned it, and the second
+-- channel was a trap — the full-profile import door runs this pass itself,
+-- so by the time RunAllMigrations called it again the folder state was gone
+-- and the returned count was a plausible-looking zero.
 local function MigrateFoldersIntoGroups(addon, profile, sourceCharacterInfo)
     if type(profile) ~= "table" then
-        return false, 0
+        return
     end
 
     local storedFolders = rawget(profile, "folders")
@@ -398,7 +428,7 @@ local function MigrateFoldersIntoGroups(addon, profile, sourceCharacterInfo)
     end
 
     if not hasFolderState then
-        return false, 0
+        return
     end
 
     AssignFlattenedOrders(addon, profile, folders, nil, sourceCharacterInfo)
@@ -406,27 +436,37 @@ local function MigrateFoldersIntoGroups(addon, profile, sourceCharacterInfo)
         AssignFlattenedOrders(addon, profile, folders, specId, sourceCharacterInfo)
     end
 
-    local flattenedCount = 0
     for _, container in pairs(containers) do
-        if type(container) == "table" and container.folderId ~= nil then
+        if type(container) == "table" then
             container.folderId = nil
-            flattenedCount = flattenedCount + 1
         end
     end
     for _, group in pairs(groups) do
-        if type(group) == "table" and group.folderId ~= nil then
+        if type(group) == "table" then
             group.folderId = nil
-            flattenedCount = flattenedCount + 1
         end
+    end
+
+    -- Count FOLDERS, which is what the notice says. Counting the entities
+    -- that carried a folderId reported one folder holding a group with three
+    -- panels as "(x4)".
+    local flattenedCount = 0
+    for _ in pairs(folders) do
+        flattenedCount = flattenedCount + 1
     end
 
     profile.folders = nil
     profile.nextFolderId = nil
-    return true, flattenedCount
+    -- The notice reads and clears this stash, so it reports correctly no
+    -- matter which door did the flattening.
+    if flattenedCount > 0 then
+        profile._cdcFlattenedFolderNotice =
+            (tonumber(profile._cdcFlattenedFolderNotice) or 0) + flattenedCount
+    end
 end
 
 function CooldownCompanion:MigrateFoldersIntoGroups(profile, sourceCharacterInfo)
-    return MigrateFoldersIntoGroups(self, profile or (self.db and self.db.profile), sourceCharacterInfo)
+    MigrateFoldersIntoGroups(self, profile or (self.db and self.db.profile), sourceCharacterInfo)
 end
 
 local function CompareVersion(left, right)
@@ -754,14 +794,14 @@ local function ClearRetiredProfileFlags(profile)
     if type(profile) ~= "table" then
         return false
     end
-    local changed = false
+    -- cdmHidden was a user-visible main-era setting (hide the Blizzard
+    -- Cooldown Manager); only an enabled value earns the notice — the
+    -- default false materializes into exported strings.
+    local cdmHiddenWasEnabled = profile.cdmHidden == true
     for _, key in ipairs(RETIRED_PROFILE_FLAGS) do
-        if profile[key] ~= nil then
-            profile[key] = nil
-            changed = true
-        end
+        profile[key] = nil
     end
-    return changed
+    return cdmHiddenWasEnabled
 end
 
 local function HasSupportedCheckpoint(payload)
@@ -885,9 +925,10 @@ end
 -- what has no 12.1 equivalent, recompute the tracked unit from spell polarity
 -- (the anti-cheat gate allows only buffs-on-player and own-debuffs-on-target).
 -- Idempotent; gated on a one-time profile stamp so users see the summary once.
--- Untouched on purpose: pandemic style keys (dormant until Blizzard fixes),
--- stored auraActive trigger clauses (retired-offer pattern), and custom-bar
--- aura entries (the later bars phases own their migration).
+-- Untouched on purpose: pandemic style keys (dormant until Blizzard fixes)
+-- and stored auraActive trigger clauses (retired-offer pattern). Custom-bar
+-- aura entries get the same treatment from the bar aura effect pass below,
+-- including the tracked-unit recompute and mixed-list trim.
 local function ClassifyAuraSpellUnit(spellID)
     if not (spellID and C_Spell.DoesSpellExist and C_Spell.DoesSpellExist(spellID)) then
         return nil
@@ -895,77 +936,223 @@ local function ClassifyAuraSpellUnit(spellID)
     return C_Spell.IsSpellHarmful(spellID) and "target" or "player"
 end
 
-local function MigrateAuraEntry(self, buttonData, counts)
+-- Aura sounds play natively through C_UnitAuras.AddAuraSound, which needs a
+-- sound FILE. Both the event set and the playability rule come from
+-- SoundAlerts so this cannot drift from the registration path: it covers
+-- every native trigger (including stack-gained) and every unplayable form
+-- (the Blizzard soundkit and text-to-speech sentinels carried over from the
+-- old CC-played path, plus shared media that resolves to a numeric SoundKit).
+local function StripUnplayableAuraSoundForms(self, dataTable)
+    local events = type(dataTable.soundAlerts) == "table"
+        and type(dataTable.soundAlerts.events) == "table"
+        and dataTable.soundAlerts.events or nil
+    if not (events and self.GetNativeAuraSoundEventKeys and self.IsAuraSoundSelectionUnplayable) then
+        return 0
+    end
+    local stripped = 0
+    for eventKey in pairs(self:GetNativeAuraSoundEventKeys()) do
+        if self:IsAuraSoundSelectionUnplayable(events[eventKey]) then
+            events[eventKey] = nil
+            stripped = stripped + 1
+        end
+    end
+    -- Prune what the strip emptied, the same as the setter paths
+    -- (SetButtonSoundAlertEvent / SetCustomBarSoundAlertEvent): an entry
+    -- left holding soundAlerts = { events = {} } still counts as configured
+    -- content, so it survives normalization and ships in every export.
+    if stripped > 0 and not next(events) then
+        dataTable.soundAlerts.events = nil
+        if not next(dataTable.soundAlerts) then
+            dataTable.soundAlerts = nil
+        end
+    end
+    return stripped
+end
+
+-- Mixed buff/debuff candidate lists are unrepresentable on 12.1 (one slot,
+-- one polarity): keep the majority polarity plus IDs that cannot be
+-- classified yet. Returns the resolved polarity and whether the stored list
+-- was trimmed. Shared by panel entries and custom-bar entries.
+local function ResolveAuraCandidatePolarity(dataTable)
+    local raw = dataTable.auraSpellID and tostring(dataTable.auraSpellID) or nil
+    if not raw then
+        return nil, false
+    end
+
+    local helpfulCount, harmfulCount = 0, 0
+    for id in raw:gmatch("%d+") do
+        local unit = ClassifyAuraSpellUnit(tonumber(id))
+        if unit == "target" then
+            harmfulCount = harmfulCount + 1
+        elseif unit == "player" then
+            helpfulCount = helpfulCount + 1
+        end
+    end
+
+    if helpfulCount > 0 and harmfulCount > 0 then
+        local keepUnit = harmfulCount > helpfulCount and "target" or "player"
+        local rebuilt = {}
+        for id in raw:gmatch("%d+") do
+            local numericID = tonumber(id)
+            local unit = ClassifyAuraSpellUnit(numericID)
+            if numericID and (unit == nil or unit == keepUnit) then
+                rebuilt[#rebuilt + 1] = tostring(numericID)
+            end
+        end
+        dataTable.auraSpellID = table.concat(rebuilt, ",")
+        return keepUnit, true
+    end
+
+    if harmfulCount > 0 then
+        return "target", false
+    end
+    if helpfulCount > 0 then
+        return "player", false
+    end
+    return nil, false
+end
+
+-- The retired stack-display option family, shared by the two storage shapes
+-- that carry it: panel entries (auraBar sub-table, cleared below in
+-- MigrateEntryAuraResidue) and custom-bar entries (cleared through the
+-- CUSTOM_BAR_RETIRED_* tables, which append these). One inventory so a key
+-- retired for one shape cannot linger on the other. Names only — counting
+-- policy stays at each call site (panels count threshold/maxGlow into their
+-- own notice lines; custom bars lump everything into cabOptions).
+local RETIRED_STACK_SILENT_KEYS = {
+    "stackTextFormat",
+    "overlayColor",
+    "thresholdMaxColor",
+    "maxStacksGlowStyle",
+    "maxStacksGlowColor",
+    "maxStacksGlowSize",
+    "maxStacksGlowThickness",
+    "maxStacksGlowSpeed",
+    "maxStacksGlowLines",
+    "maxStacksBarPulseEnabled",
+    "maxStacksBarPulseSpeed",
+    "maxStacksBarColorShiftEnabled",
+    "maxStacksBarColorShiftSpeed",
+    "maxStacksBarColorShiftColor",
+}
+
+-- Counted only when the feature was actually ON: these store explicit false
+-- when the user toggled them back off, and an untouched-then-disabled
+-- default is not a lost setting.
+local RETIRED_STACK_COUNTED_KEYS = {
+    { key = "thresholdColorEnabled", panelCount = "threshold" },
+    { key = "maxStacksGlowEnabled", panelCount = "maxGlow" },
+}
+
+-- Residue that can linger on any entry regardless of its current tracking
+-- state (aura tracking may have been toggled off after these were written),
+-- so this runs for every button, not just aura entries.
+local function MigrateEntryAuraResidue(self, buttonData, counts)
     -- hide-while-aura-active: LOST in 12.1 (no compliant mechanism).
+    -- Cleared whenever present, but counted only when it was actually ON:
+    -- main wrote an explicit false when the toggle was switched back off,
+    -- and reporting those inflates the notice with settings the user had
+    -- already disabled.
     if buttonData.hideWhileAuraActive ~= nil then
+        if buttonData.hideWhileAuraActive == true then
+            counts.hideActive = counts.hideActive + 1
+        end
         buttonData.hideWhileAuraActive = nil
-        counts.hideActive = counts.hideActive + 1
     end
 
-    -- Aura-removed sounds: no 12.1 API (gain sounds survive natively).
-    local events = type(buttonData.soundAlerts) == "table"
-        and type(buttonData.soundAlerts.events) == "table"
-        and buttonData.soundAlerts.events or nil
-    if events and events.onAuraRemoved ~= nil then
-        events.onAuraRemoved = nil
-        counts.lossSounds = counts.lossSounds + 1
+    -- hide-except-during-pandemic and keep-spell-cooldown-swipe: LOST in
+    -- 12.1. Both stored true-or-nil, so presence means enabled.
+    if buttonData.hideAuraActiveExceptPandemic ~= nil then
+        counts.hidePandemic = counts.hidePandemic + 1
+        buttonData.hideAuraActiveExceptPandemic = nil
+    end
+    if buttonData.auraKeepSpellCooldownSwipe ~= nil then
+        counts.keepSwipe = counts.keepSwipe + 1
+        buttonData.auraKeepSpellCooldownSwipe = nil
     end
 
-    -- Bar stack displays: plain numeric text only (pips/segments/overlays
-    -- need the numeric stack value, which is secret in combat).
+    -- The hide-while-active baseline fallback rode on hideWhileAuraActive
+    -- and dies with it. Not counted here: the parent's drop is counted only
+    -- when the parent key is still present, and an earlier sentinel
+    -- generation may already have cleared it, leaving this orphan alone.
+    buttonData.useBaselineAlphaFallbackAuraActive = nil
+
+    -- Dim While Aura Inactive survives but moves onto the 12.1-native
+    -- auraShellDim key. Main stored it as a fallback riding
+    -- hideWhileAuraNotActive; on 12.1 the two are mutually exclusive
+    -- single-key toggles.
+    --   pair (hide + fallback) -> auraShellDim, both legacy keys cleared.
+    --   fallback alone         -> dropped: main left this orphan behind when
+    --     the hide toggle was switched back off (only the hide-while-ACTIVE
+    --     handler cleared its sibling), and it rendered nothing there.
+    -- Both arms test == true, never ~= nil: a stored `false` is main's way
+    -- of spelling "off", and reading it as "the pair is present" would keep
+    -- the fallback alive and start dimming an entry that never dimmed.
+    --
+    -- Nothing in this pass reads or writes auraShellDim, and that is the
+    -- point. The pass re-runs on every import (ClearMigrationSentinels), so
+    -- any rule keyed on the SHAPE of the old fallback key would eventually
+    -- eat a live setting — a 12.1 entry the user dimmed is indistinguishable
+    -- from main-era residue while both share one key. Converting onto a key
+    -- this pass never touches makes re-running a genuine no-op.
+    -- Uncounted: the pair keeps its meaning and the orphan rendered nothing,
+    -- so neither is a setting the user loses.
+    if buttonData.useBaselineAlphaFallback ~= nil then
+        if buttonData.useBaselineAlphaFallback == true
+            and buttonData.hideWhileAuraNotActive == true then
+            buttonData.auraShellDim = true
+            buttonData.hideWhileAuraNotActive = nil
+        end
+        buttonData.useBaselineAlphaFallback = nil
+    end
+
+    counts.soundForm = counts.soundForm + StripUnplayableAuraSoundForms(self, buttonData)
+
+    -- Bar stack displays: the old mode value carried the display style
+    -- ("stack_continuous" etc.); split it onto the mode + stackDisplayMode
+    -- vocabulary. Gap and smoothing keep their meaning and carry over. Keys
+    -- with no 12.1 home (numeric max, overlay color, threshold colors, the
+    -- max-stacks indicator family) clear. New-vocabulary values pass
+    -- through untouched so re-running on 12.1-native data changes nothing.
     local auraBar = type(buttonData.auraBar) == "table" and buttonData.auraBar or nil
     if auraBar then
-        local touched = false
         local mode = auraBar.mode
-        if mode == "stack" or mode == "stack_continuous" or mode == "stack_segmented" or mode == "stack_overlay" then
+        local displayMode = auraBar.stackDisplayMode
+        local wantsContinuous = mode == "stack_continuous" or displayMode == "stack_continuous"
+        if mode == "stack" or mode == "stack_continuous"
+            or mode == "stack_segmented" or mode == "stack_overlay" then
             auraBar.mode = "stacks"
-            touched = true
-        end
-        if auraBar.stackDisplayMode ~= nil or auraBar.segmentGap ~= nil
-            or auraBar.segmentedSmoothing ~= nil or auraBar.maxStacks ~= nil then
-            auraBar.stackDisplayMode = nil
-            auraBar.segmentGap = nil
-            auraBar.segmentedSmoothing = nil
-            auraBar.maxStacks = nil
-            touched = true
-        end
-        if touched then
+            auraBar.stackDisplayMode = wantsContinuous and "continuous" or nil
             counts.stackModes = counts.stackModes + 1
+        elseif type(displayMode) == "string" and displayMode:find("^stack") then
+            -- Only a revived continuous style is a visible change; a stale
+            -- segmented value resolves to nil, which is already the default.
+            auraBar.stackDisplayMode = wantsContinuous and "continuous" or nil
+            if wantsContinuous then
+                counts.stackModes = counts.stackModes + 1
+            end
+        end
+        -- Panel-only: custom bars still use maxStacks, so it is not in the
+        -- shared inventory.
+        auraBar.maxStacks = nil
+        for _, key in ipairs(RETIRED_STACK_SILENT_KEYS) do
+            auraBar[key] = nil
+        end
+        for _, spec in ipairs(RETIRED_STACK_COUNTED_KEYS) do
+            if auraBar[spec.key] ~= nil then
+                if auraBar[spec.key] == true then
+                    counts[spec.panelCount] = counts[spec.panelCount] + 1
+                end
+                auraBar[spec.key] = nil
+            end
         end
     end
+end
 
-    -- Mixed buff/debuff candidate lists are unrepresentable (one slot, one
-    -- polarity): keep the majority polarity plus unclassifiable IDs.
-    local polarity = nil
-    local raw = buttonData.auraSpellID and tostring(buttonData.auraSpellID) or nil
-    if raw then
-        local helpfulCount, harmfulCount = 0, 0
-        for id in raw:gmatch("%d+") do
-            local unit = ClassifyAuraSpellUnit(tonumber(id))
-            if unit == "target" then
-                harmfulCount = harmfulCount + 1
-            elseif unit == "player" then
-                helpfulCount = helpfulCount + 1
-            end
-        end
-        if helpfulCount > 0 and harmfulCount > 0 then
-            local keepUnit = harmfulCount > helpfulCount and "target" or "player"
-            local rebuilt = {}
-            for id in raw:gmatch("%d+") do
-                local numericID = tonumber(id)
-                local unit = ClassifyAuraSpellUnit(numericID)
-                if numericID and (unit == nil or unit == keepUnit) then
-                    rebuilt[#rebuilt + 1] = tostring(numericID)
-                end
-            end
-            buttonData.auraSpellID = table.concat(rebuilt, ",")
-            counts.mixed = counts.mixed + 1
-            polarity = keepUnit
-        elseif harmfulCount > 0 then
-            polarity = "target"
-        elseif helpfulCount > 0 then
-            polarity = "player"
-        end
+local function MigrateAuraEntry(self, buttonData, counts)
+    local polarity, trimmed = ResolveAuraCandidatePolarity(buttonData)
+    if trimmed then
+        counts.mixed = counts.mixed + 1
     end
     if polarity == nil then
         polarity = ClassifyAuraSpellUnit(self:ResolveAuraSpellID(buttonData))
@@ -983,32 +1170,135 @@ local function MigrateAuraEntry(self, buttonData, counts)
     end
 end
 
+-- Generation-ordered sentinel registry: `current` is the live guard,
+-- `retired` are prior generations cleared when a pass claims a profile.
+-- A generation bump is ONE edit here — move the old current into retired,
+-- name the new current — and the guard, the retired-clears, and
+-- ClearMigrationSentinels all follow. The old shape needed three
+-- coordinated edits per bump; missing the ClearMigrationSentinels one left
+-- imported profiles permanently stamped and silently un-migrated.
+--
+-- aura rebuild generations: renamed from _cdcAuraRebuildMigrated when the
+-- pass stopped wiping aura-removed sounds, gained the lingering-option and
+-- dead-key clears, and began mapping bar stack displays onto the split
+-- vocabulary; renamed again when the sound strip moved onto the shared
+-- SoundAlerts rule.
+-- bar aura effect generations: from _cdcBarAuraGlowMigrated (size resets
+-- and custom-bar traversal), then _cdcBarAuraEffectMigrated, then
+-- _cdcBarAuraEffect2Migrated (all custom-bar storage shapes, the seed
+-- scope, the identity release).
+--
+-- Deliberately NOT here: _cdcAuraDormantPlacementNoted (marks an
+-- observation, not a transform — survives clears so the notice prints
+-- once) and _cdcFlattenedFolderNotice (a notice accumulator, not a guard).
+local AURA_REBUILD_SENTINEL = {
+    current = "_cdcAuraRebuild3Migrated",
+    retired = { "_cdcAuraRebuildMigrated", "_cdcAuraRebuild2Migrated" },
+}
+local BAR_AURA_EFFECT_SENTINEL = {
+    current = "_cdcBarAuraEffect3Migrated",
+    retired = { "_cdcBarAuraGlowMigrated", "_cdcBarAuraEffectMigrated", "_cdcBarAuraEffect2Migrated" },
+}
+local MIGRATION_SENTINELS = {
+    AURA_REBUILD_SENTINEL,
+    BAR_AURA_EFFECT_SENTINEL,
+    -- Single-generation passes keep their own inline guard and stamp (the
+    -- group-scope pass stamps conditionally on talent data being ready);
+    -- registered so ClearMigrationSentinels iterates them.
+    { current = "_cdcAuraGroupScopeMigrated" },
+    { current = "_cdcAuraGlowMigrated" },
+    { current = "_cdcLcgGlowMigrated" },
+}
+
+-- False when the profile is already stamped; otherwise clears the retired
+-- generations and lets the pass run. The caller stamps sentinel.current
+-- when its transform completes.
+local function ClaimMigrationPass(profile, sentinel)
+    if profile[sentinel.current] then return false end
+    for _, key in ipairs(sentinel.retired or {}) do
+        profile[key] = nil
+    end
+    return true
+end
+
 local function MigrateAuraTrackingRebuild(self, profile)
-    if type(profile) ~= "table" or profile._cdcAuraRebuildMigrated then return end
-    local counts = { hideActive = 0, stackModes = 0, lossSounds = 0, mixed = 0, unit = 0 }
+    -- Already-stamped profiles re-run it once (idempotent; new-vocabulary
+    -- values pass through untouched).
+    if type(profile) ~= "table" or not ClaimMigrationPass(profile, AURA_REBUILD_SENTINEL) then return end
+    local counts = {
+        hideActive = 0, hidePandemic = 0, keepSwipe = 0, stackModes = 0,
+        threshold = 0, maxGlow = 0, soundForm = 0, mixed = 0, unit = 0,
+        dormantPlacement = 0,
+    }
     local groups = profile.groups
     if type(groups) == "table" then
         for _, group in pairs(groups) do
             local buttons = type(group) == "table" and group.buttons or nil
             if type(buttons) == "table" then
+                -- Only icon and bar panels compose a 12.1 aura display;
+                -- aura tracking and stored aura trigger clauses elsewhere
+                -- are dormant by design and only counted, never moved.
+                local displayMode = group.displayMode or "icons"
+                local auraCapable = displayMode == "icons" or displayMode == "bars"
                 for _, buttonData in ipairs(buttons) do
-                    if type(buttonData) == "table" and buttonData.type == "spell"
-                        and (buttonData.auraTracking or buttonData.addedAs == "aura") then
-                        MigrateAuraEntry(self, buttonData, counts)
+                    if type(buttonData) == "table" then
+                        MigrateEntryAuraResidue(self, buttonData, counts)
+                        local isAuraEntry = buttonData.type == "spell"
+                            and (buttonData.auraTracking or buttonData.addedAs == "aura")
+                        if isAuraEntry then
+                            MigrateAuraEntry(self, buttonData, counts)
+                        end
+                        if not auraCapable then
+                            -- The singular entry-level key is a storage form
+                            -- in its own right, not just a clause spelling:
+                            -- HasTriggerConditionConfig tests it first, and
+                            -- the display reads it whenever no clause array
+                            -- exists. Main-era data that never went through
+                            -- clause promotion carries only this one, which
+                            -- is exactly the data this notice is for.
+                            local hasAuraClause = buttonData.triggerCondition == "auraActive"
+                            if not hasAuraClause and type(buttonData.triggerConditions) == "table" then
+                                for _, clause in ipairs(buttonData.triggerConditions) do
+                                    if type(clause) == "table"
+                                        and (clause.key == "auraActive"
+                                            or clause.conditionKey == "auraActive"
+                                            or clause.triggerCondition == "auraActive") then
+                                        hasAuraClause = true
+                                        break
+                                    end
+                                end
+                            end
+                            if isAuraEntry or hasAuraClause then
+                                counts.dormantPlacement = counts.dormantPlacement + 1
+                            end
+                        end
                     end
                 end
             end
         end
     end
-    profile._cdcAuraRebuildMigrated = true
+    profile[AURA_REBUILD_SENTINEL.current] = true
     local dropped = {}
     if counts.hideActive > 0 then dropped[#dropped + 1] = ("hide-while-aura-active (x%d)"):format(counts.hideActive) end
-    if counts.stackModes > 0 then dropped[#dropped + 1] = ("bar stack segment displays (x%d)"):format(counts.stackModes) end
-    if counts.lossSounds > 0 then dropped[#dropped + 1] = ("aura-removed sounds (x%d)"):format(counts.lossSounds) end
+    if counts.hidePandemic > 0 then dropped[#dropped + 1] = ("hide-except-during-pandemic (x%d)"):format(counts.hidePandemic) end
+    if counts.keepSwipe > 0 then dropped[#dropped + 1] = ("keep-spell-cooldown-swipe (x%d)"):format(counts.keepSwipe) end
+    if counts.stackModes > 0 then dropped[#dropped + 1] = ("bar stack displays remapped (x%d)"):format(counts.stackModes) end
+    if counts.threshold > 0 then dropped[#dropped + 1] = ("stack threshold colors (x%d)"):format(counts.threshold) end
+    if counts.maxGlow > 0 then dropped[#dropped + 1] = ("max-stacks glows (x%d)"):format(counts.maxGlow) end
+    if counts.soundForm > 0 then dropped[#dropped + 1] = ("aura sounds needing a file-based sound (x%d)"):format(counts.soundForm) end
     if counts.mixed > 0 then dropped[#dropped + 1] = ("mixed buff/debuff aura lists trimmed (x%d)"):format(counts.mixed) end
     if counts.unit > 0 then dropped[#dropped + 1] = ("tracked-unit corrections (x%d)"):format(counts.unit) end
+    -- Dormant placements are an OBSERVATION, not a transform: nothing is
+    -- cleared, so re-running finds the same entries forever. Its own flag
+    -- survives ClearMigrationSentinels (which exists to re-run transforms
+    -- over freshly imported data) so the notice states the fact once per
+    -- profile instead of on every import.
+    if counts.dormantPlacement > 0 and not profile._cdcAuraDormantPlacementNoted then
+        profile._cdcAuraDormantPlacementNoted = true
+        dropped[#dropped + 1] = ("aura entries on panel types without a 12.1 aura display (x%d)"):format(counts.dormantPlacement)
+    end
     if #dropped > 0 then
-        self:Print("Aura tracking updated for 12.1. Adjusted settings with no 12.1 equivalent: "
+        self:Print("Aura tracking updated for 12.1. Adjusted settings: "
             .. table.concat(dropped, ", ") .. ".")
     end
 end
@@ -1150,24 +1440,9 @@ local function MigrateAuraGlowStyleTable(styleTable, counts)
     styleTable.auraGlowLines = nil
 end
 
--- Aura-applied sounds now play through the game's aura system, which needs a
--- sound FILE; Blizzard soundkit and text-to-speech selections carried over
--- from the old CC-played path have no file form and would silently never play.
-local function MigrateAuraAppliedSoundSelection(buttonData, counts)
-    local events = type(buttonData.soundAlerts) == "table"
-        and type(buttonData.soundAlerts.events) == "table"
-        and buttonData.soundAlerts.events or nil
-    local applied = events and events.onAuraApplied
-    if type(applied) == "string"
-        and (applied == "__blz_tts" or applied:find("^__blz_soundkit:")) then
-        events.onAuraApplied = nil
-        counts.soundForm = counts.soundForm + 1
-    end
-end
-
 local function MigrateAuraGlowRebuild(self, profile)
     if type(profile) ~= "table" or profile._cdcAuraGlowMigrated then return end
-    local counts = { invert = 0, combatOnly = 0, soundForm = 0 }
+    local counts = { invert = 0, combatOnly = 0 }
 
     MigrateAuraGlowStyleTable(profile.globalStyle, counts)
 
@@ -1179,7 +1454,6 @@ local function MigrateAuraGlowRebuild(self, profile)
                     for _, buttonData in ipairs(group.buttons) do
                         if type(buttonData) == "table" then
                             MigrateAuraGlowStyleTable(buttonData.styleOverrides, counts)
-                            MigrateAuraAppliedSoundSelection(buttonData, counts)
                         end
                     end
                 end
@@ -1203,7 +1477,6 @@ local function MigrateAuraGlowRebuild(self, profile)
     local dropped = {}
     if counts.invert > 0 then dropped[#dropped + 1] = ("glow-while-missing (x%d)"):format(counts.invert) end
     if counts.combatOnly > 0 then dropped[#dropped + 1] = ("combat-only aura glow (x%d)"):format(counts.combatOnly) end
-    if counts.soundForm > 0 then dropped[#dropped + 1] = ("aura-applied sounds needing a file-based sound (x%d)"):format(counts.soundForm) end
     if #dropped > 0 then
         self:Print("Aura glow updated for 12.1. Dropped settings with no 12.1 equivalent: "
             .. table.concat(dropped, ", ") .. ".")
@@ -1337,32 +1610,189 @@ local function MigrateBarAuraEffectTable(styleTable, counts)
     end
 end
 
--- Custom-bar entries (the inactive custom-aura-bar path) carry the same
--- effect keys directly on the entry table; canonicalize them too so the
--- feature returns to clean stored values. Entries live either in a shared
--- store ({entries = {id = entry}}) or as a plain id-to-entry map.
-local function MigrateCustomBarEntries(settings, counts)
-    if type(settings) ~= "table" or type(settings.customBars) ~= "table" then return end
-    local customBars = settings.customBars
-    local entries = customBars
-    if type(customBars.entries) == "table" or type(customBars.order) == "table" then
-        entries = customBars.entries
+-- Custom-bar entries carry the same effect keys directly on the entry
+-- table; canonicalize them so the stored values stay clean. Entries live
+-- either in a shared store ({entries = {id = entry}}) or as a plain
+-- id-to-entry map. Options the 12.1 custom bars no longer offer clear here
+-- (counted only when they were enabled: live stored most as true-or-nil,
+-- and the explicit-false toggles must not count untouched defaults), and
+-- aura sounds get the same file-form rule as panel entries because the
+-- entry's soundAlerts table feeds the native aura sound path by reference.
+-- The old pandemic effect/pulse/color-shift families stay dormant with the
+-- style-table pandemic keys pending that ruling; only the retired toggle,
+-- its color, and its combat-only flag clear (the pandemic marker replaced
+-- them on custom bars).
+-- Custom-bar-only retired keys, plus the shared stack-display inventory
+-- appended below (RETIRED_STACK_*, declared beside MigrateEntryAuraResidue,
+-- which clears the same family on panel entries).
+local CUSTOM_BAR_RETIRED_OPTION_KEYS = {
+    "hideWhileAuraActive",
+    "hideAuraActiveExceptPandemic",
+    "auraGlowCombatOnly",
+    "showPandemicGlow",
+}
+local CUSTOM_BAR_RETIRED_SILENT_KEYS = {
+    "pandemicGlowCombatOnly",
+    "barPandemicColor",
+    -- auraName stays: the piece importer still reads it as a display-name
+    -- fallback for legacy custom-bar entries.
+}
+for _, spec in ipairs(RETIRED_STACK_COUNTED_KEYS) do
+    CUSTOM_BAR_RETIRED_OPTION_KEYS[#CUSTOM_BAR_RETIRED_OPTION_KEYS + 1] = spec.key
+end
+for _, key in ipairs(RETIRED_STACK_SILENT_KEYS) do
+    CUSTOM_BAR_RETIRED_SILENT_KEYS[#CUSTOM_BAR_RETIRED_SILENT_KEYS + 1] = key
+end
+
+-- Live let the user pin a custom bar's tracked unit; 12.1 derives it from
+-- spell polarity and removed the control, but GetResolvedCustomAuraBarAuraUnit
+-- still honours a stored pin ahead of polarity. A stale pin therefore leaves
+-- a permanently dark bar with no UI to correct it, so the pin is dropped for
+-- EVERY entry — the hazard is not limited to aura-typed ones, and the pin is
+-- read for both types.
+--
+-- The unit itself is deliberately NOT written here. RunResourceBarClassScopeMigration
+-- runs later in this same chain and recomputes it through the runtime
+-- resolver (EnsureCustomAuraBarAuraUnit), which is also what the live bind
+-- path and the native aura sound registration read. Writing a second,
+-- differently-derived value here would be overwritten moments later while
+-- still being reported to the user as a correction.
+local function MigrateCustomBarAuraIdentity(entry, counts)
+    local tracksAura = entry.auraTracking == true
+        or entry.entryType == nil
+        or entry.entryType == "aura"
+
+    if entry.auraUnitExplicit ~= nil then
+        entry.auraUnitExplicit = nil
+        counts.cabUnit = counts.cabUnit + 1
     end
-    if type(entries) ~= "table" then return end
-    for _, entry in pairs(entries) do
-        if type(entry) == "table" then
-            MigrateBarAuraEffectTable(entry, counts)
+
+    if not tracksAura then
+        return
+    end
+
+    -- Mixed buff/debuff candidate lists are a real transform on stored data
+    -- and stay here; the unit that falls out of them is the resolver's.
+    local _, trimmed = ResolveAuraCandidatePolarity(entry)
+    if trimmed then
+        counts.cabMixed = counts.cabMixed + 1
+    end
+end
+
+local function MigrateOneCustomBarEntry(self, entry, counts)
+    MigrateBarAuraEffectTable(entry, counts)
+    -- Stack display canonicalization: the overlay mode died with the aura
+    -- rebuild (the runtime renders anything but "continuous" as segmented),
+    -- and the stack text format is a retired live-era key the preview must
+    -- not honor while the live bar ignores it.
+    if entry.displayMode == "overlay" then
+        entry.displayMode = "segmented"
+    end
+    for _, key in ipairs(CUSTOM_BAR_RETIRED_OPTION_KEYS) do
+        if entry[key] ~= nil then
+            if entry[key] == true then
+                counts.cabOptions = counts.cabOptions + 1
+            end
+            entry[key] = nil
+        end
+    end
+    for _, key in ipairs(CUSTOM_BAR_RETIRED_SILENT_KEYS) do
+        if entry[key] ~= nil then
+            entry[key] = nil
+        end
+    end
+    counts.cabSoundForm = counts.cabSoundForm + StripUnplayableAuraSoundForms(self, entry)
+    MigrateCustomBarAuraIdentity(entry, counts)
+end
+
+-- An entry is distinguished from a spec bucket by its own scalar fields; a
+-- bucket only ever holds entry tables. Every key here must be entry-ONLY:
+-- a marker that a layout or style sub-table can also carry (displayMode,
+-- order, the colour arrays) would make this pass rewrite that table.
+local CUSTOM_BAR_ENTRY_MARKER_KEYS = {
+    "spellID", "entryType", "customBarId", "enabled", "label",
+    "auraSpellID", "trackingMode", "soundAlerts",
+    -- Live-era entries that predate the id/type fields carry these instead,
+    -- and without them such an entry is skipped by the whole pass.
+    "auraName", "resourceKey", "hideWhenInactive", "auraTracking",
+}
+
+local function LooksLikeCustomBarEntry(value)
+    for _, key in ipairs(CUSTOM_BAR_ENTRY_MARKER_KEYS) do
+        if value[key] ~= nil then
+            return true
+        end
+    end
+    return false
+end
+
+-- Custom-bar entries reach this pass in every shape the resource-bar
+-- normalizer accepts, because that normalizer runs lazily and (for the
+-- class-scope migration) only after this pass has stamped: the shared store
+-- ({entries = {id = entry}}), the live-era spec-keyed buckets
+-- ({[specID] = {[index] = entry}}), and the separate customAuraBars store.
+-- Anything missed here is promoted later and never revisited, so the walk
+-- covers all three rather than assuming the store was already converted.
+local function ForEachStoredCustomBarEntry(self, container, counts)
+    if type(container) ~= "table" then
+        return
+    end
+
+    if type(container.entries) == "table" or type(container.order) == "table" then
+        for _, entry in pairs(container.entries or {}) do
+            if type(entry) == "table" then
+                MigrateOneCustomBarEntry(self, entry, counts)
+            end
+        end
+        return
+    end
+
+    -- Descending into a value is a POSITIVE decision, never a fallback: the
+    -- pass rewrites and clears ~20 keys per entry, so a table it guesses
+    -- wrong about is corrupted. A bucket must be keyed by a spec id and hold
+    -- something that itself looks like an entry (or a nested shared store);
+    -- anything else is left untouched even if it is also not a recognizable
+    -- entry, because doing nothing is recoverable and rewriting is not.
+    local function LooksLikeCustomBarBucket(key, value)
+        if tonumber(key) == nil then
+            return false
+        end
+        if type(value.entries) == "table" or type(value.order) == "table" then
+            return true
+        end
+        for _, child in pairs(value) do
+            if type(child) == "table" and LooksLikeCustomBarEntry(child) then
+                return true
+            end
+        end
+        return false
+    end
+
+    for key, value in pairs(container) do
+        if type(value) == "table" then
+            if LooksLikeCustomBarEntry(value) then
+                MigrateOneCustomBarEntry(self, value, counts)
+            elseif LooksLikeCustomBarBucket(key, value) then
+                ForEachStoredCustomBarEntry(self, value, counts)
+            end
         end
     end
 end
 
+local function MigrateCustomBarEntries(self, settings, counts)
+    if type(settings) ~= "table" then return end
+    ForEachStoredCustomBarEntry(self, settings.customBars, counts)
+    ForEachStoredCustomBarEntry(self, settings.customAuraBars, counts)
+end
+
 local function MigrateBarAuraEffectStyles(self, profile)
-    -- Sentinel renamed from _cdcBarAuraGlowMigrated when the pass gained the
-    -- size resets and custom-bar traversal, so already-stamped profiles
-    -- re-run it once (idempotent).
-    if type(profile) ~= "table" or profile._cdcBarAuraEffectMigrated then return end
-    profile._cdcBarAuraGlowMigrated = nil
-    local counts = { remapped = 0 }
+    -- Generation history lives on BAR_AURA_EFFECT_SENTINEL beside the
+    -- registry. Already-stamped profiles re-run it once (idempotent).
+    if type(profile) ~= "table" or not ClaimMigrationPass(profile, BAR_AURA_EFFECT_SENTINEL) then return end
+    local counts = {
+        remapped = 0, cabOptions = 0, cabSoundForm = 0,
+        cabMixed = 0, cabUnit = 0,
+    }
 
     MigrateBarAuraEffectTable(profile.globalStyle, counts)
 
@@ -1394,19 +1824,30 @@ local function MigrateBarAuraEffectStyles(self, profile)
     end
 
     -- Every scope of the resource-bar stores can hold custom-bar entries.
-    MigrateCustomBarEntries(profile.resourceBars, counts)
+    -- legacyResourceBarsSeed is a frozen profile-level copy that the
+    -- class-scope migration re-injects into the character and class stores
+    -- AFTER this pass stamps, so skipping it would reintroduce un-migrated
+    -- entries that are never revisited.
+    MigrateCustomBarEntries(self, profile.resourceBars, counts)
+    MigrateCustomBarEntries(self, profile.legacyResourceBarsSeed, counts)
     for _, storeKey in ipairs({ "resourceBarsByChar", "resourceBarsByClass" }) do
         local store = profile[storeKey]
         if type(store) == "table" then
             for _, settings in pairs(store) do
-                MigrateCustomBarEntries(settings, counts)
+                MigrateCustomBarEntries(self, settings, counts)
             end
         end
     end
 
-    profile._cdcBarAuraEffectMigrated = true
-    if counts.remapped > 0 then
-        self:Print(("Bar aura effect styles updated to the new renderer (x%d)."):format(counts.remapped))
+    profile[BAR_AURA_EFFECT_SENTINEL.current] = true
+    local changed = {}
+    if counts.remapped > 0 then changed[#changed + 1] = ("effect styles moved to the new renderer (x%d)"):format(counts.remapped) end
+    if counts.cabOptions > 0 then changed[#changed + 1] = ("custom bar options with no 12.1 equivalent (x%d)"):format(counts.cabOptions) end
+    if counts.cabSoundForm > 0 then changed[#changed + 1] = ("custom bar aura sounds needing a file-based sound (x%d)"):format(counts.cabSoundForm) end
+    if counts.cabMixed > 0 then changed[#changed + 1] = ("custom bar mixed buff/debuff aura lists trimmed (x%d)"):format(counts.cabMixed) end
+    if counts.cabUnit > 0 then changed[#changed + 1] = ("custom bar tracked-unit pins released to automatic (x%d)"):format(counts.cabUnit) end
+    if #changed > 0 then
+        self:Print("Bar aura effects updated for 12.1: " .. table.concat(changed, "; ") .. ".")
     end
 end
 
@@ -1438,7 +1879,24 @@ function CooldownCompanion:RunAllMigrations()
 
     self:StampImportCheckpoint(self.db and self.db.profile)
     self:MigrateFoldersIntoGroups(self.db and self.db.profile)
-    ClearRetiredProfileFlags(self.db and self.db.profile)
+    -- Read the stash, not the return: an import door may have flattened this
+    -- profile before the chain ever reached here.
+    local noticeProfile = self.db and self.db.profile
+    local flattenedFolders = tonumber(noticeProfile and noticeProfile._cdcFlattenedFolderNotice) or 0
+    if noticeProfile then
+        noticeProfile._cdcFlattenedFolderNotice = nil
+    end
+    local retiredCdmHidden = ClearRetiredProfileFlags(self.db and self.db.profile)
+    if retiredCdmHidden or flattenedFolders > 0 then
+        local parts = {}
+        if retiredCdmHidden then
+            parts[#parts + 1] = "the Hide Cooldown Manager setting was retired"
+        end
+        if flattenedFolders > 0 then
+            parts[#parts + 1] = ("legacy folders were flattened into groups (x%d)"):format(flattenedFolders)
+        end
+        self:Print("Updated for 12.1: " .. table.concat(parts, "; ") .. ".")
+    end
     NormalizePassiveCooldownButtons(self.db and self.db.profile)
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
     BackfillAuraDurationSwipeSettings(self.db and self.db.profile, checkpointState and checkpointState.auraDurationSwipe)
@@ -1462,15 +1920,15 @@ end
 function CooldownCompanion:ClearMigrationSentinels()
     -- Import hook: clear one-time stamps so imported pre-rebuild profiles
     -- re-run their passes (each pass is idempotent; re-running on migrated
-    -- data changes nothing and prints nothing).
+    -- data changes nothing and prints nothing). Driven by the registry so a
+    -- generation bump cannot forget this site.
     local profile = self.db and self.db.profile
-    if type(profile) == "table" then
-        profile._cdcAuraRebuildMigrated = nil
-        profile._cdcAuraGroupScopeMigrated = nil
-        profile._cdcAuraGlowMigrated = nil
-        profile._cdcLcgGlowMigrated = nil
-        profile._cdcBarAuraGlowMigrated = nil
-        profile._cdcBarAuraEffectMigrated = nil
+    if type(profile) ~= "table" then return end
+    for _, sentinel in ipairs(MIGRATION_SENTINELS) do
+        for _, key in ipairs(sentinel.retired or {}) do
+            profile[key] = nil
+        end
+        profile[sentinel.current] = nil
     end
 end
 

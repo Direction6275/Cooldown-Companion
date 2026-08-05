@@ -462,7 +462,8 @@ function CooldownCompanion:ResolveStandaloneAuraDefaultSpellID(buttonData)
         return nil
     end
 
-    local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
+    local numericSpellID = tonumber(buttonData.id)
+    local baseId = numericSpellID and (C_Spell.GetBaseSpell(numericSpellID) or numericSpellID) or nil
 
     local function ResolveSingleSpellID(rawIDs)
         if not rawIDs then
@@ -486,6 +487,10 @@ function CooldownCompanion:ResolveStandaloneAuraDefaultSpellID(buttonData)
     local explicitAuraID = buttonData.addedAs ~= "aura" and ResolveSingleSpellID(buttonData.auraSpellID) or nil
     if explicitAuraID then
         return explicitAuraID
+    end
+
+    if not numericSpellID then
+        return nil
     end
 
     local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
@@ -547,6 +552,115 @@ function CooldownCompanion:ResolveStandaloneAuraDefaultUnit(buttonData)
         return C_Spell.IsSpellHarmful(buttonData.id) and "target" or "player"
     end
     return "player"
+end
+
+-- Aura shell (12.1 compositing): an aura entry that yields its resting
+-- appearance so the native aura display renders the active visual on top.
+-- Two forms, mutually exclusive in config:
+--   hideWhileAuraNotActive -> hidden shell, alpha 0
+--   auraShellDim           -> dimmed shell, DIM_FALLBACK_ALPHA
+-- Both compose the same full active visual, so every consumer that asks
+-- "is this a shell entry" must accept either. Owned here because four
+-- callers across Core and ButtonFrame need the same answer and drifted
+-- when they each kept their own copy.
+--
+-- auraShellDim is 12.1-native and deliberately NOT the main-era
+-- useBaselineAlphaFallback key it replaces. That key's presence was
+-- ambiguous: either a live setting, or residue main left behind when its
+-- partner toggle was switched back off -- and nothing in the stored shape
+-- distinguishes them. Migrating onto a distinct key makes the pass
+-- idempotent by construction: it converts the legacy pair, clears legacy
+-- orphans, and never has cause to touch this key at all.
+function CooldownCompanion:IsAuraShellEntry(buttonData)
+    if not buttonData then return false end
+    if not (buttonData.auraTracking or buttonData.addedAs == "aura") then
+        return false
+    end
+    return buttonData.hideWhileAuraNotActive == true
+        or buttonData.auraShellDim == true
+end
+
+-- Resting alpha for a shell entry, before any preview exposure. Hide wins
+-- when both keys are somehow set, matching the shell predicate's intent.
+-- Callers gate on IsAuraShellEntry first, so a non-shell entry never
+-- reaches this.
+function CooldownCompanion:GetAuraShellRestingAlpha(buttonData)
+    if buttonData and buttonData.hideWhileAuraNotActive == true then
+        return 0
+    end
+    return self.DIM_FALLBACK_ALPHA
+end
+
+-- Aura config previews draw onto CC-side regions -- the exact ones a shell
+-- makes transparent -- so a shell exposes for as long as one runs. Which
+-- kinds qualify depends on the display mode, because the regions differ:
+--   icons: the duration text and stack text live on overlayFrame, and the
+--          swipe widget sits over the button chrome.
+--   bars:  the duration BAR preview drains the statusBar, and the duration
+--          and stack text write into barTextFrame/overlayFrame. There is no
+--          swipe on a bar.
+-- Owned here rather than per-mode because bar mode's copy was cloned from
+-- the icon list without swapping the kinds -- it claimed the icon-only
+-- swipe and omitted the bar-only drain, which is the whole reason the two
+-- sets now live side by side where a mismatch is visible.
+local AURA_PREVIEW_SHELL_KINDS_ICON = {
+    aura_duration_text = true,
+    aura_stack_text = true,
+    aura_duration_swipe = true,
+}
+
+local AURA_PREVIEW_SHELL_KINDS_BAR = {
+    aura_duration_bar = true,
+    aura_duration_text = true,
+    aura_stack_text = true,
+}
+
+function CooldownCompanion:IsAuraPreviewKindExposingShell(kind, isBar)
+    if not kind then return false end
+    local kinds = isBar and AURA_PREVIEW_SHELL_KINDS_BAR or AURA_PREVIEW_SHELL_KINDS_ICON
+    return kinds[kind] == true
+end
+
+-- The one shell-alpha decision, for both display modes: 1 = no shell (the
+-- entry renders normally, including while an unlock or aura preview exposes
+-- it), 0 = full shell (the aura display is the entire visible button),
+-- fractional = the dim shell under the full-strength aura display. Static
+-- by design -- resolved at style time, never from aura state. Icon and bar
+-- mode each kept a private copy of this chain and the copies drifted (the
+-- bar one cloned the icon preview-kind list), so it lives with the shell
+-- predicate now.
+function CooldownCompanion:GetAuraShellAlpha(button, buttonData)
+    if not self:IsAuraShellEntry(buttonData) then
+        return 1
+    end
+    local frame = button and button:GetParent()
+    if not self._combatForcedLock
+        and frame
+        and (frame._containerUnlockPreviewActive == true
+            or frame._panelUnlockPreviewActive == true) then
+        return 1
+    end
+    local preview = button and button._conditionalVisualPreview
+    if self:IsAuraPreviewKindExposingShell(preview and preview.kind,
+            button and button._isBar == true) then
+        return 1
+    end
+    return self:GetAuraShellRestingAlpha(buttonData)
+end
+
+-- Mode dispatch for the shell appliers, so call sites that serve both
+-- display modes stop repeating the _isBar ternary. The appliers themselves
+-- stay per-mode (they own different region sets) and are looked up through
+-- ST at call time -- they are assigned by IconMode/BarMode, which load
+-- after this file.
+function ST._ApplyShellVisualsForButton(button, buttonData)
+    if button._isBar then
+        if ST._ApplyBarAuraShellVisuals then
+            ST._ApplyBarAuraShellVisuals(button, buttonData)
+        end
+    elseif ST._ApplyAuraShellVisuals then
+        ST._ApplyAuraShellVisuals(button, buttonData)
+    end
 end
 
 
@@ -650,12 +764,11 @@ end
 
 -- Stack display style (live parity, C2 round 3): how a stack-mode bar
 -- renders — "segmented" (per-stack segments/blocks) or "continuous" (plain
--- fill growing with stacks). Live's specific stack_* mode values were
--- collapsed to "stacks" by the (stamped) aura-rebuild migration, so the
--- style cannot auto-revive: migrated buttons default to segmented and the
--- choice is a fresh 12.1 setting stored in auraBar.stackDisplayMode
--- (nil = segmented; the migration wipes this key only when converting
--- live-era data).
+-- fill growing with stacks). Stored in auraBar.stackDisplayMode, nil =
+-- segmented. Live's specific stack_* mode values carried the style on the
+-- mode key; the aura-rebuild migration splits them onto this vocabulary, so
+-- a live "continuous" choice does revive as "continuous" and every other
+-- live-era value resolves to the segmented default.
 function CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData)
     local auraBar = buttonData and buttonData.auraBar
     local mode = type(auraBar) == "table" and auraBar.stackDisplayMode or nil
@@ -696,8 +809,9 @@ end
 -- segmented stack bar sweeps or snaps between stack counts. Same key and
 -- "on"/"off" normalizer as the resource-side control — one feature in the
 -- UI even though the mechanism differs (Blizzard's ApplicationBar
--- interpolation here, CC-side smoothing there). The aura-rebuild migration
--- wiped live-era values, so nil takes the "on" default. Continuous stack
+-- interpolation here, CC-side smoothing there). Live wrote the same
+-- "on"/"off" vocabulary, so the aura-rebuild migration carries stored
+-- values over unchanged and nil takes the "on" default. Continuous stack
 -- fills always smooth and ignore this (owner ruling 2026-07-24, resource
 -- parity: the toggle governs segmented displays only).
 function CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(buttonData)

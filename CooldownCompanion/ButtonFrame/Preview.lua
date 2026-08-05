@@ -332,11 +332,7 @@ local function ClearConditionalVisualPreviewDerivedFields(button)
     end
     -- Aura previews expose a show-only-while-active shell while running
     -- (CooldownUpdate); re-hide it now that the preview state is gone.
-    if button._isBar and ST._ApplyBarAuraShellVisuals then
-        ST._ApplyBarAuraShellVisuals(button, button.buttonData)
-    elseif not button._isBar and ST._ApplyAuraShellVisuals then
-        ST._ApplyAuraShellVisuals(button, button.buttonData)
-    end
+    ST._ApplyShellVisualsForButton(button, button.buttonData)
     button._conditionalLocPreview = nil
     button._conditionalPreviewKind = nil
     button._conditionalPreviewStartTime = nil

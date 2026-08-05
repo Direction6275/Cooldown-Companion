@@ -199,8 +199,9 @@ end
 -- canvas's own selection-key set from the build that just ran, so the
 -- strip and the canvas can never disagree about what is on screen.
 --
--- A chip is a plain left-click destination; the richer gestures
--- (multi-select, the context menu) stay on the canvas slots, where the
+-- A chip is a left-click destination that also answers the canvas slot's
+-- right-click context menu, since an object the canvas is not drawing has
+-- no other route to it. Multi-select stays on the canvas slots, where the
 -- object is actually visible.
 --
 -- The player and target frames are never chips: with frame anchoring on
@@ -254,6 +255,17 @@ local function CollectBarsOffCanvasChipItems(rendered)
                 onClick = function()
                     ST._SelectConfigCustomBar(capturedCustomBarId, { toggle = true })
                     CooldownCompanion:RefreshConfigPanel()
+                end,
+                -- Same select-then-menu gesture the canvas slot answers to, so
+                -- a Custom Bar the canvas is not drawing is still reachable by
+                -- right-click. Resources and the cast bar carry no context menu
+                -- on the canvas either, so their chips stay left-click only.
+                onRightClick = function()
+                    ST._SelectConfigCustomBar(capturedCustomBarId)
+                    CooldownCompanion:RefreshConfigPanel()
+                    if ST._OpenConfigCustomBarMenu then
+                        ST._OpenConfigCustomBarMenu(capturedCustomBarId)
+                    end
                 end,
             }
         end

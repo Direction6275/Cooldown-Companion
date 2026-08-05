@@ -63,7 +63,6 @@ local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
 local FormatTime = CooldownCompanion.FormatTime
 local UnbindDurationText = CooldownCompanion.UnbindDurationText or function() end
 local SetAuraStackCountText = EntryRuntime.SetAuraStackCountText
-local NormalizeCustomAuraStackTextFormat = RB.NormalizeCustomAuraStackTextFormat
 local IsSpellCustomBarConfig = RB.IsSpellCustomBarConfig
 local IsSpellCustomBarAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay
 
@@ -244,16 +243,11 @@ function RB.CreateResourceBarPreviewModule(deps)
 
         if bar.stackText and bar.stackText:IsShown() then
             if stacksMode then
-                SetAuraStackCountText(
-                    bar.stackText,
-                    stacks,
-                    maxStacks,
-                    NormalizeCustomAuraStackTextFormat(cabConfig.stackTextFormat)
-                )
+                -- Plain count, the live kit's only stack readout.
+                SetAuraStackCountText(bar.stackText, stacks)
             else
-                -- A duration-mode aura bar has one application to report, the
-                -- same "current" readout the live bar gives it.
-                SetAuraStackCountText(bar.stackText, PREVIEW_STACKS, maxStacks, "current")
+                -- A duration-mode aura bar has one application to report.
+                SetAuraStackCountText(bar.stackText, PREVIEW_STACKS)
             end
         end
 

@@ -72,19 +72,16 @@ local BAR_PREVIEW_EFFECT_FLAGS = {
     "_readyGlowPreview",
     "_keyPressHighlightPreview",
 }
-local BAR_PREVIEW_AURA_KINDS = {
-    aura_duration_text = true,
-    aura_duration_bar = true,
-    aura_stack_text = true,
-    aura_duration_swipe = true,
-}
-
 local function IsBarPreviewAuraActive(conditional, effectFlags)
     if conditional and conditional.auraActive == true then
         return true
     end
+    -- Deliberately the UNION of both display modes' aura-preview kinds: the
+    -- mirror simulates "the aura is active" for any aura preview, whichever
+    -- mode hosts it. The kind inventory is owned by Core/Aura.lua.
     local kind = conditional and conditional.kind or nil
-    if BAR_PREVIEW_AURA_KINDS[kind] then
+    if kind and (CooldownCompanion:IsAuraPreviewKindExposingShell(kind, true)
+        or CooldownCompanion:IsAuraPreviewKindExposingShell(kind, false)) then
         return true
     end
     return effectFlags
@@ -94,7 +91,16 @@ end
 
 local BAR_PREVIEW_REASON_DEFS = {
     { key = "disabled", label = "Disabled", rule = "Enabled is off" },
-    { key = "aura-inactive", label = "Aura inactive", rule = "Show Only While Aura Active" },
+    -- The aura pair shares one reason but not one rule name: while inactive
+    -- the entry is either hidden or dimmed, and naming the wrong toggle
+    -- sends the owner looking for a switch they never turned on.
+    { key = "aura-inactive", label = "Aura inactive",
+        rule = function(buttonData)
+            return buttonData.auraShellDim == true
+                and "Dim While Aura Inactive"
+                or "Show Only While Aura Active"
+        end,
+        fallback = "auraShellDim" },
     { key = "on-cooldown", label = "On cooldown", rule = "Hide While On Cooldown",
         fallback = "useBaselineAlphaFallbackOnCooldown" },
     { key = "not-on-cooldown", label = "Not on cooldown", rule = "Hide While Not On Cooldown",
@@ -103,7 +109,16 @@ local BAR_PREVIEW_REASON_DEFS = {
         fallback = "useBaselineAlphaFallbackNoProc" },
     { key = "zero-charges", label = "Zero charges", rule = "Hide While At Zero Charges",
         fallback = "useBaselineAlphaFallbackZeroCharges" },
-    { key = "zero-stacks", label = "Zero stacks", rule = "Hide While At Zero Stacks",
+    -- Items with use-count fallbacks title this row "Hide While No Uses
+    -- Available" in the config (ButtonConditions), so the tooltip must name
+    -- the toggle the way that entry's own row does.
+    { key = "zero-stacks", label = "Zero stacks",
+        rule = function(buttonData)
+            return type(CooldownCompanion.HasItemFallbacks) == "function"
+                and CooldownCompanion.HasItemFallbacks(buttonData) == true
+                and "Hide While No Uses Available"
+                or "Hide While At Zero Stacks"
+        end,
         fallback = "useBaselineAlphaFallbackZeroStacks" },
     { key = "not-equipped", label = "Not equipped", rule = "Hide While Not Equipped",
         fallback = "useBaselineAlphaFallbackNotEquipped" },
@@ -213,7 +228,12 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
     end
     local isAuraEntry = buttonData.type == "spell"
         and (buttonData.auraTracking == true or buttonData.addedAs == "aura")
-    if isAuraEntry and buttonData.hideWhileAuraNotActive and not auraActive then
+    -- Either aura shell form suppresses the entry's own look while the aura
+    -- is inactive; the dim key selects dimmed instead of hidden below. The
+    -- predicate is the runtime's own so the mirror cannot disagree with what
+    -- the panel will actually draw.
+    if isAuraEntry and not auraActive
+        and CooldownCompanion:IsAuraShellEntry(buttonData) then
         activeReasons["aura-inactive"] = true
     end
 
@@ -293,10 +313,14 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
     local onlyReason
     for _, definition in ipairs(BAR_PREVIEW_REASON_DEFS) do
         if activeReasons[definition.key] then
+            local rule = definition.rule
+            if type(rule) == "function" then
+                rule = rule(buttonData)
+            end
             reasons[#reasons + 1] = {
                 key = definition.key,
                 label = definition.label,
-                rule = definition.rule,
+                rule = rule,
             }
             onlyReason = definition
         end
@@ -309,7 +333,7 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
         and buttonData[onlyReason.fallback]
         and not (zeroOnlyChargeSpellHide and onlyReason.key == "not-on-cooldown") then
         underlyingMode = "dimmed"
-        underlyingAlpha = tonumber(group.baselineAlpha) or 0.3
+        underlyingAlpha = CooldownCompanion.DIM_FALLBACK_ALPHA
     elseif #reasons > 0 then
         underlyingMode = "hidden"
         underlyingAlpha = PANEL_PREVIEW_GHOST_ALPHA
