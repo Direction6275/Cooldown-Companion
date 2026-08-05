@@ -2328,10 +2328,10 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
             -- Size and speed change meaning per style (border px vs dash
             -- length; lap seconds), so a style switch resets the per-style
             -- keys to that style's defaults, like every glow dropdown.
-            target.auraBorderSize = value == "pixel" and 8 or 2
+            target.auraBorderSize = value == "pixel" and 12 or 2
             target.auraBorderSpeed = value == "pixel" and 2 or 0.5
-            target.auraBorderLines = 2
-            target.auraBorderThickness = 4
+            target.auraBorderLines = value == "pixel" and 5 or 2
+            target.auraBorderThickness = value == "pixel" and 3 or 4
             refresh()
         end,
     })
@@ -2494,10 +2494,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                         if value ~= "solid" and value ~= "pixel" then return end
                         mwResource.mwMaxStackBorderStyle = value
                         -- Per-style key resets, like every glow dropdown.
-                        mwResource.mwMaxStackBorderSize = value == "pixel" and 8 or 2
+                        mwResource.mwMaxStackBorderSize = value == "pixel" and 12 or 2
                         mwResource.mwMaxStackBorderSpeed = value == "pixel" and 2 or 0.5
-                        mwResource.mwMaxStackBorderLines = 2
-                        mwResource.mwMaxStackBorderThickness = 4
+                        mwResource.mwMaxStackBorderLines = value == "pixel" and 5 or 2
+                        mwResource.mwMaxStackBorderThickness = value == "pixel" and 3 or 4
                         applyMWBars()
                         C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
                     end,

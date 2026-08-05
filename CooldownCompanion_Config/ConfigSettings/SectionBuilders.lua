@@ -1469,10 +1469,10 @@ local GLOW_SLIDER_SPEC = {
         {label = "Shift Duration", keyField = "speed", min = 0.1, max = 2.0, step = 0.05, default = 0.8},
     },
     dashes = {
-        {label = "Dash Length", keyField = "size", min = 2, max = 20, step = 0.5, default = 8},
-        {label = "Dash Thickness", keyField = "thickness", min = 1, max = 8, step = 0.5, default = 4, requiresKey = true},
-        {label = "Number of Dashes", keyField = "lines", min = 1, max = 8, step = 1, default = 2, requiresKey = true},
-        {label = "Lap Duration", keyField = "speed", min = 0.1, max = 2.0, step = 0.05, default = 2},
+        {label = "Dash Length", keyField = "size", min = 2, max = 20, step = 0.5, default = 12},
+        {label = "Dash Thickness", keyField = "thickness", min = 1, max = 8, step = 0.5, default = 3, requiresKey = true},
+        {label = "Number of Dashes", keyField = "lines", min = 1, max = 8, step = 1, default = 5, requiresKey = true},
+        {label = "Lap Duration", keyField = "speed", min = 1, max = 3, step = 0.05, default = 2},
     },
     autocast = {
         {label = "Particle Scale", keyField = "size", min = 0.2, max = 3, step = 0.05, default = 2, clampToRange = true},
@@ -1763,7 +1763,7 @@ local AURA_GLOW_STYLE_ORDER = {"solid", "pulse", "colorShift", "dashes", "ants",
 -- The size and speed keys change meaning per style (border/dash px vs
 -- overhang %; cycle vs lap seconds), so switching styles resets the sliders
 -- to that style's defaults.
-local AURA_GLOW_SIZE_RESETS = { proc = 30, ants = 23, dashes = 8 }
+local AURA_GLOW_SIZE_RESETS = { proc = 30, ants = 23, dashes = 12 }
 local AURA_GLOW_SPEED_RESETS = { colorShift = 0.8, dashes = 2 }
 
 local function BuildAuraGlowControls(container, styleTable, refreshCallback, opts)
@@ -1780,8 +1780,8 @@ local function BuildAuraGlowControls(container, styleTable, refreshCallback, opt
         onStyleChanged = function(targetStyle, val)
             targetStyle.auraGlowSize = AURA_GLOW_SIZE_RESETS[val] or 2
             targetStyle.auraGlowSpeed = AURA_GLOW_SPEED_RESETS[val] or 0.5
-            targetStyle.auraGlowDashCount = 2
-            targetStyle.auraGlowDashThickness = 4
+            targetStyle.auraGlowDashCount = 5
+            targetStyle.auraGlowDashThickness = 3
         end,
     }, opts)
 end
@@ -1827,8 +1827,8 @@ local BAR_AURA_EFFECT_CFG = {
     onStyleChanged = function(targetStyle, val)
         targetStyle.barAuraEffectSize = AURA_GLOW_SIZE_RESETS[val] or 2
         targetStyle.barAuraEffectSpeed = AURA_GLOW_SPEED_RESETS[val] or 0.5
-        targetStyle.barAuraEffectLines = 2
-        targetStyle.barAuraEffectThickness = 4
+        targetStyle.barAuraEffectLines = 5
+        targetStyle.barAuraEffectThickness = 3
     end,
 }
 

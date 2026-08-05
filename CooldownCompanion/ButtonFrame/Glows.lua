@@ -34,9 +34,9 @@ local DEFAULT_KEY_PRESS_COLOR = {1, 1, 1, 0.4}
 local DEFAULT_GLOW_SIZES = {solid = 5, pixel = 8, glow = 30, autocast = 2}
 -- ants overhang matches Blizzard's assisted-combat highlight ratio (66px art
 -- on a 45px button); dashes size is the line length in px and thickness is
--- its own key (8 and 4: the retired LibCustomGlow pixel defaults).
-local BAR_AURA_GLOW_SIZES = {solid = 2, pixel = 8, glow = 30, autocast = 2, ants = 23, dashes = 8}
-local DEFAULT_AURA_GLOW_DASH_THICKNESS = 4
+-- its own key.
+local BAR_AURA_GLOW_SIZES = {solid = 2, pixel = 8, glow = 30, autocast = 2, ants = 23, dashes = 12}
+local DEFAULT_AURA_GLOW_DASH_THICKNESS = 3
 -- Marching ants flipbook from ActionBarButtonAssistedCombatHighlightTemplate
 -- (Blizzard_ActionBar/Shared/ActionButtonComponentTemplate.xml): 30 frames in
 -- a 6-row x 5-column sheet over 1 second, looping; 66px art on a 45px button.
@@ -641,16 +641,16 @@ local function ShowGlowStyle(container, style, button, color, params)
         container.antsFlip:Show()
         container.antsAG:Play()
     elseif style == "dashes" then
-        local count = params.lines or 2
+        local count = params.lines or 5
         count = math_min(math_max(count, 1), MAX_AURA_GLOW_DASHES)
         container.dashes = container.dashes or {}
         container.dashMasks = container.dashMasks or CreateDashMasks(container.solidFrame)
         CreateDashRegions(container.solidFrame, container.dashes, container.dashMasks, count)
         local lap = params.speed
-        if not lap or lap <= 0 or lap > 2 then
+        if not lap or lap <= 0 or lap > 3 then
             lap = AURA_GLOW_SPEED_DEFAULTS.dashes
         end
-        StyleDashPerimeter(container.dashes, container.dashMasks, button, size or 8, params.thickness, lap, count,
+        StyleDashPerimeter(container.dashes, container.dashMasks, button, size or 12, params.thickness, lap, count,
             color[1], color[2], color[3], color[4] or defaultAlpha)
     elseif style == "overlay" then
         if not container.overlayTexture then
@@ -1060,7 +1060,7 @@ local SetAuraGlow = MakeGlowSetter({
     thicknessKey       = "auraGlowDashThickness",
     speedKey           = "auraGlowSpeed",
     linesKey           = "auraGlowDashCount",
-    defaultLines       = 2,
+    defaultLines       = 5,
     pandemicStyleKey     = "pandemicGlowStyle",     pandemicDefaultStyle = "solid",
     pandemicColorKey     = "pandemicGlowColor",     pandemicDefaultColor = DEFAULT_PANDEMIC_COLOR,
     pandemicSizeKey      = "pandemicGlowSize",
@@ -1510,9 +1510,9 @@ local function StyleKitGlowRegions(glowKit, styleTable, anchorFrame, enabled)
         and NormalizeKitGlowStyle((styleTable and styleTable.auraGlowStyle) or "pulse")
         or "none"
     local speed = styleTable and styleTable.auraGlowSpeed
-    -- Speed keys store seconds (0.1..2.0); guard against legacy pixel-scale
-    -- values (10..200) with the style's own default.
-    if not speed or speed <= 0 or speed > 2 then
+    -- Speed keys store seconds (cycles 0.1..2.0, dashes laps 1..3); guard
+    -- against legacy pixel-scale values (10..200) with the style's own default.
+    if not speed or speed <= 0 or speed > 3 then
         speed = AURA_GLOW_SPEED_DEFAULTS[kitStyle]
     end
     StyleKitGlowCore(glowKit, anchorFrame, kitStyle,
@@ -1552,7 +1552,7 @@ local function StyleKitBarGlowRegions(glowKit, styleTable, anchorFrame, enabled)
     end
     local speed = styleTable and styleTable.barAuraEffectSpeed
     -- Same legacy pixel-scale speed guard as the icon resolver.
-    if not speed or speed <= 0 or speed > 2 then
+    if not speed or speed <= 0 or speed > 3 then
         speed = AURA_GLOW_SPEED_DEFAULTS[kitStyle]
     end
     StyleKitGlowCore(glowKit, anchorFrame, kitStyle,
@@ -1632,7 +1632,7 @@ local function StyleKitSegmentBorders(pool, styleTable, rects, count, enabled)
     local r, g, b, a = color[1], color[2], color[3], color[4] or 0.9
     local speed = styleTable and styleTable.barAuraEffectSpeed
     -- Same legacy pixel-scale speed guard as the whole-bar resolvers.
-    if not speed or speed <= 0 or speed > 2 then
+    if not speed or speed <= 0 or speed > 3 then
         speed = AURA_GLOW_SPEED_DEFAULTS.dashes
     end
     -- Same stores and defaults as the whole-bar dashes leg; only the
@@ -1641,7 +1641,7 @@ local function StyleKitSegmentBorders(pool, styleTable, rects, count, enabled)
         or BAR_AURA_GLOW_SIZES.dashes
     local dashThickness = (styleTable and styleTable.barAuraEffectThickness)
         or DEFAULT_AURA_GLOW_DASH_THICKNESS
-    local dashCount = math_min(math_max((styleTable and styleTable.barAuraEffectLines) or 2, 1),
+    local dashCount = math_min(math_max((styleTable and styleTable.barAuraEffectLines) or 5, 1),
         SEG_BORDER_MAX_DASHES)
 
     for s = 1, #units do
@@ -1694,7 +1694,7 @@ local SetBarAuraEffect = MakeGlowSetter({
     -- Kit style vocabulary: speed keys store seconds (matches SetAuraGlow).
     defaultSpeed       = 0.5,
     defaultSpeeds      = AURA_GLOW_SPEED_DEFAULTS,
-    defaultLines       = 2,
+    defaultLines       = 5,
     styleKey           = "barAuraEffect",           defaultStyle = "none",
     colorKey           = "barAuraEffectColor",      defaultColor = DEFAULT_AURA_GLOW_COLOR,
     color2Key          = "barAuraColorShiftColor",  defaultColor2 = DEFAULT_WHITE,

@@ -1398,10 +1398,11 @@ local function MigrateAuraGlowStyleTable(styleTable, counts)
         end
     end
 
-    -- Pulse speed stores seconds (0.1..2.0); anything larger is a leftover
-    -- pixel-scale value regardless of which style it arrived with.
+    -- Speed stores seconds (cycles up to 2.0, dashes laps up to 3); anything
+    -- larger is a leftover pixel-scale value regardless of which style it
+    -- arrived with.
     local speed = rawget(styleTable, "auraGlowSpeed")
-    if type(speed) == "number" and speed > 2 then
+    if type(speed) == "number" and speed > 3 then
         styleTable.auraGlowSpeed = nil
     end
 
@@ -1603,7 +1604,7 @@ local function MigrateBarAuraEffectTable(styleTable, counts)
         end
         if style ~= nil then
             local speed = rawget(styleTable, keys.speed)
-            if type(speed) == "number" and speed > 2 then
+            if type(speed) == "number" and speed > 3 then
                 styleTable[keys.speed] = nil
             end
         end
