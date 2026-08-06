@@ -897,22 +897,6 @@ local function BuildLayoutTab(container)
         local target = _G[frameName]
         return type(target) == "table" and type(target.GetObjectType) == "function"
     end
-    local function GetPanelAlphaControlDisabledState(groupId, targetMode, panelAlphaInherited)
-        if CooldownCompanion.GetPanelContainerAlphaSource
-            and CooldownCompanion:GetPanelContainerAlphaSource(groupId) then
-            return true, "Group Alpha is enabled. This panel uses the group's Alpha settings."
-        end
-
-        if panelAlphaInherited then
-            if targetMode == "frame" then
-                return true, "This panel inherits alpha from the target frame. Change the Panel Alpha setting to use custom alpha."
-            end
-            return true, "This panel inherits alpha from the parent panel. Change the parent panel's Alpha settings to affect it."
-        end
-
-        return false, nil
-    end
-
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
     if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
         CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
@@ -1306,50 +1290,6 @@ local function BuildLayoutTab(container)
         end
         end -- not positionCollapsed
 
-        local panelAlphaInherited = false
-        if targetMode == "panel"
-            and currentAnchorGroupId
-            and CooldownCompanion.ShouldInheritPanelAnchorAlpha then
-            panelAlphaInherited = CooldownCompanion:ShouldInheritPanelAnchorAlpha(textureGroupId)
-        elseif hasFrameAnchorTarget then
-            panelAlphaInherited = group.inheritPanelAlpha ~= false
-        end
-        local alphaControlsDisabled, alphaDisabledText = GetPanelAlphaControlDisabledState(textureGroupId, targetMode, panelAlphaInherited)
-
-        BuildAlphaControls(container, group, function()
-            CooldownCompanion:RefreshAllAuraTextureVisuals()
-            CooldownCompanion:RefreshConfigPanel()
-        end, "layout_alpha", {
-            isGlobal = group.isGlobal,
-            row = true,
-            disabled = alphaControlsDisabled,
-            disabledText = alphaDisabledText,
-            onBaselineChanged = function(val)
-                CS.texturePanelAlphaPreview = CS.texturePanelAlphaPreview or {}
-                CS.texturePanelAlphaPreview[textureGroupId] = val
-
-                local alphaModuleId = "texture_panel_" .. tostring(textureGroupId)
-                CooldownCompanion.alphaState = CooldownCompanion.alphaState or {}
-                local state = CooldownCompanion.alphaState[alphaModuleId]
-                if not state then
-                    state = {}
-                    CooldownCompanion.alphaState[alphaModuleId] = state
-                end
-                state.currentAlpha = val
-                state.desiredAlpha = val
-                state.lastAlpha = val
-                state.fadeDuration = 0
-                state.fadeStartAlpha = val
-
-                local frame = CooldownCompanion.groupFrames[textureGroupId]
-                local button = frame and frame.buttons and frame.buttons[1] or nil
-                local host = button and button.auraTextureHost or nil
-                if host and host:IsShown() then
-                    host:SetAlpha(val)
-                end
-            end,
-        })
-
         if CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
             OpenOrRebindStandaloneTexturePicker(group, settings, false)
         end
@@ -1397,17 +1337,6 @@ local function BuildLayoutTab(container)
     else
         CooldownCompanion:ClearCursorAnchorLayoutPreview()
     end
-    local panelAlphaInherited = false
-    if isPanel
-        and targetMode == "panel"
-        and currentAnchorGroupId
-        and CooldownCompanion.ShouldInheritPanelAnchorAlpha then
-        panelAlphaInherited = CooldownCompanion:ShouldInheritPanelAnchorAlpha(CS.selectedGroup)
-    elseif hasFrameAnchorTarget then
-        panelAlphaInherited = group.inheritPanelAlpha ~= false
-    end
-    local alphaControlsDisabled, alphaDisabledText = GetPanelAlphaControlDisabledState(CS.selectedGroup, targetMode, panelAlphaInherited)
-
     -- ================================================================
     -- The row grammar (RowWidgets.lua). The rules every row-grammar section
     -- follows are stated once, in the recipe comment at the top of
@@ -1415,8 +1344,10 @@ local function BuildLayoutTab(container)
     -- restating them.
     --
     -- Every mode that reaches here shares this one layout: anchoring,
-    -- position, alpha and frame strata are panel facts, not display-mode
-    -- facts. Only the Arrangement section and the icons-only strata block
+    -- position and frame strata are panel facts, not display-mode
+    -- facts. (Alpha is a panel fact too, but it reads as visibility
+    -- behavior, so it lives on the Visibility tab.)
+    -- Only the Arrangement section and the icons-only strata block
     -- below vary, and each of those names its own mode gate. (Texture and
     -- trigger panels returned far above - they anchor a single texture rather
     -- than a panel of entries.)
@@ -1811,31 +1742,6 @@ local function BuildLayoutTab(container)
         }, tabInfoButtons))
     end
     end -- not arrangementCollapsed
-
-    -- ============================================================
-    -- Alpha
-    -- ============================================================
-    BuildAlphaControls(container, group, function()
-        CooldownCompanion:RefreshConfigPanel()
-    end, "layout_alpha", {
-        isGlobal = group.isGlobal,
-        row = true,
-        disabled = alphaControlsDisabled,
-        disabledText = alphaDisabledText,
-        onBaselineChanged = function(val)
-            local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-            if frame and frame:IsShown() then
-                frame:SetAlpha(val)
-            end
-            local state = CooldownCompanion.alphaState and CooldownCompanion.alphaState[CS.selectedGroup]
-            if state then
-                state.currentAlpha = val
-                state.desiredAlpha = val
-                state.lastAlpha = val
-                state.fadeDuration = 0
-            end
-        end,
-    })
 
     -- ============================================================
     -- Strata

@@ -1280,9 +1280,12 @@ local function GetTexturePanelAlphaModuleId(groupId)
     return "texture_panel_" .. tostring(groupId)
 end
 
-local function GetTexturePanelLayoutPreviewAlpha(button)
+-- The Baseline Alpha slider lives on the panel Visibility tab (internal
+-- tab key "loadconditions"), so the preview only applies while that tab
+-- is the one holding the slider.
+local function GetTexturePanelAlphaPreview(button)
     local CS = ST._configState
-    if not button or not CS or CS.panelSettingsTab ~= "layout" or CS.selectedGroup ~= button._groupId then
+    if not button or not CS or CS.panelSettingsTab ~= "loadconditions" or CS.selectedGroup ~= button._groupId then
         return nil
     end
 
@@ -1361,7 +1364,10 @@ local function IsStandaloneTextureEditingButton(button)
         return false
     end
 
-    if CS.panelSettingsTab == "appearance" or CS.panelSettingsTab == "effects" or CS.panelSettingsTab == "layout" then
+    -- "loadconditions" is the Visibility tab, which carries the Alpha
+    -- section (Baseline Alpha previews against the shown visual).
+    if CS.panelSettingsTab == "appearance" or CS.panelSettingsTab == "effects"
+        or CS.panelSettingsTab == "layout" or CS.panelSettingsTab == "loadconditions" then
         if CooldownCompanion:IsTriggerPanelGroup(group) then
             return true
         end
@@ -1371,8 +1377,8 @@ local function IsStandaloneTextureEditingButton(button)
     end
 
     -- The inline texture browser being open for this button's panel keeps it
-    -- editing-visible on the tabs/states the checks above miss (e.g. the Load
-    -- Conditions tab, or an entry selected). Migrated from the retired floating
+    -- editing-visible on the states the checks above miss (e.g. an entry
+    -- selected). Migrated from the retired floating
     -- picker window's _targetGroupId check; CS.inlineTextureBrowserOpen holds
     -- the open panel's group id.
     return CS.inlineTextureBrowserOpen ~= nil
@@ -1718,7 +1724,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
     host:Show()
 
     local alphaModuleId = GetTexturePanelAlphaModuleId(driverButton._groupId)
-    local layoutPreviewAlpha = GetTexturePanelLayoutPreviewAlpha(driverButton)
+    local layoutPreviewAlpha = GetTexturePanelAlphaPreview(driverButton)
     host._unlockGhost = frame and frame._unlockGhost or nil
     local bypassAlpha = layoutPreviewAlpha ~= nil and layoutPreviewAlpha or (host._unlockGhost and 0.4 or 1)
     local visibilityAlpha = Clamp(driverButton._rawVisibilityAlphaOverride or 1, 0, 1)

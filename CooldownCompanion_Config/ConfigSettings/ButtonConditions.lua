@@ -14,6 +14,7 @@ local AttachCollapseButton = ST._AttachCollapseButton
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
 local CreateInfoButton = ST._CreateInfoButton
+local BuildAlphaControls = ST._BuildAlphaControls
 
 -- Imports from RowWidgets.lua (the row grammar). The Visibility tabs and the
 -- per-entry Show Conditions / Talent Conditions builder are converted; every
@@ -2961,6 +2962,101 @@ local function BuildLoadConditionsTab(container)
         infoButtons = tabInfoButtons,
         onChanged = RefreshPanelLoadConditions,
     })
+
+    -- ============================================================
+    -- Alpha (moved here from the Layout tab: transparency behavior
+    -- reads as visibility, not layout)
+    -- ============================================================
+    -- Same gating the Layout tab applied: a panel whose alpha is owned
+    -- elsewhere (Group Alpha, or an anchor it inherits from) shows the
+    -- section disabled with the reason. Derived from stored anchors
+    -- rather than the Layout tab's target-mode UI state; the two agree
+    -- because an unresolved or addon-internal target never inherits.
+    local alphaControlsDisabled, alphaDisabledText = false, nil
+    if CooldownCompanion.GetPanelContainerAlphaSource
+        and CooldownCompanion:GetPanelContainerAlphaSource(groupId) then
+        alphaControlsDisabled = true
+        alphaDisabledText = "Group Alpha is enabled. This panel uses the group's Alpha settings."
+    elseif CooldownCompanion.ShouldInheritPanelAnchorAlpha
+        and CooldownCompanion:ShouldInheritPanelAnchorAlpha(groupId) then
+        alphaControlsDisabled = true
+        alphaDisabledText = "This panel inherits alpha from the parent panel. Change the parent panel's Alpha settings to affect it."
+    elseif group.parentContainerId and group.inheritPanelAlpha ~= false then
+        local anchorSettings = CooldownCompanion.GetStandaloneTextureAnchorSettings
+            and CooldownCompanion:GetStandaloneTextureAnchorSettings(group)
+        local relativeTo = anchorSettings and anchorSettings.relativeTo
+        if not relativeTo then
+            local anchor = group.anchor
+            relativeTo = type(anchor) == "table" and anchor.relativeTo or anchor
+        end
+        if type(relativeTo) == "string" and relativeTo ~= "" and relativeTo ~= "UIParent"
+            and CooldownCompanion:ParseAddonAnchorFrameName(relativeTo) == nil then
+            local target = _G[relativeTo]
+            if type(target) == "table" and type(target.GetObjectType) == "function" then
+                alphaControlsDisabled = true
+                alphaDisabledText = "This panel inherits alpha from the target frame. Change the Panel Alpha setting on the Layout tab to use custom alpha."
+            end
+        end
+    end
+
+    local isTexturePanel = group.displayMode == "textures" or group.displayMode == "trigger"
+    if isTexturePanel then
+        BuildAlphaControls(container, group, function()
+            CooldownCompanion:RefreshAllAuraTextureVisuals()
+            CooldownCompanion:RefreshConfigPanel()
+        end, "loadconditions_alpha", {
+            isGlobal = group.isGlobal,
+            row = true,
+            disabled = alphaControlsDisabled,
+            disabledText = alphaDisabledText,
+            onBaselineChanged = function(val)
+                CS.texturePanelAlphaPreview = CS.texturePanelAlphaPreview or {}
+                CS.texturePanelAlphaPreview[groupId] = val
+
+                local alphaModuleId = "texture_panel_" .. tostring(groupId)
+                CooldownCompanion.alphaState = CooldownCompanion.alphaState or {}
+                local state = CooldownCompanion.alphaState[alphaModuleId]
+                if not state then
+                    state = {}
+                    CooldownCompanion.alphaState[alphaModuleId] = state
+                end
+                state.currentAlpha = val
+                state.desiredAlpha = val
+                state.lastAlpha = val
+                state.fadeDuration = 0
+                state.fadeStartAlpha = val
+
+                local frame = CooldownCompanion.groupFrames[groupId]
+                local button = frame and frame.buttons and frame.buttons[1] or nil
+                local host = button and button.auraTextureHost or nil
+                if host and host:IsShown() then
+                    host:SetAlpha(val)
+                end
+            end,
+        })
+    else
+        BuildAlphaControls(container, group, function()
+            CooldownCompanion:RefreshConfigPanel()
+        end, "loadconditions_alpha", {
+            isGlobal = group.isGlobal,
+            row = true,
+            disabled = alphaControlsDisabled,
+            disabledText = alphaDisabledText,
+            onBaselineChanged = function(val)
+                local frame = CooldownCompanion.groupFrames[groupId]
+                if frame and frame:IsShown() then
+                    frame:SetAlpha(val)
+                end
+                local state = CooldownCompanion.alphaState and CooldownCompanion.alphaState[groupId]
+                if state then
+                    state.currentAlpha = val
+                    state.desiredAlpha = val
+                    state.lastAlpha = val
+                    state.fadeDuration = 0
+                end
+            end,
+        })
+    end
 end
 
 local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
