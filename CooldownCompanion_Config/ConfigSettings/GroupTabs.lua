@@ -45,6 +45,7 @@ local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildAssistedHighlightControls = ST._BuildAssistedHighlightControls
 local BuildProcGlowControls = ST._BuildProcGlowControls
 local BuildAuraGlowControls = ST._BuildAuraGlowControls
+local BuildPandemicGlowControls = ST._BuildPandemicGlowControls
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
 
@@ -2456,6 +2457,8 @@ local function BuildBarModeEffects(container, group, style, previewContextChange
         CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
         CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
         CooldownCompanion:SetGroupBarAuraEffectPreview(CS.selectedGroup, false)
+        -- The bar variant also owns the staged aura drain conditional.
+        CooldownCompanion:SetGroupBarPandemicPreview(CS.selectedGroup, false)
     end
     BuildBarEffectsTab(container, group, style)
 end
@@ -2552,6 +2555,57 @@ local function BuildAuraGlowSection(container, group, style)
 
     if not auraGlowEnabled then
         CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
+        return
+    end
+end
+
+-- Pandemic effect (PTR 8): a second kit glow the game reveals only while the
+-- tracked aura sits inside its refresh window. Same gating pattern as the
+-- aura glow section; no promote button — the per-entry switch lives in the
+-- entry's Aura tab beside the Pandemic Marker one.
+local function BuildPandemicGlowSection(container, group, style)
+    if not GroupHasAuraTrackingEntry(group) then
+        if CooldownCompanion.SetGroupPandemicPreview then
+            CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
+        end
+        return
+    end
+
+    local pandemicEnabled = style.pandemicEffectEnabled == true
+    local pandemicCb = AddCheckboxRow(container, {
+        label = "Show Pandemic Effect",
+        value = pandemicEnabled,
+        onChange = function(val)
+            style.pandemicEffectEnabled = val and true or false
+            UpdateSelectedGroupStyle(true)
+        end,
+    })
+
+    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+    local function BuildPandemicAdvanced(panel)
+        BuildPandemicGlowControls(panel, style, UpdateSelectedGroupStyle, { row = true })
+    end
+
+    local _, pandemicAdvBtn = AddAdvancedToggle(pandemicCb, "pandemicGlow", tabInfoButtons, pandemicEnabled, {
+        title = "Pandemic Effect Advanced",
+        build = BuildPandemicAdvanced,
+    })
+    CreateCheckboxPromoteButton(pandemicCb, pandemicAdvBtn, "pandemicGlow", group, style)
+    AnchorRowBadge(pandemicCb, CreateInfoButton(pandemicCb.frame, pandemicCb.frame, "LEFT", "LEFT", 0, 0, {
+        "Pandemic Effect",
+        {"Adds a glow to a button while its tracked aura is in the refresh window, when recasting adds bonus time.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Only appears for auras that gain bonus time when refreshed. The game decides the window.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Shows on top of the Aura Glow while both are enabled.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Each entry can opt out in its Aura tab.", 1, 1, 1, true},
+    }, tabInfoButtons))
+
+    if not pandemicEnabled then
+        if CooldownCompanion.SetGroupPandemicPreview then
+            CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
+        end
         return
     end
 end
@@ -2728,6 +2782,7 @@ ST._INDICATORS_SECTION_BY_ADVANCED_KEY = {
     readyGlow = EFFECTS_GLOWS_SECTION,
     keyPressHighlight = EFFECTS_GLOWS_SECTION,
     auraGlow = EFFECTS_GLOWS_SECTION,
+    pandemicGlow = EFFECTS_GLOWS_SECTION,
     assistedHighlight = EFFECTS_GLOWS_SECTION,
     barActiveAura = EFFECTS_GLOWS_SECTION,
 
@@ -2875,6 +2930,7 @@ local function BuildEffectsTab(container)
     -- Gated on the group tracking an aura, so this column can run a row short;
     -- the grid top-aligns its columns, so a short side just ends early.
     BuildAuraGlowSection(glowRight, group, style)
+    BuildPandemicGlowSection(glowRight, group, style)
 
     local assistedCb = AddCheckboxRow(glowRight, {
         label = "Show Assisted Highlight",

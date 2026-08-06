@@ -69,6 +69,7 @@ local BAR_PREVIEW_EFFECT_FLAGS = {
     "_procGlowPreview",
     "_auraGlowPreview",
     "_barAuraEffectPreview",
+    "_pandemicPreview",
     "_readyGlowPreview",
     "_keyPressHighlightPreview",
 }
@@ -85,7 +86,8 @@ local function IsBarPreviewAuraActive(conditional, effectFlags)
         return true
     end
     return effectFlags
-        and (effectFlags._auraGlowPreview or effectFlags._barAuraEffectPreview)
+        and (effectFlags._auraGlowPreview or effectFlags._barAuraEffectPreview
+            or effectFlags._pandemicPreview)
         and true or false
 end
 
@@ -713,6 +715,7 @@ end
 local SELECTION_YIELDING_PREVIEW_FLAGS = {
     "_procGlowPreview",
     "_auraGlowPreview",
+    "_pandemicPreview",
     "_readyGlowPreview",
     "_barAuraEffectPreview",
     "_keyPressHighlightPreview",
@@ -2189,6 +2192,16 @@ local function BarSlotFillOnUpdate(self)
     self:SetValue(frac)
 end
 
+-- Effective pandemic enable for a mirror entry: the per-entry override wins,
+-- else the panel style's explicit-true key — the same resolution the live
+-- bind gate performs (AuraDisplay.lua StyleSlotKit).
+local function IsPandemicPreviewEnabled(style, buttonData)
+    if buttonData and buttonData.pandemicEffect ~= nil then
+        return buttonData.pandemicEffect == true
+    end
+    return style and style.pandemicEffectEnabled == true
+end
+
 local function StopBarSlotFillEffects(slot)
     if slot._cdcFillPulseAG then slot._cdcFillPulseAG:Stop() end
     if slot._cdcFillShiftAG then slot._cdcFillShiftAG:Stop() end
@@ -2203,7 +2216,12 @@ end
 -- Active Aura Indicator fill effects on the mirror bar, per BarMode.lua
 -- UpdateBarDisplay. Returns true when the color-shift animation owns the
 -- fill color (the bar then goes white underneath, kit trick).
-local function ApplyBarSlotFillEffects(slot, style)
+-- suppressShift: the pandemic recolor occludes the live fill's color shift
+-- (the kit clone draws over the shifting fill), so the mirror must not let
+-- the shift animation own the color while the pandemic preview runs — the
+-- pulse still applies, matching the clone inheriting the fill frame's
+-- pulse alpha.
+local function ApplyBarSlotFillEffects(slot, style, suppressShift)
     local fillTex = slot.statusBar:GetStatusBarTexture()
     if not fillTex then return false end
     if style.barAuraPulseEnabled == true then
@@ -2219,7 +2237,7 @@ local function ApplyBarSlotFillEffects(slot, style)
         slot._cdcFillPulseAnim:SetDuration(style.barAuraPulseSpeed or 0.5)
         slot._cdcFillPulseAG:Play()
     end
-    if style.barAuraColorShiftEnabled == true then
+    if not suppressShift and style.barAuraColorShiftEnabled == true then
         if not slot._cdcFillShiftAG then
             local ag = fillTex:CreateAnimationGroup()
             ag:SetLooping("BOUNCE")
@@ -2350,15 +2368,29 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         if startTime then
             -- The Active Aura Indicator preview's fill effects ride the
             -- aura drain (live UpdateBarDisplay, keyed off the flag).
-            local fxActive = effectFlags and effectFlags._barAuraEffectPreview == true
+            -- Pandemic recolor (PTR 8): live parity is the kit's clone
+            -- occluding the fill — including its color shift — while still
+            -- inheriting the fill pulse. So with the pandemic preview on,
+            -- the fill effects run pulse-only (shift suppressed: a playing
+            -- VertexColor animation owns the color channel and the recolor
+            -- would never show) and the base color is the pandemic color.
+            local pandemicActive = effectFlags and effectFlags._pandemicPreview == true
+                and IsPandemicPreviewEnabled(style, buttonData)
+            local fxActive = effectFlags
+                and (effectFlags._barAuraEffectPreview == true or pandemicActive)
                 and ST.IsBarAuraIndicatorEnabled
                 and ST.IsBarAuraIndicatorEnabled(style) == true
             local shifted = false
             if fxActive then
-                shifted = ApplyBarSlotFillEffects(slot, style)
+                shifted = ApplyBarSlotFillEffects(slot, style, pandemicActive)
             end
             local auraColor = style.barAuraColor or DEFAULT_BAR_AURA_COLOR or { 0, 1, 0.3, 1 }
-            if shifted then
+            if pandemicActive then
+                -- Forced opaque, matching the live clone (owner ruling: the
+                -- pandemic color replaces the aura fill color, never blends).
+                local pc = style.barPandemicColor or { 1, 0.5, 0, 1 }
+                slot.statusBar:SetStatusBarColor(pc[1] or 1, pc[2] or 0.5, pc[3] or 0, 1)
+            elseif shifted then
                 -- White base while the shift animation owns the color.
                 slot.statusBar:SetStatusBarColor(1, 1, 1, auraColor[4] or 1)
             else
@@ -2549,7 +2581,19 @@ end
 ------------------------------------------------------------------------
 local EFFECT_PREVIEWS = {
     { flag = "_procGlowPreview", containerKey = "procGlow", setter = ST._SetProcGlow },
-    { flag = "_auraGlowPreview", containerKey = "auraGlow", setter = ST._SetAuraGlow },
+    -- The aura def yields its OFF-call to an active pandemic render: the two
+    -- share one container, and an unconditional off-call would cold-reset
+    -- the shared cache every pass — hiding a pandemic render mid-pass and
+    -- restarting its animations on every config rebuild.
+    { flag = "_auraGlowPreview", containerKey = "auraGlow", setter = ST._SetAuraGlow,
+        yieldsToPandemic = true },
+    -- Pandemic rides the aura glow container with SetAuraGlow's pandemic
+    -- override (the pandemicGlow* key family). Listed AFTER the aura def,
+    -- and it only ever calls the setter while ACTIVE — the aura def's own
+    -- unconditional call reconciles the container whenever this preview is
+    -- off (see the loop).
+    { flag = "_pandemicPreview", containerKey = "auraGlow", setter = ST._SetAuraGlow,
+        pandemicOverride = true },
     { flag = "_readyGlowPreview", containerKey = "readyGlow", setter = ST._SetReadyGlow },
     { flag = "_keyPressHighlightPreview", containerKey = "keyPressHighlight",
         setter = ST._SetKeyPressHighlight, withOverlay = true },
@@ -2566,15 +2610,45 @@ local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, 
     local canQuery = CooldownCompanion.IsPreviewFlagActive ~= nil
 
     if not isBarMode then
+        -- Live parity (AuraDisplay bind gate): the pandemic rig renders
+        -- nothing while the effect is disabled for this entry. Live shows
+        -- the aura glow OUTSIDE the window and the pandemic style inside
+        -- it (the window mask swaps them); the two exclusive PCC toggles
+        -- preview those two states one at a time. Resolved once here
+        -- because both auraGlow-container defs consult it.
+        local pandemicWillRender = canQuery
+            and CooldownCompanion:IsPreviewFlagActive(panelId, index, "_pandemicPreview")
+            and IsPandemicPreviewEnabled(style, buttonData) or false
         for _, def in ipairs(EFFECT_PREVIEWS) do
             if def.setter then
-                local active = canQuery
-                    and CooldownCompanion:IsPreviewFlagActive(panelId, index, def.flag) or false
+                local active
+                if def.pandemicOverride then
+                    active = pandemicWillRender
+                else
+                    active = canQuery
+                        and CooldownCompanion:IsPreviewFlagActive(panelId, index, def.flag) or false
+                end
                 if active and not slot[def.containerKey] and CreateGlowContainer then
                     slot[def.containerKey] = CreateGlowContainer(slot, 32, def.withOverlay)
                 end
                 if slot[def.containerKey] then
-                    def.setter(slot, active)
+                    if def.pandemicOverride then
+                        -- Shares the aura def's container: only an ACTIVE
+                        -- pandemic render may touch it. The aura def's own
+                        -- call reconciles the container whenever this
+                        -- preview is off — an unconditional off-call here
+                        -- would hide the aura glow that call just rendered.
+                        if active then
+                            def.setter(slot, true, true)
+                        end
+                    elseif def.yieldsToPandemic and not active and pandemicWillRender then
+                        -- Skip the off-call: the pandemic def owns the
+                        -- container this pass, and a hide here would
+                        -- cold-reset its cache and restart its animations
+                        -- on every rebuild.
+                    else
+                        def.setter(slot, active, false)
+                    end
                 end
             end
         end

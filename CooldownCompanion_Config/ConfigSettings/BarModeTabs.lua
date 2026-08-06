@@ -682,6 +682,64 @@ local function BuildBarActiveAuraSection(container, group, style)
     end
 end
 
+-- Pandemic color (PTR 8): the aura kit reveals a pandemic-colored clone of
+-- the duration fill while the tracked aura sits inside its refresh window.
+-- Enable + color only; the window itself is game-computed. Same nil-container
+-- reconciliation contract as the active aura section above.
+local function BuildBarPandemicSection(container, group, style)
+    local function ClearPandemicPreview()
+        if CooldownCompanion.SetGroupBarPandemicPreview then
+            CooldownCompanion:SetGroupBarPandemicPreview(CS.selectedGroup, false)
+        end
+    end
+    if not GroupHasAuraTrackingEntry(group) then
+        ClearPandemicPreview()
+        return
+    end
+
+    local pandemicOn = style.pandemicEffectEnabled == true
+    if container then
+        local enableRow = AddCheckboxRow(container, {
+            label = "Show Pandemic Color",
+            value = pandemicOn,
+            onChange = function(val)
+                style.pandemicEffectEnabled = val and true or false
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+        CreateCheckboxPromoteButton(enableRow, nil, "pandemicBar", group, style)
+        AnchorRowBadge(enableRow, CreateInfoButton(enableRow.frame, enableRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Pandemic Color",
+            {"The bar fill wears this color instead of the active aura color while the tracked aura is in its refresh window, when recasting adds bonus time.", 1, 1, 1, true},
+            {" ", 1, 1, 1, true},
+            {"Only appears for auras that gain bonus time when refreshed. The game decides the window.", 1, 1, 1, true},
+            {" ", 1, 1, 1, true},
+            {"Each entry can opt out in its Aura tab.", 1, 1, 1, true},
+        }, tabInfoButtons))
+
+        if pandemicOn then
+            -- No alpha: the pandemic color REPLACES the aura fill color
+            -- (owner ruling — never blends with it), so the live clone and
+            -- the mirror both render it opaque.
+            AddColorRow(container, {
+                label = "Pandemic Color",
+                indent = true,
+                tbl = style,
+                key = "barPandemicColor",
+                default = {1, 0.5, 0, 1},
+                hasAlpha = false,
+                onConfirm = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end,
+                onChange = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end,
+            })
+        end
+    end
+
+    if not pandemicOn then
+        ClearPandemicPreview()
+    end
+end
+
 local function BuildBarEffectsTab(container, group, style)
     local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
 
@@ -701,6 +759,7 @@ local function BuildBarEffectsTab(container, group, style)
         end
     end
     BuildBarActiveAuraSection(glowsHost, group, style)
+    BuildBarPandemicSection(glowsHost, group, style)
 
     -- The remaining indicators all render on the bar's icon square.
     if style.showBarIcon ~= false then

@@ -27,6 +27,7 @@ local FitHighlightFrame = ST._FitHighlightFrame
 local DEFAULT_WHITE = {1, 1, 1, 1}
 local DEFAULT_ASSISTED_HL_COLOR = {0.3, 1, 0.3, 0.9}
 local DEFAULT_PANDEMIC_COLOR = {1, 0.5, 0, 1}
+local DEFAULT_PANDEMIC_COLOR2 = {1, 1, 1, 0.9} -- colorShift second color; must match Defaults.lua
 local DEFAULT_AURA_GLOW_COLOR = {1, 0.84, 0, 0.9}
 local DEFAULT_AURA_GLOW_COLOR2 = {0.1, 0.3, 1, 0.9}
 local DEFAULT_READY_COLOR = {0.2, 1.0, 0.2, 1}
@@ -832,14 +833,16 @@ local function MakeGlowSetter(cfg)
     local defColor    = cfg.defaultColor
 
     -- Style keys: pandemic path (nil when hasPandemic is false)
-    local panStyleKey = cfg.pandemicStyleKey
-    local panColorKey = cfg.pandemicColorKey
-    local panSizeKey  = cfg.pandemicSizeKey
-    local panThKey    = cfg.pandemicThicknessKey
-    local panSpdKey   = cfg.pandemicSpeedKey
-    local panLnKey    = cfg.pandemicLinesKey
-    local panDefStyle = cfg.pandemicDefaultStyle
-    local panDefColor = cfg.pandemicDefaultColor
+    local panStyleKey  = cfg.pandemicStyleKey
+    local panColorKey  = cfg.pandemicColorKey
+    local panColor2Key = cfg.pandemicColor2Key
+    local panDefColor2 = cfg.pandemicDefaultColor2
+    local panSizeKey   = cfg.pandemicSizeKey
+    local panThKey     = cfg.pandemicThicknessKey
+    local panSpdKey    = cfg.pandemicSpeedKey
+    local panLnKey     = cfg.pandemicLinesKey
+    local panDefStyle  = cfg.pandemicDefaultStyle
+    local panDefColor  = cfg.pandemicDefaultColor
 
     -- Cache field names on button (must match existing names for Preview.lua compat)
     local cActive   = cfg.cacheActive
@@ -893,9 +896,14 @@ local function MakeGlowSetter(cfg)
             end
 
             if glowStyle then
-                -- Second color (color shift only)
-                if color2Key and glowStyle == "colorShift" then
-                    color2 = (btnStyle and btnStyle[color2Key]) or defColor2
+                -- Second color (color shift only); the pandemic branch reads
+                -- its own key family, matching the live kit resolver.
+                if glowStyle == "colorShift" then
+                    if hasPandemic and pandemicOverride and panColor2Key then
+                        color2 = (btnStyle and btnStyle[panColor2Key]) or panDefColor2 or defColor2
+                    elseif color2Key then
+                        color2 = (btnStyle and btnStyle[color2Key]) or defColor2
+                    end
                 end
 
                 -- Resolve size
@@ -1063,6 +1071,7 @@ local SetAuraGlow = MakeGlowSetter({
     defaultLines       = 5,
     pandemicStyleKey     = "pandemicGlowStyle",     pandemicDefaultStyle = "solid",
     pandemicColorKey     = "pandemicGlowColor",     pandemicDefaultColor = DEFAULT_PANDEMIC_COLOR,
+    pandemicColor2Key    = "pandemicGlowColor2",    pandemicDefaultColor2 = DEFAULT_PANDEMIC_COLOR2,
     pandemicSizeKey      = "pandemicGlowSize",
     pandemicThicknessKey = "pandemicGlowThickness",
     pandemicSpeedKey     = "pandemicGlowSpeed",
@@ -1564,6 +1573,33 @@ local function StyleKitBarGlowRegions(glowKit, styleTable, anchorFrame, enabled)
         styleTable and styleTable.barAuraEffectThickness)
 end
 
+-- Resolve the pandemicGlow* keys and style the kit (the icon-mode pandemic
+-- display; Blizzard owns the rig's secret Shown state, this styler only
+-- decides what it looks like whenever Blizzard reveals it). The enable
+-- arrives resolved from the caller — the keys carry no gate of their own,
+-- and the entry/panel resolution lives with the other bind policy in
+-- AuraDisplay.lua. Dash count/thickness ride the dormant-era key names
+-- (pandemicGlowLines/pandemicGlowThickness).
+local function StyleKitPandemicGlowRegions(glowKit, styleTable, anchorFrame, enabled)
+    local kitStyle = enabled
+        and NormalizeKitGlowStyle((styleTable and styleTable.pandemicGlowStyle) or "solid")
+        or "none"
+    local speed = styleTable and styleTable.pandemicGlowSpeed
+    -- Same legacy pixel-scale speed guard as the icon resolver: the dormant
+    -- pandemicGlowSpeed shipped as 50 in the retired LCG scale, so stored
+    -- values that large fall back to the style's own seconds default.
+    if not speed or speed <= 0 or speed > 3 then
+        speed = AURA_GLOW_SPEED_DEFAULTS[kitStyle]
+    end
+    StyleKitGlowCore(glowKit, anchorFrame, kitStyle,
+        (styleTable and styleTable.pandemicGlowColor) or DEFAULT_PANDEMIC_COLOR,
+        (styleTable and styleTable.pandemicGlowColor2) or DEFAULT_PANDEMIC_COLOR2,
+        styleTable and styleTable.pandemicGlowSize,
+        speed,
+        styleTable and styleTable.pandemicGlowLines,
+        styleTable and styleTable.pandemicGlowThickness)
+end
+
 ------------------------------------------------------------------------
 -- Per-segment borders: one border unit per segment widget of a segmented
 -- bar. Sole consumer today is the Maelstrom Weapon max-stack border
@@ -1733,6 +1769,7 @@ ST._SetBarAuraEffect = SetBarAuraEffect
 ST._BuildKitGlowRegions = BuildKitGlowRegions
 ST._StyleKitGlowRegions = StyleKitGlowRegions
 ST._StyleKitBarGlowRegions = StyleKitBarGlowRegions
+ST._StyleKitPandemicGlowRegions = StyleKitPandemicGlowRegions
 ST._BuildKitSegmentBorderPool = BuildKitSegmentBorderPool
 ST._StyleKitSegmentBorders = StyleKitSegmentBorders
 ST._SetReadyGlow = SetReadyGlow

@@ -148,6 +148,15 @@ local PANDEMIC_MARKER_TOOLTIP = {
     {"Marker text and color are in the group's Aura Duration Text settings.", 1, 1, 1, true},
 }
 
+local PANDEMIC_EFFECT_TOOLTIP = {
+    "Pandemic Effect",
+    {"Shows the group's pandemic visual on this entry while the aura is in its refresh window.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Only appears for auras that gain bonus time when refreshed. The game decides the window.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Style and color are in the group's Effects settings.", 1, 1, 1, true},
+}
+
 local function BuildAuraTab(scroll, group, buttonData, infoButtons)
     -- Function-local, not a file upvalue: the same convention every converted
     -- surface follows (GroupTabs.lua's icons path states it).
@@ -435,6 +444,33 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
     })
     AnchorRowBadge(pandemicRow, CreateInfoButton(pandemicRow.frame, pandemicRow.frame, "LEFT", "LEFT", 0, 0,
         PANDEMIC_MARKER_TOOLTIP, infoButtons))
+
+    -- Pandemic effect per-entry switch (PTR 8 visuals). The default follows
+    -- the EFFECTIVE explicit-true enable — a promoted pandemicGlow override
+    -- can carry its own pandemicEffectEnabled — so the checkbox reflects
+    -- what this entry actually resolves; only an explicit override is
+    -- stored, so unchanged entries keep tracking that resolution.
+    local effectStyle = group and group.style or {}
+    if CooldownCompanion.GetEffectiveStyle then
+        effectStyle = CooldownCompanion:GetEffectiveStyle(effectStyle, buttonData) or effectStyle
+    end
+    local effectDefault = effectStyle.pandemicEffectEnabled == true
+    local effectValue = buttonData.pandemicEffect
+    if effectValue == nil then effectValue = effectDefault end
+    local effectRow = AddCheckboxRow(auraRight, {
+        label = "Pandemic Effect",
+        value = effectValue == true,
+        onChange = function(value)
+            if value == effectDefault then
+                buttonData.pandemicEffect = nil
+            else
+                buttonData.pandemicEffect = value and true or false
+            end
+            RefreshAuraConfig()
+        end,
+    })
+    AnchorRowBadge(effectRow, CreateInfoButton(effectRow.frame, effectRow.frame, "LEFT", "LEFT", 0, 0,
+        PANDEMIC_EFFECT_TOOLTIP, infoButtons))
 end
 
 ST._BuildAuraTab = BuildAuraTab

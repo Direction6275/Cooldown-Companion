@@ -357,6 +357,22 @@ local function BuildSlotKit(slotButton)
         kit.barFillCsAG = fillTex:CreateAnimationGroup()
         kit.barFillCsAG:SetLooping("BOUNCE")
         kit.barFillCsAnim = kit.barFillCsAG:CreateAnimation("VertexColor")
+
+        -- Pandemic fill recolor (PTR 8, Phase 0-validated): a clone texture
+        -- riding the duration fill — same file, pandemic color — registered
+        -- as a pandemic region so Blizzard reveals it only inside the
+        -- refresh window. Anchored at creation to the creation-captured
+        -- fill region: the engine resizes that region with the secret
+        -- drain, so the clone tracks it. Child of kit.barFill, so
+        -- RestBarFill's frame alpha-0 and the fill pulse both carry over.
+        -- Own alpha starts 0 (feature defaults off); bar binds dress it.
+        if slotButton.AddPandemicRegion then
+            kit.pandemicFillClone = kit.barFill:CreateTexture(nil, "ARTWORK", nil, 2)
+            kit.pandemicFillClone:SetAllPoints(fillTex)
+            kit.pandemicFillClone:SetTexture("Interface\\Buttons\\WHITE8x8")
+            kit.pandemicFillClone:SetAlpha(0)
+            slotButton:AddPandemicRegion(kit.pandemicFillClone)
+        end
     end
 
     -- Stack fill (tracker C2): a second StatusBar Blizzard drives with the
@@ -441,6 +457,19 @@ local function BuildSlotKit(slotButton)
     -- Above the swipe, below the texts.
     kit.glow = ST._BuildKitGlowRegions(slotButton)
     kit.glow.host:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
+
+    -- Pandemic glow (PTR 8, Phase 0-validated): a second glow kit registered
+    -- as a pandemic region — Blizzard alone flips its secret Shown state
+    -- while the aura sits inside its refresh window; CC styles it at OOC
+    -- bind time and never reads it back. Registration is creation-only (no
+    -- re-call evidence exists for AddPandemicRegion), so every slot carries
+    -- the rig and per-entry enable is style-time "none" (P6). Same level as
+    -- the aura glow, created after it, so the pandemic effect draws above.
+    if slotButton.AddPandemicRegion then
+        kit.pandemicGlow = ST._BuildKitGlowRegions(slotButton)
+        kit.pandemicGlow.host:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
+        slotButton:AddPandemicRegion(kit.pandemicGlow.host)
+    end
 
     kit.textOverlay = CreateFrame("Frame", nil, slotButton)
     kit.textOverlay:SetAllPoints(slotButton)
@@ -1225,6 +1254,21 @@ local function StyleSlotKit(slot, button, buttonData, style)
         CooldownCompanion:ApplyAuraDurationSwipeStyle(kit.swipe, style)
     end
 
+    -- Pandemic display enable (PTR 8): per-entry override wins, else the
+    -- panel style's explicit-true enable. Panel entries only this phase —
+    -- custom-bar hosts stay marker-only (their old pandemic keys are
+    -- migration-retired) and resource overlays carry no pandemic story at
+    -- all. Blizzard flips the rig's secret Shown state regardless; this
+    -- gate only decides whether the rig has anything visible to show.
+    local pandemicOn = false
+    if not isCustomBarHost and not isResourceHost then
+        if buttonData.pandemicEffect ~= nil then
+            pandemicOn = buttonData.pandemicEffect == true
+        else
+            pandemicOn = style.pandemicEffectEnabled == true
+        end
+    end
+
     -- Bar composition: opaque backdrop occludes the CC bar underneath
     -- (skipped for shell entries — nothing visible to occlude); Blizzard
     -- drains the registered fill while the aura runs. Color writes carry
@@ -1339,6 +1383,33 @@ local function StyleSlotKit(slot, button, buttonData, style)
                     kit.barFillCsAG, kit.barFillCsAnim, button, style)
             end
         end
+        -- Pandemic fill recolor: dress the clone in the file the duration
+        -- fill wears plus the pandemic color. The 4-arg SetVertexColor is
+        -- the LAST write and carries the color's own alpha (it replaces
+        -- region alpha through the non-SetAlpha C slot — a trailing
+        -- SetAlpha would clobber the picker's alpha to opaque while the
+        -- mirror honors it). The disabled leg writes only alpha 0 — no
+        -- color write that could resurrect it. Stack-mode, icon, and
+        -- resource binds are covered by RestBarFill's frame alpha-0 (the
+        -- clone is barFill's child), but slots are reused across entries
+        -- so the enable is converged here every bar bind regardless.
+        -- Accepted cosmetic limit: the clone stretches its full texture
+        -- into the drained rect (no per-frame texcoord crop is possible on
+        -- a secret-driven fill), visible only on bar textures with
+        -- horizontal variation.
+        if kit.pandemicFillClone then
+            if pandemicOn and not useStackFill then
+                local pc = style.barPandemicColor or { 1, 0.5, 0, 1 }
+                -- Forced opaque (owner ruling: the pandemic color REPLACES
+                -- the aura fill color, never blends with it) — the alpha
+                -- slot carries the region's visibility, not the picker's.
+                kit.pandemicFillClone:SetTexture(
+                    CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
+                kit.pandemicFillClone:SetVertexColor(pc[1] or 1, pc[2] or 0.5, pc[3] or 0, 1)
+            else
+                kit.pandemicFillClone:SetAlpha(0)
+            end
+        end
         if kit.stackFill then
             if useStackFill then
                 local atlas = widgetStack and ST.GetStackSegmentsTexture(slot.boundStackMax) or nil
@@ -1376,6 +1447,25 @@ local function StyleSlotKit(slot, button, buttonData, style)
         ST._StyleKitBarGlowRegions(kit.glow, style, button, true)
     else
         ST._StyleKitGlowRegions(kit.glow, style, button, true)
+    end
+
+    -- Icon entries with both enabled show the aura glow AND the pandemic
+    -- glow together during the window (owner ruling 2026-08-05, accepting
+    -- the fallback): the replace-while-shown ideal has no supported path —
+    -- a window mask over the aura glow textures (a black MaskTexture
+    -- registered as a pandemic region) was built and probed in game, and a
+    -- shown SetColorTexture mask observably does not blank its targets on
+    -- build 69111. Bars achieve true replacement structurally (the opaque
+    -- clone overlays the fill), so no such compromise exists there.
+
+    -- Pandemic glow: icon hosts only — the bar pandemic presentation is the
+    -- fill recolor above, not a border effect (owner ruling). Anchors to the
+    -- host button exactly like the aura glow; a disabled entry styles to
+    -- "none", which fully resets and hides the rig even though Blizzard
+    -- still flips its secret Shown state.
+    if kit.pandemicGlow then
+        ST._StyleKitPandemicGlowRegions(kit.pandemicGlow, style, button,
+            pandemicOn and not isBar)
     end
 
     -- Full-button composition for show-only-while-active entries: bg + border

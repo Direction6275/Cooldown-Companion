@@ -159,12 +159,14 @@ local defaults = {
                         procGlowSpeed = 50,
                         procGlowLines = 8,
                         procGlowCombatOnly = false,
-                        pandemicGlowStyle = "solid",
+                        pandemicEffectEnabled = false, -- explicit-true master switch (PTR 8 pandemic display)
+                        pandemicGlowStyle = "solid", -- kit styles, same menu as auraGlowStyle
                         pandemicGlowColor = {1, 0.5, 0, 1},
-                        pandemicGlowSize = 5,
-                        pandemicGlowThickness = 4,
-                        pandemicGlowSpeed = 50,
-                        pandemicGlowLines = 8,
+                        pandemicGlowColor2 = {1, 1, 1, 0.9}, -- colorShift second color
+                        pandemicGlowSize = 2,        -- border/dash px, or overhang % (proc/ants)
+                        pandemicGlowThickness = 3,   -- dash thickness px
+                        pandemicGlowSpeed = 0.5,     -- seconds: pulse/shift cycle, or dashes lap
+                        pandemicGlowLines = 5,       -- dash count
                         pandemicGlowCombatOnly = false,
                         barPandemicColor = {1, 0.5, 0, 1},
                         pandemicBarEffect = "none",
@@ -343,12 +345,14 @@ local defaults = {
             procGlowSpeed = 50,
             procGlowLines = 8,
             procGlowCombatOnly = false,
-            pandemicGlowStyle = "solid",
+            pandemicEffectEnabled = false, -- explicit-true master switch (PTR 8 pandemic display)
+            pandemicGlowStyle = "solid", -- kit styles, same menu as auraGlowStyle
             pandemicGlowColor = {1, 0.5, 0, 1},
-            pandemicGlowSize = 5,
-            pandemicGlowThickness = 4,
-            pandemicGlowSpeed = 50,
-            pandemicGlowLines = 8,
+            pandemicGlowColor2 = {1, 1, 1, 0.9}, -- colorShift second color
+            pandemicGlowSize = 2,        -- border/dash px, or overhang % (proc/ants)
+            pandemicGlowThickness = 3,   -- dash thickness px
+            pandemicGlowSpeed = 0.5,     -- seconds: pulse/shift cycle, or dashes lap
+            pandemicGlowLines = 5,       -- dash count
             pandemicGlowCombatOnly = false,
             barPandemicColor = {1, 0.5, 0, 1},
             pandemicBarEffect = "none",
@@ -967,9 +971,16 @@ ST.OVERRIDE_SECTIONS = {
         keys = {"procGlowStyle", "procGlowColor", "procGlowSize", "procGlowThickness", "procGlowSpeed", "procGlowLines", "procGlowCombatOnly"},
         modes = {icons = true},
     },
+    -- PTR 8 lit the pandemic key family up (the kit rig in AuraDisplay.lua);
+    -- the enable is now explicit-true pandemicEffectEnabled. Offered as a
+    -- per-entry override section (owner ruling) alongside the plain
+    -- pandemicEffect checkbox; live-era promotions carry forward with
+    -- their values sanitized by the aura-glow migration, which also strips
+    -- the DEAD keys. The retired live-era keys stay listed so section
+    -- prune/revert paths can still clean them.
     pandemicGlow = {
-        label = "Pandemic Glow",
-        keys = {"showPandemicGlow", "pandemicGlowStyle", "pandemicGlowColor", "pandemicGlowSize", "pandemicGlowThickness", "pandemicGlowSpeed", "pandemicGlowLines", "pandemicGlowCombatOnly"},
+        label = "Pandemic Effect",
+        keys = {"pandemicEffectEnabled", "pandemicGlowStyle", "pandemicGlowColor", "pandemicGlowColor2", "pandemicGlowSize", "pandemicGlowThickness", "pandemicGlowSpeed", "pandemicGlowLines", "showPandemicGlow", "pandemicGlowCombatOnly"},
         modes = {icons = true},
     },
     auraIndicator = {
@@ -993,13 +1004,15 @@ ST.OVERRIDE_SECTIONS = {
         modes = {icons = true},
     },
     -- Bar Mode — Appearance Tab
-    -- pandemicBar is deliberately unwired (not in the config sectionOrder):
-    -- pandemic timing is dead in combat until the game-side fix lands, same
-    -- as the icon-mode pandemic glow. barActiveAura is live (LCG-removal
+    -- pandemicBar: PTR 8 shipped the bar pandemic display as the fill
+    -- recolor (pandemicEffectEnabled + barPandemicColor, panel bars only),
+    -- offered as a per-entry override section (owner ruling). The dormant
+    -- pandemicBarEffect/Pulse/ColorShift families remain unwired pending
+    -- their Phase 3 retirement ruling. barActiveAura is live (LCG-removal
     -- project wired it through the aura kit).
     pandemicBar = {
-        label = "Pandemic Indicator",
-        keys = {"showPandemicGlow", "barPandemicColor", "pandemicBarEffect", "pandemicBarEffectColor", "pandemicBarEffectSize", "pandemicBarEffectThickness", "pandemicBarEffectSpeed", "pandemicBarEffectLines", "pandemicGlowCombatOnly", "pandemicBarPulseEnabled", "pandemicBarPulseSpeed", "pandemicBarColorShiftEnabled", "pandemicBarColorShiftSpeed", "pandemicBarColorShiftColor"},
+        label = "Pandemic Color",
+        keys = {"pandemicEffectEnabled", "barPandemicColor", "showPandemicGlow", "pandemicBarEffect", "pandemicBarEffectColor", "pandemicBarEffectSize", "pandemicBarEffectThickness", "pandemicBarEffectSpeed", "pandemicBarEffectLines", "pandemicGlowCombatOnly", "pandemicBarPulseEnabled", "pandemicBarPulseSpeed", "pandemicBarColorShiftEnabled", "pandemicBarColorShiftSpeed", "pandemicBarColorShiftColor"},
         modes = {bars = true},
     },
     barActiveAura = {

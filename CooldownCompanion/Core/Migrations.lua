@@ -1199,14 +1199,21 @@ local BAR_AURA_EFFECT_SENTINEL = {
     current = "_cdcBarAuraEffect3Migrated",
     retired = { "_cdcBarAuraGlowMigrated", "_cdcBarAuraEffectMigrated", "_cdcBarAuraEffect2Migrated" },
 }
+-- aura glow generations: renamed from _cdcAuraGlowMigrated when the pass
+-- gained the pandemic pixel-scale sanitizers and the live-era per-entry
+-- pandemicGlow override strip (PTR 8 lit the dormant key family up).
+local AURA_GLOW_SENTINEL = {
+    current = "_cdcAuraGlow2Migrated",
+    retired = { "_cdcAuraGlowMigrated" },
+}
 local MIGRATION_SENTINELS = {
     AURA_REBUILD_SENTINEL,
     BAR_AURA_EFFECT_SENTINEL,
+    AURA_GLOW_SENTINEL,
     -- Single-generation passes keep their own inline guard and stamp (the
     -- group-scope pass stamps conditionally on talent data being ready);
     -- registered so ClearMigrationSentinels iterates them.
     { current = "_cdcAuraGroupScopeMigrated" },
-    { current = "_cdcAuraGlowMigrated" },
     { current = "_cdcLcgGlowMigrated" },
 }
 
@@ -1425,6 +1432,51 @@ local function MigrateAuraGlowStyleTable(styleTable, counts)
         end
     end
 
+    -- Pandemic glow twins (PTR 8 lights the dormant keys up). Legacy style
+    -- values remap into the kit vocabulary FIRST — live-era stores carried
+    -- pixel/glow/pulsingBorder/lcg* (the LCG pass runs after this one, so
+    -- it cannot be relied on here), and the new dropdown only knows kit
+    -- values — then the pixel-scale leftovers clear against the remapped
+    -- style (dormant-era defaults were speed 50 / size 5 / thickness 4 /
+    -- lines 8 in the retired LCG scale). Same idempotence shape as the
+    -- auraGlow clears above: kit values and sane numbers pass untouched.
+    local pandemicStyle = rawget(styleTable, "pandemicGlowStyle")
+    if pandemicStyle == "pixel" then
+        styleTable.pandemicGlowStyle = "dashes"
+    elseif pandemicStyle == "pulsingBorder" then
+        styleTable.pandemicGlowStyle = "pulse"
+    elseif pandemicStyle == "glow" then
+        styleTable.pandemicGlowStyle = "proc"
+    elseif pandemicStyle == "lcgButton" or pandemicStyle == "lcgProc"
+        or pandemicStyle == "lcgAutoCast" then
+        styleTable.pandemicGlowStyle = "solid"
+    end
+    local pandemicSpeed = rawget(styleTable, "pandemicGlowSpeed")
+    if type(pandemicSpeed) == "number" and pandemicSpeed > 3 then
+        styleTable.pandemicGlowSpeed = nil
+    end
+    pandemicStyle = rawget(styleTable, "pandemicGlowStyle") or "solid"
+    local pandemicSizeCap
+    if pandemicStyle == "pulse" or pandemicStyle == "solid" or pandemicStyle == "colorShift" then
+        pandemicSizeCap = 8
+    elseif pandemicStyle == "dashes" then
+        pandemicSizeCap = 20
+    end
+    if pandemicSizeCap then
+        local pandemicSize = rawget(styleTable, "pandemicGlowSize")
+        if type(pandemicSize) == "number" and pandemicSize > pandemicSizeCap then
+            styleTable.pandemicGlowSize = nil
+        end
+    end
+    local pandemicThickness = rawget(styleTable, "pandemicGlowThickness")
+    if type(pandemicThickness) == "number" and pandemicThickness > 8 then
+        styleTable.pandemicGlowThickness = nil
+    end
+    local pandemicLines = rawget(styleTable, "pandemicGlowLines")
+    if type(pandemicLines) == "number" and pandemicLines > 8 then
+        styleTable.pandemicGlowLines = nil
+    end
+
     if rawget(styleTable, "auraGlowInvert") ~= nil then
         if styleTable.auraGlowInvert == true then
             counts.invert = counts.invert + 1
@@ -1441,8 +1493,35 @@ local function MigrateAuraGlowStyleTable(styleTable, counts)
     styleTable.auraGlowLines = nil
 end
 
+-- The pandemicGlow/pandemicBar sections are OFFERED as per-entry overrides
+-- again on 12.1 (owner ruling), so live-era promotions carry forward as
+-- visible, revertible overrides — the style-value sanitizers above run on
+-- styleOverrides too. Only the DEAD keys (no 12.1 reader: the retired
+-- nil-means-on enable, the unhonorable combat gate, and the unwired
+-- pandemicBarEffect/Pulse/ColorShift families) strip, silently, matching
+-- the custom-bar silent-retire precedent. Idempotent; re-runs on every
+-- import by design.
+local PANDEMIC_DEAD_OVERRIDE_KEYS = {
+    "showPandemicGlow", "pandemicGlowCombatOnly",
+    "pandemicBarEffect", "pandemicBarEffectColor",
+    "pandemicBarEffectSize", "pandemicBarEffectThickness",
+    "pandemicBarEffectSpeed", "pandemicBarEffectLines",
+    "pandemicBarPulseEnabled", "pandemicBarPulseSpeed",
+    "pandemicBarColorShiftEnabled", "pandemicBarColorShiftSpeed",
+    "pandemicBarColorShiftColor",
+}
+local function StripPandemicOverrideResidue(buttonData)
+    local overrides = buttonData.styleOverrides
+    if type(overrides) ~= "table" then return end
+    for _, key in ipairs(PANDEMIC_DEAD_OVERRIDE_KEYS) do
+        if rawget(overrides, key) ~= nil then
+            overrides[key] = nil
+        end
+    end
+end
+
 local function MigrateAuraGlowRebuild(self, profile)
-    if type(profile) ~= "table" or profile._cdcAuraGlowMigrated then return end
+    if type(profile) ~= "table" or not ClaimMigrationPass(profile, AURA_GLOW_SENTINEL) then return end
     local counts = { invert = 0, combatOnly = 0 }
 
     MigrateAuraGlowStyleTable(profile.globalStyle, counts)
@@ -1455,6 +1534,7 @@ local function MigrateAuraGlowRebuild(self, profile)
                     for _, buttonData in ipairs(group.buttons) do
                         if type(buttonData) == "table" then
                             MigrateAuraGlowStyleTable(buttonData.styleOverrides, counts)
+                            StripPandemicOverrideResidue(buttonData)
                         end
                     end
                 end
@@ -1474,7 +1554,7 @@ local function MigrateAuraGlowRebuild(self, profile)
         end
     end
 
-    profile._cdcAuraGlowMigrated = true
+    profile[AURA_GLOW_SENTINEL.current] = true
     local dropped = {}
     if counts.invert > 0 then dropped[#dropped + 1] = ("glow-while-missing (x%d)"):format(counts.invert) end
     if counts.combatOnly > 0 then dropped[#dropped + 1] = ("combat-only aura glow (x%d)"):format(counts.combatOnly) end

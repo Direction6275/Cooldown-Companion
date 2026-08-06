@@ -1596,7 +1596,14 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
                 enabledVal = (opts.fallbackStyle[cfg.effectKey] or "none") ~= "none"
             end
         end
-        isEnabled = enabledVal ~= false
+        -- Default-on sections read nil as enabled; explicit-true sections
+        -- (the pandemic family) read nil as disabled, matching every
+        -- runtime resolution surface for their key.
+        if cfg.enableExplicitTrue then
+            isEnabled = enabledVal == true
+        else
+            isEnabled = enabledVal ~= false
+        end
     else
         isEnabled = styleTable[cfg.styleKey] ~= "none"
     end
@@ -1784,6 +1791,73 @@ local function BuildAuraGlowControls(container, styleTable, refreshCallback, opt
             targetStyle.auraGlowDashThickness = 3
         end,
     }, opts)
+end
+
+-- Pandemic glow (PTR 8): the icon-mode pandemic display, a second aura-kit
+-- glow Blizzard reveals only while the tracked aura sits inside its refresh
+-- window. Same style vocabulary as the aura glow, its own key family
+-- (the dormant-era pandemicGlow* stores, retuned to kit seconds/px). The
+-- enable is an explicit-true key: the dormant style default is "solid", so
+-- style-derived enablement would light every panel unasked.
+local function BuildPandemicGlowControls(container, styleTable, refreshCallback, opts)
+    BuildGlowStyleControls(container, styleTable, refreshCallback, {
+        styleKey = "pandemicGlowStyle", colorKey = "pandemicGlowColor", colorLabel = "Effect Color",
+        color2Key = "pandemicGlowColor2", color2Label = "Second Color", defaultColor2 = {1, 1, 1, 0.9},
+        sizeKey = "pandemicGlowSize", speedKey = "pandemicGlowSpeed", linesKey = "pandemicGlowLines",
+        thicknessKey = "pandemicGlowThickness",
+        defaultStyle = "solid", defaultColor = {1, 0.5, 0, 1},
+        enableLabel = "Show Pandemic Effect",
+        enableKey = "pandemicEffectEnabled",
+        enableExplicitTrue = true,
+        styleOptions = AURA_GLOW_STYLE_OPTIONS,
+        styleOrder = AURA_GLOW_STYLE_ORDER,
+        solidSizeDefault = 2,
+        onStyleChanged = function(targetStyle, val)
+            targetStyle.pandemicGlowSize = AURA_GLOW_SIZE_RESETS[val] or 2
+            targetStyle.pandemicGlowSpeed = AURA_GLOW_SPEED_RESETS[val] or 0.5
+            targetStyle.pandemicGlowLines = 5
+            targetStyle.pandemicGlowThickness = 3
+        end,
+    }, opts)
+end
+
+-- Bar pandemic override section (PTR 8): enable + fill color only — the
+-- window is game-computed and the display has no further styling. The color
+-- carries no alpha (owner ruling: it REPLACES the aura fill color). Enable
+-- is explicit-true, matching the panel key's semantics.
+local function BuildBarPandemicControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local isOverrideMode = opts.isOverride == true
+    local enabledVal = rawget(styleTable, "pandemicEffectEnabled")
+    if enabledVal == nil and opts.fallbackStyle then
+        enabledVal = opts.fallbackStyle.pandemicEffectEnabled
+    end
+    local isEnabled = enabledVal == true
+    if isOverrideMode then
+        AddCheckboxRow(container, {
+            label = "Show Pandemic Color",
+            value = isEnabled,
+            indent = opts.indent,
+            onChange = function(val)
+                styleTable.pandemicEffectEnabled = val and true or false
+                refreshCallback()
+                RefreshStructuralControls(container)
+            end,
+        })
+        if not isEnabled then
+            return
+        end
+    end
+    AddColorRow(container, {
+        label = "Pandemic Color",
+        indent = isOverrideMode and true or opts.indent,
+        tbl = styleTable,
+        key = "barPandemicColor",
+        default = {1, 0.5, 0, 1},
+        hasAlpha = false,
+        onConfirm = refreshCallback,
+        onChange = refreshCallback,
+    })
 end
 
 -- Bar aura indicator (barActiveAura): the border effect shares the aura glow
@@ -2249,6 +2323,8 @@ ST._BuildIconTintControls = BuildIconTintControls
 ST._BuildAssistedHighlightControls = BuildAssistedHighlightControls
 ST._BuildProcGlowControls = BuildProcGlowControls
 ST._BuildAuraGlowControls = BuildAuraGlowControls
+ST._BuildPandemicGlowControls = BuildPandemicGlowControls
+ST._BuildBarPandemicControls = BuildBarPandemicControls
 -- The bare per-style slider renderer, for surfaces that own their style
 -- dropdown but must draw the same sliders (resource aura border, MW
 -- max-stack border). Callers hand a keys table in GlowSliderKeys' shape.

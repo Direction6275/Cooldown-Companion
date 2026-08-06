@@ -513,18 +513,12 @@ function CooldownCompanion:ClearAllConditionalVisualPreviews()
 end
 
 --------------------------------------------------------------------------------
--- Pandemic/BarAuraEffect toggle callback
+-- BarAuraEffect clear reconciliation (sole consumer:
+-- ClearAllBarAuraEffectPreviews; the old bar pandemic toggle that shared it
+-- died with the read-the-state pandemic model).
 --------------------------------------------------------------------------------
 
-local function pandemicOnToggle(button, show)
-    if not show then
-        SetBarAuraEffect(button, button._auraActive)
-    else
-        button._barAuraEffectActive = nil
-    end
-end
-
-local function pandemicOnClear(button)
+local function barAuraEffectOnClear(button)
     SetBarAuraEffect(button, button._auraActive)
 end
 
@@ -574,13 +568,54 @@ function CooldownCompanion:ClearAllAuraGlowPreviews()
 end
 
 --------------------------------------------------------------------------------
--- Pandemic Preview
--- (12.1 aura teardown: config entry-point setters removed; ClearAll* kept for
--- recycled-frame safety until the aura rebuild.)
+-- Pandemic Preview (PTR 8 visuals)
+-- Icons render through the CC-side glow container: VisualState's
+-- pandemic-preview branch routes SetAuraGlow's pandemic override, which
+-- reads the same pandemicGlow* keys the live kit rig consumes — preview
+-- parity without touching the aura slot subtree. Bars render nothing on
+-- live buttons: the fill recolor exists only on the kit fill, so bar
+-- previews live on the wide-buttons mirror alone (the same convention as
+-- the bar fill pulse/color-shift effects).
 --------------------------------------------------------------------------------
 
+function CooldownCompanion:SetPandemicPreview(groupId, buttonIndex, show)
+    SetButtonPreview(self, groupId, buttonIndex, show, "_pandemicPreview", "_auraGlowActive", false, auraGlowShellReapply, true)
+end
+
+function CooldownCompanion:SetGroupPandemicPreview(groupId, show)
+    SetGroupPreview(self, groupId, show, "_pandemicPreview", "_auraGlowActive", false, auraGlowShellReapply, true)
+end
+
+-- Bar variants: same flag, plus the fake aura drain the barActiveAura
+-- preview stages — the mirror's pandemic recolor rides the drained fill, so
+-- without the conditional there would be nothing to recolor. Live bar
+-- buttons render nothing from the flag (kit-fill-only feature).
+--
+-- The "aura_duration_bar" conditional store is SHARED with the barActiveAura
+-- preview, so a clear may only touch it while this preview's own flag holds
+-- it — reconciliation clears fire on every Effects-tab rebuild, and an
+-- unconditional wipe here would kill a running barActiveAura drain while its
+-- flag still reports the preview as playing (same gate on its setters).
+-- The gate protects only the not-holding case; both-flags-at-once never
+-- happens because the preview command center is globally mutually exclusive
+-- (ClearAllConfigPreviews on every start). A future preview starter that
+-- bypasses the command center must preserve that exclusivity.
+function CooldownCompanion:SetBarPandemicPreview(groupId, buttonIndex, show)
+    if show or self:IsPreviewFlagActive(groupId, buttonIndex, "_pandemicPreview") then
+        self:SetConditionalVisualPreviewActive(groupId, buttonIndex, "aura_duration_bar", show)
+    end
+    SetButtonPreview(self, groupId, buttonIndex, show, "_pandemicPreview", "_auraGlowActive", false, nil, true)
+end
+
+function CooldownCompanion:SetGroupBarPandemicPreview(groupId, show)
+    if show or self:IsPreviewFlagActive(groupId, nil, "_pandemicPreview") then
+        self:SetConditionalVisualPreviewActive(groupId, nil, "aura_duration_bar", show)
+    end
+    SetGroupPreview(self, groupId, show, "_pandemicPreview", "_auraGlowActive", false, nil, true)
+end
+
 function CooldownCompanion:ClearAllPandemicPreviews()
-    ClearAllPreviews(self, "_pandemicPreview", "_auraGlowActive", false, pandemicOnClear, true)
+    ClearAllPreviews(self, "_pandemicPreview", "_auraGlowActive", false, auraGlowShellReapply, true)
 end
 
 --------------------------------------------------------------------------------
@@ -613,20 +648,28 @@ local function barAuraEffectOnToggle(button, show)
     end
 end
 
+-- Same shared-conditional ownership rule as the bar pandemic setters below:
+-- a clear may only wipe the "aura_duration_bar" store while this preview's
+-- own flag holds it, or the sections' rebuild-time reconciliation clears
+-- kill each other's running drain.
 function CooldownCompanion:SetBarAuraEffectPreview(groupId, buttonIndex, show)
-    self:SetConditionalVisualPreviewActive(groupId, buttonIndex, "aura_duration_bar", show)
+    if show or self:IsPreviewFlagActive(groupId, buttonIndex, "_barAuraEffectPreview") then
+        self:SetConditionalVisualPreviewActive(groupId, buttonIndex, "aura_duration_bar", show)
+    end
     SetButtonPreview(self, groupId, buttonIndex, show, "_barAuraEffectPreview", "_barAuraEffectActive", false, barAuraEffectOnToggle, true)
 end
 
 function CooldownCompanion:SetGroupBarAuraEffectPreview(groupId, show)
-    self:SetConditionalVisualPreviewActive(groupId, nil, "aura_duration_bar", show)
+    if show or self:IsPreviewFlagActive(groupId, nil, "_barAuraEffectPreview") then
+        self:SetConditionalVisualPreviewActive(groupId, nil, "aura_duration_bar", show)
+    end
     SetGroupPreview(self, groupId, show, "_barAuraEffectPreview", "_barAuraEffectActive", false, barAuraEffectOnToggle, true)
 end
 
 -- The fake drain is cleared by ClearAllConditionalVisualPreviews; every
 -- caller of this (ClearAllConfigPreviews) runs both.
 function CooldownCompanion:ClearAllBarAuraEffectPreviews()
-    ClearAllPreviews(self, "_barAuraEffectPreview", "_barAuraEffectActive", false, pandemicOnClear, true)
+    ClearAllPreviews(self, "_barAuraEffectPreview", "_barAuraEffectActive", false, barAuraEffectOnClear, true)
 end
 
 --------------------------------------------------------------------------------
@@ -821,14 +864,10 @@ local function ApplyPreviewFlagToButton(button, previewFlag)
         button._procGlowActive = false
     elseif previewFlag == "_auraGlowPreview" or previewFlag == "_pandemicPreview" then
         button._auraGlowActive = false
-        if previewFlag == "_auraGlowPreview" then
-            -- Repopulated buttons re-hid their icon shell before this flag
-            -- was restored; reapply so the preview stays visible.
-            auraGlowShellReapply(button)
-        end
-        if previewFlag == "_pandemicPreview" then
-            pandemicOnToggle(button, true)
-        end
+        -- Repopulated buttons re-hid their icon shell before this flag was
+        -- restored; reapply so the preview stays visible (both flags render
+        -- through the same CC-side glow container).
+        auraGlowShellReapply(button)
     elseif previewFlag == "_barAuraEffectPreview" then
         button._barAuraEffectActive = false
         barAuraEffectOnToggle(button, true)

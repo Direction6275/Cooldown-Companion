@@ -298,6 +298,19 @@ local function BarAuraIndicatorEnabled(group, buttonIndex)
     return ST.IsBarAuraIndicatorEnabled(ResolveTargetStyle(group, buttonIndex)) == true
 end
 
+-- Effective pandemic enable (PTR 8 visuals): the per-entry override wins,
+-- else the effective style's explicit-true key — the same resolution the
+-- live bind gate and the config mirror perform, so the control is never
+-- offered where the preview renders nothing nor hidden at entry scope
+-- where the live rig actually renders.
+local function PandemicEffectEnabled(group, buttonIndex)
+    local buttonData = buttonIndex and (group.buttons or {})[buttonIndex] or nil
+    if buttonData and buttonData.pandemicEffect ~= nil then
+        return buttonData.pandemicEffect == true
+    end
+    return StyleFlagEnabled(group, buttonIndex, "pandemicEffectEnabled")
+end
+
 local function TextureIndicatorEnabled(group, indicatorKey)
     -- Read-only: never pass createIfMissing here, a mere preview refresh
     -- must not write indicator tables into the profile.
@@ -493,6 +506,16 @@ local CONTROLS = {
         preview = FlagPreview("_auraGlowPreview", "SetAuraGlowPreview", "SetGroupAuraGlowPreview"),
     },
     {
+        id = "pandemicGlow",
+        label = "Preview Pandemic Effect",
+        group = GROUP_EFFECTS,
+        modes = { icons = true },
+        section = "pandemicGlow",
+        requiresPandemicEffect = true,
+        settings = { tab = "effects", key = "pandemicGlow" },
+        preview = FlagPreview("_pandemicPreview", "SetPandemicPreview", "SetGroupPandemicPreview"),
+    },
+    {
         id = "readyGlow",
         label = "Preview Ready Glow Style",
         group = GROUP_EFFECTS,
@@ -521,6 +544,19 @@ local CONTROLS = {
         requiresBarAuraIndicator = true,
         settings = { tab = "effects", key = "barActiveAura" },
         preview = FlagPreview("_barAuraEffectPreview", "SetBarAuraEffectPreview", "SetGroupBarAuraEffectPreview"),
+    },
+    {
+        id = "barPandemic",
+        label = "Preview Pandemic Color",
+        group = GROUP_EFFECTS,
+        modes = { bars = true },
+        section = "pandemicBar",
+        requiresPandemicEffect = true,
+        -- No advanced key exists for the bars pandemic rows (enable + color
+        -- only), so the gear lands on the Effects tab with the Glows section
+        -- forced open — the rows live inside it.
+        settings = { tab = "effects", uncollapse = "effects_glows" },
+        preview = FlagPreview("_pandemicPreview", "SetBarPandemicPreview", "SetGroupBarPandemicPreview"),
     },
     {
         id = "textureProc",
@@ -687,6 +723,9 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
         return false
     end
     if control.requiresBarAuraIndicator and not BarAuraIndicatorEnabled(group, buttonIndex) then
+        return false
+    end
+    if control.requiresPandemicEffect and not PandemicEffectEnabled(group, buttonIndex) then
         return false
     end
     if control.indicatorKey and not TextureIndicatorEnabled(group, control.indicatorKey) then
