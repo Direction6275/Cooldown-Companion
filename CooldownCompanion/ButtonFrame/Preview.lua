@@ -572,7 +572,14 @@ end
 -- renders through; reapply the shell helper on every toggle and clear (the
 -- flag is already set/cleared when these hooks run, so the exposure
 -- predicate sees the current state).
-local function auraGlowShellReapply(button)
+-- `show` is passed by the set paths and omitted by the clear paths, which is
+-- what keeps the container build on-demand: turning a preview ON is the only
+-- moment CC's aura glow container is needed, and ClearAllPreviews walks every
+-- button in every group, so building there would defeat the point entirely.
+local function auraGlowShellReapply(button, show)
+    if show and not button._isBar and ST._EnsureAuraGlowContainer then
+        ST._EnsureAuraGlowContainer(button)
+    end
     if not button._isBar and ST._ApplyAuraShellVisuals then
         ST._ApplyAuraShellVisuals(button, button.buttonData)
     end
@@ -887,8 +894,9 @@ local function ApplyPreviewFlagToButton(button, previewFlag)
         button._auraGlowActive = false
         -- Repopulated buttons re-hid their icon shell before this flag was
         -- restored; reapply so the preview stays visible (both flags render
-        -- through the same CC-side glow container).
-        auraGlowShellReapply(button)
+        -- through the same CC-side glow container). A repopulated button is a
+        -- fresh frame with no container yet, so this must pass show.
+        auraGlowShellReapply(button, true)
     elseif previewFlag == "_barAuraEffectPreview" then
         button._barAuraEffectActive = false
         barAuraEffectOnToggle(button, true)

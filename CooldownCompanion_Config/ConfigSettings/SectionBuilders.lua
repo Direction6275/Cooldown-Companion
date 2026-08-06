@@ -402,7 +402,9 @@ local AURA_TEXT_SHARED_POSITION_TOOLTIP = {
 
 local SEPARATE_TEXT_POSITIONS_TOOLTIP = {
     "Separate Text Positions",
-    {"When enabled, aura duration text and cooldown text use independent positions and can show at the same time. Aura text position controls appear below when toggled on; cooldown text position is in the Cooldown Text section.", 1, 1, 1, true},
+    {"Gives the aura duration text and the cooldown text independent positions.", 1, 1, 1, true},
+    " ",
+    {"The cooldown text also draws above the aura display, so both timers stay visible while the aura runs.", 1, 1, 1, true},
 }
 
 -- Row grammar only: LEFT column is the toggle and what the text is drawn with;

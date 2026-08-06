@@ -1754,7 +1754,7 @@ local function BuildLayoutTab(container)
     local customStrataEnabled = isIconsMode and type(style.strataOrder) == "table"
 
     -- LEFT column: the per-icon layer switch. RIGHT column: the whole
-    -- panel's draw layer. One row each - the six layer dropdowns below
+    -- panel's draw layer. One row each - the layer dropdowns below
     -- are a block of their own so the indent cannot read as belonging to
     -- Frame Strata. Without the layer switch the section is a single row, so
     -- Frame Strata moves left rather than leaving the left column empty.
@@ -1785,8 +1785,15 @@ local function BuildLayoutTab(container)
 
     AnchorRowBadge(strataToggleRow, CreateInfoButton(strataToggleRow.frame, strataToggleRow.frame, "LEFT", "LEFT", 0, 0, {
         "Custom Icon Strata",
-        {"Controls the draw order of visual layers on each icon: Cooldown Swipe, Aura/Pandemic Glow, Ready Glow, Text Overlay, Assisted Highlight, and Proc Glow.", 1, 1, 1, true},
-        {"Layer 6 draws on top, Layer 1 on the bottom. When disabled, the default order is used.", 1, 1, 1, true},
+        {"Sets the draw order of each icon's visual layers.", 1, 1, 1, true},
+        " ",
+        {"Layer 8 draws on top, Layer 1 on the bottom.", 1, 1, 1, true},
+        " ",
+        {"Aura Display moves the aura glow, pandemic glow, aura swipe and aura text together.", 1, 1, 1, true},
+        " ",
+        {"Put Cooldown Swipe above Aura Display to keep a spell's own cooldown visible while its aura runs.", 1, 1, 1, true},
+        " ",
+        {"Loss of Control and keybind text always draw on top.", 1, 1, 1, true},
     }, tabInfoButtons))
     end -- isIconsMode (custom strata toggle)
 
@@ -3889,7 +3896,9 @@ local function BuildAppearanceTab(container)
             -- button onto the end of the row's label.
             AnchorRowBadge(sepPosRow, CreateInfoButton(sepPosRow.frame, sepPosRow.frame, "LEFT", "LEFT", 0, 0, {
                 "Separate Text Positions",
-                {"When enabled, aura duration text and cooldown text use independent positions and can show at the same time. Aura text position controls appear below when toggled on; cooldown text position is in the Cooldown Text section.", 1, 1, 1, true},
+                {"Gives the aura duration text and the cooldown text independent positions.", 1, 1, 1, true},
+                " ",
+                {"The cooldown text also draws above the aura display, so both timers stay visible while the aura runs.", 1, 1, 1, true},
             }, sepPosRow))
 
             if style.separateTextPositions then

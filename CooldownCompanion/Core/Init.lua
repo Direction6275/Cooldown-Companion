@@ -34,7 +34,22 @@ CooldownCompanion._isResting = false
 ST.BUTTON_SIZE = 36
 ST.BUTTON_SPACING = 2
 ST.DEFAULT_BORDER_SIZE = 1
-ST.DEFAULT_STRATA_ORDER = {"cooldown", "auraGlow", "readyGlow", "chargeText", "assistedHighlight", "procGlow"}
+-- Configurable icon layers, lowest first. Order is the DEFAULT stack; a panel
+-- may reorder it (style.strataOrder). Reproduces the pre-rework look: the fill
+-- timer under the swipe, the glows just above it, texts above those, and the
+-- aura display on top.
+ST.DEFAULT_STRATA_ORDER = {
+    "iconFill", "cooldown", "readyGlow", "keyPressHighlight",
+    "chargeText", "assistedHighlight", "procGlow", "auraDisplay",
+}
+
+-- How many frame levels each slot occupies. Everything is one level except the
+-- aura display, which is a BLOCK: the layer and its AuraContainer at L, the
+-- slot button at L+1, the kit swipe at L+2, the aura/pandemic glows at L+3 and
+-- the kit's own text at L+4 (Core/AuraDisplay.lua). A slot placed above it has
+-- to clear that whole span, so levels accumulate spans rather than using the
+-- slot index. 8 reserves headroom against Blizzard growing the kit.
+ST.STRATA_SLOT_SPANS = { auraDisplay = 8 }
 
 -- Minimap icon setup using LibDataBroker and LibDBIcon
 local LDB = LibStub("LibDataBroker-1.1")

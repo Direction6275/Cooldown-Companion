@@ -146,15 +146,25 @@ local function GetProfileWideBarTexturePickerValue()
 end
 
 -- Strata ordering element definitions
+-- Dropdown labels. Order below matches ST.DEFAULT_STRATA_ORDER (lowest first);
+-- the section renders the stack top-down, so the list order is presentational
+-- only. "Aura Display" is the whole Blizzard slot subtree — aura glow,
+-- pandemic glow, aura duration swipe and aura text move together, because CC
+-- cannot reorder inside it.
 local strataElementLabels = {
+    iconFill = "Icon Fill Timer",
     cooldown = "Cooldown Swipe",
-    auraGlow = "Aura / Pandemic Glow",
     readyGlow = "Ready Glow",
+    keyPressHighlight = "Key Press Highlight",
     chargeText = "Text Overlay",
-    procGlow = "Proc Glow",
     assistedHighlight = "Assisted Highlight",
+    procGlow = "Proc Glow",
+    auraDisplay = "Aura Display",
 }
-local strataElementKeys = {"cooldown", "auraGlow", "readyGlow", "chargeText", "assistedHighlight", "procGlow"}
+local strataElementKeys = {
+    "iconFill", "cooldown", "readyGlow", "keyPressHighlight",
+    "chargeText", "assistedHighlight", "procGlow", "auraDisplay",
+}
 
 -- Anchor point options
 local anchorPoints = {

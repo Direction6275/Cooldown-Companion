@@ -334,7 +334,16 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
             widget:SetHideCountdownNumbers(true)
             widget:SetDrawBling(false)
             widget:EnableMouse(false)
-            if button.cooldown then
+            -- Stands in for the kit's duration swipe, which lives at the aura
+            -- display band + 2 — NOT alongside the spell's cooldown swipe.
+            -- Levelled here for the create case; ApplyStrataOrder re-pins it
+            -- on every restyle, so a reordered panel keeps the preview honest.
+            if not button._isBar and ST._ResolveStrataLevels then
+                local levels = ST._ResolveStrataLevels(button, style and style.strataOrder)
+                if levels.auraDisplay then
+                    widget:SetFrameLevel(levels.auraDisplay + 2)
+                end
+            elseif button.cooldown then
                 widget:SetFrameLevel(button.cooldown:GetFrameLevel())
             end
             button._auraSwipePreviewCooldown = widget

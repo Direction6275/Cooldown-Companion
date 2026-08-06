@@ -502,9 +502,10 @@ local function BuildSlotKit(slotButton)
     kit.barNameText:SetAlpha(0)
 
     -- Keybind replica (icon shells): show-only-while-active entries hide CC's
-    -- overlayFrame — and CC can't re-show it with aura state (secret in
-    -- combat) — so the kit re-renders the keybind text while the aura display
-    -- is the whole visible button. Base font template only; styled at bind.
+    -- pinnedTextFrame, which is where the keybind text lives — and CC can't
+    -- re-show it with aura state (secret in combat) — so the kit re-renders
+    -- the keybind text while the aura display is the whole visible button.
+    -- Base font template only; styled at bind.
     kit.keybindText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
     kit.keybindText:SetAlpha(0)
 
@@ -1763,14 +1764,15 @@ local function EnsureAuraLayer(button)
             button.overlayFrame:SetFrameLevel(layer:GetFrameLevel() + 10)
         end
     else
-        -- Above every configurable button element (LoC sits at baseLevel+7).
-        -- ApplyStrataOrder (ButtonFrame/Helpers.lua) keeps these two levels in
-        -- sync on restyles: CC's text overlay rides ABOVE the aura display so
-        -- count/keybind text stays readable while an aura is showing.
-        layer:SetFrameLevel(button:GetFrameLevel() + 8)
-        if button.overlayFrame then
-            button.overlayFrame:SetFrameLevel(button:GetFrameLevel() + 9)
-        end
+        -- Icon hosts: the aura display is a CONFIGURABLE layer, so its level
+        -- comes from the panel's strata order. ApplyStrataOrder
+        -- (ButtonFrame/Helpers.lua) is the single owner of every level on an
+        -- icon button; this asks it for one rather than keeping a second copy
+        -- of the arithmetic in sync by hand. It does NOT touch overlayFrame:
+        -- the text overlay is its own slot now, and CC's text that must
+        -- survive an active display lives on button.pinnedTextFrame.
+        local levels, top = ST._ResolveStrataLevels(button, button.style and button.style.strataOrder)
+        layer:SetFrameLevel(levels.auraDisplay or top)
     end
     return layer
 end
@@ -1781,8 +1783,9 @@ end
 -- inside initializeFrame — the sanctioned setup window — and never moved,
 -- re-leveled, or reparented afterwards. The container is pinned to the
 -- layer's frame level so the slot lands at layer+1, exactly where the
--- pre-PTR 7 design put it (the ApplyStrataOrder/EnsureAuraLayer overlay
--- coordination is unchanged). Visibility, alpha, and strata all reach the
+-- pre-PTR 7 design put it — but the layer's own level is now a configurable
+-- slot, so where that band SITS follows the panel's strata order.
+-- Visibility, alpha, and strata all reach the
 -- slot through plain parentage; a hidden container is inert (P1a) and
 -- re-registers + refreshes itself on show (OnShow_Intrinsic).
 -- Keyed by (button, unit), which makes record.unit IMMUTABLE: a record is for

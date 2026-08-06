@@ -512,16 +512,18 @@ local function ApplyGroupSettingPresetData(profile, group, mode, presetData)
         end
     end
 
-    -- Expand legacy 4-element strataOrder from older presets
+    -- Drop a strataOrder from an older layer set rather than trying to grow it.
+    -- This replaces the 4->6 expander from a1871266, which inserted the since
+    -- retired "auraGlow" key and would now produce an order that is both the
+    -- wrong length and unrecognized: rendering would fall back to the default
+    -- while the Custom Icon Strata checkbox still read ON.
+    --
+    -- A preset can also be imported after login, so this cannot rely on the
+    -- load-time pass in Core/Migrations.lua alone. Nil is the honest value: the
+    -- panel drops to the default order and the checkbox reflects that.
     local so = group.style.strataOrder
-    if type(so) == "table" and #so == 4 then
-        local cooldownPos
-        for i = 1, 4 do
-            if so[i] == "cooldown" then cooldownPos = i; break end
-        end
-        local insertAt = (cooldownPos or 0) + 1
-        table.insert(so, insertAt, "auraGlow")
-        table.insert(so, insertAt + 1, "readyGlow")
+    if type(so) == "table" and #so > 0 and not ST._IsUsableStrataOrder(so) then
+        group.style.strataOrder = nil
     end
 end
 

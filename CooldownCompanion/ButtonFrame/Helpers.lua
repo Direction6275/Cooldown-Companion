@@ -1090,31 +1090,80 @@ local function ResolveEffectiveItem(buttonData, requestLoad)
 end
 CooldownCompanion.ResolveEffectiveItem = ResolveEffectiveItem
 
--- Apply configurable strata (frame level) ordering to button sub-elements.
--- order: array of 6 keys or nil for default.
--- Index 1 = lowest layer (baseLevel+1), index 6 = highest (baseLevel+6).
--- Loss of Control is always baseLevel+7 (above all configurable elements).
-local function ApplyStrataOrder(button, order)
-    if not order or #order ~= #ST.DEFAULT_STRATA_ORDER then
+local STRATA_VALID_KEYS = {}
+for _, key in ipairs(ST.DEFAULT_STRATA_ORDER) do
+    STRATA_VALID_KEYS[key] = true
+end
+
+-- Will the renderer actually honor this saved order? Length alone is not
+-- enough: an old import can carry the right count with a retired key in it (the
+-- aura display replaced "auraGlow"), which would leave a layer unassigned.
+--
+-- Exported, because the profile normalizer and the preset-apply path have to
+-- test the SAME definition of valid. When they each kept their own length
+-- check, a saved order could be rejected here while both of those still
+-- believed it was fine, leaving the Custom Icon Strata checkbox reading ON with
+-- none of its values in effect.
+local function IsUsableStrataOrder(order)
+    if type(order) ~= "table" or #order ~= #ST.DEFAULT_STRATA_ORDER then
+        return false
+    end
+    local seen = {}
+    for _, key in ipairs(order) do
+        if not STRATA_VALID_KEYS[key] or seen[key] then
+            return false
+        end
+        seen[key] = true
+    end
+    return true
+end
+
+-- Resolve the frame level of every configurable icon layer.
+--
+-- Slots are NOT one level each: ST.STRATA_SLOT_SPANS gives the aura display a
+-- reserved band because its subtree occupies five levels (Core/Init.lua has
+-- the map). Levels therefore accumulate spans instead of using the slot index,
+-- which is what lets a slot sit genuinely ABOVE the whole aura display.
+--
+-- Returns (levels, top): a key -> level map, and the highest occupied level so
+-- the pinned elements above the stack derive from it instead of repeating a
+-- magic offset. THE single source of truth for icon button levels — callers
+-- outside this file (EnsureAuraLayer) ask here rather than computing their own.
+local function ResolveStrataLevels(button, order)
+    if not IsUsableStrataOrder(order) then
         order = ST.DEFAULT_STRATA_ORDER
     end
-    local baseLevel = button:GetFrameLevel()
+    local levels = {}
+    local cursor = button:GetFrameLevel()
+    for _, key in ipairs(order) do
+        cursor = cursor + 1
+        levels[key] = cursor
+        cursor = cursor + (ST.STRATA_SLOT_SPANS[key] or 1) - 1
+    end
+    return levels, cursor
+end
+
+-- Apply the resolved levels to a button's sub-elements.
+local function ApplyStrataOrder(button, order)
+    local levels, top = ResolveStrataLevels(button, order)
 
     -- Map element keys to their frames
     local frameMap = {
+        iconFill = {button.iconFill},
         cooldown = {button.cooldown},
         chargeText = {button.overlayFrame},
+        auraDisplay = {button.auraLayer},
         procGlow = {
             button.procGlow and button.procGlow.solidFrame,
             button.procGlow and button.procGlow.procFrame,
         },
-        auraGlow = {
-            button.auraGlow and button.auraGlow.solidFrame,
-            button.auraGlow and button.auraGlow.procFrame,
-        },
         readyGlow = {
             button.readyGlow and button.readyGlow.solidFrame,
             button.readyGlow and button.readyGlow.procFrame,
+        },
+        keyPressHighlight = {
+            button.keyPressHighlight and button.keyPressHighlight.solidFrame,
+            button.keyPressHighlight and button.keyPressHighlight.procFrame,
         },
         assistedHighlight = {
             button.assistedHighlight and button.assistedHighlight.solidFrame,
@@ -1123,36 +1172,46 @@ local function ApplyStrataOrder(button, order)
         },
     }
 
-    for i, key in ipairs(order) do
-        local frames = frameMap[key]
-        if frames then
+    for key, frames in pairs(frameMap) do
+        local level = levels[key]
+        if level then
             for _, frame in ipairs(frames) do
                 if frame then
-                    frame:SetFrameLevel(baseLevel + i)
+                    frame:SetFrameLevel(level)
                 end
             end
         end
     end
 
-    -- LoC always on top
-    if button.locCooldown then
-        button.locCooldown:SetFrameLevel(baseLevel + #ST.DEFAULT_STRATA_ORDER + 1)
+    -- Preview stand-ins ride INSIDE the aura display's band, at the offsets
+    -- their live counterparts occupy, so a config preview draws where the real
+    -- thing will. button.auraGlow is preview-only on 12.1: the live aura and
+    -- pandemic glows are the kit's, inside the aura display.
+    local auraLevel = levels.auraDisplay
+    if auraLevel then
+        if button.auraGlow then
+            if button.auraGlow.solidFrame then
+                button.auraGlow.solidFrame:SetFrameLevel(auraLevel + 3)
+            end
+            if button.auraGlow.procFrame then
+                button.auraGlow.procFrame:SetFrameLevel(auraLevel + 3)
+            end
+        end
+        if button._auraSwipePreviewCooldown then
+            button._auraSwipePreviewCooldown:SetFrameLevel(auraLevel + 2)
+        end
     end
 
-    -- Aura entries: the aura display layer sits above every configurable
-    -- element (and LoC), and CC's text overlay rides above IT so count and
-    -- keybind text stay readable while an aura display is showing. Mirrors
-    -- EnsureAuraLayer (Core/AuraDisplay.lua); keep the two in sync.
-    -- The overlay hoist is gated on the CURRENT entry, not on auraLayer
-    -- existing — pooled buttons keep the layer forever, and a reused host
-    -- showing a non-aura entry must honor the configured chargeText slot.
-    if button.auraLayer then
-        button.auraLayer:SetFrameLevel(baseLevel + #ST.DEFAULT_STRATA_ORDER + 2)
-        local buttonData = button.buttonData
-        if button.overlayFrame and buttonData
-            and (buttonData.auraTracking or buttonData.addedAs == "aura") then
-            button.overlayFrame:SetFrameLevel(baseLevel + #ST.DEFAULT_STRATA_ORDER + 3)
-        end
+    -- Pinned above the whole configurable stack, derived from its top rather
+    -- than hardcoded. Loss of Control is a "you cannot act" alert and must
+    -- never be buried, not even by an aura display. The pinned text host rides
+    -- above even that: it carries keybind text (owner ruling: never underneath
+    -- anything) and the countdown text when Separate Text Positions lifts it.
+    if button.locCooldown then
+        button.locCooldown:SetFrameLevel(top + 1)
+    end
+    if button.pinnedTextFrame then
+        button.pinnedTextFrame:SetFrameLevel(top + 2)
     end
 end
 
@@ -1241,6 +1300,8 @@ ST._SetIconAreaPoints = SetIconAreaPoints
 ST._SetBarAreaPoints = SetBarAreaPoints
 ST._AnchorBarCountText = AnchorBarCountText
 ST._ApplyStrataOrder = ApplyStrataOrder
+ST._ResolveStrataLevels = ResolveStrataLevels
+ST._IsUsableStrataOrder = IsUsableStrataOrder
 ST._ApplyEdgePositions = ApplyEdgePositions
 ST._ApplyBorderEdgePositions = ApplyBorderEdgePositions
 ST._ApplyIconTexCoord = ApplyIconTexCoord

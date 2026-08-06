@@ -239,6 +239,11 @@ local function SelectTextureValue(value, knownAvailable)
     return nil, false
 end
 
+-- Preview-replica path ONLY (ConfigSettings/ButtonPanelPreview.lua): mirror
+-- slots are replica frames with their own leveling, not real buttons, so they
+-- have no strata order to read. Live buttons must NOT call this — iconFill is
+-- a configurable slot there and ApplyStrataOrder owns its level. Two writers
+-- is exactly how the ready-glow clobber happened.
 local function ApplyIconFillLayer(button)
     if button and button.iconFill then
         local fillLevel = button:GetFrameLevel() + 1
@@ -568,6 +573,11 @@ local function ApplyAuraShellVisuals(button, buttonData)
     if button.locCooldown then button.locCooldown:SetAlpha(alpha) end
     if button.iconFill then button.iconFill:SetAlpha(alpha) end
     if button.overlayFrame then button.overlayFrame:SetAlpha(alpha) end
+    -- The pinned host hides with the rest of CC's chrome. A shell shows
+    -- nothing until the aura is up, and CC cannot read aura state to re-show
+    -- it, so the kit's shell keybind replica (Core/AuraDisplay.lua) stays the
+    -- one that renders while the display owns the button.
+    if button.pinnedTextFrame then button.pinnedTextFrame:SetAlpha(alpha) end
     SetGlowContainerShellAlpha(button.procGlow, alpha)
     SetGlowContainerShellAlpha(button.auraGlow, alpha)
     SetGlowContainerShellAlpha(button.readyGlow, alpha)
@@ -575,18 +585,49 @@ local function ApplyAuraShellVisuals(button, buttonData)
     SetGlowContainerShellAlpha(button.assistedHighlight, alpha)
 end
 
--- Countdown text hosting (12.1 compositing): by default the countdown region
--- stays inside the Cooldown frame, which sits BELOW the aura display — so an
--- active aura's display naturally occludes it. separateTextPositions hoists
--- it into the overlay frame ABOVE the aura display, so the cooldown and the
--- aura duration (drawn by the slot kit) show simultaneously.
+-- Build CC's aura glow container on demand. It renders the aura-glow and
+-- pandemic config previews and nothing else: the live glows belong to the slot
+-- kit inside the aura display, and ResolveIconGlowIntent (ButtonFrame/
+-- VisualState.lua) can only mark the aura intent active for a preview.
+--
+-- Must run BEFORE any tick reads the button, because every downstream consumer
+-- guards on the container existing — the intent resolver, UpdateIconModeGlows,
+-- ApplyStrataOrder and the shell alpha pass all skip a button without one. The
+-- preview-flag entry points in ButtonFrame/Preview.lua are that moment.
+local function EnsureAuraGlowContainer(button)
+    if not button or button._isBar then return nil end
+    if button.auraGlow then return button.auraGlow end
+
+    local style = button.style or {}
+    button.auraGlow = CreateGlowContainer(button, 32)
+    -- Same geometry and click-through UpdateButtonStyle applies to it, so a
+    -- container born mid-session matches one that had been there all along.
+    button.auraGlow.solidFrame:SetAllPoints()
+    ApplyEdgePositions(button.auraGlow.solidTextures, button, style.auraGlowSize or 2)
+    FitHighlightFrame(button.auraGlow.procFrame, button, style.auraGlowSize or 32)
+    SetFrameClickThroughRecursive(button.auraGlow.solidFrame, true, true)
+    SetFrameClickThroughRecursive(button.auraGlow.procFrame, true, true)
+    -- Re-level: the new frames need their slot in the aura display's band.
+    ApplyStrataOrder(button, style.strataOrder)
+    return button.auraGlow
+end
+
+-- Countdown text hosting. The region lives on the TEXT OVERLAY layer, never in
+-- the Cooldown frame: that keeps "Cooldown Swipe" a pure swipe, so raising it
+-- over an aura display moves the swipe alone instead of dragging the countdown
+-- on top of the aura's own duration text.
+--
+-- separateTextPositions lifts it to the pinned host instead, which clears the
+-- whole aura display band, so the spell cooldown and the aura duration (drawn
+-- by the slot kit) show simultaneously. Without that opt-in the aura display
+-- takes the button over, which is the default.
 local function ApplyCooldownTextHost(button, buttonData, style)
     local region = button._cdTextRegion
     if not region then return end
-    local wantOverlay = style.separateTextPositions == true
+    local wantPinned = style.separateTextPositions == true
         and (buttonData.auraTracking or buttonData.addedAs == "aura")
         and not buttonData.isPassive
-    local host = wantOverlay and button.overlayFrame or button.cooldown
+    local host = (wantPinned and button.pinnedTextFrame) or button.overlayFrame
     if host and region:GetParent() ~= host then
         region:SetParent(host)
     end
@@ -686,8 +727,10 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Proc glow elements (solid border + animated glow + lazy dash/spark pools)
     button.procGlow = CreateGlowContainer(button, style.procGlowSize or 32)
 
-    -- Aura active glow elements (solid border + animated glow + lazy dash pool)
-    button.auraGlow = CreateGlowContainer(button, 32)
+    -- No aura glow container here: on 12.1 the live aura and pandemic glows are
+    -- the slot kit's, inside the aura display. CC's container serves the config
+    -- preview alone, so it is built on demand by EnsureAuraGlowContainer. The
+    -- config mirror already builds its replica containers the same way.
 
     -- Ready glow elements (glow while off cooldown)
     button.readyGlow = CreateGlowContainer(button, 32)
@@ -709,10 +752,19 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         button._cdTextRegion = region
     end
 
-    -- Stack count text (for items) — on overlay frame so it renders above cooldown swipe
+    -- Text Overlay layer: stack/charge count, aura stack count, and the
+    -- countdown text. Its position in the stack is configurable (chargeText).
     button.overlayFrame = CreateFrame("Frame", nil, button)
     button.overlayFrame:SetAllPoints()
     button.overlayFrame:EnableMouse(false)
+
+    -- Text that must survive an active aura display, pinned above the whole
+    -- configurable stack by ApplyStrataOrder: keybind text always, plus the
+    -- countdown text when separateTextPositions lifts it. Created before
+    -- ApplyCooldownTextHost, which may choose it as the host.
+    button.pinnedTextFrame = CreateFrame("Frame", nil, button)
+    button.pinnedTextFrame:SetAllPoints()
+    button.pinnedTextFrame:EnableMouse(false)
 
     ApplyCooldownTextHost(button, buttonData, style)
 
@@ -740,8 +792,11 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local asYOff = style.auraStackYOffset or 2
     button.auraStackCount:SetPoint(asAnchor, asXOff, asYOff)
 
-    -- Keybind text overlay
-    button.keybindText = button.overlayFrame:CreateFontString(nil, "OVERLAY")
+    -- Keybind text: on the pinned host, never the Text Overlay layer. It tells
+    -- you what to press, so it stays readable whatever is drawn over the icon
+    -- (owner ruling). The kit's replica covers shells only, where CC's chrome
+    -- including this host is hidden outright.
+    button.keybindText = button.pinnedTextFrame:CreateFontString(nil, "OVERLAY")
     do
         ApplyFontStyle(button.keybindText, style, "keybind", 10)
         local anchor = style.keybindAnchor or "TOPRIGHT"
@@ -753,9 +808,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         button.keybindText:SetShown(style.showKeybindText and text ~= nil)
     end
 
-    -- Apply configurable strata ordering (LoC always on top)
+    -- Every configurable level, plus the pinned elements above them.
     ApplyStrataOrder(button, style.strataOrder)
-    ApplyIconFillLayer(button)
 
     -- Store button data
     button.index = index
@@ -818,6 +872,9 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     end
     if button.overlayFrame then
         SetFrameClickThroughRecursive(button.overlayFrame, true, true)
+    end
+    if button.pinnedTextFrame then
+        SetFrameClickThroughRecursive(button.pinnedTextFrame, true, true)
     end
     if button.assistedHighlight then
         if button.assistedHighlight.solidFrame then
@@ -1337,9 +1394,10 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     ApplyDurationFormatToCooldown(button.cooldown, style)
     ApplyDefaultCooldownSwipeStyle(button, style)
 
-    -- Update cooldown font settings. The countdown region may be hosted in
-    -- the overlay frame (separateTextPositions on aura entries), so use the
-    -- stored reference — the Cooldown frame's region list can't be re-fetched.
+    -- Update cooldown font settings. The countdown region is always hosted
+    -- outside the Cooldown frame now (overlay frame, or the pinned host when
+    -- separateTextPositions lifts it), so use the stored reference — the
+    -- Cooldown frame's region list can't be re-fetched.
     local region = button._cdTextRegion
     if region and region.SetFont then
         ApplyFontStyle(region, style, "cooldown")
@@ -1427,9 +1485,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         RefreshKeyPressHighlightEnrollment(button)
     end
 
-    -- Apply configurable strata ordering (LoC always on top)
+    -- Every configurable level, plus the pinned elements above them.
     ApplyStrataOrder(button, style.strataOrder)
-    ApplyIconFillLayer(button)
     CooldownCompanion:UpdateAuraTextureVisual(button)
 
     -- Click-through is always enabled (clicks always pass through for camera movement)
@@ -1457,6 +1514,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     end
     if button.overlayFrame then
         SetFrameClickThroughRecursive(button.overlayFrame, true, true)
+    end
+    if button.pinnedTextFrame then
+        SetFrameClickThroughRecursive(button.pinnedTextFrame, true, true)
     end
     if button.assistedHighlight then
         if button.assistedHighlight.solidFrame then
@@ -1494,22 +1554,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         end
     end
 
-    -- Re-set aura/ready glow frame levels after strata order
-    if button.auraGlow then
-        local auraGlowLevel = button.cooldown:GetFrameLevel() + 1
-        button.auraGlow.solidFrame:SetFrameLevel(auraGlowLevel)
-        button.auraGlow.procFrame:SetFrameLevel(auraGlowLevel)
-    end
-    if button.readyGlow then
-        local readyGlowLevel = button.cooldown:GetFrameLevel() + 1
-        button.readyGlow.solidFrame:SetFrameLevel(readyGlowLevel)
-        button.readyGlow.procFrame:SetFrameLevel(readyGlowLevel)
-    end
-    if button.keyPressHighlight then
-        local kphLevel = button.cooldown:GetFrameLevel() + 1
-        button.keyPressHighlight.solidFrame:SetFrameLevel(kphLevel)
-        button.keyPressHighlight.procFrame:SetFrameLevel(kphLevel)
-    end
+    -- (Ready glow, key press highlight and the aura glow container used to be
+    -- re-pinned to cooldown+1 here, silently overwriting the levels
+    -- ApplyStrataOrder had just assigned. ApplyStrataOrder owns them now.)
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
     if showTooltips then
@@ -1541,6 +1588,7 @@ ST._UpdateIconModeVisuals = UpdateIconModeVisuals
 ST._UpdateIconModeGlows = UpdateIconModeGlows
 ST._ApplyIconCountTextStyle = ApplyCountTextStyle
 ST._ApplyAuraShellVisuals = ApplyAuraShellVisuals
+ST._EnsureAuraGlowContainer = EnsureAuraGlowContainer
 ST._ClearIconFillVisualState = ClearIconFillVisualState
 -- Icon-fill plumbing shared with the config mirror's cooldown preview
 -- (frame-agnostic: they read only .icon/.iconFill/.cooldown/.style).

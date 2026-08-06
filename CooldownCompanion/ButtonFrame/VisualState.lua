@@ -278,8 +278,13 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
     -- only writer that can ever reach this branch.
     local auraIndicatorEnabled = ResolveAuraIndicatorEnabled(buttonData, style)
 
+    -- "no-container" is the RESTING state, not a fault: because the container
+    -- is preview-only it is built on demand (IconMode EnsureAuraGlowContainer,
+    -- driven by the preview-flag setters), so a button that has never previewed
+    -- an aura or pandemic glow simply has none. Reading this in a diagnostic
+    -- snapshot means "nothing to draw here", not "a widget went missing".
     if not button.auraGlow then
-        SetGlowIntent(aura, false, false, "missing-widget")
+        SetGlowIntent(aura, false, false, "no-container")
         aura.auraIndicatorEnabled = auraIndicatorEnabled
     elseif button._pandemicPreview == true
         and IsPandemicEffectWanted(buttonData, style) then

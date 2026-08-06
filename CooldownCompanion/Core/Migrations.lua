@@ -563,6 +563,60 @@ local function NormalizePromotedPassiveCooldownTriggerConditions(buttonData)
     return changed
 end
 
+-- A saved strataOrder from an older layer set no longer matches the current
+-- one. ApplyStrataOrder already falls back to the default when the length is
+-- wrong, but leaving the stale array in the profile makes the Custom Icon
+-- Strata checkbox read as ON while none of its values are in effect. Dropping
+-- it turns the checkbox off, so the panel says what it is actually doing.
+--
+-- Deliberately NOT a value-preserving migration: the owner accepted the reset
+-- when the set changed from 6 layers to 8 (the aura display replaced a slot
+-- that never rendered, and two new layers joined).
+local function ClearInvalidStrataOrders(profile)
+    if type(profile) ~= "table" then
+        return false
+    end
+    local changed = false
+
+    local function clear(styleTable)
+        if type(styleTable) ~= "table" then return end
+        local order = styleTable.strataOrder
+        -- An empty table is the config's mid-edit state (some layers still
+        -- unassigned) and must survive. Anything else is judged by the
+        -- renderer's own test, so this cannot drift from what actually gets
+        -- honored: a right-length order carrying a retired key is stale too.
+        if type(order) == "table" and #order > 0 and not ST._IsUsableStrataOrder(order) then
+            styleTable.strataOrder = nil
+            changed = true
+        end
+    end
+
+    clear(profile.globalStyle)
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            if type(group) == "table" then
+                clear(group.style)
+            end
+        end
+    end
+    -- Presets too, like every other normalizer in this file. They are a
+    -- persistent store the one-shot profile migrations never reached, which is
+    -- exactly why a1871266 had to add an inline expander on the apply path
+    -- after the 4->6 change. Cleaning them here is what lets that expander go.
+    if type(profile.groupSettingPresets) == "table" then
+        for _, presetStore in pairs(profile.groupSettingPresets) do
+            if type(presetStore) == "table" then
+                for _, presetData in pairs(presetStore) do
+                    if type(presetData) == "table" then
+                        clear(presetData.style)
+                    end
+                end
+            end
+        end
+    end
+    return changed
+end
+
 local function NormalizePassiveCooldownButtons(profile)
     if type(profile) ~= "table" or type(profile.groups) ~= "table" then
         return false
@@ -2354,6 +2408,7 @@ function CooldownCompanion:RunAllMigrations()
         self:Print("Updated for 12.1: " .. table.concat(parts, "; ") .. ".")
     end
     NormalizePassiveCooldownButtons(self.db and self.db.profile)
+    ClearInvalidStrataOrders(self.db and self.db.profile)
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
     BackfillAuraDurationSwipeSettings(self.db and self.db.profile, checkpointState and checkpointState.auraDurationSwipe)
     StripRetiredSwipeEdgeKeys(self.db and self.db.profile)
