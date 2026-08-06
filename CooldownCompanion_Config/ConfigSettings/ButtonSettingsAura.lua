@@ -437,6 +437,17 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
             else
                 buttonData.pandemicMarker = value and true or false
             end
+            -- Turning it off drops this entry's command-center control, so
+            -- disarm its preview or the stand-in strands with no toggle left.
+            -- Entry-scoped check on purpose: a panel-wide marker preview is
+            -- still legitimately offered, and clearing through the entry API
+            -- would cancel it too.
+            if not value
+                and CooldownCompanion:IsButtonConditionalVisualPreviewActive(
+                    CS.selectedGroup, CS.selectedButton, "pandemic_marker") then
+                CooldownCompanion:SetConditionalVisualPreviewActive(
+                    CS.selectedGroup, CS.selectedButton, "pandemic_marker", false)
+            end
             RefreshAuraConfig()
         end,
     })
@@ -463,6 +474,14 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
                 buttonData.pandemicEffect = nil
             else
                 buttonData.pandemicEffect = value and true or false
+            end
+            -- Same stranded-preview rule as the marker above and as the
+            -- custom-bar twin. Unconditional here because this is a per-button
+            -- FLAG, not the shared conditional store: clearing it turns the
+            -- fake glow off on this entry alone, which is exactly what an
+            -- entry that just opted out should show under either scope.
+            if not value and CooldownCompanion.SetPandemicPreview then
+                CooldownCompanion:SetPandemicPreview(CS.selectedGroup, CS.selectedButton, false)
             end
             RefreshAuraConfig()
         end,

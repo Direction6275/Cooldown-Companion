@@ -446,6 +446,22 @@ function CooldownCompanion:IsPreviewFlagActive(groupId, buttonIndex, previewFlag
     end)
 end
 
+--- Entry-scoped ONLY: true when this exact button carries its own conditional
+--- preview of `previewKind`. The general query below deliberately answers true
+--- for a panel-wide preview too, which is right for the chooser but wrong for
+--- a per-entry setting deciding whether to cancel something — passing a
+--- buttonIndex to SetConditionalVisualPreviewActive clears the panel-wide
+--- preview as a side effect of the entry/panel exclusivity rule, so one entry
+--- opting out would silently stop a preview covering the whole panel.
+function CooldownCompanion:IsButtonConditionalVisualPreviewActive(groupId, buttonIndex, previewKind)
+    if not (groupId and buttonIndex) then
+        return false
+    end
+    local groupButtons = activeConditionalButtonPreviews[groupId]
+    local buttonState = groupButtons and groupButtons[buttonIndex]
+    return (buttonState and buttonState.kind == previewKind) and true or false
+end
+
 function CooldownCompanion:IsConditionalVisualPreviewActive(groupId, buttonIndex, previewKind)
     local groupState = activeConditionalGroupPreviews[groupId]
     if groupState and groupState.kind == previewKind then
