@@ -277,8 +277,8 @@ local function TryAddSpell(input, isPetSpell, forceAura)
             forceAura = true
             routedToAura = true
         end
-        -- AuraDisplay binds icon, bar, and explicitly opted-in Texture panels;
-        -- refuse aura adds elsewhere instead of creating a dead entry.
+        -- AuraDisplay binds primary Aura entries in icon, bar, and Texture
+        -- panels; refuse aura adds elsewhere instead of creating a dead entry.
         if addAsAura then
             if not TargetPanelAcceptsAuraEntries(CS.selectedGroup) then
                 PrintAuraPanelUnsupported()

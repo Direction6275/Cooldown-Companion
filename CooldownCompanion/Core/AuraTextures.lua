@@ -684,24 +684,26 @@ function CooldownCompanion:IsTexturePanelGroup(group)
     return type(group) == "table" and group.displayMode == "textures"
 end
 
--- Texture Aura display is deliberately gated by a fresh, explicit field.
--- Pre-12.1 profiles can retain auraTracking/addedAs data on Texture panels
--- from the retired implementation; those flags must not silently reactivate.
+-- Primary Aura entries in Texture panels are intrinsically aura-controlled.
+-- Ordinary spell entries retain the explicit Texture-only opt-in so legacy
+-- auraTracking residue cannot silently reactivate them.
 function CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)
     return self:IsTexturePanelGroup(group)
         and type(buttonData) == "table"
         and buttonData.type == "spell"
-        and buttonData.textureAuraDisplayEnabled == true
+        and (buttonData.addedAs == "aura"
+            or buttonData.textureAuraDisplayEnabled == true)
 end
 
 -- Texture-only tracking deliberately does not set the general auraTracking
 -- flag: doing so would silently turn tracking back on if the entry were later
 -- converted to an icon or bar. Resolve the same ordered candidate identity
--- directly while the Texture opt-in is active instead.
+-- directly while the Texture Aura display is active instead.
 function CooldownCompanion:ResolveTexturePanelAuraSpellID(buttonData)
     if not (type(buttonData) == "table"
         and buttonData.type == "spell"
-        and buttonData.textureAuraDisplayEnabled == true
+        and (buttonData.addedAs == "aura"
+            or buttonData.textureAuraDisplayEnabled == true)
         and self.GetOrderedAuraCandidateSpellIDs) then
         return nil
     end
@@ -727,9 +729,9 @@ function CooldownCompanion:NormalizeTexturePanelAuraIndicatorSettings(group, cre
     return changed
 end
 
--- Mutation helper for explicit user actions that place a primary Aura entry
--- into a Texture panel (new add, move, or panel conversion). Never call this
--- while normalizing/loading a profile: unmarked legacy placements stay dormant.
+-- Mutation helper for user actions that place a primary Aura entry into a
+-- Texture panel (new add, move, or panel conversion). Primary Aura entries do
+-- not have an opt-out in Texture panels; ordinary spell entries still do.
 function CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(group, buttonData)
     if not (self:IsTexturePanelGroup(group)
         and type(buttonData) == "table"
@@ -738,17 +740,9 @@ function CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(group, buttonDa
         return false
     end
 
-    -- nil means this placement has never made a Texture-specific choice. A
-    -- stored false is an explicit opt-out and must survive later moves or mode
-    -- conversions instead of being silently enabled again.
-    if buttonData.textureAuraDisplayEnabled == nil then
-        buttonData.textureAuraDisplayEnabled = true
-    end
-    local enabled = buttonData.textureAuraDisplayEnabled == true
-    if enabled then
-        self:NormalizeTexturePanelAuraIndicatorSettings(group, true)
-    end
-    return enabled
+    buttonData.textureAuraDisplayEnabled = true
+    self:NormalizeTexturePanelAuraIndicatorSettings(group, true)
+    return true
 end
 
 function CooldownCompanion:IsTriggerPanelGroup(group)

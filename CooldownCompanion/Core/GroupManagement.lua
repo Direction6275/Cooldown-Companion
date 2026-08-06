@@ -1350,8 +1350,8 @@ function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
     end
 
     -- Primary aura entries only display through the aura system, which binds
-    -- to icon, bar, and explicitly opted-in Texture panels; refuse conversions
-    -- that would strand them.
+    -- to icon, bar, and Texture panels; refuse conversions that would strand
+    -- them.
     if oldMode ~= newMode
         and newMode ~= "icons"
         and newMode ~= "bars"

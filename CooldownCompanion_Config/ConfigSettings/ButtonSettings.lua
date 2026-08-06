@@ -64,7 +64,8 @@ local function EntryOffersAuraTab(group, buttonData)
     local displayMode = group and group.displayMode or "icons"
     return displayMode == "icons"
         or displayMode == "bars"
-        or (displayMode == "textures" and buttonData.textureAuraDisplayEnabled == true)
+        or (displayMode == "textures"
+            and CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData))
 end
 
 local function BuildButtonSettingsTabs(group, buttonData)
@@ -223,9 +224,8 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
     local validEvents = CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData)
     if group and group.displayMode == "textures" then
         -- Texture-only aura tracking deliberately does not set the general
-        -- auraTracking flag. Make this group's sound surface follow the
-        -- explicit Texture opt-in instead, and do not advertise aura events
-        -- while the active-only display is explicitly disabled.
+        -- auraTracking flag. Make this group's sound surface follow Texture
+        -- Aura display ownership instead, including the spell-entry opt-in.
         local textureAuraEnabled = CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)
         if textureAuraEnabled then
             validEvents = validEvents or {}

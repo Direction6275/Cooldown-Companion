@@ -2268,8 +2268,9 @@ function RunAuraRebind()
     deferNoteShown = false
 
     -- Collect wanted bindings from live buttons. Icon/bar behavior keeps its
-    -- existing aura flags. Texture panels require the new explicit opt-in so
-    -- retained pre-12.1 aura data stays dormant; Trigger/Text remain excluded.
+    -- existing aura flags. Texture panels always bind primary Aura entries and
+    -- require an explicit opt-in for ordinary spells, so retained pre-12.1
+    -- auraTracking residue stays dormant; Trigger/Text remain excluded.
     local wanted = {}
     for groupId, frame in pairs(self.groupFrames) do
         local group = self.db.profile.groups[groupId]

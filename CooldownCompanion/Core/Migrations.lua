@@ -1366,10 +1366,11 @@ local function MigrateAuraTrackingRebuild(self, profile)
         for _, group in pairs(groups) do
             local buttons = type(group) == "table" and group.buttons or nil
             if type(buttons) == "table" then
-                -- Icon/bar panels compose their existing aura display. Texture
-                -- entries are supported only with the new explicit opt-in;
-                -- retained legacy flags and stored aura trigger clauses stay
-                -- dormant and are only counted, never moved.
+                -- Icon/bar panels compose their existing aura display. Primary
+                -- Aura entries in Texture panels are always enabled; ordinary
+                -- spell entries require the explicit Texture opt-in. Retained
+                -- auraTracking flags and stored aura trigger clauses otherwise
+                -- stay dormant and are only counted, never moved.
                 local displayMode = group.displayMode or "icons"
                 local standardAuraCapable = displayMode == "icons" or displayMode == "bars"
                 for _, buttonData in ipairs(buttons) do
@@ -1383,6 +1384,9 @@ local function MigrateAuraTrackingRebuild(self, profile)
                         local isTexturePanel = displayMode == "textures"
                         local textureAuraChoice
                         if isTexturePanel then
+                            if buttonData.type == "spell" and buttonData.addedAs == "aura" then
+                                buttonData.textureAuraDisplayEnabled = true
+                            end
                             textureAuraChoice = buttonData.textureAuraDisplayEnabled
                             if textureAuraChoice == true then
                                 if self:NormalizeTexturePanelAuraIndicatorSettings(group, false) then

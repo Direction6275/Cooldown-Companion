@@ -84,10 +84,10 @@ local function SyncDerivedAuraUnit(buttonData)
     end
 end
 
--- Shared with the Settings tab's Show Conditions row. The Texture-specific
--- opt-in stays an explicit boolean so legacy nil placements remain dormant,
--- while enabling preserves the same candidate inference and derived-unit
--- normalization the Aura tab used when it owned the toggle.
+-- Shared with the Settings tab's Show Conditions row for ordinary spell
+-- entries. Primary Aura entries are always enabled in Texture panels; layered
+-- spell entries retain the explicit opt-in so legacy nil placements stay
+-- dormant.
 local TEXTURE_INDICATOR_PREVIEW_KEYS = { "proc", "aura", "ready", "unusable" }
 local STANDARD_TEXTURE_INDICATOR_ADVANCED_KEYS = {
     "textureIndicator_proc",
@@ -96,7 +96,8 @@ local STANDARD_TEXTURE_INDICATOR_ADVANCED_KEYS = {
 }
 
 local function SetTexturePanelAuraDisplayEnabled(group, buttonData, value, groupId)
-    buttonData.textureAuraDisplayEnabled = value == true
+    local enabled = buttonData.addedAs == "aura" or value == true
+    buttonData.textureAuraDisplayEnabled = enabled
     if groupId then
         -- The applicable preview family changes with this toggle. Clear every
         -- Texture preview flag now so a hidden command-center control cannot
@@ -105,7 +106,7 @@ local function SetTexturePanelAuraDisplayEnabled(group, buttonData, value, group
             CooldownCompanion:SetGroupTextureIndicatorPreview(groupId, indicatorKey, false)
         end
     end
-    if value then
+    if enabled then
         -- Aura control replaces the standard Texture indicator rows with one
         -- inline Aura section. Retire any standard advanced popout that was
         -- left open across the entry/panel scope switch so it cannot keep
@@ -260,7 +261,8 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
         })
     end
 
-    if (isTexturePanel and buttonData.textureAuraDisplayEnabled ~= true)
+    if (isTexturePanel
+            and not CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData))
         or (not isTexturePanel and not (isStandalone or buttonData.auraTracking)) then
         return
     end

@@ -670,8 +670,8 @@ function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData)
         return "Texture Panels can only hold one entry. Remove the current entry first if you want to replace it."
     end
     -- Primary aura entries (addedAs == "aura") only display through the aura
-    -- system, which binds to icon, bar, and explicitly opted-in Texture
-    -- panels; refuse moving them anywhere else. Ordinary spell entries that
+    -- system, which binds to icon, bar, and Texture panels; refuse moving them
+    -- anywhere else. Ordinary spell entries that
     -- merely have aura tracking enabled keep a valid cooldown display and
     -- stay movable. entryData is a single
     -- buttonData table or an array of them (move paths pass it; add paths

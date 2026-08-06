@@ -2138,6 +2138,15 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         return false
     end
 
+    -- A primary Aura entry in a Texture panel has exactly one visibility rule:
+    -- Blizzard shows its texture while the aura is active. That rule is always
+    -- on, so this entry has no configurable Show Conditions section.
+    local hideShowConditions = not isBatch
+        and isTexturePanel
+        and buttonData.type == "spell"
+        and buttonData.addedAs == "aura"
+
+    if not hideShowConditions then
     local visKey = isBatch
         and (CS.selectedGroup .. "_batch_visibility")
         or  (CS.selectedGroup .. "_" .. CS.selectedButton .. "_visibility")
@@ -2179,10 +2188,11 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         totalRows = totalRows + rows
     end
 
-    -- A Texture panel's presence-only Aura display is itself a show
-    -- condition, so its opt-in lives here rather than in the Aura tab. The
-    -- panel can only hold one entry, which keeps this out of the batch path.
-    if not isBatch and isTexturePanel and buttonData.type == "spell" then
+    -- Ordinary Texture spell entries may layer presence-only Aura display onto
+    -- their spell behavior. Primary Aura entries are always Aura-controlled,
+    -- so only spell entries receive this opt-in.
+    if not isBatch and isTexturePanel and buttonData.type == "spell"
+        and buttonData.addedAs ~= "aura" then
         AddFamily(1, function(column)
             AddVisibilityRow(column, "Show Texture While Aura Active", "textureAuraDisplayEnabled", {
                 tooltip = {
@@ -2644,6 +2654,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     end
 
     end -- not visCollapsed
+    end -- not hideShowConditions
 
     if insertBeforeTalents then
         insertBeforeTalents()
