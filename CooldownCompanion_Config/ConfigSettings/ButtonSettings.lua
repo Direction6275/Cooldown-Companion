@@ -412,15 +412,6 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
             end
         end)
 
-        if eventKey == "onAuraApplied" then
-            -- Anchor args are a placeholder - AnchorRowBadge re-points the
-            -- button onto the end of the row's label.
-            AnchorRowBadge(row, CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0, {
-                "Aura Sounds",
-                {"Aura Applied, Aura Stack Gained, and Aura Removed play when the tracked aura is gained, gains a stack, or is removed. Handled by the game so they work everywhere.", 1, 1, 1, true},
-            }, infoButtons))
-        end
-
         return row
     end
 
