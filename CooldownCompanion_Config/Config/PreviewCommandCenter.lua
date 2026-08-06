@@ -371,6 +371,13 @@ local function TextureIndicatorEnabled(group, indicatorKey)
     return type(config) == "table" and config.enabled and true or false
 end
 
+local function TextureAuraDisplayEnabled(group)
+    local buttonData = group and group.buttons and group.buttons[1] or nil
+    return CooldownCompanion.IsTexturePanelAuraDisplayEnabled
+        and CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)
+        or false
+end
+
 local function AnyTriggerEffectEnabled(group)
     local effects = CooldownCompanion.GetTriggerPanelEffectSettings
         and CooldownCompanion:GetTriggerPanelEffectSettings(group)
@@ -616,8 +623,21 @@ local CONTROLS = {
         group = GROUP_EFFECTS,
         modes = { textures = true },
         indicatorKey = "proc",
+        excludesTextureAuraDisplay = true,
         settings = { tab = "effects", key = "textureIndicator_proc" },
         preview = TextureIndicatorPreview("proc"),
+    },
+    {
+        id = "textureAura",
+        label = "Preview Aura Effect",
+        group = GROUP_EFFECTS,
+        modes = { textures = true },
+        indicatorKey = "aura",
+        requiresTextureAuraDisplay = true,
+        -- Aura-controlled Texture options live directly in the Indicators
+        -- section; there is no advanced side panel to open.
+        settings = { tab = "effects", uncollapse = "effects_textureIndicators" },
+        preview = TextureIndicatorPreview("aura"),
     },
     {
         id = "textureReady",
@@ -625,6 +645,7 @@ local CONTROLS = {
         group = GROUP_EFFECTS,
         modes = { textures = true },
         indicatorKey = "ready",
+        excludesTextureAuraDisplay = true,
         settings = { tab = "effects", key = "textureIndicator_ready" },
         preview = TextureIndicatorPreview("ready"),
     },
@@ -634,6 +655,7 @@ local CONTROLS = {
         group = GROUP_EFFECTS,
         modes = { textures = true },
         indicatorKey = "unusable",
+        excludesTextureAuraDisplay = true,
         settings = { tab = "effects", key = "textureIndicator_unusable" },
         preview = TextureIndicatorPreview("unusable"),
     },
@@ -803,6 +825,12 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
         return false
     end
     if control.indicatorKey and not TextureIndicatorEnabled(group, control.indicatorKey) then
+        return false
+    end
+    if control.requiresTextureAuraDisplay and not TextureAuraDisplayEnabled(group) then
+        return false
+    end
+    if control.excludesTextureAuraDisplay and TextureAuraDisplayEnabled(group) then
         return false
     end
     if control.requiresTriggerEffect and not AnyTriggerEffectEnabled(group) then

@@ -1291,7 +1291,8 @@ end
 -- pass stopped wiping aura-removed sounds, gained the lingering-option and
 -- dead-key clears, and began mapping bar stack displays onto the split
 -- vocabulary; renamed again when the sound strip moved onto the shared
--- SoundAlerts rule.
+-- SoundAlerts rule; gen 4 normalizes the fresh active-only Texture aura
+-- indicator by dropping unsupported live-era missing/combat qualifiers.
 -- bar aura effect generations: from _cdcBarAuraGlowMigrated (size resets
 -- and custom-bar traversal), then _cdcBarAuraEffectMigrated, then
 -- _cdcBarAuraEffect2Migrated (all custom-bar storage shapes, the seed
@@ -1301,8 +1302,8 @@ end
 -- observation, not a transform — survives clears so the notice prints
 -- once) and _cdcFlattenedFolderNotice (a notice accumulator, not a guard).
 local AURA_REBUILD_SENTINEL = {
-    current = "_cdcAuraRebuild3Migrated",
-    retired = { "_cdcAuraRebuildMigrated", "_cdcAuraRebuild2Migrated" },
+    current = "_cdcAuraRebuild4Migrated",
+    retired = { "_cdcAuraRebuildMigrated", "_cdcAuraRebuild2Migrated", "_cdcAuraRebuild3Migrated" },
 }
 -- bar aura effect generations: gen 4 added the custom-bar entry strip of
 -- the retired pandemicBar* families (the Phase 3 pandemic retirement).
@@ -1358,18 +1359,19 @@ local function MigrateAuraTrackingRebuild(self, profile)
     local counts = {
         hideActive = 0, hidePandemic = 0, keepSwipe = 0, stackModes = 0,
         threshold = 0, maxGlow = 0, soundForm = 0, mixed = 0, unit = 0,
-        dormantPlacement = 0,
+        dormantPlacement = 0, textureAuraQualifier = 0,
     }
     local groups = profile.groups
     if type(groups) == "table" then
         for _, group in pairs(groups) do
             local buttons = type(group) == "table" and group.buttons or nil
             if type(buttons) == "table" then
-                -- Only icon and bar panels compose a 12.1 aura display;
-                -- aura tracking and stored aura trigger clauses elsewhere
-                -- are dormant by design and only counted, never moved.
+                -- Icon/bar panels compose their existing aura display. Texture
+                -- entries are supported only with the new explicit opt-in;
+                -- retained legacy flags and stored aura trigger clauses stay
+                -- dormant and are only counted, never moved.
                 local displayMode = group.displayMode or "icons"
-                local auraCapable = displayMode == "icons" or displayMode == "bars"
+                local standardAuraCapable = displayMode == "icons" or displayMode == "bars"
                 for _, buttonData in ipairs(buttons) do
                     if type(buttonData) == "table" then
                         MigrateEntryAuraResidue(self, buttonData, counts)
@@ -1378,7 +1380,21 @@ local function MigrateAuraTrackingRebuild(self, profile)
                         if isAuraEntry then
                             MigrateAuraEntry(self, buttonData, counts)
                         end
-                        if not auraCapable then
+                        local isTexturePanel = displayMode == "textures"
+                        local textureAuraChoice
+                        if isTexturePanel then
+                            textureAuraChoice = buttonData.textureAuraDisplayEnabled
+                            if textureAuraChoice == true then
+                                if self:NormalizeTexturePanelAuraIndicatorSettings(group, false) then
+                                    counts.textureAuraQualifier = counts.textureAuraQualifier + 1
+                                end
+                            end
+                        end
+                        local auraEntryCapable = standardAuraCapable
+                            or textureAuraChoice == true
+                        local auraEntryPlacementUnsupported = not auraEntryCapable
+                            and not (isTexturePanel and textureAuraChoice == false)
+                        if not auraEntryCapable or not standardAuraCapable then
                             -- The singular entry-level key is a storage form
                             -- in its own right, not just a clause spelling:
                             -- HasTriggerConditionConfig tests it first, and
@@ -1398,7 +1414,8 @@ local function MigrateAuraTrackingRebuild(self, profile)
                                     end
                                 end
                             end
-                            if isAuraEntry or hasAuraClause then
+                            if (isAuraEntry and auraEntryPlacementUnsupported)
+                                or (hasAuraClause and not standardAuraCapable) then
                                 counts.dormantPlacement = counts.dormantPlacement + 1
                             end
                         end
@@ -1418,6 +1435,10 @@ local function MigrateAuraTrackingRebuild(self, profile)
     if counts.soundForm > 0 then dropped[#dropped + 1] = ("aura sounds needing a file-based sound (x%d)"):format(counts.soundForm) end
     if counts.mixed > 0 then dropped[#dropped + 1] = ("mixed buff/debuff aura lists trimmed (x%d)"):format(counts.mixed) end
     if counts.unit > 0 then dropped[#dropped + 1] = ("tracked-unit corrections (x%d)"):format(counts.unit) end
+    if counts.textureAuraQualifier > 0 then
+        dropped[#dropped + 1] = ("Texture Aura inactive/combat-only effect qualifiers (x%d)")
+            :format(counts.textureAuraQualifier)
+    end
     -- Dormant placements are an OBSERVATION, not a transform: nothing is
     -- cleared, so re-running finds the same entries forever. Its own flag
     -- survives ClearMigrationSentinels (which exists to re-run transforms
@@ -1425,7 +1446,7 @@ local function MigrateAuraTrackingRebuild(self, profile)
     -- profile instead of on every import.
     if counts.dormantPlacement > 0 and not profile._cdcAuraDormantPlacementNoted then
         profile._cdcAuraDormantPlacementNoted = true
-        dropped[#dropped + 1] = ("aura entries on panel types without a 12.1 aura display (x%d)"):format(counts.dormantPlacement)
+        dropped[#dropped + 1] = ("unsupported aura entries or conditions (x%d)"):format(counts.dormantPlacement)
     end
     if #dropped > 0 then
         self:Print("Aura tracking updated for 12.1. Adjusted settings: "

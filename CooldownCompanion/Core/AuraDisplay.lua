@@ -8,16 +8,17 @@
     code — reads and writes both error, an error freezes the display, and
     IsForbidden() does NOT report the state. Safety is structural, not checked:
       * All slot work happens in the OOC rebind pass (RequestAuraRebind).
-      * Slot buttons live under button.auraLayer (_ccNoTouch = true); frame
-        sweeps never recurse into flagged frames.
+      * Slot buttons live under an _ccNoTouch mount: button.auraLayer for
+        icon/bar hosts, or the Texture panel's UIParent-level runtime root.
+        Frame sweeps never recurse into either flagged frame.
       * In combat the only permitted aura-system calls are container-level
         (UpdateAllAuras, SetAuraSlotCandidateFilters).
 
     PTR 7 (tracker D-A0): aura buttons carry a permanent ChangeParent
     forbidden aspect — SetParent on a slot button errors even out of combat.
     The display therefore uses ONE AuraContainer PER (HOST BUTTON, UNIT
-    TOKEN) — a host needs more than one only when an entry is tracked on
-    several units at once — created as
+    TOKEN, HOST KIND) — a host needs more than one only when an entry is
+    tracked on several units at once — created as
     a child of that button's auraLayer (containers are plain CC frames; the
     parent is set at CreateFrame and never changed — only the BUTTONS carry
     the forbidden aspects), with the slot button anchored once inside
@@ -36,6 +37,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local AT = ST._AT
 
 local ipairs = ipairs
 local pairs = pairs
@@ -44,6 +46,19 @@ local CreateFrame = CreateFrame
 local IsInRaid = IsInRaid
 local GetNumGroupMembers = GetNumGroupMembers
 local GetNumSubgroupMembers = GetNumSubgroupMembers
+local LayoutTexturePieces = AT.LayoutTexturePieces
+local Clamp = AT.Clamp
+local NormalizeTextureIndicatorEffect = AT.NormalizeTextureIndicatorEffect
+local TEXTURE_INDICATOR_EFFECT_PULSE = AT.TEXTURE_INDICATOR_EFFECT_PULSE
+local TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT = AT.TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT
+local TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND = AT.TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND
+local TEXTURE_INDICATOR_EFFECT_BOUNCE = AT.TEXTURE_INDICATOR_EFFECT_BOUNCE
+local MIN_TEXTURE_INDICATOR_SPEED = AT.MIN_TEXTURE_INDICATOR_SPEED
+local MAX_TEXTURE_INDICATOR_SPEED = AT.MAX_TEXTURE_INDICATOR_SPEED
+local DEFAULT_TEXTURE_INDICATOR_SPEED = AT.DEFAULT_TEXTURE_INDICATOR_SPEED
+local DEFAULT_TEXTURE_PULSE_ALPHA = AT.DEFAULT_TEXTURE_PULSE_ALPHA
+local DEFAULT_TEXTURE_SHRINK_SCALE = AT.DEFAULT_TEXTURE_SHRINK_SCALE
+local DEFAULT_TEXTURE_BOUNCE_PIXELS = AT.DEFAULT_TEXTURE_BOUNCE_PIXELS
 
 -- Parking (P1b/P1c + V25 Q4): slots can never be removed, so an unbound slot is
 -- given a sentinel candidate filter that cannot match, and Blizzard hides an
@@ -184,6 +199,15 @@ local RunAuraRebind
 -- too, so it is a question about this function, not about ally units.
 local function CanRunRebindNow()
     return not InCombatLockdown()
+end
+
+-- Exported for display code that must decide what to draw while no slot is
+-- bound yet. A Texture panel's production artwork lives entirely inside the
+-- slot kit, so "not bound" means "nothing to show" — and the caller needs to
+-- know whether that is a frame-long wait for the queued pass or a wait for the
+-- whole combat, which is far too long to leave the panel dark.
+function CooldownCompanion:CanRunAuraRebindNow()
+    return CanRunRebindNow()
 end
 
 -- The friendly units an ally-scope entry watches, in bind order. Chosen so no
@@ -510,6 +534,63 @@ local function BuildSlotKit(slotButton)
     kit.keybindText:SetAlpha(0)
 
     return kit
+end
+
+-- Texture panels keep a permanent copy of their selected artwork beneath
+-- AuraButton. Nothing is registered as the aura icon, so Blizzard controls
+-- presence visibility without replacing the chosen asset. Every effect is a
+-- native AnimationGroup created in this sanctioned setup window: addon code
+-- never has to touch the forbidden subtree when the aura changes in combat.
+local function BuildTexturePanelSlotKit(slotButton)
+    -- The AuraButton lives under UIParent rather than the alpha-zero driver
+    -- button, so make it permanently click-through at creation time. The
+    -- dedicated Texture record never needs tooltip or cancel-aura input.
+    slotButton:SetMouseClickEnabled(false)
+    slotButton:SetMouseMotionEnabled(false)
+
+    local visualRoot = CreateFrame("Frame", nil, slotButton)
+    visualRoot:SetAllPoints(slotButton)
+    visualRoot:SetAlpha(0)
+
+    local host = {
+        visualRoot = visualRoot,
+        primaryTexture = visualRoot:CreateTexture(nil, "ARTWORK", nil, 1),
+        secondaryTexture = visualRoot:CreateTexture(nil, "ARTWORK", nil, 1),
+    }
+
+    host.pulseAG = visualRoot:CreateAnimationGroup()
+    host.pulseAG:SetLooping("BOUNCE")
+    host.pulseAnim = host.pulseAG:CreateAnimation("Alpha")
+    host.pulseAnim:SetFromAlpha(1)
+    host.pulseAnim:SetToAlpha(DEFAULT_TEXTURE_PULSE_ALPHA)
+
+    host.shrinkAG = visualRoot:CreateAnimationGroup()
+    host.shrinkAG:SetLooping("BOUNCE")
+    host.shrinkAnim = host.shrinkAG:CreateAnimation("Scale")
+    host.shrinkAnim:SetScaleFrom(1, 1)
+    host.shrinkAnim:SetScaleTo(DEFAULT_TEXTURE_SHRINK_SCALE, DEFAULT_TEXTURE_SHRINK_SCALE)
+    host.shrinkAnim:SetOrigin("CENTER", 0, 0)
+    host.shrinkAnim:SetSmoothing("IN_OUT")
+
+    host.bounceAG = visualRoot:CreateAnimationGroup()
+    host.bounceAG:SetLooping("BOUNCE")
+    host.bounceAnim = host.bounceAG:CreateAnimation("Translation")
+    host.bounceAnim:SetSmoothing("OUT")
+
+    host.colorShift = {}
+    for index, texture in ipairs({ host.primaryTexture, host.secondaryTexture }) do
+        local group = texture:CreateAnimationGroup()
+        group:SetLooping("BOUNCE")
+        host.colorShift[index] = {
+            group = group,
+            animation = group:CreateAnimation("VertexColor"),
+        }
+        host.colorShift[index].animation:SetSmoothing("IN_OUT")
+    end
+
+    host.primaryTexture:Hide()
+    host.secondaryTexture:Hide()
+    return { texturePanelHost = host }
 end
 
 -- Position contract for the aura duration text: it shares the Cooldown Text
@@ -1017,6 +1098,67 @@ function CooldownCompanion:DecoratePandemicPreviewText(text, style)
         return text .. " " .. PandemicColorEscape(style.pandemicMarkerColor) .. marker .. "|r"
     end
     return text .. " " .. marker
+end
+
+local function StopTexturePanelSlotIndicator(host)
+    host.pulseAG:Stop()
+    host.shrinkAG:Stop()
+    host.bounceAG:Stop()
+    for _, colorShift in ipairs(host.colorShift) do
+        colorShift.group:Stop()
+    end
+end
+
+local function StyleTexturePanelSlotKit(slot, settings, indicator)
+    local host = slot.kit and slot.kit.texturePanelHost
+    if not host then return end
+
+    -- BindDisplay is OOC. Stop/reset before writing the selected texture so a
+    -- pooled slot cannot retain the previous entry's animation or end state.
+    StopTexturePanelSlotIndicator(host)
+    host.visualRoot:SetAlpha(0)
+    host.visualRoot:SetScale(1)
+
+    local geometry, alpha = CooldownCompanion:GetTexturePanelRenderGeometry(settings)
+    if not geometry then
+        host.primaryTexture:Hide()
+        host.secondaryTexture:Hide()
+        return
+    end
+
+    local shown = LayoutTexturePieces(host, settings, geometry, alpha)
+    host.visualRoot:SetAlpha(shown and 1 or 0)
+    if not shown or type(indicator) ~= "table" or indicator.enabled ~= true then
+        return
+    end
+
+    local effectType = NormalizeTextureIndicatorEffect(indicator.effectType)
+    local speed = Clamp(tonumber(indicator.speed) or DEFAULT_TEXTURE_INDICATOR_SPEED,
+        MIN_TEXTURE_INDICATOR_SPEED, MAX_TEXTURE_INDICATOR_SPEED)
+    if effectType == TEXTURE_INDICATOR_EFFECT_PULSE then
+        host.pulseAnim:SetDuration(speed)
+        host.pulseAG:Play()
+    elseif effectType == TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND then
+        host.shrinkAnim:SetDuration(speed / 2)
+        host.shrinkAG:Play()
+    elseif effectType == TEXTURE_INDICATOR_EFFECT_BOUNCE then
+        local amplitude = math.max(6, math.min(DEFAULT_TEXTURE_BOUNCE_PIXELS,
+            (geometry.boundsHeight or DEFAULT_TEXTURE_BOUNCE_PIXELS) * 0.12))
+        host.bounceAnim:SetOffset(0, amplitude)
+        host.bounceAnim:SetDuration(speed / 2)
+        host.bounceAG:Play()
+    elseif effectType == TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT then
+        local base = settings.color or { 1, 1, 1, 1 }
+        local shift = indicator.color or { 1, 1, 1, 1 }
+        local startColor = CreateColor(base[1] or 1, base[2] or 1, base[3] or 1, alpha or 1)
+        local endColor = CreateColor(shift[1] or 1, shift[2] or 1, shift[3] or 1, shift[4] or 1)
+        for _, colorShift in ipairs(host.colorShift) do
+            colorShift.animation:SetStartColor(startColor)
+            colorShift.animation:SetEndColor(endColor)
+            colorShift.animation:SetDuration(speed / 2)
+            colorShift.group:Play()
+        end
+    end
 end
 
 local function StyleSlotKit(slot, button, buttonData, style)
@@ -1777,6 +1919,15 @@ local function EnsureAuraLayer(button)
     return layer
 end
 
+-- Texture panels' driver buttons are intentionally alpha-zero 1x1 identity
+-- shells, so their production AuraContainer mounts under the existing movable
+-- UIParent-level texture host instead. The host and root are permanent once a
+-- slot exists; only the safe root's alpha is used to suppress it for previews.
+local function EnsureTexturePanelAuraLayer(button)
+    local host = CooldownCompanion:EnsureAuraTextureHost(button)
+    return host.auraRuntimeRoot
+end
+
 -- One display per host button (D-A0 rung (c)): the container is a plain CC
 -- frame whose parent is set once at CreateFrame and never changed (only the
 -- BUTTONS carry the ChangeParent aspect), and the slot button is anchored
@@ -1788,27 +1939,38 @@ end
 -- Visibility, alpha, and strata all reach the
 -- slot through plain parentage; a hidden container is inert (P1a) and
 -- re-registers + refreshes itself on show (OnShow_Intrinsic).
--- Keyed by (button, unit), which makes record.unit IMMUTABLE: a record is for
--- one unit for its whole life, and the container's SetUnit is only ever called
--- once, here. The alternative — one record per button whose unit is swapped at
--- bind — cannot represent an entry tracked on several units at once.
+-- Keyed by (button, host kind, unit), which makes record.unit IMMUTABLE: a
+-- record is for one unit for its whole life, and the container's SetUnit is
+-- only ever called once, here. The alternative — one record per button whose
+-- unit is swapped at bind — cannot represent an entry tracked on several
+-- units at once.
 --
 -- Consequence: a pooled button re-acquired for an entry of the other polarity
 -- now gains a second record rather than mutating its first. The first is parked
 -- (hidden, deregistered, rendering nothing), so this is invisible; the cost is
 -- at most one extra container per polarity that button has ever hosted.
-local function EnsureDisplay(button, unit, groupScoped)
+local function EnsureDisplay(button, unit, groupScoped, hostKind)
+    hostKind = hostKind or "button"
+    local recordKey = hostKind .. "\031" .. unit
     local byUnit = displays[button]
     if byUnit then
-        local existing = byUnit[unit]
+        local existing = byUnit[recordKey]
         if existing then return existing end
     else
         byUnit = {}
         displays[button] = byUnit
     end
-    local layer = EnsureAuraLayer(button)
+    local layer = hostKind == "texturePanel"
+        and EnsureTexturePanelAuraLayer(button)
+        or EnsureAuraLayer(button)
     slotCounter = slotCounter + 1
-    local record = { button = button, key = "cc" .. slotCounter, unit = unit }
+    local record = {
+        button = button,
+        key = "cc" .. slotCounter,
+        unit = unit,
+        hostKind = hostKind,
+        layer = layer,
+    }
     -- Direct calls, no pcall: the TOC pins this client generation, so the
     -- AuraContainer API always exists — a failure here is a real setup error
     -- that must surface, not read as "feature unavailable".
@@ -1821,7 +1983,9 @@ local function EnsureDisplay(button, unit, groupScoped)
         initializeFrame = function(frame)
             -- The ONLY place the slot button is ever positioned.
             frame:SetAllPoints(container)
-            record.kit = BuildSlotKit(frame)
+            record.kit = hostKind == "texturePanel"
+                and BuildTexturePanelSlotKit(frame)
+                or BuildSlotKit(frame)
         end,
     })
     if not slotButton then
@@ -1830,7 +1994,10 @@ local function EnsureDisplay(button, unit, groupScoped)
     end
     record.slotButton = slotButton
     record.container = container
-    byUnit[unit] = record
+    if hostKind == "texturePanel" and button.auraTextureHost then
+        button.auraTextureHost._auraSlotOwned = true
+    end
+    byUnit[recordKey] = record
     records[#records + 1] = record
     if unit == "target" then
         EnsureTargetWatcher()
@@ -1903,10 +2070,10 @@ local AURA_TOOLTIP_ANCHORS = {
     cursor = "ANCHOR_CURSOR",
 }
 
-local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMax, soundsAllowed, groupScoped)
+local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMax, soundsAllowed, groupScoped, textureSettings, textureIndicator)
     local button = record.button
     local wasParked = record.parked
-    local layer = EnsureAuraLayer(button)
+    local layer = record.hostKind == "texturePanel" and record.layer or EnsureAuraLayer(button)
     -- Undo the park's Hide() before any slot writes, so the deferred re-parse
     -- sees the finished state. OnShow_Intrinsic re-registers the container's
     -- events and refreshes it on its own.
@@ -1949,7 +2116,7 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     -- OOC in the rebind pass. Skipped when unchanged: the max is CC-side
     -- state (kit.stackFillMax), never a read-back.
     local kit = record.kit
-    if kit and kit.stackFill then
+    if record.hostKind ~= "texturePanel" and kit and kit.stackFill then
         local wantMax = stackBarMax or 1
         -- Segmented smoothing (C2 follow-on): Blizzard sweeps the driven
         -- fill between stack counts (interpolation is Blizzard-evaluated —
@@ -1974,7 +2141,11 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     end
     -- Set before styling: StyleSlotKit selects the stack fill from this tag.
     record.boundStackMax = stackBarMax
-    StyleSlotKit(record, button, buttonData, style)
+    if record.hostKind == "texturePanel" then
+        StyleTexturePanelSlotKit(record, textureSettings, textureIndicator)
+    else
+        StyleSlotKit(record, button, buttonData, style)
+    end
     -- CC-side capacity blocks sync here too: rebinds are OOC by design, so
     -- this repairs bars whose style pass ran in combat (where the block
     -- helper defers). Panel buttons only — custom-bar hosts sync their
@@ -1993,20 +2164,31 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     -- click-through sweep; the sweep itself never reaches the slot subtree).
     -- Not the sweep's motion state: entry pings widen motion without wanting
     -- tooltips. P7-validated shape.
-    record.slotButton:SetMouseMotionEnabled(button._ccTooltipMotion == true)
+    record.slotButton:SetMouseMotionEnabled(
+        record.hostKind ~= "texturePanel" and button._ccTooltipMotion == true)
     -- Tooltip position + combat hide (tracker D-C1): plain per-bind mixin
     -- state on the slot button, same OOC re-call pattern as the motion line
     -- above; Blizzard's OnEnter path reads it. ANCHOR_NONE with zero offsets
     -- is what an untouched button resolves to, so re-calling it converges
     -- pooled buttons when the setting goes back to Default.
     record.slotButton:SetTooltipAnchorPoint(
-        AURA_TOOLTIP_ANCHORS[style.tooltipAnchor] or "ANCHOR_NONE", 0, 0)
-    record.slotButton:SetHideTooltipInCombat(style.tooltipHideInCombat == true)
+        record.hostKind ~= "texturePanel"
+            and (AURA_TOOLTIP_ANCHORS[style.tooltipAnchor] or "ANCHOR_NONE")
+            or "ANCHOR_NONE",
+        0, 0)
+    record.slotButton:SetHideTooltipInCombat(
+        record.hostKind == "texturePanel" or style.tooltipHideInCombat == true)
     record.parked = nil
     record.boundEntry = buttonData
     -- Combat pool lock: while this button is pooled in combat it may only be
     -- re-acquired for the same entry (GroupFrame.AcquireButtonFromPool).
     button._auraSlotHostToken = buttonData
+    if record.hostKind == "texturePanel" and CooldownCompanion.UpdateAuraTextureVisual then
+        -- Release hides the permanent UIParent host. A pooled host reused for
+        -- a different entry also stays suppressed until this matching token is
+        -- installed; now reconverge only the safe outer host/preview switch.
+        CooldownCompanion:UpdateAuraTextureVisual(button)
+    end
 end
 
 ------------------------------------------------------------------------
@@ -2026,8 +2208,10 @@ end
 -- opt-in. That is what keeps an illegal pairing — your debuff on an ally, which
 -- the gate would silently refuse to filter — unrepresentable at runtime even if
 -- stored config drifts.
-local function ResolveEntryAuraUnits(self, buttonData)
-    local first = self:ResolveAuraSpellID(buttonData)
+local function ResolveEntryAuraUnits(self, buttonData, allowGroupScope)
+    local first = allowGroupScope == false
+        and self:ResolveTexturePanelAuraSpellID(buttonData)
+        or self:ResolveAuraSpellID(buttonData)
     local harmful
     if first and C_Spell.DoesSpellExist(first) then
         harmful = C_Spell.IsSpellHarmful(first)
@@ -2035,7 +2219,7 @@ local function ResolveEntryAuraUnits(self, buttonData)
         harmful = buttonData.auraUnit == "target"
     end
     if harmful then return { "target" } end
-    if buttonData.auraTrackGroup then return GroupAuraTokens() end
+    if allowGroupScope ~= false and buttonData.auraTrackGroup then return GroupAuraTokens() end
     return { "player" }
 end
 
@@ -2083,20 +2267,26 @@ function RunAuraRebind()
     if not (self.db and self.groupFrames) then return end
     deferNoteShown = false
 
-    -- Collect wanted bindings from live buttons (icon/bar groups only — text
-    -- mode has no compliant aura display; trigger/texture panels lost aura
-    -- conditions by design; dormant flags there stay dormant).
+    -- Collect wanted bindings from live buttons. Icon/bar behavior keeps its
+    -- existing aura flags. Texture panels require the new explicit opt-in so
+    -- retained pre-12.1 aura data stays dormant; Trigger/Text remain excluded.
     local wanted = {}
     for groupId, frame in pairs(self.groupFrames) do
         local group = self.db.profile.groups[groupId]
         local displayMode = group and (group.displayMode or "icons")
-        if (displayMode == "icons" or displayMode == "bars") and frame.buttons then
+        if (displayMode == "icons" or displayMode == "bars" or displayMode == "textures") and frame.buttons then
             for _, button in ipairs(frame.buttons) do
                 local buttonData = button.buttonData
-                if buttonData and buttonData.type == "spell"
-                    and (buttonData.auraTracking or buttonData.addedAs == "aura") then
+                local textureAura = displayMode == "textures"
+                    and self:IsTexturePanelAuraDisplayEnabled(group, buttonData)
+                local standardAura = displayMode ~= "textures"
+                    and buttonData
+                    and (buttonData.auraTracking or buttonData.addedAs == "aura")
+                if buttonData and buttonData.type == "spell" and (textureAura or standardAura) then
                     local spellSet = self:GetAuraCandidateSpellIDSet(buttonData)
-                    if spellSet then
+                    local textureSettings = textureAura and self:GetTexturePanelSettings(group) or nil
+                    local textureIndicators = textureAura and self:GetTexturePanelIndicatorSettings(group) or nil
+                    if spellSet and (not textureAura or (textureSettings and textureSettings.enabled)) then
                         -- Stack fill (tracker C2): bar hosts only; the max is
                         -- automatic (owner ruling). A nil resolve means "not
                         -- a stacking aura" and the bind falls back to the
@@ -2111,6 +2301,9 @@ function RunAuraRebind()
                             spellSet = spellSet,
                             style = self:GetEffectiveStyle(group.style, buttonData),
                             stackBarMax = stackBarMax,
+                            hostKind = textureAura and "texturePanel" or "button",
+                            textureSettings = textureSettings,
+                            textureIndicator = textureIndicators and textureIndicators.aura or nil,
                         }
                     end
                 end
@@ -2130,8 +2323,11 @@ function RunAuraRebind()
     -- (custom-bar wants arrive with unit unset). One want fans out to one
     -- record per token.
     for _, want in ipairs(wanted) do
-        want.units = want.unit and { want.unit } or ResolveEntryAuraUnits(self, want.buttonData)
-        want.groupScoped = want.buttonData.auraTrackGroup == true and want.units[1] ~= "target"
+        want.units = want.unit and { want.unit }
+            or ResolveEntryAuraUnits(self, want.buttonData, want.hostKind ~= "texturePanel")
+        want.groupScoped = want.hostKind ~= "texturePanel"
+            and want.buttonData.auraTrackGroup == true
+            and want.units[1] ~= "target"
         -- Armed from the opt-in, not from a resolved ally token: solo the set is
         -- { "player" } and there would be no ally record to trigger it.
         if want.groupScoped then
@@ -2153,10 +2349,11 @@ function RunAuraRebind()
         -- entries keep today's behavior exactly.
         local soundsAllowed = #want.units == 1
         for _, unit in ipairs(want.units) do
-            local record = EnsureDisplay(want.button, unit, want.groupScoped)
+            local record = EnsureDisplay(want.button, unit, want.groupScoped, want.hostKind)
             if record then
                 BindDisplay(record, want.buttonData, want.spellSet, unit,
-                    want.style, want.stackBarMax, soundsAllowed, want.groupScoped)
+                    want.style, want.stackBarMax, soundsAllowed, want.groupScoped,
+                    want.textureSettings, want.textureIndicator)
             end
         end
     end

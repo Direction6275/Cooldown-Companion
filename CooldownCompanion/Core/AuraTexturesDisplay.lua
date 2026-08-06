@@ -22,7 +22,6 @@ local tonumber = tonumber
 local type = type
 local issecretvalue = issecretvalue
 
-local DEFAULT_TEXTURE_SIZE = AT.DEFAULT_TEXTURE_SIZE
 local UI_PARENT_NAME = AT.UI_PARENT_NAME
 local CopyColor = AT.CopyColor
 local Clamp = AT.Clamp
@@ -1081,8 +1080,26 @@ local function SetAuraTextureDragControlsShown(host, shown, unlockGhost)
     CooldownCompanion:ApplyMoverChromeFadeToFrames(host.dragHandle, host.coordLabel, host.nudger)
 end
 
-local function EnsureAuraTextureHost(button)
+local function EnsureAuraTextureRuntimeRoot(host)
+    if host.auraRuntimeRoot then
+        return host.auraRuntimeRoot
+    end
+
+    -- Plain safe parent for AuraContainer -> AuraButton -> selected-texture
+    -- kit. Recursive frame sweeps stop here; AuraDisplay exclusively owns its
+    -- descendants. Alpha is the preview/production switch and is safe because
+    -- this frame itself is outside Blizzard's forbidden AuraButton subtree.
+    local root = CreateFrame("Frame", nil, host)
+    root:SetAllPoints(host)
+    root:SetAlpha(0)
+    root._ccNoTouch = true
+    host.auraRuntimeRoot = root
+    return root
+end
+
+function CooldownCompanion:EnsureAuraTextureHost(button)
     if button.auraTextureHost then
+        EnsureAuraTextureRuntimeRoot(button.auraTextureHost)
         return button.auraTextureHost
     end
 
@@ -1105,6 +1122,8 @@ local function EnsureAuraTextureHost(button)
     secondary:Hide()
     host.primaryTexture = primary
     host.secondaryTexture = secondary
+
+    EnsureAuraTextureRuntimeRoot(host)
 
     host:SetScript("OnDragStart", function(self)
         BeginTextureHostDrag(self)
@@ -1318,6 +1337,12 @@ function CooldownCompanion:HideAuraTextureVisual(button)
     end
     CooldownCompanion:EndDragSnapSession(host, false)
     CooldownCompanion.HideStandaloneDisplayVisuals(host)
+    if host.visualRoot then
+        host.visualRoot:SetAlpha(1)
+    end
+    if host.auraRuntimeRoot then
+        host.auraRuntimeRoot:SetAlpha(0)
+    end
     host._activeDisplayType = nil
     host._activeTextureSettings = nil
     host._activeTextureGeometry = nil
@@ -1346,8 +1371,13 @@ function CooldownCompanion:ReleaseAuraTextureVisual(button)
     if alphaModuleId then
         self:UnregisterModuleAlpha(alphaModuleId)
     end
-    button.auraTextureHost:SetParent(nil)
-    button.auraTextureHost = nil
+    -- AuraButton has a permanent ChangeParent forbidden aspect. Once this
+    -- host owns an AuraContainer, retain the whole topology across pooling;
+    -- AuraDisplay parks the container and owns the pool token reconciliation.
+    if not button.auraTextureHost._auraSlotOwned then
+        button.auraTextureHost:SetParent(nil)
+        button.auraTextureHost = nil
+    end
 end
 
 local function IsStandaloneTextureEditingButton(button)
@@ -1623,11 +1653,7 @@ function CooldownCompanion:RenderStandaloneDisplay(host, driverButton, group, se
     SyncAuraTextureControlLevels(host, false)
 
     if displayType == "texture" then
-        local baseAlpha = Clamp((settings.color and settings.color[4] or 1) * settings.alpha, 0.05, 1)
-        local alpha = Clamp(baseAlpha, 0, 1)
-        local sourceWidth = settings.width and settings.width > 0 and settings.width or DEFAULT_TEXTURE_SIZE
-        local sourceHeight = settings.height and settings.height > 0 and settings.height or DEFAULT_TEXTURE_SIZE
-        local geometry = self:BuildTexturePanelGeometry(settings, sourceWidth * settings.scale, sourceHeight * settings.scale)
+        local geometry, alpha = self:GetTexturePanelRenderGeometry(settings)
         CooldownCompanion.HideStandaloneDisplayVisuals(host)
         hostWidth = geometry.boundsWidth
         hostHeight = geometry.boundsHeight
@@ -1644,6 +1670,8 @@ function CooldownCompanion:RenderStandaloneDisplay(host, driverButton, group, se
             SetTextureIndicatorBaseVisuals(host)
             if isTriggerPanel then
                 self:ApplyTriggerPanelEffects(host, driverButton, group, effectsActive)
+            elseif self:IsTexturePanelAuraDisplayEnabled(group, driverButton.buttonData) then
+                StopAllTextureIndicatorEffects(host)
             else
                 ApplyTextureIndicatorEffects(host, driverButton, group)
             end
@@ -1670,6 +1698,41 @@ function CooldownCompanion:RenderStandaloneDisplay(host, driverButton, group, se
     end
 
     return shown
+end
+
+-- Locked Aura-controlled Texture panels keep the ordinary host for anchoring,
+-- load visibility, and alpha, but render their production pixels only beneath
+-- Blizzard's AuraButton. This prepares the safe outer shell without touching
+-- any AuraContainer descendant; AuraDisplay styles that subtree OOC.
+function CooldownCompanion:PrepareManagedAuraTextureDisplay(host, driverButton, settings, revealRuntime)
+    local resolvedSourceType = self:ResolveAuraTextureAsset(
+        settings.sourceType,
+        settings.sourceValue,
+        settings.mediaType
+    )
+    local geometry = self:GetTexturePanelRenderGeometry(settings)
+    if not resolvedSourceType or not geometry then
+        return false
+    end
+
+    host:SetFrameStrata(driverButton:GetFrameStrata())
+    host:SetFrameLevel((driverButton:GetFrameLevel() or 1) + 20)
+    SyncAuraTextureControlLevels(host, false)
+    StopAllTextureIndicatorEffects(host)
+    CooldownCompanion.HideStandaloneDisplayVisuals(host)
+    host:SetSize(geometry.boundsWidth, geometry.boundsHeight)
+    if host.visualRoot then
+        host.visualRoot:SetSize(geometry.boundsWidth, geometry.boundsHeight)
+        host.visualRoot:SetAlpha(0)
+    end
+    if host.auraRuntimeRoot then
+        host.auraRuntimeRoot:SetAlpha(revealRuntime and 1 or 0)
+    end
+    host._activeDisplayType = nil
+    host._activeTextureSettings = nil
+    host._activeTextureGeometry = nil
+    host._indicatorBaseVisualsReady = nil
+    return true
 end
 
 function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, group, settings, displayType, isTriggerPanel, visibilityState)
@@ -2022,16 +2085,43 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         return
     end
 
-    local host = EnsureAuraTextureHost(driverButton)
-    local shown = self:RenderStandaloneDisplay(
-        host,
-        driverButton,
-        group,
-        settings,
-        displayType,
-        isTriggerPanel,
-        visibilityState.triggerMatched or visibilityState.hasTriggerEffectPreview
-    )
+    local host = self:EnsureAuraTextureHost(driverButton)
+    local auraControlled = displayType == "texture"
+        and not isTriggerPanel
+        and self:IsTexturePanelAuraDisplayEnabled(group, driverButton.buttonData)
+    -- The production artwork lives inside the slot kit, so the managed path
+    -- draws NOTHING until the OOC rebind has bound a slot for this entry. That
+    -- is invisible when the queued pass lands next frame, but a pass BLOCKED by
+    -- combat (reload mid-fight, or the opt-in toggled in combat) would leave
+    -- the panel dark for the whole fight - so keep the ordinary render until
+    -- the slot exists. A pooled host can also carry the previous entry's
+    -- still-bound slot; the ordinary branch suppresses that root too, and
+    -- BindDisplay re-runs this once it installs the matching pool token.
+    local slotToken = driverButton._auraSlotHostToken
+    local hasBoundSlot = slotToken ~= nil and slotToken == driverButton.buttonData
+    local useManagedRuntime = auraControlled
+        and not visibilityState.bypassModuleAlpha
+        and (hasBoundSlot or self:CanRunAuraRebindNow())
+    local shown
+    if useManagedRuntime then
+        shown = self:PrepareManagedAuraTextureDisplay(host, driverButton, settings, hasBoundSlot)
+    else
+        if host.auraRuntimeRoot then
+            host.auraRuntimeRoot:SetAlpha(0)
+        end
+        if host.visualRoot then
+            host.visualRoot:SetAlpha(1)
+        end
+        shown = self:RenderStandaloneDisplay(
+            host,
+            driverButton,
+            group,
+            settings,
+            displayType,
+            isTriggerPanel,
+            visibilityState.triggerMatched or visibilityState.hasTriggerEffectPreview
+        )
+    end
 
     if not shown then
         self:HideAuraTextureVisual(driverButton)

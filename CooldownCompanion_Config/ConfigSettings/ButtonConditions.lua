@@ -2179,6 +2179,28 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         totalRows = totalRows + rows
     end
 
+    -- A Texture panel's presence-only Aura display is itself a show
+    -- condition, so its opt-in lives here rather than in the Aura tab. The
+    -- panel can only hold one entry, which keeps this out of the batch path.
+    if not isBatch and isTexturePanel and buttonData.type == "spell" then
+        AddFamily(1, function(column)
+            AddVisibilityRow(column, "Show Texture While Aura Active", "textureAuraDisplayEnabled", {
+                tooltip = {
+                    "Show Texture While Aura Active",
+                    {"Blizzard tracks the aura and directly controls whether the configured texture is shown. The addon never reads aura state in combat.", 1, 1, 1, true},
+                    {" ", 1, 1, 1, true},
+                    {"This is presence-only: duration, stacks, and group-member tracking are not displayed. An optional active-aura effect can be configured in the Indicators tab.", 1, 1, 1, true},
+                },
+                onChanged = function(widget, event, val)
+                    ST._SetTexturePanelAuraDisplayEnabled(group, buttonData, val, CS.selectedGroup)
+                    CooldownCompanion:RefreshAllGroups()
+                    CooldownCompanion:RequestAuraRebind("config")
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+        end)
+    end
+
     -- Show Only While Aura Active (aura entries). 12.1: applied statically —
     -- the aura display composes the whole button over an invisible CC shell,
     -- so this needs a restyle + rebind, not the per-tick visibility bits.

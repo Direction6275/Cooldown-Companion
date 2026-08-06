@@ -670,18 +670,19 @@ function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData)
         return "Texture Panels can only hold one entry. Remove the current entry first if you want to replace it."
     end
     -- Primary aura entries (addedAs == "aura") only display through the aura
-    -- system, which binds to icon and bar panels; refuse moving them anywhere
-    -- else. Ordinary spell entries that merely have aura tracking enabled
-    -- keep a valid cooldown display and stay movable. entryData is a single
+    -- system, which binds to icon, bar, and explicitly opted-in Texture
+    -- panels; refuse moving them anywhere else. Ordinary spell entries that
+    -- merely have aura tracking enabled keep a valid cooldown display and
+    -- stay movable. entryData is a single
     -- buttonData table or an array of them (move paths pass it; add paths
     -- gate aura adds before reaching here).
     if entryData and group then
         local displayMode = group.displayMode or "icons"
-        if displayMode ~= "icons" and displayMode ~= "bars" then
+        if displayMode ~= "icons" and displayMode ~= "bars" and displayMode ~= "textures" then
             local entries = entryData[1] and entryData or { entryData }
             for _, bd in ipairs(entries) do
                 if bd and bd.addedAs == "aura" then
-                    return "Auras can only be tracked in icon or bar panels."
+                    return "Auras can only be tracked in icon, bar, or Texture panels."
                 end
             end
         end

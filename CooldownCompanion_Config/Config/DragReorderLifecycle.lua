@@ -370,6 +370,9 @@ local function PerformCrossPanelMove(sourcePanelId, sourceIndex, targetPanelId, 
     end
     local maxTarget = #targetGroup.buttons + 1
     if targetIndex > maxTarget then targetIndex = maxTarget end
+    if CooldownCompanion.EnableTexturePanelAuraDisplayForEntry then
+        CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(targetGroup, buttonData)
+    end
     table.insert(targetGroup.buttons, targetIndex, buttonData)
     return buttonData
 end

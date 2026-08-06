@@ -159,6 +159,22 @@ function CooldownCompanion:BuildTexturePanelGeometry(settings, baseWidth, baseHe
     }
 end
 
+-- Shared by the ordinary preview renderer and the AuraSlot-owned production
+-- renderer so both paths use identical bounds and selected-texture alpha.
+function CooldownCompanion:GetTexturePanelRenderGeometry(settings)
+    if type(settings) ~= "table" then
+        return nil, nil
+    end
+
+    local sourceWidth = settings.width and settings.width > 0 and settings.width or DEFAULT_TEXTURE_SIZE
+    local sourceHeight = settings.height and settings.height > 0 and settings.height or DEFAULT_TEXTURE_SIZE
+    local scale = settings.scale or 1
+    local geometry = self:BuildTexturePanelGeometry(settings, sourceWidth * scale, sourceHeight * scale)
+    local color = settings.color or { 1, 1, 1, 1 }
+    local alpha = Clamp((color[4] or 1) * (settings.alpha or 1), 0.05, 1)
+    return geometry, alpha
+end
+
 local function LayoutTexturePieces(host, settings, geometry, alpha)
     local visualRoot = host.visualRoot or host
     local textures = {
@@ -827,12 +843,24 @@ local function DoesTriggerPanelMatch(frame)
     return activeRowCount > 0
 end
 
-local function ApplyTextureIndicatorEffects(host, button, group)
+local function CollectTextureIndicatorSectionEffect(effectStates, button, indicators, sectionKey)
+    local config = indicators[sectionKey]
+    local active, effectType = ResolveTextureIndicatorSectionState(button, sectionKey, config)
+    if active and effectType and effectType ~= TEXTURE_INDICATOR_EFFECT_NONE and not effectStates[effectType] then
+        effectStates[effectType] = config
+    end
+end
+
+local function ApplyTextureIndicatorEffects(host, button, group, onlySectionKey)
     if not host or not button or type(group) ~= "table" then
         return
     end
 
-    local freezeGeometryWhileUnlocked = group.locked == false
+    -- The config Live Preview passes one section and owns its own safe effect
+    -- host, so geometry effects remain useful even when the panel is unlocked.
+    -- Production Aura transforms run in the separate native-animation kit
+    -- beneath Blizzard's AuraButton.
+    local freezeGeometryWhileUnlocked = group.locked == false and onlySectionKey == nil
 
     local indicators = CooldownCompanion:GetTexturePanelIndicatorSettings(group)
     if not indicators then
@@ -846,13 +874,11 @@ local function ApplyTextureIndicatorEffects(host, button, group)
         effectStates = {}
         host._textureIndicatorEffectStates = effectStates
     end
-    for _, sectionKey in ipairs(TEXTURE_INDICATOR_SECTION_ORDER) do
-        local config = indicators[sectionKey]
-        local active, effectType = ResolveTextureIndicatorSectionState(button, sectionKey, config)
-        if active then
-            if effectType and effectType ~= TEXTURE_INDICATOR_EFFECT_NONE and not effectStates[effectType] then
-                effectStates[effectType] = config
-            end
+    if onlySectionKey then
+        CollectTextureIndicatorSectionEffect(effectStates, button, indicators, onlySectionKey)
+    else
+        for _, sectionKey in ipairs(TEXTURE_INDICATOR_SECTION_ORDER) do
+            CollectTextureIndicatorSectionEffect(effectStates, button, indicators, sectionKey)
         end
     end
 

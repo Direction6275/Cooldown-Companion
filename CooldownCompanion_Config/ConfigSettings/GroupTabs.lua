@@ -190,6 +190,10 @@ local TEXTURE_INDICATOR_SECTION_DEFS = {
         label = "Show Proc Effect",
         previewText = "Preview Proc Effect",
     },
+    aura = {
+        label = "Show Aura Effect",
+        previewText = "Preview Aura Effect",
+    },
     ready = {
         label = "Show Ready Effect",
         previewText = "Preview Ready Effect",
@@ -528,7 +532,53 @@ local function GetStandaloneTextureSelectionLabel(group, settings)
     return settings.label or tostring(settings.sourceValue)
 end
 
-local function GetStandaloneTextureCommitCallback(group)
+local function RequestTexturePanelAuraRestyle(group, groupId)
+    local buttonData = group and group.buttons and group.buttons[1] or nil
+    if CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData) then
+        CooldownCompanion:RequestAuraRebind("style", groupId)
+    end
+end
+
+-- The only restyle seam for the Aura-controlled Texture kit is a full aura
+-- rebind, which parks and re-binds EVERY slot in the profile and releases then
+-- re-registers every native aura sound. RequestAuraRebind coalesces to one
+-- frame, which is right for a discrete commit but not for the indicator's
+-- colour picker and duration slider - those fire per drag tick, so the frame
+-- coalesce still buys a whole-profile rebuild every frame. Trailing-throttle
+-- them instead: the last edit always gets a flush within the window, and the
+-- kit is invisible behind the config's force-visible render the whole time, so
+-- nothing on screen waits on it. A throttle rather than a release callback
+-- because a wheel step on an AceGUI slider commits through OnValueChanged with
+-- no OnMouseUp, and would otherwise never restyle at all.
+local TEXTURE_AURA_RESTYLE_THROTTLE = 0.25
+local pendingTextureAuraRestyleGroupId
+
+local function FlushTexturePanelAuraRestyle()
+    local groupId = pendingTextureAuraRestyleGroupId
+    pendingTextureAuraRestyleGroupId = nil
+    if not groupId then
+        return
+    end
+    local profile = CooldownCompanion.db and CooldownCompanion.db.profile
+    local group = profile and profile.groups and profile.groups[groupId] or nil
+    RequestTexturePanelAuraRestyle(group, groupId)
+end
+
+-- The rebind is profile-wide, so a second panel edited inside the window
+-- overwriting the pending id costs nothing: either id flushes both.
+local function ThrottleTexturePanelAuraRestyle(group, groupId)
+    local buttonData = group and group.buttons and group.buttons[1] or nil
+    if not (groupId and CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)) then
+        return
+    end
+    local alreadyArmed = pendingTextureAuraRestyleGroupId ~= nil
+    pendingTextureAuraRestyleGroupId = groupId
+    if not alreadyArmed then
+        C_Timer.After(TEXTURE_AURA_RESTYLE_THROTTLE, FlushTexturePanelAuraRestyle)
+    end
+end
+
+local function GetStandaloneTextureCommitCallback(group, groupId)
     return function(selection)
         local liveSettings = GetStandaloneTextureSettings(group, true)
         if not liveSettings then
@@ -549,6 +599,7 @@ local function GetStandaloneTextureCommitCallback(group)
         liveSettings.enabled = nil
 
         CooldownCompanion:RefreshAllAuraTextureVisuals()
+        RequestTexturePanelAuraRestyle(group, groupId)
         CooldownCompanion:RefreshConfigPanel()
     end
 end
@@ -564,11 +615,12 @@ local function OpenOrRebindStandaloneTexturePicker(group, settings, forceOpen)
     else
         buttonIndex = group.buttons and group.buttons[1] and 1 or nil
     end
+    local groupId = CS.selectedGroup
     local pickerOpts = {
-        groupId = CS.selectedGroup,
+        groupId = groupId,
         buttonIndex = buttonIndex,
         initialSelection = settings and settings.sourceType and settings or nil,
-        callback = GetStandaloneTextureCommitCallback(group),
+        callback = GetStandaloneTextureCommitCallback(group, groupId),
     }
 
     if forceOpen or not (CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen()) then
@@ -1911,41 +1963,63 @@ local function BuildLayoutTab(container)
 end
 
 
-local function RefreshTextureIndicatorConfig()
+local function RefreshTextureIndicatorRuntime(group, requestAuraRestyle)
     CooldownCompanion:RefreshAllAuraTextureVisuals()
+    local refreshedMirror = ST._RefreshTextureIndicatorMirrorEffect
+        and ST._RefreshTextureIndicatorMirrorEffect(CS.selectedGroup)
+    if not refreshedMirror and ST._RefreshButtonsPreviewMirror then
+        ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
+    end
+    if requestAuraRestyle then
+        ThrottleTexturePanelAuraRestyle(group, CS.selectedGroup)
+    end
+end
+
+local function RefreshTextureIndicatorConfig(group, requestAuraRestyle)
+    RefreshTextureIndicatorRuntime(group, requestAuraRestyle)
     CooldownCompanion:RefreshConfigPanel()
 end
 
--- Row grammar (RowWidgets.lua): a CDC-SliderRow. Both call sites are advanced
--- panel interiors, so this was converted outright - and the row's own value box
+-- Row grammar (RowWidgets.lua): a CDC-SliderRow. The row's own value box
 -- already accepts one decimal place, which is the whole job the pre-redesign
--- editbox hook it replaced did.
-local function BuildTextureIndicatorSpeedSlider(container, config, label)
+-- editbox hook it replaced did. Aura-controlled Texture effects also use this
+-- inline on the Indicators tab, so the caller decides whether it is indented.
+local function BuildTextureIndicatorSpeedSlider(container, config, label, onChange, indent)
     AddSliderRow(container, {
         label = label,
+        indent = indent == true,
         min = 0.1, max = 2.0, step = 0.05,
         value = config.speed or 0.5,
         onChange = function(value)
             config.speed = value
-            CooldownCompanion:RefreshAllAuraTextureVisuals()
+            if onChange then
+                onChange()
+            else
+                CooldownCompanion:RefreshAllAuraTextureVisuals()
+            end
         end,
     })
 end
 
--- Row grammar (RowWidgets.lua): one CDC-CheckBoxRow per indicator, its advanced
--- gear chained off the label. Called exactly once per indicator from the
--- textures Effects tab below, so it was converted outright rather than growing
--- an opts.row mode. `container` is the grid column the row belongs to.
+-- Row grammar (RowWidgets.lua): one CDC-CheckBoxRow per indicator. Standard
+-- Texture indicators retain their established advanced gear. Aura-controlled
+-- Texture effects show their small option set directly in the 12.1 two-column
+-- Indicators section instead: toggle and effect on the left, effect-specific
+-- color/timing on the right.
 --
 -- `container` is nil when there is nothing to draw into - the section is
 -- collapsed. The preview reconciliation at the foot still has to run in that
 -- case (the same shape BuildBarActiveAuraSection uses in BarModeTabs): an
 -- indicator that is no longer on must not leave its preview playing.
-local function BuildTextureIndicatorSection(container, group, indicators, sectionKey)
+local function BuildTextureIndicatorSection(container, group, indicators, sectionKey, opts)
     local config = indicators and indicators[sectionKey]
     local sectionDef = TEXTURE_INDICATOR_SECTION_DEFS[sectionKey]
     if not config or not sectionDef then
         return
+    end
+    local auraControlled = opts and opts.auraControlled == true
+    local function RefreshRuntime()
+        RefreshTextureIndicatorRuntime(group, auraControlled)
     end
 
     if container then
@@ -1963,73 +2037,84 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
                     else
                         config.enabled = false
                         CooldownCompanion:Print("All texture indicator effects are already in use by other sections.")
-                        RefreshTextureIndicatorConfig()
+                        RefreshTextureIndicatorConfig(group, auraControlled)
                         return
                     end
                 end
             end
 
             config.enabled = value == true
-            RefreshTextureIndicatorConfig()
+            RefreshTextureIndicatorConfig(group, auraControlled)
         end,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
-    -- every row goes straight onto the panel scroll. Nothing indents here - the
-    -- effect's color and duration are what Effect Type resolves to, not children
-    -- of a toggle, and the duration row is drawn by a builder the trigger effect
-    -- panel shares, where it heads its own panel.
-    local function BuildTextureIndicatorAdvanced(panel)
-        AddCheckboxRow(panel, {
-            label = "Show Only In Combat",
-            value = config.combatOnly or false,
-            onChange = function(value)
-                config.combatOnly = value == true
-                CooldownCompanion:RefreshAllAuraTextureVisuals()
-            end,
-        })
+    local function BuildTextureIndicatorOptions(primary, details, inline)
+        details = details or primary
+        -- Aura-controlled Texture effects inherit Blizzard's aura visibility.
+        -- A combat-only transition would require touching the forbidden child
+        -- when combat changes, so that live-only refinement is intentionally
+        -- absent here.
+        if not auraControlled then
+            AddCheckboxRow(primary, {
+                label = "Show Only In Combat",
+                value = config.combatOnly or false,
+                onChange = function(value)
+                    config.combatOnly = value == true
+                    CooldownCompanion:RefreshAllAuraTextureVisuals()
+                end,
+            })
+        end
 
         local effectList, effectOrder = GetTextureIndicatorEffectList(indicators, sectionKey)
-        AddDropdownRow(panel, {
+        AddDropdownRow(primary, {
             label = "Effect Type",
+            indent = inline == true,
             pulloutWidth = WIDE_PULLOUT_WIDTH,
             list = effectList,
             order = effectOrder,
             value = config.effectType,
             onChange = function(value)
                 config.effectType = value or "none"
-                RefreshTextureIndicatorConfig()
+                RefreshTextureIndicatorConfig(group, auraControlled)
             end,
         })
 
         -- deferCommit is deliberately absent, matching the AddColorPicker call
         -- this row replaced.
         if config.effectType == "colorShift" then
-            AddColorRow(panel, {
+            AddColorRow(details, {
                 label = "Shift Color",
+                indent = inline == true,
                 tbl = config,
                 key = "color",
                 default = { 1, 1, 1, 1 },
                 hasAlpha = true,
-                onConfirm = function() CooldownCompanion:RefreshAllAuraTextureVisuals() end,
-                onChange = function() CooldownCompanion:RefreshAllAuraTextureVisuals() end,
+                onConfirm = RefreshRuntime,
+                onChange = RefreshRuntime,
             })
-            BuildTextureIndicatorSpeedSlider(panel, config, "Shift Duration")
+            BuildTextureIndicatorSpeedSlider(details, config, "Shift Duration", RefreshRuntime, inline)
         elseif config.effectType == "pulse" then
-            BuildTextureIndicatorSpeedSlider(panel, config, "Pulse Duration")
+            BuildTextureIndicatorSpeedSlider(details, config, "Pulse Duration", RefreshRuntime, inline)
         elseif config.effectType == "shrinkExpand" then
-            BuildTextureIndicatorSpeedSlider(panel, config, "Cycle Duration")
+            BuildTextureIndicatorSpeedSlider(details, config, "Cycle Duration", RefreshRuntime, inline)
         elseif config.effectType == "bounce" then
-            BuildTextureIndicatorSpeedSlider(panel, config, "Bounce Duration")
+            BuildTextureIndicatorSpeedSlider(details, config, "Bounce Duration", RefreshRuntime, inline)
         end
-
     end
 
-    local advKey = "textureIndicator_" .. sectionKey
-    AddAdvancedToggle(enableCb, advKey, tabInfoButtons, config.enabled, {
-        title = sectionDef.label .. " Advanced",
-        build = BuildTextureIndicatorAdvanced,
-    })
+    if auraControlled then
+        if config.enabled then
+            BuildTextureIndicatorOptions(container, opts and opts.detailsContainer, true)
+        end
+    else
+        local advKey = "textureIndicator_" .. sectionKey
+        AddAdvancedToggle(enableCb, advKey, tabInfoButtons, config.enabled, {
+            title = sectionDef.label .. " Advanced",
+            build = function(panel)
+                BuildTextureIndicatorOptions(panel)
+            end,
+        })
+    end
     end -- container
 
     if not config.enabled and CS.selectedGroup then
@@ -2325,6 +2410,7 @@ end
 -- below, because the builder that reads it comes first; the gear-to-section map
 -- further down still sees it.
 local EFFECTS_TEXTURE_INDICATORS_SECTION = "effects_textureIndicators"
+local STANDARD_TEXTURE_INDICATOR_SECTION_ORDER = { "proc", "ready", "unusable" }
 
 local function BuildTextureEffectsTab(container, group)
     -- Function-local, not an upvalue: see the note by the row-grammar imports.
@@ -2334,6 +2420,29 @@ local function BuildTextureEffectsTab(container, group)
     if not indicators then
         return
     end
+
+    local buttonData = group.buttons and group.buttons[1] or nil
+    if CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData) then
+        for _, sectionKey in ipairs(STANDARD_TEXTURE_INDICATOR_SECTION_ORDER) do
+            CooldownCompanion:SetGroupTextureIndicatorPreview(CS.selectedGroup, sectionKey, false)
+        end
+        local _, indicatorsCollapsed = BuildCollapsibleSection(container, "Texture Indicators",
+            EFFECTS_TEXTURE_INDICATORS_SECTION, nil, nil, ROW_SECTION)
+        local indicatorLeft, indicatorRight
+        if not indicatorsCollapsed then
+            indicatorLeft, indicatorRight = BeginRowGrid(container)
+        end
+        -- Pass only the visible section into the uniqueness helper. Dormant
+        -- Proc/Ready/Unusable settings cannot reserve an effect that will not
+        -- run while Blizzard owns active-only visibility.
+        BuildTextureIndicatorSection(indicatorLeft, group, { aura = indicators.aura }, "aura", {
+            auraControlled = true,
+            detailsContainer = indicatorRight,
+        })
+        return
+    end
+
+    CooldownCompanion:SetGroupTextureIndicatorPreview(CS.selectedGroup, "aura", false)
 
     -- One row-grammar section. Its three gears queue advanced keys, so the
     -- collapse key is declared in ST._INDICATORS_SECTION_BY_ADVANCED_KEY below
@@ -2351,8 +2460,13 @@ local function BuildTextureEffectsTab(container, group)
     if not indicatorsCollapsed then
         indicatorLeft = BeginRowGrid(container)
     end
-    for _, sectionKey in ipairs(CooldownCompanion:GetTextureIndicatorSectionOrder()) do
-        BuildTextureIndicatorSection(indicatorLeft, group, indicators, sectionKey)
+    local standardIndicators = {
+        proc = indicators.proc,
+        ready = indicators.ready,
+        unusable = indicators.unusable,
+    }
+    for _, sectionKey in ipairs(STANDARD_TEXTURE_INDICATOR_SECTION_ORDER) do
+        BuildTextureIndicatorSection(indicatorLeft, group, standardIndicators, sectionKey)
     end
 end
 
@@ -3194,7 +3308,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
         end
     end
 
-    local function RefreshTextureRuntime()
+    local function RefreshTextureRuntime(requestAuraRestyle)
         local groupFrame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
         local button = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
         if button then
@@ -3202,9 +3316,12 @@ local function BuildTexturePanelAppearanceTab(container, group)
         else
             CooldownCompanion:RefreshAllAuraTextureVisuals()
         end
+        if requestAuraRestyle and not isTriggerPanel then
+            RequestTexturePanelAuraRestyle(group, groupId)
+        end
     end
 
-    local function RefreshTextureVisual()
+    local function RefreshTextureVisual(requestAuraRestyle)
         ClearTextureConfigPreviewStage()
         -- Both panel kinds repaint the pinned mirror. Trigger drag ticks route
         -- here directly (their sliders write the saved table live), so they
@@ -3215,7 +3332,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
         elseif ST._RefreshButtonsPreviewMirror then
             ST._RefreshButtonsPreviewMirror(groupId)
         end
-        RefreshTextureRuntime()
+        RefreshTextureRuntime(requestAuraRestyle ~= false)
     end
 
     local function CancelTexturePreviewChange()
@@ -3307,7 +3424,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
             OpenOrRebindStandaloneTexturePicker(group, settings, false)
         end
 
-        RefreshTextureVisual()
+        RefreshTextureVisual(false)
         return
     end
 
@@ -3467,7 +3584,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
         OpenOrRebindStandaloneTexturePicker(group, settings, false)
     end
 
-    RefreshTextureVisual()
+    RefreshTextureVisual(false)
 end
 
 local function BuildAppearanceTab(container)

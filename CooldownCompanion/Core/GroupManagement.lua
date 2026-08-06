@@ -1328,7 +1328,7 @@ local DISPLAY_MODE_CHANGE_REFUSALS = {
     assistant = "Assistant Panels cannot be converted. Create a new Assistant Panel instead.",
     trigger = "Trigger Panels cannot be converted. Create a new Trigger Panel instead.",
     ["texture-entry-limit"] = "Texture Panels can only hold one entry. Remove extra entries first, or create a new Texture Panel.",
-    ["aura-entries"] = "This panel contains aura entries, which can only be tracked in icon or bar panels. Remove them first, or convert to icons or bars.",
+    ["aura-entries"] = "This panel contains aura entries, which can only be tracked in icon, bar, or Texture panels. Remove them first, or convert to one of those modes.",
 }
 
 function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
@@ -1350,8 +1350,13 @@ function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
     end
 
     -- Primary aura entries only display through the aura system, which binds
-    -- to icon and bar panels; refuse conversions that would strand them.
-    if oldMode ~= newMode and newMode ~= "icons" and newMode ~= "bars" and newMode ~= nil then
+    -- to icon, bar, and explicitly opted-in Texture panels; refuse conversions
+    -- that would strand them.
+    if oldMode ~= newMode
+        and newMode ~= "icons"
+        and newMode ~= "bars"
+        and newMode ~= "textures"
+        and newMode ~= nil then
         for _, bd in ipairs(group.buttons or {}) do
             if bd.addedAs == "aura" then
                 return false, "aura-entries"
@@ -1382,6 +1387,11 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     end
 
     group.displayMode = newMode
+    if oldMode ~= newMode and newMode == "textures" and self.EnableTexturePanelAuraDisplayForEntry then
+        for _, buttonData in ipairs(group.buttons or {}) do
+            self:EnableTexturePanelAuraDisplayForEntry(group, buttonData)
+        end
+    end
     if oldMode ~= newMode and ShouldClearCDMPanelSourceForDisplayMode(group, newMode) then
         group.cdmPanelSource = nil
     end
@@ -1709,6 +1719,10 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             group.buttons,
             { trustExplicitAuraLabel = true }
         )
+    end
+
+    if self.EnableTexturePanelAuraDisplayForEntry then
+        self:EnableTexturePanelAuraDisplayForEntry(group, newButton)
     end
 
     if group.displayMode == "trigger" and self.NormalizeTriggerConditionRowData then

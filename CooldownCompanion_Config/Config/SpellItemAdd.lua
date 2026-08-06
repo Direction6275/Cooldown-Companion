@@ -55,7 +55,7 @@ end
 local function TargetPanelAcceptsAuraEntries(groupId)
     local group = GetTargetGroup(groupId)
     local displayMode = group and (group.displayMode or "icons")
-    return displayMode == "icons" or displayMode == "bars"
+    return displayMode == "icons" or displayMode == "bars" or displayMode == "textures"
 end
 
 -- File-local state
@@ -214,7 +214,7 @@ local function PrintCannotTrackAsAura(spellName)
 end
 
 local function PrintAuraPanelUnsupported()
-    CooldownCompanion:Print("Auras can only be tracked in icon or bar groups.")
+    CooldownCompanion:Print("Auras can only be tracked in icon, bar, or Texture panels.")
 end
 
 local function IsExactNumericSpellInput(input, spellId)
@@ -277,9 +277,8 @@ local function TryAddSpell(input, isPetSpell, forceAura)
             forceAura = true
             routedToAura = true
         end
-        -- The aura display only binds to icon and bar groups (AuraDisplay
-        -- rebind pass); refuse aura adds elsewhere instead of adding an entry
-        -- that can never display anything.
+        -- AuraDisplay binds icon, bar, and explicitly opted-in Texture panels;
+        -- refuse aura adds elsewhere instead of creating a dead entry.
         if addAsAura then
             if not TargetPanelAcceptsAuraEntries(CS.selectedGroup) then
                 PrintAuraPanelUnsupported()

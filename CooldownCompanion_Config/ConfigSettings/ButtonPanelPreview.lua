@@ -42,6 +42,10 @@ local ApplyIconFillLayer = ST._ApplyIconFillLayer
 local ResolveIconFillTimerValue = ST._ResolveIconFillTimerValue
 local DEFAULT_BAR_AURA_COLOR = ST._DEFAULT_BAR_AURA_COLOR
 local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
+local AuraTextures = ST._AT
+local ApplyTextureIndicatorEffects = AuraTextures and AuraTextures.ApplyTextureIndicatorEffects
+local SetTextureIndicatorBaseVisuals = AuraTextures and AuraTextures.SetTextureIndicatorBaseVisuals
+local StopAllTextureIndicatorEffects = AuraTextures and AuraTextures.StopAllTextureIndicatorEffects
 
 local PANEL_PREVIEW_PADDING = 12
 local PANEL_PREVIEW_DISABLED_ALPHA = 0.45
@@ -3599,6 +3603,50 @@ end
 -- the visual, so a spell icon alone would show something that never renders
 -- in-game. Reuses GroupTabs' fit-to-box renderer (ST._UpdateTexturePanelPreview)
 -- for textures; icon and text visuals are drawn by the render helpers below.
+local TEXTURE_INDICATOR_MIRROR_PREVIEWS = {
+    { key = "proc", flag = "_textureProcPreview" },
+    { key = "aura", flag = "_textureAuraPreview" },
+    { key = "ready", flag = "_textureReadyPreview" },
+    { key = "unusable", flag = "_textureUnusablePreview" },
+}
+
+local function StopTextureMirrorEffects(mirror)
+    local host = mirror and mirror.effectHost
+    if not host then
+        return
+    end
+
+    if StopAllTextureIndicatorEffects then
+        StopAllTextureIndicatorEffects(host)
+    else
+        host:SetScript("OnUpdate", nil)
+        if host.visualRoot then
+            host.visualRoot:SetAlpha(1)
+            host.visualRoot:SetScale(1)
+            host.visualRoot:ClearAllPoints()
+            host.visualRoot:SetPoint("CENTER", host, "CENTER", 0, 0)
+        end
+    end
+
+    host._activeDisplayType = nil
+    host._activeTextureSettings = nil
+    host._activeTextureGeometry = nil
+    host._indicatorBaseVisualsReady = nil
+end
+
+local function GetStoredTextureIndicatorPreview(panelId)
+    if not (panelId and IsStoredPreviewFlagActive) then
+        return nil, nil
+    end
+
+    for _, preview in ipairs(TEXTURE_INDICATOR_MIRROR_PREVIEWS) do
+        if IsStoredPreviewFlagActive(panelId, nil, preview.flag) then
+            return preview.key, preview.flag
+        end
+    end
+    return nil, nil
+end
+
 local function EnsureTextureMirror(preview)
     local mirror = preview.textureMirror
     if mirror then
@@ -3609,14 +3657,27 @@ local function EnsureTextureMirror(preview)
     root:SetAllPoints(preview.root)
     root:SetClipsChildren(false)
 
+    -- Effects belong to this config-owned frame tree. The runtime Texture
+    -- host is never borrowed, shown, or animated by the pinned Live Preview.
+    local effectHost = CreateFrame("Frame", nil, root)
+    effectHost:SetAllPoints(root)
+    effectHost:SetClipsChildren(false)
+    local visualRoot = CreateFrame("Frame", nil, effectHost)
+    visualRoot:SetPoint("CENTER", effectHost, "CENTER", 0, 0)
+    visualRoot:SetSize(1, 1)
+    effectHost.visualRoot = visualRoot
+
     mirror = {
         root = root,
-        anchor = root,
+        effectHost = effectHost,
+        anchor = visualRoot,
         clickMode = "texture",
-        primary = root:CreateTexture(nil, "ARTWORK"),
-        secondary = root:CreateTexture(nil, "ARTWORK"),
+        primary = visualRoot:CreateTexture(nil, "ARTWORK"),
+        secondary = visualRoot:CreateTexture(nil, "ARTWORK"),
         placeholder = root:CreateFontString(nil, "OVERLAY", "GameFontDisableLarge"),
     }
+    effectHost.primaryTexture = mirror.primary
+    effectHost.secondaryTexture = mirror.secondary
     mirror.placeholder:SetPoint("CENTER")
     mirror.placeholder:SetText("No texture selected")
 
@@ -3625,7 +3686,10 @@ local function EnsureTextureMirror(preview)
     -- module-owned frame, so attaching scripts here is safe (not an AceGUI
     -- underlying frame). Mouse is enabled per build; the browse guard skips
     -- while the inline browser is already open for this panel.
-    local hoverCue = root:CreateTexture(nil, "OVERLAY")
+    local hoverFrame = CreateFrame("Frame", nil, root)
+    hoverFrame:SetAllPoints(root)
+    hoverFrame:SetFrameLevel(effectHost:GetFrameLevel() + 5)
+    local hoverCue = hoverFrame:CreateTexture(nil, "OVERLAY")
     hoverCue:SetAllPoints()
     hoverCue:SetColorTexture(1, 1, 1, 0.06)
     hoverCue:Hide()
@@ -3703,6 +3767,113 @@ local function ApplyMirrorBand(mirror, previewRoot, bottomReserve)
     root:ClearAllPoints()
     root:SetPoint("TOPLEFT", previewRoot, "TOPLEFT", 0, 0)
     root:SetPoint("BOTTOMRIGHT", previewRoot, "BOTTOMRIGHT", 0, bottomReserve or 0)
+end
+
+local function ApplyTextureMirrorEffectPreview(mirror, panelId, group, settings, boxWidth, boxHeight)
+    local indicatorKey, previewFlag = GetStoredTextureIndicatorPreview(panelId)
+    if not (indicatorKey and previewFlag and type(settings) == "table"
+        and ApplyTextureIndicatorEffects and SetTextureIndicatorBaseVisuals) then
+        return
+    end
+    if not (mirror.primary:IsShown() or mirror.secondary:IsShown()) then
+        return
+    end
+
+    local geometry = CooldownCompanion:GetTexturePanelRenderGeometry(settings)
+    if not geometry then
+        return
+    end
+    local fit = math_min(
+        (tonumber(boxWidth) or geometry.boundsWidth) / math_max(geometry.boundsWidth, 1),
+        (tonumber(boxHeight) or geometry.boundsHeight) / math_max(geometry.boundsHeight, 1),
+        1
+    )
+
+    local host = mirror.effectHost
+    local visualRoot = host.visualRoot
+    visualRoot:ClearAllPoints()
+    visualRoot:SetPoint("CENTER", host, "CENTER", 0, 0)
+    visualRoot:SetSize(math_max(1, tonumber(boxWidth) or geometry.boundsWidth),
+        math_max(1, tonumber(boxHeight) or geometry.boundsHeight))
+
+    host._activeDisplayType = "texture"
+    host._activeTextureSettings = settings
+    host._activeTextureGeometry = {
+        pieces = geometry.pieces,
+        rotationRadians = geometry.rotationRadians,
+        boundsWidth = geometry.boundsWidth * fit,
+        boundsHeight = geometry.boundsHeight * fit,
+    }
+    host._indicatorBaseVisualsReady = nil
+    SetTextureIndicatorBaseVisuals(host)
+
+    local previewButton = mirror.effectPreviewButton or {}
+    mirror.effectPreviewButton = previewButton
+    for _, preview in ipairs(TEXTURE_INDICATOR_MIRROR_PREVIEWS) do
+        previewButton[preview.flag] = nil
+    end
+    previewButton.buttonData = group and group.buttons and group.buttons[1] or nil
+    previewButton[previewFlag] = true
+    ApplyTextureIndicatorEffects(host, previewButton, group, indicatorKey)
+end
+
+local function GetActiveTextureMirror(groupId)
+    if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then
+        return nil
+    end
+    if groupId and groupId ~= CS.selectedGroup then
+        return nil
+    end
+
+    local col3 = CS.configFrame and CS.configFrame.col3
+    local host = col3 and col3.buttonsPreviewHost
+    if not (host and host:IsShown() and col3._cdcActiveWideHost == host) then
+        return nil
+    end
+
+    local preview = host._cdcPanelPreview
+    local mirror = preview and preview.textureMirror
+    if not (mirror and mirror.root:IsShown()) then
+        return nil
+    end
+    return mirror
+end
+
+-- Clear paths can run without rebuilding the pinned preview (for example an
+-- entry-tab switch). Stop the config-owned effect immediately so a cleared
+-- stored flag can never leave an animation running on the mirror.
+function ST._StopTextureIndicatorPreviewMirror(groupId)
+    local mirror = GetActiveTextureMirror(groupId)
+    if not mirror then
+        return false
+    end
+    StopTextureMirrorEffects(mirror)
+    return true
+end
+
+-- Color and speed controls update continuously. Reapply the saved effect to
+-- the existing config-owned host so its phase continues smoothly instead of
+-- rebuilding the mirror and restarting the animation on every drag tick.
+function ST._RefreshTextureIndicatorMirrorEffect(groupId)
+    local mirror = GetActiveTextureMirror(groupId)
+    if not (mirror and mirror.texturePanelId == groupId) then
+        return false
+    end
+
+    local group = CooldownCompanion.db.profile.groups[groupId]
+    if not (group and CooldownCompanion:IsTexturePanelGroup(group)) then
+        return false
+    end
+
+    ApplyTextureMirrorEffectPreview(
+        mirror,
+        groupId,
+        group,
+        mirror.texturePanelSettings,
+        mirror.texturePanelBoxWidth,
+        mirror.texturePanelBoxHeight
+    )
+    return true
 end
 
 -- Lazy per-type visuals: children of mirror.root, so the stale-mirror hide in
@@ -3929,9 +4100,17 @@ local function BuildTextureMirror(preview, host, panelId, group, readOnly)
         or (configStaged and configStaged.groupId == panelId and configStaged.settings)
         or CooldownCompanion:GetTexturePanelSettings(group)
 
+    mirror.texturePanelId = panelId
+    mirror.texturePanelSettings = settings
+    mirror.texturePanelBoxWidth = boxWidth
+    mirror.texturePanelBoxHeight = boxHeight
+
     local render = ST._UpdateTexturePanelPreview
     if render then
         render(mirror, settings, boxWidth, boxHeight)
+    end
+    if not readOnly then
+        ApplyTextureMirrorEffectPreview(mirror, panelId, group, settings, boxWidth, boxHeight)
     end
 
     FinalizePreviewState(preview)
@@ -4054,6 +4233,7 @@ function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost, options
     end
 
     local preview = EnsurePreviewState(host)
+    StopTextureMirrorEffects(preview.textureMirror)
     -- Unified previews render the icon layout inside a measured inner frame,
     -- but the targeting instruction belongs to the outer Live Preview area.
     preview.targetingBannerHost = readOnly and nil or (targetingBannerHost or host)
@@ -4318,6 +4498,7 @@ function ST._ReleaseReadOnlyPanelPreview(host)
     local preview = host and host._cdcPanelPreview
     if not preview then return end
     StopConditionalTicker(preview)
+    StopTextureMirrorEffects(preview.textureMirror)
     for poolName, pool in pairs(preview.pools) do
         local used = preview.used[poolName] or 0
         for index = 1, used do
@@ -4346,6 +4527,7 @@ function ST._ReleaseButtonPanelPreview(host)
     local preview = host and host._cdcPanelPreview
     if preview then
         StopConditionalTicker(preview)
+        StopTextureMirrorEffects(preview.textureMirror)
         local barPool = preview.pools.barSlots or {}
         for index = 1, (preview.used.barSlots or 0) do
             local slot = barPool[index]

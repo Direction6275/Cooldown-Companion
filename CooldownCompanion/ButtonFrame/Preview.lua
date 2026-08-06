@@ -176,12 +176,12 @@ end
 -- runtime activity.
 ST._IsStoredPreviewFlagActive = IsActivePreviewFlagStored
 
--- Preview-first config: panels the config mirror renders (icon, bar,
--- and text panels) show their config previews ONLY on the mirror - the
+-- Preview-first config: panels the config mirror renders (icon, bar, text,
+-- and texture panels) show their config previews ONLY on the mirror - the
 -- setters store the preview state for the mirror to read and skip the
--- live world buttons entirely. Panel types without a mirror rendering
--- (trigger, texture, rotation assistant - the config shows a selection
--- strip for these) keep live previews as their only surface. The mirror
+-- live world buttons entirely. Preview families that do not opt into this
+-- routing (trigger and rotation assistant) keep their established surface.
+-- The mirror
 -- must also actually be the active surface for this panel (wide buttons
 -- view, panel selected) - that includes Other Class browsing, which
 -- shares the full workspace and its pinned mirror. Clear paths stay
@@ -197,7 +197,7 @@ local function IsMirrorPreviewSurface(groupId)
         return false
     end
     local mode = group.displayMode or "icons"
-    if mode == "bars" or mode == "text" then
+    if mode == "bars" or mode == "text" or mode == "textures" then
         return true
     end
     if mode ~= "icons" then
@@ -745,6 +745,48 @@ local TEXTURE_INDICATOR_PREVIEW_FLAGS = {
     ready = "_textureReadyPreview",
     unusable = "_textureUnusablePreview",
 }
+local TEXTURE_INDICATOR_PREVIEW_FLAG_SET = {}
+for _, previewFlag in pairs(TEXTURE_INDICATOR_PREVIEW_FLAGS) do
+    TEXTURE_INDICATOR_PREVIEW_FLAG_SET[previewFlag] = true
+end
+
+local function ClearTextureIndicatorPreviewFieldsFromFrame(self, frame)
+    if not (frame and frame.buttons) then
+        return
+    end
+
+    for _, button in ipairs(frame.buttons) do
+        local hadPreview = false
+        for _, previewFlag in pairs(TEXTURE_INDICATOR_PREVIEW_FLAGS) do
+            if button[previewFlag] ~= nil then
+                button[previewFlag] = nil
+                hadPreview = true
+            end
+        end
+        button._textureIndicatorPreviewDirty = false
+
+        -- Only touch the runtime renderer when retiring a stale flag from the
+        -- old live-preview path. Normal preview toggles remain stored-only and
+        -- never ask the world panel to repaint.
+        if hadPreview then
+            if button.UpdateCooldown then
+                button:UpdateCooldown()
+            else
+                self:UpdateAuraTextureVisual(button)
+            end
+        end
+    end
+end
+
+local function ClearTextureIndicatorPreviewFields(self, groupId)
+    local frame = self.groupFrames and self.groupFrames[groupId]
+    ClearTextureIndicatorPreviewFieldsFromFrame(self, frame)
+
+    local dormantFrame = self._dormantFrames and self._dormantFrames[groupId]
+    if dormantFrame ~= frame then
+        ClearTextureIndicatorPreviewFieldsFromFrame(self, dormantFrame)
+    end
+end
 
 function CooldownCompanion:SetGroupTextureIndicatorPreview(groupId, indicatorKey, show)
     local previewFlag = TEXTURE_INDICATOR_PREVIEW_FLAGS[indicatorKey]
@@ -752,21 +794,17 @@ function CooldownCompanion:SetGroupTextureIndicatorPreview(groupId, indicatorKey
         return
     end
 
-    SetGroupPreview(
-        self,
-        groupId,
-        show,
-        previewFlag,
-        "_textureIndicatorPreviewDirty",
-        false,
-        nil,
-        true
-    )
+    -- Texture effects are a config-mirror feature. Keep their state in the
+    -- config-owned store even while the pinned mirror is not visible, and
+    -- proactively retire any fields left on live buttons by older builds.
+    SetActiveGroupPreviewFlag(groupId, previewFlag, show)
+    ClearActiveButtonPreviewFlagForGroup(groupId, previewFlag)
+    ClearTextureIndicatorPreviewFields(self, groupId)
 end
 
 function CooldownCompanion:IsGroupTextureIndicatorPreviewActive(groupId, indicatorKey)
     local previewFlag = TEXTURE_INDICATOR_PREVIEW_FLAGS[indicatorKey]
-    return previewFlag and self:IsPreviewFlagActive(groupId, nil, previewFlag) or false
+    return previewFlag and IsActivePreviewFlagStored(groupId, nil, previewFlag) or false
 end
 
 function CooldownCompanion:ClearAllTextureIndicatorPreviews()
@@ -774,19 +812,17 @@ function CooldownCompanion:ClearAllTextureIndicatorPreviews()
         ClearActivePreviewFlag(TEXTURE_INDICATOR_PREVIEW_FLAGS[indicatorKey])
     end
 
-    for _, frame in pairs(self.groupFrames) do
-        for _, button in ipairs(frame.buttons) do
-            button._textureProcPreview = nil
-            button._textureAuraPreview = nil
-            button._textureReadyPreview = nil
-            button._textureUnusablePreview = nil
-            button._textureIndicatorPreviewDirty = false
-            if button.UpdateCooldown then
-                button:UpdateCooldown()
-            else
-                self:UpdateAuraTextureVisual(button)
-            end
+    for groupId in pairs(self.groupFrames or {}) do
+        ClearTextureIndicatorPreviewFields(self, groupId)
+    end
+    for groupId in pairs(self._dormantFrames or {}) do
+        if not (self.groupFrames and self.groupFrames[groupId]) then
+            ClearTextureIndicatorPreviewFields(self, groupId)
         end
+    end
+
+    if ST._StopTextureIndicatorPreviewMirror then
+        ST._StopTextureIndicatorPreviewMirror()
     end
 end
 
@@ -887,6 +923,12 @@ function CooldownCompanion:ClearAllAuraTexturePickerPreviews()
 end
 
 local function ApplyPreviewFlagToButton(button, previewFlag)
+    -- Texture indicator preview state belongs exclusively to the config
+    -- mirror, including after a live group frame is rebuilt.
+    if TEXTURE_INDICATOR_PREVIEW_FLAG_SET[previewFlag] then
+        return
+    end
+
     button[previewFlag] = true
     if previewFlag == "_procGlowPreview" then
         button._procGlowActive = false

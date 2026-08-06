@@ -459,6 +459,9 @@ local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGrou
         return false
     end
 
+    if CooldownCompanion.EnableTexturePanelAuraDisplayForEntry then
+        CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(targetGroup, entryData)
+    end
     table.insert(targetGroup.buttons, entryData)
     table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
     CooldownCompanion:RefreshGroupFrame(targetGroupId)

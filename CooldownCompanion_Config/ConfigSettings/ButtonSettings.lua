@@ -53,16 +53,18 @@ local function GroupUsesTriggerPanelEntries(group)
     return group and group.displayMode == "trigger"
 end
 
--- 12.1 aura tracking is offered on spell entries in icon/bar groups only:
--- text mode has no compliant aura display (aura numbers can't enter format
--- strings), and trigger/texture panels lost aura conditions by design.
+-- 12.1 aura tracking is offered on spell entries in icon/bar groups and as a
+-- Texture-only active/inactive display. Text mode cannot safely format secret
+-- aura values, and Trigger panels retain their separate condition system.
 local function EntryOffersAuraTab(group, buttonData)
     if not (buttonData and buttonData.type == "spell") then return false end
     if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
         return false
     end
     local displayMode = group and group.displayMode or "icons"
-    return displayMode == "icons" or displayMode == "bars"
+    return displayMode == "icons"
+        or displayMode == "bars"
+        or (displayMode == "textures" and buttonData.textureAuraDisplayEnabled == true)
 end
 
 local function BuildButtonSettingsTabs(group, buttonData)
@@ -199,7 +201,7 @@ end
 
 -- Row grammar (RowWidgets.lua): one CDC-DropdownRow per alertable event in a
 -- two-column grid. Expects the tab's ScrollFrame (a "List") directly.
-local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
+local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons)
     -- Function-local, not an upvalue: see the note by the row-grammar imports.
     local BeginRowGrid = ST._BeginRowGrid
 
@@ -219,7 +221,24 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
     if soundCollapsed then return end
 
     local validEvents = CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData)
-    if not validEvents then
+    if group and group.displayMode == "textures" then
+        -- Texture-only aura tracking deliberately does not set the general
+        -- auraTracking flag. Make this group's sound surface follow the
+        -- explicit Texture opt-in instead, and do not advertise aura events
+        -- while the active-only display is explicitly disabled.
+        local textureAuraEnabled = CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)
+        if textureAuraEnabled then
+            validEvents = validEvents or {}
+        end
+        for eventKey in pairs(CooldownCompanion:GetNativeAuraSoundEventKeys()) do
+            if textureAuraEnabled then
+                validEvents[eventKey] = true
+            elseif validEvents then
+                validEvents[eventKey] = nil
+            end
+        end
+    end
+    if not validEvents or not next(validEvents) then
         -- A transient state of the entry's tracking, not a setting, so it stays
         -- a full-width wrapped label under the heading rather than a row.
         local noEvents = AceGUI:Create("Label")
@@ -365,7 +384,7 @@ local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButto
 
     -- Row grammar: the event rows sit in a BeginRowGrid the section opens on
     -- the scroll itself, so no Flow host is interposed any more.
-    BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
+    BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons)
 end
 
 -- Row grammar (RowWidgets.lua). A clause is an ITEM, not a setting, so it
