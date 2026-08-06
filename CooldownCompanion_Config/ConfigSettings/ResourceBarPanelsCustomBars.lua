@@ -28,6 +28,7 @@ local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 -- rather than restating them.
 local AddCheckboxRow = ST._AddCheckboxRow
 local AddDropdownRow = ST._AddDropdownRow
+local AddSoundPreviewDropdownRow = ST._AddSoundPreviewDropdownRow
 local AddColorRow = ST._AddColorRow
 local AddEditBoxRow = ST._AddEditBoxRow
 local AddLabelRow = ST._AddLabelRow
@@ -399,31 +400,15 @@ local function OpenConfigCustomBarMenu(customBarId)
     return true
 end
 
-local function BuildSortedCustomBarSoundOptionOrder(soundOptions)
-    local order = {}
-    for optionKey in pairs(soundOptions or {}) do
-        order[#order + 1] = optionKey
-    end
-    table.sort(order, function(a, b)
-        if a == "None" then return true end
-        if b == "None" then return false end
-        local aLabel = soundOptions[a] or tostring(a)
-        local bLabel = soundOptions[b] or tostring(b)
-        if aLabel == bLabel then
-            return tostring(a) < tostring(b)
-        end
-        return aLabel < bLabel
-    end)
-    return order
-end
-
 local function BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
     local soundHeading, soundCollapsed =
         AddCustomBarSection(container, "Sound Alerts", "sound", GetCustomBarCollapseKey(cab))
 
     local soundInfoBtn = CreateInfoButton(soundHeading.frame, soundHeading.label, "LEFT", "RIGHT", 4, 0, {
         "Sound Alerts",
-        {"Sound alerts are played through the Master channel and follow your game's Master volume setting.", 1, 1, 1, true},
+        {"Sound effects use the Master channel and follow Master Volume. Text to Speech uses WoW's selected voice, speech rate, and speech volume.", 1, 1, 1, true},
+        {" ", 1, 1, 1, false},
+        {"Aura-event alerts use Blizzard's aura-sound API, which supports file-backed sounds only. Cooldown Manager sound-kit choices and Text to Speech are therefore unavailable in these aura-event menus.", 1, 1, 1, true},
     }, infoButtons)
     AnchorLeftAlignedHeadingRule(soundHeading, soundInfoBtn)
 
@@ -440,7 +425,7 @@ local function BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
     end
 
     local soundOptions = CooldownCompanion:GetSoundAlertOptions()
-    local soundOptionOrder = BuildSortedCustomBarSoundOptionOrder(soundOptions)
+    local soundOptionOrder = CooldownCompanion:GetSoundAlertOptionOrder(soundOptions)
     local eventOrder = CooldownCompanion:GetSoundAlertEventOrder()
 
     -- The aura sounds play through Blizzard's aura system, which accepts
@@ -448,7 +433,7 @@ local function BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
     local auraSoundOptions, auraSoundOptionOrder
     if validEvents.onAuraApplied or validEvents.onAuraStackGained or validEvents.onAuraRemoved then
         auraSoundOptions = CooldownCompanion:GetAuraSoundAlertOptions()
-        auraSoundOptionOrder = BuildSortedCustomBarSoundOptionOrder(auraSoundOptions)
+        auraSoundOptionOrder = CooldownCompanion:GetSoundAlertOptionOrder(auraSoundOptions)
     end
 
     -- This row set is FILTERED (see the fill rule in the recipe comment): a
@@ -471,7 +456,7 @@ local function BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
 
     local function AddSoundEventRow(column, eventKey)
         local isAuraEvent = CooldownCompanion:IsAuraSoundAlertEvent(eventKey)
-        AddDropdownRow(column, {
+        AddSoundPreviewDropdownRow(column, {
             label = CooldownCompanion:GetCustomBarSoundAlertEventLabel(cab, eventKey),
             pulloutWidth = SOUND_PULLOUT_WIDTH,
             list = isAuraEvent and auraSoundOptions or soundOptions,
@@ -480,6 +465,9 @@ local function BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
             onChange = function(val)
                 CooldownCompanion:SetCustomBarSoundAlertEvent(cab, eventKey, val)
                 CooldownCompanion:RefreshConfigPanel()
+            end,
+            onPreview = function(value)
+                CooldownCompanion:PreviewCustomBarSoundAlertSelection(cab, value)
             end,
         })
     end

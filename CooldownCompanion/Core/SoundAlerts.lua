@@ -27,21 +27,23 @@ local BLIZZARD_SOUNDKIT_KEY_PREFIX = "__blz_soundkit:"
 local BLIZZARD_TTS_KEY = "__blz_tts"
 
 local BLIZZARD_SOUND_CATEGORY_ORDER = {
-    "Instruments",
     "Animals",
-    "Impacts",
-    "War3",
-    "War2",
     "Devices",
+    "Impacts",
+    "Instruments",
+    "Short",
+    "War2",
+    "War3",
 }
 
 local BLIZZARD_SOUND_CATEGORY_LABELS = {
-    Instruments = COOLDOWN_VIEWER_SETTINGS_SOUND_ALERT_CATEGORY_INSTRUMENTS or "Instruments",
     Animals = COOLDOWN_VIEWER_SETTINGS_SOUND_ALERT_CATEGORY_ANIMALS or "Animals",
-    Impacts = COOLDOWN_VIEWER_SETTINGS_SOUND_ALERT_CATEGORY_IMPACTS or "Impacts",
-    War3 = COOLDOWN_VIEWER_SETTINGS_SOUND_ALERT_CATEGORY_WAR3 or "Warcraft 3",
-    War2 = COOLDOWN_VIEWER_SETTINGS_SOUND_ALERT_CATEGORY_WAR2 or "Warcraft 2",
     Devices = COOLDOWN_VIEWER_SETTINGS_SOUND_ALERT_CATEGORY_DEVICES or "Devices",
+    Impacts = COOLDOWN_VIEWER_SETTINGS_SOUND_ALERT_CATEGORY_IMPACTS or "Impacts",
+    Instruments = COOLDOWN_VIEWER_SETTINGS_SOUND_ALERT_CATEGORY_INSTRUMENTS or "Instruments",
+    Short = COOLDOWN_VIEWER_SETTINGS_SOUND_ALERT_CATEGORY_SHORT or "Short",
+    War2 = COOLDOWN_VIEWER_SETTINGS_SOUND_ALERT_CATEGORY_WAR2 or "Warcraft 2",
+    War3 = COOLDOWN_VIEWER_SETTINGS_SOUND_ALERT_CATEGORY_WAR3 or "Warcraft 3",
 }
 
 local BLIZZARD_TTS_LABEL = COOLDOWN_VIEWER_SETTINGS_ALERT_LABEL_SOUND_TYPE_TEXT_TO_SPEECH or "Text to Speech"
@@ -585,11 +587,24 @@ function CooldownCompanion:GetSoundAlertOptions()
 
     local soundData = _G.CooldownViewerSoundData
     if type(soundData) == "table" then
+        local categoryOrder = {}
+        local categoryLabels = {}
+        local soundCategoryEnum = Enum.CooldownViewerSoundCategory
+        if type(soundCategoryEnum) == "table" then
+            for _, categoryName in ipairs(BLIZZARD_SOUND_CATEGORY_ORDER) do
+                local categoryKey = soundCategoryEnum[categoryName]
+                if categoryKey ~= nil then
+                    categoryOrder[#categoryOrder + 1] = categoryKey
+                    categoryLabels[categoryKey] = BLIZZARD_SOUND_CATEGORY_LABELS[categoryName]
+                end
+            end
+        end
+
         local function AddBlizzardCategory(categoryKey)
             local categoryData = soundData[categoryKey]
             if type(categoryData) ~= "table" then return end
 
-            local categoryText = BLIZZARD_SOUND_CATEGORY_LABELS[categoryKey] or categoryKey
+            local categoryText = categoryLabels[categoryKey] or categoryKey
             for _, soundEntry in ipairs(categoryData) do
                 if type(soundEntry) == "table" and soundEntry.soundKitID and soundEntry.text then
                     local optionKey = BLIZZARD_SOUNDKIT_KEY_PREFIX .. tostring(soundEntry.soundKitID)
@@ -598,19 +613,12 @@ function CooldownCompanion:GetSoundAlertOptions()
             end
         end
 
-        for _, categoryKey in ipairs(BLIZZARD_SOUND_CATEGORY_ORDER) do
+        for _, categoryKey in ipairs(categoryOrder) do
             AddBlizzardCategory(categoryKey)
         end
 
         for categoryKey, _ in pairs(soundData) do
-            local alreadyOrdered = false
-            for _, orderedCategory in ipairs(BLIZZARD_SOUND_CATEGORY_ORDER) do
-                if orderedCategory == categoryKey then
-                    alreadyOrdered = true
-                    break
-                end
-            end
-            if not alreadyOrdered then
+            if categoryLabels[categoryKey] == nil then
                 AddBlizzardCategory(categoryKey)
             end
         end
@@ -625,6 +633,30 @@ function CooldownCompanion:GetSoundAlertOptions()
         end
     end
     return options
+end
+
+function CooldownCompanion:GetSoundAlertOptionOrder(soundOptions)
+    local order = {}
+    for optionKey in pairs(soundOptions or {}) do
+        order[#order + 1] = optionKey
+    end
+
+    table.sort(order, function(a, b)
+        local aPriority = (a == SOUND_NONE_KEY and 1) or (a == BLIZZARD_TTS_KEY and 2) or 3
+        local bPriority = (b == SOUND_NONE_KEY and 1) or (b == BLIZZARD_TTS_KEY and 2) or 3
+        if aPriority ~= bPriority then
+            return aPriority < bPriority
+        end
+
+        local aLabel = soundOptions[a] or tostring(a)
+        local bLabel = soundOptions[b] or tostring(b)
+        if aLabel == bLabel then
+            return tostring(a) < tostring(b)
+        end
+        return aLabel < bLabel
+    end)
+
+    return order
 end
 
 function CooldownCompanion:GetSoundAlertEventOrder()
@@ -737,6 +769,10 @@ end
 
 function CooldownCompanion:PreviewSoundAlertSelection(buttonData, soundName)
     return PlaySharedMediaSound(soundName, self:GetButtonSoundAlertChannel(buttonData), GetButtonSpeechText(buttonData))
+end
+
+function CooldownCompanion:PreviewCustomBarSoundAlertSelection(customBar, soundName)
+    return PlaySharedMediaSound(soundName, self:GetCustomBarSoundAlertChannel(customBar), GetCustomBarSpeechText(customBar))
 end
 
 -- Options list for the native aura sound events. C_UnitAuras.AddAuraSound

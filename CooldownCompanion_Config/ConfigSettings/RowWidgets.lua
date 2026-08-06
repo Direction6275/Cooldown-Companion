@@ -96,6 +96,7 @@ local LABEL_DISABLED_COLOR   = { 0.5, 0.5, 0.5 }
 local CHECKBOX_ROW_TYPE = "CDC-CheckBoxRow"
 local SLIDER_ROW_TYPE   = "CDC-SliderRow"
 local DROPDOWN_ROW_TYPE = "CDC-DropdownRow"
+local SOUND_PREVIEW_DROPDOWN_ITEM_TYPE = "CDC-Dropdown-Item-SoundPreview"
 local EDITBOX_ROW_TYPE  = "CDC-EditBoxRow"
 local COLOR_ROW_TYPE    = "CDC-ColorRow"
 local LABEL_ROW_TYPE    = "CDC-LabelRow"
@@ -710,6 +711,120 @@ do
 end
 
 ------------------------------------------------------------------------
+-- CDC-Dropdown-Item-SoundPreview
+--
+-- Sound rows need an action button inside each pullout item. Stock dropdown
+-- item pools are shared with every addon, and frames cannot be destroyed, so
+-- this uses an addon-owned item type rather than attaching permanent children
+-- to pooled Dropdown-Item-Toggle widgets. The main row keeps stock toggle
+-- semantics; the sound button fires OnPreview without selecting or closing.
+------------------------------------------------------------------------
+do
+    local ItemBase = LibStub("AceGUI-3.0-DropDown-ItemBase"):GetItemBase()
+    local SOUND_PREVIEW_ICON_ATLAS = "chatframe-button-icon-voicechat"
+    local SOUND_PREVIEW_TEXT_LEFT_OFFSET = 18
+    local SOUND_PREVIEW_TEXT_RIGHT_OFFSET = -8
+    local SOUND_PREVIEW_TEXT_GAP = -4
+    local SOUND_PREVIEW_BUTTON_RIGHT_OFFSET = -18
+
+    local function UpdateToggle(self)
+        self.check:SetShown(self.value == true)
+    end
+
+    local function SetValue(self, value)
+        self.value = value
+        UpdateToggle(self)
+    end
+
+    local function GetValue(self)
+        return self.value
+    end
+
+    local function SetPreviewEnabled(self, enabled)
+        enabled = enabled == true
+        self.previewButton:SetShown(enabled)
+
+        self.text:ClearAllPoints()
+        self.text:SetPoint("TOPLEFT", self.frame, "TOPLEFT", SOUND_PREVIEW_TEXT_LEFT_OFFSET, 0)
+        if enabled then
+            self.text:SetPoint("BOTTOMRIGHT", self.previewButton, "LEFT", SOUND_PREVIEW_TEXT_GAP, 0)
+        else
+            self.text:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", SOUND_PREVIEW_TEXT_RIGHT_OFFSET, 0)
+            self.events.OnPreview = nil
+            self:SetUserData("cdcSoundPreviewCallback", nil)
+        end
+    end
+
+    local function OnAcquire(self)
+        ItemBase.OnAcquire(self)
+        self:SetValue(nil)
+        self:SetPreviewEnabled(false)
+    end
+
+    local function OnRelease(self)
+        self:SetPreviewEnabled(false)
+        self:SetValue(nil)
+        ItemBase.OnRelease(self)
+    end
+
+    local function Frame_OnClick(frame)
+        local self = frame.obj
+        if self.disabled then return end
+
+        self.value = not self.value
+        PlaySound(self.value and 856 or 857)
+        UpdateToggle(self)
+        self:Fire("OnValueChanged", self.value)
+    end
+
+    local function Preview_OnClick(button)
+        local self = button.obj
+        if self.disabled then return end
+
+        local value = self:GetUserData("value")
+        if value ~= nil then
+            self:Fire("OnPreview", value)
+        end
+    end
+
+    local function Constructor()
+        local widget = ItemBase.Create(SOUND_PREVIEW_DROPDOWN_ITEM_TYPE)
+
+        widget.frame:SetScript("OnClick", Frame_OnClick)
+        widget.OnAcquire = OnAcquire
+        widget.OnRelease = OnRelease
+        widget.SetValue = SetValue
+        widget.GetValue = GetValue
+        widget.SetPreviewEnabled = SetPreviewEnabled
+
+        local previewButton = CreateFrame("Button", nil, widget.frame)
+        previewButton.obj = widget
+        previewButton:SetSize(16, 16)
+        previewButton:SetPoint("RIGHT", widget.frame, "RIGHT", SOUND_PREVIEW_BUTTON_RIGHT_OFFSET, 0)
+        previewButton:SetHighlightAtlas(SOUND_PREVIEW_ICON_ATLAS)
+        if previewButton:GetHighlightTexture() then
+            previewButton:GetHighlightTexture():SetAlpha(0.3)
+        end
+        previewButton:SetScript("OnClick", Preview_OnClick)
+
+        local previewIcon = previewButton:CreateTexture(nil, "ARTWORK")
+        previewIcon:SetSize(12, 12)
+        previewIcon:SetPoint("CENTER")
+        previewIcon:SetAtlas(SOUND_PREVIEW_ICON_ATLAS, false)
+
+        widget.previewButton = previewButton
+
+        AceGUI:RegisterAsWidget(widget)
+        return widget
+    end
+
+    AceGUI:RegisterWidgetType(
+        SOUND_PREVIEW_DROPDOWN_ITEM_TYPE,
+        Constructor,
+        ROW_WIDGET_VERSION + ItemBase.version)
+end
+
+------------------------------------------------------------------------
 -- CDC-DropdownRow
 --
 -- Menu logic is not reimplemented: the row embeds a stock AceGUI Dropdown as
@@ -1240,12 +1355,12 @@ local function AddSliderRow(container, opts)
     return row
 end
 
-local function AddDropdownRow(container, opts)
+local function AddDropdownRow(container, opts, itemTypeOverride)
     local row = AceGUI:Create(DROPDOWN_ROW_TYPE)
     ApplyCommonRowOptions(row, opts)
     if opts.multiselect then row:SetMultiselect(true) end
     if opts.pulloutWidth then row:SetPulloutWidth(opts.pulloutWidth) end
-    row:SetList(opts.list, opts.order, opts.itemType)
+    row:SetList(opts.list, opts.order, itemTypeOverride or opts.itemType)
     if opts.value ~= nil then row:SetValue(opts.value) end
     row:SetDisabled(opts.disabled == true)
     if opts.onChange then
@@ -1254,6 +1369,39 @@ local function AddDropdownRow(container, opts)
         end)
     end
     container:AddChild(row)
+    return row
+end
+
+local function ForwardSoundPreview(item, event, value)
+    local callback = item:GetUserData("cdcSoundPreviewCallback")
+    if callback then
+        callback(value)
+    end
+end
+
+-- The sound-specific wrapper keeps pullout anatomy and pooled cleanup inside
+-- this file. opts.onPreview receives the clicked sound value; it does not
+-- select the item or close the dropdown.
+local function AddSoundPreviewDropdownRow(container, opts)
+    local onPreview = opts.onPreview
+    local row = AddDropdownRow(container, opts, SOUND_PREVIEW_DROPDOWN_ITEM_TYPE)
+
+    row:SetCallback("OnOpened", function(widget)
+        if not widget.pullout then return end
+
+        for _, item in widget.pullout:IterateItems() do
+            if item.type == SOUND_PREVIEW_DROPDOWN_ITEM_TYPE then
+                local value = item:GetUserData("value")
+                local canPreview = type(onPreview) == "function" and value ~= nil and value ~= "None"
+                item:SetPreviewEnabled(canPreview)
+                if canPreview then
+                    item:SetUserData("cdcSoundPreviewCallback", onPreview)
+                    item:SetCallback("OnPreview", ForwardSoundPreview)
+                end
+            end
+        end
+    end)
+
     return row
 end
 
@@ -1548,6 +1696,7 @@ ST._RowGrammar = {
 ST._AddCheckboxRow = AddCheckboxRow
 ST._AddSliderRow = AddSliderRow
 ST._AddDropdownRow = AddDropdownRow
+ST._AddSoundPreviewDropdownRow = AddSoundPreviewDropdownRow
 ST._AddEditBoxRow = AddEditBoxRow
 ST._AddColorRow = AddColorRow
 ST._AddLabelRow = AddLabelRow

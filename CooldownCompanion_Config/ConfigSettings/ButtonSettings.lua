@@ -23,6 +23,7 @@ local UpdateItemChargeMetadata = CooldownCompanion.UpdateItemChargeMetadata
 -- every converted surface follows.
 local AddSliderRow = ST._AddSliderRow
 local AddDropdownRow = ST._AddDropdownRow
+local AddSoundPreviewDropdownRow = ST._AddSoundPreviewDropdownRow
 local AddEditBoxRow = ST._AddEditBoxRow
 local AddColorRow = ST._AddColorRow
 local AddLabelRow = ST._AddLabelRow
@@ -43,7 +44,6 @@ local CONDITION_PULLOUT_WIDTH = 300
 local RefreshButtonSettingsMultiSelect = ST._RefreshButtonSettingsMultiSelect
 local RefreshPanelMultiSelect = ST._RefreshPanelMultiSelect
 local BuildOverridesTab = ST._BuildOverridesTab
-local SOUND_ALERT_NONE_OPTION_KEY = "None" -- Keep in sync with Core/SoundAlerts.lua SOUND_NONE_KEY.
 
 local function GroupUsesTexturePanelEntries(group)
     return group and (group.displayMode or "icons") == "textures"
@@ -156,27 +156,6 @@ local function BuildEntryMultiSelectTabs(group, multiCount, multiIndices)
     }
 end
 
-local function BuildSortedSoundOptionOrder(soundOptions)
-    local order = {}
-    for optionKey in pairs(soundOptions) do
-        order[#order + 1] = optionKey
-    end
-
-    table.sort(order, function(a, b)
-        if a == SOUND_ALERT_NONE_OPTION_KEY then return true end
-        if b == SOUND_ALERT_NONE_OPTION_KEY then return false end
-
-        local aLabel = soundOptions[a] or tostring(a)
-        local bLabel = soundOptions[b] or tostring(b)
-        if aLabel == bLabel then
-            return tostring(a) < tostring(b)
-        end
-        return aLabel < bLabel
-    end)
-
-    return order
-end
-
 local function ConfigurePriorityMoveButton(button, rotation, tooltipTitle, tooltipBody, disabled, onClick)
     local isDisabled = disabled
     button:SetSize(18, 18)
@@ -214,107 +193,6 @@ local function ConfigurePriorityMoveButton(button, rotation, tooltipTitle, toolt
     button:Show()
 end
 
-local SOUND_PREVIEW_ICON_ATLAS = "chatframe-button-icon-voicechat"
-local SOUND_PREVIEW_TEXT_LEFT_OFFSET = 18
-local SOUND_PREVIEW_TEXT_RIGHT_OFFSET = -8
-local SOUND_PREVIEW_TEXT_GAP = -4
-local SOUND_PREVIEW_BUTTON_RIGHT_OFFSET = -18
-
-local function ResetSoundPreviewRow(item)
-    if not (item and item.frame and item.text) then return end
-
-    local previewBtn = item._cdcSoundPreviewBtn
-    if previewBtn then
-        previewBtn:SetShown(false)
-        previewBtn._cdcButtonData = nil
-        previewBtn._cdcGroup = nil
-        previewBtn._cdcSoundValue = nil
-        previewBtn:ClearAllPoints()
-        previewBtn:SetParent(nil)
-    end
-
-    item.text:ClearAllPoints()
-    item.text:SetPoint("TOPLEFT", item.frame, "TOPLEFT", SOUND_PREVIEW_TEXT_LEFT_OFFSET, 0)
-    item.text:SetPoint("BOTTOMRIGHT", item.frame, "BOTTOMRIGHT", SOUND_PREVIEW_TEXT_RIGHT_OFFSET, 0)
-end
-
-local function EnsureSoundPreviewRowCleanup(item)
-    if not (item and item.SetCallback) then return end
-
-    local releaseCallback = item._cdcSoundPreviewReleaseCallback
-    if not releaseCallback then
-        releaseCallback = function(widget, event)
-            local prevOnRelease = widget._cdcSoundPreviewWrappedOnRelease
-            widget._cdcSoundPreviewWrappedOnRelease = nil
-            ResetSoundPreviewRow(widget)
-            if prevOnRelease then
-                prevOnRelease(widget, event)
-            end
-        end
-        item._cdcSoundPreviewReleaseCallback = releaseCallback
-    end
-
-    local currentOnRelease = item.events and item.events["OnRelease"]
-    if currentOnRelease == releaseCallback then
-        return
-    end
-
-    item._cdcSoundPreviewWrappedOnRelease = currentOnRelease
-    item:SetCallback("OnRelease", releaseCallback)
-end
-
-local function ConfigureSoundPreviewRow(item, buttonData, group)
-    if not (item and item.frame and item.text) then return end
-
-    EnsureSoundPreviewRowCleanup(item)
-
-    local previewBtn = item._cdcSoundPreviewBtn
-    if not previewBtn then
-        previewBtn = CreateFrame("Button", nil, item.frame)
-        previewBtn:SetSize(16, 16)
-        previewBtn:SetHighlightAtlas(SOUND_PREVIEW_ICON_ATLAS)
-        if previewBtn:GetHighlightTexture() then
-            previewBtn:GetHighlightTexture():SetAlpha(0.3)
-        end
-        local icon = previewBtn:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(12, 12)
-        icon:SetPoint("CENTER")
-        icon:SetAtlas(SOUND_PREVIEW_ICON_ATLAS, false)
-        previewBtn._cdcSoundPreviewIcon = icon
-        previewBtn:SetScript("OnClick", function(self)
-            local previewValue = self._cdcSoundValue
-            local previewButtonData = self._cdcButtonData
-            local previewGroup = self._cdcGroup
-            if previewValue and previewValue ~= SOUND_ALERT_NONE_OPTION_KEY and previewGroup then
-                CooldownCompanion:PreviewTriggerPanelSoundAlertSelection(previewGroup, previewValue)
-            elseif previewValue and previewValue ~= SOUND_ALERT_NONE_OPTION_KEY and previewButtonData then
-                CooldownCompanion:PreviewSoundAlertSelection(previewButtonData, previewValue)
-            end
-        end)
-        item._cdcSoundPreviewBtn = previewBtn
-    end
-
-    previewBtn:SetParent(item.frame)
-    previewBtn:SetFrameLevel(item.frame:GetFrameLevel() + 1)
-    previewBtn:ClearAllPoints()
-    previewBtn:SetPoint("RIGHT", item.frame, "RIGHT", SOUND_PREVIEW_BUTTON_RIGHT_OFFSET, 0)
-    previewBtn._cdcButtonData = buttonData
-    previewBtn._cdcGroup = group
-
-    local previewValue = item.userdata and item.userdata.value
-    local hasPreview = previewValue and previewValue ~= SOUND_ALERT_NONE_OPTION_KEY
-    previewBtn._cdcSoundValue = hasPreview and previewValue or nil
-    previewBtn:SetShown(hasPreview)
-
-    item.text:ClearAllPoints()
-    item.text:SetPoint("TOPLEFT", item.frame, "TOPLEFT", SOUND_PREVIEW_TEXT_LEFT_OFFSET, 0)
-    if hasPreview then
-        item.text:SetPoint("BOTTOMRIGHT", previewBtn, "LEFT", SOUND_PREVIEW_TEXT_GAP, 0)
-    else
-        item.text:SetPoint("BOTTOMRIGHT", item.frame, "BOTTOMRIGHT", SOUND_PREVIEW_TEXT_RIGHT_OFFSET, 0)
-    end
-end
-
 local function SoundAlertsCollapseKey()
     return tostring(CS.selectedGroup) .. "_" .. tostring(CS.selectedButton) .. "_soundalerts"
 end
@@ -332,7 +210,9 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
     -- restarts after that badge.
     local soundInfoBtn = CreateInfoButton(soundHeading.frame, soundHeading.label, "LEFT", "RIGHT", 4, 0, {
         "Sound Alerts",
-        {"Sound alerts are played through the Master channel and follow your game's Master volume setting.", 1, 1, 1, true},
+        {"Sound effects use the Master channel and follow Master Volume. Text to Speech uses WoW's selected voice, speech rate, and speech volume.", 1, 1, 1, true},
+        {" ", 1, 1, 1, false},
+        {"Aura-event alerts use Blizzard's aura-sound API, which supports file-backed sounds only. Cooldown Manager sound-kit choices and Text to Speech are therefore unavailable in these aura-event menus.", 1, 1, 1, true},
     }, infoButtons)
     AnchorLeftAlignedHeadingRule(soundHeading, soundInfoBtn)
 
@@ -351,7 +231,7 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
     end
 
     local soundOptions = CooldownCompanion:GetSoundAlertOptions()
-    local soundOptionOrder = BuildSortedSoundOptionOrder(soundOptions)
+    local soundOptionOrder = CooldownCompanion:GetSoundAlertOptionOrder(soundOptions)
     local eventOrder = CooldownCompanion:GetSoundAlertEventOrder()
 
     -- The aura sounds play through Blizzard's aura system, which accepts
@@ -359,7 +239,7 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
     local auraSoundOptions, auraSoundOptionOrder
     if validEvents.onAuraApplied or validEvents.onAuraStackGained or validEvents.onAuraRemoved then
         auraSoundOptions = CooldownCompanion:GetAuraSoundAlertOptions()
-        auraSoundOptionOrder = BuildSortedSoundOptionOrder(auraSoundOptions)
+        auraSoundOptionOrder = CooldownCompanion:GetSoundAlertOptionOrder(auraSoundOptions)
     end
 
     -- This row set is FILTERED (see the fill rule in the recipe comment): an
@@ -381,7 +261,7 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
 
     local function AddSoundEventRow(column, eventKey)
         local isAuraEvent = CooldownCompanion:IsAuraSoundAlertEvent(eventKey)
-        local row = AddDropdownRow(column, {
+        AddSoundPreviewDropdownRow(column, {
             label = CooldownCompanion:GetSoundAlertEventLabelForButton(buttonData, eventKey),
             pulloutWidth = SOUND_PULLOUT_WIDTH,
             list = isAuraEvent and auraSoundOptions or soundOptions,
@@ -398,21 +278,10 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
                     ST._RefreshButtonsPreviewMirror()
                 end
             end,
+            onPreview = function(value)
+                CooldownCompanion:PreviewSoundAlertSelection(buttonData, value)
+            end,
         })
-
-        -- Inline preview: click the sound icon on a pullout row to test that
-        -- sound without selecting it or closing the dropdown. CDC-DropdownRow
-        -- forwards its embedded dropdown's OnOpened with self = the row and
-        -- aliases row.pullout, so this registers on the ROW only - registering
-        -- on the child as well would configure every item twice.
-        row:SetCallback("OnOpened", function(widget)
-            if not widget.pullout then return end
-            for _, item in widget.pullout:IterateItems() do
-                ConfigureSoundPreviewRow(item, buttonData)
-            end
-        end)
-
-        return row
     end
 
     if #cooldownEvents > 0 and #auraEvents > 0 then
@@ -450,18 +319,20 @@ local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, in
     -- restarts after that badge.
     local soundInfoBtn = CreateInfoButton(soundHeading.frame, soundHeading.label, "LEFT", "RIGHT", 4, 0, {
         "Sound Alerts",
-        {"Plays when the trigger texture appears. This is panel-level and not tied to any one condition. Uses the Master channel and follows your game's Master volume setting.", 1, 1, 1, true},
+        {"Plays when the trigger texture appears. This is a panel alert, not an alert for any one condition.", 1, 1, 1, true},
+        {" ", 1, 1, 1, false},
+        {"Sound effects use the Master channel and follow Master Volume. Text to Speech uses WoW's selected voice, speech rate, and speech volume.", 1, 1, 1, true},
     }, infoButtons)
     AnchorLeftAlignedHeadingRule(soundHeading, soundInfoBtn)
 
     if soundCollapsed then return end
 
     local soundOptions = CooldownCompanion:GetSoundAlertOptions()
-    local soundOptionOrder = BuildSortedSoundOptionOrder(soundOptions)
+    local soundOptionOrder = CooldownCompanion:GetSoundAlertOptionOrder(soundOptions)
 
     local soundLeft = BeginRowGrid(scroll)
 
-    local row = AddDropdownRow(soundLeft, {
+    AddSoundPreviewDropdownRow(soundLeft, {
         label = CooldownCompanion:GetTriggerPanelSoundAlertEventLabel("onShow"),
         pulloutWidth = SOUND_PULLOUT_WIDTH,
         list = soundOptions,
@@ -470,19 +341,10 @@ local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, in
         onChange = function(value)
             CooldownCompanion:SetTriggerPanelSoundAlertEvent(group, "onShow", value)
         end,
+        onPreview = function(value)
+            CooldownCompanion:PreviewTriggerPanelSoundAlertSelection(group, value)
+        end,
     })
-
-    -- Inline preview: click the sound icon on a pullout row to test that sound
-    -- without selecting it. CDC-DropdownRow forwards its embedded dropdown's
-    -- OnOpened with self = the row and aliases row.pullout, so this registers
-    -- on the ROW only - registering on the child as well would configure every
-    -- item twice.
-    row:SetCallback("OnOpened", function(widget)
-        if not widget.pullout then return end
-        for _, item in widget.pullout:IterateItems() do
-            ConfigureSoundPreviewRow(item, buttonData, group)
-        end
-    end)
 end
 
 -- Sound alerts sit at the foot of the entry's Settings tab ("Condition" on
