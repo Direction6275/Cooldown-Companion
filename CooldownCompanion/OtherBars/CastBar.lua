@@ -1055,6 +1055,11 @@ local function ApplyPosition(cb, s, height)
     -- ManagedFrameMixin:OnShow/OnHide use.
     cb.layoutParent:RemoveManagedFrame(cb)
 
+    -- AddManagedFrame's UpdateFrame also reparents the cast bar to the managed
+    -- container. Restore the parent together with the points so deferred cast
+    -- event re-applies keep both the position and effective size stable.
+    cb:SetParent(UIParent)
+
     -- Inline icon: inset bar on the icon side so fill/spark stay within bar area
     local iconInsetLeft, iconInsetRight = 0, 0
     if s.stylingEnabled and s.showIcon and not s.iconOffset then
@@ -1908,6 +1913,14 @@ InstallHooks = function()
                 end)
             end
         end)
+
+        -- A cast bar left attached in Blizzard Edit Mode can be re-anchored by
+        -- player-frame managed layout changes without SetLook being called.
+        -- Reuse the deferred cast-event path so this hook never runs our layout
+        -- work inside Blizzard's layout call.
+        if type(PlayerFrame_AdjustAttachments) == "function" then
+            hooksecurefunc("PlayerFrame_AdjustAttachments", ScheduleReapply)
+        end
 
         -- When anchor group refreshes (visibility changes) — re-evaluate
         hooksecurefunc(CooldownCompanion, "RefreshGroupFrame", function(self, groupId)
