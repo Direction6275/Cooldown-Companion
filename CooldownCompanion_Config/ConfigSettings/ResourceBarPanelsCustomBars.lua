@@ -620,6 +620,11 @@ local TryAddAuraCandidate = ST._TryAddAuraCandidate
 local RemoveAuraCandidate = ST._RemoveAuraCandidate
 local AddAuraCandidateRow = ST._AddAuraCandidateRow
 local AddAuraStackMaxStatusLabel = ST._AddAuraStackMaxStatusLabel
+-- The same three marker styling rows the panel Pandemic section hangs off its
+-- gear. Custom bars keep the marker keys FLAT on the entry under exactly these
+-- names (ResourceBarAuraHost's style adapter reads them straight through), so
+-- the shared builder writes the right store with `cab` handed in as the style.
+local AddPandemicMarkerControls = ST._AddPandemicMarkerControls
 
 -- Candidate-resolution probe: the buttonData shape Core/Aura.lua reads,
 -- synthesized from cabConfig (the same mapping the runtime adapter uses).
@@ -776,9 +781,31 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
             RefreshCustomBarAuraConfig()
         end,
     })
+    -- The marker's look had no control on this surface at all: the style
+    -- adapter has always read these four keys off the entry, but nothing ever
+    -- wrote them, so every custom aura bar drew a hardcoded orange "!!".
+    -- Only the three styling rows are added here — the on/off above IS this
+    -- entry's switch, and the panel-wide pandemicMarkerEnabled kill switch has
+    -- no meaning on a surface where the bar is the entry.
+    local function BuildCustomBarPandemicMarkerAdvanced(panel)
+        AddPandemicMarkerControls(panel, cab, function()
+            CooldownCompanion:ApplyResourceBars()
+        end, function()
+            if CS.RefreshAdvancedSettingsPanel then
+                CS.RefreshAdvancedSettingsPanel()
+            end
+        end, { childrenOnly = true })
+    end
+    AddAdvancedToggle(pandemicRow, "rbCabPandemicMarker_" .. tostring(sectionKey), infoButtons,
+        pandemicValue == true, {
+            title = "Pandemic Marker Advanced",
+            build = BuildCustomBarPandemicMarkerAdvanced,
+        })
     AnchorRowBadge(pandemicRow, CreateInfoButton(pandemicRow.frame, pandemicRow.frame, "LEFT", "LEFT", 0, 0, {
         "Pandemic Marker",
         {"Marks the duration text during the last 30% of the aura. Recasting in that window adds to the remaining time instead of wasting it.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"It rides the duration text. With that text off, nothing shows.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
         {"On by default for debuffs on your target, off for your own buffs.", 1, 1, 1, true},
     }, infoButtons))
@@ -812,8 +839,11 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     if cab.pandemicEffect == true then
         -- No alpha: the pandemic color REPLACES the aura fill color (owner
         -- ruling), so the live clone renders it opaque.
+        --
+        -- "Fill Color", not "Pandemic Color": the marker gear a few rows up
+        -- opens its own "Marker Color", and the two drive different visuals.
         AddColorRow(auraRight, {
-            label = "Pandemic Color",
+            label = "Fill Color",
             indent = true,
             tbl = cab,
             key = "pandemicColor",

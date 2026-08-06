@@ -525,7 +525,7 @@ local CONTROLS = {
         label = "Preview Pandemic Effect",
         group = GROUP_EFFECTS,
         modes = { icons = true },
-        section = "pandemicGlow",
+        section = "pandemic",
         requiresPandemicEffect = true,
         settings = { tab = "effects", key = "pandemicGlow" },
         preview = FlagPreview("_pandemicPreview", "SetPandemicPreview", "SetGroupPandemicPreview"),
@@ -565,12 +565,13 @@ local CONTROLS = {
         label = "Preview Pandemic Color",
         group = GROUP_EFFECTS,
         modes = { bars = true },
-        section = "pandemicBar",
+        section = "pandemic",
         requiresPandemicEffect = true,
-        -- No advanced key exists for the bars pandemic rows (enable + color
-        -- only), so the gear lands on the Effects tab with the Glows section
-        -- forced open — the rows live inside it.
-        settings = { tab = "effects", uncollapse = "effects_glows" },
+        -- No advanced key exists for the bars pandemic FILL rows (enable +
+        -- color only), so the gear lands on the Effects tab with the Pandemic
+        -- section forced open by name — the rows live inside it. The section
+        -- constant is GroupTabs' (EFFECTS_PANDEMIC_SECTION); bars shares it.
+        settings = { tab = "effects", uncollapse = "effects_pandemic" },
         preview = FlagPreview("_pandemicPreview", "SetBarPandemicPreview", "SetGroupBarPandemicPreview"),
     },
     {

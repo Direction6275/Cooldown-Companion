@@ -232,6 +232,10 @@ local customBarContentFields = {
     "barAuraColorShiftColor",
     "pandemicEffect",
     "pandemicColor",
+    "pandemicMarker",
+    "pandemicMarkerText",
+    "pandemicMarkerColorMode",
+    "pandemicMarkerColor",
     -- Retired pandemic families, kept ONLY so not-yet-migrated legacy
     -- entries still count as configured content (the import/migration
     -- passes strip the keys themselves; nothing renders them).

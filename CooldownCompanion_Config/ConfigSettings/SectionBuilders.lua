@@ -310,37 +310,53 @@ local PANDEMIC_MARKER_TOOLTIP_LINES = {
     "Pandemic Marker",
     {"Marks the duration text during the last 30% of the aura. Recasting in that window adds to the remaining time instead of wasting it.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
+    {"It rides the aura duration text. With that text off, nothing shows.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
     {"On by default for debuffs on your target. Each entry's Aura tab has its own switch.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"If a game update ever breaks this display, turn it off here to restore standard duration text.", 1, 1, 1, true},
 }
 
--- Row grammar only (RowWidgets.lua); the marker text, the color mode and the
--- color are children of the toggle, so they indent under it. The pre-redesign
--- full-width stock shape had no call sites left after the conversion packets.
+-- Row grammar only (RowWidgets.lua). Three shapes, one builder:
+--   opts.enableOnly   - just the toggle, returned so the caller can chain a
+--                       gear and a promote badge off it (the Indicators tab's
+--                       Pandemic section).
+--   opts.childrenOnly - just what that gear opens, so the rows fill the panel
+--                       instead of indenting under a toggle that is elsewhere.
+--   neither           - both, the Overrides tab's inline shape, where the
+--                       three styling rows are children of the toggle.
+-- Labels deliberately say "Marker": these rows share a section with the
+-- pandemic EFFECT's own color, and three rows reading "Pandemic Color" in one
+-- column would be unreadable.
 local function AddPandemicMarkerControls(container, styleTable, refreshCallback, rebuildCallback, opts)
-    local enableRow = AddCheckboxRow(container, {
-        label = "Pandemic Marker",
-        value = styleTable.pandemicMarkerEnabled ~= false,
-        indent = opts and opts.indent,
-        onChange = function(val)
-            styleTable.pandemicMarkerEnabled = val
-            refreshCallback()
-            rebuildCallback()
-        end,
-    })
-    -- Anchor args are a placeholder - AnchorRowBadge re-points the button
-    -- onto the end of the row's label.
-    AnchorRowBadge(enableRow, CreateInfoButton(enableRow.frame, enableRow.frame, "LEFT", "LEFT", 0, 0,
-        PANDEMIC_MARKER_TOOLTIP_LINES, enableRow))
-
-    if styleTable.pandemicMarkerEnabled == false then
-        return
+    opts = opts or {}
+    local enableRow
+    if not opts.childrenOnly then
+        enableRow = AddCheckboxRow(container, {
+            label = "Pandemic Marker",
+            value = styleTable.pandemicMarkerEnabled ~= false,
+            indent = opts.indent,
+            onChange = function(val)
+                styleTable.pandemicMarkerEnabled = val
+                refreshCallback()
+                rebuildCallback()
+            end,
+        })
+        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+        -- onto the end of the row's label.
+        AnchorRowBadge(enableRow, CreateInfoButton(enableRow.frame, enableRow.frame, "LEFT", "LEFT", 0, 0,
+            PANDEMIC_MARKER_TOOLTIP_LINES, enableRow))
     end
+
+    if opts.enableOnly or styleTable.pandemicMarkerEnabled == false then
+        return enableRow
+    end
+
+    local childIndent = not opts.childrenOnly
 
     AddEditBoxRow(container, {
         label = "Marker Text",
-        indent = true,
+        indent = childIndent,
         value = styleTable.pandemicMarkerText or "!!",
         onEnterPressed = function(text, widget)
             text = tostring(text or ""):gsub("[|%%]", ""):gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 8)
@@ -351,8 +367,8 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
     })
 
     AddDropdownRow(container, {
-        label = "Pandemic Color",
-        indent = true,
+        label = "Marker Coloring",
+        indent = childIndent,
         pulloutWidth = WIDE_PULLOUT_WIDTH,
         list = PANDEMIC_COLOR_MODES,
         order = PANDEMIC_COLOR_MODE_ORDER,
@@ -368,8 +384,8 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
         -- deferCommit is deliberately absent, matching the AddColorPicker call
         -- this row replaced.
         AddColorRow(container, {
-            label = "Pandemic Color",
-            indent = true,
+            label = "Marker Color",
+            indent = childIndent,
             tbl = styleTable,
             key = "pandemicMarkerColor",
             default = {1, 0.5, 0, 1},
@@ -377,6 +393,8 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
             onChange = refreshCallback,
         })
     end
+
+    return enableRow
 end
 
 local AURA_TEXT_SHARED_POSITION_TOOLTIP = {
@@ -390,8 +408,10 @@ local SEPARATE_TEXT_POSITIONS_TOOLTIP = {
 }
 
 -- Row grammar only: LEFT column is the toggle and what the text is drawn with;
--- RIGHT is where it lands (the separate-position chain) plus the pandemic
--- marker, which rides this text and so belongs to this section.
+-- RIGHT is where it lands (the separate-position chain). The pandemic marker
+-- rides this text but no longer lives here: it moved to the Indicators tab's
+-- Pandemic section so both halves of the feature share one home, and its keys
+-- moved with it into the mode-spanning "pandemic" override section.
 local function BuildAuraTextControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
     local fallbackStyle = opts.fallbackStyle
@@ -453,10 +473,6 @@ local function BuildAuraTextControls(container, styleTable, refreshCallback, opt
         AddOffsetSliders(right, styleTable, "auraTextXOffset", "auraTextYOffset", {x = 2, y = -2},
             refreshCallback, { row = true, indent = true })
     end
-
-    AddPandemicMarkerControls(right, styleTable, refreshCallback, function()
-        RefreshStructuralControls(container)
-    end)
 end
 
 -- Row grammar only: same split as Cooldown Text - LEFT the toggle and the font
@@ -1816,6 +1832,7 @@ end
 -- enable is an explicit-true key: the dormant style default is "solid", so
 -- style-derived enablement would light every panel unasked.
 local function BuildPandemicGlowControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
     BuildGlowStyleControls(container, styleTable, refreshCallback, {
         styleKey = "pandemicGlowStyle", colorKey = "pandemicGlowColor", colorLabel = "Effect Color",
         color2Key = "pandemicGlowColor2", color2Label = "Second Color", defaultColor2 = {1, 1, 1, 0.9},
@@ -1836,12 +1853,26 @@ local function BuildPandemicGlowControls(container, styleTable, refreshCallback,
             targetStyle.pandemicGlowThickness = 3
         end,
     }, opts)
+
+    -- The marker shares this override section but NOT the effect's enable: it
+    -- works with the effect off. BuildGlowStyleControls returns early in that
+    -- case, so the marker is drawn after it and in the grid's right column,
+    -- where the Overrides tab's other second-thought rows land. On the panel
+    -- (the Indicators gear) the marker has its own gear, so this stays
+    -- override-only.
+    if opts.isOverride then
+        AddPandemicMarkerControls(opts.rightColumn or container, styleTable, refreshCallback, function()
+            RefreshStructuralControls(container)
+        end)
+    end
 end
 
--- Bar pandemic override section (PTR 8): enable + fill color only — the
--- window is game-computed and the display has no further styling. The color
--- carries no alpha (owner ruling: it REPLACES the aura fill color). Enable
--- is explicit-true, matching the panel key's semantics.
+-- Bar pandemic override section (PTR 8): the fill recolor is enable + color
+-- only — the window is game-computed and the display has no further styling.
+-- The color carries no alpha (owner ruling: it REPLACES the aura fill color).
+-- Enable is explicit-true, matching the panel key's semantics. The section
+-- also owns the pandemic marker, which is independent of the fill recolor and
+-- so survives its early return.
 local function BuildBarPandemicControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
     local isOverrideMode = opts.isOverride == true
@@ -1861,20 +1892,28 @@ local function BuildBarPandemicControls(container, styleTable, refreshCallback, 
                 RefreshStructuralControls(container)
             end,
         })
-        if not isEnabled then
-            return
-        end
     end
-    AddColorRow(container, {
-        label = "Pandemic Color",
-        indent = isOverrideMode and true or opts.indent,
-        tbl = styleTable,
-        key = "barPandemicColor",
-        default = {1, 0.5, 0, 1},
-        hasAlpha = false,
-        onConfirm = refreshCallback,
-        onChange = refreshCallback,
-    })
+    if isEnabled or not isOverrideMode then
+        AddColorRow(container, {
+            -- "Fill Color" inside the section, where the marker's own color
+            -- sits a few rows away; only the standalone shape can afford the
+            -- unqualified name.
+            label = isOverrideMode and "Fill Color" or "Pandemic Color",
+            indent = isOverrideMode and true or opts.indent,
+            tbl = styleTable,
+            key = "barPandemicColor",
+            default = {1, 0.5, 0, 1},
+            hasAlpha = false,
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
+    end
+
+    if isOverrideMode then
+        AddPandemicMarkerControls(opts.rightColumn or container, styleTable, refreshCallback, function()
+            RefreshStructuralControls(container)
+        end)
+    end
 end
 
 -- Bar aura indicator (barActiveAura): the border effect shares the aura glow

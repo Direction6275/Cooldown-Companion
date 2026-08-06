@@ -145,7 +145,7 @@ local PANDEMIC_MARKER_TOOLTIP = {
     {" ", 1, 1, 1, true},
     {"On by default for debuffs on your target, off for your own buffs.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Marker text and color are in the group's Aura Duration Text settings.", 1, 1, 1, true},
+    {"Marker text and color are in the panel's Pandemic settings.", 1, 1, 1, true},
 }
 
 local PANDEMIC_EFFECT_TOOLTIP = {
@@ -154,7 +154,7 @@ local PANDEMIC_EFFECT_TOOLTIP = {
     {" ", 1, 1, 1, true},
     {"Only appears for auras that gain bonus time when refreshed. The game decides the window.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Style and color are in the group's Effects settings.", 1, 1, 1, true},
+    {"Style and color are in the panel's Pandemic settings.", 1, 1, 1, true},
 }
 
 local function BuildAuraTab(scroll, group, buttonData, infoButtons)

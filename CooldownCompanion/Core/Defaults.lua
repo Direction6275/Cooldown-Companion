@@ -864,9 +864,15 @@ ST.OVERRIDE_SECTIONS = {
         keys = {"showCooldownText", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor", "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset"},
         modes = {icons = true, bars = true},
     },
+    -- The four pandemicMarker* keys used to ride this list, because the marker
+    -- is drawn into this text. They moved to the pandemic sections below when
+    -- the config grew a Pandemic section, so one override covers the whole
+    -- refresh-window feature. MigratePandemicOverrideOwnership re-homes the
+    -- overrides that were promoted under the old list; the two edits ship as
+    -- one unit, or RevertSection stops clearing keys it no longer owns.
     auraText = {
         label = "Aura Duration Text",
-        keys = {"showAuraText", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor", "separateTextPositions", "auraTextAnchor", "auraTextXOffset", "auraTextYOffset", "pandemicMarkerEnabled", "pandemicMarkerText", "pandemicMarkerColorMode", "pandemicMarkerColor"},
+        keys = {"showAuraText", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor", "separateTextPositions", "auraTextAnchor", "auraTextXOffset", "auraTextYOffset"},
         modes = {icons = true, bars = true},
     },
     auraStackText = {
@@ -953,10 +959,26 @@ ST.OVERRIDE_SECTIONS = {
     -- their values sanitized by the aura-glow migration. The retired
     -- live-era keys left these lists with the Phase 3 retirement: the
     -- migration's every-import strip owns their cleanup now.
-    pandemicGlow = {
-        label = "Pandemic Effect",
-        keys = {"pandemicEffectEnabled", "pandemicGlowStyle", "pandemicGlowColor", "pandemicGlowColor2", "pandemicGlowSize", "pandemicGlowThickness", "pandemicGlowSpeed", "pandemicGlowLines"},
-        modes = {icons = true},
+    -- ONE section for the whole refresh-window feature across both display
+    -- modes: the glow (icons) or the fill recolor (bars), plus the marker that
+    -- decorates the duration text in either. It replaces the old pandemicGlow
+    -- and pandemicBar pair, which MigratePandemicOverrideOwnership renames.
+    --
+    -- One section, not two, because the two would share keys. Sections are the
+    -- unit promote copies and revert deletes, and nothing clears an override
+    -- when a panel changes display mode, so an icons entry converted to bars
+    -- would carry a stored pandemicGlow the Overrides tab draws as inactive
+    -- (with a live revert button) while offering pandemicBar to promote. Either
+    -- click would then write or wipe keys the other section still listed. The
+    -- marker keys made that overlap span user-authored text and colour, which
+    -- is not recoverable; merging removes the collision instead of policing it.
+    pandemic = {
+        label = "Pandemic",
+        keys = {"pandemicEffectEnabled",
+            "pandemicGlowStyle", "pandemicGlowColor", "pandemicGlowColor2", "pandemicGlowSize", "pandemicGlowThickness", "pandemicGlowSpeed", "pandemicGlowLines",
+            "barPandemicColor",
+            "pandemicMarkerEnabled", "pandemicMarkerText", "pandemicMarkerColorMode", "pandemicMarkerColor"},
+        modes = {icons = true, bars = true},
     },
     auraIndicator = {
         label = "Show Aura Glow",
@@ -979,17 +1001,12 @@ ST.OVERRIDE_SECTIONS = {
         modes = {icons = true},
     },
     -- Bar Mode — Appearance Tab
-    -- pandemicBar: PTR 8 shipped the bar pandemic display as the fill
-    -- recolor (pandemicEffectEnabled + barPandemicColor, panel bars only),
-    -- offered as a per-entry override section (owner ruling). The dormant
+    -- The bar pandemic display (the fill recolor: pandemicEffectEnabled +
+    -- barPandemicColor) is NOT here: it shares the mode-spanning "pandemic"
+    -- section above with the icons glow and the marker. The dormant
     -- pandemicBarEffect/Pulse/ColorShift families retired in Phase 3 (the
     -- migration's every-import strip owns their cleanup). barActiveAura is
     -- live (LCG-removal project wired it through the aura kit).
-    pandemicBar = {
-        label = "Pandemic Color",
-        keys = {"pandemicEffectEnabled", "barPandemicColor"},
-        modes = {bars = true},
-    },
     barActiveAura = {
         label = "Active Aura Indicator",
         keys = {"barAuraIndicatorEnabled", "barAuraColor", "barAuraEffect", "barAuraEffectColor", "barAuraEffectSize", "barAuraEffectThickness", "barAuraEffectSpeed", "barAuraEffectLines", "barAuraPulseEnabled", "barAuraPulseSpeed", "barAuraColorShiftEnabled", "barAuraColorShiftSpeed", "barAuraColorShiftColor"},
@@ -1071,9 +1088,8 @@ ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS = {
     auraDurationSwipe = true,
     assistedHighlight = true,
     procGlow = true,
-    pandemicGlow = true,
     auraIndicator = true,
-    pandemicBar = true,
+    pandemic = true,
     barActiveAura = true,
 }
 

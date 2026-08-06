@@ -28,6 +28,7 @@ local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
 local BuildAllowPingsControls = ST._BuildAllowPingsControls
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
+local AddPandemicMarkerControls = ST._AddPandemicMarkerControls
 
 -- Imports from RowWidgets.lua (the row grammar)
 local AddCheckboxRow = ST._AddCheckboxRow
@@ -46,12 +47,14 @@ local tabInfoButtons = CS.tabInfoButtons
 -- GroupTabs.lua; the sections below conform to them rather than restating them.
 local ROW_SECTION = { leftAligned = true }
 
--- The bar Effects tab draws the same three sections as the icons Effects tab
+-- The bar Effects tab draws the same four sections as the icons Effects tab
 -- and deliberately SHARES their collapse keys, so the gear-to-section map
 -- GroupTabs owns (ST._INDICATORS_SECTION_BY_ADVANCED_KEY) covers both tabs
 -- with one entry per advanced key. Keep these in step with the constants
--- declared beside that map.
+-- declared beside that map: the literals must MATCH, or collapsing a section
+-- on an icon panel would leave it open on a bar panel.
 local EFFECTS_GLOWS_SECTION = "effects_glows"
+local EFFECTS_PANDEMIC_SECTION = "effects_pandemic"
 local EFFECTS_TIMERS_SECTION = "effects_timers"
 local EFFECTS_STATES_SECTION = "effects_states"
 
@@ -686,6 +689,9 @@ end
 -- the duration fill while the tracked aura sits inside its refresh window.
 -- Enable + color only; the window itself is game-computed. Same nil-container
 -- reconciliation contract as the active aura section above.
+--
+-- Shares the Pandemic section, and the mode-spanning "pandemic" OVERRIDE
+-- section, with the marker below.
 local function BuildBarPandemicSection(container, group, style)
     local function ClearPandemicPreview()
         if CooldownCompanion.SetGroupBarPandemicPreview then
@@ -708,7 +714,7 @@ local function BuildBarPandemicSection(container, group, style)
                 CooldownCompanion:RefreshConfigPanel()
             end,
         })
-        CreateCheckboxPromoteButton(enableRow, nil, "pandemicBar", group, style)
+        CreateCheckboxPromoteButton(enableRow, nil, "pandemic", group, style)
         AnchorRowBadge(enableRow, CreateInfoButton(enableRow.frame, enableRow.frame, "LEFT", "LEFT", 0, 0, {
             "Pandemic Color",
             {"The bar fill wears this color instead of the active aura color while the tracked aura is in its refresh window, when recasting adds bonus time.", 1, 1, 1, true},
@@ -722,8 +728,12 @@ local function BuildBarPandemicSection(container, group, style)
             -- No alpha: the pandemic color REPLACES the aura fill color
             -- (owner ruling — never blends with it), so the live clone and
             -- the mirror both render it opaque.
+            --
+            -- "Fill Color", not "Pandemic Color": the marker's own color row
+            -- sits in the same section now, and two rows reading the same
+            -- thing would leave no way to tell the fill from the text.
             AddColorRow(container, {
-                label = "Pandemic Color",
+                label = "Fill Color",
                 indent = true,
                 tbl = style,
                 key = "barPandemicColor",
@@ -738,6 +748,47 @@ local function BuildBarPandemicSection(container, group, style)
     if not pandemicOn then
         ClearPandemicPreview()
     end
+end
+
+-- The text half of the same window, new to bar mode: the marker has always
+-- rendered on bar panels (it rides the aura duration text, which the kit
+-- draws in both modes) but had no group-level control anywhere - the only way
+-- to reach it was a per-entry override of Aura Duration Text.
+--
+-- Rows only, and no nil-container contract: nothing previews the marker in
+-- any mode, so there is no preview state to reconcile.
+local function BuildBarPandemicMarkerSection(container, group, style)
+    if not container or not GroupHasAuraTrackingEntry(group) then
+        return
+    end
+
+    local applyStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
+    local markerRow = AddPandemicMarkerControls(container, style, applyStyle, function()
+        CooldownCompanion:RefreshConfigPanel()
+    end, { enableOnly = true })
+
+    -- Single rail (AdvancedSettingsPanel.lua): the styling rows fill the panel,
+    -- so childrenOnly drops the indent they carry when inline.
+    local function BuildBarPandemicMarkerAdvanced(panel)
+        AddPandemicMarkerControls(panel, style, applyStyle, function()
+            if CS.RefreshAdvancedSettingsPanel then
+                CS.RefreshAdvancedSettingsPanel()
+            end
+        end, { childrenOnly = true })
+    end
+
+    -- "barPandemicMarker", not the icons key: every bars gear in this file
+    -- carries its own prefixed key (barAuraText, barNameText, barChargeText),
+    -- so a panel switch can never rebind an open panel onto the other mode's
+    -- builder. The gear-to-section map names both.
+    local _, markerAdvBtn = AddAdvancedToggle(markerRow, "barPandemicMarker", tabInfoButtons,
+        style.pandemicMarkerEnabled ~= false, {
+            title = "Pandemic Marker Advanced",
+            build = BuildBarPandemicMarkerAdvanced,
+        })
+    -- Same override section as the fill row above: one feature, one promote
+    -- target, a badge on either row.
+    CreateCheckboxPromoteButton(markerRow, markerAdvBtn, "pandemic", group, style)
 end
 
 local function BuildBarEffectsTab(container, group, style)
@@ -759,7 +810,25 @@ local function BuildBarEffectsTab(container, group, style)
         end
     end
     BuildBarActiveAuraSection(glowsHost, group, style)
-    BuildBarPandemicSection(glowsHost, group, style)
+
+    -- ================================================================
+    -- Pandemic
+    -- ================================================================
+    -- Deliberately OUTSIDE the icon-square block below: neither the fill
+    -- recolor nor the marker draws on the icon, so hiding the icon must not
+    -- take them with it. Same aura gate and same nil-host reconciliation as
+    -- Glows above.
+    local pandemicLeft, pandemicRight
+    if GroupHasAuraTrackingEntry(group) then
+        local _, pandemicCollapsed = BuildCollapsibleSection(container, "Pandemic",
+            EFFECTS_PANDEMIC_SECTION, nil, nil, ROW_SECTION)
+        if not pandemicCollapsed then
+            -- LEFT the fill half, RIGHT the text half.
+            pandemicLeft, pandemicRight = BeginRowGrid(container)
+        end
+    end
+    BuildBarPandemicSection(pandemicLeft, group, style)
+    BuildBarPandemicMarkerSection(pandemicRight, group, style)
 
     -- The remaining indicators all render on the bar's icon square.
     if style.showBarIcon ~= false then

@@ -349,8 +349,10 @@ end
 local OVERRIDE_SECTION_ORDER = {
     "borderSettings", "cooldownText", "auraText", "auraStackText",
     "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "showOutOfRange", "showTooltips",
-    "lossOfControl", "unusableDimming", "iconTint", "iconZoom", "assistedHighlight", "procGlow", "auraIndicator", "pandemicGlow", "readyGlow", "keyPressHighlight",
-    "barIcon", "barActiveAura", "pandemicBar", "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText",
+    -- "pandemic" spans both display modes (like auraText above), so it sits in
+    -- the icons run rather than being listed twice.
+    "lossOfControl", "unusableDimming", "iconTint", "iconZoom", "assistedHighlight", "procGlow", "auraIndicator", "pandemic", "readyGlow", "keyPressHighlight",
+    "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText",
     "textFont", "textColors", "textBackground",
 }
 
@@ -472,14 +474,19 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         assistedHighlight = BuildAssistedHighlightControls,
         procGlow = BuildProcGlowControls,
         auraIndicator = BuildAuraGlowControls,
-        -- PTR 8 pandemic sections, referenced through ST like iconZoom
-        -- (upvalue-ceiling note above).
-        pandemicGlow = ST._BuildPandemicGlowControls,
+        -- One pandemic section across both display modes, so the builder is
+        -- picked here rather than by the section id. Referenced through ST like
+        -- iconZoom (upvalue-ceiling note above).
+        pandemic = function(container, styleTable, refreshCallback, builderOpts)
+            if displayMode == "bars" then
+                return ST._BuildBarPandemicControls(container, styleTable, refreshCallback, builderOpts)
+            end
+            return ST._BuildPandemicGlowControls(container, styleTable, refreshCallback, builderOpts)
+        end,
         readyGlow = BuildReadyGlowControls,
         keyPressHighlight = BuildKeyPressHighlightControls,
         barIcon = BuildBarIconControls,
         barActiveAura = BuildBarActiveAuraControls,
-        pandemicBar = ST._BuildBarPandemicControls,
         barColor = BuildSingleBarColorControl("barColor", "Bar Color", {0.2, 0.6, 1.0, 1.0}),
         barCooldownColor = BuildSingleBarColorControl("barCooldownColor", "Bar Cooldown Color", {0.6, 0.6, 0.6, 1.0}),
         barChargeColor = BuildSingleBarColorControl("barChargeColor", "Bar Recharging Color", {1.0, 0.82, 0.0, 1.0}),

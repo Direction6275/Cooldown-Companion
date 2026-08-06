@@ -1213,10 +1213,18 @@ local AURA_GLOW_SENTINEL = {
     current = "_cdcAuraGlow3Migrated",
     retired = { "_cdcAuraGlowMigrated", "_cdcAuraGlow2Migrated" },
 }
+-- pandemic override ownership: the pandemicMarker* keys leaving the auraText
+-- override section for the pandemic ones, when the config grew a Pandemic
+-- section. Claimed through the shared helper so a future generation bump is
+-- still one edit.
+local PANDEMIC_OVERRIDE_SENTINEL = {
+    current = "_cdcPandemicOverrideMigrated",
+}
 local MIGRATION_SENTINELS = {
     AURA_REBUILD_SENTINEL,
     BAR_AURA_EFFECT_SENTINEL,
     AURA_GLOW_SENTINEL,
+    PANDEMIC_OVERRIDE_SENTINEL,
     -- Single-generation passes keep their own inline guard and stamp (the
     -- group-scope pass stamps conditionally on talent data being ready);
     -- registered so ClearMigrationSentinels iterates them.
@@ -1606,11 +1614,12 @@ local function MigrateAuraGlowStyleTable(styleTable, counts)
     styleTable.auraGlowLines = nil
 end
 
--- The pandemicGlow/pandemicBar sections are OFFERED as per-entry overrides
--- again on 12.1 (owner ruling), so live-era promotions carry forward as
--- visible, revertible overrides — the style-value sanitizers above run on
--- styleOverrides too, and the dead-key strip lives inside them
--- (PANDEMIC_DEAD_STYLE_KEYS, every style scope).
+-- The pandemic section is OFFERED as a per-entry override again on 12.1
+-- (owner ruling), so live-era promotions carry forward as visible, revertible
+-- overrides — the style-value sanitizers above run on styleOverrides too, and
+-- the dead-key strip lives inside them (PANDEMIC_DEAD_STYLE_KEYS, every style
+-- scope). MigratePandemicOverrideOwnership below renames the two retired
+-- section ids those promotions were stored under.
 local function MigrateAuraGlowRebuild(self, profile)
     if type(profile) ~= "table" or not ClaimMigrationPass(profile, AURA_GLOW_SENTINEL) then return end
     local counts = { invert = 0, combatOnly = 0, textFormat = 0 }
@@ -2044,6 +2053,206 @@ local function MigrateBarAuraEffectStyles(self, profile)
     end
 end
 
+------------------------------------------------------------------------
+-- PANDEMIC OVERRIDE OWNERSHIP
+--
+-- Two changes land here, because they touch the same stored tables.
+--
+-- 1. SECTION MERGE. PTR 8 shipped two per-entry override sections for one
+--    feature: pandemicGlow (icons) and pandemicBar (bars). They already shared
+--    pandemicEffectEnabled, and nothing clears an override when a panel
+--    changes display mode, so an entry could carry the wrong-mode one while
+--    the Overtab offered the right-mode one to promote — either click writing
+--    or wiping keys the other still listed. They are now one "pandemic"
+--    section spanning both modes, and this pass renames the stored ids.
+--
+-- 2. MARKER RE-HOMING. The four pandemicMarker* keys used to belong to the
+--    auraText override section, because the marker is drawn into the aura
+--    duration text. The config grew a Pandemic section holding both halves of
+--    the refresh window, and the keys moved into it.
+--
+-- Nothing has to MOVE for (2). styleOverrides is one flat table and IS the
+-- effective style (StyleOverrides.lua), so the keys already sit where they
+-- render; overrideSections is bookkeeping for promote, revert and the
+-- Overrides tab. What this pass fixes is ownership: a key in the flat table
+-- that no listed section claims still renders, but revert cannot clear it and
+-- no panel draws it. That is the whole bug, and it is invisible in game.
+--
+-- The rule is "preserve exactly what this entry renders today":
+--   * no active override section -> GetEffectiveStyle ignores styleOverrides
+--     entirely, so these keys render nothing. Drop them.
+--   * every present key equals the group's own value -> dropping them changes
+--     nothing (the metatable falls through to the same value) and the entry
+--     stops claiming a customisation it never made. This is the common case:
+--     PromoteSection copies the whole key list, so an entry promoted only to
+--     change a font physically stored all four. Presence proves nothing.
+--   * any present key differs -> that difference is what the entry renders
+--     right now, stale ride-along copies included, because overrides outrank
+--     the panel. The pandemic section takes ownership and it survives.
+--
+-- The destination is now mode-independent, so a panel converted to any other
+-- display mode keeps a single unambiguous owner. Its OTHER keys are
+-- deliberately NOT seeded: a section whose group values were nil at promote
+-- time already stores nothing for them and reads through the __index
+-- fallback, so a partly-populated section is the ordinary state rather than a
+-- new one, and not seeding keeps the entry following later panel edits to a
+-- pandemic effect it never asked to own.
+--
+-- Silent: a rename and a re-homing lose nothing, and this file's convention is
+-- that only user-visible losses and semantic remaps earn a notice.
+------------------------------------------------------------------------
+local PANDEMIC_MARKER_OVERRIDE_KEYS = {
+    "pandemicMarkerEnabled",
+    "pandemicMarkerText",
+    "pandemicMarkerColorMode",
+    "pandemicMarkerColor",
+}
+
+-- What AuraDisplay resolves when the style table is silent. Groups created
+-- before the marker existed never received these into group.style (it is a
+-- plain copy of globalStyle at creation), so the comparison needs a floor.
+local PANDEMIC_MARKER_BASELINE = {
+    pandemicMarkerEnabled = true,
+    pandemicMarkerText = "!!",
+    pandemicMarkerColorMode = "marker",
+    pandemicMarkerColor = { 1, 0.5, 0, 1 },
+}
+
+local PANDEMIC_OVERRIDE_SECTION = "pandemic"
+local PANDEMIC_RETIRED_OVERRIDE_SECTIONS = { "pandemicGlow", "pandemicBar" }
+
+-- Both retired ids collapse onto the one section. An entry that somehow holds
+-- both (an icons promote, a conversion to bars, a second promote) merges to a
+-- single flag; its keys already live in the one flat table, so there is
+-- nothing to reconcile beyond the bookkeeping.
+local function RenamePandemicOverrideSections(buttonData)
+    local sections = rawget(buttonData, "overrideSections")
+    if type(sections) ~= "table" then return end
+    for _, retired in ipairs(PANDEMIC_RETIRED_OVERRIDE_SECTIONS) do
+        if sections[retired] then
+            sections[retired] = nil
+            sections[PANDEMIC_OVERRIDE_SECTION] = true
+        end
+    end
+end
+
+-- pandemicMarkerColor is a table, and PromoteSection CopyTable's it, so every
+-- promoted entry owns a private one. Identity comparison would call every
+-- entry customised.
+local function PandemicMarkerValuesMatch(stored, baseline)
+    if type(stored) == "table" or type(baseline) == "table" then
+        if type(stored) ~= "table" or type(baseline) ~= "table" then
+            return false
+        end
+        for i = 1, 4 do
+            if stored[i] ~= baseline[i] then
+                return false
+            end
+        end
+        return true
+    end
+    return stored == baseline
+end
+
+local function MigrateOnePandemicOverride(buttonData, group)
+    if type(buttonData) ~= "table" then return end
+
+    -- Rename first: the marker logic below reads the section flag, and it must
+    -- see the merged id rather than either retired one.
+    RenamePandemicOverrideSections(buttonData)
+
+    -- rawget throughout: GetEffectiveStyle leaves __index = groupStyle on this
+    -- table and never removes it, so a plain read reports the GROUP's value
+    -- for keys the entry never stored and every entry would look customised.
+    local overrides = rawget(buttonData, "styleOverrides")
+    if type(overrides) ~= "table" then return end
+
+    local present = false
+    for _, key in ipairs(PANDEMIC_MARKER_OVERRIDE_KEYS) do
+        if rawget(overrides, key) ~= nil then
+            present = true
+        end
+    end
+    if not present then return end
+
+    local sections = rawget(buttonData, "overrideSections")
+    local hasActiveSection = type(sections) == "table" and next(sections) ~= nil
+    local destination = nil
+    if hasActiveSection then
+        destination = PANDEMIC_OVERRIDE_SECTION
+    end
+
+    if destination and sections[destination] then
+        -- Already owned. Every import clears the sentinels and re-runs this,
+        -- so the second pass must decide nothing: the keys belong to the
+        -- destination and re-testing them could unpick a real override.
+        return
+    end
+
+    if destination and ST.CanButtonUseOverrideSection
+        and not ST.CanButtonUseOverrideSection(buttonData, destination) then
+        -- PruneDisallowedOverrideSections would delete the flag and the keys
+        -- on the next GetEffectiveStyle anyway; drop them rather than hand it
+        -- a section to tear down.
+        destination = nil
+    end
+
+    local customised = false
+    if destination then
+        local groupStyle = rawget(group, "style")
+        for _, key in ipairs(PANDEMIC_MARKER_OVERRIDE_KEYS) do
+            local stored = rawget(overrides, key)
+            if stored ~= nil then
+                local baseline
+                if type(groupStyle) == "table" then
+                    baseline = rawget(groupStyle, key)
+                end
+                if baseline == nil then
+                    baseline = PANDEMIC_MARKER_BASELINE[key]
+                end
+                if not PandemicMarkerValuesMatch(stored, baseline) then
+                    customised = true
+                end
+            end
+        end
+    end
+
+    if customised then
+        sections[destination] = true
+        return
+    end
+
+    for _, key in ipairs(PANDEMIC_MARKER_OVERRIDE_KEYS) do
+        overrides[key] = nil
+    end
+    -- RevertSection's cleanup, plus the guard it does not need: it always
+    -- removes a section, this pass never does, and the Overrides tab reads
+    -- buttonData.styleOverrides directly, so a live section must keep a table.
+    if not next(overrides) and not hasActiveSection then
+        buttonData.styleOverrides = nil
+    end
+end
+
+local function MigratePandemicOverrideOwnership(self, profile)
+    if type(profile) ~= "table" or not ClaimMigrationPass(profile, PANDEMIC_OVERRIDE_SENTINEL) then return end
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            if type(group) == "table" and type(group.buttons) == "table" then
+                for _, buttonData in ipairs(group.buttons) do
+                    MigrateOnePandemicOverride(buttonData, group)
+                end
+            end
+        end
+    end
+
+    -- Custom aura bars are a different store: they hold the marker keys flat
+    -- on the entry with no override sections at all, so they need nothing
+    -- here. The names must also stay OUT of CUSTOM_BAR_RETIRED_SILENT_KEYS,
+    -- which strips the retired barPandemic* families whose names look alike.
+    profile[PANDEMIC_OVERRIDE_SENTINEL.current] = true
+end
+
 -- Consolidated entry point: enforces the 1.15 data cutoff and stamps profiles
 -- that are allowed to continue. Add new post-1.15 migrations here in order.
 function CooldownCompanion:RunAllMigrations()
@@ -2098,6 +2307,9 @@ function CooldownCompanion:RunAllMigrations()
     MigrateAuraGlowRebuild(self, self.db and self.db.profile)
     MigrateLcgGlowStyles(self, self.db and self.db.profile)
     MigrateBarAuraEffectStyles(self, self.db and self.db.profile)
+    -- After the style-table passes above: they strip dead keys from entry
+    -- override tables too, so this one compares cleaned data.
+    MigratePandemicOverrideOwnership(self, self.db and self.db.profile)
     if self.RunResourceBarClassScopeMigration then
         self:RunResourceBarClassScopeMigration()
     end

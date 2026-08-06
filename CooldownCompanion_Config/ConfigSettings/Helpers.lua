@@ -503,8 +503,7 @@ local AURA_TRACKING_CONFIG_ONLY_SECTIONS = {
     auraDurationSwipe = true,
     auraIndicator = true,
     barActiveAura = true,
-    pandemicGlow = true,
-    pandemicBar = true,
+    pandemic = true,
 }
 
 local function CanButtonUseConfigOverrideSection(buttonData, sectionId)
