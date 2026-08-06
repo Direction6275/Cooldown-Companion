@@ -65,6 +65,7 @@ local BAR_PREVIEW_ICON_FALLBACK = 134400
 local PANEL_PREVIEW_GHOST_ALPHA = 0.35
 local PANEL_PREVIEW_GHOST_HOVER_ALPHA = 0.65
 local PANEL_PREVIEW_VISIBILITY_BADGE_ATLAS = "GM-icon-visibleDis-pressed"
+local PANEL_PREVIEW_AURA_SPACE_BADGE_ATLAS = "QuestRepeatableTurnin"
 local BAR_PREVIEW_EFFECT_FLAGS = {
     "_procGlowPreview",
     "_auraGlowPreview",
@@ -960,6 +961,18 @@ local function CollectEntryMetadata(buttonData)
     return status
 end
 
+-- Aura activity is hidden from addon code during restricted gameplay. An
+-- entry that hides with its aura therefore keeps its layout slot even though
+-- Blizzard can hide the AuraButton drawn inside it. Surface that limitation
+-- directly on the live preview instead of making Compact Mode look broken.
+local function DoesHiddenAuraReserveLayoutSpace(buttonData, group)
+    local displayMode = group and (group.displayMode or "icons") or "icons"
+    return (displayMode == "icons" or displayMode == "bars")
+        and buttonData.type == "spell"
+        and (buttonData.auraTracking or buttonData.addedAs == "aura")
+        and buttonData.hideWhileAuraNotActive == true
+end
+
 -- Entry status signals shared with the workspace entry-row presentation.
 local function CollectEntryStatus(buttonData, group)
     local status = CollectEntryMetadata(buttonData)
@@ -969,15 +982,17 @@ local function CollectEntryStatus(buttonData, group)
     status.disabled = buttonData.enabled == false
     status.warn = (not usable) and buttonData.enabled ~= false
     status.loadBlocked = not loadAllowed
+    status.auraHideReservesSpace = DoesHiddenAuraReserveLayoutSpace(buttonData, group)
     return status
 end
 
 -- Bar mirrors are saved-config projections. Live usability and load-condition
 -- results may still inform other preview modes, but they must not leak into a
 -- Bar slot's tint, problem badge, or hidden-state explanation.
-local function CollectBarEntryStatus(buttonData)
+local function CollectBarEntryStatus(buttonData, group)
     local status = CollectEntryMetadata(buttonData)
     status.usable = true
+    status.auraHideReservesSpace = DoesHiddenAuraReserveLayoutSpace(buttonData, group)
     return status
 end
 
@@ -994,17 +1009,21 @@ local ENTRY_STATUS_BADGES = {
     { key = "talent", atlas = "UI-HUD-MicroMenu-SpecTalents-Mouseover", label = "Has talent conditions" },
 }
 
--- Single problem indicator in the slot's top-right corner: only states
--- where the entry won't behave normally (disabled, or unusable/blocked)
--- earn a mark on the icon, drawn over a dark backdrop so it reads against
--- bright icon art. Informational badges (talent, sound, override,
--- fallback) live in the identity strip and the hover tooltip instead.
+-- Single status indicator in the slot's top-right corner. Disabled and
+-- unusable/blocked entries use the existing dark-backed problem marks; an
+-- aura whose hidden slot cannot collapse uses the established information
+-- badge instead. Other informational badges (talent, sound, override,
+-- fallback) live in the identity strip and the hover tooltip.
 local function ApplySlotBadges(slot, status, scale, suppress)
     local atlas
+    local isReservedSpaceBadge = false
     if not suppress and status.disabled then
         atlas = "GM-icon-visibleDis-pressed"
     elseif not suppress and status.warn then
         atlas = "Ping_Marker_Icon_Warning"
+    elseif not suppress and status.auraHideReservesSpace then
+        atlas = PANEL_PREVIEW_AURA_SPACE_BADGE_ATLAS
+        isReservedSpaceBadge = true
     end
     if not atlas then
         if slot.problemBadge then slot.problemBadge:Hide() end
@@ -1020,7 +1039,8 @@ local function ApplySlotBadges(slot, status, scale, suppress)
         tex = slot:CreateTexture(nil, "OVERLAY", nil, 7)
         slot.problemBadge = tex
     end
-    local size = math_min(24, math_max(12, PANEL_PREVIEW_BADGE_SCREEN_SIZE / math_max(scale, 0.01)))
+    local size = math_min(24,
+        math_max(12, PANEL_PREVIEW_BADGE_SCREEN_SIZE / math_max(scale, 0.01)))
     tex:SetAtlas(atlas, false)
     tex:SetSize(size, size)
     tex:ClearAllPoints()
@@ -1032,7 +1052,11 @@ local function ApplySlotBadges(slot, status, scale, suppress)
     back:SetPoint("CENTER", tex, "CENTER", 0, 0)
     back:SetSize(size + 2, size + 2)
     tex:Show()
-    back:Show()
+    if isReservedSpaceBadge then
+        back:Hide()
+    else
+        back:Show()
+    end
 end
 
 local function ApplyBarVisibilityBadge(slot, show, scale)
@@ -1552,6 +1576,16 @@ local function ShowEntrySlotTooltip(slot, buttonData, status, visibility)
     end
     if status.talent then
         GameTooltip:AddLine("Has talent conditions", 1, 1, 1)
+    end
+    if status.auraHideReservesSpace then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine(
+            ("|A:%s:14:14|a Hidden aura still reserves layout space")
+                :format(PANEL_PREVIEW_AURA_SPACE_BADGE_ATLAS),
+            1, 0.82, 0.2)
+        GameTooltip:AddLine(
+            "Blizzard does not expose the active aura state to addon layout code, so this reserved space cannot safely collapse.",
+            0.7, 0.7, 0.7, true)
     end
     if visibility and not visibility.exactPreview
         and visibility.underlyingMode == "hidden" then
@@ -4179,7 +4213,7 @@ function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost, options
         elseif not isTextMode then
             ClearSlotEffectPreviews(slot)
         end
-        local status = not readOnly and (isBarMode and CollectBarEntryStatus(buttonData)
+        local status = not readOnly and (isBarMode and CollectBarEntryStatus(buttonData, group)
             or CollectEntryStatus(buttonData, group)) or nil
         local barVisibility
         if isBarMode and not readOnly then

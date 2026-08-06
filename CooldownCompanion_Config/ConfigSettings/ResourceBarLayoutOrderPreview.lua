@@ -35,6 +35,7 @@ local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
 local DEFAULT_RESOURCE_TEXT_OUTLINE = RB.DEFAULT_RESOURCE_TEXT_OUTLINE
 
 local IsTruthyConfigFlag = RB.IsTruthyConfigFlag
+local IsSpellCustomBarConfig = RB.IsSpellCustomBarConfig
 local IsVerticalFillReversed = RB.IsVerticalFillReversed
 local GetResourceGlobalThickness = RB.GetResourceGlobalThickness
 local GetResourceColors = RB.GetResourceColors
@@ -105,6 +106,8 @@ local LAYOUT_PREVIEW_IDENTITY_FONT_OUTLINE = "OUTLINE, SLUG"
 -- way. The atlas has substantial transparent padding around its glyph.
 local LAYOUT_PREVIEW_VISIBILITY_BADGE_ATLAS = "GM-icon-visibleDis-pressed"
 local LAYOUT_PREVIEW_VISIBILITY_BADGE_SCREEN_SIZE = 18
+local LAYOUT_PREVIEW_AURA_SPACE_BADGE_ATLAS = "QuestRepeatableTurnin"
+local LAYOUT_PREVIEW_AURA_SPACE_BADGE_SCREEN_SIZE = 14
 
 local GetLayoutPreviewIcon
 
@@ -1245,6 +1248,12 @@ end
 -- name is laid out here but only shown while the preview is hovered.
 -- widthOverride: for the drag ghost, whose slot takes its size from anchors
 -- and would measure nothing until the next layout pass.
+local function DoesCustomBarHideWithAura(config)
+    return type(config) == "table"
+        and (not IsSpellCustomBarConfig(config) or config.auraTracking == true)
+        and config.hideWhenInactive == true
+end
+
 local function ApplySlotIdentityMarks(preview, frame, scale, widthOverride)
     local layer = frame and frame.identityLayer
     if not layer then return end
@@ -1304,9 +1313,15 @@ local function ApplySlotIdentityMarks(preview, frame, scale, widthOverride)
     local badge = layer.badge
     local config = slot.customEntry and slot.customEntry.config
     if type(config) == "table" and config.hideWhenInactive == true then
+        local isAuraSpaceBadge = DoesCustomBarHideWithAura(config)
+        local screenSize = isAuraSpaceBadge
+            and LAYOUT_PREVIEW_AURA_SPACE_BADGE_SCREEN_SIZE
+            or LAYOUT_PREVIEW_VISIBILITY_BADGE_SCREEN_SIZE
         local size = math_min(24, math_max(12,
-            LAYOUT_PREVIEW_VISIBILITY_BADGE_SCREEN_SIZE / scale))
-        badge:SetAtlas(LAYOUT_PREVIEW_VISIBILITY_BADGE_ATLAS, false)
+            screenSize / scale))
+        badge:SetAtlas(isAuraSpaceBadge
+            and LAYOUT_PREVIEW_AURA_SPACE_BADGE_ATLAS
+            or LAYOUT_PREVIEW_VISIBILITY_BADGE_ATLAS, false)
         badge:SetSize(size, size)
         badge:ClearAllPoints()
         if isVertical then
@@ -2309,6 +2324,17 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             GameTooltip:AddLine(dragHelp, 0.75, 0.82, 0.92, true)
             if IsBarsWorkspaceActive() and slotModel.kind == "custom" then
                 GameTooltip:AddLine("Ctrl+Click to multi-select. Right-click for actions.", 0.75, 0.82, 0.92, true)
+            end
+            local customConfig = slotModel.customEntry and slotModel.customEntry.config
+            if DoesCustomBarHideWithAura(customConfig) then
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine(
+                    ("|A:%s:14:14|a Hidden aura still reserves layout space")
+                        :format(LAYOUT_PREVIEW_AURA_SPACE_BADGE_ATLAS),
+                    1, 0.82, 0.2)
+                GameTooltip:AddLine(
+                    "Blizzard does not expose the active aura state to addon layout code, so this reserved space cannot safely collapse.",
+                    0.7, 0.7, 0.7, true)
             end
             GameTooltip:Show()
         end)
