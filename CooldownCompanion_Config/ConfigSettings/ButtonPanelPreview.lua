@@ -69,6 +69,7 @@ local BAR_PREVIEW_EFFECT_FLAGS = {
     "_procGlowPreview",
     "_auraGlowPreview",
     "_barAuraEffectPreview",
+    "_pandemicPreview",
     "_readyGlowPreview",
     "_keyPressHighlightPreview",
 }
@@ -85,7 +86,8 @@ local function IsBarPreviewAuraActive(conditional, effectFlags)
         return true
     end
     return effectFlags
-        and (effectFlags._auraGlowPreview or effectFlags._barAuraEffectPreview)
+        and (effectFlags._auraGlowPreview or effectFlags._barAuraEffectPreview
+            or effectFlags._pandemicPreview)
         and true or false
 end
 
@@ -713,6 +715,7 @@ end
 local SELECTION_YIELDING_PREVIEW_FLAGS = {
     "_procGlowPreview",
     "_auraGlowPreview",
+    "_pandemicPreview",
     "_readyGlowPreview",
     "_barAuraEffectPreview",
     "_keyPressHighlightPreview",
@@ -1787,6 +1790,24 @@ local function EnsureSlotAuraText(slot)
     return slot.auraTextFS
 end
 
+-- The pandemic marker rides the aura duration text, so its preview IS the
+-- duration-text stand-in with the marker appended. Every render path below
+-- treats the two kinds as one and calls the decorator on the way out; the
+-- marker's own descriptor is what keeps the sweep inside the window.
+local function IsAuraDurationTextKind(kind)
+    return kind == "aura_duration_text" or kind == "pandemic_marker"
+end
+
+-- Honest about the entry's own switch: an entry with the marker turned off
+-- previews the bare countdown rather than a marker it will never draw.
+local function DecorateAuraDurationPreviewText(text, kind, style, buttonData)
+    if kind == "pandemic_marker"
+        and CooldownCompanion:IsPandemicMarkerPreviewWanted(buttonData, style) then
+        return CooldownCompanion:DecoratePandemicPreviewText(text, style)
+    end
+    return text
+end
+
 local function EnsureSlotAuraStackText(slot)
     if not slot.auraStackCount then
         slot.auraStackCount = EnsureSlotTextOverlay(slot):CreateFontString(nil, "OVERLAY", "NumberFontNormal")
@@ -1943,7 +1964,7 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
             local cd = slot.cooldown
             local swipeEnabled = style.showCooldownSwipe ~= false and not fillActive
             cd:SetDrawSwipe(swipeEnabled and style.showCooldownSwipeFill ~= false)
-            cd:SetDrawEdge(swipeEnabled and style.showCooldownSwipeEdge ~= false)
+            cd:SetDrawEdge(swipeEnabled and style.cooldownSwipeEdgeEnabled == true)
             cd:SetReverse(style.cooldownSwipeReverse or false)
             cd:SetSwipeColor(0, 0, 0, style.cooldownSwipeAlpha or 0.8)
             local edgeColor = style.cooldownSwipeEdgeColor or { 1, 1, 1, 1 }
@@ -2037,7 +2058,7 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
         if style.showOutOfRange and not buttonData.isPassive then
             tintR, tintG, tintB = 1, 0.2, 0.2
         end
-    elseif kind == "aura_duration_text" and GetConditionalPreviewTiming then
+    elseif IsAuraDurationTextKind(kind) and GetConditionalPreviewTiming then
         if style.showAuraText ~= false then
             local startTime, _, remaining = GetConditionalPreviewTiming(state, now)
             if startTime then
@@ -2047,7 +2068,8 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
                 local anchor, xOff, yOff = CooldownCompanion:GetAuraDurationTextPlacement(style)
                 fs:ClearAllPoints()
                 fs:SetPoint(anchor, slot, anchor, xOff, yOff)
-                fs:SetFormattedText("%d", math_ceil(remaining))
+                fs:SetText(DecorateAuraDurationPreviewText(
+                    ("%d"):format(math_ceil(remaining)), kind, style, buttonData))
                 fs:Show()
                 slot._cdcCondAnim = state
             end
@@ -2189,6 +2211,16 @@ local function BarSlotFillOnUpdate(self)
     self:SetValue(frac)
 end
 
+-- Effective pandemic enable for a mirror entry: the per-entry override wins,
+-- else the panel style's explicit-true key — the same resolution the live
+-- bind gate performs (AuraDisplay.lua StyleSlotKit).
+local function IsPandemicPreviewEnabled(style, buttonData)
+    if buttonData and buttonData.pandemicEffect ~= nil then
+        return buttonData.pandemicEffect == true
+    end
+    return style and style.pandemicEffectEnabled == true
+end
+
 local function StopBarSlotFillEffects(slot)
     if slot._cdcFillPulseAG then slot._cdcFillPulseAG:Stop() end
     if slot._cdcFillShiftAG then slot._cdcFillShiftAG:Stop() end
@@ -2203,7 +2235,12 @@ end
 -- Active Aura Indicator fill effects on the mirror bar, per BarMode.lua
 -- UpdateBarDisplay. Returns true when the color-shift animation owns the
 -- fill color (the bar then goes white underneath, kit trick).
-local function ApplyBarSlotFillEffects(slot, style)
+-- suppressShift: the pandemic recolor occludes the live fill's color shift
+-- (the kit clone draws over the shifting fill), so the mirror must not let
+-- the shift animation own the color while the pandemic preview runs — the
+-- pulse still applies, matching the clone inheriting the fill frame's
+-- pulse alpha.
+local function ApplyBarSlotFillEffects(slot, style, suppressShift)
     local fillTex = slot.statusBar:GetStatusBarTexture()
     if not fillTex then return false end
     if style.barAuraPulseEnabled == true then
@@ -2219,7 +2256,7 @@ local function ApplyBarSlotFillEffects(slot, style)
         slot._cdcFillPulseAnim:SetDuration(style.barAuraPulseSpeed or 0.5)
         slot._cdcFillPulseAG:Play()
     end
-    if style.barAuraColorShiftEnabled == true then
+    if not suppressShift and style.barAuraColorShiftEnabled == true then
         if not slot._cdcFillShiftAG then
             local ag = fillTex:CreateAnimationGroup()
             ag:SetLooping("BOUNCE")
@@ -2262,7 +2299,7 @@ local function ResetBarSlotConditionalVisuals(slot)
     end
 end
 
-local function ApplyBarAuraTimeTextPreview(slot, style, remaining)
+local function ApplyBarAuraTimeTextPreview(slot, style, remaining, kind, buttonData)
     if style.showAuraText == false then return end
     local tt = EnsureBarSlotTimeText(slot)
     local font = CooldownCompanion:FetchFont(style.auraTextFont or "Friz Quadrata TT")
@@ -2273,7 +2310,8 @@ local function ApplyBarAuraTimeTextPreview(slot, style, remaining)
     local color = style.auraTextFontColor or CooldownCompanion.DEFAULT_AURA_TEXT_COLOR
     tt:SetTextColor(color[1], color[2], color[3], color[4])
     AnchorBarSlotTimeText(slot, style)
-    tt:SetText(CooldownCompanion.FormatTime(remaining, style))
+    tt:SetText(DecorateAuraDurationPreviewText(
+        CooldownCompanion.FormatTime(remaining, style), kind, style, buttonData))
     tt:Show()
 end
 
@@ -2322,7 +2360,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         chargePresentationKind = "charge_full"
     end
 
-    if (kind == "cooldown" or kind == "aura_duration_text") and slot.timeText then
+    if (kind == "cooldown" or IsAuraDurationTextKind(kind)) and slot.timeText then
         slot.timeText:SetText("")
     end
 
@@ -2339,26 +2377,40 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         slot.statusBar:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1)
     end
 
-    if kind == "aura_duration_text" and GetConditionalPreviewTiming then
+    if IsAuraDurationTextKind(kind) and GetConditionalPreviewTiming then
         local startTime, _, remaining = GetConditionalPreviewTiming(state, now)
         if startTime then
             slot._cdcCondAnim = state
-            ApplyBarAuraTimeTextPreview(slot, style, remaining)
+            ApplyBarAuraTimeTextPreview(slot, style, remaining, kind, buttonData)
         end
     elseif kind == "aura_duration_bar" and GetConditionalPreviewTiming then
         local startTime = GetConditionalPreviewTiming(state, now)
         if startTime then
             -- The Active Aura Indicator preview's fill effects ride the
             -- aura drain (live UpdateBarDisplay, keyed off the flag).
-            local fxActive = effectFlags and effectFlags._barAuraEffectPreview == true
+            -- Pandemic recolor (PTR 8): live parity is the kit's clone
+            -- occluding the fill — including its color shift — while still
+            -- inheriting the fill pulse. So with the pandemic preview on,
+            -- the fill effects run pulse-only (shift suppressed: a playing
+            -- VertexColor animation owns the color channel and the recolor
+            -- would never show) and the base color is the pandemic color.
+            local pandemicActive = effectFlags and effectFlags._pandemicPreview == true
+                and IsPandemicPreviewEnabled(style, buttonData)
+            local fxActive = effectFlags
+                and (effectFlags._barAuraEffectPreview == true or pandemicActive)
                 and ST.IsBarAuraIndicatorEnabled
                 and ST.IsBarAuraIndicatorEnabled(style) == true
             local shifted = false
             if fxActive then
-                shifted = ApplyBarSlotFillEffects(slot, style)
+                shifted = ApplyBarSlotFillEffects(slot, style, pandemicActive)
             end
             local auraColor = style.barAuraColor or DEFAULT_BAR_AURA_COLOR or { 0, 1, 0.3, 1 }
-            if shifted then
+            if pandemicActive then
+                -- Forced opaque, matching the live clone (owner ruling: the
+                -- pandemic color replaces the aura fill color, never blends).
+                local pc = style.barPandemicColor or { 1, 0.5, 0, 1 }
+                slot.statusBar:SetStatusBarColor(pc[1] or 1, pc[2] or 0.5, pc[3] or 0, 1)
+            elseif shifted then
                 -- White base while the shift animation owns the color.
                 slot.statusBar:SetStatusBarColor(1, 1, 1, auraColor[4] or 1)
             else
@@ -2549,7 +2601,19 @@ end
 ------------------------------------------------------------------------
 local EFFECT_PREVIEWS = {
     { flag = "_procGlowPreview", containerKey = "procGlow", setter = ST._SetProcGlow },
-    { flag = "_auraGlowPreview", containerKey = "auraGlow", setter = ST._SetAuraGlow },
+    -- The aura def yields its OFF-call to an active pandemic render: the two
+    -- share one container, and an unconditional off-call would cold-reset
+    -- the shared cache every pass — hiding a pandemic render mid-pass and
+    -- restarting its animations on every config rebuild.
+    { flag = "_auraGlowPreview", containerKey = "auraGlow", setter = ST._SetAuraGlow,
+        yieldsToPandemic = true },
+    -- Pandemic rides the aura glow container with SetAuraGlow's pandemic
+    -- override (the pandemicGlow* key family). Listed AFTER the aura def,
+    -- and it only ever calls the setter while ACTIVE — the aura def's own
+    -- unconditional call reconciles the container whenever this preview is
+    -- off (see the loop).
+    { flag = "_pandemicPreview", containerKey = "auraGlow", setter = ST._SetAuraGlow,
+        pandemicOverride = true },
     { flag = "_readyGlowPreview", containerKey = "readyGlow", setter = ST._SetReadyGlow },
     { flag = "_keyPressHighlightPreview", containerKey = "keyPressHighlight",
         setter = ST._SetKeyPressHighlight, withOverlay = true },
@@ -2566,15 +2630,45 @@ local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, 
     local canQuery = CooldownCompanion.IsPreviewFlagActive ~= nil
 
     if not isBarMode then
+        -- Live parity (AuraDisplay bind gate): the pandemic rig renders
+        -- nothing while the effect is disabled for this entry. Live shows
+        -- the aura glow OUTSIDE the window and the pandemic style inside
+        -- it (the window mask swaps them); the two exclusive PCC toggles
+        -- preview those two states one at a time. Resolved once here
+        -- because both auraGlow-container defs consult it.
+        local pandemicWillRender = canQuery
+            and CooldownCompanion:IsPreviewFlagActive(panelId, index, "_pandemicPreview")
+            and IsPandemicPreviewEnabled(style, buttonData) or false
         for _, def in ipairs(EFFECT_PREVIEWS) do
             if def.setter then
-                local active = canQuery
-                    and CooldownCompanion:IsPreviewFlagActive(panelId, index, def.flag) or false
+                local active
+                if def.pandemicOverride then
+                    active = pandemicWillRender
+                else
+                    active = canQuery
+                        and CooldownCompanion:IsPreviewFlagActive(panelId, index, def.flag) or false
+                end
                 if active and not slot[def.containerKey] and CreateGlowContainer then
                     slot[def.containerKey] = CreateGlowContainer(slot, 32, def.withOverlay)
                 end
                 if slot[def.containerKey] then
-                    def.setter(slot, active)
+                    if def.pandemicOverride then
+                        -- Shares the aura def's container: only an ACTIVE
+                        -- pandemic render may touch it. The aura def's own
+                        -- call reconciles the container whenever this
+                        -- preview is off — an unconditional off-call here
+                        -- would hide the aura glow that call just rendered.
+                        if active then
+                            def.setter(slot, true, true)
+                        end
+                    elseif def.yieldsToPandemic and not active and pandemicWillRender then
+                        -- Skip the off-call: the pandemic def owns the
+                        -- container this pass, and a hide here would
+                        -- cold-reset its cache and restart its animations
+                        -- on every rebuild.
+                    else
+                        def.setter(slot, active, false)
+                    end
                 end
             end
         end
@@ -2640,8 +2734,10 @@ local function EnsureConditionalTicker(preview)
             if state then
                 local startTime, duration, remaining = GetConditionalPreviewTiming(state, now)
                 if startTime then
-                    if state.kind == "aura_duration_text" and slot.auraTextFS then
-                        slot.auraTextFS:SetFormattedText("%d", math_ceil(remaining))
+                    if IsAuraDurationTextKind(state.kind) and slot.auraTextFS then
+                        slot.auraTextFS:SetText(DecorateAuraDurationPreviewText(
+                            ("%d"):format(math_ceil(remaining)), state.kind,
+                            slot.style or {}, slot.buttonData))
                     end
                     local widget
                     if state.kind == "cooldown" then
@@ -2674,13 +2770,15 @@ local function EnsureConditionalTicker(preview)
                 if startTime then
                     if slot.timeText
                         and (state.kind == "cooldown"
-                            or state.kind == "aura_duration_text") then
+                            or IsAuraDurationTextKind(state.kind)) then
                         local style = slot.style or {}
-                        local showText = (state.kind == "aura_duration_text"
+                        local showText = (IsAuraDurationTextKind(state.kind)
                                 and style.showAuraText ~= false)
                             or (state.kind == "cooldown" and style.showCooldownText)
                         if showText and CooldownCompanion.FormatTime then
-                            slot.timeText:SetText(CooldownCompanion.FormatTime(remaining, style))
+                            slot.timeText:SetText(DecorateAuraDurationPreviewText(
+                                CooldownCompanion.FormatTime(remaining, style),
+                                state.kind, style, slot.buttonData))
                         end
                     end
                     if state.kind == "loss_of_control" and slot.locCooldown

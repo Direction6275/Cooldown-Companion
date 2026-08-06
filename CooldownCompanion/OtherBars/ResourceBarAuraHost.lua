@@ -343,6 +343,14 @@ function RB.CreateResourceBarAuraHostModule(deps)
         style.pandemicMarkerColor = cabConfig.pandemicMarkerColor
         style.pandemicMarkerColorMode = cabConfig.pandemicMarkerColorMode
 
+        -- Pandemic fill recolor (PTR 8 Phase 2): synthesized from the
+        -- entry's FRESH keys — the entry-level showPandemicGlow /
+        -- barPandemicColor names are import-retired and must never come
+        -- back; this throwaway snapshot may speak the kit's style
+        -- vocabulary safely because it is never stored.
+        style.pandemicEffectEnabled = cabConfig.pandemicEffect == true
+        style.barPandemicColor = cabConfig.pandemicColor
+
         return style
     end
 

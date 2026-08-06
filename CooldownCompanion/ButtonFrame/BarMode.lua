@@ -673,7 +673,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     -- Icon-only GCD swipe frame for bar mode.
     button.iconGCDCooldown = CreateFrame("Cooldown", button:GetName() .. "IconGCDCooldown", button, "CooldownFrameTemplate")
     button.iconGCDCooldown:SetAllPoints(button.icon)
-    button.iconGCDCooldown:SetDrawEdge(style.showCooldownSwipeEdge ~= false)
+    button.iconGCDCooldown:SetDrawEdge(style.cooldownSwipeEdgeEnabled == true)
     button.iconGCDCooldown:SetDrawSwipe(true)
     button.iconGCDCooldown:SetReverse(style.cooldownSwipeReverse or false)
     button.iconGCDCooldown:SetHideCountdownNumbers(true)
@@ -883,7 +883,6 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._displaySpellId = nil
     button._liveOverrideSpellId = nil
     button._itemCount = nil
-    EntryRuntime.ClearAuraPandemicRuntimeState(button)
     if button.auraStackCount then button.auraStackCount:SetText("") end
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
@@ -914,7 +913,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     end
     if button.iconGCDCooldown then
         button.iconGCDCooldown:SetAllPoints(button.icon)
-        button.iconGCDCooldown:SetDrawEdge(newStyle.showCooldownSwipeEdge ~= false)
+        button.iconGCDCooldown:SetDrawEdge(newStyle.cooldownSwipeEdgeEnabled == true)
         button.iconGCDCooldown:SetReverse(newStyle.cooldownSwipeReverse or false)
         if not showIcon or newStyle.showGCDSwipe ~= true then
             button.iconGCDCooldown:Hide()

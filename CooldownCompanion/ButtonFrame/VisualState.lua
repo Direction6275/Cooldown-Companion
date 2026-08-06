@@ -211,6 +211,16 @@ local function ResolveAuraIndicatorEnabled(buttonData, style)
     return auraIndicatorEnabled
 end
 
+-- Effective pandemic enable (PTR 8 visuals): the per-entry override wins,
+-- else the panel's explicit-true key — the same resolution the live bind
+-- gate (AuraDisplay.lua StyleSlotKit) and the config mirror perform.
+local function IsPandemicEffectWanted(buttonData, style)
+    if buttonData and buttonData.pandemicEffect ~= nil then
+        return buttonData.pandemicEffect == true
+    end
+    return style and style.pandemicEffectEnabled == true
+end
+
 local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActive, target, options)
     target = target or {}
     style = style or {}
@@ -261,15 +271,21 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
     -- 12.1: the live aura glow renders on the aura slot kit (AuraDisplay.lua);
     -- Blizzard's show/hide of the slot button IS the signal, so no live
     -- intent can exist here (the config's aura-glow preview renders on the
-    -- mirror, not through this resolver). The pandemic branch is the dormant
-    -- seam: nothing sets _pandemicPreview until the Blizzard curve/formatter
-    -- fixes land.
+    -- mirror, not through this resolver). The pandemic branch is
+    -- PREVIEW-ONLY by design: the live pandemic display is the kit rig with
+    -- its secret Blizzard-driven Shown state (AuraDisplay.lua), which CC can
+    -- never read, so _pandemicPreview (Preview.lua setters) is the one and
+    -- only writer that can ever reach this branch.
     local auraIndicatorEnabled = ResolveAuraIndicatorEnabled(buttonData, style)
 
     if not button.auraGlow then
         SetGlowIntent(aura, false, false, "missing-widget")
         aura.auraIndicatorEnabled = auraIndicatorEnabled
-    elseif button._pandemicPreview == true then
+    elseif button._pandemicPreview == true
+        and IsPandemicEffectWanted(buttonData, style) then
+        -- Gated by the same per-entry/panel resolution the live bind and
+        -- the config mirror use, so an opted-out entry never previews a
+        -- glow the game will not render.
         SetGlowIntent(aura, true, true, "pandemic-preview")
         aura.preview = true
         aura.pandemic = true

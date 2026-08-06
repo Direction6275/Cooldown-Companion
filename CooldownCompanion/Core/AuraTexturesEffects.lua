@@ -565,7 +565,6 @@ local function ResolveTextureIndicatorSectionState(button, sectionKey, config, t
 
     local previewActive = (sectionKey == "proc" and button._textureProcPreview)
         or (sectionKey == "aura" and button._textureAuraPreview)
-        or (sectionKey == "pandemic" and button._texturePandemicPreview)
         or (sectionKey == "ready" and button._textureReadyPreview)
         or (sectionKey == "unusable" and button._textureUnusablePreview)
     if previewActive then
@@ -594,11 +593,6 @@ local function ResolveTextureIndicatorSectionState(button, sectionKey, config, t
         end
         local active = button._auraActive == true
         return FinishTextureIndicatorSectionState(target, active, active and "aura-active" or "aura-inactive", nil, effectType)
-    end
-
-    if sectionKey == "pandemic" then
-        local active = button._auraActive == true and button._inPandemic == true
-        return FinishTextureIndicatorSectionState(target, active, active and "pandemic" or "inactive", nil, effectType)
     end
 
     if sectionKey == "ready" then

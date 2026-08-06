@@ -27,6 +27,7 @@ local FitHighlightFrame = ST._FitHighlightFrame
 local DEFAULT_WHITE = {1, 1, 1, 1}
 local DEFAULT_ASSISTED_HL_COLOR = {0.3, 1, 0.3, 0.9}
 local DEFAULT_PANDEMIC_COLOR = {1, 0.5, 0, 1}
+local DEFAULT_PANDEMIC_COLOR2 = {1, 1, 1, 0.9} -- colorShift second color; must match Defaults.lua
 local DEFAULT_AURA_GLOW_COLOR = {1, 0.84, 0, 0.9}
 local DEFAULT_AURA_GLOW_COLOR2 = {0.1, 0.3, 1, 0.9}
 local DEFAULT_READY_COLOR = {0.2, 1.0, 0.2, 1}
@@ -380,6 +381,107 @@ local function CreateDashRegions(parent, dashList, masks, count)
     end
 end
 
+------------------------------------------------------------------------
+-- CDM pandemic rig: a replica of Blizzard's CooldownPandemicFXTemplate
+-- (Blizzard_CooldownViewer/PandemicAlertAnimation.xml, build 69111). A
+-- static PandemicBorder ring plus three FX pulses that grow 0.25x->1.5x
+-- while fading in/holding/fading out, staggered 1.5s apart on one 5s
+-- REPEAT loop, all clipped to the ring by the PandemicBorder mask.
+-- Blizzard applies no tint — the art's color is baked in — so the style
+-- carries no color/size/speed knobs. The rig frame wears Blizzard's 6px
+-- outset beyond the anchor rect (identical across all three of their icon
+-- viewer sizes). Pure script-free builder: legal inside the forbidden
+-- aura-slot subtree (built once at kit-build time) and on CC preview
+-- frames alike.
+------------------------------------------------------------------------
+local CDM_PANDEMIC_BORDER_ATLAS = "UI-CooldownManager-PandemicBorder"
+local CDM_PANDEMIC_MASK_ATLAS = "UI-CooldownManager-PandemicBorder-Mask"
+local CDM_PANDEMIC_FX_ATLASES = {
+    "UI-CooldownManager-PandemicFX-Icon01",
+    "UI-CooldownManager-PandemicFX-Icon02",
+    "UI-CooldownManager-PandemicFX-Icon03",
+}
+
+local function BuildCdmPandemicRig(parent, anchorFrame)
+    local frame = CreateFrame("Frame", nil, parent)
+    frame:EnableMouse(false)
+    frame:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", -6, 6)
+    frame:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 6, -6)
+
+    local border = frame:CreateTexture(nil, "ARTWORK")
+    border:SetAtlas(CDM_PANDEMIC_BORDER_ATLAS)
+    border:SetAllPoints(frame)
+    border:SetAlpha(0)
+
+    -- The mask must carry CLAMPTOBLACKADDITIVE wrap modes or the scaled FX
+    -- pulses sample past its rect and bleed outside the ring. SetAtlas
+    -- cannot pass wrap modes, so resolve the atlas (a standalone
+    -- whole-file mask texture) to its file and use SetTexture's wrap
+    -- arguments instead.
+    local mask = frame:CreateMaskTexture()
+    local maskInfo = C_Texture.GetAtlasInfo(CDM_PANDEMIC_MASK_ATLAS)
+    if maskInfo and maskInfo.file then
+        mask:SetTexture(maskInfo.file, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    end
+    mask:SetAllPoints(frame)
+
+    local ag = frame:CreateAnimationGroup()
+    ag:SetLooping("REPEAT")
+    ag:SetToFinalAlpha(true)
+
+    local fx = {}
+    for i = 1, 3 do
+        -- Sublevel 1: Blizzard splits Border and FX onto sibling frames to
+        -- guarantee the pulses draw above the ring; same-layer creation
+        -- order is unspecified (and the mask forces separate draw batches),
+        -- so encode the ordering with the documented mechanism instead.
+        local tex = frame:CreateTexture(nil, "ARTWORK", nil, 1)
+        tex:SetAtlas(CDM_PANDEMIC_FX_ATLASES[i])
+        tex:SetAllPoints(frame)
+        tex:SetAlpha(0)
+        tex:AddMaskTexture(mask)
+        fx[i] = tex
+
+        -- Blizzard's per-texture choreography, staggered 0 / 1.5 / 3s:
+        -- grow 0.25x->1.5x over 2s; alpha in 0.5s, hold 1s, out 0.5s.
+        -- Every animation ends by t=5, so the loop cycles at 5s exactly.
+        local delay = (i - 1) * 1.5
+        local scale = ag:CreateAnimation("Scale")
+        scale:SetTarget(tex)
+        scale:SetStartDelay(delay)
+        scale:SetDuration(2)
+        scale:SetScaleFrom(0.25, 0.25)
+        scale:SetScaleTo(1.5, 1.5)
+        scale:SetSmoothing("IN_OUT")
+
+        local fadeIn = ag:CreateAnimation("Alpha")
+        fadeIn:SetTarget(tex)
+        fadeIn:SetStartDelay(delay)
+        fadeIn:SetDuration(0.5)
+        fadeIn:SetFromAlpha(0)
+        fadeIn:SetToAlpha(1)
+        fadeIn:SetSmoothing("IN_OUT")
+
+        local hold = ag:CreateAnimation("Alpha")
+        hold:SetTarget(tex)
+        hold:SetStartDelay(delay + 0.5)
+        hold:SetDuration(1)
+        hold:SetFromAlpha(1)
+        hold:SetToAlpha(1)
+        hold:SetSmoothing("IN_OUT")
+
+        local fadeOut = ag:CreateAnimation("Alpha")
+        fadeOut:SetTarget(tex)
+        fadeOut:SetStartDelay(delay + 1.5)
+        fadeOut:SetDuration(0.5)
+        fadeOut:SetFromAlpha(1)
+        fadeOut:SetToAlpha(0)
+        fadeOut:SetSmoothing("IN_OUT")
+    end
+
+    return { frame = frame, border = border, fx = fx, ag = ag }
+end
+
 -- Autocast Shine: the retired LCG renderer's orbiting sparks rebuilt on
 -- AnimationGroups. Four speed groups of four sparks each orbit the button
 -- perimeter (up the left edge from the bottom-left corner, then clockwise);
@@ -554,6 +656,10 @@ local function HideGlowStyles(container)
         if container.procFrame.ProcLoop then container.procFrame.ProcLoop:Stop() end
         container.procFrame:Hide()
     end
+    if container.cdm then
+        container.cdm.ag:Stop()
+        container.cdm.frame:Hide()
+    end
     if container.overlayTexture then container.overlayTexture:Hide() end
     -- Assisted highlight blizzard flipbook frame
     if container.blizzardFrame then
@@ -660,6 +766,15 @@ local function ShowGlowStyle(container, style, button, color, params)
         end
         container.overlayTexture:SetColorTexture(color[1], color[2], color[3], color[4] or defaultAlpha)
         container.overlayTexture:Show()
+    elseif style == "cdm" then
+        -- CDM pandemic parity: untinted Blizzard art, no knobs; color and
+        -- params are ignored by design. Lazily built like the ants twin.
+        if not container.cdm then
+            container.cdm = BuildCdmPandemicRig(container.solidFrame, button)
+        end
+        container.cdm.border:SetAlpha(1)
+        container.cdm.frame:Show()
+        container.cdm.ag:Play()
     elseif style == "blizzard" then
         if container.blizzardFrame then
             container.blizzardFrame:Show()
@@ -706,6 +821,11 @@ local function IsGlowAnimationAlive(container)
         local spark = container.sparks[1]
         if not spark.tex:IsVisible() then return true end
         return spark.ag:IsPlaying()
+    end
+    -- CDM pandemic rig (same visible-only rule as the proc flipbook)
+    if container.cdm and container.cdm.frame:IsShown() then
+        if not container.cdm.frame:IsVisible() then return true end
+        return container.cdm.ag:IsPlaying()
     end
     -- Overlay is static — without this check, the cache safety net would treat it
     -- as "dead" and restart ShowGlowStyle every tick.
@@ -832,14 +952,16 @@ local function MakeGlowSetter(cfg)
     local defColor    = cfg.defaultColor
 
     -- Style keys: pandemic path (nil when hasPandemic is false)
-    local panStyleKey = cfg.pandemicStyleKey
-    local panColorKey = cfg.pandemicColorKey
-    local panSizeKey  = cfg.pandemicSizeKey
-    local panThKey    = cfg.pandemicThicknessKey
-    local panSpdKey   = cfg.pandemicSpeedKey
-    local panLnKey    = cfg.pandemicLinesKey
-    local panDefStyle = cfg.pandemicDefaultStyle
-    local panDefColor = cfg.pandemicDefaultColor
+    local panStyleKey  = cfg.pandemicStyleKey
+    local panColorKey  = cfg.pandemicColorKey
+    local panColor2Key = cfg.pandemicColor2Key
+    local panDefColor2 = cfg.pandemicDefaultColor2
+    local panSizeKey   = cfg.pandemicSizeKey
+    local panThKey     = cfg.pandemicThicknessKey
+    local panSpdKey    = cfg.pandemicSpeedKey
+    local panLnKey     = cfg.pandemicLinesKey
+    local panDefStyle  = cfg.pandemicDefaultStyle
+    local panDefColor  = cfg.pandemicDefaultColor
 
     -- Cache field names on button (must match existing names for Preview.lua compat)
     local cActive   = cfg.cacheActive
@@ -882,9 +1004,11 @@ local function MakeGlowSetter(cfg)
                 color = (btnStyle and btnStyle[colorKey]) or defColor
             end
 
-            -- Apply normalization if configured
+            -- Apply normalization if configured; the pandemic flag lets
+            -- branch-aware normalizers admit pandemic-only styles ("cdm")
+            -- without a second normalizer upvalue.
             if normalize then
-                glowStyle = normalize(glowStyle)
+                glowStyle = normalize(glowStyle, hasPandemic and pandemicOverride)
             end
 
             -- "none" style means off
@@ -893,9 +1017,14 @@ local function MakeGlowSetter(cfg)
             end
 
             if glowStyle then
-                -- Second color (color shift only)
-                if color2Key and glowStyle == "colorShift" then
-                    color2 = (btnStyle and btnStyle[color2Key]) or defColor2
+                -- Second color (color shift only); the pandemic branch reads
+                -- its own key family, matching the live kit resolver.
+                if glowStyle == "colorShift" then
+                    if hasPandemic and pandemicOverride and panColor2Key then
+                        color2 = (btnStyle and btnStyle[panColor2Key]) or panDefColor2 or defColor2
+                    elseif color2Key then
+                        color2 = (btnStyle and btnStyle[color2Key]) or defColor2
+                    end
                 end
 
                 -- Resolve size
@@ -1023,10 +1152,15 @@ local SetProcGlow = MakeGlowSetter({
 -- CC-side twins in ShowGlowStyle; the rest translate to the equivalent
 -- legacy renderers (dead LCG styles to the pulse border, old pixel to its
 -- dashes lookalike) so preview matches the kit.
-local function NormalizeAuraGlowPreviewStyle(style)
+local function NormalizeAuraGlowPreviewStyle(style, isPandemic)
     if style == "none" or style == "solid" or style == "overlay"
         or style == "ants" or style == "colorShift" or style == "dashes" then
         return style
+    end
+    -- "cdm" exists only in the pandemic style menu; on the aura branch it
+    -- must degrade exactly like the kit does (unknown value -> pulse).
+    if style == "cdm" and isPandemic then
+        return "cdm"
     end
     if style == "glow" or style == "proc" then
         return "glow"
@@ -1063,6 +1197,7 @@ local SetAuraGlow = MakeGlowSetter({
     defaultLines       = 5,
     pandemicStyleKey     = "pandemicGlowStyle",     pandemicDefaultStyle = "solid",
     pandemicColorKey     = "pandemicGlowColor",     pandemicDefaultColor = DEFAULT_PANDEMIC_COLOR,
+    pandemicColor2Key    = "pandemicGlowColor2",    pandemicDefaultColor2 = DEFAULT_PANDEMIC_COLOR2,
     pandemicSizeKey      = "pandemicGlowSize",
     pandemicThicknessKey = "pandemicGlowThickness",
     pandemicSpeedKey     = "pandemicGlowSpeed",
@@ -1309,7 +1444,7 @@ local function NormalizeKitGlowStyle(style)
     return "pulse"
 end
 
-local function BuildKitGlowRegions(parent)
+local function BuildKitGlowRegions(parent, withCdm)
     local host = CreateFrame("Frame", nil, parent)
     host:EnableMouse(false)
     host:SetAlpha(0)
@@ -1382,6 +1517,14 @@ local function BuildKitGlowRegions(parent)
     glowKit.dashes = {}
     CreateDashRegions(host, glowKit.dashes, glowKit.dashMasks, MAX_AURA_GLOW_DASHES)
 
+    -- CDM parity rig, pandemic rigs only: the style menu offers "cdm" just
+    -- for the pandemic glow, so the aura-glow and resource-bar rig
+    -- populations skip its five regions and twelve-anim loop. Anchored to
+    -- the host, whose corners follow the CC anchor button at style time.
+    if withCdm then
+        glowKit.cdm = BuildCdmPandemicRig(host, host)
+    end
+
     return glowKit
 end
 
@@ -1428,6 +1571,14 @@ local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, s
             piece.tex:SetAlpha(0)
         end
     end
+    local cdm = glowKit.cdm
+    if cdm then
+        cdm.ag:Stop()
+        cdm.border:SetAlpha(0)
+        cdm.fx[1]:SetAlpha(0)
+        cdm.fx[2]:SetAlpha(0)
+        cdm.fx[3]:SetAlpha(0)
+    end
 
     if kitStyle == "none" then
         host:SetAlpha(0)
@@ -1458,6 +1609,17 @@ local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, s
     if kitStyle == "overlay" then
         glowKit.overlay:SetColorTexture(r, g, b, a)
         glowKit.overlay:SetAlpha(1)
+        return
+    end
+
+    if kitStyle == "cdm" then
+        -- Untinted by design: Blizzard's art carries its own color. The FX
+        -- textures stay at alpha 0 here; the loop owns their alpha from its
+        -- first frame (fromAlpha 0), so there is no static flash.
+        if cdm then
+            cdm.border:SetAlpha(1)
+            cdm.ag:Play()
+        end
         return
     end
 
@@ -1562,6 +1724,41 @@ local function StyleKitBarGlowRegions(glowKit, styleTable, anchorFrame, enabled)
         speed,
         styleTable and styleTable.barAuraEffectLines,
         styleTable and styleTable.barAuraEffectThickness)
+end
+
+-- Resolve the pandemicGlow* keys and style the kit (the icon-mode pandemic
+-- display; Blizzard owns the rig's secret Shown state, this styler only
+-- decides what it looks like whenever Blizzard reveals it). The enable
+-- arrives resolved from the caller — the keys carry no gate of their own,
+-- and the entry/panel resolution lives with the other bind policy in
+-- AuraDisplay.lua. Dash count/thickness ride the dormant-era key names
+-- (pandemicGlowLines/pandemicGlowThickness).
+local function StyleKitPandemicGlowRegions(glowKit, styleTable, anchorFrame, enabled)
+    local kitStyle = "none"
+    if enabled then
+        local rawStyle = (styleTable and styleTable.pandemicGlowStyle) or "solid"
+        if rawStyle == "cdm" and glowKit.cdm then
+            -- Pandemic-only style; rig-less kits (no withCdm at build) fall
+            -- through to the normalizer's unknown-value default instead.
+            kitStyle = "cdm"
+        else
+            kitStyle = NormalizeKitGlowStyle(rawStyle)
+        end
+    end
+    local speed = styleTable and styleTable.pandemicGlowSpeed
+    -- Same legacy pixel-scale speed guard as the icon resolver: the dormant
+    -- pandemicGlowSpeed shipped as 50 in the retired LCG scale, so stored
+    -- values that large fall back to the style's own seconds default.
+    if not speed or speed <= 0 or speed > 3 then
+        speed = AURA_GLOW_SPEED_DEFAULTS[kitStyle]
+    end
+    StyleKitGlowCore(glowKit, anchorFrame, kitStyle,
+        (styleTable and styleTable.pandemicGlowColor) or DEFAULT_PANDEMIC_COLOR,
+        (styleTable and styleTable.pandemicGlowColor2) or DEFAULT_PANDEMIC_COLOR2,
+        styleTable and styleTable.pandemicGlowSize,
+        speed,
+        styleTable and styleTable.pandemicGlowLines,
+        styleTable and styleTable.pandemicGlowThickness)
 end
 
 ------------------------------------------------------------------------
@@ -1682,7 +1879,10 @@ end
 
 local SetBarAuraEffect = MakeGlowSetter({
     containerKey       = "barAuraEffect",
-    hasPandemic        = true,
+    -- No pandemic branch: the bar-side pandemic display is the fill-clone
+    -- recolor (AuraDisplay kit), not a glow style. The dormant
+    -- pandemicBarEffect* key family retired with it.
+    hasPandemic        = false,
     normalizeStyle     = NormalizeBarAuraEffectStyle,
     noneIsOff          = true,
     fullParams         = true,
@@ -1703,18 +1903,11 @@ local SetBarAuraEffect = MakeGlowSetter({
     thicknessKey       = "barAuraEffectThickness",
     speedKey           = "barAuraEffectSpeed",
     linesKey           = "barAuraEffectLines",
-    pandemicStyleKey     = "pandemicBarEffect",         pandemicDefaultStyle = "none",
-    pandemicColorKey     = "pandemicBarEffectColor",     pandemicDefaultColor = DEFAULT_PANDEMIC_COLOR,
-    pandemicSizeKey      = "pandemicBarEffectSize",
-    pandemicThicknessKey = "pandemicBarEffectThickness",
-    pandemicSpeedKey     = "pandemicBarEffectSpeed",
-    pandemicLinesKey     = "pandemicBarEffectLines",
     cacheActive = "_barAuraEffectActive", cacheStyle = "_baeEffect",
     cacheR = "_baeR",  cacheG = "_baeG",
     cacheB = "_baeB",  cacheA = "_baeA",
     cacheSz = "_baeSz", cacheTh = "_baeTh",
     cacheSpd = "_baeSpd", cacheLn = "_baeLn",
-    cachePandemic = "_baePandemic",
 })
 
 -- Exports
@@ -1733,6 +1926,7 @@ ST._SetBarAuraEffect = SetBarAuraEffect
 ST._BuildKitGlowRegions = BuildKitGlowRegions
 ST._StyleKitGlowRegions = StyleKitGlowRegions
 ST._StyleKitBarGlowRegions = StyleKitBarGlowRegions
+ST._StyleKitPandemicGlowRegions = StyleKitPandemicGlowRegions
 ST._BuildKitSegmentBorderPool = BuildKitSegmentBorderPool
 ST._StyleKitSegmentBorders = StyleKitSegmentBorders
 ST._SetReadyGlow = SetReadyGlow

@@ -188,6 +188,35 @@ local function CustomBarAuraPreview(cabConfig)
     }
 end
 
+-- Pandemic recolor stand-in (PTR 8 Phase 2): its own flag; the canvas
+-- unions it into the Active Aura stand-in, since the recolor only exists
+-- over the aura fill.
+local function CustomBarPandemicPreview(cabConfig)
+    return {
+        groupScoped = true,
+        IsActive = function()
+            return CooldownCompanion:IsCustomAuraBarPandemicPreviewActive(cabConfig) == true
+        end,
+        SetActive = function(_, _, show)
+            CooldownCompanion:SetCustomAuraBarPandemicPreview(cabConfig, show)
+        end,
+    }
+end
+
+-- Pandemic MARKER stand-in: decorates the duration text the Active Aura
+-- stand-in writes, so the canvas unions it into that flag too.
+local function CustomBarMarkerPreview(cabConfig)
+    return {
+        groupScoped = true,
+        IsActive = function()
+            return CooldownCompanion:IsCustomAuraBarMarkerPreviewActive(cabConfig) == true
+        end,
+        SetActive = function(_, _, show)
+            CooldownCompanion:SetCustomAuraBarMarkerPreview(cabConfig, show)
+        end,
+    }
+end
+
 local function ResourceAuraPreview(powerType)
     return {
         groupScoped = true,
@@ -296,6 +325,41 @@ local function BarAuraIndicatorEnabled(group, buttonIndex)
         return true
     end
     return ST.IsBarAuraIndicatorEnabled(ResolveTargetStyle(group, buttonIndex)) == true
+end
+
+-- Effective pandemic enable (PTR 8 visuals): the per-entry override wins,
+-- else the effective style's explicit-true key — the same resolution the
+-- live bind gate and the config mirror perform, so the control is never
+-- offered where the preview renders nothing nor hidden at entry scope
+-- where the live rig actually renders.
+local function PandemicEffectEnabled(group, buttonIndex)
+    local buttonData = buttonIndex and (group.buttons or {})[buttonIndex] or nil
+    if buttonData and buttonData.pandemicEffect ~= nil then
+        return buttonData.pandemicEffect == true
+    end
+    return StyleFlagEnabled(group, buttonIndex, "pandemicEffectEnabled")
+end
+
+-- Effective marker enable, the same three-step resolution the live bind gate
+-- performs (AuraDisplay's IsPandemicMarkerWanted): the panel kill switch, then
+-- the per-entry override, then the tracked-unit default. Deliberately separate
+-- from PandemicEffectEnabled above — the marker and the effect are independent
+-- settings, and the effect is off by default, so sharing that gate would hide
+-- the marker preview on almost every panel.
+local function PandemicMarkerEnabled(group, buttonIndex)
+    if ResolveTargetStyle(group, buttonIndex).pandemicMarkerEnabled == false then
+        return false
+    end
+    local buttonData = buttonIndex and (group.buttons or {})[buttonIndex] or nil
+    if buttonData and buttonData.pandemicMarker ~= nil then
+        return buttonData.pandemicMarker == true
+    end
+    -- Panel scope has no single entry to read a unit from, so the control
+    -- stays offered and the stand-in decides per entry.
+    if not buttonData then
+        return true
+    end
+    return (buttonData.auraUnit or "player") == "target"
 end
 
 local function TextureIndicatorEnabled(group, indicatorKey)
@@ -493,6 +557,16 @@ local CONTROLS = {
         preview = FlagPreview("_auraGlowPreview", "SetAuraGlowPreview", "SetGroupAuraGlowPreview"),
     },
     {
+        id = "pandemicGlow",
+        label = "Preview Pandemic Effect",
+        group = GROUP_EFFECTS,
+        modes = { icons = true },
+        section = "pandemic",
+        requiresPandemicEffect = true,
+        settings = { tab = "effects", key = "pandemicGlow" },
+        preview = FlagPreview("_pandemicPreview", "SetPandemicPreview", "SetGroupPandemicPreview"),
+    },
+    {
         id = "readyGlow",
         label = "Preview Ready Glow Style",
         group = GROUP_EFFECTS,
@@ -521,6 +595,20 @@ local CONTROLS = {
         requiresBarAuraIndicator = true,
         settings = { tab = "effects", key = "barActiveAura" },
         preview = FlagPreview("_barAuraEffectPreview", "SetBarAuraEffectPreview", "SetGroupBarAuraEffectPreview"),
+    },
+    {
+        id = "barPandemic",
+        label = "Preview Pandemic Color",
+        group = GROUP_EFFECTS,
+        modes = { bars = true },
+        section = "pandemic",
+        requiresPandemicEffect = true,
+        -- No advanced key exists for the bars pandemic FILL rows (enable +
+        -- color only), so the gear lands on the Effects tab with the Pandemic
+        -- section forced open by name — the rows live inside it. The section
+        -- constant is GroupTabs' (EFFECTS_PANDEMIC_SECTION); bars shares it.
+        settings = { tab = "effects", uncollapse = "effects_pandemic" },
+        preview = FlagPreview("_pandemicPreview", "SetBarPandemicPreview", "SetGroupBarPandemicPreview"),
     },
     {
         id = "textureProc",
@@ -615,6 +703,25 @@ local CONTROLS = {
         preview = ConditionalPreview("aura_duration_text"),
     },
     {
+        id = "pandemicMarker",
+        label = "Preview Pandemic Marker",
+        group = GROUP_READOUTS,
+        modes = { icons = true, bars = true },
+        -- Sits with the readouts, not the effects: the marker IS the duration
+        -- text, dressed. Its settings live in the Indicators tab's Pandemic
+        -- section, so this is a two-mode effects route rather than TextRoute's
+        -- Appearance one; both gear keys are in the gear-to-section map, which
+        -- is what uncollapses the header.
+        section = "pandemic",
+        styleKeyDefaultOn = "showAuraText",
+        requiresPandemicMarker = true,
+        settings = {
+            icons = { tab = "effects", key = "pandemicMarker" },
+            bars = { tab = "effects", key = "barPandemicMarker" },
+        },
+        preview = ConditionalPreview("pandemic_marker"),
+    },
+    {
         id = "auraStackText",
         label = "Preview Aura Stack Text",
         group = GROUP_READOUTS,
@@ -687,6 +794,12 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
         return false
     end
     if control.requiresBarAuraIndicator and not BarAuraIndicatorEnabled(group, buttonIndex) then
+        return false
+    end
+    if control.requiresPandemicEffect and not PandemicEffectEnabled(group, buttonIndex) then
+        return false
+    end
+    if control.requiresPandemicMarker and not PandemicMarkerEnabled(group, buttonIndex) then
         return false
     end
     if control.indicatorKey and not TextureIndicatorEnabled(group, control.indicatorKey) then
@@ -924,6 +1037,41 @@ local function CollectObjectControls(objects)
                         },
                         preview = CustomBarAuraPreview(cab),
                     }
+                    -- Offered exactly while the entry's own enable is on
+                    -- (the same honesty rule as requiresPandemicEffect on
+                    -- the panel controls).
+                    if cab.pandemicEffect == true then
+                        applicable[#applicable + 1] = {
+                            id = "customBarPandemic_" .. tostring(cab.customBarId),
+                            label = "Preview Pandemic Color",
+                            group = "Custom Bar: " .. name,
+                            object = "customBars",
+                            settings = {
+                                object = "customBarAura",
+                                customBarId = cab.customBarId,
+                                auraTab = cab.spellID ~= nil,
+                            },
+                            preview = CustomBarPandemicPreview(cab),
+                        }
+                    end
+                    -- Same honesty rule, resolved through the shared marker
+                    -- gate: the panel kill switch, then this bar's own switch,
+                    -- then the tracked-unit default. The canvas union must
+                    -- agree with this or the stand-in strands armed.
+                    if CooldownCompanion:IsPandemicMarkerPreviewWanted(cab, cab) then
+                        applicable[#applicable + 1] = {
+                            id = "customBarPandemicMarker_" .. tostring(cab.customBarId),
+                            label = "Preview Pandemic Marker",
+                            group = "Custom Bar: " .. name,
+                            object = "customBars",
+                            settings = {
+                                object = "customBarAura",
+                                customBarId = cab.customBarId,
+                                auraTab = cab.spellID ~= nil,
+                            },
+                            preview = CustomBarMarkerPreview(cab),
+                        }
+                    end
                 end
             end
         end

@@ -620,6 +620,11 @@ local TryAddAuraCandidate = ST._TryAddAuraCandidate
 local RemoveAuraCandidate = ST._RemoveAuraCandidate
 local AddAuraCandidateRow = ST._AddAuraCandidateRow
 local AddAuraStackMaxStatusLabel = ST._AddAuraStackMaxStatusLabel
+-- The same three marker styling rows the panel Pandemic section hangs off its
+-- gear. Custom bars keep the marker keys FLAT on the entry under exactly these
+-- names (ResourceBarAuraHost's style adapter reads them straight through), so
+-- the shared builder writes the right store with `cab` handed in as the style.
+local AddPandemicMarkerControls = ST._AddPandemicMarkerControls
 
 -- Candidate-resolution probe: the buttonData shape Core/Aura.lua reads,
 -- synthesized from cabConfig (the same mapping the runtime adapter uses).
@@ -773,15 +778,92 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
             else
                 cab.pandemicMarker = value and true or false
             end
+            -- Turning it off drops the command-center control, so disarm its
+            -- preview here or the stand-in strands with no toggle left to stop
+            -- it (the Show Pandemic Color twin below clears its own the same
+            -- way). Asked through the shared gate the control is offered on.
+            if not CooldownCompanion:IsPandemicMarkerPreviewWanted(cab, cab) then
+                CooldownCompanion:SetCustomAuraBarMarkerPreview(cab, false)
+            end
             RefreshCustomBarAuraConfig()
         end,
     })
+    -- The marker's look had no control on this surface at all: the style
+    -- adapter has always read these four keys off the entry, but nothing ever
+    -- wrote them, so every custom aura bar drew a hardcoded orange "!!".
+    -- Only the three styling rows are added here — the on/off above IS this
+    -- entry's switch, and the panel-wide pandemicMarkerEnabled kill switch has
+    -- no meaning on a surface where the bar is the entry.
+    local function BuildCustomBarPandemicMarkerAdvanced(panel)
+        AddPandemicMarkerControls(panel, cab, function()
+            CooldownCompanion:ApplyResourceBars()
+        end, function()
+            if CS.RefreshAdvancedSettingsPanel then
+                CS.RefreshAdvancedSettingsPanel()
+            end
+        end, { childrenOnly = true })
+    end
+    AddAdvancedToggle(pandemicRow, "rbCabPandemicMarker_" .. tostring(sectionKey), infoButtons,
+        pandemicValue == true, {
+            title = "Pandemic Marker Advanced",
+            build = BuildCustomBarPandemicMarkerAdvanced,
+        })
     AnchorRowBadge(pandemicRow, CreateInfoButton(pandemicRow.frame, pandemicRow.frame, "LEFT", "LEFT", 0, 0, {
         "Pandemic Marker",
-        {"Marks the duration text during the last 30% of the aura. Recasting in that window adds to the remaining time instead of wasting it.", 1, 1, 1, true},
+        {"Marks the duration text for the last 30% of the aura, where recasting adds to the remaining time instead of wasting it.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
-        {"On by default for debuffs on your target, off for your own buffs.", 1, 1, 1, true},
+        {"It rides that text. With Show Duration Text off, nothing shows.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"On by default for debuffs on your target.", 1, 1, 1, true},
     }, infoButtons))
+
+    -- Pandemic fill recolor (PTR 8 Phase 2). Fresh entry keys: the retired
+    -- showPandemicGlow/barPandemicColor names are wiped on every import and
+    -- must never be written again.
+    local effectRow = AddCheckboxRow(auraRight, {
+        label = "Show Pandemic Color",
+        value = cab.pandemicEffect == true,
+        onChange = function(value)
+            cab.pandemicEffect = value and true or nil
+            -- Disabling drops the command-center control, so disarm its
+            -- preview here or it strands active with no toggle left and
+            -- silently resumes on re-check (the panel twins clear theirs
+            -- the same way when rebuilt disabled).
+            if not value then
+                CooldownCompanion:SetCustomAuraBarPandemicPreview(cab, false)
+            end
+            RefreshCustomBarAuraConfig()
+        end,
+    })
+    AnchorRowBadge(effectRow, CreateInfoButton(effectRow.frame, effectRow.frame, "LEFT", "LEFT", 0, 0, {
+        "Pandemic Color",
+        {"The bar fill wears this color instead of the aura color while the tracked aura is in its refresh window, where recasting adds bonus time.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Auras that gain no time when refreshed never show it.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"A bar showing stacks keeps its stack look.", 1, 1, 1, true},
+    }, infoButtons))
+    if cab.pandemicEffect == true then
+        -- No alpha: the pandemic color REPLACES the aura fill color (owner
+        -- ruling), so the live clone renders it opaque.
+        --
+        -- "Fill Color", not "Pandemic Color": the marker gear a few rows up
+        -- opens its own "Marker Color", and the two drive different visuals.
+        AddColorRow(auraRight, {
+            label = "Fill Color",
+            indent = true,
+            tbl = cab,
+            key = "pandemicColor",
+            default = {1, 0.5, 0, 1},
+            hasAlpha = false,
+            onConfirm = function()
+                CooldownCompanion:ApplyResourceBars()
+                RefreshLayoutOrderPreview()
+            end,
+            onChange = RefreshLayoutOrderPreviewForDrag,
+            deferCommit = true,
+        })
+    end
 
     local shellRow = AddCheckboxRow(auraRight, {
         label = "Show Only While Aura Active",

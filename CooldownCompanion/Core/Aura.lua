@@ -605,6 +605,8 @@ end
 -- sets now live side by side where a mismatch is visible.
 local AURA_PREVIEW_SHELL_KINDS_ICON = {
     aura_duration_text = true,
+    -- Same stand-in as the duration text, so the same shell has to open.
+    pandemic_marker = true,
     aura_stack_text = true,
     aura_duration_swipe = true,
 }
@@ -612,6 +614,7 @@ local AURA_PREVIEW_SHELL_KINDS_ICON = {
 local AURA_PREVIEW_SHELL_KINDS_BAR = {
     aura_duration_bar = true,
     aura_duration_text = true,
+    pandemic_marker = true,
     aura_stack_text = true,
 }
 

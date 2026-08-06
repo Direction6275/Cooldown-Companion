@@ -45,6 +45,7 @@ local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildAssistedHighlightControls = ST._BuildAssistedHighlightControls
 local BuildProcGlowControls = ST._BuildProcGlowControls
 local BuildAuraGlowControls = ST._BuildAuraGlowControls
+local BuildPandemicGlowControls = ST._BuildPandemicGlowControls
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
 
@@ -2318,9 +2319,9 @@ local function MakeCooldownSwipeAdvancedDescriptor()
             -- Show Swipe Edge
             AddCheckboxRow(panel, {
                 label = "Show Swipe Edge",
-                value = style.showCooldownSwipeEdge ~= false,
+                value = style.cooldownSwipeEdgeEnabled == true,
                 onChange = function(val)
-                    style.showCooldownSwipeEdge = val
+                    style.cooldownSwipeEdgeEnabled = val
                     RefreshSelectedGroupStyle()
                     RefreshActiveAdvancedSettingsPanel()
                 end,
@@ -2328,7 +2329,7 @@ local function MakeCooldownSwipeAdvancedDescriptor()
 
             -- Swipe Edge Color (only when edge is visible). deferCommit is
             -- deliberately absent, matching the AddColorPicker call it replaced.
-            if style.showCooldownSwipeEdge ~= false then
+            if style.cooldownSwipeEdgeEnabled == true then
                 AddColorRow(panel, {
                     label = "Swipe Edge Color",
                     indent = true,
@@ -2456,6 +2457,8 @@ local function BuildBarModeEffects(container, group, style, previewContextChange
         CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
         CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
         CooldownCompanion:SetGroupBarAuraEffectPreview(CS.selectedGroup, false)
+        -- The bar variant also owns the staged aura drain conditional.
+        CooldownCompanion:SetGroupBarPandemicPreview(CS.selectedGroup, false)
     end
     BuildBarEffectsTab(container, group, style)
 end
@@ -2554,6 +2557,98 @@ local function BuildAuraGlowSection(container, group, style)
         CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
         return
     end
+end
+
+-- Pandemic effect (PTR 8): a second kit glow the game reveals only while the
+-- tracked aura sits inside its refresh window. It shares the Pandemic section,
+-- and the "pandemic" OVERRIDE section, with the marker below — one feature,
+-- one promote badge target, two rows.
+--
+-- Nil-container contract, copied from the bars twin (BarModeTabs' Glows note):
+-- the builder runs with whatever host it ends up with, because a glow left
+-- running by a deleted aura entry - or by a collapsed section - still has to
+-- be cleared. Guarding the CALL instead would strand the preview.
+local function BuildPandemicGlowSection(container, group, style)
+    local function ClearPandemicPreview()
+        if CooldownCompanion.SetGroupPandemicPreview then
+            CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
+        end
+    end
+    if not GroupHasAuraTrackingEntry(group) then
+        ClearPandemicPreview()
+        return
+    end
+
+    local pandemicEnabled = style.pandemicEffectEnabled == true
+    if container then
+        local pandemicCb = AddCheckboxRow(container, {
+            label = "Show Pandemic Effect",
+            value = pandemicEnabled,
+            onChange = function(val)
+                style.pandemicEffectEnabled = val and true or false
+                UpdateSelectedGroupStyle(true)
+            end,
+        })
+
+        -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+        local function BuildPandemicAdvanced(panel)
+            BuildPandemicGlowControls(panel, style, UpdateSelectedGroupStyle, { row = true })
+        end
+
+        local _, pandemicAdvBtn = AddAdvancedToggle(pandemicCb, "pandemicGlow", tabInfoButtons, pandemicEnabled, {
+            title = "Pandemic Effect Advanced",
+            build = BuildPandemicAdvanced,
+        })
+        CreateCheckboxPromoteButton(pandemicCb, pandemicAdvBtn, "pandemic", group, style)
+        AnchorRowBadge(pandemicCb, CreateInfoButton(pandemicCb.frame, pandemicCb.frame, "LEFT", "LEFT", 0, 0, {
+            "Pandemic Effect",
+            {"Glows a button while its tracked aura is in the refresh window, where recasting adds bonus time.", 1, 1, 1, true},
+            {" ", 1, 1, 1, true},
+            {"Auras that gain no time when refreshed never show it.", 1, 1, 1, true},
+            {" ", 1, 1, 1, true},
+            {"Draws over the Aura Glow when both are on.", 1, 1, 1, true},
+        }, tabInfoButtons))
+    end
+
+    if not pandemicEnabled then
+        ClearPandemicPreview()
+    end
+end
+
+-- Pandemic marker: the text half of the same window. Rows only — no preview
+-- surface renders the marker in any mode (every duration-text stand-in writes
+-- a bare countdown), so there is deliberately no command-center control to
+-- reconcile here and no nil-container contract to honour.
+--
+-- The marker rides the aura duration text, which lives on the Appearance tab.
+-- The rows stay visible when that text is off and the info tooltip says what
+-- happens; a control that vanishes onto another tab is harder to find than an
+-- inert one.
+local function BuildPandemicMarkerSection(container, group, style)
+    if not container or not GroupHasAuraTrackingEntry(group) then
+        return
+    end
+
+    local applyStyle = function() UpdateSelectedGroupStyle(false) end
+    local markerRow = AddPandemicMarkerControls(container, style, applyStyle, function()
+        CooldownCompanion:RefreshConfigPanel()
+    end, { enableOnly = true })
+
+    -- Single rail (AdvancedSettingsPanel.lua): the three styling rows fill the
+    -- panel, so they carry no indent - childrenOnly drops it.
+    local function BuildPandemicMarkerAdvanced(panel)
+        AddPandemicMarkerControls(panel, style, applyStyle, RefreshActiveAdvancedSettingsPanel,
+            { childrenOnly = true })
+    end
+
+    local _, markerAdvBtn = AddAdvancedToggle(markerRow, "pandemicMarker", tabInfoButtons,
+        style.pandemicMarkerEnabled ~= false, {
+            title = "Pandemic Marker Advanced",
+            build = BuildPandemicMarkerAdvanced,
+        })
+    -- Same override section as the effect row above: the badge is offered on
+    -- both so a marker-only user never has to reach for the other row.
+    CreateCheckboxPromoteButton(markerRow, markerAdvBtn, "pandemic", group, style)
 end
 
 local function BuildReadyGlowSection(container, group, style)
@@ -2720,6 +2815,7 @@ end
 -- and a key reached in a mode that has no such section just clears a collapse
 -- state nothing is reading.
 local EFFECTS_GLOWS_SECTION = "effects_glows"
+local EFFECTS_PANDEMIC_SECTION = "effects_pandemic"
 local EFFECTS_TIMERS_SECTION = "effects_timers"
 local EFFECTS_STATES_SECTION = "effects_states"
 
@@ -2730,6 +2826,14 @@ ST._INDICATORS_SECTION_BY_ADVANCED_KEY = {
     auraGlow = EFFECTS_GLOWS_SECTION,
     assistedHighlight = EFFECTS_GLOWS_SECTION,
     barActiveAura = EFFECTS_GLOWS_SECTION,
+
+    -- The refresh window owns both its visuals, so both gears sit in the
+    -- Pandemic section rather than beside unrelated glows and unrelated text.
+    -- The bars route reaches this section by name instead of by key (it has
+    -- no gear of its own): PreviewCommandCenter's barPandemic `uncollapse`.
+    pandemicGlow = EFFECTS_PANDEMIC_SECTION,
+    pandemicMarker = EFFECTS_PANDEMIC_SECTION,
+    barPandemicMarker = EFFECTS_PANDEMIC_SECTION,
 
     iconFillTimer = EFFECTS_TIMERS_SECTION,
     cooldownSwipe = EFFECTS_TIMERS_SECTION,
@@ -2845,7 +2949,7 @@ local function BuildEffectsTab(container)
     -- chained off the end of the label), and each section splits its rows
     -- into a curated two-column grid from BeginRowGrid.
     --
-    -- All three sections collapse, like every other row-grammar section. The
+    -- All four sections collapse, like every other row-grammar section. The
     -- preview command center's quick-access gears queue advanced keys at the
     -- toggles below and a gear that never builds expires silently, so the
     -- collapse keys are declared alongside the gear-to-section map above and
@@ -2908,6 +3012,26 @@ local function BuildEffectsTab(container)
         build = BuildAssistedHighlightAdvanced,
     })
     end -- not glowsCollapsed
+
+    -- ================================================================
+    -- Pandemic
+    -- ================================================================
+    -- Both halves are aura-only, so unlike Glows the whole header is gated -
+    -- an empty "Pandemic" heading on a group with no aura entry would be a
+    -- promise of nothing. The effect builder still runs with a nil host so it
+    -- can reconcile its preview; the bars twin has carried that contract
+    -- since PTR 8 and this side needs it for the same reason.
+    local pandemicLeft, pandemicRight
+    if GroupHasAuraTrackingEntry(group) then
+        local _, pandemicCollapsed = BuildCollapsibleSection(container, "Pandemic",
+            EFFECTS_PANDEMIC_SECTION, nil, nil, ROW_SECTION)
+        if not pandemicCollapsed then
+            -- LEFT the glow half, RIGHT the text half.
+            pandemicLeft, pandemicRight = BeginRowGrid(container)
+        end
+    end
+    BuildPandemicGlowSection(pandemicLeft, group, style)
+    BuildPandemicMarkerSection(pandemicRight, group, style)
 
     -- ================================================================
     -- Timers
@@ -3866,8 +3990,6 @@ local function BuildAppearanceTab(container)
                 AddAnchorDropdown(panel, style, "auraTextAnchor", "TOPLEFT", refreshStyle, nil, { row = true, indent = true })
                 AddOffsetSliders(panel, style, "auraTextXOffset", "auraTextYOffset", { x = 2, y = -2 }, refreshStyle, { row = true, indent = true })
             end
-
-            AddPandemicMarkerControls(panel, style, refreshStyle, RefreshActiveAdvancedSettingsPanel, { row = true })
         end
 
         local _, auraTextAdvBtn = AddAdvancedToggle(auraTextRow, "auraText", tabInfoButtons, style.showAuraText ~= false, {

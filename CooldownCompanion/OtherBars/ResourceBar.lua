@@ -374,6 +374,8 @@ function CooldownCompanion:CancelIndependentResourceStackDrag()
 end
 
 local activeCustomAuraBarActivePreviews = {}
+local activeCustomAuraBarPandemicPreviews = {}
+local activeCustomAuraBarMarkerPreviews = {}
 -- Resource aura overlay previews, keyed by POWER TYPE. Never by barInfo or
 -- frame: a form change rebuilds the positional bar array, and the power
 -- type is the only identity that survives it.
@@ -424,6 +426,8 @@ local function ClearCustomAuraBarIndicatorVisualState(barInfo, clearPreviewFlags
 
     if clearPreviewFlags then
         bar._barAuraActivePreview = nil
+        bar._barPandemicPreview = nil
+        bar._barMarkerPreview = nil
     end
 
     ResetCustomAuraBarIndicatorVisuals(bar, barInfo.cabConfig)
@@ -503,6 +507,10 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig)
         or (isSpellCustomCooldown and {0.2, 1.0, 0.2, 1.0})
         or (cabConfig.barColor or {0.5, 0.5, 1})
 
+    -- Pandemic stand-in (PTR 8 Phase 2): only meaningful over the aura fill.
+    local pandemicPreview = bar._barPandemicPreview == true
+        and cabConfig.pandemicEffect == true
+
     bar._barAuraColor = wantAuraColor
     if not bar._barColorShiftActive then
         bar:SetStatusBarColor(wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4] or 1)
@@ -525,7 +533,9 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig)
         end
     end
 
-    if cabConfig.barAuraColorShiftEnabled then
+    -- Color shift yields while the pandemic color wears the fill (the panel
+    -- mirror rule: shift suppressed, pulse kept).
+    if cabConfig.barAuraColorShiftEnabled and not pandemicPreview then
         bar._barColorShiftActive = true
         bar._barCSBaseColor = wantAuraColor
         bar._barCSShiftColor = cabConfig.barAuraColorShiftColor or {1, 1, 1, 1}
@@ -536,6 +546,13 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig)
         bar._barCSShiftColor = nil
         bar._barCSSpeed = nil
         bar:SetStatusBarColor(wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4] or 1)
+    end
+
+    -- Last write wins: the pandemic color REPLACES the aura color, opaque
+    -- (owner ruling), matching the live clone's forced-opaque render.
+    if pandemicPreview then
+        local pc = cabConfig.pandemicColor
+        bar:SetStatusBarColor((pc and pc[1]) or 1, (pc and pc[2]) or 0.5, (pc and pc[3]) or 0, 1)
     end
 end
 local function ClearStaleRecycledBarRuntimeState(frame)
@@ -2827,8 +2844,34 @@ function CooldownCompanion:IsCustomAuraBarActivePreviewActive(cabConfig)
     return activeCustomAuraBarActivePreviews[cabConfig] == true
 end
 
+-- Pandemic stand-in (PTR 8 Phase 2): rides on top of the Active Aura
+-- stand-in — the recolor exists only while the aura fill renders, so the
+-- command center arms both flags together. Same table-keyed state model.
+function CooldownCompanion:SetCustomAuraBarPandemicPreview(cabConfig, active)
+    if type(cabConfig) ~= "table" then return end
+    activeCustomAuraBarPandemicPreviews[cabConfig] = active and true or nil
+end
+
+function CooldownCompanion:IsCustomAuraBarPandemicPreviewActive(cabConfig)
+    return activeCustomAuraBarPandemicPreviews[cabConfig] == true
+end
+
+--- Pandemic MARKER stand-in: the marker decorates the duration text, not the
+--- fill, so unlike the recolor above it needs no aura stand-in underneath and
+--- gets its own flag rather than riding the Active Aura one.
+function CooldownCompanion:SetCustomAuraBarMarkerPreview(cabConfig, active)
+    if type(cabConfig) ~= "table" then return end
+    activeCustomAuraBarMarkerPreviews[cabConfig] = active and true or nil
+end
+
+function CooldownCompanion:IsCustomAuraBarMarkerPreviewActive(cabConfig)
+    return activeCustomAuraBarMarkerPreviews[cabConfig] == true
+end
+
 function CooldownCompanion:ClearAllCustomAuraBarPreviews()
     wipe(activeCustomAuraBarActivePreviews)
+    wipe(activeCustomAuraBarPandemicPreviews)
+    wipe(activeCustomAuraBarMarkerPreviews)
 end
 
 -- Resource aura overlay preview (the aura pass, Phase 2): which resources

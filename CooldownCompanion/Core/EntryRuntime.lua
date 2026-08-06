@@ -88,11 +88,6 @@ local function SetAuraStackCountText(fontString, value)
 end
 EntryRuntime.SetAuraStackCountText = SetAuraStackCountText
 
--- 12.1 demolition: pandemic runtime removed with the aura backend; kept as a
--- no-op because teardown/recycle paths across the addon still call it.
-local function ClearAuraPandemicRuntimeState(owner) end
-EntryRuntime.ClearAuraPandemicRuntimeState = ClearAuraPandemicRuntimeState
-
 -- Kept as a real field-clearer: recycled buttons/custom bars still carry
 -- preview-set aura fields that teardown must wipe.
 function EntryRuntime.ClearTrackedAuraOwnerState(owner, configUnit, options)
@@ -110,8 +105,6 @@ function EntryRuntime.ClearTrackedAuraOwnerState(owner, configUnit, options)
         owner._targetSwitchAt = nil
         owner._targetSwitchDataReceived = nil
     end
-    owner._inPandemic = inactiveValue
-    ClearAuraPandemicRuntimeState(owner)
     if options.clearCustomAuraStacks then
         owner._customAuraStackValue = nil
         owner._customAuraApplicationsValue = nil

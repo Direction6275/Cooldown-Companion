@@ -1344,7 +1344,6 @@ local function ClearButtonPreviewState(button)
     button._keyPressHighlightPreview = nil
     button._textureProcPreview = nil
     button._textureAuraPreview = nil
-    button._texturePandemicPreview = nil
     button._textureReadyPreview = nil
     button._textureUnusablePreview = nil
     button._textureIndicatorPreviewDirty = false
@@ -1359,7 +1358,6 @@ local function ClearButtonPreviewState(button)
     button._conditionalPreviewLoopDuration = nil
     button._conditionalPreviewDomain = nil
     button._conditionalAuraPreview = nil
-    button._conditionalPandemicPreview = nil
     button._conditionalUnusablePreview = nil
     button._conditionalOutOfRangePreview = nil
     button._conditionalReadyPreview = nil
@@ -1469,10 +1467,6 @@ local function ClearReusableButtonRuntime(button)
     button._textModeSecretArgs = nil
     button._textModeSecretParts = nil
     button._savedOnUpdate = nil
-    button._inPandemic = nil
-    if EntryRuntime and EntryRuntime.ClearAuraPandemicRuntimeState then
-        EntryRuntime.ClearAuraPandemicRuntimeState(button)
-    end
     ClearButtonPreviewState(button)
     ClearButtonVisualState(button)
     if button.count then button.count:SetText("") end

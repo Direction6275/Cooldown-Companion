@@ -141,11 +141,18 @@ local SEGMENTED_SMOOTHING_TOOLTIP = {
 
 local PANDEMIC_MARKER_TOOLTIP = {
     "Pandemic Marker",
-    {"Marks the duration text during the last 30% of the aura. Recasting in that window adds to the remaining time instead of wasting it.", 1, 1, 1, true},
+    {"Marks this entry's duration text while recasting would add to the remaining time instead of wasting it.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"On by default for debuffs on your target, off for your own buffs.", 1, 1, 1, true},
+    {"On by default for debuffs on your target.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Marker text and color are in the group's Aura Duration Text settings.", 1, 1, 1, true},
+    {"Text and color are in the panel's Pandemic settings.", 1, 1, 1, true},
+}
+
+local PANDEMIC_EFFECT_TOOLTIP = {
+    "Pandemic Effect",
+    {"Shows the panel's pandemic visual on this entry during its refresh window.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Style and color are in the panel's Pandemic settings.", 1, 1, 1, true},
 }
 
 local function BuildAuraTab(scroll, group, buttonData, infoButtons)
@@ -430,11 +437,57 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
             else
                 buttonData.pandemicMarker = value and true or false
             end
+            -- Turning it off drops this entry's command-center control, so
+            -- disarm its preview or the stand-in strands with no toggle left.
+            -- Entry-scoped check on purpose: a panel-wide marker preview is
+            -- still legitimately offered, and clearing through the entry API
+            -- would cancel it too.
+            if not value
+                and CooldownCompanion:IsButtonConditionalVisualPreviewActive(
+                    CS.selectedGroup, CS.selectedButton, "pandemic_marker") then
+                CooldownCompanion:SetConditionalVisualPreviewActive(
+                    CS.selectedGroup, CS.selectedButton, "pandemic_marker", false)
+            end
             RefreshAuraConfig()
         end,
     })
     AnchorRowBadge(pandemicRow, CreateInfoButton(pandemicRow.frame, pandemicRow.frame, "LEFT", "LEFT", 0, 0,
         PANDEMIC_MARKER_TOOLTIP, infoButtons))
+
+    -- Pandemic effect per-entry switch (PTR 8 visuals). The default follows
+    -- the EFFECTIVE explicit-true enable — a promoted pandemicGlow override
+    -- can carry its own pandemicEffectEnabled — so the checkbox reflects
+    -- what this entry actually resolves; only an explicit override is
+    -- stored, so unchanged entries keep tracking that resolution.
+    local effectStyle = group and group.style or {}
+    if CooldownCompanion.GetEffectiveStyle then
+        effectStyle = CooldownCompanion:GetEffectiveStyle(effectStyle, buttonData) or effectStyle
+    end
+    local effectDefault = effectStyle.pandemicEffectEnabled == true
+    local effectValue = buttonData.pandemicEffect
+    if effectValue == nil then effectValue = effectDefault end
+    local effectRow = AddCheckboxRow(auraRight, {
+        label = "Pandemic Effect",
+        value = effectValue == true,
+        onChange = function(value)
+            if value == effectDefault then
+                buttonData.pandemicEffect = nil
+            else
+                buttonData.pandemicEffect = value and true or false
+            end
+            -- Same stranded-preview rule as the marker above and as the
+            -- custom-bar twin. Unconditional here because this is a per-button
+            -- FLAG, not the shared conditional store: clearing it turns the
+            -- fake glow off on this entry alone, which is exactly what an
+            -- entry that just opted out should show under either scope.
+            if not value and CooldownCompanion.SetPandemicPreview then
+                CooldownCompanion:SetPandemicPreview(CS.selectedGroup, CS.selectedButton, false)
+            end
+            RefreshAuraConfig()
+        end,
+    })
+    AnchorRowBadge(effectRow, CreateInfoButton(effectRow.frame, effectRow.frame, "LEFT", "LEFT", 0, 0,
+        PANDEMIC_EFFECT_TOOLTIP, infoButtons))
 end
 
 ST._BuildAuraTab = BuildAuraTab
