@@ -2602,13 +2602,11 @@ local function BuildPandemicGlowSection(container, group, style)
         CreateCheckboxPromoteButton(pandemicCb, pandemicAdvBtn, "pandemic", group, style)
         AnchorRowBadge(pandemicCb, CreateInfoButton(pandemicCb.frame, pandemicCb.frame, "LEFT", "LEFT", 0, 0, {
             "Pandemic Effect",
-            {"Adds a glow to a button while its tracked aura is in the refresh window, when recasting adds bonus time.", 1, 1, 1, true},
+            {"Glows a button while its tracked aura is in the refresh window, where recasting adds bonus time.", 1, 1, 1, true},
             {" ", 1, 1, 1, true},
-            {"Only appears for auras that gain bonus time when refreshed. The game decides the window.", 1, 1, 1, true},
+            {"Auras that gain no time when refreshed never show it.", 1, 1, 1, true},
             {" ", 1, 1, 1, true},
-            {"Shows on top of the Aura Glow while both are enabled.", 1, 1, 1, true},
-            {" ", 1, 1, 1, true},
-            {"Each entry can opt out in its Aura tab.", 1, 1, 1, true},
+            {"Draws over the Aura Glow when both are on.", 1, 1, 1, true},
         }, tabInfoButtons))
     end
 

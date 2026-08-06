@@ -971,6 +971,53 @@ local function BuildPandemicDurationOptions(baseDuration, style)
     return options
 end
 
+------------------------------------------------------------------------
+-- PREVIEW TWINS
+--
+-- Previews are forbidden to touch the aura slot subtree, so no stand-in can
+-- reach SetDurationText or the formatter/curve it takes. Each surface writes
+-- its own fontstring and asks these two how to dress it, which keeps one
+-- definition of "is the marker on" and one of "what does it look like"
+-- instead of four reimplementations drifting apart.
+------------------------------------------------------------------------
+
+-- The live resolver reads the unit off a live aura bind. A preview has none,
+-- so it reads the entry's synced auraUnit (SyncDerivedAuraUnit refreshes it
+-- whenever tracking config changes) — the same fallback the entry's own
+-- Pandemic Marker checkbox resolves its default from. They can only disagree
+-- before a spell's data is cached, which the next config write corrects.
+function CooldownCompanion:IsPandemicMarkerPreviewWanted(buttonData, style)
+    if type(buttonData) ~= "table" or type(style) ~= "table" then
+        return false
+    end
+    return IsPandemicMarkerWanted(buttonData, style, buttonData.auraUnit or "player")
+end
+
+-- Mirrors BuildPandemicMarkerFormatter's three modes on an already-formatted
+-- countdown: "marker" colors the marker alone, "whole" colors the number with
+-- it (the live curve's below-threshold segment), "off" appends it plain. An
+-- empty marker leaves whole-text coloring as the only effect, matching the
+-- curve-only options the live path builds in that case.
+function CooldownCompanion:DecoratePandemicPreviewText(text, style)
+    text = tostring(text or "")
+    if type(style) ~= "table" then
+        return text
+    end
+    local marker = SanitizePandemicMarkerText(style.pandemicMarkerText or "!!")
+    local mode = style.pandemicMarkerColorMode or "marker"
+    if mode == "whole" then
+        local body = marker ~= "" and (text .. " " .. marker) or text
+        return PandemicColorEscape(style.pandemicMarkerColor) .. body .. "|r"
+    end
+    if marker == "" then
+        return text
+    end
+    if mode == "marker" then
+        return text .. " " .. PandemicColorEscape(style.pandemicMarkerColor) .. marker .. "|r"
+    end
+    return text .. " " .. marker
+end
+
 local function StyleSlotKit(slot, button, buttonData, style)
     local kit = slot.kit
     if not kit then return end

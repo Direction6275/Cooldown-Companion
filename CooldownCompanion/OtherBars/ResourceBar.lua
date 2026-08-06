@@ -375,6 +375,7 @@ end
 
 local activeCustomAuraBarActivePreviews = {}
 local activeCustomAuraBarPandemicPreviews = {}
+local activeCustomAuraBarMarkerPreviews = {}
 -- Resource aura overlay previews, keyed by POWER TYPE. Never by barInfo or
 -- frame: a form change rebuilds the positional bar array, and the power
 -- type is the only identity that survives it.
@@ -426,6 +427,7 @@ local function ClearCustomAuraBarIndicatorVisualState(barInfo, clearPreviewFlags
     if clearPreviewFlags then
         bar._barAuraActivePreview = nil
         bar._barPandemicPreview = nil
+        bar._barMarkerPreview = nil
     end
 
     ResetCustomAuraBarIndicatorVisuals(bar, barInfo.cabConfig)
@@ -2854,9 +2856,22 @@ function CooldownCompanion:IsCustomAuraBarPandemicPreviewActive(cabConfig)
     return activeCustomAuraBarPandemicPreviews[cabConfig] == true
 end
 
+--- Pandemic MARKER stand-in: the marker decorates the duration text, not the
+--- fill, so unlike the recolor above it needs no aura stand-in underneath and
+--- gets its own flag rather than riding the Active Aura one.
+function CooldownCompanion:SetCustomAuraBarMarkerPreview(cabConfig, active)
+    if type(cabConfig) ~= "table" then return end
+    activeCustomAuraBarMarkerPreviews[cabConfig] = active and true or nil
+end
+
+function CooldownCompanion:IsCustomAuraBarMarkerPreviewActive(cabConfig)
+    return activeCustomAuraBarMarkerPreviews[cabConfig] == true
+end
+
 function CooldownCompanion:ClearAllCustomAuraBarPreviews()
     wipe(activeCustomAuraBarActivePreviews)
     wipe(activeCustomAuraBarPandemicPreviews)
+    wipe(activeCustomAuraBarMarkerPreviews)
 end
 
 -- Resource aura overlay preview (the aura pass, Phase 2): which resources

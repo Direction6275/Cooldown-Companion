@@ -1790,6 +1790,24 @@ local function EnsureSlotAuraText(slot)
     return slot.auraTextFS
 end
 
+-- The pandemic marker rides the aura duration text, so its preview IS the
+-- duration-text stand-in with the marker appended. Every render path below
+-- treats the two kinds as one and calls the decorator on the way out; the
+-- marker's own descriptor is what keeps the sweep inside the window.
+local function IsAuraDurationTextKind(kind)
+    return kind == "aura_duration_text" or kind == "pandemic_marker"
+end
+
+-- Honest about the entry's own switch: an entry with the marker turned off
+-- previews the bare countdown rather than a marker it will never draw.
+local function DecorateAuraDurationPreviewText(text, kind, style, buttonData)
+    if kind == "pandemic_marker"
+        and CooldownCompanion:IsPandemicMarkerPreviewWanted(buttonData, style) then
+        return CooldownCompanion:DecoratePandemicPreviewText(text, style)
+    end
+    return text
+end
+
 local function EnsureSlotAuraStackText(slot)
     if not slot.auraStackCount then
         slot.auraStackCount = EnsureSlotTextOverlay(slot):CreateFontString(nil, "OVERLAY", "NumberFontNormal")
@@ -2040,7 +2058,7 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
         if style.showOutOfRange and not buttonData.isPassive then
             tintR, tintG, tintB = 1, 0.2, 0.2
         end
-    elseif kind == "aura_duration_text" and GetConditionalPreviewTiming then
+    elseif IsAuraDurationTextKind(kind) and GetConditionalPreviewTiming then
         if style.showAuraText ~= false then
             local startTime, _, remaining = GetConditionalPreviewTiming(state, now)
             if startTime then
@@ -2050,7 +2068,8 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
                 local anchor, xOff, yOff = CooldownCompanion:GetAuraDurationTextPlacement(style)
                 fs:ClearAllPoints()
                 fs:SetPoint(anchor, slot, anchor, xOff, yOff)
-                fs:SetFormattedText("%d", math_ceil(remaining))
+                fs:SetText(DecorateAuraDurationPreviewText(
+                    ("%d"):format(math_ceil(remaining)), kind, style, buttonData))
                 fs:Show()
                 slot._cdcCondAnim = state
             end
@@ -2280,7 +2299,7 @@ local function ResetBarSlotConditionalVisuals(slot)
     end
 end
 
-local function ApplyBarAuraTimeTextPreview(slot, style, remaining)
+local function ApplyBarAuraTimeTextPreview(slot, style, remaining, kind, buttonData)
     if style.showAuraText == false then return end
     local tt = EnsureBarSlotTimeText(slot)
     local font = CooldownCompanion:FetchFont(style.auraTextFont or "Friz Quadrata TT")
@@ -2291,7 +2310,8 @@ local function ApplyBarAuraTimeTextPreview(slot, style, remaining)
     local color = style.auraTextFontColor or CooldownCompanion.DEFAULT_AURA_TEXT_COLOR
     tt:SetTextColor(color[1], color[2], color[3], color[4])
     AnchorBarSlotTimeText(slot, style)
-    tt:SetText(CooldownCompanion.FormatTime(remaining, style))
+    tt:SetText(DecorateAuraDurationPreviewText(
+        CooldownCompanion.FormatTime(remaining, style), kind, style, buttonData))
     tt:Show()
 end
 
@@ -2340,7 +2360,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         chargePresentationKind = "charge_full"
     end
 
-    if (kind == "cooldown" or kind == "aura_duration_text") and slot.timeText then
+    if (kind == "cooldown" or IsAuraDurationTextKind(kind)) and slot.timeText then
         slot.timeText:SetText("")
     end
 
@@ -2357,11 +2377,11 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         slot.statusBar:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1)
     end
 
-    if kind == "aura_duration_text" and GetConditionalPreviewTiming then
+    if IsAuraDurationTextKind(kind) and GetConditionalPreviewTiming then
         local startTime, _, remaining = GetConditionalPreviewTiming(state, now)
         if startTime then
             slot._cdcCondAnim = state
-            ApplyBarAuraTimeTextPreview(slot, style, remaining)
+            ApplyBarAuraTimeTextPreview(slot, style, remaining, kind, buttonData)
         end
     elseif kind == "aura_duration_bar" and GetConditionalPreviewTiming then
         local startTime = GetConditionalPreviewTiming(state, now)
@@ -2714,8 +2734,10 @@ local function EnsureConditionalTicker(preview)
             if state then
                 local startTime, duration, remaining = GetConditionalPreviewTiming(state, now)
                 if startTime then
-                    if state.kind == "aura_duration_text" and slot.auraTextFS then
-                        slot.auraTextFS:SetFormattedText("%d", math_ceil(remaining))
+                    if IsAuraDurationTextKind(state.kind) and slot.auraTextFS then
+                        slot.auraTextFS:SetText(DecorateAuraDurationPreviewText(
+                            ("%d"):format(math_ceil(remaining)), state.kind,
+                            slot.style or {}, slot.buttonData))
                     end
                     local widget
                     if state.kind == "cooldown" then
@@ -2748,13 +2770,15 @@ local function EnsureConditionalTicker(preview)
                 if startTime then
                     if slot.timeText
                         and (state.kind == "cooldown"
-                            or state.kind == "aura_duration_text") then
+                            or IsAuraDurationTextKind(state.kind)) then
                         local style = slot.style or {}
-                        local showText = (state.kind == "aura_duration_text"
+                        local showText = (IsAuraDurationTextKind(state.kind)
                                 and style.showAuraText ~= false)
                             or (state.kind == "cooldown" and style.showCooldownText)
                         if showText and CooldownCompanion.FormatTime then
-                            slot.timeText:SetText(CooldownCompanion.FormatTime(remaining, style))
+                            slot.timeText:SetText(DecorateAuraDurationPreviewText(
+                                CooldownCompanion.FormatTime(remaining, style),
+                                state.kind, style, slot.buttonData))
                         end
                     end
                     if state.kind == "loss_of_control" and slot.locCooldown

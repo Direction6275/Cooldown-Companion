@@ -253,11 +253,15 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
         return
     end
 
-    if kind == "aura_duration_text" then
+    if kind == "aura_duration_text" or kind == "pandemic_marker" then
         -- CC-owned stand-in for the slot kit's duration text (previews never
         -- touch the aura slot subtree): same font keys, same shared/separate
         -- position contract. Deliberately does NOT set the shared preview
         -- timing fields — those would leak into the icon fill's preview path.
+        --
+        -- The pandemic marker rides this text, so it is the same stand-in
+        -- with the marker dressing added; its own descriptor keeps the sweep
+        -- inside the window.
         local fs = button._auraTextPreviewFS
         if style.showAuraText == false then
             if fs then fs:Hide() end
@@ -282,7 +286,14 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
         local anchor, xOff, yOff = CooldownCompanion:GetAuraDurationTextPlacement(style)
         fs:ClearAllPoints()
         fs:SetPoint(anchor, button, anchor, xOff, yOff)
-        fs:SetFormattedText("%d", math_ceil(remaining))
+        local text = ("%d"):format(math_ceil(remaining))
+        -- Honest about the entry's own switch: an entry with the marker off
+        -- previews the bare countdown rather than a marker it will never draw.
+        if kind == "pandemic_marker"
+            and CooldownCompanion:IsPandemicMarkerPreviewWanted(buttonData, style) then
+            text = CooldownCompanion:DecoratePandemicPreviewText(text, style)
+        end
+        fs:SetText(text)
         fs:Show()
         return
     end

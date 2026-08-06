@@ -717,11 +717,9 @@ local function BuildBarPandemicSection(container, group, style)
         CreateCheckboxPromoteButton(enableRow, nil, "pandemic", group, style)
         AnchorRowBadge(enableRow, CreateInfoButton(enableRow.frame, enableRow.frame, "LEFT", "LEFT", 0, 0, {
             "Pandemic Color",
-            {"The bar fill wears this color instead of the active aura color while the tracked aura is in its refresh window, when recasting adds bonus time.", 1, 1, 1, true},
+            {"The bar fill wears this color instead of the aura color while the tracked aura is in its refresh window, where recasting adds bonus time.", 1, 1, 1, true},
             {" ", 1, 1, 1, true},
-            {"Only appears for auras that gain bonus time when refreshed. The game decides the window.", 1, 1, 1, true},
-            {" ", 1, 1, 1, true},
-            {"Each entry can opt out in its Aura tab.", 1, 1, 1, true},
+            {"Auras that gain no time when refreshed never show it.", 1, 1, 1, true},
         }, tabInfoButtons))
 
         if pandemicOn then

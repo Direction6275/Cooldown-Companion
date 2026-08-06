@@ -141,18 +141,16 @@ local SEGMENTED_SMOOTHING_TOOLTIP = {
 
 local PANDEMIC_MARKER_TOOLTIP = {
     "Pandemic Marker",
-    {"Marks the duration text during the last 30% of the aura. Recasting in that window adds to the remaining time instead of wasting it.", 1, 1, 1, true},
+    {"Marks this entry's duration text while recasting would add to the remaining time instead of wasting it.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"On by default for debuffs on your target, off for your own buffs.", 1, 1, 1, true},
+    {"On by default for debuffs on your target.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Marker text and color are in the panel's Pandemic settings.", 1, 1, 1, true},
+    {"Text and color are in the panel's Pandemic settings.", 1, 1, 1, true},
 }
 
 local PANDEMIC_EFFECT_TOOLTIP = {
     "Pandemic Effect",
-    {"Shows the group's pandemic visual on this entry while the aura is in its refresh window.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Only appears for auras that gain bonus time when refreshed. The game decides the window.", 1, 1, 1, true},
+    {"Shows the panel's pandemic visual on this entry during its refresh window.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"Style and color are in the panel's Pandemic settings.", 1, 1, 1, true},
 }

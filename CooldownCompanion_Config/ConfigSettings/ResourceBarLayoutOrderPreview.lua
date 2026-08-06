@@ -1410,11 +1410,19 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         local pandemicPreview = cabConfig
             and cabConfig.pandemicEffect == true
             and CooldownCompanion:IsCustomAuraBarPandemicPreviewActive(cabConfig)
+        -- The marker rides the duration text the Active Aura stand-in writes,
+        -- so it unions into that flag the same way the recolor does. Gated on
+        -- the same predicate the command-center control offers itself on, or
+        -- the stand-in strands armed with no toggle left to stop it.
+        local markerPreview = cabConfig
+            and CooldownCompanion:IsCustomAuraBarMarkerPreviewActive(cabConfig)
+            and CooldownCompanion:IsPandemicMarkerPreviewWanted(cabConfig, cabConfig)
         barInfo.frame._barAuraActivePreview = (cabConfig
             and (CooldownCompanion:IsCustomAuraBarActivePreviewActive(cabConfig)
-                or pandemicPreview))
+                or pandemicPreview or markerPreview))
             or nil
         barInfo.frame._barPandemicPreview = pandemicPreview or nil
+        barInfo.frame._barMarkerPreview = markerPreview or nil
     elseif slot.powerType == 101 then
         if not barInfo or barInfo.barType ~= "stagger_continuous" then
             if barInfo and barInfo.frame then

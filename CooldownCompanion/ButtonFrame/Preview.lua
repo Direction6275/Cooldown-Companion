@@ -276,6 +276,13 @@ local CONDITIONAL_VISUAL_PREVIEW_DEFAULTS = {
     -- 12.1 aura previews render CC-side stand-ins from the same style keys
     -- the slot kit consumes; they never touch the aura slot subtree.
     aura_duration_text = { kind = "aura_duration_text", duration = 12, remaining = 8, loop = true },
+    -- The marker rides the duration text, so this renders the same stand-in
+    -- and only differs in dressing it. The loop is deliberately shorter than
+    -- the plain text one: the marker appears below 30% of `duration` (3.6s
+    -- here), so a 5s sweep spends most of itself inside the window while
+    -- still crossing the threshold each cycle, which is what the setting
+    -- actually does. An 8s sweep would leave it blank over half the time.
+    pandemic_marker = { kind = "pandemic_marker", duration = 12, remaining = 5, loop = true },
     aura_duration_bar = { kind = "aura_duration_bar", duration = 12, remaining = 8, loop = true },
     aura_stack_text = { kind = "aura_stack_text", stackText = "3" },
     aura_duration_swipe = { kind = "aura_duration_swipe", duration = 12, remaining = 8, loop = true },

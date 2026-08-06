@@ -778,6 +778,13 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
             else
                 cab.pandemicMarker = value and true or false
             end
+            -- Turning it off drops the command-center control, so disarm its
+            -- preview here or the stand-in strands with no toggle left to stop
+            -- it (the Show Pandemic Color twin below clears its own the same
+            -- way). Asked through the shared gate the control is offered on.
+            if not CooldownCompanion:IsPandemicMarkerPreviewWanted(cab, cab) then
+                CooldownCompanion:SetCustomAuraBarMarkerPreview(cab, false)
+            end
             RefreshCustomBarAuraConfig()
         end,
     })
@@ -803,11 +810,11 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         })
     AnchorRowBadge(pandemicRow, CreateInfoButton(pandemicRow.frame, pandemicRow.frame, "LEFT", "LEFT", 0, 0, {
         "Pandemic Marker",
-        {"Marks the duration text during the last 30% of the aura. Recasting in that window adds to the remaining time instead of wasting it.", 1, 1, 1, true},
+        {"Marks the duration text for the last 30% of the aura, where recasting adds to the remaining time instead of wasting it.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
-        {"It rides the duration text. With that text off, nothing shows.", 1, 1, 1, true},
+        {"It rides that text. With Show Duration Text off, nothing shows.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
-        {"On by default for debuffs on your target, off for your own buffs.", 1, 1, 1, true},
+        {"On by default for debuffs on your target.", 1, 1, 1, true},
     }, infoButtons))
 
     -- Pandemic fill recolor (PTR 8 Phase 2). Fresh entry keys: the retired
@@ -830,11 +837,11 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     })
     AnchorRowBadge(effectRow, CreateInfoButton(effectRow.frame, effectRow.frame, "LEFT", "LEFT", 0, 0, {
         "Pandemic Color",
-        {"The bar fill wears this color instead of the aura color while the tracked aura is in its refresh window, when recasting adds bonus time.", 1, 1, 1, true},
+        {"The bar fill wears this color instead of the aura color while the tracked aura is in its refresh window, where recasting adds bonus time.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
-        {"Only appears for auras that gain bonus time when refreshed. The game decides the window.", 1, 1, 1, true},
+        {"Auras that gain no time when refreshed never show it.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
-        {"Shows on the duration fill. A bar showing stacks keeps its stack look.", 1, 1, 1, true},
+        {"A bar showing stacks keeps its stack look.", 1, 1, 1, true},
     }, infoButtons))
     if cab.pandemicEffect == true then
         -- No alpha: the pandemic color REPLACES the aura fill color (owner

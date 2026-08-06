@@ -203,6 +203,20 @@ local function CustomBarPandemicPreview(cabConfig)
     }
 end
 
+-- Pandemic MARKER stand-in: decorates the duration text the Active Aura
+-- stand-in writes, so the canvas unions it into that flag too.
+local function CustomBarMarkerPreview(cabConfig)
+    return {
+        groupScoped = true,
+        IsActive = function()
+            return CooldownCompanion:IsCustomAuraBarMarkerPreviewActive(cabConfig) == true
+        end,
+        SetActive = function(_, _, show)
+            CooldownCompanion:SetCustomAuraBarMarkerPreview(cabConfig, show)
+        end,
+    }
+end
+
 local function ResourceAuraPreview(powerType)
     return {
         groupScoped = true,
@@ -324,6 +338,28 @@ local function PandemicEffectEnabled(group, buttonIndex)
         return buttonData.pandemicEffect == true
     end
     return StyleFlagEnabled(group, buttonIndex, "pandemicEffectEnabled")
+end
+
+-- Effective marker enable, the same three-step resolution the live bind gate
+-- performs (AuraDisplay's IsPandemicMarkerWanted): the panel kill switch, then
+-- the per-entry override, then the tracked-unit default. Deliberately separate
+-- from PandemicEffectEnabled above — the marker and the effect are independent
+-- settings, and the effect is off by default, so sharing that gate would hide
+-- the marker preview on almost every panel.
+local function PandemicMarkerEnabled(group, buttonIndex)
+    if ResolveTargetStyle(group, buttonIndex).pandemicMarkerEnabled == false then
+        return false
+    end
+    local buttonData = buttonIndex and (group.buttons or {})[buttonIndex] or nil
+    if buttonData and buttonData.pandemicMarker ~= nil then
+        return buttonData.pandemicMarker == true
+    end
+    -- Panel scope has no single entry to read a unit from, so the control
+    -- stays offered and the stand-in decides per entry.
+    if not buttonData then
+        return true
+    end
+    return (buttonData.auraUnit or "player") == "target"
 end
 
 local function TextureIndicatorEnabled(group, indicatorKey)
@@ -667,6 +703,25 @@ local CONTROLS = {
         preview = ConditionalPreview("aura_duration_text"),
     },
     {
+        id = "pandemicMarker",
+        label = "Preview Pandemic Marker",
+        group = GROUP_READOUTS,
+        modes = { icons = true, bars = true },
+        -- Sits with the readouts, not the effects: the marker IS the duration
+        -- text, dressed. Its settings live in the Indicators tab's Pandemic
+        -- section, so this is a two-mode effects route rather than TextRoute's
+        -- Appearance one; both gear keys are in the gear-to-section map, which
+        -- is what uncollapses the header.
+        section = "pandemic",
+        styleKeyDefaultOn = "showAuraText",
+        requiresPandemicMarker = true,
+        settings = {
+            icons = { tab = "effects", key = "pandemicMarker" },
+            bars = { tab = "effects", key = "barPandemicMarker" },
+        },
+        preview = ConditionalPreview("pandemic_marker"),
+    },
+    {
         id = "auraStackText",
         label = "Preview Aura Stack Text",
         group = GROUP_READOUTS,
@@ -742,6 +797,9 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
         return false
     end
     if control.requiresPandemicEffect and not PandemicEffectEnabled(group, buttonIndex) then
+        return false
+    end
+    if control.requiresPandemicMarker and not PandemicMarkerEnabled(group, buttonIndex) then
         return false
     end
     if control.indicatorKey and not TextureIndicatorEnabled(group, control.indicatorKey) then
@@ -994,6 +1052,24 @@ local function CollectObjectControls(objects)
                                 auraTab = cab.spellID ~= nil,
                             },
                             preview = CustomBarPandemicPreview(cab),
+                        }
+                    end
+                    -- Same honesty rule, resolved through the shared marker
+                    -- gate: the panel kill switch, then this bar's own switch,
+                    -- then the tracked-unit default. The canvas union must
+                    -- agree with this or the stand-in strands armed.
+                    if CooldownCompanion:IsPandemicMarkerPreviewWanted(cab, cab) then
+                        applicable[#applicable + 1] = {
+                            id = "customBarPandemicMarker_" .. tostring(cab.customBarId),
+                            label = "Preview Pandemic Marker",
+                            group = "Custom Bar: " .. name,
+                            object = "customBars",
+                            settings = {
+                                object = "customBarAura",
+                                customBarId = cab.customBarId,
+                                auraTab = cab.spellID ~= nil,
+                            },
+                            preview = CustomBarMarkerPreview(cab),
                         }
                     end
                 end

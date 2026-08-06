@@ -308,13 +308,11 @@ local PANDEMIC_COLOR_MODE_ORDER = { "off", "marker", "whole" }
 
 local PANDEMIC_MARKER_TOOLTIP_LINES = {
     "Pandemic Marker",
-    {"Marks the duration text during the last 30% of the aura. Recasting in that window adds to the remaining time instead of wasting it.", 1, 1, 1, true},
+    {"Marks the duration text for the last 30% of an aura, where recasting adds to the remaining time instead of wasting it.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"It rides the aura duration text. With that text off, nothing shows.", 1, 1, 1, true},
+    {"It rides that text. With Aura Duration Text off, nothing shows.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"On by default for debuffs on your target. Each entry's Aura tab has its own switch.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"If a game update ever breaks this display, turn it off here to restore standard duration text.", 1, 1, 1, true},
+    {"On by default for debuffs on your target.", 1, 1, 1, true},
 }
 
 -- Row grammar only (RowWidgets.lua). Three shapes, one builder:
