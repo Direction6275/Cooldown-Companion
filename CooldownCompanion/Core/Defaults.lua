@@ -116,12 +116,12 @@ local defaults = {
                         showAuraDurationSwipe = true,
                         showCooldownSwipeFill = true,
                         cooldownSwipeReverse = false,
-                        showCooldownSwipeEdge = true,
+                        cooldownSwipeEdgeEnabled = false, -- explicit-true; Blizzard's 12.1 cooldowns draw no edge
                         cooldownSwipeAlpha = 0.8,
                         cooldownSwipeEdgeColor = {1, 1, 1, 1},
                         showAuraDurationSwipeFill = true,
                         auraDurationSwipeReverse = true,
-                        showAuraDurationSwipeEdge = true,
+                        auraDurationSwipeEdgeEnabled = false, -- explicit-true; mirrors the cooldown edge default
                         auraDurationSwipeAlpha = 0.8,
                         auraDurationSwipeEdgeColor = {1, 1, 1, 1},
                         auraUseBlizzardSwipe = false,
@@ -291,12 +291,12 @@ local defaults = {
             showAuraDurationSwipe = true,
             showCooldownSwipeFill = true,
             cooldownSwipeReverse = false,
-            showCooldownSwipeEdge = true,
+            cooldownSwipeEdgeEnabled = false, -- explicit-true; Blizzard's 12.1 cooldowns draw no edge
             cooldownSwipeAlpha = 0.8,
             cooldownSwipeEdgeColor = {1, 1, 1, 1},
             showAuraDurationSwipeFill = true,
             auraDurationSwipeReverse = true,
-            showAuraDurationSwipeEdge = true,
+            auraDurationSwipeEdgeEnabled = false, -- explicit-true; mirrors the cooldown edge default
             auraDurationSwipeAlpha = 0.8,
             auraDurationSwipeEdgeColor = {1, 1, 1, 1},
             auraUseBlizzardSwipe = false,
@@ -898,7 +898,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     cooldownSwipe = {
         label = "Cooldown Swipe",
-        keys = {"showCooldownSwipe", "showCooldownSwipeFill", "cooldownSwipeReverse", "showCooldownSwipeEdge", "cooldownSwipeAlpha", "cooldownSwipeEdgeColor"},
+        keys = {"showCooldownSwipe", "showCooldownSwipeFill", "cooldownSwipeReverse", "cooldownSwipeEdgeEnabled", "cooldownSwipeAlpha", "cooldownSwipeEdgeColor"},
         modes = {icons = true, rotationAssistant = true},
     },
     showGCDSwipe = {
@@ -987,7 +987,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     auraDurationSwipe = {
         label = "Aura Duration Swipe",
-        keys = {"showAuraDurationSwipe", "showAuraDurationSwipeFill", "auraDurationSwipeReverse", "showAuraDurationSwipeEdge", "auraDurationSwipeAlpha", "auraDurationSwipeEdgeColor", "auraUseBlizzardSwipe"},
+        keys = {"showAuraDurationSwipe", "showAuraDurationSwipeFill", "auraDurationSwipeReverse", "auraDurationSwipeEdgeEnabled", "auraDurationSwipeAlpha", "auraDurationSwipeEdgeColor", "auraUseBlizzardSwipe"},
         modes = {icons = true},
     },
     readyGlow = {

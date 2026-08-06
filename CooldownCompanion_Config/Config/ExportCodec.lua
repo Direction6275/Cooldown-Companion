@@ -410,6 +410,11 @@ local function BuildCurrentCompactProfileDefaults()
         -- added after the compact snapshot was defined, so exporting it here
         -- would change compaction/rehydration behavior without a format bump.
         compactDefaults.globalStyle.readyGlowOnlyAtMaxCharges = nil
+        -- Same rule for the 12.1 swipe-edge retirement pair: these explicit-true
+        -- keys postdate the compact snapshots, so they stay out of the baseline
+        -- and always serialize explicitly when set.
+        compactDefaults.globalStyle.cooldownSwipeEdgeEnabled = nil
+        compactDefaults.globalStyle.auraDurationSwipeEdgeEnabled = nil
     end
     return compactDefaults
 end
@@ -432,7 +437,7 @@ local function StripAuraDurationSwipeDefaults(compactDefaults)
     style.showAuraDurationSwipe = nil
     style.showAuraDurationSwipeFill = nil
     style.auraDurationSwipeReverse = nil
-    style.showAuraDurationSwipeEdge = nil
+    style.auraDurationSwipeEdgeEnabled = nil
     style.auraDurationSwipeAlpha = nil
     style.auraDurationSwipeEdgeColor = nil
     return compactDefaults

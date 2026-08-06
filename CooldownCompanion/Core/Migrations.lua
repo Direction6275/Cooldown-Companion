@@ -635,7 +635,6 @@ end
 local AURA_DURATION_SWIPE_STYLE_MIRRORS = {
     { auraKey = "showAuraDurationSwipeFill", cooldownKey = "showCooldownSwipeFill", default = true },
     { auraKey = "auraDurationSwipeReverse", cooldownKey = "cooldownSwipeReverse", default = false },
-    { auraKey = "showAuraDurationSwipeEdge", cooldownKey = "showCooldownSwipeEdge", default = true },
     { auraKey = "auraDurationSwipeAlpha", cooldownKey = "cooldownSwipeAlpha", default = 0.8 },
     { auraKey = "auraDurationSwipeEdgeColor", cooldownKey = "cooldownSwipeEdgeColor", default = {1, 1, 1, 1} },
 }
@@ -786,6 +785,61 @@ local function BackfillAuraDurationSwipeSettings(profile, savedProfileState)
     end
 
     return changed
+end
+
+-- 12.1 swipe-edge retirement: the 12.1 client draws the cooldown edge shorter
+-- and detached from the swipe boundary, and Blizzard's own cooldowns (action
+-- bars, Cooldown Manager, spellbook) all ship edge-off, so the edge is now off
+-- by default. The old nil-means-on keys are retired outright; the explicit-true
+-- pair cooldownSwipeEdgeEnabled / auraDurationSwipeEdgeEnabled replaces them.
+-- Deleting instead of flipping keeps this pass a no-op on migrated data, so
+-- import-driven re-runs can never claw back an edge a user re-enabled.
+local RETIRED_SWIPE_EDGE_KEYS = { "showCooldownSwipeEdge", "showAuraDurationSwipeEdge" }
+
+local function StripRetiredSwipeEdgeKeysFromStyle(style)
+    if type(style) ~= "table" then
+        return
+    end
+    for _, key in ipairs(RETIRED_SWIPE_EDGE_KEYS) do
+        if rawget(style, key) ~= nil then
+            style[key] = nil
+        end
+    end
+end
+
+local function StripRetiredSwipeEdgeKeys(profile)
+    if type(profile) ~= "table" then
+        return
+    end
+
+    StripRetiredSwipeEdgeKeysFromStyle(profile.globalStyle)
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            if type(group) == "table" then
+                StripRetiredSwipeEdgeKeysFromStyle(group.style)
+                if type(group.buttons) == "table" then
+                    for _, buttonData in ipairs(group.buttons) do
+                        if type(buttonData) == "table" then
+                            StripRetiredSwipeEdgeKeysFromStyle(buttonData.styleOverrides)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if type(profile.groupSettingPresets) == "table" then
+        for _, presetStore in pairs(profile.groupSettingPresets) do
+            if type(presetStore) == "table" then
+                for _, presetData in pairs(presetStore) do
+                    if type(presetData) == "table" then
+                        StripRetiredSwipeEdgeKeysFromStyle(presetData.style)
+                    end
+                end
+            end
+        end
+    end
 end
 
 local RETIRED_PROFILE_FLAGS = { "autoAddPrefs", "cdmHidden" }
@@ -2302,6 +2356,7 @@ function CooldownCompanion:RunAllMigrations()
     NormalizePassiveCooldownButtons(self.db and self.db.profile)
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
     BackfillAuraDurationSwipeSettings(self.db and self.db.profile, checkpointState and checkpointState.auraDurationSwipe)
+    StripRetiredSwipeEdgeKeys(self.db and self.db.profile)
     MigrateAuraTrackingRebuild(self, self.db and self.db.profile)
     MigrateAuraGroupScopeIdentity(self, self.db and self.db.profile)
     MigrateAuraGlowRebuild(self, self.db and self.db.profile)

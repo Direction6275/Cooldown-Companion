@@ -556,7 +556,7 @@ function CooldownCompanion:ApplyAuraDurationSwipeStyle(swipe, style)
     end
 
     local fillEnabled = style.showAuraDurationSwipeFill ~= false
-    local edgeEnabled = style.showAuraDurationSwipeEdge ~= false
+    local edgeEnabled = style.auraDurationSwipeEdgeEnabled == true
     swipe:SetUseAuraDisplayTime(false)
     swipe:SetSwipeTexture(DEFAULT_SWIPE_TEXTURE, 1, 1, 1, 1)
     swipe:SetTexCoordRange(DEFAULT_SWIPE_TEX_LOW, DEFAULT_SWIPE_TEX_HIGH)

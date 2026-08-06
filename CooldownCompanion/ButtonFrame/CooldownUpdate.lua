@@ -1169,7 +1169,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
             if gcdDurationObj then
                 local iconGCDCooldown = button.iconGCDCooldown
-                iconGCDCooldown:SetDrawEdge(style.showCooldownSwipeEdge ~= false)
+                iconGCDCooldown:SetDrawEdge(style.cooldownSwipeEdgeEnabled == true)
                 iconGCDCooldown:SetReverse(style.cooldownSwipeReverse or false)
                 iconGCDCooldown:Hide()
                 iconGCDCooldown:SetCooldownFromDurationObject(gcdDurationObj)

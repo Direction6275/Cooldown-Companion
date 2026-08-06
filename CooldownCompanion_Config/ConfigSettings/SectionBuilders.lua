@@ -962,7 +962,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     end
     local function ApplyShowEdge(val)
         if disabledByIconFill then return end
-        styleTable.showCooldownSwipeEdge = val
+        styleTable.cooldownSwipeEdgeEnabled = val
         refreshCallback()
         RefreshStructuralControls(container)
     end
@@ -1009,13 +1009,13 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
 
     AddCheckboxRow(container, {
         label = "Show Swipe Edge",
-        value = styleTable.showCooldownSwipeEdge ~= false,
+        value = styleTable.cooldownSwipeEdgeEnabled == true,
         indent = childIndent,
         disabled = disabledByIconFill,
         onChange = ApplyShowEdge,
     })
 
-    if styleTable.showCooldownSwipeEdge ~= false then
+    if styleTable.cooldownSwipeEdgeEnabled == true then
         -- deferCommit is deliberately absent, matching the AddColorPicker call
         -- this row replaced.
         AddColorRow(container, {
@@ -1112,18 +1112,18 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
 
     AddCheckboxRow(container, {
         label = "Show Swipe Edge",
-        value = styleTable.showAuraDurationSwipeEdge ~= false,
+        value = styleTable.auraDurationSwipeEdgeEnabled == true,
         indent = childIndent,
         disabled = blizzardStyleActive,
         onChange = function(val)
             if blizzardStyleActive then return end
-            styleTable.showAuraDurationSwipeEdge = val
+            styleTable.auraDurationSwipeEdgeEnabled = val
             refreshCallback()
             RefreshStructuralControls(container)
         end,
     })
 
-    if styleTable.showAuraDurationSwipeEdge ~= false then
+    if styleTable.auraDurationSwipeEdgeEnabled == true then
         -- deferCommit is deliberately absent, matching the AddColorPicker call
         -- this row replaced.
         AddColorRow(container, {

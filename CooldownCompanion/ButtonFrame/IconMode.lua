@@ -303,7 +303,7 @@ local function ApplyDefaultCooldownSwipeStyle(button, style)
 
     local swipeEnabled = style.showCooldownSwipe ~= false
     local fillEnabled = style.showCooldownSwipeFill ~= false
-    local edgeEnabled = style.showCooldownSwipeEdge ~= false
+    local edgeEnabled = style.cooldownSwipeEdgeEnabled == true
     local reverse = style.cooldownSwipeReverse or false
     local alpha = style.cooldownSwipeAlpha or 0.8
     local edgeColor = style.cooldownSwipeEdgeColor or DEFAULT_WHITE
@@ -1083,7 +1083,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     -- ApplyDefaultCooldownSwipeStyle gates on showCooldownSwipe, so a GCD-only
     -- radial drew nothing when the main swipe was off. Only in that case, draw
     -- it ourselves, mirroring bar mode (sweep on, edge per
-    -- showCooldownSwipeEdge). Latched to avoid per-tick writes; the falling
+    -- cooldownSwipeEdgeEnabled). Latched to avoid per-tick writes; the falling
     -- edge restores default styling and runs unconditionally, so a fetchOk
     -- false tick can't strand the latch. Defers to real cooldown (isGCDOnly
     -- excludes it), icon-fill owner, charge-visual, hideCooldownWithCharges,
@@ -1102,7 +1102,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         if button._gcdSwipeDrawActive ~= true then
             button._gcdSwipeDrawActive = true
             button.cooldown:SetDrawSwipe(true)
-            button.cooldown:SetDrawEdge(style.showCooldownSwipeEdge ~= false)
+            button.cooldown:SetDrawEdge(style.cooldownSwipeEdgeEnabled == true)
             button.cooldown:SetReverse(style.cooldownSwipeReverse or false)
         end
     elseif button._gcdSwipeDrawActive == true then

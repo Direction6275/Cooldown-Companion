@@ -2319,9 +2319,9 @@ local function MakeCooldownSwipeAdvancedDescriptor()
             -- Show Swipe Edge
             AddCheckboxRow(panel, {
                 label = "Show Swipe Edge",
-                value = style.showCooldownSwipeEdge ~= false,
+                value = style.cooldownSwipeEdgeEnabled == true,
                 onChange = function(val)
-                    style.showCooldownSwipeEdge = val
+                    style.cooldownSwipeEdgeEnabled = val
                     RefreshSelectedGroupStyle()
                     RefreshActiveAdvancedSettingsPanel()
                 end,
@@ -2329,7 +2329,7 @@ local function MakeCooldownSwipeAdvancedDescriptor()
 
             -- Swipe Edge Color (only when edge is visible). deferCommit is
             -- deliberately absent, matching the AddColorPicker call it replaced.
-            if style.showCooldownSwipeEdge ~= false then
+            if style.cooldownSwipeEdgeEnabled == true then
                 AddColorRow(panel, {
                     label = "Swipe Edge Color",
                     indent = true,
