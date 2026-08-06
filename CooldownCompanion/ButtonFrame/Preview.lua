@@ -712,7 +712,6 @@ end
 local TEXTURE_INDICATOR_PREVIEW_FLAGS = {
     proc = "_textureProcPreview",
     aura = "_textureAuraPreview",
-    pandemic = "_texturePandemicPreview",
     ready = "_textureReadyPreview",
     unusable = "_textureUnusablePreview",
 }
@@ -749,7 +748,6 @@ function CooldownCompanion:ClearAllTextureIndicatorPreviews()
         for _, button in ipairs(frame.buttons) do
             button._textureProcPreview = nil
             button._textureAuraPreview = nil
-            button._texturePandemicPreview = nil
             button._textureReadyPreview = nil
             button._textureUnusablePreview = nil
             button._textureIndicatorPreviewDirty = false
@@ -877,7 +875,6 @@ local function ApplyPreviewFlagToButton(button, previewFlag)
         RefreshKeyPressHighlightPreview(button)
     elseif previewFlag == "_textureProcPreview"
         or previewFlag == "_textureAuraPreview"
-        or previewFlag == "_texturePandemicPreview"
         or previewFlag == "_textureReadyPreview"
         or previewFlag == "_textureUnusablePreview" then
         button._textureIndicatorPreviewDirty = false

@@ -925,7 +925,8 @@ end
 -- what has no 12.1 equivalent, recompute the tracked unit from spell polarity
 -- (the anti-cheat gate allows only buffs-on-player and own-debuffs-on-target).
 -- Idempotent; gated on a one-time profile stamp so users see the summary once.
--- Untouched on purpose: pandemic style keys (dormant until Blizzard fixes)
+-- Untouched on purpose: the live pandemic visual keys (the aura glow pass
+-- owns their sanitizers and the dead-family strip)
 -- and stored auraActive trigger clauses (retired-offer pattern). Custom-bar
 -- aura entries get the same treatment from the bar aura effect pass below,
 -- including the tracked-unit recompute and mixed-list trim.
@@ -1195,16 +1196,22 @@ local AURA_REBUILD_SENTINEL = {
     current = "_cdcAuraRebuild3Migrated",
     retired = { "_cdcAuraRebuildMigrated", "_cdcAuraRebuild2Migrated" },
 }
+-- bar aura effect generations: gen 4 added the custom-bar entry strip of
+-- the retired pandemicBar* families (the Phase 3 pandemic retirement).
 local BAR_AURA_EFFECT_SENTINEL = {
-    current = "_cdcBarAuraEffect3Migrated",
-    retired = { "_cdcBarAuraGlowMigrated", "_cdcBarAuraEffectMigrated", "_cdcBarAuraEffect2Migrated" },
+    current = "_cdcBarAuraEffect4Migrated",
+    retired = { "_cdcBarAuraGlowMigrated", "_cdcBarAuraEffectMigrated",
+        "_cdcBarAuraEffect2Migrated", "_cdcBarAuraEffect3Migrated" },
 }
--- aura glow generations: renamed from _cdcAuraGlowMigrated when the pass
--- gained the pandemic pixel-scale sanitizers and the live-era per-entry
--- pandemicGlow override strip (PTR 8 lit the dormant key family up).
+-- aura glow generations: gen 2 (renamed from _cdcAuraGlowMigrated) gained
+-- the pandemic pixel-scale sanitizers and the live-era per-entry
+-- pandemicGlow override strip (PTR 8 lit the dormant key family up); gen 3
+-- extended the dead-key strip to every style scope and added the
+-- texture-indicator pandemic strip and the {?pandemic} text-format scrub
+-- (the Phase 3 pandemic retirement).
 local AURA_GLOW_SENTINEL = {
-    current = "_cdcAuraGlow2Migrated",
-    retired = { "_cdcAuraGlowMigrated" },
+    current = "_cdcAuraGlow3Migrated",
+    retired = { "_cdcAuraGlowMigrated", "_cdcAuraGlow2Migrated" },
 }
 local MIGRATION_SENTINELS = {
     AURA_REBUILD_SENTINEL,
@@ -1365,8 +1372,114 @@ end
 -- dropped. Style keys sit physically on every stored style table (full-copy
 -- group creation), so renames run silently; only enabled invert/combat-only
 -- losses are user-visible and counted.
+
+-- Retired pandemic keys with no 12.1 reader (the Phase 3 retirement): the
+-- nil-means-on enable, the unhonorable combat gate, and the unwired
+-- pandemicBarEffect/Pulse/ColorShift families. Stripped silently from
+-- every style scope (globalStyle, group styles, per-entry overrides,
+-- presets); the custom-bar ENTRY twins ride CUSTOM_BAR_RETIRED_SILENT_KEYS.
+-- Idempotent; re-runs on every import by design.
+local PANDEMIC_DEAD_STYLE_KEYS = {
+    "showPandemicGlow", "pandemicGlowCombatOnly",
+    "pandemicBarEffect", "pandemicBarEffectColor",
+    "pandemicBarEffectSize", "pandemicBarEffectThickness",
+    "pandemicBarEffectSpeed", "pandemicBarEffectLines",
+    "pandemicBarPulseEnabled", "pandemicBarPulseSpeed",
+    "pandemicBarColorShiftEnabled", "pandemicBarColorShiftSpeed",
+    "pandemicBarColorShiftColor",
+}
+
+-- {?pandemic} conditional spans never rendered their content (the presence
+-- read a permanently-false flag) and {!pandemic} spans always did: drop the
+-- former with content, unwrap the latter, then drop stray tags and the
+-- bare value token (which rendered empty). The parser lowercases tokens,
+-- so the matching is case-insensitive too. Degenerate mismatched-tag
+-- layouts crossing pandemic and non-pandemic conditionals cannot all be
+-- preserved statically; the span walk below mirrors the retired runtime
+-- walker so the common classes (flat, nested, unclosed, stray closers)
+-- keep exactly what they rendered.
+
+-- The conditional-token set the retired walker knew, frozen at retirement:
+-- while skipping a false span it deepened on ANY known cond_start and
+-- closed one level on ANY known cond_end, with unknown tags inert — so a
+-- stray {/stacks} inside a {?pandemic} span really did close it and rescue
+-- the text after it. Runtime token changes must never edit this list.
+local SCRUB_CONDITIONAL_TOKENS = {
+    time = true, charges = true, maxcharges = true, missingcharges = true,
+    zerocharges = true, stacks = true, aura = true, keybind = true,
+    pandemic = true, proc = true, unusable = true, oor = true,
+    available = true, incombat = true,
+}
+
+local PANDEMIC_TOKEN_PATTERN = "[pP][aA][nN][dD][eE][mM][iI][cC]"
+
+-- Remove one false {?pandemic} span exactly as the walker skipped it.
+local function DropFalsePandemicSpan(fmt)
+    local openStart, openEnd = fmt:find("{%?" .. PANDEMIC_TOKEN_PATTERN .. "}")
+    if not openStart then return fmt, false end
+    local depth = 1
+    local pos = openEnd + 1
+    while depth > 0 do
+        local tagStart = fmt:find("{", pos, true)
+        local tagEnd = tagStart and fmt:find("}", tagStart + 1, true)
+        if not tagEnd then
+            -- Unclosed span: the walker skipped to end-of-string.
+            pos = #fmt + 1
+            break
+        end
+        local inner = fmt:sub(tagStart + 1, tagEnd - 1):lower()
+        local prefix = inner:sub(1, 1)
+        if (prefix == "?" or prefix == "!") and SCRUB_CONDITIONAL_TOKENS[inner:sub(2)] then
+            depth = depth + 1
+        elseif prefix == "/" and SCRUB_CONDITIONAL_TOKENS[inner:sub(2)] then
+            depth = depth - 1
+        end
+        pos = tagEnd + 1
+    end
+    return fmt:sub(1, openStart - 1) .. fmt:sub(pos), true
+end
+
+local function ScrubPandemicTextFormat(fmt)
+    if type(fmt) ~= "string" or not fmt:find("[pP]") then return fmt, false end
+    local out = fmt
+    -- Run the whole pass to a fixed point: a tag removal can splice its
+    -- surroundings into a NEW pandemic tag ("{?pandem{pandemic}ic}"), and
+    -- one call must converge fully. Terminates because every changing
+    -- pass strictly shrinks the string.
+    repeat
+        local before = out
+        local dropped = true
+        while dropped do
+            out, dropped = DropFalsePandemicSpan(out)
+        end
+        out = out:gsub("{!" .. PANDEMIC_TOKEN_PATTERN .. "}(.-){/" .. PANDEMIC_TOKEN_PATTERN .. "}", "%1")
+        out = out:gsub("{[%?!/]?" .. PANDEMIC_TOKEN_PATTERN .. "}", "")
+    until out == before
+    return out, out ~= fmt
+end
+
 local function MigrateAuraGlowStyleTable(styleTable, counts)
     if type(styleTable) ~= "table" then return end
+
+    for _, key in ipairs(PANDEMIC_DEAD_STYLE_KEYS) do
+        if rawget(styleTable, key) ~= nil then
+            styleTable[key] = nil
+        end
+    end
+
+    -- The texture-panel pandemic indicator retired with no config surface
+    -- to ever enable it, but the store normalizer had been writing its
+    -- normalized sub-table into every texture panel's saved style.
+    local indicators = rawget(styleTable, "textureIndicators")
+    if type(indicators) == "table" and indicators.pandemic ~= nil then
+        indicators.pandemic = nil
+    end
+
+    local fmt, scrubbed = ScrubPandemicTextFormat(rawget(styleTable, "textFormat"))
+    if scrubbed then
+        styleTable.textFormat = fmt
+        counts.textFormat = counts.textFormat + 1
+    end
 
     local oldStyle = rawget(styleTable, "auraGlowStyle")
     if oldStyle ~= nil and oldStyle ~= "none" and oldStyle ~= "solid"
@@ -1496,33 +1609,11 @@ end
 -- The pandemicGlow/pandemicBar sections are OFFERED as per-entry overrides
 -- again on 12.1 (owner ruling), so live-era promotions carry forward as
 -- visible, revertible overrides — the style-value sanitizers above run on
--- styleOverrides too. Only the DEAD keys (no 12.1 reader: the retired
--- nil-means-on enable, the unhonorable combat gate, and the unwired
--- pandemicBarEffect/Pulse/ColorShift families) strip, silently, matching
--- the custom-bar silent-retire precedent. Idempotent; re-runs on every
--- import by design.
-local PANDEMIC_DEAD_OVERRIDE_KEYS = {
-    "showPandemicGlow", "pandemicGlowCombatOnly",
-    "pandemicBarEffect", "pandemicBarEffectColor",
-    "pandemicBarEffectSize", "pandemicBarEffectThickness",
-    "pandemicBarEffectSpeed", "pandemicBarEffectLines",
-    "pandemicBarPulseEnabled", "pandemicBarPulseSpeed",
-    "pandemicBarColorShiftEnabled", "pandemicBarColorShiftSpeed",
-    "pandemicBarColorShiftColor",
-}
-local function StripPandemicOverrideResidue(buttonData)
-    local overrides = buttonData.styleOverrides
-    if type(overrides) ~= "table" then return end
-    for _, key in ipairs(PANDEMIC_DEAD_OVERRIDE_KEYS) do
-        if rawget(overrides, key) ~= nil then
-            overrides[key] = nil
-        end
-    end
-end
-
+-- styleOverrides too, and the dead-key strip lives inside them
+-- (PANDEMIC_DEAD_STYLE_KEYS, every style scope).
 local function MigrateAuraGlowRebuild(self, profile)
     if type(profile) ~= "table" or not ClaimMigrationPass(profile, AURA_GLOW_SENTINEL) then return end
-    local counts = { invert = 0, combatOnly = 0 }
+    local counts = { invert = 0, combatOnly = 0, textFormat = 0 }
 
     MigrateAuraGlowStyleTable(profile.globalStyle, counts)
 
@@ -1534,7 +1625,13 @@ local function MigrateAuraGlowRebuild(self, profile)
                     for _, buttonData in ipairs(group.buttons) do
                         if type(buttonData) == "table" then
                             MigrateAuraGlowStyleTable(buttonData.styleOverrides, counts)
-                            StripPandemicOverrideResidue(buttonData)
+                            -- Per-entry format strings carry the same
+                            -- retired text token as the style tables.
+                            local fmt, scrubbed = ScrubPandemicTextFormat(rawget(buttonData, "textFormat"))
+                            if scrubbed then
+                                buttonData.textFormat = fmt
+                                counts.textFormat = counts.textFormat + 1
+                            end
                         end
                     end
                 end
@@ -1558,6 +1655,7 @@ local function MigrateAuraGlowRebuild(self, profile)
     local dropped = {}
     if counts.invert > 0 then dropped[#dropped + 1] = ("glow-while-missing (x%d)"):format(counts.invert) end
     if counts.combatOnly > 0 then dropped[#dropped + 1] = ("combat-only aura glow (x%d)"):format(counts.combatOnly) end
+    if counts.textFormat > 0 then dropped[#dropped + 1] = ("pandemic text tokens (x%d)"):format(counts.textFormat) end
     if #dropped > 0 then
         self:Print("Aura glow updated for 12.1. Dropped settings with no 12.1 equivalent: "
             .. table.concat(dropped, ", ") .. ".")
@@ -1655,9 +1753,11 @@ end
 local function MigrateBarAuraEffectTable(styleTable, counts)
     if type(styleTable) ~= "table" then return end
 
+    -- The pandemicBarEffect* family no longer remaps here: it retired
+    -- outright (PANDEMIC_DEAD_STYLE_KEYS strips the style scopes, the
+    -- custom-bar silent list strips the entries).
     for _, keys in ipairs({
         { style = "barAuraEffect", size = "barAuraEffectSize", speed = "barAuraEffectSpeed", lines = "barAuraEffectLines" },
-        { style = "pandemicBarEffect", size = "pandemicBarEffectSize", speed = "pandemicBarEffectSpeed", lines = "pandemicBarEffectLines" },
     }) do
         local style = rawget(styleTable, keys.style)
         local mapped
@@ -1699,10 +1799,11 @@ end
 -- and the explicit-false toggles must not count untouched defaults), and
 -- aura sounds get the same file-form rule as panel entries because the
 -- entry's soundAlerts table feeds the native aura sound path by reference.
--- The old pandemic effect/pulse/color-shift families stay dormant with the
--- style-table pandemic keys pending that ruling; only the retired toggle,
--- its color, and its combat-only flag clear (the pandemic marker replaced
--- them on custom bars).
+-- The old pandemic families retired outright (Phase 3 ruling): the toggle,
+-- its color, the combat-only flag, and the whole effect/pulse/color-shift
+-- family clear from entries. The 12.1 replacements are the pandemic marker
+-- and the fresh pandemicEffect/pandemicColor fill-recolor keys — neither of
+-- which may ever appear on these lists.
 -- Custom-bar-only retired keys, plus the shared stack-display inventory
 -- appended below (RETIRED_STACK_*, declared beside MigrateEntryAuraResidue,
 -- which clears the same family on panel entries).
@@ -1715,6 +1816,17 @@ local CUSTOM_BAR_RETIRED_OPTION_KEYS = {
 local CUSTOM_BAR_RETIRED_SILENT_KEYS = {
     "pandemicGlowCombatOnly",
     "barPandemicColor",
+    "pandemicBarEffect",
+    "pandemicBarEffectColor",
+    "pandemicBarEffectSize",
+    "pandemicBarEffectThickness",
+    "pandemicBarEffectSpeed",
+    "pandemicBarEffectLines",
+    "pandemicBarPulseEnabled",
+    "pandemicBarPulseSpeed",
+    "pandemicBarColorShiftEnabled",
+    "pandemicBarColorShiftSpeed",
+    "pandemicBarColorShiftColor",
     -- auraName stays: the piece importer still reads it as a display-name
     -- fallback for legacy custom-bar entries.
 }

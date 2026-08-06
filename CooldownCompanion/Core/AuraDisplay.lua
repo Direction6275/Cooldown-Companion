@@ -466,8 +466,13 @@ local function BuildSlotKit(slotButton)
     -- the rig and per-entry enable is style-time "none" (P6). Same level as
     -- the aura glow, created after it, so the pandemic effect draws above.
     if slotButton.AddPandemicRegion then
-        kit.pandemicGlow = ST._BuildKitGlowRegions(slotButton)
+        -- withCdm: only pandemic rigs carry the CDM-parity region set.
+        kit.pandemicGlow = ST._BuildKitGlowRegions(slotButton, true)
         kit.pandemicGlow.host:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
+        -- The CDM rig is a child FRAME of the host; left at its default
+        -- level it would TIE kit.textOverlay at swipe+2. Pin it to swipe+1
+        -- with every other pandemic style so the texts stay strictly above.
+        kit.pandemicGlow.cdm.frame:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
         slotButton:AddPandemicRegion(kit.pandemicGlow.host)
     end
 
@@ -1255,13 +1260,16 @@ local function StyleSlotKit(slot, button, buttonData, style)
     end
 
     -- Pandemic display enable (PTR 8): per-entry override wins, else the
-    -- panel style's explicit-true enable. Panel entries only this phase —
-    -- custom-bar hosts stay marker-only (their old pandemic keys are
-    -- migration-retired) and resource overlays carry no pandemic story at
-    -- all. Blizzard flips the rig's secret Shown state regardless; this
-    -- gate only decides whether the rig has anything visible to show.
+    -- panel style's explicit-true enable. Custom-bar hosts read the same
+    -- style key, synthesized by BuildStyleAdapter from the entry's own
+    -- fresh pandemicEffect key (the entry has no panel level to follow).
+    -- Resource overlays carry no pandemic story at all. Blizzard flips the
+    -- rig's secret Shown state regardless; this gate only decides whether
+    -- the rig has anything visible to show.
     local pandemicOn = false
-    if not isCustomBarHost and not isResourceHost then
+    if isCustomBarHost then
+        pandemicOn = style.pandemicEffectEnabled == true
+    elseif not isResourceHost then
         if buttonData.pandemicEffect ~= nil then
             pandemicOn = buttonData.pandemicEffect == true
         else

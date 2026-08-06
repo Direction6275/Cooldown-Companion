@@ -188,6 +188,21 @@ local function CustomBarAuraPreview(cabConfig)
     }
 end
 
+-- Pandemic recolor stand-in (PTR 8 Phase 2): its own flag; the canvas
+-- unions it into the Active Aura stand-in, since the recolor only exists
+-- over the aura fill.
+local function CustomBarPandemicPreview(cabConfig)
+    return {
+        groupScoped = true,
+        IsActive = function()
+            return CooldownCompanion:IsCustomAuraBarPandemicPreviewActive(cabConfig) == true
+        end,
+        SetActive = function(_, _, show)
+            CooldownCompanion:SetCustomAuraBarPandemicPreview(cabConfig, show)
+        end,
+    }
+end
+
 local function ResourceAuraPreview(powerType)
     return {
         groupScoped = true,
@@ -963,6 +978,23 @@ local function CollectObjectControls(objects)
                         },
                         preview = CustomBarAuraPreview(cab),
                     }
+                    -- Offered exactly while the entry's own enable is on
+                    -- (the same honesty rule as requiresPandemicEffect on
+                    -- the panel controls).
+                    if cab.pandemicEffect == true then
+                        applicable[#applicable + 1] = {
+                            id = "customBarPandemic_" .. tostring(cab.customBarId),
+                            label = "Preview Pandemic Color",
+                            group = "Custom Bar: " .. name,
+                            object = "customBars",
+                            settings = {
+                                object = "customBarAura",
+                                customBarId = cab.customBarId,
+                                auraTab = cab.spellID ~= nil,
+                            },
+                            preview = CustomBarPandemicPreview(cab),
+                        }
+                    end
                 end
             end
         end

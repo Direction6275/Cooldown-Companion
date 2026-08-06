@@ -67,6 +67,8 @@ end
 --   { {type="literal", value="  "}, {type="token", value="name"}, ... }
 -- Parsed once at creation/style-change; per-tick substitution walks the list.
 ------------------------------------------------------------------------
+-- No pandemic token: it needed readable pandemic state, which 12.1 made
+-- permanently secret (retired Phase 3; migrations scrub saved formats).
 local KNOWN_TOKENS = {
     name = true,
     time = true,
@@ -76,7 +78,6 @@ local KNOWN_TOKENS = {
     zerocharges = true,
     stacks = true,
     aura = true,
-    pandemic = true,
     proc = true,
     unusable = true,
     oor = true,
@@ -97,7 +98,6 @@ local KNOWN_CONDITIONAL_TOKENS = {
     stacks = true,
     aura = true,
     keybind = true,
-    pandemic = true,
     proc = true,
     unusable = true,
     oor = true,
@@ -366,8 +366,6 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
     elseif tokenName == "keybind" then
         local kb = CooldownCompanion:GetKeybindText(button.buttonData, button._resolvedItemId, button)
         return kb and kb ~= ""
-    elseif tokenName == "pandemic" then
-        return button._inPandemic == true
     elseif tokenName == "proc" then
         return button._procOverlayActive == true
     elseif tokenName == "unusable" then

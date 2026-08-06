@@ -145,10 +145,11 @@ local DEFAULT_TEXTURE_PULSE_ALPHA = 0.45
 local DEFAULT_TEXTURE_SHRINK_SCALE = 0.82
 local DEFAULT_TEXTURE_BOUNCE_PIXELS = 18
 
+-- No pandemic entry: texture panels carry no aura tracking by settled
+-- design, so a pandemic indicator could never light (retired Phase 3).
 local TEXTURE_INDICATOR_SECTION_ORDER = {
     "proc",
     "aura",
-    "pandemic",
     "ready",
     "unusable",
 }
@@ -168,13 +169,6 @@ local TEXTURE_INDICATOR_DEFAULTS = {
         color = { 1, 0.84, 0, 1 },
         combatOnly = false,
         invert = false,
-    },
-    pandemic = {
-        enabled = false,
-        effectType = TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND,
-        speed = DEFAULT_TEXTURE_INDICATOR_SPEED,
-        color = { 1, 0.5, 0, 1 },
-        combatOnly = false,
     },
     ready = {
         enabled = false,

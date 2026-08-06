@@ -346,7 +346,6 @@ local function EvaluateMockPresence(tokenName, mockState)
     elseif tokenName == "stacks" then return mockState.stacks and mockState.stacks > 0
     elseif tokenName == "aura" then return mockState.auraTime and mockState.auraTime > 0
     elseif tokenName == "keybind" then return mockState.keybind and mockState.keybind ~= ""
-    elseif tokenName == "pandemic" then return mockState.pandemic == true
     elseif tokenName == "proc" then return mockState.proc == true
     elseif tokenName == "unusable" then return mockState.unusable == true
     elseif tokenName == "oor" then return mockState.oor == true
@@ -567,7 +566,7 @@ local CD_STATE_TRIGGERS = {
 
 -- Tokens that differentiate Aura state
 local AURA_STATE_TRIGGERS = {
-    aura = true, status = true, stacks = true, pandemic = true,
+    aura = true, status = true, stacks = true,
 }
 
 local function BuildMockStates(style, segments, previewTarget)
@@ -636,12 +635,6 @@ local function BuildMockStates(style, segments, previewTarget)
         states[#states + 1] = {
             label = WrapPreviewColor("Proc:", EXTRA_ROW_COLOR),
             state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, proc = true, auraOnly = auraOnly },
-        }
-    end
-    if used["pandemic"] then
-        states[#states + 1] = {
-            label = WrapPreviewColor("Pandemic:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 1, auraTime = 4.5, keybind = "F1", icon = icon, pandemic = true, auraOnly = auraOnly },
         }
     end
     if used["unusable"] then
@@ -1204,7 +1197,7 @@ ST._RenderFormatPreview = function(formatString, style)
     local mockState = {
         name = name, time = 83, charges = 1, maxCharges = 3, hasCharges = true,
         stacks = 3, auraTime = 12.3, keybind = "F1", icon = icon,
-        proc = true, pandemic = true,
+        proc = true,
     }
     local rendered = PreviewSubstitute(segments, style, mockState)
     return rendered

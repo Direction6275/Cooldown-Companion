@@ -1401,9 +1401,20 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         -- world (owner ruling 2026-07-26). Written every pass so stopping the
         -- preview clears it from a recycled frame.
         local cabConfig = slot.customEntry and slot.customEntry.config
-        barInfo.frame._barAuraActivePreview = cabConfig
-            and CooldownCompanion:IsCustomAuraBarActivePreviewActive(cabConfig)
+        -- The pandemic recolor renders over the aura fill, so its preview
+        -- arms the Active Aura stand-in too (union), while the pandemic
+        -- flag itself stays owned by its own command-center control. Gated
+        -- on the entry's own enable, like the recolor itself: a stale map
+        -- entry left by unchecking Show Pandemic Color must not keep the
+        -- stand-in armed after its control disappeared.
+        local pandemicPreview = cabConfig
+            and cabConfig.pandemicEffect == true
+            and CooldownCompanion:IsCustomAuraBarPandemicPreviewActive(cabConfig)
+        barInfo.frame._barAuraActivePreview = (cabConfig
+            and (CooldownCompanion:IsCustomAuraBarActivePreviewActive(cabConfig)
+                or pandemicPreview))
             or nil
+        barInfo.frame._barPandemicPreview = pandemicPreview or nil
     elseif slot.powerType == 101 then
         if not barInfo or barInfo.barType ~= "stagger_continuous" then
             if barInfo and barInfo.frame then

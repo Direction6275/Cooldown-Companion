@@ -1697,7 +1697,10 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
     -- the picker-open path onto the caller's preview and leaves the commit on
     -- refreshCallback; without it both stay on refreshCallback as before.
     local pickerOpenRefresh = opts.previewRefresh or refreshCallback
-    if not opts.hidePrimaryColorPicker then
+    -- cfg.noColorStyles: styles whose art is untinted (the pandemic CDM
+    -- look), so a color row would be a dead control.
+    if not opts.hidePrimaryColorPicker
+        and not (cfg.noColorStyles and cfg.noColorStyles[currentStyle]) then
         AddColorRow(container, {
             label = cfg.colorLabel,
             indent = childIndent,
@@ -1767,6 +1770,19 @@ local AURA_GLOW_STYLE_OPTIONS = {
 }
 local AURA_GLOW_STYLE_ORDER = {"solid", "pulse", "colorShift", "dashes", "ants", "proc", "overlay"}
 
+-- The pandemic menu offers the aura-glow vocabulary plus Blizzard's own
+-- Cooldown Manager pandemic look (PTR 8 Phase 2). "cdm" is pandemic-only:
+-- the aura menu never emits it and the kit's aura resolver degrades it to
+-- pulse. Untinted fixed-choreography art, so it draws no color row (via
+-- noColorStyles) and no sliders (no GLOW_SLIDER_SPEC entry).
+local PANDEMIC_GLOW_STYLE_OPTIONS = {
+    ["cdm"] = "Cooldown Manager",
+}
+for k, v in pairs(AURA_GLOW_STYLE_OPTIONS) do
+    PANDEMIC_GLOW_STYLE_OPTIONS[k] = v
+end
+local PANDEMIC_GLOW_STYLE_ORDER = {"solid", "pulse", "colorShift", "dashes", "ants", "proc", "overlay", "cdm"}
+
 -- The size and speed keys change meaning per style (border/dash px vs
 -- overhang %; cycle vs lap seconds), so switching styles resets the sliders
 -- to that style's defaults.
@@ -1809,8 +1825,9 @@ local function BuildPandemicGlowControls(container, styleTable, refreshCallback,
         enableLabel = "Show Pandemic Effect",
         enableKey = "pandemicEffectEnabled",
         enableExplicitTrue = true,
-        styleOptions = AURA_GLOW_STYLE_OPTIONS,
-        styleOrder = AURA_GLOW_STYLE_ORDER,
+        styleOptions = PANDEMIC_GLOW_STYLE_OPTIONS,
+        styleOrder = PANDEMIC_GLOW_STYLE_ORDER,
+        noColorStyles = { cdm = true },
         solidSizeDefault = 2,
         onStyleChanged = function(targetStyle, val)
             targetStyle.pandemicGlowSize = AURA_GLOW_SIZE_RESETS[val] or 2

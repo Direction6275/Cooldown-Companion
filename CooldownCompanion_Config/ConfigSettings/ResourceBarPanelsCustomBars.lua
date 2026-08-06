@@ -783,6 +783,51 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         {"On by default for debuffs on your target, off for your own buffs.", 1, 1, 1, true},
     }, infoButtons))
 
+    -- Pandemic fill recolor (PTR 8 Phase 2). Fresh entry keys: the retired
+    -- showPandemicGlow/barPandemicColor names are wiped on every import and
+    -- must never be written again.
+    local effectRow = AddCheckboxRow(auraRight, {
+        label = "Show Pandemic Color",
+        value = cab.pandemicEffect == true,
+        onChange = function(value)
+            cab.pandemicEffect = value and true or nil
+            -- Disabling drops the command-center control, so disarm its
+            -- preview here or it strands active with no toggle left and
+            -- silently resumes on re-check (the panel twins clear theirs
+            -- the same way when rebuilt disabled).
+            if not value then
+                CooldownCompanion:SetCustomAuraBarPandemicPreview(cab, false)
+            end
+            RefreshCustomBarAuraConfig()
+        end,
+    })
+    AnchorRowBadge(effectRow, CreateInfoButton(effectRow.frame, effectRow.frame, "LEFT", "LEFT", 0, 0, {
+        "Pandemic Color",
+        {"The bar fill wears this color instead of the aura color while the tracked aura is in its refresh window, when recasting adds bonus time.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Only appears for auras that gain bonus time when refreshed. The game decides the window.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Shows on the duration fill. A bar showing stacks keeps its stack look.", 1, 1, 1, true},
+    }, infoButtons))
+    if cab.pandemicEffect == true then
+        -- No alpha: the pandemic color REPLACES the aura fill color (owner
+        -- ruling), so the live clone renders it opaque.
+        AddColorRow(auraRight, {
+            label = "Pandemic Color",
+            indent = true,
+            tbl = cab,
+            key = "pandemicColor",
+            default = {1, 0.5, 0, 1},
+            hasAlpha = false,
+            onConfirm = function()
+                CooldownCompanion:ApplyResourceBars()
+                RefreshLayoutOrderPreview()
+            end,
+            onChange = RefreshLayoutOrderPreviewForDrag,
+            deferCommit = true,
+        })
+    end
+
     local shellRow = AddCheckboxRow(auraRight, {
         label = "Show Only While Aura Active",
         value = cab.hideWhenInactive == true,
