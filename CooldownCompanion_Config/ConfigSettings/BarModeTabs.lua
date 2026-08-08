@@ -199,7 +199,9 @@ local function BuildBarAppearanceTab(container, group, style)
     -- while Bar Settings is folded away. They get a grid of their own, which is
     -- also what keeps them off the section's last line.
     -- LEFT column: the bar at rest - its fill and the backdrop behind it.
-    -- RIGHT column: the two colors a timer paints over that.
+    -- RIGHT column: the colors a timer paints over that. The aura timer color
+    -- is one of them, so it lives here rather than beside the aura TEXT toggles
+    -- in Text & Icon, and it carries that section's aura-tracking gate with it.
     local colorLeft, colorRight = BeginRowGrid(container)
 
     local barColorRow = AddColorRow(colorLeft, {
@@ -233,6 +235,19 @@ local function BuildBarAppearanceTab(container, group, style)
         onConfirm = refreshStyle, onChange = refreshStyle,
     })
     CreateColorPickerPromoteButton(barChargeColorRow, "barChargeColor", group, style)
+
+    -- The color the aura timer drains in. Same gate as the aura block down in
+    -- Text & Icon, so it appears only while the group tracks an aura. No
+    -- promote button: barAuraColor belongs to the barActiveAura override
+    -- section, which the Effects tab's Active Aura Indicator controls own.
+    if GroupHasAuraTrackingEntry(group) then
+        AddColorRow(colorRight, {
+            label = "Bar Aura Timer Color",
+            tbl = style, key = "barAuraColor",
+            default = {0.2, 1.0, 0.2, 1.0}, hasAlpha = true,
+            onConfirm = refreshStyle, onChange = refreshStyle,
+        })
+    end
 
     -- ================================================================
     -- Border (thickness, size, color - mirrors the icon-mode Border section)
@@ -504,19 +519,12 @@ local function BuildBarAppearanceTab(container, group, style)
     })
     CreateCheckboxPromoteButton(showReadyRow, readyAdvBtn, "barReadyText", group, style)
 
-    -- Bar aura block: fills the Blizzard-driven aura bar composited over the CC
-    -- bar, plus the aura text toggles. Shown only while the group has an
-    -- aura-tracking entry (same gate as the icon-side aura sections). Style
-    -- edits route through refreshStyle -> UpdateGroupStyle -> RequestAuraRebind,
-    -- which defers to combat end with the one-time note when needed.
+    -- Bar aura block: the aura text toggles. Shown only while the group has an
+    -- aura-tracking entry (same gate as the icon-side aura sections, and as the
+    -- Bar Aura Timer Color row up with the other bar colors). Style edits route
+    -- through refreshStyle -> UpdateGroupStyle -> RequestAuraRebind, which
+    -- defers to combat end with the one-time note when needed.
     if GroupHasAuraTrackingEntry(group) then
-        AddColorRow(textRight, {
-            label = "Bar Aura Timer Color",
-            tbl = style, key = "barAuraColor",
-            default = {0.2, 1.0, 0.2, 1.0}, hasAlpha = true,
-            onConfirm = refreshStyle, onChange = refreshStyle,
-        })
-
         -- Aura duration text: rendered by the aura display at the bar's time
         -- text position (it follows the Flip Time Text and offset settings
         -- from the Cooldown Text section).
