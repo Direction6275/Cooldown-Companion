@@ -956,10 +956,11 @@ end
 -- First candidate aura ID that reports a real duration wins: cast-spell IDs
 -- whose aura lives on a linked spell return 0 (V22: Rake), and permanent
 -- auras have no duration — both mean "no pandemic window on this ID".
-local function GetPandemicBaseDuration(buttonData)
+local function GetPandemicBaseDuration(buttonData, constrainImplicitFallbacks)
     local anchorID = FindPlayerAuraAnchorInstanceID()
     if not anchorID then return nil end
-    local candidates = CooldownCompanion:GetOrderedAuraCandidateSpellIDs(buttonData)
+    local candidates = CooldownCompanion:GetOrderedAuraCandidateSpellIDs(
+        buttonData, constrainImplicitFallbacks)
     for _, spellID in ipairs(candidates) do
         if C_Spell.DoesSpellExist(spellID) then
             local duration = C_UnitAuras.GetAuraBaseDuration("player", anchorID, spellID)
@@ -1363,7 +1364,8 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- formatting — so slots reused across entries always converge.
     local pandemicOptions
     if style.showAuraText ~= false and IsPandemicMarkerWanted(buttonData, style, slot.unit) then
-        local baseDuration = GetPandemicBaseDuration(buttonData)
+        local baseDuration = GetPandemicBaseDuration(
+            buttonData, not isCustomBarHost and not isResourceHost)
         if baseDuration then
             pandemicOptions = BuildPandemicDurationOptions(baseDuration, style)
         end
@@ -2287,7 +2289,7 @@ function RunAuraRebind()
                     and buttonData
                     and (buttonData.auraTracking or buttonData.addedAs == "aura")
                 if buttonData and buttonData.type == "spell" and (textureAura or standardAura) then
-                    local spellSet = self:GetAuraCandidateSpellIDSet(buttonData)
+                    local spellSet = self:GetAuraCandidateSpellIDSet(buttonData, true)
                     local textureSettings = textureAura and self:GetTexturePanelSettings(group) or nil
                     local textureIndicators = textureAura and self:GetTexturePanelIndicatorSettings(group) or nil
                     if spellSet and (not textureAura or (textureSettings and textureSettings.enabled)) then
@@ -2297,7 +2299,7 @@ function RunAuraRebind()
                         -- duration fill.
                         local stackBarMax
                         if displayMode == "bars" and self:IsBarPanelAuraStackDisplay(buttonData) then
-                            stackBarMax = self:GetAuraStackBarMax(buttonData)
+                            stackBarMax = self:GetAuraStackBarMax(buttonData, true)
                         end
                         wanted[#wanted + 1] = {
                             button = button,

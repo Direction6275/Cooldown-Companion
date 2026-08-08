@@ -117,6 +117,42 @@ local function AppendOrderedAuraCandidateIDsFromString(candidateSet, orderedSet,
     end
 end
 
+local function ClassifyAuraSpellUnit(spellID)
+    local numericID = tonumber(spellID)
+    if not (numericID and C_Spell.DoesSpellExist(numericID)) then
+        return nil
+    end
+    return C_Spell.IsSpellHarmful(numericID) and "target" or "player"
+end
+
+local function IsAuraCandidateUnitAllowed(spellID, requiredUnit)
+    if requiredUnit == nil then
+        return true
+    end
+    local unit = ClassifyAuraSpellUnit(spellID)
+    return unit == requiredUnit
+end
+
+-- Explicit candidate lists own the slot polarity for ordinary spell entries.
+-- The migration and config writer keep those lists single-polarity; the stored
+-- unit remains the fallback when spell data is temporarily unavailable.
+local function ResolveExplicitAuraCandidateUnit(buttonData)
+    local rawIDs = buttonData and buttonData.auraSpellID and tostring(buttonData.auraSpellID) or nil
+    if not rawIDs then
+        return nil
+    end
+    for id in rawIDs:gmatch("%d+") do
+        local unit = ClassifyAuraSpellUnit(id)
+        if unit then
+            return unit
+        end
+    end
+    if buttonData.auraUnit == "player" or buttonData.auraUnit == "target" then
+        return buttonData.auraUnit
+    end
+    return nil
+end
+
 
 local function HasBuffSuffixName(name)
     return type(name) == "string" and name:match("%s%([Bb]uff%)$") ~= nil
@@ -150,7 +186,7 @@ end
 -- is the exact list Blizzard's own tracked bars match auras against. Pure data
 -- API (no viewer frames); the spell->cooldownID map is the one SoundAlerts
 -- maintains, rebuilt alongside the viewer aura map.
-local function AppendCdmLinkedAuraIDs(candidateSet, orderedSet, orderedIDs, buttonData, spellID)
+local function AppendCdmLinkedAuraIDs(candidateSet, orderedSet, orderedIDs, buttonData, spellID, requiredUnit)
     local addon = CooldownCompanion
     addon:EnsureSoundAlertSpellMap()
     local cooldownIDs = addon._soundAlertSpellToCooldownIDs and addon._soundAlertSpellToCooldownIDs[spellID]
@@ -161,7 +197,8 @@ local function AppendCdmLinkedAuraIDs(candidateSet, orderedSet, orderedIDs, butt
         local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID)
         if info and info.linkedSpellIDs then
             for _, linkedID in ipairs(info.linkedSpellIDs) do
-                if not IsDistinctAuraIdentityForButton(buttonData, linkedID) then
+                if not IsDistinctAuraIdentityForButton(buttonData, linkedID)
+                    and IsAuraCandidateUnitAllowed(linkedID, requiredUnit) then
                     AppendOrderedAuraCandidateID(candidateSet, orderedSet, orderedIDs, linkedID)
                 end
             end
@@ -281,7 +318,7 @@ local function BuildStandaloneAuraFallbackSpellIDText(buttonData, rawIDs)
     return #fallbackIDs > 0 and table.concat(fallbackIDs, ",") or nil
 end
 
-local function BuildOrderedAuraCandidateIDs(buttonData)
+local function BuildOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbacks)
     local candidateIDs = {}
     local orderedCandidateSet = {}
     local orderedCandidateIDs = {}
@@ -292,16 +329,23 @@ local function BuildOrderedAuraCandidateIDs(buttonData)
 
     local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
 
-    local function AppendSpellAssociationAuraIDs()
-        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.id)
-        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, baseId)
+    local function AppendSpellAssociationAuraIDs(requiredUnit)
+        if IsAuraCandidateUnitAllowed(buttonData.id, requiredUnit) then
+            AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.id)
+        end
+        if IsAuraCandidateUnitAllowed(baseId, requiredUnit) then
+            AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, baseId)
+        end
 
         local resolvedAuraId = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
-        if resolvedAuraId and not IsDistinctAuraIdentityForButton(buttonData, resolvedAuraId) then
+        if resolvedAuraId
+            and not IsDistinctAuraIdentityForButton(buttonData, resolvedAuraId)
+            and IsAuraCandidateUnitAllowed(resolvedAuraId, requiredUnit) then
             AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, resolvedAuraId)
         end
 
-        AppendCdmLinkedAuraIDs(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData, baseId)
+        AppendCdmLinkedAuraIDs(candidateIDs, orderedCandidateSet, orderedCandidateIDs,
+            buttonData, baseId, requiredUnit)
     end
 
     if buttonData.addedAs == "aura" then
@@ -312,7 +356,9 @@ local function BuildOrderedAuraCandidateIDs(buttonData)
         AppendStandaloneFallbackAuraCandidateIDs(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData, buttonData.auraSpellID)
     else
         AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.auraSpellID)
-        AppendSpellAssociationAuraIDs()
+        local requiredUnit = constrainImplicitFallbacks
+            and ResolveExplicitAuraCandidateUnit(buttonData) or nil
+        AppendSpellAssociationAuraIDs(requiredUnit)
     end
 
     return orderedCandidateIDs, candidateIDs, orderedCandidateSet
@@ -376,14 +422,17 @@ end
 -- Ordered candidate list (primary first), for callers that need priority
 -- order rather than a lookup set — e.g. the pandemic-threshold base-duration
 -- query, which takes the first candidate that reports a real aura duration.
-function CooldownCompanion:GetOrderedAuraCandidateSpellIDs(buttonData)
-    return (BuildOrderedAuraCandidateIDs(buttonData))
+function CooldownCompanion:GetOrderedAuraCandidateSpellIDs(buttonData, constrainImplicitFallbacks)
+    return (BuildOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbacks))
 end
 
 -- Full ordered candidate set as a lookup table, for AuraDisplay's
 -- includeSpellIDs filters (config-time resolution; not combat-blocked).
-function CooldownCompanion:GetAuraCandidateSpellIDSet(buttonData)
-    local orderedCandidateIDs = BuildOrderedAuraCandidateIDs(buttonData)
+-- Aura-capable panel entries pass constrainImplicitFallbacks=true so an
+-- explicit Aura list owns the slot polarity; Custom Bars omit it and retain
+-- their existing candidate behavior.
+function CooldownCompanion:GetAuraCandidateSpellIDSet(buttonData, constrainImplicitFallbacks)
+    local orderedCandidateIDs = BuildOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbacks)
     if #orderedCandidateIDs == 0 then return nil end
     local set = {}
     for _, spellID in ipairs(orderedCandidateIDs) do
@@ -838,10 +887,10 @@ end
 -- "not a stacking aura" — callers fall back to the duration fill. The return
 -- is documented SecretWhenUnitAuraRestricted; callers run OOC, but a secret
 -- is still discarded before any comparison.
-function CooldownCompanion:GetAuraStackBarMax(buttonData)
+function CooldownCompanion:GetAuraStackBarMax(buttonData, constrainImplicitFallbacks)
     local getMax = C_Spell.GetSpellMaxCumulativeAuraApplications
     if not getMax then return nil end
-    local spellSet = self:GetAuraCandidateSpellIDSet(buttonData)
+    local spellSet = self:GetAuraCandidateSpellIDSet(buttonData, constrainImplicitFallbacks)
     if not spellSet then return nil end
     local best = 0
     for spellID in pairs(spellSet) do

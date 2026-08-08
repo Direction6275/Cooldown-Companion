@@ -422,7 +422,7 @@ local function UpdateBarStackBlocks(button, style)
         and CooldownCompanion.IsBarPanelAuraStackDisplay
         and CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData)
         and CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) == "segmented" then
-        max = CooldownCompanion:GetAuraStackBarMax(buttonData)
+        max = CooldownCompanion:GetAuraStackBarMax(buttonData, true)
         if max and max > ST.STACK_SEGMENT_ATLAS_MAX then max = nil end
     end
     if max then

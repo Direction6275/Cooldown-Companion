@@ -58,12 +58,40 @@ local function ResolveConfiguredAuraSpellID(buttonData)
         or CooldownCompanion:ResolveTexturePanelAuraSpellID(buttonData)
 end
 
-local function GetEntryAuraUnit(buttonData)
-    local resolved = ResolveConfiguredAuraSpellID(buttonData)
-    return ClassifyAuraSpellUnit(resolved) or buttonData.auraUnit or "player"
+local function GetExplicitAuraCandidateUnit(buttonData)
+    if buttonData.addedAs == "aura" then
+        local resolved = ResolveConfiguredAuraSpellID(buttonData)
+        return ClassifyAuraSpellUnit(resolved) or buttonData.auraUnit or "player"
+    end
+    local candidates = GetAuraCandidateList(buttonData)
+    if #candidates == 0 then
+        -- The first explicit Aura owns the entry's polarity. Do not compare it
+        -- against the implicit base spell; the post-change sync below derives
+        -- and stores the new player/target unit from the chosen Aura.
+        return nil
+    end
+    for _, spellID in ipairs(candidates) do
+        local unit = ClassifyAuraSpellUnit(spellID)
+        if unit then
+            return unit
+        end
+    end
+    return buttonData.auraUnit
 end
 
 local function EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
+    if type(buttonData) == "table"
+        and buttonData.addedAs ~= "aura"
+        and #GetAuraCandidateList(buttonData) > 0 then
+        local baseUnit = ClassifyAuraSpellUnit(buttonData.id)
+        local explicitUnit = ClassifyAuraSpellUnit(primaryAuraSpellID)
+        if baseUnit and explicitUnit and baseUnit ~= explicitUnit then
+            -- The base spell remains the ownership proof for same-polarity
+            -- applied Aura IDs. An opposite-polarity Aura is an independent
+            -- override, so the base spell cannot make it group-trackable.
+            return false, true
+        end
+    end
     return CooldownCompanion:EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
 end
 
@@ -149,11 +177,11 @@ local AURA_TRACKING_TOOLTIP = {
     "Aura Tracking",
     {"Blizzard tracks the aura and drives the display; the addon never reads aura state in combat.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Buffs are tracked on you, or on you and your group. Your own debuffs are tracked on your target. This is a Blizzard restriction.", 1, 1, 1, true},
+    {"Buffs are tracked on you. Buffs tied to a helpful spell you can cast may also be tracked on your group; a buff overriding a harmful spell stays on you. Your own debuffs are tracked on your target.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"Whether an entry is a buff or a debuff is detected automatically.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"With no auras listed, the entry tracks its own aura. Added aura IDs override that; spell entries always keep their own aura as a fallback.", 1, 1, 1, true},
+    {"With no auras listed, the entry tracks its own aura. Added aura IDs take priority; its own aura remains a fallback only when both are buffs or both are debuffs.", 1, 1, 1, true},
 }
 
 local TEXTURE_AURA_TRACKING_TOOLTIP = {
@@ -161,6 +189,8 @@ local TEXTURE_AURA_TRACKING_TOOLTIP = {
     {"Blizzard tracks the aura and directly controls whether the configured texture is shown. The addon never reads aura state in combat.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"Buffs are tracked on you. Your own debuffs are tracked on your target. Group-member tracking is not available for Texture panels.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"With no auras listed, the entry tracks its own aura. Added aura IDs take priority; its own aura remains a fallback only when both are buffs or both are debuffs.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"This is presence-only: duration and stacks are not displayed. An optional active-aura effect can be configured in the Indicators tab.", 1, 1, 1, true},
 }
@@ -318,7 +348,7 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
         if entry and TryAddAuraCandidate(
             buttonData,
             tostring(entry.id),
-            GetEntryAuraUnit(buttonData),
+            GetExplicitAuraCandidateUnit(buttonData),
             OnCandidateListChanged
         ) then
             auraAddBox:SetText("")
@@ -333,7 +363,7 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
         onEnterPressed = function(text, widget)
             if CS.ConsumeAutocompleteEnter() then return end
             CS.HideAutocomplete()
-            if TryAddAuraCandidate(buttonData, text, GetEntryAuraUnit(buttonData), OnCandidateListChanged) then
+            if TryAddAuraCandidate(buttonData, text, GetExplicitAuraCandidateUnit(buttonData), OnCandidateListChanged) then
                 widget:SetText("")
                 RefreshAuraConfig()
             end
@@ -390,7 +420,7 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
             BAR_SHOWS_STACKS_TOOLTIP, infoButtons))
 
         if CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) then
-            local maxStacks = CooldownCompanion:GetAuraStackBarMax(buttonData)
+            local maxStacks = CooldownCompanion:GetAuraStackBarMax(buttonData, true)
             local stackStyle = CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData)
 
             -- Stack style (live parity): segmented per-stack rendering or a
