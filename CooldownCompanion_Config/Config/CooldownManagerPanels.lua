@@ -364,7 +364,7 @@ local function ApplyCDMStarterPanelLayout(group, sourceKey, containerId, entryCo
     elseif source.layoutKind == "trackedBars" then
         group.compactLayout = true
         group.compactGrowthDirection = "center"
-        style.orientation = "vertical"
+        style.barOrientation = "vertical"
         style.growthOrigin = "TOPLEFT"
         style.buttonsPerRow = GetStarterButtonLimit(entryCount, style.buttonsPerRow)
         style.barLength = math_max(180, tonumber(style.barLength) or 180)

@@ -373,7 +373,9 @@ local function PerformCrossPanelMove(sourcePanelId, sourceIndex, targetPanelId, 
     if CooldownCompanion.EnableTexturePanelAuraDisplayForEntry then
         CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(targetGroup, buttonData)
     end
+    local previousCount = #targetGroup.buttons
     table.insert(targetGroup.buttons, targetIndex, buttonData)
+    CooldownCompanion:KeepPanelSingleLineOnGrowth(targetGroup, previousCount)
     return buttonData
 end
 

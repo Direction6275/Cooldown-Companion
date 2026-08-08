@@ -1135,6 +1135,11 @@ local function CreateImportedPanel(db, containerId, panelIndex, srcPanel, import
     panel.cdmPanelSource = nil
     panel.parentContainerId = containerId
     panel.order = panelIndex
+    -- Piece imports land in an already-migrated profile, so pre-split
+    -- bar/text panels get their per-mode orientation key mapped here.
+    if ST._NormalizePanelOrientationKeys then
+        ST._NormalizePanelOrientationKeys(panel)
+    end
     if not panel.anchor then
         panel.anchor = BuildImportedRootAnchor("CooldownCompanionContainer" .. containerId)
     end

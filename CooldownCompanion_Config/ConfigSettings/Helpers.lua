@@ -1107,8 +1107,7 @@ end
 
 local function GetCompactGrowthDirectionLabels(group)
     local style = group.style or {}
-    local isBarMode = group.displayMode == "bars"
-    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
+    local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
     local growthOrigin = style.growthOrigin or "TOPLEFT"
     if orientation == "vertical" then
         local startIsTop = (growthOrigin == "TOPLEFT" or growthOrigin == "TOPRIGHT")

@@ -1410,6 +1410,7 @@ local MIGRATION_SENTINELS = {
     -- registered so ClearMigrationSentinels iterates them.
     { current = "_cdcAuraGroupScopeMigrated" },
     { current = "_cdcLcgGlowMigrated" },
+    { current = "_cdcPerModeOrientationMigrated" },
 }
 
 -- False when the profile is already stamped; otherwise clears the retired
@@ -1421,6 +1422,44 @@ local function ClaimMigrationPass(profile, sentinel)
         profile[key] = nil
     end
     return true
+end
+
+-- Per-mode orientation split (2026-08-08): bar and text panels stopped
+-- reading style.orientation (icons keep it) and moved onto their own
+-- barOrientation/textOrientation keys, so a display-mode swap can no longer
+-- destroy another mode's layout. A panel from before the split carries its
+-- current bar/text layout only in the shared key; copy it across so nothing
+-- on screen flips on update. Nil-guarded: new-format bar/text panels always
+-- have their key stamped (CreatePanel, mode swap, the config writers), which
+-- keeps the sentinel-stripped re-run after a profile import from touching
+-- them. Shared with the panel-piece import door, which installs panels into
+-- an already-stamped profile the load-time pass will not revisit.
+function ST._NormalizePanelOrientationKeys(group)
+    if type(group) ~= "table" or type(group.style) ~= "table" then return end
+    local style = group.style
+    if group.displayMode == "bars" then
+        if style.barOrientation == nil then
+            style.barOrientation = style.orientation or "vertical"
+        end
+    elseif group.displayMode == "text" then
+        if style.textOrientation == nil then
+            -- "horizontal", not "vertical": the pre-split fallback for an
+            -- unset TEXT panel was horizontal (only bar mode fell back to
+            -- vertical), and this copy preserves what was on screen. The
+            -- vertical text default is for panels born after the split.
+            style.textOrientation = style.orientation or "horizontal"
+        end
+    end
+end
+
+local function MigratePerModeOrientation(self, profile)
+    if type(profile) ~= "table" or profile._cdcPerModeOrientationMigrated then return end
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            ST._NormalizePanelOrientationKeys(group)
+        end
+    end
+    profile._cdcPerModeOrientationMigrated = true
 end
 
 local function MigrateAuraTrackingRebuild(self, profile)
@@ -2511,6 +2550,7 @@ function CooldownCompanion:RunAllMigrations()
     if StripRetiredTextSizeKeys(self.db and self.db.profile) then
         self:Print("Updated for 12.1: text panels now size themselves from their format and font. Use Padding for breathing room.")
     end
+    MigratePerModeOrientation(self, self.db and self.db.profile)
     MigrateAuraTrackingRebuild(self, self.db and self.db.profile)
     MigrateAuraGroupScopeIdentity(self, self.db and self.db.profile)
     MigrateAuraGlowRebuild(self, self.db and self.db.profile)

@@ -377,6 +377,20 @@ local function GetGroupDisplayMode(group)
     return "icons"
 end
 
+-- Panel arrangement orientation is remembered PER MODE so a display-mode
+-- swap can never destroy another mode's layout: bars and text panels read
+-- their own keys (unset = vertical), everything else keeps style.orientation
+-- (unset = horizontal). Every layout read goes through here.
+function ST.GetPanelLayoutOrientation(displayMode, style)
+    if displayMode == "bars" then
+        return style.barOrientation or "vertical"
+    end
+    if displayMode == "text" then
+        return style.textOrientation or "vertical"
+    end
+    return style.orientation or "horizontal"
+end
+
 local function GroupMatchesDirectStyleCopyMode(group, mode)
     if not group or not IsValidDirectStyleCopyMode(mode) then
         return false
@@ -451,10 +465,11 @@ end
 
 local function BuildGroupSettingPresetBaseline(profile, mode)
     local style = CopyTable(profile.globalStyle or {})
+    style.orientation = "horizontal"
     if mode == "bars" then
-        style.orientation = "vertical"
-    else
-        style.orientation = "horizontal"
+        style.barOrientation = "vertical"
+    elseif mode == "text" then
+        style.textOrientation = "vertical"
     end
     style.buttonsPerRow = 12
     style.showCooldownText = true
@@ -509,6 +524,15 @@ local function ApplyGroupSettingPresetData(profile, group, mode, presetData)
     if type(styleData) == "table" then
         for key, value in pairs(styleData) do
             group.style[key] = CopyPresetValue(value)
+        end
+        -- Presets captured before the per-mode orientation split carry the
+        -- bar/text layout only in the legacy shared key. A preset can be
+        -- imported after login (same reasoning as strataOrder below), so map
+        -- it here rather than relying on the load-time pass alone.
+        if mode == "bars" and styleData.barOrientation == nil and styleData.orientation ~= nil then
+            group.style.barOrientation = styleData.orientation
+        elseif mode == "text" and styleData.textOrientation == nil and styleData.orientation ~= nil then
+            group.style.textOrientation = styleData.orientation
         end
     end
 
@@ -1155,6 +1179,15 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     -- Style defaults (nil-guard respects user-customized globalStyle)
     local style = db.groups[groupId].style
     style.orientation = "horizontal"
+    -- Stamp the per-mode orientation key at birth: new-format bar/text
+    -- panels must always carry it, or the sentinel-stripped re-run of the
+    -- orientation migration after a profile import would mistake them for
+    -- pre-split panels and copy the icons key over their layout.
+    if displayMode == "bars" then
+        style.barOrientation = "vertical"
+    elseif displayMode == "text" then
+        style.textOrientation = "vertical"
+    end
     style.growthOrigin = "TOPLEFT"
     style.buttonsPerRow = 12
     style.showCooldownText = true
@@ -1402,8 +1435,13 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     if oldMode ~= newMode and self.ClearAllConfigPreviews then
         self:ClearAllConfigPreviews()
     end
-    if newMode == "bars" or newMode == "text" then
-        group.style.orientation = "vertical"
+    -- Orientation is remembered per mode (ST.GetPanelLayoutOrientation), so
+    -- entering bars/text no longer stomps the icons layout: only stamp the
+    -- mode's own key on first entry so new-format panels always carry it.
+    if newMode == "bars" and group.style.barOrientation == nil then
+        group.style.barOrientation = "vertical"
+    elseif newMode == "text" and group.style.textOrientation == nil then
+        group.style.textOrientation = "vertical"
     end
     if newMode ~= "icons" and group.masqueEnabled and self.ToggleGroupMasque then
         self:ToggleGroupMasque(groupId, false)
@@ -1530,6 +1568,27 @@ function CooldownCompanion:ToggleGroupGlobal(containerId)
     end
 
     self:RefreshAllGroups()
+end
+
+-- A panel whose entries currently fit a single row/column keeps that single
+-- line as entries are added; only a panel the user deliberately wrapped
+-- (wrap count below the entry count) may start a new row or column. Every
+-- path that grows a panel's entry list calls this with the count from
+-- before the growth, after inserting.
+function CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount)
+    if not group then return end
+    local displayMode = group.displayMode or "icons"
+    if displayMode ~= "icons" and displayMode ~= "bars" and displayMode ~= "text" then
+        return
+    end
+    local style = group.style
+    if not style then return end
+    previousCount = tonumber(previousCount) or 0
+    local newCount = #(group.buttons or {})
+    local perLine = tonumber(style.buttonsPerRow) or 12
+    if perLine >= previousCount and newCount > perLine then
+        style.buttonsPerRow = newCount
+    end
 end
 
 function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot, preserveSpellID)
@@ -1729,6 +1788,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         self:NormalizeTriggerConditionRowData(newButton)
     end
 
+    self:KeepPanelSingleLineOnGrowth(group, buttonIndex - 1)
     self:RefreshGroupFrame(groupId)
     return buttonIndex, transformNotified
 end
@@ -1761,6 +1821,7 @@ function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKi
         self:NormalizeTriggerConditionRowData(newButton)
     end
 
+    self:KeepPanelSingleLineOnGrowth(group, buttonIndex - 1)
     self:RefreshGroupFrame(groupId)
     return buttonIndex
 end

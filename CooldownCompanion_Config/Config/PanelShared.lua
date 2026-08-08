@@ -69,13 +69,11 @@ local PANEL_TYPES = {
         label = "Bar Panel",
         description = "Shows spells or items as timer bars with names and durations.",
         primary = true,
-        verticalStyle = true,
     },
     {
         mode = "text",
         label = "Text Panel",
         description = "Shows text-only entries for compact readouts and status lists.",
-        verticalStyle = true,
     },
     {
         mode = "textures",
@@ -117,7 +115,6 @@ end
 local function BuildPanelCreateOptions(displayMode)
     local panelType = GetPanelTypeInfo(displayMode)
     return {
-        verticalStyle = panelType.verticalStyle,
         notifyTutorial = panelType.notifyTutorial,
     }
 end
@@ -145,14 +142,6 @@ local function FinalizeCreatedPanel(newPanelId, displayMode, opts)
     end
 
     local group = CooldownCompanion.db.profile.groups[newPanelId]
-    if opts and opts.verticalStyle and group then
-        group.style.orientation = "vertical"
-        if group.masqueEnabled then
-            CooldownCompanion:ToggleGroupMasque(newPanelId, false)
-        end
-        CooldownCompanion:RefreshGroupFrame(newPanelId)
-    end
-
     SelectConfigPanel(newPanelId, {
         containerId = opts and opts.containerId or nil,
     })
@@ -463,8 +452,10 @@ local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGrou
     if CooldownCompanion.EnableTexturePanelAuraDisplayForEntry then
         CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(targetGroup, entryData)
     end
+    local previousCount = #targetGroup.buttons
     table.insert(targetGroup.buttons, entryData)
     table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
+    CooldownCompanion:KeepPanelSingleLineOnGrowth(targetGroup, previousCount)
     CooldownCompanion:RefreshGroupFrame(targetGroupId)
     CooldownCompanion:RefreshGroupFrame(sourceGroupId)
     CooldownCompanion:ClearAllConfigPreviews()

@@ -2049,8 +2049,7 @@ local function BeginPanelResizeGesture(grip)
     grip._resizeElapsed = 0
     grip._resizeRestylePending = nil
 
-    local isBarMode = group.displayMode == "bars"
-    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
+    local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
     local buttonsPerRow = style.buttonsPerRow or 12
     local numButtons = frame.visibleButtonCount
         or (CooldownCompanion:IsRotationAssistantGroup(group) and 1)
@@ -3659,7 +3658,7 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
     local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions, groupId)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
-    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
+    local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
     local buttonsPerRow = style.buttonsPerRow or 12
     local isTriggerMode = group.displayMode == "trigger"
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
@@ -3904,7 +3903,7 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions, groupId)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
-    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
+    local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
     local buttonsPerRow = style.buttonsPerRow or 12
     local numButtons = frame.visibleButtonCount
         or (self:IsRotationAssistantGroup(group) and 1)
@@ -4001,7 +4000,7 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
     local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions, groupId)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
-    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
+    local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
     local buttonsPerRow = style.buttonsPerRow or 12
     local compactGrowthDirection = NormalizeCompactGrowthDirection(group.compactGrowthDirection)
 

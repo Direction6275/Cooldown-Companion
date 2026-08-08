@@ -1671,10 +1671,11 @@ local function BuildLayoutTab(container)
     local arrangeLeft, arrangeRight = BeginRowGrid(container)
     local arrangeHost = isBarMode and arrangeRight or arrangeLeft
 
-    -- Bar panels stack vertically by default; every other mode runs across.
-    -- The same fallback GetCompactGrowthDirectionLabels uses, because the
+    -- Orientation is remembered per display mode (bar and text panels own
+    -- their keys, unset = vertical), so a mode swap keeps every mode's
+    -- layout. Same helper GetCompactGrowthDirectionLabels uses, because the
     -- Growth Direction labels below have to agree with it.
-    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
+    local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
 
     if isBarMode then
         -- Which way a bar's own fill runs is independent of how the bars are
@@ -1707,7 +1708,7 @@ local function BuildLayoutTab(container)
                 label = "Horizontal Bar Layout",
                 value = orientation == "horizontal",
                 onChange = function(val)
-                    style.orientation = val and "horizontal" or "vertical"
+                    style.barOrientation = val and "horizontal" or "vertical"
                     CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
                     CooldownCompanion:RefreshConfigPanel()
                 end,
@@ -1716,15 +1717,18 @@ local function BuildLayoutTab(container)
     else
         AddDropdownRow(arrangeHost, {
             label = "Orientation",
+            -- Owner ruling 2026-08-08 (supersedes 2026-07-28): the display
+            -- reads the same per-mode helper the core lays out with, and
+            -- text panels now default vertical like bars. Each mode writes
+            -- its own key so swapping modes keeps every mode's layout.
             list = { horizontal = "Horizontal", vertical = "Vertical" },
-            -- Owner ruling 2026-07-28: the displayed default follows what the
-            -- core actually does (`isBarMode and "vertical" or "horizontal"`,
-            -- the same fallback the Growth Direction labels below use) — the
-            -- old display claimed "Vertical" for unset text panels while the
-            -- game laid them out horizontally.
             value = orientation,
             onChange = function(val)
-                style.orientation = val
+                if isTextMode then
+                    style.textOrientation = val
+                else
+                    style.orientation = val
+                end
                 CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
                 CooldownCompanion:RefreshConfigPanel()
             end,

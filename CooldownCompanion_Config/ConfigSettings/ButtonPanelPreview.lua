@@ -1872,7 +1872,7 @@ local function GetPanelGeometry(group, isBarMode, isTextMode)
         entryWidth = w,
         entryHeight = h,
         spacing = style.buttonSpacing or ST.BUTTON_SPACING,
-        orientation = style.orientation or (isBarMode and "vertical" or "horizontal"),
+        orientation = ST.GetPanelLayoutOrientation(group.displayMode, style),
         buttonsPerRow = style.buttonsPerRow or 12,
     }
 end

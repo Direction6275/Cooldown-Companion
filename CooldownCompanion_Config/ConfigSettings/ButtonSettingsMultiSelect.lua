@@ -163,10 +163,12 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
             table.insert(sorted, idx)
         end
         table.sort(sorted, function(a, b) return a > b end)
+        local previousCount = #sourceGroup.buttons
         for _, idx in ipairs(sorted) do
             local copy = CopyTable(sourceGroup.buttons[idx])
             table.insert(sourceGroup.buttons, idx + 1, copy)
         end
+        CooldownCompanion:KeepPanelSingleLineOnGrowth(sourceGroup, previousCount)
         CooldownCompanion:RefreshGroupFrame(sourceGroupId)
         ClearConfigButtonSelection()
         CooldownCompanion:RefreshConfigPanel()
@@ -207,6 +209,7 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
                         CooldownCompanion:Print(rejectMessage)
                         return
                     end
+                    local previousCount = #targetGroup.buttons
                     for _, idx in ipairs(indices) do
                         table.insert(targetGroup.buttons, db.groups[sourceGroupId].buttons[idx])
                     end
@@ -214,6 +217,7 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
                     for _, idx in ipairs(indices) do
                         table.remove(db.groups[sourceGroupId].buttons, idx)
                     end
+                    CooldownCompanion:KeepPanelSingleLineOnGrowth(targetGroup, previousCount)
                     CooldownCompanion:RefreshGroupFrame(groupEntry.id)
                     CooldownCompanion:RefreshGroupFrame(sourceGroupId)
                     ClearConfigButtonSelection()
