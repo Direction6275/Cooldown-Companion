@@ -3925,8 +3925,8 @@ local function EnsureMirrorIconVisual(mirror)
     if visual then
         return visual
     end
-    local holder = CreateFrame("Frame", nil, mirror.root)
-    holder:SetPoint("CENTER", mirror.root, "CENTER", 0, 0)
+    local holder = CreateFrame("Frame", nil, mirror.effectHost.visualRoot)
+    holder:SetPoint("CENTER", mirror.effectHost.visualRoot, "CENTER", 0, 0)
     holder:SetSize(STRIP_ICON_SIZE, STRIP_ICON_SIZE)
     visual = {
         holder = holder,
@@ -3938,6 +3938,10 @@ local function EnsureMirrorIconVisual(mirror)
     for index = 1, 4 do
         visual.borders[index] = holder:CreateTexture(nil, "OVERLAY")
     end
+    holder.bg = visual.bg
+    holder.icon = visual.icon
+    holder.borderTextures = visual.borders
+    mirror.effectHost.iconFrame = holder
     mirror.iconVisual = visual
     return visual
 end
@@ -3947,8 +3951,8 @@ local function EnsureMirrorTextVisual(mirror)
     if visual then
         return visual
     end
-    local holder = CreateFrame("Frame", nil, mirror.root)
-    holder:SetPoint("CENTER", mirror.root, "CENTER", 0, 0)
+    local holder = CreateFrame("Frame", nil, mirror.effectHost.visualRoot)
+    holder:SetPoint("CENTER", mirror.effectHost.visualRoot, "CENTER", 0, 0)
     holder:SetSize(1, 1)
     visual = {
         holder = holder,
@@ -3960,6 +3964,10 @@ local function EnsureMirrorTextVisual(mirror)
     visual.text:SetJustifyH("CENTER")
     visual.text:SetWordWrap(false)
     visual.text:SetMaxLines(0)
+    holder.bg = visual.bg
+    holder.text = visual.text
+    holder.borderTextures = {}
+    mirror.effectHost.textFrame = holder
     mirror.textVisual = visual
     return visual
 end
@@ -4059,12 +4067,71 @@ local function RenderTriggerTextMirror(mirror, settings, boxWidth, boxHeight)
     holder:Show()
 end
 
+local function ApplyTriggerMirrorEffectPreview(mirror, group, panelId, displayType, settings, boxWidth, boxHeight)
+    local host = mirror and mirror.effectHost
+    if not host then return end
+
+    local active = CooldownCompanion:IsTriggerPanelEffectsPreviewActive(panelId)
+    if not active then
+        StopTextureMirrorEffects(mirror)
+        return
+    end
+
+    host._activeDisplayType = displayType
+    host._activeTextureSettings = nil
+    host._activeTextureGeometry = nil
+    host._triggerIconBaseColor = nil
+    host._triggerTextBaseColor = nil
+    host._indicatorBaseVisualsReady = nil
+
+    if displayType == "texture" then
+        local geometry = settings and CooldownCompanion:GetTexturePanelRenderGeometry(settings)
+        if not geometry or not (mirror.primary:IsShown() or mirror.secondary:IsShown()) then
+            StopTextureMirrorEffects(mirror)
+            return
+        end
+        local fit = math_min(
+            (tonumber(boxWidth) or geometry.boundsWidth) / math_max(geometry.boundsWidth, 1),
+            (tonumber(boxHeight) or geometry.boundsHeight) / math_max(geometry.boundsHeight, 1),
+            1
+        )
+        host._activeTextureSettings = settings
+        host._activeTextureGeometry = {
+            pieces = geometry.pieces,
+            rotationRadians = geometry.rotationRadians,
+            boundsWidth = geometry.boundsWidth * fit,
+            boundsHeight = geometry.boundsHeight * fit,
+        }
+    elseif displayType == "icon" then
+        if not (mirror.iconVisual and mirror.iconVisual.holder:IsShown()) then
+            StopTextureMirrorEffects(mirror)
+            return
+        end
+        local color = settings and settings.iconTintColor or { 1, 1, 1, 1 }
+        host._triggerIconBaseColor = { color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1 }
+    elseif displayType == "text" then
+        if not (mirror.textVisual and mirror.textVisual.holder:IsShown()) then
+            StopTextureMirrorEffects(mirror)
+            return
+        end
+        local color = settings and settings.textFontColor or { 1, 1, 1, 1 }
+        host._triggerTextBaseColor = { color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1 }
+    end
+
+    local previewGroup = {
+        locked = true,
+        triggerSettings = group and group.triggerSettings,
+    }
+    CooldownCompanion:ApplyTriggerPanelEffects(host, mirror.effectPreviewButton or {}, previewGroup, true)
+end
+
 -- Paint a trigger panel's display visual into the mirror: the config-side twin
 -- of the runtime RenderStandaloneDisplay dispatch. Split out of the builder so
 -- a settings change can repaint just this, leaving the selection strip's slots
 -- and their wiring alone.
 local function RenderTriggerDisplayVisual(mirror, group, panelId, boxWidth, boxHeight, readOnly)
     local displayType = CooldownCompanion.GetStandaloneDisplayType(group)
+    local settings
     -- Explicit branches: an and/or chain can't yield nil for the text case.
     if displayType == "icon" then
         mirror.clickMode = "icon"
@@ -4080,27 +4147,28 @@ local function RenderTriggerDisplayVisual(mirror, group, panelId, boxWidth, boxH
     if mirror.textVisual then mirror.textVisual.holder:Hide() end
 
     if displayType == "icon" then
-        RenderTriggerIconMirror(mirror,
-            CooldownCompanion:GetTriggerPanelIconSettings(group), boxWidth, boxHeight)
-        return
-    end
-    if displayType == "text" then
-        RenderTriggerTextMirror(mirror,
-            CooldownCompanion:GetTriggerPanelTextSettings(group), boxWidth, boxHeight)
-        return
+        settings = CooldownCompanion:GetTriggerPanelIconSettings(group)
+        RenderTriggerIconMirror(mirror, settings, boxWidth, boxHeight)
+    elseif displayType == "text" then
+        settings = CooldownCompanion:GetTriggerPanelTextSettings(group)
+        RenderTriggerTextMirror(mirror, settings, boxWidth, boxHeight)
+    else
+        mirror.placeholder:SetText("No texture selected")
+        -- Same staged-selection precedence as BuildTextureMirror. Trigger panels
+        -- have no config staging copy: their sliders write the saved table live
+        -- (owner-validated), so saved is always current here.
+        local staged = CS.textureMirrorStage
+        settings = readOnly and CooldownCompanion:GetTriggerPanelSignalSettings(group)
+            or (staged and staged.groupId == panelId and staged.selection)
+            or CooldownCompanion:GetTriggerPanelSignalSettings(group)
+        local render = ST._UpdateTexturePanelPreview
+        if render then
+            render(mirror, settings, boxWidth, boxHeight)
+        end
     end
 
-    mirror.placeholder:SetText("No texture selected")
-    -- Same staged-selection precedence as BuildTextureMirror. Trigger panels
-    -- have no config staging copy: their sliders write the saved table live
-    -- (owner-validated), so saved is always current here.
-    local staged = CS.textureMirrorStage
-    local settings = readOnly and CooldownCompanion:GetTriggerPanelSignalSettings(group)
-        or (staged and staged.groupId == panelId and staged.selection)
-        or CooldownCompanion:GetTriggerPanelSignalSettings(group)
-    local render = ST._UpdateTexturePanelPreview
-    if render then
-        render(mirror, settings, boxWidth, boxHeight)
+    if not readOnly then
+        ApplyTriggerMirrorEffectPreview(mirror, group, panelId, displayType, settings, boxWidth, boxHeight)
     end
 end
 
@@ -4262,6 +4330,13 @@ function ST._RefreshTriggerDisplayVisual(groupId)
     if not mirror.clickMode then
         mirror.hoverCue:Hide()
     end
+    return true
+end
+
+function ST._StopTriggerPanelEffectsPreviewMirror(groupId)
+    local mirror = GetActiveTextureMirror(groupId)
+    if not mirror then return false end
+    StopTextureMirrorEffects(mirror)
     return true
 end
 

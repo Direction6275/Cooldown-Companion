@@ -659,10 +659,6 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
         return button._desatCooldownActive == true
     end
 
-    if conditionKey == "auraActive" then
-        return button._auraActive == true
-    end
-
     if conditionKey == "procActive" then
         return button._procOverlayActive == true
     end
@@ -819,6 +815,13 @@ local function DoesTriggerPanelMatch(frame)
             for _, clause in ipairs(clauses) do
                 local conditionKey = NormalizeTriggerConditionKey(buttonData, clause.key)
                 if not conditionKey then
+                    return false
+                end
+
+                -- Trigger panels do not support Aura conditions on 12.1.
+                -- Preserve old saved clauses, but fail them closed instead of
+                -- consulting addon-side Aura state or guessing at absence.
+                if conditionKey == "auraActive" then
                     return false
                 end
 

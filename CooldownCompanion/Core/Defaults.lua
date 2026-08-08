@@ -685,7 +685,7 @@ function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData)
             local entries = entryData[1] and entryData or { entryData }
             for _, bd in ipairs(entries) do
                 if bd and bd.addedAs == "aura" then
-                    return "Auras can only be tracked in icon, bar, or Texture panels."
+                    return "Use an icon or bar panel for Aura tracking."
                 end
             end
         end

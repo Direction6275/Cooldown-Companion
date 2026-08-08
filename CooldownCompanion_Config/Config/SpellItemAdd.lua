@@ -214,7 +214,7 @@ local function PrintCannotTrackAsAura(spellName)
 end
 
 local function PrintAuraPanelUnsupported()
-    CooldownCompanion:Print("Auras can only be tracked in icon, bar, or Texture panels.")
+    CooldownCompanion:Print("Use an icon or bar panel for Aura tracking.")
 end
 
 local function IsExactNumericSpellInput(input, spellId)

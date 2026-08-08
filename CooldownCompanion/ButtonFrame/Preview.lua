@@ -830,19 +830,11 @@ function CooldownCompanion:SetTriggerPanelEffectsPreview(groupId, show)
     if not groupId then
         return
     end
-    local frame = self.groupFrames[groupId]
     activeTriggerPanelEffectPreviews[groupId] = show or nil
-    if not frame then
-        return
-    end
-
-    for _, button in ipairs(frame.buttons) do
-        button._triggerEffectsPreview = show or nil
-        if button.UpdateCooldown then
-            button:UpdateCooldown()
-        else
-            self:UpdateAuraTextureVisual(button)
-        end
+    -- Trigger effect previews belong exclusively to the pinned config mirror.
+    -- Never write preview flags onto live/runtime buttons.
+    if ST._RefreshTriggerDisplayVisual then
+        ST._RefreshTriggerDisplayVisual(groupId)
     end
 end
 
@@ -850,19 +842,20 @@ function CooldownCompanion:IsTriggerPanelEffectsPreviewActive(groupId)
     if activeTriggerPanelEffectPreviews[groupId] then
         return true
     end
-    return self:IsPreviewFlagActive(groupId, nil, "_triggerEffectsPreview")
+    return false
 end
 
 function CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
+    local activeGroups = {}
+    for groupId in pairs(activeTriggerPanelEffectPreviews) do
+        activeGroups[#activeGroups + 1] = groupId
+    end
     wipe(activeTriggerPanelEffectPreviews)
-    for _, frame in pairs(self.groupFrames) do
-        for _, button in ipairs(frame.buttons) do
-            button._triggerEffectsPreview = nil
-            if button.UpdateCooldown then
-                button:UpdateCooldown()
-            else
-                self:UpdateAuraTextureVisual(button)
-            end
+    for _, groupId in ipairs(activeGroups) do
+        if ST._StopTriggerPanelEffectsPreviewMirror then
+            ST._StopTriggerPanelEffectsPreviewMirror(groupId)
+        elseif ST._RefreshTriggerDisplayVisual then
+            ST._RefreshTriggerDisplayVisual(groupId)
         end
     end
 end
@@ -985,12 +978,6 @@ function CooldownCompanion:ApplyConfigPreviewsToGroup(groupId)
                     ApplyPreviewFlagToButton(button, previewFlag)
                 end
             end
-        end
-    end
-
-    if activeTriggerPanelEffectPreviews[groupId] then
-        for _, button in ipairs(frame.buttons) do
-            button._triggerEffectsPreview = true
         end
     end
 

@@ -1347,7 +1347,6 @@ local function ClearButtonPreviewState(button)
     button._textureReadyPreview = nil
     button._textureUnusablePreview = nil
     button._textureIndicatorPreviewDirty = false
-    button._triggerEffectsPreview = nil
     button._auraTexturePreviewSelection = nil
     button._conditionalPreviewKind = nil
     button._conditionalPreviewStartTime = nil

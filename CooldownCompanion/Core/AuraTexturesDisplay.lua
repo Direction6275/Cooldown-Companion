@@ -1609,7 +1609,6 @@ function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, dri
         groupedPreviewFrame = groupedPreviewFrame,
         isUnlocked = not isCursorAnchored and not combatForcedLock and group and (group.locked == false or groupedPreviewFrame ~= nil),
         hasPreviewSelection = displayType == "texture" and type(driverButton._auraTexturePreviewSelection) == "table",
-        hasTriggerEffectPreview = isTriggerPanel and driverButton._triggerEffectsPreview == true,
         triggerMatched = isTriggerPanel and frame and frame:IsShown() and DoesTriggerPanelMatch(frame) or false,
         showDisplay = false,
     }
@@ -1620,7 +1619,7 @@ function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, dri
         elseif state.isCursorLayoutPreview then
             state.showDisplay = true
         elseif isTriggerPanel then
-            state.showDisplay = state.triggerMatched or state.hasTriggerEffectPreview or state.isEditing or state.isUnlocked
+            state.showDisplay = state.triggerMatched or state.isEditing or state.isUnlocked
         elseif state.isEditing then
             state.showDisplay = true
         elseif state.isConfigForceVisible then
@@ -2119,7 +2118,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
             settings,
             displayType,
             isTriggerPanel,
-            visibilityState.triggerMatched or visibilityState.hasTriggerEffectPreview
+            visibilityState.triggerMatched
         )
     end
 
