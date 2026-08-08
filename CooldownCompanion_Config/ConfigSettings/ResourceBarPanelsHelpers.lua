@@ -60,6 +60,12 @@ end
 -- rather than name a bar: a resource overlay and an icon entry's tracked-aura
 -- list both want buffs and debuffs, never plain spells. Cached off the same
 -- shared source and invalidated by its identity, exactly like its parent.
+--
+-- Rows are re-identified to trackedAuraID (the spellID the applied aura
+-- carries) when it differs from the row's cast/talent spellID: these fields
+-- store the picked ID verbatim into an includeSpellIDs-style candidate list,
+-- and only the applied ID ever matches there. Shared rows are copied, never
+-- mutated — the parent cache keeps the row identity for standalone adds.
 local trackedAuraAutocompleteCache = nil
 local trackedAuraAutocompleteSource = nil
 
@@ -72,7 +78,24 @@ local function BuildTrackedAuraAutocompleteCache()
     local cache = {}
     for _, entry in ipairs(sharedCache) do
         if entry.autocompleteKind == "aura" then
-            cache[#cache + 1] = entry
+            local trackedID = entry.trackedAuraID
+            if trackedID and trackedID ~= entry.id then
+                local info = C_Spell.GetSpellInfo(trackedID)
+                local name = info and info.name or entry.name
+                cache[#cache + 1] = {
+                    id = trackedID,
+                    name = name,
+                    displayName = ("%s |cff999999(%d)|r"):format(name, trackedID),
+                    nameLower = name:lower(),
+                    icon = info and info.iconID or entry.icon,
+                    category = entry.category,
+                    autocompleteKind = "aura",
+                    isItem = false,
+                    forceAura = true,
+                }
+            else
+                cache[#cache + 1] = entry
+            end
         end
     end
     trackedAuraAutocompleteCache = cache

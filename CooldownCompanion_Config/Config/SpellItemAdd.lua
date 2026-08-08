@@ -752,6 +752,32 @@ local function BuildAutocompleteCache()
     -- Rows are deduped by underlying tracked aura: two data rows whose
     -- resolved/linked spellIDs overlap (e.g. an ability row and its applied
     -- DoT) would produce identical tracking entries, so only the first shows.
+    --
+    -- trackedAuraID is the spellID the APPLIED aura carries. A row's resolved
+    -- spellID is the cast or talent spell; when the game applies the aura
+    -- under a different spellID, that identity exists only in linkedSpellIDs
+    -- (Rake 1822 applies bleed 155722; Apex Predator's Craving talent 391881
+    -- applies buff 391882). Tracked-aura list fields must store the applied
+    -- ID or Blizzard's aura matching never fires on it; standalone aura
+    -- entries keep the row identity, which their candidate build expands.
+    local function ResolveTrackedAuraSpellID(cdInfo, resolvedID)
+        local linked = cdInfo.linkedSpellIDs
+        if type(linked) ~= "table" or #linked == 0 then
+            return resolvedID
+        end
+        for _, linkedID in ipairs(linked) do
+            if linkedID == resolvedID then
+                return resolvedID
+            end
+        end
+        for _, linkedID in ipairs(linked) do
+            if type(linkedID) == "number" and linkedID > 0 and C_Spell.DoesSpellExist(linkedID) then
+                return linkedID
+            end
+        end
+        return resolvedID
+    end
+
     local seenAuras = {}
     for _, cat in ipairs({ Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar }) do
         local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
@@ -779,6 +805,7 @@ local function BuildAutocompleteCache()
                         end
                         table.insert(cache, {
                             id = id,
+                            trackedAuraID = ResolveTrackedAuraSpellID(cdInfo, id),
                             name = spellInfo.name,
                             displayName = ("%s |cff999999(%d)|r"):format(spellInfo.name, id),
                             nameLower = spellInfo.name:lower(),
