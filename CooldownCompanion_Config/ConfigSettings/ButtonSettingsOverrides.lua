@@ -468,6 +468,9 @@ local OVERRIDE_SECTION_ORDER = {
     "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText",
     "textFont", "textColors", "textBackground",
 }
+-- The entry-slot hover tooltip lists an entry's active overrides in this
+-- same order, so the tooltip and the Overrides tab cannot disagree.
+ST._OverrideSectionOrder = OVERRIDE_SECTION_ORDER
 
 -- Zero-modal path to per-button overrides (owner ruling 2026-07-18):
 -- pick an eligible section here to promote it for this entry directly,

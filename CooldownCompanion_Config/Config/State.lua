@@ -514,23 +514,15 @@ local function GetConfigEntryDisplayName(buttonData, opts)
             if addedAs ~= "spell" and addedAs ~= "aura" then
                 addedAs = buttonData.isPassive and "aura" or "spell"
             end
-            local icons = ""
-            if addedAs ~= "aura" then
-                icons = icons .. "|A:ui_adv_atk:15:15|a"
-            end
-            if addedAs == "aura" then
-                icons = icons .. "|A:ui_adv_health:15:15|a"
-            end
-            if icons ~= "" then
-                entryName = (entryName or ("Unknown " .. tostring(buttonData.type))) .. "  " .. icons
-            end
+            entryName = (entryName or ("Unknown " .. tostring(buttonData.type)))
+                .. " |cff7d7566(" .. (addedAs == "aura" and "Aura" or "Spell") .. ")|r"
         end
     elseif buttonData.type == "item" and includeDecorations then
         entryName = entryName or ("Unknown " .. tostring(buttonData.type))
         if C_Item.IsEquippableItem(buttonData.id) then
-            entryName = entryName .. "  |A:Crosshair_repairnpc_32:15:15|a"
+            entryName = entryName .. " |cff7d7566(Equipment)|r"
         else
-            entryName = entryName .. "  |A:auctionhouse-icon-coin-gold:12:12|a"
+            entryName = entryName .. " |cff7d7566(Item)|r"
         end
     end
 

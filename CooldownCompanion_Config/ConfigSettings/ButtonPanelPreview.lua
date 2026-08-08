@@ -506,6 +506,8 @@ local function DisableReadOnlySlotInteraction(slot)
     if slot.selectedHighlight then slot.selectedHighlight:Hide() end
     if slot.problemBadge then slot.problemBadge:Hide() end
     if slot.problemBadgeBack then slot.problemBadgeBack:Hide() end
+    if slot.overrideBadge then slot.overrideBadge:Hide() end
+    if slot.overrideBadgeBack then slot.overrideBadgeBack:Hide() end
     if slot.visibilityBadge then slot.visibilityBadge:Hide() end
 end
 
@@ -643,6 +645,8 @@ ResetBarSlotWorkspaceState = function(frame)
     if frame.visibilityBadge then frame.visibilityBadge:Hide() end
     if frame.problemBadge then frame.problemBadge:Hide() end
     if frame.problemBadgeBack then frame.problemBadgeBack:Hide() end
+    if frame.overrideBadge then frame.overrideBadge:Hide() end
+    if frame.overrideBadgeBack then frame.overrideBadgeBack:Hide() end
     frame._cdcVisibilityBadgeShown = nil
 end
 
@@ -950,9 +954,17 @@ local function ApplyOverrideTargetingVisuals(slot, panelId, buttonData)
     slot.selectedHighlight:Show()
 end
 
-local function CollectEntryMetadata(buttonData)
+local function CollectEntryMetadata(buttonData, group)
+    -- The per-entry text format override is the flat buttonData.textFormat
+    -- field (never part of the styleOverrides sections), so it needs its own
+    -- check to count as an appearance override on text panels.
+    local hasOverrides = CooldownCompanion:HasStyleOverrides(buttonData) and true or false
+    if not hasOverrides and group and group.displayMode == "text"
+        and buttonData.textFormat ~= nil then
+        hasOverrides = true
+    end
     local status = {
-        override = CooldownCompanion:HasStyleOverrides(buttonData) and true or false,
+        override = hasOverrides,
         fallback = CooldownCompanion.HasItemFallbacks(buttonData) and true or false,
         talent = (buttonData.talentConditions and #buttonData.talentConditions > 0) and true or false,
         sound = false,
@@ -985,7 +997,7 @@ end
 
 -- Entry status signals shared with the workspace entry-row presentation.
 local function CollectEntryStatus(buttonData, group)
-    local status = CollectEntryMetadata(buttonData)
+    local status = CollectEntryMetadata(buttonData, group)
     local usable = CooldownCompanion:IsButtonUsable(buttonData, group)
     local loadAllowed = CooldownCompanion:IsButtonLoadConditionMet(buttonData, group)
     status.usable = usable
@@ -1000,7 +1012,7 @@ end
 -- results may still inform other preview modes, but they must not leak into a
 -- Bar slot's tint, problem badge, or hidden-state explanation.
 local function CollectBarEntryStatus(buttonData, group)
-    local status = CollectEntryMetadata(buttonData)
+    local status = CollectEntryMetadata(buttonData, group)
     status.usable = true
     status.auraHideReservesSpace = DoesHiddenAuraReserveLayoutSpace(buttonData, group)
     return status
@@ -1019,12 +1031,29 @@ local ENTRY_STATUS_BADGES = {
     { key = "talent", atlas = "UI-HUD-MicroMenu-SpecTalents-Mouseover", label = "Has talent conditions" },
 }
 
--- Single status indicator in the slot's top-right corner. Disabled and
+-- key → atlas, for the hover tooltip's inline badge marks: each tooltip
+-- section opens with the same badge the slot corner and identity strip
+-- wear, so the two surfaces cannot drift apart.
+local ENTRY_STATUS_BADGE_ATLAS = {}
+for _, desc in ipairs(ENTRY_STATUS_BADGES) do
+    ENTRY_STATUS_BADGE_ATLAS[desc.key] = desc.atlas
+end
+
+-- Status indicators in the slot's top-right corner. Disabled and
 -- unusable/blocked entries use the existing dark-backed problem marks; an
 -- aura whose hidden slot cannot collapse uses the established information
--- badge instead. Other informational badges (talent, sound, override,
--- fallback) live in the identity strip and the hover tooltip.
+-- badge instead. Entries with appearance overrides carry their own badge
+-- (the identity strip's override crosshair) riding left of any problem
+-- mark, so overrides read at a glance across the whole preview. Other
+-- informational badges (talent, sound, fallback) live in the identity
+-- strip and the hover tooltip.
 local function ApplySlotBadges(slot, status, scale, suppress)
+    local size = math_min(24,
+        math_max(12, PANEL_PREVIEW_BADGE_SCREEN_SIZE / math_max(scale, 0.01)))
+    local hasVisibilityBadge = slot._cdcVisibilityBadgeShown == true
+    local badgeAnchor = hasVisibilityBadge and slot.barBounds or slot
+    local cornerOffset = hasVisibilityBadge and -(size + 2) or 0
+
     local atlas
     local isReservedSpaceBadge = false
     if not suppress and status.disabled then
@@ -1035,37 +1064,60 @@ local function ApplySlotBadges(slot, status, scale, suppress)
         atlas = PANEL_PREVIEW_AURA_SPACE_BADGE_ATLAS
         isReservedSpaceBadge = true
     end
-    if not atlas then
+    if atlas then
+        local tex = slot.problemBadge
+        local back = slot.problemBadgeBack
+        if not tex then
+            back = slot:CreateTexture(nil, "OVERLAY", nil, 6)
+            back:SetColorTexture(0, 0, 0, 0.7)
+            slot.problemBadgeBack = back
+            tex = slot:CreateTexture(nil, "OVERLAY", nil, 7)
+            slot.problemBadge = tex
+        end
+        tex:SetAtlas(atlas, false)
+        tex:SetSize(size, size)
+        tex:ClearAllPoints()
+        tex:SetPoint("TOPRIGHT", badgeAnchor, "TOPRIGHT", cornerOffset, 0)
+        back:ClearAllPoints()
+        back:SetPoint("CENTER", tex, "CENTER", 0, 0)
+        back:SetSize(size + 2, size + 2)
+        tex:Show()
+        if isReservedSpaceBadge then
+            back:Hide()
+        else
+            back:Show()
+        end
+    else
         if slot.problemBadge then slot.problemBadge:Hide() end
         if slot.problemBadgeBack then slot.problemBadgeBack:Hide() end
-        return
     end
-    local tex = slot.problemBadge
-    local back = slot.problemBadgeBack
-    if not tex then
-        back = slot:CreateTexture(nil, "OVERLAY", nil, 6)
-        back:SetColorTexture(0, 0, 0, 0.7)
-        slot.problemBadgeBack = back
-        tex = slot:CreateTexture(nil, "OVERLAY", nil, 7)
-        slot.problemBadge = tex
-    end
-    local size = math_min(24,
-        math_max(12, PANEL_PREVIEW_BADGE_SCREEN_SIZE / math_max(scale, 0.01)))
-    tex:SetAtlas(atlas, false)
-    tex:SetSize(size, size)
-    tex:ClearAllPoints()
-    local hasVisibilityBadge = slot._cdcVisibilityBadgeShown == true
-    local badgeAnchor = hasVisibilityBadge and slot.barBounds or slot
-    local xOffset = hasVisibilityBadge and -(size + 2) or 0
-    tex:SetPoint("TOPRIGHT", badgeAnchor, "TOPRIGHT", xOffset, 0)
-    back:ClearAllPoints()
-    back:SetPoint("CENTER", tex, "CENTER", 0, 0)
-    back:SetSize(size + 2, size + 2)
-    tex:Show()
-    if isReservedSpaceBadge then
-        back:Hide()
-    else
+
+    if not suppress and status.override then
+        local tex = slot.overrideBadge
+        local back = slot.overrideBadgeBack
+        if not tex then
+            back = slot:CreateTexture(nil, "OVERLAY", nil, 6)
+            back:SetColorTexture(0, 0, 0, 0.7)
+            slot.overrideBadgeBack = back
+            tex = slot:CreateTexture(nil, "OVERLAY", nil, 7)
+            slot.overrideBadge = tex
+        end
+        tex:SetAtlas("Crosshair_VehichleCursor_32", false)
+        tex:SetSize(size, size)
+        tex:ClearAllPoints()
+        if atlas then
+            tex:SetPoint("TOPRIGHT", slot.problemBadge, "TOPLEFT", -4, 0)
+        else
+            tex:SetPoint("TOPRIGHT", badgeAnchor, "TOPRIGHT", cornerOffset, 0)
+        end
+        back:ClearAllPoints()
+        back:SetPoint("CENTER", tex, "CENTER", 0, 0)
+        back:SetSize(size + 2, size + 2)
+        tex:Show()
         back:Show()
+    else
+        if slot.overrideBadge then slot.overrideBadge:Hide() end
+        if slot.overrideBadgeBack then slot.overrideBadgeBack:Hide() end
     end
 end
 
@@ -1550,42 +1602,91 @@ local function ResolveSlotShiftTooltip(buttonData)
     return nil
 end
 
--- Plain hover: the decorated entry name plus the same status lines the
--- shared row badges carry (Shift is the controller's job above).
-local function ShowEntrySlotTooltip(slot, buttonData, status, visibility)
+-- Plain hover: the entry name with its kind spelled out, plus the same
+-- status signals the shared row badges carry (Shift is the controller's
+-- job above). Overrides and talent conditions list their actual contents
+-- here so nobody has to open the entry's tabs just to see what is set.
+local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibility)
     GameTooltip:SetOwner(slot, "ANCHOR_RIGHT")
     local name = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
     GameTooltip:SetText(name or "Entry", 1, 1, 1)
-    if buttonData.type == "spell" then
-        -- Same addedAs fallback the name decorations use.
-        local addedAs = buttonData.addedAs
-        if addedAs ~= "spell" and addedAs ~= "aura" then
-            addedAs = buttonData.isPassive and "aura" or "spell"
-        end
-        GameTooltip:AddLine(addedAs == "aura" and "Tracked as an aura" or "Tracked as a spell",
+    if status.disabled then
+        GameTooltip:AddLine(
+            ("|A:%s:14:14|a Disabled"):format(ENTRY_STATUS_BADGE_ATLAS.disabled),
             0.6, 0.6, 0.6)
     end
-    if status.disabled then
-        GameTooltip:AddLine("Disabled", 0.6, 0.6, 0.6)
-    end
     if status.warn then
-        if status.loadBlocked then
-            GameTooltip:AddLine("Hidden by visibility rules", 1, 0.3, 0.3)
-        else
-            GameTooltip:AddLine("Spell/item unavailable", 1, 0.3, 0.3)
-        end
+        GameTooltip:AddLine(
+            ("|A:%s:14:14|a %s"):format(ENTRY_STATUS_BADGE_ATLAS.warn,
+                status.loadBlocked and "Hidden by visibility rules" or "Spell/item unavailable"),
+            1, 0.3, 0.3)
     end
     if status.override then
-        GameTooltip:AddLine("Has appearance overrides", 1, 1, 1)
-    end
-    if status.fallback then
-        GameTooltip:AddLine("Uses item fallbacks", 1, 1, 1)
-    end
-    if status.sound then
-        GameTooltip:AddLine("Sound alerts enabled", 1, 1, 1)
+        local group = panelId and CooldownCompanion.db
+            and CooldownCompanion.db.profile.groups[panelId] or nil
+        local displayMode = group and (group.displayMode or "icons") or "icons"
+        -- Same order, same activity gates as the Overrides tab's sections.
+        local canUse = ST._CanButtonUseConfigOverrideSection
+        local sections = buttonData.overrideSections or {}
+        local lines = {}
+        if displayMode == "text" and buttonData.textFormat ~= nil then
+            lines[#lines + 1] = { label = "Text Format", active = true }
+        end
+        for _, sectionId in ipairs(ST._OverrideSectionOrder or {}) do
+            if sections[sectionId] then
+                local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
+                if sectionDef then
+                    lines[#lines + 1] = {
+                        label = sectionDef.label,
+                        active = sectionDef.modes[displayMode] == true
+                            and (not canUse or (canUse(buttonData, sectionId))),
+                    }
+                end
+            end
+        end
+        GameTooltip:AddLine(" ")
+        if #lines > 0 then
+            GameTooltip:AddLine(
+                ("|A:%s:14:14|a Appearance overrides:"):format(ENTRY_STATUS_BADGE_ATLAS.override),
+                1, 1, 1)
+            for _, line in ipairs(lines) do
+                if line.active then
+                    GameTooltip:AddLine("    " .. line.label, 0.7, 0.7, 0.7)
+                else
+                    GameTooltip:AddLine("    " .. line.label .. " (inactive)", 0.45, 0.45, 0.45)
+                end
+            end
+        else
+            GameTooltip:AddLine(
+                ("|A:%s:14:14|a Has appearance overrides"):format(ENTRY_STATUS_BADGE_ATLAS.override),
+                1, 1, 1)
+        end
     end
     if status.talent then
-        GameTooltip:AddLine("Has talent conditions", 1, 1, 1)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine(
+            ("|A:%s:14:14|a Talent conditions:"):format(ENTRY_STATUS_BADGE_ATLAS.talent),
+            1, 1, 1)
+        local getName = ST._GetConditionDisplayName
+        for _, cond in ipairs(buttonData.talentConditions or {}) do
+            local nameText = getName and getName(cond) or (cond.name or "Unknown Talent")
+            local suffix = (cond.show == "not_taken")
+                and " |cffff4d4d(not taken)|r" or " |cff33dd33(taken)|r"
+            GameTooltip:AddLine("    " .. nameText .. suffix, 0.7, 0.7, 0.7)
+        end
+    end
+    if status.fallback or status.sound then
+        GameTooltip:AddLine(" ")
+        if status.fallback then
+            GameTooltip:AddLine(
+                ("|A:%s:14:14|a Uses item fallbacks"):format(ENTRY_STATUS_BADGE_ATLAS.fallback),
+                1, 1, 1)
+        end
+        if status.sound then
+            GameTooltip:AddLine(
+                ("|A:%s:14:14|a Sound alerts enabled"):format(ENTRY_STATUS_BADGE_ATLAS.sound),
+                1, 1, 1)
+        end
     end
     if status.auraHideReservesSpace then
         GameTooltip:AddLine(" ")
@@ -1599,14 +1700,20 @@ local function ShowEntrySlotTooltip(slot, buttonData, status, visibility)
     end
     if visibility and not visibility.exactPreview
         and visibility.underlyingMode == "hidden" then
-        GameTooltip:AddLine("Hidden in simulated state", 1, 0.82, 0.2)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine(
+            ("|A:%s:14:14|a Hidden in simulated state")
+                :format(PANEL_PREVIEW_VISIBILITY_BADGE_ATLAS),
+            1, 0.82, 0.2)
         for _, reason in ipairs(visibility.reasons or {}) do
-            GameTooltip:AddLine(reason.label .. " - " .. reason.rule, 0.7, 0.7, 0.7)
+            GameTooltip:AddLine("    " .. reason.label .. " - " .. reason.rule, 0.7, 0.7, 0.7)
         end
     end
     if CooldownCompanion:HasLocalLoadConditions(buttonData) then
+        GameTooltip:AddLine(" ")
         GameTooltip:AddLine("This entry adds visibility rules.", 0.7, 0.7, 0.7)
     end
+    GameTooltip:AddLine(" ")
     if slot._cdcDraggable then
         GameTooltip:AddLine("Drag to reorder.", 0.75, 0.82, 0.92)
     end
@@ -1694,7 +1801,7 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
                 return
             end
         end
-        ShowEntrySlotTooltip(self, buttonData, status, visibility)
+        ShowEntrySlotTooltip(self, panelId, buttonData, status, visibility)
         local targeting = GetActiveOverrideTargeting(panelId)
         if targeting then
             local sectionDef = ST.OVERRIDE_SECTIONS[targeting.sectionId]
@@ -3509,6 +3616,8 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly, layo
             slot.icon:SetDesaturated(false)
             if slot.problemBadge then slot.problemBadge:Hide() end
             if slot.problemBadgeBack then slot.problemBadgeBack:Hide() end
+            if slot.overrideBadge then slot.overrideBadge:Hide() end
+            if slot.overrideBadgeBack then slot.overrideBadgeBack:Hide() end
             -- Recycled slots may carry a drag handler from a grid render
             slot:SetScript("OnMouseDown", nil)
             if CS.selectedRotationAssistantEntry == true then
