@@ -2270,7 +2270,10 @@ function RunAuraRebind()
     -- Collect wanted bindings from live buttons. Icon/bar behavior keeps its
     -- existing aura flags. Texture panels always bind primary Aura entries and
     -- require an explicit opt-in for ordinary spells, so retained pre-12.1
-    -- auraTracking residue stays dormant; Trigger/Text remain excluded.
+    -- auraTracking residue stays dormant; Trigger/Text remain excluded. A
+    -- client-drawn aura readout docked into a text entry's format was trialed
+    -- and removed by owner decision, so text panels are aura-blind by design
+    -- rather than by omission.
     local wanted = {}
     for groupId, frame in pairs(self.groupFrames) do
         local group = self.db.profile.groups[groupId]

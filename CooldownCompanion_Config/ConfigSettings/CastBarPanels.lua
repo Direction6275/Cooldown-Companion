@@ -647,7 +647,7 @@ local function BuildCastBarStylingPanel(container)
             font = "Friz Quadrata TT", outline = "OUTLINE",
         }, applyCastBar, { row = true, previewRefresh = castPreviewOnly })
 
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color-picker call
         -- this row replaced.
         AddColorRow(panel, {
             label = "Font Color",
@@ -684,7 +684,7 @@ local function BuildCastBarStylingPanel(container)
             font = "Friz Quadrata TT", outline = "OUTLINE",
         }, applyCastBar, { row = true, previewRefresh = castPreviewOnly })
 
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color-picker call
         -- this row replaced.
         AddColorRow(panel, {
             label = "Font Color",

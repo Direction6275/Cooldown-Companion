@@ -279,7 +279,7 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback,
             { row = true, indent = true })
 
         -- deferCommit is deliberately absent throughout, matching the
-        -- AddColorPicker calls these rows replaced.
+        -- stock color pickers these rows replaced.
         AddColorRow(right, {
             label = "Font Color",
             tbl = styleTable,
@@ -379,7 +379,7 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
     })
 
     if (styleTable.pandemicMarkerColorMode or "marker") ~= "off" then
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color picker
         -- this row replaced.
         AddColorRow(container, {
             label = "Marker Color",
@@ -443,7 +443,7 @@ local function BuildAuraTextControls(container, styleTable, refreshCallback, opt
 
     AddFontControls(container, styleTable, "auraText", {}, refreshCallback,
         { row = true, indent = true })
-    -- deferCommit is deliberately absent, matching the AddColorPicker call this
+    -- deferCommit is deliberately absent, matching the stock color picker this
     -- row replaced.
     AddColorRow(container, {
         label = "Font Color",
@@ -501,7 +501,7 @@ local function BuildAuraStackTextControls(container, styleTable, refreshCallback
     if showAuraStackText ~= false then
         AddFontControls(container, styleTable, "auraStack", {}, refreshCallback,
             { row = true, indent = true })
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color picker
         -- this row replaced.
         AddColorRow(right, {
             label = "Font Color",
@@ -549,7 +549,7 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback, 
     if styleTable.showKeybindText then
         AddFontControls(container, styleTable, "keybind", {size = 10, sizeMin = 6, sizeMax = 24},
             refreshCallback, { row = true, indent = true })
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color picker
         -- this row replaced.
         AddColorRow(right, {
             label = "Font Color",
@@ -590,7 +590,7 @@ local function BuildChargeTextControls(container, styleTable, refreshCallback, o
             { row = true, indent = true })
 
         -- deferCommit is deliberately absent throughout, matching the
-        -- AddColorPicker calls these rows replaced.
+        -- stock color pickers these rows replaced.
         local function ChargeColorRow(rowLabel, key)
             AddColorRow(right, {
                 label = rowLabel,
@@ -647,7 +647,7 @@ local function BuildBorderControls(container, styleTable, refreshCallback, opts)
         })
     end
 
-    -- deferCommit is deliberately absent, matching the AddColorPicker call this
+    -- deferCommit is deliberately absent, matching the stock color picker this
     -- row replaced.
     AddColorRow(container, {
         label = "Border Color",
@@ -841,8 +841,8 @@ end
 -- Row grammar only (RowWidgets.lua). Each conditional color indents as the
 -- child of the toggle that reveals it; the pre-redesign shape's row-break
 -- spacer has no equivalent here, because the grid columns do that work.
--- deferCommit is deliberately absent throughout, matching the AddColorPicker
--- calls these rows replaced.
+-- deferCommit is deliberately absent throughout, matching the stock color
+-- pickers these rows replaced.
 --
 -- Aura tint applies to the slot-kit aura layer (consumed at bind time by
 -- AuraDisplay.StyleSlotKit); only offered where an aura display exists.
@@ -1018,7 +1018,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     })
 
     if styleTable.cooldownSwipeEdgeEnabled == true then
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color picker
         -- this row replaced.
         AddColorRow(container, {
             label = "Swipe Edge Color",
@@ -1126,7 +1126,7 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
     })
 
     if styleTable.auraDurationSwipeEdgeEnabled == true then
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color picker
         -- this row replaced.
         AddColorRow(container, {
             label = "Swipe Edge Color",
@@ -1273,7 +1273,7 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
         end,
     })
 
-    -- deferCommit is deliberately absent, matching the AddColorPicker call this
+    -- deferCommit is deliberately absent, matching the stock color picker this
     -- row replaced.
     AddColorRow(container, {
         label = "Cooldown Fill Color",
@@ -1392,7 +1392,7 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
     })
 
     -- deferCommit is deliberately absent throughout, matching the
-    -- AddColorPicker calls these rows replaced.
+    -- stock color pickers these rows replaced.
     local function HighlightColorRow(rowLabel, key, default)
         AddColorRow(right, {
             label = rowLabel,
@@ -1708,7 +1708,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
         onChange = ApplyStyle,
     })
 
-    -- deferCommit is deliberately absent, matching the AddColorPicker calls
+    -- deferCommit is deliberately absent, matching the stock color pickers
     -- these rows replaced. opts.previewRefresh (the mirror-first opt-in) moves
     -- the picker-open path onto the caller's preview and leaves the commit on
     -- refreshCallback; without it both stay on refreshCallback as before.
@@ -2152,7 +2152,7 @@ local function BuildBarNameTextControls(container, styleTable, refreshCallback, 
                 refreshCallback()
             end,
         })
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color picker
         -- this row replaced.
         AddColorRow(right, {
             label = "Font Color",
@@ -2199,7 +2199,7 @@ local function BuildBarReadyTextControls(container, styleTable, refreshCallback,
             readyRow.editbox.Instructions:Hide()
         end
 
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color picker
         -- this row replaced.
         AddColorRow(right, {
             label = "Ready Text Color",
@@ -2226,7 +2226,7 @@ local function BuildTextBackgroundControls(container, styleTable, refreshCallbac
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
     -- deferCommit is deliberately absent throughout, matching the
-    -- AddColorPicker calls this section used to make.
+    -- stock color pickers this section used to make.
     AddColorRow(container, {
         label = "Background Color",
         indent = opts.indent,
@@ -2299,33 +2299,28 @@ local function BuildTextFontControls(container, styleTable, refreshCallback, opt
     })
 end
 
--- Row grammar only: the row sizes itself and the Ready Color gear rides the
--- row's badge chain rather than a hand-placed anchor. Three rows, so they stay
--- in one column.
+-- Row grammar only: the complete palette the text renderer can reach. LEFT
+-- column (the container the caller hands over): the base color and the two
+-- cooldown states. RIGHT column (opts.rightColumn): the aura color and the
+-- custom color, which no token claims on its own.
+--
+-- Every row carries a "?" badge naming the tokens it paints. A swatch says
+-- nothing about which token it reaches, and two of these five are reachable
+-- only through a color tag.
+--
+-- Ready Text is a format-vocabulary setting, so on the panel path it lives in
+-- the Format String section (TextModeTabs.lua). A per-entry override has no
+-- Format String section of its own, so the override path keeps its own row for
+-- it here - a plain row, not the advanced gear this section used to carry.
 local function BuildTextColorsControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
-
-    -- Single rail (AdvancedSettingsPanel.lua): one row straight onto the panel
-    -- scroll. The CDC-EditBoxRow embeds a stock EditBox, so the raw frame the
-    -- Instructions text hangs on is still reachable through row.editbox.
-    local function BuildReadyTextAdvanced(panel)
-        local readyRow = AddEditBoxRow(panel, {
-            label = "Ready Text",
-            value = styleTable.textReadyText or "Ready",
-            onEnterPressed = function(val)
-                styleTable.textReadyText = val
-                refreshCallback()
-            end,
-        })
-        if readyRow.editbox and readyRow.editbox.Instructions then
-            readyRow.editbox.Instructions:Hide()
-        end
-    end
+    local right = opts.rightColumn or container
+    local infoButtons = opts.infoButtons or tabInfoButtons
 
     -- deferCommit is deliberately absent throughout, matching the
-    -- AddColorPicker calls these rows replaced.
-    local function TextColorRow(rowLabel, key, default)
-        return AddColorRow(container, {
+    -- stock color pickers these rows replaced.
+    local function TextColorRow(host, rowLabel, key, default, tooltipLines)
+        local row = AddColorRow(host, {
             label = rowLabel,
             indent = opts.indent,
             tbl = styleTable,
@@ -2335,19 +2330,68 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback, o
             onConfirm = refreshCallback,
             onChange = refreshCallback,
         })
+        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+        -- onto the end of the row's label.
+        AnchorRowBadge(row, CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0,
+            tooltipLines, infoButtons))
+        return row
     end
 
-    TextColorRow("Text Color", "textFontColor", {1, 1, 1, 1})
-    TextColorRow("Cooldown Color", "textCooldownColor", {1, 0.3, 0.3, 1})
-    local readyRow = TextColorRow("Ready Color", "textReadyColor", {0.2, 1.0, 0.2, 1})
+    TextColorRow(container, "Text Color", "textFontColor", {1, 1, 1, 1}, {
+        "Text Color",
+        {"The color text falls back to.", 1, 1, 1, true},
+        " ",
+        {"Paints |cff00ff00{name}|r, |cff00ff00{keybind}|r, |cff00ff00{stacks}|r and |cff00ff00{maxcharges}|r.", 1, 1, 1, true},
+        " ",
+        {"Color tags in the format override it.", 1, 1, 1, true},
+    })
 
-    -- AnchorRowBadge handles the placement: the gear chains off the end of the
-    -- row's label, so no manual re-anchor is needed here.
-    AddAdvancedToggle(readyRow, opts.advancedKey or "textReadyText",
-        opts.infoButtons or tabInfoButtons, nil, {
-            title = "Ready Color Advanced",
-            build = BuildReadyTextAdvanced,
+    TextColorRow(container, "Cooldown Color", "textCooldownColor", {1, 0.3, 0.3, 1}, {
+        "Cooldown Color",
+        {"Paints |cff00ff00{time}|r, and |cff00ff00{status}|r while the spell is on cooldown.", 1, 1, 1, true},
+        " ",
+        {"The |cff44bbff{cooldown}|r tag paints anything with it.", 1, 1, 1, true},
+    })
+
+    TextColorRow(container, "Ready Color", "textReadyColor", {0.2, 1.0, 0.2, 1}, {
+        "Ready Color",
+        {"Paints |cff00ff00{status}|r when the spell is ready.", 1, 1, 1, true},
+        " ",
+        {"The |cff44bbff{ready}|r tag paints anything with it.", 1, 1, 1, true},
+    })
+
+    TextColorRow(right, "Aura Color", "textAuraColor", {0, 0.925, 1, 1}, {
+        "Aura Color",
+        {"The |cff44bbff{active}|r tag paints anything with it.", 1, 1, 1, true},
+    })
+
+    TextColorRow(right, "Custom Color", "textCustomColor", {1, 0.82, 0, 1}, {
+        "Custom Color",
+        {"No token paints with this color on its own.", 1, 1, 1, true},
+        " ",
+        {"The |cff44bbff{custom}|r tag paints anything with it.", 1, 1, 1, true},
+    })
+
+    if opts.isOverride then
+        -- The CDC-EditBoxRow embeds a stock EditBox, so the raw frame the
+        -- Instructions text hangs on is still reachable through row.editbox.
+        local readyTextRow = AddEditBoxRow(right, {
+            label = "Ready Text",
+            indent = opts.indent,
+            value = styleTable.textReadyText or "Ready",
+            onEnterPressed = function(val)
+                styleTable.textReadyText = val
+                refreshCallback()
+            end,
         })
+        if readyTextRow.editbox and readyTextRow.editbox.Instructions then
+            readyTextRow.editbox.Instructions:Hide()
+        end
+        AnchorRowBadge(readyTextRow, CreateInfoButton(readyTextRow.frame, readyTextRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Ready Text",
+            {"The word |cff00ff00{status}|r shows when the spell is ready.", 1, 1, 1, true},
+        }, infoButtons))
+    end
 end
 
 ------------------------------------------------------------------------

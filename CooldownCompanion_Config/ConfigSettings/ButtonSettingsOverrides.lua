@@ -32,8 +32,6 @@ local ROW_SECTION = { leftAligned = true }
 -- Section actions sit on one grammar-height line (ButtonConditions.lua states
 -- the idiom): compact SetAutoWidth buttons, flush left, never page-wide.
 local ACTION_STRIP_HEIGHT = (ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT) or 30
-local ACTION_STRIP_BUTTON_HEIGHT = 24
-local ACTION_STRIP_GUTTER = 4
 
 -- The override section labels run past what the 140px control column can size
 -- a menu from ("Bar Recharging Color", "Aura Duration Text").
@@ -162,13 +160,132 @@ local FORMAT_OVERRIDE_TOOLTIP = {
     {"Clear the override to revert to the group default.", 1, 1, 1},
 }
 
+------------------------------------------------------------------------
+-- FORMAT OVERRIDE SECTION
+--
 -- Text mode's format string is a per-entry override like any other, so it
 -- takes the same collapsible row-grammar header keyed the same way. Its body
--- is prose and two actions rather than settings rows: the rendered preview and
--- the token summary are wrapped sentences, which do not fit a grid cell, so
--- they stay full-width on the tab surface.
+-- is the whole format editor - the same component the panel's Format tab
+-- hosts (TextModeTabs.lua), bound to this entry's override instead of the
+-- panel's shared format - with the destructive Clear below the content it
+-- clears.
+--
+-- Typing commits live on a short debounce, so this section has a lifecycle
+-- the other override sections do not: a controller that owns an animation
+-- driver and a pending write, both of which have to be settled before the
+-- container holding them is released or rebuilt.
+--
+-- Exactly one override editor exists at a time (one entry owns the settings
+-- surface), and it is never live at the same time as the Format tab's: a
+-- controller is only ever created inside one of the two tab groups'
+-- OnGroupSelected callbacks, and each of those releases BOTH editors before
+-- it builds. The four module-locals below are this one editor's whole
+-- state; ReleaseTextFormatOverrideEditor is the single teardown, and every
+-- seam that can take the container away calls it.
+------------------------------------------------------------------------
+local FORMAT_OVERRIDE_COMMIT_DELAY = 0.3
+
+local overrideController = nil
+local overrideCommitTimer = nil
+local overrideCommitTarget = nil   -- { buttonData, groupId }, captured when scheduled
+local overrideClearButton = nil    -- the live section's Clear Override button, or nil
+
+-- Writes the edited format to the entry's override and refreshes everything
+-- that reads it.
+--
+-- The commit deliberately never calls RefreshConfigPanel: that would release
+-- the very section being typed in and drop the cursor (the editor component
+-- has no commit method of its own for exactly this reason).
+-- RefreshGroupFrame is the world-side half of the write (the live
+-- panel re-parses the format through PopulateGroupButtons ->
+-- UpdateTextStyle), and it repaints the config's pinned mirror on the way in
+-- (ST._RefreshButtonsPreviewMirror, first thing in GroupFrame.lua's
+-- RefreshGroupFrame), which is the config-side half. Neither touches the
+-- settings column. Same shape as the Format tab's commit.
+--
+-- The editor seeds from the panel's format when there is no override yet, so
+-- the first edit is what CREATES the override - including an edit that lands
+-- back on the panel's own text. Clear Override is the way back.
+local function CommitTextFormatOverrideEdit()
+    overrideCommitTimer = nil
+    local target = overrideCommitTarget
+    overrideCommitTarget = nil
+    if not (target and overrideController) then return end
+
+    local raw = overrideController:GetRawText()
+    -- An empty format is never written (same guard the Format tab's commit uses).
+    if not raw or raw == "" then return end
+    if target.buttonData.textFormat == raw then return end
+
+    target.buttonData.textFormat = raw
+    -- This is the write that can CREATE the override, and it deliberately does
+    -- not rebuild the config, so nothing else would notice. Clear Override is
+    -- built disabled while there is no override; enable it in place here.
+    -- Cheap and unconditional: on an edit that only UPDATES an existing
+    -- override the button is already enabled and this is a no-op.
+    --
+    -- The reference is only ever the live section's own button - it is dropped
+    -- before this can run against a torn-down section (see
+    -- ReleaseTextFormatOverrideEditor) and again by the widget's own OnRelease
+    -- (see AddTextOverrideSection), so it never points into AceGUI's pool.
+    if overrideClearButton then
+        overrideClearButton:SetDisabled(false)
+    end
+    CooldownCompanion:RefreshGroupFrame(target.groupId)
+end
+
+-- The target is captured per schedule, not read at fire time, so a write that
+-- lands after the user has moved on still goes to the entry they typed it in.
+local function ScheduleTextFormatOverrideCommit(buttonData, groupId)
+    overrideCommitTarget = { buttonData = buttonData, groupId = groupId }
+    if overrideCommitTimer then
+        overrideCommitTimer:Cancel()
+    end
+    overrideCommitTimer = C_Timer.NewTimer(FORMAT_OVERRIDE_COMMIT_DELAY, CommitTextFormatOverrideEdit)
+end
+
+local function FlushTextFormatOverrideCommit()
+    if not overrideCommitTimer then return end
+    overrideCommitTimer:Cancel()
+    CommitTextFormatOverrideEdit()
+end
+
+-- Drops a pending write instead of settling it. Only Clear Override wants
+-- this: the write it would flush is the very key the clear removes.
+local function CancelTextFormatOverrideCommit()
+    if overrideCommitTimer then
+        overrideCommitTimer:Cancel()
+        overrideCommitTimer = nil
+    end
+    overrideCommitTarget = nil
+end
+
+-- Settle the pending write FIRST, then drop the controller: the container
+-- frame is about to go back into AceGUI's pool, and a commit that fires after
+-- that would write against a released editor.
+local function ReleaseTextFormatOverrideEditor()
+    -- Dropped BEFORE the flush, not with the rest of the state after it. One
+    -- caller (AddTextOverrideSection's defensive release) runs after the
+    -- container has already been recycled, so by flush time the button can be
+    -- back in AceGUI's pool wearing someone else's label. Nothing is lost by
+    -- skipping the enable here: a release is always followed by a rebuild that
+    -- reads buttonData.textFormat fresh.
+    overrideClearButton = nil
+    FlushTextFormatOverrideCommit()
+    if overrideController then
+        overrideController:Release()
+        overrideController = nil
+    end
+    overrideCommitTarget = nil
+end
+
 local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
-    local fmtKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_override_textFormat"
+    -- Defensive: every seam already releases before it gets here, so this is
+    -- a no-op in the normal path and the backstop for anything that is not.
+    ReleaseTextFormatOverrideEditor()
+
+    local groupId = CS.selectedGroup
+    local fmtKey = groupId .. "_" .. CS.selectedButton .. "_override_textFormat"
     local fmtHeading, fmtCollapsed = BuildCollapsibleSection(scroll, "Format Override", fmtKey,
         nil, nil, ROW_SECTION)
 
@@ -180,90 +297,86 @@ local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
 
     if fmtCollapsed then return end
 
-    local effectiveFmt = buttonData.textFormat or group.style.textFormat or "{name}  {status}"
+    overrideController = ST._BuildFormatEditorContent(scroll, {
+        -- saveTarget is the entry, so the component reads and writes
+        -- buttonData.textFormat; with none set yet it seeds from the panel's
+        -- format, which is what defaultFormat carries.
+        target = {
+            style = group.style,
+            groupId = groupId,
+            saveTarget = buttonData,
+            defaultFormat = group.style.textFormat or "{name}  {status}",
+        },
+        onDirty = function()
+            ScheduleTextFormatOverrideCommit(buttonData, groupId)
+        end,
+    })
 
-    local preSpacer = AceGUI:Create("Label")
-    preSpacer:SetText(" ")
-    preSpacer:SetFullWidth(true)
-    scroll:AddChild(preSpacer)
-
-    local fmtPreview = AceGUI:Create("Label")
-    ST._ConfigureWrappedHelperLabel(fmtPreview)
-    fmtPreview:SetText(ST._RenderFormatPreview(effectiveFmt, group.style))
-    fmtPreview:SetFullWidth(true)
-    fmtPreview:SetFontObject(GameFontHighlight)
-    fmtPreview:SetJustifyH("CENTER")
-    scroll:AddChild(fmtPreview)
-
-    local postSpacer = AceGUI:Create("Label")
-    postSpacer:SetText(" ")
-    postSpacer:SetFullWidth(true)
-    scroll:AddChild(postSpacer)
-
-    if not buttonData.textFormat then
-        local defaultNote = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(defaultNote)
-        defaultNote:SetText("|cff888888Using group default|r")
-        defaultNote:SetFullWidth(true)
-        defaultNote:SetFontObject(GameFontHighlightSmall)
-        scroll:AddChild(defaultNote)
-    else
-        for _, line in ipairs(ST._BuildFormatSummary(effectiveFmt)) do
-            local fmtSummary = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(fmtSummary)
-            fmtSummary:SetText(line)
-            fmtSummary:SetFullWidth(true)
-            fmtSummary:SetFontObject(GameFontHighlightSmall)
-            scroll:AddChild(fmtSummary)
-        end
-    end
-
-    -- Compact and flush left on one grammar-height line. The destructive Clear
-    -- shares that line with the editor that owns what it clears.
+    -- The destructive action sits below the content it clears, compact and
+    -- flush left on one grammar-height line.
+    --
+    -- Built ALWAYS, disabled while there is no override, rather than built
+    -- with the key: the debounced commit that creates the override does not
+    -- rebuild the config (it would drop the edit box's focus), so a strip
+    -- conditional on the key would arrive a rebuild late - the user would type
+    -- an override and see no way back until something else refreshed the
+    -- column. A row that is always present only has to change state, which the
+    -- commit can do in place, and the section's height never moves.
     local btnRow = AceGUI:Create("SimpleGroup")
     btnRow:SetFullWidth(true)
     btnRow:SetLayout("Flow")
     btnRow:SetHeight(ACTION_STRIP_HEIGHT)
     btnRow.noAutoHeight = true
 
-    local editBtn = AceGUI:Create("Button")
-    editBtn:SetText("Edit Format Override")
-    editBtn:SetAutoWidth(true)
-    editBtn:SetCallback("OnClick", function()
-        ST._OpenFormatEditor(group.style, CS.selectedGroup, {
-            title = "Button Format Override",
-            saveTarget = buttonData,
-            defaultFormat = group.style.textFormat or "{name}  {status}",
-        })
+    local clearBtn = AceGUI:Create("Button")
+    clearBtn:SetText("Clear Override")
+    clearBtn:SetAutoWidth(true)
+    -- Stock AceGUI disabled look: SetDisabled just calls Enable/Disable on the
+    -- UIPanelButtonTemplate underneath, and OnAcquire resets it to enabled, so
+    -- no state leaks into the pool and nothing here is custom-styled.
+    clearBtn:SetDisabled(buttonData.textFormat == nil)
+    clearBtn:SetCallback("OnClick", function()
+        -- A debounced write from just before the click would land back on
+        -- the key this clears, so it is dropped rather than flushed.
+        CancelTextFormatOverrideCommit()
+        buttonData.textFormat = nil
+        CooldownCompanion:RefreshGroupFrame(groupId)
+        -- The one place this section rebuilds itself: the strip comes back
+        -- disabled, and the rebuilt editor re-seeds from the panel's format.
+        -- (Typing never takes this path - see the commit above.)
+        CooldownCompanion:RefreshConfigPanel()
     end)
-    btnRow:AddChild(editBtn)
-
-    if buttonData.textFormat then
-        -- Flow packs siblings at 0px, so the gutter is a fixed-size spacer
-        -- group - the same idiom the preset trio and the talent strip use.
-        local gutter = AceGUI:Create("SimpleGroup")
-        gutter:SetWidth(ACTION_STRIP_GUTTER)
-        gutter:SetHeight(ACTION_STRIP_BUTTON_HEIGHT)
-        gutter.noAutoHeight = true
-        btnRow:AddChild(gutter)
-
-        local clearBtn = AceGUI:Create("Button")
-        clearBtn:SetText("Clear Override")
-        clearBtn:SetAutoWidth(true)
-        clearBtn:SetCallback("OnClick", function()
-            buttonData.textFormat = nil
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        btnRow:AddChild(clearBtn)
-    end
+    -- Second half of the reference's lifecycle. ReleaseTextFormatOverrideEditor
+    -- covers every seam that knows it is taking the section away; this covers
+    -- the ones that do not, because AceGUI fires OnRelease on the way into the
+    -- pool (before it wipes the callback table), so the reference cannot
+    -- outlive the widget it names no matter who recycled it.
+    clearBtn:SetCallback("OnRelease", function(widget)
+        if overrideClearButton == widget then
+            overrideClearButton = nil
+        end
+    end)
+    overrideClearButton = clearBtn
+    btnRow:AddChild(clearBtn)
 
     -- Added last so the List-layout parent measures a populated row.
     scroll:AddChild(btnRow)
 end
 
+-- Lifecycle hooks for the Format Override section's live editor. Called
+-- through ST at fire time rather than captured at load, so file order does
+-- not matter:
+--   Release - every seam that releases or rebuilds the entry Overrides tab's
+--             container (both tab groups' OnGroupSelected, the entry
+--             settings refresh, the entry surfaces being hidden, the config's
+--             OnHide).
+--   Flush   - seams that do not take the container away but must not leave a
+--             write pending (the config's OnHide while collapsing).
+ST._ReleaseTextFormatOverrideEditor = ReleaseTextFormatOverrideEditor
+ST._FlushTextFormatOverrideCommit = FlushTextFormatOverrideCommit
+
 -- One color, so the left column carries it alone. deferCommit is deliberately
--- absent, matching the AddColorPicker call this replaced.
+-- absent, matching the stock color-picker call this replaced.
 local function BuildSingleBarColorControl(key, label, defaultColor)
     return function(container, styleTable, onChange)
         AddColorRow(container, {

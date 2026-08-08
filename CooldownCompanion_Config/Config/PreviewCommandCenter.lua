@@ -1348,6 +1348,9 @@ local function ApplyGearRoute(route, queueKey)
     SetRowScope("primary")
     CS.selectedTab = route.tab
     CS.panelSettingsTab = route.tab
+    -- A deliberate destination, so it outranks a display mode's own default
+    -- landing tab (text panels otherwise land on Format).
+    CS.panelSettingsTabExplicit = true
     -- A collapsed section never builds its checkbox, and a queued key with
     -- no gear to consume it expires silently.
     if type(CS.collapsedSections) == "table" then

@@ -54,8 +54,10 @@ local function GroupUsesTriggerPanelEntries(group)
 end
 
 -- 12.1 aura tracking is offered on spell entries in icon/bar groups and as a
--- Texture-only active/inactive display. Text mode cannot safely format secret
--- aura values, and Trigger panels retain their separate condition system.
+-- Texture-only active/inactive display. Text panels do not render aura state
+-- on 12.1 (a client-drawn readout docked into the format was trialed and
+-- removed by owner decision), and Trigger panels retain their separate
+-- condition system.
 local function EntryOffersAuraTab(group, buttonData)
     if not (buttonData and buttonData.type == "spell") then return false end
     if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
@@ -1085,6 +1087,17 @@ local function RefreshButtonSettingsColumn()
     if not cf then return end
     local bsCol = cf.col3
     if not bsCol or not bsCol.bsTabGroup then return end
+
+    -- The entry Overrides tab can host a live format editor with a pending
+    -- debounced write and an animation driver on the container frame. Settle
+    -- both here, at the top, before any branch below decides what owns the
+    -- surface: the no-selection branch takes the tab content away without
+    -- re-selecting a tab, and the branch that does re-select one releases
+    -- again from the callback (Release is idempotent). Same shape as the
+    -- panel-side host refresh in GroupSettingsHost.
+    if ST._ReleaseTextFormatOverrideEditor then
+        ST._ReleaseTextFormatOverrideEditor()
+    end
 
     -- Check for multiselect
     local multiCount = 0

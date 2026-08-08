@@ -533,6 +533,9 @@ local function ShowPanelContextMenu(panelId, containerId)
                 SelectConfigPanel(panelId, { containerId = containerId })
                 CS.selectedTab = "loadconditions"
                 CS.panelSettingsTab = "loadconditions"
+                -- A deliberate destination, so it outranks a display mode's
+                -- own default landing tab.
+                CS.panelSettingsTabExplicit = true
                 CooldownCompanion:RefreshConfigPanel()
             end
             UIDropDownMenu_AddButton(info, level)
@@ -2303,6 +2306,9 @@ local function RefreshColumn1(preserveDrag)
                             SelectConfigPanel(panelId, { containerId = containerId })
                             CS.selectedTab = "loadconditions"
                             CS.panelSettingsTab = "loadconditions"
+                            -- A deliberate destination, so it outranks a
+                            -- display mode's own default landing tab.
+                            CS.panelSettingsTabExplicit = true
                             CooldownCompanion:RefreshConfigPanel()
                         else
                             SelectConfigPanel(panelId, {

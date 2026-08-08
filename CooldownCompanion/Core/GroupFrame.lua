@@ -1617,6 +1617,14 @@ local function PreparePooledButtonForUse(self, frame, group, button, index, butt
     if self.UpdateButtonIcon then
         self:UpdateButtonIcon(button)
     end
+    -- A text entry is auto-sized from a worst-case render of its format, and
+    -- {name} resolves through the display identity UpdateButtonIcon just
+    -- assigned (ClearReusableButtonRuntime wiped it on release). UpdateStyle
+    -- above therefore measured against the SAVED id, so re-measure here; the
+    -- ApplyActiveButtonLayout call that follows this loop re-pitches the grid.
+    if button._isText and ST._ApplyTextEntryLayout then
+        ST._ApplyTextEntryLayout(button)
+    end
     if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         button:SetAlpha(0)
         button._lastVisAlpha = 0
@@ -1661,7 +1669,13 @@ local PANEL_RESIZE_GRIP_SIZE = 12
 local PANEL_RESIZE_REFRESH_INTERVAL = 0.05
 
 local CreatePixelBorders = ST.CreatePixelBorders
-local GetEffectiveTextHeight = ST._GetEffectiveTextHeight
+-- Text entries are auto-sized from a measured worst-case render of their
+-- format (ButtonFrame/TextMode.lua). Cached per entry: the restyle path
+-- measures, layout paths below only read.
+-- NOTE: this file's main chunk sits on Lua's 200-local ceiling. This upvalue
+-- took over the slot of a retired one rather than adding a slot; nothing new
+-- may be localized in this chunk.
+local GetTextEntryMetrics = ST._GetTextEntryMetrics
 
 local PropagateFrameStrata
 
@@ -3571,22 +3585,24 @@ local function GetButtonDimensions(group, buttonUsabilityOptions, groupId)
     if isTextureMode then
         w, h = 1, 1
     elseif isTextMode then
-        w = style.textWidth or 200
-        if GetEffectiveTextHeight then
-            local maxHeight = GetEffectiveTextHeight(style, style.textFormat or "{name}  {status}")
+        if GetTextEntryMetrics then
+            -- The grid pitch is the widest/tallest usable entry. Each entry
+            -- frame keeps its own measured size (UpdateStyle -> ApplyTextLayout),
+            -- so short entries stay short inside a wider pitch. The group-level
+            -- format seeds a floor so an entry-less panel still has a size.
+            w, h = GetTextEntryMetrics(style, nil, style.textFormat or "{name}  {status}")
             for sourceIndex, buttonData in ipairs(group.buttons or {}) do
                 if IsSourceButtonInPreviewScope(CooldownCompanion, groupId, sourceIndex, buttonUsabilityOptions)
                     and CooldownCompanion:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
                     local effectiveStyle = CooldownCompanion:GetEffectiveStyle(style, buttonData)
                     local fmt = buttonData.textFormat or effectiveStyle.textFormat or "{name}  {status}"
-                    local buttonHeight = GetEffectiveTextHeight(effectiveStyle, fmt)
-                    w = math_max(w, effectiveStyle.textWidth or 200)
-                    maxHeight = math_max(maxHeight, buttonHeight)
+                    local buttonWidth, buttonHeight = GetTextEntryMetrics(effectiveStyle, buttonData, fmt)
+                    w = math_max(w, buttonWidth)
+                    h = math_max(h, buttonHeight)
                 end
             end
-            h = maxHeight
         else
-            h = style.textHeight or 20
+            w, h = 200, 20
         end
     elseif isBarMode then
         w, h = style.barLength or 180, style.barHeight or 20
@@ -3932,6 +3948,15 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     end
 
     frame:SetSize(targetWidth, targetHeight)
+
+    -- ApplyTextGroupHeader runs before the layout pass in both
+    -- PopulateGroupButtons and UpdateGroupStyle, so its frame:GetWidth() read
+    -- is the pre-resize width. That was survivable while text width came from
+    -- a slider; auto-sized entries change the width on any format/font/name
+    -- change, so re-fit the header here, where the final width is known.
+    if frame._textHeaderShown and frame.textHeader then
+        frame.textHeader:SetWidth(math_max(1, targetWidth - 4))
+    end
 
     local compactGrowthDirection = NormalizeCompactGrowthDirection(group.compactGrowthDirection)
     local fixedPoint = group.compactLayout and GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, style.growthOrigin) or nil

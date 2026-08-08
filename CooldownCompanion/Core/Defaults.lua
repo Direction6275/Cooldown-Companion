@@ -423,8 +423,11 @@ local defaults = {
             barReadyFontOutline = "OUTLINE",
             barTexture = "Solid",
             -- Text display mode defaults
-            textWidth = 200,
-            textHeight = 20,
+            -- Text entries auto-size from a measured worst-case render of
+            -- their format, so textPadding is the only manual size knob. The
+            -- retired textWidth/textHeight pair is stripped from saved data
+            -- by StripRetiredTextSizeKeys in Core/Migrations.lua.
+            textPadding = 4,
             textFormat = "{name}  {status}",
             textFont = "Friz Quadrata TT",
             textFontSize = 12,
@@ -1056,16 +1059,9 @@ ST.OVERRIDE_SECTIONS = {
         modes = {bars = true},
     },
     -- Text Mode
-    textDimensions = {
-        label = "Text Dimensions",
-        keys = {"textWidth", "textHeight", "showTextGroupHeader", "textHeaderFontSize", "textHeaderFontColor"},
-        modes = {text = true},
-    },
-    textFormat = {
-        label = "Format String",
-        keys = {"textFormat"},
-        modes = {text = true},
-    },
+    -- (No textFormat section: the per-entry format override is the flat
+    -- buttonData.textFormat field, edited inline on the Overrides tab, and
+    -- never went through the styleOverrides section machinery.)
     textFont = {
         label = "Text Font",
         keys = {"textFont", "textFontSize", "textFontOutline", "textAlignment", "textShadow"},

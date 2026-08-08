@@ -896,6 +896,77 @@ local function StripRetiredSwipeEdgeKeys(profile)
     end
 end
 
+-- 12.1 text-panel auto-sizing retirement: a text entry now measures a
+-- worst-case render of its own format, font and padding, so the manual
+-- textWidth / textHeight pair has nothing left to size and no runtime reader.
+-- textPadding is the only manual size knob that survives. Deleting the keys
+-- rather than remapping them keeps this pass a no-op on migrated data, so
+-- import-driven re-runs can never resurrect a size the layout no longer obeys.
+local RETIRED_TEXT_SIZE_KEYS = { "textWidth", "textHeight" }
+
+-- Only a value the user actually moved earns the notice; the shipped defaults
+-- materialize into every profile and every exported string, so treating those
+-- as a change would print for people who never touched the sliders.
+local RETIRED_TEXT_SIZE_DEFAULTS = { textWidth = 200, textHeight = 20 }
+
+local function StripRetiredTextSizeKeysFromStyle(style)
+    if type(style) ~= "table" then
+        return false
+    end
+    local hadCustomSize = false
+    for _, key in ipairs(RETIRED_TEXT_SIZE_KEYS) do
+        local value = rawget(style, key)
+        if value ~= nil then
+            if value ~= RETIRED_TEXT_SIZE_DEFAULTS[key] then
+                hadCustomSize = true
+            end
+            style[key] = nil
+        end
+    end
+    return hadCustomSize
+end
+
+local function StripRetiredTextSizeKeys(profile)
+    if type(profile) ~= "table" then
+        return false
+    end
+
+    local hadCustomSize = StripRetiredTextSizeKeysFromStyle(profile.globalStyle)
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            if type(group) == "table" then
+                if StripRetiredTextSizeKeysFromStyle(group.style) then
+                    hadCustomSize = true
+                end
+                if type(group.buttons) == "table" then
+                    for _, buttonData in ipairs(group.buttons) do
+                        if type(buttonData) == "table"
+                            and StripRetiredTextSizeKeysFromStyle(buttonData.styleOverrides) then
+                            hadCustomSize = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if type(profile.groupSettingPresets) == "table" then
+        for _, presetStore in pairs(profile.groupSettingPresets) do
+            if type(presetStore) == "table" then
+                for _, presetData in pairs(presetStore) do
+                    if type(presetData) == "table"
+                        and StripRetiredTextSizeKeysFromStyle(presetData.style) then
+                        hadCustomSize = true
+                    end
+                end
+            end
+        end
+    end
+
+    return hadCustomSize
+end
+
 local RETIRED_PROFILE_FLAGS = { "autoAddPrefs", "cdmHidden" }
 
 local function ClearRetiredProfileFlags(profile)
@@ -2437,6 +2508,9 @@ function CooldownCompanion:RunAllMigrations()
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
     BackfillAuraDurationSwipeSettings(self.db and self.db.profile, checkpointState and checkpointState.auraDurationSwipe)
     StripRetiredSwipeEdgeKeys(self.db and self.db.profile)
+    if StripRetiredTextSizeKeys(self.db and self.db.profile) then
+        self:Print("Updated for 12.1: text panels now size themselves from their format and font. Use Padding for breathing room.")
+    end
     MigrateAuraTrackingRebuild(self, self.db and self.db.profile)
     MigrateAuraGroupScopeIdentity(self, self.db and self.db.profile)
     MigrateAuraGlowRebuild(self, self.db and self.db.profile)

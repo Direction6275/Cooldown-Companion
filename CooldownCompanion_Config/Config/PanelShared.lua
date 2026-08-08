@@ -15,6 +15,7 @@ local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local ResolveViewerChildForSpellDisplay = ST.ResolveViewerChildForSpellDisplay
 local NotifyTutorialAction = ST._NotifyTutorialAction
 local SelectConfigPanel = ST._SelectConfigPanel
+local SelectConfigButton = ST._SelectConfigButton
 local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
 local ClearConfigPanelSelection = ST._ClearConfigPanelSelection
 local BuildCDMPanelSourceData = ST._BuildCDMPanelSourceData
@@ -614,6 +615,57 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
     UIDropDownMenu_Initialize(CS.buttonContextMenu, function(self, level, menuList)
         level = level or 1
         if level == 1 then
+            local sourceGroup = CooldownCompanion.db.profile.groups[sourceGroupId]
+
+            -- A text panel IS its format string, so the editor that owns it
+            -- leads the menu. The editor is config surface now rather than a
+            -- popout, so this is navigation: an entry already carrying its own
+            -- override lands on its Format Override section, everything else
+            -- on the panel's Format tab.
+            if sourceGroup and sourceGroup.displayMode == "text" then
+                local formatInfo = UIDropDownMenu_CreateInfo()
+                formatInfo.text = "Edit Format..."
+                formatInfo.notCheckable = true
+                formatInfo.func = function()
+                    CloseDropDownMenus()
+                    if entryData.textFormat then
+                        -- Entry scope. force: this names an entry, so it must
+                        -- end selected even if clicking it would normally
+                        -- toggle the selection off.
+                        if SelectConfigButton then
+                            SelectConfigButton(sourceGroupId, sourceIndex, { force = true })
+                        end
+                        CS.buttonSettingsTab = "overrides"
+                        -- The destination is a collapsible row-grammar section
+                        -- keyed per entry, so landing on the tab with it
+                        -- collapsed would show a header and nothing else.
+                        if type(CS.collapsedSections) == "table" then
+                            CS.collapsedSections[sourceGroupId .. "_" .. sourceIndex
+                                .. "_override_textFormat"] = nil
+                        end
+                    else
+                        -- Panel scope. The panel tab keeps any entry selected
+                        -- beside it, so the selection is only moved when the
+                        -- menu came from a panel that is not the selected one.
+                        if CS.selectedGroup ~= sourceGroupId then
+                            SelectConfigPanel(sourceGroupId, {
+                                containerId = sourceGroup.parentContainerId,
+                            })
+                        end
+                        if ST._UnifiedRowSetScope then
+                            ST._UnifiedRowSetScope("primary")
+                        end
+                        CS.selectedTab = "format"
+                        CS.panelSettingsTab = "format"
+                        -- A deliberate destination, so it outranks a display
+                        -- mode's own default landing tab.
+                        CS.panelSettingsTabExplicit = true
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+                UIDropDownMenu_AddButton(formatInfo, level)
+            end
+
             -- Disable / Enable button
             local toggleInfo = UIDropDownMenu_CreateInfo()
             toggleInfo.text = (entryData.enabled ~= false) and "Disable" or "Enable"
@@ -626,7 +678,6 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
             end
             UIDropDownMenu_AddButton(toggleInfo, level)
 
-            local sourceGroup = CooldownCompanion.db.profile.groups[sourceGroupId]
             if not (sourceGroup and sourceGroup.displayMode == "textures") then
                 local dupInfo = UIDropDownMenu_CreateInfo()
                 dupInfo.text = "Duplicate"

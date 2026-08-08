@@ -61,6 +61,12 @@ local function SetPreviewSplit(fraction)
 end
 
 local function HideEntrySurfaces(col3)
+    -- The entry Overrides tab can host a live format editor. These branches
+    -- hide the surface without re-selecting a tab, so nothing else would
+    -- settle its pending write or stop its animation driver.
+    if ST._ReleaseTextFormatOverrideEditor then
+        ST._ReleaseTextFormatOverrideEditor()
+    end
     if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
     if col3.bsPlaceholder then col3.bsPlaceholder:Hide() end
 end

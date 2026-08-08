@@ -213,6 +213,12 @@ ST._configState = {
     selectedContainerTab = "general",
     buttonSettingsTab = "settings",
     panelSettingsTab = "appearance",
+    -- Whether `selectedTab` above is an explicit choice — a tab the user
+    -- clicked, or one a route deliberately sent them to — rather than the
+    -- shipped default. Until it is, a text panel lands on its Format tab
+    -- instead of honoring it. Set beside every deliberate assignment of
+    -- selectedTab; the panel tab callback sets it for clicks.
+    panelSettingsTabExplicit = false,
     -- Which half of the unified tab row owns the settings surface while a
     -- detail cluster (entry, entry multi-select, attached bar, resource) is
     -- in it: "detail" (the default - selecting one zooms into it) or
@@ -643,6 +649,7 @@ local function SnapshotOtherClassLibraryState()
         peekedContainers = CopyConfigStateMap(CS.peekedContainers),
         selectedTab = CS.selectedTab,
         panelSettingsTab = CS.panelSettingsTab,
+        panelSettingsTabExplicit = CS.panelSettingsTabExplicit,
         selectedContainerTab = CS.selectedContainerTab,
         buttonSettingsTab = CS.buttonSettingsTab,
         unifiedRowScope = CS.unifiedRowScope,
@@ -680,6 +687,7 @@ local function RestoreOtherClassLibrarySnapshot()
     for id, expanded in pairs(snapshot.peekedContainers or {}) do CS.peekedContainers[id] = expanded end
     CS.selectedTab = snapshot.selectedTab
     CS.panelSettingsTab = snapshot.panelSettingsTab
+    CS.panelSettingsTabExplicit = snapshot.panelSettingsTabExplicit
     CS.selectedContainerTab = snapshot.selectedContainerTab
     CS.buttonSettingsTab = snapshot.buttonSettingsTab
     CS.unifiedRowScope = snapshot.unifiedRowScope

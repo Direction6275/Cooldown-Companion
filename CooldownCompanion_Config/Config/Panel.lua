@@ -215,9 +215,6 @@ local function OpenProfileWideFontWindow()
     if CS.CancelPickAuraTexture then
         CS.CancelPickAuraTexture()
     end
-    if ST._CloseFormatEditor then
-        ST._CloseFormatEditor()
-    end
     if CS.CloseSpellbookPanel then
         CS.CloseSpellbookPanel()
     end
@@ -257,9 +254,6 @@ local function OpenProfileWideBarTextureWindow()
     end
     if CS.CancelPickAuraTexture then
         CS.CancelPickAuraTexture()
-    end
-    if ST._CloseFormatEditor then
-        ST._CloseFormatEditor()
     end
     if CS.CloseSpellbookPanel then
         CS.CloseSpellbookPanel()
@@ -865,9 +859,6 @@ local function ReanchorConfigSideWindows()
     if ST._ReanchorAdvancedSettingsPanels then
         ST._ReanchorAdvancedSettingsPanels()
     end
-    if ST._ReanchorFormatEditorWindow then
-        ST._ReanchorFormatEditorWindow()
-    end
 end
 
 local function SaveConfigWindowGeometry(content)
@@ -1123,7 +1114,28 @@ local function CreateConfigPanel()
         if CancelFirstIconPanelTutorial then
             CancelFirstIconPanelTutorial(isCollapsing and "config_collapsed" or "config_hidden")
         end
+        -- The text Format tab commits typing on a debounce, so a close mid-word
+        -- has a write still pending. Flush before the collapse guard: collapsing
+        -- keeps the tab built, so its editor must stay alive, but the pending
+        -- write is settled either way.
+        if ST._FlushTextFormatTabCommit then
+            ST._FlushTextFormatTabCommit()
+        end
+        -- The entry Overrides tab hosts the same editor against an entry's
+        -- override, on the same debounce, for the same reason.
+        if ST._FlushTextFormatOverrideCommit then
+            ST._FlushTextFormatOverrideCommit()
+        end
         if isCollapsing then return end
+        -- Truly closing: the next open runs RefreshConfigPanel, which rebuilds
+        -- the tab and its editor, so drop this one's animation driver and any
+        -- confirmation it left standing.
+        if ST._ReleaseTextFormatTabEditor then
+            ST._ReleaseTextFormatTabEditor()
+        end
+        if ST._ReleaseTextFormatOverrideEditor then
+            ST._ReleaseTextFormatOverrideEditor()
+        end
         if frame.HideChangelogOverlay then
             frame.HideChangelogOverlay()
         end
@@ -2007,6 +2019,19 @@ local function CreateConfigPanel()
     bsTabGroup:SetLayout("Fill")
 
     bsTabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+        -- Both text-format editors are settled here, before anything else:
+        -- the entry Overrides one because ReleaseChildren below hands its
+        -- container frame back to the pool, and the panel Format tab one
+        -- because selecting an entry tab hands the settings surface to entry
+        -- scope. A controller is only ever created inside this callback or the
+        -- panel tabs' twin, and both release both, so the two are never live
+        -- at once. Release is idempotent.
+        if ST._ReleaseTextFormatOverrideEditor then
+            ST._ReleaseTextFormatOverrideEditor()
+        end
+        if ST._ReleaseTextFormatTabEditor then
+            ST._ReleaseTextFormatTabEditor()
+        end
         local previousTab = col3._activeButtonSettingsTab
         local tabChanged = previousTab ~= nil and previousTab ~= tab
         -- Selecting an entry tab hands the settings surface back to entry

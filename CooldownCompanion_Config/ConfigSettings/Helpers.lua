@@ -1606,23 +1606,6 @@ end
 -- Each creates, configures, and adds to container; single-widget factories return the widget.
 ------------------------------------------------------------------------
 
--- Create a ColorPicker, configure it, wire callbacks, add to container.
--- onConfirmFn fires when the color picker closes; onChangeFn (optional)
--- fires during drag.
--- deferCommit (optional) keeps the drag value out of the bound table except
--- while onChangeFn runs — see SetupColorCallbacks.
-local function AddColorPicker(container, tbl, key, label, default, hasAlpha, onConfirmFn, onChangeFn, deferCommit)
-    local picker = AceGUI:Create("ColorPicker")
-    picker:SetLabel(label)
-    picker:SetHasAlpha(hasAlpha)
-    local c = tbl[key] or default
-    picker:SetColor(c[1], c[2], c[3], c[4])
-    picker:SetFullWidth(true)
-    SetupColorCallbacks(picker, tbl, key, onConfirmFn, onChangeFn, deferCommit)
-    container:AddChild(picker)
-    return picker
-end
-
 -- Create an anchor-point row using the pre-built list from State.lua.
 -- Optional label param overrides the default "Anchor" label.
 --
@@ -1848,10 +1831,9 @@ ST._CreateInfoButton = CreateInfoButton
 ST._BuildCompactModeControls = BuildCompactModeControls
 ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls
 ST._CreateCharacterCopyButton = CreateCharacterCopyButton
-ST._AddColorPicker = AddColorPicker
 ST._AddAnchorDropdown = AddAnchorDropdown
 -- Exposed so the row-grammar color row can bind the exact same
--- commit-on-close contract AddColorPicker uses (see RowWidgets.lua).
+-- commit-on-close contract described above (see RowWidgets.lua).
 ST._SetupColorCallbacks = SetupColorCallbacks
 
 -- Shared alpha UI builder for groups, containers, resource bars, and other

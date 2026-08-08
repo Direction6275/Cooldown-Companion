@@ -1084,8 +1084,8 @@ end
 --
 -- The swatch is a stock AceGUI ColorPicker child so the commit-on-close
 -- bridge in Helpers.lua (SetupColorCallbacks) keeps working unchanged: point
--- it at row.colorPicker and the callback contract is identical to
--- ST._AddColorPicker's. An optional toggle check sits to the swatch's left
+-- it at row.colorPicker and the callback contract is identical to the stock
+-- color pickers these rows replaced. An optional toggle check sits to the swatch's left
 -- for enable+color composites.
 ------------------------------------------------------------------------
 do
@@ -1422,8 +1422,8 @@ local function AddEditBoxRow(container, opts)
     return row
 end
 
--- opts.tbl/opts.key bind the color the same way ST._AddColorPicker does, so
--- conversion packets swap call sites 1:1 (including deferCommit).
+-- opts.tbl/opts.key bind the color the same way the stock color pickers they
+-- replaced did, so conversion packets swap call sites 1:1 (incl. deferCommit).
 local function AddColorRow(container, opts)
     local row = AceGUI:Create(COLOR_ROW_TYPE)
     ApplyCommonRowOptions(row, opts)

@@ -113,7 +113,7 @@ local function MakeBarCooldownTextAdvancedDescriptor()
             }, flipTimeRow))
 
             AddFontControls(panel, style, "cooldown", {sizeMin = 6, sizeMax = 24}, refreshStyle, { row = true })
-            -- deferCommit is deliberately absent, matching the AddColorPicker
+            -- deferCommit is deliberately absent, matching the stock color-picker
             -- call this row replaced.
             AddColorRow(panel, {
                 label = "Font Color",
@@ -365,7 +365,7 @@ local function BuildBarAppearanceTab(container, group, style)
         })
 
         AddFontControls(panel, style, "barName", {sizeMin = 6, sizeMax = 24, size = 10}, refreshStyle, { row = true })
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color-picker call
         -- this row replaced.
         AddColorRow(panel, {
             label = "Font Color",
@@ -427,7 +427,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- each states itself on hover so a narrower config column cannot silently
     -- swallow which charge state it names.
     --
-    -- deferCommit is deliberately absent throughout, matching the AddColorPicker
+    -- deferCommit is deliberately absent throughout, matching the stock color-picker
     -- calls these rows replaced.
     local function BuildBarChargeTextAdvanced(panel)
         AddFontControls(panel, style, "charge", {}, refreshStyle, { row = true })
@@ -485,7 +485,7 @@ local function BuildBarAppearanceTab(container, group, style)
             readyRow.editbox.Instructions:Hide()
         end
 
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color-picker call
         -- this row replaced.
         AddColorRow(panel, {
             label = "Ready Text Color",
@@ -532,7 +532,7 @@ local function BuildBarAppearanceTab(container, group, style)
         })
 
         -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color-picker call
         -- the color row replaced.
         local function BuildBarAuraTextAdvanced(panel)
             AddFontControls(panel, style, "auraText", { size = 12 }, refreshStyle, { row = true })
@@ -572,7 +572,7 @@ local function BuildBarAppearanceTab(container, group, style)
         -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
         local function BuildBarAuraStackTextAdvanced(panel)
             AddFontControls(panel, style, "auraStack", { size = 12 }, refreshStyle, { row = true })
-            -- deferCommit is deliberately absent, matching the AddColorPicker
+            -- deferCommit is deliberately absent, matching the stock color-picker
             -- call this row replaced.
             AddColorRow(panel, {
                 label = "Font Color",

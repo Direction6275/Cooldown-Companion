@@ -346,7 +346,7 @@ function HealthResource.AddEffectStyleControls(container, checkbox, health, opti
     -- both rows go straight onto the panel scroll. The toggle these belong to
     -- lives back on the tab, so neither indents.
     local function BuildEffectStyleAdvanced(panel)
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color-picker call
         -- this row replaced.
         AddColorRow(panel, {
             label = options.colorLabel,
@@ -555,7 +555,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
             applyBars()
         end)
 
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color-picker call
         -- this row replaced. onChange is new: it is the only path that fires
         -- while the picker is open, and the canvas tracks the colour there.
         AddColorRow(panel, {
@@ -700,7 +700,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
         end)
 
         -- deferCommit and onChange are deliberately absent, matching the
-        -- AddColorPicker call this row replaced.
+        -- stock color-picker call this row replaced.
         AddColorRow(panel, {
             label = "Text Color",
             tbl = resSettings,
@@ -1925,7 +1925,7 @@ local function AddThresholdTickEntryEditor(panel, options)
         local proxy = {
             [proxyKey] = type(entry.color) == "table" and CopyTable(entry.color) or CopyTable(options.defaultColor),
         }
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color-picker call
         -- this row replaced: the bound table IS the throwaway proxy, so a drag
         -- value resting in it cannot reach a live renderer.
         AddColorRow(panel, {

@@ -1,6 +1,13 @@
 --[[
     CooldownCompanion - ConfigSettings/FormatEditor.lua
-    Popout window for editing text-mode format strings with syntax highlighting and live preview.
+    The text-mode format editor: syntax highlighting, validation, token and
+    conditional pickers. Built into whichever config surface hosts it (the
+    panel's Format tab, an entry's Format Override section) through the
+    component below; this file owns no window of its own.
+
+    There is no scenario preview here: the pinned live mirror above the config
+    tabs shows the real panel rendering the real format, so the editor's job
+    ends at the text.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -10,38 +17,10 @@ local CS = ST._configState
 
 local ParseFormatString = ST._ParseFormatString
 local CreateInfoButton = ST._CreateInfoButton
-local FormatTime = CooldownCompanion.FormatTime
-local AddColorPicker = ST._AddColorPicker
 
--- Module-level reference for lifecycle management
-local formatEditorFrame = nil
-
-local FORMAT_EDITOR_WINDOW_WIDTH = 400
-
--- Follows the shared config side-placement rule (Panel.lua): right when it
--- fits, left when only the left has room, else slid on-screen over the
--- config. The config's geometry hooks re-run this after a move or resize.
-local function AnchorFormatEditorWindow()
-    local windowWidget = CS.formatEditorFrame
-    local configFrame = CS.configFrame
-    if not (windowWidget and configFrame and configFrame.frame and configFrame.frame:IsShown()) then
-        return
-    end
-    local wf = windowWidget.frame
-    wf:ClearAllPoints()
-    local side, xOff = "right", 4
-    if ST._ComputeConfigSidePlacement then
-        side, xOff = ST._ComputeConfigSidePlacement(wf, FORMAT_EDITOR_WINDOW_WIDTH)
-    end
-    if side == "left" then
-        wf:SetPoint("TOPRIGHT", configFrame.frame, "TOPLEFT", xOff, 0)
-    else
-        wf:SetPoint("TOPLEFT", configFrame.frame, "TOPRIGHT", xOff, 0)
-    end
-end
-ST._ReanchorFormatEditorWindow = AnchorFormatEditorWindow
-
--- Token list for insert buttons
+-- Token list for insert buttons. Order is the order the buttons appear in.
+-- No {aura} button: text panels are aura-blind on 12.1 (see the advisory
+-- below), so the token is only ever reached through an older saved format.
 local TOKEN_LIST = {"name", "time", "charges", "maxcharges", "stacks", "keybind", "status", "icon", "br"}
 
 -- Tokens available as conditional targets.
@@ -49,6 +28,69 @@ local COND_TOKEN_LIST = {}
 local COND_TOKEN_ORDER = {"time", "available", "charges", "maxcharges", "missingcharges", "zerocharges", "stacks", "keybind", "proc", "unusable", "oor", "incombat"}
 for _, t in ipairs(COND_TOKEN_ORDER) do
     COND_TOKEN_LIST[t] = t
+end
+
+-- Mirrors DEFAULT_TEXT_FORMAT in ButtonFrame/TextMode.lua.
+local DEFAULT_TEXT_FORMAT = "{name}  {status}"
+
+-- Plain-language description of each conditional, shown under the
+-- "Show Only When..." buttons. The wording tracks EvaluateTokenPresence in
+-- ButtonFrame/TextMode.lua (what makes the condition TRUE), not what the
+-- same-named value token prints.
+local COND_TOKEN_HELP = {
+    time = "Wraps the format so that part only shows while the entry is on cooldown.",
+    available = "Wraps the format so that part only shows while the entry is off cooldown.",
+    charges = "Wraps the format so that part only shows for entries that use charges.",
+    maxcharges = "Wraps the format so that part only shows while every charge is ready.",
+    missingcharges = "Wraps the format so that part only shows while recharging with a charge still ready.",
+    zerocharges = "Wraps the format so that part only shows while no charges are ready.",
+    stacks = "Wraps the format so that part only shows while there is a stack or item count.",
+    keybind = "Wraps the format so that part only shows while the entry has a keybind.",
+    proc = "Wraps the format so that part only shows while the spell has a proc highlight.",
+    unusable = "Wraps the format so that part only shows while the entry is not usable.",
+    oor = "Wraps the format so that part only shows while the target is out of range.",
+    incombat = "Wraps the format so that part only shows while you are in combat.",
+}
+
+-- Starter formats for the "Start From an Example" chips. Every string is
+-- written in the parser's grammar (ButtonFrame/TextMode.lua) and validates
+-- with no warnings.
+local FORMAT_TEMPLATES = {
+    { label = "Name + Status",    format = DEFAULT_TEXT_FORMAT },
+    { label = "Time Only",        format = "{time}" },
+    { label = "Charges Tracker",  format = "{name}  {charges}/{maxcharges}" },
+    { label = "Hide When Ready",  format = "{?time}{name}  {time}{/time}" },
+    { label = "Pulse When Ready", format = "{?available}{pulse}{name}{/pulse}{/available}{?time}{name}  {time}{/time}" },
+    { label = "Two Lines",        format = "{name}{br}{status}" },
+    { label = "Stacks Watch",     format = "{name}  {stacks}" },
+}
+
+-- Overwriting hand-written work is the one destructive thing a chip can do,
+-- so it goes through the config's normal confirmation shape. The popup is
+-- raised above the editor window the same way every other config popup is.
+local TEMPLATE_CONFIRM_POPUP = "CDC_FORMAT_TEMPLATE_OVERWRITE"
+
+StaticPopupDialogs[TEMPLATE_CONFIRM_POPUP] = {
+    text = "Replace the current format with the %s example?\n\nThe format you have now is discarded.",
+    button1 = "Replace",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.apply then
+            data.apply()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+local function ShowTemplateConfirm(label, applyFn)
+    local showFn = CS and CS.ShowPopupAboveConfig
+    if showFn then
+        return showFn(TEMPLATE_CONFIRM_POPUP, label, { apply = applyFn })
+    end
+    return StaticPopup_Show(TEMPLATE_CONFIRM_POPUP, label, nil, { apply = applyFn })
 end
 
 ------------------------------------------------------------------------
@@ -262,6 +304,46 @@ local function ValidateFormat(segments)
 end
 
 ------------------------------------------------------------------------
+-- AURA ADVISORIES
+--
+-- Everything above is malformed-format territory. These are advisories: the
+-- format still renders, it just will not do what the user meant. They ride
+-- the same label, tinted so the two read apart without a severity system.
+--
+-- All three concern the same fact: a text panel cannot see aura state on
+-- 12.1, so {aura} prints nothing and {?aura} can never be true
+-- (EvaluateTokenPresence in ButtonFrame/TextMode.lua). The tokens still
+-- parse so an older saved format keeps its shape instead of degrading to
+-- literal braces.
+------------------------------------------------------------------------
+local ADVISORY_COLOR = "|cffffcc66"
+
+local function AddAdvisory(warnings, text)
+    warnings[#warnings + 1] = ADVISORY_COLOR .. text .. "|r"
+end
+
+local function AppendAuraAdvisories(warnings, segments)
+    local saidInert, saidNeverShows, saidAlwaysShows = false, false, false
+
+    for _, seg in ipairs(segments) do
+        if seg.type == "token" and not seg.unknown and seg.value == "aura" then
+            if not saidInert then
+                saidInert = true
+                AddAdvisory(warnings, "{aura} shows nothing on this game version.")
+            end
+        elseif seg.type == "cond_start" and seg.value == "aura" then
+            if seg.negated and not saidAlwaysShows then
+                saidAlwaysShows = true
+                AddAdvisory(warnings, "{!aura} is always true on this game version, so that part always shows.")
+            elseif not seg.negated and not saidNeverShows then
+                saidNeverShows = true
+                AddAdvisory(warnings, "{?aura} can never be true on this game version, so that part never shows.")
+            end
+        end
+    end
+end
+
+------------------------------------------------------------------------
 -- COLOR CODE CURSOR MAPPING
 -- Maps cursor positions between raw text and colorized text that has
 -- |cXXXXXXXX...|r escape sequences injected by BuildSyntaxString.
@@ -309,52 +391,11 @@ local function RawToColorizedPos(rawPos, colorizedText)
 end
 
 ------------------------------------------------------------------------
--- PREVIEW SUBSTITUTION
--- Simplified substitution that uses mock data instead of a real button.
+-- COLOR TAG RESOLUTION
+-- Maps a {cooldown}/{ready}/{active}/{custom} tag name onto the style color
+-- the text renderer paints that span with. Only the insert-button swatches
+-- read it now, through GetStyleTagColor below.
 ------------------------------------------------------------------------
-
-local function WrapPreviewColor(text, color)
-    if not text or text == "" then return "" end
-    return string.format("|cff%02x%02x%02x%s|r",
-        math.floor(color[1] * 255),
-        math.floor(color[2] * 255),
-        math.floor(color[3] * 255),
-        text)
-end
-
-local function IsAuraOnlyPreviewTarget(previewTarget)
-    return type(previewTarget) == "table"
-        and previewTarget.type == "spell"
-        and previewTarget.addedAs == "aura"
-        and previewTarget.auraTracking == true
-end
-
-local function EvaluateMockPresence(tokenName, mockState)
-    if tokenName == "time" then return mockState.time and mockState.time > 0
-    elseif tokenName == "charges" then return mockState.hasCharges == true
-    elseif tokenName == "maxcharges" then
-        if not mockState.hasCharges then return false end
-        return mockState.charges ~= nil and mockState.maxCharges ~= nil
-            and mockState.charges == mockState.maxCharges
-    elseif tokenName == "missingcharges" then
-        if not mockState.hasCharges then return false end
-        return mockState.charges ~= nil and mockState.maxCharges ~= nil
-            and mockState.charges > 0 and mockState.charges < mockState.maxCharges
-    elseif tokenName == "zerocharges" then
-        if not mockState.hasCharges then return false end
-        return mockState.charges ~= nil and mockState.charges == 0
-    elseif tokenName == "stacks" then return mockState.stacks and mockState.stacks > 0
-    elseif tokenName == "aura" then return mockState.auraTime and mockState.auraTime > 0
-    elseif tokenName == "keybind" then return mockState.keybind and mockState.keybind ~= ""
-    elseif tokenName == "proc" then return mockState.proc == true
-    elseif tokenName == "unusable" then return mockState.unusable == true
-    elseif tokenName == "oor" then return mockState.oor == true
-    elseif tokenName == "available" then return not mockState.time or mockState.time <= 0
-    elseif tokenName == "incombat" then return mockState.incombat == true
-    end
-    return false
-end
-
 local function ResolvePreviewColor(name, cdColor, readyColor, auraColor, customColor)
     if name == "cooldown" then return cdColor
     elseif name == "ready" then return readyColor
@@ -363,343 +404,134 @@ local function ResolvePreviewColor(name, cdColor, readyColor, auraColor, customC
     end
 end
 
-local function PreviewSubstitute(segments, style, mockState)
-    local parts = {}
-    local baseColor = style.textFontColor or {1, 1, 1, 1}
-    local cdColor = style.textCooldownColor or {1, 0.3, 0.3, 1}
-    local readyColor = style.textReadyColor or {0.2, 1.0, 0.2, 1}
-    local auraColor = style.textAuraColor or {0, 0.925, 1, 1}
-    local customColor = style.textCustomColor or {1, 0.82, 0, 1}
-    local chargeFull = style.chargeFontColor or {1, 1, 1, 1}
-    local chargeMissing = style.chargeFontColorMissing or {1, 1, 1, 1}
-    local chargeZero = style.chargeFontColorZero or {1, 1, 1, 1}
+-- Fallbacks for the swatch lookup below. Read-only: never write an index.
+local DEFAULT_TAG_COOLDOWN_COLOR = {1, 0.3, 0.3, 1}
+local DEFAULT_TAG_READY_COLOR    = {0.2, 1.0, 0.2, 1}
+local DEFAULT_TAG_ACTIVE_COLOR   = {0, 0.925, 1, 1}
+local DEFAULT_TAG_CUSTOM_COLOR   = {1, 0.82, 0, 1}
 
-    local skipDepth = 0
-    local pulseDepth = 0
-    local pulseActive = false
-    local auraActive = mockState.auraTime and mockState.auraTime > 0
-    local auraOnly = mockState.auraOnly == true
-    local timeVal = mockState.time
-    local auraVal = mockState.auraTime
-
-    local colorOverride = nil
-    local colorStack = {}
-
-    for _, seg in ipairs(segments) do
-        if seg.type == "cond_start" then
-            if skipDepth > 0 then
-                skipDepth = skipDepth + 1
-            else
-                local present = EvaluateMockPresence(seg.value, mockState)
-                local shouldShow = (seg.negated and not present) or (not seg.negated and present)
-                if not shouldShow then
-                    skipDepth = 1
-                end
-            end
-        elseif seg.type == "cond_end" then
-            if skipDepth > 0 then
-                skipDepth = skipDepth - 1
-            end
-        elseif skipDepth > 0 then
-            -- inside false conditional
-        elseif seg.type == "effect_start" then
-            if seg.value == "pulse" then pulseDepth = pulseDepth + 1 end
-        elseif seg.type == "effect_end" then
-            if seg.value == "pulse" and pulseDepth > 0 then pulseDepth = pulseDepth - 1 end
-        elseif seg.type == "color_start" then
-            colorStack[#colorStack + 1] = colorOverride
-            colorOverride = ResolvePreviewColor(seg.value, cdColor, readyColor, auraColor, customColor)
-        elseif seg.type == "color_end" then
-            colorOverride = colorStack[#colorStack]
-            colorStack[#colorStack] = nil
-        elseif seg.type == "literal" then
-            if colorOverride then
-                parts[#parts + 1] = WrapPreviewColor(seg.value, colorOverride)
-            else
-                parts[#parts + 1] = seg.value
-            end
-            if pulseDepth > 0 then pulseActive = true end
-        elseif seg.unknown then
-            -- unknown tokens render empty
-        else
-            local prevPartCount = #parts
-            local token = seg.value
-            if token == "name" then
-                parts[#parts + 1] = WrapPreviewColor(mockState.name or "Fireball", colorOverride or baseColor)
-            elseif token == "time" then
-                if timeVal and timeVal > 0 then
-                    parts[#parts + 1] = WrapPreviewColor(FormatTime(timeVal, style), colorOverride or cdColor)
-                end
-            elseif token == "charges" then
-                if mockState.charges then
-                    local cc
-                    if mockState.charges == mockState.maxCharges then cc = chargeFull
-                    elseif mockState.charges == 0 then cc = chargeZero
-                    else cc = chargeMissing end
-                    parts[#parts + 1] = WrapPreviewColor(tostring(mockState.charges), colorOverride or cc)
-                end
-            elseif token == "maxcharges" then
-                if mockState.maxCharges and mockState.maxCharges > 1 then
-                    parts[#parts + 1] = WrapPreviewColor(tostring(mockState.maxCharges), colorOverride or baseColor)
-                end
-            elseif token == "stacks" then
-                if mockState.stacks and mockState.stacks > 0 then
-                    parts[#parts + 1] = WrapPreviewColor(tostring(mockState.stacks), colorOverride or baseColor)
-                end
-            elseif token == "aura" then
-                if auraVal and auraVal > 0 then
-                    parts[#parts + 1] = WrapPreviewColor(FormatTime(auraVal, style), colorOverride or auraColor)
-                end
-            elseif token == "keybind" then
-                if mockState.keybind and mockState.keybind ~= "" then
-                    parts[#parts + 1] = WrapPreviewColor(mockState.keybind, colorOverride or baseColor)
-                end
-            elseif token == "status" then
-                if auraActive then
-                    if auraVal and auraVal > 0 then
-                        parts[#parts + 1] = WrapPreviewColor(FormatTime(auraVal, style), colorOverride or auraColor)
-                    else
-                        parts[#parts + 1] = WrapPreviewColor("Active", colorOverride or auraColor)
-                    end
-                elseif auraOnly then
-                    -- Aura-only entries do not have a ready/cooldown fallback.
-                elseif timeVal and timeVal > 0 then
-                    parts[#parts + 1] = WrapPreviewColor(FormatTime(timeVal, style), colorOverride or cdColor)
-                else
-                    parts[#parts + 1] = WrapPreviewColor(style.textReadyText or "Ready", colorOverride or readyColor)
-                end
-            elseif token == "icon" then
-                if mockState.icon then
-                    parts[#parts + 1] = string.format("|T%s:0|t", tostring(mockState.icon))
-                end
-            elseif token == "br" then
-                parts[#parts + 1] = "\n"
-            end
-            if pulseDepth > 0 and #parts > prevPartCount then
-                pulseActive = true
-            end
-        end
-    end
-
-    return table.concat(parts), pulseActive
+-- The palette color a {cooldown}/{ready}/{active}/{custom} tag resolves to
+-- for one style, using the same fallbacks the text renderer falls back to so
+-- a swatch and the rendered panel can never disagree. Always called with the
+-- editor's CURRENT style, never a style captured when the window was first
+-- built.
+local function GetStyleTagColor(style, name)
+    return ResolvePreviewColor(name,
+        style.textCooldownColor or DEFAULT_TAG_COOLDOWN_COLOR,
+        style.textReadyColor or DEFAULT_TAG_READY_COLOR,
+        style.textAuraColor or DEFAULT_TAG_ACTIVE_COLOR,
+        style.textCustomColor or DEFAULT_TAG_CUSTOM_COLOR)
 end
 
 ------------------------------------------------------------------------
--- RESOLVE BUTTON NAME
--- Gets the name from the currently selected button in config, or fallback.
+-- COLOR TAG SWATCHES
+-- A stock AceGUI Button with a palette square inside it, left of the label.
+-- AceGUI pools Button frames, so both the textures and the moved fontstring
+-- anchors have to be undone on release or the next unrelated Button in the
+-- config wears this one's swatch.
 ------------------------------------------------------------------------
-local function GetPreviewName()
-    if CS.selectedGroup and CS.selectedButton then
-        local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-        if group and group.buttons and group.buttons[CS.selectedButton] then
-            local bd = group.buttons[CS.selectedButton]
-            local name = bd.customName or bd.name
-            if not bd.customName and bd.type == "spell" then
-                -- Resolve base-stored ID to current override for display name.
-                local raw = C_Spell.GetOverrideSpell(bd.id)
-                local displayId = (raw and raw ~= 0) and raw or bd.id
-                local spellName = C_Spell.GetSpellName(displayId)
-                if spellName then name = spellName end
-            elseif CooldownCompanion.IsEquipmentSlotEntry
-                and CooldownCompanion.IsEquipmentSlotEntry(bd) then
-                name = CooldownCompanion.GetEquipmentSlotDisplayName
-                    and CooldownCompanion.GetEquipmentSlotDisplayName(bd) or name
-            elseif not bd.customName and bd.type == "item" then
-                local itemName = C_Item.GetItemNameByID(bd.id)
-                if itemName then name = itemName end
-            end
-            return name or "Fireball"
-        end
+local COLOR_SWATCH_SIZE = 12
+local COLOR_SWATCH_INSET = 6
+local COLOR_BUTTON_TEXT_INSET = COLOR_SWATCH_INSET + COLOR_SWATCH_SIZE + 4
+local COLOR_BUTTON_RIGHT_INSET = 8
+
+-- Stock anchors from AceGUIWidget-Button.lua's constructor.
+local BUTTON_TEXT_STOCK_INSET = 15
+
+local function ReleaseColorSwatch(button)
+    local swatch = button._cdcColorSwatch
+    if swatch then
+        swatch.border:Hide()
+        swatch.fill:Hide()
     end
-    return "Fireball"
+    local text = button.text
+    if text then
+        text:ClearAllPoints()
+        text:SetPoint("TOPLEFT", BUTTON_TEXT_STOCK_INSET, -1)
+        text:SetPoint("BOTTOMRIGHT", -BUTTON_TEXT_STOCK_INSET, 1)
+    end
 end
 
-local function GetPreviewIcon()
-    if CS.selectedGroup and CS.selectedButton then
-        local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-        if group and group.buttons and group.buttons[CS.selectedButton] then
-            local bd = group.buttons[CS.selectedButton]
-            if bd.type == "spell" then
-                local info = C_Spell.GetSpellTexture(bd.id)
-                if info then return info end
-            elseif CooldownCompanion.IsEquipmentSlotEntry
-                and CooldownCompanion.IsEquipmentSlotEntry(bd) then
-                local effectiveItem = CooldownCompanion.ResolveEffectiveItem
-                    and CooldownCompanion.ResolveEffectiveItem(bd, true) or nil
-                if effectiveItem and effectiveItem.trackable and effectiveItem.icon then
-                    return effectiveItem.icon
-                end
-            elseif bd.type == "item" then
-                local tex = C_Item.GetItemIconByID(bd.id)
-                if tex then return tex end
-            end
-        end
-    end
-    return 135810  -- Fireball icon
-end
+-- Call after the button's final text is set: the width is measured from it.
+local function AttachColorSwatch(button)
+    local frame = button.frame
+    local swatch = button._cdcColorSwatch
+    if not swatch then
+        local border = frame:CreateTexture(nil, "OVERLAY")
+        border:SetColorTexture(0, 0, 0, 1)
+        border:SetSize(COLOR_SWATCH_SIZE, COLOR_SWATCH_SIZE)
+        border:SetPoint("LEFT", frame, "LEFT", COLOR_SWATCH_INSET, 0)
 
-------------------------------------------------------------------------
--- DETECT USED TOKENS (value tokens + conditionals)
-------------------------------------------------------------------------
-local function DetectUsedTokens(segments)
-    local used = {}
-    for _, seg in ipairs(segments) do
-        if seg.type == "cond_start" then
-            used[seg.value] = true
-        elseif seg.type == "token" and not seg.unknown then
-            used[seg.value] = true
-        end
+        local fill = frame:CreateTexture(nil, "OVERLAY", nil, 1)
+        fill:SetPoint("TOPLEFT", border, "TOPLEFT", 1, -1)
+        fill:SetPoint("BOTTOMRIGHT", border, "BOTTOMRIGHT", -1, 1)
+
+        swatch = { border = border, fill = fill }
+        button._cdcColorSwatch = swatch
     end
-    return used
+    swatch.border:Show()
+    swatch.fill:Show()
+
+    local text = button.text
+    local textWidth = text:GetStringWidth()
+    text:ClearAllPoints()
+    text:SetPoint("TOPLEFT", COLOR_BUTTON_TEXT_INSET, -1)
+    text:SetPoint("BOTTOMRIGHT", -COLOR_BUTTON_RIGHT_INSET, 1)
+    button:SetWidth(textWidth + COLOR_BUTTON_TEXT_INSET + COLOR_BUTTON_RIGHT_INSET)
+
+    button:SetCallback("OnRelease", ReleaseColorSwatch)
+    return swatch.fill
 end
 
 ------------------------------------------------------------------------
--- BUILD MOCK STATES
+-- FORMAT EDITOR CONTENT
+-- Builds everything an editor shows between its title and its Save button
+-- into any AceGUI container, and returns a controller the host drives:
+--
+--   controller:SetTarget({ style, saveTarget, defaultFormat })
+--   controller:GetRawText()
+--   controller:Release()      -- safe to call twice
+--
+-- opts.target   initial target table, same shape as SetTarget's argument
+-- opts.onDirty  optional; called with the controller whenever the raw format
+--               string changes from typing, a starter chip, or an insert
+--
+-- Hosts carry their own bookkeeping in the same target table (the groupId they
+-- refresh through); the component reads only the three keys listed above.
+--
+-- The host owns the window or tab, the title, and EVERY commit: this component
+-- never writes to the profile and deliberately offers no commit method of its
+-- own. Both hosts debounce their write and end it at RefreshGroupFrame,
+-- because a commit path that reached RefreshConfigPanel would release the very
+-- editor being typed in and drop the cursor.
 ------------------------------------------------------------------------
-local EXTRA_ROW_COLOR = {0.6, 0.6, 0.6}
+local function BuildFormatEditorContent(container, opts)
+    opts = opts or {}
+    local controller = {}
 
--- Tokens that differentiate Ready/Cooldown states
-local CD_STATE_TRIGGERS = {
-    time = true, status = true, available = true,
-    charges = true, maxcharges = true, missingcharges = true, zerocharges = true,
-}
+    -- Editor state, declared before any section so every section below can
+    -- reach it. AceGUI's List layout follows AddChild order, so the order the
+    -- widgets are created in below IS the order they appear in: edit box,
+    -- validation, starter chips, then the insert sections.
+    --
+    -- The EditBox text carries |c...|r color codes for native rendering;
+    -- currentRawText is the actual format string the user is editing.
+    local initialTarget = opts.target or {}
+    local currentStyle = initialTarget.style or {}
+    local currentFormatTarget = initialTarget.saveTarget or currentStyle
+    local currentDefaultFormat = initialTarget.defaultFormat or DEFAULT_TEXT_FORMAT
+    local currentRawText = currentFormatTarget.textFormat or currentDefaultFormat
 
--- Tokens that differentiate Aura state
-local AURA_STATE_TRIGGERS = {
-    aura = true, status = true, stacks = true,
-}
+    local eb                    -- edit box; assigned with the widget below
+    local ApplyColorized        -- assigned once the edit box exists
+    local UpdateDisplay         -- assigned once the warning label exists
+    local RefreshColorSwatches  -- assigned once the color buttons exist
 
-local function BuildMockStates(style, segments, previewTarget)
-    local name = GetPreviewName()
-    local icon = GetPreviewIcon()
-    local states = {}
-    local auraOnly = IsAuraOnlyPreviewTarget(previewTarget)
-
-    if not segments then return states end
-
-    local used = DetectUsedTokens(segments)
-
-    -- Determine which base rows to show
-    local showCDStates = false
-    local showAura = false
-    for token in pairs(used) do
-        if CD_STATE_TRIGGERS[token] then showCDStates = true end
-        if AURA_STATE_TRIGGERS[token] then showAura = true end
-    end
-
-    if showCDStates and not auraOnly then
-        states[#states + 1] = {
-            label = WrapPreviewColor("Ready:", style.textReadyColor or {0.2, 1.0, 0.2, 1}),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, auraOnly = auraOnly },
-        }
-        states[#states + 1] = {
-            label = WrapPreviewColor("Cooldown:", style.textCooldownColor or {1, 0.3, 0.3, 1}),
-            state = { name = name, time = 83, charges = 1, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, auraOnly = auraOnly },
-        }
-    end
-    if showAura then
-        states[#states + 1] = {
-            label = WrapPreviewColor("Aura:", style.textAuraColor or {0, 0.925, 1, 1}),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 3, auraTime = 12.3, keybind = "F1", icon = icon, auraOnly = auraOnly },
-        }
-    end
-
-    -- Fallback: if no base rows but format has value tokens, show a generic preview
-    if #states == 0 then
-        local hasPreviewContent = false
-        for _, seg in ipairs(segments) do
-            if seg.type == "token" and not seg.unknown then
-                hasPreviewContent = true
-                break
-            elseif seg.type == "literal" and seg.value and seg.value:match("%S") then
-                hasPreviewContent = true
-                break
-            end
-        end
-        if hasPreviewContent then
-            states[#states + 1] = {
-                label = WrapPreviewColor("Preview:", EXTRA_ROW_COLOR),
-                state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, auraOnly = auraOnly },
-            }
+    local function NotifyDirty()
+        if opts.onDirty then
+            opts.onDirty(controller)
         end
     end
-
-    -- Extra rows for conditional-only tokens that need dedicated scenarios
-    if used["zerocharges"] then
-        states[#states + 1] = {
-            label = WrapPreviewColor("Zero Charges:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 83, charges = 0, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, auraOnly = auraOnly },
-        }
-    end
-    if used["proc"] then
-        states[#states + 1] = {
-            label = WrapPreviewColor("Proc:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, proc = true, auraOnly = auraOnly },
-        }
-    end
-    if used["unusable"] then
-        states[#states + 1] = {
-            label = WrapPreviewColor("Unusable:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, unusable = true, auraOnly = auraOnly },
-        }
-    end
-    if used["oor"] then
-        states[#states + 1] = {
-            label = WrapPreviewColor("Out of Range:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, oor = true, auraOnly = auraOnly },
-        }
-    end
-    if used["incombat"] then
-        states[#states + 1] = {
-            label = WrapPreviewColor("In Combat:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, incombat = true, auraOnly = auraOnly },
-        }
-    end
-
-    return states
-end
-
-------------------------------------------------------------------------
--- OPEN FORMAT EDITOR
-------------------------------------------------------------------------
-local function OpenFormatEditor(style, groupId, opts)
-    if CS.CloseAdvancedSettingsPanel then
-        CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
-    end
-    if CS.CloseProfileWideFontWindow then
-        CS.CloseProfileWideFontWindow()
-    end
-    if CS.CloseProfileWideBarTextureWindow then
-        CS.CloseProfileWideBarTextureWindow()
-    end
-    if CS.CloseSpellbookPanel then
-        CS.CloseSpellbookPanel()
-    end
-
-    -- If already open, bring to front and refresh
-    if formatEditorFrame then
-        formatEditorFrame:Show()
-        formatEditorFrame.frame:Raise()
-        if formatEditorFrame._refresh then
-            formatEditorFrame._refresh(style, groupId, opts)
-        end
-        return
-    end
-
-    local window = AceGUI:Create("Window")
-    window:SetTitle((opts and opts.title) or "Format String Editor")
-    window:SetWidth(FORMAT_EDITOR_WINDOW_WIDTH)
-    window:SetHeight(600)
-    window:SetLayout("List")
-    window:EnableResize(false)
-    window:PauseLayout()
-    formatEditorFrame = window
-    CS.formatEditorFrame = window
-    if CS.RegisterConfigDragAlphaFrame then
-        CS.RegisterConfigDragAlphaFrame(window.frame)
-    end
-
-    AnchorFormatEditorWindow()
 
     -- ================================================================
     -- EDIT BOX (MultiLineEditBox) with inline syntax coloring
@@ -711,19 +543,12 @@ local function OpenFormatEditor(style, groupId, opts)
     editGroup.button:Hide()  -- hide "Accept" button, we save on change
     editGroup.scrollBar:Hide()
     editGroup.scrollBG:SetPoint("TOPRIGHT", editGroup.frame, "TOPRIGHT", -4, -23)
-    window:AddChild(editGroup)
+    container:AddChild(editGroup)
 
-    local eb = editGroup.editBox
-
-    -- Track the raw (uncolored) format string separately.
-    -- The EditBox text contains |c...|r color codes for native rendering;
-    -- currentRawText is the actual format string the user is editing.
-    local currentFormatTarget = (opts and opts.saveTarget) or style
-    local currentDefaultFormat = (opts and opts.defaultFormat) or "{name}  {status}"
-    local currentRawText = currentFormatTarget.textFormat or currentDefaultFormat
+    eb = editGroup.editBox
 
     -- Helper: colorize raw text and set into EditBox, preserving cursor position.
-    local function ApplyColorized(rawText, rawCursorPos)
+    ApplyColorized = function(rawText, rawCursorPos)
         local colorized = BuildSyntaxString(ParseFormatString(rawText))
         local colorizedCursor = RawToColorizedPos(rawCursorPos, colorized)
         eb:SetText(colorized)
@@ -735,6 +560,9 @@ local function OpenFormatEditor(style, groupId, opts)
 
     -- ================================================================
     -- WARNING LABEL (below editbox, shows validation errors)
+    --
+    -- Stays immediately under the edit box: it comments on that box's
+    -- contents, so nothing may be inserted between the two.
     -- ================================================================
     local warningLabel = AceGUI:Create("Label")
     ST._ConfigureWrappedHelperLabel(warningLabel)
@@ -742,117 +570,94 @@ local function OpenFormatEditor(style, groupId, opts)
     warningLabel:SetFontObject(GameFontNormalSmall)
     warningLabel:SetColor(1, 0.4, 0.4)
     warningLabel:SetText("")
-    window:AddChild(warningLabel)
+    container:AddChild(warningLabel)
 
     -- ================================================================
-    -- PREVIEW SECTION (directly beneath edit box)
+    -- UPDATE FUNCTION
+    -- Everything that has to follow currentRawText or currentStyle: the
+    -- validation readout, and the palette swatches on the color buttons.
+    -- What the format actually LOOKS like is the live mirror's job.
     -- ================================================================
-    local previewHeading = AceGUI:Create("Heading")
-    previewHeading:SetText("Preview")
-    previewHeading.right:ClearAllPoints()
-    previewHeading.right:SetPoint("RIGHT", previewHeading.frame, "RIGHT", -3, 0)
-    previewHeading.right:SetPoint("LEFT", previewHeading.label, "RIGHT", 5, 0)
-    previewHeading:SetFullWidth(true)
-    window:AddChild(previewHeading)
-
-    local previewContainer = AceGUI:Create("SimpleGroup")
-    previewContainer:SetFullWidth(true)
-    previewContainer:SetLayout("List")
-    previewContainer:SetAutoAdjustHeight(true)
-    window:AddChild(previewContainer)
-
-    -- ================================================================
-    -- UPDATE FUNCTION (refreshes preview from currentRawText)
-    -- ================================================================
-    local currentStyle = style
-    local currentGroupId = groupId
-
-    local function UpdateDisplay()
+    UpdateDisplay = function()
         local segments = ParseFormatString(currentRawText)
-        local mockStates = BuildMockStates(currentStyle, segments, currentFormatTarget)
 
-        -- Rebuild preview rows
-        previewContainer:PauseLayout()
-        previewContainer:ReleaseChildren()
-        previewContainer:SetHeight(0)
-        local contentLabels = {}
-        local pulseFlags = {}
-        local anyPulse = false
-
-        if #mockStates == 0 then
-            local emptyLabel = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(emptyLabel)
-            emptyLabel:SetFullWidth(true)
-            emptyLabel:SetFontObject(GameFontDisableSmall)
-            emptyLabel:SetJustifyH("CENTER")
-            emptyLabel:SetText("|cff888888Nothing to preview|r")
-            previewContainer:AddChild(emptyLabel)
-        end
-
-        for i, mock in ipairs(mockStates) do
-            local rowGroup = AceGUI:Create("SimpleGroup")
-            rowGroup:SetFullWidth(true)
-            rowGroup:SetLayout("Flow")
-            rowGroup:SetAutoAdjustHeight(true)
-            previewContainer:AddChild(rowGroup)
-
-            local prefix = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(prefix)
-            prefix:SetRelativeWidth(0.25)
-            prefix:SetFontObject(GameFontHighlight)
-            prefix:SetText(mock.label)
-            rowGroup:AddChild(prefix)
-
-            local content = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(content)
-            content:SetRelativeWidth(0.75)
-            content:SetFontObject(GameFontHighlight)
-            rowGroup:AddChild(content)
-
-            local preview, hasPulse = PreviewSubstitute(segments, currentStyle, mock.state)
-            content:SetText(preview)
-
-            contentLabels[i] = content
-            pulseFlags[i] = hasPulse
-            if hasPulse then anyPulse = true end
-        end
-        previewContainer:ResumeLayout()
-        previewContainer:DoLayout()
-
-        -- Install or remove pulse animation OnUpdate
-        local rowCount = #mockStates
-        if anyPulse then
-            local wf = window.frame
-            wf._pulseElapsed = 0
-            wf:SetScript("OnUpdate", function(self, elapsed)
-                self._pulseElapsed = (self._pulseElapsed or 0) + elapsed
-                if self._pulseElapsed < (1 / 30) then return end
-                self._pulseElapsed = self._pulseElapsed - (1 / 30)
-                local alpha = 0.7 + 0.3 * math.sin(GetTime() * 2 * math.pi)
-                for idx = 1, rowCount do
-                    if pulseFlags[idx] and contentLabels[idx].label then
-                        contentLabels[idx].label:SetAlpha(alpha)
-                    elseif contentLabels[idx].label then
-                        contentLabels[idx].label:SetAlpha(1.0)
-                    end
-                end
-            end)
-        else
-            window.frame:SetScript("OnUpdate", nil)
+        -- Swatches follow currentStyle, so this also covers a _refresh that
+        -- retargets the editor at a different panel.
+        if RefreshColorSwatches then
+            RefreshColorSwatches()
         end
 
         local warnings = ValidateFormat(segments)
+        -- Runs after the structural pass so malformed-format errors always
+        -- read first.
+        AppendAuraAdvisories(warnings, segments)
         if #warnings > 0 then
             warningLabel:SetText(table.concat(warnings, "\n"))
         else
             warningLabel:SetText("")
         end
 
-        window:DoLayout()
+        container:DoLayout()
     end
 
-    -- Initial preview
+    -- Initial validation pass. RefreshColorSwatches is still nil here; the
+    -- color section paints its own swatches once it has built them.
     UpdateDisplay()
+
+    -- ================================================================
+    -- STARTER TEMPLATES
+    -- ================================================================
+    local templateHeading = AceGUI:Create("Heading")
+    templateHeading:SetText("Start From an Example")
+    templateHeading.right:ClearAllPoints()
+    templateHeading.right:SetPoint("RIGHT", templateHeading.frame, "RIGHT", -3, 0)
+    templateHeading.right:SetPoint("LEFT", templateHeading.label, "RIGHT", 5, 0)
+    templateHeading:SetFullWidth(true)
+    container:AddChild(templateHeading)
+
+    local templateGroup = AceGUI:Create("SimpleGroup")
+    templateGroup:SetFullWidth(true)
+    templateGroup:SetLayout("Flow")
+    templateGroup:SetAutoAdjustHeight(true)
+    container:AddChild(templateGroup)
+
+    -- A chip overwrites silently only when there is nothing of the user's to
+    -- lose: empty, still the default for this target, or already an example.
+    local function IsDisposableFormat(text)
+        if not text or text == "" then return true end
+        if text == currentDefaultFormat or text == DEFAULT_TEXT_FORMAT then return true end
+        for _, tpl in ipairs(FORMAT_TEMPLATES) do
+            if text == tpl.format then return true end
+        end
+        return false
+    end
+
+    -- Same path typing takes: raw text, recolorize, validation, swatches.
+    local function ApplyTemplate(formatString)
+        -- The confirmation popup can outlive the editor that opened it.
+        if controller.released then return end
+        currentRawText = formatString
+        ApplyColorized(currentRawText, #currentRawText)
+        UpdateDisplay()
+        eb:SetFocus()
+        NotifyDirty()
+    end
+
+    for _, tpl in ipairs(FORMAT_TEMPLATES) do
+        local chip = AceGUI:Create("Button")
+        chip:SetText(tpl.label)
+        chip:SetAutoWidth(true)
+        chip:SetCallback("OnClick", function()
+            if IsDisposableFormat(currentRawText) then
+                ApplyTemplate(tpl.format)
+            else
+                ShowTemplateConfirm(tpl.label, function()
+                    ApplyTemplate(tpl.format)
+                end)
+            end
+        end)
+        templateGroup:AddChild(chip)
+    end
 
     -- ================================================================
     -- INSERT HELPER (shared by token + conditional buttons)
@@ -869,15 +674,16 @@ local function OpenFormatEditor(style, groupId, opts)
         ApplyColorized(newRaw, rawCursor + cursorOffset)
         eb:SetFocus()
         UpdateDisplay()
+        NotifyDirty()
     end
 
     -- ================================================================
-    -- TOKEN INSERT BUTTONS
+    -- SHOW INFORMATION (value token inserts)
     -- ================================================================
     local tokenHeading = AceGUI:Create("Heading")
-    tokenHeading:SetText("Insert Token")
+    tokenHeading:SetText("Show Information")
     tokenHeading:SetFullWidth(true)
-    window:AddChild(tokenHeading)
+    container:AddChild(tokenHeading)
 
     local tokenInfo = CreateInfoButton(tokenHeading.frame, tokenHeading.label, "LEFT", "RIGHT", 4, 0, {
         {"Available Tokens", 1, 0.82, 0},
@@ -900,7 +706,7 @@ local function OpenFormatEditor(style, groupId, opts)
     tokenGroup:SetFullWidth(true)
     tokenGroup:SetLayout("Flow")
     tokenGroup:SetAutoAdjustHeight(true)
-    window:AddChild(tokenGroup)
+    container:AddChild(tokenGroup)
 
     for _, tokenName in ipairs(TOKEN_LIST) do
         local btn = AceGUI:Create("Button")
@@ -913,63 +719,26 @@ local function OpenFormatEditor(style, groupId, opts)
     end
 
     -- ================================================================
-    -- EFFECT INSERT BUTTONS
-    -- ================================================================
-    local effectHeading = AceGUI:Create("Heading")
-    effectHeading:SetText("Insert Effect")
-    effectHeading:SetFullWidth(true)
-    window:AddChild(effectHeading)
-
-    local effectInfo = CreateInfoButton(effectHeading.frame, effectHeading.label, "LEFT", "RIGHT", 4, 0, {
-        {"Visual Effects", 1, 0.82, 0, true},
-        " ",
-        {"Wrap tokens or text in effect tags to add", 1, 1, 1, true},
-        {"animated visual indicators.", 1, 1, 1, true},
-        " ",
-        {"|cffcc44ff{pulse}|r  Smooth sine alpha oscillation (~1Hz)", 1, 1, 1, true},
-        " ",
-        {"Composes with conditionals:", 0.7, 0.7, 0.7, true},
-        {"|cffffff00{?charges}|r|cffcc44ff{pulse}|r|cff00ff00{charges}|r|cffcc44ff{/pulse}|r|cffffff00{/charges}|r", 0.7, 0.7, 0.7, true},
-        {"Pulse only when charges exist.", 0.7, 0.7, 0.7, true},
-        " ",
-        {"Pulse affects the whole line's alpha.", 0.7, 0.7, 0.7, true},
-    }, effectHeading)
-    effectHeading.right:ClearAllPoints()
-    effectHeading.right:SetPoint("RIGHT", effectHeading.frame, "RIGHT", -3, 0)
-    effectHeading.right:SetPoint("LEFT", effectInfo, "RIGHT", 4, 0)
-
-    local effectGroup = AceGUI:Create("SimpleGroup")
-    effectGroup:SetFullWidth(true)
-    effectGroup:SetLayout("Flow")
-    effectGroup:SetAutoAdjustHeight(true)
-    window:AddChild(effectGroup)
-
-    local pulseBtn = AceGUI:Create("Button")
-    pulseBtn:SetText("{pulse}")
-    pulseBtn:SetAutoWidth(true)
-    pulseBtn:SetCallback("OnClick", function()
-        InsertAtCursor("{pulse}{/pulse}", 7)
-    end)
-    effectGroup:AddChild(pulseBtn)
-
-    -- ================================================================
-    -- COLOR INSERT BUTTONS
+    -- COLOR A SECTION (color tag inserts)
     -- ================================================================
     local colorHeading = AceGUI:Create("Heading")
-    colorHeading:SetText("Insert Color")
+    colorHeading:SetText("Color a Section")
     colorHeading:SetFullWidth(true)
-    window:AddChild(colorHeading)
+    container:AddChild(colorHeading)
 
     local colorInfo = CreateInfoButton(colorHeading.frame, colorHeading.label, "LEFT", "RIGHT", 4, 0, {
-        {"Color Overrides", 1, 0.82, 0, true},
+        {"Color a Section", 1, 0.82, 0, true},
         " ",
-        {"Wrap tokens or literal text to force a specific", 1, 1, 1, true},
-        {"color, overriding the token's default coloring.", 1, 1, 1, true},
+        {"Wrap tokens or literal text to recolor that span,", 1, 1, 1, true},
+        {"overriding the token's default coloring.", 1, 1, 1, true},
         " ",
-        {"|cff44bbff{cooldown}|r  Cooldown color (red by default)", 1, 1, 1, true},
-        {"|cff44bbff{ready}|r  Ready color (green by default)", 1, 1, 1, true},
-        {"|cff44bbff{active}|r  Aura active color (cyan by default)", 1, 1, 1, true},
-        {"|cff44bbff{custom}|r  User-defined custom color (gold by default)", 1, 1, 1, true},
+        {"|cff44bbff{cooldown}|r  Cooldown color", 1, 1, 1, true},
+        {"|cff44bbff{ready}|r  Ready color", 1, 1, 1, true},
+        {"|cff44bbff{active}|r  Aura active color", 1, 1, 1, true},
+        {"|cff44bbff{custom}|r  Custom color", 1, 1, 1, true},
+        " ",
+        {"The swatches show this panel's colors.", 0.7, 0.7, 0.7, true},
+        {"Change them in the Colors section of the Appearance tab.", 0.7, 0.7, 0.7, true},
         " ",
         {"Example:", 0.7, 0.7, 0.7, true},
         {"|cff44bbff{cooldown}|r|cff00ff00{name}|r|cff44bbff{/cooldown}|r", 0.7, 0.7, 0.7, true},
@@ -986,29 +755,41 @@ local function OpenFormatEditor(style, groupId, opts)
     colorGroup:SetFullWidth(true)
     colorGroup:SetLayout("Flow")
     colorGroup:SetAutoAdjustHeight(true)
-    window:AddChild(colorGroup)
+    container:AddChild(colorGroup)
 
+    local colorSwatches = {}
     for _, colorName in ipairs({"cooldown", "ready", "active", "custom"}) do
         local colorBtn = AceGUI:Create("Button")
         colorBtn:SetText("{" .. colorName .. "}")
-        colorBtn:SetAutoWidth(true)
         colorBtn:SetCallback("OnClick", function()
             local open = "{" .. colorName .. "}"
             local close = "{/" .. colorName .. "}"
             InsertAtCursor(open .. close, #open)
         end)
+        -- Attach before AddChild so the first layout already sees the width
+        -- the swatch forces.
+        colorSwatches[#colorSwatches + 1] = {
+            name = colorName,
+            fill = AttachColorSwatch(colorBtn),
+        }
         colorGroup:AddChild(colorBtn)
     end
 
-    AddColorPicker(window, style, "textCustomColor", "Custom Color", {1, 0.82, 0, 1}, true, UpdateDisplay, UpdateDisplay)
+    RefreshColorSwatches = function()
+        for _, entry in ipairs(colorSwatches) do
+            local c = GetStyleTagColor(currentStyle, entry.name)
+            entry.fill:SetColorTexture(c[1] or 1, c[2] or 1, c[3] or 1, 1)
+        end
+    end
+    RefreshColorSwatches()
 
     -- ================================================================
-    -- CONDITIONAL INSERT BUTTONS
+    -- SHOW ONLY WHEN (conditional inserts)
     -- ================================================================
     local condHeading = AceGUI:Create("Heading")
-    condHeading:SetText("Insert Conditional")
+    condHeading:SetText("Show Only When...")
     condHeading:SetFullWidth(true)
-    window:AddChild(condHeading)
+    container:AddChild(condHeading)
 
     local condInfo = CreateInfoButton(condHeading.frame, condHeading.label, "LEFT", "RIGHT", 4, 0, {
         {"Available Conditionals", 1, 0.82, 0, true},
@@ -1017,12 +798,12 @@ local function OpenFormatEditor(style, groupId, opts)
         {"on whether a condition is true.", 1, 1, 1, true},
         " ",
         {"|cffffff00{time}|r  Cooldown time remaining", 1, 1, 1, true},
-        {"|cffffff00{available}|r  Off cooldown / has charges", 1, 1, 1, true},
-        {"|cffffff00{charges}|r  Spell has charges", 1, 1, 1, true},
+        {"|cffffff00{available}|r  Off cooldown", 1, 1, 1, true},
+        {"|cffffff00{charges}|r  Entry uses charges", 1, 1, 1, true},
         {"|cffffff00{maxcharges}|r  At max charges", 1, 1, 1, true},
         {"|cffffff00{missingcharges}|r  Recharging with charges left", 1, 1, 1, true},
         {"|cffffff00{zerocharges}|r  All charges spent", 1, 1, 1, true},
-        {"|cffffff00{stacks}|r  Item count", 1, 1, 1, true},
+        {"|cffffff00{stacks}|r  Has a stack or item count", 1, 1, 1, true},
         {"|cffffff00{keybind}|r  Keybind text", 1, 1, 1, true},
         {"|cffffff00{proc}|r  Spell proc overlay active", 1, 1, 1, true},
         {"|cffffff00{unusable}|r  Spell/item not usable", 1, 1, 1, true},
@@ -1046,7 +827,7 @@ local function OpenFormatEditor(style, groupId, opts)
     condGroup:SetFullWidth(true)
     condGroup:SetLayout("Flow")
     condGroup:SetAutoAdjustHeight(true)
-    window:AddChild(condGroup)
+    container:AddChild(condGroup)
 
     local condDropdown = AceGUI:Create("Dropdown")
     condDropdown:SetLabel("")
@@ -1074,32 +855,64 @@ local function OpenFormatEditor(style, groupId, opts)
     hideBtn:SetCallback("OnClick", function() InsertConditional("!") end)
     condGroup:AddChild(hideBtn)
 
-    -- ================================================================
-    -- SAVE BUTTON (clamped to window bottom)
-    -- ================================================================
-    local saveBtn = AceGUI:Create("Button")
-    saveBtn:SetText("Save & Close")
-    saveBtn:SetCallback("OnClick", function()
-        if currentRawText and currentRawText ~= "" then
-            currentFormatTarget.textFormat = currentRawText
-            CooldownCompanion:RefreshGroupFrame(currentGroupId)
-            CooldownCompanion:RefreshConfigPanel()
-        end
-        window:Hide()
-    end)
-    -- Position outside AceGUI layout, clamped to window bottom
-    saveBtn.frame:SetParent(window.frame)
-    saveBtn.frame:ClearAllPoints()
-    saveBtn.frame:SetPoint("BOTTOMLEFT", window.frame, "BOTTOMLEFT", 15, 15)
-    saveBtn.frame:SetPoint("BOTTOMRIGHT", window.frame, "BOTTOMRIGHT", -15, 15)
-    saveBtn.frame:SetHeight(24)
-    saveBtn.frame:Show()
-    window._saveBtn = saveBtn
-    window:ResumeLayout()
-    window:DoLayout()
+    -- Plain-language readout of whatever the dropdown currently names, so the
+    -- twelve conditions do not all have to be learned from the info button.
+    local condHelp = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(condHelp)
+    condHelp:SetFullWidth(true)
+    condHelp:SetFontObject(GameFontNormalSmall)
+    condHelp:SetColor(0.6, 0.6, 0.6)
+    container:AddChild(condHelp)
+
+    local function UpdateCondHelp()
+        condHelp:SetText(COND_TOKEN_HELP[condDropdown:GetValue()] or "")
+        container:DoLayout()
+    end
+    condDropdown:SetCallback("OnValueChanged", UpdateCondHelp)
+    UpdateCondHelp()
 
     -- ================================================================
-    -- LIVE EDIT CALLBACKS
+    -- EFFECTS
+    -- ================================================================
+    local effectHeading = AceGUI:Create("Heading")
+    effectHeading:SetText("Effects")
+    effectHeading:SetFullWidth(true)
+    container:AddChild(effectHeading)
+
+    local effectInfo = CreateInfoButton(effectHeading.frame, effectHeading.label, "LEFT", "RIGHT", 4, 0, {
+        {"Visual Effects", 1, 0.82, 0, true},
+        " ",
+        {"Wrap tokens or text in effect tags to add", 1, 1, 1, true},
+        {"animated visual indicators.", 1, 1, 1, true},
+        " ",
+        {"|cffcc44ff{pulse}|r  Smooth sine alpha oscillation (~1Hz)", 1, 1, 1, true},
+        " ",
+        {"Composes with conditionals:", 0.7, 0.7, 0.7, true},
+        {"|cffffff00{?charges}|r|cffcc44ff{pulse}|r|cff00ff00{charges}|r|cffcc44ff{/pulse}|r|cffffff00{/charges}|r", 0.7, 0.7, 0.7, true},
+        {"Pulse only when charges exist.", 0.7, 0.7, 0.7, true},
+        " ",
+        {"Pulse affects the whole line's alpha.", 0.7, 0.7, 0.7, true},
+    }, effectHeading)
+    effectHeading.right:ClearAllPoints()
+    effectHeading.right:SetPoint("RIGHT", effectHeading.frame, "RIGHT", -3, 0)
+    effectHeading.right:SetPoint("LEFT", effectInfo, "RIGHT", 4, 0)
+
+    local effectGroup = AceGUI:Create("SimpleGroup")
+    effectGroup:SetFullWidth(true)
+    effectGroup:SetLayout("Flow")
+    effectGroup:SetAutoAdjustHeight(true)
+    container:AddChild(effectGroup)
+
+    local pulseBtn = AceGUI:Create("Button")
+    pulseBtn:SetText("{pulse}")
+    pulseBtn:SetAutoWidth(true)
+    pulseBtn:SetCallback("OnClick", function()
+        InsertAtCursor("{pulse}{/pulse}", 7)
+    end)
+    effectGroup:AddChild(pulseBtn)
+
+    -- ================================================================
+    -- LIVE EDIT CALLBACK
     -- ================================================================
 
     -- OnTextChanged fires only on user input (AceGUI checks userInput flag).
@@ -1114,91 +927,46 @@ local function OpenFormatEditor(style, groupId, opts)
 
         ApplyColorized(newRaw, rawCursor)
         UpdateDisplay()
+        NotifyDirty()
     end)
 
-    -- Save on Enter (Ctrl+Enter in multiline)
-    editGroup:SetCallback("OnEnterPressed", function(widget, event, text)
-        if currentRawText and currentRawText ~= "" then
-            currentFormatTarget.textFormat = currentRawText
-            CooldownCompanion:RefreshGroupFrame(currentGroupId)
-        end
-    end)
-
-    -- Refresh function for re-opening with different style/group
-    window._refresh = function(newStyle, newGroupId, newOpts)
-        newOpts = newOpts or {}
-        currentStyle = newStyle
-        currentGroupId = newGroupId
-        currentFormatTarget = newOpts.saveTarget or newStyle
-        currentDefaultFormat = newOpts.defaultFormat or "{name}  {status}"
-        window:SetTitle(newOpts.title or "Format String Editor")
+    -- ================================================================
+    -- CONTROLLER
+    -- ================================================================
+    -- (Re)binds every piece of editor state, then repaints the text, the
+    -- colorization, the validation and the swatches from the new target.
+    function controller:SetTarget(newTarget)
+        newTarget = newTarget or {}
+        currentStyle = newTarget.style or {}
+        currentFormatTarget = newTarget.saveTarget or currentStyle
+        currentDefaultFormat = newTarget.defaultFormat or DEFAULT_TEXT_FORMAT
         currentRawText = currentFormatTarget.textFormat or currentDefaultFormat
         ApplyColorized(currentRawText, #currentRawText)
+        -- Repaints the swatches from the new style as well.
         UpdateDisplay()
     end
 
-    -- ================================================================
-    -- LIFECYCLE
-    -- ================================================================
-    window:SetCallback("OnClose", function(widget)
-        -- Stop pulse animation
-        widget.frame:SetScript("OnUpdate", nil)
-        if CS.UnregisterConfigDragAlphaFrame then
-            CS.UnregisterConfigDragAlphaFrame(widget.frame)
-        end
-        -- Release save button (not part of AceGUI layout)
-        if widget._saveBtn then
-            AceGUI:Release(widget._saveBtn)
-            widget._saveBtn = nil
-        end
-        -- Auto-save on close
-        if currentRawText and currentRawText ~= "" and currentRawText ~= (currentFormatTarget.textFormat or currentDefaultFormat) then
-            currentFormatTarget.textFormat = currentRawText
-            CooldownCompanion:RefreshGroupFrame(currentGroupId)
-            CooldownCompanion:RefreshConfigPanel()
-        end
-        AceGUI:Release(widget)
-        formatEditorFrame = nil
-        CS.formatEditorFrame = nil
-    end)
-
-    -- Close when config panel hides (hook only once per config frame instance)
-    if configFrame and configFrame.frame and not configFrame.frame._formatEditorHooked then
-        configFrame.frame._formatEditorHooked = true
-        configFrame.frame:HookScript("OnHide", function()
-            if formatEditorFrame then
-                formatEditorFrame:Hide()
-            end
-        end)
+    function controller:GetRawText()
+        return currentRawText
     end
 
-end
-
-------------------------------------------------------------------------
--- CLOSE FORMAT EDITOR (utility for external callers)
-------------------------------------------------------------------------
-local function CloseFormatEditor()
-    if formatEditorFrame then
-        formatEditorFrame:Hide()
+    -- Drops everything the component owns outside AceGUI's own pooling. The
+    -- widgets themselves go back with whoever releases the container.
+    function controller:Release()
+        if controller.released then return end
+        controller.released = true
+        -- A pending template confirmation has nothing left to apply, and
+        -- ApplyTemplate refuses to run once released either way.
+        StaticPopup_Hide(TEMPLATE_CONFIRM_POPUP)
     end
+
+    return controller
 end
 
 ------------------------------------------------------------------------
 -- EXPORTS
 ------------------------------------------------------------------------
-ST._OpenFormatEditor = OpenFormatEditor
-ST._CloseFormatEditor = CloseFormatEditor
-
-ST._RenderFormatPreview = function(formatString, style)
-    local segments = ParseFormatString(formatString)
-    local name = GetPreviewName()
-    local icon = GetPreviewIcon()
-    -- "All present" mock state so every token renders visibly
-    local mockState = {
-        name = name, time = 83, charges = 1, maxCharges = 3, hasCharges = true,
-        stacks = 3, auraTime = 12.3, keybind = "F1", icon = icon,
-        proc = true,
-    }
-    local rendered = PreviewSubstitute(segments, style, mockState)
-    return rendered
-end
+-- The editor body, built into whichever config surface hosts it (the panel's
+-- Format tab, an entry's Format Override section). See the component's header
+-- comment for the controller API.
+ST._BuildFormatEditorContent = BuildFormatEditorContent

@@ -418,9 +418,6 @@ local function CloseCompetingEditors()
     if CS.CloseProfileWideBarTextureWindow then
         CS.CloseProfileWideBarTextureWindow()
     end
-    if ST._CloseFormatEditor then
-        ST._CloseFormatEditor()
-    end
     if CS.CloseSpellbookPanel then
         CS.CloseSpellbookPanel()
     end

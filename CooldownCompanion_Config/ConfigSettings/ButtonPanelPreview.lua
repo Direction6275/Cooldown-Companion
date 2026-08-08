@@ -27,7 +27,10 @@ local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 local PerformButtonReorder = ST._PerformButtonReorder
 local StartDragTracking = ST._StartDragTracking
 local CancelDrag = ST._CancelDrag
-local GetEffectiveTextHeight = ST._GetEffectiveTextHeight
+-- Text entries auto-size from a measured worst-case render of their format
+-- (ButtonFrame/TextMode.lua). Cached per entry, keyed on the entry table, so
+-- every call site here passes its buttonData.
+local GetTextEntryMetrics = ST._GetTextEntryMetrics
 local CreateGlowContainer = ST._CreateGlowContainer
 local SetBarAuraEffect = ST._SetBarAuraEffect
 local GetStoredConditionalPreviewState = ST._GetStoredConditionalPreviewState
@@ -1604,6 +1607,9 @@ local function ShowEntrySlotTooltip(slot, buttonData, status, visibility)
     if slot._cdcDraggable then
         GameTooltip:AddLine("Drag to reorder.", 0.75, 0.82, 0.92)
     end
+    -- WireEntryInteraction opens the entry context menu on every display mode,
+    -- and that menu holds destructive actions, so every mode advertises it.
+    GameTooltip:AddLine("Right-click for options.", 0.75, 0.82, 0.92)
     GameTooltip:Show()
 end
 
@@ -1718,22 +1724,29 @@ local function GetPanelGeometry(group, isBarMode, isTextMode)
     local style = group.style or {}
     local w, h
     if isTextMode then
-        -- Mirror of GroupFrame's text-mode sizing: widest entry width and
-        -- tallest effective format height win (the config mirror measures
-        -- every entry, not just currently usable ones).
-        w = style.textWidth or 200
-        h = style.textHeight or 20
-        if GetEffectiveTextHeight then
-            h = GetEffectiveTextHeight(style, style.textFormat)
+        -- Mirror of GroupFrame's text-mode sizing (GetButtonDimensions): a
+        -- text entry measures itself from its own format and font, and the
+        -- grid pitch is the widest/tallest of them. The panel's own format
+        -- seeds a floor so an entry-less panel still has a size.
+        --
+        -- DIVERGENCE (pre-existing, deliberate): the live panel maxes over
+        -- currently USABLE entries only, while the mirror measures every saved
+        -- entry, so the mirror shows the pitch the panel takes with everything
+        -- showing rather than the pitch of this character's current subset.
+        if GetTextEntryMetrics then
+            w, h = GetTextEntryMetrics(style, nil, style.textFormat)
             for _, buttonData in ipairs(group.buttons or {}) do
                 local effectiveStyle = CooldownCompanion.GetEffectiveStyle
                     and CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
                 local fmt = buttonData.textFormat or effectiveStyle.textFormat
-                w = math_max(w, effectiveStyle.textWidth or 200)
-                -- Parenthesized: GetEffectiveTextHeight returns a second
-                -- (boolean) value that must not reach math_max.
-                h = math_max(h, (GetEffectiveTextHeight(effectiveStyle, fmt)))
+                local entryWidth, entryHeight = GetTextEntryMetrics(effectiveStyle, buttonData, fmt)
+                w = math_max(w, entryWidth)
+                h = math_max(h, entryHeight)
             end
+        else
+            -- Same floor GroupFrame falls back to when the renderer's export
+            -- is missing.
+            w, h = 200, 20
         end
     elseif isBarMode then
         w, h = style.barLength or 180, style.barHeight or 20
@@ -1752,6 +1765,29 @@ local function GetPanelGeometry(group, isBarMode, isTextMode)
         orientation = style.orientation or (isBarMode and "vertical" or "horizontal"),
         buttonsPerRow = style.buttonsPerRow or 12,
     }
+end
+
+-- Per-entry text footprint, mirroring TextMode.lua ApplyTextLayout: in the
+-- world each text button measures itself and calls button:SetSize with its
+-- OWN width/height, while GroupFrame's ApplyActiveButtonLayout only POSITIONS
+-- text buttons on the uniform pitch. So the mirror places slots on the pitch
+-- grid (GetPanelGeometry above) but sizes each one from its own metrics --
+-- otherwise a short entry beside a long one renders full-pitch wide here and
+-- narrow in the world. Same call shape as the pitch pass, so the entry's
+-- metrics cache slot is shared rather than churned.
+--
+-- Without the renderer's export the pitch is the only number available, which
+-- is exactly the uniform-slot behavior this mirror had before.
+local function GetTextSlotSize(group, buttonData, pitchWidth, pitchHeight)
+    if not GetTextEntryMetrics then
+        return pitchWidth, pitchHeight
+    end
+    local style = group.style or {}
+    local effectiveStyle = CooldownCompanion.GetEffectiveStyle
+        and CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+    local fmt = buttonData.textFormat or effectiveStyle.textFormat
+    local entryWidth, entryHeight = GetTextEntryMetrics(effectiveStyle, buttonData, fmt)
+    return entryWidth or pitchWidth, entryHeight or pitchHeight
 end
 
 local function IsIconModePanel(group)
@@ -3103,7 +3139,10 @@ local function SubstituteMirrorTokens(segments, style, buttonData, condState, no
             elseif token == "br" then
                 parts[#parts + 1] = "\n"
             end
-            -- stacks/aura tokens: idle (empty) on the mirror
+            -- {stacks}: a runtime-only domain, idle (empty) on the mirror.
+            -- {aura}: emits nothing here because it emits nothing at runtime
+            -- either -- text panels are aura-blind on 12.1 (SubstituteTokens
+            -- in ButtonFrame/TextMode.lua).
         end
     end
 
@@ -3129,11 +3168,14 @@ local function ApplyTextSlotConditionalPreview(slot, buttonData, group, panelId,
     local fmt = buttonData.textFormat or style.textFormat or DEFAULT_TEXT_FORMAT
     slot._cdcTextSegments = ParseFormatString and ParseFormatString(fmt) or nil
 
-    -- Live ApplyTextLayout: multiline formats wrap from the top
-    if GetEffectiveTextHeight then
-        local _, isMultiline = GetEffectiveTextHeight(style, fmt)
+    -- Live ApplyTextLayout: multiline formats wrap from the top. buttonData is
+    -- the metrics cache key, so this shares the entry's cache slot with the
+    -- pitch pass rather than churning the style table's slot.
+    if GetTextEntryMetrics then
+        local _, _, lineCount = GetTextEntryMetrics(style, buttonData, fmt)
+        local isMultiline = (lineCount or 1) > 1
         slot.textString:SetJustifyV(isMultiline and "TOP" or "MIDDLE")
-        slot.textString:SetWordWrap(isMultiline and true or false)
+        slot.textString:SetWordWrap(isMultiline)
     end
 
     local state = not forceBase and GetStoredConditionalPreviewState
@@ -4368,7 +4410,13 @@ function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost, options
 
     for index, buttonData in ipairs(buttons) do
         local slot = AcquireSlot(preview, content, poolName)
-        slot:SetSize(w, h)
+        if isTextMode then
+            -- Cell placement stays on the uniform pitch below; only the slot's
+            -- own footprint is per-entry, like the live text button.
+            slot:SetSize(GetTextSlotSize(group, buttonData, w, h))
+        else
+            slot:SetSize(w, h)
+        end
 
         local cx, cy = layoutDrag.cellXY(index)
         ApplyPreviewSlotGeometry(preview, slot, growthAnchor, cx, cy)

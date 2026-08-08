@@ -786,7 +786,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
     })
 
     -- deferCommit is deliberately absent throughout, matching the
-    -- AddColorPicker calls these rows replace: the callbacks repaint the
+    -- stock color pickers these rows replace: the callbacks repaint the
     -- canvas, they do not re-read the bound table every tick.
     AddColorRow(iconLeft, {
         label = "Base Icon Color",
@@ -906,7 +906,7 @@ local function BuildTriggerTextAppearanceTab(container, group)
         end,
     })
 
-    -- deferCommit is deliberately absent, matching the AddColorPicker calls
+    -- deferCommit is deliberately absent, matching the stock color pickers
     -- these rows replace.
     AddColorRow(textRight, {
         label = "Text Color",
@@ -1830,7 +1830,9 @@ local function BuildLayoutTab(container)
             end
             local host = CS.groupSettingsActiveHost
             if host and host.tabGroup then
-                host.tabGroup:SelectTab(CS.selectedTab)
+                -- Rebuild in place, not a tab choice: the helper keeps the
+                -- remembered-tab bookkeeping from reading it as one.
+                ST._SelectPanelSettingsTabProgrammatic(host.tabGroup, CS.selectedTab)
             end
         end,
     })
@@ -2079,7 +2081,7 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
             end,
         })
 
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color picker
         -- this row replaced.
         if config.effectType == "colorShift" then
             AddColorRow(details, {
@@ -2146,7 +2148,7 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
     -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
     -- both rows go straight onto the panel scroll.
     local function BuildTriggerEffectAdvanced(panel)
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color picker
         -- this row replaced.
         if effectKey == "colorShift" then
             AddColorRow(panel, {
@@ -2239,8 +2241,8 @@ local function MakeCooldownTextAdvancedDescriptor()
             -- rightColumn, and each falls back to `container` for its extras.
             AddFontControls(panel, style, "cooldown", { size = 12 }, RefreshSelectedGroupStyle, { row = true })
 
-            -- deferCommit is deliberately absent, matching the AddColorPicker
-            -- call this row replaced.
+            -- deferCommit is deliberately absent, matching the stock color picker
+            -- this row replaced.
             AddColorRow(panel, {
                 label = "Font Color",
                 tbl = style,
@@ -2326,7 +2328,7 @@ local function MakeCooldownSwipeAdvancedDescriptor()
             })
 
             -- Swipe Edge Color (only when edge is visible). deferCommit is
-            -- deliberately absent, matching the AddColorPicker call it replaced.
+            -- deliberately absent, matching the stock color picker it replaced.
             if style.cooldownSwipeEdgeEnabled == true then
                 AddColorRow(panel, {
                     label = "Swipe Edge Color",
@@ -3938,7 +3940,7 @@ local function BuildAppearanceTab(container)
     -- silently swallow which charge state it names.
     --
     -- deferCommit is deliberately absent throughout, matching the
-    -- AddColorPicker calls these rows replaced.
+    -- stock color pickers these rows replaced.
     local function BuildChargeTextAdvanced(panel)
         AddFontControls(panel, style, "charge", { size = 12 }, refreshStyle, { row = true })
 
@@ -3987,8 +3989,8 @@ local function BuildAppearanceTab(container)
         local function BuildAuraDurationTextAdvanced(panel)
             AddFontControls(panel, style, "auraText", { size = 12 }, refreshStyle, { row = true })
 
-            -- deferCommit is deliberately absent, matching the AddColorPicker
-            -- call this row replaced.
+            -- deferCommit is deliberately absent, matching the stock color picker
+            -- this row replaced.
             AddColorRow(panel, {
                 label = "Font Color",
                 tbl = style,
@@ -4054,8 +4056,8 @@ local function BuildAppearanceTab(container)
         -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
         local function BuildAuraStackTextAdvanced(panel)
             AddFontControls(panel, style, "auraStack", { size = 12 }, refreshStyle, { row = true })
-            -- deferCommit is deliberately absent, matching the AddColorPicker
-            -- call this row replaced.
+            -- deferCommit is deliberately absent, matching the stock color picker
+            -- this row replaced.
             AddColorRow(panel, {
                 label = "Font Color",
                 tbl = style,
@@ -4108,7 +4110,7 @@ local function BuildAppearanceTab(container)
 
         AddOffsetSliders(panel, style, "keybindXOffset", "keybindYOffset", { x = -2, y = -2 }, refreshStyle, { row = true })
         AddFontControls(panel, style, "keybind", { size = 10, sizeMin = 6, sizeMax = 24 }, refreshStyle, { row = true })
-        -- deferCommit is deliberately absent, matching the AddColorPicker call
+        -- deferCommit is deliberately absent, matching the stock color picker
         -- this row replaced.
         AddColorRow(panel, {
             label = "Font Color",
