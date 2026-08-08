@@ -175,7 +175,7 @@ local GetContinuousTickAbsoluteConfig = RBP.GetContinuousTickAbsoluteConfig
 local IsResourceBarVerticalConfig = RBP.IsResourceBarVerticalConfig
 local GetResourceThicknessFieldConfig = RBP.GetResourceThicknessFieldConfig
 local GetResourceGapFieldConfig = RBP.GetResourceGapFieldConfig
-local ResolveAuraColorSpellIDFromText = RBP.ResolveAuraColorSpellIDFromText
+local ResolveTrackedAuraSpellIDFromText = RBP.ResolveTrackedAuraSpellIDFromText
 local BuildTrackedAuraAutocompleteCache = RBP.BuildTrackedAuraAutocompleteCache
 
 local function EnsureResourceLayoutAnchor(settings, layout)
@@ -2141,7 +2141,9 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
                 -- The dropdown owns Enter while it has a highlighted row.
                 if CS.ConsumeAutocompleteEnter() then return end
                 CS.HideAutocomplete()
-                local id, blank = ResolveAuraColorSpellIDFromText(text)
+                -- The tracked-aura resolver, not the identity one: a typed
+                -- name lands the applied-aura ID, matching a dropdown pick.
+                local id, blank = ResolveTrackedAuraSpellIDFromText(text)
                 if not id then
                     -- Enter on an empty box is a no-op, not a failed lookup.
                     if not blank then

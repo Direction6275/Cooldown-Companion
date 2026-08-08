@@ -486,6 +486,34 @@ local function ResolveAuraColorSpellIDFromText(text)
     return nil, false
 end
 
+-- Typed names must land the same ID an autocomplete pick would: the tracked
+-- slice re-identifies CDM rows to the applied-aura spellID, while a plain
+-- name lookup resolves to the castable spell (Rake -> 1822, never bleed
+-- 155722). Numeric input is honored verbatim. Tracked-aura LIST fields
+-- resolve through here; bar/entry IDENTITY fields keep the resolver above,
+-- whose row identity their standalone candidate build expands.
+local function ResolveTrackedAuraSpellIDFromText(text)
+    if not text then return nil, false end
+    local cleaned = text:gsub("^%s+", ""):gsub("%s+$", "")
+    if cleaned == "" then
+        return nil, true
+    end
+
+    local numeric = tonumber(cleaned)
+    if numeric and numeric > 0 then
+        return numeric, false
+    end
+
+    local lookup = cleaned:lower()
+    for _, entry in ipairs(BuildTrackedAuraAutocompleteCache()) do
+        if entry.nameLower == lookup then
+            return tonumber(entry.id), false
+        end
+    end
+
+    return ResolveAuraColorSpellIDFromText(cleaned)
+end
+
 local function GetSafeRGBConfig(color, fallback)
     if type(color) == "table" and color[1] ~= nil and color[2] ~= nil and color[3] ~= nil then
         return color
@@ -693,6 +721,7 @@ ST._RBP = {
     WriteSpecOverrideKey = WriteSpecOverrideKey,
     GetPlayerSpecOptionsConfig = GetPlayerSpecOptionsConfig,
     ResolveAuraColorSpellIDFromText = ResolveAuraColorSpellIDFromText,
+    ResolveTrackedAuraSpellIDFromText = ResolveTrackedAuraSpellIDFromText,
     GetSafeRGBConfig = GetSafeRGBConfig,
     GetSafeRGBAConfig = GetSafeRGBAConfig,
     CopyRGBConfig = CopyRGBConfig,

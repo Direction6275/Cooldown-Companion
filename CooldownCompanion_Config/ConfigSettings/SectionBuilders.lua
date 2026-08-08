@@ -81,8 +81,19 @@ local function TryAddAuraCandidate(config, input, currentUnit, onChanged)
     if input == "" then return false end
     local spellID = tonumber(input)
     if not spellID then
-        local info = C_Spell.GetSpellInfo(input)
-        spellID = info and info.spellID
+        -- Typed names must land the same ID an autocomplete pick would: the
+        -- tracked slice re-identifies CDM rows to the applied-aura spellID,
+        -- while GetSpellInfo resolves a name to the castable spell, whose ID
+        -- never matches an aura applied under a linked spell (Rake 1822 vs
+        -- bleed 155722). ST._RBP is read at call time: ResourceBarPanels-
+        -- Helpers loads after this file.
+        local RBP = ST._RBP
+        if RBP and RBP.ResolveTrackedAuraSpellIDFromText then
+            spellID = RBP.ResolveTrackedAuraSpellIDFromText(input)
+        else
+            local info = C_Spell.GetSpellInfo(input)
+            spellID = info and info.spellID
+        end
     end
     if not (spellID and C_Spell.DoesSpellExist(spellID)) then
         CooldownCompanion:Print("Aura not found: " .. input .. ". Try the spell ID.")
