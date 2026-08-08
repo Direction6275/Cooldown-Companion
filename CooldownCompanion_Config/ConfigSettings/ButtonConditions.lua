@@ -53,6 +53,7 @@ local ELIGIBILITY_PULLOUT_WIDTH = 300
 local ACTION_STRIP_HEIGHT = (ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT) or 30
 local ACTION_STRIP_BUTTON_HEIGHT = 24
 local ACTION_STRIP_GUTTER = 4
+local ROW_CONTROL_WIDTH = (ST._RowGrammar and ST._RowGrammar.CONTROL_COLUMN_WIDTH) or 140
 local VIEW_TRAIT_CONFIG_ID = (Constants and Constants.TraitConsts and Constants.TraitConsts.VIEW_TRAIT_CONFIG_ID) or -3
 
 if AceGUI and not AceGUI:GetWidgetVersion(REMOVE_BADGE_WIDGET_TYPE) then
@@ -2717,69 +2718,62 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
 
     if not talentCollapsed then
 
-    -- Condition list display
-    if isBatch and hasTalent == nil then
-        local mixedLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(mixedLabel)
-        mixedLabel:SetText("|cff888888Multiple conditions; pick or clear to unify.|r")
-        mixedLabel:SetFullWidth(true)
-        scroll:AddChild(mixedLabel)
-    elseif condCount > 0 then
+    -- One-column row grid, the same shape this section already has on the
+    -- custom-bar tab. Conditions are ITEM rows: a CDC-LabelRow with the
+    -- talent icon inlined into the label text and the taken/not-taken state
+    -- as the row's right-aligned status word.
+    local talentLeft = BeginRowGrid(scroll)
+
+    if condCount > 0 and not (isBatch and hasTalent == nil) then
         local cache = CooldownCompanion._talentNodeCache
         local currentSpecID = CooldownCompanion._currentSpecId
         local currentHeroSubTreeID = CooldownCompanion._currentHeroSpecId
         for _, cond in ipairs(conditions) do
-            local condLabel = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(condLabel)
             local displayIcon = not IsHeroSpecProxyCondition(cond)
                 and cond.spellID
                 and C_Spell.GetSpellTexture(cond.spellID)
-            if displayIcon then
-                condLabel:SetImage(displayIcon, 0.08, 0.92, 0.08, 0.92)
-                condLabel:SetImageSize(16, 16)
-            end
             local nameText = GetConditionDisplayName(cond)
-            local showText, showColor
-            if cond.show == "not_taken" then
-                showText = " |cffff4d4d(not taken)|r"
-            else
-                showText = " |cff33dd33(taken)|r"
+            if displayIcon then
+                nameText = ("|T%s:16:16:0:0|t %s"):format(tostring(displayIcon), nameText)
             end
-            condLabel:SetText("|cffFFFFFF" .. nameText .. "|r" .. showText)
-            condLabel:SetFullWidth(true)
-            scroll:AddChild(condLabel)
+            AddLabelRow(talentLeft, {
+                label = "|cffFFFFFF" .. nameText .. "|r",
+                controlText = (cond.show == "not_taken")
+                    and "|cffff4d4d(not taken)|r"
+                    or "|cff33dd33(taken)|r",
+            })
 
-            -- Per-condition stale node warning
+            -- Per-condition stale node warning. A wrapped sentence rather
+            -- than a setting, so it keeps its stock Label shape and sits
+            -- directly under the row it warns about.
             local matchesCurrentScope = (not cond.specID or cond.specID == currentSpecID)
                 and (not cond.heroSubTreeID or cond.heroSubTreeID == currentHeroSubTreeID)
             if not isBatch and matchesCurrentScope and cache and not cache[cond.nodeID] then
                 local warnLabel = AceGUI:Create("Label")
                 ST._ConfigureWrappedHelperLabel(warnLabel)
-                warnLabel:SetText("|cffff8800  This talent is not in your current active tree, so it behaves as not taken right now.|r")
+                warnLabel:SetText("|cffff8800This talent is not in your current active tree, so it behaves as not taken right now.|r")
                 warnLabel:SetFullWidth(true)
-                scroll:AddChild(warnLabel)
+                talentLeft:AddChild(warnLabel)
             end
         end
-    else
-        local emptyLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(emptyLabel)
-        emptyLabel:SetText("|cff888888No talent conditions set.|r")
-        emptyLabel:SetFullWidth(true)
-        scroll:AddChild(emptyLabel)
     end
 
-    -- Section actions on one grammar-height line: compact (SetAutoWidth) and
-    -- flush left, never page-wide. The talent summary above is wrapped prose,
-    -- so it stays a full-width label on the tab surface rather than a row.
-    local talentBtnRow = AceGUI:Create("SimpleGroup")
-    talentBtnRow:SetFullWidth(true)
-    talentBtnRow:SetLayout("Flow")
-    talentBtnRow:SetHeight(ACTION_STRIP_HEIGHT)
-    talentBtnRow.noAutoHeight = true
+    -- The section's status prose and its actions share one closing grammar
+    -- row: the buttons live in the row's control column, so the picker wears
+    -- the same 140px right-aligned footprint as every control above it
+    -- instead of floating compact on the tab surface.
+    local talentStatusText
+    if isBatch and hasTalent == nil then
+        talentStatusText = "|cff888888Multiple conditions; pick or clear to unify.|r"
+    elseif condCount > 0 then
+        talentStatusText = ""
+    else
+        talentStatusText = "|cff888888No talent conditions set.|r"
+    end
 
     local pickBtn = AceGUI:Create("Button")
     pickBtn:SetText(condCount > 0 and "Edit" or "Pick Talents")
-    pickBtn:SetAutoWidth(true)
+    pickBtn:SetHeight(ACTION_STRIP_BUTTON_HEIGHT)
     pickBtn:SetCallback("OnClick", function()
         local initialConditions = not isBatch and buttonData.talentConditions or nil
         CooldownCompanion:OpenTalentPicker(function(results)
@@ -2852,22 +2846,32 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             CooldownCompanion:RefreshConfigPanel()
         end, initialConditions, group)
     end)
-    talentBtnRow:AddChild(pickBtn)
 
-    -- Clear All button (only when conditions exist). Destructive, so it shares
-    -- the line with the picker that owns what it clears.
+    local talentActionControl
     if hasTalent then
-        -- Flow packs siblings at 0px, so the gutter is a fixed-size spacer
-        -- group - the same idiom the preset trio uses.
+        -- Edit and Clear split the control column. Clear is destructive, so
+        -- it shares the row with the picker that owns what it clears. Flow
+        -- packs siblings at 0px, so the gutter is a fixed-size spacer group -
+        -- the same idiom the preset trio uses.
+        local strip = AceGUI:Create("SimpleGroup")
+        strip:SetLayout("Flow")
+        strip:SetWidth(ROW_CONTROL_WIDTH)
+        strip:SetHeight(ACTION_STRIP_HEIGHT)
+        strip.noAutoHeight = true
+
+        pickBtn:SetWidth((ROW_CONTROL_WIDTH - ACTION_STRIP_GUTTER) / 2)
+        strip:AddChild(pickBtn)
+
         local gutter = AceGUI:Create("SimpleGroup")
         gutter:SetWidth(ACTION_STRIP_GUTTER)
         gutter:SetHeight(ACTION_STRIP_BUTTON_HEIGHT)
         gutter.noAutoHeight = true
-        talentBtnRow:AddChild(gutter)
+        strip:AddChild(gutter)
 
         local clearBtn = AceGUI:Create("Button")
         clearBtn:SetText("Clear")
-        clearBtn:SetAutoWidth(true)
+        clearBtn:SetHeight(ACTION_STRIP_BUTTON_HEIGHT)
+        clearBtn:SetWidth((ROW_CONTROL_WIDTH - ACTION_STRIP_GUTTER) / 2)
         clearBtn:SetCallback("OnClick", function()
             ApplyToSelected("talentConditions", nil)
             ApplyToSelected("talentNodeID", nil)
@@ -2878,10 +2882,18 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end)
-        talentBtnRow:AddChild(clearBtn)
+        strip:AddChild(clearBtn)
+
+        talentActionControl = strip
+    else
+        pickBtn:SetWidth(ROW_CONTROL_WIDTH)
+        talentActionControl = pickBtn
     end
 
-    scroll:AddChild(talentBtnRow)
+    AddLabelRow(talentLeft, {
+        label = talentStatusText,
+        controlWidget = talentActionControl,
+    })
 
     end -- not talentCollapsed
 

@@ -43,6 +43,15 @@ local ROW_SECTION = { leftAligned = true }
 -- control column, and a dropdown sizes its menu from the control.
 local SOUND_PULLOUT_WIDTH = 300
 
+-- Row-grammar action strip metrics: the talent section's closing row puts its
+-- buttons in the row's control column (same treatment as the entry Visibility
+-- tab in ButtonConditions.lua). Flow insets its single row by 3px top and
+-- bottom, so 3 + 24 + 3 centres inside the 30px band.
+local ACTION_STRIP_HEIGHT = (ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT) or 30
+local ACTION_STRIP_BUTTON_HEIGHT = 24
+local ACTION_STRIP_GUTTER = 4
+local ROW_CONTROL_WIDTH = (ST._RowGrammar and ST._RowGrammar.CONTROL_COLUMN_WIDTH) or 140
+
 local function RefreshLayoutOrderPreview()
     -- Both the Resources home and the Cast Bar & Unit Frames home pin the
     -- preview in the workspace; the helper self-gates on view state.
@@ -1466,11 +1475,11 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
 
                 if not talentCollapsed then
 
-                -- LEFT column: the conditions themselves, ending in the Clear
-                -- that empties them - meaning wins over balance for a control
-                -- this destructive. RIGHT column: the picker that adds to
-                -- them, at the head so it lands beside the first condition.
-                local talentLeft, talentRight = BeginRowGrid(container)
+                -- One-column row grid, matching the entry Visibility tab's
+                -- talent section: condition ITEM rows stacked in the left
+                -- column, the actions on one closing grammar row whose
+                -- control column owns the buttons.
+                local talentLeft = BeginRowGrid(container)
 
                 -- Condition list display. Each condition presents an ITEM, not
                 -- a setting: a CDC-LabelRow with the talent icon inlined into
@@ -1508,19 +1517,14 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                             talentLeft:AddChild(warnLabel)
                         end
                     end
-                else
-                    local emptyLabel = AceGUI:Create("Label")
-                    ST._ConfigureWrappedHelperLabel(emptyLabel)
-                    emptyLabel:SetText("|cff888888No talent conditions set.|r")
-                    emptyLabel:SetFullWidth(true)
-                    talentLeft:AddChild(emptyLabel)
                 end
 
-                -- Compact and flush left, inside the grid: a page-wide button
-                -- is louder than every row it sits under.
+                -- The section's status prose and its actions share one
+                -- closing grammar row, so the picker wears the same 140px
+                -- right-aligned footprint as every control above it.
                 local pickBtn = AceGUI:Create("Button")
                 pickBtn:SetText(condCount > 0 and "Edit" or "Pick Talents")
-                pickBtn:SetAutoWidth(true)
+                pickBtn:SetHeight(ACTION_STRIP_BUTTON_HEIGHT)
                 pickBtn:SetCallback("OnClick", function()
                     local initialConditions = cab.talentConditions
                     local specID = layoutSpecID or CooldownCompanion._currentSpecId
@@ -1540,21 +1544,50 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         CooldownCompanion:RefreshConfigPanel()
                     end, initialConditions, specHint)
                 end)
-                talentRight:AddChild(pickBtn)
 
-                -- Clear button (only when conditions exist)
+                local talentActionControl
                 if condCount > 0 then
+                    -- Edit and Clear split the control column. Clear is
+                    -- destructive, so it shares the row with the picker that
+                    -- owns what it clears. Flow packs siblings at 0px, so the
+                    -- gutter is a fixed-size spacer group.
+                    local strip = AceGUI:Create("SimpleGroup")
+                    strip:SetLayout("Flow")
+                    strip:SetWidth(ROW_CONTROL_WIDTH)
+                    strip:SetHeight(ACTION_STRIP_HEIGHT)
+                    strip.noAutoHeight = true
+
+                    pickBtn:SetWidth((ROW_CONTROL_WIDTH - ACTION_STRIP_GUTTER) / 2)
+                    strip:AddChild(pickBtn)
+
+                    local gutter = AceGUI:Create("SimpleGroup")
+                    gutter:SetWidth(ACTION_STRIP_GUTTER)
+                    gutter:SetHeight(ACTION_STRIP_BUTTON_HEIGHT)
+                    gutter.noAutoHeight = true
+                    strip:AddChild(gutter)
+
                     local clearBtn = AceGUI:Create("Button")
                     clearBtn:SetText("Clear")
-                    clearBtn:SetAutoWidth(true)
+                    clearBtn:SetHeight(ACTION_STRIP_BUTTON_HEIGHT)
+                    clearBtn:SetWidth((ROW_CONTROL_WIDTH - ACTION_STRIP_GUTTER) / 2)
                     clearBtn:SetCallback("OnClick", function()
                         customBars[cabIdx].talentConditions = nil
                         CooldownCompanion:ApplyResourceBars()
                         CooldownCompanion:UpdateAnchorStacking()
                         CooldownCompanion:RefreshConfigPanel()
                     end)
-                    talentLeft:AddChild(clearBtn)
+                    strip:AddChild(clearBtn)
+
+                    talentActionControl = strip
+                else
+                    pickBtn:SetWidth(ROW_CONTROL_WIDTH)
+                    talentActionControl = pickBtn
                 end
+
+                AddLabelRow(talentLeft, {
+                    label = (condCount > 0) and "" or "|cff888888No talent conditions set.|r",
+                    controlWidget = talentActionControl,
+                })
 
                 end -- not talentCollapsed
             end
