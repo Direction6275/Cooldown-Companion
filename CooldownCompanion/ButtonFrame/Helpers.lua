@@ -348,38 +348,61 @@ local function FloorComponent(divisor, modulo)
     }
 end
 
-local function AddFloorBreakpoint(formatter, threshold, format)
-    formatter:AddBreakpoint({
+local function FloorBreakpoint(threshold, format)
+    return {
         threshold = threshold,
         step = 1,
         rounding = GetDurationTextRoundingDown(),
         format = format,
-    })
+    }
 end
 
-local function AddClockBreakpoints(formatter, decimalThreshold)
-    if decimalThreshold and decimalThreshold > 0 then
-        formatter:AddBreakpoint({
-            threshold = 0,
-            format = "%.1f",
-        })
+-- One ascending breakpoint list per format key: the single definition of what
+-- each Duration Format looks like for NumericRuleFormatter consumers. The
+-- cooldown text formatter below builds straight from it, and the aura display
+-- reads it to derive per-spell pandemic marker formatters that keep the same
+-- shape. Cached lists are shared and must never be mutated.
+local function BuildDurationFormatBrackets(formatKey)
+    local brackets = {}
+
+    if formatKey == DURATION_FORMAT_UNITS then
+        brackets[1] = FloorBreakpoint(0, "%.0fs")
+        brackets[2] = {
+            threshold = 60,
+            format = "%.0fm %.0fs",
+            components = {
+                FloorComponent(60),
+                FloorComponent(nil, 60),
+            },
+        }
+        brackets[3] = {
+            threshold = 3600,
+            format = "%.0fh %.0fm",
+            components = {
+                FloorComponent(3600),
+                FloorComponent(60, 60),
+            },
+        }
+        return brackets
+    end
+
+    if formatKey == DURATION_FORMAT_DECIMAL_UNDER_10 then
+        brackets[#brackets + 1] = { threshold = 0, format = "%.1f" }
+        brackets[#brackets + 1] = FloorBreakpoint(10, "%.0f")
+    elseif formatKey == DURATION_FORMAT_DECIMAL_UNDER_60 then
+        brackets[#brackets + 1] = { threshold = 0, format = "%.1f" }
     else
-        AddFloorBreakpoint(formatter, 0, "%.0f")
+        brackets[#brackets + 1] = FloorBreakpoint(0, "%.0f")
     end
-
-    if decimalThreshold == 10 then
-        AddFloorBreakpoint(formatter, 10, "%.0f")
-    end
-
-    formatter:AddBreakpoint({
+    brackets[#brackets + 1] = {
         threshold = 60,
         format = "%.0f:%02.0f",
         components = {
             FloorComponent(60),
             FloorComponent(nil, 60),
         },
-    })
-    formatter:AddBreakpoint({
+    }
+    brackets[#brackets + 1] = {
         threshold = 3600,
         format = "%.0f:%02.0f:%02.0f",
         components = {
@@ -387,28 +410,22 @@ local function AddClockBreakpoints(formatter, decimalThreshold)
             FloorComponent(60, 60),
             FloorComponent(nil, 60),
         },
-    })
+    }
+    return brackets
 end
 
-local function AddUnitsBreakpoints(formatter)
-    AddFloorBreakpoint(formatter, 0, "%.0fs")
-    formatter:AddBreakpoint({
-        threshold = 60,
-        format = "%.0fm %.0fs",
-        components = {
-            FloorComponent(60),
-            FloorComponent(nil, 60),
-        },
-    })
-    formatter:AddBreakpoint({
-        threshold = 3600,
-        format = "%.0fh %.0fm",
-        components = {
-            FloorComponent(3600),
-            FloorComponent(60, 60),
-        },
-    })
+local durationFormatBracketsCache = {}
+
+local function GetDurationFormatBrackets(source)
+    local formatKey = GetDurationFormat(source)
+    local brackets = durationFormatBracketsCache[formatKey]
+    if not brackets then
+        brackets = BuildDurationFormatBrackets(formatKey)
+        durationFormatBracketsCache[formatKey] = brackets
+    end
+    return brackets, formatKey
 end
+CooldownCompanion.GetDurationFormatBrackets = GetDurationFormatBrackets
 
 local function CreateDurationTextFormatter(formatKey)
     if not (C_StringUtil and C_StringUtil.CreateNumericRuleFormatter) then
@@ -420,14 +437,8 @@ local function CreateDurationTextFormatter(formatKey)
         return nil
     end
 
-    if formatKey == DURATION_FORMAT_UNITS then
-        AddUnitsBreakpoints(formatter)
-    elseif formatKey == DURATION_FORMAT_DECIMAL_UNDER_10 then
-        AddClockBreakpoints(formatter, 10)
-    elseif formatKey == DURATION_FORMAT_DECIMAL_UNDER_60 then
-        AddClockBreakpoints(formatter, 60)
-    else
-        AddClockBreakpoints(formatter)
+    for _, breakpoint in ipairs(BuildDurationFormatBrackets(formatKey)) do
+        formatter:AddBreakpoint(breakpoint)
     end
 
     return formatter
@@ -447,6 +458,7 @@ local function GetDurationTextFormatter(source)
     durationTextFormatterCache[formatKey] = formatter or false
     return formatter, formatKey
 end
+CooldownCompanion.GetDurationTextFormatter = GetDurationTextFormatter
 
 local function DurationTextBindingHasMethods(binding)
     return binding

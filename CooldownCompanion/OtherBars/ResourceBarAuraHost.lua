@@ -315,6 +315,11 @@ function RB.CreateResourceBarAuraHostModule(deps)
         style.auraStackFont, style.auraStackFontSize, style.auraStackFontOutline, style.auraStackFontColor =
             ResolveCustomBarFont(cabConfig, "stackText")
         style.showAuraText = cabConfig.showDurationText == true
+        -- Duration Format: the kit's SetDurationText bind resolves its
+        -- formatter from these, the same keys the bar's CC-side FormatTime
+        -- text already reads off the cab config.
+        style.durationFormat = cabConfig.durationFormat
+        style.decimalTimers = cabConfig.decimalTimers
         -- Stack text resolution mirrors StyleCustomAuraBar's compat rule:
         -- stacks-mode bars with no explicit showStackText fall back to the
         -- legacy showText flag.

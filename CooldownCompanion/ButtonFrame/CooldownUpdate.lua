@@ -20,7 +20,6 @@ local ipairs = ipairs
 local type = type
 local issecretvalue = issecretvalue
 local math_max = math.max
-local math_ceil = math.ceil
 
 -- Imports from Visibility
 local EvaluateButtonVisibility = ST._EvaluateButtonVisibility
@@ -306,7 +305,9 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
         local anchor, xOff, yOff = CooldownCompanion:GetAuraDurationTextPlacement(style)
         fs:ClearAllPoints()
         fs:SetPoint(anchor, button, anchor, xOff, yOff)
-        local text = ("%d"):format(math_ceil(remaining))
+        -- Same Duration Format the live slot's SetDurationText bind resolves
+        -- from this style, so the preview countdown matches the live shape.
+        local text = CooldownCompanion.FormatTime(remaining, style)
         -- Honest about the entry's own switch: an entry with the marker off
         -- previews the bare countdown rather than a marker it will never draw.
         if kind == "pandemic_marker"

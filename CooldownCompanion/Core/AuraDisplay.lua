@@ -505,9 +505,10 @@ local function BuildSlotKit(slotButton)
     kit.textOverlay:SetFrameLevel(kit.swipe:GetFrameLevel() + 2)
 
     -- Initial registration with no options = stock Blizzard formatting.
-    -- Marker binds re-call SetDurationText with per-spell options at bind
-    -- time (StyleSlotKit; V23 PTR 7 — re-calls outside initializeFrame are
-    -- legal again), so nothing CC-owned is registered here.
+    -- Every bind re-calls SetDurationText with the group's Duration Format
+    -- options at bind time (StyleSlotKit; V23 PTR 7 — re-calls outside
+    -- initializeFrame are legal again), so nothing CC-owned is registered
+    -- here.
     kit.durationText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
     kit.durationText:SetPoint("BOTTOM", slotButton, "BOTTOM", 0, 1)
     slotButton:SetDurationText(kit.durationText)
@@ -914,9 +915,6 @@ end
 local PANDEMIC_FRACTION = 0.3
 local PANDEMIC_MARKER_MAX_LEN = 8
 
-local DURATION_ROUND_DOWN = Enum.NumericRuleFormatRounding
-    and Enum.NumericRuleFormatRounding.Down or 2
-
 -- Effective per-entry enable: the explicit per-button setting wins; the
 -- auto default is on for target debuffs (where pandemic refresh lives)
 -- and off for player buffs. style.pandemicMarkerEnabled is the group-wide
@@ -979,41 +977,59 @@ local function PandemicColorEscape(color)
     return ("|cff%02x%02x%02x"):format(r, g, b)
 end
 
-local function AppendLongDurationBreakpoints(list)
-    list[#list + 1] = {
-        threshold = 91,
-        format = "%.0f m",
-        components = { { div = 60, step = 1, rounding = DURATION_ROUND_DOWN } },
-    }
-    list[#list + 1] = {
-        threshold = 5401,
-        format = "%.0f h",
-        components = { { div = 3600, step = 1, rounding = DURATION_ROUND_DOWN } },
+-- One breakpoint cloned from a shared Duration Format bracket, optionally
+-- with a suffix baked onto its format string and a new threshold. Clones
+-- because the source brackets are a shared cache and must never be mutated;
+-- the components table is composition-only and safe to share.
+local function CloneBracket(bracket, threshold, suffix)
+    return {
+        threshold = threshold or bracket.threshold,
+        step = bracket.step,
+        rounding = bracket.rounding,
+        components = bracket.components,
+        format = suffix and (bracket.format .. suffix) or bracket.format,
     }
 end
 
--- Marker formatter for one bind: the number keeps the default "%d s" form
--- on both sides of the threshold — only the marker distinguishes the
--- pandemic window. Marker-only coloring is baked escapes (V21); in whole-
--- text mode the marker stays plain so the curve colors number and marker
--- together.
+-- Marker formatter for one bind: the countdown keeps the group's own
+-- Duration Format brackets on both sides of the threshold — inside the
+-- pandemic window each bracket's format gains the marker suffix, above it
+-- the brackets render plain, so only the marker distinguishes the window.
+-- Marker-only coloring is baked escapes (V21); in whole-text mode the
+-- marker stays plain so the curve colors number and marker together.
 local function BuildPandemicMarkerFormatter(threshold, marker, style)
-    local below
+    local suffix
     if (style.pandemicMarkerColorMode or "marker") == "marker" then
-        below = "%d s " .. PandemicColorEscape(style.pandemicMarkerColor) .. marker .. "|r"
+        suffix = " " .. PandemicColorEscape(style.pandemicMarkerColor) .. marker .. "|r"
     else
-        below = "%d s " .. marker
+        suffix = " " .. marker
     end
-    local list = {
-        { threshold = 0, step = 1, rounding = DURATION_ROUND_DOWN, format = below },
-        { threshold = threshold, step = 1, rounding = DURATION_ROUND_DOWN, format = "%d s" },
-    }
-    -- Long-duration brackets only when they keep the list ascending (a
-    -- pandemic threshold above 90s means a 5min+ aura; raw seconds above it
-    -- is an accepted cosmetic edge).
-    if threshold < 91 then
-        AppendLongDurationBreakpoints(list)
+
+    local brackets = CooldownCompanion.GetDurationFormatBrackets(style)
+    local list = {}
+    local containing, atThreshold
+    for _, bracket in ipairs(brackets) do
+        if bracket.threshold < threshold then
+            containing = bracket
+            list[#list + 1] = CloneBracket(bracket, nil, suffix)
+        elseif bracket.threshold == threshold then
+            atThreshold = true
+        end
     end
+    -- Re-enter the containing bracket's plain format exactly at the
+    -- threshold (the first bracket sits at 0 and the threshold is always
+    -- positive, so one always contains it), then keep every higher bracket
+    -- as-is. The list stays ascending for any threshold; a bracket sitting
+    -- exactly at the threshold already is the re-entry.
+    if containing and not atThreshold then
+        list[#list + 1] = CloneBracket(containing, threshold)
+    end
+    for _, bracket in ipairs(brackets) do
+        if bracket.threshold >= threshold then
+            list[#list + 1] = CloneBracket(bracket)
+        end
+    end
+
     local formatter = C_StringUtil.CreateNumericRuleFormatter()
     formatter:SetBreakpoints(list)
     return formatter
@@ -1035,8 +1051,8 @@ end
 
 -- SetDurationText options for one marker bind; nil when there is nothing
 -- to render (empty marker without whole-text coloring). With an empty
--- marker in whole-text mode the options are curve-only: stock Blizzard
--- formatting, pandemic-colored.
+-- marker in whole-text mode the options are curve-only; the bind site
+-- adds the group's plain Duration Format formatter to them.
 local function BuildPandemicDurationOptions(baseDuration, style)
     local threshold = baseDuration * PANDEMIC_FRACTION
     local marker = SanitizePandemicMarkerText(style.pandemicMarkerText or "!!")
@@ -1359,9 +1375,9 @@ local function StyleSlotKit(slot, button, buttonData, style)
 
     -- Pandemic marker + color (C9): per-bind SetDurationText re-call on the
     -- creation-captured fontstring (V23 PTR 7 — re-calls are legal; this
-    -- pass is structurally OOC). Marker binds carry per-spell options; every
-    -- other bind re-calls with none, resetting the binding to stock Blizzard
-    -- formatting — so slots reused across entries always converge.
+    -- pass is structurally OOC). Marker binds carry per-spell options;
+    -- Blizzard's setter resets the binding before applying whatever a bind
+    -- passes, so slots reused across entries always converge.
     local pandemicOptions
     if style.showAuraText ~= false and IsPandemicMarkerWanted(buttonData, style, slot.unit) then
         local baseDuration = GetPandemicBaseDuration(
@@ -1376,7 +1392,20 @@ local function StyleSlotKit(slot, button, buttonData, style)
         -- static text color — same trick as the bar colorShift fill).
         kit.durationText:SetTextColor(1, 1, 1, 1)
     end
-    slotButton:SetDurationText(kit.durationText, pandemicOptions)
+    -- Duration Format: every bind carries the group's own formatter so the
+    -- aura countdown renders like the cooldown text instead of Blizzard's
+    -- stock "12 s" SecondsFormatter. Marker binds already built a formatter
+    -- on the same brackets; color-only pandemic options gain the plain one.
+    local durationOptions = pandemicOptions
+    if not (durationOptions and durationOptions.textFormatter) then
+        local formatter = CooldownCompanion.GetDurationTextFormatter
+            and CooldownCompanion.GetDurationTextFormatter(style)
+        if formatter then
+            durationOptions = durationOptions or {}
+            durationOptions.textFormatter = formatter
+        end
+    end
+    slotButton:SetDurationText(kit.durationText, durationOptions)
 
     -- Bar name replica: bind-time entry name in the bar name-text style (the
     -- backdrop occludes CC's name text; a live aura-name override would need
