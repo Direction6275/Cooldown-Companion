@@ -221,7 +221,10 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
     local kind = preview.kind
     button._conditionalPreviewKind = kind
 
-    if kind == "cooldown" then
+    -- cooldown_swipe is the state look with the countdown numbers suppressed
+    -- (UpdateIconModeVisuals reads the kind in its text section): same state,
+    -- same desaturation/tint/fill, one readout withheld.
+    if kind == "cooldown" or kind == "cooldown_swipe" then
         local startTime, duration, remaining, loopStartTime, loopDuration = GetConditionalPreviewTiming(preview, now)
         if not startTime then return end
         button._cooldownState = COOLDOWN_STATE_COOLDOWN
@@ -230,6 +233,23 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
         button._conditionalPreviewDomain = "cooldown"
         SetConditionalPreviewTimingFields(button, startTime, duration, remaining, loopStartTime, loopDuration)
         if button.cooldown then
+            button.cooldown:SetCooldown(startTime, duration)
+        end
+        return
+    end
+
+    if kind == "cooldown_text" then
+        -- Countdown text alone, on a button that otherwise stays at rest: the
+        -- domain is deliberately NOT "cooldown", so the icon fill preview path
+        -- and the state look (desaturation, tint, bar drain and recolor) never
+        -- engage. Icons run the real widget so its own countdown region counts,
+        -- with the swipe suppressed by UpdateIconModeVisuals; bars render the
+        -- time text from the timing fields in UpdateBarFill.
+        local startTime, duration, remaining, loopStartTime, loopDuration = GetConditionalPreviewTiming(preview, now)
+        if not startTime then return end
+        button._conditionalPreviewDomain = "cooldown_text"
+        SetConditionalPreviewTimingFields(button, startTime, duration, remaining, loopStartTime, loopDuration)
+        if not button._isBar and button.cooldown then
             button.cooldown:SetCooldown(startTime, duration)
         end
         return

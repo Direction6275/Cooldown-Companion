@@ -306,6 +306,11 @@ local function ApplyDefaultCooldownSwipeStyle(button, style)
         return
     end
 
+    -- Any restore drops the Cooldown Text preview's suppression latch, so
+    -- the preview pass in UpdateIconModeVisuals re-suppresses on its next
+    -- look instead of trusting a latch another path just overwrote.
+    button._cooldownTextPreviewSwipeOff = nil
+
     local swipeEnabled = style.showCooldownSwipe ~= false
     local fillEnabled = style.showCooldownSwipeFill ~= false
     local edgeEnabled = style.cooldownSwipeEdgeEnabled == true
@@ -1102,6 +1107,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             and button._cooldownDeferred ~= true
         local cooldownVisualActive = realCooldownSwipeActive
             or button._conditionalPreviewDomain == "cooldown"
+            or button._conditionalPreviewDomain == "cooldown_text"
             or button._chargeCooldownVisualActive == true
             or (isGCDOnly and style.showGCDSwipe == true)
 
@@ -1154,6 +1160,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         and button._chargeCooldownVisualActive ~= true
         and button._hideCooldownChargesActive ~= true
         and button._conditionalPreviewDomain ~= "cooldown"
+        and button._conditionalPreviewDomain ~= "cooldown_text"
 
     if gcdOnlyRadialActive then
         if button._gcdSwipeDrawActive ~= true then
@@ -1164,6 +1171,22 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         end
     elseif button._gcdSwipeDrawActive == true then
         button._gcdSwipeDrawActive = nil
+        ApplyDefaultCooldownSwipeStyle(button, style)
+    end
+
+    -- Cooldown Text preview: the countdown rides button.cooldown's own
+    -- region, so the widget runs while the swipe it would normally draw
+    -- stays hidden. Latched; ApplyDefaultCooldownSwipeStyle drops the latch
+    -- on every restore, so any path that re-enables the swipe mid-preview
+    -- gets re-suppressed here on the next pass.
+    if button._conditionalPreviewKind == "cooldown_text" then
+        if button._cooldownTextPreviewSwipeOff ~= true then
+            button._cooldownTextPreviewSwipeOff = true
+            button.cooldown:SetDrawSwipe(false)
+            button.cooldown:SetDrawEdge(false)
+        end
+    elseif button._cooldownTextPreviewSwipeOff then
+        button._cooldownTextPreviewSwipeOff = nil
         ApplyDefaultCooldownSwipeStyle(button, style)
     end
 
@@ -1178,6 +1201,12 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         else
             showText = style.showCooldownText
             if showText and button._hideCooldownChargesActive then
+                showText = false
+            end
+            -- The Cooldown Swipe preview is the state look minus this
+            -- readout; the _cdTextHidden latch below restores the numbers
+            -- when the preview ends.
+            if showText and button._conditionalPreviewKind == "cooldown_swipe" then
                 showText = false
             end
             fontColor = style.cooldownFontColor or DEFAULT_WHITE

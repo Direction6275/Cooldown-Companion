@@ -218,7 +218,10 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
         chargeState = "zero"
     end
     local onCooldown = conditional and conditional.onCooldown == true or false
-    if kind == "cooldown" then
+    -- Cooldown Text draws only the countdown, but a countdown still claims
+    -- the cooldown situation, so the hide rules project it like the full
+    -- state preview always was.
+    if kind == "cooldown" or kind == "cooldown_text" then
         onCooldown = true
     end
 
@@ -2027,23 +2030,35 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
     local kind = state and state.kind or nil
     local now = GetTime()
 
-    if kind == "cooldown" and GetConditionalPreviewTiming then
+    -- The cooldown family: "cooldown" is the full state (text and rotation
+    -- assistant panels still fire it); "cooldown_swipe" is that state with
+    -- the countdown numbers withheld; "cooldown_text" is the countdown text
+    -- alone on an otherwise resting slot (no fill, no desaturation, no tint).
+    if (kind == "cooldown" or kind == "cooldown_swipe" or kind == "cooldown_text")
+        and GetConditionalPreviewTiming then
         local startTime, duration = GetConditionalPreviewTiming(state, now)
         if startTime then
+            local textOnly = kind == "cooldown_text"
             -- An active icon fill owns the cooldown visual and suppresses
             -- the swipe and edge (VisualState.lua SetIconFillIntent).
-            local fillActive = style.iconFillEnabled == true
+            local fillActive = not textOnly
+                and style.iconFillEnabled == true
                 and group.masqueEnabled ~= true
                 and ResolveIconFillTimerValue ~= nil
             local cd = slot.cooldown
-            local swipeEnabled = style.showCooldownSwipe ~= false and not fillActive
+            local swipeEnabled = not textOnly
+                and style.showCooldownSwipe ~= false and not fillActive
             cd:SetDrawSwipe(swipeEnabled and style.showCooldownSwipeFill ~= false)
             cd:SetDrawEdge(swipeEnabled and style.cooldownSwipeEdgeEnabled == true)
             cd:SetReverse(style.cooldownSwipeReverse or false)
             cd:SetSwipeColor(0, 0, 0, style.cooldownSwipeAlpha or 0.8)
             local edgeColor = style.cooldownSwipeEdgeColor or { 1, 1, 1, 1 }
             cd:SetEdgeColor(edgeColor[1], edgeColor[2], edgeColor[3], edgeColor[4])
-            StyleSlotCooldownText(slot, style)
+            if kind == "cooldown_swipe" then
+                cd:SetHideCountdownNumbers(true)
+            else
+                StyleSlotCooldownText(slot, style)
+            end
             cd:Show()
             cd:SetCooldown(startTime, duration)
             slot._cdcCondAnim = state
@@ -2061,12 +2076,14 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
                 SlotIconFillOnUpdate(fill)
             end
 
-            if style.desaturateOnCooldown then
-                forceDesat = true
-            end
-            if style.iconCooldownTintEnabled and style.iconCooldownTintColor then
-                local c = style.iconCooldownTintColor
-                tintR, tintG, tintB, tintA = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+            if not textOnly then
+                if style.desaturateOnCooldown then
+                    forceDesat = true
+                end
+                if style.iconCooldownTintEnabled and style.iconCooldownTintColor then
+                    local c = style.iconCooldownTintColor
+                    tintR, tintG, tintB, tintA = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                end
             end
         end
     elseif kind == "charge_full" or kind == "charge_missing" or kind == "charge_zero" then
@@ -2434,7 +2451,8 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         chargePresentationKind = "charge_full"
     end
 
-    if (kind == "cooldown" or IsAuraDurationTextKind(kind)) and slot.timeText then
+    if (kind == "cooldown" or kind == "cooldown_text" or IsAuraDurationTextKind(kind))
+        and slot.timeText then
         slot.timeText:SetText("")
     end
 
@@ -2523,6 +2541,19 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
                 tt:SetText(CooldownCompanion.FormatTime(remaining, style))
                 tt:Show()
             end
+        end
+    elseif kind == "cooldown_text" and GetConditionalPreviewTiming then
+        -- Countdown text alone on a resting bar (live parity: UpdateBarFill's
+        -- preview seam): no drain, no cooldown color, no desaturation/tint.
+        -- The conditional ticker keeps the text counting via _cdcCondAnim.
+        local startTime, _, remaining = GetConditionalPreviewTiming(state, now)
+        if startTime and not buttonData.isPassive and style.showCooldownText then
+            local tt = EnsureBarSlotTimeText(slot)
+            CooldownCompanion.ApplyFontStyle(tt, style, "cooldown")
+            AnchorBarSlotTimeText(slot, style)
+            tt:SetText(CooldownCompanion.FormatTime(remaining, style))
+            tt:Show()
+            slot._cdcCondAnim = state
         end
     elseif chargePresentationKind == "charge_full"
         or chargePresentationKind == "charge_missing"
@@ -2814,7 +2845,9 @@ local function EnsureConditionalTicker(preview)
                             slot.style or {}, slot.buttonData))
                     end
                     local widget
-                    if state.kind == "cooldown" then
+                    if state.kind == "cooldown"
+                        or state.kind == "cooldown_text"
+                        or state.kind == "cooldown_swipe" then
                         widget = slot.cooldown
                     elseif state.kind == "aura_duration_swipe" then
                         widget = slot.auraSwipe
@@ -2825,7 +2858,10 @@ local function EnsureConditionalTicker(preview)
                         and startTime > slot._cdcCondArmedStart + 0.05 then
                         slot._cdcCondArmedStart = startTime
                         widget:SetCooldown(startTime, duration)
-                        if state.kind == "cooldown" then
+                        -- cooldown_swipe keeps its numbers hidden across
+                        -- re-arms (a widget flag, not a region style), so
+                        -- only the text-bearing kinds restyle here.
+                        if state.kind == "cooldown" or state.kind == "cooldown_text" then
                             StyleSlotCooldownText(slot, slot.style or {})
                         end
                     end
@@ -2844,11 +2880,13 @@ local function EnsureConditionalTicker(preview)
                 if startTime then
                     if slot.timeText
                         and (state.kind == "cooldown"
+                            or state.kind == "cooldown_text"
                             or IsAuraDurationTextKind(state.kind)) then
                         local style = slot.style or {}
                         local showText = (IsAuraDurationTextKind(state.kind)
                                 and style.showAuraText ~= false)
-                            or (state.kind == "cooldown" and style.showCooldownText)
+                            or ((state.kind == "cooldown" or state.kind == "cooldown_text")
+                                and style.showCooldownText)
                         if showText and CooldownCompanion.FormatTime then
                             slot.timeText:SetText(DecorateAuraDurationPreviewText(
                                 CooldownCompanion.FormatTime(remaining, style),

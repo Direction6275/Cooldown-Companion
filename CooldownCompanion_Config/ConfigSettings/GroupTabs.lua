@@ -2258,7 +2258,6 @@ local function MakeCooldownTextAdvancedDescriptor()
         end,
     }
 end
-ST._MakeCooldownTextAdvancedDescriptor = MakeCooldownTextAdvancedDescriptor
 
 local function MakeCooldownSwipeAdvancedDescriptor()
     return {
@@ -2344,7 +2343,6 @@ local function MakeCooldownSwipeAdvancedDescriptor()
         end,
     }
 end
-ST._MakeCooldownSwipeAdvancedDescriptor = MakeCooldownSwipeAdvancedDescriptor
 
 local function ClearEffectsTabWidgets()
     for _, btn in ipairs(tabInfoButtons) do

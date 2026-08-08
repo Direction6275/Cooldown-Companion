@@ -141,6 +141,39 @@ local function SetBarTimeText(button, text)
 end
 
 local function UpdateBarFill(button)
+    -- Cooldown Text preview (preview command center): the countdown text
+    -- alone on a resting bar — the drain and the bar colors stay in their
+    -- ready state, and UpdateBarDisplay keeps the ready text color off the
+    -- countdown while the kind is set. Timing fields are recomputed by
+    -- ApplyConditionalVisualPreview each cooldown pass (loop wraps included),
+    -- so reading them here only has to count the current cycle down.
+    if button._conditionalPreviewKind == "cooldown_text" then
+        SetStatusBarImmediateValue(button.statusBar, button.buttonData.isPassive and 0 or 1)
+        if button.style.showCooldownText and not button.buttonData.isPassive then
+            if button._barTextMode ~= "cd" then
+                button._barTextMode = "cd"
+                button._barTextColorDirty = true
+                local f = CooldownCompanion:FetchFont(button.style.cooldownFont or "Friz Quadrata TT")
+                local s = button.style.cooldownFontSize or 12
+                local o = ST.GetEffectiveFontOutline(button.style.cooldownFontOutline or "OUTLINE")
+                button.timeText:SetFont(f, s, o)
+                ST.ApplyFontShadowForOutline(button.timeText, o)
+            end
+            if button._barTextColorDirty then
+                button._barTextColorDirty = nil
+                local cc = button.style.cooldownFontColor or DEFAULT_WHITE
+                button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+            end
+            local remaining = (button._conditionalPreviewStartTime or 0)
+                + (button._conditionalPreviewDuration or 0) - GetTime()
+            if remaining < 0 then remaining = 0 end
+            SetBarTimeText(button, FormatTime(remaining, button.style))
+        else
+            SetBarTimeText(button, "")
+        end
+        return
+    end
+
     -- Single-bar path
     -- DurationObjects are handed to StatusBar:SetTimerDuration so drain/fill motion
     -- is engine-driven instead of re-sampled as Lua percentages.
@@ -292,8 +325,11 @@ local function UpdateBarDisplay(button)
         onCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
     end
 
-    -- Time text color: switch between cooldown and ready colors
+    -- Time text color: switch between cooldown and ready colors. The
+    -- Cooldown Text preview writes a countdown while the bar rests, so the
+    -- ready color must not claim it.
     local wantReadyTextColor = not onCooldown and style.showBarReadyText
+        and button._conditionalPreviewKind ~= "cooldown_text"
     if button._barReadyTextColor ~= wantReadyTextColor then
         button._barReadyTextColor = wantReadyTextColor
         if wantReadyTextColor then

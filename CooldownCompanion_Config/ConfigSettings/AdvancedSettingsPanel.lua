@@ -469,8 +469,9 @@ local function OpenAdvancedSettingsPanel(opts)
 
     CloseCompetingEditors()
     -- Singleton, exactly as the settings-side gears have always been: opening
-    -- one panel closes whatever else was up. Only the preview command center
-    -- stacks panels, and it comes in through OpenAdvancedSettingsPanels.
+    -- one panel closes whatever else was up. (The preview command center's
+    -- open-every-panel path was retired 2026-08-08 with the combined cooldown
+    -- preview that needed it; its gear rides this one-at-a-time seam now.)
     HideOpenPanels(nil)
     OpenPanelForDescriptor(descriptor)
 
@@ -478,88 +479,6 @@ local function OpenAdvancedSettingsPanel(opts)
         ST._RefreshPreviewCommandCenterGear()
     end
     return true
-end
-
--- The additive path, for the preview command center's gear only: show every
--- advanced panel the chosen preview is driven by, and nothing else. Panels
--- already open under a matching context are left exactly as they are, so a
--- repeat call neither rebuilds nor flaps them.
-local function OpenAdvancedSettingsPanels(list)
-    if type(list) ~= "table" then
-        return false
-    end
-
-    local descriptors = {}
-    for _, opts in ipairs(list) do
-        local descriptor = NormalizeDescriptor(opts)
-        if descriptor then
-            descriptors[#descriptors + 1] = descriptor
-        end
-    end
-    if #descriptors == 0 then
-        return false
-    end
-
-    local wanted = {}
-    for _, descriptor in ipairs(descriptors) do
-        wanted[descriptor.settingKey] = descriptor
-    end
-
-    -- Anything else goes, including a same-key panel left over from a context
-    -- that has moved on - this is still "the settings for THIS preview", not
-    -- an accumulating pile of windows.
-    for index = #openPanels, 1, -1 do
-        local panel = openPanels[index]
-        local descriptor = wanted[panel.descriptor.settingKey]
-        if not (descriptor and ContextMatches(panel.descriptor.context, descriptor.context)) then
-            panel.window:Hide()
-        end
-    end
-
-    local openedAny = false
-    for _, descriptor in ipairs(descriptors) do
-        if not FindPanelIndexByDescriptor(descriptor) then
-            -- Only once, and only when something actually opens: the side
-            -- editors have no quarrel with a batch that is already on screen.
-            if not openedAny then
-                CloseCompetingEditors()
-            end
-            OpenPanelForDescriptor(descriptor)
-            openedAny = true
-        end
-    end
-
-    -- The caller's list is the stack order (owner ruling 2026-07-26: cooldown
-    -- text on top, swipe below), not the order the panels happened to open in
-    -- - the panel riding the queue seam opens during the rebuild and would
-    -- otherwise always land first. The hide pass above left only this batch's
-    -- panels in the list, so ordering by descriptor orders the whole stack.
-    local ordered = {}
-    local placed = {}
-    for _, descriptor in ipairs(descriptors) do
-        local index = FindPanelIndexByDescriptor(descriptor)
-        if index and not placed[index] then
-            placed[index] = true
-            ordered[#ordered + 1] = openPanels[index]
-        end
-    end
-    for index, panel in ipairs(openPanels) do
-        if not placed[index] then
-            ordered[#ordered + 1] = panel
-        end
-    end
-    for index = 1, #ordered do
-        openPanels[index] = ordered[index]
-    end
-
-    -- Unconditional: a reorder with nothing newly opened still moves windows.
-    SyncPrimaryWindowHandle()
-    AnchorPanelsToConfig()
-
-    if ST._RefreshPreviewCommandCenterGear then
-        ST._RefreshPreviewCommandCenterGear()
-    end
-    return openedAny
 end
 
 local function RebindAdvancedSettingsPanel(opts)
@@ -643,7 +562,6 @@ local function IsAdvancedSettingsPanelOpen(settingKey, extraContext)
 end
 
 CS.OpenAdvancedSettingsPanel = OpenAdvancedSettingsPanel
-CS.OpenAdvancedSettingsPanels = OpenAdvancedSettingsPanels
 CS.CloseAdvancedSettingsPanel = CloseAdvancedSettingsPanel
 CS.RefreshAdvancedSettingsPanel = RefreshAdvancedSettingsPanel
 CS.RebindAdvancedSettingsPanel = RebindAdvancedSettingsPanel

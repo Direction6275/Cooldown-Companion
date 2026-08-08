@@ -127,7 +127,6 @@ local function MakeBarCooldownTextAdvancedDescriptor()
         end,
     }
 end
-ST._MakeBarCooldownTextAdvancedDescriptor = MakeBarCooldownTextAdvancedDescriptor
 
 local function BuildBarAppearanceTab(container, group, style)
     local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
