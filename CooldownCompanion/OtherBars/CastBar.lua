@@ -1,31 +1,41 @@
 --[[
     CooldownCompanion - CastBar
-    Repositions and reskins PlayerCastingBarFrame to anchor beneath/above an icon group.
+    CC draws its own player cast bar and suppresses Blizzard's while the feature
+    is enabled.  The CC bar is used in both stack-attached and independent modes.
 
-    TAINT RULES — PlayerCastingBarFrame has secure OnEvent handlers that access
-    CastingBarTypeInfo (keyed by secretwrap values).  Any taint in the execution
-    context causes "forbidden table" errors.
+    WHY A CC-OWNED FRAME (12.1): the resource stack gained a Blizzard-side
+    collapsing aura block container, and PlayerCastingBarFrame can never anchor
+    to it — SetPoint fails with "Anchoring disallowed as dependent object would
+    inherit forbidden aspects: UntrustedLayoutScriptExecution".  Only a frame
+    created with DisableUntrustedLayoutScriptsTemplate may depend on an aspected
+    anchor, and the aspect cannot be added to a Blizzard frame from addon code.
+
+    FRAME RULES — every FRAME in the cast bar subtree, and every frame anchored
+    to it, is created with DisableUntrustedLayoutScriptsTemplate.  Textures and
+    font strings are regions, not frames, and need nothing.  The aspect disables
+    layout scripts: no OnSizeChanged or other layout script anywhere in the
+    subtree, and POSITION is never read back from the bar or its children
+    (GetCenter/GetLeft/GetTop/GetPoint/GetRect).  Sizes CC sets itself may be
+    read back, which is why the bar always gets an explicit width.
+
+    TAINT RULES — PlayerCastingBarFrame still has secure OnEvent handlers that
+    access CastingBarTypeInfo (keyed by secretwrap values), so suppression and
+    restore touch it with C-level widget methods only.
 
     FORBIDDEN (causes taint):
-      - Writing ANY Lua property to PlayerCastingBarFrame from addon code
-        (e.g. cb.showIcon, cb.showCastTimeSetting, cb.ignoreFramePositionManager).
-        These values are read by Blizzard's OnEvent; insecure writes taint the
-        entire execution, which cascades: even self.casting, self.barType etc.
-        written DURING the tainted event become tainted for subsequent events.
-      - Calling SetIconShown() from addon code (writes self.showIcon internally).
-      - Calling SetLook() from addon code (writes self.look, self.playCastFX).
-      - hooksecurefunc on methods called FROM OnEvent (SetStatusBarTexture, ShowSpark).
+      - Writing ANY Lua property to PlayerCastingBarFrame from addon code.
+      - Calling mixin methods that write Lua properties internally: SetUnit,
+        SetLook, SetIconShown, SetAndUpdateShowCastbar.
 
     SAFE:
-      - C-level widget methods (SetPoint, SetHeight, SetStatusBarTexture,
-        SetStatusBarColor, Show, Hide, etc.) — no Lua table entries written.
-      - Calling C methods on CHILD objects (cb.Icon:Hide(), cb.Text:SetFont()).
-      - hooksecurefunc — does not taint the caller's execution context.
-      - hooksecurefunc on methods NOT called from OnEvent (SetLook).
+      - C-level widget methods (UnregisterAllEvents, RegisterUnitEvent, Hide,
+        SetPoint, SetParent, ...) — no Lua table entries written.
+      - Methods on the managed-layout CONTAINER (cb.layoutParent).
 
-    Strategy: all customisation uses C widget methods only.  A helper frame listens
-    for cast events independently and defers re-application via C_Timer.After(0),
-    ensuring our code never runs inside Blizzard's secure handler.
+    The player's own cast data is plain for addons: UnitCastingInfo,
+    UnitChannelInfo, GetUnitEmpowerStageDuration, GetUnitEmpowerHoldAtMaxTime and
+    the UNIT_SPELLCAST_* events are annotated SecretWhenUnitSpellCastRestricted,
+    which is secret only for units other than the player and their pet.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -33,21 +43,25 @@ local CooldownCompanion = ST.Addon
 local RB = ST._RB
 
 local isApplied = false
-local pixelBorders = nil
 local hooksInstalled = false
 local castEventFrame = nil
 local castEventFrameEnabled = false
-local fillMaskLeft, fillMaskRight = nil, nil
+local blizzardSuppressed = false
 -- Two different things, deliberately separate (owner ruling 2026-07-26).
 -- The unlock assist paints the real bar so an independent cast bar can be
 -- positioned; the command-center preview is a config-canvas state and never
 -- touches the world.
 local isUnlockAssistActive = false
 local isCanvasPreviewActive = false
-local originalFXSizes = nil
+-- Blizzard systems (Professions crafting, the talent frame) can replace the
+-- player cast bar with their own overlay bar (OverlayPlayerCastingBarMixin);
+-- while one is up CC yields exactly like Blizzard's own bar does, or the
+-- player would see the cast twice.
+local overlayReplacingPlayerBar = false
 local independentMoverFrame = nil
 local InstallHooks
 local UpdateIndependentCastBarDragState
+local ApplyCastBarUnlockPreview
 
 function CooldownCompanion:GetIndependentCastBarSnapFrame()
     return independentMoverFrame
@@ -694,407 +708,348 @@ local function HideIndependentCastBarMover()
     end
 end
 
---- Create or return the pixel border textures for the cast bar
-local function GetPixelBorders(cb)
-    if pixelBorders then return pixelBorders end
-    pixelBorders = ST.CreateBorderTextureSet(cb, "OVERLAY", 7)
-    return pixelBorders
-end
-
---- Optional iconFrame + iconOnRight: extends the border to wrap both bar+icon.
-local function ShowPixelBorders(cb, color, size, renderMode, iconFrame, iconOnRight)
-    local borders = GetPixelBorders(cb)
-    local leftFrame = (iconFrame and not iconOnRight) and iconFrame or cb
-    local rightFrame = (iconFrame and iconOnRight) and iconFrame or cb
-    ST.ApplyBorderTexturesBetween(borders, leftFrame, rightFrame, color, size, ST.GetEffectiveBorderRenderMode(renderMode, nil, size))
-end
-
-local function HidePixelBorders()
-    if not pixelBorders then return end
-    ST.HideBorderTextures(pixelBorders)
-end
-
---- Icon pixel borders (inline mode — matches bar border style)
-local iconPixelBorders = nil
-
-local function GetIconPixelBorders(cb)
-    if iconPixelBorders then return iconPixelBorders end
-    iconPixelBorders = ST.CreateBorderTextureSet(cb, "OVERLAY", 7)
-    return iconPixelBorders
-end
-
-local function ShowIconPixelBorders(cb, color, size, renderMode)
-    local borders = GetIconPixelBorders(cb)
-    ST.ApplyBorderTextures(borders, cb.Icon, color, size, ST.GetEffectiveBorderRenderMode(renderMode, nil, size))
-end
-
-local function HideIconPixelBorders()
-    if not iconPixelBorders then return end
-    ST.HideBorderTextures(iconPixelBorders)
-end
-
---- Fill edge masks: thin opaque strips at the left/right edges of the StatusBar
---- that prevent the bar fill texture from visually poking past the Blizzard border
---- atlas when the bar is wider/taller than the designed 208x11 default.
---- Layer: ARTWORK sublevel 1 (above fill at BORDER, below border at ARTWORK sublevel 4).
-local function EnsureFillMasks(cb)
-    if fillMaskLeft then return end
-    fillMaskLeft = cb:CreateTexture(nil, "ARTWORK", nil, 1)
-    fillMaskRight = cb:CreateTexture(nil, "ARTWORK", nil, 1)
-
-    fillMaskLeft:SetColorTexture(0, 0, 0, 1)
-    fillMaskLeft:SetWidth(2)
-    fillMaskLeft:SetPoint("TOPLEFT", cb, "TOPLEFT", 0, 0)
-    fillMaskLeft:SetPoint("BOTTOMLEFT", cb, "BOTTOMLEFT", 0, 0)
-
-    fillMaskRight:SetColorTexture(0, 0, 0, 1)
-    fillMaskRight:SetWidth(2)
-    fillMaskRight:SetPoint("TOPRIGHT", cb, "TOPRIGHT", 0, 0)
-    fillMaskRight:SetPoint("BOTTOMRIGHT", cb, "BOTTOMRIGHT", 0, 0)
-end
-
-local function ShowFillMasks(cb)
-    EnsureFillMasks(cb)
-    fillMaskLeft:Show()
-    fillMaskRight:Show()
-end
-
-local function HideFillMasks()
-    if fillMaskLeft then fillMaskLeft:Hide() end
-    if fillMaskRight then fillMaskRight:Hide() end
-end
-
 ------------------------------------------------------------------------
--- Spark sizing helper — height matches bar exactly, width stays default
+-- CC-owned cast bar frame
+--
+-- Structure (every FRAME carries the forbidden-aspect template so the bar may
+-- anchor to the aspected aura block container):
+--
+--   castBarFrame   root; CC anchors and sizes it, and it never moves itself
+--     content      shake target; the root stays put so the anchor survives
+--       fill       StatusBar covering the bar area (footprint minus inline icon)
+--       textLayer  name / cast time above the fill
+--
+-- Widths are always set explicitly: a two-point anchor across the block
+-- container would make the width secret, and position is never read back.
 ------------------------------------------------------------------------
+
+local CAST_FRAME_TEMPLATE = "DisableUntrustedLayoutScriptsTemplate"
+
+-- Blizzard designs the cast bar art for 208x11; FX regions scale off that.
+local FX_BASE_WIDTH = 208
+local FX_BASE_HEIGHT = 11
 
 -- Default spark is 20px for an 11px bar.  1.66x splits the difference between
 -- the full default ratio (1.82x) and a tighter fit (1.5x).
 local SPARK_HEIGHT_SCALE = 1.66
 
-local function ApplySparkSize(cb, barHeight)
-    if not cb.Spark then return end
-    local atlas = cb.Spark:GetAtlas()
-    if atlas then
-        cb.Spark:SetAtlas(atlas, false)
-    end
-    cb.Spark:SetSize(8, barHeight * SPARK_HEIGHT_SCALE)
-end
-
-------------------------------------------------------------------------
--- FX scaling helpers — scale cast bar effect textures proportionally
--- Default bar is 208x11; FX regions are designed for that size.
--- When the bar is wider/taller, scale all FX regions proportionally.
-------------------------------------------------------------------------
-
--- Bar-wide FX: scale both width and height proportionally
-local FX_REGIONS_BAR_WIDE = {
-    "BorderMask",       -- MaskTexture that clips all FX (256x13)
-    "InterruptGlow",    -- interrupt outer glow
-    "ChargeGlow",       -- empowered outer glow
-    "EnergyGlow",       -- standard finish upward glow
-    "EnergyMask",       -- standard finish mask
-    "Flakes01",         -- standard finish particles
-    "Flakes02",
-    "Flakes03",
-    "Shine",            -- crafting finish wipe
-    "CraftingMask",     -- crafting finish mask
-    "BaseGlow",         -- channel finish FX
-    "WispGlow",
-    "WispMask",
-    "Sparkles01",
-    "Sparkles02",
+-- FX timings mirror Blizzard's animation groups (CastingBarFrame.xml).
+local FLASH_IN, FLASH_OUT = 0.2, 0.3
+local INTERRUPT_GLOW_DURATION = 1.0
+local FADE_HOLD_FINISH = 0.2
+local FADE_HOLD_INTERRUPT = 1.0
+local FADE_DURATION = 0.3
+local SHAKE_STEP = 0.05
+local SHAKE_OFFSETS = {
+    { -1, 1 }, { 1, -2 }, { 1, 2 }, { -1, -1 },
 }
 
--- Spark-local FX: small textures anchored to the spark pip — scale height only
-local FX_REGIONS_SPARK_LOCAL = {
-    "StandardGlow",     -- spark trail glow (37x12)
-    "CraftGlow",        -- craft spark trail glow (37x12)
-    "ChannelShadow",    -- channel spark shadow (11x11)
+local castBarFrame = nil
+local appliedWidth, appliedHeight = 200, 15
+local appliedFillWidth = 200
+-- Spark toggles are read every rendered frame, so the style pass caches them.
+local sparkEnabled, sparkTrailEnabled = true, true
+
+-- Live cast + effect state.  `state` is nil whenever no cast is running; the
+-- effect timers keep the driver alive through the finish/interrupt tail.
+local cast = {
+    state = nil,        -- "cast" | "channel" | "empower"
+    startTime = 0,
+    endTime = 0,
+    castID = nil,
+    empowerHold = false, -- endTime carries GetUnitEmpowerHoldAtMaxTime
+    numStages = 0,      -- kept so pips can rebuild on pushback or resize
+    fadeMode = nil,     -- "finish" | "interrupt"
+    fadeElapsed = 0,
+    flashElapsed = nil,
+    glowElapsed = nil,
+    shakeElapsed = nil,
 }
 
-local function CaptureOriginalFXSizes(cb)
-    if originalFXSizes then return end
-    originalFXSizes = {}
-    for _, name in ipairs(FX_REGIONS_BAR_WIDE) do
-        local region = cb[name]
-        if region then
-            local w, h = region:GetSize()
-            if w and h and w > 0 and h > 0 then
-                originalFXSizes[name] = { w = w, h = h }
+local function ResetCastState()
+    cast.state = nil
+    cast.startTime = 0
+    cast.endTime = 0
+    cast.castID = nil
+    cast.empowerHold = false
+    cast.numStages = 0
+    cast.fadeMode = nil
+    cast.fadeElapsed = 0
+    cast.flashElapsed = nil
+    cast.glowElapsed = nil
+    cast.shakeElapsed = nil
+end
+
+--- Cache an atlas's design size once so later layout passes can scale from it.
+--- Read from the atlas record rather than the region: nothing in the cast bar
+--- subtree is measured back out of the frame.
+local function CaptureAtlasSize(tex, atlas)
+    tex:SetAtlas(atlas, false)
+    local info = C_Texture.GetAtlasInfo(atlas)
+    tex._ccBaseW = (info and info.width and info.width > 0) and info.width or 1
+    tex._ccBaseH = (info and info.height and info.height > 0) and info.height or 1
+end
+
+local function EnsureCastBarFrame()
+    if castBarFrame then return castBarFrame end
+
+    local frame = CreateFrame("Frame", "CooldownCompanionCastBar", UIParent, CAST_FRAME_TEMPLATE)
+    frame:SetFixedFrameStrata(true)
+    frame:SetFrameStrata("HIGH")
+    frame:SetSize(appliedWidth, appliedHeight)
+    frame:EnableMouse(false)
+    frame:Hide()
+
+    local content = CreateFrame("Frame", nil, frame, CAST_FRAME_TEMPLATE)
+    content:SetAllPoints(frame)
+    content:EnableMouse(false)
+    frame.content = content
+
+    local fill = CreateFrame("StatusBar", nil, content, CAST_FRAME_TEMPLATE)
+    fill:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Solid"))
+    fill:SetMinMaxValues(0, 1)
+    ST.SetStatusBarImmediateValue(fill, 0)
+    frame.fill = fill
+
+    fill.bg = fill:CreateTexture(nil, "BACKGROUND")
+    fill.bg:SetAllPoints(fill)
+    fill.bg:SetColorTexture(0, 0, 0, 0.5)
+
+    frame.spark = fill:CreateTexture(nil, "OVERLAY", nil, 3)
+    frame.spark:SetAtlas("ui-castingbar-pip")
+    frame.spark:Hide()
+
+    -- Blizzard gives the spark trail an explicit 37x12 rather than the atlas
+    -- size, so the design size is a constant here too.
+    frame.sparkTrail = fill:CreateTexture(nil, "OVERLAY", nil, 2)
+    frame.sparkTrail:SetAtlas("cast_standard_pipglow", false)
+    frame.sparkTrail._ccBaseW = 37
+    frame.sparkTrail._ccBaseH = 12
+    frame.sparkTrail:SetBlendMode("ADD")
+    frame.sparkTrail:SetPoint("RIGHT", frame.spark, "LEFT", 2, 0)
+    frame.sparkTrail:Hide()
+
+    frame.flash = fill:CreateTexture(nil, "OVERLAY", nil, 0)
+    frame.flash:SetAtlas("ui-castingbar-full-glow-standard")
+    frame.flash:SetBlendMode("ADD")
+    frame.flash:SetPoint("TOPLEFT", fill, "TOPLEFT", -1, 1)
+    frame.flash:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT", 1, -1)
+    frame.flash:SetAlpha(0)
+
+    frame.interruptGlow = content:CreateTexture(nil, "BACKGROUND", nil, 1)
+    CaptureAtlasSize(frame.interruptGlow, "cast_interrupt_outerglow")
+    frame.interruptGlow:SetBlendMode("ADD")
+    frame.interruptGlow:SetPoint("CENTER", fill, "CENTER", 0, 0)
+    frame.interruptGlow:SetAlpha(0)
+
+    local textLayer = CreateFrame("Frame", nil, content, CAST_FRAME_TEMPLATE)
+    textLayer:SetAllPoints(fill)
+    textLayer:SetFrameLevel(fill:GetFrameLevel() + 2)
+    textLayer:EnableMouse(false)
+    frame.textLayer = textLayer
+
+    -- On the text layer, not on content: `fill` is a child FRAME of content
+    -- and outranks any content texture regardless of draw layer, so an
+    -- offset icon dragged over the bar would render behind the fill. Here it
+    -- sits above the fill and below the border overlay; the texts stay above
+    -- it on OVERLAY.
+    frame.icon = textLayer:CreateTexture(nil, "ARTWORK", nil, 3)
+    frame.icon:Hide()
+
+    frame.nameText = textLayer:CreateFontString(nil, "OVERLAY")
+    frame.castTimeText = textLayer:CreateFontString(nil, "OVERLAY")
+
+    -- Empower stage separators, built on demand per cast.
+    frame.stagePips = {}
+
+    -- Borders sit on their own frame above the fill: a texture on `content`
+    -- would be occluded by the StatusBar child, which outranks it by frame
+    -- level regardless of draw layer.
+    local overlay = CreateFrame("Frame", nil, content, CAST_FRAME_TEMPLATE)
+    overlay:SetAllPoints(frame)
+    overlay:SetFrameLevel(textLayer:GetFrameLevel() + 1)
+    overlay:EnableMouse(false)
+    frame.overlay = overlay
+
+    -- Blizzard border atlas, for borderStyle == "blizzard".
+    frame.blizzardBorder = overlay:CreateTexture(nil, "ARTWORK", nil, 4)
+    frame.blizzardBorder:SetAtlas("ui-castingbar-frame")
+    frame.blizzardBorder:Hide()
+
+    frame.borders = ST.CreateBorderTextureSet(overlay, "OVERLAY", 7)
+    frame.iconBorders = ST.CreateBorderTextureSet(overlay, "OVERLAY", 7)
+
+    castBarFrame = frame
+    return frame
+end
+
+------------------------------------------------------------------------
+-- Blizzard cast bar suppression
+--
+-- The event set below is exactly what CastingBarMixin:SetUnit registers, so
+-- re-registering it restores the frame without calling SetUnit (which writes
+-- Lua properties and would taint the secure OnEvent).
+------------------------------------------------------------------------
+
+local BLIZZARD_CAST_UNIT_EVENTS = {
+    "UNIT_SPELLCAST_INTERRUPTED",
+    "UNIT_SPELLCAST_DELAYED",
+    "UNIT_SPELLCAST_CHANNEL_START",
+    "UNIT_SPELLCAST_CHANNEL_UPDATE",
+    "UNIT_SPELLCAST_CHANNEL_STOP",
+    "UNIT_SPELLCAST_EMPOWER_START",
+    "UNIT_SPELLCAST_EMPOWER_UPDATE",
+    "UNIT_SPELLCAST_EMPOWER_STOP",
+    "UNIT_SPELLCAST_INTERRUPTIBLE",
+    "UNIT_SPELLCAST_NOT_INTERRUPTIBLE",
+    "UNIT_SPELLCAST_START",
+    "UNIT_SPELLCAST_STOP",
+    "UNIT_SPELLCAST_FAILED",
+}
+
+local function SuppressBlizzardCastBar()
+    if blizzardSuppressed then return end
+    local cb = PlayerCastingBarFrame
+    if not cb then return end
+    blizzardSuppressed = true
+
+    -- Method on the CONTAINER, not on the cast bar (we do NOT write
+    -- cb.ignoreFramePositionManager — that taints OnEvent).
+    if cb.layoutParent then
+        cb.layoutParent:RemoveManagedFrame(cb)
+    end
+    cb:UnregisterAllEvents()
+    -- Edit Mode replaces Hide/SetPoint/ClearAllPoints on this frame with Lua
+    -- overrides (EditModeSystemMixin:OnSystemLoad) that run edit-mode logic;
+    -- calling those from addon code executes Blizzard Lua under addon taint.
+    -- The *Base aliases are the preserved C methods.
+    local hide = cb.HideBase or cb.Hide
+    hide(cb)
+end
+
+local function RestoreBlizzardCastBar()
+    if not blizzardSuppressed then return end
+    blizzardSuppressed = false
+
+    local cb = PlayerCastingBarFrame
+    if not cb then return end
+
+    for _, event in ipairs(BLIZZARD_CAST_UNIT_EVENTS) do
+        cb:RegisterUnitEvent(event, "player")
+    end
+    cb:RegisterEvent("PLAYER_ENTERING_WORLD")
+
+    -- The Edit Mode overrides again (see SuppressBlizzardCastBar): every
+    -- point/visibility write below goes through the preserved C aliases, and
+    -- isInDefaultPosition is a plain field read, never the mixin call.
+    local clearAllPoints = cb.ClearAllPointsBase or cb.ClearAllPoints
+    local setPoint = cb.SetPointBase or cb.SetPoint
+    local hide = cb.HideBase or cb.Hide
+
+    cb:SetAlpha(1)
+
+    -- "Lock To Player Frame": PlayerFrame owns the bar's parent, strata and
+    -- anchors (PlayerFrame_AttachCastBar) and ignoreFramePositionManager is
+    -- set, so the writes below would detach it from its owner for the rest
+    -- of the session. Leave the whole arrangement alone.
+    if not cb.attachedToPlayerFrame then
+        cb:SetParent(UIParent)
+        cb:SetFixedFrameStrata(true)
+        cb:SetFrameStrata("HIGH")
+
+        -- Restore the EditMode position for a custom placement. The managed
+        -- default position is NOT re-added here: AddManagedFrame early-exits
+        -- on a hidden frame, and ManagedFrameMixin.OnShow re-adds the bar on
+        -- its next cast anyway.
+        clearAllPoints(cb)
+        if cb.systemInfo and cb.systemInfo.anchorInfo
+            and cb.systemInfo.isInDefaultPosition == false then
+            local scale = cb:GetScale()
+            local ai = cb.systemInfo.anchorInfo
+            setPoint(cb, ai.point, ai.relativeTo, ai.relativePoint,
+                     ai.offsetX / scale, ai.offsetY / scale)
+            if cb.systemInfo.anchorInfo2 then
+                local ai2 = cb.systemInfo.anchorInfo2
+                setPoint(cb, ai2.point, ai2.relativeTo, ai2.relativePoint,
+                         ai2.offsetX / scale, ai2.offsetY / scale)
             end
         end
     end
-    for _, name in ipairs(FX_REGIONS_SPARK_LOCAL) do
-        local region = cb[name]
-        if region then
-            local w, h = region:GetSize()
-            if w and h and w > 0 and h > 0 then
-                originalFXSizes[name] = { w = w, h = h }
-            end
-        end
-    end
-end
 
-local function ApplyFXScaling(cb, barWidth, barHeight)
-    CaptureOriginalFXSizes(cb)
-    if not originalFXSizes then return end
-
-    local widthScale = barWidth / 208
-    local heightScale = barHeight / 11
-
-    for _, name in ipairs(FX_REGIONS_BAR_WIDE) do
-        local orig = originalFXSizes[name]
-        if orig then
-            local region = cb[name]
-            if region then
-                region:SetSize(orig.w * widthScale, orig.h * heightScale)
-            end
-        end
-    end
-    -- Spark-local: height only — width stays original to avoid distortion
-    for _, name in ipairs(FX_REGIONS_SPARK_LOCAL) do
-        local orig = originalFXSizes[name]
-        if orig then
-            local region = cb[name]
-            if region then
-                region:SetSize(orig.w, orig.h * heightScale)
-            end
-        end
-    end
-end
-
-local function RevertFXScaling(cb)
-    if not originalFXSizes then return end
-    for _, name in ipairs(FX_REGIONS_BAR_WIDE) do
-        local orig = originalFXSizes[name]
-        if orig then
-            local region = cb[name]
-            if region then
-                region:SetSize(orig.w, orig.h)
-            end
-        end
-    end
-    for _, name in ipairs(FX_REGIONS_SPARK_LOCAL) do
-        local orig = originalFXSizes[name]
-        if orig then
-            local region = cb[name]
-            if region then
-                region:SetSize(orig.w, orig.h)
-            end
-        end
-    end
+    -- Blizzard's frame shows itself again on the next cast START; its cached
+    -- casting state is refreshed by that event and by PLAYER_ENTERING_WORLD.
+    hide(cb)
 end
 
 ------------------------------------------------------------------------
--- Fill styling — safe C-level widget calls only.
+-- Geometry
 ------------------------------------------------------------------------
 
-local function ReapplyCastBarFillStyling(cb, s)
-    if not cb or not s or s.enabled ~= true or s.stylingEnabled ~= true then return end
-
-    local tex = s.barTexture
-    if tex and tex ~= "" then
-        cb:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(tex))
-    end
-
-    local bc = s.barColor
-    if bc then
-        cb:SetStatusBarColor(bc[1] or 0, bc[2] or 0, bc[3] or 0, bc[4] or 1)
-    end
+local function GetCastBarHeight(s)
+    return tonumber(s and s.height) or 15
 end
 
-local function ReapplyActiveCastBarFillStyling(cb)
-    if not isApplied then return nil end
-
-    local s = GetCastBarSettings()
-    ReapplyCastBarFillStyling(cb, s)
-    return s
+local function IsInlineIcon(s)
+    return s.showIcon ~= false and not s.iconOffset
 end
 
-------------------------------------------------------------------------
--- FX suppression — hides/stops individual FX categories.
--- Called from DeferredReapply and ApplyCastBarSettings (both branches).
--- Uses ~= false so missing keys default to enabled.
-------------------------------------------------------------------------
-
-local function SuppressFX(cb, s)
-    -- Always hide ChannelShadow when styling is on (artifacts)
-    if s.stylingEnabled then
-        if cb.ChannelShadow then cb.ChannelShadow:Hide() end
-    end
-    if s.showSparkTrail == false then
-        if cb.StandardGlow then cb.StandardGlow:Hide() end
-        if cb.CraftGlow then cb.CraftGlow:Hide() end
-        if cb.ChannelShadow then cb.ChannelShadow:Hide() end
-    end
-    if s.showInterruptShake == false then
-        if cb.InterruptShakeAnim then cb.InterruptShakeAnim:Stop() end
-    end
-    if s.showInterruptGlow == false then
-        if cb.InterruptGlowAnim then cb.InterruptGlowAnim:Stop() end
-        if cb.InterruptGlow then cb.InterruptGlow:SetAlpha(0) end
-    end
-    if s.showCastFinishFX == false then
-        if cb.StandardFinish then cb.StandardFinish:Stop() end
-        if cb.ChannelFinish then cb.ChannelFinish:Stop() end
-        if cb.CraftingFinish then cb.CraftingFinish:Stop() end
-        if cb.FlashAnim then cb.FlashAnim:Stop() end
-        if cb.Flash then cb.Flash:SetAlpha(0) end
-    end
-end
-
-------------------------------------------------------------------------
--- FX hooks — synchronous suppression via hooksecurefunc on Play().
--- hooksecurefunc runs immediately after the original call (same frame),
--- so Stop() prevents even a single rendered frame of the animation.
--- IMPORTANT: `self` in hook callbacks is a SECRET VALUE when Play() is
--- called from Blizzard's secure OnEvent — cannot be indexed.  We capture
--- a local reference to each AnimationGroup at install time instead.
--- All hooks are on CHILD objects (AnimationGroup) — taint-safe.
-------------------------------------------------------------------------
-
-local fxHooksInstalled = false
-
-local function InstallFXHooks(cb)
-    if fxHooksInstalled then return end
-    fxHooksInstalled = true
-
-    -- FlashAnim covers completed stops even when the current bar type has no finishAnim.
-    local function HookFinishFlashAnim(animGroup)
-        if not animGroup then return end
-        local anim = animGroup
-        hooksecurefunc(anim, "Play", function()
-            local s = ReapplyActiveCastBarFillStyling(cb)
-            if s and s.showCastFinishFX == false then
-                anim:Stop()
-                if cb.Flash then cb.Flash:SetAlpha(0) end
-            end
-        end)
-    end
-
-    -- HoldFadeOutAnim covers interrupted/failed stops, which do not call PlayFadeAnim.
-    local function HookFillReapplyAnim(animGroup)
-        if not animGroup then return end
-        local anim = animGroup
-        hooksecurefunc(anim, "Play", function()
-            ReapplyActiveCastBarFillStyling(cb)
-        end)
-    end
-
-    HookFinishFlashAnim(cb.FlashAnim)
-    HookFillReapplyAnim(cb.HoldFadeOutAnim)
-
-    -- Type-specific finish hooks still suppress optional finish FX in the same frame.
-    local function HookFinishAnim(animGroup)
-        if not animGroup then return end
-        local anim = animGroup  -- capture in insecure context (self in hook is secret)
-        hooksecurefunc(anim, "Play", function()
-            local s = ReapplyActiveCastBarFillStyling(cb)
-            if s and s.showCastFinishFX == false then
-                anim:Stop()
-                if cb.FlashAnim then cb.FlashAnim:Stop() end
-                if cb.Flash then cb.Flash:SetAlpha(0) end
-            end
-        end)
-    end
-    HookFinishAnim(cb.StandardFinish)
-    HookFinishAnim(cb.ChannelFinish)
-    HookFinishAnim(cb.CraftingFinish)
-    if cb.InterruptGlowAnim then
-        local anim = cb.InterruptGlowAnim
-        hooksecurefunc(anim, "Play", function()
-            local s = GetCastBarSettings()
-            if s and s.showInterruptGlow == false then
-                anim:Stop()
-                if cb.InterruptGlow then cb.InterruptGlow:SetAlpha(0) end
-            end
-        end)
-    end
-    if cb.ChannelShadow then
-        local shadow = cb.ChannelShadow
-        hooksecurefunc(shadow, "Show", function()
-            if not isApplied then return end
-            local s = GetCastBarSettings()
-            if s and s.stylingEnabled then
-                shadow:Hide()
-            end
-        end)
-    end
-end
-
-------------------------------------------------------------------------
--- Spark size hook — replaces per-frame OnUpdate with a same-frame hook
--- on Spark:SetAtlas (fired by Blizzard's ShowSpark during cast events).
-------------------------------------------------------------------------
-local sparkHookInstalled = false
-
-local function InstallSparkHook(cb)
-    if sparkHookInstalled then return end
-    if not cb or not cb.Spark then return end
-    sparkHookInstalled = true
-
-    local spark = cb.Spark
-    hooksecurefunc(spark, "SetAtlas", function()
-        if not isApplied then return end
-        local s = GetCastBarSettings()
-        if not s or not s.enabled then return end
-        local barH = s.stylingEnabled and (s.height or 15) or 11
-        spark:SetSize(8, barH * SPARK_HEIGHT_SCALE)
-    end)
-end
-
-------------------------------------------------------------------------
--- Position helper (used by both Apply and DeferredReapply)
-------------------------------------------------------------------------
-
-local function ApplyPosition(cb, s, height)
-    -- Remove from managed layout (OnShow re-adds on each cast via AddManagedFrame).
-    -- cb.layoutParent is the container (12.1: BottomManagedFrameContainer; the old
-    -- UIParentBottomManagedFrameContainer global is gone) — same reference
-    -- ManagedFrameMixin:OnShow/OnHide use.
-    cb.layoutParent:RemoveManagedFrame(cb)
-
-    -- AddManagedFrame's UpdateFrame also reparents the cast bar to the managed
-    -- container. Restore the parent together with the points so deferred cast
-    -- event re-applies keep both the position and effective size stable.
-    cb:SetParent(UIParent)
-
-    -- Inline icon: inset bar on the icon side so fill/spark stay within bar area
-    local iconInsetLeft, iconInsetRight = 0, 0
-    if s.stylingEnabled and s.showIcon and not s.iconOffset then
-        local iconSize = height
-        if s.iconFlipSide then
-            iconInsetRight = iconSize
-        else
-            iconInsetLeft = iconSize
-        end
-    end
-
-    -- Independent mode: anchor to mover frame instead of group/resource predecessor
+local function ResolveCastBarWidth(s)
     if s.independentAnchorEnabled then
-        if not independentMoverFrame then return end
-        cb:ClearAllPoints()
-        cb:SetPoint("TOPLEFT", independentMoverFrame, "TOPLEFT", iconInsetLeft, 0)
-        cb:SetPoint("TOPRIGHT", independentMoverFrame, "TOPRIGHT", -iconInsetRight, 0)
-        cb:SetHeight(height or 15)
-        return
+        return ClampCastBarDimension(s.independentWidth, 200)
+    end
+    local groupFrame = GetAnchorGroupFrame(s)
+    if not groupFrame then return nil end
+    local width = groupFrame:GetWidth()
+    if not width or width <= 0 then return nil end
+    return width
+end
+
+--- One point per side, taken from the corner the stack pins that side by, and
+--- growing the way the stack grows.  Two-point anchoring is never an option:
+--- it would make this bar's width secret.  The corner matters as much as the
+--- count — the aura block container's extent is secret, so only its mount
+--- corner is a deterministic edge to line up with.
+local SIDE_ANCHORS = {
+    above = { point = "BOTTOMLEFT", relativePoint = "TOPLEFT", dx = 0, dy = 1 },
+    below = { point = "TOPLEFT", relativePoint = "BOTTOMLEFT", dx = 0, dy = -1 },
+    left = { point = "TOPRIGHT", relativePoint = "TOPLEFT", dx = -1, dy = 0 },
+    right = { point = "TOPLEFT", relativePoint = "TOPRIGHT", dx = 1, dy = 0 },
+}
+
+local function AnchorBySide(frame, side, relative, spacing)
+    local anchor = SIDE_ANCHORS[side] or SIDE_ANCHORS.below
+    frame:SetPoint(anchor.point, relative, anchor.relativePoint,
+        anchor.dx * spacing, anchor.dy * spacing)
+end
+
+--- Position + size the bar.  Returns false when the anchor is unavailable.
+local function ApplyCastBarPosition(s, width, height)
+    local frame = castBarFrame
+    if not frame then return false end
+
+    frame:ClearAllPoints()
+    frame:SetSize(width, height)
+
+    if s.independentAnchorEnabled then
+        if not independentMoverFrame then return false end
+        frame:SetPoint("TOPLEFT", independentMoverFrame, "TOPLEFT", 0, 0)
+        return true
     end
 
-    -- Group-relative mode (original behavior)
     local groupFrame = GetAnchorGroupFrame(s)
-    if not groupFrame then return end
+    if not groupFrame then return false end
 
-    cb:ClearAllPoints()
     local specLayout = CooldownCompanion:GetSpecLayoutOrder()
     local cbLayout = specLayout and specLayout.castBar
     local cbPosition = (cbLayout and cbLayout.position) or "below"
-    local cbOrder = (cbLayout and cbLayout.order) or 2000
-    local predecessor = nil
-    if not (specLayout and specLayout.independentAnchorEnabled == true) then
-        predecessor = CooldownCompanion:GetResourceBarPredecessor(cbPosition, cbOrder)
-    end
     local rbSettings = CooldownCompanion:GetResourceBarSettings()
+    local stackDetached = specLayout and specLayout.independentAnchorEnabled == true
+    -- The cast bar has no vertical-side concept: its stored position is
+    -- always above/below, and the layout preview draws it there in every
+    -- orientation. Under a vertical stack the left/right-keyed predecessor
+    -- and block lookups simply miss, and the bar anchors to the panel.
+    local side = cbPosition
+
     local gap = specLayout and (specLayout.yOffset or specLayout.verticalXOffset)
         or (rbSettings and (rbSettings.yOffset or rbSettings.verticalXOffset))
         or 3
@@ -1103,189 +1058,645 @@ local function ApplyPosition(cb, s, height)
         or 3.6
     local panelYOffset = GetAttachedCastBarPanelYOffset(s)
 
-    if predecessor then
-        if cbPosition == "above" then
-            cb:SetPoint("BOTTOMLEFT", predecessor, "TOPLEFT", iconInsetLeft, barSpacing + panelYOffset)
-            cb:SetPoint("BOTTOMRIGHT", predecessor, "TOPRIGHT", -iconInsetRight, barSpacing + panelYOffset)
-        else
-            cb:SetPoint("TOPLEFT", predecessor, "BOTTOMLEFT", iconInsetLeft, -(barSpacing + panelYOffset))
-            cb:SetPoint("TOPRIGHT", predecessor, "BOTTOMRIGHT", -iconInsetRight, -(barSpacing + panelYOffset))
+    if not stackDetached then
+        -- The aura block container packs itself at the end of its side, so
+        -- when the cast bar's side has one it, not the last fixed bar, is the
+        -- element the cast bar follows.
+        -- The accessor answers from the CC-side shown flag and returns the
+        -- chain TAIL, so it is already nil for a parked side and already the
+        -- right container in either bucket order. No IsShown read here.
+        local blockContainer = RB.GetCustomBarAuraBlockContainer
+            and RB.GetCustomBarAuraBlockContainer(side)
+            or nil
+        if blockContainer then
+            AnchorBySide(frame, side, blockContainer, barSpacing + panelYOffset)
+            return true
         end
-    else
-        if cbPosition == "above" then
-            cb:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", iconInsetLeft, gap + panelYOffset)
-            cb:SetPoint("BOTTOMRIGHT", groupFrame, "TOPRIGHT", -iconInsetRight, gap + panelYOffset)
-        else
-            cb:SetPoint("TOPLEFT", groupFrame, "BOTTOMLEFT", iconInsetLeft, -(gap + panelYOffset))
-            cb:SetPoint("TOPRIGHT", groupFrame, "BOTTOMRIGHT", -iconInsetRight, -(gap + panelYOffset))
+
+        -- The cast bar is ALWAYS the last element of its side (owner ruling
+        -- 2026-08-09): the stack reserves no space for an interleaved cast
+        -- bar, so a stored order between two bars double-books the next
+        -- bar's slot. The stored order is ignored for anchoring.
+        local predecessor = CooldownCompanion:GetResourceBarPredecessor(side, math.huge)
+        if predecessor then
+            AnchorBySide(frame, side, predecessor, barSpacing + panelYOffset)
+            return true
         end
     end
 
-    cb:SetHeight(height or 15)
+    AnchorBySide(frame, side, groupFrame, gap + panelYOffset)
+    return true
+end
+
+--- Position the bar's contents inside the applied footprint.
+local function ApplyCastBarLayout(s, width, height)
+    local frame = castBarFrame
+    if not frame then return end
+
+    local inlineIcon = IsInlineIcon(s)
+    local inlineIconSize = height
+    local fillWidth = width - (inlineIcon and inlineIconSize or 0)
+    if fillWidth < 1 then fillWidth = 1 end
+
+    appliedWidth = width
+    appliedHeight = height
+    appliedFillWidth = fillWidth
+
+    local fill = frame.fill
+    fill:ClearAllPoints()
+    if inlineIcon and not s.iconFlipSide then
+        fill:SetPoint("TOPLEFT", frame.content, "TOPLEFT", inlineIconSize, 0)
+    else
+        fill:SetPoint("TOPLEFT", frame.content, "TOPLEFT", 0, 0)
+    end
+    fill:SetSize(fillWidth, height)
+
+    local icon = frame.icon
+    icon:SetShown(s.showIcon ~= false)
+    if s.showIcon ~= false then
+        ST._ApplyIconTexCoord(icon, 1, 1, s.iconZoom)
+        icon:ClearAllPoints()
+        if s.iconOffset then
+            local iconSize = tonumber(s.iconSize) or 16
+            icon:SetSize(iconSize, iconSize)
+            local ox = tonumber(s.iconOffsetX) or 0
+            local oy = tonumber(s.iconOffsetY) or 0
+            if s.iconFlipSide then
+                icon:SetPoint("LEFT", fill, "RIGHT", 5 + ox, oy)
+            else
+                icon:SetPoint("RIGHT", fill, "LEFT", -5 + ox, oy)
+            end
+        else
+            icon:SetSize(inlineIconSize, inlineIconSize)
+            if s.iconFlipSide then
+                icon:SetPoint("LEFT", fill, "RIGHT", 0, 0)
+            else
+                icon:SetPoint("RIGHT", fill, "LEFT", 0, 0)
+            end
+        end
+    end
+
+    local widthScale = fillWidth / FX_BASE_WIDTH
+    local heightScale = height / FX_BASE_HEIGHT
+
+    frame.spark:SetSize(8, height * SPARK_HEIGHT_SCALE)
+    -- Spark-local FX keep their native width so the trail is not stretched.
+    frame.sparkTrail:SetSize(frame.sparkTrail._ccBaseW, frame.sparkTrail._ccBaseH * heightScale)
+    -- Blizzard draws the interrupt glow atlas at half scale.
+    frame.interruptGlow:SetSize(frame.interruptGlow._ccBaseW * 0.5 * widthScale,
+                                frame.interruptGlow._ccBaseH * 0.5 * heightScale)
+
+    frame.blizzardBorder:ClearAllPoints()
+    frame.blizzardBorder:SetPoint("TOPLEFT", fill, "TOPLEFT", -2, 2)
+    frame.blizzardBorder:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT", 2, -2)
+
+    local nameText = frame.nameText
+    nameText:ClearAllPoints()
+    nameText:SetPoint("LEFT", fill, "LEFT", 4, 0)
+    nameText:SetPoint("RIGHT", fill, "RIGHT", -4, 0)
+    nameText:SetJustifyH("LEFT")
+
+    local castTimeText = frame.castTimeText
+    castTimeText:ClearAllPoints()
+    castTimeText:SetPoint("RIGHT", fill, "RIGHT",
+        -4 + (tonumber(s.castTimeXOffset) or 0), tonumber(s.castTimeYOffset) or 0)
+    castTimeText:SetJustifyH("RIGHT")
 end
 
 ------------------------------------------------------------------------
--- Deferred re-apply: runs NEXT FRAME after Blizzard's secure OnEvent
+-- Styling
 ------------------------------------------------------------------------
-local pendingReapply = false
 
-local function DeferredReapply()
-    pendingReapply = false
-    if not isApplied then return end
-    local cb = PlayerCastingBarFrame
-    if not cb then return end
-    local s = GetCastBarSettings()
-    if not s or not s.enabled then return end
+local function ApplyCastBarStyle(s)
+    local frame = castBarFrame
+    if not frame then return end
 
-    -- Effective height: custom when styling on, Blizzard default when off
-    local effectiveHeight = s.stylingEnabled and (s.height or 15) or 11
+    sparkEnabled = s.showSpark ~= false
+    sparkTrailEnabled = s.showSparkTrail ~= false
 
-    -- Re-position (OnShow's AddManagedFrame may have repositioned us)
-    ApplyPosition(cb, s, effectiveHeight)
+    frame.fill:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(s.barTexture or "Solid"))
 
-    -- Spark sizing (technical — always applies regardless of styling)
-    ApplySparkSize(cb, effectiveHeight)
+    local barColor = s.barColor or { 1, 0.7, 0, 1 }
+    frame.fill:SetStatusBarColor(barColor[1] or 0, barColor[2] or 0, barColor[3] or 0,
+        barColor[4] ~= nil and barColor[4] or 1)
 
-    -- FX scaling (always applies when anchored — spark trails, interrupt glow, etc.)
-    ApplyFXScaling(cb, cb:GetWidth(), effectiveHeight)
+    local bg = s.backgroundColor or { 0, 0, 0, 0.5 }
+    frame.fill.bg:SetColorTexture(bg[1] or 0, bg[2] or 0, bg[3] or 0,
+        bg[4] ~= nil and bg[4] or 0.5)
 
-    -- FX suppression (always applies — user toggles for individual FX categories)
-    SuppressFX(cb, s)
+    local borderStyle = s.borderStyle or "pixel"
+    if borderStyle == "pixel" then
+        frame.blizzardBorder:Hide()
+        local color = s.borderColor or { 0, 0, 0, 1 }
+        local size = s.borderSize or 1
+        local mode = ST.GetEffectiveBorderRenderMode(ST.GetBorderRenderMode(s), nil, size)
+        if IsInlineIcon(s) then
+            -- One ring around bar + inline icon.
+            local leftEdge = s.iconFlipSide and frame.fill or frame.icon
+            local rightEdge = s.iconFlipSide and frame.icon or frame.fill
+            ST.ApplyBorderTexturesBetween(frame.borders, leftEdge, rightEdge, color, size, mode)
+        else
+            ST.ApplyBorderTextures(frame.borders, frame.fill, color, size, mode)
+        end
+        if s.showIcon ~= false and s.iconOffset then
+            local iconBorderSize = s.iconBorderSize or 1
+            local iconMode = ST.GetEffectiveBorderRenderMode(
+                ST.GetBorderRenderMode(s, "iconBorderRenderMode"), nil, iconBorderSize)
+            ST.ApplyBorderTextures(frame.iconBorders, frame.icon, color, iconBorderSize, iconMode)
+        else
+            ST.HideBorderTextures(frame.iconBorders)
+        end
+    else
+        ST.HideBorderTextures(frame.borders)
+        ST.HideBorderTextures(frame.iconBorders)
+        frame.blizzardBorder:SetShown(borderStyle == "blizzard")
+    end
 
-    if s.stylingEnabled then
-        -- Re-apply custom fill (Blizzard resets to atlas on cast events)
-        ReapplyCastBarFillStyling(cb, s)
+    local nameText = frame.nameText
+    if s.showNameText ~= false then
+        local font = CooldownCompanion:FetchFont(s.nameFont or "Friz Quadrata TT")
+        local outline = ST.GetEffectiveFontOutline(s.nameFontOutline or "OUTLINE")
+        nameText:SetFont(font, s.nameFontSize or 10, outline)
+        ST.ApplyFontShadowForOutline(nameText, outline)
+        local color = s.nameFontColor
+        if color then
+            nameText:SetVertexColor(color[1], color[2], color[3], color[4])
+        end
+        nameText:Show()
+    else
+        nameText:Hide()
+    end
 
-        -- Re-apply icon visibility, size, and position
-        if cb.Icon then
-            cb.Icon:SetShown(s.showIcon ~= false)
-            if s.showIcon then
-                ST._ApplyIconTexCoord(cb.Icon, 1, 1, s.iconZoom)
-                if s.iconOffset then
-                    local iSize = s.iconSize or 16
-                    cb.Icon:SetSize(iSize, iSize)
-                    cb.Icon:ClearAllPoints()
-                    local ox = s.iconOffsetX or 0
-                    local oy = s.iconOffsetY or 0
-                    if s.iconFlipSide then
-                        cb.Icon:SetPoint("LEFT", cb, "RIGHT", 5 + ox, oy)
-                    else
-                        cb.Icon:SetPoint("RIGHT", cb, "LEFT", -5 + ox, oy)
-                    end
-                else
-                    local iconSize = effectiveHeight
-                    cb.Icon:SetSize(iconSize, iconSize)
-                    cb.Icon:ClearAllPoints()
-                    if s.iconFlipSide then
-                        cb.Icon:SetPoint("LEFT", cb, "RIGHT", 0, 0)
-                    else
-                        cb.Icon:SetPoint("RIGHT", cb, "LEFT", 0, 0)
-                    end
+    local castTimeText = frame.castTimeText
+    if s.showCastTimeText ~= false then
+        local font = CooldownCompanion:FetchFont(s.castTimeFont or "Friz Quadrata TT")
+        local outline = ST.GetEffectiveFontOutline(s.castTimeFontOutline or "OUTLINE")
+        castTimeText:SetFont(font, s.castTimeFontSize or 10, outline)
+        ST.ApplyFontShadowForOutline(castTimeText, outline)
+        local color = s.castTimeFontColor
+        if color then
+            castTimeText:SetVertexColor(color[1], color[2], color[3], color[4])
+        end
+        castTimeText:Show()
+    else
+        castTimeText:Hide()
+    end
+end
+
+------------------------------------------------------------------------
+-- Rendering
+------------------------------------------------------------------------
+
+local function HideStagePips()
+    local frame = castBarFrame
+    if not frame then return end
+    for _, pip in ipairs(frame.stagePips) do
+        pip:Hide()
+    end
+end
+
+--- Empowered casts get one separator per stage boundary.  Stage durations are
+--- plain for the player (SecretWhenUnitSpellCastRestricted), and the offsets
+--- come from the width CC set itself — the bar's position is never read.
+local function BuildStagePips(numStages)
+    HideStagePips()
+    local frame = castBarFrame
+    if not frame or numStages <= 0 then return end
+
+    local total = cast.endTime - cast.startTime
+    if total <= 0 then return end
+    local stageMaxValue = total * 1000
+    local sumDuration = 0
+    local shown = 0
+
+    for index = 1, numStages do
+        local duration = GetUnitEmpowerStageDuration("player", index - 1)
+        if type(duration) == "number" and duration > 0 then
+            sumDuration = sumDuration + duration
+            local portion = sumDuration / stageMaxValue
+            if portion > 0 and portion < 1 then
+                shown = shown + 1
+                local pip = frame.stagePips[shown]
+                if not pip then
+                    pip = frame.fill:CreateTexture(nil, "OVERLAY", nil, 1)
+                    frame.stagePips[shown] = pip
                 end
+                local offset = appliedFillWidth * portion
+                pip:SetColorTexture(0, 0, 0, 0.85)
+                pip:ClearAllPoints()
+                pip:SetPoint("TOP", frame.fill, "TOPLEFT", offset, 0)
+                pip:SetPoint("BOTTOM", frame.fill, "BOTTOMLEFT", offset, 0)
+                pip:SetWidth(1)
+                pip:Show()
             end
         end
-
-        -- Re-apply pixel borders
-        local bStyle = s.borderStyle or "pixel"
-        if bStyle == "pixel" then
-            local bColor = s.borderColor or {0,0,0,1}
-            local bSize = s.borderSize or 1
-            local bRenderMode = ST.GetBorderRenderMode(s)
-            if s.showIcon and not s.iconOffset then
-                ShowPixelBorders(cb, bColor, bSize, bRenderMode, cb.Icon, s.iconFlipSide)
-            else
-                ShowPixelBorders(cb, bColor, bSize, bRenderMode)
-            end
-            if s.showIcon and s.iconOffset then
-                ShowIconPixelBorders(cb, bColor, s.iconBorderSize or 1, ST.GetBorderRenderMode(s, "iconBorderRenderMode"))
-            else
-                HideIconPixelBorders()
-            end
-        else
-            HideIconPixelBorders()
-        end
-
-        -- Re-apply cast time text visibility
-        if cb.CastTimeText then
-            if s.showCastTimeText then
-                cb.CastTimeText:SetShown(cb.casting or cb.channeling or false)
-            else
-                cb.CastTimeText:Hide()
-            end
-        end
-
-        -- Re-apply spark visibility
-        if not s.showSpark and cb.Spark then
-            cb.Spark:Hide()
-        end
-
-        -- Re-hide TextBorder
-        if cb.TextBorder then
-            cb.TextBorder:Hide()
-        end
-
-        -- Re-show fill masks based on border style
-        if (s.borderStyle or "pixel") == "blizzard" then
-            ShowFillMasks(cb)
-        end
-    else
-        -- Anchoring-only: just show fill masks (Blizzard border at non-standard width)
-        ShowFillMasks(cb)
     end
 end
 
-local function ScheduleReapply()
-    if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
-    if pendingReapply then return end
-    if not isApplied then return end
-    pendingReapply = true
-    C_Timer.After(0, DeferredReapply)
+local function SetCastFill(pct, showSpark)
+    local frame = castBarFrame
+    if not frame then return end
+    if pct < 0 then pct = 0 elseif pct > 1 then pct = 1 end
+    -- No interpolation on this bar: the OnUpdate below already writes the
+    -- exact value every rendered frame.
+    frame.fill:SetValue(pct)
+
+    if showSpark and sparkEnabled then
+        frame.spark:ClearAllPoints()
+        frame.spark:SetPoint("CENTER", frame.fill, "LEFT", pct * appliedFillWidth, 0)
+        frame.spark:Show()
+        frame.sparkTrail:SetShown(sparkTrailEnabled)
+    else
+        frame.spark:Hide()
+        frame.sparkTrail:Hide()
+    end
 end
 
---- Create the helper frame that listens for cast events on a SEPARATE frame
---- (not on PlayerCastingBarFrame) and schedules deferred re-apply.
-local function EnsureCastEventFrame()
-    if castEventFrame then return end
-    castEventFrame = CreateFrame("Frame")
-    castEventFrame:SetScript("OnEvent", function(self, event, unit)
-        if unit and unit ~= "player" then return end
-        -- Real cast started — drop the unlock stand-in so the real cast shows
-        if isUnlockAssistActive then
-            isUnlockAssistActive = false
+local function SetCastTimeText(remaining)
+    local frame = castBarFrame
+    if not frame then return end
+    if remaining < 0 then remaining = 0 end
+    frame.castTimeText:SetText(format(CAST_BAR_CAST_TIME or "%.1f", remaining))
+end
+
+local function ClearCastBarEffects()
+    local frame = castBarFrame
+    if not frame then return end
+    cast.flashElapsed = nil
+    cast.glowElapsed = nil
+    cast.shakeElapsed = nil
+    frame.flash:SetAlpha(0)
+    frame.interruptGlow:SetAlpha(0)
+    frame.content:ClearAllPoints()
+    frame.content:SetAllPoints(frame)
+end
+
+local StartCastBarDriverUpdates
+local StopCastBarDriverUpdates
+
+local function HideCastBar()
+    ResetCastState()
+    HideStagePips()
+    local frame = castBarFrame
+    if frame then
+        ClearCastBarEffects()
+        frame:SetAlpha(1)
+        frame:Hide()
+    end
+    StopCastBarDriverUpdates()
+end
+
+local function FinishCast()
+    local frame = castBarFrame
+    if not frame or not cast.state then return end
+    local s = GetCastBarSettings()
+
+    if cast.state ~= "channel" then
+        SetCastFill(1, false)
+    else
+        SetCastFill(0, false)
+    end
+    SetCastTimeText(0)
+    cast.state = nil
+    HideStagePips()
+
+    if s and s.showCastFinishFX ~= false then
+        cast.flashElapsed = 0
+    end
+    cast.fadeMode = "finish"
+    cast.fadeElapsed = 0
+    StartCastBarDriverUpdates()
+end
+
+local function InterruptCast(text)
+    local frame = castBarFrame
+    if not frame or not frame:IsShown() then return end
+    local s = GetCastBarSettings()
+
+    SetCastFill(1, false)
+    SetCastTimeText(0)
+    cast.state = nil
+    HideStagePips()
+    if text and s and s.showNameText ~= false then
+        frame.nameText:SetText(text)
+    end
+
+    if s and s.showInterruptGlow ~= false then
+        cast.glowElapsed = 0
+    end
+    if s and s.showInterruptShake ~= false then
+        cast.shakeElapsed = 0
+    end
+    cast.fadeMode = "interrupt"
+    cast.fadeElapsed = 0
+    StartCastBarDriverUpdates()
+end
+
+local function CastBarOnUpdate(self, elapsed)
+    local frame = castBarFrame
+    if not frame then
+        StopCastBarDriverUpdates()
+        return
+    end
+
+    local busy = false
+
+    if cast.state then
+        busy = true
+        local now = GetTime()
+        local total = cast.endTime - cast.startTime
+        if total <= 0 then total = 0.001 end
+        local remaining = cast.endTime - now
+        local pct
+        if cast.state == "channel" then
+            pct = remaining / total
+        else
+            pct = (now - cast.startTime) / total
         end
-        ScheduleReapply()
-    end)
+        SetCastFill(pct, true)
+        SetCastTimeText(remaining)
+        -- Safety only: the STOP event owns the finish, but a cast that
+        -- outlives its own end time by a full second is over.
+        if remaining < -1 then
+            FinishCast()
+        end
+    end
+
+    if cast.flashElapsed then
+        busy = true
+        cast.flashElapsed = cast.flashElapsed + elapsed
+        local t = cast.flashElapsed
+        if t < FLASH_IN then
+            frame.flash:SetAlpha(t / FLASH_IN)
+        elseif t < FLASH_IN + FLASH_OUT then
+            frame.flash:SetAlpha(1 - (t - FLASH_IN) / FLASH_OUT)
+        else
+            cast.flashElapsed = nil
+            frame.flash:SetAlpha(0)
+        end
+    end
+
+    if cast.glowElapsed then
+        busy = true
+        cast.glowElapsed = cast.glowElapsed + elapsed
+        if cast.glowElapsed < INTERRUPT_GLOW_DURATION then
+            frame.interruptGlow:SetAlpha(1 - cast.glowElapsed / INTERRUPT_GLOW_DURATION)
+        else
+            cast.glowElapsed = nil
+            frame.interruptGlow:SetAlpha(0)
+        end
+    end
+
+    if cast.shakeElapsed then
+        busy = true
+        cast.shakeElapsed = cast.shakeElapsed + elapsed
+        local step = math.floor(cast.shakeElapsed / SHAKE_STEP) + 1
+        local offset = SHAKE_OFFSETS[step]
+        frame.content:ClearAllPoints()
+        if offset then
+            frame.content:SetPoint("TOPLEFT", frame, "TOPLEFT", offset[1], offset[2])
+            frame.content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", offset[1], offset[2])
+        else
+            cast.shakeElapsed = nil
+            frame.content:SetAllPoints(frame)
+        end
+    end
+
+    if cast.fadeMode then
+        busy = true
+        cast.fadeElapsed = cast.fadeElapsed + elapsed
+        local hold = cast.fadeMode == "interrupt" and FADE_HOLD_INTERRUPT or FADE_HOLD_FINISH
+        if cast.fadeElapsed <= hold then
+            frame:SetAlpha(1)
+        elseif cast.fadeElapsed < hold + FADE_DURATION then
+            frame:SetAlpha(1 - (cast.fadeElapsed - hold) / FADE_DURATION)
+        else
+            cast.fadeMode = nil
+            HideCastBar()
+            return
+        end
+    end
+
+    if not busy then
+        StopCastBarDriverUpdates()
+    end
+end
+
+StartCastBarDriverUpdates = function()
+    if not castEventFrame then return end
+    castEventFrame:Show()
+    castEventFrame:SetScript("OnUpdate", CastBarOnUpdate)
+end
+
+StopCastBarDriverUpdates = function()
+    if not castEventFrame then return end
+    castEventFrame:SetScript("OnUpdate", nil)
     castEventFrame:Hide()
 end
 
+------------------------------------------------------------------------
+-- Cast events (value math mirrors CastingBarMixin)
+------------------------------------------------------------------------
+
+local function ReadCastInfo(kind)
+    if kind == "cast" then
+        local name, text, texture, startTime, endTime, isTradeSkill, castID = UnitCastingInfo("player")
+        return name, text, texture, startTime, endTime, isTradeSkill, castID, 0
+    end
+    local name, text, texture, startTime, endTime, isTradeSkill, _notInterruptible, _spellID, _isEmpowered, numStages =
+        UnitChannelInfo("player")
+    return name, text, texture, startTime, endTime, isTradeSkill, nil, tonumber(numStages) or 0
+end
+
+local function BeginCast(kind)
+    local s = GetCastBarSettings()
+    if not s or not s.enabled or not isApplied then return end
+    local frame = castBarFrame
+    if not frame then return end
+
+    -- A Blizzard overlay cast bar (crafting, talent commit) owns the player
+    -- cast for now; showing it here too would double it.
+    if overlayReplacingPlayerBar then
+        HideCastBar()
+        return
+    end
+
+    local name, text, texture, startTime, endTime, _isTradeSkill, castID, numStages = ReadCastInfo(kind)
+    if not name or not startTime or not endTime then
+        HideCastBar()
+        return
+    end
+
+    local isEmpower = kind == "empower" and numStages > 0
+    if isEmpower then
+        endTime = endTime + GetUnitEmpowerHoldAtMaxTime("player")
+    end
+
+    ClearCastBarEffects()
+    cast.state = kind
+    cast.startTime = startTime / 1000
+    cast.endTime = endTime / 1000
+    cast.castID = castID
+    cast.empowerHold = isEmpower
+    cast.numStages = isEmpower and numStages or 0
+    cast.fadeMode = nil
+    cast.fadeElapsed = 0
+
+    frame.nameText:SetText(text or name or "")
+    frame.icon:SetTexture(texture)
+    frame:SetAlpha(1)
+    frame:Show()
+
+    BuildStagePips(cast.numStages)
+    CastBarOnUpdate(castEventFrame, 0)
+    StartCastBarDriverUpdates()
+end
+
+--- UNIT_SPELLCAST_DELAYED / CHANNEL_UPDATE / EMPOWER_UPDATE: pushback and
+--- haste changes move the window, so re-read it and keep the same state.
+local function UpdateCastTiming(kind)
+    if not cast.state then return end
+    local name, _text, _texture, startTime, endTime = ReadCastInfo(kind)
+    if not name or not startTime or not endTime then
+        HideCastBar()
+        return
+    end
+    -- Blizzard's HandleChannelUpdateDelayed drops the hold window here; CC
+    -- keeps it so an empower delay does not jump the fill.
+    if cast.empowerHold then
+        endTime = endTime + GetUnitEmpowerHoldAtMaxTime("player")
+    end
+    cast.startTime = startTime / 1000
+    cast.endTime = endTime / 1000
+    -- Pushback moved the window the pip offsets were computed from.
+    if cast.state == "empower" and cast.numStages > 0 then
+        BuildStagePips(cast.numStages)
+    end
+end
+
+local function HandleCastEvent(self, event, unit, arg2, _arg3, arg4, arg5)
+    -- PLAYER_ENTERING_WORLD carries login flags, not a unit token, so it is
+    -- resolved before the unit guard.
+    if event == "PLAYER_ENTERING_WORLD" then
+        if isUnlockAssistActive then return end
+        -- isEmpowered decides the resync kind: an empower resumed as a plain
+        -- channel would fill backwards, drop the hold window and lose its
+        -- stage pips.
+        local channelName, _, _, _, _, _, _, _, channelIsEmpowered = UnitChannelInfo("player")
+        if channelName then
+            BeginCast(channelIsEmpowered and "empower" or "channel")
+        elseif UnitCastingInfo("player") then
+            BeginCast("cast")
+        else
+            HideCastBar()
+        end
+        return
+    end
+
+    if unit ~= "player" then return end
+
+    -- A real cast event supersedes the unlock stand-in — including one that
+    -- starts nothing (a FAILED with no cast running), which must also wipe
+    -- the fabricated fill instead of stranding it.
+    if isUnlockAssistActive then
+        CooldownCompanion:StopCastBarUnlockAssist()
+    end
+
+    if event == "UNIT_SPELLCAST_START" then
+        BeginCast("cast")
+    elseif event == "UNIT_SPELLCAST_CHANNEL_START" then
+        BeginCast("channel")
+    elseif event == "UNIT_SPELLCAST_EMPOWER_START" then
+        BeginCast("empower")
+    elseif event == "UNIT_SPELLCAST_DELAYED" then
+        UpdateCastTiming("cast")
+    elseif event == "UNIT_SPELLCAST_CHANNEL_UPDATE" or event == "UNIT_SPELLCAST_EMPOWER_UPDATE" then
+        UpdateCastTiming("channel")
+    elseif event == "UNIT_SPELLCAST_STOP" then
+        if cast.state == "cast" and (cast.castID == nil or arg2 == cast.castID) then
+            FinishCast()
+        end
+    elseif event == "UNIT_SPELLCAST_CHANNEL_STOP" then
+        if cast.state == "channel" then
+            if arg4 == nil then
+                FinishCast()
+            else
+                InterruptCast(INTERRUPTED)
+            end
+        end
+    elseif event == "UNIT_SPELLCAST_EMPOWER_STOP" then
+        if cast.state == "empower" then
+            if arg4 == false then
+                -- Never FAILED here: Blizzard reserves that text for the
+                -- FAILED event, and releasing an empower before stage one is
+                -- normal play, shown as an interrupt-style stop
+                -- (HandleInterruptOrSpellFailed keys the text on the event).
+                InterruptCast(INTERRUPTED)
+            else
+                FinishCast()
+            end
+        end
+    elseif event == "UNIT_SPELLCAST_INTERRUPTED" then
+        -- Blizzard's guard: an empower interrupts without an id match, an
+        -- ordinary cast only when the payload's GUID is the one on the bar
+        -- (a failed OTHER attempt must not tear down a running cast).
+        -- Channels keep their interruption in CHANNEL_STOP.
+        if cast.state == "empower"
+            or (cast.state == "cast" and (cast.castID == nil or arg2 == cast.castID)) then
+            InterruptCast(INTERRUPTED)
+        end
+    elseif event == "UNIT_SPELLCAST_FAILED" then
+        if cast.state == "cast" and (cast.castID == nil or arg2 == cast.castID) then
+            InterruptCast(FAILED)
+        end
+    end
+end
+
+--- Driver frame: owns both the cast events and the casting OnUpdate.
+--- Parented to UIParent so OnUpdate can run when it is shown.
+local function EnsureCastEventFrame()
+    if castEventFrame then return end
+    castEventFrame = CreateFrame("Frame", nil, UIParent)
+    castEventFrame:SetSize(1, 1)
+    castEventFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+    castEventFrame:EnableMouse(false)
+    castEventFrame:SetScript("OnEvent", HandleCastEvent)
+    castEventFrame:Hide()
+end
+
+local CC_CAST_UNIT_EVENTS = {
+    "UNIT_SPELLCAST_START",
+    "UNIT_SPELLCAST_STOP",
+    "UNIT_SPELLCAST_FAILED",
+    "UNIT_SPELLCAST_INTERRUPTED",
+    "UNIT_SPELLCAST_DELAYED",
+    "UNIT_SPELLCAST_CHANNEL_START",
+    "UNIT_SPELLCAST_CHANNEL_UPDATE",
+    "UNIT_SPELLCAST_CHANNEL_STOP",
+    "UNIT_SPELLCAST_EMPOWER_START",
+    "UNIT_SPELLCAST_EMPOWER_UPDATE",
+    "UNIT_SPELLCAST_EMPOWER_STOP",
+}
+
 local function EnableCastEventFrame()
-    if castEventFrameEnabled then return end
     EnsureCastEventFrame()
-    castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_START", "player")
-    castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_STOP", "player")
-    castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
-    castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
-    castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_EMPOWER_START", "player")
-    castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_EMPOWER_STOP", "player")
-    castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTED", "player")
-    castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_DELAYED", "player")
-    castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_UPDATE", "player")
-    castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_EMPOWER_UPDATE", "player")
+    if castEventFrameEnabled then return end
+    for _, event in ipairs(CC_CAST_UNIT_EVENTS) do
+        castEventFrame:RegisterUnitEvent(event, "player")
+    end
+    castEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     castEventFrameEnabled = true
 end
 
 local function DisableCastEventFrame()
     if not castEventFrame then return end
     castEventFrame:UnregisterAllEvents()
-    pendingReapply = false
+    StopCastBarDriverUpdates()
     castEventFrameEnabled = false
 end
 
 ------------------------------------------------------------------------
--- Revert: restore Blizzard defaults
--- NOTE: We must NOT call cb:SetLook("CLASSIC") — calling it from addon
--- code writes self.look, self.playCastFX etc. which taints OnEvent.
--- Instead we manually restore the CLASSIC visual state using C methods.
+-- Revert: hide CC's bar and give Blizzard's back
 ------------------------------------------------------------------------
 function CooldownCompanion:RevertCastBar()
     if not isApplied then return end
@@ -1293,70 +1704,7 @@ function CooldownCompanion:RevertCastBar()
 
     HideIndependentCastBarMover()
     DisableCastEventFrame()
-
-    local cb = PlayerCastingBarFrame
-    if not cb then return end
-
-    -- Restore size and alpha (CLASSIC defaults)
-    cb:SetWidth(208)
-    cb:SetHeight(11)
-    cb:SetAlpha(1)
-
-    -- Restore parent / strata
-    cb:SetParent(UIParent)
-    cb:SetFixedFrameStrata(true)
-    cb:SetFrameStrata("HIGH")
-
-    -- Restore EditMode position.
-    -- AddManagedFrame early-exits when IsInDefaultPosition() is false (custom EditMode
-    -- position), leaving the bar with no anchors.  Read the saved anchorInfo directly
-    -- and apply it ourselves (all reads + C SetPoint — taint-safe).
-    cb:ClearAllPoints()
-    if cb.systemInfo and cb.systemInfo.anchorInfo and not cb:IsInDefaultPosition() then
-        local scale = cb:GetScale()
-        local ai = cb.systemInfo.anchorInfo
-        cb:SetPoint(ai.point, ai.relativeTo, ai.relativePoint,
-                    ai.offsetX / scale, ai.offsetY / scale)
-        if cb.systemInfo.anchorInfo2 then
-            local ai2 = cb.systemInfo.anchorInfo2
-            cb:SetPoint(ai2.point, ai2.relativeTo, ai2.relativePoint,
-                        ai2.offsetX / scale, ai2.offsetY / scale)
-        end
-    else
-        cb.layoutParent:AddManagedFrame(cb)
-    end
-
-    -- Restore bar fill to default atlas and reset color tint
-    cb:SetStatusBarTexture("ui-castingbar-filling-standard")
-    cb:SetStatusBarColor(1, 1, 1, 1)
-
-    -- Restore background atlas and anchoring
-    if cb.Background then
-        cb.Background:SetAtlas("ui-castingbar-background")
-        cb.Background:SetVertexColor(1, 1, 1, 1)
-        cb.Background:ClearAllPoints()
-        cb.Background:SetPoint("TOPLEFT", -1, 1)
-        cb.Background:SetPoint("BOTTOMRIGHT", 1, -1)
-    end
-
-    -- Restore Blizzard border atlas
-    if cb.Border then
-        cb.Border:SetAtlas("ui-castingbar-frame")
-        cb.Border:Show()
-    end
-
-    -- Show TextBorder again (CLASSIC shows it)
-    if cb.TextBorder then
-        cb.TextBorder:Show()
-    end
-
-    -- Hide pixel borders, icon borders, and fill masks
-    HidePixelBorders()
-    HideIconPixelBorders()
-    HideFillMasks()
-
-    -- Restore FX regions to original sizes
-    RevertFXScaling(cb)
+    HideCastBar()
 
     -- End the unlock stand-in if active: it paints THIS bar, so it goes when
     -- the bar does.
@@ -1373,59 +1721,11 @@ function CooldownCompanion:RevertCastBar()
     -- it happens to be drawable this instant.
     isUnlockAssistActive = false
 
-    -- Restore spark visibility and size (CLASSIC: 8x20)
-    if cb.Spark then
-        cb.Spark:SetSize(8, 20)
-        cb.Spark:Show()
-    end
-
-    -- Restore icon (CLASSIC: hidden, 16x16, left side)
-    if cb.Icon then
-        cb.Icon:Hide()
-        cb.Icon:SetSize(16, 16)
-        cb.Icon:SetDrawLayer("ARTWORK", 0)
-        cb.Icon:SetTexCoord(0, 1, 0, 1)
-        cb.Icon:ClearAllPoints()
-        cb.Icon:SetPoint("RIGHT", cb, "LEFT", -5, 0)
-    end
-
-    -- Restore text to CLASSIC defaults
-    if cb.Text then
-        cb.Text:Show()
-        cb.Text:ClearAllPoints()
-        cb.Text:SetWidth(185)
-        cb.Text:SetHeight(16)
-        cb.Text:SetPoint("TOP", 0, -10)
-        cb.Text:SetFontObject("GameFontHighlightSmall")
-        cb.Text:SetJustifyH("CENTER")
-        cb.Text:SetVertexColor(1, 1, 1, 1)
-    end
-
-    -- Restore cast time text
-    if cb.CastTimeText then
-        cb.CastTimeText:SetFontObject("GameFontHighlightLarge")
-        cb.CastTimeText:ClearAllPoints()
-        cb.CastTimeText:SetPoint("LEFT", cb, "RIGHT", 10, 0)
-        cb.CastTimeText:SetVertexColor(1, 1, 1, 1)
-    end
-
-    -- Restore BorderShield to CLASSIC defaults
-    if cb.BorderShield then
-        cb.BorderShield:ClearAllPoints()
-        cb.BorderShield:SetWidth(256)
-        cb.BorderShield:SetHeight(64)
-        cb.BorderShield:SetPoint("TOP", 0, 28)
-    end
-
-    -- Hide DropShadow (CLASSIC hides it)
-    if cb.DropShadow then
-        cb.DropShadow:Hide()
-    end
+    RestoreBlizzardCastBar()
 end
 
 ------------------------------------------------------------------------
--- Apply: reposition and restyle the cast bar
--- CRITICAL: only C-level widget methods — NO Lua property writes to cb
+-- Apply: build, position and style CC's cast bar
 ------------------------------------------------------------------------
 function CooldownCompanion:ApplyCastBarSettings(opts)
     opts = opts or {}
@@ -1447,28 +1747,24 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
     InstallHooks()
 
     local isIndependent = settings.independentAnchorEnabled == true
-    local groupId, groupFrame
 
     if isIndependent then
         -- Independent mode: no group needed, set up mover frame
         EnsureIndependentCastBarConfig(settings)
         CreateCastBarMoverFrame()
         local anchor = settings.independentAnchor
-        local width = settings.independentWidth
         local relFrame = UIParent
         if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
             relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
         end
         independentMoverFrame:ClearAllPoints()
         independentMoverFrame:SetPoint(anchor.point, relFrame, anchor.relativePoint, anchor.x, anchor.y)
-        local effectiveHeight = settings.stylingEnabled and (settings.height or 15) or 11
-        independentMoverFrame:SetSize(width, effectiveHeight)
+        independentMoverFrame:SetSize(settings.independentWidth, GetCastBarHeight(settings))
         independentMoverFrame:Show()
         UpdateIndependentCastBarDragState(settings)
         UpdateIndependentCastBarCoordLabel(independentMoverFrame, anchor.x, anchor.y)
     else
-        -- Validate anchor group
-        groupId = GetEffectiveAnchorGroupId(settings)
+        local groupId = GetEffectiveAnchorGroupId(settings)
         if not groupId then
             self:RevertCastBar()
             return
@@ -1480,7 +1776,7 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
             return
         end
 
-        groupFrame = CooldownCompanion.groupFrames[groupId]
+        local groupFrame = CooldownCompanion.groupFrames[groupId]
         if not groupFrame or not groupFrame:IsShown() then
             self:RevertCastBar()
             return
@@ -1495,252 +1791,58 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
         HideIndependentCastBarMover()
     end
 
-    local cb = PlayerCastingBarFrame
-    if not cb then return end
-
-    -- Remove from managed layout — method on CONTAINER, not on cast bar
-    -- (we do NOT set cb.ignoreFramePositionManager — that taints OnEvent)
-    cb.layoutParent:RemoveManagedFrame(cb)
-    cb:SetParent(UIParent)
-    cb:SetFixedFrameStrata(true)
-    cb:SetFrameStrata("HIGH")
-
-    -- ---- ANCHORING (always applied when enabled) ----
-    -- Height: use custom setting when styling is on, Blizzard default (11) when off
-    local effectiveHeight = settings.stylingEnabled and (settings.height or 15) or 11
-    ApplyPosition(cb, settings, effectiveHeight)
-    ApplySparkSize(cb, effectiveHeight)
-    local barWidth
-    if isIndependent then
-        barWidth = settings.independentWidth
-    else
-        barWidth = groupFrame:GetWidth()
+    local width = ResolveCastBarWidth(settings)
+    if not width then
+        self:RevertCastBar()
+        return
     end
-    if settings.showIcon and not settings.iconOffset and settings.stylingEnabled then
-        barWidth = barWidth - effectiveHeight
+    local height = GetCastBarHeight(settings)
+
+    EnsureCastBarFrame()
+    if not ApplyCastBarPosition(settings, width, height) then
+        self:RevertCastBar()
+        return
     end
-    ApplyFXScaling(cb, barWidth, effectiveHeight)
-
-    -- FX hooks (once) + suppression (always applies — user toggles for FX categories)
-    InstallFXHooks(cb)
-    InstallSparkHook(cb)
-    SuppressFX(cb, settings)
-
-    if settings.stylingEnabled then
-        -- ---- STYLING (optional layer) ----
-
-        -- Bar fill texture + color (C widget methods — safe)
-        ReapplyCastBarFillStyling(cb, settings)
-
-        -- Background color (C methods on child — safe)
-        if cb.Background then
-            local bgc = settings.backgroundColor
-            if bgc then
-                cb.Background:SetAtlas(nil)
-                cb.Background:SetColorTexture(bgc[1], bgc[2], bgc[3], bgc[4])
-                cb.Background:ClearAllPoints()
-                cb.Background:SetPoint("TOPLEFT", 0, 0)
-                cb.Background:SetPoint("BOTTOMRIGHT", 0, 0)
-            end
-        end
-
-        -- Icon visibility, size, and position — C methods on CHILD
-        if cb.Icon then
-            cb.Icon:SetShown(settings.showIcon ~= false)
-            if settings.showIcon then
-                ST._ApplyIconTexCoord(cb.Icon, 1, 1, settings.iconZoom)
-                if settings.iconOffset then
-                    -- Offset mode: custom size, positioned outside bar with X/Y offsets
-                    local iSize = settings.iconSize or 16
-                    cb.Icon:SetSize(iSize, iSize)
-                    cb.Icon:ClearAllPoints()
-                    local ox = settings.iconOffsetX or 0
-                    local oy = settings.iconOffsetY or 0
-                    if settings.iconFlipSide then
-                        cb.Icon:SetPoint("LEFT", cb, "RIGHT", 5 + ox, oy)
-                    else
-                        cb.Icon:SetPoint("RIGHT", cb, "LEFT", -5 + ox, oy)
-                    end
-                else
-                    -- Inline mode: icon outside bar, same height as bar
-                    local iconSize = effectiveHeight
-                    cb.Icon:SetSize(iconSize, iconSize)
-                    cb.Icon:ClearAllPoints()
-                    if settings.iconFlipSide then
-                        cb.Icon:SetPoint("LEFT", cb, "RIGHT", 0, 0)
-                    else
-                        cb.Icon:SetPoint("RIGHT", cb, "LEFT", 0, 0)
-                    end
-                end
-            end
-        end
-
-        -- Spark visibility
-        if not settings.showSpark and cb.Spark then
-            cb.Spark:Hide()
-        end
-
-        -- Border style
-        local borderStyle = settings.borderStyle or "pixel"
-        if borderStyle == "blizzard" then
-            HidePixelBorders()
-            HideIconPixelBorders()
-            if cb.Border then
-                cb.Border:SetAtlas("ui-castingbar-frame")
-                cb.Border:Show()
-            end
-            ShowFillMasks(cb)
-        elseif borderStyle == "pixel" then
-            HideFillMasks()
-            if cb.Border then
-                cb.Border:Hide()
-            end
-            local bColor = settings.borderColor or { 0, 0, 0, 1 }
-            local bSize = settings.borderSize or 1
-            local bRenderMode = ST.GetBorderRenderMode(settings)
-            if settings.showIcon and not settings.iconOffset then
-                ShowPixelBorders(cb, bColor, bSize, bRenderMode, cb.Icon, settings.iconFlipSide)
-            else
-                ShowPixelBorders(cb, bColor, bSize, bRenderMode)
-            end
-            -- Icon border (offset mode only)
-            if settings.showIcon and settings.iconOffset then
-                ShowIconPixelBorders(cb, bColor, settings.iconBorderSize or 1, ST.GetBorderRenderMode(settings, "iconBorderRenderMode"))
-            else
-                HideIconPixelBorders()
-            end
-        elseif borderStyle == "none" then
-            HidePixelBorders()
-            HideIconPixelBorders()
-            HideFillMasks()
-            if cb.Border then
-                cb.Border:Hide()
-            end
-        end
-
-        -- Hide TextBorder
-        if cb.TextBorder then
-            cb.TextBorder:Hide()
-        end
-
-        -- Spell name text (C methods on child — safe)
-        if cb.Text then
-            if settings.showNameText then
-                cb.Text:Show()
-                local nf = CooldownCompanion:FetchFont(settings.nameFont or "Friz Quadrata TT")
-                local ns = settings.nameFontSize or 10
-                local no = ST.GetEffectiveFontOutline(settings.nameFontOutline or "OUTLINE")
-                cb.Text:SetFont(nf, ns, no)
-                ST.ApplyFontShadowForOutline(cb.Text, no)
-                cb.Text:ClearAllPoints()
-                cb.Text:SetPoint("LEFT", cb, "LEFT", 4, 0)
-                cb.Text:SetPoint("RIGHT", cb, "RIGHT", -4, 0)
-                cb.Text:SetWidth(0)
-                cb.Text:SetHeight(0)
-                cb.Text:SetJustifyH("LEFT")
-                local nc = settings.nameFontColor
-                if nc then
-                    cb.Text:SetVertexColor(nc[1], nc[2], nc[3], nc[4])
-                end
-            else
-                cb.Text:Hide()
-            end
-        end
-
-        -- Cast time text — C methods only, NOT showCastTimeSetting
-        if cb.CastTimeText then
-            if settings.showCastTimeText then
-                local ctf = CooldownCompanion:FetchFont(settings.castTimeFont or "Friz Quadrata TT")
-                local cts = settings.castTimeFontSize or 10
-                local cto = ST.GetEffectiveFontOutline(settings.castTimeFontOutline or "OUTLINE")
-                cb.CastTimeText:SetFont(ctf, cts, cto)
-                ST.ApplyFontShadowForOutline(cb.CastTimeText, cto)
-                cb.CastTimeText:ClearAllPoints()
-                local xOfs = settings.castTimeXOffset or 0
-                local ctYOfs = settings.castTimeYOffset or 0
-                cb.CastTimeText:SetPoint("RIGHT", cb, "RIGHT", -4 + xOfs, ctYOfs)
-                cb.CastTimeText:SetJustifyH("RIGHT")
-                local ctc = settings.castTimeFontColor
-                if ctc then
-                    cb.CastTimeText:SetVertexColor(ctc[1], ctc[2], ctc[3], ctc[4])
-                end
-                cb.CastTimeText:SetShown(cb.casting or cb.channeling or false)
-            else
-                cb.CastTimeText:Hide()
-            end
-        end
-    else
-        -- ---- ANCHORING ONLY — restore Blizzard default visuals ----
-        -- (needed to undo styling if it was previously enabled)
-        cb:SetStatusBarTexture("ui-castingbar-filling-standard")
-        cb:SetStatusBarColor(1, 1, 1, 1)
-
-        if cb.Background then
-            cb.Background:SetAtlas("ui-castingbar-background")
-            cb.Background:SetVertexColor(1, 1, 1, 1)
-            cb.Background:ClearAllPoints()
-            cb.Background:SetPoint("TOPLEFT", -1, 1)
-            cb.Background:SetPoint("BOTTOMRIGHT", 1, -1)
-        end
-
-        if cb.Icon then
-            cb.Icon:Hide()
-            cb.Icon:SetSize(16, 16)
-            cb.Icon:SetDrawLayer("ARTWORK", 0)
-            cb.Icon:SetTexCoord(0, 1, 0, 1)
-            cb.Icon:ClearAllPoints()
-            cb.Icon:SetPoint("RIGHT", cb, "LEFT", -5, 0)
-        end
-        if cb.Spark then cb.Spark:Show() end
-
-        HidePixelBorders()
-        HideIconPixelBorders()
-        if cb.Border then
-            cb.Border:SetAtlas("ui-castingbar-frame")
-            cb.Border:Show()
-        end
-        ShowFillMasks(cb)
-
-        if cb.TextBorder then cb.TextBorder:Show() end
-
-        -- Restore text to CLASSIC defaults
-        if cb.Text then
-            cb.Text:Show()
-            cb.Text:ClearAllPoints()
-            cb.Text:SetWidth(185)
-            cb.Text:SetHeight(16)
-            cb.Text:SetPoint("TOP", 0, -10)
-            cb.Text:SetFontObject("GameFontHighlightSmall")
-            cb.Text:SetJustifyH("CENTER")
-            cb.Text:SetVertexColor(1, 1, 1, 1)
-        end
-
-        if cb.CastTimeText then
-            cb.CastTimeText:SetFontObject("GameFontHighlightLarge")
-            cb.CastTimeText:ClearAllPoints()
-            cb.CastTimeText:SetPoint("LEFT", cb, "RIGHT", 10, 0)
-            cb.CastTimeText:SetVertexColor(1, 1, 1, 1)
-        end
+    ApplyCastBarLayout(settings, width, height)
+    ApplyCastBarStyle(settings)
+    -- The pip offsets are absolute against the fill width that just changed.
+    if cast.state == "empower" and cast.numStages > 0 then
+        BuildStagePips(cast.numStages)
     end
 
+    SuppressBlizzardCastBar()
     isApplied = true
-
-    -- Enable the helper frame that re-applies visuals on each cast event
     EnableCastEventFrame()
+
+    -- Pick up a cast already in flight (feature enabled mid-cast, /reload),
+    -- the same resync Blizzard's bar does on PLAYER_ENTERING_WORLD.
+    if isUnlockAssistActive then
+        ApplyCastBarUnlockPreview()
+    elseif not cast.state and not cast.fadeMode then
+        HandleCastEvent(castEventFrame, "PLAYER_ENTERING_WORLD")
+    end
 end
 
 ------------------------------------------------------------------------
--- Reposition: lightweight Y-offset recalculation for resource bar changes
+-- Reposition: anchor/width recalculation for stack and group changes
 ------------------------------------------------------------------------
 
 function CooldownCompanion:RepositionCastBar()
     if not isApplied then return end
-    local cb = PlayerCastingBarFrame
-    if not cb then return end
-    local s = GetCastBarSettings()
-    if not s or not s.enabled then return end
-    local effectiveHeight = s.stylingEnabled and (s.height or 15) or 11
-    ApplyPosition(cb, s, effectiveHeight)
+    local settings = GetCastBarSettings()
+    if not settings or not settings.enabled then return end
+    if not castBarFrame then return end
+
+    local width = ResolveCastBarWidth(settings)
+    if not width then return end
+    local height = GetCastBarHeight(settings)
+
+    if not ApplyCastBarPosition(settings, width, height) then return end
+    ApplyCastBarLayout(settings, width, height)
+    -- The pip offsets are absolute against the fill width that just changed.
+    if cast.state == "empower" and cast.numStages > 0 then
+        BuildStagePips(cast.numStages)
+    end
 end
 
 ------------------------------------------------------------------------
@@ -1777,11 +1879,12 @@ function CooldownCompanion:GetCastBarRuntimeDebugInfo()
         applied = isApplied == true,
         hooksInstalled = hooksInstalled == true,
         castEventsActive = castEventFrameEnabled == true,
+        blizzardSuppressed = blizzardSuppressed == true,
     }
 end
 
 ------------------------------------------------------------------------
--- Unlock assist: show the real cast bar with a stand-in cast so it can be
+-- Unlock assist: show CC's cast bar with a stand-in cast so it can be
 -- dragged. State is ephemeral (local flag, not saved to DB) and ends when:
 --   • a real cast event fires
 --   • the bar is locked again
@@ -1792,84 +1895,38 @@ end
 -- display, and only because an idle cast bar has nothing to position by.
 ------------------------------------------------------------------------
 
-local function ApplyPreview()
+ApplyCastBarUnlockPreview = function()
     if not isApplied then return end
-    local cb = PlayerCastingBarFrame
-    if not cb then return end
+    local frame = castBarFrame
+    if not frame then return end
     local s = GetCastBarSettings()
     if not s or not s.enabled then return end
 
-    -- Ensure the managed frame system doesn't fight us
-    cb.layoutParent:RemoveManagedFrame(cb)
+    ResetCastState()
+    HideStagePips()
+    ClearCastBarEffects()
+    StopCastBarDriverUpdates()
 
-    cb:SetAlpha(1)
-    cb:Show()
-    local interpolation = ST.STATUS_BAR_INTERPOLATION_SMOOTH
-    if interpolation ~= nil then
-        cb:SetMinMaxValues(0, 100, interpolation)
-        cb:SetValue(65, interpolation)
-    else
-        cb:SetMinMaxValues(0, 100)
-        cb:SetValue(65)
-    end
-
-    -- Spell name text
-    if cb.Text then
-        cb.Text:SetText("Preview Cast")
-        cb.Text:Show()
-    end
-
-    -- Cast time text (always show in preview so the user can see layout)
-    if cb.CastTimeText then
-        cb.CastTimeText:SetText("1.5 s")
-        if s.stylingEnabled then
-            cb.CastTimeText:SetShown(s.showCastTimeText ~= false)
-        else
-            cb.CastTimeText:Show()
-        end
-    end
-
-    -- Spark at the fill edge (65% of bar width)
-    if cb.Spark then
-        local showSpark = (not s.stylingEnabled) or (s.showSpark ~= false)
-        if showSpark then
-            local sparkPos = 0.65 * cb:GetWidth()
-            cb.Spark:Show()
-            cb.Spark:ClearAllPoints()
-            cb.Spark:SetPoint("CENTER", cb, "LEFT", sparkPos, cb.Spark.offsetY or 0)
-        else
-            cb.Spark:Hide()
-        end
-    end
-
-    -- TextBorder: hide only when styling is active
-    if s.stylingEnabled and cb.TextBorder then
-        cb.TextBorder:Hide()
-    end
-
-    -- Fill masks
-    local borderStyle = s.stylingEnabled and (s.borderStyle or "pixel") or "blizzard"
-    if borderStyle == "blizzard" then
-        ShowFillMasks(cb)
-    end
+    frame:SetAlpha(1)
+    frame:Show()
+    SetCastFill(0.65, true)
+    frame.nameText:SetText("Preview Cast")
+    frame.castTimeText:SetText(format(CAST_BAR_CAST_TIME or "%.1f", 1.5))
 end
 
 function CooldownCompanion:StartCastBarUnlockAssist()
     isUnlockAssistActive = true
     self:ApplyCastBarSettings()
-    ApplyPreview()
+    ApplyCastBarUnlockPreview()
 end
 
 function CooldownCompanion:StopCastBarUnlockAssist()
-    if not isUnlockAssistActive then return end
+    -- Unconditional on the flag: a cast event can clear it while the
+    -- stand-in is still painted (a FAILED that starts nothing), and the
+    -- mover's lock path must still wipe the fabricated fill.
     isUnlockAssistActive = false
-
-    local cb = PlayerCastingBarFrame
-    if not cb then return end
-
-    -- If not actually casting, hide the bar
-    if not (cb.casting or cb.channeling) then
-        cb:Hide()
+    if not cast.state and not cast.fadeMode then
+        HideCastBar()
     end
 end
 
@@ -1889,38 +1946,15 @@ end
 
 ------------------------------------------------------------------------
 -- Hooks
--- hooksecurefunc on SetLook is safe: SetLook is never called from OnEvent,
--- and the deferred ApplyCastBarSettings uses only C methods (no Lua writes).
 -- Hooks on our own addon methods (RefreshGroupFrame, RefreshAllGroups) are
--- always safe since they are not Blizzard secure handlers.
+-- always safe since they are not Blizzard secure handlers.  Nothing here
+-- hooks PlayerCastingBarFrame any more: CC no longer restyles it, so the
+-- SetLook / PlayerFrame_AdjustAttachments re-apply chase is gone with it.
 ------------------------------------------------------------------------
 
 InstallHooks = function()
     if not hooksInstalled then
         hooksInstalled = true
-
-        -- When SetLook is called by Blizzard (EditMode, PlayerFrame attach/detach),
-        -- re-apply our settings after it finishes.
-        hooksecurefunc(PlayerCastingBarFrame, "SetLook", function()
-            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
-            if isApplied then
-                C_Timer.After(0, function()
-                    if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
-                    local s = GetCastBarSettings()
-                    if s and s.enabled then
-                        CooldownCompanion:ApplyCastBarSettings()
-                    end
-                end)
-            end
-        end)
-
-        -- A cast bar left attached in Blizzard Edit Mode can be re-anchored by
-        -- player-frame managed layout changes without SetLook being called.
-        -- Reuse the deferred cast-event path so this hook never runs our layout
-        -- work inside Blizzard's layout call.
-        if type(PlayerFrame_AdjustAttachments) == "function" then
-            hooksecurefunc("PlayerFrame_AdjustAttachments", ScheduleReapply)
-        end
 
         -- When anchor group refreshes (visibility changes) — re-evaluate
         hooksecurefunc(CooldownCompanion, "RefreshGroupFrame", function(self, groupId)
@@ -1954,36 +1988,46 @@ InstallHooks = function()
             QueueCastBarReevaluate()
         end)
 
-        -- Shared handler: re-apply FX scaling when anchor group width changes
-        local function ReapplyFXFromHook(groupId)
+        -- Shared handler: the attached bar takes its width from the anchor
+        -- group, so a group resize is a cast bar reposition.
+        local function RepositionFromHook(groupId)
             if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
+            if not isApplied then return end
             local s = GetCastBarSettings()
             if not s or not s.enabled then return end
             if s.independentAnchorEnabled then return end  -- independent: width not tied to group
-            local anchorGroupId = GetEffectiveAnchorGroupId(s)
-            if anchorGroupId ~= groupId then return end
-            if not isApplied then return end
-            local cb = PlayerCastingBarFrame
-            if not cb then return end
-            local groupFrame = CooldownCompanion.groupFrames[groupId]
-            if not groupFrame then return end
-            local effectiveHeight = s.stylingEnabled and (s.height or 15) or 11
-            local barWidth = groupFrame:GetWidth()
-            if s.showIcon and not s.iconOffset and s.stylingEnabled then
-                barWidth = barWidth - effectiveHeight
-            end
-            ApplyFXScaling(cb, barWidth, effectiveHeight)
+            if GetEffectiveAnchorGroupId(s) ~= groupId then return end
+            CooldownCompanion:RepositionCastBar()
         end
 
-        -- When compact layout changes visible buttons — re-apply FX scaling
+        -- When compact layout changes visible buttons — re-measure
         hooksecurefunc(CooldownCompanion, "UpdateGroupLayout", function(self, groupId)
-            ReapplyFXFromHook(groupId)
+            RepositionFromHook(groupId)
         end)
 
-        -- When icon size / spacing / buttons-per-row changes — re-apply FX scaling
+        -- When icon size / spacing / buttons-per-row changes — re-measure
         hooksecurefunc(CooldownCompanion, "ResizeGroupFrame", function(self, groupId)
-            ReapplyFXFromHook(groupId)
+            RepositionFromHook(groupId)
         end)
+
+        -- Yield to Blizzard's overlay cast bars (Professions crafting, the
+        -- talent commit): OverlayPlayerCastingBarMixin replaces the player
+        -- bar and suppresses Blizzard's own via SetAndUpdateShowCastbar,
+        -- which CC may never call. These registry events are the sanctioned
+        -- signal for the same yield.
+        EventRegistry:RegisterCallback("OverlayPlayerCastBar.OnShow", function()
+            overlayReplacingPlayerBar = true
+            if isApplied then
+                HideCastBar()
+            end
+        end, CooldownCompanion)
+        EventRegistry:RegisterCallback("OverlayPlayerCastBar.OnHide", function()
+            overlayReplacingPlayerBar = false
+            -- Pick an in-flight cast back up exactly like the login resync.
+            if isApplied and not isUnlockAssistActive then
+                HandleCastEvent(castEventFrame, "PLAYER_ENTERING_WORLD")
+            end
+        end, CooldownCompanion)
     end
 end
 

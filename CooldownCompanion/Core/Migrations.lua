@@ -896,6 +896,32 @@ local function StripRetiredSwipeEdgeKeys(profile)
     end
 end
 
+-- 12.1 cast-bar styling retirement: the CC-owned cast bar is always
+-- CC-styled, so the old "restyle Blizzard's bar or leave it native" switch
+-- has no runtime reader. Deleting rather than flipping keeps this pass a
+-- no-op on migrated data, so import-driven re-runs change nothing.
+--
+-- Cast bar settings are CHARACTER-SCOPED: the live table is
+-- profile.castBarByChar[<char>], seeded from profile.legacyCastBarSeed, with
+-- profile.castBar as the pre-scoping legacy table. All three stores can
+-- carry the key (and ride export strings), so all three are stripped.
+local function StripCastBarStylingFromStore(castBar)
+    if type(castBar) == "table" and rawget(castBar, "stylingEnabled") ~= nil then
+        castBar.stylingEnabled = nil
+    end
+end
+
+local function StripRetiredCastBarStylingKey(profile)
+    if type(profile) ~= "table" then return end
+    StripCastBarStylingFromStore(profile.castBar)
+    StripCastBarStylingFromStore(profile.legacyCastBarSeed)
+    if type(profile.castBarByChar) == "table" then
+        for _, castBar in pairs(profile.castBarByChar) do
+            StripCastBarStylingFromStore(castBar)
+        end
+    end
+end
+
 -- 12.1 text-panel auto-sizing retirement: a text entry now measures a
 -- worst-case render of its own format, font and padding, so the manual
 -- textWidth / textHeight pair has nothing left to size and no runtime reader.
@@ -2547,6 +2573,7 @@ function CooldownCompanion:RunAllMigrations()
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
     BackfillAuraDurationSwipeSettings(self.db and self.db.profile, checkpointState and checkpointState.auraDurationSwipe)
     StripRetiredSwipeEdgeKeys(self.db and self.db.profile)
+    StripRetiredCastBarStylingKey(self.db and self.db.profile)
     if StripRetiredTextSizeKeys(self.db and self.db.profile) then
         self:Print("Updated for 12.1: text panels now size themselves from their format and font. Use Padding for breathing room.")
     end

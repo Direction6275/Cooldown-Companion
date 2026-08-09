@@ -2882,6 +2882,14 @@ function RunAuraRebind()
     -- set (which would suppress later RequestAuraRebind bookkeeping).
     DisarmRebindRetry()
     pendingRebind = false
+
+    -- The cast bar anchors to the block chain's TAIL, and this pass is the
+    -- only writer of which container that is. Coalesced next-frame stacking
+    -- re-evaluation, so the combat-deferred rebind cannot leave the cast bar
+    -- pointing at last pull's tail.
+    if self.UpdateAnchorStacking then
+        self:UpdateAnchorStacking()
+    end
 end
 
 rebindDeferFrame:SetScript("OnEvent", function()

@@ -335,7 +335,7 @@ local BARS_OVERVIEW_SECTIONS = {
     },
     {
         title = "Cast Bar",
-        body = "Skin the Blizzard cast bar and anchor it to a panel, or position it anywhere on screen.",
+        body = "Draw your cast bar in your chosen style, anchored to a panel or positioned anywhere on screen.",
         buttonText = "Enable Cast Bar",
         onEnable = EnableCastBarModule,
     },

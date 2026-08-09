@@ -1096,7 +1096,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
             -- The cast bar's own height, not the stack's: it used to be
             -- folded into one max with the resource thickness, which
             -- clamped every bar up to whichever was taller.
-            thickness = cbSettings.stylingEnabled and (tonumber(cbSettings.height) or 15) or 11,
+            thickness = tonumber(cbSettings.height) or 15,
             color = CloneColor(cbSettings.barColor, { 1.0, 0.72, 0.18, 1 }),
             icon = LAYOUT_PREVIEW_ICON_FALLBACK,
             getPos = function()
@@ -1121,10 +1121,13 @@ end
 
 -- Stack sections. The live stack packs aura-block entries into collapsing
 -- containers at the far end of the side, past every fixed bar, and the cast
--- bar still anchors past those containers. Order values alone cannot express
--- that, so the sort ranks sections first and orders within a section second.
--- Ranks apply only while the side actually holds a block; a side without one
--- sorts on order alone, cast bar included.
+-- bar anchors past everything: the stack reserves no space for an
+-- interleaved cast bar, so the far end is the only slot live geometry can
+-- honour (owner ruling 2026-08-09). Order values alone cannot express any
+-- of that, so the sort ranks sections first and orders within a section
+-- second — ALWAYS, so this canvas can never show an arrangement the live
+-- stack cannot render. A lane of only fixed bars has one rank and still
+-- sorts purely on order.
 --
 -- A container tracks exactly ONE unit, so the block is really two chained
 -- buckets: the bars watching YOUR auras nearest the panel, the bars watching
@@ -1252,15 +1255,6 @@ local LAYOUT_PREVIEW_BUCKET_TINTS = {
     },
 }
 
-local function StackHasAuraBlock(slots)
-    for _, slot in ipairs(slots or {}) do
-        if IsAuraBlockSlot(slot) then
-            return true
-        end
-    end
-    return false
-end
-
 -- Sections run the same direction the lane does: on a reversed lane index 1
 -- is the slot furthest from the panel, so the block has to come first there
 -- and last everywhere else.
@@ -1283,13 +1277,10 @@ local function SortSlotsForSide(slots, side, reversed, targetFirst)
             table_insert(out, slot)
         end
     end
-    local ranked = StackHasAuraBlock(out)
     table_sort(out, function(a, b)
-        if ranked then
-            local rankResult = CompareStackRank(a, b, reversed, targetFirst)
-            if rankResult ~= nil then
-                return rankResult
-            end
+        local rankResult = CompareStackRank(a, b, reversed, targetFirst)
+        if rankResult ~= nil then
+            return rankResult
         end
         if reversed then
             return a.getOrder() > b.getOrder()
@@ -1317,17 +1308,14 @@ local function SortSlotsForIndependentStack(slots, firstSide, secondSide, previe
     -- stack. Ties use the normal below/right direction.
     local side = firstCount > secondCount and firstSide or secondSide
     local reversed = side == firstSide
-    local ranked = StackHasAuraBlock(out)
     -- The flag comes from the side the block bars are SAVED on, not from the
     -- dominant side this merged lane happens to be labelled with.
     local targetFirst = GetPreviewTargetFirst(preview,
         GetLaneBlockFlagSide(out) or side)
     table_sort(out, function(a, b)
-        if ranked then
-            local rankResult = CompareStackRank(a, b, reversed, targetFirst)
-            if rankResult ~= nil then
-                return rankResult
-            end
+        local rankResult = CompareStackRank(a, b, reversed, targetFirst)
+        if rankResult ~= nil then
+            return rankResult
         end
         local aOrder = a.getOrder()
         local bOrder = b.getOrder()
@@ -1992,13 +1980,11 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
     root:SetPoint("BOTTOMRIGHT", frame.previewCanvas, "BOTTOMRIGHT", 0, 0)
     root:Show()
 
-    -- Effective appearance, the same split the live bar makes: with Styling
-    -- off the real cast bar reverts to Blizzard visuals and every custom
-    -- setting on this panel is dormant (CastBar.lua gates its whole styling
-    -- layer on it, and the inline icon area is only reserved when it is on).
-    -- The facsimile used to paint those settings regardless, advertising a
-    -- look the live bar would never wear.
-    local styled = settings.stylingEnabled == true
+    -- Styling is always on for the CC-owned bar: the old Blizzard-visuals
+    -- fallback died with the frame replacement, so the facsimile paints the
+    -- configured settings unconditionally (constant kept so every resolution
+    -- below stays a verbatim mirror of CastBar.lua's own).
+    local styled = true
 
     local iconShown = styled and settings.showIcon ~= false
     local iconSize = height
@@ -2472,13 +2458,13 @@ end
 -- side's same-unit bucket, or - when that side has no such bucket yet - at
 -- the position that bucket would occupy there.
 --
--- Ranks bind only a lane the stack actually ranks. Without a block on either
--- the lane or the incoming bar, order alone decides and the cast bar is free
--- to sit anywhere, exactly as before.
+-- Ranks always bind: a lane of only fixed bars has one rank and stays a
+-- free reorder, while the cast bar is confined to the far end everywhere —
+-- the stack reserves no space for an interleaved cast bar, so the far end
+-- is the only slot live geometry can honour.
 local function ClampLaneInsertIndex(lane, slotData, filtered, insertIndex)
     local count = #filtered
-    if not slotData
-        or not (StackHasAuraBlock(filtered) or IsAuraBlockSlot(slotData)) then
+    if not slotData then
         return math_max(1, math_min(count + 1, insertIndex or 1))
     end
 
@@ -3727,7 +3713,7 @@ local function CreateLayoutDragModel(preview)
             -- inside the bucket containment already confined it to.
             local peers = filtered
             local peerIndex = adjustedIndex
-            if StackHasAuraBlock(lane.slotModels) then
+            do
                 local targetFirst = lane.targetFirst == true
                 local rank = GetSlotStackRank(slotData, targetFirst)
                 local section = {}

@@ -346,6 +346,19 @@ end
 
 local function BuildCastBarStylingPanel(container)
     local settings = CooldownCompanion:GetCastBarSettings()
+
+    -- The retired styling switch used to carry this gate too: with the
+    -- module off, styling rows would commit to a bar that immediately
+    -- reverts. Same disabled-state surface as the positioning panel.
+    if not settings.enabled then
+        local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
+        label:SetText("Enable Cast Bar Anchoring to configure appearance.")
+        label:SetFullWidth(true)
+        container:AddChild(label)
+        return
+    end
+
     -- Everything on this panel is the cast bar's LOOK, and the canvas draws
     -- that look; so the commit path applies to the live bar and repaints the
     -- canvas together, and the drag/picker-open path stays on the canvas alone.
@@ -359,80 +372,60 @@ local function BuildCastBarStylingPanel(container)
     -- ================================================================
     -- Bar (the fill itself, what shows behind it, and how tall it is)
     -- ================================================================
-    -- The styling switch lives inside this section for the same reason the
-    -- anchoring switch lives inside the General tab's first one.
+    -- The CC bar is always CC-styled: the old "Enable Cast Bar Styling"
+    -- switch meant "restyle Blizzard's bar or leave it native", and that
+    -- choice died with the frame replacement (owner ruling 2026-08-08).
     local _, barCollapsed = BuildCollapsibleSection(container, "Bar",
         "castbar_bar", nil, nil, ROW_SECTION)
 
-    -- Deliberately the truthy test, not `~= false`: the pre-row tab gated the
-    -- rest of the panel on `not settings.stylingEnabled` while the checkbox
-    -- itself reads `~= false`, so an unset value shows checked and still
-    -- builds nothing below. Kept exactly as it was.
-    local stylingOn = (settings.enabled and settings.stylingEnabled) and true or false
-
     if not barCollapsed then
-        -- LEFT column: the switch and the bar's own shape. RIGHT column: the
-        -- two colors it draws with.
+        -- LEFT column: the bar's own shape. RIGHT column: the two colors it
+        -- draws with.
         local barLeft, barRight = BeginRowGrid(container)
 
-        AddCheckboxRow(barLeft, {
-            label = "Enable Cast Bar Styling",
-            value = settings.stylingEnabled ~= false,
-            disabled = not settings.enabled,
-            onChange = function(val)
-                settings.stylingEnabled = val
-                CooldownCompanion:ApplyCastBarSettings()
-                CooldownCompanion:RefreshConfigPanel()
-            end,
+        -- LibSharedMedia names run past the control column, so the menu is
+        -- widened - a 140px control would otherwise open a 140px menu.
+        local texRow = AddDropdownRow(barLeft, {
+            label = "Bar Texture",
+            pulloutWidth = WIDE_PULLOUT_WIDTH,
+        })
+        CS.SetupBarTextureDropdown(texRow)
+        texRow:SetValue(settings.barTexture or "Solid")
+        CS.SetBarTextureDropdownCallback(texRow, function(widget, event, val)
+            settings.barTexture = val
+            applyCastBar()
+        end)
+
+        -- The canvas sizes the cast slot from this value, so the whole
+        -- stack reflows under the drag; the live bar restyles on release.
+        AddMirrorFirstSliderRow(barLeft, {
+            label = "Height",
+            min = 4, max = 40, step = 0.1,
+            value = settings.height or 15,
+            set = function(val) settings.height = val end,
+            apply = applyCastBar,
         })
 
-        if stylingOn then
-            -- LibSharedMedia names run past the control column, so the menu is
-            -- widened - a 140px control would otherwise open a 140px menu.
-            local texRow = AddDropdownRow(barLeft, {
-                label = "Bar Texture",
-                pulloutWidth = WIDE_PULLOUT_WIDTH,
-            })
-            CS.SetupBarTextureDropdown(texRow)
-            texRow:SetValue(settings.barTexture or "Solid")
-            CS.SetBarTextureDropdownCallback(texRow, function(widget, event, val)
-                settings.barTexture = val
-                applyCastBar()
-            end)
+        AddColorRow(barRight, {
+            label = "Bar Color",
+            tbl = settings,
+            key = "barColor",
+            default = {1.0, 0.7, 0.0, 1.0},
+            hasAlpha = true,
+            onConfirm = applyCastBar,
+            onChange = castPreviewOnly,
+        })
 
-            -- The canvas sizes the cast slot from this value, so the whole
-            -- stack reflows under the drag; the live bar restyles on release.
-            AddMirrorFirstSliderRow(barLeft, {
-                label = "Height",
-                min = 4, max = 40, step = 0.1,
-                value = settings.height or 15,
-                set = function(val) settings.height = val end,
-                apply = applyCastBar,
-            })
-
-            AddColorRow(barRight, {
-                label = "Bar Color",
-                tbl = settings,
-                key = "barColor",
-                default = {1.0, 0.7, 0.0, 1.0},
-                hasAlpha = true,
-                onConfirm = applyCastBar,
-                onChange = castPreviewOnly,
-            })
-
-            AddColorRow(barRight, {
-                label = "Background Color",
-                tbl = settings,
-                key = "backgroundColor",
-                default = {0, 0, 0, 0.5},
-                hasAlpha = true,
-                onConfirm = applyCastBar,
-                onChange = castPreviewOnly,
-            })
-        end
+        AddColorRow(barRight, {
+            label = "Background Color",
+            tbl = settings,
+            key = "backgroundColor",
+            default = {0, 0, 0, 0.5},
+            hasAlpha = true,
+            onConfirm = applyCastBar,
+            onChange = castPreviewOnly,
+        })
     end
-
-    if not stylingOn then return end
 
     -- ================================================================
     -- Border

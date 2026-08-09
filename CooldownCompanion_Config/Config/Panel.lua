@@ -1921,7 +1921,7 @@ local function CreateConfigPanel()
             GameTooltip:AddLine("Resource Bars, the cast bar, and unit frame anchoring are all disabled. Enable any of them to start building this workspace.", 1, 1, 1, true)
         elseif CS.barsEntrySelected and CS.castFramesSelectedItem == "castbar" then
             GameTooltip:AddLine("Cast Bar")
-            GameTooltip:AddLine("Skins the Blizzard cast bar and anchors it to a panel, or positions it anywhere on screen.", 1, 1, 1, true)
+            GameTooltip:AddLine("Draws your cast bar in your chosen style, anchored to a panel or positioned anywhere on screen.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("These settings are saved per character.", 1, 1, 1, true)
         elseif CS.barsEntrySelected and CS.castFramesSelectedItem then

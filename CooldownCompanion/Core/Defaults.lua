@@ -572,7 +572,6 @@ local defaults = {
         },
         castBar = {
             enabled = false,
-            stylingEnabled = true,
             anchorGroupId = nil,
             position = "below",
             order = 2000,
