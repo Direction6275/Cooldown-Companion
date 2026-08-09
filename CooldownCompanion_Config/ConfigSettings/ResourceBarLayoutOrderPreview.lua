@@ -1982,8 +1982,12 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
 
     -- Styling is always on for the CC-owned bar: the old Blizzard-visuals
     -- fallback died with the frame replacement, so the facsimile paints the
-    -- configured settings unconditionally (constant kept so every resolution
-    -- below stays a verbatim mirror of CastBar.lua's own).
+    -- configured settings unconditionally. The resolutions below keep
+    -- CastBar.lua's shape but are NOT pixel-exact: this facsimile pads an
+    -- inline icon with a 4px gap where the live bar uses none, reserves
+    -- in-bar footprint for an offset icon the live bar draws outside the
+    -- fill, and rings only the bar where the live pixel border wraps bar
+    -- and inline icon together.
     local styled = true
 
     local iconShown = styled and settings.showIcon ~= false
