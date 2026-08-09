@@ -282,7 +282,6 @@ local customBarContentFields = {
     "stackTextFontOutline",
     "stackTextFontColor",
     "auraUnit",
-    "auraUnitExplicit",
     "hasCharges",
     "maxCharges",
 }
@@ -1349,47 +1348,38 @@ local function GetDefaultSpellCustomBarAuraUnit(cabConfig, spellID)
     return GetDefaultCustomAuraUnit(resolvedSpellID)
 end
 
-local function HasExplicitCustomAuraBarAuraUnit(cabConfig)
-    return type(cabConfig) == "table"
-        and cabConfig.auraUnitExplicit == true
-        and IsValidCustomAuraUnit(cabConfig.auraUnit)
-end
-
 local function GetResolvedCustomAuraBarAuraUnit(cabConfig, spellID)
     local resolvedSpellID = spellID
     if resolvedSpellID == nil and type(cabConfig) == "table" then
         resolvedSpellID = cabConfig.spellID
     end
 
-    if type(cabConfig) == "table" and HasExplicitCustomAuraBarAuraUnit(cabConfig) then
-        return cabConfig.auraUnit
-    end
-
     -- Both entry types resolve candidate-aware (the tracked aura list can
     -- carry a different polarity than the base spell); the helper falls
     -- back to base-spell polarity when no candidate resolves. The migration
-    -- and config derive the stored auraUnit from this same identity.
+    -- and config derive the stored auraUnit from this same identity, and
+    -- the slot display path classifies through the same standalone resolver
+    -- — there is deliberately NO stored-unit override here (the retired
+    -- auraUnitExplicit branch was the one thing that could make the block
+    -- and slot paths watch different units for the same bar).
     return GetDefaultSpellCustomBarAuraUnit(cabConfig, resolvedSpellID)
 end
 
-local function EnsureCustomAuraBarAuraUnit(cabConfig, spellID, unit, explicit)
+local function EnsureCustomAuraBarAuraUnit(cabConfig, spellID, unit)
     local resolvedSpellID = spellID
     if resolvedSpellID == nil and type(cabConfig) == "table" then
         resolvedSpellID = cabConfig.spellID
     end
 
     if type(cabConfig) == "table" then
-        local wasExplicit = HasExplicitCustomAuraBarAuraUnit(cabConfig)
         local resolvedUnit = IsValidCustomAuraUnit(unit) and unit
             or GetResolvedCustomAuraBarAuraUnit(cabConfig, resolvedSpellID)
 
         cabConfig.auraUnit = resolvedUnit
-
-        if IsValidCustomAuraUnit(unit) then
-            cabConfig.auraUnitExplicit = explicit == false and nil or true
-        elseif not wasExplicit then
-            cabConfig.auraUnitExplicit = nil
-        end
+        -- Custom-bar units are always polarity-derived: the explicit-unit
+        -- flag is retired, and stripping residue here keeps an imported
+        -- pre-retirement config from ever resurrecting it.
+        cabConfig.auraUnitExplicit = nil
 
         if IsValidCustomAuraUnit(cabConfig.auraUnit) then
             return cabConfig.auraUnit
