@@ -241,11 +241,19 @@ end
 -- Container-level refresh for records whose token may now resolve to a different
 -- person. Combat-safe (V13, re-validated V18). Shared by both watchers so a
 -- change to the refresh shape can never apply to only one token family.
+-- Assigned in the AURA BLOCKS section, where blockRecords is in scope; the
+-- watcher must cover BOTH container families or a target-scoped block keeps
+-- the previous target's aura across a same-token swap.
+local RefreshBlockRecordsForToken
+
 local function RefreshRecordsForToken(isMatch)
     for _, record in ipairs(records) do
         if isMatch(record.unit) then
             record.container:UpdateAllAuras()
         end
+    end
+    if RefreshBlockRecordsForToken then
+        RefreshBlockRecordsForToken(isMatch)
     end
 end
 
@@ -815,6 +823,19 @@ local function RestBarFill(fill, fillTex, pulseAG, csAG)
     fill:SetAlpha(0)
 end
 
+-- The host rect, in numbers CC owns. Aura-host descriptors stamp
+-- _ccKitRectW/H because measuring them is either stale (a freshly anchored
+-- holder reports last frame's rect — the lane lesson) or forbidden (a block
+-- host lives under a Blizzard-positioned group frame, whose geometry is
+-- secret). CC buttons carry neither and measure their own mount rect exactly
+-- as before.
+local function HostRectSize(button)
+    local w, h = button._ccKitRectW, button._ccKitRectH
+    if w and h then return w, h end
+    local host = button.statusBar or button
+    return host:GetWidth(), host:GetHeight()
+end
+
 -- Segment separators: backdrop-colored stripes at each stack boundary so the
 -- fill reads as "N of max" at a glance. Stacks are whole numbers, so the
 -- Blizzard fill edge always lands exactly on a boundary — a stripe centered
@@ -827,8 +848,8 @@ local function StyleStackSegments(kit, button, buttonData, style, boundMax, show
     local segments = kit.stackSegments
     if not segments then return end
     local vertical = button._isVertical
-    local host = button.statusBar or button
-    local length = vertical and host:GetHeight() or host:GetWidth()
+    local rectW, rectH = HostRectSize(button)
+    local length = vertical and rectH or rectW
     local gap = CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData)
     if not shown or length <= 0 or gap <= 0
         or not boundMax or boundMax - 1 > #segments then
@@ -1202,12 +1223,18 @@ local function StyleSlotKit(slot, button, buttonData, style)
     local barIconShown = isBar and style.showBarIcon ~= false and button.icon ~= nil
     local showAuraIcon = ShouldShowAuraIcon(buttonData)
 
+    -- Inset-aware anchor host: on block hosts the statusBar proxy is the
+    -- border-inset rect while slotButton is the full Blizzard-laid group
+    -- frame; on every other host the two rects are identical. Texts, name
+    -- and icon regions anchor here so styling can never undo the
+    -- creation-time inset (fills already ride the proxy).
+    local innerHost = button.statusBar or slotButton
     -- Icon regions cover the slot rect on icon hosts. Bar hosts mount the
     -- slot on the bar rect, so the aura icon and its cover re-anchor onto the
     -- bar's icon square instead (host regions are sanctioned anchor targets;
     -- the duration text has host-anchored since Phase 3). Slots are reused
     -- across entries and modes, so both anchorings reset every bind.
-    local iconAnchor = barIconShown and button.icon or slotButton
+    local iconAnchor = barIconShown and button.icon or innerHost
     kit.auraIcon:ClearAllPoints()
     kit.auraIcon:SetPoint("TOPLEFT", iconAnchor, "TOPLEFT", 0, 0)
     kit.auraIcon:SetPoint("BOTTOMRIGHT", iconAnchor, "BOTTOMRIGHT", 0, 0)
@@ -1241,7 +1268,11 @@ local function StyleSlotKit(slot, button, buttonData, style)
     else
         local ApplyIconTexCoord = ST._ApplyIconTexCoord
         if ApplyIconTexCoord then
-            local cropW, cropH = button:GetWidth(), button:GetHeight()
+            -- Explicit dims first: a block host must never be measured.
+            local cropW, cropH = button._ccKitRectW, button._ccKitRectH
+            if not (cropW and cropH) then
+                cropW, cropH = button:GetWidth(), button:GetHeight()
+            end
             ApplyIconTexCoord(kit.iconCover, cropW, cropH, style.iconZoom)
             ApplyIconTexCoord(kit.auraIcon, cropW, cropH, style.iconZoom)
         end
@@ -1308,25 +1339,25 @@ local function StyleSlotKit(slot, button, buttonData, style)
         local showStack = style.showAuraStackText ~= false
         if button._isVertical then
             if showStack then
-                kit.durationText:SetPoint("BOTTOM", slotButton, "BOTTOM", 0, 2)
+                kit.durationText:SetPoint("BOTTOM", innerHost, "BOTTOM", 0, 2)
             else
-                kit.durationText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
+                kit.durationText:SetPoint("CENTER", innerHost, "CENTER", 0, 0)
             end
             if showDur then
-                kit.stackText:SetPoint("TOP", slotButton, "TOP", 0, -2)
+                kit.stackText:SetPoint("TOP", innerHost, "TOP", 0, -2)
             else
-                kit.stackText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
+                kit.stackText:SetPoint("CENTER", innerHost, "CENTER", 0, 0)
             end
         else
             if showStack then
-                kit.durationText:SetPoint("LEFT", slotButton, "LEFT", 4, 0)
+                kit.durationText:SetPoint("LEFT", innerHost, "LEFT", 4, 0)
             else
-                kit.durationText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
+                kit.durationText:SetPoint("CENTER", innerHost, "CENTER", 0, 0)
             end
             if showDur then
-                kit.stackText:SetPoint("RIGHT", slotButton, "RIGHT", -4, 0)
+                kit.stackText:SetPoint("RIGHT", innerHost, "RIGHT", -4, 0)
             else
-                kit.stackText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
+                kit.stackText:SetPoint("CENTER", innerHost, "CENTER", 0, 0)
             end
         end
         kit.durationText:SetJustifyH("CENTER")
@@ -1342,23 +1373,23 @@ local function StyleSlotKit(slot, button, buttonData, style)
         local timeReverse = style.barTimeTextReverse
         if button._isVertical then
             if timeReverse then
-                kit.durationText:SetPoint("BOTTOM", slotButton, "BOTTOM", cdOffX, 3 + cdOffY)
+                kit.durationText:SetPoint("BOTTOM", innerHost, "BOTTOM", cdOffX, 3 + cdOffY)
             else
-                kit.durationText:SetPoint("TOP", slotButton, "TOP", cdOffX, -3 + cdOffY)
+                kit.durationText:SetPoint("TOP", innerHost, "TOP", cdOffX, -3 + cdOffY)
             end
             kit.durationText:SetJustifyH("CENTER")
         else
             if timeReverse then
-                kit.durationText:SetPoint("LEFT", slotButton, "LEFT", 3 + cdOffX, cdOffY)
+                kit.durationText:SetPoint("LEFT", innerHost, "LEFT", 3 + cdOffX, cdOffY)
                 kit.durationText:SetJustifyH("LEFT")
             else
-                kit.durationText:SetPoint("RIGHT", slotButton, "RIGHT", -3 + cdOffX, cdOffY)
+                kit.durationText:SetPoint("RIGHT", innerHost, "RIGHT", -3 + cdOffX, cdOffY)
                 kit.durationText:SetJustifyH("RIGHT")
             end
         end
         kit.durationText:SetAlpha(style.showAuraText ~= false and 1 or 0)
         local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
-        local stackAnchorTo = barIconShown and button.icon or slotButton
+        local stackAnchorTo = barIconShown and button.icon or innerHost
         kit.stackText:SetPoint(asAnchor, stackAnchorTo, asAnchor,
             style.auraStackXOffset or 2, style.auraStackYOffset or 2)
         kit.stackText:SetAlpha(style.showAuraStackText ~= false and 1 or 0)
@@ -1420,17 +1451,17 @@ local function StyleSlotKit(slot, button, buttonData, style)
         local nameReverse = style.barNameTextReverse
         if button._isVertical then
             if nameReverse then
-                kit.barNameText:SetPoint("TOP", slotButton, "TOP", nameOffX, -3 + nameOffY)
+                kit.barNameText:SetPoint("TOP", innerHost, "TOP", nameOffX, -3 + nameOffY)
             else
-                kit.barNameText:SetPoint("BOTTOM", slotButton, "BOTTOM", nameOffX, 3 + nameOffY)
+                kit.barNameText:SetPoint("BOTTOM", innerHost, "BOTTOM", nameOffX, 3 + nameOffY)
             end
             kit.barNameText:SetJustifyH("CENTER")
         else
             if nameReverse then
-                kit.barNameText:SetPoint("RIGHT", slotButton, "RIGHT", -3 + nameOffX, nameOffY)
+                kit.barNameText:SetPoint("RIGHT", innerHost, "RIGHT", -3 + nameOffX, nameOffY)
                 kit.barNameText:SetJustifyH("RIGHT")
             else
-                kit.barNameText:SetPoint("LEFT", slotButton, "LEFT", 3 + nameOffX, nameOffY)
+                kit.barNameText:SetPoint("LEFT", innerHost, "LEFT", 3 + nameOffX, nameOffY)
                 kit.barNameText:SetJustifyH("LEFT")
             end
             -- Same-side truncation guard, replicated from CreateBarFrame:
@@ -1588,8 +1619,10 @@ local function StyleSlotKit(slot, button, buttonData, style)
             elseif isCustomBarHost then
                 blockAlpha = blockBg[4] or 1
             end
+            local rectW, rectH = HostRectSize(button)
             ST.LayoutStackBlocks(kit.stackBgBlocks, button.statusBar or slotButton,
-                slot.boundStackMax, button._isVertical, blockBg, blockAlpha)
+                slot.boundStackMax, button._isVertical, blockBg, blockAlpha,
+                button._isVertical and rectH or rectW)
             -- The per-block rings always come from the KIT, even when its
             -- blocks are invisible (they are laid out purely to anchor
             -- these). The kit's rings live inside the fill frame and draw
@@ -2101,6 +2134,39 @@ local AURA_TOOLTIP_ANCHORS = {
     cursor = "ANCHOR_CURSOR",
 }
 
+-- Stack fill re-call (tracker C2): converge the registered max to this bind
+-- before styling — always a number (ApplyApplicationBar runs math.max(max, 1),
+-- so a nil errors inside Blizzard's refresh and freezes the display), 1 =
+-- duration-only bind. Same per-bind re-call pattern as the C9 SetDurationText
+-- call inside StyleSlotKit (V23 PTR 7 — re-calls are legal again; the
+-- ApplicationBar leg is probe-gated by the v24 retest), structurally OOC in
+-- the rebind pass. Skipped when unchanged: the max is CC-side state
+-- (kit.stackFillMax), never a read-back.
+--
+-- Segmented smoothing (C2 follow-on): Blizzard sweeps the driven fill between
+-- stack counts (interpolation is Blizzard-evaluated — the only smoothing path
+-- for secret values). Continuous style always smooths (owner ruling, resource
+-- parity); segmented follows the per-entry toggle. Plain duration binds
+-- (wantMax == 1) never use the stack fill, so they keep the creation-time
+-- registration untouched.
+local function ConvergeApplicationBar(slotButton, kit, buttonData, stackBarMax)
+    if not (kit and kit.stackFill) then return end
+    local wantMax = stackBarMax or 1
+    local wantSmooth = false
+    if wantMax > 1 and ST.STATUS_BAR_INTERPOLATION_SMOOTH then
+        wantSmooth = CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) == "continuous"
+            or CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(buttonData) == ST.SEGMENTED_SMOOTHING_ON
+    end
+    if kit.stackFillMax ~= wantMax or kit.stackFillSmooth ~= wantSmooth then
+        slotButton:SetApplicationBar(kit.stackFill, {
+            maxApplications = wantMax,
+            interpolation = wantSmooth and ST.STATUS_BAR_INTERPOLATION_SMOOTH or nil,
+        })
+        kit.stackFillMax = wantMax
+        kit.stackFillSmooth = wantSmooth
+    end
+end
+
 local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMax, soundsAllowed, groupScoped, textureSettings, textureIndicator)
     local button = record.button
     local wasParked = record.parked
@@ -2139,36 +2205,8 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     record.container:SetAuraSlotFilterString(record.key, SlotContract(unit, groupScoped).filter)
     record.container:SetAuraSlotCandidateFilters(record.key,
         BuildCandidateFilters(unit, spellSet, groupScoped))
-    -- Stack fill re-call (tracker C2): converge the registered max to this
-    -- bind before styling — always a number (ApplyApplicationBar hazard),
-    -- 1 = duration-only bind. Same per-bind re-call pattern as the C9
-    -- SetDurationText below (V23 PTR 7 — re-calls are legal again; the
-    -- ApplicationBar leg is probe-gated by the v24 retest), structurally
-    -- OOC in the rebind pass. Skipped when unchanged: the max is CC-side
-    -- state (kit.stackFillMax), never a read-back.
-    local kit = record.kit
-    if record.hostKind ~= "texturePanel" and kit and kit.stackFill then
-        local wantMax = stackBarMax or 1
-        -- Segmented smoothing (C2 follow-on): Blizzard sweeps the driven
-        -- fill between stack counts (interpolation is Blizzard-evaluated —
-        -- the only smoothing path for secret values; the CC-side resource
-        -- mechanism can't apply here). Continuous style always smooths
-        -- (owner ruling, resource parity); segmented follows the per-entry
-        -- toggle. Plain duration binds (wantMax == 1) never use the stack
-        -- fill, so they keep the creation-time registration untouched.
-        local wantSmooth = false
-        if wantMax > 1 and ST.STATUS_BAR_INTERPOLATION_SMOOTH then
-            wantSmooth = CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) == "continuous"
-                or CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(buttonData) == ST.SEGMENTED_SMOOTHING_ON
-        end
-        if kit.stackFillMax ~= wantMax or kit.stackFillSmooth ~= wantSmooth then
-            record.slotButton:SetApplicationBar(kit.stackFill, {
-                maxApplications = wantMax,
-                interpolation = wantSmooth and ST.STATUS_BAR_INTERPOLATION_SMOOTH or nil,
-            })
-            kit.stackFillMax = wantMax
-            kit.stackFillSmooth = wantSmooth
-        end
+    if record.hostKind ~= "texturePanel" then
+        ConvergeApplicationBar(record.slotButton, record.kit, buttonData, stackBarMax)
     end
     -- Set before styling: StyleSlotKit selects the stack fill from this tag.
     record.boundStackMax = stackBarMax
@@ -2252,6 +2290,436 @@ local function ResolveEntryAuraUnits(self, buttonData, allowGroupScope)
     if harmful then return { "target" } end
     if allowGroupScope ~= false and buttonData.auraTrackGroup then return GroupAuraTokens() end
     return { "player" }
+end
+
+------------------------------------------------------------------------
+-- AURA BLOCKS — custom-bar aura entries that hide when inactive.
+--
+-- Such an entry cannot hold a fixed slot in the CC-laid-out resource stack:
+-- aura presence is secret, so CC can never pack the stack around it. Each
+-- side of the stack instead gets ONE AuraContainer running in GROUP mode.
+-- Blizzard assigns a pooled AuraButton per ACTIVE aura and packs the
+-- survivors with its own flow layout, in the layoutIndex order written here;
+-- CC never learns which groups are up.
+--
+-- Groups are APPEND-ONLY — there is no public removal (ClearAuraGroups is
+-- deliberately private) — so a block group record is permanent exactly like a
+-- slot record, and retiring an entry parks it instead.
+--
+-- The container takes the UntrustedLayoutScriptExecution forbidden aspect at
+-- its first AddAuraGroup and Blizzard resizes it with secret values from then
+-- on. Nothing here reads the container's or a group frame's rect: every
+-- geometry number arrives from the CC-side block contract
+-- (OtherBars/ResourceBarAuraHost.lua).
+--
+-- One container per (side, UNIT). A container tracks exactly one unit and
+-- SetUnit is called once, at creation — the same immutability the slot
+-- records rely on. A side whose entries resolve to BOTH units therefore
+-- renders as two CHAINED buckets: the player container takes the stack-end
+-- mount and the target container hangs off its trailing edge, riding a size
+-- CC never reads. Buckets never interleave, and player is always the one
+-- nearer the panel.
+--
+-- Every container is created with DisableUntrustedLayoutScriptsTemplate
+-- alongside CustomAuraContainerTemplate, which is what makes it legal to
+-- anchor one aspected container to another (runtime-probed 2026-08-08).
+------------------------------------------------------------------------
+
+-- Flow geometry per side. The layout AXIS is the direction bars stack along,
+-- so a horizontal resource stack (above/below) flows vertically and a
+-- vertical one (left/right) flows horizontally. Anchor point and growth
+-- mirror RelayoutBars' own accumulator signs for that side, and the anchor
+-- point matches the container's own mount corner so both grow the same way.
+local BLOCK_FLOW = {
+    above = { axis = "Vertical", anchor = "BOTTOMLEFT", h = "Right", v = "Up" },
+    below = { axis = "Vertical", anchor = "TOPLEFT", h = "Right", v = "Down" },
+    left = { axis = "Horizontal", anchor = "TOPRIGHT", h = "Left", v = "Down" },
+    right = { axis = "Horizontal", anchor = "TOPLEFT", h = "Right", v = "Down" },
+}
+
+local blockContainers = {} -- side .. "\031" .. unit -> block record
+local blockRecords = {}    -- flat, append-only list of every block record
+local blockChainBlocked = 0 -- entries the last bind dropped for a dead chain
+
+-- The watcher-side half of the token refresh (forward-declared above the
+-- watchers). Same container-level call the slot loop makes: sanctioned
+-- combat surface, and hidden containers self-heal on show regardless.
+function RefreshBlockRecordsForToken(isMatch)
+    for _, record in ipairs(blockRecords) do
+        if isMatch(record.unit) then
+            record.container:UpdateAllAuras()
+        end
+    end
+end
+
+local function ApplyBlockMount(record)
+    local getMount = ST._GetCustomBarAuraBlockMount
+    if not getMount then return false end
+    local parent, point, x, y, level = getMount(record.side)
+    if not parent then return false end
+    -- ONE point: the container's extent is secret from its first group, so a
+    -- second point would ask the engine to reconcile a secret size against a
+    -- CC-side one. Position only — the size is Blizzard's.
+    record.container:ClearAllPoints()
+    record.container:SetPoint(point, parent, point, x, y)
+    record.container:SetFrameLevel(level)
+    return true
+end
+
+-- The second bucket's mount: same one-point rule, but the anchor is the
+-- FIRST bucket's container rather than the stack container, so this bucket
+-- rides a secret extent instead of a CC-side offset. Legal only because both
+-- containers carry DisableUntrustedLayoutScriptsTemplate — callers must have
+-- checked `chainable` on both.
+local function ApplyBlockChainMount(record, anchorRecord)
+    local getMount = ST._GetCustomBarAuraBlockChainMount
+    if not getMount then return false end
+    local point, relPoint, x, y, level = getMount(record.side)
+    if not point then return false end
+    record.container:ClearAllPoints()
+    record.container:SetPoint(point, anchorRecord.container, relPoint, x, y)
+    record.container:SetFrameLevel(level)
+    return true
+end
+
+-- Re-anchor every existing container from the current contract. Container
+-- geometry is OOC-only (the validated combat surface is container METHODS),
+-- so every call site gates on InCombatLockdown; in combat a moved stack just
+-- leaves the block stale until the deferred rebind. A chained record
+-- re-anchors to its anchor container, never to the stack mount.
+function ST._SyncCustomBarAuraBlockMounts()
+    for _, record in ipairs(blockRecords) do
+        if record.chainAnchor then
+            ApplyBlockChainMount(record, record.chainAnchor)
+        else
+            ApplyBlockMount(record)
+        end
+    end
+end
+
+-- The TAIL of a side's chain, for a trailing frame (cast bar) to hang off.
+-- The chained record is by construction the far bucket whichever order the
+-- side binds in, so it wins; a lone bucket is the whole block. CC-side shown
+-- flag, never an IsShown read.
+function ST._GetCustomBarAuraBlockContainer(side)
+    local head
+    for _, record in ipairs(blockRecords) do
+        if record.side == side and record.shown then
+            if record.chainAnchor then return record.container end
+            head = head or record.container
+        end
+    end
+    return head
+end
+
+local function EnsureBlockContainer(side, unit)
+    local key = side .. "\031" .. unit
+    local record = blockContainers[key]
+    if record then return record end
+    local flow = BLOCK_FLOW[side]
+    if not flow then return nil end
+    -- Parented to the custom-bar aura host root, like the holders: the root
+    -- already carries the resource stack's applied state and alpha, so block
+    -- bars fade and go dark with the bars they belong to without any
+    -- per-container registration.
+    -- Both templates, always: DisableUntrustedLayoutScriptsTemplate is what
+    -- lets a second container anchor to this one's edge and ride its secret
+    -- size, and which container ends up serving as a chain anchor is not
+    -- known at creation time.
+    local container = CreateFrame("AuraContainer", nil,
+        CooldownCompanion:GetCustomBarAuraHostRoot(),
+        "CustomAuraContainerTemplate, DisableUntrustedLayoutScriptsTemplate")
+    -- Seed only; Blizzard resizes from its own layout pass once a group
+    -- exists, and that size is never CC's to read.
+    container:SetSize(1, 1)
+    container:SetUnit(unit)
+    container:SetFlowLayoutAxis(AnchorUtil.FlowLayoutAxis[flow.axis])
+    container:SetFlowLayoutAnchorPoint(flow.anchor)
+    container:SetFlowLayoutGrowthDirection(
+        AnchorUtil.FlowDirection[flow.h], AnchorUtil.FlowDirection[flow.v])
+    container:SetFlowLayoutPadding(0, 0, 0, 0)
+    container:Hide()
+    record = {
+        side = side,
+        unit = unit,
+        container = container,
+        -- Stamped at creation, never inferred later: a container built before
+        -- this rule (same session, code swapped under a live client) has no
+        -- way back to the aspect, and anchoring one errors.
+        chainable = true,
+        groups = {},
+        groupList = {},
+    }
+    blockContainers[key] = record
+    blockRecords[#blockRecords + 1] = record
+    if unit == "target" then
+        EnsureTargetWatcher()
+    end
+    return record
+end
+
+-- The geometry every host of a group carries. Explicit numbers throughout:
+-- the frame's own size is what Blizzard's flow layout reserves space for
+-- (GetElementSize prefers the group's elementWidth/Height but never resizes
+-- the frame), so the two must be written from the same source every bind.
+local function ApplyBlockHostGeometry(group, host)
+    host.frame:SetSize(group.frameWidth, group.frameHeight)
+    -- The holder split, mirrored: the proxy (statusBar mount) sits INSIDE the
+    -- border ring so the kit fill never paints over it, while the bounds
+    -- child spans the full rect for the shell bg/border replicas. Single
+    -- points + explicit sizes; the group frame's size is CC's, its position
+    -- is Blizzard's.
+    local inset = group.inset or 0
+    local innerW = group.frameWidth - inset * 2
+    local innerH = group.frameHeight - inset * 2
+    if innerW < 1 then innerW = 1 end
+    if innerH < 1 then innerH = 1 end
+    local proxy = host.proxy
+    proxy:ClearAllPoints()
+    proxy:SetPoint("TOPLEFT", host.frame, "TOPLEFT", inset, -inset)
+    proxy:SetSize(innerW, innerH)
+    proxy._isVertical = group.isVertical
+    proxy._ccKitRectW = innerW
+    proxy._ccKitRectH = innerH
+    local bounds = proxy._ccBounds
+    bounds:ClearAllPoints()
+    bounds:SetPoint("TOPLEFT", proxy, "TOPLEFT", -inset, inset)
+    bounds:SetSize(group.frameWidth, group.frameHeight)
+end
+
+-- One host per pooled group frame. Blizzard pre-creates a batch of frames at
+-- AddAuraGroup and runs this for each, so every frame the group can ever
+-- assign leaves here with a finished kit — nothing is built later, in combat,
+-- or on a frame CC has not seen. maxFrameCount 1 keeps the group inside that
+-- batch forever (see EnsureBlockGroup).
+--
+-- The proxy is the bar-host descriptor the kit vocabulary needs
+-- (statusBar/_barBounds/orientation/explicit rect dims). It lives UNDER the
+-- group frame on purpose: the frame's position is Blizzard-owned and secret,
+-- so a descriptor anchored anywhere else would drag every host-anchored kit
+-- region off the bar. It is CC-created and never registered, so it carries no
+-- secrets of its own.
+local function BuildBlockGroupHost(group, frame)
+    local proxy = CreateFrame("Frame", nil, frame)
+    proxy:EnableMouse(false)
+    proxy._ccAuraHostKind = "customBar"
+    proxy._isBar = true
+    proxy.statusBar = proxy
+    proxy._cdcClickThroughMotion = true
+    -- Full-footprint bounds for the shell replicas, like the holders'
+    -- _ccBounds; the proxy itself mounts inside the border ring
+    -- (ApplyBlockHostGeometry owns both rects).
+    proxy._ccBounds = CreateFrame("Frame", nil, proxy)
+    proxy._ccBounds:EnableMouse(false)
+    proxy._barBounds = proxy._ccBounds
+    local host = { frame = frame, proxy = proxy, kit = BuildSlotKit(frame) }
+    -- On the slot path the whole kit anchors to the BUTTON, and the button
+    -- itself is mounted on the inset holder — the border inset arrives
+    -- through button geometry. Block buttons are full-rect and
+    -- Blizzard-positioned, so everything button-anchored must move to the
+    -- inset proxy instead, or fills paint over the border ring. Creation
+    -- window only — never re-anchored after registration.
+    local kit = host.kit
+    local inner = {
+        kit.iconCover, kit.auraIcon, kit.swipe, kit.barBackdrop,
+        kit.barFill, kit.stackFill, kit.textOverlay,
+    }
+    for i = 1, #inner do
+        local region = inner[i]
+        if region then
+            region:ClearAllPoints()
+            region:SetAllPoints(proxy)
+        end
+    end
+    ApplyBlockHostGeometry(group, host)
+    group.hosts[#group.hosts + 1] = host
+end
+
+-- SetAuraGroupLayout REPLACES the whole options table, so every field the
+-- group needs is written every time. elementSpacing must stay 0: the flow
+-- layout advances the cursor by elementSpacing after an element AND adds
+-- groupSpacing before the next group, so a nonzero pair doubles every gap
+-- between consecutive single-frame groups (seen in game 2026-08-08).
+-- groupSpacing alone carries the stack's own spacing.
+local function BlockGroupLayout(entry, layoutIndex)
+    return {
+        layoutIndex = layoutIndex,
+        elementWidth = entry.width,
+        elementHeight = entry.height,
+        elementSpacing = 0,
+        groupSpacing = entry.spacing,
+    }
+end
+
+local function EnsureBlockGroup(record, entry, layoutIndex)
+    local group = record.groups[entry.id]
+    if group then
+        group.frameWidth = entry.width
+        group.frameHeight = entry.height
+        group.isVertical = entry.vertical
+        group.inset = entry.inset
+        record.container:SetAuraGroupLayout(entry.id, BlockGroupLayout(entry, layoutIndex))
+        return group
+    end
+    group = {
+        key = entry.id,
+        record = record,
+        unit = record.unit,
+        hosts = {},
+        parked = true,
+        frameWidth = entry.width,
+        frameHeight = entry.height,
+        isVertical = entry.vertical,
+        inset = entry.inset,
+    }
+    -- maxFrameCount 1 is structural, not a display choice: a group that could
+    -- outgrow its pre-created batch would run AcquireFrame -> CreateFrameBatch
+    -- -> initializeFrame IN COMBAT, from tainted code, on a forbidden subtree.
+    -- Born parked like a slot; the bind below writes the real contract.
+    record.container:AddAuraGroup(entry.id, SlotContract(record.unit).filter, {
+        candidateFilters = BuildParkFilters(record.unit),
+        maxFrameCount = 1,
+        layout = BlockGroupLayout(entry, layoutIndex),
+        initializeFrame = function(frame)
+            BuildBlockGroupHost(group, frame)
+        end,
+    })
+    record.groups[entry.id] = group
+    record.groupList[#record.groupList + 1] = group
+    return group
+end
+
+-- Park = zero frames PLUS the polarity-crossed sentinel, the group analog of
+-- ParkDisplay. The container is hidden by the pass when a side keeps nothing;
+-- a side that still renders something cannot hide its container, so the
+-- sentinel is what keeps a retired entry dark inside a live one.
+local function ParkBlockGroup(group)
+    if group.parked then return end
+    group.parked = true
+    group.boundEntry = nil
+    group.boundStackMax = nil
+    ReleaseSlotAuraSounds(group)
+    local container = group.record.container
+    container:SetAuraGroupMaxFrameCount(group.key, 0)
+    container:SetAuraGroupCandidateFilters(group.key, BuildParkFilters(group.unit))
+end
+
+local function BindBlockGroup(group, entry)
+    local container = group.record.container
+    container:SetAuraGroupMaxFrameCount(group.key, 1)
+    -- Converge the whole contract every bind, exactly like the slot path: the
+    -- filter string, the candidate set and the park sentinel all come from
+    -- one source, so they can never drift apart.
+    container:SetAuraGroupFilterString(group.key, SlotContract(group.unit).filter)
+    container:SetAuraGroupCandidateFilters(group.key,
+        BuildCandidateFilters(group.unit, entry.spellSet))
+    group.boundStackMax = entry.stackBarMax
+    -- Re-style every owned frame, not just the assigned one: initializeFrame
+    -- ran once per pooled frame at group creation, and which frame the group
+    -- hands out next is Blizzard's business.
+    for _, host in ipairs(group.hosts) do
+        ApplyBlockHostGeometry(group, host)
+        ConvergeApplicationBar(host.frame, host.kit, entry.buttonData, entry.stackBarMax)
+        StyleSlotKit({
+            kit = host.kit,
+            slotButton = host.frame,
+            unit = group.unit,
+            boundStackMax = entry.stackBarMax,
+        }, host.proxy, entry.buttonData, entry.style)
+        -- Resource bars never show aura tooltips (their CC holders are
+        -- click-through), and pooled frames are reused across entries, so the
+        -- untouched-button defaults are converged every bind.
+        host.frame:SetMouseMotionEnabled(false)
+        host.frame:SetTooltipAnchorPoint("ANCHOR_NONE", 0, 0)
+        host.frame:SetHideTooltipInCombat(true)
+    end
+    RegisterSlotAuraSounds(group, entry.buttonData, entry.spellSet)
+    group.parked = nil
+    group.boundEntry = entry.buttonData
+end
+
+-- One unit bucket of one side. `anchorRecord` nil means this bucket takes the
+-- stack-end mount; non-nil means it chains off that bucket's trailing edge.
+-- Returns the bound record, or nil when nothing could be mounted.
+local function BindBlockBucket(side, unit, entries, anchorRecord)
+    local record = EnsureBlockContainer(side, unit)
+    if not record then return nil end
+    local mounted
+    if anchorRecord then
+        if not (record.chainable and anchorRecord.chainable) then
+            -- A container from before the dual-template rule cannot be
+            -- anchored to or from: the call errors on the forbidden aspect,
+            -- and an error inside the aura refresh pipeline freezes the whole
+            -- display until reload. So this bucket simply does not render
+            -- this session; /reload rebuilds every container chainable.
+            blockChainBlocked = blockChainBlocked + #entries
+            return nil
+        end
+        mounted = ApplyBlockChainMount(record, anchorRecord)
+        if mounted then record.chainAnchor = anchorRecord end
+    else
+        mounted = ApplyBlockMount(record)
+    end
+    if not mounted then return nil end
+    local layoutIndex = 0
+    for _, entry in ipairs(entries) do
+        layoutIndex = layoutIndex + 1
+        BindBlockGroup(EnsureBlockGroup(record, entry, layoutIndex), entry)
+    end
+    record.container:Show()
+    record.shown = true
+    return record
+end
+
+-- Park everything, then bind — the same discipline (and the same coalescing
+-- argument) as the slot pass above. OOC by RunAuraRebind's guarantee, which
+-- is also what makes the chain anchor legal here: it is container geometry.
+local function RebindCustomBarAuraBlocks(self)
+    for _, record in ipairs(blockRecords) do
+        for _, group in ipairs(record.groupList) do
+            ParkBlockGroup(group)
+        end
+        record.container:Hide()
+        record.shown = false
+        record.chainAnchor = nil
+    end
+    blockChainBlocked = 0
+    local collect = ST._CollectCustomBarAuraBlockWants
+    if not collect then return end
+    for _, want in ipairs(collect()) do
+        -- Split the side's ordered entry list into per-unit buckets. Appending
+        -- in list order is what preserves each bucket's relative order; the
+        -- buckets themselves never interleave, and want.targetFirst decides
+        -- which of the two sits nearer the panel.
+        local playerEntries, targetEntries
+        for _, entry in ipairs(want.entries) do
+            if entry.unit == "target" then
+                targetEntries = targetEntries or {}
+                targetEntries[#targetEntries + 1] = entry
+            else
+                playerEntries = playerEntries or {}
+                playerEntries[#playerEntries + 1] = entry
+            end
+        end
+        -- Every entry's unit was resolved ONCE at partition time and rides the
+        -- contract, so this pass can never re-derive a different answer.
+        local firstUnit, firstEntries = "player", playerEntries
+        local secondUnit, secondEntries = "target", targetEntries
+        if want.targetFirst then
+            firstUnit, firstEntries = "target", targetEntries
+            secondUnit, secondEntries = "player", playerEntries
+        end
+        local anchorRecord
+        if firstEntries then
+            anchorRecord = BindBlockBucket(want.side, firstUnit, firstEntries, nil)
+        end
+        if secondEntries then
+            -- The chain exists only while BOTH buckets are populated: a hidden
+            -- container is not something to hang geometry off, so a one-bucket
+            -- side takes the stack-end mount itself.
+            BindBlockBucket(want.side, secondUnit, secondEntries, anchorRecord)
+        end
+    end
 end
 
 -- One combat-defer note per deferral window: config edits made in combat keep
@@ -2393,6 +2861,11 @@ function RunAuraRebind()
         end
     end
 
+    -- Aura blocks (custom-bar aura entries that hide when inactive): their own
+    -- park-then-bind pass over the group containers. Disjoint from the slot
+    -- records above — no host button, no pool lock — so ordering is free.
+    RebindCustomBarAuraBlocks(self)
+
     -- Reconcile the shared pool lock once, after binding: a host is only
     -- slot-free when NONE of its records holds a binding. ParkDisplay must not
     -- do this per record — several records share one button, and clearing the
@@ -2470,5 +2943,34 @@ function CooldownCompanion:GetAuraDisplayStatus()
         if record.boundEntry then unitStatus.bound = unitStatus.bound + 1 end
         if record.boundStackMax then unitStatus.stackBound = unitStatus.stackBound + 1 end
     end
+    -- Aura blocks: containers created (permanent once created), groups by
+    -- bind state, how many sides run a two-bucket chain, and any entries the
+    -- chain safety dropped (see BindBlockBucket — clears on /reload).
+    local blocks = {
+        containers = #blockRecords,
+        shown = 0,
+        bound = 0,
+        parked = 0,
+        hosts = 0,
+        chained = 0,
+        chainBlocked = blockChainBlocked,
+    }
+    for _, record in ipairs(blockRecords) do
+        -- CC-side tags, not container reads: these are the only diagnostics
+        -- that can be asked for in combat.
+        if record.shown then blocks.shown = blocks.shown + 1 end
+        if record.chainAnchor then blocks.chained = blocks.chained + 1 end
+        for _, group in ipairs(record.groupList) do
+            if group.boundEntry then
+                blocks.bound = blocks.bound + 1
+            else
+                blocks.parked = blocks.parked + 1
+            end
+            -- Observability for the batch-size assumption: every pooled frame
+            -- Blizzard pre-created ran initializeFrame and built a full kit.
+            blocks.hosts = blocks.hosts + #group.hosts
+        end
+    end
+    status.blocks = blocks
     return status
 end

@@ -867,15 +867,34 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         value = cab.hideWhenInactive == true,
         onChange = function(value)
             cab.hideWhenInactive = value or nil
-            RefreshCustomBarAuraConfig()
+            -- Toggling moves an aura bar between the fixed stack and the
+            -- collapsing block, so the stack's extent changes: this needs
+            -- the same commit as a layout drop, not just a config refresh.
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RepositionCastBar()
+            CooldownCompanion:UpdateAnchorStacking()
+            CooldownCompanion:RefreshConfigPanel()
         end,
     })
-    AnchorRowBadge(shellRow, CreateInfoButton(shellRow.frame, shellRow.frame, "LEFT", "LEFT", 0, 0, {
+    local shellInfo = {
         "Show Only While Aura Active",
         {"The bar shows only while the aura is running.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
-        {"Its slot in the bar stack stays reserved; bars cannot reflow around it in combat.", 1, 1, 1, true},
-    }, infoButtons))
+    }
+    -- Only aura entries join the collapsing aura block
+    -- (RB.IsAuraBlockEntry); a spell bar keeps its slot either way.
+    if isSpellBar then
+        shellInfo[#shellInfo + 1] = {"Its slot in the bar stack stays reserved.", 1, 1, 1, true}
+    else
+        shellInfo[#shellInfo + 1] = {"It leaves the stack while hidden. It returns at the far end of its side, in order with the other bars that do the same.", 1, 1, 1, true}
+        shellInfo[#shellInfo + 1] = {" ", 1, 1, 1, true}
+        shellInfo[#shellInfo + 1] = {"Your auras and the target's collapse in separate groups.", 1, 1, 1, true}
+        shellInfo[#shellInfo + 1] = {" ", 1, 1, 1, true}
+        shellInfo[#shellInfo + 1] = {"A group whose bars are all hidden still holds one bar gap of space. The game hides aura activity from addons, so that space cannot close.", 1, 1, 1, true}
+        shellInfo[#shellInfo + 1] = {" ", 1, 1, 1, true}
+        shellInfo[#shellInfo + 1] = {"Splitting your auras and the target's onto different sides avoids the extra gap.", 1, 1, 1, true}
+    end
+    AnchorRowBadge(shellRow, CreateInfoButton(shellRow.frame, shellRow.frame, "LEFT", "LEFT", 0, 0, shellInfo, infoButtons))
 end
 
 local function BuildCustomBarWorkspaceAddBox(container)
@@ -964,12 +983,16 @@ local function BuildCustomBarWorkspaceAddBox(container)
             -- Aura-driven Custom Bar (the aura pass): duration bar by
             -- default; stacks are the "Bar Shows Stacks" opt-in. The unit
             -- seed derives from spell polarity (never user-set).
+            -- hideWhenInactive defaults on: a new aura bar joins the
+            -- collapsing aura block rather than parking an empty slot in
+            -- the stack. Existing bars keep whatever they were saved with.
             entry = {
                 entryType = "aura",
                 enabled = true,
                 spellID = spellId,
                 trackingMode = "active",
                 showDurationText = true,
+                hideWhenInactive = true,
                 auraUnit = ClassifyAuraSpellUnit(spellId) or "player",
                 label = labelOverride or GetAuraBarAutocompleteDisplayName(spellId) or C_Spell.GetSpellName(spellId) or "",
             }

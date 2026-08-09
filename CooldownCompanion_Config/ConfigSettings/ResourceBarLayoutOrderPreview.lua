@@ -35,7 +35,8 @@ local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
 local DEFAULT_RESOURCE_TEXT_OUTLINE = RB.DEFAULT_RESOURCE_TEXT_OUTLINE
 
 local IsTruthyConfigFlag = RB.IsTruthyConfigFlag
-local IsSpellCustomBarConfig = RB.IsSpellCustomBarConfig
+local IsAuraBlockEntry = RB.IsAuraBlockEntry
+local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
 local IsVerticalFillReversed = RB.IsVerticalFillReversed
 local GetResourceGlobalThickness = RB.GetResourceGlobalThickness
 local GetResourceColors = RB.GetResourceColors
@@ -106,8 +107,39 @@ local LAYOUT_PREVIEW_IDENTITY_FONT_OUTLINE = "OUTLINE, SLUG"
 -- way. The atlas has substantial transparent padding around its glyph.
 local LAYOUT_PREVIEW_VISIBILITY_BADGE_ATLAS = "GM-icon-visibleDis-pressed"
 local LAYOUT_PREVIEW_VISIBILITY_BADGE_SCREEN_SIZE = 18
-local LAYOUT_PREVIEW_AURA_SPACE_BADGE_ATLAS = "QuestRepeatableTurnin"
-local LAYOUT_PREVIEW_AURA_SPACE_BADGE_SCREEN_SIZE = 14
+-- Aura-block members get their own badge: they leave the stack in play and
+-- the bars past them close up, which the expanded preview cannot show.
+local LAYOUT_PREVIEW_AURA_BLOCK_BADGE_ATLAS = "QuestRepeatableTurnin"
+local LAYOUT_PREVIEW_AURA_BLOCK_BADGE_SCREEN_SIZE = 14
+
+-- The handle on the seam between a lane's two aura-block buckets. One table
+-- rather than a run of file-level functions: this chunk sits on Lua 5.1's
+-- 200-local ceiling, so a feature's worth of names has to fold into a single
+-- one. Its members are filled in further down, where the lane geometry they
+-- read is in scope.
+--
+-- The size is a SCREEN size, counter-scaled against the fit-to-host scale
+-- exactly like the identity marks: a hit target that shrank with the
+-- composition would stop being one.
+--
+-- One flat glyph, no plate: it hangs over the bars the owner is judging, so
+-- anything with a filled background of its own reads as part of the
+-- composition. The glyph is orientation-neutral, which is why nothing here
+-- keys off the lane axis.
+local SwapSeam = {
+    SCREEN_SIZE = 16,
+    -- Cross-axis clearance between the bars' outer edge and the handle's
+    -- NEAR edge: the handle sits wholly outside the bars (owner ruling; a
+    -- centre-on-edge hang clipped them), close enough to stay attached to
+    -- the seam it names. The hover plate overhangs the frame by 10% a side,
+    -- so this must stay above that overhang.
+    HANG = 3,
+    GLYPH_ATLAS = "uitools-icon-refresh",
+    HOVER_ATLAS = "uitools-icon-highlight",
+    HOVER_SCALE = 1.2,
+    REST = { 0.62, 0.64, 0.70, 1 },
+    HOVER = { 1, 1, 1, 1 },
+}
 
 local GetLayoutPreviewIcon
 
@@ -221,6 +253,7 @@ local function EnsurePreviewState(host)
             slots = {},
             gaps = {},
             pills = {},
+            swaps = {},
         },
         used = {},
         tweens = {},
@@ -259,6 +292,7 @@ local function ResetPreviewState(preview)
     preview.used.slots = 0
     preview.used.gaps = 0
     preview.used.pills = 0
+    preview.used.swaps = 0
     preview.renderedSelectionKeys = {}
     preview.independentResources = false
     preview.layoutDrag = nil
@@ -459,6 +493,40 @@ local function AcquireGap(preview, parent)
     frame:SetParent(parent)
     frame:Show()
     frame.text:Hide()
+    return frame
+end
+
+-- Mouse-enabled on its own small rect alone, so it never takes a drag off
+-- the bars it sits over. The hover plate is created below the glyph and
+-- anchored once: ApplyScale only ever resizes, so the CENTER anchor keeps
+-- both on the seam.
+function SwapSeam.Acquire(preview, parent)
+    local pool = preview.pools.swaps
+    if not pool then
+        pool = {}
+        preview.pools.swaps = pool
+    end
+    local index = (preview.used.swaps or 0) + 1
+    preview.used.swaps = index
+    local frame = pool[index]
+    if not frame then
+        frame = CreateFrame("Button", nil, parent)
+        frame:SetClipsChildren(false)
+        frame:RegisterForClicks("LeftButtonUp")
+        pool[index] = frame
+    end
+    if not frame.glyph then
+        frame.hover = frame:CreateTexture(nil, "ARTWORK")
+        frame.hover:SetAtlas(SwapSeam.HOVER_ATLAS, false)
+        frame.hover:SetPoint("CENTER")
+        frame.hover:Hide()
+        frame.glyph = frame:CreateTexture(nil, "OVERLAY")
+        frame.glyph:SetAtlas(SwapSeam.GLYPH_ATLAS, false)
+        frame.glyph:SetPoint("CENTER")
+    end
+    frame:SetParent(parent)
+    frame:EnableMouse(true)
+    frame:Show()
     return frame
 end
 
@@ -1051,14 +1119,178 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
     return primarySlots, castSlots
 end
 
-local function SortSlotsForSide(slots, side, reversed)
+-- Stack sections. The live stack packs aura-block entries into collapsing
+-- containers at the far end of the side, past every fixed bar, and the cast
+-- bar still anchors past those containers. Order values alone cannot express
+-- that, so the sort ranks sections first and orders within a section second.
+-- Ranks apply only while the side actually holds a block; a side without one
+-- sorts on order alone, cast bar included.
+--
+-- A container tracks exactly ONE unit, so the block is really two chained
+-- buckets: the bars watching YOUR auras nearest the panel, the bars watching
+-- the TARGET past them. Each bucket is its own rank, which is all the sort
+-- and the section-local drag math need to keep them from interleaving.
+local STACK_RANK_FIXED = 0
+local STACK_RANK_AURA_BLOCK_PLAYER = 1
+local STACK_RANK_AURA_BLOCK_TARGET = 2
+local STACK_RANK_CAST = 3
+
+-- One test for the sort, the badge and the tooltip: the preview must not
+-- carry its own copy of what counts as a block entry.
+local function IsAuraBlockCustomBar(config)
+    return type(config) == "table" and IsAuraBlockEntry(config) == true
+end
+
+local function IsAuraBlockSlot(slot)
+    return slot.kind == "custom"
+        and IsAuraBlockCustomBar(slot.customEntry and slot.customEntry.config)
+end
+
+-- Derived exactly the way the live partition derives it, so the canvas can
+-- never draw a bucket the stack does not build.
+local function GetAuraBlockSlotUnit(slot)
+    local config = slot.customEntry and slot.customEntry.config
+    if type(config) ~= "table" then
+        return "player"
+    end
+    return GetResolvedCustomAuraBarAuraUnit(config, tonumber(config.spellID)) or "player"
+end
+
+-- Which bucket a slot belongs to, or nil for anything outside the block.
+-- IDENTITY, never order: the wash colours key off this, so a flipped side
+-- still draws your auras blue and the target's gold.
+local function GetSlotBucketId(slot)
+    if not IsAuraBlockSlot(slot) then
+        return nil
+    end
+    if GetAuraBlockSlotUnit(slot) == "target" then
+        return STACK_RANK_AURA_BLOCK_TARGET
+    end
+    return STACK_RANK_AURA_BLOCK_PLAYER
+end
+
+-- ORDER, not identity. The two bucket ranks trade places when the side is
+-- flipped (auraBlockTargetFirst), which is what makes the sort, the seam
+-- runs and the drag containment agree with the live bind order.
+local function GetSlotStackRank(slot, targetFirst)
+    local bucket = GetSlotBucketId(slot)
+    if bucket then
+        if not targetFirst then
+            return bucket
+        end
+        if bucket == STACK_RANK_AURA_BLOCK_TARGET then
+            return STACK_RANK_AURA_BLOCK_PLAYER
+        end
+        return STACK_RANK_AURA_BLOCK_TARGET
+    end
+    if slot.kind == "cast" then
+        return STACK_RANK_CAST
+    end
+    return STACK_RANK_FIXED
+end
+
+-- Resolved ONCE per sort or layout pass and carried on the lane, never
+-- re-read per comparator call: every rank in a pass has to answer to the same
+-- flag or the comparator stops being a total order.
+--
+-- Reached through RB rather than through a file-level alias: this chunk sits
+-- on Lua 5.1's 200-local ceiling, so the two bucket-order helpers are the
+-- ones that pay for it.
+local function GetPreviewTargetFirst(preview, side)
+    return RB.IsAuraBlockTargetFirst(preview and preview.rbSettings, side) == true
+end
+
+-- The saved side a lane's block bars share, or nil plus a split marker when
+-- they straddle two sides — which only the merged independent lane can
+-- render. The bucket-order flag belongs to THIS side: the merged lane's own
+-- label is just the dominant side and can disagree with where the bars are
+-- actually saved, and the live stack builds its containers per saved side.
+local function GetLaneBlockFlagSide(slots)
+    local flagSide
+    for _, slot in ipairs(slots or {}) do
+        if IsAuraBlockSlot(slot) then
+            local pos = slot.getPos()
+            if flagSide == nil then
+                flagSide = pos
+            elseif flagSide ~= pos then
+                return nil, true
+            end
+        end
+    end
+    return flagSide, false
+end
+
+-- Bucket membership is worn by the MEMBER BARS themselves, never by a shared
+-- frame around them: anything drawn around the run has to shrink when a bar
+-- lifts out of the stack, and a bucket that shrinks mid-drag reads as one
+-- with no room for the bar in flight. Both colors are already in this
+-- canvas's vocabulary - the slot-hover blue for your own auras, the
+-- aura-block tooltip's gold for the target's.
+--
+-- `wash` is applied with ADD, the same blend the hover and selection glows
+-- use, so it can only lift the bar and never mutes the colour the owner is
+-- judging. The two alphas are not equal on purpose: they are matched by the
+-- LUMA each hue adds (blue 0.14 and gold 0.10 both land at ~0.08), so neither
+-- bucket reads louder than the other.
+--
+-- `gap*` is the drop cue and is drawn over empty lane, not over a bar, so it
+-- is a plain translucent fill a step stronger than the wash. The inner fill
+-- is part of the same cue and moves with it, or a target-bucket drop would
+-- open a blue gap inside a gold run.
+local LAYOUT_PREVIEW_BUCKET_TINTS = {
+    [STACK_RANK_AURA_BLOCK_PLAYER] = {
+        wash = { 0.38, 0.60, 0.92, 0.14 },
+        gapBg = { 0.38, 0.60, 0.92, 0.26 },
+        gapBorder = { 0.38, 0.60, 0.92, 0.95 },
+        gapInner = { 0.38, 0.60, 0.92, 0.22 },
+    },
+    [STACK_RANK_AURA_BLOCK_TARGET] = {
+        wash = { 1.00, 0.82, 0.20, 0.10 },
+        gapBg = { 1.00, 0.82, 0.20, 0.20 },
+        gapBorder = { 1.00, 0.82, 0.20, 0.95 },
+        gapInner = { 1.00, 0.82, 0.20, 0.18 },
+    },
+}
+
+local function StackHasAuraBlock(slots)
+    for _, slot in ipairs(slots or {}) do
+        if IsAuraBlockSlot(slot) then
+            return true
+        end
+    end
+    return false
+end
+
+-- Sections run the same direction the lane does: on a reversed lane index 1
+-- is the slot furthest from the panel, so the block has to come first there
+-- and last everywhere else.
+local function CompareStackRank(a, b, reversed, targetFirst)
+    local aRank = GetSlotStackRank(a, targetFirst)
+    local bRank = GetSlotStackRank(b, targetFirst)
+    if aRank == bRank then
+        return nil
+    end
+    if reversed then
+        return aRank > bRank
+    end
+    return aRank < bRank
+end
+
+local function SortSlotsForSide(slots, side, reversed, targetFirst)
     local out = {}
     for _, slot in ipairs(slots) do
         if slot.getPos() == side then
             table_insert(out, slot)
         end
     end
+    local ranked = StackHasAuraBlock(out)
     table_sort(out, function(a, b)
+        if ranked then
+            local rankResult = CompareStackRank(a, b, reversed, targetFirst)
+            if rankResult ~= nil then
+                return rankResult
+            end
+        end
         if reversed then
             return a.getOrder() > b.getOrder()
         end
@@ -1067,7 +1299,7 @@ local function SortSlotsForSide(slots, side, reversed)
     return out
 end
 
-local function SortSlotsForIndependentStack(slots, firstSide, secondSide)
+local function SortSlotsForIndependentStack(slots, firstSide, secondSide, preview)
     local firstCount = 0
     local secondCount = 0
     local out = {}
@@ -1085,11 +1317,27 @@ local function SortSlotsForIndependentStack(slots, firstSide, secondSide)
     -- stack. Ties use the normal below/right direction.
     local side = firstCount > secondCount and firstSide or secondSide
     local reversed = side == firstSide
+    local ranked = StackHasAuraBlock(out)
+    -- The flag comes from the side the block bars are SAVED on, not from the
+    -- dominant side this merged lane happens to be labelled with.
+    local targetFirst = GetPreviewTargetFirst(preview,
+        GetLaneBlockFlagSide(out) or side)
     table_sort(out, function(a, b)
+        if ranked then
+            local rankResult = CompareStackRank(a, b, reversed, targetFirst)
+            if rankResult ~= nil then
+                return rankResult
+            end
+        end
         local aOrder = a.getOrder()
         local bOrder = b.getOrder()
         if aOrder ~= bOrder then
-            return reversed and aOrder > bOrder or aOrder < bOrder
+            -- Not `reversed and a>b or a<b`: that parses as `(reversed and
+            -- a>b) or (a<b)`, which answers true for BOTH orderings of an
+            -- unequal pair when reversed, and table.sort rejects such a
+            -- comparator ("invalid order function").
+            if reversed then return aOrder > bOrder end
+            return aOrder < bOrder
         end
         return tostring(a.id) < tostring(b.id)
     end)
@@ -1237,6 +1485,33 @@ local function ConfigureSlotChrome(frame, slot, skin, isVertical)
         frame.identityLayer:Hide()
     end
 
+    -- Aura-block membership, worn by the bar itself. Elevated above the bar
+    -- composition (a texture at the slot's own level renders UNDER the bar
+    -- frames inside previewCanvas) but under the identity marks and the
+    -- hover/selection glows, so those stay the topmost read.
+    --
+    -- Runs on EVERY configure, both legs: a pooled slot arrives wearing
+    -- whatever its last owner left on it, so the non-bucket case has to clear
+    -- the wash rather than skip it.
+    local tint = LAYOUT_PREVIEW_BUCKET_TINTS[GetSlotBucketId(slot)]
+    local wash = frame.bucketWash
+    if tint then
+        if not wash then
+            wash = CreateFrame("Frame", nil, frame)
+            wash:SetAllPoints(frame.previewCanvas)
+            wash:EnableMouse(false)
+            wash.tex = wash:CreateTexture(nil, "OVERLAY")
+            wash.tex:SetAllPoints()
+            wash.tex:SetBlendMode("ADD")
+            frame.bucketWash = wash
+        end
+        wash:SetFrameLevel(frame:GetFrameLevel() + 17)
+        wash.tex:SetColorTexture(tint.wash[1], tint.wash[2], tint.wash[3], tint.wash[4])
+        wash:Show()
+    elseif wash then
+        wash:Hide()
+    end
+
     frame.previewCanvas:ClearAllPoints()
     frame.previewCanvas:SetAllPoints(frame)
 end
@@ -1248,12 +1523,6 @@ end
 -- name is laid out here but only shown while the preview is hovered.
 -- widthOverride: for the drag ghost, whose slot takes its size from anchors
 -- and would measure nothing until the next layout pass.
-local function DoesCustomBarHideWithAura(config)
-    return type(config) == "table"
-        and (not IsSpellCustomBarConfig(config) or config.auraTracking == true)
-        and config.hideWhenInactive == true
-end
-
 local function ApplySlotIdentityMarks(preview, frame, scale, widthOverride)
     local layer = frame and frame.identityLayer
     if not layer then return end
@@ -1313,14 +1582,14 @@ local function ApplySlotIdentityMarks(preview, frame, scale, widthOverride)
     local badge = layer.badge
     local config = slot.customEntry and slot.customEntry.config
     if type(config) == "table" and config.hideWhenInactive == true then
-        local isAuraSpaceBadge = DoesCustomBarHideWithAura(config)
-        local screenSize = isAuraSpaceBadge
-            and LAYOUT_PREVIEW_AURA_SPACE_BADGE_SCREEN_SIZE
+        local isAuraBlockBadge = IsAuraBlockCustomBar(config)
+        local screenSize = isAuraBlockBadge
+            and LAYOUT_PREVIEW_AURA_BLOCK_BADGE_SCREEN_SIZE
             or LAYOUT_PREVIEW_VISIBILITY_BADGE_SCREEN_SIZE
         local size = math_min(24, math_max(12,
             screenSize / scale))
-        badge:SetAtlas(isAuraSpaceBadge
-            and LAYOUT_PREVIEW_AURA_SPACE_BADGE_ATLAS
+        badge:SetAtlas(isAuraBlockBadge
+            and LAYOUT_PREVIEW_AURA_BLOCK_BADGE_ATLAS
             or LAYOUT_PREVIEW_VISIBILITY_BADGE_ATLAS, false)
         badge:SetSize(size, size)
         badge:ClearAllPoints()
@@ -2052,6 +2321,204 @@ local function BuildLaneSlotGeometry(lane, index, sizes)
     return x, -offset, lane.slotWidth, extent
 end
 
+-- The contiguous run of slots each aura-block bucket owns, in render order.
+-- The sort already guarantees the buckets do not interleave, so a run is
+-- simply the stretch of one bucket IDENTITY; everything else breaks the run.
+-- Only the seam handle needs this: membership itself is drawn per bar.
+function SwapSeam.BuildRuns(slotModels)
+    local runs = {}
+    local current
+    for index, slot in ipairs(slotModels or {}) do
+        local bucket = GetSlotBucketId(slot)
+        if bucket then
+            if current and current.bucket == bucket then
+                current.last = index
+            else
+                current = { bucket = bucket, first = index, last = index }
+                table_insert(runs, current)
+            end
+        else
+            current = nil
+        end
+    end
+    return runs
+end
+
+-- Sized against the fit-to-host scale, like the identity marks. Both textures
+-- are anchored by CENTER at creation, so resizing alone keeps them on the
+-- seam.
+function SwapSeam.ApplyScale(frame, scale)
+    if not (frame and frame.glyph) then return end
+    scale = math_max(scale or 1, 0.01)
+    local size = math_min(26, math_max(13, SwapSeam.SCREEN_SIZE / scale))
+    frame:SetSize(size, size)
+    frame.glyph:SetSize(size, size)
+    frame.hover:SetSize(size * SwapSeam.HOVER_SCALE, size * SwapSeam.HOVER_SCALE)
+end
+
+function SwapSeam.OnEnter(self)
+    local color = SwapSeam.HOVER
+    self.glyph:SetVertexColor(color[1], color[2], color[3], color[4])
+    self.hover:Show()
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Swap Group Order", 1, 1, 1)
+    GameTooltip:AddLine("Blue bars track your auras. Gold bars track the target's.", 0.7, 0.7, 0.7, true)
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Bars cannot move between the groups. Swapping moves the other group next to the panel.", 0.7, 0.7, 0.7, true)
+    GameTooltip:Show()
+end
+
+function SwapSeam.ApplyRestingLook(self)
+    local color = SwapSeam.REST
+    self.glyph:SetVertexColor(color[1], color[2], color[3], color[4])
+    self.hover:Hide()
+end
+
+function SwapSeam.OnLeave(self)
+    SwapSeam.ApplyRestingLook(self)
+    GameTooltip:Hide()
+end
+
+-- The handle on the seam between a lane's two aura-block buckets, and the
+-- only place the bucket order can be changed: containment forbids dragging a
+-- bar out of its own bucket, so the ORDER OF THE BUCKETS needs its own
+-- control. Drawn only when the lane holds both buckets, which is the only
+-- time there is an order to swap.
+--
+-- It rides the seam ALONG the stack and hangs just off the bars' outer edge
+-- ACROSS it: clear of the bar centre, where the identity name sits, and of
+-- the far edge, where the aura-block badge does.
+function SwapSeam.Build(preview, lane)
+    lane.swapButton = nil
+    local runs = SwapSeam.BuildRuns(lane.slotModels)
+    if #runs ~= 2 then
+        return
+    end
+
+    -- Which side's flag this seam owns: the side the bucket bars are SAVED
+    -- on. The merged independent lane renders BOTH saved sides at once, and
+    -- buckets living on different saved sides are separate one-bucket
+    -- containers live — a swap would flip one side's flag and change nothing
+    -- in play, so the handle only appears when every bucket bar shares one
+    -- saved side, and it reads/writes THAT side's flag.
+    local flagSide, split = GetLaneBlockFlagSide(lane.slotModels)
+    if split then
+        return
+    end
+    flagSide = flagSide or lane.side
+
+    -- No drag is open on the build path, so display index is model index.
+    local xa, ya, wa, ha = BuildLaneSlotGeometry(lane, runs[1].last)
+    local xb, yb, wb, hb = BuildLaneSlotGeometry(lane, runs[2].first)
+    local hang = SwapSeam.HANG
+
+    -- Anchored by its bars-facing EDGE, not its centre: the handle sits
+    -- wholly outside the bars, and the fit-to-host re-scale grows it away
+    -- from them instead of into them.
+    local point, px, py
+    if lane.axis == "x" then
+        point = "TOP"
+        px = ((xa + wa) + xb) / 2
+        py = (yb - hb) - hang
+    else
+        point = "RIGHT"
+        px = xb - hang
+        py = ((ya - ha) + yb) / 2
+    end
+
+    local frame = SwapSeam.Acquire(preview, lane.frame)
+    frame:SetFrameLevel(lane.frame:GetFrameLevel() + 3)
+    -- Provisional size; the fit-to-host pass re-runs ApplyScale once the
+    -- composition's scale is known.
+    SwapSeam.ApplyScale(frame, 1)
+    -- The resting look, NOT OnLeave: a rebuild can land while the cursor is
+    -- on a bar, and hiding the tooltip here would take that bar's away.
+    SwapSeam.ApplyRestingLook(frame)
+    frame:ClearAllPoints()
+    frame:SetPoint(point, lane.frame, "TOPLEFT", px, py)
+
+    local side = flagSide
+    frame:SetScript("OnEnter", SwapSeam.OnEnter)
+    frame:SetScript("OnLeave", SwapSeam.OnLeave)
+    frame:SetScript("OnClick", function()
+        local settings = preview.rbSettings
+        RB.SetAuraBlockTargetFirst(settings, side, not RB.IsAuraBlockTargetFirst(settings, side))
+        GameTooltip:Hide()
+        -- The drop-commit refresh, verbatim: the flag reorders the live
+        -- buckets, and the rebuild is what re-ranks this canvas.
+        CooldownCompanion:ApplyResourceBars()
+        -- In combat the block rebind defers, but its internal reason never
+        -- prints the "applies when combat ends" notice. This edit is
+        -- config-originated, so say so; out of combat the apply above
+        -- already rebound and this would only run a redundant pass.
+        if InCombatLockdown() then
+            CooldownCompanion:RequestAuraRebind("config")
+        end
+        CooldownCompanion:RepositionCastBar()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    lane.swapButton = frame
+end
+
+-- The insert index a drop is ALLOWED to take, clamped out of the raw one.
+-- `filtered` is the destination lane's slots with the dragged one lifted out.
+--
+-- One rule covers every case: the drop may not break the lane's rank order.
+-- A block bar therefore cannot leave its own bucket's run, and a fixed bar or
+-- the cast bar cannot land inside one. Cross-lane drops read the DESTINATION
+-- lane's bucket order, so a bar dropped on the other side lands inside that
+-- side's same-unit bucket, or - when that side has no such bucket yet - at
+-- the position that bucket would occupy there.
+--
+-- Ranks bind only a lane the stack actually ranks. Without a block on either
+-- the lane or the incoming bar, order alone decides and the cast bar is free
+-- to sit anywhere, exactly as before.
+local function ClampLaneInsertIndex(lane, slotData, filtered, insertIndex)
+    local count = #filtered
+    if not slotData
+        or not (StackHasAuraBlock(filtered) or IsAuraBlockSlot(slotData)) then
+        return math_max(1, math_min(count + 1, insertIndex or 1))
+    end
+
+    local targetFirst = lane.targetFirst == true
+    -- Sections run the lane's own direction: on a reversed lane index 1 is
+    -- the slot furthest from the panel, so ranks descend there.
+    local reversed = lane.reversed == true
+    local rank = GetSlotStackRank(slotData, targetFirst)
+
+    local lower = 1
+    for index = 1, count do
+        local other = GetSlotStackRank(filtered[index], targetFirst)
+        local precedes
+        if reversed then precedes = other > rank else precedes = other < rank end
+        if not precedes then
+            break
+        end
+        lower = index + 1
+    end
+
+    local upper = count + 1
+    for index = count, 1, -1 do
+        local other = GetSlotStackRank(filtered[index], targetFirst)
+        local follows
+        if reversed then follows = other < rank else follows = other > rank end
+        if not follows then
+            break
+        end
+        upper = index
+    end
+
+    -- A lane the sort never ranked can hold slots out of rank order, which
+    -- collapses the window; the lower bound wins and the post-drop sort
+    -- settles the rest.
+    if upper < lower then
+        upper = lower
+    end
+    return math_max(lower, math_min(upper, insertIndex or lower))
+end
+
 local function GetScaledFrameRect(frame)
     if not (frame and frame.GetScaledRect) then
         return nil
@@ -2088,10 +2555,13 @@ local function GetLaneScale(lane)
     }
 end
 
+-- Returns the lane's scale, the hit rects, and the slot models those rects
+-- belong to. The models come back because the drag containment has to clamp
+-- against the same list the rects were measured from.
 local function BuildStableLaneSlots(lane, draggedSlotId)
     local laneScale = GetLaneScale(lane)
     if not laneScale then
-        return nil, nil
+        return nil, nil, nil
     end
 
     local filtered = {}
@@ -2119,7 +2589,7 @@ local function BuildStableLaneSlots(lane, draggedSlotId)
         }
     end
 
-    return laneScale, slotRects
+    return laneScale, slotRects, filtered
 end
 
 local function SelectPreviewSlot(slot, modifierMulti)
@@ -2180,6 +2650,13 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         axis = axis,
         side = side,
         reversed = reversed,
+        -- Resolved once, here: the sort that produced `slotModels` used this
+        -- same answer, and the drag containment has to agree with it. Flag
+        -- side, not lane side: on the merged independent lane the two can
+        -- disagree (a split-side lane falls back to the lane side, where the
+        -- flag is moot — the seam never builds there).
+        targetFirst = GetPreviewTargetFirst(preview,
+            GetLaneBlockFlagSide(slotModels) or side),
         slotModels = slotModels,
         baseWidth = width,
         baseHeight = height,
@@ -2200,6 +2677,11 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
 
     for index, slotModel in ipairs(slotModels) do
         local slotFrame = AcquireSlot(preview, laneFrame)
+        -- Explicit, and before the chrome pass reads it: the drop gap rides
+        -- at the lane's level + 1 and the bucket wash is offset from this
+        -- one, so a pooled slot must not come back carrying a level from
+        -- another lane.
+        slotFrame:SetFrameLevel(laneFrame:GetFrameLevel() + 2)
         local slotExtent = lane.naturalSizes[index]
         ConfigureSlotPreview(
             slotFrame, slotModel, preview,
@@ -2326,15 +2808,34 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
                 GameTooltip:AddLine("Ctrl+Click to multi-select. Right-click for actions.", 0.75, 0.82, 0.92, true)
             end
             local customConfig = slotModel.customEntry and slotModel.customEntry.config
-            if DoesCustomBarHideWithAura(customConfig) then
+            if IsAuraBlockCustomBar(customConfig) then
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine(
-                    ("|A:%s:14:14|a Hidden aura still reserves layout space")
-                        :format(LAYOUT_PREVIEW_AURA_SPACE_BADGE_ATLAS),
+                    ("|A:%s:14:14|a Leaves the stack while its aura is down")
+                        :format(LAYOUT_PREVIEW_AURA_BLOCK_BADGE_ATLAS),
                     1, 0.82, 0.2)
                 GameTooltip:AddLine(
-                    "Blizzard does not expose the active aura state to addon layout code, so this reserved space cannot safely collapse.",
+                    "In play the bars past it close up. This preview keeps every bar in its slot.",
                     0.7, 0.7, 0.7, true)
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine(
+                    "Blue bars track your auras, gold bars the target's. Each group collapses on its own.",
+                    0.7, 0.7, 0.7, true)
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine(
+                    "A group whose bars are all hidden still holds one bar gap of space. Splitting the groups onto different sides avoids this.",
+                    0.7, 0.7, 0.7, true)
+            elseif type(customConfig) == "table"
+                and customConfig.hideWhenInactive == true
+                and customConfig.auraTracking == true then
+                -- Spell bars never join the block, so their slot really does
+                -- stay reserved while the bar is hidden. Aura tracking is
+                -- what makes them hide at all.
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine(
+                    ("|A:%s:14:14|a Hidden, but its slot stays reserved")
+                        :format(LAYOUT_PREVIEW_VISIBILITY_BADGE_ATLAS),
+                    1, 0.82, 0.2)
             end
             GameTooltip:Show()
         end)
@@ -2357,7 +2858,10 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         lane.slotFramesById[slotModel.id] = slotFrame
     end
 
+    SwapSeam.Build(preview, lane)
+
     lane.gapFrame = AcquireGap(preview, laneFrame)
+    lane.gapFrame:SetFrameLevel(laneFrame:GetFrameLevel() + 1)
     lane.gapFrame:Hide()
     ApplyBackdrop(lane.gapFrame, preview.skin.gapBg, preview.skin.gapBorder)
     lane.gapFrame:SetAlpha(0.95)
@@ -2386,8 +2890,8 @@ local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel,
     local panelFrame = AcquirePanelFrame(preview, content, sourcePanel, 1)
     local panelWidth = panelFrame:GetWidth()
     local panelHeight = panelFrame:GetHeight()
-    local aboveSlots = SortSlotsForSide(slots, "above", true)
-    local belowSlots = SortSlotsForSide(slots, "below", false)
+    local aboveSlots = SortSlotsForSide(slots, "above", true, GetPreviewTargetFirst(preview, "above"))
+    local belowSlots = SortSlotsForSide(slots, "below", false, GetPreviewTargetFirst(preview, "below"))
     local slotFrameHeight = math_max(8, slotHeight)
     local aboveHeight = GetLaneExtent(preview, aboveSlots, slotFrameHeight)
     local belowHeight = GetLaneExtent(preview, belowSlots, slotFrameHeight)
@@ -2417,7 +2921,7 @@ local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel,
 end
 
 local function RenderIndependentHorizontalLayout(preview, content, layoutDrag, slots, slotWidth, slotHeight)
-    local stackSlots, stackSide, reversed = SortSlotsForIndependentStack(slots, "above", "below")
+    local stackSlots, stackSide, reversed = SortSlotsForIndependentStack(slots, "above", "below", preview)
     local slotFrameHeight = math_max(8, slotHeight)
     local stackHeight = GetLaneExtent(preview, stackSlots, slotFrameHeight)
 
@@ -2442,7 +2946,7 @@ local function RenderIndependentHorizontalLayout(preview, content, layoutDrag, s
 end
 
 local function RenderIndependentVerticalLayout(preview, content, layoutDrag, slots, slotHeight, slotWidth)
-    local stackSlots, stackSide, reversed = SortSlotsForIndependentStack(slots, "left", "right")
+    local stackSlots, stackSide, reversed = SortSlotsForIndependentStack(slots, "left", "right", preview)
     local stackWidth = GetLaneExtent(preview, stackSlots, slotWidth)
 
     local lane = BuildLane(
@@ -2473,8 +2977,8 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
         local panelWidth = castPanel:GetWidth()
         local panelHeight = castPanel:GetHeight()
         local castSlotFrameHeight = math_max(8, horizontalBarHeight)
-        local castAbove = SortSlotsForSide(castSlots, "above", true)
-        local castBelow = SortSlotsForSide(castSlots, "below", false)
+        local castAbove = SortSlotsForSide(castSlots, "above", true, GetPreviewTargetFirst(preview, "above"))
+        local castBelow = SortSlotsForSide(castSlots, "below", false, GetPreviewTargetFirst(preview, "below"))
         local castAboveHeight = GetLaneExtent(preview, castAbove, castSlotFrameHeight)
         local castBelowHeight = GetLaneExtent(preview, castBelow, castSlotFrameHeight)
 
@@ -2501,8 +3005,8 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
     local panelFrame = AcquirePanelFrame(preview, content, sourcePanel, 1)
     local panelWidth = panelFrame:GetWidth()
     local panelHeight = panelFrame:GetHeight()
-    local leftSlots = SortSlotsForSide(primarySlots, "left", true)
-    local rightSlots = SortSlotsForSide(primarySlots, "right", false)
+    local leftSlots = SortSlotsForSide(primarySlots, "left", true, GetPreviewTargetFirst(preview, "left"))
+    local rightSlots = SortSlotsForSide(primarySlots, "right", false, GetPreviewTargetFirst(preview, "right"))
     local leftWidth = GetLaneExtent(preview, leftSlots, verticalBarWidth)
     local rightWidth = GetLaneExtent(preview, rightSlots, verticalBarWidth)
     local verticalBarHeight = panelHeight
@@ -2531,8 +3035,8 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
         -- panel below the primary section, so this is instance 2.
         local castPanel = AcquirePanelFrame(preview, content, sourcePanel, 2)
         local castSlotFrameHeight = math_max(8, horizontalBarHeight)
-        local castAbove = SortSlotsForSide(castSlots, "above", true)
-        local castBelow = SortSlotsForSide(castSlots, "below", false)
+        local castAbove = SortSlotsForSide(castSlots, "above", true, GetPreviewTargetFirst(preview, "above"))
+        local castBelow = SortSlotsForSide(castSlots, "below", false, GetPreviewTargetFirst(preview, "below"))
         local castAboveHeight = GetLaneExtent(preview, castAbove, castSlotFrameHeight)
         local castBelowHeight = GetLaneExtent(preview, castBelow, castSlotFrameHeight)
 
@@ -2866,31 +3370,39 @@ local function GetLayoutOrderForInsertion(laneSlots, reversed, insertIndex)
     return 1
 end
 
-local function GetLaneInsertIndex(lane, cursorX, cursorY, draggedSlotId)
-    local _, slots = BuildStableLaneSlots(lane, draggedSlotId)
+-- The cursor's raw landing spot, CLAMPED into the positions the drop is
+-- allowed to take. Clamping here rather than at commit time is what makes the
+-- drag teach the rule: the gap indicator reads this same index, so a block
+-- bar dragged past the end of its bucket shows the gap holding at the
+-- bucket's edge instead of opening somewhere it would only snap back from.
+local function GetLaneInsertIndex(lane, cursorX, cursorY, draggedSlotId, draggedSlot)
+    local _, slots, models = BuildStableLaneSlots(lane, draggedSlotId)
     if not slots then
         return 1
     end
 
+    local raw
     if #slots == 0 then
-        return 1
-    end
-
-    if lane.axis == "x" then
+        raw = 1
+    elseif lane.axis == "x" then
+        raw = #slots + 1
         for index, slotRect in ipairs(slots) do
             if cursorX < ((slotRect.left + slotRect.right) / 2) then
-                return index
+                raw = index
+                break
             end
         end
-        return #slots + 1
-    end
-
-    for index, slotRect in ipairs(slots) do
-        if cursorY > ((slotRect.top + slotRect.bottom) / 2) then
-            return index
+    else
+        raw = #slots + 1
+        for index, slotRect in ipairs(slots) do
+            if cursorY > ((slotRect.top + slotRect.bottom) / 2) then
+                raw = index
+                break
+            end
         end
     end
-    return #slots + 1
+
+    return ClampLaneInsertIndex(lane, draggedSlot, models or {}, raw)
 end
 
 local function GetDistanceToLane(laneScale, cursorX, cursorY)
@@ -2917,10 +3429,11 @@ local function GetDistanceToLane(laneScale, cursorX, cursorY)
     return (dx * dx) + (dy * dy)
 end
 
-local function ResolveDropTarget(layoutDrag, cursorX, cursorY)
+local function ResolveDropTarget(layoutDrag, cursorX, cursorY, draggedSlot)
     local closestLane
     local closestLaneScale
     local closestDistance
+    draggedSlot = draggedSlot or layoutDrag.draggedSlotData
 
     for _, lane in ipairs(layoutDrag.lanes or {}) do
         local frame = lane.frame
@@ -2942,7 +3455,7 @@ local function ResolveDropTarget(layoutDrag, cursorX, cursorY)
                 and cursorY <= top and cursorY >= bottom then
                 return {
                     lane = lane,
-                    insertIndex = GetLaneInsertIndex(lane, cursorX, cursorY, layoutDrag.draggedSlotId),
+                    insertIndex = GetLaneInsertIndex(lane, cursorX, cursorY, layoutDrag.draggedSlotId, draggedSlot),
                 }
             end
         end
@@ -2955,7 +3468,7 @@ local function ResolveDropTarget(layoutDrag, cursorX, cursorY)
         if closestDistance <= (threshold ^ 2) then
             return {
                 lane = closestLane,
-                insertIndex = GetLaneInsertIndex(closestLane, cursorX, cursorY, layoutDrag.draggedSlotId),
+                insertIndex = GetLaneInsertIndex(closestLane, cursorX, cursorY, layoutDrag.draggedSlotId, draggedSlot),
             }
         end
     end
@@ -2963,7 +3476,10 @@ local function ResolveDropTarget(layoutDrag, cursorX, cursorY)
     return nil
 end
 
-local function UpdateLanePreview(preview, lane, draggedSlotId, dropTarget)
+-- `draggedSlot` is the model behind `draggedSlotId`, carried in for the drop
+-- cue alone: a bucket bar in flight has to leave a bucket-coloured hole
+-- behind, or the run it came out of reads as having lost the room for it.
+local function UpdateLanePreview(preview, lane, draggedSlotId, dropTarget, draggedSlot)
     local gapIndex = (dropTarget and dropTarget.lane == lane and dropTarget.insertIndex) or nil
 
     -- Render order for this frame: the lane's slots with the dragged one
@@ -3013,12 +3529,31 @@ local function UpdateLanePreview(preview, lane, draggedSlotId, dropTarget)
 
     if gapIndex then
         local x, y, w, h = BuildLaneSlotGeometry(lane, gapIndex)
-        ApplyBackdrop(lane.gapFrame, preview.skin.gapBg, preview.skin.gapBorder)
+        -- Containment already clamps a bucket bar's landing inside its own
+        -- bucket, so the bar's identity decides the cue's colour. Re-applied
+        -- on both legs every update: the gap frame is pooled per lane and a
+        -- previous drag can have left the other bucket's colours on it.
+        local tint = draggedSlot and LAYOUT_PREVIEW_BUCKET_TINTS[GetSlotBucketId(draggedSlot)]
+        if tint then
+            ApplyBackdrop(lane.gapFrame, tint.gapBg, tint.gapBorder)
+            lane.gapFrame.inner:SetColorTexture(tint.gapInner[1], tint.gapInner[2],
+                tint.gapInner[3], tint.gapInner[4])
+        else
+            ApplyBackdrop(lane.gapFrame, preview.skin.gapBg, preview.skin.gapBorder)
+            lane.gapFrame.inner:SetColorTexture(preview.skin.slotHover[1],
+                preview.skin.slotHover[2], preview.skin.slotHover[3], 0.22)
+        end
         lane.gapFrame:SetAlpha(0.95)
         QueueSlotTween(preview, lane.gapFrame, lane.frame, x, y, w, h, 1, LAYOUT_PREVIEW_ANIM_DURATION)
         lane.gapFrame:Show()
     else
         lane.gapFrame:Hide()
+    end
+
+    -- The seam moves while the stack shuffles, and a handle chasing it would
+    -- read as a drop target. It comes back when the drag ends.
+    if lane.swapButton then
+        lane.swapButton:Hide()
     end
 end
 
@@ -3035,6 +3570,9 @@ local function ResetLanePreview(preview, lane)
         end
     end
     lane.gapFrame:Hide()
+    if lane.swapButton then
+        lane.swapButton:Show()
+    end
     if lane.setPreviewOverflow then
         lane.setPreviewOverflow(0)
     end
@@ -3083,17 +3621,21 @@ end
 local function CreateLayoutDragModel(preview)
     local layoutDrag = { host = preview.host, lanes = {} }
 
-    layoutDrag.resolveDropTarget = function(cursorX, cursorY)
-        return ResolveDropTarget(layoutDrag, cursorX, cursorY)
+    -- The lifecycle hands the drag state through, and the dragged bar's model
+    -- is what the containment clamp needs: which bucket it belongs to decides
+    -- where the gap is allowed to open.
+    layoutDrag.resolveDropTarget = function(cursorX, cursorY, state)
+        return ResolveDropTarget(layoutDrag, cursorX, cursorY, state and state.slotData)
     end
 
     layoutDrag.onActivate = function(state)
         if not (state and state.widget and state.slotData) then return end
         layoutDrag.draggedSlotId = state.slotData.id
+        layoutDrag.draggedSlotData = state.slotData
         preview.draggedSlotExtent = GetSlotExtent(state.slotData, nil)
         ConfigureGhost(preview, state.slotData, state.widget)
         for _, lane in ipairs(layoutDrag.lanes) do
-            UpdateLanePreview(preview, lane, state.slotData.id, state.dropTarget)
+            UpdateLanePreview(preview, lane, state.slotData.id, state.dropTarget, state.slotData)
         end
         preview.root:SetScript("OnUpdate", function()
             TickPreview(preview)
@@ -3103,9 +3645,10 @@ local function CreateLayoutDragModel(preview)
     layoutDrag.onUpdate = function(state, cursorX, cursorY, dropTarget)
         if not (state and state.slotData) then return end
         layoutDrag.draggedSlotId = state.slotData.id
+        layoutDrag.draggedSlotData = state.slotData
         preview.draggedSlotExtent = GetSlotExtent(state.slotData, nil)
         for _, lane in ipairs(layoutDrag.lanes) do
-            UpdateLanePreview(preview, lane, state.slotData.id, dropTarget)
+            UpdateLanePreview(preview, lane, state.slotData.id, dropTarget, state.slotData)
         end
         if not preview.ghostActive then
             ConfigureGhost(preview, state.slotData, state.widget)
@@ -3119,6 +3662,7 @@ local function CreateLayoutDragModel(preview)
 
     layoutDrag.onCancel = function()
         layoutDrag.draggedSlotId = nil
+        layoutDrag.draggedSlotData = nil
         preview.draggedSlotExtent = nil
         -- Thaw the reveal once the drag really is over. Deferred because
         -- this runs while CS.dragState is still set (CancelDrag clears it
@@ -3151,7 +3695,11 @@ local function CreateLayoutDragModel(preview)
             end
         end
 
-        local adjustedIndex = math_max(1, math_min(#filtered + 1, dropTarget.insertIndex or 1))
+        -- Re-clamped here, not just trusted from the drop target: the commit
+        -- and the gap indicator must land on the same index, and this is the
+        -- last point that can guarantee it.
+        local adjustedIndex = ClampLaneInsertIndex(lane, slotData, filtered,
+            math_max(1, math_min(#filtered + 1, dropTarget.insertIndex or 1)))
         local changed = false
         if preview.independentResources then
             -- Independent Resources is one continuous stack. Normalize every
@@ -3170,9 +3718,36 @@ local function CreateLayoutDragModel(preview)
         else
             local oldPos = slotData.getPos()
             local oldOrder = slotData.getOrder()
-            local newOrder = (#filtered == 0 and oldPos == lane.side)
+            -- Order values interleave across a section boundary once the
+            -- aura block is in play, so the new order has to be midpointed
+            -- against the dropped slot's OWN section. Measured against the
+            -- whole lane, a within-block move lands on a fixed bar's order
+            -- and re-renders on the wrong side of its own block. Each aura
+            -- bucket is its own rank, so this is what orders a block entry
+            -- inside the bucket containment already confined it to.
+            local peers = filtered
+            local peerIndex = adjustedIndex
+            if StackHasAuraBlock(lane.slotModels) then
+                local targetFirst = lane.targetFirst == true
+                local rank = GetSlotStackRank(slotData, targetFirst)
+                local section = {}
+                local sectionIndex = 0
+                for index, slot in ipairs(filtered) do
+                    if GetSlotStackRank(slot, targetFirst) == rank then
+                        table_insert(section, slot)
+                        if index < adjustedIndex then
+                            sectionIndex = #section
+                        end
+                    end
+                end
+                if #section > 0 then
+                    peers = section
+                    peerIndex = sectionIndex + 1
+                end
+            end
+            local newOrder = (#peers == 0 and oldPos == lane.side)
                 and oldOrder
-                or GetLayoutOrderForInsertion(filtered, lane.reversed, adjustedIndex)
+                or GetLayoutOrderForInsertion(peers, lane.reversed, peerIndex)
             slotData.setPos(lane.side)
             slotData.setOrder(newOrder)
             changed = oldPos ~= lane.side or oldOrder ~= newOrder
@@ -3180,6 +3755,13 @@ local function CreateLayoutDragModel(preview)
 
         if changed then
             CooldownCompanion:ApplyResourceBars()
+            -- A block bar's order only lands at the deferred aura rebind in
+            -- combat, and the rebind's internal reason never prints the
+            -- "applies when combat ends" notice. This drop is a config edit,
+            -- so say so; out of combat the apply above already rebound.
+            if InCombatLockdown() and IsAuraBlockSlot(slotData) then
+                CooldownCompanion:RequestAuraRebind("config")
+            end
             CooldownCompanion:RepositionCastBar()
             CooldownCompanion:UpdateAnchorStacking()
             CooldownCompanion:RefreshConfigPanel()
@@ -3440,6 +4022,11 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     preview.identityLabelsShown = AnyCustomPreviewSlotHovered(preview)
     for index = 1, (preview.used.slots or 0) do
         ApplySlotIdentityMarks(preview, preview.pools.slots[index], scale)
+    end
+    -- Same reason, same pass: the seam handle is a hit target, so it is sized
+    -- in screen pixels rather than in the composition's.
+    for index = 1, (preview.used.swaps or 0) do
+        SwapSeam.ApplyScale(preview.pools.swaps[index], scale)
     end
 
     FinalizePreviewState(preview)

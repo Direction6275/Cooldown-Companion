@@ -39,6 +39,8 @@ local CooldownCompanion = ST.Addon
 local ipairs = ipairs
 local pairs = pairs
 local tonumber = tonumber
+local tostring = tostring
+local table_concat = table.concat
 local math_min = math.min
 local CreateFrame = CreateFrame
 
@@ -730,6 +732,242 @@ function RB.CreateResourceBarAuraHostModule(deps)
         local buttonData = BuildResourceOverlayEntryAdapter(
             entry, settings, ResolveResourceOverlayShapes(entry, powerType))
         return CooldownCompanion:GetAuraStackBarMax(buttonData)
+    end
+
+    ------------------------------------------------------------------------
+    -- The aura BLOCK (12.1): the collapsing container at the end of a side.
+    --
+    -- An aura entry that hides when inactive cannot hold a fixed slot in the
+    -- CC-laid-out stack — aura presence is secret, so the CC accumulator can
+    -- never pack around it. Those entries leave the stack entirely and the
+    -- apply pass hands the partition here; Core/AuraDisplay.lua turns each
+    -- side into ONE Blizzard AuraContainer running in GROUP mode, where
+    -- Blizzard packs the ACTIVE auras itself.
+    --
+    -- This module owns only the CC-side half of that contract: where the
+    -- container mounts (geometry on an aspected frame, so it applies OOC
+    -- only — a changed mount stays stale in combat until the deferred
+    -- rebind) and what each entry wants (the same adapters and candidate
+    -- set the slot path builds, resolved by the OOC rebind pass).
+    ------------------------------------------------------------------------
+
+    local BLOCK_SIDES = { "above", "below", "left", "right" }
+
+    -- Where a side's block container pins to that side's stack container,
+    -- and which way its mount offset runs. Mirrors RelayoutBars' own
+    -- accumulator signs, so the block continues the fixed stack seamlessly:
+    -- below/right grow away from the anchor edge, above/left back toward it.
+    --
+    -- `far` is the same container's TRAILING edge — the corner a second
+    -- per-unit bucket chains from. It is the mount point mirrored along the
+    -- growth axis only (the cross-axis corner is unchanged), so a chained
+    -- container keeps the mount's alignment and continues its flow.
+    local BLOCK_MOUNTS = {
+        above = { point = "BOTTOMLEFT", far = "TOPLEFT", dx = 0, dy = 1 },
+        below = { point = "TOPLEFT", far = "BOTTOMLEFT", dx = 0, dy = -1 },
+        left = { point = "TOPRIGHT", far = "TOPLEFT", dx = -1, dy = 0 },
+        right = { point = "TOPLEFT", far = "TOPRIGHT", dx = 1, dy = 0 },
+    }
+
+    local blockState = {}      -- side -> recorded block contract
+    local blockSignatures = {} -- side -> last bind-relevant signature
+
+    -- Everything a rebind would have to re-derive: the entry set, its order,
+    -- the mount geometry, and the park state. Mount-only changes still land
+    -- immediately (the container is re-anchored below), but they also change
+    -- the elementWidth/Height every group carries, so they belong here.
+    local function BuildBlockSignature(side, state)
+        local parts = {
+            side,
+            tostring(state.parent),
+            tostring(state.unlockAssist),
+            tostring(state.vertical),
+            tostring(state.offset),
+            tostring(state.width),
+            tostring(state.spacing),
+            -- Bucket order decides which container takes the stack mount and
+            -- which chains, so a flip must force a rebind like a unit change.
+            tostring(state.targetFirst),
+        }
+        for _, entry in ipairs(state.entries) do
+            -- The unit rides the per-entry part: it decides which container an
+            -- entry binds into (and therefore whether the side chains), so a
+            -- unit change has to force a rebind exactly like an order change.
+            parts[#parts + 1] = tostring(entry.customBarId)
+                .. ":" .. tostring(entry.thickness)
+                .. ":" .. tostring(entry.unit)
+        end
+        return table_concat(parts, "|")
+    end
+
+    -- Called at the end of every ApplyResourceBars pass (and from the revert
+    -- with all sides empty). Records the desired state, re-anchors whatever
+    -- containers already exist, and asks for a rebind when the recorded
+    -- state materially changed. No slot work happens here: this runs in
+    -- combat.
+    function RB.SyncCustomBarAuraBlocks(blocks)
+        local changed = false
+        for _, side in ipairs(BLOCK_SIDES) do
+            local block = type(blocks) == "table" and blocks[side] or nil
+            local state
+            if block then
+                state = {
+                    parent = block.parent,
+                    offset = tonumber(block.offset) or 0,
+                    width = tonumber(block.width) or 0,
+                    spacing = tonumber(block.spacing) or 0,
+                    vertical = block.vertical == true,
+                    -- Unlock assist keeps the legacy expanded shells in the
+                    -- stack (an arrange-mode stack must offer every bar as a
+                    -- drag target), so the block owns nothing that pass.
+                    unlockAssist = block.unlockAssist == true,
+                    targetFirst = block.targetFirst == true,
+                    entries = block.unlockAssist and {} or (block.entries or {}),
+                }
+            end
+            blockState[side] = state
+            local signature = state and BuildBlockSignature(side, state) or ""
+            if blockSignatures[side] ~= signature then
+                blockSignatures[side] = signature
+                changed = true
+            end
+        end
+        -- Geometry writes on the aspected containers are OOC-only: the hazard
+        -- map's validated combat surface is container METHODS, not anchoring.
+        -- In combat a changed mount stays stale until the deferred rebind
+        -- re-anchors it (cosmetic drift, never a forbidden write), and an
+        -- unchanged signature needs no re-anchor at all.
+        if changed then
+            if not InCombatLockdown() and ST._SyncCustomBarAuraBlockMounts then
+                ST._SyncCustomBarAuraBlockMounts()
+            end
+            CooldownCompanion:RequestAuraRebind("custom-bar-blocks")
+        end
+    end
+
+    -- The TAIL of a side's block chain, for trailing frames (cast bar) to
+    -- chain from: the target bucket when the side runs one, else the player
+    -- bucket. Anything anchored to it must be created with
+    -- DisableUntrustedLayoutScriptsTemplate and single-point anchored.
+    function RB.GetCustomBarAuraBlockContainer(side)
+        local get = ST._GetCustomBarAuraBlockContainer
+        return get and get(side) or nil
+    end
+
+    -- The mount for a side: ONE anchor point (never two — the container's
+    -- size is secret from its first aura group) plus the frame level the
+    -- holders use. Nil parent means the side has no live stack container.
+    function ST._GetCustomBarAuraBlockMount(side)
+        local state = blockState[side]
+        local mount = state and BLOCK_MOUNTS[side]
+        if not (mount and state.parent) then return nil end
+        return state.parent, mount.point,
+            mount.dx * state.offset, mount.dy * state.offset,
+            state.parent:GetFrameLevel() + 3
+    end
+
+    -- The mount for a side's SECOND unit bucket. It does not pin to the stack
+    -- at all: it pins to the first bucket's trailing edge along the same
+    -- growth axis, so the two buckets read as one block even though the first
+    -- one's extent is secret. Same single-point discipline — the anchor is
+    -- everything CC may state; the size stays Blizzard's. The level still
+    -- comes from the stack container, so no aspected frame is read. Returns
+    -- own point, the anchor's point, the offset, and the level.
+    --
+    -- The seam is one bar spacing, PAID BLIND: an all-inactive first bucket
+    -- still sits in the chain as a ~1px sliver with the seam attached, so
+    -- the block's outer gap breathes by spacing+1px in that state. That is
+    -- structural — the engine's measured size excludes trailing spacing and
+    -- an empty container measures its padding, so no offset choice can
+    -- serve both states (proven against ApplyFlowLayout source). A fixed
+    -- 2px seam was TRIALED AND REVERTED by owner ruling 2026-08-08: uniform
+    -- spacing won and the breath is accepted and explained in config. Do
+    -- not re-propose the tight seam.
+    function ST._GetCustomBarAuraBlockChainMount(side)
+        local state = blockState[side]
+        local mount = state and BLOCK_MOUNTS[side]
+        if not (mount and state.parent) then return nil end
+        return mount.point, mount.far,
+            mount.dx * state.spacing, mount.dy * state.spacing,
+            state.parent:GetFrameLevel() + 3
+    end
+
+    -- OOC (rebind pass): one want per side, carrying the adapters, candidate
+    -- set and explicit geometry for every entry in block order, each stamped
+    -- with the unit resolved at partition time. Empty sides are reported too,
+    -- so the bind pass can park them.
+    function ST._CollectCustomBarAuraBlockWants()
+        local wants = {}
+        local settings = GetResourceBarSettings()
+        for _, side in ipairs(BLOCK_SIDES) do
+            local state = blockState[side]
+            local want = {
+                side = side,
+                entries = {},
+                -- From the recorded contract, not re-read from settings: the
+                -- bind pass must see the same order the signature saw.
+                targetFirst = state and state.targetFirst == true,
+            }
+            wants[#wants + 1] = want
+            if state and settings and settings.enabled and not state.unlockAssist then
+                -- Layout-derived, like the resource overlays: a block entry
+                -- has no CC bar frame to read a fill direction off.
+                local reverseFill = state.vertical
+                    and IsVerticalFillReversed(settings) == true or false
+                for _, entry in ipairs(state.entries) do
+                    local cabConfig = entry.config
+                    if IsAuraTrackedCustomBar(cabConfig)
+                        and CooldownCompanion:IsCustomBarRuntimeEligible(cabConfig) then
+                        local buttonData = BuildEntryAdapter(cabConfig, settings)
+                        local spellSet = CooldownCompanion:GetAuraCandidateSpellIDSet(buttonData)
+                        if spellSet then
+                            -- Same automatic, game-data resolved max the
+                            -- stack path uses (owner ruling — no manual max
+                            -- anywhere). Cached by the BAR so the config
+                            -- canvas can read it back.
+                            local stackBarMax
+                            if CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) then
+                                stackBarMax = CooldownCompanion:GetAuraStackBarMax(buttonData)
+                            end
+                            SetCustomBarCachedStackMax(entry.customBarId, stackBarMax)
+                            local style = BuildStyleAdapter(cabConfig, settings)
+                            style.barReverseFill = reverseFill
+                            local thickness = tonumber(entry.thickness) or 0
+                            want.entries[#want.entries + 1] = {
+                                id = tostring(entry.customBarId),
+                                -- Resolved once at partition time; the bind
+                                -- pass adopts it verbatim, so which container
+                                -- an entry lands in can never drift.
+                                unit = entry.unit or "player",
+                                buttonData = buttonData,
+                                spellSet = spellSet,
+                                style = style,
+                                stackBarMax = stackBarMax,
+                                spacing = state.spacing,
+                                vertical = state.vertical,
+                                -- The stack's cross-axis extent is the bar's
+                                -- length; the entry's own thickness is the
+                                -- other axis.
+                                width = state.vertical and thickness or state.width,
+                                height = state.vertical and state.width or thickness,
+                                -- Border-ring inset for the kit fill. Widget
+                                -- stacks take 0 (owner ruling 2026-08-08):
+                                -- they draw per-block rings, never the
+                                -- whole-bar ring the inset protects, and the
+                                -- CC absent-state blocks already span the
+                                -- full footprint (EnsureInsetRect(frame, 0)).
+                                inset = (stackBarMax ~= nil
+                                        and stackBarMax <= ST.STACK_SEGMENT_ATLAS_MAX
+                                        and CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) == "segmented")
+                                    and 0
+                                    or GetCustomBarBorderInset(settings),
+                            }
+                        end
+                    end
+                end
+            end
+        end
+        return wants
     end
 
     ------------------------------------------------------------------------

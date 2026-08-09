@@ -303,6 +303,9 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         if not (bar and cabConfig) then return end
         local auraTracked = not RB.IsSpellCustomBarConfig(cabConfig)
             or cabConfig.auraTracking == true
+        -- Aura entries reach the zeroed branch only on an unlock-assist pass:
+        -- the aura block partition (RB.IsAuraBlockEntry) keeps them out of
+        -- the stack otherwise. Spell bars with aura tracking still shell here.
         local shell = auraTracked
             and cabConfig.hideWhenInactive == true
             and not GetUnlockAssistActive()

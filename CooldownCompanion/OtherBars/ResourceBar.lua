@@ -1856,6 +1856,23 @@ RelayoutBars = function()
     local primaryLength = lastAppliedPrimaryLength or 1
     local isVertical = lastAppliedOrientation == "vertical"
 
+    -- Aura block mount contract: the collapsing Blizzard-side container packs
+    -- itself from the accumulator each side ends on, so that end offset is
+    -- recorded here. It cannot be recovered from the container extent, which
+    -- drops the trailing spacing. A side keeps its container shown while it
+    -- carries block entries even after every fixed bar has left it.
+    local auraBlocks = RB._auraBlocks
+    local function RecordAuraBlockGeometry(side, parent, endOffset)
+        local block = auraBlocks and auraBlocks[side]
+        if not block then return false end
+        block.parent = parent
+        block.offset = endOffset
+        block.width = primaryLength
+        block.spacing = barSpacing
+        block.vertical = isVertical
+        return #block.entries > 0
+    end
+
     if isVertical then
         local leftBars = {}
         local rightBars = {}
@@ -1884,9 +1901,10 @@ RelayoutBars = function()
             barInfo.frame:SetWidth(w)
             currentX = currentX + w + barSpacing
         end
+        local leftHasBlock = RecordAuraBlockGeometry("left", containerFrameAbove, currentX)
         local leftWidth = currentX > 0 and (currentX - barSpacing) or 1
         containerFrameAbove:SetWidth(leftWidth)
-        if #leftBars > 0 then containerFrameAbove:Show() else containerFrameAbove:Hide() end
+        if #leftBars > 0 or leftHasBlock then containerFrameAbove:Show() else containerFrameAbove:Hide() end
 
         -- Right side stacks outward from the group (left edge near group).
         currentX = 0
@@ -1898,9 +1916,10 @@ RelayoutBars = function()
             barInfo.frame:SetWidth(w)
             currentX = currentX + w + barSpacing
         end
+        local rightHasBlock = RecordAuraBlockGeometry("right", containerFrameBelow, currentX)
         local rightWidth = currentX > 0 and (currentX - barSpacing) or 1
         containerFrameBelow:SetWidth(rightWidth)
-        if #rightBars > 0 then containerFrameBelow:Show() else containerFrameBelow:Hide() end
+        if #rightBars > 0 or rightHasBlock then containerFrameBelow:Show() else containerFrameBelow:Hide() end
     else
         local aboveBars = {}
         local belowBars = {}
@@ -1929,9 +1948,10 @@ RelayoutBars = function()
             barInfo.frame:SetHeight(h)
             currentY = currentY + h + barSpacing
         end
+        local aboveHasBlock = RecordAuraBlockGeometry("above", containerFrameAbove, currentY)
         local aboveHeight = currentY > 0 and (currentY - barSpacing) or 1
         containerFrameAbove:SetHeight(aboveHeight)
-        if #aboveBars > 0 then containerFrameAbove:Show() else containerFrameAbove:Hide() end
+        if #aboveBars > 0 or aboveHasBlock then containerFrameAbove:Show() else containerFrameAbove:Hide() end
 
         -- Stack below bars (order ascending = top to bottom; order=1 closest to group)
         currentY = 0
@@ -1943,9 +1963,10 @@ RelayoutBars = function()
             barInfo.frame:SetHeight(h)
             currentY = currentY + h + barSpacing
         end
+        local belowHasBlock = RecordAuraBlockGeometry("below", containerFrameBelow, currentY)
         local belowHeight = currentY > 0 and (currentY - barSpacing) or 1
         containerFrameBelow:SetHeight(belowHeight)
-        if #belowBars > 0 then containerFrameBelow:Show() else containerFrameBelow:Hide() end
+        if #belowBars > 0 or belowHasBlock then containerFrameBelow:Show() else containerFrameBelow:Hide() end
     end
 end
 
@@ -2362,6 +2383,85 @@ function CooldownCompanion:ApplyResourceBars(opts)
         orderList[idx] = order
     end
 
+    -- Aura block partition (12.1): aura entries that hide when inactive leave
+    -- the CC-laid-out stack entirely — no slot, no PrepareCustomAuraBar, no
+    -- thickness — because only the Blizzard-side container can see aura
+    -- presence and pack them. Removing them from the stack is what puts the
+    -- block at the end of its side. Unlock assist keeps the legacy expanded
+    -- shells: an arrange-mode stack must offer every bar as a drag target.
+    -- Reached through RB and self, never new file-level locals:
+    -- ApplyResourceBars sits at Lua 5.1's 60-upvalue ceiling.
+    local blockUnlockAssist = self:IsResourceBarUnlockAssistActive() == true
+    local auraBlocks = {}
+    -- Bucket order is resolved HERE like each entry's unit: stamped once on
+    -- the contract, so the bind pass and the mount signature both ride it.
+    local function NewSideBlock(side)
+        return {
+            entries = {},
+            unlockAssist = blockUnlockAssist,
+            targetFirst = RB.IsAuraBlockTargetFirst(settings, side),
+        }
+    end
+    if isVerticalLayout then
+        auraBlocks.left = NewSideBlock("left")
+        auraBlocks.right = NewSideBlock("right")
+    else
+        auraBlocks.above = NewSideBlock("above")
+        auraBlocks.below = NewSideBlock("below")
+    end
+
+    if not blockUnlockAssist then
+        -- A block container tracks exactly ONE unit, so a mixed side renders
+        -- as two CHAINED per-unit buckets (the bind pass anchors the target
+        -- container to the player container's far edge). Every block
+        -- candidate therefore joins its side's block; the unit is stamped PER
+        -- ENTRY HERE, once, and rides the contract so the bind pass can never
+        -- re-derive a different answer.
+        local keptEntries, keptSides, keptOrders = {}, {}, {}
+        for idx, entry in ipairs(filtered) do
+            local block
+            if type(entry) == "table" and entry.kind == "custom" and RB.IsAuraBlockEntry(entry.config) then
+                block = auraBlocks[sideList[idx]]
+            end
+            if block then
+                local blockThickness = globalBarThickness
+                if layout.customBarHeights then
+                    local slotLayout = RB.GetCustomBarLayout(settings, nil, entry.config, false)
+                    if isVerticalLayout then
+                        blockThickness = (slotLayout and (slotLayout.barWidth or slotLayout.barHeight)) or globalBarThickness
+                    else
+                        blockThickness = (slotLayout and (slotLayout.barHeight or slotLayout.barWidth)) or globalBarThickness
+                    end
+                end
+                block.entries[#block.entries + 1] = {
+                    customBarId = entry.customBarId,
+                    config = entry.config,
+                    thickness = blockThickness,
+                    order = orderList[idx],
+                    unit = RB.GetResolvedCustomAuraBarAuraUnit(entry.config,
+                        tonumber(entry.config.spellID)) or "player",
+                }
+            else
+                keptEntries[#keptEntries + 1] = entry
+                keptSides[#keptSides + 1] = sideList[idx]
+                keptOrders[#keptOrders + 1] = orderList[idx]
+            end
+        end
+        filtered, sideList, orderList = keptEntries, keptSides, keptOrders
+
+        -- Same resolution CompareBarOrder applies to the stack, so the block
+        -- keeps the order the layout panel shows. Sorted once for the whole
+        -- side: the bind pass splits this list into per-unit buckets in place,
+        -- which preserves each bucket's relative order for free.
+        for _, block in pairs(auraBlocks) do
+            table.sort(block.entries, function(a, b)
+                if a.order ~= b.order then return a.order < b.order end
+                return tostring(a.customBarId) < tostring(b.customBarId)
+            end)
+        end
+    end
+    RB._auraBlocks = auraBlocks
+
     -- Hide existing bars that we don't need
     HideUnusedResourceBarFrames(#filtered + 1)
 
@@ -2642,6 +2742,13 @@ function CooldownCompanion:ApplyResourceBars(opts)
     -- Position bars within containers (reusable for relayout on visibility change)
     RelayoutBars()
 
+    -- Hand the aura block to its mount every pass, empty sides included, so
+    -- the mount can park a container the stack no longer feeds. Guarded: the
+    -- mount side is a separate owner and may not be present.
+    if RB.SyncCustomBarAuraBlocks then
+        RB.SyncCustomBarAuraBlocks(auraBlocks)
+    end
+
     -- Anchor drag chrome to frame the content (after containers are sized)
     if isIndependentStack then
         UpdateIndependentStackChrome(isVerticalLayout, layout)
@@ -2793,6 +2900,26 @@ function CooldownCompanion:RevertResourceBars()
     if containerFrameBelow then containerFrameBelow:Hide() end
     HideIndependentWrapperFrame()
 
+    -- Park the aura block with the stack. Both orientations are reported
+    -- empty: the teardown does not know which one the mount last built from.
+    RB._auraBlocks = nil
+    if RB.SyncCustomBarAuraBlocks then
+        local parked = {}
+        for _, side in ipairs({ "above", "below", "left", "right" }) do
+            local isFirstSide = side == "above" or side == "left"
+            parked[side] = {
+                parent = isFirstSide and containerFrameAbove or containerFrameBelow,
+                offset = 0,
+                width = 0,
+                spacing = 0,
+                vertical = side == "left" or side == "right",
+                unlockAssist = false,
+                entries = {},
+            }
+        end
+        RB.SyncCustomBarAuraBlocks(parked)
+    end
+
     isUnlockAssistActive = false
     -- Config-canvas preview state is deliberately NOT cleared here. This
     -- teardown runs for transient live conditions — no anchor group yet, an
@@ -2938,6 +3065,42 @@ function CooldownCompanion:GetResourceBarRuntimeDebugInfo()
             entry.hideWhenInactive = barInfo.cabConfig.hideWhenInactive == true
         end
         info[#info + 1] = entry
+    end
+    -- Aura block entries hold no stack slot, so they cannot appear in the
+    -- per-slot array above. Reported per side alongside it, keyed so the
+    -- array report keeps its shape.
+    local blocks = RB._auraBlocks
+    if blocks then
+        local auraBlock = {}
+        for side, block in pairs(blocks) do
+            local customBarIds, unitCounts = {}, {}
+            for _, blockEntry in ipairs(block.entries) do
+                customBarIds[#customBarIds + 1] = tostring(blockEntry.customBarId)
+                local unit = blockEntry.unit or "player"
+                unitCounts[unit] = (unitCounts[unit] or 0) + 1
+            end
+            -- Per-entry units summarised per side ("player:2 target:1"): a
+            -- side with both runs two chained buckets in the bind pass. Fixed
+            -- token order so two snapshots stay comparable.
+            local units = ""
+            for _, unit in ipairs({ "player", "target" }) do
+                if unitCounts[unit] then
+                    units = (units == "" and "" or units .. " ")
+                        .. unit .. ":" .. unitCounts[unit]
+                end
+            end
+            -- Emitted here, not at the consumer: "" is truthy in Lua, so an
+            -- `or "none"` fallback over there can never fire.
+            if units == "" then units = "none" end
+            auraBlock[side] = {
+                customBarIds = customBarIds,
+                offset = block.offset,
+                unlockAssist = block.unlockAssist == true,
+                units = units,
+                targetFirst = block.targetFirst == true,
+            }
+        end
+        info.auraBlock = auraBlock
     end
     return info
 end

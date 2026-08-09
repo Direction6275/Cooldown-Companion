@@ -338,6 +338,43 @@ local function IsSpellCustomBarAuraStackDisplay(cab)
         and GetCustomBarTrackingMode(cab, true) ~= "active"
 end
 
+-- Aura block entries (12.1): an aura entry that hides when inactive cannot
+-- hold a fixed slot in the CC-laid-out stack — aura presence is secret, so
+-- the CC accumulator can never pack the stack around it. These entries leave
+-- the stack and mount into the Blizzard-side collapsing aura container.
+local function IsAuraBlockEntry(cab)
+    return type(cab) == "table"
+        and not IsSpellCustomBarConfig(cab)
+        and cab.hideWhenInactive == true
+end
+
+-- Which per-unit bucket of a side's aura block sits nearer the panel. A
+-- layout fact, so it lives in the per-spec layout table like every other
+-- arrangement value. Absent means player-first, the original order.
+local function IsAuraBlockTargetFirst(settings, side)
+    local layout = GetSpecLayoutOrder and GetSpecLayoutOrder(settings)
+    local map = layout and layout.auraBlockTargetFirst
+    return type(map) == "table" and map[side] == true
+end
+
+local function SetAuraBlockTargetFirst(settings, side, targetFirst)
+    local layout = GetSpecLayoutOrder and GetSpecLayoutOrder(settings)
+    if type(layout) ~= "table" or type(side) ~= "string" then return end
+    local map = layout.auraBlockTargetFirst
+    if targetFirst then
+        if type(map) ~= "table" then
+            map = {}
+            layout.auraBlockTargetFirst = map
+        end
+        map[side] = true
+    elseif type(map) == "table" then
+        map[side] = nil
+        if next(map) == nil then
+            layout.auraBlockTargetFirst = nil
+        end
+    end
+end
+
 -- The automatic aura stack max (the aura pass), resolved from game data by
 -- the OOC rebind collector so in-combat re-applies never touch the
 -- restricted lookup.
@@ -2143,6 +2180,9 @@ RB.IsConfiguredCustomBar = IsConfiguredCustomBar
 RB.GetCustomBarEntryType = GetCustomBarEntryType
 RB.IsSpellCustomBarConfig = IsSpellCustomBarConfig
 RB.IsSpellCustomBarAuraStackDisplay = IsSpellCustomBarAuraStackDisplay
+RB.IsAuraBlockEntry = IsAuraBlockEntry
+RB.IsAuraBlockTargetFirst = IsAuraBlockTargetFirst
+RB.SetAuraBlockTargetFirst = SetAuraBlockTargetFirst
 RB.GetCustomBarCachedStackMax = GetCustomBarCachedStackMax
 RB.SetCustomBarCachedStackMax = SetCustomBarCachedStackMax
 RB.GetResolvedCustomAuraBarAuraUnit = GetResolvedCustomAuraBarAuraUnit

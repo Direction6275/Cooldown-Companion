@@ -868,6 +868,17 @@ local function FormatDiagnosticBugReportAsText(diag)
             add("  " .. table.concat(parts, " "))
         end
     end
+    if r.resourceBarRuntime and r.resourceBarRuntime.auraBlock then
+        add("Aura Blocks:")
+        for side, block in pairs(r.resourceBarRuntime.auraBlock) do
+            add(("  [%s] offset=%s unlockAssist=%s units=%s targetFirst=%s bars=%s"):format(
+                tostring(side), tostring(block.offset or 0),
+                tostring(block.unlockAssist or false),
+                tostring(block.units or "none"),
+                tostring(block.targetFirst or false),
+                table.concat(block.customBarIds or {}, ", ")))
+        end
+    end
 
     AddVisualStateDiagnosticsLines(add, r.visualStateDiagnostics)
 
