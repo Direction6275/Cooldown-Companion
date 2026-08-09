@@ -330,7 +330,12 @@ local function CreateContinuousBar(parent)
     -- Pixel borders
     bar.borders = CreatePixelBorders(bar)
 
-    -- Text container above the fill.
+    -- Text container above the fill. +2 is the CUSTOM BAR height and the
+    -- factory default: spell custom bars rely on their aura kit (holder at
+    -- bar+3) occluding CC's per-tick cooldown text while an aura shows, so
+    -- their text must stay beneath it. Resource bars restyle the layer up
+    -- to RESOURCE_TEXT_LAYER_LEVEL (StyleContinuousBar / HealthBar), where
+    -- text wins over every bar's fills and kit visuals.
     bar.textLayer = CreateFrame("Frame", nil, bar)
     bar.textLayer:SetAllPoints(bar)
     bar.textLayer:SetFrameLevel(bar:GetFrameLevel() + 2)
@@ -377,9 +382,11 @@ local function CreateSegmentedBar(parent, numSegments)
         holder.segments[i] = seg
     end
 
+    -- Segmented bars are resource-only, so the text layer mounts straight
+    -- into the stack's text band (see RESOURCE_TEXT_LAYER_LEVEL).
     holder.textLayer = CreateFrame("Frame", nil, holder)
     holder.textLayer:SetAllPoints(holder)
-    holder.textLayer:SetFrameLevel(holder:GetFrameLevel() + 8)
+    holder.textLayer:SetFrameLevel(holder:GetFrameLevel() + RB.RESOURCE_TEXT_LAYER_LEVEL)
 
     local textFont = CooldownCompanion:FetchFont("Friz Quadrata TT")
     local textOutline = ST.GetEffectiveFontOutline("OUTLINE")
@@ -533,9 +540,11 @@ local function CreateOverlayBar(parent, halfSegments)
         holder.overlaySegments[i] = seg
     end
 
+    -- Overlay bars are resource-only (MW), so the text layer mounts straight
+    -- into the stack's text band (see RESOURCE_TEXT_LAYER_LEVEL).
     holder.textLayer = CreateFrame("Frame", nil, holder)
     holder.textLayer:SetAllPoints(holder)
-    holder.textLayer:SetFrameLevel(holder:GetFrameLevel() + 8)
+    holder.textLayer:SetFrameLevel(holder:GetFrameLevel() + RB.RESOURCE_TEXT_LAYER_LEVEL)
 
     holder.text = holder.textLayer:CreateFontString(nil, "OVERLAY")
     local textOutline = ST.GetEffectiveFontOutline("OUTLINE")

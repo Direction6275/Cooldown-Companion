@@ -130,10 +130,15 @@ function RB.CreateResourceBarAuraHostModule(deps)
     -- is equally valid in combat.
     -- levelOffset: how far above the bar frame the kit renders. Custom bars
     -- use 3 (their textLayer sits at bar+2, and everything CC draws on a
-    -- custom bar lives at or below it). Resource bars stack far taller —
-    -- segment children at +3, MW overlay segments at +4, and the text layer
-    -- at +8 — so a resource holder at +3 would render UNDERNEATH the very
-    -- segments it decorates. They pass 9 (see HOLDER_LEVEL_RESOURCE).
+    -- custom bar lives at or below it — the kit MUST keep occluding CC's
+    -- spell-bar cooldown text, which CC writes per tick with no way to know
+    -- an aura is showing). Resource bars stack taller — segment children at
+    -- +3, MW overlay segments at +4 — so a resource holder at +3 would
+    -- render UNDERNEATH the very segments it decorates. They pass 9 (see
+    -- HOLDER_LEVEL_RESOURCE). Resource TEXT is the one thing above either
+    -- kit: it bands at RESOURCE_TEXT_LAYER_LEVEL, past the tallest
+    -- holder's reserved strata span, so it survives font-size spill onto a
+    -- neighboring bar (owner ruling: text > borders/glows > fills).
     local function AnchorHolderToBar(holder, frame, inset, levelOffset)
         holder:ClearAllPoints()
         holder:SetPoint("TOPLEFT", frame, "TOPLEFT", inset, -inset)

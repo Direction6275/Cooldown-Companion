@@ -1625,8 +1625,10 @@ local function UpdateMWMaxStackBorder(holder, settings, barType, isMax)
         local host = CreateFrame("Frame", nil, holder)
         host:EnableMouse(false)
         host:SetAllPoints(holder)
-        -- Over every layer the bar stacks (MW overlay segments at +4, the
-        -- text layer at +8) — the same clearance the aura overlay uses.
+        -- Over every non-text layer the bar stacks (MW overlay segments at
+        -- +4) — the same clearance the aura overlay uses. Resource text
+        -- bands above this (RESOURCE_TEXT_LAYER_LEVEL): text wins over
+        -- borders and glows by owner ruling.
         host:SetFrameLevel(holder:GetFrameLevel() + RB.RESOURCE_OVERLAY_HOLDER_LEVEL)
         pool = { host = host }
         holder._ccMWMaxBorder = pool
@@ -2069,7 +2071,11 @@ local function StyleContinuousBar(bar, powerType, settings)
         HidePixelBorders(bar.borders)
     end
 
-    -- Text setup
+    -- Text setup. The factory parks the text layer at the custom-bar height
+    -- (bar+2, under the aura kit); resource bars hoist it into the stack's
+    -- text band here so resource text renders above every bar's fills and
+    -- kit visuals (RESOURCE_TEXT_LAYER_LEVEL has the band map).
+    bar.textLayer:SetFrameLevel(bar:GetFrameLevel() + RB.RESOURCE_TEXT_LAYER_LEVEL)
     local resourceConfig = GetResourceDisplayConfig(settings, powerType)
     local textFormat = resourceConfig and resourceConfig.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT
     if textFormat ~= "current" and textFormat ~= "current_max" and textFormat ~= "percent" then

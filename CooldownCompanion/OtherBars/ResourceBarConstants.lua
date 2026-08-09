@@ -315,12 +315,25 @@ ST._RB = {
     DEFAULT_MW_MAX_STACK_BORDER_COLOR = { 1, 1, 1, 1 },
     DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR,
     -- How far above a resource bar its aura overlay mounts. Clear of every
-    -- layer the bar draws: segment children at bar+3, MW overlay segments
-    -- at +4, the CC-side aura lane pool at +7, the text layer at +8. Frame
-    -- level beats draw layer, so anything short of this renders behind the
-    -- bar it decorates. The config canvas stands the overlay in at the same
+    -- non-text layer the bar draws: segment children at bar+3, MW overlay
+    -- segments at +4, the CC-side aura lane pool at +7. Frame level beats
+    -- draw layer, so anything short of this renders behind the bar it
+    -- decorates. The config canvas stands the overlay in at the same
     -- height, which is why this is shared rather than local to the host.
     RESOURCE_OVERLAY_HOLDER_LEVEL = 9,
+    -- The resource-stack band order (owner ruling 2026-08-09): bar fills at
+    -- the bottom, borders/glows/aura kit above them, RESOURCE text above
+    -- everything. Bars in the stack are same-level siblings, so a large
+    -- font spilling past its bar's rect used to lose to the neighboring
+    -- bar's aura kit; every resource text layer now mounts at this shared
+    -- offset above its bar instead of a per-shape bump. Derivation: the
+    -- tallest kit is the aura overlay holder at bar+9 whose strata map
+    -- reserves through holder+15 (auraDisplay at +8, span 8 — Core/
+    -- Init.lua), so texts clear bar+24. Custom bar text layers deliberately
+    -- do NOT use this band: CC keeps writing spell-bar cooldown text with
+    -- no way to know an aura is showing, so their kit must keep occluding
+    -- their text (they stay at bar+2, under their holder at bar+3).
+    RESOURCE_TEXT_LAYER_LEVEL = 25,
     DEFAULT_SEG_THRESHOLD_COLOR = DEFAULT_SEG_THRESHOLD_COLOR,
     DEFAULT_HEALTH_BAR_COLOR = DEFAULT_HEALTH_BAR_COLOR,
     DEFAULT_HEALTH_BAR_OPACITY = DEFAULT_HEALTH_BAR_OPACITY,

@@ -405,7 +405,10 @@ function HealthBar.LayoutEffectBars(bar, borderStyle, borderSize, borderRenderMo
     HealthBar.LayoutReverseEdgeEffectBar(bar, bar.absorbOverflowBar)
     HealthBar.LayoutHealAbsorbBar(bar)
     if bar.textLayer then
-        bar.textLayer:SetFrameLevel(bar:GetFrameLevel() + 7)
+        -- Hoist from the factory's custom-bar height into the stack's text
+        -- band: health text renders above every bar's fills and kit visuals
+        -- (RESOURCE_TEXT_LAYER_LEVEL has the band map).
+        bar.textLayer:SetFrameLevel(bar:GetFrameLevel() + RB.RESOURCE_TEXT_LAYER_LEVEL)
     end
 end
 
