@@ -418,6 +418,15 @@ function RB.CreateResourceBarAuraHostModule(deps)
         return WantsAbsentStackBlocks(barInfo, opts)
     end
 
+    -- The block textures a stacks bar currently renders as, for canvas
+    -- overlays that must hug the blocks instead of the whole bar rect (the
+    -- layout preview's bucket wash). Nil when the bar renders as one fill.
+    function RB.GetCustomBarActiveStackBlocks(barInfo)
+        local frame = barInfo and barInfo.frame
+        if not (frame and frame._ccCabStackBlocksActive) then return nil end
+        return frame._ccCabStackBlocks
+    end
+
     local function ApplyCustomBarAbsentStackVisuals(barInfo, settings, opts)
         local frame = barInfo and barInfo.frame
         if not frame then return end

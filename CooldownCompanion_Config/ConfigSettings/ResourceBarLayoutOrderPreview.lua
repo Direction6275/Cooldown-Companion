@@ -1495,6 +1495,17 @@ local function ConfigureSlotChrome(frame, slot, skin, isVertical)
         end
         wash:SetFrameLevel(frame:GetFrameLevel() + 17)
         wash.tex:SetColorTexture(tint.wash[1], tint.wash[2], tint.wash[3], tint.wash[4])
+        -- Full-rect is the default shape; the slot render re-shapes the wash
+        -- onto the capacity blocks when the bar renders as segments (pooled
+        -- slots may arrive block-shaped from their last owner, so both legs
+        -- reset here every configure).
+        wash.color = tint.wash
+        wash.tex:Show()
+        if wash.blockTexes then
+            for _, blockTex in ipairs(wash.blockTexes) do
+                blockTex:Hide()
+            end
+        end
         wash:Show()
     elseif wash then
         wash:Hide()
@@ -1857,6 +1868,43 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 litStacks = RB.GetCustomBarStandInLitStacks
                     and RB.GetCustomBarStandInLitStacks(barInfo, rbSettings, standInMax) or nil,
             })
+            -- Bucket wash containment: on a stacks bar the blocks ARE the
+            -- bar and the gaps are genuinely empty, so the full-rect wash
+            -- read as one solid tinted bar over them. Re-shape the wash onto
+            -- the block rects; every other shape keeps the whole-canvas wash
+            -- ConfigureSlotChrome laid down.
+            local wash = frame.bucketWash
+            if wash and wash:IsShown() and RB.GetCustomBarActiveStackBlocks then
+                local blocks = RB.GetCustomBarActiveStackBlocks(barInfo)
+                if blocks then
+                    local texes = wash.blockTexes
+                    if not texes then
+                        texes = {}
+                        wash.blockTexes = texes
+                    end
+                    local color = wash.color
+                    for i, block in ipairs(blocks) do
+                        local blockTex = texes[i]
+                        if not blockTex then
+                            blockTex = wash:CreateTexture(nil, "OVERLAY")
+                            blockTex:SetBlendMode("ADD")
+                            texes[i] = blockTex
+                        end
+                        blockTex:ClearAllPoints()
+                        blockTex:SetAllPoints(block)
+                        blockTex:SetColorTexture(color[1], color[2], color[3], color[4])
+                        -- Blocks past the resolved max stay laid out at
+                        -- alpha 0; mirror it so the wash never outlines a
+                        -- block the bar is not drawing.
+                        blockTex:SetAlpha(block:GetAlpha())
+                        blockTex:Show()
+                    end
+                    for i = #blocks + 1, #texes do
+                        texes[i]:Hide()
+                    end
+                    wash.tex:Hide()
+                end
+            end
         end
         if barInfo.frame._barAuraActivePreview and RB.AnimatePreviewBarAura then
             table_insert(preview.animated, {
