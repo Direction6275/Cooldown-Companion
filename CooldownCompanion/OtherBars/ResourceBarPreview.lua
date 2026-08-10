@@ -25,8 +25,8 @@
 
     On top of the resting look sit the preview STATES, which the command
     center arms one at a time. Those are the sanctioned fabrications — an
-    aura that is not running, a cast that is not being cast — and they render
-    on the config canvas only.
+    aura that is not running, a cooldown that is not ticking, a cast that is
+    not being cast — and they render on the config canvas only.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -83,6 +83,12 @@ local function GetReadyChargeCount(cabConfig)
     end
     return nil
 end
+
+-- ONE resolver for everything that asks "does this bar track a charge
+-- spell": the ready-state readout here, the command center's offer gate
+-- and labels, and the canvas's recharge-preview gate. Split answers let
+-- the offered entries and the drawn stand-in disagree.
+RB.GetCustomBarReadyChargeCount = GetReadyChargeCount
 
 -- Stack capacity for everything the canvas draws on one bar: the capacity
 -- blocks, the stand-in's lit run, and its stack text. ONE resolver, because
@@ -265,6 +271,63 @@ function RB.CreateResourceBarPreviewModule(deps)
         -- reads the preview flag off the frame for the aura-active legs.
         if UpdateCustomAuraBarIndicatorVisuals then
             UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig)
+        end
+        return true
+    end
+
+    ------------------------------------------------------------------------
+    -- The Cooldown stand-in
+    --
+    -- What a spell custom bar shows while its command-center cooldown
+    -- preview runs: the mid-cooldown look the live renderer draws
+    -- (RB.UpdateCustomCooldownBar), with fabricated progress and remaining
+    -- time. Two kinds, matching the live colour logic: "cooldown" is the
+    -- plain cooldown (or a charge spell at zero charges), "recharge" is a
+    -- charge spell refilling with charges still in hand.
+    ------------------------------------------------------------------------
+
+    local function ApplyCustomBarCooldownStandIn(barInfo)
+        local bar = barInfo.frame
+        local cabConfig = barInfo.cabConfig
+        local kind = bar and bar._barCooldownPreview
+        if not (bar and cabConfig and kind) then
+            return false
+        end
+
+        -- Same reset the live cooldown pass makes before it paints: the
+        -- stand-in owns the fill colour below, so any aura-preview tint or
+        -- pulse left on a recycled frame has to go first.
+        ClearCustomAuraBarIndicatorState(barInfo, false)
+
+        local fillColor
+        if kind == "recharge" then
+            fillColor = cabConfig.barChargeColor or {1.0, 0.82, 0.0, 1}
+        else
+            fillColor = cabConfig.barCooldownColor or {0.6, 0.13, 0.18, 1}
+        end
+        bar:SetStatusBarColor(fillColor[1], fillColor[2], fillColor[3],
+            fillColor[4] ~= nil and fillColor[4] or 1)
+
+        -- The live bar fills by elapsed percent, so the sample sits at the
+        -- shared preview fill fraction with the shared remaining time.
+        SetStatusBarSmoothRange(bar, 0, 1)
+        SetStatusBarImmediateValue(bar, PREVIEW_FILL)
+
+        if bar.text and bar.text:IsShown() then
+            UnbindDurationText(bar.text)
+            bar.text:SetText(FormatTime(PREVIEW_DURATION, cabConfig))
+        elseif bar.text then
+            UnbindDurationText(bar.text)
+        end
+
+        if bar.stackText and bar.stackText:IsShown() then
+            local maxCharges = GetReadyChargeCount(cabConfig)
+            if maxCharges then
+                local currentCharges = kind == "recharge" and (maxCharges - 1) or 0
+                bar.stackText:SetFormattedText("%d / %d", currentCharges, maxCharges)
+            else
+                bar.stackText:SetText("")
+            end
         end
         return true
     end
@@ -574,6 +637,9 @@ function RB.CreateResourceBarPreviewModule(deps)
             -- while the aura runs.
             local cabConfig = barInfo.cabConfig
             if ApplyCustomBarAuraStandIn(barInfo, settings) then
+                return
+            end
+            if ApplyCustomBarCooldownStandIn(barInfo) then
                 return
             end
             SetStatusBarSmoothRange(barInfo.frame, 0, 1)

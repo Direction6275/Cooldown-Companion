@@ -217,6 +217,23 @@ local function CustomBarMarkerPreview(cabConfig)
     }
 end
 
+-- Spell custom-bar cooldown stand-in: the mid-cooldown look on the config
+-- canvas — fill progress, cooldown/recharge colour, duration text and the
+-- charge readout. One flag holding a KIND rather than two flags: the two
+-- looks are the same fabrication in different colours, and only one can
+-- ever run.
+local function CustomBarCooldownPreview(cabConfig, kind)
+    return {
+        groupScoped = true,
+        IsActive = function()
+            return CooldownCompanion:GetCustomBarCooldownPreviewKind(cabConfig) == kind
+        end,
+        SetActive = function(_, _, show)
+            CooldownCompanion:SetCustomBarCooldownPreview(cabConfig, show and kind or nil)
+        end,
+    }
+end
+
 local function ResourceAuraPreview(powerType)
     return {
         groupScoped = true,
@@ -988,6 +1005,17 @@ local OBJECT_CONTROLS = {
     },
 }
 
+-- Does this spell custom bar track a charge spell? Decides whether the
+-- recharge look exists at all, and which label the cooldown entry wears
+-- (zero charges IS the cooldown colour on a charge spell). The shared
+-- resolver (RB.GetCustomBarReadyChargeCount), which the canvas's charge
+-- readout and its recharge-preview gate also use — split answers would let
+-- the entries offered and the stand-in drawn disagree.
+local function CustomBarMaxCharges(cab)
+    if not (RB and RB.GetCustomBarReadyChargeCount) then return nil end
+    return RB.GetCustomBarReadyChargeCount(cab)
+end
+
 -- Which objects a surface hosts. The homes list the objects that
 -- workspace configures; the buttons workspace lists the bars its unified
 -- anchor preview actually draws as lanes, which is also exactly when a
@@ -1015,61 +1043,98 @@ local function CollectObjectControls(objects)
             and CooldownCompanion:GetResourceBarSettings()
         if settings and settings.enabled == true then
             for _, cab in ipairs(CooldownCompanion:GetSpecCustomAuraBars()) do
+                local isSpellBar = type(cab) == "table" and cab.entryType == "spell"
                 local auraTracked = type(cab) == "table"
-                    and (cab.entryType ~= "spell" or cab.auraTracking == true)
-                if auraTracked and CooldownCompanion:IsCustomBarRuntimeEligible(cab) then
+                    and (not isSpellBar or cab.auraTracking == true)
+                if type(cab) == "table" and CooldownCompanion:IsCustomBarRuntimeEligible(cab) then
                     local name = cab.label
                     if not name or name == "" then
                         name = C_Spell.GetSpellName(tonumber(cab.spellID)) or "Custom Bar"
                     end
-                    applicable[#applicable + 1] = {
-                        id = "customBarAura_" .. tostring(cab.customBarId),
-                        label = "Preview Active Aura",
-                        group = "Custom Bar: " .. name,
-                        object = "customBars",
-                        settings = {
+                    -- The cooldown looks, spell bars only (an aura bar has no
+                    -- cooldown leg at all). Listed before the aura entries:
+                    -- the cooldown is the bar's base render, the aura display
+                    -- occludes it. On a charge spell the cooldown colour is
+                    -- the zero-charges look, so the entry says so, and the
+                    -- recharge look exists only there.
+                    if isSpellBar then
+                        local maxCharges = CustomBarMaxCharges(cab)
+                        -- Both looks share the bar's Colors section, so the
+                        -- gear route is one shape.
+                        local cooldownRoute = {
                             object = "customBarAura",
                             customBarId = cab.customBarId,
-                            -- The bar's Aura tab only exists for a spell
-                            -- entry (GetCustomBarEntryTabs).
-                            auraTab = cab.spellID ~= nil,
-                        },
-                        preview = CustomBarAuraPreview(cab),
-                    }
-                    -- Offered exactly while the entry's own enable is on
-                    -- (the same honesty rule as requiresPandemicEffect on
-                    -- the panel controls).
-                    if cab.pandemicEffect == true then
+                            appearanceSection = "colors",
+                        }
                         applicable[#applicable + 1] = {
-                            id = "customBarPandemic_" .. tostring(cab.customBarId),
-                            label = "Preview Pandemic Color",
+                            id = "customBarCooldown_" .. tostring(cab.customBarId),
+                            label = maxCharges and "Preview Zero Charges" or "Preview Cooldown",
                             group = "Custom Bar: " .. name,
                             object = "customBars",
-                            settings = {
-                                object = "customBarAura",
-                                customBarId = cab.customBarId,
-                                auraTab = cab.spellID ~= nil,
-                            },
-                            preview = CustomBarPandemicPreview(cab),
+                            settings = cooldownRoute,
+                            preview = CustomBarCooldownPreview(cab, "cooldown"),
                         }
+                        if maxCharges then
+                            applicable[#applicable + 1] = {
+                                id = "customBarRecharge_" .. tostring(cab.customBarId),
+                                label = "Preview Recharging",
+                                group = "Custom Bar: " .. name,
+                                object = "customBars",
+                                settings = cooldownRoute,
+                                preview = CustomBarCooldownPreview(cab, "recharge"),
+                            }
+                        end
                     end
-                    -- Same honesty rule, resolved through the shared marker
-                    -- gate: the panel kill switch, then this bar's own switch,
-                    -- then the tracked-unit default. The canvas union must
-                    -- agree with this or the stand-in strands armed.
-                    if CooldownCompanion:IsPandemicMarkerPreviewWanted(cab, cab) then
+                    if auraTracked then
                         applicable[#applicable + 1] = {
-                            id = "customBarPandemicMarker_" .. tostring(cab.customBarId),
-                            label = "Preview Pandemic Marker",
+                            id = "customBarAura_" .. tostring(cab.customBarId),
+                            label = "Preview Active Aura",
                             group = "Custom Bar: " .. name,
                             object = "customBars",
                             settings = {
                                 object = "customBarAura",
                                 customBarId = cab.customBarId,
+                                -- The bar's Aura tab only exists for a spell
+                                -- entry (GetCustomBarEntryTabs).
                                 auraTab = cab.spellID ~= nil,
                             },
-                            preview = CustomBarMarkerPreview(cab),
+                            preview = CustomBarAuraPreview(cab),
                         }
+                        -- Offered exactly while the entry's own enable is on
+                        -- (the same honesty rule as requiresPandemicEffect on
+                        -- the panel controls).
+                        if cab.pandemicEffect == true then
+                            applicable[#applicable + 1] = {
+                                id = "customBarPandemic_" .. tostring(cab.customBarId),
+                                label = "Preview Pandemic Color",
+                                group = "Custom Bar: " .. name,
+                                object = "customBars",
+                                settings = {
+                                    object = "customBarAura",
+                                    customBarId = cab.customBarId,
+                                    auraTab = cab.spellID ~= nil,
+                                },
+                                preview = CustomBarPandemicPreview(cab),
+                            }
+                        end
+                        -- Same honesty rule, resolved through the shared marker
+                        -- gate: the panel kill switch, then this bar's own switch,
+                        -- then the tracked-unit default. The canvas union must
+                        -- agree with this or the stand-in strands armed.
+                        if CooldownCompanion:IsPandemicMarkerPreviewWanted(cab, cab) then
+                            applicable[#applicable + 1] = {
+                                id = "customBarPandemicMarker_" .. tostring(cab.customBarId),
+                                label = "Preview Pandemic Marker",
+                                group = "Custom Bar: " .. name,
+                                object = "customBars",
+                                settings = {
+                                    object = "customBarAura",
+                                    customBarId = cab.customBarId,
+                                    auraTab = cab.spellID ~= nil,
+                                },
+                                preview = CustomBarMarkerPreview(cab),
+                            }
+                        end
                     end
                 end
             end
@@ -1261,11 +1326,18 @@ local function ApplyObjectRoute(route)
         SetRowScope("detail")
         -- Both halves of the Aura tab are collapsible and keyed per bar, so a
         -- route that lands there has to open the two it means: the tracking
-        -- section and the effects this preview is showing.
+        -- section and the effects this preview is showing. An Appearance-tab
+        -- route names its own section instead (the cooldown previews land on
+        -- Colors).
         if RBP then
             local barKey = tostring(route.customBarId)
-            RBP.collapsedSections["cab_aura_" .. barKey] = nil
-            RBP.collapsedSections["cab_aura_effects_" .. barKey] = nil
+            if route.auraTab then
+                RBP.collapsedSections["cab_aura_" .. barKey] = nil
+                RBP.collapsedSections["cab_aura_effects_" .. barKey] = nil
+            end
+            if route.appearanceSection then
+                RBP.collapsedSections["cab_" .. route.appearanceSection .. "_" .. barKey] = nil
+            end
         end
     elseif route.object == "resourceAura" then
         -- Always the CURRENT spec: the overlay the preview draws is resolved

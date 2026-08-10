@@ -376,6 +376,11 @@ end
 local activeCustomAuraBarActivePreviews = {}
 local activeCustomAuraBarPandemicPreviews = {}
 local activeCustomAuraBarMarkerPreviews = {}
+-- Spell custom-bar cooldown previews: the value is the KIND of stand-in
+-- armed ("cooldown" or "recharge"), not a boolean — a charge spell has two
+-- distinct cooldown looks and the command center offers each as its own
+-- entry.
+local activeCustomBarCooldownPreviews = {}
 -- Resource aura overlay previews, keyed by POWER TYPE. Never by barInfo or
 -- frame: a form change rebuilds the positional bar array, and the power
 -- type is the only identity that survives it.
@@ -428,6 +433,7 @@ local function ClearCustomAuraBarIndicatorVisualState(barInfo, clearPreviewFlags
         bar._barAuraActivePreview = nil
         bar._barPandemicPreview = nil
         bar._barMarkerPreview = nil
+        bar._barCooldownPreview = nil
     end
 
     ResetCustomAuraBarIndicatorVisuals(bar, barInfo.cabConfig)
@@ -3001,10 +3007,26 @@ function CooldownCompanion:IsCustomAuraBarMarkerPreviewActive(cabConfig)
     return activeCustomAuraBarMarkerPreviews[cabConfig] == true
 end
 
+-- Spell custom-bar cooldown stand-in: which spell bars render as if their
+-- cooldown were running, and which of the two looks each shows. Same
+-- table-keyed, canvas-only state model as the aura previews above.
+function CooldownCompanion:SetCustomBarCooldownPreview(cabConfig, kind)
+    if type(cabConfig) ~= "table" then return end
+    if kind ~= "cooldown" and kind ~= "recharge" then
+        kind = nil
+    end
+    activeCustomBarCooldownPreviews[cabConfig] = kind
+end
+
+function CooldownCompanion:GetCustomBarCooldownPreviewKind(cabConfig)
+    return activeCustomBarCooldownPreviews[cabConfig]
+end
+
 function CooldownCompanion:ClearAllCustomAuraBarPreviews()
     wipe(activeCustomAuraBarActivePreviews)
     wipe(activeCustomAuraBarPandemicPreviews)
     wipe(activeCustomAuraBarMarkerPreviews)
+    wipe(activeCustomBarCooldownPreviews)
 end
 
 -- Resource aura overlay preview (the aura pass, Phase 2): which resources

@@ -1706,6 +1706,21 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
             or nil
         barInfo.frame._barPandemicPreview = pandemicPreview or nil
         barInfo.frame._barMarkerPreview = markerPreview or nil
+        -- The Cooldown preview state for spell custom bars, same canvas-only
+        -- model: the kind ("cooldown"/"recharge") or nil, written every pass
+        -- so stopping the preview clears it from a recycled frame. Gated on
+        -- the same charge resolve the command-center control offers itself
+        -- on, or a "recharge" stand-in strands armed after a talent or spec
+        -- change takes the spell's extra charge — and its control — away.
+        local cooldownPreviewKind = cabConfig
+            and CooldownCompanion:GetCustomBarCooldownPreviewKind(cabConfig)
+            or nil
+        if cooldownPreviewKind == "recharge"
+            and not (RB.GetCustomBarReadyChargeCount
+                and RB.GetCustomBarReadyChargeCount(cabConfig)) then
+            cooldownPreviewKind = nil
+        end
+        barInfo.frame._barCooldownPreview = cooldownPreviewKind
     elseif slot.powerType == 101 then
         if not barInfo or barInfo.barType ~= "stagger_continuous" then
             if barInfo and barInfo.frame then
