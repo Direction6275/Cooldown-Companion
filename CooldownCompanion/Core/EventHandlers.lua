@@ -553,3 +553,33 @@ function CooldownCompanion:UpdateAnchorStacking()
         CooldownCompanion:EvaluateBarsAndFramesStackingRuntime("anchor-stacking")
     end)
 end
+
+-- Cast-bar-only stacking leg, for the aura rebind pass. The pass moves the
+-- block chain TAIL the cast bar hangs from, and the cast bar is pinned to the
+-- stack end, so resource bars never move in response to a tail change. The
+-- pass must NOT run the full stacking evaluation: EvaluateResourceBars
+-- re-applies unconditionally and ApplyResourceBars ends in
+-- RequestAuraRebind("custom-bars"), so pass -> stacking -> apply -> request
+-- cycled a full park-and-rebind pass at frame rate for as long as the bars
+-- were enabled (diagnosed 2026-08-10; the churn also raced Blizzard's
+-- deferred container rebuilds, which is what left displays dark).
+local pendingCastBarStackUpdate = false
+
+function CooldownCompanion:UpdateCastBarStackAnchor()
+    local enabled, flags = self:RefreshBarsAndFramesRuntimeGate("castbar-stack-anchor-check")
+    if not enabled or not flags.castBar then
+        return
+    end
+    if pendingCastBarStackUpdate then return end
+    pendingCastBarStackUpdate = true
+    C_Timer.After(0, function()
+        pendingCastBarStackUpdate = false
+        -- Re-check at fire time, mirroring EvaluateBarsAndFramesStackingRuntime:
+        -- the gate can flip between the queue and the callback.
+        local enabledNow, flagsNow = CooldownCompanion:RefreshBarsAndFramesRuntimeGate("castbar-stack-anchor")
+        if not enabledNow or not flagsNow.castBar then return end
+        if CooldownCompanion.EvaluateCastBar then
+            CooldownCompanion:EvaluateCastBar({ skipRuntimeGate = true })
+        end
+    end)
+end

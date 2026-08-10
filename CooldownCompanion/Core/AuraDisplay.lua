@@ -137,6 +137,14 @@ local slotCounter = 0
 local pendingRebind = false
 local rebindQueued = false
 
+-- Idle-health counters (2026-08-10 feedback-loop lesson): rebind work runs at
+-- config-change frequency, so these climbing on an idle session IS a feedback
+-- loop. Read-only, never reset; surfaced in GetAuraDisplayStatus and copied
+-- into DevBridge snapshots.
+local rebindRequestCount = 0
+local rebindPassCount = 0
+local lastRebindPassAt = nil
+
 -- Deferred-rebind retry events: PLAYER_REGEN_ENABLED for player combat, and
 -- target-scoped UNIT_FLAGS for the case where ONLY target combat blocks (an
 -- OOC player never gets a regen event, so the target's own combat-flag change
@@ -2765,6 +2773,8 @@ function RunAuraRebind()
     local self = CooldownCompanion
     if not (self.db and self.groupFrames) then return end
     deferNoteShown = false
+    rebindPassCount = rebindPassCount + 1
+    lastRebindPassAt = GetTime()
 
     -- Collect wanted bindings from live buttons. Icon/bar behavior keeps its
     -- existing aura flags. Texture panels always bind primary Aura entries and
@@ -2884,11 +2894,16 @@ function RunAuraRebind()
     pendingRebind = false
 
     -- The cast bar anchors to the block chain's TAIL, and this pass is the
-    -- only writer of which container that is. Coalesced next-frame stacking
+    -- only writer of which container that is. Coalesced next-frame cast-bar
     -- re-evaluation, so the combat-deferred rebind cannot leave the cast bar
-    -- pointing at last pull's tail.
-    if self.UpdateAnchorStacking then
-        self:UpdateAnchorStacking()
+    -- pointing at last pull's tail. CAST BAR LEG ONLY — never the full
+    -- stacking evaluation: its resource leg re-applies the bars, whose apply
+    -- ends in RequestAuraRebind("custom-bars"), which re-ran this pass every
+    -- frame forever (2026-08-10 feedback-loop diagnosis). The stack-end pin
+    -- rule means resource bars never move in response to a tail change, so
+    -- the cast bar is the only trailing frame with anything to re-anchor.
+    if self.UpdateCastBarStackAnchor then
+        self:UpdateCastBarStackAnchor()
     end
 end
 
@@ -2910,6 +2925,7 @@ end)
 -- combat and re-defers if a pull started in between.
 function CooldownCompanion:RequestAuraRebind(reason, groupId)
     if not self.db then return end
+    rebindRequestCount = rebindRequestCount + 1
     if not CanRunRebindNow() then
         NoteDeferredConfigEdit(reason, groupId)
         if pendingRebind then return end
@@ -2980,5 +2996,11 @@ function CooldownCompanion:GetAuraDisplayStatus()
         end
     end
     status.blocks = blocks
+    -- Idle health: requests/passes since login, and how long ago the last
+    -- pass ran. On an idle session these must hold still — climbing numbers
+    -- mean something is re-requesting the pass without a real change.
+    status.rebindRequests = rebindRequestCount
+    status.rebindPasses = rebindPassCount
+    status.rebindPassAge = lastRebindPassAt and (GetTime() - lastRebindPassAt) or nil
     return status
 end
