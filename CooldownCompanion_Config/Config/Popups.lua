@@ -244,11 +244,11 @@ local function ShowResourceBarConflictChooser(classKey, opts)
     AddResourceBarConflictSpacer(chooser, 14)
 
     local bullets = {
-        "The Resource settings and Resource Aura overlays from the setup you KEEP will be saved for the whole class.",
+        "The Resource settings from the setup you KEEP will be saved for the whole class.",
         "Custom Bars from every listed same-class setup will be preserved and added to the saved class setup.",
-        "The other listed character Resource settings and Resource Aura overlays will be removed.",
+        "The other listed character Resource settings will be removed.",
         "Going forward, every character of this class will use the saved setup.",
-        "Per-spec layouts, resource overrides, and aura overlays still work inside that class setup.",
+        "Per-spec layouts and resource overrides still work inside that class setup.",
     }
     for index, text in ipairs(bullets) do
         AddResourceBarConflictText(chooser, "- " .. text, GameFontHighlight)
@@ -360,36 +360,6 @@ end
 
 ST._ShowResourceBarConflictChooser = ShowResourceBarConflictChooser
 
-local function PruneDeletedFolderSelection(folderId)
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    if not db then return end
-
-    if CS.selectedFolder == folderId then
-        CS.selectedFolder = nil
-    end
-
-    if CS.selectedContainer and not (db.groupContainers and db.groupContainers[CS.selectedContainer]) then
-        ClearConfigContainerSelection()
-    elseif CS.selectedGroup and not (db.groups and db.groups[CS.selectedGroup]) then
-        ClearConfigPanelSelection()
-    end
-
-    if CS.addingToPanelId and not (db.groups and db.groups[CS.addingToPanelId]) then
-        CS.addingToPanelId = nil
-    end
-
-    for containerId in pairs(CS.selectedGroups) do
-        if not (db.groupContainers and db.groupContainers[containerId]) then
-            CS.selectedGroups[containerId] = nil
-        end
-    end
-    for panelId in pairs(CS.selectedPanels) do
-        if not (db.groups and db.groups[panelId]) then
-            CS.selectedPanels[panelId] = nil
-        end
-    end
-end
-
 StaticPopupDialogs["CDC_DELETE_GROUP"] = {
     text = "Are you sure you want to delete group '%s'?",
     button1 = "Delete",
@@ -456,6 +426,33 @@ StaticPopupDialogs["CDC_DELETE_EMPTY_CDM_PANEL"] = {
     preferredIndex = 3,
 }
 
+StaticPopupDialogs["CDC_REFRESH_CDM_PANEL"] = {
+    text = "Replace the entries in '%s' with its Cooldown Manager section? Per-entry settings will be lost.",
+    button1 = "Replace",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if not data then
+            return
+        end
+        local panel = CooldownCompanion.db.profile.groups[data.panelId]
+        -- Same class-scope rule as the menu: the refresh reads the logged-in
+        -- character's CDM data, so another class's browsed panel must never
+        -- accept it.
+        if panel
+            and panel.parentContainerId == data.containerId
+            and panel.cdmPanelSource == data.sourceKey
+            and ST._IsCreateTargetContainer
+            and ST._IsCreateTargetContainer(data.containerId)
+            and ST._RefreshCDMPanelFromSource then
+            ST._RefreshCDMPanelFromSource(data.panelId, panel, data.containerId)
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 StaticPopupDialogs["CDC_RENAME_GROUP"] = {
     text = "Rename group '%s' to:",
     button1 = "Rename",
@@ -501,8 +498,8 @@ StaticPopupDialogs["CDC_RENAME_GROUP"] = {
 }
 
 StaticPopupDialogs["CDC_DELETE_BUTTON"] = {
-    text = "Remove '%s' from this group?",
-    button1 = "Remove",
+    text = "Are you sure you want to delete '%s'?",
+    button1 = "Delete",
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.groupId and data.buttonIndex then
@@ -518,8 +515,8 @@ StaticPopupDialogs["CDC_DELETE_BUTTON"] = {
 }
 
 StaticPopupDialogs["CDC_DELETE_SELECTED_BUTTONS"] = {
-    text = "Remove %d selected entries from this group?",
-    button1 = "Remove",
+    text = "Delete %d selected entries?",
+    button1 = "Delete",
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.groupId and data.indices then
@@ -829,39 +826,6 @@ StaticPopupDialogs["CDC_CROSS_PANEL_STRIP_OVERRIDES"] = {
     preferredIndex = 3,
 }
 
-StaticPopupDialogs["CDC_DRAG_UNGLOBAL_FOLDER"] = {
-    text = "This folder contains groups with foreign eligibility filters. Moving to your current class will remove those filters. Continue?",
-    button1 = "Continue",
-    button2 = "Cancel",
-    OnAccept = function(self, data)
-        if data and data.dragState then
-            ST._ApplyCol1Drop(data.dragState)
-            CooldownCompanion:RefreshAllGroups()
-            CooldownCompanion:RefreshConfigPanel()
-        end
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
-StaticPopupDialogs["CDC_UNGLOBAL_FOLDER"] = {
-    text = "This folder contains groups with foreign eligibility filters. Moving '%s' to your current class will remove those filters. Continue?",
-    button1 = "Continue",
-    button2 = "Cancel",
-    OnAccept = function(self, data)
-        if data and data.folderId then
-            CooldownCompanion:ToggleFolderGlobal(data.folderId)
-            CooldownCompanion:RefreshConfigPanel()
-        end
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
 StaticPopupDialogs["CDC_DELETE_SELECTED_GROUPS"] = {
     text = "Delete %d selected groups?",
     button1 = "Delete",
@@ -869,7 +833,11 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_GROUPS"] = {
     OnAccept = function(self, data)
         if data and data.groupIds then
             for _, gid in ipairs(data.groupIds) do
-                CooldownCompanion:DeleteGroup(gid)
+                -- Ids freeze at popup-show time; a container deleted while the
+                -- popup was open must not fall through DeleteGroup's panel-id path.
+                if CooldownCompanion.db.profile.groupContainers[gid] then
+                    CooldownCompanion:DeleteGroup(gid)
+                end
             end
             ResetConfigSelection(true)
             CooldownCompanion:RefreshConfigPanel()
@@ -892,10 +860,25 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_CUSTOM_BARS"] = {
             for _, customBarId in ipairs(data.ids) do
                 rb.DeleteCustomBar(settings, customBarId)
             end
-            ClearConfigCustomBarSelection(true, { clearExpanded = true })
+            ClearConfigCustomBarSelection({ clearExpanded = true })
             CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:UpdateAnchorStacking()
             CooldownCompanion:RefreshConfigPanel()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_DELETE_CUSTOM_BAR"] = {
+    text = "Are you sure you want to delete Custom Bar '%s'?",
+    button1 = "Delete",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.customBarId and ST._DeleteConfigCustomBar then
+            ST._DeleteConfigCustomBar(data.customBarId)
         end
     end,
     timeout = 0,
@@ -919,52 +902,8 @@ StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
     preferredIndex = 3,
 }
 
-StaticPopupDialogs["CDC_RENAME_FOLDER"] = {
-    text = "Rename folder '%s' to:",
-    button1 = "Rename",
-    button2 = "Cancel",
-    hasEditBox = true,
-    OnAccept = function(self, data)
-        local newName = self.EditBox:GetText()
-        if newName and newName ~= "" and data and data.folderId then
-            CooldownCompanion:RenameFolder(data.folderId, newName)
-            CooldownCompanion:RefreshConfigPanel()
-        end
-    end,
-    EditBoxOnEnterPressed = function(self)
-        local parent = self:GetParent()
-        StaticPopupDialogs["CDC_RENAME_FOLDER"].OnAccept(parent, parent.data)
-        parent:Hide()
-    end,
-    OnShow = function(self)
-        self.EditBox:SetFocus()
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
-StaticPopupDialogs["CDC_DELETE_FOLDER"] = {
-    text = "Delete folder '%s' and all groups inside it?",
-    button1 = "Delete",
-    button2 = "Cancel",
-    OnAccept = function(self, data)
-        if data and data.folderId then
-            CooldownCompanion:ClearAllConfigPreviews()
-            CooldownCompanion:DeleteFolder(data.folderId)
-            PruneDeletedFolderSelection(data.folderId)
-            CooldownCompanion:RefreshConfigPanel()
-        end
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
 ------------------------------------------------------------------------
--- Group/Folder Export and Apply
+-- Group export and apply
 ------------------------------------------------------------------------
 
 local function GetCustomBarExportConflictBlockMessage()
@@ -992,7 +931,6 @@ local function BuildGroupExportData(group)
     end
     data.createdBy = nil
     data.order = nil
-    data.folderId = nil
     data.isGlobal = nil
     data.parentContainerId = nil
     return data
@@ -1005,7 +943,54 @@ local function EncodeExportData(payload)
             return nil
         end
     end
+    if type(payload) == "table" and payload.type == "setup"
+        and (payload.resources or payload.customBars) then
+        local blocked = BlockCustomBarExportForResourceBarConflict()
+        if blocked then
+            return nil
+        end
+    end
     return EncodeSharedPayload(payload, "entity")
+end
+
+-- Assembles the one-string setup payload from its sections. Any section may
+-- be nil. `customBars` accepts the standalone customBars payload shape (the
+-- `type` marker is dropped; sections carry no type of their own). A Resources
+-- section already contains its class's Custom Bars, so callers must not pass
+-- both for the same class.
+local function BuildSetupExportPayload(sections)
+    if type(sections) ~= "table" then
+        return nil
+    end
+    local payload = { type = "setup", version = 1 }
+    local hasAny = false
+
+    if type(sections.containers) == "table" and #sections.containers > 0 then
+        payload.containers = sections.containers
+        hasAny = true
+    end
+    if type(sections.customBars) == "table"
+        and type(sections.customBars.bars) == "table"
+        and #sections.customBars.bars > 0 then
+        payload.customBars = {
+            version = sections.customBars.version or 1,
+            classID = sections.customBars.classID,
+            classFilename = sections.customBars.classFilename,
+            bars = sections.customBars.bars,
+            layouts = sections.customBars.layouts,
+        }
+        hasAny = true
+    end
+    if type(sections.resources) == "table"
+        and type(sections.resources.settings) == "table" then
+        payload.resources = sections.resources
+        hasAny = true
+    end
+
+    if not hasAny then
+        return nil
+    end
+    return payload
 end
 
 local function BuildContainerExportData(container)
@@ -1013,8 +998,9 @@ local function BuildContainerExportData(container)
     data.createdBy = nil
     data.order = nil
     data.specOrders = nil
-    data.folderId = nil
-    data.isGlobal = nil
+    -- isGlobal deliberately rides: the import landing decision reads it to
+    -- keep an originally-global group global. Stripping it here forced a
+    -- _sourceGlobal side-channel that restated the same fact.
     return data
 end
 
@@ -1079,7 +1065,7 @@ end
 ST._BuildGroupExportData = BuildGroupExportData
 ST._BuildContainerExportData = BuildContainerExportData
 ST._EncodeExportData = EncodeExportData
-ST._BlockCustomBarExportForResourceBarConflict = BlockCustomBarExportForResourceBarConflict
+ST._BuildSetupExportPayload = BuildSetupExportPayload
 
 local function BuildImportedRootAnchor(relativeTo)
     return {
@@ -1149,6 +1135,11 @@ local function CreateImportedPanel(db, containerId, panelIndex, srcPanel, import
     panel.cdmPanelSource = nil
     panel.parentContainerId = containerId
     panel.order = panelIndex
+    -- Piece imports land in an already-migrated profile, so pre-split
+    -- bar/text panels get their per-mode orientation key mapped here.
+    if ST._NormalizePanelOrientationKeys then
+        ST._NormalizePanelOrientationKeys(panel)
+    end
     if not panel.anchor then
         panel.anchor = BuildImportedRootAnchor("CooldownCompanionContainer" .. containerId)
     end
@@ -1171,12 +1162,19 @@ local function NewGroupImportState()
     }
 end
 
-local function ImportContainerEntries(db, entries, charKey, folderId, importState, options)
+local function ImportContainerEntries(db, entries, charKey, importState, options)
     importState = importState or NewGroupImportState()
     options = options or {}
     local firstContainerIndex = #importState.importedContainerIds + 1
     local startContainerCount = importState.containerCount
     local startPanelCount = importState.panelCount
+    local _, _, importerClassID = UnitClass("player")
+    -- Once for this whole door, before any landing decision: the hero-talent
+    -- sweep behind those decisions costs ~40 view-loadout builds and must be
+    -- retried across imports but never repeated within one.
+    if ST._ResetHeroTalentSweepAttempt then
+        ST._ResetHeroTalentSweepAttempt()
+    end
 
     for _, entry in ipairs(entries) do
         local containerId = db.nextContainerId
@@ -1187,16 +1185,61 @@ local function ImportContainerEntries(db, entries, charKey, folderId, importStat
         end
 
         local container = CopyTable(entry.container)
-        local importAsGlobal = options.forceGlobalScope == true
-            or ContainerEntryHasPortableEligibility(entry)
-        container.createdBy = charKey
+        -- Landing scope: an originally-global piece stays global; everything
+        -- else goes through the SAME decision the full-profile door uses
+        -- (ST._ResolveEntityTreeLanding), so one policy owns both doors.
+        -- Only content no class section can represent (cross-class mixes,
+        -- class allowlists) moves the piece to Global.
+        local sourceWasGlobal = container.isGlobal == true
+            or container.section == "global"
+        local importAsGlobal = options.forceGlobalScope == true or sourceWasGlobal
+        local landingCharKey
+        if not importAsGlobal
+            and ContainerEntryHasPortableEligibility(entry)
+            and ST._ResolveEntityTreeLanding
+        then
+            local entities = { entry.container }
+            for _, panel in ipairs(entry.panels or {}) do
+                entities[#entities + 1] = panel
+            end
+            -- importerClassID nil (UnitClass gave nothing) means "cannot
+            -- tell", and the shared rule then keeps the importer as owner
+            -- rather than re-homing every piece onto a placeholder.
+            local mustGlobalize
+            landingCharKey, mustGlobalize = ST._ResolveEntityTreeLanding(entities, importerClassID)
+            if mustGlobalize then
+                importAsGlobal = true
+                landingCharKey = nil
+            end
+        end
+        container.createdBy = landingCharKey or charKey
         container.isGlobal = importAsGlobal
+        if not importAsGlobal and ST._FoldSpecAllowlistIntoSpecs then
+            ST._FoldSpecAllowlistIntoSpecs(container)
+            for _, panel in ipairs(entry.panels or {}) do
+                ST._FoldSpecAllowlistIntoSpecs(panel)
+            end
+        end
+        if type(options.legacyFolder) == "table" then
+            -- Decode-only compatibility: apply the retired Folder's inherited
+            -- restrictions through the canonical migration, without ever
+            -- attaching Folder state to the live profile.
+            local legacyProfile = {
+                groupContainers = { [1] = container },
+                groups = {},
+                folders = { [1] = CopyTable(options.legacyFolder) },
+                nextFolderId = 2,
+            }
+            container.folderId = 1
+            CooldownCompanion:MigrateFoldersIntoGroups(legacyProfile)
+        end
         container.order = containerId
         container.specOrders = nil
-        container.folderId = folderId
         container.locked = true
-        if importAsGlobal then
+        if importAsGlobal and not sourceWasGlobal then
             importState.globalizedEligibilityImports = (importState.globalizedEligibilityImports or 0) + 1
+        elseif landingCharKey then
+            importState.sortedEligibilityImports = (importState.sortedEligibilityImports or 0) + 1
         end
         db.groupContainers[containerId] = container
         CooldownCompanion:CreateContainerFrame(containerId)
@@ -1263,6 +1306,9 @@ local function PrintImportSanitizerNotes(importState)
     end
     if (importState.characterEligibilityStripped or 0) > 0 then
         CooldownCompanion:Print("Character eligibility is local and was not imported.")
+    end
+    if (importState.sortedEligibilityImports or 0) > 0 then
+        CooldownCompanion:Print("Imported groups were sorted into class sections by their eligibility (x" .. importState.sortedEligibilityImports .. ").")
     end
     if (importState.globalizedEligibilityImports or 0) > 0 then
         CooldownCompanion:Print("Class, specialization, and hero talent eligibility were preserved in Global Groups.")
@@ -1372,7 +1418,48 @@ ST._AttachGroupImportBatch = function(payload, token)
     end
 end
 
-local function ApplyGroupImportData(data)
+-- Import doors insert entries that can carry main-era keys AFTER the
+-- migration sentinels stamped, so the chain re-runs over the profile (it is
+-- idempotent by contract). Centralized because getting it right has three
+-- parts every door needs:
+--   * While a group-import batch is open, imported anchors still hold the
+--     exporter's frame references. SanitizeCursorAnchorPolicy runs inside
+--     the chain and would judge them before FinishGroupImportBatch remaps
+--     them, detaching imported groups to the screen root — so it is
+--     deferred, and the batch sanitizes once anchors are correct.
+--   * A multi-section import (setup, pieces) would otherwise walk the whole
+--     profile once per section. Those doors pass options.deferMigrations and
+--     take one run themselves after finishing their batch. Deferral is a
+--     per-call argument, deliberately not shared state: an earlier version
+--     used a module-level counter, and a Lua error thrown between its
+--     increment and decrement left it raised for the rest of the session,
+--     after which every import silently skipped the chain and still
+--     reported success.
+--   * The failure return is the caller's to honor; reporting success over a
+--     profile whose migration bailed is how unmigrated data ships silently.
+--     Doors still refresh after a failed run: the entries are already
+--     committed with no rollback, so leaving the UI showing the pre-import
+--     profile only hides that fact.
+local function RunPostImportMigrations()
+    CooldownCompanion:ClearMigrationSentinels()
+    local previousDefer = CooldownCompanion._deferCursorAnchorPolicySanitizer
+    if next(activeGroupImportBatches) ~= nil then
+        CooldownCompanion._deferCursorAnchorPolicySanitizer = true
+    end
+    local ok = CooldownCompanion:RunAllMigrations()
+    CooldownCompanion._deferCursorAnchorPolicySanitizer = previousDefer
+    if not ok then
+        CooldownCompanion:Print("Import failed: this profile could not be migrated to 12.1.")
+    end
+    return ok
+end
+
+-- Exported for the pieces door, the other multi-section import: it lives in
+-- ProfileImportPieces.lua, defers its sections the same way, and so needs to
+-- take the single run itself.
+ST._RunPostImportMigrations = RunPostImportMigrations
+
+local function ApplyGroupImportData(data, options)
     if type(data) ~= "table" then
         return false
     end
@@ -1386,7 +1473,7 @@ local function ApplyGroupImportData(data)
     end
 
     if not data.type then
-        CooldownCompanion:Print("Import failed: this is a profile backup, not a group, folder, or panel export.")
+        CooldownCompanion:Print("Import failed: this is a profile backup, not a group or panel export.")
         return false
     end
 
@@ -1406,7 +1493,7 @@ local function ApplyGroupImportData(data)
         return false
 
     elseif data.type == "containers" and data.containers then
-        local importState, containerCount = ImportContainerEntries(db, data.containers, charKey, nil, rootImportState)
+        local importState, containerCount = ImportContainerEntries(db, data.containers, charKey, rootImportState)
         if not deferAnchorRemap then
             RemapImportedContainerAnchors(db, importState, true)
             RemapImportedPanelAnchors(db, importState)
@@ -1419,8 +1506,6 @@ local function ApplyGroupImportData(data)
             return false
         end
 
-        local folderId = db.nextFolderId
-        db.nextFolderId = folderId + 1
         local importedManualIcon = data.folder.manualIcon
         if type(importedManualIcon) ~= "number" and type(importedManualIcon) ~= "string" then
             importedManualIcon = nil
@@ -1478,9 +1563,9 @@ local function ApplyGroupImportData(data)
                     or importedLoadConditions.specAllowlist
             ))
             or ContainersHavePortableEligibility(data.containers)
-        db.folders[folderId] = {
+        local legacyFolder = {
             name = data.folder.name or "Imported Folder",
-            order = folderId,
+            order = 1,
             section = folderUsesGlobalEligibility and "global" or "char",
             createdBy = charKey,
             manualIcon = importedManualIcon,
@@ -1493,25 +1578,31 @@ local function ApplyGroupImportData(data)
         end
         local count = 0
         if data.containers then
-            local importState, _, panelCount = ImportContainerEntries(
-                db, data.containers, charKey, folderId, rootImportState, {
+            local importState, containerCount = ImportContainerEntries(
+                db, data.containers, charKey, rootImportState, {
                     forceGlobalScope = folderUsesGlobalEligibility and true or false,
+                    legacyFolder = legacyFolder,
                 }
             )
             if not deferAnchorRemap then
                 RemapImportedContainerAnchors(db, importState, true)
                 RemapImportedPanelAnchors(db, importState)
             end
-            count = panelCount
+            count = containerCount
         end
-        CooldownCompanion:Print("Imported folder: " .. (data.folder.name or "Unnamed") .. " (" .. count .. " groups)")
+        CooldownCompanion:Print("Imported " .. count .. " groups.")
 
+    -- Legacy single-group strings (pre-Export-mode). No current producer
+    -- emits this shape. The old exporter stripped isGlobal, so an
+    -- originally-global group cannot prove it was global and lands by
+    -- content like everything else; current payloads carry isGlobal in the
+    -- container itself, where the landing decision reads it.
     elseif data.type == "container" and data.container and data.panels then
         local importState, _, panelCount, containerId = ImportContainerEntries(db, {{
             container = data.container,
             panels = data.panels,
             _originalContainerId = data._originalContainerId,
-        }}, charKey, nil, rootImportState)
+        }}, charKey, rootImportState)
         local container = db.groupContainers[containerId]
         if not deferAnchorRemap then
             RemapImportedContainerAnchors(db, importState, false)
@@ -1524,23 +1615,22 @@ local function ApplyGroupImportData(data)
         return false
     end
 
-    CooldownCompanion:ClearMigrationSentinels()
-    local previousDeferCursorAnchorPolicySanitizer = CooldownCompanion._deferCursorAnchorPolicySanitizer
-    if deferAnchorRemap then
-        CooldownCompanion._deferCursorAnchorPolicySanitizer = true
-    end
-    local migrationsOk = CooldownCompanion:RunAllMigrations()
-    CooldownCompanion._deferCursorAnchorPolicySanitizer = previousDeferCursorAnchorPolicySanitizer
-    if not migrationsOk then
-        return false
+    local migrationOk = true
+    if not (options and options.deferMigrations) then
+        migrationOk = RunPostImportMigrations()
     end
 
+    -- Refresh even when the migration failed: the groups above are already
+    -- written and there is no rollback, so returning early would only leave
+    -- the config and the live frames describing a profile that no longer
+    -- exists. The failure is reported by RunPostImportMigrations and carried
+    -- out in the return value.
     CooldownCompanion:RefreshConfigPanel()
     CooldownCompanion:RefreshAllGroups()
     if not deferAnchorRemap then
         PrintImportSanitizerNotes(rootImportState)
     end
-    return true
+    return migrationOk
 end
 
 ST._ApplyGroupImportData = ApplyGroupImportData
@@ -1565,12 +1655,16 @@ StaticPopupDialogs["CDC_EXPORT_GROUP"] = {
     preferredIndex = 3,
 }
 
-local function BlockCustomBarsImportForResourceBarConflict()
-    local classKey = CooldownCompanion.GetCurrentResourceBarClassKey
-        and CooldownCompanion:GetCurrentResourceBarClassKey()
+-- classKey defaults to the current class. Setup imports pass the class the
+-- payload targets, so a cross-class import respects THAT class's pending
+-- conflict, not the importing character's.
+local function BlockCustomBarsImportForResourceBarConflict(classKey)
+    classKey = classKey
+        or (CooldownCompanion.GetCurrentResourceBarClassKey
+            and CooldownCompanion:GetCurrentResourceBarClassKey())
         or nil
-    local conflict = CooldownCompanion.GetCurrentResourceBarConflict
-        and CooldownCompanion:GetCurrentResourceBarConflict()
+    local conflict = CooldownCompanion.GetResourceBarConflict
+        and CooldownCompanion:GetResourceBarConflict(classKey)
         or nil
     if not conflict then
         return false
@@ -1597,17 +1691,25 @@ local function ApplyCustomBarsImportData(data, options)
     if RejectUnsupportedImportPayload(data, "custom bars import") then
         return false
     end
-    if BlockCustomBarsImportForResourceBarConflict() then
+    local targetClassKey = options and options.targetClassKey or nil
+    if BlockCustomBarsImportForResourceBarConflict(targetClassKey) then
         return false
     end
     local importState = options and options.importState or NewGroupImportState()
     StripImportCharacterEligibility(data, importState)
 
     local rb = ST._RB
-    local settings = CooldownCompanion:GetResourceBarSettings()
+    local settings
+    if targetClassKey and CooldownCompanion.EnsureResourceBarSettingsForClass then
+        settings = CooldownCompanion:EnsureResourceBarSettingsForClass(targetClassKey)
+    else
+        settings = CooldownCompanion:GetResourceBarSettings()
+    end
     local ok, message
     if rb and rb.ImportCustomBarsPayload then
-        ok, message = rb.ImportCustomBarsPayload(settings, data)
+        ok, message = rb.ImportCustomBarsPayload(settings, data, targetClassKey and {
+            targetClassKey = targetClassKey,
+        } or nil)
     end
     if not ok then
         CooldownCompanion:Print(message or "Import failed.")
@@ -1618,41 +1720,203 @@ local function ApplyCustomBarsImportData(data, options)
         CooldownCompanion:Print(message)
     end
     PrintImportSanitizerNotes(importState)
+    local migrationOk = true
+    if not (options and options.deferMigrations) then
+        migrationOk = RunPostImportMigrations()
+    end
+
+    -- Apply and refresh even when the migration failed: the bars are already
+    -- written into the live settings table with no rollback, and the success
+    -- message above has already gone out. Returning before this left the
+    -- caller parked in Import mode with bars in the profile and none on
+    -- screen until a reload.
     CooldownCompanion:ApplyResourceBars()
     CooldownCompanion:UpdateAnchorStacking()
     CooldownCompanion:RefreshConfigPanel()
-    return true
+    return migrationOk
+end
+
+local function GetSetupSectionClassKey(section)
+    if type(section) ~= "table" then
+        return nil
+    end
+    local normalize = ST._NormalizeResourceBarClassKey
+    local classKey = normalize and normalize(section.classFilename) or nil
+    if classKey then
+        return classKey
+    end
+    if section.classID and ST._GetResourceBarClassKeyFromClassID then
+        return ST._GetResourceBarClassKeyFromClassID(section.classID)
+    end
+    return nil
+end
+
+-- Applies a `setup` payload: groups additively, then the Resources section as
+-- a whole-bucket replace for its class, then any Custom Bars section
+-- additively. Order matters: groups first so the Resources anchor can remap
+-- onto the groups imported from the same string.
+local function ApplySetupImportData(data)
+    if type(data) ~= "table" or data.type ~= "setup" then
+        CooldownCompanion:Print("Import failed: this is not a setup export.")
+        return false
+    end
+    if RejectUnsupportedImportPayload(data, "setup import") then
+        return false
+    end
+
+    local hasContainers = type(data.containers) == "table" and #data.containers > 0
+    local customBarsSection = type(data.customBars) == "table"
+        and type(data.customBars.bars) == "table"
+        and #data.customBars.bars > 0
+        and data.customBars
+        or nil
+    local resourcesSection = type(data.resources) == "table"
+        and type(data.resources.settings) == "table"
+        and data.resources
+        or nil
+    if not hasContainers and not customBarsSection and not resourcesSection then
+        CooldownCompanion:Print("Import failed: this setup export is empty.")
+        return false
+    end
+
+    local resourcesClassKey = resourcesSection and GetSetupSectionClassKey(resourcesSection) or nil
+    if resourcesSection and not resourcesClassKey then
+        CooldownCompanion:Print("Import failed: the Resources setup does not name its class.")
+        return false
+    end
+    local barsClassKey = customBarsSection and GetSetupSectionClassKey(customBarsSection) or nil
+    if customBarsSection and not barsClassKey then
+        CooldownCompanion:Print("Import failed: the Custom Bars do not name their class.")
+        return false
+    end
+
+    if resourcesClassKey and BlockCustomBarsImportForResourceBarConflict(resourcesClassKey) then
+        return false
+    end
+    if barsClassKey and barsClassKey ~= resourcesClassKey
+        and BlockCustomBarsImportForResourceBarConflict(barsClassKey) then
+        return false
+    end
+
+    local batchToken = ST._BeginGroupImportBatch()
+    local applied = false
+    local failed = false
+    local containersApplied = false
+    local customBarsApplied = false
+
+    -- One migration run owns this whole click: each section would otherwise
+    -- walk the entire profile again, and the runs nested inside the open
+    -- batch would sanitize anchors that are not remapped yet. Every section
+    -- is handed this and the single run is taken below, once the batch has
+    -- closed.
+    local deferToSetupRun = { deferMigrations = true }
+
+    if hasContainers then
+        local containersPayload = {
+            type = "containers",
+            containers = data.containers,
+            _cdcImportCheckpoint = data._cdcImportCheckpoint,
+        }
+        ST._AttachGroupImportBatch(containersPayload, batchToken)
+        containersApplied = ApplyGroupImportData(containersPayload, deferToSetupRun) == true
+        applied = containersApplied or applied
+        failed = failed or not containersApplied
+    end
+
+    local importState = activeGroupImportBatches[batchToken]
+
+    if resourcesSection then
+        local settings = CopyTable(resourcesSection.settings)
+        local anchorId = tonumber(settings.anchorGroupId)
+        if anchorId then
+            -- The exporter's group ids mean nothing here; keep the anchor only
+            -- when it remaps onto a group imported from this same string.
+            settings.anchorGroupId = importState
+                and importState.groupIdMap
+                and importState.groupIdMap[anchorId]
+                or nil
+        end
+        local replaced = CooldownCompanion.ReplaceResourceBarClassSettings
+            and CooldownCompanion:ReplaceResourceBarClassSettings(resourcesClassKey, settings)
+        if replaced then
+            applied = true
+            CooldownCompanion:Print("Imported Resources setup for " .. tostring(resourcesClassKey) .. ".")
+        else
+            failed = true
+        end
+    end
+
+    -- A Resources section already carries its class's Custom Bars; a separate
+    -- bars section for that same class would double-import them. Export mode
+    -- never builds both, so only apply bars aimed at a different class.
+    if customBarsSection and barsClassKey ~= resourcesClassKey then
+        local barsPayload = {
+            type = "customBars",
+            version = customBarsSection.version or 1,
+            classID = customBarsSection.classID,
+            classFilename = customBarsSection.classFilename,
+            bars = customBarsSection.bars,
+            layouts = customBarsSection.layouts,
+            _cdcImportCheckpoint = data._cdcImportCheckpoint,
+        }
+        local ok = ApplyCustomBarsImportData(barsPayload, {
+            targetClassKey = barsClassKey,
+            deferMigrations = true,
+        }) == true
+        customBarsApplied = ok
+        applied = ok or applied
+        failed = failed or not ok
+    end
+
+    ST._FinishGroupImportBatch(batchToken, containersApplied)
+
+    -- The single migration run for every section this setup inserted, taken
+    -- once the batch has remapped anchors so the chain's cursor-anchor
+    -- sanitizer judges final data -- and BEFORE the refresh below, because
+    -- every section deferred its own run and the frames built by that
+    -- refresh must come from migrated entries. Running it after meant a
+    -- setup carrying main-era data rendered with retired keys still live
+    -- until the next spec change or reload, under a chat line announcing
+    -- the migration had happened.
+    local migrationOk = true
+    if applied then
+        migrationOk = RunPostImportMigrations()
+        failed = failed or not migrationOk
+    end
+
+    -- The batch remaps container and panel anchors, and that runs AFTER
+    -- ApplyGroupImportData's own RefreshAllGroups - so without this the
+    -- remapped anchors never reach the live frames (same reason
+    -- ApplyProfileImportPieces refreshes after finishing its batch).
+    if containersApplied and CooldownCompanion.RefreshAllGroups then
+        CooldownCompanion:RefreshAllGroups()
+    end
+
+    -- Rebuild bars after the migration for either section that can hold
+    -- them. A Custom Bars section builds its own bars on the way in, but it
+    -- deferred the migration to this function, so those bars came from
+    -- pre-migration entries and have to be rebuilt here just as a Resources
+    -- section does.
+    if resourcesSection or customBarsApplied then
+        CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end
+
+    if failed then
+        CooldownCompanion:Print(applied
+            and "Import finished: some parts of this setup could not be imported."
+            or "Import failed: this setup could not be imported.")
+    end
+    -- A failed final migration is a failed import even though the sections
+    -- landed: the caller uses this to decide whether to leave Import mode,
+    -- and treating unmigrated data as a clean import is how it ships.
+    return applied and migrationOk
 end
 
 ST._BlockCustomBarsImportForResourceBarConflict = BlockCustomBarsImportForResourceBarConflict
 ST._ApplyCustomBarsImportData = ApplyCustomBarsImportData
-
-StaticPopupDialogs["CDC_EXPORT_CUSTOM_BARS"] = {
-    text = "Export Custom Bars string (Ctrl+C to copy):",
-    button1 = "Close",
-    hasEditBox = true,
-    OnShow = function(self)
-        local blocked, blockMessage = BlockCustomBarExportForResourceBarConflict()
-        if blocked then
-            self.EditBox:SetText(blockMessage or "Resolve pending Resource Bar conflicts before exporting Custom Bars.")
-            self.EditBox:HighlightText()
-            self.EditBox:SetFocus()
-            return
-        end
-        if self.data and self.data.exportString then
-            self.EditBox:SetText(self.data.exportString)
-            self.EditBox:HighlightText()
-            self.EditBox:SetFocus()
-        end
-    end,
-    EditBoxOnEscapePressed = function(self)
-        self:GetParent():Hide()
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
+ST._ApplySetupImportData = ApplySetupImportData
 
 StaticPopupDialogs["CDC_SAVE_GROUP_SETTINGS_PRESET"] = {
     text = "Save current group settings as preset:",
@@ -1765,7 +2029,7 @@ StaticPopupDialogs["CDC_DELETE_GROUP_SETTINGS_PRESET"] = {
 }
 
 StaticPopupDialogs["CDC_CONFIRM_PANEL_STYLE_COPY"] = {
-    text = "Copy style from '%s' to this panel?\n\nThis copies Appearance, Indicators, and layout style. Positioning, Load Conditions, and panel contents stay unchanged.",
+    text = "Copy style from '%s' to this panel?\n\nThis copies Appearance, Indicators, and layout style. Positioning, Visibility rules, and panel contents stay unchanged.",
     button1 = "Copy",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -1832,7 +2096,7 @@ local function AcceptResourceSpecCopy(self, data)
 end
 
 StaticPopupDialogs["CDC_CONFIRM_RESOURCE_SPEC_COPY"] = {
-    text = "Copy Resource Bar settings from %s?\n\nThis copies Appearance, Layout, resource colors, and non-aura Resource Settings into the current spec. If that spec is using defaults, those default values are copied. Health settings, Custom Bars, and aura overlays are not copied.",
+    text = "Copy Resource Bar settings from %s?\n\nThis copies Appearance, Layout, resource colors, and Resource Settings into the current spec. If that spec is using defaults, those default values are copied. Health settings and Custom Bars are not copied.",
     button1 = "Copy",
     button2 = "Cancel",
     OnAccept = AcceptResourceSpecCopy,

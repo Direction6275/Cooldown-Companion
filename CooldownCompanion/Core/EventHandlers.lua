@@ -98,55 +98,6 @@ function CooldownCompanion:EnsureEquipmentSlotItemLoadFrame()
     end)
 end
 
-local function PlayerHasTrackedAuraForButton(button, buttonData)
-    if button._activeAuraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(button._activeAuraSpellID) then
-        return true
-    end
-
-    if buttonData.type == "spell" and buttonData.addedAs == "aura" then
-        local orderedAuraIDs = CooldownCompanion:GetOrderedAuraCandidateIDs(buttonData)
-        for _, spellID in ipairs(orderedAuraIDs) do
-            if C_UnitAuras.GetPlayerAuraBySpellID(spellID) then
-                return true
-            end
-        end
-        return false
-    end
-
-    if buttonData.auraSpellID then
-        local includesButtonID
-        for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
-            local spellID = tonumber(id)
-            if spellID then
-                if spellID == buttonData.id then
-                    includesButtonID = true
-                end
-                if C_UnitAuras.GetPlayerAuraBySpellID(spellID) then
-                    return true
-                end
-            end
-        end
-        if not includesButtonID and buttonData.type == "spell" then
-            local baseId = C_Spell.GetBaseSpell(buttonData.id)
-            if baseId and baseId ~= button._auraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(baseId) then
-                return true
-            end
-        end
-        return false
-    end
-
-    if buttonData.type ~= "spell" then
-        return button._auraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(button._auraSpellID) ~= nil
-    end
-
-    local baseId = C_Spell.GetBaseSpell(buttonData.id)
-    if baseId and baseId ~= button._auraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(baseId) then
-        return true
-    end
-
-    return button._auraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(button._auraSpellID) ~= nil
-end
-
 function CooldownCompanion:RefreshSpellAvailabilityState(opts)
     opts = opts or {}
     self:CachePlayerState()
@@ -450,10 +401,14 @@ function CooldownCompanion:OnZoneChanged()
     self:RefreshSpellAvailabilityState({ evaluateResourceBars = true })
 end
 
+-- PLAYER_UPDATE_RESTING also fires on login and loading screens without the
+-- resting state actually flipping, so only do work on a real change. The
+-- RefreshAllGroupsVisibilityOnly hooks re-evaluate bars and frame anchoring.
 function CooldownCompanion:OnRestingChanged()
-    self._isResting = IsResting()
+    local isResting = IsResting()
+    if isResting == self._isResting then return end
+    self._isResting = isResting
     self:RefreshAllGroupsVisibilityOnly()
-    self:EvaluateBarsAndFramesRuntime("resting-changed")
     self:RefreshConfigPanel()
 end
 
@@ -511,7 +466,6 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
         else
             self:RefreshAllGroupsForSpellAvailability()
         end
-        self:ApplyCdmAlpha()
         if isFullInit then
             self:RefreshKeybindState()
         end
@@ -526,58 +480,10 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
             QueueSpellAvailabilitySettlingRefresh(self)
         end
     end)
-    -- Post-login sweep: clear buttons falsely stuck as aura-active from stale
-    -- CDM viewer data during the first seconds after login/reload.
+    -- Post-login settle repaint (12.1 demolition: the false-aura-active sweep
+    -- is gone with the aura backend; keep the 2s settle dirty mark).
     if isFullInit then
         C_Timer.After(2, function()
-            self:ForEachButton(function(button, bd)
-                if bd.auraTracking and button._auraActive and not bd.isPassive then
-                    -- Mirror the tick code's viewer resolution order:
-                    -- cdmChildSlot → ResolveBuffViewerFrameForSpell
-                    local vf
-                    if bd.cdmChildSlot then
-                        local allChildren = self.viewerAuraAllChildren[bd.id]
-                        if allChildren then
-                            vf = allChildren[bd.cdmChildSlot]
-                        end
-                    end
-                    if not vf and button._auraSpellID then
-                        vf = self:ResolveBuffViewerFrameForSpell(button._auraSpellID)
-                    end
-                    -- Confirm via auraInstanceID, viewer cooldown widget, or totem slot
-                    local viewerConfirms = vf and (vf.auraInstanceID ~= nil)
-                    if not viewerConfirms and vf then
-                        local vc = vf.Cooldown
-                        if vc and vc:IsShown() then
-                            viewerConfirms = true
-                        elseif vf.preferredTotemUpdateSlot and vf:IsVisible() then
-                            viewerConfirms = true
-                        end
-                    end
-                    if not viewerConfirms then
-                        local unit = button._auraUnit or "player"
-                        local apiConfirms = false
-                        if unit == "player" and button._auraSpellID then
-                            apiConfirms = PlayerHasTrackedAuraForButton(button, bd)
-                        elseif unit == "target" and UnitExists("target") and button._auraInstanceID then
-                            apiConfirms = C_UnitAuras.GetAuraDuration("target", button._auraInstanceID) ~= nil
-                        end
-                        if not apiConfirms then
-                            button._auraActive = false
-                            button._auraInstanceID = nil
-                            button._auraUnit = bd.auraUnit or "player"
-                            button._inPandemic = false
-                            button._durationObj = nil
-                            button._auraDurationObj = nil
-                            button._auraCooldownStart = nil
-                            button._auraCooldownDuration = nil
-                            button._auraPrimarySwipeActive = nil
-                            button.cooldown:SetCooldown(0, 0)
-                            button.cooldown:Hide()
-                        end
-                    end
-                end
-            end)
             self:MarkCooldownsDirty("player-entering-world")
         end)
     end
@@ -645,5 +551,35 @@ function CooldownCompanion:UpdateAnchorStacking()
     C_Timer.After(0, function()
         pendingStackUpdate = false
         CooldownCompanion:EvaluateBarsAndFramesStackingRuntime("anchor-stacking")
+    end)
+end
+
+-- Cast-bar-only stacking leg, for the aura rebind pass. The pass moves the
+-- block chain TAIL the cast bar hangs from, and the cast bar is pinned to the
+-- stack end, so resource bars never move in response to a tail change. The
+-- pass must NOT run the full stacking evaluation: EvaluateResourceBars
+-- re-applies unconditionally and ApplyResourceBars ends in
+-- RequestAuraRebind("custom-bars"), so pass -> stacking -> apply -> request
+-- cycled a full park-and-rebind pass at frame rate for as long as the bars
+-- were enabled (diagnosed 2026-08-10; the churn also raced Blizzard's
+-- deferred container rebuilds, which is what left displays dark).
+local pendingCastBarStackUpdate = false
+
+function CooldownCompanion:UpdateCastBarStackAnchor()
+    local enabled, flags = self:RefreshBarsAndFramesRuntimeGate("castbar-stack-anchor-check")
+    if not enabled or not flags.castBar then
+        return
+    end
+    if pendingCastBarStackUpdate then return end
+    pendingCastBarStackUpdate = true
+    C_Timer.After(0, function()
+        pendingCastBarStackUpdate = false
+        -- Re-check at fire time, mirroring EvaluateBarsAndFramesStackingRuntime:
+        -- the gate can flip between the queue and the callback.
+        local enabledNow, flagsNow = CooldownCompanion:RefreshBarsAndFramesRuntimeGate("castbar-stack-anchor")
+        if not enabledNow or not flagsNow.castBar then return end
+        if CooldownCompanion.EvaluateCastBar then
+            CooldownCompanion:EvaluateCastBar({ skipRuntimeGate = true })
+        end
     end)
 end

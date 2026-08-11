@@ -180,6 +180,14 @@ local function StripCharacterEligibilityFromPayload(payload)
             stripped = stripped + StripCharacterEligibilityFromEntity(bar)
         end
     end
+    if type(payload.customBars) == "table" and type(payload.customBars.bars) == "table" then
+        for _, bar in ipairs(payload.customBars.bars) do
+            stripped = stripped + StripCharacterEligibilityFromEntity(bar)
+        end
+    end
+    if type(payload.resources) == "table" then
+        stripped = stripped + StripCharacterEligibilityFromResourceBarSettings(payload.resources.settings)
+    end
     return stripped
 end
 
@@ -370,7 +378,6 @@ local PROFILE_DEFAULT_KEYS = {
     auraTextureLibrary = "auraTextureLibrary",
     globalStyle = "globalStyle",
     locked = "locked",
-    cdmHidden = "cdmHidden",
     resourceBarMigration = "resourceBarMigration",
     resourceBars = "resourceBars",
     castBar = "castBar",
@@ -380,10 +387,16 @@ local PROFILE_DEFAULT_KEYS = {
 local RETIRED_PROFILE_KEYS = {
     autoAddPrefs = true,
     hideInfoButtons = true,
+    cdmHidden = true,
+}
+
+local OUTBOUND_ONLY_RETIRED_PROFILE_KEYS = {
+    folders = true,
+    nextFolderId = true,
 }
 
 local function IsRetiredProfileKey(key)
-    return RETIRED_PROFILE_KEYS[key] == true
+    return RETIRED_PROFILE_KEYS[key] == true or OUTBOUND_ONLY_RETIRED_PROFILE_KEYS[key] == true
 end
 
 local function BuildCurrentCompactProfileDefaults()
@@ -397,6 +410,39 @@ local function BuildCurrentCompactProfileDefaults()
         -- added after the compact snapshot was defined, so exporting it here
         -- would change compaction/rehydration behavior without a format bump.
         compactDefaults.globalStyle.readyGlowOnlyAtMaxCharges = nil
+        -- Same rule for the 12.1 swipe-edge retirement pair: these explicit-true
+        -- keys postdate the compact snapshots, so they stay out of the baseline
+        -- and always serialize explicitly when set.
+        compactDefaults.globalStyle.cooldownSwipeEdgeEnabled = nil
+        compactDefaults.globalStyle.auraDurationSwipeEdgeEnabled = nil
+        -- Preserve the shipped compact5 baseline exactly: live shipped this
+        -- default as false, and compact5 exports from live omit the key when
+        -- it matched. 12.1 flipped the runtime default to true, so the
+        -- baseline must stay pinned at false or those imports silently flip
+        -- to reversed aura swipes. The new default serializes explicitly.
+        compactDefaults.globalStyle.auraDurationSwipeReverse = false
+        -- Same rule for the glow families the LibCustomGlow retirement
+        -- re-defaulted. An export made on live omitted these when they matched
+        -- live's defaults, so the baseline has to keep answering with the
+        -- live-era values; the glow migrations then map them exactly as they
+        -- map an in-place-upgraded profile (pixel -> dashes, speed 50 -> the
+        -- new default, and so on). Without the pins those imports land on the
+        -- 12.1 defaults instead and render a different glow than the same
+        -- profile upgraded in place.
+        compactDefaults.globalStyle.auraGlowStyle = "pixel"
+        compactDefaults.globalStyle.auraGlowSize = 8
+        compactDefaults.globalStyle.auraGlowSpeed = 50
+        compactDefaults.globalStyle.pandemicGlowSize = 5
+        compactDefaults.globalStyle.pandemicGlowThickness = 4
+        compactDefaults.globalStyle.pandemicGlowSpeed = 50
+        compactDefaults.globalStyle.pandemicGlowLines = 8
+        -- Retired keys, pinned as migration INPUTS only: the pixel -> dashes
+        -- pass reads them for the dash count/thickness and deletes them on its
+        -- way out, so they never persist into live data. Without them a filled
+        -- baseline would migrate to the new dash defaults instead of the
+        -- exporter's line/thickness values.
+        compactDefaults.globalStyle.auraGlowLines = 8
+        compactDefaults.globalStyle.auraGlowThickness = 4
     end
     return compactDefaults
 end
@@ -419,7 +465,7 @@ local function StripAuraDurationSwipeDefaults(compactDefaults)
     style.showAuraDurationSwipe = nil
     style.showAuraDurationSwipeFill = nil
     style.auraDurationSwipeReverse = nil
-    style.showAuraDurationSwipeEdge = nil
+    style.auraDurationSwipeEdgeEnabled = nil
     style.auraDurationSwipeAlpha = nil
     style.auraDurationSwipeEdgeColor = nil
     return compactDefaults
@@ -810,7 +856,9 @@ local function CompactPanel(group, styleDefaults, panelContainerRef, formatVersi
     local panelDefaults = GetEffectivePanelDefaults(formatVersion, group)
     local compact = {}
     for key, value in pairs(group) do
-        if key == "style" then
+        if key == "folderId" then
+            -- Decode-only compatibility must never return to outbound data.
+        elseif key == "style" then
             local compactStyle = CompactTableAgainstDefaults(value, styleDefaults)
             if compactStyle then
                 compact.style = compactStyle
@@ -890,7 +938,9 @@ local function CompactContainer(container, formatVersion)
     local containerAnchorDefaults = GetContainerDefaultAnchor(formatVersion)
     local compact = {}
     for key, value in pairs(container) do
-        if key == "loadConditions" then
+        if key == "folderId" then
+            -- Decode-only compatibility must never return to outbound data.
+        elseif key == "loadConditions" then
             local compactLoadConditions = CompactLoadConditions(value, formatVersion)
             if compactLoadConditions then
                 compact.loadConditions = compactLoadConditions
@@ -936,29 +986,6 @@ local function RehydrateContainer(container, formatVersion)
             container[key] = CopyValue(defaultValue)
         end
     end
-end
-
-local function CompactFolder(folder, formatVersion)
-    if type(folder) ~= "table" then
-        return nil
-    end
-
-    local compact = {}
-    for key, value in pairs(folder) do
-        if key == "loadConditions" then
-            local compactLoadConditions = CompactLoadConditions(value, formatVersion, true)
-            if compactLoadConditions then
-                compact.loadConditions = compactLoadConditions
-            end
-        elseif key == "specs" or key == "heroTalents" then
-            if type(value) == "table" and next(value) ~= nil then
-                compact[key] = CopyTable(value)
-            end
-        else
-            compact[key] = CopyValue(value)
-        end
-    end
-    return compact
 end
 
 local function RehydrateFolder(folder, formatVersion)
@@ -1135,12 +1162,6 @@ local function CompactProfile(profile, formatVersion)
                     compactContainers[containerId] = CompactContainer(container, formatVersion)
                 end
                 compact.groupContainers = compactContainers
-            elseif key == "folders" and type(value) == "table" then
-                local compactFolders = {}
-                for folderId, folder in pairs(value) do
-                    compactFolders[folderId] = CompactFolder(folder, formatVersion)
-                end
-                compact.folders = compactFolders
             else
                 compact[key] = CopyValue(value)
             end
@@ -1185,10 +1206,6 @@ local function RehydrateProfile(profile, formatVersion)
     if type(profile.groupContainers) ~= "table" then
         profile.groupContainers = {}
     end
-    if type(profile.folders) ~= "table" then
-        profile.folders = {}
-    end
-
     local globalStyleDefaults = profile.globalStyle or profileDefaults.globalStyle or {}
 
     if type(profile.groups) == "table" then
@@ -1222,6 +1239,10 @@ local function CompactEntityPayload(payload, formatVersion)
     end
 
     local compact = CopyTable(payload)
+    compact.folder = nil
+    compact.folders = nil
+    compact.nextFolderId = nil
+    compact.folderId = nil
     local globalStyleDefaults = GetSubsystemDefaults("globalStyle", formatVersion)
 
     if payload.group then
@@ -1263,13 +1284,9 @@ local function CompactEntityPayload(payload, formatVersion)
             compact.containers[index] = compactEntry
         end
     end
-    if payload.folder then
-        compact.folder = CompactFolder(payload.folder, formatVersion)
+    if type(compact.resources) == "table" and type(compact.resources.settings) == "table" then
+        compact.resources.settings = CompactScopedSettings(compact.resources.settings, "resourceBars", true, formatVersion)
     end
-    if type(payload.containers) ~= "table" and payload.type == "folder" then
-        compact.folder = CompactFolder(payload.folder, formatVersion)
-    end
-
     return compact
 end
 
@@ -1318,6 +1335,9 @@ local function RehydrateEntityPayload(payload, formatVersion)
                 end
             end
         end
+    end
+    if type(payload.resources) == "table" and type(payload.resources.settings) == "table" then
+        payload.resources.settings = RehydrateScopedSettings(payload.resources.settings, "resourceBars", formatVersion)
     end
 
     return payload

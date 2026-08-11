@@ -49,9 +49,8 @@ local CLEAR_CUSTOM_AURA_STACKS_OPTS = { clearCustomAuraStacks = true }
 local RB = ST._RB
 local UPDATE_INTERVAL = RB.UPDATE_INTERVAL
 local PERCENT_SCALE_CURVE = RB.PERCENT_SCALE_CURVE
-local CUSTOM_AURA_BAR_BASE = RB.CUSTOM_AURA_BAR_BASE
-local MW_SPELL_ID = RB.MW_SPELL_ID
 local RAGING_MAELSTROM_SPELL_ID = RB.RAGING_MAELSTROM_SPELL_ID
+local MW_AURA_SPELL_ID = RB.MW_AURA_SPELL_ID
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local RESOURCE_MAELSTROM_WEAPON = RB.RESOURCE_MAELSTROM_WEAPON
 local DEFAULT_RESOURCE_TEXT_FORMAT = RB.DEFAULT_RESOURCE_TEXT_FORMAT
@@ -64,7 +63,6 @@ local IsBarsConfigActive = RB.IsBarsConfigActive
 local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
 local POWER_ATLAS_INFO = RB.POWER_ATLAS_INFO
 local RESOURCE_COLOR_DEFS = RB.RESOURCE_COLOR_DEFS
-local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
 
 -- Helpers
 local GetResourceBarSettings = RB.GetResourceBarSettings
@@ -78,8 +76,6 @@ local GetVerticalSideFallback = RB.GetVerticalSideFallback
 local GetEffectiveAnchorGroupId = RB.GetEffectiveAnchorGroupId
 local GetPlayerClassID = RB.GetPlayerClassID
 local GetSpecCustomAuraBars = RB.GetSpecCustomAuraBars
-local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
-local EnsureCustomAuraBarAuraUnit = RB.EnsureCustomAuraBarAuraUnit
 local GetSpecLayoutOrder = RB.GetSpecLayoutOrder
 local GetResourceDisplayValue = RB.GetResourceDisplayValue
 local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
@@ -87,54 +83,237 @@ local GetResourceDisplayConfig = RB.GetResourceDisplayConfig
 local GetAnchorOffset = RB.GetAnchorOffset
 local RoundToTenths = RB.RoundToTenths
 local ClampIndependentDimension = RB.ClampIndependentDimension
-local NormalizeCustomAuraStackTextFormat = RB.NormalizeCustomAuraStackTextFormat
+local UpdateIndependentStackDragState
+
+local function UpdateIndependentStackCoordLabel(frame, x, y)
+    if frame and frame._coordLabel then
+        frame._coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x or 0, y or 0))
+    end
+end
+
+local function CancelCoordinateEdit(coordLabel)
+    if not (coordLabel and coordLabel.xEdit and coordLabel.yEdit) then
+        return
+    end
+
+    coordLabel._editGeneration = (coordLabel._editGeneration or 0) + 1
+    coordLabel._editing = nil
+    coordLabel.xEdit:ClearFocus()
+    coordLabel.yEdit:ClearFocus()
+    coordLabel.xLabel:Hide()
+    coordLabel.yLabel:Hide()
+    coordLabel.xEdit:Hide()
+    coordLabel.yEdit:Hide()
+    coordLabel.text:Show()
+end
+
+local function CreateEditableCoordLabel(coordLabel, getCoordinates, applyCoordinates, isDragging)
+    local xLabel = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    xLabel:SetText("x:")
+    xLabel:SetTextColor(1, 1, 1, 0.8)
+    xLabel:SetPoint("LEFT", coordLabel, "LEFT", 2, 0)
+    xLabel:Hide()
+
+    local xEdit = CreateFrame("EditBox", nil, coordLabel)
+    xEdit:SetAutoFocus(false)
+    xEdit:SetFontObject(GameFontNormalSmall)
+    xEdit:SetTextColor(1, 1, 1, 1)
+    xEdit:SetJustifyH("CENTER")
+    xEdit:SetPoint("LEFT", xLabel, "RIGHT", 1, 0)
+    xEdit:SetPoint("RIGHT", coordLabel, "CENTER", -1, 0)
+    xEdit:SetHeight(13)
+    xEdit:Hide()
+
+    local yLabel = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    yLabel:SetText("y:")
+    yLabel:SetTextColor(1, 1, 1, 0.8)
+    yLabel:SetPoint("LEFT", coordLabel, "CENTER", 1, 0)
+    yLabel:Hide()
+
+    local yEdit = CreateFrame("EditBox", nil, coordLabel)
+    yEdit:SetAutoFocus(false)
+    yEdit:SetFontObject(GameFontNormalSmall)
+    yEdit:SetTextColor(1, 1, 1, 1)
+    yEdit:SetJustifyH("CENTER")
+    yEdit:SetPoint("LEFT", yLabel, "RIGHT", 1, 0)
+    yEdit:SetPoint("RIGHT", coordLabel, "RIGHT", -2, 0)
+    yEdit:SetHeight(13)
+    yEdit:Hide()
+
+    coordLabel.xLabel = xLabel
+    coordLabel.yLabel = yLabel
+    coordLabel.xEdit = xEdit
+    coordLabel.yEdit = yEdit
+    coordLabel:EnableMouse(true)
+
+    local function CommitEdit()
+        if not coordLabel._editing then
+            return
+        end
+
+        local newX = tonumber(xEdit:GetText())
+        local newY = tonumber(yEdit:GetText())
+        if newX == nil or newY == nil then
+            CancelCoordinateEdit(coordLabel)
+            return
+        end
+
+        newX = RoundToTenths(newX)
+        newY = RoundToTenths(newY)
+        local oldX, oldY = getCoordinates()
+        oldX = RoundToTenths(tonumber(oldX) or 0)
+        oldY = RoundToTenths(tonumber(oldY) or 0)
+        CancelCoordinateEdit(coordLabel)
+        if newX ~= oldX or newY ~= oldY then
+            applyCoordinates(newX, newY)
+        end
+    end
+
+    local function BeginEdit()
+        if coordLabel._editing or (isDragging and isDragging()) then
+            return
+        end
+
+        local x, y = getCoordinates()
+        coordLabel._editGeneration = (coordLabel._editGeneration or 0) + 1
+        coordLabel._editing = true
+        coordLabel.text:Hide()
+        xEdit:SetText(("%.1f"):format(tonumber(x) or 0))
+        yEdit:SetText(("%.1f"):format(tonumber(y) or 0))
+        xLabel:Show()
+        yLabel:Show()
+        xEdit:Show()
+        yEdit:Show()
+        xEdit:SetFocus()
+        xEdit:HighlightText()
+    end
+
+    local function HandleFocusLost(self)
+        self:HighlightText(0, 0)
+        local generation = coordLabel._editGeneration
+        C_Timer.After(0, function()
+            if coordLabel._editing
+                and coordLabel._editGeneration == generation
+                and not xEdit:HasFocus()
+                and not yEdit:HasFocus() then
+                CommitEdit()
+            end
+        end)
+    end
+
+    xEdit:SetScript("OnEnterPressed", CommitEdit)
+    yEdit:SetScript("OnEnterPressed", CommitEdit)
+    xEdit:SetScript("OnEscapePressed", function() CancelCoordinateEdit(coordLabel) end)
+    yEdit:SetScript("OnEscapePressed", function() CancelCoordinateEdit(coordLabel) end)
+    xEdit:SetScript("OnTabPressed", function()
+        yEdit:SetFocus()
+        yEdit:HighlightText()
+    end)
+    yEdit:SetScript("OnTabPressed", function()
+        xEdit:SetFocus()
+        xEdit:HighlightText()
+    end)
+    xEdit:SetScript("OnEditFocusLost", HandleFocusLost)
+    yEdit:SetScript("OnEditFocusLost", HandleFocusLost)
+    xEdit:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+    yEdit:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+
+    coordLabel:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(0.3, 0.3, 0.3, 0.9)
+    end)
+    coordLabel:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    end)
+    coordLabel:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" then
+            BeginEdit()
+        end
+    end)
+    coordLabel:SetScript("OnHide", function(self)
+        self:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+        CancelCoordinateEdit(self)
+    end)
+end
+
+local function ComputeIndependentStackCoordinates(frame, anchor)
+    local cx, cy = frame:GetCenter()
+    local fw, fh = frame:GetSize()
+    local relFrame = UIParent
+    if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
+        relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
+    end
+    local tcx, tcy = relFrame:GetCenter()
+    local tw, th = relFrame:GetSize()
+    if not (cx and cy and fw and fh and tcx and tcy and tw and th) then return nil, nil end
+
+    local fax, fay = GetAnchorOffset(anchor.point, fw, fh)
+    local tax, tay = GetAnchorOffset(anchor.relativePoint, tw, th)
+    return RoundToTenths((cx + fax) - (tcx + tax)), RoundToTenths((cy + fay) - (tcy + tay))
+end
+
+local function StopIndependentStackCoordUpdates(frame)
+    frame._coordDragElapsed = nil
+    frame._coordDragAnchor = nil
+    frame:SetScript("OnUpdate", nil)
+    if CooldownCompanion.EndDragSnapSession then
+        CooldownCompanion:EndDragSnapSession(frame, false)
+    end
+end
+
+local function IndependentStackCoordOnUpdate(self, elapsed)
+    if not self._dragInProgress then
+        StopIndependentStackCoordUpdates(self)
+        return
+    end
+
+    self._coordDragElapsed = (self._coordDragElapsed or 0) + elapsed
+    if self._coordDragElapsed < 0.05 then
+        return
+    end
+
+    self._coordDragElapsed = 0
+    local anchor = self._coordDragAnchor
+    if anchor then
+        local x, y = ComputeIndependentStackCoordinates(self, anchor)
+        if x ~= nil and y ~= nil then
+            UpdateIndependentStackCoordLabel(self, x, y)
+        end
+    end
+    CooldownCompanion:UpdateDragSnapSession(self)
+end
+
+local function StartIndependentStackCoordUpdates(frame, anchor)
+    frame._coordDragElapsed = 0
+    frame._coordDragAnchor = anchor
+    frame:SetScript("OnUpdate", IndependentStackCoordOnUpdate)
+end
+
 local DetermineActiveResources = RB.DetermineActiveResources
 local GetResourceColors = RB.GetResourceColors
 local IsUnitPowerSecret = RB.IsUnitPowerSecret
 local IsUnitPowerMaxSecret = RB.IsUnitPowerMaxSecret
 local GetSegmentedThresholdColorForValue = RB.GetSegmentedThresholdColorForValue
-local SupportsResourceAuraStackMode = RB.SupportsResourceAuraStackMode
 local IsResourceEnabled = RB.IsResourceEnabled
 local IsSegmentedTextResource = RB.IsSegmentedTextResource
 local ClearSegmentedText = RB.ClearSegmentedText
 local SetSegmentedText = RB.SetSegmentedText
 
 -- Visuals
-local GetResourceAuraConfiguredMaxStacks = RB.GetResourceAuraConfiguredMaxStacks
-local GetResourceAuraState = RB.GetResourceAuraState
-local HideResourceAuraStackSegments = RB.HideResourceAuraStackSegments
-local ApplyResourceAuraStackSegments = RB.ApplyResourceAuraStackSegments
-local ClearResourceAuraVisuals = RB.ClearResourceAuraVisuals
 local UpdateContinuousTickMarker = RB.UpdateContinuousTickMarker
 local ApplyContinuousFillColor = RB.ApplyContinuousFillColor
 local ApplyPixelBorders = RB.ApplyPixelBorders
 local HidePixelBorders = RB.HidePixelBorders
-local IsCustomAuraMaxThresholdEnabled = RB.IsCustomAuraMaxThresholdEnabled
-local GetCustomAuraMaxThresholdColor = RB.GetCustomAuraMaxThresholdColor
-local SetCustomAuraMaxThresholdRange = RB.SetCustomAuraMaxThresholdRange
-local EnsureMaxStacksIndicator = RB.EnsureMaxStacksIndicator
-local LayoutMaxStacksIndicator = RB.LayoutMaxStacksIndicator
-local ClearMaxStacksIndicator = RB.ClearMaxStacksIndicator
-local EnsureCustomAuraContinuousThresholdOverlay = RB.EnsureCustomAuraContinuousThresholdOverlay
-local EnsureCustomAuraSegmentThresholdOverlays = RB.EnsureCustomAuraSegmentThresholdOverlays
-local EnsureCustomAuraOverlayThresholdOverlays = RB.EnsureCustomAuraOverlayThresholdOverlays
-local LayoutCustomAuraContinuousThresholdOverlay = RB.LayoutCustomAuraContinuousThresholdOverlay
 local CreateContinuousBar = RB.CreateContinuousBar
 local CreateSegmentedBar = RB.CreateSegmentedBar
 local LayoutSegments = RB.LayoutSegments
 local CreateOverlayBar = RB.CreateOverlayBar
 local LayoutOverlaySegments = RB.LayoutOverlaySegments
-local IsResourceAuraOverlayEnabled = RB.IsResourceAuraOverlayEnabled
-local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
 
 -- Shared helper from ButtonFrame/Helpers.lua
 local FormatTime = CooldownCompanion.FormatTime
-local GetDurationSecretFormatSpec = CooldownCompanion.GetDurationSecretFormatSpec
 -- Other ST imports
 local CreateGlowContainer = ST._CreateGlowContainer
 local SetBarAuraEffect = ST._SetBarAuraEffect
-local IsBarAuraIndicatorEnabled = ST.IsBarAuraIndicatorEnabled
-local DEFAULT_BAR_PANDEMIC_COLOR = ST._DEFAULT_BAR_PANDEMIC_COLOR
 
 ------------------------------------------------------------------------
 -- State
@@ -152,24 +331,64 @@ local lastAppliedLayout = nil
 local lastAppliedIndependentStack = false
 local resourceBarFrames = {}   -- array of bar frame objects (ordered by stacking)
 local activeResources = {}     -- array of power type ints currently displayed
-local isPreviewActive = false
-local ApplyPreviewData
+-- Unlock-to-position assist, not a preview: the real bars are forced visible
+-- so an independent stack can be dragged. Their data stays real (owner
+-- ruling 2026-07-26 — previews live in the config canvas and nowhere else).
+local isUnlockAssistActive = false
 local savedContainerAlpha = nil
 local alphaSyncFrame = nil
 local lastAppliedBarSpacing = nil
 local lastAppliedBarThickness = nil
-local layoutDirty = false
 local independentWrapperFrame = nil
+
+function CooldownCompanion:GetIndependentResourceStackSnapFrame()
+    return independentWrapperFrame and independentWrapperFrame._dragSnapRectFrame
+end
+
+function CooldownCompanion:GetIndependentResourceStackMoverChrome()
+    local frame = independentWrapperFrame
+    return frame and frame._dragHandle, frame and frame._coordLabel, frame and frame._nudger
+end
+
+function CooldownCompanion:SetIndependentResourceStackLocked(locked)
+    local settings = GetResourceBarSettings()
+    if not settings then return end
+    local placementSettings = GetSpecLayoutOrder(settings)
+    if not placementSettings then return end
+    placementSettings.independentAnchorLocked = locked == true
+    self:ApplyResourceBars()
+end
+
+function CooldownCompanion:CancelIndependentResourceStackDrag()
+    local frame = independentWrapperFrame
+    if not frame then return end
+    if frame._dragInProgress then
+        frame._dragCancelPending = true
+        frame:StopMovingOrSizing()
+        frame._dragInProgress = nil
+        StopIndependentStackCoordUpdates(frame)
+        self:EndMoverChromeFade(frame)
+    end
+    local settings = GetResourceBarSettings()
+    UpdateIndependentStackDragState(settings, settings and GetSpecLayoutOrder(settings))
+end
+
 local activeCustomAuraBarActivePreviews = {}
 local activeCustomAuraBarPandemicPreviews = {}
-local segmentedUpdateScratch = { auraActiveCache = {} }
+local activeCustomAuraBarMarkerPreviews = {}
+-- Spell custom-bar cooldown previews: the value is the KIND of stand-in
+-- armed ("cooldown" or "recharge"), not a boolean — a charge spell has two
+-- distinct cooldown looks and the command center offers each as its own
+-- entry.
+local activeCustomBarCooldownPreviews = {}
+-- Resource aura overlay previews, keyed by POWER TYPE. Never by barInfo or
+-- frame: a form change rebuilds the positional bar array, and the power
+-- type is the only identity that survives it.
+local activeResourceAuraPreviews = {}
+local segmentedUpdateScratch = {}
 local HealthBar = RB.HealthBar
 local HEALTH_EFFECTS = RB.HealthEffects
 local lifecycleModule = nil
-
-local function HasCustomAuraBarAuraVisuals(cabConfig)
-    return IsBarAuraIndicatorEnabled(cabConfig)
-end
 
 local function ResetCustomAuraBarIndicatorVisuals(bar, cabConfig)
     if not bar then return end
@@ -212,7 +431,9 @@ local function ClearCustomAuraBarIndicatorVisualState(barInfo, clearPreviewFlags
 
     if clearPreviewFlags then
         bar._barAuraActivePreview = nil
-        bar._pandemicPreview = nil
+        bar._barPandemicPreview = nil
+        bar._barMarkerPreview = nil
+        bar._barCooldownPreview = nil
     end
 
     ResetCustomAuraBarIndicatorVisuals(bar, barInfo.cabConfig)
@@ -229,17 +450,6 @@ local function ClearCustomAuraBarIndicatorState(barInfo, clearPreviewFlags)
     EntryRuntime.ClearTrackedAuraOwnerState(bar, nil, CLEAR_CUSTOM_AURA_STACKS_OPTS)
 
     ClearCustomAuraBarIndicatorVisualState(barInfo, clearPreviewFlags)
-end
-
-local function ApplyCustomAuraBarPreviewState(barInfo)
-    local bar = barInfo and barInfo.frame
-    local cabConfig = barInfo and barInfo.cabConfig
-    if not (bar and cabConfig) then
-        return
-    end
-
-    bar._barAuraActivePreview = activeCustomAuraBarActivePreviews[cabConfig] and true or nil
-    bar._pandemicPreview = activeCustomAuraBarPandemicPreviews[cabConfig] and true or nil
 end
 
 local function AnimateCustomAuraBarIndicator(bar)
@@ -275,7 +485,11 @@ local function AnimateCustomAuraBarIndicator(bar)
     end
 end
 
-local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPresent)
+-- The aura pass (12.1): the kit renders all live aura effects, so the only
+-- thing that can arm this is the config canvas's Active Aura stand-in — the
+-- preview flag is set on canvas frames alone, and live bars only ever reach
+-- the reset leg.
+local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig)
     local isSpellCustomCooldown = barInfo and barInfo.barType == "custom_cooldown"
     if not barInfo or (barInfo.barType ~= "custom_continuous" and not isSpellCustomCooldown) then return end
     if not cabConfig
@@ -289,82 +503,33 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPrese
     if not bar then return end
 
     local auraPreview = bar._barAuraActivePreview
-    local pandemicPreview = bar._pandemicPreview
-    local auraActive = auraPresent or auraPreview or pandemicPreview
-    bar._auraActive = auraActive or nil
 
-    if not auraActive then
-        bar._inPandemic = nil
-        EntryRuntime.ClearAuraPandemicRuntimeState(bar)
+    if not auraPreview then
         ResetCustomAuraBarIndicatorVisuals(bar, cabConfig)
         return
     end
 
-    local inCombat = InCombatLockdown()
-    local auraVisualsEnabled = HasCustomAuraBarAuraVisuals(cabConfig)
-    local auraCombatAllowed = not cabConfig.auraGlowCombatOnly or inCombat
-    local pandemicEnabled = cabConfig.showPandemicGlow == true
-    local pandemicCombatAllowed = not cabConfig.pandemicGlowCombatOnly or inCombat
-
-    local wantAuraColor
-    local activeAuraColor = cabConfig.barAuraColor
+    local wantAuraColor = cabConfig.barAuraColor
         or (isSpellCustomCooldown and {0.2, 1.0, 0.2, 1.0})
         or (cabConfig.barColor or {0.5, 0.5, 1})
 
-    if pandemicPreview then
-        wantAuraColor = cabConfig.barPandemicColor or DEFAULT_BAR_PANDEMIC_COLOR
-    elseif auraPreview then
-        wantAuraColor = activeAuraColor
-    elseif auraPresent then
-        if bar._inPandemic and pandemicEnabled and pandemicCombatAllowed then
-            wantAuraColor = cabConfig.barPandemicColor or DEFAULT_BAR_PANDEMIC_COLOR
-        elseif auraVisualsEnabled and auraCombatAllowed then
-            wantAuraColor = activeAuraColor
-        end
-    end
+    -- Pandemic stand-in (PTR 8 Phase 2): only meaningful over the aura fill.
+    local pandemicPreview = bar._barPandemicPreview == true
+        and cabConfig.pandemicEffect == true
 
-    if bar._barAuraColor ~= wantAuraColor then
-        bar._barAuraColor = wantAuraColor
-        if not wantAuraColor and not bar._barColorShiftActive then
-            local baseColor = cabConfig.barColor or {0.5, 0.5, 1}
-            bar:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
-        end
-    end
-    if wantAuraColor and not bar._barColorShiftActive then
+    bar._barAuraColor = wantAuraColor
+    if not bar._barColorShiftActive then
         bar:SetStatusBarColor(wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4] or 1)
     end
 
-    local showBarAuraEffect = auraPreview
-        or pandemicPreview
-        or auraVisualsEnabled
-        or pandemicEnabled
-    if showBarAuraEffect and not bar.barAuraEffect then
+    if not bar.barAuraEffect then
         bar.barAuraEffect = CreateGlowContainer(bar, 32, false)
     end
+    SetBarAuraEffect(bar, true, false)
 
-    local pandemicActive = pandemicPreview
-        or (auraPresent and bar._inPandemic and pandemicEnabled and pandemicCombatAllowed)
-    local effectShow = auraPreview
-        or pandemicPreview
-        or (auraPresent and (pandemicActive or (auraVisualsEnabled and auraCombatAllowed)))
-    if bar.barAuraEffect then
-        SetBarAuraEffect(bar, effectShow, pandemicActive or false)
-    end
-
-    local auraActiveForPulse = auraPreview
-        or (auraVisualsEnabled and auraPresent and auraCombatAllowed)
-
-    local wantPulse
-    if (pandemicPreview or pandemicActive) and cabConfig.pandemicBarPulseEnabled then
-        wantPulse = "pandemic"
-    elseif auraActiveForPulse and cabConfig.barAuraPulseEnabled then
-        wantPulse = "aura"
-    end
-    if wantPulse then
+    if cabConfig.barAuraPulseEnabled then
         bar._barPulseActive = true
-        bar._barPulseSpeed = (wantPulse == "pandemic")
-            and (cabConfig.pandemicBarPulseSpeed or 0.5)
-            or (cabConfig.barAuraPulseSpeed or 0.5)
+        bar._barPulseSpeed = cabConfig.barAuraPulseSpeed or 0.5
     elseif bar._barPulseActive then
         bar._barPulseActive = nil
         bar._barPulseSpeed = nil
@@ -374,29 +539,26 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPrese
         end
     end
 
-    local wantColorShift
-    if (pandemicPreview or pandemicActive) and cabConfig.pandemicBarColorShiftEnabled then
-        wantColorShift = "pandemic"
-    elseif auraActiveForPulse and cabConfig.barAuraColorShiftEnabled then
-        wantColorShift = "aura"
-    end
-    if wantColorShift then
+    -- Color shift yields while the pandemic color wears the fill (the panel
+    -- mirror rule: shift suppressed, pulse kept).
+    if cabConfig.barAuraColorShiftEnabled and not pandemicPreview then
         bar._barColorShiftActive = true
-        bar._barCSBaseColor = wantAuraColor or cabConfig.barColor or {0.5, 0.5, 1, 1}
-        if wantColorShift == "pandemic" then
-            bar._barCSShiftColor = cabConfig.pandemicBarColorShiftColor or {1, 1, 1, 1}
-            bar._barCSSpeed = cabConfig.pandemicBarColorShiftSpeed or 0.5
-        else
-            bar._barCSShiftColor = cabConfig.barAuraColorShiftColor or {1, 1, 1, 1}
-            bar._barCSSpeed = cabConfig.barAuraColorShiftSpeed or 0.5
-        end
+        bar._barCSBaseColor = wantAuraColor
+        bar._barCSShiftColor = cabConfig.barAuraColorShiftColor or {1, 1, 1, 1}
+        bar._barCSSpeed = cabConfig.barAuraColorShiftSpeed or 0.5
     elseif bar._barColorShiftActive then
         bar._barColorShiftActive = nil
         bar._barCSBaseColor = nil
         bar._barCSShiftColor = nil
         bar._barCSSpeed = nil
-        local resetColor = wantAuraColor or cabConfig.barColor or {0.5, 0.5, 1}
-        bar:SetStatusBarColor(resetColor[1], resetColor[2], resetColor[3], resetColor[4] or 1)
+        bar:SetStatusBarColor(wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4] or 1)
+    end
+
+    -- Last write wins: the pandemic color REPLACES the aura color, opaque
+    -- (owner ruling), matching the live clone's forced-opaque render.
+    if pandemicPreview then
+        local pc = cabConfig.pandemicColor
+        bar:SetStatusBarColor((pc and pc[1]) or 1, (pc and pc[2]) or 0.5, (pc and pc[3]) or 0, 1)
     end
 end
 local function ClearStaleRecycledBarRuntimeState(frame)
@@ -433,6 +595,35 @@ local function ClearStaleRecycledBarRuntimeState(frame)
     end
     frame._cdcIndependentAlphaTarget = nil
     frame._cdcIndependentLastAlpha = nil
+    -- MW max-stack border: cleared so a recycled frame that stops being an
+    -- MW shape never keeps a lit border (no MW tick runs on it to clear
+    -- it). A frame still MW re-lights on its next update — the key
+    -- mismatch makes that one restyle.
+    local mwBorder = frame._ccMWMaxBorder
+    if mwBorder and mwBorder.key ~= "off" then
+        mwBorder.key = "off"
+        if mwBorder.glow then
+            ST._StyleKitBarGlowRegions(mwBorder.glow, nil, mwBorder.host, false)
+        end
+        if mwBorder.segBorders then
+            ST._StyleKitSegmentBorders(mwBorder.segBorders, nil, nil, 0, false)
+        end
+    end
+    -- Aura-pass absent-state blocks: hidden for the apply pass;
+    -- FinalizeAppliedBarVisibility re-lays them from the cached max for
+    -- bars that still want them (recycled frames stay clean).
+    if frame._ccCabStackBlocksActive then
+        frame._ccCabStackBlocksActive = nil
+        ST.HideStackBlocks(frame._ccCabStackBlocks)
+        ST.HideStackBlockBorders(frame._ccCabStackBlockBorders)
+        -- Blocks mode zeroes the background region (the blocks ARE the
+        -- background there). Restore it with the blocks: this frame may be
+        -- handed to a resource bar next, and only custom bars re-run the
+        -- absent-state pass that would otherwise repair it.
+        if frame.bg then
+            frame.bg:SetAlpha(1)
+        end
+    end
     EntryRuntime.ClearTrackedAuraOwnerState(frame, nil, CLEAR_CUSTOM_AURA_STACKS_OPTS)
     EntryRuntime.ReleaseTrackedAuraScratch(frame)
     frame._parsedAuraIDs = nil
@@ -491,31 +682,82 @@ local function SaveIndependentStackAnchor(refreshConfig)
     local frame = independentWrapperFrame
     local anchor = placementSettings.independentAnchor
 
-    local cx, cy = frame:GetCenter()
-    local fw, fh = frame:GetSize()
-    local relFrame = UIParent
-    if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
-        relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
-    end
-    local tcx, tcy = relFrame:GetCenter()
-    local tw, th = relFrame:GetSize()
-    if not (cx and cy and fw and fh and tcx and tcy and tw and th) then return end
-
-    local fax, fay = GetAnchorOffset(anchor.point, fw, fh)
-    local tax, tay = GetAnchorOffset(anchor.relativePoint, tw, th)
-    anchor.x = RoundToTenths((cx + fax) - (tcx + tax))
-    anchor.y = RoundToTenths((cy + fay) - (tcy + tay))
-
-    if frame._coordLabel then
-        frame._coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(anchor.x, anchor.y))
-    end
+    local x, y = ComputeIndependentStackCoordinates(frame, anchor)
+    if x == nil or y == nil then return end
+    anchor.x = x
+    anchor.y = y
+    UpdateIndependentStackCoordLabel(frame, x, y)
 
     if refreshConfig and IsBarsConfigActive() and CooldownCompanion.RefreshConfigPanel then
         CooldownCompanion:RefreshConfigPanel()
     end
 end
 
-local UpdateIndependentStackDragState
+local function ApplyIndependentStackCoordinates(frame, x, y)
+    local settings = GetResourceBarSettings()
+    if not settings then return end
+    local placementSettings = GetSpecLayoutOrder(settings)
+    if not placementSettings then return end
+    EnsureIndependentStackConfig(settings, placementSettings)
+
+    local anchor = placementSettings.independentAnchor
+    anchor.x = x
+    anchor.y = y
+    local relFrame = UIParent
+    if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
+        relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
+    end
+    frame:ClearAllPoints()
+    frame:SetPoint(anchor.point, relFrame, anchor.relativePoint, x, y)
+    UpdateIndependentStackCoordLabel(frame, x, y)
+    SaveIndependentStackAnchor(true)
+end
+
+local function LockIndependentStackFromMover(frame)
+    local settings = GetResourceBarSettings()
+    if not settings then return end
+    local placementSettings = GetSpecLayoutOrder(settings)
+    if not placementSettings then return end
+    placementSettings.independentAnchorLocked = true
+    frame._dragInProgress = nil
+    StopIndependentStackCoordUpdates(frame)
+    frame:StopMovingOrSizing()
+    SaveIndependentStackAnchor(true)
+    CooldownCompanion:EndMoverChromeFade(frame)
+    UpdateIndependentStackDragState(settings, placementSettings)
+    CooldownCompanion:CaptureArrangeResourceRecord()
+    CooldownCompanion:CheckArrangeModeAutoExit()
+end
+
+local function CreateResourceBarLockButton(parent, onLock)
+    local button = CreateFrame("Button", nil, parent)
+    button:SetSize(INDEPENDENT_NUDGE_BTN_SIZE, INDEPENDENT_NUDGE_BTN_SIZE)
+    button:RegisterForClicks("LeftButtonUp")
+
+    local icon = button:CreateTexture(nil, "OVERLAY")
+    icon:SetSize(INDEPENDENT_NUDGE_BTN_SIZE - 2, INDEPENDENT_NUDGE_BTN_SIZE - 2)
+    icon:SetPoint("CENTER")
+    icon:SetAtlas("questlog-questtypeicon-lock", false)
+    icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+    button.icon = icon
+
+    button:SetScript("OnEnter", function(self)
+        self.icon:SetVertexColor(1, 1, 1, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Lock")
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function(self)
+        self.icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+        GameTooltip:Hide()
+    end)
+    button:SetScript("OnClick", function(self)
+        self.icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+        onLock()
+    end)
+
+    return button
+end
 
 local function CreateIndependentWrapperFrame()
     if independentWrapperFrame then return end
@@ -525,6 +767,8 @@ local function CreateIndependentWrapperFrame()
     frame:SetSize(1, 1)
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
+    frame._dragSnapRectFrame = CreateFrame("Frame", nil, frame)
+    frame._dragSnapRectFrame:Hide()
 
     -- Drag handle (full-width, anchored to containers by UpdateIndependentStackChrome)
     local dragHandle = CreateFrame("Frame", nil, frame, "BackdropTemplate")
@@ -544,6 +788,15 @@ local function CreateIndependentWrapperFrame()
     dragHandle.text:SetText("Resource Bars")
     dragHandle.text:SetTextColor(1, 1, 1, 1)
 
+    dragHandle.lockButton = CreateResourceBarLockButton(dragHandle, function()
+        LockIndependentStackFromMover(frame)
+    end)
+    dragHandle.lockButton:SetPoint("RIGHT", dragHandle, "RIGHT", -2, 0)
+    dragHandle.text:ClearAllPoints()
+    dragHandle.text:SetPoint("LEFT", dragHandle, "LEFT", 16, 0)
+    dragHandle.text:SetPoint("RIGHT", dragHandle, "RIGHT", -16, 0)
+    dragHandle.text:SetJustifyH("CENTER")
+
     -- Nudger (4-direction pixel nudge, same pattern as custom aura bars)
     local NUDGE_GAP = 2
     local nudger = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
@@ -558,6 +811,17 @@ local function CreateIndependentWrapperFrame()
     nudger:SetBackdropBorderColor(0, 0, 0, 1)
     nudger:EnableMouse(false)
     nudger._cdcButtons = {}
+    nudger:SetScript("OnEnter", function(self)
+        CooldownCompanion:BeginMoverChromeHoverFade(self)
+    end)
+    nudger:SetScript("OnLeave", function(self)
+        if not self:IsMouseOver() then
+            CooldownCompanion:EndMoverChromeFade(self)
+        end
+    end)
+    nudger:SetScript("OnHide", function(self)
+        CooldownCompanion:EndMoverChromeFade(self)
+    end)
 
     local directions = {
         { atlas = "common-dropdown-icon-back", rotation = -math.pi / 2, anchor = "BOTTOM", dx = 0, dy = 1, ox = 0, oy = NUDGE_GAP },
@@ -592,19 +856,25 @@ local function CreateIndependentWrapperFrame()
                 EnsureIndependentStackConfig(settings, placementSettings)
                 placementSettings.independentAnchor.x = RoundToTenths(x)
                 placementSettings.independentAnchor.y = RoundToTenths(y)
-                if frame._coordLabel then
-                    frame._coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x, y))
-                end
+                UpdateIndependentStackCoordLabel(frame, x, y)
             end
         end
 
-        btn:SetScript("OnEnter", function(self) self.arrow:SetVertexColor(1, 1, 1, 1) end)
+        btn:SetScript("OnEnter", function(self)
+            self.arrow:SetVertexColor(1, 1, 1, 1)
+            CooldownCompanion:BeginMoverChromeHoverFade(nudger)
+        end)
         btn:SetScript("OnLeave", function(self)
             self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
             SaveIndependentStackAnchor(true)
+            if not nudger:IsMouseOver() then
+                CooldownCompanion:EndMoverChromeFade(nudger)
+            end
         end)
         btn:SetScript("OnMouseDown", function(self)
+            CancelCoordinateEdit(frame._coordLabel)
             DoNudge()
+            CooldownCompanion:VerifyMoverChromeHoverFade(nudger)
         end)
         btn:SetScript("OnMouseUp", function(self)
             SaveIndependentStackAnchor(true)
@@ -623,48 +893,82 @@ local function CreateIndependentWrapperFrame()
     })
     coordLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
     coordLabel:SetBackdropBorderColor(0, 0, 0, 1)
-    coordLabel:EnableMouse(false)
     coordLabel.text = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     coordLabel.text:SetPoint("CENTER")
     coordLabel.text:SetTextColor(1, 1, 1, 1)
+    CreateEditableCoordLabel(
+        coordLabel,
+        function()
+            local settings = GetResourceBarSettings()
+            local placementSettings = settings and GetSpecLayoutOrder(settings)
+            local anchor = placementSettings and placementSettings.independentAnchor
+            return anchor and anchor.x or 0, anchor and anchor.y or 0
+        end,
+        function(x, y)
+            ApplyIndependentStackCoordinates(frame, x, y)
+        end,
+        function()
+            return frame._dragInProgress == true
+        end
+    )
 
     dragHandle:RegisterForDrag("LeftButton")
     dragHandle:SetScript("OnDragStart", function()
+        CancelCoordinateEdit(coordLabel)
         local settings = GetResourceBarSettings()
         if not settings then return end
         local placementSettings = GetSpecLayoutOrder(settings)
         if not placementSettings then return end
         if placementSettings.independentAnchorLocked then return end
         if InCombatLockdown() then return end
+        frame._dragCancelPending = nil
+        frame._dragInProgress = true
         frame:StartMoving()
+        CooldownCompanion:BeginMoverChromeFade(frame)
+        CooldownCompanion:BeginDragSnapSession(frame, function(candidateFrame)
+            return candidateFrame == frame or candidateFrame == frame._dragSnapRectFrame
+        end)
+        StartIndependentStackCoordUpdates(frame, placementSettings.independentAnchor)
     end)
     dragHandle:SetScript("OnDragStop", function()
+        local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
+        frame._dragCancelPending = nil
+        frame._dragInProgress = nil
         frame:StopMovingOrSizing()
+        if not cancelSave then
+            CooldownCompanion:UpdateDragSnapSession(frame)
+        end
+        local snapDX, snapDY = CooldownCompanion:EndDragSnapSession(frame, not cancelSave)
+        if snapDX ~= nil or snapDY ~= nil then
+            frame:AdjustPointsOffset(snapDX or 0, snapDY or 0)
+        end
+        StopIndependentStackCoordUpdates(frame)
+        if cancelSave then
+            CooldownCompanion:EndMoverChromeFade(frame)
+            return
+        end
         SaveIndependentStackAnchor(true)
-    end)
-    dragHandle:SetScript("OnMouseUp", function(_, button)
-        if button ~= "MiddleButton" then return end
-        local settings = GetResourceBarSettings()
-        if not settings then return end
-        local placementSettings = GetSpecLayoutOrder(settings)
-        if not placementSettings then return end
-        placementSettings.independentAnchorLocked = true
-        frame:StopMovingOrSizing()
-        SaveIndependentStackAnchor(true)
-        UpdateIndependentStackDragState(settings, placementSettings)
+        CooldownCompanion:EndMoverChromeFade(frame)
     end)
 
     frame._dragHandle = dragHandle
     frame._nudger = nudger
     frame._coordLabel = coordLabel
     independentWrapperFrame = frame
+    CooldownCompanion:ApplyMoverChromeFadeToFrames(dragHandle, coordLabel, nudger)
 end
 
 UpdateIndependentStackDragState = function(settings, placementSettings)
     if not independentWrapperFrame then return end
     local frame = independentWrapperFrame
     placementSettings = placementSettings or (settings and GetSpecLayoutOrder(settings)) or settings
-    local unlocked = placementSettings and placementSettings.independentAnchorEnabled == true and not placementSettings.independentAnchorLocked
+    local unlocked = placementSettings
+        and placementSettings.independentAnchorEnabled == true
+        and not placementSettings.independentAnchorLocked
+        and not CooldownCompanion._combatForcedLock
+    if not unlocked and frame._dragInProgress then
+        CooldownCompanion:CancelIndependentResourceStackDrag()
+    end
 
     frame:SetMovable(unlocked or false)
 
@@ -691,19 +995,25 @@ UpdateIndependentStackDragState = function(settings, placementSettings)
     if frame._coordLabel then
         frame._coordLabel:SetShown(unlocked or false)
     end
+    CooldownCompanion:ApplyMoverChromeFadeToFrames(frame._dragHandle, frame._coordLabel, frame._nudger)
 
-    -- Force preview on while unlocked so bars are visible for positioning
-    if unlocked and not isPreviewActive then
-        CooldownCompanion:StartResourceBarPreview()
-        frame._cdcForcedPreview = true
-    elseif not unlocked and frame._cdcForcedPreview then
-        frame._cdcForcedPreview = false
-        CooldownCompanion:StopResourceBarPreview()
+    -- Force the bars visible while unlocked so they can be dragged. Their
+    -- contents stay real — a health bar shows your health, a shell bar shows
+    -- its (empty) frame instead of nothing at all.
+    if unlocked and not isUnlockAssistActive then
+        CooldownCompanion:StartResourceBarUnlockAssist()
+        frame._cdcUnlockAssist = true
+    elseif not unlocked and frame._cdcUnlockAssist then
+        frame._cdcUnlockAssist = false
+        CooldownCompanion:StopResourceBarUnlockAssist()
     end
 end
 
 local function HideIndependentWrapperFrame()
     if not independentWrapperFrame then return end
+    CooldownCompanion:CancelIndependentResourceStackDrag()
+    independentWrapperFrame._dragInProgress = nil
+    StopIndependentStackCoordUpdates(independentWrapperFrame)
     independentWrapperFrame:Hide()
     if independentWrapperFrame._dragHandle then
         independentWrapperFrame._dragHandle:Hide()
@@ -714,9 +1024,9 @@ local function HideIndependentWrapperFrame()
     if independentWrapperFrame._coordLabel then
         independentWrapperFrame._coordLabel:Hide()
     end
-    if independentWrapperFrame._cdcForcedPreview then
-        independentWrapperFrame._cdcForcedPreview = false
-        CooldownCompanion:StopResourceBarPreview()
+    if independentWrapperFrame._cdcUnlockAssist then
+        independentWrapperFrame._cdcUnlockAssist = false
+        CooldownCompanion:StopResourceBarUnlockAssist()
     end
 end
 
@@ -731,6 +1041,26 @@ local function UpdateIndependentStackChrome(isVerticalLayout, placementSettings)
     -- When all bars are on one side, the empty container is hidden (height/width=1).
     local aboveShown = containerFrameAbove:IsShown()
     local belowShown = containerFrameBelow:IsShown()
+
+    local snapRect = frame._dragSnapRectFrame
+    if snapRect then
+        snapRect:ClearAllPoints()
+        if not aboveShown and not belowShown then
+            snapRect:Hide()
+        elseif isVerticalLayout then
+            local leftRef = aboveShown and containerFrameAbove or containerFrameBelow
+            local rightRef = belowShown and containerFrameBelow or containerFrameAbove
+            snapRect:SetPoint("TOPLEFT", leftRef, "TOPLEFT")
+            snapRect:SetPoint("BOTTOMRIGHT", rightRef, "BOTTOMRIGHT")
+            snapRect:Show()
+        else
+            local topRef = aboveShown and containerFrameAbove or containerFrameBelow
+            local bottomRef = belowShown and containerFrameBelow or containerFrameAbove
+            snapRect:SetPoint("TOPLEFT", topRef, "TOPLEFT")
+            snapRect:SetPoint("BOTTOMRIGHT", bottomRef, "BOTTOMRIGHT")
+            snapRect:Show()
+        end
+    end
 
     local dragHandle = frame._dragHandle
     if dragHandle then
@@ -767,10 +1097,11 @@ local function UpdateIndependentStackChrome(isVerticalLayout, placementSettings)
         local settings = GetResourceBarSettings()
         placementSettings = placementSettings or (settings and GetSpecLayoutOrder(settings)) or settings
         if placementSettings and placementSettings.independentAnchor then
-            coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(
-                placementSettings.independentAnchor.x or 0,
-                placementSettings.independentAnchor.y or 0
-            ))
+            UpdateIndependentStackCoordLabel(
+                frame,
+                placementSettings.independentAnchor.x,
+                placementSettings.independentAnchor.y
+            )
         end
     end
 end
@@ -792,7 +1123,7 @@ end
 -- Update logic: Continuous resources (SECRET in combat — NO Lua arithmetic)
 ------------------------------------------------------------------------
 
-local function UpdateContinuousBar(bar, powerType, settings, auraActiveCache)
+local function UpdateContinuousBar(bar, powerType, settings)
     if not settings then
         settings = GetResourceBarSettings()
     end
@@ -808,8 +1139,7 @@ local function UpdateContinuousBar(bar, powerType, settings, auraActiveCache)
     SetStatusBarSmoothRange(bar, 0, maxPower)
     SetStatusBarSmoothValue(bar, currentPower)
 
-    local auraOverrideColor = GetResourceAuraState(powerType, settings, auraActiveCache)
-    ApplyContinuousFillColor(bar, powerType, settings, auraOverrideColor)
+    ApplyContinuousFillColor(bar, powerType, settings)
     UpdateContinuousTickMarker(bar, powerType, settings, maxPower, maxPowerIsSecret)
 
     -- Text: pass directly to C-level SetFormattedText — accepts secrets
@@ -890,39 +1220,13 @@ end
 -- Update logic: Segmented resources (NOT secret — full Lua logic)
 ------------------------------------------------------------------------
 
-function segmentedUpdateScratch.GetFullSegments(holder)
-    if not holder._fullSegmentsScratch then
-        holder._fullSegmentsScratch = {}
-    else
-        wipe(holder._fullSegmentsScratch)
-    end
-    return holder._fullSegmentsScratch
-end
-
 function segmentedUpdateScratch.ClearValues(holder)
     for _, seg in ipairs(holder.segments) do
         SetStatusBarImmediateValue(seg, 0)
     end
 end
 
-function segmentedUpdateScratch.ApplyAuraVisuals(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments)
-    if auraOverrideColor and not useAuraStackMode then
-        for i, seg in ipairs(holder.segments) do
-            if fullSegments[i] then
-                seg:SetStatusBarColor(auraOverrideColor[1], auraOverrideColor[2], auraOverrideColor[3], 1)
-            end
-        end
-    end
-
-    if useAuraStackMode then
-        ApplyResourceAuraStackSegments(holder, settings, auraApplications, auraMaxStacks, auraOverrideColor)
-    else
-        HideResourceAuraStackSegments(holder)
-    end
-end
-
-function segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, currentValue, maxValue, clearText)
-    segmentedUpdateScratch.ApplyAuraVisuals(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments)
+function segmentedUpdateScratch.FinishText(holder, currentValue, maxValue, clearText)
     if clearText then
         ClearSegmentedText(holder)
     else
@@ -1022,20 +1326,13 @@ local function SetRechargeText(holder, segmentIndex, remaining, showZero)
     text:SetShown(formatted ~= "")
 end
 
-local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
+local function UpdateSegmentedBar(holder, powerType, settings)
     if not holder or not holder.segments then return end
     if not settings then
         settings = GetResourceBarSettings()
     end
 
-    local auraOverrideColor, auraApplications, auraHasApplications = GetResourceAuraState(powerType, settings, auraActiveCache)
-    local auraMaxStacks = GetResourceAuraConfiguredMaxStacks(powerType, settings)
     local segmentedSmoothing = GetResourceSegmentedSmoothing(settings)
-    local useAuraStackMode = auraOverrideColor
-        and auraMaxStacks
-        and auraHasApplications
-        and SupportsResourceAuraStackMode(powerType)
-    local fullSegments = segmentedUpdateScratch.GetFullSegments(holder)
     HideRechargeTexts(holder)
 
     if powerType == 5 then
@@ -1083,7 +1380,6 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
                 segValue = 1
                 SetStatusBarSegmentedValue(seg, segValue, segmentedSmoothing)
                 seg:SetStatusBarColor(activeReadyColor[1], activeReadyColor[2], activeReadyColor[3], 1)
-                fullSegments[i] = true
                 if showAllRechargeText then
                     SetRechargeText(holder, i, 0, true)
                 end
@@ -1103,14 +1399,14 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
             end
             runeValueTotal = runeValueTotal + segValue
         end
-        segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, runeValueTotal, numSegs, false)
+        segmentedUpdateScratch.FinishText(holder, runeValueTotal, numSegs, false)
         return
     end
 
     if powerType == 7 then
         if IsUnitPowerSecret("player", 7) or IsUnitPowerMaxSecret("player", 7) then
             segmentedUpdateScratch.ClearValues(holder)
-            segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
+            segmentedUpdateScratch.FinishText(holder, nil, nil, true)
             return
         end
 
@@ -1120,7 +1416,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         local max = UnitPowerMax("player", 7)
         if issecretvalue and (issecretvalue(raw) or issecretvalue(rawMax) or issecretvalue(max)) then
             segmentedUpdateScratch.ClearValues(holder)
-            segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
+            segmentedUpdateScratch.FinishText(holder, nil, nil, true)
             return
         end
 
@@ -1140,7 +1436,6 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
                     if i <= filled then
                         SetStatusBarSegmentedValue(seg, 1, segmentedSmoothing)
                         seg:SetStatusBarColor(activeReadyColor[1], activeReadyColor[2], activeReadyColor[3], 1)
-                        fullSegments[i] = true
                     elseif i == filled + 1 and partial > 0 then
                         SetStatusBarSegmentedValue(seg, partial, segmentedSmoothing)
                         seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
@@ -1156,9 +1451,9 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
             segmentedUpdateScratch.ClearValues(holder)
         end
         if type(displayCurrent) == "number" then
-            segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, displayCurrent, max, false)
+            segmentedUpdateScratch.FinishText(holder, displayCurrent, max, false)
         else
-            segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
+            segmentedUpdateScratch.FinishText(holder, nil, nil, true)
         end
         return
     end
@@ -1166,7 +1461,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
     if powerType == 19 then
         if IsUnitPowerSecret("player", 19) or IsUnitPowerMaxSecret("player", 19) then
             segmentedUpdateScratch.ClearValues(holder)
-            segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
+            segmentedUpdateScratch.FinishText(holder, nil, nil, true)
             return
         end
 
@@ -1176,7 +1471,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         local partialRaw = UnitPartialPower("player", 19)
         if issecretvalue and (issecretvalue(filled) or issecretvalue(max) or issecretvalue(partialRaw)) then
             segmentedUpdateScratch.ClearValues(holder)
-            segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
+            segmentedUpdateScratch.FinishText(holder, nil, nil, true)
             return
         end
 
@@ -1191,7 +1486,6 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
             if i <= filled then
                 SetStatusBarSegmentedValue(seg, 1, segmentedSmoothing)
                 seg:SetStatusBarColor(activeReadyColor[1], activeReadyColor[2], activeReadyColor[3], 1)
-                fullSegments[i] = true
             elseif i == filled + 1 and partial > 0 then
                 SetStatusBarSegmentedValue(seg, partial, segmentedSmoothing)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
@@ -1200,7 +1494,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
             end
         end
-        segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, displayCurrent, max, false)
+        segmentedUpdateScratch.FinishText(holder, displayCurrent, max, false)
         return
     end
 
@@ -1208,7 +1502,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
     if powerType == 4 then
         if IsUnitPowerSecret("player", 4) or IsUnitPowerMaxSecret("player", 4) then
             segmentedUpdateScratch.ClearValues(holder)
-            segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
+            segmentedUpdateScratch.FinishText(holder, nil, nil, true)
             return
         end
 
@@ -1216,7 +1510,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         local max = UnitPowerMax("player", 4)
         if issecretvalue and (issecretvalue(current) or issecretvalue(max)) then
             segmentedUpdateScratch.ClearValues(holder)
-            segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
+            segmentedUpdateScratch.FinishText(holder, nil, nil, true)
             return
         end
 
@@ -1235,7 +1529,6 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
             local seg = holder.segments[i]
             if i <= current then
                 SetStatusBarSegmentedValue(seg, 1, segmentedSmoothing)
-                fullSegments[i] = true
                 if chargedPoints and tContains(chargedPoints, i) then
                     seg:SetStatusBarColor(chargedColor[1], chargedColor[2], chargedColor[3], 1)
                 else
@@ -1245,14 +1538,14 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
                 SetStatusBarSegmentedValue(seg, 0, segmentedSmoothing)
             end
         end
-        segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, current, max, false)
+        segmentedUpdateScratch.FinishText(holder, current, max, false)
         return
     end
 
     -- Generic segmented with max color: HolyPower, Chi, ArcaneCharges
     if IsUnitPowerSecret("player", powerType) or IsUnitPowerMaxSecret("player", powerType) then
         segmentedUpdateScratch.ClearValues(holder)
-        segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
+        segmentedUpdateScratch.FinishText(holder, nil, nil, true)
         return
     end
 
@@ -1260,7 +1553,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
     local max = UnitPowerMax("player", powerType)
     if issecretvalue and (issecretvalue(current) or issecretvalue(max)) then
         segmentedUpdateScratch.ClearValues(holder)
-        segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
+        segmentedUpdateScratch.FinishText(holder, nil, nil, true)
         return
     end
     local normalColor, maxColor
@@ -1278,36 +1571,169 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         if i <= current then
             SetStatusBarSegmentedValue(seg, 1, segmentedSmoothing)
             seg:SetStatusBarColor(activeColor[1], activeColor[2], activeColor[3], 1)
-            fullSegments[i] = true
         else
             SetStatusBarSegmentedValue(seg, 0, segmentedSmoothing)
         end
     end
-    segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, current, max, false)
+    segmentedUpdateScratch.FinishText(holder, current, max, false)
 end
+
+------------------------------------------------------------------------
+-- Maelstrom Weapon max-stack border (owner ruling 2026-08-02): a CC-drawn
+-- border that lights while MW sits at its stack maximum. Legal in combat
+-- because MW's aura is server-flagged never-secret — the same plain read
+-- the bar itself runs on — and everything here is plain CC frames.
+-- Renders through the same pure builders as the resource aura border:
+-- per segment on the segmented shapes, whole-bar on continuous.
+------------------------------------------------------------------------
+
+-- The border's config, or nil when disabled. Plain resource-level keys on
+-- settings.resources[100] (no spec overrides: MW is one spec's resource).
+-- Returns the resource table too, for the slider keys.
+local function GetMWMaxStackBorderConfig(settings)
+    local resource = settings and settings.resources
+        and settings.resources[RESOURCE_MAELSTROM_WEAPON]
+    if type(resource) ~= "table" or resource.mwMaxStackBorderEnabled ~= true then
+        return nil
+    end
+    local style = resource.mwMaxStackBorderStyle == "pixel" and "pixel" or "solid"
+    local color = resource.mwMaxStackBorderColor
+    if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
+        color = RB.DEFAULT_MW_MAX_STACK_BORDER_COLOR
+    end
+    return style, color, resource
+end
+
+-- Runs on every MW update tick, so restyling is keyed: only a real change
+-- (lit flips, style or colour edited, bar shape swapped) touches regions.
+-- The pool hangs off the bar frame and is reset by
+-- ClearStaleRecycledBarRuntimeState when the frame is recycled.
+local function UpdateMWMaxStackBorder(holder, settings, barType, isMax)
+    local style, color, resource
+    if isMax then
+        style, color, resource = GetMWMaxStackBorderConfig(settings)
+    end
+    local pool = holder._ccMWMaxBorder
+    if not style then
+        if pool and pool.key ~= "off" then
+            pool.key = "off"
+            if pool.glow then
+                ST._StyleKitBarGlowRegions(pool.glow, nil, pool.host, false)
+            end
+            if pool.segBorders then
+                ST._StyleKitSegmentBorders(pool.segBorders, nil, nil, 0, false)
+            end
+        end
+        return
+    end
+
+    if not pool then
+        local host = CreateFrame("Frame", nil, holder)
+        host:EnableMouse(false)
+        host:SetAllPoints(holder)
+        -- Over every non-text layer the bar stacks (MW overlay segments at
+        -- +4) — the same clearance the aura overlay uses. Resource text
+        -- bands above this (RESOURCE_TEXT_LAYER_LEVEL): text wins over
+        -- borders and glows by owner ruling.
+        host:SetFrameLevel(holder:GetFrameLevel() + RB.RESOURCE_OVERLAY_HOLDER_LEVEL)
+        pool = { host = host }
+        holder._ccMWMaxBorder = pool
+    end
+
+    local size = tonumber(resource.mwMaxStackBorderSize)
+    local thickness = tonumber(resource.mwMaxStackBorderThickness)
+    local speed = tonumber(resource.mwMaxStackBorderSpeed)
+    local lines = tonumber(resource.mwMaxStackBorderLines)
+
+    local isContinuous = barType == "mw_continuous" or not holder.segments
+    local key = (isContinuous and "bar:" or "seg:") .. style .. ":"
+        .. tostring(color[1]) .. ":" .. tostring(color[2]) .. ":"
+        .. tostring(color[3]) .. ":" .. tostring(color[4]) .. ":"
+        .. tostring(size) .. ":" .. tostring(thickness) .. ":"
+        .. tostring(speed) .. ":" .. tostring(lines)
+    if pool.key == key then return end
+    pool.key = key
+
+    local borderStyle = {
+        barAuraIndicatorEnabled = true,
+        barAuraEffect = style,
+        barAuraEffectColor = color,
+        barAuraEffectSize = size,
+        barAuraEffectThickness = thickness,
+        barAuraEffectSpeed = speed,
+        barAuraEffectLines = lines,
+    }
+    if isContinuous then
+        if not pool.glow then
+            pool.glow = ST._BuildKitGlowRegions(pool.host)
+        end
+        -- Explicit rect dims for the dash geometry: the bar carries an
+        -- explicit size, the SetAllPoints host may not have resolved yet.
+        local fw, fh = holder:GetSize()
+        pool.host._ccKitRectW = (fw and fw > 1) and fw or 1
+        pool.host._ccKitRectH = (fh and fh > 1) and fh or 1
+        ST._StyleKitBarGlowRegions(pool.glow, borderStyle, pool.host, true)
+        if pool.segBorders then
+            ST._StyleKitSegmentBorders(pool.segBorders, nil, nil, 0, false)
+        end
+    else
+        if not pool.segBorders then
+            pool.segBorders = ST._BuildKitSegmentBorderPool(pool.host, ST.RESOURCE_SEGMENT_BORDER_MAX)
+        end
+        local segments = holder.segments
+        local n = math_min(#segments, ST.RESOURCE_SEGMENT_BORDER_MAX)
+        for i = 1, n do
+            segments[i]._ccW, segments[i]._ccH = segments[i]:GetSize()
+        end
+        ST._StyleKitSegmentBorders(pool.segBorders, borderStyle, segments, n, true)
+        if pool.glow then
+            ST._StyleKitBarGlowRegions(pool.glow, nil, pool.host, false)
+        end
+    end
+end
+-- For the config canvas (ResourceBarPreview), which renders MW at max.
+RB.UpdateMWMaxStackBorder = UpdateMWMaxStackBorder
 
 ------------------------------------------------------------------------
 -- Update logic: Maelstrom Weapon (overlay bar, plain applications)
 ------------------------------------------------------------------------
 
-local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
-    if not holder or not holder.segments then return end
+local function UpdateMaelstromWeaponBar(holder, settings, barType)
+    if not holder then return end
+    -- The continuous style has no segments; every other style does.
+    local isContinuous = barType == "mw_continuous"
+    if not (isContinuous or holder.segments) then return end
     if not settings then
         settings = GetResourceBarSettings()
     end
     local segmentedSmoothing = GetResourceSegmentedSmoothing(settings)
 
-    -- Read stacks from viewer frame (applications is plain for MW)
+    -- Maelstrom Weapon stacks (the aura pass, Phase 2). MW carries the
+    -- server-side per-spell never-secret flag — validated on PTR 7 by
+    -- dumping the aura mid-combat: a fully PLAIN AuraData with a readable
+    -- `applications`, exactly the carve-out the API docs describe for
+    -- resource-like auras. So the bar reads its own stacks and keeps the
+    -- full Lua render (dual-colour halves, threshold and max colours,
+    -- segment text) instead of a Blizzard-driven kit shape.
+    --
+    -- GetPlayerAuraBySpellID is the RequiresNonSecretAura read path: it
+    -- returns NOTHING for a secret aura rather than erroring, so this is
+    -- safe in every restricted context. The secret guard below covers the
+    -- flag being changed by a future build (retest-each-build discipline) —
+    -- a secret reaching the comparisons underneath would be a hard error.
     local stacks = 0
-    local viewerFrame = CooldownCompanion.viewerAuraFrames and CooldownCompanion.viewerAuraFrames[MW_SPELL_ID]
-    local instId = viewerFrame and viewerFrame.auraInstanceID
-    if instId then
-        local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID("player", instId)
-        if auraData then
-            stacks = auraData.applications or 0
-        end
+    local mwAura = C_UnitAuras.GetPlayerAuraBySpellID(MW_AURA_SPELL_ID)
+    if mwAura then
+        stacks = mwAura.applications or 0
     end
     if issecretvalue and issecretvalue(stacks) then
+        -- Unreadable stacks read as not-at-max: the border clears.
+        UpdateMWMaxStackBorder(holder, settings, barType, false)
+        if isContinuous then
+            SetStatusBarImmediateValue(holder, 0)
+            if holder.text then holder.text:SetText("") end
+            return
+        end
         for i = 1, #holder.segments do
             SetStatusBarImmediateValue(holder.segments[i], 0)
             if holder.overlaySegments and holder.overlaySegments[i] then
@@ -1315,15 +1741,52 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
                 holder.overlaySegments[i]:SetAlpha(0)
             end
         end
-        HideResourceAuraStackSegments(holder)
         ClearSegmentedText(holder)
         return
     end
 
-    local half = #holder.segments
     local baseColor, overlayColor, maxColor = GetResourceColors(100, settings)
     local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(RESOURCE_MAELSTROM_WEAPON, settings, stacks)
     local isMax = stacks > 0 and stacks == mwMaxStacks
+    -- Colour precedence is identical in all three shapes: at max wins, then
+    -- a configured threshold, then the resource's own colour.
+    local activeColor = isMax and maxColor or (thresholdActive and thresholdColor or baseColor)
+    UpdateMWMaxStackBorder(holder, settings, barType, isMax)
+
+    if isContinuous then
+        -- One bar, empty to full, the stack maximum as its range.
+        SetStatusBarSmoothRange(holder, 0, mwMaxStacks)
+        SetStatusBarSegmentedValue(holder, stacks, segmentedSmoothing)
+        holder:SetStatusBarColor(activeColor[1], activeColor[2], activeColor[3], 1)
+        if holder.brightnessOverlay then
+            holder.brightnessOverlay:Hide()
+        end
+        if holder.text and holder.text:IsShown() then
+            local textFormat = holder._textFormat
+            if textFormat == "current" then
+                holder.text:SetFormattedText("%d", stacks)
+            elseif textFormat == "percent" then
+                holder.text:SetFormattedText("%d", (stacks / mwMaxStacks) * 100)
+            else
+                holder.text:SetFormattedText("%d / %d", stacks, mwMaxStacks)
+            end
+        end
+        return
+    end
+
+    if barType == "mw_segments" then
+        -- One segment per stack: each fills whole, like every other
+        -- discrete resource.
+        for i = 1, #holder.segments do
+            local seg = holder.segments[i]
+            SetStatusBarSegmentedValue(seg, i <= stacks and 1 or 0, segmentedSmoothing)
+            seg:SetStatusBarColor(activeColor[1], activeColor[2], activeColor[3], 1)
+        end
+        SetSegmentedText(holder, stacks, mwMaxStacks)
+        return
+    end
+
+    local half = #holder.segments
 
     for i = 1, half do
         local baseSeg = holder.segments[i]
@@ -1351,27 +1814,6 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
         end
     end
 
-    local auraOverrideColor, auraApplications, auraHasApplications = GetResourceAuraState(100, settings, auraActiveCache)
-    local auraMaxStacks = GetResourceAuraConfiguredMaxStacks(100, settings)
-    local useAuraStackMode = auraOverrideColor and auraMaxStacks and auraHasApplications and SupportsResourceAuraStackMode(100)
-
-    if auraOverrideColor and not useAuraStackMode then
-        for i = 1, half do
-            if stacks >= i then
-                holder.segments[i]:SetStatusBarColor(auraOverrideColor[1], auraOverrideColor[2], auraOverrideColor[3], 1)
-            end
-            if stacks >= (half + i) then
-                holder.overlaySegments[i]:SetStatusBarColor(auraOverrideColor[1], auraOverrideColor[2], auraOverrideColor[3], 1)
-            end
-        end
-    end
-
-    if useAuraStackMode then
-        ApplyResourceAuraStackSegments(holder, settings, auraApplications, auraMaxStacks, auraOverrideColor)
-    else
-        HideResourceAuraStackSegments(holder)
-    end
-
     SetSegmentedText(holder, stacks, mwMaxStacks)
 end
 
@@ -1380,37 +1822,32 @@ end
 ------------------------------------------------------------------------
 
 local RelayoutBars
-local RelayoutResourceStack
 local customBarsModule = RB.CreateResourceBarCustomBarsModule({
     resourceBarFrames = resourceBarFrames,
-    GetPreviewActive = function()
-        return isPreviewActive
-    end,
-    MarkLayoutDirty = function()
-        layoutDirty = true
-    end,
-    RelayoutResourceStack = function()
-        if RelayoutResourceStack then
-            RelayoutResourceStack()
-        end
+    GetUnlockAssistActive = function()
+        return isUnlockAssistActive
     end,
     ClearStaleRecycledBarRuntimeState = ClearStaleRecycledBarRuntimeState,
     ClearCustomAuraBarIndicatorState = ClearCustomAuraBarIndicatorState,
     ClearCustomAuraBarIndicatorVisualState = ClearCustomAuraBarIndicatorVisualState,
     UpdateCustomAuraBarIndicatorVisuals = UpdateCustomAuraBarIndicatorVisuals,
-    ApplyCustomAuraBarPreviewState = ApplyCustomAuraBarPreviewState,
 })
 local UpdateCustomAuraBar = customBarsModule.UpdateCustomAuraBar
-local ShouldUpdateHiddenCustomAuraPandemicWake = customBarsModule.ShouldUpdateHiddenCustomAuraPandemicWake
-local ClearDeferredCustomAuraWakeRetries = customBarsModule.ClearDeferredCustomAuraWakeRetries
-local RefreshEventDrivenCustomAuraBarsForUnit = customBarsModule.RefreshEventDrivenCustomAuraBarsForUnit
 local FinalizeAppliedBarVisibility = customBarsModule.FinalizeAppliedBarVisibility
 local HideUnusedResourceBarFrames = customBarsModule.HideUnusedResourceBarFrames
 local PrepareCustomAuraBar = customBarsModule.PrepareCustomAuraBar
 
+-- Custom-bar aura hosting (the aura pass): stable holders + adapters for
+-- the AuraContainer display in Core/AuraDisplay.lua. Reached via
+-- CooldownCompanion methods, not locals: ApplyResourceBars sits at the
+-- 60-upvalue ceiling.
+RB.CreateResourceBarAuraHostModule({
+    resourceBarFrames = resourceBarFrames,
+})
+
 ------------------------------------------------------------------------
 -- Relayout: reposition bars within their containers by visibility/order
--- Called from ApplyResourceBars() and from OnUpdate when layoutDirty.
+-- Called from ApplyResourceBars().
 ------------------------------------------------------------------------
 
 local function CompareBarOrder(a, b)
@@ -1426,6 +1863,23 @@ RelayoutBars = function()
     local globalThickness = lastAppliedBarThickness or 12
     local primaryLength = lastAppliedPrimaryLength or 1
     local isVertical = lastAppliedOrientation == "vertical"
+
+    -- Aura block mount contract: the collapsing Blizzard-side container packs
+    -- itself from the accumulator each side ends on, so that end offset is
+    -- recorded here. It cannot be recovered from the container extent, which
+    -- drops the trailing spacing. A side keeps its container shown while it
+    -- carries block entries even after every fixed bar has left it.
+    local auraBlocks = RB._auraBlocks
+    local function RecordAuraBlockGeometry(side, parent, endOffset)
+        local block = auraBlocks and auraBlocks[side]
+        if not block then return false end
+        block.parent = parent
+        block.offset = endOffset
+        block.width = primaryLength
+        block.spacing = barSpacing
+        block.vertical = isVertical
+        return #block.entries > 0
+    end
 
     if isVertical then
         local leftBars = {}
@@ -1455,9 +1909,10 @@ RelayoutBars = function()
             barInfo.frame:SetWidth(w)
             currentX = currentX + w + barSpacing
         end
+        local leftHasBlock = RecordAuraBlockGeometry("left", containerFrameAbove, currentX)
         local leftWidth = currentX > 0 and (currentX - barSpacing) or 1
         containerFrameAbove:SetWidth(leftWidth)
-        if #leftBars > 0 then containerFrameAbove:Show() else containerFrameAbove:Hide() end
+        if #leftBars > 0 or leftHasBlock then containerFrameAbove:Show() else containerFrameAbove:Hide() end
 
         -- Right side stacks outward from the group (left edge near group).
         currentX = 0
@@ -1469,9 +1924,10 @@ RelayoutBars = function()
             barInfo.frame:SetWidth(w)
             currentX = currentX + w + barSpacing
         end
+        local rightHasBlock = RecordAuraBlockGeometry("right", containerFrameBelow, currentX)
         local rightWidth = currentX > 0 and (currentX - barSpacing) or 1
         containerFrameBelow:SetWidth(rightWidth)
-        if #rightBars > 0 then containerFrameBelow:Show() else containerFrameBelow:Hide() end
+        if #rightBars > 0 or rightHasBlock then containerFrameBelow:Show() else containerFrameBelow:Hide() end
     else
         local aboveBars = {}
         local belowBars = {}
@@ -1500,9 +1956,10 @@ RelayoutBars = function()
             barInfo.frame:SetHeight(h)
             currentY = currentY + h + barSpacing
         end
+        local aboveHasBlock = RecordAuraBlockGeometry("above", containerFrameAbove, currentY)
         local aboveHeight = currentY > 0 and (currentY - barSpacing) or 1
         containerFrameAbove:SetHeight(aboveHeight)
-        if #aboveBars > 0 then containerFrameAbove:Show() else containerFrameAbove:Hide() end
+        if #aboveBars > 0 or aboveHasBlock then containerFrameAbove:Show() else containerFrameAbove:Hide() end
 
         -- Stack below bars (order ascending = top to bottom; order=1 closest to group)
         currentY = 0
@@ -1514,19 +1971,11 @@ RelayoutBars = function()
             barInfo.frame:SetHeight(h)
             currentY = currentY + h + barSpacing
         end
+        local belowHasBlock = RecordAuraBlockGeometry("below", containerFrameBelow, currentY)
         local belowHeight = currentY > 0 and (currentY - barSpacing) or 1
         containerFrameBelow:SetHeight(belowHeight)
-        if #belowBars > 0 then containerFrameBelow:Show() else containerFrameBelow:Hide() end
+        if #belowBars > 0 or belowHasBlock then containerFrameBelow:Show() else containerFrameBelow:Hide() end
     end
-end
-
-RelayoutResourceStack = function()
-    layoutDirty = false
-    RelayoutBars()
-    if lastAppliedIndependentStack then
-        UpdateIndependentStackChrome(lastAppliedOrientation == "vertical", lastAppliedLayout)
-    end
-    CooldownCompanion:RepositionCastBar()
 end
 
 ------------------------------------------------------------------------
@@ -1541,24 +1990,19 @@ local function OnUpdate(self, elapsed)
     elapsed_acc = 0
 
     local settings = GetResourceBarSettings()
-    if isPreviewActive then
-        HealthBar.RefreshEffectPreviewAnimation(settings)
-        return
-    end
-
-    local auraActiveCache = segmentedUpdateScratch.auraActiveCache
-    wipe(auraActiveCache)
 
     for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo.frame and (barInfo.frame:IsShown() or ShouldUpdateHiddenCustomAuraPandemicWake(barInfo)) then
+        if barInfo.frame and barInfo.frame:IsShown() then
             if barInfo.barType == "continuous" then
-                UpdateContinuousBar(barInfo.frame, barInfo.powerType, settings, auraActiveCache)
+                UpdateContinuousBar(barInfo.frame, barInfo.powerType, settings)
             elseif barInfo.barType == "health_continuous" then
                 HealthBar.Update(barInfo.frame, settings)
             elseif barInfo.barType == "segmented" then
-                UpdateSegmentedBar(barInfo.frame, barInfo.powerType, settings, auraActiveCache)
-            elseif barInfo.barType == "mw_segmented" then
-                UpdateMaelstromWeaponBar(barInfo.frame, settings, auraActiveCache)
+                UpdateSegmentedBar(barInfo.frame, barInfo.powerType, settings)
+            elseif barInfo.barType == "mw_segmented"
+                or barInfo.barType == "mw_segments"
+                or barInfo.barType == "mw_continuous" then
+                UpdateMaelstromWeaponBar(barInfo.frame, settings, barInfo.barType)
             elseif barInfo.barType == "stagger_continuous" then
                 UpdateStaggerBar(barInfo.frame, settings)
             elseif barInfo.barType == "custom_cooldown" then
@@ -1575,9 +2019,6 @@ local function OnUpdate(self, elapsed)
         end
     end
 
-    if layoutDirty then
-        RelayoutResourceStack()
-    end
 end
 
 ------------------------------------------------------------------------
@@ -1618,7 +2059,7 @@ local function StyleContinuousBar(bar, powerType, settings)
     bar._isVertical = isVertical
     bar._reverseFill = reverseFill
 
-    ApplyContinuousFillColor(bar, powerType, settings, nil)
+    ApplyContinuousFillColor(bar, powerType, settings)
 
     local bgc = GetResourceDisplayValue(settings, "backgroundColor", { 0, 0, 0, 0.5 })
     bar.bg:ClearAllPoints()
@@ -1636,7 +2077,11 @@ local function StyleContinuousBar(bar, powerType, settings)
         HidePixelBorders(bar.borders)
     end
 
-    -- Text setup
+    -- Text setup. The factory parks the text layer at the custom-bar height
+    -- (bar+2, under the aura kit); resource bars hoist it into the stack's
+    -- text band here so resource text renders above every bar's fills and
+    -- kit visuals (RESOURCE_TEXT_LAYER_LEVEL has the band map).
+    bar.textLayer:SetFrameLevel(bar:GetFrameLevel() + RB.RESOURCE_TEXT_LAYER_LEVEL)
     local resourceConfig = GetResourceDisplayConfig(settings, powerType)
     local textFormat = resourceConfig and resourceConfig.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT
     if textFormat ~= "current" and textFormat ~= "current_max" and textFormat ~= "percent" then
@@ -1670,8 +2115,13 @@ local function StyleContinuousBar(bar, powerType, settings)
     bar.text:SetShown(showText)
     bar._textFormat = textFormat
 
-    -- Stagger (101) uses UnitHealthMax, not UnitPowerMax; tick markers not applicable
-    if powerType ~= 101 then
+    -- Tick markers need a real power type to measure against. Both of CC's
+    -- invented ids are excluded: Stagger (101) is sized by UnitHealthMax,
+    -- and Maelstrom Weapon (100) is sized by its aura's stack cap — passing
+    -- either to UnitPowerMax is a hard error. Neither is offered tick
+    -- markers anyway (GetContinuousTickEntriesConfig groups Maelstrom with
+    -- the segmented resources, whose threshold colours serve the same role).
+    if powerType ~= 101 and powerType ~= RESOURCE_MAELSTROM_WEAPON then
         local maxPower = UnitPowerMax("player", powerType)
         local maxPowerIsSecret = IsUnitPowerMaxSecret("player", powerType)
         if issecretvalue and issecretvalue(maxPower) then
@@ -1945,6 +2395,85 @@ function CooldownCompanion:ApplyResourceBars(opts)
         orderList[idx] = order
     end
 
+    -- Aura block partition (12.1): aura entries that hide when inactive leave
+    -- the CC-laid-out stack entirely — no slot, no PrepareCustomAuraBar, no
+    -- thickness — because only the Blizzard-side container can see aura
+    -- presence and pack them. Removing them from the stack is what puts the
+    -- block at the end of its side. Unlock assist keeps the legacy expanded
+    -- shells: an arrange-mode stack must offer every bar as a drag target.
+    -- Reached through RB and self, never new file-level locals:
+    -- ApplyResourceBars sits at Lua 5.1's 60-upvalue ceiling.
+    local blockUnlockAssist = self:IsResourceBarUnlockAssistActive() == true
+    local auraBlocks = {}
+    -- Bucket order is resolved HERE like each entry's unit: stamped once on
+    -- the contract, so the bind pass and the mount signature both ride it.
+    local function NewSideBlock(side)
+        return {
+            entries = {},
+            unlockAssist = blockUnlockAssist,
+            targetFirst = RB.IsAuraBlockTargetFirst(settings, side),
+        }
+    end
+    if isVerticalLayout then
+        auraBlocks.left = NewSideBlock("left")
+        auraBlocks.right = NewSideBlock("right")
+    else
+        auraBlocks.above = NewSideBlock("above")
+        auraBlocks.below = NewSideBlock("below")
+    end
+
+    if not blockUnlockAssist then
+        -- A block container tracks exactly ONE unit, so a mixed side renders
+        -- as two CHAINED per-unit buckets (the bind pass anchors the target
+        -- container to the player container's far edge). Every block
+        -- candidate therefore joins its side's block; the unit is stamped PER
+        -- ENTRY HERE, once, and rides the contract so the bind pass can never
+        -- re-derive a different answer.
+        local keptEntries, keptSides, keptOrders = {}, {}, {}
+        for idx, entry in ipairs(filtered) do
+            local block
+            if type(entry) == "table" and entry.kind == "custom" and RB.IsAuraBlockEntry(entry.config) then
+                block = auraBlocks[sideList[idx]]
+            end
+            if block then
+                local blockThickness = globalBarThickness
+                if layout.customBarHeights then
+                    local slotLayout = RB.GetCustomBarLayout(settings, nil, entry.config, false)
+                    if isVerticalLayout then
+                        blockThickness = (slotLayout and (slotLayout.barWidth or slotLayout.barHeight)) or globalBarThickness
+                    else
+                        blockThickness = (slotLayout and (slotLayout.barHeight or slotLayout.barWidth)) or globalBarThickness
+                    end
+                end
+                block.entries[#block.entries + 1] = {
+                    customBarId = entry.customBarId,
+                    config = entry.config,
+                    thickness = blockThickness,
+                    order = orderList[idx],
+                    unit = RB.GetResolvedCustomAuraBarAuraUnit(entry.config,
+                        tonumber(entry.config.spellID)) or "player",
+                }
+            else
+                keptEntries[#keptEntries + 1] = entry
+                keptSides[#keptSides + 1] = sideList[idx]
+                keptOrders[#keptOrders + 1] = orderList[idx]
+            end
+        end
+        filtered, sideList, orderList = keptEntries, keptSides, keptOrders
+
+        -- Same resolution CompareBarOrder applies to the stack, so the block
+        -- keeps the order the layout panel shows. Sorted once for the whole
+        -- side: the bind pass splits this list into per-unit buckets in place,
+        -- which preserves each bucket's relative order for free.
+        for _, block in pairs(auraBlocks) do
+            table.sort(block.entries, function(a, b)
+                if a.order ~= b.order then return a.order < b.order end
+                return tostring(a.customBarId) < tostring(b.customBarId)
+            end)
+        end
+    end
+    RB._auraBlocks = auraBlocks
+
     -- Hide existing bars that we don't need
     HideUnusedResourceBarFrames(#filtered + 1)
 
@@ -1983,7 +2512,6 @@ function CooldownCompanion:ApplyResourceBars(opts)
             if not barInfo or barInfo.barType ~= "health_continuous" then
                 if barInfo and barInfo.frame then
                     ClearStaleRecycledBarRuntimeState(barInfo.frame)
-                    ClearResourceAuraVisuals(barInfo.frame)
                     barInfo.frame:Hide()
                 end
                 local bar = CreateContinuousBar(targetContainer)
@@ -2001,7 +2529,6 @@ function CooldownCompanion:ApplyResourceBars(opts)
             if not barInfo or barInfo.barType ~= "stagger_continuous" then
                 if barInfo and barInfo.frame then
                     ClearStaleRecycledBarRuntimeState(barInfo.frame)
-                    ClearResourceAuraVisuals(barInfo.frame)
                     barInfo.frame:Hide()
                 end
                 local bar = CreateContinuousBar(targetContainer)
@@ -2015,34 +2542,89 @@ function CooldownCompanion:ApplyResourceBars(opts)
             StyleContinuousBar(barInfo.frame, powerType, settings)
 
         elseif powerType == RESOURCE_MAELSTROM_WEAPON then
-            -- Maelstrom Weapon: overlay bar with dedicated update
-            local halfSegments = mwMaxStacks <= 5 and mwMaxStacks or (mwMaxStacks / 2)
+            -- Maelstrom Weapon renders in one of three shapes (see
+            -- GetMWDisplayStyle). The stack source is the same in all of
+            -- them; only the widget differs, so each style materializes the
+            -- matching bar frame here and UpdateMaelstromWeaponBar renders
+            -- to it. The style is read once per apply, never per tick, and
+            -- reached through RB rather than a new file-level local:
+            -- ApplyResourceBars sits at Lua 5.1's 60-upvalue ceiling.
+            local mwStyle = RB.GetMWDisplayStyle(settings)
 
-            if not barInfo or barInfo.barType ~= "mw_segmented"
-                or #barInfo.frame.segments ~= halfSegments then
-                if barInfo and barInfo.frame then
-                    ClearStaleRecycledBarRuntimeState(barInfo.frame)
-                    ClearResourceAuraVisuals(barInfo.frame)
-                    barInfo.frame:Hide()
+            if mwStyle == "continuous" then
+                if not barInfo or barInfo.barType ~= "mw_continuous" then
+                    if barInfo and barInfo.frame then
+                        ClearStaleRecycledBarRuntimeState(barInfo.frame)
+                        barInfo.frame:Hide()
+                    end
+                    local bar = CreateContinuousBar(targetContainer)
+                    barInfo = { frame = bar, barType = "mw_continuous", powerType = powerType }
+                    resourceBarFrames[idx] = barInfo
+                else
+                    barInfo.powerType = powerType
                 end
-                local holder = CreateOverlayBar(targetContainer, halfSegments)
-                barInfo = { frame = holder, barType = "mw_segmented", powerType = powerType }
-                resourceBarFrames[idx] = barInfo
+
+                barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
+                -- Shares the continuous styling path, so texture, borders,
+                -- background, and the bar text all follow the same resource
+                -- settings every other continuous bar uses.
+                StyleContinuousBar(barInfo.frame, powerType, settings)
+
+            elseif mwStyle == "segments" then
+                -- One segment per stack, no overlay layer: the plain
+                -- segmented widget every other discrete resource uses.
+                if not barInfo or barInfo.barType ~= "mw_segments"
+                    or #barInfo.frame.segments ~= mwMaxStacks then
+                    if barInfo and barInfo.frame then
+                        ClearStaleRecycledBarRuntimeState(barInfo.frame)
+                        barInfo.frame:Hide()
+                    end
+                    local holder = CreateSegmentedBar(targetContainer, mwMaxStacks)
+                    barInfo = { frame = holder, barType = "mw_segments", powerType = powerType }
+                    resourceBarFrames[idx] = barInfo
+                else
+                    barInfo.powerType = powerType
+                end
+
+                barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
+                LayoutSegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings)
+
+                local baseColor = GetResourceColors(100, settings)
+                for i = 1, mwMaxStacks do
+                    barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+                end
+                StyleSegmentedText(barInfo.frame, powerType, settings)
+
             else
-                barInfo.powerType = powerType
-            end
+                -- Overlay: five segments carrying a second colour layer for
+                -- stacks past five (the default shape).
+                local halfSegments = mwMaxStacks <= 5 and mwMaxStacks or (mwMaxStacks / 2)
 
-            barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
-            LayoutOverlaySegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings, halfSegments)
+                if not barInfo or barInfo.barType ~= "mw_segmented"
+                    or #barInfo.frame.segments ~= halfSegments then
+                    if barInfo and barInfo.frame then
+                        ClearStaleRecycledBarRuntimeState(barInfo.frame)
+                        barInfo.frame:Hide()
+                    end
+                    local holder = CreateOverlayBar(targetContainer, halfSegments)
+                    barInfo = { frame = holder, barType = "mw_segmented", powerType = powerType }
+                    resourceBarFrames[idx] = barInfo
+                else
+                    barInfo.powerType = powerType
+                end
 
-            -- Apply initial colors
-            local baseColor, overlayColor = GetResourceColors(100, settings)
-            for i = 1, halfSegments do
-                barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
-                barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
-                barInfo.frame.overlaySegments[i]:Show()
+                barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
+                LayoutOverlaySegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings, halfSegments)
+
+                -- Apply initial colors
+                local baseColor, overlayColor = GetResourceColors(100, settings)
+                for i = 1, halfSegments do
+                    barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+                    barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
+                    barInfo.frame.overlaySegments[i]:Show()
+                end
+                StyleSegmentedText(barInfo.frame, powerType, settings)
             end
-            StyleSegmentedText(barInfo.frame, powerType, settings)
 
         elseif isCustomEntry then
             barInfo = PrepareCustomAuraBar(
@@ -2068,7 +2650,6 @@ function CooldownCompanion:ApplyResourceBars(opts)
                 or barInfo.frame._numSegments ~= max then
                 if barInfo and barInfo.frame then
                     ClearStaleRecycledBarRuntimeState(barInfo.frame)
-                    ClearResourceAuraVisuals(barInfo.frame)
                     barInfo.frame:Hide()
                 end
                 local holder = CreateSegmentedBar(targetContainer, max)
@@ -2081,15 +2662,12 @@ function CooldownCompanion:ApplyResourceBars(opts)
             barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
             LayoutSegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings)
             StyleSegmentedBar(barInfo.frame, powerType, settings)
-            if not isPreviewActive then
-                UpdateSegmentedBar(barInfo.frame, powerType, settings, {})
-            end
+            UpdateSegmentedBar(barInfo.frame, powerType, settings, {})
         else
             -- Continuous bar
             if not barInfo or barInfo.barType ~= "continuous" then
                 if barInfo and barInfo.frame then
                     ClearStaleRecycledBarRuntimeState(barInfo.frame)
-                    ClearResourceAuraVisuals(barInfo.frame)
                     barInfo.frame:Hide()
                 end
                 local bar = CreateContinuousBar(targetContainer)
@@ -2107,11 +2685,20 @@ function CooldownCompanion:ApplyResourceBars(opts)
         if barInfo.frame:GetParent() ~= targetContainer then
             barInfo.frame:SetParent(targetContainer)
         end
+        -- Slot reuse hygiene (aura pass): a slot moving from a custom bar
+        -- to a resource bar kept the old cabConfig/customBarId, and the
+        -- aura-host collector then bound an aura display onto the resource
+        -- bar (the phantom custom_bar_12 bind).
+        if not isCustomEntry then
+            barInfo.cabConfig = nil
+            barInfo.customBarId = nil
+            barInfo.customBarIndex = nil
+        end
         barInfo._side = sideList[idx]
         barInfo._order = orderList[idx]
         barInfo._effectiveThickness = effectiveThickness
 
-        FinalizeAppliedBarVisibility(barInfo, isPreviewActive)
+        FinalizeAppliedBarVisibility(barInfo)
     end
 
     activeResources = filtered
@@ -2167,6 +2754,13 @@ function CooldownCompanion:ApplyResourceBars(opts)
     -- Position bars within containers (reusable for relayout on visibility change)
     RelayoutBars()
 
+    -- Hand the aura block to its mount every pass, empty sides included, so
+    -- the mount can park a container the stack no longer feeds. Guarded: the
+    -- mount side is a separate owner and may not be present.
+    if RB.SyncCustomBarAuraBlocks then
+        RB.SyncCustomBarAuraBlocks(auraBlocks)
+    end
+
     -- Anchor drag chrome to frame the content (after containers are sized)
     if isIndependentStack then
         UpdateIndependentStackChrome(isVerticalLayout, layout)
@@ -2197,6 +2791,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         if independentWrapperFrame then frames[#frames + 1] = independentWrapperFrame end
         if containerFrameAbove then frames[#frames + 1] = containerFrameAbove end
         if containerFrameBelow then frames[#frames + 1] = containerFrameBelow end
+        frames[#frames + 1] = self:GetCustomBarAuraHostRoot()
         if #frames > 0 then
             CooldownCompanion:RegisterModuleAlpha(rbModuleId, settings, frames)
         end
@@ -2211,6 +2806,12 @@ function CooldownCompanion:ApplyResourceBars(opts)
         local groupAlpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
         containerFrameAbove:SetAlpha(groupAlpha)
         containerFrameBelow:SetAlpha(groupAlpha)
+        -- Aura host root rides the same alpha writes: the kit visuals fade
+        -- with the bars they decorate (plain CC frame; alpha propagates
+        -- down through the holders into the slot subtrees engine-side).
+        -- Captured as a local: the sync closure below shadows `self`.
+        local auraHostRoot = self:GetCustomBarAuraHostRoot()
+        auraHostRoot:SetAlpha(groupAlpha)
 
         if not alphaSyncFrame then
             alphaSyncFrame = CreateFrame("Frame")
@@ -2228,6 +2829,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
                 lastAlpha = alpha
                 if containerFrameAbove then containerFrameAbove:SetAlpha(alpha) end
                 if containerFrameBelow then containerFrameBelow:SetAlpha(alpha) end
+                auraHostRoot:SetAlpha(alpha)
             end
         end)
     else
@@ -2240,15 +2842,17 @@ function CooldownCompanion:ApplyResourceBars(opts)
         local frames = {}
         if containerFrameAbove then frames[#frames + 1] = containerFrameAbove end
         if containerFrameBelow then frames[#frames + 1] = containerFrameBelow end
+        frames[#frames + 1] = self:GetCustomBarAuraHostRoot()
         if #frames > 0 then
             CooldownCompanion:RegisterModuleAlpha(rbModuleId, settings, frames)
         end
     end
 
-    -- Re-apply preview visuals if preview mode is active
-    if isPreviewActive then
-        ApplyPreviewData()
-    end
+    -- Custom-bar aura displays (the aura pass): holders re-anchor to the
+    -- frames this apply may have recreated, and slot filters re-bind, in
+    -- the coalesced OOC rebind pass.
+    self:SetCustomBarAuraHostApplied(true)
+    self:RequestAuraRebind("custom-bars")
 end
 
 ------------------------------------------------------------------------
@@ -2264,8 +2868,6 @@ function CooldownCompanion:RevertResourceBars()
     lastAppliedIndependentStack = false
     lastAppliedBarSpacing = nil
     lastAppliedBarThickness = nil
-    layoutDirty = false
-    ClearDeferredCustomAuraWakeRetries()
 
     -- Stop alpha sync, unregister module alpha, restore alpha
     CooldownCompanion:UnregisterModuleAlpha("rb")
@@ -2277,6 +2879,13 @@ function CooldownCompanion:RevertResourceBars()
         if containerFrameBelow then containerFrameBelow:SetAlpha(savedContainerAlpha) end
     end
     savedContainerAlpha = nil
+
+    -- Aura host root goes dark with the bars (safe in combat: plain CC
+    -- frame; a hidden container is inert and self-refreshes on show). The
+    -- rebind request parks the custom-bar displays once OOC.
+    self:SetCustomBarAuraHostApplied(false)
+    self:GetCustomBarAuraHostRoot():SetAlpha(1)
+    self:RequestAuraRebind("custom-bars")
 
     -- Stop OnUpdate
     if onUpdateFrame then
@@ -2291,8 +2900,6 @@ function CooldownCompanion:RevertResourceBars()
         if barInfo.frame then
             ClearStaleRecycledBarRuntimeState(barInfo.frame)
             ClearCustomAuraBarIndicatorState(barInfo, true)
-            ClearResourceAuraVisuals(barInfo.frame)
-            ClearMaxStacksIndicator(barInfo)
             barInfo.frame:Hide()
             if barInfo.frame.brightnessOverlay then
                 barInfo.frame.brightnessOverlay:Hide()
@@ -2305,11 +2912,34 @@ function CooldownCompanion:RevertResourceBars()
     if containerFrameBelow then containerFrameBelow:Hide() end
     HideIndependentWrapperFrame()
 
-    isPreviewActive = false
-    wipe(HEALTH_EFFECTS.preview)
-    HEALTH_EFFECTS.forcedPreview = nil
-    wipe(activeCustomAuraBarActivePreviews)
-    wipe(activeCustomAuraBarPandemicPreviews)
+    -- Park the aura block with the stack. Both orientations are reported
+    -- empty: the teardown does not know which one the mount last built from.
+    RB._auraBlocks = nil
+    if RB.SyncCustomBarAuraBlocks then
+        local parked = {}
+        for _, side in ipairs({ "above", "below", "left", "right" }) do
+            local isFirstSide = side == "above" or side == "left"
+            parked[side] = {
+                parent = isFirstSide and containerFrameAbove or containerFrameBelow,
+                offset = 0,
+                width = 0,
+                spacing = 0,
+                vertical = side == "left" or side == "right",
+                unlockAssist = false,
+                entries = {},
+            }
+        end
+        RB.SyncCustomBarAuraBlocks(parked)
+    end
+
+    isUnlockAssistActive = false
+    -- Config-canvas preview state is deliberately NOT cleared here. This
+    -- teardown runs for transient live conditions — no anchor group yet, an
+    -- anchor that is not icon-like, an anchor frame that is momentarily
+    -- hidden — and the canvas keeps rendering from saved data through all of
+    -- them. Wiping the maps made a running command-center preview die
+    -- because of live-frame availability it has nothing to do with.
+    -- Ownership sits with ClearAllConfigPreviews and the explicit stops.
     activeResources = {}
 end
 
@@ -2317,6 +2947,12 @@ function CooldownCompanion:DisableResourceBarRuntime()
     self._resourceBarsNeedsMWMaxRefresh = true
     DisableLifecycleEvents()
     self:RevertResourceBars()
+    -- The feature itself is off, so the bars those previews stand for no
+    -- longer exist anywhere — this is the disable path, not the transient
+    -- teardown above, and clearing here is the point.
+    self:ClearAllHealthEffectPreviews()
+    self:ClearAllCustomAuraBarPreviews()
+    self:ClearAllResourceAuraPreviews()
 end
 
 function CooldownCompanion:GetSpecCustomAuraBars()
@@ -2331,100 +2967,85 @@ function CooldownCompanion:GetSpecLayoutOrder()
     return GetSpecLayoutOrder(settings)
 end
 
-local function RefreshCustomAuraBarPreviewState(cabConfig, previewKey, show)
-    local anyUpdated = false
-
-    for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo.cabConfig == cabConfig and barInfo.frame then
-            barInfo.frame[previewKey] = show or nil
-            if barInfo.barType == "custom_cooldown" then
-                RB.UpdateCustomCooldownBar(barInfo)
-            else
-                UpdateCustomAuraBar(barInfo)
-            end
-            if barInfo.barType == "custom_continuous" or barInfo.barType == "custom_cooldown" then
-                AnimateCustomAuraBarIndicator(barInfo.frame)
-            end
-            anyUpdated = true
-        end
-    end
-
-    if anyUpdated and layoutDirty then
-        RelayoutResourceStack()
-    end
-end
-
-local function IsCustomAuraBarPreviewStateActive(cabConfig, previewKey)
-    if not (cabConfig and previewKey) then
-        return false
-    end
-    for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo.cabConfig == cabConfig and barInfo.frame and barInfo.frame[previewKey] then
-            return true
-        end
-    end
-    return false
-end
-
-function CooldownCompanion:SetCustomAuraBarActivePreview(cabConfig, show)
-    if not cabConfig then return end
-    if show then
-        local specID = RB.GetCurrentSpecID and RB.GetCurrentSpecID()
-        if not (specID and RB.CustomBarHasSpec and RB.CustomBarHasSpec(cabConfig, specID)) then
-            show = nil
-        end
-    end
-    activeCustomAuraBarActivePreviews[cabConfig] = show or nil
-    RefreshCustomAuraBarPreviewState(cabConfig, "_barAuraActivePreview", show)
+-- Custom-bar aura preview (the aura pass): which bars have their Active Aura
+-- stand-in armed, keyed by the stored config table (the same identity
+-- barInfo.cabConfig carries, and the one the config canvas reads back).
+--
+-- State only. The stand-in renders on the config canvas and the live bar is
+-- never touched (owner ruling 2026-07-26); the canvas repaints itself when
+-- the command center flips this.
+function CooldownCompanion:SetCustomAuraBarActivePreview(cabConfig, active)
+    if type(cabConfig) ~= "table" then return end
+    activeCustomAuraBarActivePreviews[cabConfig] = active and true or nil
 end
 
 function CooldownCompanion:IsCustomAuraBarActivePreviewActive(cabConfig)
     return activeCustomAuraBarActivePreviews[cabConfig] == true
-        or IsCustomAuraBarPreviewStateActive(cabConfig, "_barAuraActivePreview")
 end
 
-function CooldownCompanion:SetCustomAuraBarPandemicPreview(cabConfig, show)
-    if not cabConfig then return end
-    if show then
-        local specID = RB.GetCurrentSpecID and RB.GetCurrentSpecID()
-        if not (specID and RB.CustomBarHasSpec and RB.CustomBarHasSpec(cabConfig, specID)) then
-            show = nil
-        end
-    end
-    activeCustomAuraBarPandemicPreviews[cabConfig] = show or nil
-    RefreshCustomAuraBarPreviewState(cabConfig, "_pandemicPreview", show)
+-- Pandemic stand-in (PTR 8 Phase 2): rides on top of the Active Aura
+-- stand-in — the recolor exists only while the aura fill renders, so the
+-- command center arms both flags together. Same table-keyed state model.
+function CooldownCompanion:SetCustomAuraBarPandemicPreview(cabConfig, active)
+    if type(cabConfig) ~= "table" then return end
+    activeCustomAuraBarPandemicPreviews[cabConfig] = active and true or nil
 end
 
 function CooldownCompanion:IsCustomAuraBarPandemicPreviewActive(cabConfig)
     return activeCustomAuraBarPandemicPreviews[cabConfig] == true
-        or IsCustomAuraBarPreviewStateActive(cabConfig, "_pandemicPreview")
+end
+
+--- Pandemic MARKER stand-in: the marker decorates the duration text, not the
+--- fill, so unlike the recolor above it needs no aura stand-in underneath and
+--- gets its own flag rather than riding the Active Aura one.
+function CooldownCompanion:SetCustomAuraBarMarkerPreview(cabConfig, active)
+    if type(cabConfig) ~= "table" then return end
+    activeCustomAuraBarMarkerPreviews[cabConfig] = active and true or nil
+end
+
+function CooldownCompanion:IsCustomAuraBarMarkerPreviewActive(cabConfig)
+    return activeCustomAuraBarMarkerPreviews[cabConfig] == true
+end
+
+-- Spell custom-bar cooldown stand-in: which spell bars render as if their
+-- cooldown were running, and which of the two looks each shows. Same
+-- table-keyed, canvas-only state model as the aura previews above.
+function CooldownCompanion:SetCustomBarCooldownPreview(cabConfig, kind)
+    if type(cabConfig) ~= "table" then return end
+    if kind ~= "cooldown" and kind ~= "recharge" then
+        kind = nil
+    end
+    activeCustomBarCooldownPreviews[cabConfig] = kind
+end
+
+function CooldownCompanion:GetCustomBarCooldownPreviewKind(cabConfig)
+    return activeCustomBarCooldownPreviews[cabConfig]
 end
 
 function CooldownCompanion:ClearAllCustomAuraBarPreviews()
     wipe(activeCustomAuraBarActivePreviews)
     wipe(activeCustomAuraBarPandemicPreviews)
+    wipe(activeCustomAuraBarMarkerPreviews)
+    wipe(activeCustomBarCooldownPreviews)
+end
 
-    local anyUpdated = false
-    for _, barInfo in ipairs(resourceBarFrames) do
-        local frame = barInfo.frame
-        if frame and (frame._barAuraActivePreview or frame._pandemicPreview) then
-            frame._barAuraActivePreview = nil
-            frame._pandemicPreview = nil
-            if barInfo.barType == "custom_cooldown" then
-                RB.UpdateCustomCooldownBar(barInfo)
-            else
-                UpdateCustomAuraBar(barInfo)
-            end
-            if barInfo.barType == "custom_continuous" or barInfo.barType == "custom_cooldown" then
-                AnimateCustomAuraBarIndicator(frame)
-            end
-            anyUpdated = true
-        end
-    end
+-- Resource aura overlay preview (the aura pass, Phase 2): which resources
+-- have their Active Aura stand-in armed. State only, same as the custom-bar
+-- previews above — the stand-in renders on the config canvas and the live
+-- bar is never touched (owner ruling 2026-07-26).
+function CooldownCompanion:SetResourceAuraActivePreview(powerType, active)
+    powerType = tonumber(powerType)
+    if not powerType then return end
+    activeResourceAuraPreviews[powerType] = active and true or nil
+end
 
-    if anyUpdated and layoutDirty then
-        RelayoutResourceStack()
-    end
+function CooldownCompanion:IsResourceAuraActivePreviewActive(powerType)
+    powerType = tonumber(powerType)
+    return powerType ~= nil and activeResourceAuraPreviews[powerType] == true
+end
+
+function CooldownCompanion:ClearAllResourceAuraPreviews()
+    wipe(activeResourceAuraPreviews)
 end
 
 function HealthBar.HasActiveEffectPreview()
@@ -2435,35 +3056,9 @@ function HealthBar.HasActiveEffectPreview()
         or preview.lowHealthAlert == true
 end
 
-function HealthBar.RefreshEffectPreviewState()
-    if isPreviewActive and ApplyPreviewData then
-        ApplyPreviewData()
-        return
-    end
-
-    local settings = GetResourceBarSettings()
-    local config = HealthBar.GetConfig(settings)
-    for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo.barType == "health_continuous" and barInfo.frame then
-            HealthBar.UpdateEffectBars(barInfo.frame, config, UnitHealthMax("player"), HEALTH_EFFECTS.preview)
-        end
-    end
-end
-
-function HealthBar.RefreshEffectPreviewAnimation(settings)
-    local preview = HEALTH_EFFECTS.preview
-    if preview.lowHealthAlert ~= true then
-        return
-    end
-
-    local config = HealthBar.GetConfig(settings)
-    for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo.barType == "health_continuous" and barInfo.frame and barInfo.frame:IsShown() then
-            HealthBar.UpdateEffectBars(barInfo.frame, config, 100, preview)
-        end
-    end
-end
-
+-- Health-effect previews are state only, like the custom-bar aura previews:
+-- absorbs, incoming heals and the low-health alert render on the config
+-- canvas's health facsimile, never on the real bar.
 function CooldownCompanion:SetHealthEffectPreview(effectKey, show)
     if effectKey ~= "absorbs"
         and effectKey ~= "healAbsorbs"
@@ -2473,22 +3068,6 @@ function CooldownCompanion:SetHealthEffectPreview(effectKey, show)
     end
 
     HEALTH_EFFECTS.preview[effectKey] = show and true or nil
-    if show then
-        if not isPreviewActive then
-            HEALTH_EFFECTS.forcedPreview = true
-            self:StartResourceBarPreview()
-        else
-            HealthBar.RefreshEffectPreviewState()
-        end
-        return
-    end
-
-    if not HealthBar.HasActiveEffectPreview() and HEALTH_EFFECTS.forcedPreview then
-        HEALTH_EFFECTS.forcedPreview = nil
-        self:StopResourceBarPreview()
-    else
-        HealthBar.RefreshEffectPreviewState()
-    end
 end
 
 function CooldownCompanion:IsHealthEffectPreviewActive(effectKey)
@@ -2496,17 +3075,7 @@ function CooldownCompanion:IsHealthEffectPreviewActive(effectKey)
 end
 
 function CooldownCompanion:ClearAllHealthEffectPreviews()
-    if not HealthBar.HasActiveEffectPreview() then
-        return
-    end
-
     wipe(HEALTH_EFFECTS.preview)
-    if HEALTH_EFFECTS.forcedPreview then
-        HEALTH_EFFECTS.forcedPreview = nil
-        self:StopResourceBarPreview()
-    else
-        HealthBar.RefreshEffectPreviewState()
-    end
 end
 
 function CooldownCompanion:GetResourceBarRuntimeDebugInfo()
@@ -2524,6 +3093,42 @@ function CooldownCompanion:GetResourceBarRuntimeDebugInfo()
             entry.hideWhenInactive = barInfo.cabConfig.hideWhenInactive == true
         end
         info[#info + 1] = entry
+    end
+    -- Aura block entries hold no stack slot, so they cannot appear in the
+    -- per-slot array above. Reported per side alongside it, keyed so the
+    -- array report keeps its shape.
+    local blocks = RB._auraBlocks
+    if blocks then
+        local auraBlock = {}
+        for side, block in pairs(blocks) do
+            local customBarIds, unitCounts = {}, {}
+            for _, blockEntry in ipairs(block.entries) do
+                customBarIds[#customBarIds + 1] = tostring(blockEntry.customBarId)
+                local unit = blockEntry.unit or "player"
+                unitCounts[unit] = (unitCounts[unit] or 0) + 1
+            end
+            -- Per-entry units summarised per side ("player:2 target:1"): a
+            -- side with both runs two chained buckets in the bind pass. Fixed
+            -- token order so two snapshots stay comparable.
+            local units = ""
+            for _, unit in ipairs({ "player", "target" }) do
+                if unitCounts[unit] then
+                    units = (units == "" and "" or units .. " ")
+                        .. unit .. ":" .. unitCounts[unit]
+                end
+            end
+            -- Emitted here, not at the consumer: "" is truthy in Lua, so an
+            -- `or "none"` fallback over there can never fire.
+            if units == "" then units = "none" end
+            auraBlock[side] = {
+                customBarIds = customBarIds,
+                offset = block.offset,
+                unlockAssist = block.unlockAssist == true,
+                units = units,
+                targetFirst = block.targetFirst == true,
+            }
+        end
+        info.auraBlock = auraBlock
     end
     return info
 end
@@ -2606,15 +3211,14 @@ end
 -- Preview mode
 ------------------------------------------------------------------------
 
-local previewModule = RB.CreateResourceBarPreviewModule({
-    resourceBarFrames = resourceBarFrames,
+RB.CreateResourceBarPreviewModule({
     HealthBar = HealthBar,
     HEALTH_EFFECTS = HEALTH_EFFECTS,
-    GetPreviewActive = function()
-        return isPreviewActive
+    GetUnlockAssistActive = function()
+        return isUnlockAssistActive
     end,
-    SetPreviewActive = function(value)
-        isPreviewActive = value == true
+    SetUnlockAssistActive = function(value)
+        isUnlockAssistActive = value == true
     end,
     GetMWMaxStacks = function()
         return mwMaxStacks
@@ -2623,25 +3227,23 @@ local previewModule = RB.CreateResourceBarPreviewModule({
     ApplySegmentedPreviewColors = ApplySegmentedPreviewColors,
     ClearCustomAuraBarIndicatorState = ClearCustomAuraBarIndicatorState,
     ClearCustomAuraBarIndicatorVisualState = ClearCustomAuraBarIndicatorVisualState,
+    UpdateCustomAuraBarIndicatorVisuals = UpdateCustomAuraBarIndicatorVisuals,
+    AnimateCustomAuraBarIndicator = AnimateCustomAuraBarIndicator,
 })
-ApplyPreviewData = previewModule.ApplyPreviewData
 
 ------------------------------------------------------------------------
 -- Hook installation and initialization
 ------------------------------------------------------------------------
 
 lifecycleModule = RB.CreateResourceBarLifecycleModule({
-    resourceBarFrames = resourceBarFrames,
     GetResourceBarSettings = GetResourceBarSettings,
     GetSpecLayoutOrder = GetSpecLayoutOrder,
     GetEffectiveAnchorGroupId = GetEffectiveAnchorGroupId,
     GetResourcePrimaryLength = GetResourcePrimaryLength,
-    GetResolvedCustomAuraBarAuraUnit = GetResolvedCustomAuraBarAuraUnit,
     GetLastAppliedPrimaryLength = function()
         return lastAppliedPrimaryLength
     end,
     UpdateMWMaxStacks = UpdateMWMaxStacks,
-    RefreshEventDrivenCustomAuraBarsForUnit = RefreshEventDrivenCustomAuraBarsForUnit,
 })
 EnableLifecycleEvents = lifecycleModule.EnableLifecycleEvents
 DisableLifecycleEvents = lifecycleModule.DisableLifecycleEvents

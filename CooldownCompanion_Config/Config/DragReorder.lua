@@ -4,6 +4,12 @@
 
     Concern modules:
     - DragReorderTargets.lua: drop-target resolution, indicators, and reorder primitives.
-    - DragReorderPreview.lua: animated Column 1 and Column 2 drag previews.
     - DragReorderLifecycle.lua: drag lifecycle, drop application, and public exports.
+
+    Navigator drags are shown with a single insertion line, not an animated
+    preview. The previous DragReorderPreview.lua rebuilt a proxy copy of the
+    whole column because AceGUI owns the real rows' positions and they cannot be
+    moved; keeping that copy in step with the widgets it mirrored was the source
+    of its bugs. Do not reintroduce one while Column 1 is built from AceGUI
+    widgets.
 ]]

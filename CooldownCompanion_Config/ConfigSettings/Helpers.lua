@@ -3,15 +3,45 @@ local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
-local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local IsNoCooldownSpellID = ST.IsNoCooldownSpell
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
--- Helper: tint AceGUI Heading labels with player class color
+-- Helper: tint AceGUI Heading labels with player class color.
+-- Also restores the stock right-line anchors: AceGUI recycles Heading
+-- widgets and neither OnAcquire nor SetText repairs the right line, so a
+-- heading whose right line was re-anchored to a decoration (info button,
+-- collapse arrow, preview badge) carries that stale anchor into its next
+-- life. Decorated call sites re-anchor again after calling this.
+--
+-- The label/left-line reset below is the same defence for the opt-in
+-- left-aligned variant further down: those are the two pieces of stock
+-- Heading anatomy that neither OnAcquire nor SetText puts back, and the
+-- Heading pool is shared with every other addon. Re-asserting the stock
+-- state here is a no-op for every centered heading.
 local function ColorHeading(heading)
     local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
     if cc then
         heading.label:SetTextColor(cc.r, cc.g, cc.b)
+    end
+    heading.label:ClearAllPoints()
+    heading.label:SetPoint("TOP")
+    heading.label:SetPoint("BOTTOM")
+    heading.label:SetJustifyH("CENTER")
+    heading.left:ClearAllPoints()
+    heading.left:SetPoint("LEFT", 3, 0)
+    local headingText = heading.label:GetText()
+    if headingText and headingText ~= "" then
+        heading.left:SetPoint("RIGHT", heading.label, "LEFT", -5, 0)
+    else
+        heading.left:SetPoint("RIGHT", -3, 0)
+    end
+    heading.left:Show()
+    heading.right:ClearAllPoints()
+    heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
+    heading.right:SetPoint("LEFT", heading.label, "RIGHT", 5, 0)
+    local rule = heading.frame._cdcHeadingRule
+    if rule then
+        rule:Hide()
     end
 end
 
@@ -65,6 +95,164 @@ local function AttachCollapseButton(heading, isCollapsed, onClickFn)
     return btn
 end
 
+-- Helper: re-shape a Heading into the row-grammar section header: caret at
+-- the far left, then the label, then a thin rule fading out to the right,
+-- with breathing room above the whole line so sections do not butt together.
+-- The stock left/right border textures are hidden rather than re-textured,
+-- and the fading rule is cached on heading.frame._cdcHeadingRule so it
+-- survives widget recycling without stacking duplicate textures.
+--
+-- Everything touched here is put back on release, and the acquire side is
+-- covered too: ColorHeading above re-asserts the label/left/right anatomy on
+-- every acquire, and the taller frame is re-asserted by stock Heading's own
+-- OnAcquire (`self:SetHeight(18)`), which is the one piece of state AceGUI
+-- resets for us. So a Heading that passes through this variant can never
+-- carry it into another addon's use of the shared pool.
+local HEADING_CARET_INSET = 2
+local HEADING_CARET_SIZE = 16          -- matches AttachCollapseButton's button
+local HEADING_CARET_GAP = 4
+local HEADING_RULE_GAP = 8
+local HEADING_RULE_HEIGHT = 1
+local HEADING_RULE_ALPHA = 0.35
+-- Stock AceGUI Heading height; its own OnAcquire re-asserts this, which is
+-- why the taller variant below only has to undo itself on release.
+local HEADING_STOCK_HEIGHT = 18
+-- Sections must not butt against each other, and the HEADER owns that gap so
+-- every tab stamped from the row-grammar template inherits it. The frame
+-- grows by HEADING_TOP_PAD and the header line is pinned to the frame's
+-- BOTTOM, so the extra space lands ABOVE the text - air before a section,
+-- never after it.
+local HEADING_TOP_PAD = 10
+-- The header line therefore sits half a pad below the frame's vertical
+-- centre. Caret and badges hang off the LABEL and follow it for free, but
+-- every point taken against the FRAME carries this offset - LEFT/RIGHT points
+-- also declare a vertical centre, and two anchors declaring DIFFERENT centres
+-- on the same region is over-constrained and resolves by luck.
+local HEADING_LINE_Y = -HEADING_TOP_PAD / 2
+-- Caret first, then label. The label sits at this inset whether or not the
+-- section has a caret, so collapsible and plain section titles line up.
+local HEADING_LABEL_INSET = HEADING_CARET_INSET + HEADING_CARET_SIZE + HEADING_CARET_GAP
+
+local function ApplyLeftAlignedHeading(heading, btn)
+    local frame = heading.frame
+    local rule = frame._cdcHeadingRule
+
+    if not rule then
+        rule = frame:CreateTexture(nil, "BACKGROUND")
+        rule:SetTexture("Interface/Buttons/WHITE8x8")
+        rule:SetHeight(HEADING_RULE_HEIGHT)
+        frame._cdcHeadingRule = rule
+    end
+
+    heading.left:Hide()
+    heading.right:Hide()
+
+    -- Taller than stock, with the label pushed down by the whole pad: the
+    -- text keeps its 18px line at the BOTTOM of the frame and the extra room
+    -- opens above it.
+    heading:SetHeight(HEADING_STOCK_HEIGHT + HEADING_TOP_PAD)
+
+    heading.label:ClearAllPoints()
+    heading.label:SetJustifyH("LEFT")
+    heading.label:SetPoint("TOP", frame, "TOP", 0, -HEADING_TOP_PAD)
+    heading.label:SetPoint("BOTTOM")
+    heading.label:SetPoint("LEFT", frame, "LEFT", HEADING_LABEL_INSET, HEADING_LINE_Y)
+    -- Caret hangs off the LABEL, not the frame, so it rides the shifted line
+    -- and the label's inset stays the same with or without one.
+    if btn then
+        btn:ClearAllPoints()
+        btn:SetPoint("RIGHT", heading.label, "LEFT", -HEADING_CARET_GAP, 0)
+    end
+
+    local r, g, b = 0.8, 0.8, 0.8
+    local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+    if cc then
+        r, g, b = cc.r, cc.g, cc.b
+    end
+    rule:ClearAllPoints()
+    rule:SetPoint("LEFT", heading.label, "RIGHT", HEADING_RULE_GAP, 0)
+    rule:SetPoint("RIGHT", frame, "RIGHT", -3, HEADING_LINE_Y)
+    rule:SetGradient("HORIZONTAL", CreateColor(r, g, b, HEADING_RULE_ALPHA), CreateColor(r, g, b, 0))
+    rule:Show()
+
+    -- Chain, don't replace: AttachCollapseButton already installed its own
+    -- detach handler on this heading.
+    local prevOnRelease = heading.events and heading.events["OnRelease"]
+    heading:SetCallback("OnRelease", function(widget, event, ...)
+        if prevOnRelease then
+            prevOnRelease(widget, event, ...)
+        end
+        rule:Hide()
+        rule:ClearAllPoints()
+        heading:SetHeight(HEADING_STOCK_HEIGHT)
+        heading.label:ClearAllPoints()
+        heading.label:SetPoint("TOP")
+        heading.label:SetPoint("BOTTOM")
+        heading.label:SetJustifyH("CENTER")
+        heading.left:ClearAllPoints()
+        heading.left:SetPoint("LEFT", 3, 0)
+        heading.left:SetPoint("RIGHT", heading.label, "LEFT", -5, 0)
+        heading.left:Show()
+        heading.right:ClearAllPoints()
+        heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
+        heading.right:SetPoint("LEFT", heading.label, "RIGHT", 5, 0)
+        heading.right:Show()
+    end)
+
+    return rule
+end
+
+-- Re-anchor a left-aligned heading's fading rule to sit after the last badge
+-- on the heading line. Returns false for centered headings so decorated call
+-- sites can fall back to their stock `heading.right` re-anchor.
+local function AnchorLeftAlignedHeadingRule(heading, afterFrame)
+    local frame = heading and heading.frame
+    local rule = frame and frame._cdcHeadingRule
+    if not (rule and rule:IsShown()) then
+        return false
+    end
+    rule:ClearAllPoints()
+    rule:SetPoint("LEFT", afterFrame or heading.label, "RIGHT", HEADING_RULE_GAP, 0)
+    -- Badges are label-anchored, so the LEFT point already rides the header
+    -- line; the frame-anchored RIGHT point has to be dropped to match it.
+    rule:SetPoint("RIGHT", frame, "RIGHT", -3, HEADING_LINE_Y)
+    return true
+end
+
+-- Helper: build a class-colored collapsible section Heading wired to a
+-- collapse-state store. store defaults to CS.collapsedSections (the config
+-- columns' store); resource-bar panels pass their own. refreshFn defaults to
+-- a full config-panel refresh. Returns the heading, its collapsed state, and
+-- the collapse button (for callers that anchor extra controls to it).
+--
+-- opts.leftAligned opts into the row-grammar header shape (caret, then a
+-- left-aligned label, then a rule fading right). Omitting opts keeps the
+-- stock centered heading every existing call site draws today.
+local function BuildCollapsibleSection(container, title, key, store, refreshFn, opts)
+    store = store or CS.collapsedSections
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(title)
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+
+    local collapsed = store[key]
+    local btn = AttachCollapseButton(heading, collapsed, function()
+        store[key] = not store[key]
+        if refreshFn then
+            refreshFn()
+        else
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end)
+
+    if opts and opts.leftAligned then
+        ApplyLeftAlignedHeading(heading, btn)
+    end
+
+    return heading, collapsed, btn
+end
+
 -- Helper: add an advanced-settings button on a parent widget (CheckBox or Heading).
 -- The button opens the shared side editor when options.build is provided.
 local ADVANCED_TOGGLE_ATLAS = "QuestLog-icon-setting"
@@ -79,6 +267,9 @@ local function GetAdvancedToggleTitle(parentWidget, options)
         labelText = parentWidget.text:GetText()
     elseif parentWidget.label and parentWidget.label.GetText then
         labelText = parentWidget.label:GetText()
+    elseif parentWidget.rowLabel and parentWidget.rowLabel.GetText then
+        -- Row-grammar widgets (RowWidgets.lua) name their label rowLabel.
+        labelText = parentWidget.rowLabel:GetText()
     end
 
     if labelText and labelText ~= "" then
@@ -152,15 +343,30 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
 
     -- Clean up on widget release (prevent leaking into recycled widgets).
     -- Also covers any collapse button on the same frame, since AddAdvancedToggle
-    -- is always called after AttachCollapseButton and overwrites its OnRelease.
-    parentWidget:SetCallback("OnRelease", function()
+    -- may run after AttachCollapseButton on the same heading.
+    --
+    -- Chain, don't replace: the left-aligned heading variant and the row
+    -- widgets install their own restore/detach handlers, and clobbering those
+    -- would leave stock Heading anatomy re-anchored in the shared pool. The
+    -- collapse-button detach below is idempotent with AttachCollapseButton's
+    -- own handler, so running both is a no-op for existing call sites.
+    --
+    -- Every close below names its own setting key. A settings-side gear owns
+    -- exactly one panel, and the preview command center can have a second one
+    -- open whose gear lives on another tab - closing that one too would be a
+    -- gear reaching past its own panel.
+    local prevOnRelease = parentWidget.events and parentWidget.events["OnRelease"]
+    parentWidget:SetCallback("OnRelease", function(widget, event, ...)
+        if prevOnRelease then
+            prevOnRelease(widget, event, ...)
+        end
         local activeSidePanelToggleReleased = useSidePanel and CS.activeAdvancedSettingsToggleButton == btn
         if activeSidePanelToggleReleased
             and not CS.configRefreshInProgress
             and not CS.advancedSettingsPanelRefreshing
             and CS.CloseAdvancedSettingsPanel
         then
-            CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+            CS.CloseAdvancedSettingsPanel({ settingKey = settingKey })
         end
 
         btn:ClearAllPoints()
@@ -176,21 +382,12 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
             colBtn:Hide()
             colBtn:SetParent(nil)
         end
-        local previewBtn = frame._cdcPreviewBtn
-        if previewBtn then
-            previewBtn:ClearAllPoints()
-            previewBtn:Hide()
-            previewBtn:SetParent(nil)
-            if CS.activePreviewBadgeButton == previewBtn then
-                CS.activePreviewBadgeButton = nil
-            end
-        end
     end)
 
     -- Hide when parent setting is disabled
     if isEnabled == false then
         if useSidePanel and isActive and CS.CloseAdvancedSettingsPanel then
-            CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+            CS.CloseAdvancedSettingsPanel({ settingKey = settingKey })
         end
         btn:Hide()
         btn._icon:Hide()
@@ -201,8 +398,13 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
     btn:Show()
     btn._icon:Show()
 
+    -- Position for row-grammar widgets: badges chain off the end of the row's
+    -- label text (RowWidgets.lua). The gear is normally created first, so it
+    -- is the badge nearest the label.
+    if parentWidget.badgeAnchor then
+        ST._AnchorRowBadge(parentWidget, btn)
     -- Position for CheckBox widgets (has checkbg and text)
-    if parentWidget.checkbg then
+    elseif parentWidget.checkbg then
         btn:SetPoint("LEFT", parentWidget.checkbg, "RIGHT", parentWidget.text:GetStringWidth() + 6, 0)
     end
     -- For headings, caller positions manually (use returned btn reference)
@@ -217,7 +419,7 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
     btn:SetScript("OnClick", function()
         if useSidePanel then
             if CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(settingKey, options.context) then
-                CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+                CS.CloseAdvancedSettingsPanel({ settingKey = settingKey })
             else
                 local descriptor = BuildAdvancedDescriptor(parentWidget, settingKey, options)
                 if CS.OpenAdvancedSettingsPanel(descriptor) and btn:GetParent() == frame then
@@ -275,6 +477,35 @@ local function GetSelectedRuntimeButton(buttonData)
     return nil
 end
 
+-- Owner ruling (aura rebuild plan): group-level aura style sections are shown
+-- only while the group actually has an aura-tracking entry. Shared by
+-- GroupTabs and BarModeTabs (load order: Helpers loads first).
+local function GroupHasAuraTrackingEntry(group)
+    if not (group and group.buttons) then
+        return false
+    end
+    for _, buttonData in ipairs(group.buttons) do
+        if buttonData.type == "spell"
+            and (buttonData.auraTracking or buttonData.addedAs == "aura") then
+            return true
+        end
+    end
+    return false
+end
+
+-- Aura style sections only apply while an entry tracks an aura. This gate is
+-- config-visibility only, NOT part of ST.CanButtonUseOverrideSection: aura
+-- tracking is a toggle, and the runtime check feeds GetEffectiveStyle's prune
+-- pass, which would permanently delete the saved override on toggle-off.
+local AURA_TRACKING_CONFIG_ONLY_SECTIONS = {
+    auraText = true,
+    auraStackText = true,
+    auraDurationSwipe = true,
+    auraIndicator = true,
+    barActiveAura = true,
+    pandemic = true,
+}
+
 local function CanButtonUseConfigOverrideSection(buttonData, sectionId)
     if ST.CanButtonUseOverrideSection then
         local allowed, reason = ST.CanButtonUseOverrideSection(buttonData, sectionId)
@@ -285,6 +516,11 @@ local function CanButtonUseConfigOverrideSection(buttonData, sectionId)
         and ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS
         and ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS[sectionId] then
         return false, "entryType"
+    end
+
+    if AURA_TRACKING_CONFIG_ONLY_SECTIONS[sectionId]
+        and not (buttonData and (buttonData.auraTracking or buttonData.addedAs == "aura")) then
+        return false, "auraTracking"
     end
 
     if not (ST.NO_COOLDOWN_DENIED_OVERRIDE_SECTIONS
@@ -316,6 +552,87 @@ local function CanButtonUseConfigOverrideSection(buttonData, sectionId)
     return true
 end
 
+------------------------------------------------------------------------
+-- One-shot override targeting (owner ruling 2026-07-18): with no entry
+-- selected in the wide view, promote badges stay active and arm a
+-- targeting mode; the next click on an entry in the mirror preview
+-- promotes the section for that entry and lands in its Overrides tab.
+-- ButtonPanelPreview.lua owns the banner, slot highlights, click
+-- consumption, and the cancel paths.
+------------------------------------------------------------------------
+local function CanArmOverrideTargeting(group, sectionId)
+    if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then
+        return false
+    end
+    if CS.selectedButton ~= nil or (CS.selectedButtons and next(CS.selectedButtons)) then
+        return false
+    end
+    if not group or group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+        return false
+    end
+    -- Arm only when the click can actually land somewhere: at least one
+    -- entry must be able to use this section (already-overridden entries
+    -- count — targeting them jumps to their Overrides tab).
+    for _, buttonData in ipairs(group.buttons or {}) do
+        if (CanButtonUseConfigOverrideSection(buttonData, sectionId)) then
+            return true
+        end
+    end
+    return false
+end
+
+local function IsOverrideTargetingArmed(sectionId)
+    local targeting = CS.overrideTargeting
+    return targeting ~= nil
+        and targeting.sectionId == sectionId
+        and targeting.panelId == CS.selectedGroup
+end
+
+local function ToggleOverrideTargeting(sectionId)
+    if IsOverrideTargetingArmed(sectionId) then
+        CS.overrideTargeting = nil
+    else
+        CS.overrideTargeting = { sectionId = sectionId, panelId = CS.selectedGroup }
+    end
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function ApplyPromoteBadgeState(icon, promoteBtn, canPromote, canTarget, sectionId)
+    if canPromote or canTarget then
+        icon:SetAtlas("Crosshair_VehichleCursor_32")
+        promoteBtn:Enable()
+    else
+        icon:SetAtlas("Crosshair_unableVehichleCursor_32")
+        promoteBtn:Disable()
+    end
+    if canTarget and IsOverrideTargetingArmed(sectionId) then
+        icon:SetVertexColor(0.2, 1, 0.4)
+    else
+        icon:SetVertexColor(1, 1, 1)
+    end
+end
+
+local function AddPromoteBadgeTooltipLines(canPromote, canTarget, sectionId, sectionLabel,
+        btnData, sectionAllowed, sectionUnavailableReason)
+    if canPromote then
+        GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
+    elseif canTarget and IsOverrideTargetingArmed(sectionId) then
+        GameTooltip:AddLine("Click an entry in the preview to override " .. sectionLabel)
+        GameTooltip:AddLine("Click again, right-click the preview, or press Esc to cancel", 0.7, 0.7, 0.7)
+    elseif canTarget then
+        GameTooltip:AddLine("Override " .. sectionLabel .. " for one entry")
+        GameTooltip:AddLine("Click, then choose the entry in the preview", 0.7, 0.7, 0.7)
+    elseif btnData and sectionUnavailableReason == "noCooldown" then
+        GameTooltip:AddLine("This override is not available for spells without a real cooldown", 0.5, 0.5, 0.5)
+    elseif btnData and sectionUnavailableReason == "auraTracking" then
+        GameTooltip:AddLine("This override is only available for entries that track an aura", 0.5, 0.5, 0.5)
+    elseif btnData and not sectionAllowed then
+        GameTooltip:AddLine("This override is not available for this entry type", 0.5, 0.5, 0.5)
+    else
+        GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
+    end
+end
+
 local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupStyle)
     local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not GroupSupportsPerButtonOverrides(group) then
@@ -324,11 +641,19 @@ local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupSt
 
     local promoteBtn = CreateFrame("Button", nil, headingWidget.frame)
     promoteBtn:SetSize(16, 16)
-    local anchorAfter = headingWidget.frame._cdcCollapseBtn or headingWidget.label
-    promoteBtn:SetPoint("LEFT", anchorAfter, "RIGHT", 4, 0)
-    headingWidget.right:ClearAllPoints()
-    headingWidget.right:SetPoint("RIGHT", headingWidget.frame, "RIGHT", -3, 0)
-    headingWidget.right:SetPoint("LEFT", promoteBtn, "RIGHT", 4, 0)
+    -- Left-aligned row-grammar headings put the caret first and the label
+    -- second, so badges follow the label and push the fading rule right. The
+    -- stock `right` texture is hidden on those headings - leave it alone.
+    if headingWidget.frame._cdcHeadingRule and headingWidget.frame._cdcHeadingRule:IsShown() then
+        promoteBtn:SetPoint("LEFT", headingWidget.label, "RIGHT", 4, 0)
+        AnchorLeftAlignedHeadingRule(headingWidget, promoteBtn)
+    else
+        local anchorAfter = headingWidget.frame._cdcCollapseBtn or headingWidget.label
+        promoteBtn:SetPoint("LEFT", anchorAfter, "RIGHT", 4, 0)
+        headingWidget.right:ClearAllPoints()
+        headingWidget.right:SetPoint("RIGHT", headingWidget.frame, "RIGHT", -3, 0)
+        headingWidget.right:SetPoint("LEFT", promoteBtn, "RIGHT", 4, 0)
+    end
 
     local icon = promoteBtn:CreateTexture(nil, "OVERLAY")
     icon:SetSize(12, 12)
@@ -344,40 +669,31 @@ local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupSt
         and buttonData ~= nil
         and sectionAllowed
         and not (buttonData.overrideSections and buttonData.overrideSections[sectionId])
+    local canTarget = not canPromote and CanArmOverrideTargeting(group, sectionId)
 
-    if canPromote then
-        icon:SetAtlas("Crosshair_VehichleCursor_32")
-        promoteBtn:Enable()
-    else
-        icon:SetAtlas("Crosshair_unableVehichleCursor_32")
-        promoteBtn:Disable()
-    end
+    ApplyPromoteBadgeState(icon, promoteBtn, canPromote, canTarget, sectionId)
 
     local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
     local sectionLabel = sectionDef and sectionDef.label or sectionId
 
     promoteBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if canPromote then
-            GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
-        elseif buttonData and sectionUnavailableReason == "noCooldown" then
-            GameTooltip:AddLine("This override is not available for spells without a real cooldown", 0.5, 0.5, 0.5)
-        elseif buttonData and not sectionAllowed then
-            GameTooltip:AddLine("This override is not available for equipment slots", 0.5, 0.5, 0.5)
-        else
-            GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
-        end
+        AddPromoteBadgeTooltipLines(canPromote, canTarget, sectionId, sectionLabel,
+            buttonData, sectionAllowed, sectionUnavailableReason)
         GameTooltip:Show()
     end)
     promoteBtn:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
     promoteBtn:SetScript("OnClick", function()
-        if not canPromote then return end
-        CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CS.buttonSettingsTab = "overrides"
-        CooldownCompanion:RefreshConfigPanel()
+        if canPromote then
+            CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CS.buttonSettingsTab = "overrides"
+            CooldownCompanion:RefreshConfigPanel()
+        elseif canTarget then
+            ToggleOverrideTargeting(sectionId)
+        end
     end)
 
     table.insert(tabInfoButtons, promoteBtn)
@@ -390,11 +706,20 @@ end
 local function CreateRevertButton(headingWidget, buttonData, sectionId)
     local revertBtn = CreateFrame("Button", nil, headingWidget.frame)
     revertBtn:SetSize(16, 16)
+    -- Left-aligned row-grammar headings put the caret first and the label
+    -- second, so badges follow the label and push the fading rule right. The
+    -- stock `right` texture is hidden on those headings - leave it alone.
+    -- Same branch CreatePromoteButton takes, for the same reason.
+    if headingWidget.frame._cdcHeadingRule and headingWidget.frame._cdcHeadingRule:IsShown() then
+        revertBtn:SetPoint("LEFT", headingWidget.label, "RIGHT", 4, 0)
+        AnchorLeftAlignedHeadingRule(headingWidget, revertBtn)
+    else
     local anchorAfter = headingWidget.frame._cdcCollapseBtn or headingWidget.label
     revertBtn:SetPoint("LEFT", anchorAfter, "RIGHT", 4, 0)
     headingWidget.right:ClearAllPoints()
     headingWidget.right:SetPoint("RIGHT", headingWidget.frame, "RIGHT", -3, 0)
     headingWidget.right:SetPoint("LEFT", revertBtn, "RIGHT", 4, 0)
+    end
 
     local icon = revertBtn:CreateTexture(nil, "OVERLAY")
     icon:SetSize(12, 12)
@@ -426,8 +751,12 @@ local function CreateCheckboxPromoteButton(cbWidget, anchorAfterFrame, sectionId
     local promoteBtn = CreateFrame("Button", nil, cbWidget.frame)
     promoteBtn:SetSize(16, 16)
 
-    -- Anchor: right of anchorAfterFrame if visible, else right of checkbox text
-    if anchorAfterFrame and anchorAfterFrame:IsShown() then
+    -- Row-grammar widgets ignore anchorAfterFrame entirely: AnchorRowBadge
+    -- appends to the label's badge chain, which already ends at the gear when
+    -- there is one. Stock checkboxes keep the old anchorAfterFrame behaviour.
+    if cbWidget.badgeAnchor then
+        ST._AnchorRowBadge(cbWidget, promoteBtn)
+    elseif anchorAfterFrame and anchorAfterFrame:IsShown() then
         promoteBtn:SetPoint("LEFT", anchorAfterFrame, "RIGHT", 4, 0)
     else
         promoteBtn:SetPoint("LEFT", cbWidget.checkbg, "RIGHT", cbWidget.text:GetStringWidth() + 6, 0)
@@ -446,38 +775,29 @@ local function CreateCheckboxPromoteButton(cbWidget, anchorAfterFrame, sectionId
         and btnData ~= nil
         and sectionAllowed
         and not (btnData.overrideSections and btnData.overrideSections[sectionId])
+    local canTarget = not canPromote and CanArmOverrideTargeting(group, sectionId)
 
-    if canPromote then
-        icon:SetAtlas("Crosshair_VehichleCursor_32")
-        promoteBtn:Enable()
-    else
-        icon:SetAtlas("Crosshair_unableVehichleCursor_32")
-        promoteBtn:Disable()
-    end
+    ApplyPromoteBadgeState(icon, promoteBtn, canPromote, canTarget, sectionId)
 
     local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
     local sectionLabel = sectionDef and sectionDef.label or sectionId
 
     promoteBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if canPromote then
-            GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
-        elseif btnData and sectionUnavailableReason == "noCooldown" then
-            GameTooltip:AddLine("This override is not available for spells without a real cooldown", 0.5, 0.5, 0.5)
-        elseif btnData and not sectionAllowed then
-            GameTooltip:AddLine("This override is not available for equipment slots", 0.5, 0.5, 0.5)
-        else
-            GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
-        end
+        AddPromoteBadgeTooltipLines(canPromote, canTarget, sectionId, sectionLabel,
+            btnData, sectionAllowed, sectionUnavailableReason)
         GameTooltip:Show()
     end)
     promoteBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     promoteBtn:SetScript("OnClick", function()
-        if not canPromote then return end
-        CooldownCompanion:PromoteSection(btnData, groupStyle, sectionId)
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CS.buttonSettingsTab = "overrides"
-        CooldownCompanion:RefreshConfigPanel()
+        if canPromote then
+            CooldownCompanion:PromoteSection(btnData, groupStyle, sectionId)
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CS.buttonSettingsTab = "overrides"
+            CooldownCompanion:RefreshConfigPanel()
+        elseif canTarget then
+            ToggleOverrideTargeting(sectionId)
+        end
     end)
 
     table.insert(tabInfoButtons, promoteBtn)
@@ -504,7 +824,12 @@ local function CreateColorPickerPromoteButton(colorPickerWidget, sectionId, grou
 
     promoteBtn:SetParent(frame)
     promoteBtn:ClearAllPoints()
-    promoteBtn:SetPoint("LEFT", colorPickerWidget.colorSwatch, "RIGHT", colorPickerWidget.text:GetStringWidth() + 8, 0)
+    if colorPickerWidget.badgeAnchor then
+        -- Row-grammar color row: badges chain off the end of the label text.
+        ST._AnchorRowBadge(colorPickerWidget, promoteBtn)
+    else
+        promoteBtn:SetPoint("LEFT", colorPickerWidget.colorSwatch, "RIGHT", colorPickerWidget.text:GetStringWidth() + 8, 0)
+    end
     promoteBtn:Show()
     promoteBtn.icon:Show()
 
@@ -517,41 +842,38 @@ local function CreateColorPickerPromoteButton(colorPickerWidget, sectionId, grou
         and btnData ~= nil
         and sectionAllowed
         and not (btnData.overrideSections and btnData.overrideSections[sectionId])
+    local canTarget = not canPromote and CanArmOverrideTargeting(group, sectionId)
 
-    if canPromote then
-        promoteBtn.icon:SetAtlas("Crosshair_VehichleCursor_32")
-        promoteBtn:Enable()
-    else
-        promoteBtn.icon:SetAtlas("Crosshair_unableVehichleCursor_32")
-        promoteBtn:Disable()
-    end
+    ApplyPromoteBadgeState(promoteBtn.icon, promoteBtn, canPromote, canTarget, sectionId)
 
     local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
     local sectionLabel = sectionDef and sectionDef.label or sectionId
 
     promoteBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if canPromote then
-            GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
-        elseif btnData and sectionUnavailableReason == "noCooldown" then
-            GameTooltip:AddLine("This override is not available for spells without a real cooldown", 0.5, 0.5, 0.5)
-        elseif btnData and not sectionAllowed then
-            GameTooltip:AddLine("This override is not available for equipment slots", 0.5, 0.5, 0.5)
-        else
-            GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
-        end
+        AddPromoteBadgeTooltipLines(canPromote, canTarget, sectionId, sectionLabel,
+            btnData, sectionAllowed, sectionUnavailableReason)
         GameTooltip:Show()
     end)
     promoteBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     promoteBtn:SetScript("OnClick", function()
-        if not canPromote then return end
-        CooldownCompanion:PromoteSection(btnData, groupStyle, sectionId)
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CS.buttonSettingsTab = "overrides"
-        CooldownCompanion:RefreshConfigPanel()
+        if canPromote then
+            CooldownCompanion:PromoteSection(btnData, groupStyle, sectionId)
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CS.buttonSettingsTab = "overrides"
+            CooldownCompanion:RefreshConfigPanel()
+        elseif canTarget then
+            ToggleOverrideTargeting(sectionId)
+        end
     end)
 
-    colorPickerWidget:SetCallback("OnRelease", function()
+    -- Chain, don't replace: a color row can also carry a gear whose own
+    -- OnRelease detach would otherwise be clobbered here.
+    local prevOnRelease = colorPickerWidget.events and colorPickerWidget.events["OnRelease"]
+    colorPickerWidget:SetCallback("OnRelease", function(widget, event, ...)
+        if prevOnRelease then
+            prevOnRelease(widget, event, ...)
+        end
         promoteBtn:ClearAllPoints()
         promoteBtn:Hide()
         promoteBtn:SetParent(nil)
@@ -681,23 +1003,17 @@ local function ValidateIndependentAnchorTarget(frameName)
     return true
 end
 
-local function BuildIndependentAnchorTargetRow(container, anchor, applyFn)
-    local anchorRow = AceGUI:Create("SimpleGroup")
-    anchorRow:SetFullWidth(true)
-    anchorRow:SetLayout("Flow")
+-- Row grammar only (RowWidgets.lua): the frame name takes the whole 140px
+-- control column, so Pick does not share it - it goes to opts.pickContainer
+-- (the head of the grid's other column) instead. The pre-redesign Flow
+-- editbox + button pair had no call sites left after the conversion packets.
+local function BuildIndependentAnchorTargetRow(container, anchor, applyFn, opts)
+    local currentTargetName = anchor.relativeTo
+    if not currentTargetName or currentTargetName == "UIParent" then
+        currentTargetName = ""
+    end
 
-    local anchorBox = AceGUI:Create("EditBox")
-    if anchorBox.editbox.Instructions then
-        anchorBox.editbox.Instructions:Hide()
-    end
-    anchorBox:SetLabel("Anchor to Frame")
-    local currentRelativeTo = anchor.relativeTo
-    if not currentRelativeTo or currentRelativeTo == "UIParent" then
-        currentRelativeTo = ""
-    end
-    anchorBox:SetText(currentRelativeTo)
-    anchorBox:SetRelativeWidth(0.68)
-    anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
+    local function CommitAnchorTargetText(text)
         if text == "" then
             local wasAnchored = anchor.relativeTo and anchor.relativeTo ~= "UIParent"
             if wasAnchored then
@@ -720,13 +1036,9 @@ local function BuildIndependentAnchorTargetRow(container, anchor, applyFn)
         end
         applyFn()
         CooldownCompanion:RefreshConfigPanel()
-    end)
-    anchorRow:AddChild(anchorBox)
+    end
 
-    local pickBtn = AceGUI:Create("Button")
-    pickBtn:SetText("Pick")
-    pickBtn:SetRelativeWidth(0.24)
-    pickBtn:SetCallback("OnClick", function()
+    local function StartAnchorTargetPick()
         CS.StartPickFrame(function(name)
             if CS.configFrame then
                 CS.configFrame.frame:Show()
@@ -745,17 +1057,39 @@ local function BuildIndependentAnchorTargetRow(container, anchor, applyFn)
             end
             CooldownCompanion:RefreshConfigPanel()
         end, nil, { domain = "external" })
-    end)
-    anchorRow:AddChild(pickBtn)
-    container:AddChild(anchorRow)
+    end
 
-    pickBtn.frame:SetScript("OnUpdate", function(self)
-        self:SetScript("OnUpdate", nil)
-        local p, rel, rp, xOfs, yOfs = self:GetPoint(1)
-        if yOfs then
-            self:SetPoint(p, rel, rp, xOfs, yOfs - 2)
-        end
-    end)
+    local targetRow = ST._AddEditBoxRow(container, {
+        label = "Anchor to Frame",
+        indent = opts and opts.indent,
+        value = currentTargetName,
+        onEnterPressed = function(text)
+            CommitAnchorTargetText(text)
+        end,
+    })
+    if targetRow.editbox and targetRow.editbox.Instructions then
+        targetRow.editbox.Instructions:Hide()
+    end
+
+    -- Exactly one grammar row tall so the button's centre lands on the
+    -- editbox's: Flow insets its single row by 3px and the button is 24 tall,
+    -- so 3 + 24 + 3 fills the 30px band. noAutoHeight keeps Flow's own 27px
+    -- report from shrinking it back.
+    local pickRow = AceGUI:Create("SimpleGroup")
+    pickRow:SetFullWidth(true)
+    pickRow:SetLayout("Flow")
+    pickRow:SetHeight(ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT or 30)
+    pickRow.noAutoHeight = true
+
+    local rowPickBtn = AceGUI:Create("Button")
+    rowPickBtn:SetText("Pick")
+    rowPickBtn:SetAutoWidth(true)
+    rowPickBtn:SetCallback("OnClick", StartAnchorTargetPick)
+    pickRow:AddChild(rowPickBtn)
+
+    -- Added last so the List-layout column measures a populated row.
+    ;((opts and opts.pickContainer) or container):AddChild(pickRow)
+    return targetRow
 end
 
 ------------------------------------------------------------------------
@@ -773,8 +1107,7 @@ end
 
 local function GetCompactGrowthDirectionLabels(group)
     local style = group.style or {}
-    local isBarMode = group.displayMode == "bars"
-    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
+    local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
     local growthOrigin = style.growthOrigin or "TOPLEFT"
     if orientation == "vertical" then
         local startIsTop = (growthOrigin == "TOPLEFT" or growthOrigin == "TOPRIGHT")
@@ -792,21 +1125,21 @@ local function GetCompactGrowthDirectionLabels(group)
     }
 end
 
--- Builds the compact mode section shared by icon mode (GroupTabs) and
--- bar mode (BarModeTabs): checkbox → advanced toggle → info button →
--- conditional growth-direction + max-visible-buttons controls.
-local function BuildCompactModeControls(container, group, tabInfoButtons)
+-- Builds the compact mode section shared by the icon (GroupTabs), bar
+-- (BarModeTabs) and text (TextModeTabs) tabs: a CDC-CheckBoxRow whose gear
+-- and info badge chain off the end of its label, with the growth-direction
+-- and max-visible-buttons controls behind the gear.
+--
+-- Row grammar only (RowWidgets.lua) - the pre-redesign full-width/half-width
+-- checkbox shape had no call sites left once the bar and text tabs converted.
+-- opts.indent makes it a child row.
+local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
     local stableAnchorLocked = false
     if CooldownCompanion.NormalizeStableExternalAnchorCompactLayout and CS.selectedGroup then
         stableAnchorLocked = CooldownCompanion:NormalizeStableExternalAnchorCompactLayout(CS.selectedGroup, group) == true
     end
 
-    local compactCb = AceGUI:Create("CheckBox")
-    compactCb:SetLabel("Compact Mode")
-    compactCb:SetValue(group.compactLayout or false)
-    compactCb:SetFullWidth(true)
-    compactCb:SetDisabled(stableAnchorLocked)
-    compactCb:SetCallback("OnValueChanged", function(widget, event, val)
+    local function ApplyCompactLayout(val)
         if stableAnchorLocked then
             group.compactLayout = false
             return
@@ -816,79 +1149,94 @@ local function BuildCompactModeControls(container, group, tabInfoButtons)
         local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
         if frame then frame._layoutDirty = true end
         CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(compactCb)
-
-    local function BuildCompactAdvanced(panel)
-        local growthDirectionDrop = AceGUI:Create("Dropdown")
-        growthDirectionDrop:SetLabel("Growth Direction")
-        growthDirectionDrop:SetList(GetCompactGrowthDirectionLabels(group), {"start", "center", "end"})
-        growthDirectionDrop:SetValue(NormalizeCompactGrowthDirection(group.compactGrowthDirection))
-        growthDirectionDrop:SetFullWidth(true)
-        growthDirectionDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            group.compactGrowthDirection = NormalizeCompactGrowthDirection(val)
-            local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-            if frame then
-                frame._layoutDirty = true
-                if frame:IsShown() then
-                    CooldownCompanion:UpdateGroupLayout(CS.selectedGroup)
-                end
-            end
-        end)
-        panel:AddChild(growthDirectionDrop)
-
-        CreateInfoButton(growthDirectionDrop.frame, growthDirectionDrop.label, "LEFT", "CENTER", growthDirectionDrop.label:GetStringWidth() / 2 + 4, 0, {
-            "Growth Direction",
-            {"Choose which edge acts as the compact anchor icon/bar as visibility changes. Horizontal uses Left/Center/Right, vertical uses Top/Center/Bottom.", 1, 1, 1, true},
-        }, tabInfoButtons)
-
-        local totalButtons = #group.buttons
-        local maxVisSlider = AceGUI:Create("Slider")
-        maxVisSlider:SetLabel("Max Visible Buttons")
-        maxVisSlider:SetSliderValues(1, math.max(totalButtons, 1), 1)
-        maxVisSlider:SetValue(group.maxVisibleButtons == 0 and totalButtons or group.maxVisibleButtons)
-        maxVisSlider:SetFullWidth(true)
-        maxVisSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            val = math.floor(val + 0.5)
-            if val >= totalButtons then
-                group.maxVisibleButtons = 0
-            else
-                group.maxVisibleButtons = val
-            end
-            local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-            if frame then frame._layoutDirty = true end
-        end)
-        panel:AddChild(maxVisSlider)
-
-        CreateInfoButton(maxVisSlider.frame, maxVisSlider.label, "LEFT", "CENTER", maxVisSlider.label:GetStringWidth() / 2 + 4, 0, {
-            "Max Visible Buttons",
-            {"Limits how many buttons can appear at once. The first buttons (by group order) that pass visibility checks are shown; the rest are hidden.", 1, 1, 1, true},
-        }, tabInfoButtons)
     end
 
-    local _, compactAdvBtn = AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout and not stableAnchorLocked, {
+    local compactCb = ST._AddCheckboxRow(container, {
+        label = "Compact Mode",
+        value = group.compactLayout or false,
+        disabled = stableAnchorLocked,
+        indent = opts and opts.indent,
+        onChange = ApplyCompactLayout,
+    })
+
+    -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
+    -- both rows go straight onto the panel scroll and their (?) badges chain off
+    -- the end of each row's label. The row builders are read at CALL time, for
+    -- the load-order reason stated at AddFontControls' row branch below.
+    local function BuildCompactAdvanced(panel)
+        local growthRow = ST._AddDropdownRow(panel, {
+            label = "Growth Direction",
+            list = GetCompactGrowthDirectionLabels(group),
+            order = {"start", "center", "end"},
+            value = NormalizeCompactGrowthDirection(group.compactGrowthDirection),
+            onChange = function(val)
+                group.compactGrowthDirection = NormalizeCompactGrowthDirection(val)
+                local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+                if frame then
+                    frame._layoutDirty = true
+                    if frame:IsShown() then
+                        CooldownCompanion:UpdateGroupLayout(CS.selectedGroup)
+                    end
+                end
+            end,
+        })
+        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+        -- onto the end of the row's label.
+        ST._AnchorRowBadge(growthRow, CreateInfoButton(growthRow.frame, growthRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Growth Direction",
+            {"Choose which edge acts as the compact anchor icon/bar as visibility changes. Horizontal uses Left/Center/Right, vertical uses Top/Center/Bottom.", 1, 1, 1, true},
+        }, tabInfoButtons))
+
+        local totalButtons = #group.buttons
+        local maxVisRow = ST._AddSliderRow(panel, {
+            label = "Max Visible Buttons",
+            min = 1, max = math.max(totalButtons, 1), step = 1,
+            value = group.maxVisibleButtons == 0 and totalButtons or group.maxVisibleButtons,
+            onChange = function(val)
+                val = math.floor(val + 0.5)
+                if val >= totalButtons then
+                    group.maxVisibleButtons = 0
+                else
+                    group.maxVisibleButtons = val
+                end
+                local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+                if frame then frame._layoutDirty = true end
+            end,
+        })
+        ST._AnchorRowBadge(maxVisRow, CreateInfoButton(maxVisRow.frame, maxVisRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Max Visible Buttons",
+            {"Limits how many buttons can appear at once. The first buttons (by group order) that pass visibility checks are shown; the rest are hidden.", 1, 1, 1, true},
+        }, tabInfoButtons))
+    end
+
+    AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout and not stableAnchorLocked, {
         title = "Compact Mode Advanced",
         build = BuildCompactAdvanced,
     })
 
-    -- (?) tooltip for compact mode — anchor shifts when advanced toggle is visible
-    local compactAnchor, compactRelPoint, compactXOff
-    if group.compactLayout then
-        compactAnchor = compactAdvBtn
-        compactRelPoint = "RIGHT"
-        compactXOff = 4
-    else
-        compactAnchor = compactCb.checkbg
-        compactRelPoint = "RIGHT"
-        compactXOff = compactCb.text:GetStringWidth() + 6
-    end
-    CreateInfoButton(compactCb.frame, compactAnchor, "LEFT", compactRelPoint, compactXOff, 0, {
+    -- (?) tooltip for compact mode. The gear is already chained off the label,
+    -- so this info button lands to its right; the anchor args below are a
+    -- placeholder - AnchorRowBadge re-points the button.
+    local compactInfo = CreateInfoButton(compactCb.frame, compactCb.frame, "LEFT", "LEFT", 0, 0, {
         "Compact Mode",
         {"Compacts visible buttons or bars when hide conditions remove entries, helping centered layouts stay centered.", 1, 1, 1, true},
-        {"Does not function when unit frames, resources, or cast bars are anchored to this panel.", 0.7, 0.7, 0.7, true},
+        {" ", 1, 1, 1},
+        {"Auras set to |cffffd100Show Only While Aura Active|r always keep their space reserved. The game hides whether auras are active from addons, so the panel cannot tighten around a hidden aura.", 1, 1, 1, true},
+        {" ", 1, 1, 1},
+        {"Does not function when unit frames, resources, or cast bars are anchored to this panel.", 1, 1, 1, true},
     }, tabInfoButtons)
+    ST._AnchorRowBadge(compactCb, compactInfo)
 end
 
+-- Stock AceGUI Button height (AceGUIWidget-Button.lua OnAcquire) and the gutter
+-- the row grammar puts between two compact buttons on the same line.
+local PRESET_ACTION_BUTTON_HEIGHT = 24
+local PRESET_ACTION_GUTTER = 4
+
+-- Row grammar only (RowWidgets.lua): a left-aligned non-collapsible section
+-- header, the preset picker as a CDC-DropdownRow in a two-column grid, and
+-- compact action buttons sharing its line. The pre-redesign centered heading
+-- and full-width controls had no call sites left once bar mode converted.
 local function BuildGroupSettingPresetControls(container, group, mode, tabInfoButtons)
     if not group then return end
     if mode ~= "bars" then
@@ -912,6 +1260,11 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
     heading:SetFullWidth(true)
     container:AddChild(heading)
 
+    -- No caret: this section has no collapse state, and the left-aligned
+    -- shape indents the label as if it had one so it lines up with the
+    -- collapsible sections above it.
+    ApplyLeftAlignedHeading(heading)
+
     local presetModeLabel = mode == "bars" and "Bar Panel Presets" or "Icon Panel Presets"
     local modeSpecificLine = mode == "bars"
         and "Bar presets only work on bar panels."
@@ -921,7 +1274,7 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
         {"Click Save to store this panel's settings as a preset.", 1, 1, 1},
         " ",
         {"Presets save appearance, indicator, and text settings.", 1, 1, 1},
-        {"Load Conditions (including Spec/Hero filters) are not saved or changed.", 1, 1, 1},
+        {"Visibility rules (including Spec/Hero filters) are not saved or changed.", 1, 1, 1},
         {"Presets do not include Columns 1, 2, or 3.", 1, 1, 1},
         {"Anchors are not saved or changed.", 1, 1, 1},
         " ",
@@ -930,19 +1283,15 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
         {modeSpecificLine, 1, 1, 1},
     }, tabInfoButtons)
 
-    -- Keep the info icon inside the heading line by shifting the right segment.
-    heading.right:ClearAllPoints()
-    heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
-    heading.right:SetPoint("LEFT", headingInfoBtn, "RIGHT", 4, 0)
+    -- The rule fades out after the last badge on the heading line, the same as
+    -- every collapsible section in the row grammar.
+    AnchorLeftAlignedHeadingRule(heading, headingInfoBtn)
 
-    local presetDrop = AceGUI:Create("Dropdown")
-    presetDrop:SetLabel("Preset")
-    presetDrop:SetList(presetList, presetOrder)
-    presetDrop:SetValue(selectedPreset)
-    presetDrop:SetFullWidth(true)
     local applyBtn
     local deleteBtn
-    presetDrop:SetCallback("OnValueChanged", function(widget, event, value)
+    -- Picking a preset only records the choice and gates the two buttons that
+    -- need one; shared so both shapes wire the identical behaviour.
+    local function OnPresetSelected(value)
         CS.groupPresetSelection[mode] = value
         local hasSelection = value ~= nil
         if applyBtn then
@@ -951,8 +1300,21 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
         if deleteBtn then
             deleteBtn:SetDisabled(not hasSelection)
         end
-    end)
-    container:AddChild(presetDrop)
+    end
+
+    -- The picker owns the left column; the Apply/Save/Delete trio goes in the
+    -- right one so the section reads as a single line instead of a dropdown
+    -- with an orphan button bar under it. The grid is top-aligned, so the two
+    -- halves line up without any extra alignment work. presetRight is consumed
+    -- at the bottom of this function, where the trio is finally parented.
+    local presetLeft, presetRight = ST._BeginRowGrid(container)
+    ST._AddDropdownRow(presetLeft, {
+        label = "Preset",
+        list = presetList,
+        order = presetOrder,
+        value = selectedPreset,
+        onChange = OnPresetSelected,
+    })
 
     if #presetOrder == 0 then
         local hintLabel = AceGUI:Create("Label")
@@ -966,9 +1328,39 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
     buttonRow:SetFullWidth(true)
     buttonRow:SetLayout("Flow")
 
+    -- Occupy exactly one grammar row so the trio's vertical centre lands on the
+    -- Preset dropdown's. Flow insets its single row by 3px from the top
+    -- (AceGUI-3.0.lua:796), and the buttons are 24 tall, so 3 + 24 + 3 centres
+    -- inside a 30px band. noAutoHeight keeps Flow's own 27px report from
+    -- shrinking it back.
+    local grammar = ST._RowGrammar
+    buttonRow:SetHeight(grammar and grammar.ROW_HEIGHT or 30)
+    buttonRow.noAutoHeight = true
+
+    -- Section actions are compact and left-aligned. SetAutoWidth is AceGUI's
+    -- own "text width + 30px padding" rule, and Flow anchors its children from
+    -- the left, so the trio reads as a button group instead of three page-wide
+    -- banners.
+    local function SizePresetActionButton(btn)
+        btn:SetAutoWidth(true)
+    end
+
+    -- Flow packs siblings at 0px, so the gutter is a fixed-size spacer group -
+    -- the same idiom Column1.lua and ImportReview.lua already use for vertical
+    -- air. It matches the buttons' height on purpose: Flow offsets each child
+    -- by (its height / 2) relative to the previous one, so a shorter spacer
+    -- would make the row step up and down.
+    local function AddPresetActionGutter()
+        local gutter = AceGUI:Create("SimpleGroup")
+        gutter:SetWidth(PRESET_ACTION_GUTTER)
+        gutter:SetHeight(PRESET_ACTION_BUTTON_HEIGHT)
+        gutter.noAutoHeight = true
+        buttonRow:AddChild(gutter)
+    end
+
     applyBtn = AceGUI:Create("Button")
     applyBtn:SetText("Apply")
-    applyBtn:SetRelativeWidth(0.32)
+    SizePresetActionButton(applyBtn)
     applyBtn:SetCallback("OnClick", function()
         local presetName = CS.groupPresetSelection and CS.groupPresetSelection[mode]
         if not presetName then return end
@@ -983,10 +1375,11 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
         CooldownCompanion:RefreshConfigPanel()
     end)
     buttonRow:AddChild(applyBtn)
+    AddPresetActionGutter()
 
     local saveBtn = AceGUI:Create("Button")
     saveBtn:SetText("Save")
-    saveBtn:SetRelativeWidth(0.32)
+    SizePresetActionButton(saveBtn)
     saveBtn:SetCallback("OnClick", function()
         if not ShowPopupAboveConfig then
             CooldownCompanion:Print("Preset save is unavailable.")
@@ -999,10 +1392,11 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
         })
     end)
     buttonRow:AddChild(saveBtn)
+    AddPresetActionGutter()
 
     deleteBtn = AceGUI:Create("Button")
     deleteBtn:SetText("Delete")
-    deleteBtn:SetRelativeWidth(0.32)
+    SizePresetActionButton(deleteBtn)
     deleteBtn:SetCallback("OnClick", function()
         local presetName = CS.groupPresetSelection and CS.groupPresetSelection[mode]
         if not presetName then return end
@@ -1022,8 +1416,9 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
     deleteBtn:SetDisabled(not hasSelection)
 
     -- Add the row after children are populated so List-layout parent containers
-    -- compute scroll height correctly on first render.
-    container:AddChild(buttonRow)
+    -- compute scroll height correctly on first render. The parent is the grid's
+    -- right column, which puts the trio on the picker's line.
+    presetRight:AddChild(buttonRow)
 
 end
 
@@ -1060,8 +1455,15 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
         btn:SetParent(enableCb.frame)
     end
 
-    btn:ClearAllPoints()
-    btn:SetPoint("LEFT", enableCb.checkbg, "RIGHT", enableCb.text:GetStringWidth() + 4, 0)
+    -- Row-grammar checkboxes have no checkbg/text anatomy: the badge chains
+    -- off the end of the row's label instead, like every other row badge.
+    -- AnchorRowBadge does the SetParent and ClearAllPoints itself.
+    if enableCb.badgeAnchor then
+        ST._AnchorRowBadge(enableCb, btn)
+    else
+        btn:ClearAllPoints()
+        btn:SetPoint("LEFT", enableCb.checkbg, "RIGHT", enableCb.text:GetStringWidth() + 4, 0)
+    end
     btn:Show()
 
     btn:SetScript("OnEnter", function(self)
@@ -1130,15 +1532,68 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
     return btn
 end
 
+-- The modern ColorPickerFrame never delivers AceGUI's OnValueConfirmed:
+-- the OK button runs swatchFunc/opacityFunc BEFORE Hide(), so the widget's
+-- "picker still open" test routes them to OnValueChanged — and its no-change
+-- guard swallows them anyway, because the last drag tick already carried the
+-- same values. Commit is therefore detected by picker CLOSE. Every close
+-- path (OK, Cancel, Esc, any click outside the picker — including on
+-- another swatch, which cancels via GLOBAL_MOUSE_DOWN before its own click
+-- lands) runs through OnHide, and the cancel paths restore the original
+-- color into the bound table via OnValueChanged before hiding — so flushing
+-- the armed commit on hide applies the right value on every path.
+local pendingColorCommit
+local colorCommitHookInstalled
+local function ArmColorCommitOnClose(onConfirmedFn)
+    if not colorCommitHookInstalled then
+        if not ColorPickerFrame then return end
+        colorCommitHookInstalled = true
+        ColorPickerFrame:HookScript("OnHide", function()
+            local commit = pendingColorCommit
+            pendingColorCommit = nil
+            if commit then commit() end
+        end)
+    end
+    pendingColorCommit = onConfirmedFn
+end
+
 -- Helper: wire up OnValueChanged and OnValueConfirmed for a ColorPicker widget.
--- Stores {r,g,b,a} into tbl[key]. onConfirmedFn fires on release; onChangeFn
--- (optional) fires during drag for live preview.
-local function SetupColorCallbacks(widget, tbl, key, onConfirmedFn, onChangeFn)
+-- Stores {r,g,b,a} into tbl[key]. onConfirmedFn fires when the color picker
+-- closes (via the commit-on-close bridge above); onChangeFn (optional) fires
+-- during drag for live preview.
+-- With deferCommit, the drag value never rests in the bound table: it is
+-- swapped in only for the duration of the onChangeFn call and committed for
+-- real when the picker closes. Use it when a live renderer re-reads the same
+-- table every tick and must keep showing the committed color during a drag.
+local function SetupColorCallbacks(widget, tbl, key, onConfirmedFn, onChangeFn, deferCommit)
     widget:SetCallback("OnValueChanged", function(_, _, r, g, b, a)
-        tbl[key] = {r, g, b, a}
-        if onChangeFn then onChangeFn() end
+        if deferCommit then
+            -- Deferred mode: the live renderers re-read this table every tick,
+            -- so an uncommitted drag value may only exist in it for the moment
+            -- the config canvas rebuild reads it. Arm the close commit FIRST so
+            -- a failed refresh still converges when the picker closes — and arm
+            -- it unconditionally, because this closure is the only writer of
+            -- tbl[key] in deferred mode; without it the edit would be silently
+            -- discarded when no confirm callback is supplied.
+            local pending = {r, g, b, a}
+            ArmColorCommitOnClose(function()
+                tbl[key] = pending
+                if onConfirmedFn then onConfirmedFn() end
+            end)
+            local committed = tbl[key]
+            tbl[key] = pending
+            if onChangeFn then onChangeFn() end
+            tbl[key] = committed
+        else
+            tbl[key] = {r, g, b, a}
+            if onConfirmedFn then ArmColorCommitOnClose(onConfirmedFn) end
+            if onChangeFn then onChangeFn() end
+        end
     end)
+    -- Kept wired so nothing double-fires if a future Ace3 update restores
+    -- OnValueConfirmed: disarm the pending close commit before running it here.
     widget:SetCallback("OnValueConfirmed", function(_, _, r, g, b, a)
+        pendingColorCommit = nil
         tbl[key] = {r, g, b, a}
         if onConfirmedFn then onConfirmedFn() end
     end)
@@ -1150,105 +1605,144 @@ end
 -- Each creates, configures, and adds to container; single-widget factories return the widget.
 ------------------------------------------------------------------------
 
--- Create a ColorPicker, configure it, wire callbacks, add to container.
--- onConfirmFn fires on mouse release; onChangeFn (optional) fires during drag.
-local function AddColorPicker(container, tbl, key, label, default, hasAlpha, onConfirmFn, onChangeFn)
-    local picker = AceGUI:Create("ColorPicker")
-    picker:SetLabel(label)
-    picker:SetHasAlpha(hasAlpha)
-    local c = tbl[key] or default
-    picker:SetColor(c[1], c[2], c[3], c[4])
-    picker:SetFullWidth(true)
-    SetupColorCallbacks(picker, tbl, key, onConfirmFn, onChangeFn)
-    container:AddChild(picker)
-    return picker
+-- Create an anchor-point row using the pre-built list from State.lua.
+-- Optional label param overrides the default "Anchor" label.
+--
+-- Row grammar only (RowWidgets.lua); opts.indent makes it a child row. The
+-- pre-redesign full-width stock Dropdown had no call sites left after the
+-- conversion packets.
+--
+-- The row builder is read at CALL time rather than hoisted to file scope:
+-- Helpers.lua loads BEFORE RowWidgets.lua (TOC 46 vs 47), so ST._AddDropdownRow
+-- does not exist yet while this file is being read.
+local function AddAnchorDropdown(container, tbl, key, default, refreshFn, label, opts)
+    return ST._AddDropdownRow(container, {
+        label = label or "Anchor",
+        indent = opts and opts.indent,
+        list = CS.anchorDropdownList,
+        order = CS.anchorPoints,
+        value = tbl[key] or default,
+        onChange = function(val)
+            tbl[key] = val
+            refreshFn()
+        end,
+    })
 end
 
--- Create an anchor-point Dropdown using the pre-built list from State.lua.
--- Optional label param overrides the default "Anchor" label.
-local function AddAnchorDropdown(container, tbl, key, default, refreshFn, label)
-    local drop = AceGUI:Create("Dropdown")
-    drop:SetLabel(label or "Anchor")
-    drop:SetList(CS.anchorDropdownList, CS.anchorPoints)
-    drop:SetValue(tbl[key] or default)
-    drop:SetFullWidth(true)
-    drop:SetCallback("OnValueChanged", function(widget, event, val)
-        tbl[key] = val
-        refreshFn()
-    end)
-    container:AddChild(drop)
-    return drop
-end
+-- LibSharedMedia font names run well past the 140px control column, and a
+-- dropdown sizes its menu from the control it hangs under.
+local FONT_ROW_PULLOUT_WIDTH = 300
 
 -- Create Font Size slider + Font dropdown + Font Outline dropdown.
 -- prefix: key prefix (e.g. "cooldown" reads cooldownFont, cooldownFontSize, cooldownFontOutline).
 -- defaults: {size, sizeMin, sizeMax, sizeStep, font, outline} — all optional with sane fallbacks.
-local function AddFontControls(container, tbl, prefix, defaults, refreshFn)
+--
+-- Row grammar only (RowWidgets.lua); opts.indent makes them child rows. The
+-- pre-redesign full-width stock trio had no call sites left after the
+-- conversion packets.
+--
+-- The row builders are read at CALL time rather than hoisted to file scope:
+-- Helpers.lua loads BEFORE RowWidgets.lua (TOC 46 vs 47), so ST._AddSliderRow
+-- does not exist yet while this file is being read. Same rule the alpha and
+-- anchor-target builders above follow.
+local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts)
     local fontKey = prefix .. "Font"
     local sizeKey = prefix .. "FontSize"
     local outlineKey = prefix .. "FontOutline"
+    local indent = opts and opts.indent
+    -- Mirror-first opt-in for the one control here with a drag phase (the
+    -- resources surfaces, owner ruling 2026-08-02): the drag tick drives the
+    -- caller's preview and refreshFn applies once on release. Omitted - which
+    -- is every caller that has not opted in - the slider applies per tick as
+    -- before. The two dropdowns have no drag phase and stay on refreshFn.
+    local previewRefresh = opts and opts.previewRefresh
 
-    local fontSizeSlider = AceGUI:Create("Slider")
-    fontSizeSlider:SetLabel("Font Size")
-    fontSizeSlider:SetSliderValues(defaults.sizeMin or 8, defaults.sizeMax or 32, defaults.sizeStep or 1)
-    fontSizeSlider:SetValue(tbl[sizeKey] or defaults.size or 12)
-    fontSizeSlider:SetFullWidth(true)
-    fontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        tbl[sizeKey] = val
-        refreshFn()
-    end)
-    container:AddChild(fontSizeSlider)
+    ST._AddSliderRow(container, {
+        label = "Font Size",
+        indent = indent,
+        min = defaults.sizeMin or 8,
+        max = defaults.sizeMax or 32,
+        step = defaults.sizeStep or 1,
+        value = tbl[sizeKey] or defaults.size or 12,
+        onChange = function(val)
+            tbl[sizeKey] = val
+            local notify = previewRefresh or refreshFn
+            notify()
+        end,
+        onRelease = previewRefresh and function(val)
+            tbl[sizeKey] = val
+            refreshFn()
+        end or nil,
+    })
 
-    local fontDrop = AceGUI:Create("Dropdown")
-    fontDrop:SetLabel("Font")
-    CS.SetupFontDropdown(fontDrop)
-    fontDrop:SetValue(tbl[fontKey] or defaults.font or "Friz Quadrata TT")
-    fontDrop:SetFullWidth(true)
-    CS.SetFontDropdownCallback(fontDrop, function(widget, event, val)
+    -- FONT ROW (the Item Settings pilot's rule, stated at that call site):
+    -- the row is created with a label and a widened pullout but NO list and
+    -- NO onChange, then handed to the shared font helpers exactly as a
+    -- stock Dropdown would be. CDC-DropdownRow forwards SetList/SetDisabled
+    -- to its embedded child and forwards the child's OnOpened with
+    -- self = the row (aliasing row.pullout), which is everything
+    -- CS.SetupFontDropdown touches. AddDropdownRow registers OnValueChanged
+    -- only when opts.onChange is given, so SetFontDropdownCallback is the
+    -- one registration and the profile-wide font lock still gates every
+    -- write. The value is set AFTER SetupFontDropdown, because SetList
+    -- rebuilds the list the displayed text is read from.
+    local fontRow = ST._AddDropdownRow(container, {
+        label = "Font",
+        indent = indent,
+        pulloutWidth = FONT_ROW_PULLOUT_WIDTH,
+    })
+    CS.SetupFontDropdown(fontRow)
+    fontRow:SetValue(tbl[fontKey] or defaults.font or "Friz Quadrata TT")
+    CS.SetFontDropdownCallback(fontRow, function(widget, event, val)
         tbl[fontKey] = val
         refreshFn()
     end)
-    container:AddChild(fontDrop)
 
-    local outlineDrop = AceGUI:Create("Dropdown")
-    outlineDrop:SetLabel("Font Outline")
-    CS.SetupFontOutlineDropdown(outlineDrop)
-    outlineDrop:SetValue(tbl[outlineKey] or defaults.outline or "OUTLINE")
-    outlineDrop:SetFullWidth(true)
-    CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
+    local outlineRow = ST._AddDropdownRow(container, {
+        label = "Font Outline",
+        indent = indent,
+    })
+    CS.SetupFontOutlineDropdown(outlineRow)
+    outlineRow:SetValue(tbl[outlineKey] or defaults.outline or "OUTLINE")
+    CS.SetFontOutlineDropdownCallback(outlineRow, function(widget, event, val)
         tbl[outlineKey] = val
         refreshFn()
     end)
-    container:AddChild(outlineDrop)
 end
 
 -- Create X Offset + Y Offset slider pair.
 -- defaults: {x, y, range (default 20), step (default 0.1)}
-local function AddOffsetSliders(container, tbl, xKey, yKey, defaults, refreshFn)
+--
+-- Row grammar only (RowWidgets.lua); opts.indent makes them child rows. Same
+-- call-time row-builder read as AddFontControls above, and for the same
+-- load-order reason. The pre-redesign full-width stock pair had no call sites
+-- left after the conversion packets.
+local function AddOffsetSliders(container, tbl, xKey, yKey, defaults, refreshFn, opts)
     local range = defaults.range or 20
     local step = defaults.step or 0.1
+    local indent = opts and opts.indent
 
-    local xSlider = AceGUI:Create("Slider")
-    xSlider:SetLabel("X Offset")
-    xSlider:SetSliderValues(-range, range, step)
-    xSlider:SetValue(tbl[xKey] or defaults.x or 0)
-    xSlider:SetFullWidth(true)
-    xSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        tbl[xKey] = val
-        refreshFn()
-    end)
-    container:AddChild(xSlider)
+    ST._AddSliderRow(container, {
+        label = "X Offset",
+        indent = indent,
+        min = -range, max = range, step = step,
+        value = tbl[xKey] or defaults.x or 0,
+        onChange = function(val)
+            tbl[xKey] = val
+            refreshFn()
+        end,
+    })
 
-    local ySlider = AceGUI:Create("Slider")
-    ySlider:SetLabel("Y Offset")
-    ySlider:SetSliderValues(-range, range, step)
-    ySlider:SetValue(tbl[yKey] or defaults.y or 0)
-    ySlider:SetFullWidth(true)
-    ySlider:SetCallback("OnValueChanged", function(widget, event, val)
-        tbl[yKey] = val
-        refreshFn()
-    end)
-    container:AddChild(ySlider)
+    ST._AddSliderRow(container, {
+        label = "Y Offset",
+        indent = indent,
+        min = -range, max = range, step = step,
+        value = tbl[yKey] or defaults.y or 0,
+        onChange = function(val)
+            tbl[yKey] = val
+            refreshFn()
+        end,
+    })
 end
 
 local BORDER_THICKNESS_MODE_TOOLTIPS = {
@@ -1282,88 +1776,77 @@ local function AddDropdownItemTooltips(dropdown, tooltipByValue)
     end
 end
 
-local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disabled)
+-- Row grammar only (RowWidgets.lua); opts.indent makes it a child row. The
+-- pre-redesign full-width stock Dropdown had no call sites left after the
+-- conversion packets.
+local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disabled, opts)
     key = key or "borderRenderMode"
     local controlsDisabled = disabled == true or ST.IsBorderThicknessLocked()
-
-    local modeDrop = AceGUI:Create("Dropdown")
-    modeDrop:SetLabel("Border Thickness")
-    modeDrop:SetList({
+    local modeList = {
         [ST.BORDER_RENDER_MODE_CUSTOM] = "Custom Thickness",
         [ST.BORDER_RENDER_MODE_CRISP] = "One-pixel",
-    }, { ST.BORDER_RENDER_MODE_CUSTOM, ST.BORDER_RENDER_MODE_CRISP })
-    AddDropdownItemTooltips(modeDrop, BORDER_THICKNESS_MODE_TOOLTIPS)
-    modeDrop:SetValue(ST.GetBorderRenderMode(tbl, key))
-    if modeDrop.SetDisabled then
-        modeDrop:SetDisabled(controlsDisabled)
-    end
-    modeDrop:SetCallback("OnClosed", function()
-        GameTooltip:Hide()
-    end)
-    modeDrop:SetFullWidth(true)
-    modeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+    }
+    local modeOrder = { ST.BORDER_RENDER_MODE_CUSTOM, ST.BORDER_RENDER_MODE_CRISP }
+
+    local function ApplyRenderMode(val)
         if controlsDisabled then return end
         tbl[key] = ST.GetBorderRenderMode(val)
         if refreshFn then
             refreshFn()
         end
-    end)
-    container:AddChild(modeDrop)
+    end
 
-    return ST.GetBorderRenderMode(tbl, key)
+    local modeRow = ST._AddDropdownRow(container, {
+        label = "Border Thickness",
+        indent = opts and opts.indent,
+        list = modeList,
+        order = modeOrder,
+        value = ST.GetBorderRenderMode(tbl, key),
+        disabled = controlsDisabled,
+        onChange = ApplyRenderMode,
+    })
+    AddDropdownItemTooltips(modeRow, BORDER_THICKNESS_MODE_TOOLTIPS)
+    modeRow:SetCallback("OnClosed", function()
+        GameTooltip:Hide()
+    end)
+
+    return ST.GetBorderRenderMode(tbl, key), modeRow
 end
 
 -- Expose helpers for other ConfigSettings files
 ST._ColorHeading = ColorHeading
 ST._AttachCollapseButton = AttachCollapseButton
+ST._ApplyLeftAlignedHeading = ApplyLeftAlignedHeading
+ST._AnchorLeftAlignedHeadingRule = AnchorLeftAlignedHeadingRule
+ST._BuildCollapsibleSection = BuildCollapsibleSection
 ST._AddAdvancedToggle = AddAdvancedToggle
 ST._CreatePromoteButton = CreatePromoteButton
 ST._CreateRevertButton = CreateRevertButton
 ST._CreateCheckboxPromoteButton = CreateCheckboxPromoteButton
 ST._CreateColorPickerPromoteButton = CreateColorPickerPromoteButton
 ST._CanButtonUseConfigOverrideSection = CanButtonUseConfigOverrideSection
+ST._GroupHasAuraTrackingEntry = GroupHasAuraTrackingEntry
 ST._CreateInfoButton = CreateInfoButton
 ST._BuildCompactModeControls = BuildCompactModeControls
 ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls
 ST._CreateCharacterCopyButton = CreateCharacterCopyButton
-ST._AddColorPicker = AddColorPicker
 ST._AddAnchorDropdown = AddAnchorDropdown
+-- Exposed so the row-grammar color row can bind the exact same
+-- commit-on-close contract described above (see RowWidgets.lua).
+ST._SetupColorCallbacks = SetupColorCallbacks
 
--- Allow decimal input from editbox while keeping slider/wheel at 1px steps.
--- Reusable across any AceGUI Slider widget that needs sub-integer precision.
-local function HookSliderEditBox(sliderWidget)
-    local editbox = sliderWidget.editbox
-    local origHandler = editbox:GetScript("OnEnterPressed")
-    editbox:SetScript("OnEnterPressed", function(eb)
-        local widget = eb.obj
-        local value = tonumber(eb:GetText())
-        if value then
-            value = math.floor(value * 10 + 0.5) / 10
-            value = math.max(widget.min, math.min(widget.max, value))
-            PlaySound(856)
-            widget:SetValue(value)
-            widget:Fire("OnValueChanged", value)
-            widget:Fire("OnMouseUp", value)
-        end
-    end)
-
-    -- Restore original AceGUI handler on release so recycled sliders aren't permanently modified
-    local prevOnRelease = sliderWidget.events and sliderWidget.events["OnRelease"]
-    sliderWidget:SetCallback("OnRelease", function()
-        if prevOnRelease then
-            prevOnRelease(sliderWidget, "OnRelease")
-        end
-        editbox:SetScript("OnEnterPressed", origHandler)
-    end)
-end
-ST._HookSliderEditBox = HookSliderEditBox
-
--- Shared alpha UI builder for groups, resource bars, and other shared alpha consumers.
+-- Shared alpha UI builder for groups, containers, resource bars, and other
+-- shared alpha consumers.
 -- container: AceGUI parent widget
 -- config: table with alpha fields (baselineAlpha, forceAlpha*, forceHide*, fade*, etc.)
 -- refreshFn: function called after value changes (typically RefreshConfigPanel)
 -- collapseKey: string key for CS.collapsedSections
 -- opts (optional): { onBaselineChanged = fn(val), isGlobal = bool, disabled = bool, disabledText = string, infoButtons = table, hideHeading = bool }
+--
+-- Row grammar only (RowWidgets.lua): a collapsible left-aligned section header
+-- and a two-column grid of fixed-height rows. Every caller opts in, so there is
+-- no stock shape left to draw; opts.row is accepted and ignored for callers
+-- that still state it.
 local function BuildAlphaControls(container, config, refreshFn, collapseKey, opts)
     opts = opts or {}
     local tabInfoBtns = opts.infoButtons or CS.tabInfoButtons
@@ -1378,20 +1861,21 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         end
     end
 
-    if opts.hideHeading ~= true then
-        local alphaHeading = AceGUI:Create("Heading")
-        alphaHeading:SetText("Alpha")
-        ColorHeading(alphaHeading)
-        alphaHeading:SetFullWidth(true)
-        container:AddChild(alphaHeading)
+    local ALPHA_TOOLTIP = {
+        "Alpha",
+        {"Controls transparency: 1 is fully visible, 0 is hidden.\n\nThe first four options (In Combat, Out of Combat, Regular Mount, Skyriding) cycle on click through Disabled, |cff00ff00Fully Visible|r, and |cffff0000Fully Hidden|r.\n\n|cff00ff00Fully Visible|r forces the display fully shown while its condition applies; |cffff0000Fully Hidden|r hides it.\n\nIf both apply at once, |cff00ff00Fully Visible|r wins.", 1, 1, 1, true},
+    }
 
-        local alphaCollapsed = collapseKey and CS.collapsedSections[collapseKey] or false
-        AttachCollapseButton(alphaHeading, alphaCollapsed, function()
-            if collapseKey then
-                CS.collapsedSections[collapseKey] = not CS.collapsedSections[collapseKey]
-            end
-            CooldownCompanion:RefreshConfigPanel()
-        end)
+    if opts.hideHeading ~= true then
+        local alphaHeading, alphaCollapsed = BuildCollapsibleSection(container, "Alpha", collapseKey, nil, nil, { leftAligned = true })
+
+        -- The tooltip describes the whole section (the tri-state force
+        -- conditions above all), so it rides the header rather than badging
+        -- the Baseline Alpha row: a slider row's track starts exactly where a
+        -- badge chain would run into it.
+        local headingInfoBtn = CreateInfoButton(alphaHeading.frame, alphaHeading.label, "LEFT", "RIGHT", 4, 0,
+            ALPHA_TOOLTIP, tabInfoBtns)
+        AnchorLeftAlignedHeadingRule(alphaHeading, headingInfoBtn)
 
         if alphaCollapsed then return end
     end
@@ -1406,26 +1890,28 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         container:AddChild(disabledLabel)
     end
 
-    local baseAlphaSlider = AceGUI:Create("Slider")
-    baseAlphaSlider:SetLabel("Baseline Alpha")
-    baseAlphaSlider:SetSliderValues(0, 1, 0.1)
-    baseAlphaSlider:SetValue(config.baselineAlpha or 1)
-    baseAlphaSlider:SetFullWidth(true)
-    baseAlphaSlider:SetDisabled(controlsDisabled)
-    baseAlphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
+    -- LEFT column holds the baseline and the four combat/mount force
+    -- conditions, RIGHT the unit and mouseover conditions plus the fade
+    -- behaviour they all share. Both halves are top-aligned, so the gated
+    -- child rows on either side just end their column early.
+    local leftTarget, rightTarget = ST._BeginRowGrid(container)
+
+    local function ApplyBaselineAlpha(val)
         if controlsDisabled then return end
         config.baselineAlpha = val
         if opts.onBaselineChanged then
             opts.onBaselineChanged(val)
         end
         ApplyAlphaSettingChange(false)
-    end)
-    container:AddChild(baseAlphaSlider)
+    end
 
-    CreateInfoButton(baseAlphaSlider.frame, baseAlphaSlider.label, "LEFT", "CENTER", baseAlphaSlider.label:GetStringWidth() / 2 + 4, 0, {
-        "Alpha",
-        {"Controls transparency. Alpha = 1 is fully visible. Alpha = 0 means completely hidden.\n\nThe first four options (In Combat, Out of Combat, Regular Mount, Skyriding) are 3-way toggles — click to cycle through Disabled, |cff00ff00Fully Visible|r, and |cffff0000Fully Hidden|r.\n\n|cff00ff00Fully Visible|r overrides alpha to 1 when the condition is met.\n\n|cffff0000Fully Hidden|r overrides alpha to 0 when the condition is met.\n\nIf both apply simultaneously, |cff00ff00Fully Visible|r takes priority.", 1, 1, 1, true},
-    }, tabInfoBtns)
+    ST._AddSliderRow(leftTarget, {
+        label = "Baseline Alpha",
+        min = 0, max = 1, step = 0.1,
+        value = config.baselineAlpha or 1,
+        disabled = controlsDisabled,
+        onChange = ApplyBaselineAlpha,
+    })
 
     do
         local function GetTriState(visibleKey, hiddenKey)
@@ -1443,27 +1929,30 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
             return base
         end
 
-        local function CreateTriStateToggle(label, visibleKey, hiddenKey)
-            local val = GetTriState(visibleKey, hiddenKey)
-            local cb = AceGUI:Create("CheckBox")
-            cb:SetTriState(true)
-            cb:SetLabel(TriStateLabel(label, val))
-            cb:SetValue(val)
-            cb:SetFullWidth(true)
-            cb:SetDisabled(controlsDisabled)
-            cb:SetCallback("OnValueChanged", function(widget, event, newVal)
-                if controlsDisabled then return end
-                config[visibleKey] = (newVal == true)
-                config[hiddenKey] = (newVal == nil)
-                ApplyAlphaSettingChange(true)
-            end)
-            return cb
+        local function ApplyTriState(visibleKey, hiddenKey, newVal)
+            if controlsDisabled then return end
+            config[visibleKey] = (newVal == true)
+            config[hiddenKey] = (newVal == nil)
+            ApplyAlphaSettingChange(true)
         end
 
-        container:AddChild(CreateTriStateToggle("In Combat", "forceAlphaInCombat", "forceHideInCombat"))
-        container:AddChild(CreateTriStateToggle("Out of Combat", "forceAlphaOutOfCombat", "forceHideOutOfCombat"))
-        container:AddChild(CreateTriStateToggle("Regular Mount", "forceAlphaRegularMounted", "forceHideRegularMounted"))
-        container:AddChild(CreateTriStateToggle("Skyriding", "forceAlphaDragonriding", "forceHideDragonriding"))
+        local function AddTriStateToggle(parent, label, visibleKey, hiddenKey)
+            local val = GetTriState(visibleKey, hiddenKey)
+            return ST._AddCheckboxRow(parent, {
+                label = TriStateLabel(label, val),
+                tristate = true,
+                value = val,
+                disabled = controlsDisabled,
+                onChange = function(newVal)
+                    ApplyTriState(visibleKey, hiddenKey, newVal)
+                end,
+            })
+        end
+
+        AddTriStateToggle(leftTarget, "In Combat", "forceAlphaInCombat", "forceHideInCombat")
+        AddTriStateToggle(leftTarget, "Out of Combat", "forceAlphaOutOfCombat", "forceHideOutOfCombat")
+        AddTriStateToggle(leftTarget, "Regular Mount", "forceAlphaRegularMounted", "forceHideRegularMounted")
+        AddTriStateToggle(leftTarget, "Skyriding", "forceAlphaDragonriding", "forceHideDragonriding")
 
         local mountedActive = config.forceAlphaRegularMounted
             or config.forceHideRegularMounted
@@ -1472,130 +1961,104 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         local isDruid = CooldownCompanion._playerClassID == 11
         if mountedActive and (opts.isGlobal or isDruid) then
             local travelVal = config.treatTravelFormAsMounted or false
-            local travelCb = AceGUI:Create("CheckBox")
-            travelCb:SetLabel("Include Druid Travel Form (applies to both)")
-            travelCb:SetValue(travelVal)
-            travelCb:SetFullWidth(true)
-            travelCb:SetDisabled(controlsDisabled)
-            travelCb:SetCallback("OnValueChanged", function(widget, event, val)
+            local function ApplyTravelForm(val)
                 if controlsDisabled then return end
                 config.treatTravelFormAsMounted = val
                 ApplyAlphaSettingChange(false)
-            end)
-            container:AddChild(travelCb)
+            end
+
+            -- Child of the two mount toggles above it, so it is indented and
+            -- stays in their column.
+            ST._AddCheckboxRow(leftTarget, {
+                label = "Include Druid Travel Form (applies to both)",
+                indent = true,
+                value = travelVal,
+                disabled = controlsDisabled,
+                onChange = ApplyTravelForm,
+            })
+        end
+
+        local function ApplyForceFlag(key, val, refreshPanel)
+            if controlsDisabled then return end
+            config[key] = val
+            ApplyAlphaSettingChange(refreshPanel)
         end
 
         local targetVal = config.forceAlphaTargetExists or false
-        local targetCb = AceGUI:Create("CheckBox")
-        targetCb:SetLabel(targetVal and "Target Exists - |cff00ff00Fully Visible|r" or "Target Exists")
-        targetCb:SetValue(targetVal)
-        targetCb:SetFullWidth(true)
-        targetCb:SetDisabled(controlsDisabled)
-        targetCb:SetCallback("OnValueChanged", function(widget, event, val)
-            if controlsDisabled then return end
-            config.forceAlphaTargetExists = val
-            ApplyAlphaSettingChange(true)
-        end)
-        container:AddChild(targetCb)
+        local targetLabel = targetVal and "Target Exists - |cff00ff00Fully Visible|r" or "Target Exists"
+        ST._AddCheckboxRow(rightTarget, {
+            label = targetLabel,
+            value = targetVal,
+            disabled = controlsDisabled,
+            onChange = function(val) ApplyForceFlag("forceAlphaTargetExists", val, true) end,
+        })
 
         if targetVal then
-            local enemyOnlyVal = config.forceAlphaTargetEnemyOnly or false
-            local enemyOnlyCb = AceGUI:Create("CheckBox")
-            enemyOnlyCb:SetLabel("Enemy Only")
-            enemyOnlyCb:SetValue(enemyOnlyVal)
-            enemyOnlyCb:SetFullWidth(true)
-            enemyOnlyCb:SetDisabled(controlsDisabled)
-            enemyOnlyCb:SetCallback("OnValueChanged", function(widget, event, val)
-                if controlsDisabled then return end
-                config.forceAlphaTargetEnemyOnly = val
-                ApplyAlphaSettingChange(true)
-            end)
-            container:AddChild(enemyOnlyCb)
-            ApplyCheckboxIndent(enemyOnlyCb, 20)
+            ST._AddCheckboxRow(rightTarget, {
+                label = "Enemy Only",
+                indent = true,
+                value = config.forceAlphaTargetEnemyOnly or false,
+                disabled = controlsDisabled,
+                onChange = function(val) ApplyForceFlag("forceAlphaTargetEnemyOnly", val, true) end,
+            })
         end
 
         local focusVal = config.forceAlphaFocusExists or false
-        local focusCb = AceGUI:Create("CheckBox")
-        focusCb:SetLabel(focusVal and "Focus Exists - |cff00ff00Fully Visible|r" or "Focus Exists")
-        focusCb:SetValue(focusVal)
-        focusCb:SetFullWidth(true)
-        focusCb:SetDisabled(controlsDisabled)
-        focusCb:SetCallback("OnValueChanged", function(widget, event, val)
-            if controlsDisabled then return end
-            config.forceAlphaFocusExists = val
-            ApplyAlphaSettingChange(true)
-        end)
-        container:AddChild(focusCb)
+        local focusLabel = focusVal and "Focus Exists - |cff00ff00Fully Visible|r" or "Focus Exists"
+        ST._AddCheckboxRow(rightTarget, {
+            label = focusLabel,
+            value = focusVal,
+            disabled = controlsDisabled,
+            onChange = function(val) ApplyForceFlag("forceAlphaFocusExists", val, true) end,
+        })
 
         local mouseoverVal = config.forceAlphaMouseover or false
-        local mouseoverCb = AceGUI:Create("CheckBox")
-        mouseoverCb:SetLabel(mouseoverVal and "Mouseover - |cff00ff00Fully Visible|r" or "Mouseover")
-        mouseoverCb:SetValue(mouseoverVal)
-        mouseoverCb:SetFullWidth(true)
-        mouseoverCb:SetDisabled(controlsDisabled)
-        mouseoverCb:SetCallback("OnValueChanged", function(widget, event, val)
-            if controlsDisabled then return end
-            config.forceAlphaMouseover = val
-            ApplyAlphaSettingChange(true)
-        end)
-        container:AddChild(mouseoverCb)
-
-        CreateInfoButton(mouseoverCb.frame, mouseoverCb.text, "LEFT", "RIGHT", 4, 0, {
+        local mouseoverLabel = mouseoverVal and "Mouseover - |cff00ff00Fully Visible|r" or "Mouseover"
+        local mouseoverRow = ST._AddCheckboxRow(rightTarget, {
+            label = mouseoverLabel,
+            value = mouseoverVal,
+            disabled = controlsDisabled,
+            onChange = function(val) ApplyForceFlag("forceAlphaMouseover", val, true) end,
+        })
+        -- Row grammar: the badge hangs off the end of the label. The anchor
+        -- args below are a placeholder - AnchorRowBadge re-points it.
+        ST._AnchorRowBadge(mouseoverRow, CreateInfoButton(mouseoverRow.frame, mouseoverRow.frame, "LEFT", "LEFT", 0, 0, {
             "Mouseover",
             {"When enabled, mousing over forces full visibility. Like all |cff00ff00Force Visible|r conditions, this overrides |cffff0000Force Hidden|r.", 1, 1, 1, true},
-        }, tabInfoBtns)
+        }, tabInfoBtns))
 
-        local fadeCb = AceGUI:Create("CheckBox")
-        fadeCb:SetLabel("Custom Fade Settings")
-        fadeCb:SetValue(config.customFade or false)
-        fadeCb:SetFullWidth(true)
-        fadeCb:SetDisabled(controlsDisabled)
-        fadeCb:SetCallback("OnValueChanged", function(widget, event, val)
+        local function ApplyCustomFade(val)
             if controlsDisabled then return end
             config.customFade = val or nil
             ApplyAlphaSettingChange(true)
-        end)
-        container:AddChild(fadeCb)
+        end
+
+        ST._AddCheckboxRow(rightTarget, {
+            label = "Custom Fade Settings",
+            value = config.customFade or false,
+            disabled = controlsDisabled,
+            onChange = ApplyCustomFade,
+        })
 
         if config.customFade then
-        local fadeDelaySlider = AceGUI:Create("Slider")
-        fadeDelaySlider:SetLabel("Fade Delay (seconds)")
-        fadeDelaySlider:SetSliderValues(0, 5, 0.1)
-        fadeDelaySlider:SetValue(config.fadeDelay or 1)
-        fadeDelaySlider:SetFullWidth(true)
-        fadeDelaySlider:SetDisabled(controlsDisabled)
-        fadeDelaySlider:SetCallback("OnValueChanged", function(widget, event, val)
-            if controlsDisabled then return end
-            config.fadeDelay = val
-            ApplyAlphaSettingChange(false)
-        end)
-        container:AddChild(fadeDelaySlider)
+        local function AddFadeSlider(label, key, default)
+            ST._AddSliderRow(rightTarget, {
+                label = label,
+                indent = true,
+                min = 0, max = 5, step = 0.1,
+                value = config[key] or default,
+                disabled = controlsDisabled,
+                onChange = function(val)
+                    if controlsDisabled then return end
+                    config[key] = val
+                    ApplyAlphaSettingChange(false)
+                end,
+            })
+        end
 
-        local fadeInSlider = AceGUI:Create("Slider")
-        fadeInSlider:SetLabel("Fade In Duration (seconds)")
-        fadeInSlider:SetSliderValues(0, 5, 0.1)
-        fadeInSlider:SetValue(config.fadeInDuration or 0.2)
-        fadeInSlider:SetFullWidth(true)
-        fadeInSlider:SetDisabled(controlsDisabled)
-        fadeInSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            if controlsDisabled then return end
-            config.fadeInDuration = val
-            ApplyAlphaSettingChange(false)
-        end)
-        container:AddChild(fadeInSlider)
-
-        local fadeOutSlider = AceGUI:Create("Slider")
-        fadeOutSlider:SetLabel("Fade Out Duration (seconds)")
-        fadeOutSlider:SetSliderValues(0, 5, 0.1)
-        fadeOutSlider:SetValue(config.fadeOutDuration or 0.2)
-        fadeOutSlider:SetFullWidth(true)
-        fadeOutSlider:SetDisabled(controlsDisabled)
-        fadeOutSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            if controlsDisabled then return end
-            config.fadeOutDuration = val
-            ApplyAlphaSettingChange(false)
-        end)
-        container:AddChild(fadeOutSlider)
+        AddFadeSlider("Fade Delay (seconds)", "fadeDelay", 1)
+        AddFadeSlider("Fade In Duration (seconds)", "fadeInDuration", 0.2)
+        AddFadeSlider("Fade Out Duration (seconds)", "fadeOutDuration", 0.2)
         end -- config.customFade
     end
 end

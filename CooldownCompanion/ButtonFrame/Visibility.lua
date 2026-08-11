@@ -24,10 +24,10 @@ local tonumber = tonumber
 local type = type
 
 -- Bitmask constants for hide reasons
+-- (12.1: aura visibility is no longer a per-tick rule — hideWhileAuraNotActive
+-- is applied statically by the aura display composition; see AuraDisplay.lua.)
 local HIDE_ON_COOLDOWN      = 0x001
 local HIDE_NOT_ON_COOLDOWN  = 0x002
-local HIDE_AURA_NOT_ACTIVE  = 0x004
-local HIDE_AURA_ACTIVE      = 0x008
 local HIDE_NO_PROC          = 0x010
 local HIDE_ZERO_CHARGES     = 0x020
 local HIDE_ZERO_STACKS      = 0x040
@@ -37,8 +37,6 @@ local HIDE_UNUSABLE         = 0x100
 local HIDE_REASON_NAMES = {
     { bit = HIDE_ON_COOLDOWN,      name = "on-cooldown" },
     { bit = HIDE_NOT_ON_COOLDOWN,  name = "not-on-cooldown" },
-    { bit = HIDE_AURA_NOT_ACTIVE,  name = "aura-missing" },
-    { bit = HIDE_AURA_ACTIVE,      name = "aura-active" },
     { bit = HIDE_NO_PROC,          name = "no-proc" },
     { bit = HIDE_ZERO_CHARGES,     name = "zero-charges" },
     { bit = HIDE_ZERO_STACKS,      name = "zero-stacks" },
@@ -46,16 +44,17 @@ local HIDE_REASON_NAMES = {
     { bit = HIDE_UNUSABLE,         name = "unusable" },
 }
 
--- Baseline alpha fallback descriptors: each entry maps a hide reason bit
--- to the buttonData config key that enables "dim instead of hide" when
--- that reason is the ONLY active hide reason.
--- IMPORTANT: Every HIDE_* constant that supports a fallback MUST have an
--- entry here. A missing entry will silently cause full hide instead of dim.
--- Fallbacks do not compose: multiple active reasons = full hide even if
--- each individually has its fallback enabled.
+-- Dim-instead-of-hide descriptors: each entry maps a hide reason bit to the
+-- buttonData config key that dims to DIM_FALLBACK_ALPHA instead of hiding,
+-- when that reason is the ONLY active hide reason.
+-- IMPORTANT: Every HIDE_* constant that supports dimming MUST have an entry
+-- here. A missing entry will silently cause full hide instead of dim.
+-- Dim rules do not compose: multiple active reasons = full hide even if
+-- each individually has its dim rule enabled.
+-- The key names still carry the retired "useBaselineAlphaFallback" prefix;
+-- they are stored profile data and renaming them would cost a migration for
+-- no user-visible gain. The dim strength no longer comes from Baseline Alpha.
 local BASELINE_FALLBACKS = {
-    { bit = HIDE_AURA_NOT_ACTIVE, key = "useBaselineAlphaFallback" },
-    { bit = HIDE_AURA_ACTIVE,     key = "useBaselineAlphaFallbackAuraActive" },
     { bit = HIDE_ZERO_CHARGES,    key = "useBaselineAlphaFallbackZeroCharges" },
     { bit = HIDE_ZERO_STACKS,     key = "useBaselineAlphaFallbackZeroStacks" },
     { bit = HIDE_NOT_EQUIPPED,    key = "useBaselineAlphaFallbackNotEquipped" },
@@ -102,7 +101,7 @@ end
 -- Evaluate per-button visibility rules and set hidden/alpha override state.
 -- Called inside UpdateButtonCooldown after cooldown fetch and aura tracking are complete.
 -- Fast path: if no toggles are enabled, zero overhead.
-local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, procOverlayActive, auraOwnsPrimarySwipe)
+local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
     if buttonData and buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = nil
@@ -111,15 +110,9 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
         return
     end
 
-    if auraOwnsPrimarySwipe == nil then
-        auraOwnsPrimarySwipe = auraOverrideActive
-    end
-
     -- Fast path: no visibility toggles enabled
     if not buttonData.hideWhileOnCooldown
        and not buttonData.hideWhileNotOnCooldown
-       and not buttonData.hideWhileAuraNotActive
-       and not buttonData.hideWhileAuraActive
        and not buttonData.hideWhileNoProc
        and not buttonData.hideWhileZeroCharges
        and not buttonData.hideWhileZeroStacks
@@ -135,14 +128,12 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
     -- Phase 1: Evaluate each hide condition and accumulate active reasons as bits.
     local hideReasons = 0
     local zeroOnlyChargeSpellHide = false
-    local auraTrackingReady = button._auraTrackingReady == true
-    local barAuraStackDisplay = button._barAuraStackDisplay == true
     local itemUsesResolvedCooldownState = IsEntryItemLike(buttonData)
         and button._resolvedItemQuantityKind == "stacks"
     local noCooldownForVisibility = IsNoCooldownForVisibility(button)
 
     -- Check hideWhileOnCooldown (skip for no-CD spells — always "not on CD")
-    if buttonData.hideWhileOnCooldown and not noCooldownForVisibility and not barAuraStackDisplay then
+    if buttonData.hideWhileOnCooldown and not noCooldownForVisibility then
         if itemUsesResolvedCooldownState then
             if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
@@ -157,14 +148,14 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         else
-            if button._cooldownState == COOLDOWN_STATE_COOLDOWN and not auraOwnsPrimarySwipe then
+            if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         end
     end
 
     -- Check hideWhileNotOnCooldown (skip for no-CD spells — would permanently hide)
-    if buttonData.hideWhileNotOnCooldown and not noCooldownForVisibility and not barAuraStackDisplay then
+    if buttonData.hideWhileNotOnCooldown and not noCooldownForVisibility then
         if itemUsesResolvedCooldownState then
             if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
@@ -186,21 +177,9 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         else
-            if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN and not auraOwnsPrimarySwipe then
+            if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
-        end
-    end
-
-    -- Check hideWhileAuraNotActive
-    if auraTrackingReady and buttonData.hideWhileAuraNotActive and not auraOverrideActive then
-        hideReasons = bit_bor(hideReasons, HIDE_AURA_NOT_ACTIVE)
-    end
-
-    -- Check hideWhileAuraActive
-    if auraTrackingReady and buttonData.hideWhileAuraActive and auraOverrideActive then
-        if not (buttonData.hideAuraActiveExceptPandemic and button._inPandemic) then
-            hideReasons = bit_bor(hideReasons, HIDE_AURA_ACTIVE)
         end
     end
 
@@ -217,7 +196,6 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
 
     -- Check hideWhileZeroCharges (charge-based spells and items)
     if buttonData.hideWhileZeroCharges
-            and not barAuraStackDisplay
             and not CooldownCompanion.HasItemFallbacks(buttonData)
             and button._chargeState == CHARGE_STATE_ZERO then
         hideReasons = bit_bor(hideReasons, HIDE_ZERO_CHARGES)
@@ -251,9 +229,9 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
         end
     end
 
-    -- Phase 2: Baseline alpha fallback.
-    -- If exactly one hide reason fired and its fallback is enabled,
-    -- dim to baselineAlpha instead of fully hiding the button.
+    -- Phase 2: Dim instead of hide.
+    -- If exactly one hide reason fired and its dim rule is enabled, render
+    -- at DIM_FALLBACK_ALPHA instead of fully hiding the button.
     -- hideReasons == entry.bit is true iff no other bit is set,
     -- which is equivalent to "this is the only active hide reason."
     if hideReasons ~= 0 then
@@ -263,10 +241,8 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
                     and bit_band(hideReasons, entry.bit) ~= 0
                     and buttonData[entry.key] then
                 if hideReasons == entry.bit then
-                    local groupId = button._groupId
-                    local group = groupId and CooldownCompanion.db.profile.groups[groupId]
                     button._visibilityHidden = false
-                    button._visibilityAlphaOverride = group and group.baselineAlpha or 0.3
+                    button._visibilityAlphaOverride = CooldownCompanion.DIM_FALLBACK_ALPHA
                     button._visibilityReasonBits = hideReasons
                     button._visibilityReasonMode = "dimmed"
                     return
@@ -291,6 +267,10 @@ end
 -- returns secret start/duration that SetCooldown will reject after the 12.0.1 hotfix.
 local function UpdateLossOfControl(button)
     if not button.locCooldown then return end
+
+    -- Config preview owns the widget while active (the preview write runs
+    -- earlier in the same tick; without this the no-LoC path clears it).
+    if button._conditionalLocPreview then return end
 
     local buttonData = button.buttonData
     if buttonData and buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then

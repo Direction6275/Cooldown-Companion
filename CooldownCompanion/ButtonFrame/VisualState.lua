@@ -7,11 +7,9 @@ local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local ResolveIconDesaturationIntent = ST._ResolveIconDesaturationIntent
 local GetButtonVisibilityReasonNames = ST._GetButtonVisibilityReasonNames
 local DEFAULT_ICON_FILL_COOLDOWN_COLOR = {0.6, 0.13, 0.18, 0.55}
-local DEFAULT_ICON_FILL_AURA_COLOR = {0.2, 1.0, 0.2, 0.55}
 local UsesChargeBehavior = CooldownCompanion and CooldownCompanion.UsesChargeBehavior
 local InCombatLockdown = InCombatLockdown
 local GetTime = GetTime
-local UnitExists = UnitExists
 
 local function IsTrue(value)
     return value == true
@@ -69,23 +67,11 @@ local TEXT_APPLIED_FIELDS = {
 local BAR_INTENT_FIELDS = {
     "domain",
     "colorReason",
-    "auraColorReason",
-    "auraEffectActive",
-    "auraEffectReason",
-    "pulseActive",
-    "pulseMode",
-    "colorShiftActive",
-    "colorShiftMode",
-    "stackDisplay",
-    "stackMode",
     "gcdSuppressed",
 }
 
 local BAR_APPLIED_FIELDS = {
     appliedColorReason = "colorReason",
-    appliedAuraEffectActive = "auraEffectActive",
-    appliedPulseActive = "pulseActive",
-    appliedColorShiftActive = "colorShiftActive",
     appliedGcdSuppressed = "gcdSuppressed",
 }
 
@@ -132,16 +118,14 @@ local function GetButtonGroup(button)
         and CooldownCompanion.db.profile.groups[groupId]
 end
 
-local function SetIconFillIntent(target, available, active, reason, mode, color, auraActive, static)
+local function SetIconFillIntent(target, available, active, reason, mode, color, static)
     target.available = available == true
     target.active = active == true
     target.reason = reason
     target.mode = mode
-    target.auraActive = auraActive == true
     target.static = static == true
     target.usesOnUpdate = target.active and target.static ~= true or false
     target.suppressCooldownSwipe = target.active
-    target.suppressAuraBlizzardSwipe = target.auraActive
     target.r = color and color[1] or nil
     target.g = color and color[2] or nil
     target.b = color and color[3] or nil
@@ -196,16 +180,6 @@ local function IsReadyGlowAtMaxCharges(button, buttonData)
     return button._chargeState == CHARGE_STATE_FULL
 end
 
-local function GetTargetExists(options)
-    if options and options.targetExists ~= nil then
-        return options.targetExists == true
-    end
-    if type(UnitExists) == "function" then
-        return UnitExists("target") == true
-    end
-    return false
-end
-
 local function GetResolverCombatState(options)
     if options and options.inCombat ~= nil then
         return options.inCombat == true
@@ -237,6 +211,16 @@ local function ResolveAuraIndicatorEnabled(buttonData, style)
     return auraIndicatorEnabled
 end
 
+-- Effective pandemic enable (PTR 8 visuals): the per-entry override wins,
+-- else the panel's explicit-true key — the same resolution the live bind
+-- gate (AuraDisplay.lua StyleSlotKit) and the config mirror perform.
+local function IsPandemicEffectWanted(buttonData, style)
+    if buttonData and buttonData.pandemicEffect ~= nil then
+        return buttonData.pandemicEffect == true
+    end
+    return style and style.pandemicEffectEnabled == true
+end
+
 local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActive, target, options)
     target = target or {}
     style = style or {}
@@ -259,10 +243,6 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
 
     if not button.procGlow then
         SetGlowIntent(proc, false, false, "missing-widget")
-        proc.procOverlayActive = procOverlayShown
-    elseif button._procGlowPreview == true then
-        SetGlowIntent(proc, true, true, "preview")
-        proc.preview = true
         proc.procOverlayActive = procOverlayShown
     elseif style.procGlowStyle == "none" then
         SetGlowIntent(proc, true, false, "disabled")
@@ -288,96 +268,35 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
         SetGlowIntent(proc, true, false, "inactive")
     end
 
+    -- 12.1: the live aura glow renders on the aura slot kit (AuraDisplay.lua);
+    -- Blizzard's show/hide of the slot button IS the signal, so no live
+    -- intent can exist here (the config's aura-glow preview renders on the
+    -- mirror, not through this resolver). The pandemic branch is
+    -- PREVIEW-ONLY by design: the live pandemic display is the kit rig with
+    -- its secret Blizzard-driven Shown state (AuraDisplay.lua), which CC can
+    -- never read, so _pandemicPreview (Preview.lua setters) is the one and
+    -- only writer that can ever reach this branch.
     local auraIndicatorEnabled = ResolveAuraIndicatorEnabled(buttonData, style)
-    local auraCombatOnly = style.auraGlowCombatOnly
-    local pandemicCombatOnly = style.pandemicGlowCombatOnly
-    local targetExists
 
+    -- "no-container" is the RESTING state, not a fault: because the container
+    -- is preview-only it is built on demand (IconMode EnsureAuraGlowContainer,
+    -- driven by the preview-flag setters), so a button that has never previewed
+    -- an aura or pandemic glow simply has none. Reading this in a diagnostic
+    -- snapshot means "nothing to draw here", not "a widget went missing".
     if not button.auraGlow then
-        SetGlowIntent(aura, false, false, "missing-widget")
+        SetGlowIntent(aura, false, false, "no-container")
         aura.auraIndicatorEnabled = auraIndicatorEnabled
-    elseif button._pandemicPreview == true then
+    elseif button._pandemicPreview == true
+        and IsPandemicEffectWanted(buttonData, style) then
+        -- Gated by the same per-entry/panel resolution the live bind and
+        -- the config mirror use, so an opted-out entry never previews a
+        -- glow the game will not render.
         SetGlowIntent(aura, true, true, "pandemic-preview")
         aura.preview = true
         aura.pandemic = true
         aura.auraIndicatorEnabled = auraIndicatorEnabled
-    elseif button._auraGlowPreview == true then
-        SetGlowIntent(aura, true, true, "preview")
-        aura.preview = true
-        aura.auraIndicatorEnabled = auraIndicatorEnabled
-    elseif style.auraGlowInvert then
-        if button._auraTrackingReady == true and button._auraSpellID and not button._auraActive then
-            if auraIndicatorEnabled or style.auraGlowStyle ~= "none" then
-                if auraCombatOnly and not inCombat then
-                    SetGlowIntent(aura, true, false, "combat-only")
-                    aura.combatOnly = true
-                    aura.combatSuppressed = true
-                    aura.invert = true
-                    aura.auraIndicatorEnabled = auraIndicatorEnabled
-                else
-                    targetExists = button._auraUnit ~= "target" or GetTargetExists(options)
-                    SetGlowIntent(
-                        aura,
-                        true,
-                        targetExists,
-                        targetExists and "aura-missing" or "target-missing"
-                    )
-                    aura.invert = true
-                    aura.targetRequired = button._auraUnit == "target"
-                    aura.targetExists = targetExists
-                    aura.auraIndicatorEnabled = auraIndicatorEnabled
-                end
-            else
-                SetGlowIntent(aura, true, false, "disabled")
-                aura.invert = true
-                aura.auraIndicatorEnabled = auraIndicatorEnabled
-            end
-        elseif button._auraActive and button._inPandemic and style.showPandemicGlow ~= false then
-            SetGlowIntent(
-                aura,
-                true,
-                not (pandemicCombatOnly and not inCombat),
-                pandemicCombatOnly and not inCombat and "pandemic-combat-only" or "pandemic"
-            )
-            aura.pandemic = true
-            aura.combatOnly = pandemicCombatOnly and true or false
-            aura.combatSuppressed = pandemicCombatOnly and not inCombat
-            aura.invert = true
-            aura.auraIndicatorEnabled = auraIndicatorEnabled
-        else
-            SetGlowIntent(aura, true, false, "inactive")
-            aura.invert = true
-            aura.auraIndicatorEnabled = auraIndicatorEnabled
-        end
-    elseif button._auraActive then
-        if button._inPandemic and style.showPandemicGlow ~= false
-            and not (pandemicCombatOnly and not inCombat) then
-            SetGlowIntent(
-                aura,
-                true,
-                true,
-                "pandemic"
-            )
-            aura.pandemic = true
-            aura.combatOnly = pandemicCombatOnly and true or false
-            aura.combatSuppressed = false
-            aura.auraIndicatorEnabled = auraIndicatorEnabled
-        elseif auraIndicatorEnabled or style.auraGlowStyle ~= "none" then
-            SetGlowIntent(
-                aura,
-                true,
-                not (auraCombatOnly and not inCombat),
-                auraCombatOnly and not inCombat and "combat-only" or "aura"
-            )
-            aura.combatOnly = auraCombatOnly and true or false
-            aura.combatSuppressed = auraCombatOnly and not inCombat
-            aura.auraIndicatorEnabled = auraIndicatorEnabled
-        else
-            SetGlowIntent(aura, true, false, "disabled")
-            aura.auraIndicatorEnabled = auraIndicatorEnabled
-        end
     else
-        SetGlowIntent(aura, true, false, "aura-missing")
+        SetGlowIntent(aura, true, false, "inactive")
         aura.auraIndicatorEnabled = auraIndicatorEnabled
     end
 
@@ -385,9 +304,6 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
     local auraSuppressesReady = button._auraTrackingReady == true and button._auraActive == true
     if not button.readyGlow then
         SetGlowIntent(ready, false, false, "missing-widget")
-    elseif button._readyGlowPreview == true then
-        SetGlowIntent(ready, true, true, "preview")
-        ready.preview = true
     elseif not style.readyGlowStyle or style.readyGlowStyle == "none" then
         SetGlowIntent(ready, true, false, "disabled")
     elseif isPassive then
@@ -473,30 +389,7 @@ local function ResolveIconFillIntent(button, buttonData, style, target)
         end
     end
 
-    local auraPreview = button._conditionalAuraPreview == true
-        or button._conditionalAuraDurationTextPreview == true
     local cooldownPreview = button._conditionalPreviewDomain == "cooldown"
-
-    if button._auraPrimarySwipeActive == true or auraPreview then
-        local mode = "aura"
-        local reason = "aura"
-        local static = false
-        if button._auraHasTimer == false and not auraPreview then
-            mode = "aura_static"
-            reason = "aura-static"
-            static = true
-        end
-        return SetIconFillIntent(
-            target,
-            true,
-            true,
-            reason,
-            mode,
-            style.iconFillAuraColor or DEFAULT_ICON_FILL_AURA_COLOR,
-            true,
-            static
-        )
-    end
 
     local cooldownReason
     if cooldownPreview then
@@ -517,7 +410,6 @@ local function ResolveIconFillIntent(button, buttonData, style, target)
             cooldownReason,
             "cooldown",
             style.iconFillCooldownColor or DEFAULT_ICON_FILL_COOLDOWN_COLOR,
-            false,
             false
         )
     end
@@ -566,9 +458,7 @@ local function CopyBarVisualState(button, bar, context)
     bar.intentAvailable = hasIntent
     CopyFieldList(bar, hasIntent and intent or nil, BAR_INTENT_FIELDS)
     if not hasIntent then
-        bar.domain = IsTrue(button._barAuraStackDisplay) and "stack" or nil
-        bar.stackDisplay = IsTrue(button._barAuraStackDisplay)
-        bar.stackMode = button._barAuraStackMode
+        bar.domain = nil
         bar.gcdSuppressed = IsTrue(button._barGCDSuppressed)
     end
 
@@ -664,13 +554,11 @@ local function RefreshButtonVisualState(button, context)
     local iconFill = EnsureSection(state, "iconFill")
     iconFill.active = IsTrue(button._iconFillActive)
     iconFill.mode = button._iconFillMode
-    iconFill.auraActive = IsTrue(button._iconFillAuraActive)
     iconFill.onUpdateInstalled = IsTrue(button._iconFillOnUpdateInstalled)
     iconFill.intentAvailable = hasIconFillIntent
     iconFill.intentActive = hasIconFillIntent and IsTrue(iconFillIntent.active) or false
     iconFill.intentMode = hasIconFillIntent and iconFillIntent.mode or nil
     iconFill.intentReason = hasIconFillIntent and iconFillIntent.reason or nil
-    iconFill.intentAuraActive = hasIconFillIntent and IsTrue(iconFillIntent.auraActive) or false
     iconFill.intentUsesOnUpdate = hasIconFillIntent and IsTrue(iconFillIntent.usesOnUpdate) or false
 
     local glows = EnsureSection(state, "glows")

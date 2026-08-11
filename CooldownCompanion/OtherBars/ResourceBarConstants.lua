@@ -21,8 +21,13 @@ PERCENT_SCALE_CURVE:AddPoint(0.0, 0)
 PERCENT_SCALE_CURVE:AddPoint(1.0, 100)
 
 local CUSTOM_AURA_BAR_BASE = 201  -- 201-205 for slots 1-5
-local MW_SPELL_ID = 187880
 local RAGING_MAELSTROM_SPELL_ID = 384143
+-- The Active Aura stand-in: what a custom bar shows while its preview runs.
+-- Deliberately invented values (no aura is running), shared so the config
+-- canvas and the runtime tell the same story.
+local CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL = 0.65
+local CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS = 3
+local CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION = 12.3
 local RESOURCE_HEALTH = -1
 local RESOURCE_MAELSTROM_WEAPON = 100
 -- Stagger power type ID: 101 (used inline to stay under Lua 200-local limit)
@@ -34,7 +39,6 @@ local RESOURCE_MAELSTROM_WEAPON = 100
 local DEFAULT_MW_BASE_COLOR = { 0, 0.5, 1 }
 local DEFAULT_MW_OVERLAY_COLOR = { 1, 0.84, 0 }
 local DEFAULT_MW_MAX_COLOR = { 0.5, 0.8, 1 }
-local DEFAULT_CUSTOM_AURA_MAX_COLOR = { 1, 0.84, 0 }
 local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = { 1, 0.84, 0 }
 local DEFAULT_SEG_THRESHOLD_COLOR = { 1, 0.84, 0 }
 local DEFAULT_HEALTH_BAR_COLOR = { 0.25, 0.78, 0.22 }
@@ -55,7 +59,6 @@ local DEFAULT_HEALTH_INCOMING_HEAL_COLOR = { 0.1, 0.85, 0.35, 0.45 }
 local DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR = { 1.0, 0.08, 0.04, 0.35 }
 local DEFAULT_HEALTH_EFFECT_TEXTURE = "Solid"
 local DEFAULT_RESOURCE_TEXT_FORMAT = "current"
-local DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT = "current_max"
 local DEFAULT_RESOURCE_TEXT_FONT = "Friz Quadrata TT"
 local DEFAULT_RESOURCE_TEXT_SIZE = 10
 local DEFAULT_RESOURCE_TEXT_OUTLINE = "OUTLINE"
@@ -289,8 +292,16 @@ ST._RB = {
     UPDATE_INTERVAL = UPDATE_INTERVAL,
     PERCENT_SCALE_CURVE = PERCENT_SCALE_CURVE,
     CUSTOM_AURA_BAR_BASE = CUSTOM_AURA_BAR_BASE,
-    MW_SPELL_ID = MW_SPELL_ID,
+    CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL = CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL,
+    CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS = CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS,
+    CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION = CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION,
     RAGING_MAELSTROM_SPELL_ID = RAGING_MAELSTROM_SPELL_ID,
+    -- The APPLIED Maelstrom Weapon aura (CumulativeAura=5 in SpellAuraOptions,
+    -- 10 with Raging Maelstrom). Not live's 187880, which is the proc trigger
+    -- carrying no stacks — live only resolved the real aura through a CDM
+    -- viewer frame's auraInstanceID, a path 12.1 closed. Written inline
+    -- rather than as a local: this chunk is at Lua 5.1's 200-local ceiling.
+    MW_AURA_SPELL_ID = 344179,
     RESOURCE_HEALTH = RESOURCE_HEALTH,
     RESOURCE_MAELSTROM_WEAPON = RESOURCE_MAELSTROM_WEAPON,
 
@@ -298,8 +309,31 @@ ST._RB = {
     DEFAULT_MW_BASE_COLOR = DEFAULT_MW_BASE_COLOR,
     DEFAULT_MW_OVERLAY_COLOR = DEFAULT_MW_OVERLAY_COLOR,
     DEFAULT_MW_MAX_COLOR = DEFAULT_MW_MAX_COLOR,
-    DEFAULT_CUSTOM_AURA_MAX_COLOR = DEFAULT_CUSTOM_AURA_MAX_COLOR,
+    -- Max-stack border default. Deliberately NOT the max fill colour: the
+    -- border draws on top of the at-max fill, and matching it would make
+    -- the border invisible. Written inline: 200-local ceiling.
+    DEFAULT_MW_MAX_STACK_BORDER_COLOR = { 1, 1, 1, 1 },
     DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR,
+    -- How far above a resource bar its aura overlay mounts. Clear of every
+    -- non-text layer the bar draws: segment children at bar+3, MW overlay
+    -- segments at +4, the CC-side aura lane pool at +7. Frame level beats
+    -- draw layer, so anything short of this renders behind the bar it
+    -- decorates. The config canvas stands the overlay in at the same
+    -- height, which is why this is shared rather than local to the host.
+    RESOURCE_OVERLAY_HOLDER_LEVEL = 9,
+    -- The resource-stack band order (owner ruling 2026-08-09): bar fills at
+    -- the bottom, borders/glows/aura kit above them, RESOURCE text above
+    -- everything. Bars in the stack are same-level siblings, so a large
+    -- font spilling past its bar's rect used to lose to the neighboring
+    -- bar's aura kit; every resource text layer now mounts at this shared
+    -- offset above its bar instead of a per-shape bump. Derivation: the
+    -- tallest kit is the aura overlay holder at bar+9 whose strata map
+    -- reserves through holder+15 (auraDisplay at +8, span 8 — Core/
+    -- Init.lua), so texts clear bar+24. Custom bar text layers deliberately
+    -- do NOT use this band: CC keeps writing spell-bar cooldown text with
+    -- no way to know an aura is showing, so their kit must keep occluding
+    -- their text (they stay at bar+2, under their holder at bar+3).
+    RESOURCE_TEXT_LAYER_LEVEL = 25,
     DEFAULT_SEG_THRESHOLD_COLOR = DEFAULT_SEG_THRESHOLD_COLOR,
     DEFAULT_HEALTH_BAR_COLOR = DEFAULT_HEALTH_BAR_COLOR,
     DEFAULT_HEALTH_BAR_OPACITY = DEFAULT_HEALTH_BAR_OPACITY,
@@ -319,7 +353,6 @@ ST._RB = {
     DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR = DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR,
     DEFAULT_HEALTH_EFFECT_TEXTURE = DEFAULT_HEALTH_EFFECT_TEXTURE,
     DEFAULT_RESOURCE_TEXT_FORMAT = DEFAULT_RESOURCE_TEXT_FORMAT,
-    DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT = DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT,
     DEFAULT_RESOURCE_TEXT_FONT = DEFAULT_RESOURCE_TEXT_FONT,
     DEFAULT_RESOURCE_TEXT_SIZE = DEFAULT_RESOURCE_TEXT_SIZE,
     DEFAULT_RESOURCE_TEXT_OUTLINE = DEFAULT_RESOURCE_TEXT_OUTLINE,

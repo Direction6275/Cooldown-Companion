@@ -152,14 +152,7 @@ function CooldownCompanion:RunConfigIntent(intent)
         CloseBlizzardSettings()
     end
 
-    if intent.action == "mode" then
-        if not EnsureConfigOpen(self) then
-            self:Print(FormatConfigLoadFailure(entryPoint, "config panel unavailable"))
-            return false
-        end
-        ST._SetConfigPrimaryMode(intent.mode or "buttons")
-        return true
-    elseif intent.action == "open" then
+    if intent.action == "open" then
         if not EnsureConfigOpen(self) then
             self:Print(FormatConfigLoadFailure(entryPoint, "config panel unavailable"))
             return false
@@ -243,13 +236,6 @@ local function RestampCharacterScopedProfileOwnership(addon)
         for _, container in pairs(profile.groupContainers) do
             if not container.isGlobal then
                 container.createdBy = charKey
-            end
-        end
-    end
-    if profile.folders then
-        for _, folder in pairs(profile.folders) do
-            if folder.section == "char" then
-                folder.createdBy = charKey
             end
         end
     end
@@ -338,6 +324,12 @@ function CooldownCompanion:SetupConfig()
     end)
     self.db.RegisterCallback(self, "OnProfileCopied", function()
         ResetLoadedConfigForProfileChange(CooldownCompanion)
+
+        if CooldownCompanion.MigrateFoldersIntoGroups then
+            -- Flatten compatibility Folders before copied character-scoped
+            -- entities are restamped to the current character.
+            CooldownCompanion:MigrateFoldersIntoGroups(CooldownCompanion.db and CooldownCompanion.db.profile)
+        end
 
         local suppress = CooldownCompanion._suppressOwnershipRestamp
         CooldownCompanion._suppressOwnershipRestamp = nil

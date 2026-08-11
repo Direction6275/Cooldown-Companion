@@ -19,8 +19,8 @@
       boundary. The frame must stay shown; hidden frames do not receive OnUpdate.
     - _tickerIdleEligible (set in GroupOperations.UpdateAllCooldowns): true after
       a completed walk that saw no time-animated button. Read by
-      IsIdleTickerSkipEligible; it gates the idle ticker skip
-      (CanSkipIdleTickerRefresh) and its observe-only would-skip cross-check.
+      CanSkipIdleTickerRefresh; it gates the idle ticker skip and its
+      observe-only would-skip cross-check.
     - _tickerSkipStreak: consecutive idle skips since the last walk; forces a 1s
       safety walk (TICKER_MAX_CONSECUTIVE_SKIPS). Reset by every walk.
 
@@ -44,32 +44,23 @@
     - Accepted residual: no-event fallback probes that ride the clean walk
       (e.g. the 0.25s icon texture staleness probe in CooldownUpdate.lua) run
       at safety-walk cadence (~1s) while skipping. Owner-approved (PR #505).
-    - Accepted residual: during aura override the real spell cooldown has no
-      expiry signal (OnCooldownDone rides button.cooldown, which the aura owns;
-      the walk-time probe in CooldownUpdate.lua re-checks it). For a buff that
-      outlasts its spell's cooldown, the ready transition (desat clear, ready
-      glow) can lag up to the ~1s safety walk while skipping.
-      Owner-approved (2026-07-04).
     - cd-done marks come from ST.OnButtonCooldownDone (ButtonFrame/Helpers.lua)
       and are ordinary MarkCooldownsDirty calls.
     - The combat ticker floor extends the idle skip into combat for
-      self-animating display modes only, via three coupled changes:
-        1. Mode-aware classifier (NoteButtonTimeState): an active cooldown/aura/
-           GCD swipe on an icon or bar button no longer forces a walk (the swipe,
-           numbers, and iconFill self-animate). Text mode, charge recharge,
-           target-switch holds, ready-glow windows, previews, and any
-           secret/unproven state still force walks.
-        2. Pandemic edge-hook: the crossing is secret in combat, so the CDM's
-           pooled pandemic FX frames' OnShow/OnHide (hooked per viewer via
-           pandemicIconPool) mark dirty ("pandemic-edge") -- a one-tick
-           event-covered edge, not a poll. An aura button is skippable only once
-           its viewer's pandemic pool is hooked (_pandemicEdgeUncovered nil);
-           until then it forces (fail open).
-        3. Power-mark demotion: UNIT_POWER_FREQUENT does not mark dirty; the
+      self-animating display modes only, via two coupled rules:
+        1. Mode-aware classifier (NoteButtonTimeState): an active cooldown or
+           GCD swipe on an icon or bar button no longer forces a walk because
+           its swipe, numbers, and iconFill self-animate. Text mode, charge
+           recharge, ready-glow windows, conditional previews, hide-unusable
+           fail-open state still force walks.
+        2. Power-mark demotion: UNIT_POWER_FREQUENT does not mark dirty; the
            castability tint rides walk cadence (safety walk ~1s worst case).
-      Discrete edges stay event-covered (cooldown start/end, aura apply/remove,
-      pandemic enter/exit). The safety walk (TICKER_MAX_CONSECUTIVE_SKIPS) is now
-      load-bearing in combat.
+           Coupled to the hide-unusable floorFailOpen term in
+           CooldownUpdate.UpdateButtonCooldown: usability has no event
+           precisely because power marks are demoted, so lifting the demotion
+           and lifting that floor must be decided together.
+      Discrete cooldown start/end edges stay event-covered. The safety walk
+      (TICKER_MAX_CONSECUTIVE_SKIPS) is load-bearing in combat.
     - Broadcast demotion (F1 3a) may downgrade ACTIONBAR/BAG cooldown events
       from immediate-broad to dirty-only. It never suppresses the mark itself
       and never touches SPELL_UPDATE_COOLDOWN. Bounded by the next ticker
@@ -102,13 +93,13 @@ local CooldownCompanion = ST.Addon
 -- ticks in a row; the next tick walks.
 local TICKER_MAX_CONSECUTIVE_SKIPS = 9
 
--- F2: authoritative "config UI is open" check (read-only, nil-safe; the same
--- indicator used elsewhere, e.g. AuraTexturesDisplay). Conditional previews are
--- the only time-animated config surface, so an open config forces walking.
+-- F2: authoritative "config UI is open" check (read-only, nil-safe via the
+-- GetConfigFrame accessor). Conditional previews are the only time-animated
+-- config surface, so an open config forces walking.
 local function IsConfigWindowOpen()
-    local cs = ST._configState
-    return cs and cs.configFrame and cs.configFrame.frame
-        and cs.configFrame.frame:IsShown() and true or false
+    local configFrame = CooldownCompanion:GetConfigFrame()
+    return configFrame and configFrame.frame
+        and configFrame.frame:IsShown() and true or false
 end
 
 local function CooldownRefreshQueueOnUpdate(frame)
@@ -121,10 +112,7 @@ end
 function CooldownCompanion:MarkCooldownsDirty(source)
     self._cooldownsDirty = true
     self._cooldownDirtySerial = (self._cooldownDirtySerial or 0) + 1
-    local T = ST.RefreshTelemetry
-    if T and T.enabled then
-        T:CountDirty(source or "unspecified")
-    end
+    ST.RefreshTelemetry:CountDirty(source or "unspecified")
 end
 
 function CooldownCompanion:ClearCooldownsDirty()
@@ -150,9 +138,7 @@ function CooldownCompanion:FlushQueuedCooldownRefresh()
 
     if queuedSource then
         local T = ST.RefreshTelemetry
-        if T and T.enabled then
-            T:SetPending("queue-flush", queuedSource, T:TakeQueueHistory(), nil)
-        end
+        T:SetPending("queue-flush", queuedSource, T:TakeQueueHistory(), nil)
         self:UpdateAllCooldowns()
         if cooldownEventSerial then
             self._cooldownRefreshSatisfiedSerial = cooldownEventSerial
@@ -165,10 +151,7 @@ function CooldownCompanion:QueueCooldownRefresh(source)
     if source == "cooldown-event" then
         self._queuedCooldownRefreshCooldownEventSerial = self._cooldownDirtySerial or 0
     end
-    local T = ST.RefreshTelemetry
-    if T and T.enabled then
-        T:CountQueue(source or "event")
-    end
+    ST.RefreshTelemetry:CountQueue(source or "event")
     self:EnsureCooldownRefreshQueueFrame()
 end
 
@@ -184,16 +167,14 @@ function CooldownCompanion:RunImmediateCooldownRefresh(source)
     end
 
     local T = ST.RefreshTelemetry
-    if self._queuedCooldownRefreshSource and T and T.enabled then
+    if self._queuedCooldownRefreshSource then
         T:ClearQueueHistory()
     end
     self._queuedCooldownRefreshSource = nil
     self._queuedCooldownRefreshCooldownEventSerial = nil
     self._cooldownImmediateRefreshThisFrame = true
     self:EnsureCooldownRefreshQueueFrame()
-    if T and T.enabled then
-        T:SetPending("immediate", source, nil, nil)
-    end
+    T:SetPending("immediate", source, nil, nil)
     self:UpdateAllCooldowns()
     if cooldownEventSerial then
         self._cooldownRefreshSatisfiedSerial = cooldownEventSerial
@@ -207,20 +188,13 @@ function CooldownCompanion:CanSkipTickerCooldownRefresh()
         and self._cooldownRefreshSatisfiedSerial == (self._cooldownDirtySerial or 0)
 end
 
--- F2 idle-skip eligibility (inner predicate of CanSkipIdleTickerRefresh; every
--- term except the config-open interlock). It latches on _tickerIdleEligible,
--- which a completed walk sets true only when it saw no time-animated button.
--- Fail open: any term unclear forces a walk.
-function CooldownCompanion:IsIdleTickerSkipEligible()
+-- F2 live-skip predicate. It latches on _tickerIdleEligible, which a completed
+-- walk sets true only when it saw no time-animated button, plus the config-open
+-- interlock. Fail open on every term (any false forces a walk).
+function CooldownCompanion:CanSkipIdleTickerRefresh()
     return not self._cooldownsDirty
         and not self._queuedCooldownRefreshSource
         and self._tickerIdleEligible == true
-end
-
--- F2 live-skip predicate: the shared inner eligibility plus the config-open
--- interlock. Fail open on every term (any false forces a walk).
-function CooldownCompanion:CanSkipIdleTickerRefresh()
-    return self:IsIdleTickerSkipEligible()
         and not IsConfigWindowOpen()
 end
 

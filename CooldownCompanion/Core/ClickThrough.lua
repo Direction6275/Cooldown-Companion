@@ -104,9 +104,12 @@ local function SetChildFramesClickThrough(disableClicks, disableMotion, ...)
     end
 end
 
--- Recursively apply click-through to frame and all children
+-- Recursively apply click-through to frame and all children.
+-- _ccNoTouch subtrees (aura slot hosts) are skipped entirely: their children
+-- are forbidden to addon code in combat; the aura module applies the slot's
+-- mouse state itself at bind time (SetMouseMotionEnabled).
 function ST.SetFrameClickThroughRecursive(frame, disableClicks, disableMotion)
-    if not frame then return end
+    if not frame or frame._ccNoTouch then return end
     ST.SetFrameClickThrough(frame, disableClicks, disableMotion)
     SetChildFramesClickThrough(disableClicks, disableMotion, frame:GetChildren())
 end

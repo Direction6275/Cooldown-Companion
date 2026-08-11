@@ -1,4 +1,4 @@
-## Interface: 120007
+## Interface: 120100
 ## Title: Cooldown Companion Config
 ## Notes: Load-on-demand configuration UI for Cooldown Companion
 ## Author: You
@@ -29,21 +29,32 @@ Config\TalentPicker.lua
 Config\SpellItemAdd.lua
 Config\CooldownManagerPanels.lua
 Config\DragReorderTargets.lua
-Config\DragReorderPreview.lua
 Config\DragReorderLifecycle.lua
 Config\DragReorder.lua
 Config\Column1.lua
-Config\Column2.lua
+Config\PanelShared.lua
 Config\Column3.lua
-Config\Column4.lua
+Config\UnifiedTabRow.lua
+Config\GroupSettingsHost.lua
+Config\PreviewCommandCenter.lua
+Config\SpellbookPanel.lua
+Config\ButtonsWideColumn.lua
+Config\ResourcesWideColumn.lua
+Config\ExportMode.lua
+Config\ImportMode.lua
+Config\ProfileBar.lua
 Config\PanelChangelogOverlay.lua
 Config\Panel.lua
 ConfigSettings\Helpers.lua
+ConfigSettings\RowWidgets.lua
 ConfigSettings\AdvancedSettingsPanel.lua
 ConfigSettings\SectionBuilders.lua
 ConfigSettings\CastBarPanels.lua
 ConfigSettings\ResourceBarPanelsHelpers.lua
 ConfigSettings\ResourceBarLayoutOrderPreview.lua
+ConfigSettings\ButtonPanelPreview.lua
+ConfigSettings\GroupPanelOverviewPreview.lua
+ConfigSettings\UnifiedAnchorPreview.lua
 ConfigSettings\ResourceBarPanelsResource.lua
 ConfigSettings\ResourceBarPanelsCustomBars.lua
 ConfigSettings\ResourceBarPanelsLayoutOrder.lua
@@ -53,6 +64,7 @@ ConfigSettings\AuraTexturePicker.lua
 ConfigSettings\ButtonSettingsMultiSelect.lua
 ConfigSettings\ButtonSettingsOverrides.lua
 ConfigSettings\ButtonSettings.lua
+ConfigSettings\ButtonSettingsAura.lua
 ConfigSettings\ButtonConditions.lua
 ConfigSettings\BarModeTabs.lua
 ConfigSettings\FormatEditor.lua

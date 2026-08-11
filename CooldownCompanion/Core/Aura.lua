@@ -1,13 +1,13 @@
 --[[
-    CooldownCompanion - Core/Aura.lua: Aura event handlers (OnUnitAura, ClearAuraUnit,
-    OnTargetChanged), aura resolution, ABILITY_BUFF_OVERRIDES, CDM viewer system
-    (ApplyCdmAlpha, BuildViewerAuraMap, FindViewerChildForSpell, FindCooldownViewerChild,
-    OnViewerSpellOverrideUpdated)
+    CooldownCompanion - Core/Aura.lua: slim aura event handlers (OnUnitAura,
+    OnTargetChanged), config-time aura resolution, CDM
+    viewer system (BuildViewerAuraMap, FindViewerChildForSpell,
+    FindCooldownViewerChild, OnViewerSpellOverrideUpdated).
+    12.1 demolition: runtime aura reading removed pending the AuraContainer rebuild.
 ]]
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-local EntryRuntime = ST.EntryRuntime
 
 
 local ipairs = ipairs
@@ -21,40 +21,15 @@ local tonumber = tonumber
 local VIEWER_NAMES = ST._VIEWER_NAMES
 local COOLDOWN_VIEWER_NAMES = ST._COOLDOWN_VIEWER_NAMES
 local BUFF_VIEWER_SET = ST._BUFF_VIEWER_SET
-local cdmAlphaGuard = ST._cdmAlphaGuard
 local IsDistinctCDMAuraIdentity = ST.IsDistinctCDMAuraIdentity
 local pendingViewerAuraMapToken = 0
 local FindChildInViewers
-local TRACKED_AURA_CATEGORIES = {
-    Enum.CooldownViewerCategory.TrackedBuff,
-    Enum.CooldownViewerCategory.TrackedBar,
-}
-local COOLDOWN_VIEWER_ASSOCIATION_CATEGORIES = {
-    Enum.CooldownViewerCategory.Essential,
-    Enum.CooldownViewerCategory.Utility,
-    Enum.CooldownViewerCategory.TrackedBuff,
-    Enum.CooldownViewerCategory.TrackedBar,
-}
-
-local GetAuraInstanceIDSets = ST.GetAuraInstanceIDSets
-
--- Immutable — shared across calls; never write to this table.
-local CLEAR_TRACKED_AURA_FALSE_STATE_OPTS = { useFalseState = true }
 
 local function IsBuffViewerChild(frame)
     if not frame then return false end
     local parent = frame:GetParent()
     local parentName = parent and parent:GetName()
     return BUFF_VIEWER_SET[parentName] == true
-end
-
-local function SetViewerChildrenMouseMotion(enabled, ...)
-    for i = 1, select("#", ...) do
-        local child = select(i, ...)
-        if child then
-            child:SetMouseMotionEnabled(enabled)
-        end
-    end
 end
 
 local function FindMatchingViewerChild(spellID, buffOnly, ...)
@@ -119,12 +94,6 @@ local function AddViewerAuraMapChildren(addon, viewerName, addViewerAuraChild, .
     end
 end
 
-local function AddAuraCandidateID(candidateSet, spellID)
-    local numericID = tonumber(spellID)
-    if numericID and numericID ~= 0 then
-        candidateSet[numericID] = true
-    end
-end
 
 local function AppendOrderedAuraCandidateID(candidateSet, orderedSet, orderedIDs, spellID)
     local numericID = tonumber(spellID)
@@ -148,21 +117,42 @@ local function AppendOrderedAuraCandidateIDsFromString(candidateSet, orderedSet,
     end
 end
 
-local function AddCooldownInfoCandidateIDs(candidateSet, cooldownInfo)
-    if type(cooldownInfo) ~= "table" then
-        return
+local function ClassifyAuraSpellUnit(spellID)
+    local numericID = tonumber(spellID)
+    if not (numericID and C_Spell.DoesSpellExist(numericID)) then
+        return nil
     end
+    return C_Spell.IsSpellHarmful(numericID) and "target" or "player"
+end
 
-    AddAuraCandidateID(candidateSet, cooldownInfo.spellID)
-    AddAuraCandidateID(candidateSet, cooldownInfo.overrideSpellID)
-    AddAuraCandidateID(candidateSet, cooldownInfo.overrideTooltipSpellID)
+local function IsAuraCandidateUnitAllowed(spellID, requiredUnit)
+    if requiredUnit == nil then
+        return true
+    end
+    local unit = ClassifyAuraSpellUnit(spellID)
+    return unit == requiredUnit
+end
 
-    if cooldownInfo.linkedSpellIDs then
-        for _, linkedSpellID in ipairs(cooldownInfo.linkedSpellIDs) do
-            AddAuraCandidateID(candidateSet, linkedSpellID)
+-- Explicit candidate lists own the slot polarity for ordinary spell entries.
+-- The migration and config writer keep those lists single-polarity; the stored
+-- unit remains the fallback when spell data is temporarily unavailable.
+local function ResolveExplicitAuraCandidateUnit(buttonData)
+    local rawIDs = buttonData and buttonData.auraSpellID and tostring(buttonData.auraSpellID) or nil
+    if not rawIDs then
+        return nil
+    end
+    for id in rawIDs:gmatch("%d+") do
+        local unit = ClassifyAuraSpellUnit(id)
+        if unit then
+            return unit
         end
     end
+    if buttonData.auraUnit == "player" or buttonData.auraUnit == "target" then
+        return buttonData.auraUnit
+    end
+    return nil
 end
+
 
 local function HasBuffSuffixName(name)
     return type(name) == "string" and name:match("%s%([Bb]uff%)$") ~= nil
@@ -188,6 +178,32 @@ local function NormalizeResolvedAuraSpellID(baseId, auraSpellID)
     end
 
     return numericAuraID
+end
+
+-- Abilities that apply an aura under a DIFFERENT spellID (e.g. Rake 1822
+-- applies bleed 155722) get no linkage from GetCooldownAuraBySpellID; the only
+-- API source is the Cooldown Manager's data rows — cooldownInfo.linkedSpellIDs
+-- is the exact list Blizzard's own tracked bars match auras against. Pure data
+-- API (no viewer frames); the spell->cooldownID map is the one SoundAlerts
+-- maintains, rebuilt alongside the viewer aura map.
+local function AppendCdmLinkedAuraIDs(candidateSet, orderedSet, orderedIDs, buttonData, spellID, requiredUnit)
+    local addon = CooldownCompanion
+    addon:EnsureSoundAlertSpellMap()
+    local cooldownIDs = addon._soundAlertSpellToCooldownIDs and addon._soundAlertSpellToCooldownIDs[spellID]
+    if not cooldownIDs then
+        return
+    end
+    for cooldownID in pairs(cooldownIDs) do
+        local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID)
+        if info and info.linkedSpellIDs then
+            for _, linkedID in ipairs(info.linkedSpellIDs) do
+                if not IsDistinctAuraIdentityForButton(buttonData, linkedID)
+                    and IsAuraCandidateUnitAllowed(linkedID, requiredUnit) then
+                    AppendOrderedAuraCandidateID(candidateSet, orderedSet, orderedIDs, linkedID)
+                end
+            end
+        end
+    end
 end
 
 local function ResolveViewerFrameForSpellID(spellID, buffOnly)
@@ -266,10 +282,7 @@ local function BuildStandaloneOriginalAuraCandidateIDs(buttonData)
     AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.id)
     AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, baseId)
 
-    local overrideBuffs = CooldownCompanion.ABILITY_BUFF_OVERRIDES and CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
-    if overrideBuffs then
-        AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, overrideBuffs)
-    end
+    AppendCdmLinkedAuraIDs(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData, baseId)
 
     return orderedCandidateIDs, candidateIDs, orderedCandidateSet
 end
@@ -287,19 +300,6 @@ local function AppendStandaloneFallbackAuraCandidateIDs(candidateIDs, orderedCan
     end
 end
 
-local function BuildStandaloneFallbackAuraCandidateIDs(buttonData, rawIDs)
-    local fallbackCandidateIDs = {}
-    local fallbackCandidateSet = {}
-    local fallbackOrderedSet = {}
-    AppendStandaloneFallbackAuraCandidateIDs(
-        fallbackCandidateSet,
-        fallbackOrderedSet,
-        fallbackCandidateIDs,
-        buttonData,
-        rawIDs
-    )
-    return fallbackCandidateIDs, fallbackCandidateSet, fallbackOrderedSet
-end
 
 local function BuildStandaloneAuraFallbackSpellIDText(buttonData, rawIDs)
     local _, originalCandidateSet = BuildStandaloneOriginalAuraCandidateIDs(buttonData)
@@ -318,7 +318,7 @@ local function BuildStandaloneAuraFallbackSpellIDText(buttonData, rawIDs)
     return #fallbackIDs > 0 and table.concat(fallbackIDs, ",") or nil
 end
 
-local function BuildOrderedAuraCandidateIDs(buttonData)
+local function BuildOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbacks)
     local candidateIDs = {}
     local orderedCandidateSet = {}
     local orderedCandidateIDs = {}
@@ -329,14 +329,23 @@ local function BuildOrderedAuraCandidateIDs(buttonData)
 
     local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
 
-    local function AppendSpellAssociationAuraIDs()
-        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.id)
-        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, baseId)
+    local function AppendSpellAssociationAuraIDs(requiredUnit)
+        if IsAuraCandidateUnitAllowed(buttonData.id, requiredUnit) then
+            AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.id)
+        end
+        if IsAuraCandidateUnitAllowed(baseId, requiredUnit) then
+            AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, baseId)
+        end
 
         local resolvedAuraId = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
-        if resolvedAuraId and not IsDistinctAuraIdentityForButton(buttonData, resolvedAuraId) then
+        if resolvedAuraId
+            and not IsDistinctAuraIdentityForButton(buttonData, resolvedAuraId)
+            and IsAuraCandidateUnitAllowed(resolvedAuraId, requiredUnit) then
             AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, resolvedAuraId)
         end
+
+        AppendCdmLinkedAuraIDs(candidateIDs, orderedCandidateSet, orderedCandidateIDs,
+            buttonData, baseId, requiredUnit)
     end
 
     if buttonData.addedAs == "aura" then
@@ -347,220 +356,37 @@ local function BuildOrderedAuraCandidateIDs(buttonData)
         AppendStandaloneFallbackAuraCandidateIDs(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData, buttonData.auraSpellID)
     else
         AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.auraSpellID)
-        AppendSpellAssociationAuraIDs()
-    end
-
-    local overrideBuffs = buttonData.addedAs ~= "aura"
-        and CooldownCompanion.ABILITY_BUFF_OVERRIDES
-        and CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
-    if overrideBuffs then
-        AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, overrideBuffs)
+        local requiredUnit = constrainImplicitFallbacks
+            and ResolveExplicitAuraCandidateUnit(buttonData) or nil
+        AppendSpellAssociationAuraIDs(requiredUnit)
     end
 
     return orderedCandidateIDs, candidateIDs, orderedCandidateSet
 end
 
-function CooldownCompanion:GetOrderedAuraCandidateIDs(buttonData)
-    return BuildOrderedAuraCandidateIDs(buttonData)
-end
-
-function CooldownCompanion:GetStandaloneAuraCandidateGroups(buttonData)
-    local originalAuraIDs = BuildStandaloneOriginalAuraCandidateIDs(buttonData)
-    local fallbackAuraIDs = BuildStandaloneFallbackAuraCandidateIDs(buttonData, buttonData and buttonData.auraSpellID)
-    return originalAuraIDs, fallbackAuraIDs
-end
 
 function CooldownCompanion:GetStandaloneAuraFallbackSpellIDText(buttonData, rawIDs)
     return BuildStandaloneAuraFallbackSpellIDText(buttonData, rawIDs or (buttonData and buttonData.auraSpellID))
 end
 
-local function CooldownInfoMatchesCandidateSet(cooldownInfo, candidateSet)
-    if type(cooldownInfo) ~= "table" then
-        return false
-    end
 
-    local function MatchesSpellID(spellID)
-        local numericID = tonumber(spellID)
-        if not numericID or numericID == 0 then
-            return false
-        end
-        if candidateSet[numericID] then
-            return true
-        end
 
-        local baseSpellID = C_Spell.GetBaseSpell(numericID)
-        return baseSpellID and baseSpellID ~= numericID and candidateSet[baseSpellID] == true
-    end
 
-    if MatchesSpellID(cooldownInfo.spellID)
-        or MatchesSpellID(cooldownInfo.overrideSpellID)
-        or MatchesSpellID(cooldownInfo.overrideTooltipSpellID) then
-        return true
-    end
 
-    if cooldownInfo.linkedSpellIDs then
-        for _, linkedSpellID in ipairs(cooldownInfo.linkedSpellIDs) do
-            if MatchesSpellID(linkedSpellID) then
-                return true
-            end
-        end
-    end
-
-    return false
-end
-
-local function GetCooldownViewerDataProvider()
-    if not (CooldownViewerSettings and CooldownViewerSettings.GetDataProvider) then
-        return nil
-    end
-    return CooldownViewerSettings:GetDataProvider()
-end
-
-local function ForEachRawCooldownInfo(callback)
-    for _, category in ipairs(COOLDOWN_VIEWER_ASSOCIATION_CATEGORIES) do
-        local cooldownIDs = C_CooldownViewer.GetCooldownViewerCategorySet(category, true)
-        if cooldownIDs then
-            for _, cooldownID in ipairs(cooldownIDs) do
-                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID)
-                if info then
-                    callback(cooldownID, info, category)
-                end
-            end
-        end
-    end
-end
-
-local function ForEachAuraLayoutInfo(callback)
-    local dataProvider = GetCooldownViewerDataProvider()
-    if not dataProvider then
-        return false
-    end
-
-    for _, category in ipairs(TRACKED_AURA_CATEGORIES) do
-        local cooldownIDs = dataProvider:GetOrderedCooldownIDsForCategory(category, true)
-        if cooldownIDs then
-            for _, cooldownID in ipairs(cooldownIDs) do
-                local info = dataProvider:GetCooldownInfoForID(cooldownID)
-                if info then
-                    callback(cooldownID, info, category, true)
-                end
-            end
-        end
-    end
-
-    local hiddenAuraCategory = Enum.CooldownViewerCategory.HiddenAura
-    if hiddenAuraCategory ~= nil then
-        local cooldownIDs = dataProvider:GetOrderedCooldownIDsForCategory(hiddenAuraCategory, true)
-        if cooldownIDs then
-            for _, cooldownID in ipairs(cooldownIDs) do
-                local info = dataProvider:GetCooldownInfoForID(cooldownID)
-                if info then
-                    callback(cooldownID, info, hiddenAuraCategory, false)
-                end
-            end
-        end
-    end
-
-    return true
-end
-
+-- Slim (12.1 demolition): aura tracking removed. Sole surviving duty is the
+-- Dracthyr Soar mount-alpha cache invalidation (AlphaFade.lua Soar read is a
+-- flagged follow-up).
 function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
-    self:MarkCooldownsDirty(unit == "player" and "aura-player" or "aura-other")
     if unit == "player" and self._isDracthyr then
         self:InvalidateMountAlphaCache()
     end
-
-    if not updateInfo then return end
-
-    -- Merged single-pass processing: removals, pandemic updates, and target-switch
-    -- signaling in one ForEachButton call instead of three separate iterations.
-    -- Removals are processed first so refreshed auras (remove + add in same event)
-    -- work correctly — the update path re-checks _auraInstanceID after removals.
-    local removedIDs = updateInfo.removedAuraInstanceIDs
-    local updatedIDs = updateInfo.updatedAuraInstanceIDs
-    local removedIDSet, updatedIDSet = GetAuraInstanceIDSets(updateInfo)
-    local isTarget = (unit == "target")
-    if removedIDs or updatedIDs or isTarget then
-        self:ForEachButton(function(button)
-            if button._auraInstanceID and button._auraUnit == unit then
-                if removedIDSet and removedIDSet[button._auraInstanceID] then
-                    button._auraInstanceID = nil
-                    button._inPandemic = false
-                    EntryRuntime.ClearAuraPandemicRuntimeState(button)
-                    button._auraEventRemoved = true
-                end
-                -- Updates are dirty signals, not proof of refresh. Let the shared
-                -- resolver compare fresh semantic range and readable aura timing.
-                if updatedIDSet
-                    and button._auraInstanceID
-                    and updatedIDSet[button._auraInstanceID] then
-                    EntryRuntime.MarkAuraPandemicStateDirty(button, unit, button._auraInstanceID)
-                end
-            end
-            -- Signal that the server has delivered target aura data, so the hold
-            -- logic in CooldownUpdate can terminate early instead of waiting for the
-            -- safety cap timeout.
-            if isTarget and button._targetSwitchAt then
-                button._targetSwitchDataReceived = true
-            end
-        end)
-    end
-
-    -- Refresh immediately on the first aura event this frame. CDM viewer
-    -- frames registered their event handlers before our addon loaded, so by
-    -- the time this handler fires the CDM has already refreshed its children
-    -- with fresh auraInstanceID data. Bursts later in the same frame coalesce.
-    if unit == "target" or unit == "player" then
-        self:RunImmediateCooldownRefresh("aura-event")
-    end
 end
 
--- Clear aura state on buttons tracking a unit when that unit changes (target/focus switch).
--- The viewer will re-evaluate on its next tick; this ensures stale data is cleared promptly.
-function CooldownCompanion:ClearAuraUnit(unitToken)
-    self:ForEachButton(function(button, bd)
-        if bd.auraTracking or bd.isPassive then
-            local configUnit = bd.auraUnit or "player"
-            local shouldClear = button._auraUnit == unitToken
-            if not shouldClear and configUnit == unitToken then
-                shouldClear = true
-            end
-            if shouldClear then
-                EntryRuntime.ClearTrackedAuraOwnerState(button, configUnit, CLEAR_TRACKED_AURA_FALSE_STATE_OPTS)
-                button._auraPrimarySwipeActive = nil
-            end
-        end
-    end)
-    self:MarkCooldownsDirty("aura-clear")
-end
-
+-- Slim (12.1 demolition): kept because FrameAnchoring.lua hooksecurefunc's this
+-- method (inheritAlpha resync rides the hook); the dirty mark keeps
+-- target-dependent kept visuals (range tint, {oor} text) repainting promptly.
 function CooldownCompanion:OnTargetChanged()
-    if not UnitExists("target") then
-        -- Deselected target: clear all target aura state immediately
-        self:ClearAuraUnit("target")
-        return
-    end
-    -- New target: clear stale instance IDs so the viewer path doesn't
-    -- read old auraInstanceIDs.  Keep _auraActive so the hold can
-    -- maintain visual continuity while CDM refreshes.
-    local now = GetTime()
-    self:ForEachButton(function(button, bd)
-        if bd.auraTracking or bd.isPassive then
-            local configUnit = bd.auraUnit or "player"
-            local isTarget = button._auraUnit == "target"
-                or configUnit == "target"
-            if isTarget then
-                EntryRuntime.StartTrackedAuraTargetSwitch(button, now, "target")
-            end
-        end
-    end)
-    -- Synchronous probe: CDM viewer frames register their event handlers on
-    -- Blizzard frames created before addons load.  If UNIT_TARGET has already
-    -- been processed by the time PLAYER_TARGET_CHANGED fires, the CDM children
-    -- will have fresh auraInstanceID data.  Probing immediately lets the
-    -- primary path clear _targetSwitchAt in the same frame — zero hold.
-    ST.TagRefreshPass("target-probe")
-    self:UpdateAllCooldowns()
+    self:MarkCooldownsDirty("target-changed")
 end
 
 
@@ -593,6 +419,28 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
     return nil
 end
 
+-- Ordered candidate list (primary first), for callers that need priority
+-- order rather than a lookup set — e.g. the pandemic-threshold base-duration
+-- query, which takes the first candidate that reports a real aura duration.
+function CooldownCompanion:GetOrderedAuraCandidateSpellIDs(buttonData, constrainImplicitFallbacks)
+    return (BuildOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbacks))
+end
+
+-- Full ordered candidate set as a lookup table, for AuraDisplay's
+-- includeSpellIDs filters (config-time resolution; not combat-blocked).
+-- Aura-capable panel entries pass constrainImplicitFallbacks=true so an
+-- explicit Aura list owns the slot polarity; Custom Bars omit it and retain
+-- their existing candidate behavior.
+function CooldownCompanion:GetAuraCandidateSpellIDSet(buttonData, constrainImplicitFallbacks)
+    local orderedCandidateIDs = BuildOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbacks)
+    if #orderedCandidateIDs == 0 then return nil end
+    local set = {}
+    for _, spellID in ipairs(orderedCandidateIDs) do
+        set[spellID] = true
+    end
+    return set
+end
+
 function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
     if not (buttonData and buttonData.type == "spell") then
         return nil
@@ -600,11 +448,6 @@ function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
 
     if buttonData.auraSpellID then
         return tostring(buttonData.auraSpellID)
-    end
-
-    local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[buttonData.id]
-    if overrideBuffs then
-        return overrideBuffs
     end
 
     local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
@@ -668,7 +511,8 @@ function CooldownCompanion:ResolveStandaloneAuraDefaultSpellID(buttonData)
         return nil
     end
 
-    local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
+    local numericSpellID = tonumber(buttonData.id)
+    local baseId = numericSpellID and (C_Spell.GetBaseSpell(numericSpellID) or numericSpellID) or nil
 
     local function ResolveSingleSpellID(rawIDs)
         if not rawIDs then
@@ -692,6 +536,10 @@ function CooldownCompanion:ResolveStandaloneAuraDefaultSpellID(buttonData)
     local explicitAuraID = buttonData.addedAs ~= "aura" and ResolveSingleSpellID(buttonData.auraSpellID) or nil
     if explicitAuraID then
         return explicitAuraID
+    end
+
+    if not numericSpellID then
+        return nil
     end
 
     local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
@@ -755,85 +603,118 @@ function CooldownCompanion:ResolveStandaloneAuraDefaultUnit(buttonData)
     return "player"
 end
 
-function CooldownCompanion:ResolveAuraTrackingAssociationData(buttonData, viewerFrame)
-    local data = {
-        hasAssociatedAura = false,
-        hasTrackedAuraLayout = false,
-        trackedBuffViewerFrame = nil,
-    }
-
-    if not (buttonData and buttonData.type == "spell") then
-        return data
+-- Aura shell (12.1 compositing): an aura entry that yields its resting
+-- appearance so the native aura display renders the active visual on top.
+-- Two forms, mutually exclusive in config:
+--   hideWhileAuraNotActive -> hidden shell, alpha 0
+--   auraShellDim           -> dimmed shell, DIM_FALLBACK_ALPHA
+-- Both compose the same full active visual, so every consumer that asks
+-- "is this a shell entry" must accept either. Owned here because four
+-- callers across Core and ButtonFrame need the same answer and drifted
+-- when they each kept their own copy.
+--
+-- auraShellDim is 12.1-native and deliberately NOT the main-era
+-- useBaselineAlphaFallback key it replaces. That key's presence was
+-- ambiguous: either a live setting, or residue main left behind when its
+-- partner toggle was switched back off -- and nothing in the stored shape
+-- distinguishes them. Migrating onto a distinct key makes the pass
+-- idempotent by construction: it converts the legacy pair, clears legacy
+-- orphans, and never has cause to touch this key at all.
+function CooldownCompanion:IsAuraShellEntry(buttonData)
+    if not buttonData then return false end
+    if not (buttonData.auraTracking or buttonData.addedAs == "aura") then
+        return false
     end
-
-    local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
-    local orderedCandidateIDs, candidateIDs, orderedCandidateSet = BuildOrderedAuraCandidateIDs(buttonData)
-    local resolvedAuraId = C_UnitAuras.GetCooldownAuraBySpellID(baseId)
-    if resolvedAuraId and resolvedAuraId ~= 0 then
-        data.hasAssociatedAura = true
-    end
-
-    local function MergeCooldownInfo(cooldownInfo)
-        if type(cooldownInfo) ~= "table" then
-            return
-        end
-        AddCooldownInfoCandidateIDs(candidateIDs, cooldownInfo)
-    end
-
-    if viewerFrame and IsBuffViewerChild(viewerFrame) and type(viewerFrame.cooldownInfo) == "table" then
-        data.trackedBuffViewerFrame = viewerFrame
-        data.hasAssociatedAura = true
-        MergeCooldownInfo(viewerFrame.cooldownInfo)
-    end
-
-    -- Raw cooldown records expand candidate spell IDs, but the config text should
-    -- only consider an aura "found" if Blizzard places it in the aura layout
-    -- itself (tracked or hidden/not displayed), not merely on a cooldown record.
-    for _ = 1, 2 do
-        ForEachRawCooldownInfo(function(_cooldownID, info)
-            if CooldownInfoMatchesCandidateSet(info, candidateIDs) then
-                MergeCooldownInfo(info)
-            end
-        end)
-    end
-
-    for spellID in pairs(candidateIDs) do
-        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, spellID)
-    end
-
-    if not data.trackedBuffViewerFrame then
-        for _, spellID in ipairs(orderedCandidateIDs) do
-            local candidate = self:ResolveBuffViewerFrameForSpell(spellID)
-            if candidate then
-                data.trackedBuffViewerFrame = candidate
-                data.hasAssociatedAura = true
-                MergeCooldownInfo(candidate.cooldownInfo)
-                break
-            end
-        end
-    end
-
-    for _, spellID in ipairs(orderedCandidateIDs) do
-        local candidate = ResolveViewerFrameForSpellID(spellID, false)
-        if candidate and type(candidate.cooldownInfo) == "table" then
-            MergeCooldownInfo(candidate.cooldownInfo)
-        end
-    end
-
-    for _ = 1, 2 do
-        ForEachAuraLayoutInfo(function(_cooldownID, info, _category, isTracked)
-            if CooldownInfoMatchesCandidateSet(info, candidateIDs) then
-                if isTracked then
-                    data.hasTrackedAuraLayout = true
-                end
-                data.hasAssociatedAura = true
-                MergeCooldownInfo(info)
-            end
-        end)
-    end
-
-    return data
+    return buttonData.hideWhileAuraNotActive == true
+        or buttonData.auraShellDim == true
 end
+
+-- Resting alpha for a shell entry, before any preview exposure. Hide wins
+-- when both keys are somehow set, matching the shell predicate's intent.
+-- Callers gate on IsAuraShellEntry first, so a non-shell entry never
+-- reaches this.
+function CooldownCompanion:GetAuraShellRestingAlpha(buttonData)
+    if buttonData and buttonData.hideWhileAuraNotActive == true then
+        return 0
+    end
+    return self.DIM_FALLBACK_ALPHA
+end
+
+-- Aura config previews draw onto CC-side regions -- the exact ones a shell
+-- makes transparent -- so a shell exposes for as long as one runs. Which
+-- kinds qualify depends on the display mode, because the regions differ:
+--   icons: the duration text and stack text live on overlayFrame, and the
+--          swipe widget sits over the button chrome.
+--   bars:  the duration BAR preview drains the statusBar, and the duration
+--          and stack text write into barTextFrame/overlayFrame. There is no
+--          swipe on a bar.
+-- Owned here rather than per-mode because bar mode's copy was cloned from
+-- the icon list without swapping the kinds -- it claimed the icon-only
+-- swipe and omitted the bar-only drain, which is the whole reason the two
+-- sets now live side by side where a mismatch is visible.
+local AURA_PREVIEW_SHELL_KINDS_ICON = {
+    aura_duration_text = true,
+    -- Same stand-in as the duration text, so the same shell has to open.
+    pandemic_marker = true,
+    aura_stack_text = true,
+    aura_duration_swipe = true,
+}
+
+local AURA_PREVIEW_SHELL_KINDS_BAR = {
+    aura_duration_bar = true,
+    aura_duration_text = true,
+    pandemic_marker = true,
+    aura_stack_text = true,
+}
+
+function CooldownCompanion:IsAuraPreviewKindExposingShell(kind, isBar)
+    if not kind then return false end
+    local kinds = isBar and AURA_PREVIEW_SHELL_KINDS_BAR or AURA_PREVIEW_SHELL_KINDS_ICON
+    return kinds[kind] == true
+end
+
+-- The one shell-alpha decision, for both display modes: 1 = no shell (the
+-- entry renders normally, including while an unlock or aura preview exposes
+-- it), 0 = full shell (the aura display is the entire visible button),
+-- fractional = the dim shell under the full-strength aura display. Static
+-- by design -- resolved at style time, never from aura state. Icon and bar
+-- mode each kept a private copy of this chain and the copies drifted (the
+-- bar one cloned the icon preview-kind list), so it lives with the shell
+-- predicate now.
+function CooldownCompanion:GetAuraShellAlpha(button, buttonData)
+    if not self:IsAuraShellEntry(buttonData) then
+        return 1
+    end
+    local frame = button and button:GetParent()
+    if not self._combatForcedLock
+        and frame
+        and (frame._containerUnlockPreviewActive == true
+            or frame._panelUnlockPreviewActive == true) then
+        return 1
+    end
+    local preview = button and button._conditionalVisualPreview
+    if self:IsAuraPreviewKindExposingShell(preview and preview.kind,
+            button and button._isBar == true) then
+        return 1
+    end
+    return self:GetAuraShellRestingAlpha(buttonData)
+end
+
+-- Mode dispatch for the shell appliers, so call sites that serve both
+-- display modes stop repeating the _isBar ternary. The appliers themselves
+-- stay per-mode (they own different region sets) and are looked up through
+-- ST at call time -- they are assigned by IconMode/BarMode, which load
+-- after this file.
+function ST._ApplyShellVisualsForButton(button, buttonData)
+    if button._isBar then
+        if ST._ApplyBarAuraShellVisuals then
+            ST._ApplyBarAuraShellVisuals(button, buttonData)
+        end
+    elseif ST._ApplyAuraShellVisuals then
+        ST._ApplyAuraShellVisuals(button, buttonData)
+    end
+end
+
 
 function CooldownCompanion:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, siblingButtons, options)
     if not (buttonData and buttonData.type == "spell") then
@@ -915,294 +796,116 @@ function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData, sibling
     return changed
 end
 
-local BAR_PANEL_AURA_STACK_MODES = {
-    stacks = true,
-    stack = true,
-    stack_continuous = true,
-    stack_segmented = true,
-    stack_overlay = true,
-}
+-- 12.1 bar aura fill modes (PTR 6, tracker C2): the Blizzard-driven duration
+-- timer, or the ApplicationBar stack fill. auraBar.mode == "stacks" — kept
+-- dormant by the aura-rebuild migration exactly for this revival — selects
+-- the stack fill; anything else means duration.
 
-local BAR_PANEL_AURA_ACTIVE_MODES = {
-    active = true,
-    duration = true,
-}
-
-local BAR_PANEL_AURA_STACK_MODE_BY_DISPLAY = {
-    continuous = "stack_continuous",
-    segmented = "stack_segmented",
-    overlay = "stack_overlay",
-}
-
-local function NormalizeBarPanelAuraStackMode(mode)
-    if mode == "stack_continuous" then
-        return "stack_continuous"
-    elseif mode == "stack_overlay" then
-        return "stack_overlay"
-    elseif mode == "stack_segmented" then
-        return "stack_segmented"
-    end
-    return nil
+function CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData)
+    local auraBar = buttonData and buttonData.auraBar
+    return type(auraBar) == "table" and auraBar.mode == "stacks"
 end
 
-local function GetBarPanelAuraStackDisplayFromMode(mode)
-    mode = NormalizeBarPanelAuraStackMode(mode)
-    if mode == "stack_continuous" then
+function CooldownCompanion:SetBarPanelAuraStackDisplay(buttonData, wantStacks)
+    if type(buttonData.auraBar) ~= "table" then
+        if not wantStacks then return end
+        buttonData.auraBar = {}
+    end
+    buttonData.auraBar.mode = wantStacks and "stacks" or "duration"
+end
+
+-- Stack display style (live parity, C2 round 3): how a stack-mode bar
+-- renders — "segmented" (per-stack segments/blocks) or "continuous" (plain
+-- fill growing with stacks). Stored in auraBar.stackDisplayMode, nil =
+-- segmented. Live's specific stack_* mode values carried the style on the
+-- mode key; the aura-rebuild migration splits them onto this vocabulary, so
+-- a live "continuous" choice does revive as "continuous" and every other
+-- live-era value resolves to the segmented default.
+function CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData)
+    local auraBar = buttonData and buttonData.auraBar
+    local mode = type(auraBar) == "table" and auraBar.stackDisplayMode or nil
+    if mode == "continuous" then
         return "continuous"
-    elseif mode == "stack_overlay" then
-        return "overlay"
     end
     return "segmented"
 end
 
-local function NormalizeBarPanelAuraStackTextFormat(format)
-    if format == "current_max" then
-        return "current_max"
-    end
-    return "current"
-end
-
-local function EnsureBarPanelAuraSettings(buttonData)
+function CooldownCompanion:SetBarPanelAuraStackDisplayMode(buttonData, displayMode)
     if type(buttonData.auraBar) ~= "table" then
+        if displayMode == nil or displayMode == "segmented" then return end
         buttonData.auraBar = {}
     end
-    return buttonData.auraBar
+    buttonData.auraBar.stackDisplayMode = displayMode ~= "segmented" and displayMode or nil
 end
 
-local function SetBarPanelAuraStackMode(auraBar, stackMode)
-    auraBar.mode = stackMode
-    auraBar.stackDisplayMode = stackMode
-end
-
-local function ClampBarPanelAuraNumber(value, minValue, maxValue, defaultValue)
-    value = tonumber(value) or defaultValue
-    if value < minValue then
-        return minValue
-    elseif value > maxValue then
-        return maxValue
-    end
+-- Segment gap (live parity): per-button width of the painted gap between
+-- stack segments. Stored raw, clamped on read; 0 = solid unsegmented fill.
+function CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData)
+    local auraBar = buttonData and buttonData.auraBar
+    local value = type(auraBar) == "table" and tonumber(auraBar.segmentGap) or nil
+    if not value then return 4 end
+    value = math.floor(value + 0.5)
+    if value < 0 then return 0 end
+    if value > 20 then return 20 end
     return value
 end
 
-function CooldownCompanion:IsBarPanelAuraDisplayEligible(buttonData)
-    if not (buttonData and buttonData.type == "spell") then
-        return false
-    end
-    return buttonData.addedAs == "aura" or buttonData.auraTracking == true
-end
-
-function CooldownCompanion:GetBarPanelAuraDisplayKind(buttonData)
-    if not self:IsBarPanelAuraDisplayEligible(buttonData) then
-        return "active"
-    end
-
-    local auraBar = buttonData.auraBar
-    local mode = type(auraBar) == "table" and auraBar.mode or nil
-    if BAR_PANEL_AURA_STACK_MODES[mode] then
-        return "stacks"
-    end
-    if mode == nil or BAR_PANEL_AURA_ACTIVE_MODES[mode] then
-        return "active"
-    end
-    return "active"
-end
-
-function CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData)
-    return self:GetBarPanelAuraDisplayKind(buttonData) == "stacks"
-end
-
-function CooldownCompanion:SetBarPanelAuraDisplayKind(buttonData, kind)
-    if not self:IsBarPanelAuraDisplayEligible(buttonData) then
-        return
-    end
-
-    local auraBar = EnsureBarPanelAuraSettings(buttonData)
-    if kind == "stacks" then
-        local stackMode = NormalizeBarPanelAuraStackMode(auraBar.mode)
-            or NormalizeBarPanelAuraStackMode(auraBar.stackDisplayMode)
-            or "stack_segmented"
-        SetBarPanelAuraStackMode(auraBar, stackMode)
-        auraBar.maxStacks = self:GetBarPanelAuraMaxStacks(buttonData)
-        return
-    end
-
-    local stackMode = NormalizeBarPanelAuraStackMode(auraBar.mode)
-    if stackMode then
-        auraBar.stackDisplayMode = stackMode
-    end
-    auraBar.mode = "duration"
-end
-
-function CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData)
-    local auraBar = buttonData and buttonData.auraBar
-    local mode = type(auraBar) == "table" and auraBar.mode or nil
-    if type(auraBar) == "table" then
-        mode = NormalizeBarPanelAuraStackMode(mode) or NormalizeBarPanelAuraStackMode(auraBar.stackDisplayMode)
-    end
-    return GetBarPanelAuraStackDisplayFromMode(mode)
-end
-
-function CooldownCompanion:SetBarPanelAuraStackDisplayMode(buttonData, displayMode)
-    if not self:IsBarPanelAuraDisplayEligible(buttonData) then
-        return
-    end
-
-    local auraBar = EnsureBarPanelAuraSettings(buttonData)
-    local stackMode = BAR_PANEL_AURA_STACK_MODE_BY_DISPLAY[displayMode] or "stack_segmented"
-    SetBarPanelAuraStackMode(auraBar, stackMode)
-    auraBar.maxStacks = self:GetBarPanelAuraMaxStacks(buttonData)
-end
-
-function CooldownCompanion:GetBarPanelAuraMaxStacks(buttonData)
-    local auraBar = buttonData and buttonData.auraBar
-    local value = type(auraBar) == "table" and auraBar.maxStacks or nil
-    return math.floor(ClampBarPanelAuraNumber(value, 1, 99, 1) + 0.5)
-end
-
-function CooldownCompanion:SetBarPanelAuraMaxStacks(buttonData, value)
-    if not self:IsBarPanelAuraDisplayEligible(buttonData) then
-        return
-    end
-    EnsureBarPanelAuraSettings(buttonData).maxStacks = math.floor(ClampBarPanelAuraNumber(value, 1, 99, 1) + 0.5)
-end
-
-function CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData)
-    local auraBar = buttonData and buttonData.auraBar
-    local value = type(auraBar) == "table" and auraBar.segmentGap or nil
-    return ClampBarPanelAuraNumber(value, 0, 20, 4)
-end
-
 function CooldownCompanion:SetBarPanelAuraSegmentGap(buttonData, value)
-    if not self:IsBarPanelAuraDisplayEligible(buttonData) then
-        return
+    if type(buttonData.auraBar) ~= "table" then
+        buttonData.auraBar = {}
     end
-    EnsureBarPanelAuraSettings(buttonData).segmentGap = ClampBarPanelAuraNumber(value, 0, 20, 4)
+    buttonData.auraBar.segmentGap = value
 end
 
-function CooldownCompanion:GetBarPanelAuraStackTextFormat(buttonData)
-    local auraBar = buttonData and buttonData.auraBar
-    return NormalizeBarPanelAuraStackTextFormat(type(auraBar) == "table" and auraBar.stackTextFormat or nil)
-end
-
-function CooldownCompanion:SetBarPanelAuraStackTextFormat(buttonData, format)
-    if not self:IsBarPanelAuraDisplayEligible(buttonData) then
-        return
-    end
-    EnsureBarPanelAuraSettings(buttonData).stackTextFormat = NormalizeBarPanelAuraStackTextFormat(format)
-end
-
+-- Segmented smoothing (live parity revival, tracker C2): whether a
+-- segmented stack bar sweeps or snaps between stack counts. Same key and
+-- "on"/"off" normalizer as the resource-side control — one feature in the
+-- UI even though the mechanism differs (Blizzard's ApplicationBar
+-- interpolation here, CC-side smoothing there). Live wrote the same
+-- "on"/"off" vocabulary, so the aura-rebuild migration carries stored
+-- values over unchanged and nil takes the "on" default. Continuous stack
+-- fills always smooth and ignore this (owner ruling 2026-07-24, resource
+-- parity: the toggle governs segmented displays only).
 function CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(buttonData)
     local auraBar = buttonData and buttonData.auraBar
-    return ST.NormalizeSegmentedSmoothing(type(auraBar) == "table" and auraBar.segmentedSmoothing or nil)
+    local value = type(auraBar) == "table" and auraBar.segmentedSmoothing or nil
+    return ST.NormalizeSegmentedSmoothing(value)
 end
 
 function CooldownCompanion:SetBarPanelAuraSegmentedSmoothing(buttonData, value)
-    if not self:IsBarPanelAuraDisplayEligible(buttonData) then
-        return
+    value = ST.NormalizeSegmentedSmoothing(value)
+    if type(buttonData.auraBar) ~= "table" then
+        if value == ST.SEGMENTED_SMOOTHING_ON then return end
+        buttonData.auraBar = {}
     end
-    EnsureBarPanelAuraSettings(buttonData).segmentedSmoothing = ST.NormalizeSegmentedSmoothing(value)
+    buttonData.auraBar.segmentedSmoothing = value ~= ST.SEGMENTED_SMOOTHING_ON and value or nil
 end
 
-function CooldownCompanion:IsAuraTrackingReady(buttonData, cdmEnabled, viewerFrame)
-    if not (buttonData and buttonData.type == "spell") then
-        return false
-    end
-
-    if buttonData.auraTracking ~= true and buttonData.isPassive ~= true then
-        return false
-    end
-
-    if cdmEnabled == nil then
-        cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
-    end
-    if cdmEnabled ~= true then
-        return false
-    end
-
-    if viewerFrame ~= nil then
-        return true
-    end
-
-    -- Passive player auras can still track through direct aura API fallback
-    -- even when Blizzard has not built a readable Buff viewer child yet.
-    return buttonData.isPassive == true and (buttonData.auraUnit or "player") == "player"
-end
-
-function CooldownCompanion:ResolveAuraTrackingConfigStatus(buttonData, cdmEnabled, viewerFrame)
-    local status = {
-        state = "disabled",
-        ready = false,
-        cdmEnabled = false,
-        hasAssociatedAura = false,
-        hasTrackedAuraLayout = false,
-    }
-
-    if not (buttonData and buttonData.type == "spell") then
-        return status
-    end
-
-    if buttonData.auraTracking ~= true and buttonData.isPassive ~= true then
-        return status
-    end
-
-    if cdmEnabled == nil then
-        cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
-    end
-    status.cdmEnabled = cdmEnabled == true
-    if not status.cdmEnabled then
-        status.state = "cdmDisabled"
-        return status
-    end
-
-    local associationData = self:ResolveAuraTrackingAssociationData(buttonData, viewerFrame)
-    local hasTrackedBuffViewer = associationData.trackedBuffViewerFrame ~= nil
-    local hasTrackedAuraLayout = associationData.hasTrackedAuraLayout == true
-    status.hasAssociatedAura = associationData.hasAssociatedAura == true
-    status.hasTrackedAuraLayout = hasTrackedAuraLayout
-
-    if hasTrackedBuffViewer then
-        status.ready = true
-        status.state = "ready"
-        return status
-    end
-
-    if hasTrackedAuraLayout then
-        status.state = "trackedAuraUnavailable"
-        return status
-    end
-
-    if status.hasAssociatedAura then
-        status.state = "associatedAuraNotTracked"
-        return status
-    end
-
-    status.state = "noAssociatedAura"
-    return status
-end
-
-function CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData)
-    if not buttonData or buttonData.type ~= "spell" then return nil end
-    if buttonData.cdmChildSlot then
-        local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
-        local slotChild = allChildren and allChildren[buttonData.cdmChildSlot]
-        if IsBuffViewerChild(slotChild) then
-            return slotChild
+-- Automatic max-stacks resolution (owner ruling: automatic only, no manual
+-- field). The lookup is talent-aware and returns 0 for IDs that carry no
+-- stacking aura (V24), so the highest candidate wins and anything ≤ 1 means
+-- "not a stacking aura" — callers fall back to the duration fill. The return
+-- is documented SecretWhenUnitAuraRestricted; callers run OOC, but a secret
+-- is still discarded before any comparison.
+function CooldownCompanion:GetAuraStackBarMax(buttonData, constrainImplicitFallbacks)
+    local getMax = C_Spell.GetSpellMaxCumulativeAuraApplications
+    if not getMax then return nil end
+    local spellSet = self:GetAuraCandidateSpellIDSet(buttonData, constrainImplicitFallbacks)
+    if not spellSet then return nil end
+    local best = 0
+    for spellID in pairs(spellSet) do
+        local maxApplications = getMax(spellID)
+        if not issecretvalue(maxApplications) and type(maxApplications) == "number"
+            and maxApplications > best then
+            best = maxApplications
         end
     end
-
-    local associationData = self:ResolveAuraTrackingAssociationData(buttonData)
-    return associationData.trackedBuffViewerFrame
+    if best > 1 then
+        return best
+    end
+    return nil
 end
 
--- Hardcoded ability → buff overrides for spells whose ability ID and buff IDs
--- are completely unlinked by any API (GetCooldownAuraBySpellID returns 0).
--- Format: [abilitySpellID] = "comma-separated buff spell IDs"
-CooldownCompanion.ABILITY_BUFF_OVERRIDES = {
-    -- Legacy compatibility only: older saved Eclipse buttons may still use
-    -- the ability IDs, but new adds must choose the specific CDM aura row.
-    [1233346] = "48517,48518",  -- Solar Eclipse legacy ability -> Eclipse buffs
-    [1233272] = "48517,48518",  -- Lunar Eclipse legacy ability -> Eclipse buffs
-}
 
 -------------------------------------------------------------------------------
 -- CDM Viewer System (merged from Core/ViewerAura.lua)
@@ -1221,29 +924,6 @@ FindChildInViewers = function(viewerNames, spellID, buffOnly)
         end
     end
     return nil
-end
-
-function CooldownCompanion:ApplyCdmAlpha()
-    local hidden = self.db.profile.cdmHidden and not self._cdmPickMode
-    local alpha = hidden and 0 or 1
-    for _, name in ipairs(VIEWER_NAMES) do
-        local viewer = _G[name]
-        if viewer then
-            cdmAlphaGuard[viewer] = true
-            viewer:SetAlpha(alpha)
-            cdmAlphaGuard[viewer] = nil
-            if not InCombatLockdown() then
-                if hidden then
-                    SetViewerChildrenMouseMotion(false, viewer:GetChildren())
-                else
-                    -- Restore tooltip state using Blizzard's own pattern
-                    for itemFrame in viewer.itemFramePool:EnumerateActive() do
-                        itemFrame:SetTooltipsShown(viewer.tooltipsShown)
-                    end
-                end
-            end
-        end
-    end
 end
 
 function CooldownCompanion:QueueBuildViewerAuraMap()
@@ -1276,10 +956,11 @@ function CooldownCompanion:ResolveBuffViewerFrameForSpell(spellID)
     return nil
 end
 
--- Build a mapping from spellID → Blizzard cooldown viewer child frame.
--- The viewer frames (EssentialCooldownViewer, UtilityCooldownViewer, etc.)
--- run untainted code that reads secret aura data and stores the result
--- (auraInstanceID, auraDataUnit) as plain frame properties we can read.
+-- Map readable cooldownInfo spell identities to Blizzard cooldown viewer
+-- children for retained config-time and association behavior. In 12.1, do not
+-- treat child aura fields as runtime truth: auraSpellID/auraInstanceID become
+-- secret in combat, and instance-ID aura APIs hard-error for addon code in
+-- restricted combat.
 function CooldownCompanion:BuildViewerAuraMap()
     wipe(self.viewerAuraFrames)
     wipe(self.viewerAuraAllChildren)
@@ -1310,70 +991,14 @@ function CooldownCompanion:BuildViewerAuraMap()
     -- buttonData.id is a non-current override form of a transforming spell.
     self:MapButtonSpellsToViewers()
 
-    -- Map hardcoded overrides: ability IDs and buff IDs → viewer child.
-    -- Group by buff string so sibling abilities can cross-map to the same
-    -- viewer child even if only one form is current.
-    local groupsByBuffs = {}
-    for abilityID, buffIDStr in pairs(self.ABILITY_BUFF_OVERRIDES) do
-        if not groupsByBuffs[buffIDStr] then
-            groupsByBuffs[buffIDStr] = {}
-        end
-        groupsByBuffs[buffIDStr][#groupsByBuffs[buffIDStr] + 1] = abilityID
-    end
-    for buffIDStr, abilityIDs in pairs(groupsByBuffs) do
-        -- Prefer a BuffIcon/BuffBar child (tracks aura duration) over
-        -- Essential/Utility (tracks cooldown only). Check buff IDs first
-        -- since the initial scan maps them to the correct viewer type.
-        local child
-        for id in buffIDStr:gmatch("%d+") do
-            local c = self.viewerAuraFrames[tonumber(id)]
-            if c then
-                local p = c:GetParent()
-                local pn = p and p:GetName()
-                if pn == "BuffIconCooldownViewer" or pn == "BuffBarCooldownViewer" then
-                    child = c
-                    break
-                end
-            end
-        end
-        if not child then
-            for _, abilityID in ipairs(abilityIDs) do
-                child = self.viewerAuraFrames[abilityID]
-                if child then break end
-            end
-        end
-        if not child then
-            for _, abilityID in ipairs(abilityIDs) do
-                child = self:FindViewerChildForSpell(abilityID)
-                if child then break end
-            end
-        end
-        if child then
-            for _, abilityID in ipairs(abilityIDs) do
-                self.viewerAuraFrames[abilityID] = child
-            end
-            -- Map buff IDs only if they aren't already mapped by the initial scan.
-            -- Each buff may have its own viewer child (e.g. Solar vs Lunar Eclipse).
-            for id in buffIDStr:gmatch("%d+") do
-                local numID = tonumber(id)
-                if not self.viewerAuraFrames[numID] then
-                    self.viewerAuraFrames[numID] = child
-                end
-            end
-        end
-    end
-
     -- Rebuild spell -> cooldown alert capability mapping used by per-button sound alerts.
     self:RebuildSoundAlertSpellMap()
 
-    -- Re-enforce mouse state for hidden CDM after map rebuild
-    if self.db.profile.cdmHidden and not self._cdmPickMode then
-        for _, name2 in ipairs(VIEWER_NAMES) do
-            local v = _G[name2]
-            if v then
-                SetViewerChildrenMouseMotion(false, v:GetChildren())
-            end
-        end
+    -- Aura candidate sets resolve through this map (linked-aura sets, buff
+    -- viewer children), so bound slot filters go stale when it changes —
+    -- re-request the coalesced, OOC-deferred rebind every rebuild.
+    if self.RequestAuraRebind then
+        self:RequestAuraRebind("viewer-map")
     end
 end
 
@@ -1406,20 +1031,6 @@ function CooldownCompanion:FindViewerChildForSpell(spellID)
         child = self.viewerAuraFrames[baseSpellID]
         if child then return child end
     end
-    -- Override table: check buff IDs and sibling abilities
-    local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[spellID]
-    if overrideBuffs then
-        for id in overrideBuffs:gmatch("%d+") do
-            child = self.viewerAuraFrames[tonumber(id)]
-            if child then return child end
-        end
-        for sibID, sibBuffs in pairs(self.ABILITY_BUFF_OVERRIDES) do
-            if sibBuffs == overrideBuffs and sibID ~= spellID then
-                child = self.viewerAuraFrames[sibID]
-                if child then return child end
-            end
-        end
-    end
     return nil
 end
 
@@ -1433,16 +1044,6 @@ function CooldownCompanion:FindCooldownViewerChild(spellID)
     local baseSpellID = C_Spell.GetBaseSpell(spellID)
     if baseSpellID and baseSpellID ~= spellID then
         return self:FindCooldownViewerChild(baseSpellID)
-    end
-    -- Try sibling abilities from override table
-    local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[spellID]
-    if overrideBuffs then
-        for sibID, sibBuffs in pairs(self.ABILITY_BUFF_OVERRIDES) do
-            if sibBuffs == overrideBuffs and sibID ~= spellID then
-                child = FindChildInViewers(COOLDOWN_VIEWER_NAMES, sibID)
-                if child then return child end
-            end
-        end
     end
     return nil
 end

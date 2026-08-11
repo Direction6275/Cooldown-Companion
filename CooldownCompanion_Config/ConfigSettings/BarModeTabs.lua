@@ -4,572 +4,898 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 -- Imports from Helpers.lua
-local ColorHeading = ST._ColorHeading
-local AttachCollapseButton = ST._AttachCollapseButton
+local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
+local CreatePromoteButton = ST._CreatePromoteButton
 local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateColorPickerPromoteButton = ST._CreateColorPickerPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
-local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
-local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
+local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
+local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 
 -- Imports from SectionBuilders.lua
-local BuildPandemicBarControls = ST._BuildPandemicBarControls
-local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
-local BuildBarAuraPulseControls = ST._BuildBarAuraPulseControls
-local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
+local BuildBorderControls = ST._BuildBorderControls
 local BuildLossOfControlControls = ST._BuildLossOfControlControls
 local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
-local AddPreviewBadge = ST._AddPreviewBadge
-local AddConditionalPreviewBadge = ST._AddConditionalPreviewBadge
+local BuildAllowPingsControls = ST._BuildAllowPingsControls
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
+local AddPandemicMarkerControls = ST._AddPandemicMarkerControls
+
+-- Imports from RowWidgets.lua (the row grammar)
+local AddCheckboxRow = ST._AddCheckboxRow
+local AddSliderRow = ST._AddSliderRow
+local AddDropdownRow = ST._AddDropdownRow
+local AddEditBoxRow = ST._AddEditBoxRow
+local AddColorRow = ST._AddColorRow
+local AnchorRowBadge = ST._AnchorRowBadge
+local BeginRowGrid = ST._BeginRowGrid
 
 local tabInfoButtons = CS.tabInfoButtons
-local appearanceTabElements = CS.appearanceTabElements
 
+-- Row-grammar section headers: caret far left, label, then a class-colored
+-- rule fading right. The rules every row-grammar section follows are stated
+-- once, in the recipe comment at the top of BuildAppearanceTab's icons path in
+-- GroupTabs.lua; the sections below conform to them rather than restating them.
+local ROW_SECTION = { leftAligned = true }
+
+-- The bar Effects tab draws the same four sections as the icons Effects tab
+-- and deliberately SHARES their collapse keys, so the gear-to-section map
+-- GroupTabs owns (ST._INDICATORS_SECTION_BY_ADVANCED_KEY) covers both tabs
+-- with one entry per advanced key. Keep these in step with the constants
+-- declared beside that map: the literals must MATCH, or collapsing a section
+-- on an icon panel would leave it open on a bar panel.
+local EFFECTS_GLOWS_SECTION = "effects_glows"
+local EFFECTS_PANDEMIC_SECTION = "effects_pandemic"
+local EFFECTS_TIMERS_SECTION = "effects_timers"
+local EFFECTS_STATES_SECTION = "effects_states"
+
+-- LibSharedMedia statusbar names run well past the 140px control column, and a
+-- dropdown sizes its menu from the control it hangs under.
+local BAR_TEXTURE_PULLOUT_WIDTH = 300
+
+-- Cooldown text advanced, as a descriptor.
+--
+-- The preview command center's gear opens the advanced panels behind the
+-- preview it names without going through their gears (owner ruling
+-- 2026-07-26), which for a bar-mode cooldown is this one - and its gear sits
+-- inside the "Text & Icon" collapsible, so it is not always built. The tab
+-- below calls the same factory, so the panel has exactly one definition.
+--
+-- The style table is resolved inside `build`, never captured: a panel the
+-- command center opened has no gear on screen to rebind its descriptor, so a
+-- wholesale style replacement that keeps the same context (Copy Style From
+-- Panel assigns a fresh group.style outright) would leave a captured table
+-- orphaned and every control writing into nothing.
+local function ResolveSelectedGroupStyle()
+    local groupId = CS.selectedGroup
+    local profile = groupId and CooldownCompanion.db and CooldownCompanion.db.profile
+    local group = profile and profile.groups and profile.groups[groupId]
+    return group and group.style or nil
+end
+
+local function MakeBarCooldownTextAdvancedDescriptor()
+    local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
+    return {
+        settingKey = "barCooldownText",
+        title = "Cooldown Text Advanced",
+        build = function(panel)
+            local style = ResolveSelectedGroupStyle()
+            if not style then
+                return
+            end
+
+            -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow
+            -- column, so every row goes straight onto the panel scroll and each
+            -- shared builder runs with { row = true } and no rightColumn.
+            local flipTimeRow = AddCheckboxRow(panel, {
+                label = "Flip Time Text",
+                value = style.barTimeTextReverse or false,
+                onChange = function(val)
+                    style.barTimeTextReverse = val or nil
+                    refreshStyle()
+                end,
+            })
+
+            -- (?) tooltip for Flip Time Text. Anchor args are a placeholder -
+            -- AnchorRowBadge re-points the button onto the end of the label.
+            AnchorRowBadge(flipTimeRow, CreateInfoButton(flipTimeRow.frame, flipTimeRow.frame, "LEFT", "LEFT", 0, 0, {
+                "Flip Time Text",
+                {"Applies to all time-based text, including cooldown time and ready text.", 1, 1, 1, true},
+            }, flipTimeRow))
+
+            AddFontControls(panel, style, "cooldown", {sizeMin = 6, sizeMax = 24}, refreshStyle, { row = true })
+            -- deferCommit is deliberately absent, matching the stock color-picker
+            -- call this row replaced.
+            AddColorRow(panel, {
+                label = "Font Color",
+                tbl = style,
+                key = "cooldownFontColor",
+                default = {1, 1, 1, 1},
+                onConfirm = refreshStyle,
+                onChange = refreshStyle,
+            })
+            AddOffsetSliders(panel, style, "barCdTextOffsetX", "barCdTextOffsetY", {range = 50}, refreshStyle, { row = true })
+        end,
+    }
+end
 
 local function BuildBarAppearanceTab(container, group, style)
     local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
 
     -- ================================================================
-    -- Bar Settings (length, height, spacing, bar color)
+    -- Bar Settings (length, height, spacing, texture)
     -- ================================================================
-    local barHeading = AceGUI:Create("Heading")
-    barHeading:SetText("Bar Settings")
-    ColorHeading(barHeading)
-    barHeading:SetFullWidth(true)
-    container:AddChild(barHeading)
-
-    local barSettingsCollapsed = CS.collapsedSections["barappearance_settings"]
-    AttachCollapseButton(barHeading, barSettingsCollapsed, function()
-        CS.collapsedSections["barappearance_settings"] = not CS.collapsedSections["barappearance_settings"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local _, barSettingsCollapsed = BuildCollapsibleSection(container, "Bar Settings", "barappearance_settings", nil, nil, ROW_SECTION)
 
     if not barSettingsCollapsed then
-    local lengthSlider = AceGUI:Create("Slider")
-    lengthSlider:SetLabel("Bar Length")
-    lengthSlider:SetSliderValues(10, 500, 0.1)
-    lengthSlider:SetValue(style.barLength or 180)
-    lengthSlider:SetFullWidth(true)
-    lengthSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.barLength = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(lengthSlider)
+    -- LEFT column: how one bar is shaped. RIGHT column: how the bars sit
+    -- together and what they are drawn with.
+    local barLeft, barRight = BeginRowGrid(container)
 
-    local heightSlider = AceGUI:Create("Slider")
-    heightSlider:SetLabel("Bar Height")
-    heightSlider:SetSliderValues(5, 100, 0.1)
-    heightSlider:SetValue(style.barHeight or 20)
-    heightSlider:SetFullWidth(true)
-    heightSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.barHeight = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(heightSlider)
-
-    local renderMode = AddBorderRenderModeDropdown(container, style, "borderRenderMode", function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    local borderThicknessLocked = ST.IsBorderThicknessLocked()
-
-    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-        local borderSlider = AceGUI:Create("Slider")
-        borderSlider:SetLabel("Border Size")
-        borderSlider:SetSliderValues(0, 5, 0.1)
-        borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
-        borderSlider:SetFullWidth(true)
-        borderSlider:SetDisabled(borderThicknessLocked)
-        borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            if borderThicknessLocked then return end
-            style.borderSize = val
+    AddSliderRow(barLeft, {
+        label = "Bar Length",
+        min = 10, max = 500, step = 0.1,
+        value = style.barLength or 180,
+        onChange = function(val)
+            style.barLength = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(borderSlider)
-    end
+        end,
+    })
+
+    AddSliderRow(barLeft, {
+        label = "Bar Height",
+        min = 5, max = 100, step = 0.1,
+        value = style.barHeight or 20,
+        onChange = function(val)
+            style.barHeight = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end,
+    })
 
     if group.buttons and #group.buttons > 1 then
-        local spacingSlider = AceGUI:Create("Slider")
-        spacingSlider:SetLabel("Bar Spacing")
-        spacingSlider:SetSliderValues(-10, 100, 0.1)
-        spacingSlider:SetValue(style.buttonSpacing or ST.BUTTON_SPACING)
-        spacingSlider:SetFullWidth(true)
-        spacingSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.buttonSpacing = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(spacingSlider)
+        AddSliderRow(barRight, {
+            label = "Bar Spacing",
+            min = -10, max = 100, step = 0.1,
+            value = style.buttonSpacing or ST.BUTTON_SPACING,
+            onChange = function(val)
+                style.buttonSpacing = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end,
+        })
     end
 
-    -- Bar Texture
-    local barTexDrop = AceGUI:Create("Dropdown")
-    barTexDrop:SetLabel("Bar Texture")
-    CS.SetupBarTextureDropdown(barTexDrop)
-    barTexDrop:SetValue(style.barTexture or "Solid")
-    barTexDrop:SetFullWidth(true)
-    CS.SetBarTextureDropdownCallback(barTexDrop, function(widget, event, val)
+    -- MEDIA ROW - the same recipe the font rows follow (stated in full at
+    -- AddFontControls' row branch): the row is created with a label and a
+    -- widened pullout but NO list and NO onChange, then handed to the shared
+    -- bar-texture helpers exactly as a stock Dropdown would be.
+    -- CDC-DropdownRow forwards SetList and SetDisabled to its embedded child,
+    -- which is everything SetupBarTextureDropdown touches, and AddDropdownRow
+    -- registers OnValueChanged only when opts.onChange is given - so the
+    -- callback helper is the one registration and the profile-wide bar texture
+    -- lock still gates every write. The value is set AFTER the setup call,
+    -- because SetList rebuilds the list the displayed text is read from.
+    local barTexRow = AddDropdownRow(barRight, {
+        label = "Bar Texture",
+        pulloutWidth = BAR_TEXTURE_PULLOUT_WIDTH,
+    })
+    CS.SetupBarTextureDropdown(barTexRow)
+    barTexRow:SetValue(style.barTexture or "Solid")
+    CS.SetBarTextureDropdownCallback(barTexRow, function(widget, event, val)
         style.barTexture = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
-    container:AddChild(barTexDrop)
-
-    -- Bar Color (basic)
-    local barColorPicker = AddColorPicker(container, style, "barColor", "Bar Color", {0.2, 0.6, 1.0, 1.0}, true, refreshStyle, refreshStyle)
-    CreateColorPickerPromoteButton(barColorPicker, "barColor", group, style)
-
     end -- not barSettingsCollapsed
 
-    -- Contextual color pickers (no heading/collapse/promote)
-    local barCooldownColorPicker = AddColorPicker(container, style, "barCooldownColor", "Bar Cooldown Color", {0.6, 0.6, 0.6, 1.0}, true, refreshStyle, refreshStyle)
-    CreateColorPickerPromoteButton(barCooldownColorPicker, "barCooldownColor", group, style)
+    -- Bar colors have no heading and no collapse state, so they stay on screen
+    -- while Bar Settings is folded away. They get a grid of their own, which is
+    -- also what keeps them off the section's last line.
+    -- LEFT column: the bar at rest - its fill and the backdrop behind it.
+    -- RIGHT column: the colors a timer paints over that. The aura timer color
+    -- is one of them, so it lives here rather than beside the aura TEXT toggles
+    -- in Text & Icon, and it carries that section's aura-tracking gate with it.
+    local colorLeft, colorRight = BeginRowGrid(container)
 
-    local barChargeColorPicker = AddColorPicker(container, style, "barChargeColor", "Bar Recharging Color", {1.0, 0.82, 0.0, 1.0}, true, refreshStyle, refreshStyle)
-    CreateColorPickerPromoteButton(barChargeColorPicker, "barChargeColor", group, style)
+    local barColorRow = AddColorRow(colorLeft, {
+        label = "Bar Color",
+        tbl = style, key = "barColor",
+        default = {0.2, 0.6, 1.0, 1.0}, hasAlpha = true,
+        onConfirm = refreshStyle, onChange = refreshStyle,
+    })
+    CreateColorPickerPromoteButton(barColorRow, "barColor", group, style)
 
-    local barBgColorPicker = AddColorPicker(container, style, "barBgColor", "Bar Background Color", {0.1, 0.1, 0.1, 0.8}, true, refreshStyle, refreshStyle)
-    CreateColorPickerPromoteButton(barBgColorPicker, "barBgColor", group, style)
+    local barBgColorRow = AddColorRow(colorLeft, {
+        label = "Bar Background Color",
+        tbl = style, key = "barBgColor",
+        default = {0.1, 0.1, 0.1, 0.8}, hasAlpha = true,
+        onConfirm = refreshStyle, onChange = refreshStyle,
+    })
+    CreateColorPickerPromoteButton(barBgColorRow, "barBgColor", group, style)
 
-    local borderColorPicker = AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
-    CreateColorPickerPromoteButton(borderColorPicker, "borderSettings", group, style)
+    local barCooldownColorRow = AddColorRow(colorRight, {
+        label = "Bar Cooldown Color",
+        tbl = style, key = "barCooldownColor",
+        default = {0.6, 0.6, 0.6, 1.0}, hasAlpha = true,
+        onConfirm = refreshStyle, onChange = refreshStyle,
+    })
+    CreateColorPickerPromoteButton(barCooldownColorRow, "barCooldownColor", group, style)
 
-    -- ================================================================
-    -- Show Icon (standalone checkbox with advanced toggle + promote)
-    -- ================================================================
-    local showIconCb = AceGUI:Create("CheckBox")
-    showIconCb:SetLabel("Show Icon")
-    showIconCb:SetValue(style.showBarIcon ~= false)
-    showIconCb:SetFullWidth(true)
-    showIconCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showBarIcon = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(showIconCb)
+    local barChargeColorRow = AddColorRow(colorRight, {
+        label = "Bar Recharging Color",
+        tbl = style, key = "barChargeColor",
+        default = {1.0, 0.82, 0.0, 1.0}, hasAlpha = true,
+        onConfirm = refreshStyle, onChange = refreshStyle,
+    })
+    CreateColorPickerPromoteButton(barChargeColorRow, "barChargeColor", group, style)
 
-    local function BuildBarIconAdvanced(panel)
-        local flipIconCheck = AceGUI:Create("CheckBox")
-        flipIconCheck:SetLabel("Flip Icon Side")
-        flipIconCheck:SetValue(style.barIconReverse or false)
-        flipIconCheck:SetFullWidth(true)
-        flipIconCheck:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barIconReverse = val or nil
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        panel:AddChild(flipIconCheck)
-
-        local iconOffsetSlider = AceGUI:Create("Slider")
-        iconOffsetSlider:SetLabel("Icon Offset")
-        iconOffsetSlider:SetSliderValues(-5, 50, 0.1)
-        iconOffsetSlider:SetValue(style.barIconOffset or 0)
-        iconOffsetSlider:SetFullWidth(true)
-        iconOffsetSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barIconOffset = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        panel:AddChild(iconOffsetSlider)
-
-        local customIconSizeCb = AceGUI:Create("CheckBox")
-        customIconSizeCb:SetLabel("Custom Icon Size")
-        customIconSizeCb:SetValue(style.barIconSizeOverride or false)
-        customIconSizeCb:SetFullWidth(true)
-        customIconSizeCb:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barIconSizeOverride = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        panel:AddChild(customIconSizeCb)
-
-        if style.barIconSizeOverride then
-            local iconSizeSlider = AceGUI:Create("Slider")
-            iconSizeSlider:SetLabel("Icon Size")
-            iconSizeSlider:SetSliderValues(5, 100, 0.1)
-            iconSizeSlider:SetValue(style.barIconSize or 20)
-            iconSizeSlider:SetFullWidth(true)
-            iconSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                style.barIconSize = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end)
-            panel:AddChild(iconSizeSlider)
-        end
+    -- The color the aura timer drains in. Same gate as the aura block down in
+    -- Text & Icon, so it appears only while the group tracks an aura. No
+    -- promote button: barAuraColor belongs to the barActiveAura override
+    -- section, which the Effects tab's Active Aura Indicator controls own.
+    if GroupHasAuraTrackingEntry(group) then
+        AddColorRow(colorRight, {
+            label = "Bar Aura Timer Color",
+            tbl = style, key = "barAuraColor",
+            default = {0.2, 1.0, 0.2, 1.0}, hasAlpha = true,
+            onConfirm = refreshStyle, onChange = refreshStyle,
+        })
     end
 
-    local _, iconAdvBtn = AddAdvancedToggle(showIconCb, "barIcon", tabInfoButtons, style.showBarIcon ~= false, {
+    -- ================================================================
+    -- Border (thickness, size, color - mirrors the icon-mode Border section)
+    -- ================================================================
+    local borderHeading, borderCollapsed = BuildCollapsibleSection(container, "Border", "barappearance_border", nil, nil, ROW_SECTION)
+    CreatePromoteButton(borderHeading, "borderSettings", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
+    if not borderCollapsed then
+    -- Three related rows, so they stay in one column rather than splitting a
+    -- parent from its children. The right column is deliberately empty.
+    local borderLeft = BeginRowGrid(container)
+
+    BuildBorderControls(borderLeft, style, refreshStyle, { row = true })
+    end -- not borderCollapsed
+
+    -- ================================================================
+    -- Text & Icon (per-bar display elements)
+    --
+    -- The collapse key is load-bearing: the preview command center's text and
+    -- cooldown routes name it (PreviewCommandCenter's BAR_TEXT_SECTION) so a
+    -- queued gear inside this section is uncollapsed on the way past.
+    -- ================================================================
+    local _, textIconCollapsed = BuildCollapsibleSection(container, "Text & Icon", "barappearance_textIcon", nil, nil, ROW_SECTION)
+
+    if not textIconCollapsed then
+    -- LEFT column: what every bar can draw, top to bottom as it reads on the
+    -- bar itself. RIGHT column: the aura block (gated on the group tracking an
+    -- aura, so this column can run short - the grid top-aligns its columns) and
+    -- the panel-level packing toggle.
+    local textLeft, textRight = BeginRowGrid(container)
+
+    -- ================================================================
+    -- Show Icon
+    -- ================================================================
+    local showIconRow = AddCheckboxRow(textLeft, {
+        label = "Show Icon",
+        value = style.showBarIcon ~= false,
+        onChange = function(val)
+            style.showBarIcon = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+
+    -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
+    -- the rows go straight onto the panel scroll and Icon Size indents under the
+    -- toggle that gates it.
+    local function BuildBarIconAdvanced(panel)
+        AddCheckboxRow(panel, {
+            label = "Flip Icon Side",
+            value = style.barIconReverse or false,
+            onChange = function(val)
+                style.barIconReverse = val or nil
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        AddSliderRow(panel, {
+            label = "Icon Offset",
+            min = -5, max = 50, step = 0.1,
+            value = style.barIconOffset or 0,
+            onChange = function(val)
+                style.barIconOffset = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end,
+        })
+
+        AddCheckboxRow(panel, {
+            label = "Custom Icon Size",
+            value = style.barIconSizeOverride or false,
+            onChange = function(val)
+                style.barIconSizeOverride = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        if style.barIconSizeOverride then
+            AddSliderRow(panel, {
+                label = "Icon Size",
+                indent = true,
+                min = 5, max = 100, step = 0.1,
+                value = style.barIconSize or 20,
+                onChange = function(val)
+                    style.barIconSize = val
+                    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                end,
+            })
+        end
+
+        ST._BuildIconZoomControls(panel, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end, {
+            previewRefresh = function()
+                if ST._RefreshButtonsPreviewMirror then
+                    ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
+                end
+            end,
+        })
+    end
+
+    local _, iconAdvBtn = AddAdvancedToggle(showIconRow, "barIcon", tabInfoButtons, style.showBarIcon ~= false, {
         title = "Bar Icon Advanced",
         build = BuildBarIconAdvanced,
     })
-    CreateCheckboxPromoteButton(showIconCb, iconAdvBtn, "barIcon", group, style)
+    CreateCheckboxPromoteButton(showIconRow, iconAdvBtn, "barIcon", group, style)
 
     -- Show Name Text toggle
-    local showNameCbBasic = AceGUI:Create("CheckBox")
-    showNameCbBasic:SetLabel("Show Name Text")
-    showNameCbBasic:SetValue(style.showBarNameText ~= false)
-    showNameCbBasic:SetFullWidth(true)
-    showNameCbBasic:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showBarNameText = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(showNameCbBasic)
-
-    local function BuildBarNameTextAdvanced(panel)
-        local flipNameCheck = AceGUI:Create("CheckBox")
-        flipNameCheck:SetLabel("Flip Name Text")
-        flipNameCheck:SetValue(style.barNameTextReverse or false)
-        flipNameCheck:SetFullWidth(true)
-        flipNameCheck:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barNameTextReverse = val or nil
+    local showNameRow = AddCheckboxRow(textLeft, {
+        label = "Show Name Text",
+        value = style.showBarNameText ~= false,
+        onChange = function(val)
+            style.showBarNameText = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        panel:AddChild(flipNameCheck)
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
 
-        AddFontControls(panel, style, "barName", {sizeMin = 6, sizeMax = 24, size = 10}, refreshStyle)
-        AddColorPicker(panel, style, "barNameFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-        AddOffsetSliders(panel, style, "barNameTextOffsetX", "barNameTextOffsetY", {range = 50}, refreshStyle)
+    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+    local function BuildBarNameTextAdvanced(panel)
+        AddCheckboxRow(panel, {
+            label = "Flip Name Text",
+            value = style.barNameTextReverse or false,
+            onChange = function(val)
+                style.barNameTextReverse = val or nil
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end,
+        })
+
+        AddFontControls(panel, style, "barName", {sizeMin = 6, sizeMax = 24, size = 10}, refreshStyle, { row = true })
+        -- deferCommit is deliberately absent, matching the stock color-picker call
+        -- this row replaced.
+        AddColorRow(panel, {
+            label = "Font Color",
+            tbl = style,
+            key = "barNameFontColor",
+            default = {1, 1, 1, 1},
+            hasAlpha = true,
+            onConfirm = refreshStyle,
+            onChange = refreshStyle,
+        })
+        AddOffsetSliders(panel, style, "barNameTextOffsetX", "barNameTextOffsetY", {range = 50}, refreshStyle, { row = true })
     end
 
-    local _, nameAdvBtn = AddAdvancedToggle(showNameCbBasic, "barNameText", tabInfoButtons, style.showBarNameText ~= false, {
+    local _, nameAdvBtn = AddAdvancedToggle(showNameRow, "barNameText", tabInfoButtons, style.showBarNameText ~= false, {
         title = "Name Text Advanced",
         build = BuildBarNameTextAdvanced,
     })
-    CreateCheckboxPromoteButton(showNameCbBasic, nameAdvBtn, "barNameText", group, style)
+    CreateCheckboxPromoteButton(showNameRow, nameAdvBtn, "barNameText", group, style)
 
     -- Show Cooldown Text toggle
-    local showTimeCbBasic = AceGUI:Create("CheckBox")
-    showTimeCbBasic:SetLabel("Show Cooldown Text")
-    showTimeCbBasic:SetValue(style.showCooldownText or false)
-    showTimeCbBasic:SetFullWidth(true)
-    showTimeCbBasic:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showCooldownText = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(showTimeCbBasic)
-
-    local function BuildBarCooldownTextAdvanced(panel)
-        local flipTimeCheck = AceGUI:Create("CheckBox")
-        flipTimeCheck:SetLabel("Flip Time Text")
-        flipTimeCheck:SetValue(style.barTimeTextReverse or false)
-        flipTimeCheck:SetFullWidth(true)
-        flipTimeCheck:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barTimeTextReverse = val or nil
+    local showTimeRow = AddCheckboxRow(textLeft, {
+        label = "Show Cooldown Text",
+        value = style.showCooldownText or false,
+        onChange = function(val)
+            style.showCooldownText = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        panel:AddChild(flipTimeCheck)
-
-        -- (?) tooltip for Flip Time Text
-        CreateInfoButton(flipTimeCheck.frame, flipTimeCheck.checkbg, "LEFT", "RIGHT", flipTimeCheck.text:GetStringWidth() + 4, 0, {
-            "Flip Time Text",
-            {"Applies to all time-based text, including cooldown time, aura time, and ready text.", 1, 1, 1, true},
-        }, flipTimeCheck)
-
-        AddFontControls(panel, style, "cooldown", {sizeMin = 6, sizeMax = 24}, refreshStyle)
-        AddColorPicker(panel, style, "cooldownFontColor", "Font Color", {1, 1, 1, 1}, false, refreshStyle, refreshStyle)
-        AddOffsetSliders(panel, style, "barCdTextOffsetX", "barCdTextOffsetY", {range = 50}, refreshStyle)
-    end
-
-    local _, timeAdvBtn = AddAdvancedToggle(showTimeCbBasic, "barCooldownText", tabInfoButtons, style.showCooldownText, {
-        title = "Cooldown Text Advanced",
-        build = BuildBarCooldownTextAdvanced,
+            CooldownCompanion:RefreshConfigPanel()
+        end,
     })
-    local timePromoteBtn = CreateCheckboxPromoteButton(showTimeCbBasic, timeAdvBtn, "cooldownText", group, style)
-    AddConditionalPreviewBadge(showTimeCbBasic, timePromoteBtn or timeAdvBtn, "Preview Cooldown Text", "cooldown", style.showCooldownText)
+
+    local barCdTextAdvanced = MakeBarCooldownTextAdvancedDescriptor()
+
+    local _, timeAdvBtn = AddAdvancedToggle(showTimeRow, barCdTextAdvanced.settingKey, tabInfoButtons, style.showCooldownText, {
+        title = barCdTextAdvanced.title,
+        build = barCdTextAdvanced.build,
+    })
+    CreateCheckboxPromoteButton(showTimeRow, timeAdvBtn, "cooldownText", group, style)
+
+    -- Duration Format sits with the cooldown text it formats. It is not gated
+    -- on that toggle in bar mode (ready text reads it too), so it is a row of
+    -- its own rather than an indented child.
+    AddDurationFormatDropdown(textLeft, style, refreshStyle, { row = true })
 
     -- Show Charge Text toggle
-    local chargeTextCb = AceGUI:Create("CheckBox")
-    chargeTextCb:SetLabel("Show Count Text (Charges/Uses)")
-    chargeTextCb:SetValue(style.showChargeText ~= false)
-    chargeTextCb:SetFullWidth(true)
-    chargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showChargeText = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(chargeTextCb)
+    local chargeTextRow = AddCheckboxRow(textLeft, {
+        label = "Show Count Text (Charges/Uses)",
+        value = style.showChargeText ~= false,
+        onChange = function(val)
+            style.showChargeText = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
 
+    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+    --
+    -- The three count colors are the panel's longest labels. They end in a 19px
+    -- swatch, the narrow control the row grammar reserves long labels for, and
+    -- each states itself on hover so a narrower config column cannot silently
+    -- swallow which charge state it names.
+    --
+    -- deferCommit is deliberately absent throughout, matching the stock color-picker
+    -- calls these rows replaced.
     local function BuildBarChargeTextAdvanced(panel)
-        AddFontControls(panel, style, "charge", {}, refreshStyle)
-        AddColorPicker(panel, style, "chargeFontColor", "Font Color (Max Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-        AddColorPicker(panel, style, "chargeFontColorMissing", "Font Color (Missing Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-        AddColorPicker(panel, style, "chargeFontColorZero", "Font Color (Zero Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-        AddAnchorDropdown(panel, style, "chargeAnchor", "BOTTOMRIGHT", refreshStyle)
-        AddOffsetSliders(panel, style, "chargeXOffset", "chargeYOffset", {x = -2, y = 2}, refreshStyle)
+        AddFontControls(panel, style, "charge", {}, refreshStyle, { row = true })
+
+        local function ChargeColorRow(rowLabel, key)
+            AddColorRow(panel, {
+                label = rowLabel,
+                tooltip = { rowLabel },
+                tbl = style,
+                key = key,
+                default = {1, 1, 1, 1},
+                hasAlpha = true,
+                onConfirm = refreshStyle,
+                onChange = refreshStyle,
+            })
+        end
+        ChargeColorRow("Font Color (Max Charges)", "chargeFontColor")
+        ChargeColorRow("Font Color (Missing Charges)", "chargeFontColorMissing")
+        ChargeColorRow("Font Color (Zero Charges)", "chargeFontColorZero")
+
+        AddAnchorDropdown(panel, style, "chargeAnchor", "BOTTOMRIGHT", refreshStyle, nil, { row = true })
+        AddOffsetSliders(panel, style, "chargeXOffset", "chargeYOffset", {x = -2, y = 2}, refreshStyle, { row = true })
     end
 
-    local _, chargeAdvBtn = AddAdvancedToggle(chargeTextCb, "barChargeText", tabInfoButtons, style.showChargeText ~= false, {
+    local _, chargeAdvBtn = AddAdvancedToggle(chargeTextRow, "barChargeText", tabInfoButtons, style.showChargeText ~= false, {
         title = "Count Text Advanced",
         build = BuildBarChargeTextAdvanced,
     })
-    CreateCheckboxPromoteButton(chargeTextCb, chargeAdvBtn, "chargeText", group, style)
-
-    -- ================================================================
-    -- Aura Duration Text
-    -- ================================================================
-    local auraTextCb = AceGUI:Create("CheckBox")
-    auraTextCb:SetLabel("Show Aura Duration Text")
-    auraTextCb:SetValue(style.showAuraText ~= false)
-    auraTextCb:SetFullWidth(true)
-    auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showAuraText = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(auraTextCb)
-
-    local function BuildBarAuraTextAdvanced(panel)
-        AddFontControls(panel, style, "auraText", {sizeMin = 6, sizeMax = 24}, refreshStyle)
-        AddColorPicker(panel, style, "auraTextFontColor", "Font Color", {0, 0.925, 1, 1}, false, refreshStyle, refreshStyle)
-    end
-
-    local _, barAuraTextAdvBtn = AddAdvancedToggle(auraTextCb, "barAuraText", tabInfoButtons, style.showAuraText ~= false, {
-        title = "Aura Duration Text Advanced",
-        build = BuildBarAuraTextAdvanced,
-    })
-    local barAuraTextPromoteBtn = CreateCheckboxPromoteButton(auraTextCb, barAuraTextAdvBtn, "auraText", group, style)
-    AddConditionalPreviewBadge(auraTextCb, barAuraTextPromoteBtn or barAuraTextAdvBtn, "Preview Aura Duration Text", "aura_duration_text", style.showAuraText ~= false)
-
-    -- ================================================================
-    -- Aura Stack Text
-    -- ================================================================
-    local barAuraStackCb = AceGUI:Create("CheckBox")
-    barAuraStackCb:SetLabel("Show Aura Stack Text")
-    barAuraStackCb:SetValue(style.showAuraStackText ~= false)
-    barAuraStackCb:SetFullWidth(true)
-    barAuraStackCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showAuraStackText = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(barAuraStackCb)
-
-    local function BuildBarAuraStackAdvanced(panel)
-        AddFontControls(panel, style, "auraStack", {}, refreshStyle)
-        AddColorPicker(panel, style, "auraStackFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-        AddAnchorDropdown(panel, style, "auraStackAnchor", "BOTTOMLEFT", refreshStyle)
-        AddOffsetSliders(panel, style, "auraStackXOffset", "auraStackYOffset", {x = 2, y = 2}, refreshStyle)
-    end
-
-    local _, barAuraStackAdvBtn = AddAdvancedToggle(barAuraStackCb, "barAuraStackText", tabInfoButtons, style.showAuraStackText ~= false, {
-        title = "Aura Stack Text Advanced",
-        build = BuildBarAuraStackAdvanced,
-    })
-    local barAuraStackPromoteBtn = CreateCheckboxPromoteButton(barAuraStackCb, barAuraStackAdvBtn, "auraStackText", group, style)
-    AddConditionalPreviewBadge(barAuraStackCb, barAuraStackPromoteBtn or barAuraStackAdvBtn, "Preview Aura Stack Text", "aura_stack_text", style.showAuraStackText ~= false)
+    CreateCheckboxPromoteButton(chargeTextRow, chargeAdvBtn, "chargeText", group, style)
 
     -- Show Ready Text toggle
-    local showReadyCb = AceGUI:Create("CheckBox")
-    showReadyCb:SetLabel("Show Ready Text")
-    showReadyCb:SetValue(style.showBarReadyText or false)
-    showReadyCb:SetFullWidth(true)
-    showReadyCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showBarReadyText = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(showReadyCb)
-
-    local function BuildBarReadyTextAdvanced(panel)
-        local readyTextBox = AceGUI:Create("EditBox")
-        if readyTextBox.editbox.Instructions then readyTextBox.editbox.Instructions:Hide() end
-        readyTextBox:SetLabel("Ready Text")
-        readyTextBox:SetText(style.barReadyText or "Ready")
-        readyTextBox:SetFullWidth(true)
-        readyTextBox:SetCallback("OnEnterPressed", function(widget, event, val)
-            style.barReadyText = val
+    local showReadyRow = AddCheckboxRow(textLeft, {
+        label = "Show Ready Text",
+        value = style.showBarReadyText or false,
+        onChange = function(val)
+            style.showBarReadyText = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        panel:AddChild(readyTextBox)
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
 
-        AddColorPicker(panel, style, "barReadyTextColor", "Ready Text Color", {0.2, 1.0, 0.2, 1.0}, true, refreshStyle, refreshStyle)
-        AddFontControls(panel, style, "barReady", {sizeMin = 6, sizeMax = 24}, refreshStyle)
+    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn. The
+    -- CDC-EditBoxRow embeds a stock EditBox, so the raw frame the Instructions
+    -- text hangs on is still reachable through row.editbox.
+    local function BuildBarReadyTextAdvanced(panel)
+        local readyRow = AddEditBoxRow(panel, {
+            label = "Ready Text",
+            value = style.barReadyText or "Ready",
+            onEnterPressed = function(val)
+                style.barReadyText = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end,
+        })
+        if readyRow.editbox and readyRow.editbox.Instructions then
+            readyRow.editbox.Instructions:Hide()
+        end
+
+        -- deferCommit is deliberately absent, matching the stock color-picker call
+        -- this row replaced.
+        AddColorRow(panel, {
+            label = "Ready Text Color",
+            tbl = style,
+            key = "barReadyTextColor",
+            default = {0.2, 1.0, 0.2, 1.0},
+            hasAlpha = true,
+            onConfirm = refreshStyle,
+            onChange = refreshStyle,
+        })
+        AddFontControls(panel, style, "barReady", {sizeMin = 6, sizeMax = 24}, refreshStyle, { row = true })
     end
 
-    local _, readyAdvBtn = AddAdvancedToggle(showReadyCb, "barReadyText", tabInfoButtons, style.showBarReadyText, {
+    local _, readyAdvBtn = AddAdvancedToggle(showReadyRow, "barReadyText", tabInfoButtons, style.showBarReadyText, {
         title = "Ready Text Advanced",
         build = BuildBarReadyTextAdvanced,
     })
-    CreateCheckboxPromoteButton(showReadyCb, readyAdvBtn, "barReadyText", group, style)
+    CreateCheckboxPromoteButton(showReadyRow, readyAdvBtn, "barReadyText", group, style)
 
-    -- Compact Mode toggle + Max Visible Buttons slider
-    BuildCompactModeControls(container, group, tabInfoButtons)
-    AddDurationFormatDropdown(container, style, refreshStyle)
+    -- Bar aura block: the aura text toggles. Shown only while the group has an
+    -- aura-tracking entry (same gate as the icon-side aura sections, and as the
+    -- Bar Aura Timer Color row up with the other bar colors). Style edits route
+    -- through refreshStyle -> UpdateGroupStyle -> RequestAuraRebind, which
+    -- defers to combat end with the one-time note when needed.
+    if GroupHasAuraTrackingEntry(group) then
+        -- Aura duration text: rendered by the aura display at the bar's time
+        -- text position (it follows the Flip Time Text and offset settings
+        -- from the Cooldown Text section).
+        local auraTextRow = AddCheckboxRow(textRight, {
+            label = "Show Aura Duration Text",
+            value = style.showAuraText ~= false,
+            onChange = function(val)
+                style.showAuraText = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+        -- deferCommit is deliberately absent, matching the stock color-picker call
+        -- the color row replaced.
+        local function BuildBarAuraTextAdvanced(panel)
+            AddFontControls(panel, style, "auraText", { size = 12 }, refreshStyle, { row = true })
+            AddColorRow(panel, {
+                label = "Font Color",
+                tbl = style,
+                key = "auraTextFontColor",
+                default = {0, 0.925, 1, 1},
+                onConfirm = refreshStyle,
+                onChange = refreshStyle,
+            })
+        end
+        AddAdvancedToggle(auraTextRow, "barAuraText", tabInfoButtons, style.showAuraText ~= false, {
+            title = "Aura Duration Text Advanced",
+            build = BuildBarAuraTextAdvanced,
+        })
+        -- Second badge in the chain, after the gear. The anchor args below are
+        -- a placeholder - AnchorRowBadge re-points the button onto the end of
+        -- the label's chain.
+        AnchorRowBadge(auraTextRow, CreateInfoButton(auraTextRow.frame, auraTextRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Aura Duration Text",
+            {"Shows the remaining aura time at the bar's time text position while the aura is active. Position follows the flip and offset settings in the Cooldown Text section.", 1, 1, 1, true},
+        }, auraTextRow))
+
+        -- Aura stack text: Blizzard writes the live stack count; anchored to
+        -- the icon square (or the bar with the icon hidden).
+        local auraStackRow = AddCheckboxRow(textRight, {
+            label = "Show Aura Stack Text",
+            value = style.showAuraStackText ~= false,
+            onChange = function(val)
+                style.showAuraStackText = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+        local function BuildBarAuraStackTextAdvanced(panel)
+            AddFontControls(panel, style, "auraStack", { size = 12 }, refreshStyle, { row = true })
+            -- deferCommit is deliberately absent, matching the stock color-picker
+            -- call this row replaced.
+            AddColorRow(panel, {
+                label = "Font Color",
+                tbl = style,
+                key = "auraStackFontColor",
+                default = {1, 1, 1, 1},
+                hasAlpha = true,
+                onConfirm = refreshStyle,
+                onChange = refreshStyle,
+            })
+            AddAnchorDropdown(panel, style, "auraStackAnchor", "BOTTOMLEFT", refreshStyle, nil, { row = true })
+            AddOffsetSliders(panel, style, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle, { row = true })
+        end
+        AddAdvancedToggle(auraStackRow, "barAuraStackText", tabInfoButtons, style.showAuraStackText ~= false, {
+            title = "Aura Stack Text Advanced",
+            build = BuildBarAuraStackTextAdvanced,
+        })
+        AnchorRowBadge(auraStackRow, CreateInfoButton(auraStackRow.frame, auraStackRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Aura Stack Text",
+            {"Shows the live stack count while the aura is active, drawn by the game so it stays accurate in combat. Stack counts cannot drive the bar fill; the count is hidden from addons during combat.", 1, 1, 1, true},
+        }, auraStackRow))
+    end
+
+    -- Compact Mode toggle + advanced (growth direction, max visible buttons)
+    BuildCompactModeControls(textRight, group, tabInfoButtons)
+    end -- not textIconCollapsed
 
     BuildGroupSettingPresetControls(container, group, "bars", tabInfoButtons)
 
 end
 
 ------------------------------------------------------------------------
--- EFFECTS TAB (Glows / Indicators)
+-- EFFECTS TAB (Glows / Timers / States)
+--
+-- Row grammar (RowWidgets.lua), and the SAME three collapse keys the icons
+-- Effects tab uses - see the note by the section constants at the top of this
+-- file for why they are shared rather than bar-specific.
 ------------------------------------------------------------------------
+
+-- Active aura indicator: border effect + fill effects rendered by the aura
+-- kit while the tracked aura runs. The checkbox reflects whether anything
+-- actually renders (enabled AND a visible effect chosen); checking it with
+-- no visible effect forces the pulse border, mirroring the icon aura glow.
+--
+-- `container` is nil when there is nothing to draw into - the group lost its
+-- last aura entry, or the Glows section is collapsed. The reconciliation below
+-- still has to run in that case: an indicator that is no longer on must not
+-- leave its preview glowing on the panel.
+local function BuildBarActiveAuraSection(container, group, style)
+    if not GroupHasAuraTrackingEntry(group) then
+        -- The section owning an active preview just disappeared (last aura
+        -- entry removed); don't leave the preview glow orphaned.
+        CooldownCompanion:SetGroupBarAuraEffectPreview(CS.selectedGroup, false)
+        return
+    end
+
+    local hasBorderEffect = style.barAuraEffect ~= nil
+        and style.barAuraEffect ~= "color" and style.barAuraEffect ~= "none"
+    local anyEffect = hasBorderEffect
+        or style.barAuraPulseEnabled == true
+        or style.barAuraColorShiftEnabled == true
+    local indicatorOn = ST.IsBarAuraIndicatorEnabled(style) and anyEffect
+
+    if container then
+        local enableRow = AddCheckboxRow(container, {
+            label = "Show Active Aura Indicator",
+            value = indicatorOn,
+            onChange = function(val)
+                style.barAuraIndicatorEnabled = val
+                if val and not (style.barAuraEffect and style.barAuraEffect ~= "color" and style.barAuraEffect ~= "none"
+                    or style.barAuraPulseEnabled == true or style.barAuraColorShiftEnabled == true) then
+                    -- Nothing visible was configured; force the pulse border and
+                    -- reset its per-style keys (a leftover proc-scale size would
+                    -- render a 30px wall).
+                    style.barAuraEffect = "pulse"
+                    style.barAuraEffectSize = 2
+                    style.barAuraEffectSpeed = 0.5
+                end
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        -- Single rail (AdvancedSettingsPanel.lua): this builder's row path opens
+        -- its own two-column grid, which a ~330px panel has no room for, so
+        -- opts.singleRail suppresses it and rails the border effect and the two
+        -- fill effects onto the panel scroll in order.
+        local function BuildBarActiveAuraAdvanced(panel)
+            BuildBarActiveAuraControls(panel, style, function()
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end, { row = true, singleRail = true, infoButtons = tabInfoButtons })
+        end
+
+        AddAdvancedToggle(enableRow, "barActiveAura", tabInfoButtons, indicatorOn, {
+            title = "Active Aura Indicator Advanced",
+            build = BuildBarActiveAuraAdvanced,
+        })
+        CreateCheckboxPromoteButton(enableRow, nil, "barActiveAura", group, style)
+        -- Third badge in the chain: gear, promote, then this. The anchor args
+        -- below are a placeholder - AnchorRowBadge appends to whatever the
+        -- chain actually ends at.
+        AnchorRowBadge(enableRow, CreateInfoButton(enableRow.frame, enableRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Active Aura Indicator",
+            {"Adds a border effect to a bar while its tracked aura is active, with optional fill pulse and fill color shift. The preview shows the bar as if the aura were running.", 1, 1, 1, true},
+        }, tabInfoButtons))
+    end
+
+    if not indicatorOn then
+        CooldownCompanion:SetGroupBarAuraEffectPreview(CS.selectedGroup, false)
+    end
+end
+
+-- Pandemic color (PTR 8): the aura kit reveals a pandemic-colored clone of
+-- the duration fill while the tracked aura sits inside its refresh window.
+-- Enable + color only; the window itself is game-computed. Same nil-container
+-- reconciliation contract as the active aura section above.
+--
+-- Shares the Pandemic section, and the mode-spanning "pandemic" OVERRIDE
+-- section, with the marker below.
+local function BuildBarPandemicSection(container, group, style)
+    local function ClearPandemicPreview()
+        if CooldownCompanion.SetGroupBarPandemicPreview then
+            CooldownCompanion:SetGroupBarPandemicPreview(CS.selectedGroup, false)
+        end
+    end
+    if not GroupHasAuraTrackingEntry(group) then
+        ClearPandemicPreview()
+        return
+    end
+
+    local pandemicOn = style.pandemicEffectEnabled == true
+    if container then
+        local enableRow = AddCheckboxRow(container, {
+            label = "Show Pandemic Color",
+            value = pandemicOn,
+            onChange = function(val)
+                style.pandemicEffectEnabled = val and true or false
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+        CreateCheckboxPromoteButton(enableRow, nil, "pandemic", group, style)
+        AnchorRowBadge(enableRow, CreateInfoButton(enableRow.frame, enableRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Pandemic Color",
+            {"The bar fill wears this color instead of the aura color while the tracked aura is in its refresh window, where recasting adds bonus time.", 1, 1, 1, true},
+            {" ", 1, 1, 1, true},
+            {"Auras that gain no time when refreshed never show it.", 1, 1, 1, true},
+        }, tabInfoButtons))
+
+        if pandemicOn then
+            -- No alpha: the pandemic color REPLACES the aura fill color
+            -- (owner ruling — never blends with it), so the live clone and
+            -- the mirror both render it opaque.
+            --
+            -- "Fill Color", not "Pandemic Color": the marker's own color row
+            -- sits in the same section now, and two rows reading the same
+            -- thing would leave no way to tell the fill from the text.
+            AddColorRow(container, {
+                label = "Fill Color",
+                indent = true,
+                tbl = style,
+                key = "barPandemicColor",
+                default = {1, 0.5, 0, 1},
+                hasAlpha = false,
+                onConfirm = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end,
+                onChange = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end,
+            })
+        end
+    end
+
+    if not pandemicOn then
+        ClearPandemicPreview()
+    end
+end
+
+-- The text half of the same window, new to bar mode: the marker has always
+-- rendered on bar panels (it rides the aura duration text, which the kit
+-- draws in both modes) but had no group-level control anywhere - the only way
+-- to reach it was a per-entry override of Aura Duration Text.
+--
+-- Rows only, and no nil-container contract: nothing previews the marker in
+-- any mode, so there is no preview state to reconcile.
+local function BuildBarPandemicMarkerSection(container, group, style)
+    if not container or not GroupHasAuraTrackingEntry(group) then
+        return
+    end
+
+    local applyStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
+    local markerRow = AddPandemicMarkerControls(container, style, applyStyle, function()
+        CooldownCompanion:RefreshConfigPanel()
+    end, { enableOnly = true })
+
+    -- Single rail (AdvancedSettingsPanel.lua): the styling rows fill the panel,
+    -- so childrenOnly drops the indent they carry when inline.
+    local function BuildBarPandemicMarkerAdvanced(panel)
+        AddPandemicMarkerControls(panel, style, applyStyle, function()
+            if CS.RefreshAdvancedSettingsPanel then
+                CS.RefreshAdvancedSettingsPanel()
+            end
+        end, { childrenOnly = true })
+    end
+
+    -- "barPandemicMarker", not the icons key: every bars gear in this file
+    -- carries its own prefixed key (barAuraText, barNameText, barChargeText),
+    -- so a panel switch can never rebind an open panel onto the other mode's
+    -- builder. The gear-to-section map names both.
+    local _, markerAdvBtn = AddAdvancedToggle(markerRow, "barPandemicMarker", tabInfoButtons,
+        style.pandemicMarkerEnabled ~= false, {
+            title = "Pandemic Marker Advanced",
+            build = BuildBarPandemicMarkerAdvanced,
+        })
+    -- Same override section as the fill row above: one feature, one promote
+    -- target, a badge on either row.
+    CreateCheckboxPromoteButton(markerRow, markerAdvBtn, "pandemic", group, style)
+end
+
 local function BuildBarEffectsTab(container, group, style)
-    local activeAuraEnabled = ST.IsBarAuraIndicatorEnabled(style)
+    local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
 
     -- ================================================================
-    -- Enable Active Aura Indicator
+    -- Glows
     -- ================================================================
-    local barAuraEnableCb = AceGUI:Create("CheckBox")
-    barAuraEnableCb:SetLabel("Enable Active Aura Indicator")
-    barAuraEnableCb:SetValue(activeAuraEnabled)
-    barAuraEnableCb:SetFullWidth(true)
-    barAuraEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.barAuraIndicatorEnabled = val and true or false
-        if val and (style.barAuraEffect == nil or style.barAuraEffect == "none") then
-            style.barAuraEffect = "color"
+    -- The section is offered only while the group tracks an aura, but the
+    -- builder below runs either way and with whatever host it ends up with:
+    -- it reconciles its own preview, and a glow left running by a deleted aura
+    -- entry - or by a collapsed section - still has to be cleared.
+    local glowsHost
+    if GroupHasAuraTrackingEntry(group) then
+        local _, glowsCollapsed = BuildCollapsibleSection(container, "Glows", EFFECTS_GLOWS_SECTION, nil, nil, ROW_SECTION)
+        if not glowsCollapsed then
+            -- One row; the right column is deliberately empty.
+            glowsHost = BeginRowGrid(container)
         end
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(barAuraEnableCb)
-
-    local function BuildBarActiveAuraAdvanced(panel)
-        local barAuraCombatCb = AceGUI:Create("CheckBox")
-        barAuraCombatCb:SetLabel("Show Only In Combat")
-        barAuraCombatCb:SetValue(style.auraGlowCombatOnly or false)
-        barAuraCombatCb:SetFullWidth(true)
-        barAuraCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraGlowCombatOnly = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        panel:AddChild(barAuraCombatCb)
-
-        BuildBarActiveAuraControls(panel, style, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-
-        BuildBarAuraPulseControls(panel, style, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
     end
+    BuildBarActiveAuraSection(glowsHost, group, style)
 
-    local _, barAuraAdvBtn = AddAdvancedToggle(barAuraEnableCb, "barActiveAura", tabInfoButtons, activeAuraEnabled, {
-        title = "Active Aura Indicator Advanced",
-        build = BuildBarActiveAuraAdvanced,
-    })
-    local barAuraPromoteBtn = CreateCheckboxPromoteButton(barAuraEnableCb, barAuraAdvBtn, "barActiveAura", group, style)
-    AddPreviewBadge(barAuraEnableCb, barAuraPromoteBtn or barAuraAdvBtn, "Preview Active Aura Indicator", function()
-        return CS.selectedGroup and CooldownCompanion:IsBarAuraActivePreviewActive(CS.selectedGroup, nil)
-    end, function(show)
-        if CS.selectedGroup then
-            CooldownCompanion:SetBarAuraActivePreview(CS.selectedGroup, nil, show)
+    -- ================================================================
+    -- Pandemic
+    -- ================================================================
+    -- Deliberately OUTSIDE the icon-square block below: neither the fill
+    -- recolor nor the marker draws on the icon, so hiding the icon must not
+    -- take them with it. Same aura gate and same nil-host reconciliation as
+    -- Glows above.
+    local pandemicLeft, pandemicRight
+    if GroupHasAuraTrackingEntry(group) then
+        local _, pandemicCollapsed = BuildCollapsibleSection(container, "Pandemic",
+            EFFECTS_PANDEMIC_SECTION, nil, nil, ROW_SECTION)
+        if not pandemicCollapsed then
+            -- LEFT the fill half, RIGHT the text half.
+            pandemicLeft, pandemicRight = BeginRowGrid(container)
         end
-    end, activeAuraEnabled)
-
-    if not activeAuraEnabled and CS.selectedGroup then
-        CooldownCompanion:SetBarAuraActivePreview(CS.selectedGroup, nil, false)
-    end -- barAuraAdvExpanded
-
-    -- ================================================================
-    -- Show Pandemic Indicator
-    -- ================================================================
-    local pandemicIndicatorCb = AceGUI:Create("CheckBox")
-    pandemicIndicatorCb:SetLabel("Show Pandemic Indicator")
-    pandemicIndicatorCb:SetValue(style.showPandemicGlow ~= false)
-    pandemicIndicatorCb:SetFullWidth(true)
-    pandemicIndicatorCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showPandemicGlow = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(pandemicIndicatorCb)
-
-    local function BuildBarPandemicAdvanced(panel)
-        local barPandemicCombatCb = AceGUI:Create("CheckBox")
-        barPandemicCombatCb:SetLabel("Show Only In Combat")
-        barPandemicCombatCb:SetValue(style.pandemicGlowCombatOnly or false)
-        barPandemicCombatCb:SetFullWidth(true)
-        barPandemicCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
-            style.pandemicGlowCombatOnly = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        panel:AddChild(barPandemicCombatCb)
-
-        BuildPandemicBarControls(panel, style, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-
-        BuildPandemicBarPulseControls(panel, style, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
     end
+    BuildBarPandemicSection(pandemicLeft, group, style)
+    BuildBarPandemicMarkerSection(pandemicRight, group, style)
 
-    local _, barPandemicAdvBtn = AddAdvancedToggle(pandemicIndicatorCb, "barPandemicIndicator", tabInfoButtons, style.showPandemicGlow ~= false, {
-        title = "Pandemic Indicator Advanced",
-        build = BuildBarPandemicAdvanced,
-    })
-    local barPandemicPromoteBtn = CreateCheckboxPromoteButton(pandemicIndicatorCb, barPandemicAdvBtn, "pandemicBar", group, style)
-    AddPreviewBadge(pandemicIndicatorCb, barPandemicPromoteBtn or barPandemicAdvBtn, "Preview Pandemic Effects", function()
-        return CS.selectedGroup and CooldownCompanion:IsPreviewFlagActive(CS.selectedGroup, nil, "_pandemicPreview")
-    end, function(show)
-        if CS.selectedGroup then
-            CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, show)
-        end
-    end, style.showPandemicGlow ~= false)
-
-    if style.showPandemicGlow == false and CS.selectedGroup then
-        CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
-    end -- barPandemicAdvExpanded
-
-    -- ================================================================
-    -- Desaturate on Cooldown
-    -- ================================================================
+    -- The remaining indicators all render on the bar's icon square.
     if style.showBarIcon ~= false then
-        local gcdCb = AceGUI:Create("CheckBox")
-        gcdCb:SetLabel("Show GCD Swipe")
-        gcdCb:SetValue(style.showGCDSwipe == true)
-        gcdCb:SetFullWidth(true)
-        gcdCb:SetCallback("OnValueChanged", function(widget, event, val)
-            style.showGCDSwipe = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(gcdCb)
-        CreateCheckboxPromoteButton(gcdCb, nil, "showGCDSwipe", group, style)
+        -- ================================================================
+        -- Timers
+        -- ================================================================
+        local _, timersCollapsed = BuildCollapsibleSection(container, "Timers", EFFECTS_TIMERS_SECTION, nil, nil, ROW_SECTION)
 
-        local desatCb = AceGUI:Create("CheckBox")
-        desatCb:SetLabel("Show Desaturate On Cooldown")
-        desatCb:SetValue(style.desaturateOnCooldown or false)
-        desatCb:SetFullWidth(true)
-        desatCb:SetCallback("OnValueChanged", function(widget, event, val)
-            style.desaturateOnCooldown = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(desatCb)
-        CreateCheckboxPromoteButton(desatCb, nil, "desaturation", group, style)
+        if not timersCollapsed then
+        -- One row; the right column is deliberately empty.
+        local timerLeft = BeginRowGrid(container)
+
+        local gcdRow = AddCheckboxRow(timerLeft, {
+            label = "Show GCD Swipe",
+            value = style.showGCDSwipe == true,
+            onChange = function(val)
+                style.showGCDSwipe = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end,
+        })
+        CreateCheckboxPromoteButton(gcdRow, nil, "showGCDSwipe", group, style)
+        end -- not timersCollapsed
 
         -- ================================================================
-        -- Loss of Control
+        -- States
         -- ================================================================
-        local locCb = BuildLossOfControlControls(container, style, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        CreateCheckboxPromoteButton(locCb, nil, "lossOfControl", group, style)
+        local _, statesCollapsed = BuildCollapsibleSection(container, "States", EFFECTS_STATES_SECTION, nil, nil, ROW_SECTION)
 
-        -- ================================================================
-        -- Unusable Visual
-        -- ================================================================
-        local unusableCb, unusableAdvBtn = BuildUnusableDimmingControls(container, style, function()
+        if not statesCollapsed then
+        -- LEFT column: the two looks the bar's icon takes on by itself.
+        -- RIGHT column: the situational state and the hover behavior.
+        local stateLeft, stateRight = BeginRowGrid(container)
+
+        local desatRow = AddCheckboxRow(stateLeft, {
+            label = "Show Desaturate On Cooldown",
+            value = style.desaturateOnCooldown or false,
+            onChange = function(val)
+                style.desaturateOnCooldown = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end,
+        })
+        CreateCheckboxPromoteButton(desatRow, nil, "desaturation", group, style)
+
+        local unusableRow, unusableAdvBtn = BuildUnusableDimmingControls(stateLeft, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
-        end)
-        local unusablePromoteBtn = CreateCheckboxPromoteButton(unusableCb, unusableAdvBtn, "unusableDimming", group, style)
-        AddConditionalPreviewBadge(unusableCb, unusablePromoteBtn or unusableAdvBtn, "Preview Unusable State", "unusable", style.showUnusable)
+        end, { row = true })
+        CreateCheckboxPromoteButton(unusableRow, unusableAdvBtn, "unusableDimming", group, style)
 
-        -- Show Tooltips
-        local tooltipCb = BuildShowTooltipsControls(container, style, function()
+        local locRow = BuildLossOfControlControls(stateRight, style, refreshStyle, { row = true })
+        CreateCheckboxPromoteButton(locRow, nil, "lossOfControl", group, style)
+
+        local tooltipRow, tooltipAdvBtn = BuildShowTooltipsControls(stateRight, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        CreateCheckboxPromoteButton(tooltipCb, nil, "showTooltips", group, style)
+            CooldownCompanion:RefreshConfigPanel()
+        end, { row = true, advanced = true, infoButtons = tabInfoButtons })
+        CreateCheckboxPromoteButton(tooltipRow, tooltipAdvBtn, "showTooltips", group, style)
+
+        BuildAllowPingsControls(stateRight, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end, { row = true })
+        end -- not statesCollapsed
     end
 
 end

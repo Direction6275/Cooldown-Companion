@@ -28,7 +28,6 @@ local DEFAULT_CONTINUOUS_TICK_PERCENT = RB.DEFAULT_CONTINUOUS_TICK_PERCENT
 local DEFAULT_CONTINUOUS_TICK_ABSOLUTE = RB.DEFAULT_CONTINUOUS_TICK_ABSOLUTE
 local DEFAULT_CONTINUOUS_TICK_WIDTH = RB.DEFAULT_CONTINUOUS_TICK_WIDTH
 local DEFAULT_CONTINUOUS_TICK_COLOR = RB.DEFAULT_CONTINUOUS_TICK_COLOR
-local DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT = RB.DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local CLASS_RESOURCES = RB.CLASS_RESOURCES
 local SPEC_RESOURCES = RB.SPEC_RESOURCES
@@ -231,6 +230,15 @@ local customBarContentFields = {
     "barAuraColorShiftEnabled",
     "barAuraColorShiftSpeed",
     "barAuraColorShiftColor",
+    "pandemicEffect",
+    "pandemicColor",
+    "pandemicMarker",
+    "pandemicMarkerText",
+    "pandemicMarkerColorMode",
+    "pandemicMarkerColor",
+    -- Retired pandemic families, kept ONLY so not-yet-migrated legacy
+    -- entries still count as configured content (the import/migration
+    -- passes strip the keys themselves; nothing renders them).
     "showPandemicGlow",
     "barPandemicColor",
     "pandemicBarEffect",
@@ -274,7 +282,6 @@ local customBarContentFields = {
     "stackTextFontOutline",
     "stackTextFontColor",
     "auraUnit",
-    "auraUnitExplicit",
     "hasCharges",
     "maxCharges",
 }
@@ -328,6 +335,65 @@ local function IsSpellCustomBarAuraStackDisplay(cab)
         and IsSpellCustomBarConfig(cab)
         and cab.auraTracking == true
         and GetCustomBarTrackingMode(cab, true) ~= "active"
+end
+
+-- Aura block entries (12.1): an aura entry that hides when inactive cannot
+-- hold a fixed slot in the CC-laid-out stack — aura presence is secret, so
+-- the CC accumulator can never pack the stack around it. These entries leave
+-- the stack and mount into the Blizzard-side collapsing aura container.
+local function IsAuraBlockEntry(cab)
+    return type(cab) == "table"
+        and not IsSpellCustomBarConfig(cab)
+        and cab.hideWhenInactive == true
+end
+
+-- Which per-unit bucket of a side's aura block sits nearer the panel. A
+-- layout fact, so it lives in the per-spec layout table like every other
+-- arrangement value. Absent means player-first, the original order.
+local function IsAuraBlockTargetFirst(settings, side)
+    local layout = GetSpecLayoutOrder and GetSpecLayoutOrder(settings)
+    local map = layout and layout.auraBlockTargetFirst
+    return type(map) == "table" and map[side] == true
+end
+
+local function SetAuraBlockTargetFirst(settings, side, targetFirst)
+    local layout = GetSpecLayoutOrder and GetSpecLayoutOrder(settings)
+    if type(layout) ~= "table" or type(side) ~= "string" then return end
+    local map = layout.auraBlockTargetFirst
+    if targetFirst then
+        if type(map) ~= "table" then
+            map = {}
+            layout.auraBlockTargetFirst = map
+        end
+        map[side] = true
+    elseif type(map) == "table" then
+        map[side] = nil
+        if next(map) == nil then
+            layout.auraBlockTargetFirst = nil
+        end
+    end
+end
+
+-- The automatic aura stack max (the aura pass), resolved from game data by
+-- the OOC rebind collector so in-combat re-applies never touch the
+-- restricted lookup.
+--
+-- Keyed by customBarId, NOT by slot. Bar frames and their barInfo tables
+-- are recycled by stack position, so shapeshifting a resource in or out
+-- hands a bar a different slot — and a slot-keyed cache would be empty
+-- exactly when combat forbids recomputing it, dropping the capacity blocks
+-- and their per-stack rings for the rest of the fight.
+local customBarStackMaxById = {}
+
+local function SetCustomBarCachedStackMax(customBarId, maxStacks)
+    if type(customBarId) ~= "string" then return end
+    customBarStackMaxById[customBarId] = maxStacks
+end
+
+local function GetCustomBarCachedStackMax(barInfo)
+    local customBarId = type(barInfo) == "table" and barInfo.customBarId or nil
+    if type(customBarId) ~= "string" then return nil end
+    return customBarStackMaxById[customBarId]
 end
 
 local function NormalizeCustomBarEntryType(cab)
@@ -1089,20 +1155,97 @@ local function BuildCustomBarsExportPayload(settings, entries)
     return payload
 end
 
-local function ImportCustomBarsPayload(settings, payload)
+local function NormalizePayloadClassKey(value)
+    if type(value) ~= "string" or value == "" then
+        return nil
+    end
+    return string.upper(value)
+end
+
+local function GetPayloadClassKey(payload)
+    local classKey = NormalizePayloadClassKey(payload.classFilename)
+    if classKey then
+        return classKey
+    end
+    if payload.classID and ST._GetResourceBarClassKeyFromClassID then
+        return ST._GetResourceBarClassKeyFromClassID(payload.classID)
+    end
+    return nil
+end
+
+local function GetFirstClassSpecID(classKey)
+    local specInfo = ST._GetResourceBarClassSpecInfo
+    local specIDs = specInfo and specInfo(classKey) or nil
+    if type(specIDs) ~= "table" then
+        return nil
+    end
+    local firstSpecID
+    for specID in pairs(specIDs) do
+        if not firstSpecID or specID < firstSpecID then
+            firstSpecID = specID
+        end
+    end
+    return firstSpecID
+end
+
+-- The "Resources" piece of a setup export: the whole class bucket, tagged with
+-- the class it belongs to. Replaces the target class's bucket on import.
+local function BuildResourcesSetupSection(settings, classKey)
+    if type(settings) ~= "table" then
+        return nil
+    end
+    classKey = NormalizePayloadClassKey(classKey)
+    if not classKey then
+        local _, playerClassFilename = UnitClass("player")
+        classKey = NormalizePayloadClassKey(playerClassFilename)
+    end
+    if not classKey then
+        return nil
+    end
+    local classID = ST._GetClassIDFromResourceBarClassKey
+        and ST._GetClassIDFromResourceBarClassKey(classKey)
+        or nil
+    return {
+        classID = classID,
+        classFilename = classKey,
+        settings = CopyTable(settings),
+    }
+end
+
+-- options.targetClassKey: the class whose bucket `settings` belongs to. When
+-- set, the payload's class must match IT (cross-class import lands in that
+-- class's bucket); the spec fallback for spec-less bars comes from that class,
+-- never from the character doing the importing. Without options the original
+-- same-class-as-player contract holds.
+local function ImportCustomBarsPayload(settings, payload, options)
     if type(settings) ~= "table" or type(payload) ~= "table" or payload.type ~= "customBars" then
         return false, "Import failed: this is not a Custom Bars export."
     end
 
-    local _, classFilename, classID = UnitClass("player")
-    if payload.classID and payload.classID ~= classID then
-        return false, "Import failed: Custom Bars can only be imported on the same class."
-    end
-    if payload.classFilename and classFilename and payload.classFilename ~= classFilename then
-        return false, "Import failed: Custom Bars can only be imported on the same class."
+    local targetClassKey = options and NormalizePayloadClassKey(options.targetClassKey) or nil
+    local payloadClassKey = GetPayloadClassKey(payload)
+    if targetClassKey then
+        if payloadClassKey and payloadClassKey ~= targetClassKey then
+            return false, "Import failed: these Custom Bars belong to another class."
+        end
+    else
+        local _, classFilename, classID = UnitClass("player")
+        if payload.classID and payload.classID ~= classID then
+            return false, "Import failed: Custom Bars can only be imported on the same class."
+        end
+        if payload.classFilename and classFilename and payload.classFilename ~= classFilename then
+            return false, "Import failed: Custom Bars can only be imported on the same class."
+        end
     end
     if type(payload.bars) ~= "table" or #payload.bars == 0 then
         return false, "Import failed: no Custom Bars were found."
+    end
+
+    local fallbackSpecID
+    if targetClassKey then
+        fallbackSpecID = GetFirstClassSpecID(targetClassKey)
+    else
+        fallbackSpecID = GetCurrentSpecID()
     end
 
     local importedCount = 0
@@ -1111,7 +1254,7 @@ local function ImportCustomBarsPayload(settings, payload)
         if IsConfiguredCustomBar(exportedEntry) then
             local oldId = exportedEntry.customBarId
             local specIDs = CollectCustomBarSpecIDs(exportedEntry)
-            local firstSpecID = specIDs[1] or GetCurrentSpecID()
+            local firstSpecID = specIDs[1] or fallbackSpecID
             if firstSpecID then
                 local entry = CopyTable(exportedEntry)
                 entry.customBarId = nil
@@ -1186,20 +1329,23 @@ local function GetDefaultSpellCustomBarAuraUnit(cabConfig, spellID)
     resolvedSpellID = tonumber(resolvedSpellID)
 
     if CooldownCompanion and CooldownCompanion.ResolveStandaloneAuraDefaultUnit then
+        -- The synthetic must classify the same way the live slot adapter
+        -- does (ResourceBarAuraHost's BuildEntryAdapter): the resolver
+        -- branches on addedAs, and an aura bar left unmarked takes the
+        -- plain-spell branch, resolving a unit the bound candidate list
+        -- disagrees with.
+        local isAuraEntry = type(cabConfig) == "table"
+            and not IsSpellCustomBarConfig(cabConfig)
         return CooldownCompanion:ResolveStandaloneAuraDefaultUnit({
             type = "spell",
             id = resolvedSpellID,
+            addedAs = isAuraEntry and "aura" or nil,
+            auraTracking = true,
             auraSpellID = type(cabConfig) == "table" and cabConfig.auraSpellID or nil,
         })
     end
 
     return GetDefaultCustomAuraUnit(resolvedSpellID)
-end
-
-local function HasExplicitCustomAuraBarAuraUnit(cabConfig)
-    return type(cabConfig) == "table"
-        and cabConfig.auraUnitExplicit == true
-        and IsValidCustomAuraUnit(cabConfig.auraUnit)
 end
 
 local function GetResolvedCustomAuraBarAuraUnit(cabConfig, spellID)
@@ -1208,35 +1354,32 @@ local function GetResolvedCustomAuraBarAuraUnit(cabConfig, spellID)
         resolvedSpellID = cabConfig.spellID
     end
 
-    if type(cabConfig) == "table" and HasExplicitCustomAuraBarAuraUnit(cabConfig) then
-        return cabConfig.auraUnit
-    end
-
-    if type(cabConfig) == "table" and (cabConfig.entryType == nil or cabConfig.entryType == "aura") then
-        return GetDefaultCustomAuraUnit(resolvedSpellID)
-    end
-
+    -- Both entry types resolve candidate-aware (the tracked aura list can
+    -- carry a different polarity than the base spell); the helper falls
+    -- back to base-spell polarity when no candidate resolves. The migration
+    -- and config derive the stored auraUnit from this same identity, and
+    -- the slot display path classifies through the same standalone resolver
+    -- — there is deliberately NO stored-unit override here (the retired
+    -- auraUnitExplicit branch was the one thing that could make the block
+    -- and slot paths watch different units for the same bar).
     return GetDefaultSpellCustomBarAuraUnit(cabConfig, resolvedSpellID)
 end
 
-local function EnsureCustomAuraBarAuraUnit(cabConfig, spellID, unit, explicit)
+local function EnsureCustomAuraBarAuraUnit(cabConfig, spellID, unit)
     local resolvedSpellID = spellID
     if resolvedSpellID == nil and type(cabConfig) == "table" then
         resolvedSpellID = cabConfig.spellID
     end
 
     if type(cabConfig) == "table" then
-        local wasExplicit = HasExplicitCustomAuraBarAuraUnit(cabConfig)
         local resolvedUnit = IsValidCustomAuraUnit(unit) and unit
             or GetResolvedCustomAuraBarAuraUnit(cabConfig, resolvedSpellID)
 
         cabConfig.auraUnit = resolvedUnit
-
-        if IsValidCustomAuraUnit(unit) then
-            cabConfig.auraUnitExplicit = explicit == false and nil or true
-        elseif not wasExplicit then
-            cabConfig.auraUnitExplicit = nil
-        end
+        -- Custom-bar units are always polarity-derived: the explicit-unit
+        -- flag is retired, and stripping residue here keeps an imported
+        -- pre-retirement config from ever resurrecting it.
+        cabConfig.auraUnitExplicit = nil
 
         if IsValidCustomAuraUnit(cabConfig.auraUnit) then
             return cabConfig.auraUnit
@@ -1244,90 +1387,6 @@ local function EnsureCustomAuraBarAuraUnit(cabConfig, spellID, unit, explicit)
     end
 
     return GetDefaultSpellCustomBarAuraUnit(cabConfig, resolvedSpellID)
-end
-
-local function RefreshCustomAuraBarAuraUnitForSpell(cabConfig, spellID)
-    local resolvedSpellID = spellID
-    if resolvedSpellID == nil and type(cabConfig) == "table" then
-        resolvedSpellID = cabConfig.spellID
-    end
-
-    if HasExplicitCustomAuraBarAuraUnit(cabConfig) then
-        return cabConfig.auraUnit
-    end
-
-    local defaultUnit = GetDefaultCustomAuraUnit(resolvedSpellID)
-    if type(cabConfig) == "table" and cabConfig.entryType == "spell" then
-        defaultUnit = GetDefaultSpellCustomBarAuraUnit(cabConfig, resolvedSpellID)
-    end
-    return EnsureCustomAuraBarAuraUnit(cabConfig, resolvedSpellID, defaultUnit, false)
-end
-
-local function IsValidResourceAuraUnit(unit)
-    return unit == "player" or unit == "target"
-end
-
-local function GetDefaultResourceAuraUnit(spellID)
-    return (spellID and C_Spell.IsSpellHarmful(spellID)) and "target" or "player"
-end
-
-local function HasExplicitResourceAuraUnit(resourceAuraEntry)
-    return type(resourceAuraEntry) == "table"
-        and resourceAuraEntry.auraUnitExplicit == true
-        and IsValidResourceAuraUnit(resourceAuraEntry.auraUnit)
-end
-
-local function GetResolvedResourceAuraUnit(resourceAuraEntry, spellID)
-    local resolvedSpellID = spellID
-    if resolvedSpellID == nil and type(resourceAuraEntry) == "table" then
-        resolvedSpellID = tonumber(resourceAuraEntry.auraColorSpellID) or nil
-    end
-
-    if type(resourceAuraEntry) == "table" and IsValidResourceAuraUnit(resourceAuraEntry.auraUnit) then
-        return resourceAuraEntry.auraUnit
-    end
-
-    return GetDefaultResourceAuraUnit(resolvedSpellID)
-end
-
-local function EnsureResourceAuraUnit(resourceAuraEntry, spellID, unit, explicit)
-    local resolvedSpellID = spellID
-    if resolvedSpellID == nil and type(resourceAuraEntry) == "table" then
-        resolvedSpellID = tonumber(resourceAuraEntry.auraColorSpellID) or nil
-    end
-
-    if type(resourceAuraEntry) == "table" then
-        local wasExplicit = HasExplicitResourceAuraUnit(resourceAuraEntry)
-        local resolvedUnit = IsValidResourceAuraUnit(unit) and unit
-            or GetResolvedResourceAuraUnit(resourceAuraEntry, resolvedSpellID)
-
-        resourceAuraEntry.auraUnit = resolvedUnit
-
-        if IsValidResourceAuraUnit(unit) then
-            resourceAuraEntry.auraUnitExplicit = explicit == false and nil or true
-        elseif not wasExplicit then
-            resourceAuraEntry.auraUnitExplicit = nil
-        end
-
-        if IsValidResourceAuraUnit(resourceAuraEntry.auraUnit) then
-            return resourceAuraEntry.auraUnit
-        end
-    end
-
-    return GetDefaultResourceAuraUnit(resolvedSpellID)
-end
-
-local function RefreshResourceAuraUnitForSpell(resourceAuraEntry, spellID)
-    local resolvedSpellID = spellID
-    if resolvedSpellID == nil and type(resourceAuraEntry) == "table" then
-        resolvedSpellID = tonumber(resourceAuraEntry.auraColorSpellID) or nil
-    end
-
-    if HasExplicitResourceAuraUnit(resourceAuraEntry) then
-        return resourceAuraEntry.auraUnit
-    end
-
-    return EnsureResourceAuraUnit(resourceAuraEntry, resolvedSpellID, GetDefaultResourceAuraUnit(resolvedSpellID), false)
 end
 
 local function CopyIndependentAnchor(anchor)
@@ -1492,6 +1551,29 @@ local function GetResourceSegmentedSmoothing(settings, specID)
     return ST.NormalizeSegmentedSmoothing(profile and profile.segmentedSmoothing or nil)
 end
 
+-- Maelstrom Weapon stack display shape. The stack count is identical in
+-- every style; only the widget that renders it differs:
+--   overlay    five segments with a second colour layer for stacks past
+--              five (the default, and the only pre-12.1 look)
+--   segments   one segment per stack, no overlay layer
+--   continuous a single bar filling from empty to the stack maximum
+-- The maximum is talent-driven (mwMaxStacks), so "segments" is five or ten
+-- segments depending on Raging Maelstrom, exactly like the overlay style's
+-- own capacity.
+local MW_DISPLAY_STYLES = { overlay = true, segments = true, continuous = true }
+
+local function GetMWDisplayStyle(settings, specID)
+    if type(settings) ~= "table" or type(settings.resources) ~= "table" then
+        return "overlay"
+    end
+    local resource = settings.resources[RESOURCE_MAELSTROM_WEAPON]
+    if type(resource) ~= "table" then
+        return "overlay"
+    end
+    local style = ResolveSpecOverrideKey(resource, specID or GetCurrentSpecID(), "mwDisplayStyle")
+    return MW_DISPLAY_STYLES[style] and style or "overlay"
+end
+
 local function GetResourceDisplayConfig(settings, powerType)
     local resource = settings and settings.resources and settings.resources[powerType]
     if type(resource) ~= "table" then return nil end
@@ -1580,13 +1662,6 @@ end
 ------------------------------------------------------------------------
 -- Resource Detection
 ------------------------------------------------------------------------
-
-local function NormalizeCustomAuraStackTextFormat(textFormat)
-    if textFormat == "current" or textFormat == "current_max" then
-        return textFormat
-    end
-    return DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT
-end
 
 local function IsHealerSpec()
     local specIdx = C_SpecializationInfo.GetSpecialization()
@@ -2049,7 +2124,7 @@ end
 
 local function IsBarsConfigActive()
     local cs = ST and ST._configState
-    if not cs or not cs.resourceBarPanelActive then
+    if not cs or not cs.barsEntrySelected then
         return false
     end
     if not CooldownCompanion.GetConfigFrame then
@@ -2086,6 +2161,7 @@ RB.CustomBarHasExplicitSpec = CustomBarHasExplicitSpec
 RB.AddCustomBarToSpec = AddCustomBarToSpec
 RB.RemoveCustomBarFromSpec = RemoveCustomBarFromSpec
 RB.BuildCustomBarsExportPayload = BuildCustomBarsExportPayload
+RB.BuildResourcesSetupSection = BuildResourcesSetupSection
 RB.ImportCustomBarsPayload = ImportCustomBarsPayload
 RB.EnsureCustomBarId = EnsureCustomBarId
 RB.GetCustomBarLayout = GetCustomBarLayout
@@ -2093,18 +2169,19 @@ RB.EnsureCustomBarLayout = EnsureCustomBarLayout
 RB.IsConfiguredCustomBar = IsConfiguredCustomBar
 RB.GetCustomBarEntryType = GetCustomBarEntryType
 RB.IsSpellCustomBarConfig = IsSpellCustomBarConfig
-RB.GetCustomBarTrackingMode = GetCustomBarTrackingMode
 RB.IsSpellCustomBarAuraStackDisplay = IsSpellCustomBarAuraStackDisplay
+RB.IsAuraBlockEntry = IsAuraBlockEntry
+RB.IsAuraBlockTargetFirst = IsAuraBlockTargetFirst
+RB.SetAuraBlockTargetFirst = SetAuraBlockTargetFirst
+RB.GetCustomBarCachedStackMax = GetCustomBarCachedStackMax
+RB.SetCustomBarCachedStackMax = SetCustomBarCachedStackMax
 RB.GetResolvedCustomAuraBarAuraUnit = GetResolvedCustomAuraBarAuraUnit
 RB.EnsureCustomAuraBarAuraUnit = EnsureCustomAuraBarAuraUnit
-RB.RefreshCustomAuraBarAuraUnitForSpell = RefreshCustomAuraBarAuraUnitForSpell
-RB.GetResolvedResourceAuraUnit = GetResolvedResourceAuraUnit
-RB.EnsureResourceAuraUnit = EnsureResourceAuraUnit
-RB.RefreshResourceAuraUnitForSpell = RefreshResourceAuraUnitForSpell
 RB.GetSpecLayoutOrder = GetSpecLayoutOrder
 RB.GetSpecResourceDisplayProfile = GetSpecResourceDisplayProfile
 RB.GetResourceDisplayValue = GetResourceDisplayValue
 RB.GetResourceSegmentedSmoothing = GetResourceSegmentedSmoothing
+RB.GetMWDisplayStyle = GetMWDisplayStyle
 RB.GetResourceDisplayConfig = GetResourceDisplayConfig
 RB.GetResourceSpecOverrideTable = GetResourceSpecOverrideTable
 RB.RESOURCE_TEXT_DISPLAY_KEYS = RESOURCE_TEXT_DISPLAY_KEYS
@@ -2114,7 +2191,6 @@ RB.RoundToTenths = RoundToTenths
 RB.ClampIndependentDimension = ClampIndependentDimension
 RB.IsBarsConfigActive = IsBarsConfigActive
 RB.IsTruthyConfigFlag = IsTruthyConfigFlag
-RB.NormalizeCustomAuraStackTextFormat = NormalizeCustomAuraStackTextFormat
 RB.IsAstralPowerAvailableForCurrentDruidSpec = IsAstralPowerAvailableForCurrentDruidSpec
 RB.DetermineActiveResources = DetermineActiveResources
 RB.GetResourceColors = GetResourceColors

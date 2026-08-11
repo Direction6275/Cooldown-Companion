@@ -977,6 +977,14 @@ end
 -- SHOW / HIDE TALENT PICKER
 ------------------------------------------------------------------------
 local function ShowTalentPicker(configFrame, initialConditions, group)
+    -- Stored command-center previews must not outlive the workspace view:
+    -- with the picker up the mirror is no longer the preview surface, so a
+    -- live-frame repopulate would re-apply them to world buttons (the one
+    -- path that reaches the live stand-ins). Clear them like every other
+    -- selection/tab change does.
+    if CooldownCompanion.ClearAllConfigPreviews then
+        CooldownCompanion:ClearAllConfigPreviews()
+    end
     CS.talentPickerMode = true
     pickerGroup = group
     pickerSelectedSpecID = nil
@@ -984,9 +992,7 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
     pickerSelectedHeroSubTreeID = nil
 
     local col1 = configFrame.col1
-    local col2 = configFrame.col2
     local col3 = configFrame.col3
-    local col4 = configFrame.col4
 
     -- Save titles
     savedCol1Title = col1.titletext:GetText()
@@ -998,34 +1004,30 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
     col3:SetTitle("Spec")
     configFrame:SetTitle("Pick Talent Conditions")
 
-    -- Hide col2 + col4
-    col2.frame:Hide()
-    col4.frame:Hide()
-
     -- Hide col1 normal content
     CS.col1Scroll.frame:Hide()
     CS.col1ButtonBar:Hide()
-    if col1._barsPanelTabGroup then col1._barsPanelTabGroup.frame:Hide() end
 
     -- Hide col3 normal content (all possible states)
     if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
     if col3.bsPlaceholder then col3.bsPlaceholder:Hide() end
     if col3._customAuraTabGroup then col3._customAuraTabGroup.frame:Hide() end
-    if col3._customBarsScroll then col3._customBarsScroll.frame:Hide() end
-    if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
+    if col3._multiSelectActionsScroll then col3._multiSelectActionsScroll.frame:Hide() end
+    if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
+    if ST._HideButtonsPanelPreviewSurfaces then ST._HideButtonsPanelPreviewSurfaces(col3) end
+    if ST._HideResourcesWideSurfaces then ST._HideResourcesWideSurfaces(col3) end
 
     -- Recompute column layout (2-column mode)
     configFrame.LayoutColumns()
 
     -- Hide panel elements
-    configFrame.modeStatusRow:Hide()
     if configFrame.profileBar:IsShown() then
         configFrame.profileBar:Hide()
     end
 
     -- Hide column info buttons during talent picker
     if CS.columnInfoButtons[1] then CS.columnInfoButtons[1]:Hide() end
-    if CS.columnInfoButtons[3] then CS.columnInfoButtons[3]:Hide() end
+    if CS.columnInfoButtons[2] then CS.columnInfoButtons[2]:Hide() end
 
     -- Initialize pending conditions from initial conditions
     wipe(pendingConditions)
@@ -1100,7 +1102,7 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
     LayoutSpecFrames(col3.content, pickerSelectedSpecID ~= nil)
     specTreeFrame:Show()
 
-    -- Position accept button at bottom center of main panel (where modeStatusRow normally sits)
+    -- Position accept button at bottom center of main panel
     acceptBtn.frame:SetParent(configFrame.frame)
     acceptBtn.frame:ClearAllPoints()
     acceptBtn.frame:SetPoint("BOTTOM", configFrame.frame, "BOTTOM", 0, 21)
@@ -1157,29 +1159,16 @@ HideTalentPicker = function()
         if savedCol3Title then configFrame.col3:SetTitle(savedCol3Title) end
         if savedPanelTitle then configFrame:SetTitle(savedPanelTitle) end
 
-        -- Show col2 + col4
-        configFrame.col2.frame:Show()
-        configFrame.col4.frame:Show()
-
         -- Restore column info buttons
         if CS.columnInfoButtons[1] then CS.columnInfoButtons[1]:Show() end
-        if CS.columnInfoButtons[3] then CS.columnInfoButtons[3]:Show() end
+        if CS.columnInfoButtons[2] then CS.columnInfoButtons[2]:Show() end
 
         -- Show col1 normal content
         CS.col1Scroll.frame:Show()
         CS.col1ButtonBar:Show()
 
-        -- Restore modeStatusRow visibility (SyncModeToggleWithProfileBar is a closure,
-        -- so replicate its visibility logic: row shows when profileBar is hidden)
-        if configFrame.modeStatusRow and configFrame.profileBar then
-            configFrame.modeStatusRow:SetShown(not configFrame.profileBar:IsShown())
-        end
-
-        -- Recompute layout (4-column mode) then refresh
+        -- Recompute the Navigator/workspace layout, then refresh.
         configFrame.LayoutColumns()
-        if configFrame.UpdateModeNavigationUI then
-            configFrame.UpdateModeNavigationUI()
-        end
     end
 
     savedCol1Title = nil

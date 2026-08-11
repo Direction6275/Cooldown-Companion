@@ -66,9 +66,22 @@ local function IsCursorAnchoredButton(button)
         or false
 end
 
+-- Texture/Trigger panels drive alpha-0 icon buttons through this file; those
+-- invisible frames must never become ping receivers (their config tabs do not
+-- expose the toggle, and a converted panel keeps its old style keys).
+local function IsStandaloneTexturePanelButton(button)
+    local groups = CooldownCompanion.db and CooldownCompanion.db.profile.groups
+    local group = groups and button._groupId and groups[button._groupId]
+    return group ~= nil
+        and CooldownCompanion.IsStandaloneTexturePanelGroup ~= nil
+        and CooldownCompanion:IsStandaloneTexturePanelGroup(group)
+end
+
 -- Shared helpers from ButtonFrame/Helpers.lua
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
 local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
+local IsEntryPingEligible = CooldownCompanion.IsEntryPingEligible
+local SetEntryPingReceiver = ST.SetEntryPingReceiver
 local ResolveEffectiveItem = CooldownCompanion.ResolveEffectiveItem
 local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
 local ApplyDurationFormatToCooldown = CooldownCompanion.ApplyDurationFormatToCooldown
@@ -76,15 +89,7 @@ local ApplyDurationFormatToCooldown = CooldownCompanion.ApplyDurationFormatToCoo
 -- Pre-defined color constant tables to avoid per-tick allocation.
 -- IMPORTANT: These tables are read-only — never write to their indices.
 local DEFAULT_WHITE = {1, 1, 1, 1}
-local DEFAULT_AURA_TEXT_COLOR = {0, 0.925, 1, 1}
 local ICON_FILL_TEXTURE = "Interface\\Buttons\\WHITE8x8"
-local BLIZZARD_AURA_SWIPE_TEXTURE = "Interface\\HUD\\UI-HUD-CoolDownManager-Icon-Swipe"
-local BLIZZARD_AURA_SWIPE_R = 1
-local BLIZZARD_AURA_SWIPE_G = 0.95
-local BLIZZARD_AURA_SWIPE_B = 0.57
-local BLIZZARD_AURA_SWIPE_A = 0.7
-local BLIZZARD_AURA_SWIPE_TEX_LOW = {x = 0.15, y = 0.15}
-local BLIZZARD_AURA_SWIPE_TEX_HIGH = {x = 0.85, y = 0.85}
 local QUESTION_MARK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 local KPH_INTERVAL = 0.05
@@ -114,10 +119,6 @@ local function ShouldEnrollKeyPressHighlightButton(button)
         return false
     end
 
-    if button._keyPressHighlightPreview then
-        return true
-    end
-
     local style = button.style
     if not (style and style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none") then
         return false
@@ -135,10 +136,6 @@ local function ShouldEnrollKeyPressHighlightButton(button)
 end
 
 local function ShouldShowKeyPressHighlight(button, inCombat)
-    if button._keyPressHighlightPreview then
-        return true, inCombat
-    end
-
     local style = button.style
     if style and style.keyPressHighlightCombatOnly then
         if inCombat == nil then
@@ -242,19 +239,11 @@ local function SelectTextureValue(value, knownAvailable)
     return nil, false
 end
 
-local function ShouldUseActiveAuraIcon(buttonData)
-    return buttonData
-        and (buttonData.auraShowAuraIcon == true
-            or buttonData.addedAs == "aura"
-            or buttonData.isPassive == true)
-end
-
-local function ApplyAuraBlizzardCooldownLayer(button)
-    if button and button.auraBlizzardCooldown and button.cooldown then
-        button.auraBlizzardCooldown:SetFrameLevel(button.cooldown:GetFrameLevel())
-    end
-end
-
+-- Preview-replica path ONLY (ConfigSettings/ButtonPanelPreview.lua): mirror
+-- slots are replica frames with their own leveling, not real buttons, so they
+-- have no strata order to read. Live buttons must NOT call this — iconFill is
+-- a configurable slot there and ApplyStrataOrder owns its level. Two writers
+-- is exactly how the ready-glow clobber happened.
 local function ApplyIconFillLayer(button)
     if button and button.iconFill then
         local fillLevel = button:GetFrameLevel() + 1
@@ -312,73 +301,28 @@ local function ResolveIconFillDurationObjectValue(button, durationObj)
     return durationObj:GetRemainingPercent()
 end
 
-local function AnchorAuraBlizzardCooldown(button)
-    if not (button and button.auraBlizzardCooldown and button.icon) then
-        return
-    end
-
-    button.auraBlizzardCooldown:ClearAllPoints()
-    button.auraBlizzardCooldown:SetAllPoints(button.icon)
-    button.auraBlizzardCooldown:SetTexCoordRange(BLIZZARD_AURA_SWIPE_TEX_LOW, BLIZZARD_AURA_SWIPE_TEX_HIGH)
-end
-
-local function IsAuraDurationSwipeOwner(button)
-    return button
-        and (button._auraPrimarySwipeActive == true or button._conditionalAuraDurationTextPreview == true)
-end
-
 local function ApplyDefaultCooldownSwipeStyle(button, style)
     if not (button and button.cooldown and style) then
         return
     end
 
-    local auraOwner = IsAuraDurationSwipeOwner(button)
-    local swipeEnabled
-    local fillEnabled
-    local edgeEnabled
-    local reverse
-    local alpha
-    local edgeColor
-    if auraOwner then
-        swipeEnabled = style.showAuraDurationSwipe ~= false and style.auraUseBlizzardSwipe ~= true
-        fillEnabled = style.showAuraDurationSwipeFill ~= false
-        edgeEnabled = style.showAuraDurationSwipeEdge ~= false
-        reverse = style.auraDurationSwipeReverse or false
-        alpha = style.auraDurationSwipeAlpha or 0.8
-        edgeColor = style.auraDurationSwipeEdgeColor or DEFAULT_WHITE
-    else
-        swipeEnabled = style.showCooldownSwipe ~= false
-        fillEnabled = style.showCooldownSwipeFill ~= false
-        edgeEnabled = style.showCooldownSwipeEdge ~= false
-        reverse = style.cooldownSwipeReverse or false
-        alpha = style.cooldownSwipeAlpha or 0.8
-        edgeColor = style.cooldownSwipeEdgeColor or DEFAULT_WHITE
-    end
-    button._cooldownSwipeOwnerIsAura = auraOwner or false
+    -- Any restore drops the Cooldown Text preview's suppression latch, so
+    -- the preview pass in UpdateIconModeVisuals re-suppresses on its next
+    -- look instead of trusting a latch another path just overwrote.
+    button._cooldownTextPreviewSwipeOff = nil
+
+    local swipeEnabled = style.showCooldownSwipe ~= false
+    local fillEnabled = style.showCooldownSwipeFill ~= false
+    local edgeEnabled = style.cooldownSwipeEdgeEnabled == true
+    local reverse = style.cooldownSwipeReverse or false
+    local alpha = style.cooldownSwipeAlpha or 0.8
+    local edgeColor = style.cooldownSwipeEdgeColor or DEFAULT_WHITE
     button.cooldown:SetUseAuraDisplayTime(false)
     button.cooldown:SetDrawSwipe(swipeEnabled and fillEnabled and button._hideCooldownChargesActive ~= true)
     button.cooldown:SetDrawEdge(swipeEnabled and edgeEnabled)
     button.cooldown:SetReverse(swipeEnabled and reverse)
     button.cooldown:SetSwipeColor(0, 0, 0, alpha)
     button.cooldown:SetEdgeColor(edgeColor[1], edgeColor[2], edgeColor[3], edgeColor[4])
-end
-
-local function RefreshDefaultCooldownSwipeStyleForOwner(button, style)
-    if button and button._cooldownSwipeOwnerIsAura ~= (IsAuraDurationSwipeOwner(button) or false) then
-        ApplyDefaultCooldownSwipeStyle(button, style)
-    end
-end
-
-local function HideBlizzardAuraSwipe(button, style)
-    if button and button.auraBlizzardCooldown then
-        button.auraBlizzardCooldown:Hide()
-    end
-    if button and button._auraBlizzardSwipeActive then
-        button._auraBlizzardSwipeActive = nil
-        if button._iconFillActive ~= true then
-            ApplyDefaultCooldownSwipeStyle(button, style)
-        end
-    end
 end
 
 local function ResolveIconFillPreviewRemaining(button)
@@ -390,7 +334,7 @@ local function ResolveIconFillPreviewRemaining(button)
 
     -- F2 canary: past the guard, an icon-fill conditional-preview remaining is
     -- computed this walk (covered by the conditionalPreview classifier term).
-    if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
+    RefreshTelemetry:NoteTimeRender()
     local remaining
     if button._conditionalPreviewLoop
         and button._conditionalPreviewLoopStartTime
@@ -446,40 +390,9 @@ local function SetIconFillValue(button)
         return
     end
 
-    if button._iconFillMode == "aura_static" then
-        button.iconFill:SetValue(1)
-        return
-    end
-
     local remaining, duration = ResolveIconFillPreviewRemaining(button)
     if remaining and duration and duration > 0 then
         button.iconFill:SetValue(ResolveIconFillTimerValue(button, 1 - (remaining / duration)))
-        return
-    end
-
-    if button._iconFillAuraActive then
-        if button._auraDurationObj then
-            button.iconFill:SetValue(ResolveIconFillDurationObjectValue(button, button._auraDurationObj))
-            return
-        end
-
-        if button._auraCooldownStart and button._auraCooldownDuration and button._auraCooldownDuration > 0 then
-            -- F2 canary: aura-cooldown icon fill draws remaining this walk
-            -- (covered by the _auraActive classifier term). Skipped under the
-            -- combat ticker floor -- this fill self-animates (own OnUpdate), so
-            -- counting it would falsely trip falseIdleTotal against a skippable icon.
-            local elapsed = GetTime() - button._auraCooldownStart
-            if elapsed < 0 then elapsed = 0 end
-            if elapsed > button._auraCooldownDuration then elapsed = button._auraCooldownDuration end
-            button.iconFill:SetValue(ResolveIconFillTimerValue(button, elapsed / button._auraCooldownDuration))
-            return
-        end
-
-        if button._auraPrimarySwipeActive == true and SetIconFillFromCooldownWidget(button) then
-            return
-        end
-
-        button.iconFill:SetValue(0)
         return
     end
 
@@ -531,7 +444,6 @@ local function ClearIconFillVisualState(button, style, preserveIntent, forceClea
     button._iconFillOnUpdateInstalled = nil
     button._iconFillActive = nil
     button._iconFillMode = nil
-    button._iconFillAuraActive = nil
     button._iconFillColorR = nil
     button._iconFillColorG = nil
     button._iconFillColorB = nil
@@ -570,7 +482,6 @@ local function UpdateIconFill(button, buttonData, style)
     local mode = intent.mode
     button._iconFillActive = true
     button._iconFillMode = mode
-    button._iconFillAuraActive = intent.auraActive == true or nil
     ApplyIconFillGeometry(button, style)
     local r = intent.r or 1
     local g = intent.g or 1
@@ -602,67 +513,6 @@ local function UpdateIconFill(button, buttonData, style)
         button.cooldown:SetDrawSwipe(false)
         button.cooldown:SetDrawEdge(false)
     end
-    if intent.suppressAuraBlizzardSwipe == true then
-        HideBlizzardAuraSwipe(button, style)
-    end
-end
-
-local function UpdateBlizzardAuraSwipe(button, style)
-    if not (button and button.auraBlizzardCooldown) then
-        return
-    end
-
-    local enabled = style.showAuraDurationSwipe ~= false
-        and style.auraUseBlizzardSwipe == true
-        and button._iconFillAuraActive ~= true
-        and (button._auraPrimarySwipeActive == true or button._conditionalAuraDurationTextPreview == true)
-        and (button._conditionalAuraDurationTextPreview == true or button._auraHasTimer ~= false)
-
-    if not enabled then
-        HideBlizzardAuraSwipe(button, style)
-        return
-    end
-
-    local overlay = button.auraBlizzardCooldown
-    overlay:Show()
-    overlay:SetUseAuraDisplayTime(true)
-    overlay:SetDrawSwipe(true)
-    overlay:SetDrawEdge(false)
-    overlay:SetReverse(false)
-    overlay:SetSwipeColor(BLIZZARD_AURA_SWIPE_R, BLIZZARD_AURA_SWIPE_G, BLIZZARD_AURA_SWIPE_B, BLIZZARD_AURA_SWIPE_A)
-
-    local rendered = false
-    if button._conditionalAuraDurationTextPreview == true
-        and button._conditionalPreviewStartTime
-        and button._conditionalPreviewDuration then
-        overlay:SetCooldown(button._conditionalPreviewStartTime, button._conditionalPreviewDuration)
-        rendered = true
-    elseif button._auraDurationObj then
-        overlay:SetCooldownFromDurationObject(button._auraDurationObj)
-        rendered = overlay:IsShown()
-    elseif button._auraCooldownStart and button._auraCooldownDuration and button._auraCooldownDuration > 0 then
-        overlay:SetCooldown(button._auraCooldownStart, button._auraCooldownDuration)
-        rendered = true
-    elseif button._auraPrimarySwipeActive == true and button._durationObj then
-        overlay:SetCooldownFromDurationObject(button._durationObj)
-        rendered = overlay:IsShown()
-    else
-        local startMs, durMs = button.cooldown:GetCooldownTimes()
-        if startMs and durMs and not issecretvalue(startMs) and not issecretvalue(durMs) and durMs > 0 then
-            overlay:SetCooldown(startMs / 1000, durMs / 1000)
-            rendered = true
-        end
-    end
-
-    if rendered then
-        overlay:Show()
-        button._auraBlizzardSwipeActive = true
-        button.cooldown:SetUseAuraDisplayTime(true)
-        button.cooldown:SetDrawSwipe(false)
-        button.cooldown:SetDrawEdge(false)
-    else
-        HideBlizzardAuraSwipe(button, style)
-    end
 end
 
 local function ApplyCountTextStyle(button, style)
@@ -688,6 +538,108 @@ local function ApplyCountTextStyle(button, style)
         button.count:SetPoint("BOTTOMRIGHT", -2, 2)
     end
     button._countTextLaneStyled = buttonData and UsesChargeTextLane(buttonData) or false
+end
+
+-- Shell entries (12.1 compositing): the aura display slot renders the
+-- entire visible button while the aura runs, so the CC frame stays shown as
+-- the layout shell and slot host but every visual it owns goes transparent
+-- (hideWhileAuraNotActive, Show Only While Aura Active) or dims to
+-- DIM_FALLBACK_ALPHA (auraShellDim, Dim While Aura Inactive — a standalone
+-- key on 12.1; the toggles are mutually exclusive). Static by design — no
+-- aura state exists to read at runtime. The predicate, the alpha decision,
+-- and the preview/unlock exposure rules all live in Core/Aura.lua.
+local function SetGlowContainerShellAlpha(container, alpha)
+    if not container then return end
+    -- Stamp the shell alpha so glow state changes can't resurrect the
+    -- container: StopSolidBorderPulse restores this instead of a flat 1.
+    container._ccShellAlpha = alpha
+    if container.solidFrame then container.solidFrame:SetAlpha(alpha) end
+    if container.procFrame then container.procFrame:SetAlpha(alpha) end
+    if container.blizzardFrame then container.blizzardFrame:SetAlpha(alpha) end
+end
+
+local function ApplyAuraShellVisuals(button, buttonData)
+    local alpha = CooldownCompanion:GetAuraShellAlpha(button, buttonData)
+    button.bg:SetAlpha(alpha)
+    -- The icon must be hidden by shown-state, not alpha: the per-tick tint
+    -- pipeline writes icon:SetVertexColor(r,g,b,a) on every intent change,
+    -- and the 4-arg form overwrites the texture's alpha through a different
+    -- C entry point than SetAlpha — it silently undid an alpha-0 shell on
+    -- the next tick. Nothing else Shows the icon. Dimmed shells keep the
+    -- icon shown and hand the tint pipeline this multiplier instead.
+    button._auraShellIconAlpha = alpha
+    button.icon:SetShown(alpha > 0)
+    if button.borderTextures then
+        for _, tex in ipairs(button.borderTextures) do
+            tex:SetAlpha(alpha)
+        end
+    end
+    button.cooldown:SetAlpha(alpha)
+    if button.locCooldown then button.locCooldown:SetAlpha(alpha) end
+    if button.iconFill then button.iconFill:SetAlpha(alpha) end
+    if button.overlayFrame then button.overlayFrame:SetAlpha(alpha) end
+    -- The pinned host hides with the rest of CC's chrome. A shell shows
+    -- nothing until the aura is up, and CC cannot read aura state to re-show
+    -- it, so the kit's shell keybind replica (Core/AuraDisplay.lua) stays the
+    -- one that renders while the display owns the button.
+    if button.pinnedTextFrame then button.pinnedTextFrame:SetAlpha(alpha) end
+    SetGlowContainerShellAlpha(button.procGlow, alpha)
+    SetGlowContainerShellAlpha(button.auraGlow, alpha)
+    SetGlowContainerShellAlpha(button.readyGlow, alpha)
+    SetGlowContainerShellAlpha(button.keyPressHighlight, alpha)
+    SetGlowContainerShellAlpha(button.assistedHighlight, alpha)
+end
+
+-- Build CC's aura glow container on demand. It renders the aura-glow and
+-- pandemic config previews and nothing else: the live glows belong to the slot
+-- kit inside the aura display, and ResolveIconGlowIntent (ButtonFrame/
+-- VisualState.lua) can only mark the aura intent active for a preview.
+--
+-- Must run BEFORE any tick reads the button, because every downstream consumer
+-- guards on the container existing — the intent resolver, UpdateIconModeGlows,
+-- ApplyStrataOrder and the shell alpha pass all skip a button without one. The
+-- preview-flag entry points in ButtonFrame/Preview.lua are that moment.
+local function EnsureAuraGlowContainer(button)
+    if not button or button._isBar then return nil end
+    if button.auraGlow then return button.auraGlow end
+
+    local style = button.style or {}
+    button.auraGlow = CreateGlowContainer(button, 32)
+    -- Same geometry and click-through UpdateButtonStyle applies to it, so a
+    -- container born mid-session matches one that had been there all along.
+    button.auraGlow.solidFrame:SetAllPoints()
+    ApplyEdgePositions(button.auraGlow.solidTextures, button, style.auraGlowSize or 2)
+    FitHighlightFrame(button.auraGlow.procFrame, button, style.auraGlowSize or 32)
+    SetFrameClickThroughRecursive(button.auraGlow.solidFrame, true, true)
+    SetFrameClickThroughRecursive(button.auraGlow.procFrame, true, true)
+    -- Re-level: the new frames need their slot in the aura display's band.
+    ApplyStrataOrder(button, style.strataOrder)
+    return button.auraGlow
+end
+
+-- Countdown text hosting. The region lives on the TEXT OVERLAY layer, never in
+-- the Cooldown frame: that keeps "Cooldown Swipe" a pure swipe, so raising it
+-- over an aura display moves the swipe alone instead of dragging the countdown
+-- on top of the aura's own duration text.
+--
+-- separateTextPositions lifts it to the pinned host instead, which clears the
+-- whole aura display band, so the spell cooldown and the aura duration (drawn
+-- by the slot kit) show simultaneously. Without that opt-in the aura display
+-- takes the button over, which is the default.
+local function ApplyCooldownTextHost(button, buttonData, style)
+    local region = button._cdTextRegion
+    if not region then return end
+    local wantPinned = style.separateTextPositions == true
+        and (buttonData.auraTracking or buttonData.addedAs == "aura")
+        and not buttonData.isPassive
+    local host = (wantPinned and button.pinnedTextFrame) or button.overlayFrame
+    if host and region:GetParent() ~= host then
+        region:SetParent(host)
+    end
+    region:ClearAllPoints()
+    local cdAnchor = style.cooldownTextAnchor or "CENTER"
+    region:SetPoint(cdAnchor, host, cdAnchor,
+        style.cooldownTextXOffset or 0, style.cooldownTextYOffset or 0)
 end
 
 function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
@@ -726,7 +678,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.icon:SetPoint("TOPLEFT", borderLayoutSize, -borderLayoutSize)
     button.icon:SetPoint("BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
 
-    ApplyIconTexCoord(button.icon, width, height)
+    ApplyIconTexCoord(button.icon, width, height, style.iconZoom)
 
     button.iconFill = CreateFrame("StatusBar", button:GetName() .. "IconFill", button)
     button.iconFill._owner = button
@@ -753,21 +705,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Assisted highlight overlays (multiple styles, all hidden by default)
     button.assistedHighlight = CreateAssistedHighlight(button, style)
 
-    -- Blizzard-style aura duration swipe overlay. This is separate from the
-    -- normal cooldown frame so regular cooldowns keep their existing styling.
-    button.auraBlizzardCooldown = CreateFrame("Cooldown", button:GetName() .. "AuraBlizzardCooldown", button, "CooldownFrameTemplate")
-    AnchorAuraBlizzardCooldown(button)
-    button.auraBlizzardCooldown:SetDrawSwipe(true)
-    button.auraBlizzardCooldown:SetDrawEdge(false)
-    button.auraBlizzardCooldown:SetDrawBling(false)
-    button.auraBlizzardCooldown:SetReverse(false)
-    button.auraBlizzardCooldown:SetSwipeTexture(BLIZZARD_AURA_SWIPE_TEXTURE, 1, 1, 1, 1)
-    button.auraBlizzardCooldown:SetSwipeColor(BLIZZARD_AURA_SWIPE_R, BLIZZARD_AURA_SWIPE_G, BLIZZARD_AURA_SWIPE_B, BLIZZARD_AURA_SWIPE_A)
-    button.auraBlizzardCooldown:SetUseAuraDisplayTime(true)
-    button.auraBlizzardCooldown:SetHideCountdownNumbers(true)
-    button.auraBlizzardCooldown:Hide()
-    SetFrameClickThroughRecursive(button.auraBlizzardCooldown, true, true)
-
     -- Cooldown frame (standard radial swipe)
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
     button.cooldown:SetAllPoints(button.icon)
@@ -792,11 +729,13 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.cooldown:SetDrawBling(false)
     button.locCooldown:SetDrawBling(false)
 
-    -- Proc glow elements (solid border + animated glow; pixel glow via LCG)
+    -- Proc glow elements (solid border + animated glow + lazy dash/spark pools)
     button.procGlow = CreateGlowContainer(button, style.procGlowSize or 32)
 
-    -- Aura active glow elements (solid border + animated glow; pixel glow via LCG)
-    button.auraGlow = CreateGlowContainer(button, 32)
+    -- No aura glow container here: on 12.1 the live aura and pandemic glows are
+    -- the slot kit's, inside the aura display. CC's container serves the config
+    -- preview alone, so it is built on demand by EnsureAuraGlowContainer. The
+    -- config mirror already builds its replica containers the same way.
 
     -- Ready glow elements (glow while off cooldown)
     button.readyGlow = CreateGlowContainer(button, 32)
@@ -818,40 +757,21 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         button._cdTextRegion = region
     end
 
-    -- Stack count text (for items) — on overlay frame so it renders above cooldown swipe
+    -- Text Overlay layer: stack/charge count, aura stack count, and the
+    -- countdown text. Its position in the stack is configurable (chargeText).
     button.overlayFrame = CreateFrame("Frame", nil, button)
     button.overlayFrame:SetAllPoints()
     button.overlayFrame:EnableMouse(false)
 
-    -- Secondary cooldown text: shown at a separate position during aura override (icon mode only).
-    -- An invisible CooldownFrame whose only job is hosting a text region that WoW's C++
-    -- CooldownFrame countdown rendering drives automatically — handles secret values natively.
-    if style.separateTextPositions and buttonData.auraTracking and not buttonData.isPassive then
-        local secCd = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
-        secCd:SetDrawSwipe(false)
-        secCd:SetDrawEdge(false)
-        secCd:SetDrawBling(false)
-        secCd:SetSwipeColor(0, 0, 0, 0)
-        secCd:SetSize(1, 1)
-        secCd:SetPoint("CENTER")
-        secCd:SetHideCountdownNumbers(false)
-        ApplyDurationFormatToCooldown(secCd, style)
-        SetFrameClickThroughRecursive(secCd, true, true)
-        button.secondaryCooldown = secCd
+    -- Text that must survive an active aura display, pinned above the whole
+    -- configurable stack by ApplyStrataOrder: keybind text always, plus the
+    -- countdown text when separateTextPositions lifts it. Created before
+    -- ApplyCooldownTextHost, which may choose it as the host.
+    button.pinnedTextFrame = CreateFrame("Frame", nil, button)
+    button.pinnedTextFrame:SetAllPoints()
+    button.pinnedTextFrame:EnableMouse(false)
 
-        -- Extract text region, reparent to overlay so it renders above cooldown swipe
-        local secRegion = secCd:GetRegions()
-        if secRegion and secRegion.SetFont then
-            secRegion:SetParent(button.overlayFrame)
-            secRegion:ClearAllPoints()
-            local secAnchor = style.cooldownTextAnchor or "CENTER"
-            local secXOff = style.cooldownTextXOffset or 0
-            local secYOff = style.cooldownTextYOffset or 0
-            secRegion:SetPoint(secAnchor, button.overlayFrame, secAnchor, secXOff, secYOff)
-            ApplyFontStyle(secRegion, style, "cooldown")
-            button._secondaryCdTextRegion = secRegion
-        end
-    end
+    ApplyCooldownTextHost(button, buttonData, style)
 
     button.count = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     button.count:SetText("")
@@ -877,8 +797,11 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local asYOff = style.auraStackYOffset or 2
     button.auraStackCount:SetPoint(asAnchor, asXOff, asYOff)
 
-    -- Keybind text overlay
-    button.keybindText = button.overlayFrame:CreateFontString(nil, "OVERLAY")
+    -- Keybind text: on the pinned host, never the Text Overlay layer. It tells
+    -- you what to press, so it stays readable whatever is drawn over the icon
+    -- (owner ruling). The kit's replica covers shells only, where CC's chrome
+    -- including this host is hidden outright.
+    button.keybindText = button.pinnedTextFrame:CreateFontString(nil, "OVERLAY")
     do
         ApplyFontStyle(button.keybindText, style, "keybind", 10)
         local anchor = style.keybindAnchor or "TOPRIGHT"
@@ -890,10 +813,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         button.keybindText:SetShown(style.showKeybindText and text ~= nil)
     end
 
-    -- Apply configurable strata ordering (LoC always on top)
+    -- Every configurable level, plus the pinned elements above them.
     ApplyStrataOrder(button, style.strataOrder)
-    ApplyIconFillLayer(button)
-    ApplyAuraBlizzardCooldownLayer(button)
 
     -- Store button data
     button.index = index
@@ -905,30 +826,9 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         buttonData._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(buttonData.id)
     end
 
-    -- Aura tracking runtime state
-    button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
-    button._auraUnit = buttonData.auraUnit or "player"
-    button._auraActive = false
-    button._auraDurationObj = nil
-    button._auraCooldownStart = nil
-    button._auraCooldownDuration = nil
-    button._auraPrimarySwipeActive = nil
-    button._auraTrackingReady = buttonData.isPassive == true
-    button._showingAuraIcon = false
-    button._auraViewerFrame = nil
-    button._activeAuraSpellID = nil
-    button._activeAuraSpellIDFromFallback = nil
-    button._activeAuraIcon = nil
-    button._activeAuraIconAvailable = nil
-    button._lastViewerTexId = nil
+    -- Spell display texture-monitor cache
     button._lastSpellTexture = nil
     button._lastTextureCheckAt = nil
-    button._spellTexBaseline = nil
-
-    button._auraInstanceID = nil
-    button._viewerAuraVisualsActive = nil
-    button._auraDisplayName = nil
-    button._auraNameOverrideActive = nil
 
     -- Key press highlight runtime state
     button._keyPressHighlightActive = nil
@@ -953,10 +853,14 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     end
 
     -- Click-through is always enabled (clicks always pass through for camera movement)
-    -- Motion (hover) is only enabled when tooltips are on
-    local showTooltips = style.showTooltips == true and not IsCursorAnchoredButton(button)
+    -- Motion (hover) is only enabled when tooltips or entry pings are on
+    local cursorAnchored = IsCursorAnchoredButton(button)
+    local showTooltips = style.showTooltips == true and not cursorAnchored
+    local allowPings = style.allowPings == true and not cursorAnchored
+        and IsEntryPingEligible(buttonData)
+        and not IsStandaloneTexturePanelButton(button)
     local disableClicks = true
-    local disableMotion = not showTooltips
+    local disableMotion = not (showTooltips or allowPings)
 
     -- Apply to the button frame and all children recursively
     SetFrameClickThroughRecursive(button, disableClicks, disableMotion)
@@ -966,9 +870,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     if button.iconFill then
         SetFrameClickThroughRecursive(button.iconFill, true, true)
     end
-    if button.auraBlizzardCooldown then
-        SetFrameClickThroughRecursive(button.auraBlizzardCooldown, true, true)
-    end
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
     if button.procGlow then
         SetFrameClickThroughRecursive(button.procGlow.solidFrame, true, true)
@@ -976,6 +877,9 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     end
     if button.overlayFrame then
         SetFrameClickThroughRecursive(button.overlayFrame, true, true)
+    end
+    if button.pinnedTextFrame then
+        SetFrameClickThroughRecursive(button.pinnedTextFrame, true, true)
     end
     if button.assistedHighlight then
         if button.assistedHighlight.solidFrame then
@@ -1012,14 +916,23 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
             SetFrameClickThroughRecursive(button.keyPressHighlight.procFrame, true, true)
         end
     end
-    if button.secondaryCooldown then
-        SetFrameClickThroughRecursive(button.secondaryCooldown, true, true)
-    end
-
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
     if showTooltips then
         SetupTooltipScripts(button)
+    elseif allowPings then
+        -- Motion is on for pings only; keep tooltip scripts off.
+        button:SetScript("OnEnter", nil)
+        button:SetScript("OnLeave", nil)
     end
+    -- Tooltip intent for the aura slot bind (AuraDisplay). Kept separate from
+    -- the click-through motion state, which entry pings widen without wanting
+    -- tooltips.
+    button._ccTooltipMotion = showTooltips
+    -- Visibility hide/show edges (CooldownUpdate) arm and disarm this surface.
+    button._ccPingSurface = allowPings and button or nil
+    SetEntryPingReceiver(button, allowPings and button._visibilityHidden ~= true)
+
+    ApplyAuraShellVisuals(button, buttonData)
 
     return button
 end
@@ -1096,41 +1009,10 @@ function CooldownCompanion:UpdateButtonIcon(button)
                     UseIcon(C_Spell.GetSpellTexture(buttonData.id))
                 end
             else
-                -- For non-cdmChildSlot buttons, read the viewer frame's Icon
-                -- (for stage transitions like Heating Up → Hot Streak) but
-                -- prefer the spell API when it has changed from baseline
-                -- (buff transforms like Tiger's Fury empowering Rake/Rip).
-                local vf = button._auraViewerFrame
-                local hasViewerIcon
-                if vf then
-                    local iconTexture = vf.Icon
-                    if iconTexture and not iconTexture.GetTextureFileID then
-                        iconTexture = iconTexture.Icon
-                    end
-                    if iconTexture and iconTexture.GetTextureFileID then
-                        hasViewerIcon = UseIcon(iconTexture:GetTextureFileID())
-                    end
-                end
-                if hasViewerIcon then
-                    -- Disambiguate buff transforms vs stage transitions using
-                    -- _spellTexBaseline (frozen while viewer is active).
-                    -- Buff transform: spell API changed from baseline → use spell.
-                    -- Stage transition: spell API unchanged → keep viewer icon.
-                    -- Baseline only updates when no viewer, so multiple UBI calls
-                    -- in the same tick all detect the transform consistently.
-                    if not issecretvalue(icon) then
-                        local spellIcon = C_Spell.GetSpellTexture(buttonData.id)
-                        if spellIcon ~= nil and spellIcon ~= button._spellTexBaseline then
-                            UseIcon(spellIcon)
-                        end
-                    end
-                else
-                    local spellIcon = C_Spell.GetSpellTexture(buttonData.id)
-                    UseIcon(spellIcon)
-                    -- Update baseline only when no viewer is active — keeps
-                    -- it frozen during viewer presence to prevent oscillation.
-                    button._spellTexBaseline = spellIcon
-                end
+                -- Non-cdmChildSlot buttons: GetSpellTexture on the base spell
+                -- dynamically resolves the current visual (including talent
+                -- transforms).
+                UseIcon(C_Spell.GetSpellTexture(buttonData.id))
             end
         end
         -- Always validate displayId against the Spell API — the viewer child may
@@ -1150,40 +1032,12 @@ function CooldownCompanion:UpdateButtonIcon(button)
         end
     end
 
-    -- Manual icon override: replaces base icon; aura icon swap still takes precedence
+    -- Manual icon override: replaces base icon. (The 12.1 aura icon swap is
+    -- Blizzard-driven on the aura display layer — see Core/AuraDisplay.lua.)
     local manualIcon = buttonData.manualIcon
     if type(manualIcon) == "number" or type(manualIcon) == "string" then
         icon = manualIcon
         hasIcon = true
-    end
-
-    -- Aura icon swap: show the tracked aura spell's icon while aura is active
-    if buttonData.type == "spell" and button._auraActive and ShouldUseActiveAuraIcon(buttonData) then
-        if button._activeAuraIconAvailable == true then
-            UseIcon(button._activeAuraIcon, true)
-        else
-            local auraIconSpellID = button._activeAuraSpellID or button._auraSpellID
-            if auraIconSpellID then
-                -- Read the viewer frame's Icon texture (updates per-stage for multi-stage
-                -- auras like Hot Streak). GetTextureFileID may return a secret value in
-                -- combat; pass it straight through — do not test or branch on it.
-                local vf = button._activeAuraSpellIDFromFallback and nil or button._auraViewerFrame
-                local hasViewerIcon
-                if vf then
-                    local iconTexture = vf.Icon
-                    if iconTexture and not iconTexture.GetTextureFileID then
-                        iconTexture = iconTexture.Icon
-                    end
-                    if iconTexture and iconTexture.GetTextureFileID then
-                        hasViewerIcon = UseIcon(iconTexture:GetTextureFileID())
-                    end
-                end
-                if not hasViewerIcon then
-                    -- Fallback: static spell texture (viewer hidden or unavailable)
-                    UseIcon(C_Spell.GetSpellTexture(auraIconSpellID))
-                end
-            end
-        end
     end
 
     local prevDisplayId = button._displaySpellId
@@ -1249,14 +1103,11 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             and button._chargeCooldownVisualActive ~= true
             and button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
 
-        local timedAuraPrimarySwipeActive = button._auraPrimarySwipeActive == true
-            and button._auraHasTimer ~= false
         local realCooldownSwipeActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
             and button._cooldownDeferred ~= true
         local cooldownVisualActive = realCooldownSwipeActive
-            or timedAuraPrimarySwipeActive
-            or button._conditionalAuraDurationTextPreview == true
             or button._conditionalPreviewDomain == "cooldown"
+            or button._conditionalPreviewDomain == "cooldown_text"
             or button._chargeCooldownVisualActive == true
             or (isGCDOnly and style.showGCDSwipe == true)
 
@@ -1267,12 +1118,10 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         end
     end
 
-    RefreshDefaultCooldownSwipeStyleForOwner(button, style)
-
     -- Charge-visual suppression: when toggle is active and charges remain,
     -- hide the swipe fill (dark overlay) but keep the edge visible.
     if UsesChargeBehavior(buttonData) and buttonData.hideCooldownWithCharges
-            and not HasItemFallbacks(buttonData) and button._auraPrimarySwipeActive ~= true then
+            and not HasItemFallbacks(buttonData) then
         local hasChargesRemaining = (button._chargeState ~= CHARGE_STATE_ZERO)
         if hasChargesRemaining ~= button._hideCooldownChargesActive then
             button._hideCooldownChargesActive = hasChargesRemaining
@@ -1288,37 +1137,36 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     end
 
     UpdateIconFill(button, buttonData, style)
-    UpdateBlizzardAuraSwipe(button, style)
 
-    -- Independent GCD swipe. Runs AFTER UpdateIconFill and UpdateBlizzardAuraSwipe
-    -- because both also write button.cooldown's swipe flags -- being the final owner
-    -- for the pass is what keeps the latch honest. Bar mode draws its GCD radial from
-    -- a dedicated frame, so Show GCD Swipe works there even with the main swipe off;
-    -- icon mode shares button.cooldown, whose flags ApplyDefaultCooldownSwipeStyle
-    -- gates on showCooldownSwipe, so a GCD-only radial drew nothing when the main
-    -- swipe was off. Only in that case, draw it ourselves, mirroring bar mode (sweep
-    -- on, edge per showCooldownSwipeEdge). Latched to avoid per-tick writes; the
-    -- falling edge restores default styling and runs unconditionally, so a fetchOk
-    -- false tick can't strand the latch. Defers to real cooldown (isGCDOnly excludes
-    -- it), aura/icon-fill owners, charge-visual, hideCooldownWithCharges, and previews.
+    -- Independent GCD swipe. Runs AFTER UpdateIconFill because it also writes
+    -- button.cooldown's swipe flags -- being the final owner for the pass is
+    -- what keeps the latch honest. Bar mode draws its GCD radial from a
+    -- dedicated frame, so Show GCD Swipe works there even with the main swipe
+    -- off; icon mode shares button.cooldown, whose flags
+    -- ApplyDefaultCooldownSwipeStyle gates on showCooldownSwipe, so a GCD-only
+    -- radial drew nothing when the main swipe was off. Only in that case, draw
+    -- it ourselves, mirroring bar mode (sweep on, edge per
+    -- cooldownSwipeEdgeEnabled). Latched to avoid per-tick writes; the falling
+    -- edge restores default styling and runs unconditionally, so a fetchOk
+    -- false tick can't strand the latch. Defers to real cooldown (isGCDOnly
+    -- excludes it), icon-fill owner, charge-visual, hideCooldownWithCharges,
+    -- and previews.
     local gcdOnlyRadialActive = fetchOk
         and not buttonData.isPassive
         and isGCDOnly
         and style.showGCDSwipe == true
         and style.showCooldownSwipe == false
-        and button._auraPrimarySwipeActive ~= true
-        and button._auraBlizzardSwipeActive ~= true
         and button._iconFillActive ~= true
         and button._chargeCooldownVisualActive ~= true
         and button._hideCooldownChargesActive ~= true
         and button._conditionalPreviewDomain ~= "cooldown"
-        and button._conditionalAuraDurationTextPreview ~= true
+        and button._conditionalPreviewDomain ~= "cooldown_text"
 
     if gcdOnlyRadialActive then
         if button._gcdSwipeDrawActive ~= true then
             button._gcdSwipeDrawActive = true
             button.cooldown:SetDrawSwipe(true)
-            button.cooldown:SetDrawEdge(style.showCooldownSwipeEdge ~= false)
+            button.cooldown:SetDrawEdge(style.cooldownSwipeEdgeEnabled == true)
             button.cooldown:SetReverse(style.cooldownSwipeReverse or false)
         end
     elseif button._gcdSwipeDrawActive == true then
@@ -1326,61 +1174,46 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         ApplyDefaultCooldownSwipeStyle(button, style)
     end
 
-    -- When separate text positions: move primary text to aura anchor during aura, cooldown anchor otherwise
-    if button._secondaryCdTextRegion and button._cdTextRegion then
-        local wantAuraPos = button._auraPrimarySwipeActive == true or button._conditionalAuraDurationTextPreview == true
-        if button._cdTextAtAuraPos ~= wantAuraPos then
-            button._cdTextAtAuraPos = wantAuraPos
-            button._cdTextRegion:ClearAllPoints()
-            if wantAuraPos then
-                local auraAnchor = style.auraTextAnchor or "TOPLEFT"
-                local auraXOff = style.auraTextXOffset or 2
-                local auraYOff = style.auraTextYOffset or -2
-                button._cdTextRegion:SetPoint(auraAnchor, button.overlayFrame, auraAnchor, auraXOff, auraYOff)
-            else
-                local cdAnchor = style.cooldownTextAnchor or "CENTER"
-                local cdXOff = style.cooldownTextXOffset or 0
-                local cdYOff = style.cooldownTextYOffset or 0
-                button._cdTextRegion:SetPoint(cdAnchor, button.overlayFrame, cdAnchor, cdXOff, cdYOff)
-            end
+    -- Cooldown Text preview: the countdown rides button.cooldown's own
+    -- region, so the widget runs while the swipe it would normally draw
+    -- stays hidden. Latched; ApplyDefaultCooldownSwipeStyle drops the latch
+    -- on every restore, so any path that re-enables the swipe mid-preview
+    -- gets re-suppressed here on the next pass.
+    if button._conditionalPreviewKind == "cooldown_text" then
+        if button._cooldownTextPreviewSwipeOff ~= true then
+            button._cooldownTextPreviewSwipeOff = true
+            button.cooldown:SetDrawSwipe(false)
+            button.cooldown:SetDrawEdge(false)
         end
+    elseif button._cooldownTextPreviewSwipeOff then
+        button._cooldownTextPreviewSwipeOff = nil
+        ApplyDefaultCooldownSwipeStyle(button, style)
     end
 
-    -- Cooldown/aura text: pick font + visibility based on current state.
+    -- Cooldown text: visibility + color. (Aura duration text is drawn by the
+    -- aura display layer — see Core/AuraDisplay.lua.)
     -- Color is reapplied each tick because WoW's CooldownFrame may reset it.
     if button._cdTextRegion then
-        local showText, fontColor, wantFont, wantSize, wantOutline
-        local auraTextPreview = button._conditionalAuraDurationTextPreview == true
-        local auraTextActive = button._auraPrimarySwipeActive == true or auraTextPreview
-        if auraTextActive then
-            showText = style.showAuraText ~= false
-            fontColor = style.auraTextFontColor or DEFAULT_AURA_TEXT_COLOR
-            wantFont = CooldownCompanion:FetchFont(style.auraTextFont or "Friz Quadrata TT")
-            wantSize = style.auraTextFontSize or 12
-            wantOutline = ST.GetEffectiveFontOutline(style.auraTextFontOutline or "OUTLINE")
-        elseif buttonData.isPassive then
-            -- Inactive passive aura: no text (cooldown frame hidden)
+        local showText, fontColor
+        if buttonData.isPassive then
+            -- Passive aura entry: no cooldown text (cooldown frame hidden)
             button._cdTextRegion:SetTextColor(0, 0, 0, 0)
         else
             showText = style.showCooldownText
             if showText and button._hideCooldownChargesActive then
                 showText = false
             end
+            -- The Cooldown Swipe preview is the state look minus this
+            -- readout; the _cdTextHidden latch below restores the numbers
+            -- when the preview ends.
+            if showText and button._conditionalPreviewKind == "cooldown_swipe" then
+                showText = false
+            end
             fontColor = style.cooldownFontColor or DEFAULT_WHITE
-            wantFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
-            wantSize = style.cooldownFontSize or 12
-            wantOutline = ST.GetEffectiveFontOutline(style.cooldownFontOutline or "OUTLINE")
         end
         if showText then
             local cc = fontColor
             button._cdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
-            -- Only call SetFont when mode changes to avoid per-tick overhead
-            local mode = auraTextActive and "aura" or "cd"
-            if button._cdTextMode ~= mode then
-                button._cdTextMode = mode
-                button._cdTextRegion:SetFont(wantFont, wantSize, wantOutline)
-                ST.ApplyFontShadowForOutline(button._cdTextRegion, wantOutline)
-            end
         else
             button._cdTextRegion:SetTextColor(0, 0, 0, 0)
         end
@@ -1390,22 +1223,6 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         if button._cdTextHidden ~= wantHide then
             button._cdTextHidden = wantHide
             button.cooldown:SetHideCountdownNumbers(wantHide)
-        end
-    end
-
-    -- Secondary cooldown text: visible only when aura owns primary text and a real cooldown is running.
-    if button._secondaryCdTextRegion then
-        local showSecondary = button._auraPrimarySwipeActive and button._secondaryCdActive and style.showCooldownText
-        if showSecondary then
-            local cc = style.cooldownFontColor or DEFAULT_WHITE
-            button._secondaryCdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
-        else
-            button._secondaryCdTextRegion:SetTextColor(0, 0, 0, 0)
-        end
-        local wantHideSecondary = not showSecondary
-        if button._secondaryCdTextHidden ~= wantHideSecondary then
-            button._secondaryCdTextHidden = wantHideSecondary
-            button.secondaryCooldown:SetHideCountdownNumbers(wantHideSecondary)
         end
     end
 
@@ -1481,8 +1298,7 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
         -- OFF edge is walk-evaluated (covered by the ready-glow window
         -- classifier term). durationWindow is reset on every resolve, so this
         -- cannot read a stale flag.
-        if showReady and readyIntent.durationWindow == true
-            and RefreshTelemetry and RefreshTelemetry.enabled then
+        if showReady and readyIntent.durationWindow == true then
             RefreshTelemetry:NoteTimeRender()
         end
         SetReadyGlow(button, showReady)
@@ -1550,39 +1366,21 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._liveOverrideSpellId = nil
     button._spellOutOfRange = nil
     button._itemCount = nil
-    button._auraActive = nil
-    button._auraDurationObj = nil
-    button._auraCooldownStart = nil
-    button._auraCooldownDuration = nil
-    button._auraPrimarySwipeActive = nil
-    button._showingAuraIcon = nil
-    button._auraViewerFrame = nil
-    button._activeAuraSpellID = nil
-    button._activeAuraSpellIDFromFallback = nil
-    button._activeAuraIcon = nil
-    button._activeAuraIconAvailable = nil
-    button._lastViewerTexId = nil
     button._lastSpellTexture = nil
     button._lastTextureCheckAt = nil
-    button._spellTexBaseline = nil
 
-    button._auraInstanceID = nil
-    button._inPandemic = nil
-    EntryRuntime.ClearAuraPandemicRuntimeState(button)
-    button._viewerAuraVisualsActive = nil
-    button._auraDisplayName = nil
-    button._auraNameOverrideActive = nil
-    button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
-    button._auraUnit = button.buttonData.auraUnit or "player"
-    button._auraStackText = nil
     button._iconFillActive = nil
     button._iconFillMode = nil
-    button._iconFillAuraActive = nil
     button._iconFillColorR = nil
     button._iconFillColorG = nil
     button._iconFillColorB = nil
     button._iconFillColorA = nil
     if button.auraStackCount then button.auraStackCount:SetText("") end
+    if button._auraTextPreviewFS then button._auraTextPreviewFS:Hide() end
+    if button._auraSwipePreviewCooldown then
+        button._auraSwipePreviewCooldown:SetCooldown(0, 0)
+        button._auraSwipePreviewCooldown:Hide()
+    end
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
     button._visibilityAlphaOverride = nil
@@ -1595,7 +1393,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button.icon:SetPoint("TOPLEFT", borderLayoutSize, -borderLayoutSize)
     button.icon:SetPoint("BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
 
-    ApplyIconTexCoord(button.icon, width, height)
+    ApplyIconTexCoord(button.icon, width, height, style.iconZoom)
 
     if button.iconFill then
         AnchorIconFill(button)
@@ -1623,43 +1421,17 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Countdown number visibility is controlled per-tick via SetHideCountdownNumbers
     button.cooldown:SetHideCountdownNumbers(false)
     ApplyDurationFormatToCooldown(button.cooldown, style)
-    if button.secondaryCooldown then
-        ApplyDurationFormatToCooldown(button.secondaryCooldown, style)
-    end
     ApplyDefaultCooldownSwipeStyle(button, style)
-    if button.auraBlizzardCooldown then
-        AnchorAuraBlizzardCooldown(button)
-        button.auraBlizzardCooldown:SetUseAuraDisplayTime(true)
-        button.auraBlizzardCooldown:SetDrawSwipe(true)
-        button.auraBlizzardCooldown:SetDrawEdge(false)
-        button.auraBlizzardCooldown:SetDrawBling(false)
-        button.auraBlizzardCooldown:SetReverse(false)
-        button.auraBlizzardCooldown:SetSwipeTexture(BLIZZARD_AURA_SWIPE_TEXTURE, 1, 1, 1, 1)
-        button.auraBlizzardCooldown:SetSwipeColor(BLIZZARD_AURA_SWIPE_R, BLIZZARD_AURA_SWIPE_G, BLIZZARD_AURA_SWIPE_B, BLIZZARD_AURA_SWIPE_A)
-        button.auraBlizzardCooldown:SetHideCountdownNumbers(true)
-    end
 
-    -- Update cooldown font settings (default state; per-tick logic handles aura mode)
-    local region = button.cooldown:GetRegions()
+    -- Update cooldown font settings. The countdown region is always hosted
+    -- outside the Cooldown frame now (overlay frame, or the pinned host when
+    -- separateTextPositions lifts it), so use the stored reference — the
+    -- Cooldown frame's region list can't be re-fetched.
+    local region = button._cdTextRegion
     if region and region.SetFont then
         ApplyFontStyle(region, style, "cooldown")
-        region:ClearAllPoints()
-        local cdAnchor = style.cooldownTextAnchor or "CENTER"
-        local cdXOff = style.cooldownTextXOffset or 0
-        local cdYOff = style.cooldownTextYOffset or 0
-        region:SetPoint(cdAnchor, cdXOff, cdYOff)
     end
-    if button._secondaryCdTextRegion and button._secondaryCdTextRegion.SetFont then
-        local secRegion = button._secondaryCdTextRegion
-        ApplyFontStyle(secRegion, style, "cooldown")
-        secRegion:ClearAllPoints()
-        local cdAnchor = style.cooldownTextAnchor or "CENTER"
-        local cdXOff = style.cooldownTextXOffset or 0
-        local cdYOff = style.cooldownTextYOffset or 0
-        secRegion:SetPoint(cdAnchor, button.overlayFrame, cdAnchor, cdXOff, cdYOff)
-    end
-    -- Clear cached text mode so per-tick logic re-applies the correct font
-    button._cdTextMode = nil
+    ApplyCooldownTextHost(button, button.buttonData, style)
     button._cdTextHidden = nil
 
     -- Update count text font/anchor settings from effective style
@@ -1736,25 +1508,25 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     if button.keyPressHighlight then
         button.keyPressHighlight.solidFrame:SetAllPoints()
         ApplyEdgePositions(button.keyPressHighlight.solidTextures, button, button.style.keyPressHighlightSize or 5)
-        -- Only reset the glow if not in preview mode; force cache re-evaluation on next frame
-        if not button._keyPressHighlightPreview then
-            SetKeyPressHighlight(button, false)
-        end
+        -- Reset the glow; force cache re-evaluation on next frame
+        SetKeyPressHighlight(button, false)
         button._keyPressHighlightActive = nil
         RefreshKeyPressHighlightEnrollment(button)
     end
 
-    -- Apply configurable strata ordering (LoC always on top)
+    -- Every configurable level, plus the pinned elements above them.
     ApplyStrataOrder(button, style.strataOrder)
-    ApplyIconFillLayer(button)
-    ApplyAuraBlizzardCooldownLayer(button)
     CooldownCompanion:UpdateAuraTextureVisual(button)
 
     -- Click-through is always enabled (clicks always pass through for camera movement)
-    -- Motion (hover) is only enabled when tooltips are on
-    local showTooltips = style.showTooltips == true and not IsCursorAnchoredButton(button)
+    -- Motion (hover) is only enabled when tooltips or entry pings are on
+    local cursorAnchored = IsCursorAnchoredButton(button)
+    local showTooltips = style.showTooltips == true and not cursorAnchored
+    local allowPings = style.allowPings == true and not cursorAnchored
+        and IsEntryPingEligible(button.buttonData)
+        and not IsStandaloneTexturePanelButton(button)
     local disableClicks = true
-    local disableMotion = not showTooltips
+    local disableMotion = not (showTooltips or allowPings)
 
     -- Apply to the button frame and all children recursively
     SetFrameClickThroughRecursive(button, disableClicks, disableMotion)
@@ -1764,9 +1536,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     if button.iconFill then
         SetFrameClickThroughRecursive(button.iconFill, true, true)
     end
-    if button.auraBlizzardCooldown then
-        SetFrameClickThroughRecursive(button.auraBlizzardCooldown, true, true)
-    end
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
     if button.procGlow then
         SetFrameClickThroughRecursive(button.procGlow.solidFrame, true, true)
@@ -1774,6 +1543,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     end
     if button.overlayFrame then
         SetFrameClickThroughRecursive(button.overlayFrame, true, true)
+    end
+    if button.pinnedTextFrame then
+        SetFrameClickThroughRecursive(button.pinnedTextFrame, true, true)
     end
     if button.assistedHighlight then
         if button.assistedHighlight.solidFrame then
@@ -1811,27 +1583,31 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         end
     end
 
-    -- Re-set aura/ready glow frame levels after strata order
-    if button.auraGlow then
-        local auraGlowLevel = button.cooldown:GetFrameLevel() + 1
-        button.auraGlow.solidFrame:SetFrameLevel(auraGlowLevel)
-        button.auraGlow.procFrame:SetFrameLevel(auraGlowLevel)
-    end
-    if button.readyGlow then
-        local readyGlowLevel = button.cooldown:GetFrameLevel() + 1
-        button.readyGlow.solidFrame:SetFrameLevel(readyGlowLevel)
-        button.readyGlow.procFrame:SetFrameLevel(readyGlowLevel)
-    end
-    if button.keyPressHighlight then
-        local kphLevel = button.cooldown:GetFrameLevel() + 1
-        button.keyPressHighlight.solidFrame:SetFrameLevel(kphLevel)
-        button.keyPressHighlight.procFrame:SetFrameLevel(kphLevel)
-    end
+    -- (Ready glow, key press highlight and the aura glow container used to be
+    -- re-pinned to cooldown+1 here, silently overwriting the levels
+    -- ApplyStrataOrder had just assigned. ApplyStrataOrder owns them now.)
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
     if showTooltips then
         SetupTooltipScripts(button)
+    elseif allowPings then
+        -- Motion is on for pings only; keep tooltip scripts off.
+        button:SetScript("OnEnter", nil)
+        button:SetScript("OnLeave", nil)
     end
+    -- Tooltip intent for the aura slot bind (AuraDisplay). Kept separate from
+    -- the click-through motion state, which entry pings widen without wanting
+    -- tooltips.
+    button._ccTooltipMotion = showTooltips
+    -- Visibility hide/show edges (CooldownUpdate) arm and disarm this surface.
+    button._ccPingSurface = allowPings and button or nil
+    SetEntryPingReceiver(button, allowPings and button._visibilityHidden ~= true)
+    -- A button restyled from bar mode may still carry the bar icon's receiver.
+    if button._iconBounds then
+        SetEntryPingReceiver(button._iconBounds, false)
+    end
+
+    ApplyAuraShellVisuals(button, button.buttonData)
 end
 
 -- Exports
@@ -1840,4 +1616,12 @@ ST._UnregisterKeyPressHighlightButton = UnregisterKeyPressHighlightButton
 ST._UpdateIconModeVisuals = UpdateIconModeVisuals
 ST._UpdateIconModeGlows = UpdateIconModeGlows
 ST._ApplyIconCountTextStyle = ApplyCountTextStyle
+ST._ApplyAuraShellVisuals = ApplyAuraShellVisuals
+ST._EnsureAuraGlowContainer = EnsureAuraGlowContainer
 ST._ClearIconFillVisualState = ClearIconFillVisualState
+-- Icon-fill plumbing shared with the config mirror's cooldown preview
+-- (frame-agnostic: they read only .icon/.iconFill/.cooldown/.style).
+ST._AnchorIconFill = AnchorIconFill
+ST._ApplyIconFillGeometry = ApplyIconFillGeometry
+ST._ApplyIconFillLayer = ApplyIconFillLayer
+ST._ResolveIconFillTimerValue = ResolveIconFillTimerValue

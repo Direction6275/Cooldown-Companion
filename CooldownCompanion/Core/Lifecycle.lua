@@ -45,8 +45,6 @@ local BUFF_VIEWER_SET = {
 }
 ST._BUFF_VIEWER_SET = BUFF_VIEWER_SET
 
-local cdmAlphaGuard = {}
-ST._cdmAlphaGuard = cdmAlphaGuard
 
 function CooldownCompanion:OnInitialize()
     self._hadSavedVariables = type(_G.CooldownCompanionDB) == "table"
@@ -88,6 +86,10 @@ function CooldownCompanion:OnInitialize()
             end
         elseif mediatype == "sound" then
             self:RefreshConfigPanel()
+            -- Native aura sounds are registered during the rebind pass, and a
+            -- sound that was not registered yet resolved to nil there. Rebind
+            -- so late-loading media addons' sounds actually take effect.
+            self:RequestAuraRebind("sound-media")
         end
     end)
 
@@ -170,7 +172,9 @@ function CooldownCompanion:OnEnable()
         end)
     end
     self._unitEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
-    self._unitEventFrame:RegisterUnitEvent("UNIT_AURA", "player", "target")
+    -- Player-only: the slim OnUnitAura handler only invalidates the Dracthyr
+    -- Soar mount-alpha cache (12.1 demolition removed aura tracking).
+    self._unitEventFrame:RegisterUnitEvent("UNIT_AURA", "player")
 
     -- Combat events
     self:RegisterEvent("PLAYER_REGEN_DISABLED", "OnCombatStart")
@@ -260,40 +264,16 @@ function CooldownCompanion:OnEnable()
     -- Track spell overrides (transforming spells like Eclipse) to keep viewer map current
     self:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", "OnViewerSpellOverrideUpdated")
 
-    -- Hook SetAlpha on CDM viewers to re-enforce hidden state against
-    -- Blizzard overrides (AnimInManagedFrames, EditMode opacity, etc.)
+    -- Hook RefreshLayout on CDM viewers so pool churn re-queues the viewer
+    -- aura map rebuild.
     for _, name in ipairs(VIEWER_NAMES) do
         local viewer = _G[name]
         if viewer then
-            hooksecurefunc(viewer, "SetAlpha", function(frame, a)
-                if cdmAlphaGuard[frame] then return end
-                if not CooldownCompanion._cdmPickMode
-                   and CooldownCompanion.db
-                   and CooldownCompanion.db.profile.cdmHidden then
-                    cdmAlphaGuard[frame] = true
-                    frame:SetAlpha(0)
-                    cdmAlphaGuard[frame] = nil
-                end
-            end)
-            -- Hook RefreshLayout to re-disable mouse on newly pool-acquired children.
-            -- Blizzard's OnAcquireItemFrame calls SetTooltipsShown(true) on new children.
-            hooksecurefunc(viewer, "RefreshLayout", function(frame)
-                if CooldownCompanion._cdmPickMode then return end
+            hooksecurefunc(viewer, "RefreshLayout", function()
                 CooldownCompanion:QueueBuildViewerAuraMap()
-                if CooldownCompanion.db
-                   and CooldownCompanion.db.profile.cdmHidden then
-                    for _, child in pairs({frame:GetChildren()}) do
-                        child:SetMouseMotionEnabled(false)
-                    end
-                end
             end)
         end
     end
-
-    -- Enforce CDM hidden state immediately after hooks are installed.
-    -- Without this, viewers flash visible for ~1s after /reload until
-    -- the delayed ApplyCdmAlpha() in OnPlayerEnteringWorld fires.
-    self:ApplyCdmAlpha()
 
     -- Keybind text events
     self:RegisterEvent("UPDATE_BINDINGS", "OnBindingsChanged")
@@ -388,9 +368,8 @@ function CooldownCompanion:OnDisable()
         self._alphaFrame = nil
     end
 
-    local T = ST.RefreshTelemetry
-    if self._queuedCooldownRefreshSource and T and T.enabled then
-        T:ClearQueueHistory()
+    if self._queuedCooldownRefreshSource then
+        ST.RefreshTelemetry:ClearQueueHistory()
     end
     self:ResetCooldownRefreshState()
     self:ResetRoutedCooldownBatch()
@@ -492,12 +471,17 @@ function CooldownCompanion:OnCombatStart()
     end
     -- Hide config panel during combat to avoid protected frame errors
     local configFrame = self:GetConfigFrame()
-    if configFrame and configFrame.frame:IsShown() then
+    local miniFrame = configFrame and configFrame._miniFrame
+    if configFrame
+        and (configFrame.frame:IsShown() or (miniFrame and miniFrame:IsShown())) then
         self._pendingConfigIntent = {
             action = "toggle",
             entryPoint = "combat reopen",
         }
         configFrame.frame:Hide()
+        if miniFrame and miniFrame:IsShown() then
+            miniFrame:Hide()
+        end
         self:Print("Config closed for combat. It will reopen when combat ends.")
     end
 end
@@ -505,7 +489,10 @@ end
 function CooldownCompanion:OnCombatEnd()
     local combatLockSnapshot = self:EndCombatForcedLock()
     self:QueueCooldownRefresh("combat-event")
-    self:ApplyCdmAlpha()
+    -- Soar reads return nothing while auras are restricted, so a recompute
+    -- during combat can have settled on the regular-mounted branch. Re-dirty
+    -- so the first out-of-combat tick reclassifies.
+    self:InvalidateMountAlphaCache()
     if self._pendingUnsupportedLegacyHide or self._unsupportedLegacyProfile then
         self._pendingUnsupportedLegacyHide = nil
         self._pendingFullRefresh = nil
@@ -544,41 +531,11 @@ function CooldownCompanion:SlashCommand(input)
     input = tostring(input or ""):lower()
     input = input:match("^%s*(.-)%s*$")
 
-    local function SwitchPrimaryConfigMode(mode, entryPoint)
-        self:ToggleConfig({
-            action = "mode",
-            mode = mode,
-            entryPoint = entryPoint or ("/cdc " .. mode),
-        })
-    end
-
-    if input == "lock" or input == "unlock" then
-        -- Toggle: if any visible container is unlocked, lock all; otherwise unlock all
-        local anyUnlocked = false
-        for containerId, container in pairs(self.db.profile.groupContainers) do
-            if self:IsContainerVisibleToCurrentChar(containerId) and not container.locked then
-                anyUnlocked = true
-                break
-            end
-        end
-        if anyUnlocked then
-            for containerId, container in pairs(self.db.profile.groupContainers) do
-                if self:IsContainerVisibleToCurrentChar(containerId) then
-                    container.locked = true
-                end
-            end
-            self:LockAllFrames()
-            self:RefreshConfigPanel()
-            self:Print("All frames locked.")
+    if input == "unlock" or input == "lock" then
+        if self:IsArrangeModeActive() then
+            self:ExitArrangeMode()
         else
-            for containerId, container in pairs(self.db.profile.groupContainers) do
-                if self:IsContainerVisibleToCurrentChar(containerId) then
-                    container.locked = false
-                end
-            end
-            self:UnlockAllFrames()
-            self:RefreshConfigPanel()
-            self:Print("All frames unlocked. Drag to move.")
+            self:EnterArrangeMode()
         end
     elseif input == "minimap" then
         self.db.profile.minimap.hide = not self.db.profile.minimap.hide
@@ -592,16 +549,9 @@ function CooldownCompanion:SlashCommand(input)
     elseif input == "help" then
         self:Print("Cooldown Companion commands:")
         self:Print("/cdc - Open settings")
-        self:Print("/cdc buttons - Open settings in Buttons mode")
-        self:Print("/cdc bars - Open settings in Bars & Frames mode")
-        self:Print("/cdc frames - Alias for /cdc bars")
-        self:Print("/cdc lock - Toggle lock/unlock all group frames")
+        self:Print("/cdc lock - Toggle arrange mode (/cdc unlock does the same)")
         self:Print("/cdc minimap - Toggle minimap icon")
         self:Print("/cdc reset - Reset profile to defaults")
-    elseif input == "bars" or input == "frames" then
-        SwitchPrimaryConfigMode("bars", "/cdc " .. input)
-    elseif input == "buttons" then
-        SwitchPrimaryConfigMode("buttons")
     elseif input == "reset" then
         self:ShowResetProfilePopup()
     elseif input == "debugimport" then

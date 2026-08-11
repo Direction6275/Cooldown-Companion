@@ -51,18 +51,18 @@ local batchCount = 0
 local batchGeneration = nil -- index.generation stamped when the batch was armed
 
 -- Per-fire scratch: one fire's matched buttons (union of the spellID bucket and
--- the distinct-baseID bucket), deduped within the fire, plus a panel-membership
--- flag. Reset at the top of every RouteCooldownEventFire.
-local fireSeen = {}         -- button -> true within this fire
+-- the distinct-baseID bucket), plus a panel-membership flag. A button in both
+-- buckets is listed twice; the batch merge dedups via batchButtons, the
+-- fireCount == 0 drop check only needs "any match", and a duplicate panel check
+-- is harmless. Reset at the top of every RouteCooldownEventFire.
 local fireList = {}
 local fireCount = 0
 local firePanel = false
 
--- A panel group (displayMode "textures"/"trigger") is a cross-button aggregate
--- (D4 inventory A4/A5): its visual ANDs cached per-row state, so updating only
--- the matched row can leave the panel reading stale inputs. One matched panel
--- member makes the whole fire broad -- fail open (panel-as-routing-unit is a
--- later refinement).
+-- A panel group is a cross-button aggregate (D4 inventory A4/A5): its visual
+-- ANDs cached per-row state, so updating only the matched row can leave the
+-- panel reading stale inputs. One matched panel member makes the whole fire
+-- broad -- fail open (panel-as-routing-unit is a later refinement).
 local function IsPanelButton(button)
     local groupId = button._groupId
     if not groupId then
@@ -70,20 +70,16 @@ local function IsPanelButton(button)
     end
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
     local group = profile and profile.groups and profile.groups[groupId]
-    local mode = group and group.displayMode
-    return mode == "textures" or mode == "trigger"
+    return CooldownCompanion:IsStandaloneTexturePanelGroup(group)
 end
 
--- ForEachIndexedSpellButton callback: collect this fire's matched buttons
--- (deduped) and note whether any belongs to a panel group.
+-- ForEachIndexedSpellButton callback: collect this fire's matched buttons and
+-- note whether any belongs to a panel group.
 local function CollectFireButton(button)
-    if not fireSeen[button] then
-        fireSeen[button] = true
-        fireCount = fireCount + 1
-        fireList[fireCount] = button
-        if IsPanelButton(button) then
-            firePanel = true
-        end
+    fireCount = fireCount + 1
+    fireList[fireCount] = button
+    if IsPanelButton(button) then
+        firePanel = true
     end
 end
 
@@ -170,7 +166,6 @@ function CooldownCompanion:RouteCooldownEventFire(spellID, baseSpellID)
         baseNum = baseSpellID
     end
 
-    wipe(fireSeen)
     fireCount = 0
     firePanel = false
     self:ForEachIndexedSpellButton(spellID, CollectFireButton)

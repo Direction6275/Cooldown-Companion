@@ -2,22 +2,200 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
-local RB = ST._RB
 
 -- Imports from Helpers.lua
-local ColorHeading = ST._ColorHeading
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
-local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
-local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 
+-- Imports from RowWidgets.lua (the row grammar). Every builder in this file
+-- draws from these: the pre-redesign stock shapes are gone, so there is only
+-- one shape left per section.
+--
+-- opts.rightColumn is the second half of the grid the CALLER opened: a builder
+-- with a natural two-column split writes its "what it looks like / where it
+-- lands" rows there and its "what it is drawn with" rows into `container`.
+-- Builders that ignore it simply fill the left column, which is what the
+-- fill-LEFT-first rule asks for. Only the Overrides tab passes it today.
+local AddCheckboxRow = ST._AddCheckboxRow
+local AddSliderRow = ST._AddSliderRow
+local AddDropdownRow = ST._AddDropdownRow
+local AddEditBoxRow = ST._AddEditBoxRow
+local AddColorRow = ST._AddColorRow
+local AddLabelRow = ST._AddLabelRow
+local AnchorRowBadge = ST._AnchorRowBadge
+local BeginRowGrid = ST._BeginRowGrid
+local CleanRecycledEntry = ST._CleanRecycledEntry
+
+-- Dropdown items past ~16 characters need a menu wider than the 140px control
+-- column can size ("Color the Whole Text", the override section labels).
+local WIDE_PULLOUT_WIDTH = 300
+
 -- Module-level aliases
 local tabInfoButtons = CS.tabInfoButtons
-local appearanceTabElements = CS.appearanceTabElements
+
+------------------------------------------------------------------------
+-- TRACKED-AURA CANDIDATE LISTS
+------------------------------------------------------------------------
+-- Both aura surfaces (panel entries and custom bars) store the same shape:
+-- a CSV of spell IDs on `auraSpellID`, with the Blizzard polarity rule that
+-- one entry may never mix buffs and debuffs. The rules and their messages
+-- live here once so the two surfaces cannot answer the same action
+-- differently. Callers supply their own derived unit and a post-change hook
+-- (each surface normalizes its own entry shape afterwards).
+
+local function ClassifyAuraSpellUnit(spellID)
+    if not (spellID and C_Spell.DoesSpellExist(spellID)) then return nil end
+    return C_Spell.IsSpellHarmful(spellID) and "target" or "player"
+end
+
+local function GetAuraCandidateList(config)
+    local list = {}
+    local raw = config and config.auraSpellID and tostring(config.auraSpellID) or nil
+    if raw then
+        for id in raw:gmatch("%d+") do
+            list[#list + 1] = tonumber(id)
+        end
+    end
+    return list
+end
+
+local function SetAuraCandidateList(config, list, onChanged)
+    if #list > 0 then
+        local parts = {}
+        for i, id in ipairs(list) do parts[i] = tostring(id) end
+        config.auraSpellID = table.concat(parts, ",")
+    else
+        config.auraSpellID = nil
+    end
+    if onChanged then onChanged(config) end
+end
+
+-- currentUnit is the surface's own derived tracking unit. Returns true when
+-- the list actually changed.
+local function TryAddAuraCandidate(config, input, currentUnit, onChanged)
+    input = input and input:gsub("^%s+", ""):gsub("%s+$", "") or ""
+    if input == "" then return false end
+    local spellID = tonumber(input)
+    if not spellID then
+        -- Typed names must land the same ID an autocomplete pick would: the
+        -- tracked slice re-identifies CDM rows to the applied-aura spellID,
+        -- while GetSpellInfo resolves a name to the castable spell, whose ID
+        -- never matches an aura applied under a linked spell (Rake 1822 vs
+        -- bleed 155722). ST._RBP is read at call time: ResourceBarPanels-
+        -- Helpers loads after this file.
+        local RBP = ST._RBP
+        if RBP and RBP.ResolveTrackedAuraSpellIDFromText then
+            spellID = RBP.ResolveTrackedAuraSpellIDFromText(input)
+        else
+            local info = C_Spell.GetSpellInfo(input)
+            spellID = info and info.spellID
+        end
+    end
+    if not (spellID and C_Spell.DoesSpellExist(spellID)) then
+        CooldownCompanion:Print("Aura not found: " .. input .. ". Try the spell ID.")
+        return false
+    end
+    local list = GetAuraCandidateList(config)
+    for _, existing in ipairs(list) do
+        if existing == spellID then
+            return false
+        end
+    end
+    local newUnit = ClassifyAuraSpellUnit(spellID)
+    if newUnit and currentUnit and newUnit ~= currentUnit then
+        CooldownCompanion:Print("Buffs and debuffs can't be tracked by the same entry. Debuffs are tracked on your target, buffs on you.")
+        return false
+    end
+    list[#list + 1] = spellID
+    SetAuraCandidateList(config, list, onChanged)
+    return true
+end
+
+-- Removing the last listed aura is always allowed: the entry's own aura is
+-- implicit, so an empty list just returns to the default.
+local function RemoveAuraCandidate(config, spellID, onChanged)
+    local list = GetAuraCandidateList(config)
+    for i, existing in ipairs(list) do
+        if existing == spellID then
+            table.remove(list, i)
+            SetAuraCandidateList(config, list, onChanged)
+            return true
+        end
+    end
+    return false
+end
+
+-- Row grammar only (RowWidgets.lua). A tracked aura presents an ITEM, not a
+-- setting, so it draws as a CDC-LabelRow: the spell's icon inlined into the
+-- label text (the row's label is a FontString, so the icon rides an inline
+-- texture escape) and a Remove link owned by the row's control column. The
+-- pre-redesign 22px Flow row broke the 30px rhythm inside a grid column and had
+-- no call sites left after the conversion packets.
+local function AddAuraCandidateRow(container, spellID, onRemove, opts)
+    local info = C_Spell.GetSpellInfo(spellID)
+    local name = info and info.name or ("Spell " .. spellID)
+    local icon = C_Spell.GetSpellTexture(spellID) or 134400
+
+    local row = AddLabelRow(container, {
+        label = ("|T%d:16:16:0:0|t %s |cff999999(%d)|r"):format(icon, name, spellID),
+        indent = true,
+    })
+
+    -- Right-justified so the word lands on the control column's right edge
+    -- like every other row's control. SetJustifyH is public API and the
+    -- stock Label resets it to LEFT in OnAcquire, so the pool stays clean.
+    local removeLabel = AceGUI:Create("InteractiveLabel")
+    -- The shared InteractiveLabel pool also serves the Navigator, whose rows
+    -- hang plain-child badges off the label FRAME; nothing hides those on
+    -- release, so a reacquired frame arrives wearing its previous tenant's
+    -- badges. Same clean-on-acquire call every Navigator site makes.
+    CleanRecycledEntry(removeLabel)
+    removeLabel:SetText("|cffff5555Remove|r")
+    removeLabel:SetWidth(60)
+    removeLabel:SetJustifyH("RIGHT")
+    removeLabel:SetCallback("OnClick", function()
+        onRemove(spellID)
+    end)
+    row:SetControlWidget(removeLabel)
+    return row
+end
+
+-- The stack-bar status line. A nil max means one of two very different
+-- things, and only the combat check tells them apart: in combat the game
+-- returns the stack maximum as a secret the addon must discard, so claiming
+-- the aura doesn't stack would be a lie the tab tells whenever it is
+-- rebuilt mid-fight.
+-- The three texts live here alone so every surface that reports the stack
+-- maximum words them identically.
+local function GetAuraStackMaxStatusText(maxStacks)
+    if maxStacks then
+        return "|cffffd100Stack bar:|r full at " .. maxStacks .. " stacks"
+    elseif InCombatLockdown() then
+        return "|cffff9955The stack maximum can't be read in combat; it resolves when you leave combat.|r"
+    else
+        return "|cffff9955This aura doesn't stack; the bar will show duration.|r"
+    end
+end
+
+-- Row grammar only (RowWidgets.lua). The pre-redesign shape was a wrapped Label
+-- - 1-3 lines of unpredictable height, which between two rows shoves everything
+-- below it out of rhythm; as a label row it occupies exactly one row slot
+-- whether it is there or not. It always indents, because it is always a child
+-- of the stacks toggle it explains, and row labels never wrap, so the sentence
+-- also says its piece on hover.
+local function AddAuraStackMaxStatusLabel(container, maxStacks, opts)
+    local statusText = GetAuraStackMaxStatusText(maxStacks)
+
+    return AddLabelRow(container, {
+        label = statusText,
+        indent = true,
+        tooltip = { { statusText, 1, 1, 1, true } },
+    })
+end
 
 ------------------------------------------------------------------------
 -- REUSABLE SECTION BUILDER FUNCTIONS
@@ -32,34 +210,9 @@ local KEYBIND_CUSTOM_TOOLTIP = {
     " ",
     {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
 }
-local AURA_BLIZZARD_SWIPE_TOOLTIP = {
-    "Blizzard-style Aura Duration Swipe",
-    {"Uses Blizzard's fixed aura duration swipe style while Aura Duration Swipe is enabled. The normal aura duration swipe style settings do not affect this overlay.", 1, 1, 1, true},
-}
-local function ResolvePreviewOption(value)
-    if type(value) == "function" then
-        return value()
-    end
-    return value
-end
-
-local function RefreshConfigPanelForPreviewToggle()
-    if not CooldownCompanion.RefreshConfigPanel then
-        return false
-    end
-
-    local wasPreviewRefresh = CS.previewToggleRefreshActive
-    CS.previewToggleRefreshActive = true
-    CooldownCompanion:RefreshConfigPanel()
-    CS.previewToggleRefreshActive = wasPreviewRefresh
-    return true
-end
-
 local function IsAdvancedSettingsPanelContainer(container)
     return container and container._isAdvancedSettingsPanel == true
 end
-
-local ClearActivePreviewBadgeButton
 
 local function RefreshStructuralControls(container)
     if IsAdvancedSettingsPanelContainer(container) and CS.RefreshAdvancedSettingsPanel then
@@ -69,538 +222,711 @@ local function RefreshStructuralControls(container)
     end
 end
 
-local function RefreshPreviewToggleButtons(container)
-    local buttons = container and container._previewToggleButtons
-    if type(buttons) ~= "table" then
-        return
-    end
-
-    for _, previewBtn in ipairs(buttons) do
-        if previewBtn and previewBtn._isActiveFn and previewBtn._offLabel then
-            previewBtn:SetText(previewBtn._isActiveFn() and "Preview: ON" or previewBtn._offLabel)
-        end
-    end
-end
-
-local function RefreshActiveAdvancedPreviewToggleButtons()
-    RefreshPreviewToggleButtons({ _previewToggleButtons = CS.advancedSettingsPreviewToggleButtons })
-end
-
-local function ApplyOverrideCheckboxIndent(checkbox, opts)
-    if opts and opts.isOverride then
-        ApplyCheckboxIndent(checkbox, 20)
-    end
-end
-
+-- Row grammar only (RowWidgets.lua): opts.indent makes it a child row and
+-- opts.pulloutWidth widens its menu. No default pullout width: the longest
+-- option ("1:30 / 45.0 / 8.7") sizes fine against the 140px control column.
+-- The pre-redesign full-width stock Dropdown had no call sites left after the
+-- conversion packets.
 local function AddDurationFormatDropdown(container, settings, refreshCallback, opts)
     if not (container and settings and CooldownCompanion.GetDurationFormatOptions) then
         return nil
     end
 
     local formatOptions, formatOrder = CooldownCompanion:GetDurationFormatOptions()
-    local durationDrop = AceGUI:Create("Dropdown")
-    durationDrop:SetLabel("Duration Format")
-    durationDrop:SetList(formatOptions, formatOrder)
-    durationDrop:SetValue(CooldownCompanion.GetDurationFormat(settings))
-    durationDrop:SetFullWidth(true)
-    durationDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.durationFormat = CooldownCompanion.NormalizeDurationFormat(val)
-        settings.decimalTimers = nil
-        if refreshCallback then
-            refreshCallback()
-        end
-    end)
-    container:AddChild(durationDrop)
-    return durationDrop
-end
 
-local function AddPreviewToggleButton(container, offLabel, isActiveFn, setActiveFn)
-    if not (container and isActiveFn and setActiveFn) then
-        return nil
-    end
-
-    local btn = AceGUI:Create("Button")
-    btn:SetText(isActiveFn() and "Preview: ON" or offLabel)
-    btn:SetFullWidth(true)
-    if IsAdvancedSettingsPanelContainer(container) then
-        container._previewToggleButtons = container._previewToggleButtons or {}
-        CS.advancedSettingsPreviewToggleButtons = container._previewToggleButtons
-        btn._isActiveFn = isActiveFn
-        btn._offLabel = offLabel
-        table.insert(container._previewToggleButtons, btn)
-    end
-    btn:SetCallback("OnClick", function()
-        local showPreview = not isActiveFn()
-        if showPreview and CooldownCompanion.ClearAllConfigPreviews then
-            CooldownCompanion:ClearAllConfigPreviews()
-        elseif not showPreview and ClearActivePreviewBadgeButton then
-            ClearActivePreviewBadgeButton()
-        end
-        setActiveFn(showPreview)
-        if IsAdvancedSettingsPanelContainer(container) then
-            RefreshPreviewToggleButtons(container)
-        elseif not RefreshConfigPanelForPreviewToggle() then
-            btn:SetText(isActiveFn() and "Preview: ON" or offLabel)
-        end
-    end)
-    container:AddChild(btn)
-    return btn
-end
-
-local function SetPreviewBadgeActive(btn, active)
-    if btn then
-        if not btn._activeHighlight then
-            local activeHighlight = btn:CreateTexture(nil, "BACKGROUND")
-            activeHighlight:SetPoint("TOPLEFT", -1, 1)
-            activeHighlight:SetPoint("BOTTOMRIGHT", 1, -1)
-            activeHighlight:SetColorTexture(0.85, 0.65, 0.0, 0.6)
-            activeHighlight:Hide()
-            btn._activeHighlight = activeHighlight
-        end
-
-        if active then
-            btn._activeHighlight:Show()
-        else
-            btn._activeHighlight:Hide()
-        end
-    end
-
-    if btn and btn._icon then
-        if active then
-            btn._icon:SetVertexColor(1, 0.82, 0, 1)
-        else
-            btn._icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
-        end
-    end
-end
-
-function ClearActivePreviewBadgeButton()
-    local btn = CS.activePreviewBadgeButton
-    if btn then
-        SetPreviewBadgeActive(btn, false)
-    end
-    CS.activePreviewBadgeButton = nil
-end
-
-local function SetActivePreviewBadgeButton(btn, active)
-    SetPreviewBadgeActive(btn, active)
-
-    if active then
-        local previousBtn = CS.activePreviewBadgeButton
-        if previousBtn and previousBtn ~= btn then
-            SetPreviewBadgeActive(previousBtn, false)
-        end
-        CS.activePreviewBadgeButton = btn
-    elseif CS.activePreviewBadgeButton == btn then
-        CS.activePreviewBadgeButton = nil
-    end
-end
-
-local function AddPreviewBadge(parentWidget, anchorAfterFrame, label, isActiveFn, setActiveFn, enabled)
-    local hasCheckboxAnchor = parentWidget and parentWidget.frame and parentWidget.checkbg and parentWidget.text
-    local hasLabelAnchor = parentWidget and parentWidget.frame and parentWidget.label
-    if not enabled
-        or not (hasCheckboxAnchor or hasLabelAnchor)
-        or type(isActiveFn) ~= "function"
-        or type(setActiveFn) ~= "function"
-    then
-        return nil
-    end
-
-    local frame = parentWidget.frame
-    local btn = frame._cdcPreviewBtn
-    if not btn then
-        btn = CreateFrame("Button", nil, frame)
-        btn:SetSize(14, 14)
-        btn._icon = btn:CreateTexture(nil, "ARTWORK")
-        btn._icon:SetSize(13, 13)
-        btn._icon:SetPoint("CENTER")
-        btn._icon:SetAtlas("CreditsScreen-Assets-Buttons-Play", false)
-        frame._cdcPreviewBtn = btn
-    end
-
-    btn:SetParent(frame)
-    btn:ClearAllPoints()
-    if anchorAfterFrame and anchorAfterFrame:IsShown() then
-        btn:SetPoint("LEFT", anchorAfterFrame, "RIGHT", 4, 0)
-    elseif hasCheckboxAnchor then
-        btn:SetPoint("LEFT", parentWidget.checkbg, "RIGHT", parentWidget.text:GetStringWidth() + 6, 0)
-    else
-        btn:SetPoint("LEFT", parentWidget.label, "RIGHT", 4, 0)
-    end
-    btn:Show()
-    btn._icon:Show()
-
-    SetActivePreviewBadgeButton(btn, isActiveFn())
-    btn:SetScript("OnClick", function()
-        local showPreview = not isActiveFn()
-        if showPreview and CooldownCompanion.ClearAllConfigPreviews then
-            CooldownCompanion:ClearAllConfigPreviews()
-        end
-        setActiveFn(showPreview)
-        SetActivePreviewBadgeButton(btn, isActiveFn())
-        RefreshActiveAdvancedPreviewToggleButtons()
-    end)
-    btn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine(label)
-        GameTooltip:Show()
-    end)
-    btn:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    local advancedBtn = frame._cdcAdvancedBtn
-    if not (advancedBtn and advancedBtn:GetParent() == frame) then
-        parentWidget:SetCallback("OnRelease", function()
-            btn:ClearAllPoints()
-            btn:Hide()
-            btn:SetParent(nil)
-            if CS.activePreviewBadgeButton == btn then
-                CS.activePreviewBadgeButton = nil
+    return AddDropdownRow(container, {
+        label = "Duration Format",
+        indent = opts and opts.indent,
+        pulloutWidth = opts and opts.pulloutWidth,
+        list = formatOptions,
+        order = formatOrder,
+        value = CooldownCompanion.GetDurationFormat(settings),
+        onChange = function(val)
+            settings.durationFormat = CooldownCompanion.NormalizeDurationFormat(val)
+            settings.decimalTimers = nil
+            if refreshCallback then
+                refreshCallback()
             end
-        end)
-    end
-
-    return btn
+        end,
+    })
 end
 
-local function AddConditionalPreviewButton(container, label, previewKind, opts)
-    if not (container and CooldownCompanion.SetConditionalVisualPreviewActive and CooldownCompanion.IsConditionalVisualPreviewActive) then
-        return nil
-    end
-
-    local function ResolveTarget()
-        local groupId = ResolvePreviewOption(opts and opts.groupId) or CS.selectedGroup
-        local buttonIndex = ResolvePreviewOption(opts and opts.buttonIndex)
-        if opts and opts.requireButton and not buttonIndex then
-            return nil, nil
-        end
-        return groupId, buttonIndex
-    end
-
-    return AddPreviewToggleButton(container, label, function()
-        local groupId, buttonIndex = ResolveTarget()
-        if not groupId then
-            return false
-        end
-        return CooldownCompanion:IsConditionalVisualPreviewActive(groupId, buttonIndex, previewKind)
-    end, function(show)
-        local groupId, buttonIndex = ResolveTarget()
-        if groupId then
-            CooldownCompanion:SetConditionalVisualPreviewActive(
-                groupId,
-                buttonIndex,
-                previewKind,
-                show,
-                opts and opts.sampleState
-            )
-        end
-    end)
-end
-
-local function AddConditionalPreviewBadge(parentWidget, anchorAfterFrame, label, previewKind, enabled, opts)
-    if not (CooldownCompanion.SetConditionalVisualPreviewActive and CooldownCompanion.IsConditionalVisualPreviewActive) then
-        return nil
-    end
-
-    local function ResolveTarget()
-        local groupId = ResolvePreviewOption(opts and opts.groupId) or CS.selectedGroup
-        local buttonIndex = ResolvePreviewOption(opts and opts.buttonIndex)
-        if opts and opts.requireButton and not buttonIndex then
-            return nil, nil
-        end
-        return groupId, buttonIndex
-    end
-
-    return AddPreviewBadge(parentWidget, anchorAfterFrame, label, function()
-        local groupId, buttonIndex = ResolveTarget()
-        if not groupId then
-            return false
-        end
-        return CooldownCompanion:IsConditionalVisualPreviewActive(groupId, buttonIndex, previewKind)
-    end, function(show)
-        local groupId, buttonIndex = ResolveTarget()
-        if groupId then
-            CooldownCompanion:SetConditionalVisualPreviewActive(
-                groupId,
-                buttonIndex,
-                previewKind,
-                show,
-                opts and opts.sampleState
-            )
-        end
-    end, enabled)
-end
-
+-- Row grammar only (RowWidgets.lua). LEFT column (the container the caller
+-- hands over): the toggle and what the text is drawn WITH. RIGHT column
+-- (opts.rightColumn): what it looks like and where it lands. Rows in the LEFT
+-- column indent under the toggle they belong to; the RIGHT column's rows head
+-- their own column, so they do not - the same convention every text builder
+-- below follows. The pre-redesign full-width stock shape had no call sites left
+-- after the conversion packets.
 local function BuildCooldownTextControls(container, styleTable, refreshCallback, opts)
-    local fallbackStyle = opts and opts.fallbackStyle
+    opts = opts or {}
+    local fallbackStyle = opts.fallbackStyle
     local showCooldownText = styleTable.showCooldownText
     if showCooldownText == nil and type(fallbackStyle) == "table" then
         showCooldownText = fallbackStyle.showCooldownText
     end
+
+    local right = opts.rightColumn or container
+
+    AddCheckboxRow(container, {
+        label = "Show Cooldown Text",
+        value = showCooldownText or false,
+        indent = opts.indent,
+        onChange = function(val)
+            styleTable.showCooldownText = val
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
+
+    -- A per-entry override does not carry the group's duration format.
+    if not opts.isOverride and showCooldownText then
+        AddDurationFormatDropdown(container, styleTable, refreshCallback,
+            { indent = true })
+    end
+
+    if showCooldownText then
+        AddFontControls(container, styleTable, "cooldown", {}, refreshCallback,
+            { row = true, indent = true })
+
+        -- deferCommit is deliberately absent throughout, matching the
+        -- stock color pickers these rows replaced.
+        AddColorRow(right, {
+            label = "Font Color",
+            tbl = styleTable,
+            key = "cooldownFontColor",
+            default = {1, 1, 1, 1},
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
+        AddAnchorDropdown(right, styleTable, "cooldownTextAnchor", "CENTER", refreshCallback,
+            nil, { row = true })
+        AddOffsetSliders(right, styleTable, "cooldownTextXOffset", "cooldownTextYOffset", {},
+            refreshCallback, { row = true })
+    end
+end
+
+-- Pandemic marker controls (tracker C9), shared between the group-tab
+-- advanced panel and the per-button override builder. The marker rides the
+-- aura duration text, so it lives with these options. rebuildCallback
+-- re-renders the surrounding panel when a structural choice changes.
+local PANDEMIC_COLOR_MODES = {
+    off = "No Color",
+    marker = "Color the Marker",
+    whole = "Color the Whole Text",
+}
+local PANDEMIC_COLOR_MODE_ORDER = { "off", "marker", "whole" }
+
+local PANDEMIC_MARKER_TOOLTIP_LINES = {
+    "Pandemic Marker",
+    {"Marks the duration text for the last 30% of an aura, where recasting adds to the remaining time instead of wasting it.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"It rides that text. With Aura Duration Text off, nothing shows.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"On by default for debuffs on your target.", 1, 1, 1, true},
+}
+
+-- Row grammar only (RowWidgets.lua). Three shapes, one builder:
+--   opts.enableOnly   - just the toggle, returned so the caller can chain a
+--                       gear and a promote badge off it (the Indicators tab's
+--                       Pandemic section).
+--   opts.childrenOnly - just what that gear opens, so the rows fill the panel
+--                       instead of indenting under a toggle that is elsewhere.
+--   neither           - both, the Overrides tab's inline shape, where the
+--                       three styling rows are children of the toggle.
+-- Labels deliberately say "Marker": these rows share a section with the
+-- pandemic EFFECT's own color, and three rows reading "Pandemic Color" in one
+-- column would be unreadable.
+local function AddPandemicMarkerControls(container, styleTable, refreshCallback, rebuildCallback, opts)
+    opts = opts or {}
+    local enableRow
+    if not opts.childrenOnly then
+        enableRow = AddCheckboxRow(container, {
+            label = "Pandemic Marker",
+            value = styleTable.pandemicMarkerEnabled ~= false,
+            indent = opts.indent,
+            onChange = function(val)
+                styleTable.pandemicMarkerEnabled = val
+                refreshCallback()
+                rebuildCallback()
+            end,
+        })
+        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+        -- onto the end of the row's label.
+        AnchorRowBadge(enableRow, CreateInfoButton(enableRow.frame, enableRow.frame, "LEFT", "LEFT", 0, 0,
+            PANDEMIC_MARKER_TOOLTIP_LINES, enableRow))
+    end
+
+    if opts.enableOnly or styleTable.pandemicMarkerEnabled == false then
+        return enableRow
+    end
+
+    local childIndent = not opts.childrenOnly
+
+    AddEditBoxRow(container, {
+        label = "Marker Text",
+        indent = childIndent,
+        value = styleTable.pandemicMarkerText or "!!",
+        onEnterPressed = function(text, widget)
+            text = tostring(text or ""):gsub("[|%%]", ""):gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 8)
+            styleTable.pandemicMarkerText = text
+            widget:SetText(text)
+            refreshCallback()
+        end,
+    })
+
+    AddDropdownRow(container, {
+        label = "Marker Coloring",
+        indent = childIndent,
+        pulloutWidth = WIDE_PULLOUT_WIDTH,
+        list = PANDEMIC_COLOR_MODES,
+        order = PANDEMIC_COLOR_MODE_ORDER,
+        value = styleTable.pandemicMarkerColorMode or "marker",
+        onChange = function(val)
+            styleTable.pandemicMarkerColorMode = val
+            refreshCallback()
+            rebuildCallback()
+        end,
+    })
+
+    if (styleTable.pandemicMarkerColorMode or "marker") ~= "off" then
+        -- deferCommit is deliberately absent, matching the stock color picker
+        -- this row replaced.
+        AddColorRow(container, {
+            label = "Marker Color",
+            indent = childIndent,
+            tbl = styleTable,
+            key = "pandemicMarkerColor",
+            default = {1, 0.5, 0, 1},
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
+    end
+
+    return enableRow
+end
+
+local AURA_TEXT_SHARED_POSITION_TOOLTIP = {
+    "Shared Position",
+    {"Position is shared with Cooldown Text by default. Enable 'Separate Text Positions' below to use independent positions.", 1, 1, 1, true},
+}
+
+local SEPARATE_TEXT_POSITIONS_TOOLTIP = {
+    "Separate Text Positions",
+    {"Gives the aura duration text and the cooldown text independent positions.", 1, 1, 1, true},
+    " ",
+    {"The cooldown text also draws above the aura display, so both timers stay visible while the aura runs.", 1, 1, 1, true},
+}
+
+-- Row grammar only: LEFT column is the toggle and what the text is drawn with;
+-- RIGHT is where it lands (the separate-position chain). The pandemic marker
+-- rides this text but no longer lives here: it moved to the Indicators tab's
+-- Pandemic section so both halves of the feature share one home, and its keys
+-- moved with it into the mode-spanning "pandemic" override section.
+local function BuildAuraTextControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local fallbackStyle = opts.fallbackStyle
     local showAuraText = styleTable.showAuraText
     if showAuraText == nil and type(fallbackStyle) == "table" then
         showAuraText = fallbackStyle.showAuraText
     end
 
-    local cdTextCb = AceGUI:Create("CheckBox")
-    cdTextCb:SetLabel("Show Cooldown Text")
-    cdTextCb:SetValue(showCooldownText or false)
-    cdTextCb:SetFullWidth(true)
-    cdTextCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showCooldownText = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(cdTextCb)
+    local right = opts.rightColumn or container
 
-    if not (opts and opts.isOverride) and (showCooldownText or showAuraText ~= false) then
-        AddDurationFormatDropdown(container, styleTable, refreshCallback, opts)
+    local auraTextRow = AddCheckboxRow(container, {
+        label = "Show Aura Duration Text",
+        value = showAuraText ~= false,
+        indent = opts.indent,
+        onChange = function(val)
+            styleTable.showAuraText = val
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
+    -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+    -- onto the end of the row's label.
+    AnchorRowBadge(auraTextRow, CreateInfoButton(auraTextRow.frame, auraTextRow.frame, "LEFT", "LEFT", 0, 0,
+        AURA_TEXT_SHARED_POSITION_TOOLTIP, auraTextRow))
+
+    if showAuraText == false then
+        return
     end
 
-    if showCooldownText then
-        AddFontControls(container, styleTable, "cooldown", {}, refreshCallback)
-        AddColorPicker(container, styleTable, "cooldownFontColor", "Font Color", {1, 1, 1, 1}, false, refreshCallback, refreshCallback)
+    AddFontControls(container, styleTable, "auraText", {}, refreshCallback,
+        { row = true, indent = true })
+    -- deferCommit is deliberately absent, matching the stock color picker this
+    -- row replaced.
+    AddColorRow(container, {
+        label = "Font Color",
+        indent = true,
+        tbl = styleTable,
+        key = "auraTextFontColor",
+        default = {0, 0.925, 1, 1},
+        onConfirm = refreshCallback,
+        onChange = refreshCallback,
+    })
 
-        local cdAnchorDrop = AddAnchorDropdown(container, styleTable, "cooldownTextAnchor", "CENTER", refreshCallback)
-
-        -- (?) tooltip for shared positioning
-        CreateInfoButton(cdAnchorDrop.frame, cdAnchorDrop.label, "LEFT", "RIGHT", 4, 0, {
-            "Shared Position",
-            {"Position is shared with Aura Duration Text by default. Enable 'Separate Text Positions' in the Aura Duration Text section to use independent positions.", 1, 1, 1, true},
-        }, cdAnchorDrop)
-
-        AddOffsetSliders(container, styleTable, "cooldownTextXOffset", "cooldownTextYOffset", {}, refreshCallback)
-
-    end
-end
-
-local function BuildAuraTextControls(container, styleTable, refreshCallback)
-    local auraTextCb = AceGUI:Create("CheckBox")
-    auraTextCb:SetLabel("Show Aura Duration Text")
-    auraTextCb:SetValue(styleTable.showAuraText ~= false)
-    auraTextCb:SetFullWidth(true)
-    auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showAuraText = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(auraTextCb)
-
-    -- (?) tooltip for shared positioning note
-    CreateInfoButton(auraTextCb.frame, auraTextCb.checkbg, "LEFT", "RIGHT", auraTextCb.text:GetStringWidth() + 4, 0, {
-        "Shared Position",
-        {"Position is shared with Cooldown Text by default. Enable 'Separate Text Positions' below to use independent positions.", 1, 1, 1, true},
-    }, auraTextCb)
-
-    if styleTable.showAuraText ~= false then
-        AddFontControls(container, styleTable, "auraText", {}, refreshCallback)
-        AddColorPicker(container, styleTable, "auraTextFontColor", "Font Color", {0, 0.925, 1, 1}, false, refreshCallback, refreshCallback)
-
-        local sepPosCb = AceGUI:Create("CheckBox")
-        sepPosCb:SetLabel("Separate Text Positions")
-        sepPosCb:SetValue(styleTable.separateTextPositions or false)
-        sepPosCb:SetFullWidth(true)
-        sepPosCb:SetCallback("OnValueChanged", function(widget, event, val)
+    local sepPosRow = AddCheckboxRow(right, {
+        label = "Separate Text Positions",
+        value = styleTable.separateTextPositions or false,
+        onChange = function(val)
             styleTable.separateTextPositions = val
             refreshCallback()
             RefreshStructuralControls(container)
-        end)
-        container:AddChild(sepPosCb)
+        end,
+    })
+    AnchorRowBadge(sepPosRow, CreateInfoButton(sepPosRow.frame, sepPosRow.frame, "LEFT", "LEFT", 0, 0,
+        SEPARATE_TEXT_POSITIONS_TOOLTIP, sepPosRow))
 
-        CreateInfoButton(sepPosCb.frame, sepPosCb.checkbg, "LEFT", "RIGHT", sepPosCb.text:GetStringWidth() + 4, 0, {
-            "Separate Text Positions",
-            {"When enabled, aura duration text and cooldown text use independent positions. Aura text position controls appear below when toggled on; cooldown text position is in the Cooldown Text section.", 1, 1, 1, true},
-        }, sepPosCb)
+    if styleTable.separateTextPositions then
+        AddAnchorDropdown(right, styleTable, "auraTextAnchor", "TOPLEFT", refreshCallback,
+            nil, { row = true, indent = true })
+        AddOffsetSliders(right, styleTable, "auraTextXOffset", "auraTextYOffset", {x = 2, y = -2},
+            refreshCallback, { row = true, indent = true })
+    end
+end
 
-        if styleTable.separateTextPositions then
-            AddAnchorDropdown(container, styleTable, "auraTextAnchor", "TOPLEFT", refreshCallback)
-            AddOffsetSliders(container, styleTable, "auraTextXOffset", "auraTextYOffset", {x = 2, y = -2}, refreshCallback)
+-- Row grammar only: same split as Cooldown Text - LEFT the toggle and the font
+-- trio, RIGHT the color, anchor and offsets.
+local function BuildAuraStackTextControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local fallbackStyle = opts.fallbackStyle
+    local showAuraStackText = styleTable.showAuraStackText
+    if showAuraStackText == nil and type(fallbackStyle) == "table" then
+        showAuraStackText = fallbackStyle.showAuraStackText
+    end
+
+    local right = opts.rightColumn or container
+
+    AddCheckboxRow(container, {
+        label = "Show Aura Stack Text",
+        value = showAuraStackText ~= false,
+        indent = opts.indent,
+        onChange = function(val)
+            styleTable.showAuraStackText = val
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
+
+    if showAuraStackText ~= false then
+        AddFontControls(container, styleTable, "auraStack", {}, refreshCallback,
+            { row = true, indent = true })
+        -- deferCommit is deliberately absent, matching the stock color picker
+        -- this row replaced.
+        AddColorRow(right, {
+            label = "Font Color",
+            tbl = styleTable,
+            key = "auraStackFontColor",
+            default = {1, 1, 1, 1},
+            hasAlpha = true,
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
+        AddAnchorDropdown(right, styleTable, "auraStackAnchor", "BOTTOMLEFT", refreshCallback,
+            nil, { row = true })
+        AddOffsetSliders(right, styleTable, "auraStackXOffset", "auraStackYOffset", {x = 2, y = 2},
+            refreshCallback, { row = true })
+    end
+end
+
+-- Row grammar only: LEFT column (the container the caller hands over) the
+-- toggle and the font trio, RIGHT column (opts.rightColumn) the color, anchor
+-- and offsets. opts.label / opts.tooltip let the rotation assistant name this
+-- "Show Keybind Text" - it has no custom-text form.
+local function BuildKeybindTextControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local label = opts.label or KEYBIND_CUSTOM_LABEL
+    local tooltip = opts.tooltip or KEYBIND_CUSTOM_TOOLTIP
+    local right = opts.rightColumn or container
+
+    local function ApplyShowKeybindText(val)
+        styleTable.showKeybindText = val
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end
+
+    local kbRow = AddCheckboxRow(container, {
+        label = label,
+        value = styleTable.showKeybindText or false,
+        indent = opts.indent,
+        onChange = ApplyShowKeybindText,
+    })
+    -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+    -- onto the end of the row's label.
+    AnchorRowBadge(kbRow, CreateInfoButton(kbRow.frame, kbRow.frame, "LEFT", "LEFT", 0, 0,
+        tooltip, kbRow))
+
+    if styleTable.showKeybindText then
+        AddFontControls(container, styleTable, "keybind", {size = 10, sizeMin = 6, sizeMax = 24},
+            refreshCallback, { row = true, indent = true })
+        -- deferCommit is deliberately absent, matching the stock color picker
+        -- this row replaced.
+        AddColorRow(right, {
+            label = "Font Color",
+            tbl = styleTable,
+            key = "keybindFontColor",
+            default = {1, 1, 1, 1},
+            hasAlpha = true,
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
+        AddAnchorDropdown(right, styleTable, "keybindAnchor", "TOPRIGHT", refreshCallback,
+            nil, { row = true })
+        AddOffsetSliders(right, styleTable, "keybindXOffset", "keybindYOffset", {x = -2, y = -2},
+            refreshCallback, { row = true })
+    end
+end
+
+-- Row grammar only: LEFT the toggle and the font trio, RIGHT the three state
+-- colors and the placement.
+local function BuildChargeTextControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+
+    local right = opts.rightColumn or container
+
+    AddCheckboxRow(container, {
+        label = "Show Count Text (Charges/Uses)",
+        value = styleTable.showChargeText ~= false,
+        indent = opts.indent,
+        onChange = function(val)
+            styleTable.showChargeText = val
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
+
+    if styleTable.showChargeText ~= false then
+        AddFontControls(container, styleTable, "charge", {}, refreshCallback,
+            { row = true, indent = true })
+
+        -- deferCommit is deliberately absent throughout, matching the
+        -- stock color pickers these rows replaced.
+        local function ChargeColorRow(rowLabel, key)
+            AddColorRow(right, {
+                label = rowLabel,
+                tbl = styleTable,
+                key = key,
+                default = {1, 1, 1, 1},
+                hasAlpha = true,
+                onConfirm = refreshCallback,
+                onChange = refreshCallback,
+            })
+        end
+        ChargeColorRow("Font Color (Max Charges)", "chargeFontColor")
+        ChargeColorRow("Font Color (Missing Charges)", "chargeFontColorMissing")
+        ChargeColorRow("Font Color (Zero Charges)", "chargeFontColorZero")
+
+        AddAnchorDropdown(right, styleTable, "chargeAnchor", "BOTTOMRIGHT", refreshCallback,
+            nil, { row = true })
+        AddOffsetSliders(right, styleTable, "chargeXOffset", "chargeYOffset", {x = -2, y = 2},
+            refreshCallback, { row = true })
+    end
+end
+
+-- Row grammar only: the render-mode dropdown reuses
+-- AddBorderRenderModeDropdown's own row mode, the conditional thickness slider
+-- is its child row, and the color is a color row. Three rows in one column -
+-- splitting a parent from its children would orphan the indent.
+local function BuildBorderControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+
+    local function ApplyRenderModeChanged()
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end
+    local function ApplyBorderSize(val)
+        styleTable.borderSize = val
+        refreshCallback()
+    end
+
+    local renderMode = AddBorderRenderModeDropdown(container, styleTable, "borderRenderMode",
+        ApplyRenderModeChanged, nil, { row = true, indent = opts.indent })
+    local borderThicknessLocked = ST.IsBorderThicknessLocked()
+
+    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+        AddSliderRow(container, {
+            label = "Border Size",
+            indent = true,
+            min = 0, max = 5, step = 0.1,
+            value = styleTable.borderSize or ST.DEFAULT_BORDER_SIZE,
+            disabled = borderThicknessLocked,
+            onChange = function(val)
+                if borderThicknessLocked then return end
+                ApplyBorderSize(val)
+            end,
+        })
+    end
+
+    -- deferCommit is deliberately absent, matching the stock color picker this
+    -- row replaced.
+    AddColorRow(container, {
+        label = "Border Color",
+        indent = opts.indent,
+        tbl = styleTable,
+        key = "borderColor",
+        default = {0, 0, 0, 1},
+        hasAlpha = true,
+        onConfirm = refreshCallback,
+        onChange = refreshCallback,
+    })
+end
+
+-- Row grammar only: one color row, which sizes itself. The pre-redesign stock
+-- picker took a width setter for two-column Flow hosts; that shape is gone, but
+-- the parameter stays to hold its POSITION - the Overrides tab still calls this
+-- with an explicit nil there (ButtonSettingsOverrides.lua), and moving opts up
+-- would silently read that nil as the options table.
+local function BuildBackgroundColorControls(container, styleTable, refreshCallback, _legacySetWidth, opts)
+    return AddColorRow(container, {
+        label = "Background Color",
+        indent = opts and opts.indent,
+        tbl = styleTable,
+        key = "backgroundColor",
+        default = {0, 0, 0, 0.5},
+        hasAlpha = true,
+        onConfirm = refreshCallback,
+        onChange = refreshCallback,
+    })
+end
+
+-- Row grammar only: one slider row. WeakAuras-style zoom: crops the icon
+-- artwork toward its center without changing the frame's size.
+-- Mirror-first when opts.previewRefresh is given: drag ticks save the value
+-- and repaint only that preview, and refreshCallback restyles the live
+-- surface once on release (the slider's edit box fires the release path on
+-- Enter too, so typed values also apply live).
+local function BuildIconZoomControls(container, styleTable, refreshCallback, opts)
+    -- Masque skins own the icon's texture coordinates, so the row locks
+    -- whenever the panel is skinned (mirrors the Square Icons row).
+    local locked = opts and (opts.disabled or opts.masqueEnabled) or false
+    local previewRefresh = opts and opts.previewRefresh
+    return AddSliderRow(container, {
+        label = "Icon Zoom",
+        indent = opts and opts.indent,
+        disabled = locked,
+        min = 0, max = 50, step = 1,
+        value = styleTable.iconZoom or 0,
+        onChange = function(val)
+            if locked then return end
+            styleTable.iconZoom = val
+            if previewRefresh then previewRefresh() else refreshCallback() end
+        end,
+        onRelease = previewRefresh and function(val)
+            if locked then return end
+            styleTable.iconZoom = val
+            refreshCallback()
+        end or nil,
+    })
+end
+
+-- Row grammar only: one checkbox row.
+local function BuildDesaturationControls(container, styleTable, refreshCallback, opts)
+    return AddCheckboxRow(container, {
+        label = "Show Desaturate On Cooldown",
+        value = styleTable.desaturateOnCooldown or false,
+        indent = opts and opts.indent,
+        onChange = function(val)
+            styleTable.desaturateOnCooldown = val
+            refreshCallback()
+        end,
+    })
+end
+
+-- Tooltip position + combat hide (tracker D-C1). Group-level only (owner
+-- ruling 2026-07-24) and applied to both the normal button tooltip and the
+-- aura display's tooltip. Lives in the Show Tooltips advanced panel.
+local TOOLTIP_ANCHOR_LIST = {
+    default = "Default",
+    above = "Above",
+    below = "Below",
+    left = "Left",
+    right = "Right",
+    cursor = "At Cursor",
+}
+local TOOLTIP_ANCHOR_ORDER = { "default", "above", "below", "left", "right", "cursor" }
+
+-- Row grammar only (RowWidgets.lua), single rail: this is the interior of the
+-- Show Tooltips advanced panel and has no other call site. A panel is one
+-- narrow column (AdvancedSettingsPanel.lua), so both rows go straight onto
+-- `container`.
+local function BuildTooltipBehaviorControls(container, styleTable, refreshCallback)
+    local drop = AddDropdownRow(container, {
+        label = "Tooltip Position",
+        list = TOOLTIP_ANCHOR_LIST,
+        order = TOOLTIP_ANCHOR_ORDER,
+        value = styleTable.tooltipAnchor or "default",
+        onChange = function(val)
+            styleTable.tooltipAnchor = val
+            refreshCallback()
+        end,
+    })
+
+    local combatCb = AddCheckboxRow(container, {
+        label = "Hide Tooltips in Combat",
+        value = styleTable.tooltipHideInCombat == true,
+        onChange = function(val)
+            styleTable.tooltipHideInCombat = val
+            refreshCallback()
+        end,
+    })
+
+    return drop, combatCb
+end
+
+-- opts.advanced: attach the gear that opens Tooltip Position / Hide in Combat
+-- (group-level tabs only — those keys are group style, with no per-entry
+-- override section, so the override editor calls this without it).
+--
+-- Row grammar only: the toggle is a CDC-CheckBoxRow whose gear chains off the
+-- label.
+local function BuildShowTooltipsControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+
+    local cb = AddCheckboxRow(container, {
+        label = "Show Tooltips",
+        value = styleTable.showTooltips == true,
+        indent = opts.indent,
+        onChange = function(val)
+            styleTable.showTooltips = val
+            refreshCallback()
+        end,
+    })
+
+    if not opts.advanced then
+        return cb
+    end
+
+    local _, advBtn = AddAdvancedToggle(cb, "tooltipBehavior",
+        opts.infoButtons or tabInfoButtons,
+        styleTable.showTooltips == true, {
+            title = "Tooltip Advanced",
+            build = function(panel)
+                BuildTooltipBehaviorControls(panel, styleTable, refreshCallback)
+            end,
+        })
+
+    return cb, advBtn
+end
+
+-- Row grammar only: one checkbox row.
+local function BuildShowOutOfRangeControls(container, styleTable, refreshCallback, opts)
+    return AddCheckboxRow(container, {
+        label = "Show Out of Range",
+        value = styleTable.showOutOfRange or false,
+        indent = opts and opts.indent,
+        onChange = function(val)
+            styleTable.showOutOfRange = val
+            refreshCallback()
+        end,
+    })
+end
+
+local ALLOW_PINGS_TOOLTIP_LINES = {
+    "Allow Pings",
+    {"Ping an entry to your group like a Cooldown Manager icon: hold the ping keybind and click it.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"The ping shows the spell or item and whether it is ready.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Works with tooltips off. Entries added as auras cannot be pinged.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Bars ping from the bar icon.", 1, 1, 1, true},
+}
+
+-- Row grammar only: one checkbox row with a "?" badge.
+local function BuildAllowPingsControls(container, styleTable, refreshCallback, opts)
+    local cb = AddCheckboxRow(container, {
+        label = "Allow Pings",
+        value = styleTable.allowPings == true,
+        indent = opts and opts.indent,
+        onChange = function(val)
+            styleTable.allowPings = val
+            refreshCallback()
+        end,
+    })
+    AnchorRowBadge(cb, CreateInfoButton(cb.frame, cb.frame, "LEFT", "LEFT", 0, 0,
+        ALLOW_PINGS_TOOLTIP_LINES, cb))
+    return cb
+end
+
+-- Row grammar only (RowWidgets.lua). Each conditional color indents as the
+-- child of the toggle that reveals it; the pre-redesign shape's row-break
+-- spacer has no equivalent here, because the grid columns do that work.
+-- deferCommit is deliberately absent throughout, matching the stock color
+-- pickers these rows replaced.
+--
+-- Aura tint applies to the slot-kit aura layer (consumed at bind time by
+-- AuraDisplay.StyleSlotKit); only offered where an aura display exists.
+local function BuildIconTintControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+
+    local function TintColorRow(label, key, default, indent)
+        AddColorRow(container, {
+            label = label,
+            indent = indent,
+            tbl = styleTable,
+            key = key,
+            default = default,
+            hasAlpha = true,
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
+    end
+
+    TintColorRow("Base Icon Color", "iconTintColor", {1, 1, 1, 1}, opts.indent)
+
+    if styleTable.showUnusable and ST.UnusableVisualUsesDimTint(styleTable) then
+        TintColorRow("Unusable Dim Color", "iconUnusableTintColor", {0.4, 0.4, 0.4, 1}, opts.indent)
+    end
+
+    if opts.includeBackground then
+        BuildBackgroundColorControls(container, styleTable, refreshCallback, nil, opts)
+    end
+
+    AddCheckboxRow(container, {
+        label = "Use Separate Cooldown Tint",
+        value = styleTable.iconCooldownTintEnabled or false,
+        indent = opts.indent,
+        onChange = function(val)
+            styleTable.iconCooldownTintEnabled = val
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
+
+    if styleTable.iconCooldownTintEnabled then
+        TintColorRow("Cooldown Icon Color", "iconCooldownTintColor", {1, 0, 0.102, 1}, true)
+    end
+
+    if opts.showAuraTint then
+        AddCheckboxRow(container, {
+            label = "Use Separate Aura Tint",
+            value = styleTable.iconAuraTintEnabled or false,
+            indent = opts.indent,
+            onChange = function(val)
+                styleTable.iconAuraTintEnabled = val
+                refreshCallback()
+                RefreshStructuralControls(container)
+            end,
+        })
+
+        if styleTable.iconAuraTintEnabled then
+            TintColorRow("Aura Active Icon Color", "iconAuraTintColor", {0, 0.925, 1, 1}, true)
         end
     end
 end
 
-local function BuildAuraStackTextControls(container, styleTable, refreshCallback)
-    local auraStackCb = AceGUI:Create("CheckBox")
-    auraStackCb:SetLabel("Show Aura Stack Text")
-    auraStackCb:SetValue(styleTable.showAuraStackText ~= false)
-    auraStackCb:SetFullWidth(true)
-    auraStackCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showAuraStackText = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(auraStackCb)
-
-    if styleTable.showAuraStackText ~= false then
-        AddFontControls(container, styleTable, "auraStack", {}, refreshCallback)
-        AddColorPicker(container, styleTable, "auraStackFontColor", "Font Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
-        AddAnchorDropdown(container, styleTable, "auraStackAnchor", "BOTTOMLEFT", refreshCallback)
-        AddOffsetSliders(container, styleTable, "auraStackXOffset", "auraStackYOffset", {x = 2, y = 2}, refreshCallback)
-    end
-end
-
-local function BuildKeybindTextControls(container, styleTable, refreshCallback, opts)
-    local label = opts and opts.label or KEYBIND_CUSTOM_LABEL
-    local tooltip = opts and opts.tooltip or KEYBIND_CUSTOM_TOOLTIP
-    local kbCb = AceGUI:Create("CheckBox")
-    kbCb:SetLabel(label)
-    kbCb:SetValue(styleTable.showKeybindText or false)
-    kbCb:SetFullWidth(true)
-    kbCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showKeybindText = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(kbCb)
-
-    CreateInfoButton(kbCb.frame, kbCb.checkbg, "LEFT", "RIGHT", kbCb.text:GetStringWidth() + 4, 0, tooltip, kbCb)
-
-    if styleTable.showKeybindText then
-        AddAnchorDropdown(container, styleTable, "keybindAnchor", "TOPRIGHT", refreshCallback)
-        AddOffsetSliders(container, styleTable, "keybindXOffset", "keybindYOffset", {x = -2, y = -2}, refreshCallback)
-        AddFontControls(container, styleTable, "keybind", {size = 10, sizeMin = 6, sizeMax = 24}, refreshCallback)
-        AddColorPicker(container, styleTable, "keybindFontColor", "Font Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
-    end
-end
-
-local function BuildChargeTextControls(container, styleTable, refreshCallback)
-    local chargeTextCb = AceGUI:Create("CheckBox")
-    chargeTextCb:SetLabel("Show Count Text (Charges/Uses)")
-    chargeTextCb:SetValue(styleTable.showChargeText ~= false)
-    chargeTextCb:SetFullWidth(true)
-    chargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showChargeText = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(chargeTextCb)
-
-    if styleTable.showChargeText ~= false then
-        AddFontControls(container, styleTable, "charge", {}, refreshCallback)
-        AddColorPicker(container, styleTable, "chargeFontColor", "Font Color (Max Charges)", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
-        AddColorPicker(container, styleTable, "chargeFontColorMissing", "Font Color (Missing Charges)", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
-        AddColorPicker(container, styleTable, "chargeFontColorZero", "Font Color (Zero Charges)", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
-        AddAnchorDropdown(container, styleTable, "chargeAnchor", "BOTTOMRIGHT", refreshCallback)
-        AddOffsetSliders(container, styleTable, "chargeXOffset", "chargeYOffset", {x = -2, y = 2}, refreshCallback)
-    end
-end
-
-local function BuildBorderControls(container, styleTable, refreshCallback)
-    local renderMode = AddBorderRenderModeDropdown(container, styleTable, "borderRenderMode", function()
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    local borderThicknessLocked = ST.IsBorderThicknessLocked()
-
-    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-        local borderSlider = AceGUI:Create("Slider")
-        borderSlider:SetLabel("Border Size")
-        borderSlider:SetSliderValues(0, 5, 0.1)
-        borderSlider:SetValue(styleTable.borderSize or ST.DEFAULT_BORDER_SIZE)
-        borderSlider:SetFullWidth(true)
-        borderSlider:SetDisabled(borderThicknessLocked)
-        borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            if borderThicknessLocked then return end
-            styleTable.borderSize = val
+-- Row grammar only: one checkbox row.
+local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback, opts)
+    return AddCheckboxRow(container, {
+        label = "Show GCD Swipe",
+        value = styleTable.showGCDSwipe == true,
+        indent = opts and opts.indent,
+        onChange = function(val)
+            styleTable.showGCDSwipe = val
             refreshCallback()
-        end)
-        container:AddChild(borderSlider)
-    end
-
-    AddColorPicker(container, styleTable, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshCallback, refreshCallback)
-end
-
-local function BuildBackgroundColorControls(container, styleTable, refreshCallback)
-    AddColorPicker(container, styleTable, "backgroundColor", "Background Color", {0, 0, 0, 0.5}, true, refreshCallback, refreshCallback)
-end
-
-local function BuildDesaturationControls(container, styleTable, refreshCallback)
-    local desatCb = AceGUI:Create("CheckBox")
-    desatCb:SetLabel("Show Desaturate On Cooldown")
-    desatCb:SetValue(styleTable.desaturateOnCooldown or false)
-    desatCb:SetFullWidth(true)
-    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.desaturateOnCooldown = val
-        refreshCallback()
-    end)
-    container:AddChild(desatCb)
-end
-
-local function BuildShowTooltipsControls(container, styleTable, refreshCallback)
-    local cb = AceGUI:Create("CheckBox")
-    cb:SetLabel("Show Tooltips")
-    cb:SetValue(styleTable.showTooltips == true)
-    cb:SetFullWidth(true)
-    cb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showTooltips = val
-        refreshCallback()
-    end)
-    container:AddChild(cb)
-    return cb
-end
-
-local function BuildShowOutOfRangeControls(container, styleTable, refreshCallback)
-    local cb = AceGUI:Create("CheckBox")
-    cb:SetLabel("Show Out of Range")
-    cb:SetValue(styleTable.showOutOfRange or false)
-    cb:SetFullWidth(true)
-    cb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showOutOfRange = val
-        refreshCallback()
-    end)
-    container:AddChild(cb)
-    return cb
-end
-
-local function BuildIconTintControls(container, styleTable, refreshCallback)
-    AddColorPicker(container, styleTable, "iconTintColor", "Base Icon Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
-
-    local cdTintCb = AceGUI:Create("CheckBox")
-    cdTintCb:SetLabel("Use Separate Cooldown Tint")
-    cdTintCb:SetValue(styleTable.iconCooldownTintEnabled or false)
-    cdTintCb:SetFullWidth(true)
-    cdTintCb:SetCallback("OnValueChanged", function(w, e, val)
-        styleTable.iconCooldownTintEnabled = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(cdTintCb)
-
-    if styleTable.iconCooldownTintEnabled then
-        AddColorPicker(container, styleTable, "iconCooldownTintColor", "Cooldown Icon Color", {1, 0, 0.102, 1}, true, refreshCallback, refreshCallback)
-    end
-
-    local auraTintCb = AceGUI:Create("CheckBox")
-    auraTintCb:SetLabel("Use Separate Aura Tint")
-    auraTintCb:SetValue(styleTable.iconAuraTintEnabled or false)
-    auraTintCb:SetFullWidth(true)
-    auraTintCb:SetCallback("OnValueChanged", function(w, e, val)
-        styleTable.iconAuraTintEnabled = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(auraTintCb)
-
-    if styleTable.iconAuraTintEnabled then
-        AddColorPicker(container, styleTable, "iconAuraTintColor", "Aura Active Icon Color", {0, 0.925, 1, 1}, true, refreshCallback, refreshCallback)
-    end
-
-    if styleTable.showUnusable and ST.UnusableVisualUsesDimTint(styleTable) then
-        AddColorPicker(container, styleTable, "iconUnusableTintColor", "Unusable Dim Color", {0.4, 0.4, 0.4, 1}, true, refreshCallback, refreshCallback)
-    end
-end
-
-local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback)
-    local cb = AceGUI:Create("CheckBox")
-    cb:SetLabel("Show GCD Swipe")
-    cb:SetValue(styleTable.showGCDSwipe == true)
-    cb:SetFullWidth(true)
-    cb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showGCDSwipe = val
-        refreshCallback()
-    end)
-    container:AddChild(cb)
+        end,
+    })
 end
 
 local function IsIconFillTimerEnabled(styleTable, opts)
@@ -615,97 +941,252 @@ end
 
 local BuildIconFillTimerAdvancedControls
 
+-- Row grammar only. The three follow-on toggles keep the indent rule (children
+-- of the first one in override mode, siblings otherwise); the two conditional
+-- controls always indent under the toggle that reveals them. One parent chain,
+-- so it stays in a single column.
 local function BuildCooldownSwipeControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
     local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
 
-    local cb = AceGUI:Create("CheckBox")
-    cb:SetLabel("Show Cooldown Swipe")
-    cb:SetValue(styleTable.showCooldownSwipe ~= false)
-    cb:SetFullWidth(true)
-    cb:SetDisabled(disabledByIconFill)
-    cb:SetCallback("OnValueChanged", function(widget, event, val)
+    -- The writes both shapes perform, hoisted so neither can wire a different
+    -- store than the other. RefreshStructuralControls is on exactly the calls
+    -- that change which further controls exist.
+    local function ApplyShowSwipe(val)
         if disabledByIconFill then return end
         styleTable.showCooldownSwipe = val
         refreshCallback()
-    end)
-    container:AddChild(cb)
-
-    local reverseCb = AceGUI:Create("CheckBox")
-    reverseCb:SetLabel("Reverse Swipe")
-    reverseCb:SetValue(styleTable.cooldownSwipeReverse or false)
-    reverseCb:SetFullWidth(true)
-    reverseCb:SetDisabled(disabledByIconFill)
-    reverseCb:SetCallback("OnValueChanged", function(widget, event, val)
+    end
+    local function ApplyReverse(val)
         if disabledByIconFill then return end
         styleTable.cooldownSwipeReverse = val
         refreshCallback()
-    end)
-    container:AddChild(reverseCb)
-    ApplyOverrideCheckboxIndent(reverseCb, opts)
-
-    local fillCb = AceGUI:Create("CheckBox")
-    fillCb:SetLabel("Show Swipe Fill")
-    fillCb:SetValue(styleTable.showCooldownSwipeFill ~= false)
-    fillCb:SetFullWidth(true)
-    fillCb:SetDisabled(disabledByIconFill)
-    fillCb:SetCallback("OnValueChanged", function(widget, event, val)
+    end
+    local function ApplyShowFill(val)
         if disabledByIconFill then return end
         styleTable.showCooldownSwipeFill = val
         refreshCallback()
         RefreshStructuralControls(container)
-    end)
-    container:AddChild(fillCb)
-    ApplyOverrideCheckboxIndent(fillCb, opts)
-
-    -- Swipe Fill Opacity (only when fill is visible)
-    if styleTable.showCooldownSwipeFill ~= false then
-        local alphaSlider = AceGUI:Create("Slider")
-        alphaSlider:SetLabel("Swipe Fill Opacity")
-        alphaSlider:SetSliderValues(0, 1, 0.05)
-        alphaSlider:SetIsPercent(true)
-        alphaSlider:SetValue(styleTable.cooldownSwipeAlpha or 0.8)
-        alphaSlider:SetFullWidth(true)
-        if alphaSlider.SetDisabled then alphaSlider:SetDisabled(disabledByIconFill) end
-        alphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            if disabledByIconFill then return end
-            styleTable.cooldownSwipeAlpha = val
-            refreshCallback()
-        end)
-        container:AddChild(alphaSlider)
     end
-
-    local edgeCb = AceGUI:Create("CheckBox")
-    edgeCb:SetLabel("Show Swipe Edge")
-    edgeCb:SetValue(styleTable.showCooldownSwipeEdge ~= false)
-    edgeCb:SetFullWidth(true)
-    edgeCb:SetDisabled(disabledByIconFill)
-    edgeCb:SetCallback("OnValueChanged", function(widget, event, val)
+    local function ApplyFillAlpha(val)
         if disabledByIconFill then return end
-        styleTable.showCooldownSwipeEdge = val
+        styleTable.cooldownSwipeAlpha = val
+        refreshCallback()
+    end
+    local function ApplyShowEdge(val)
+        if disabledByIconFill then return end
+        styleTable.cooldownSwipeEdgeEnabled = val
         refreshCallback()
         RefreshStructuralControls(container)
-    end)
-    container:AddChild(edgeCb)
-    ApplyOverrideCheckboxIndent(edgeCb, opts)
+    end
 
-    -- Swipe Edge Color (only when edge is visible)
-    if styleTable.showCooldownSwipeEdge ~= false then
-        local edgeColor = AddColorPicker(container, styleTable, "cooldownSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
-        if edgeColor.SetDisabled then edgeColor:SetDisabled(disabledByIconFill) end
+    local childIndent = opts.isOverride and true or opts.indent
+
+    local swipeRow = AddCheckboxRow(container, {
+        label = "Show Cooldown Swipe",
+        value = styleTable.showCooldownSwipe ~= false,
+        indent = opts.indent,
+        disabled = disabledByIconFill,
+        onChange = ApplyShowSwipe,
+    })
+
+    AddCheckboxRow(container, {
+        label = "Reverse Swipe",
+        value = styleTable.cooldownSwipeReverse or false,
+        indent = childIndent,
+        disabled = disabledByIconFill,
+        onChange = ApplyReverse,
+    })
+
+    AddCheckboxRow(container, {
+        label = "Show Swipe Fill",
+        value = styleTable.showCooldownSwipeFill ~= false,
+        indent = childIndent,
+        disabled = disabledByIconFill,
+        onChange = ApplyShowFill,
+    })
+
+    if styleTable.showCooldownSwipeFill ~= false then
+        -- Row grammar has no percent readout, so this reads 0 - 1 rather
+        -- than the pre-redesign slider's 0% - 100%; same store, same range.
+        -- The resource-bar opacity rows already read that way.
+        AddSliderRow(container, {
+            label = "Swipe Fill Opacity",
+            indent = true,
+            min = 0, max = 1, step = 0.05,
+            value = styleTable.cooldownSwipeAlpha or 0.8,
+            disabled = disabledByIconFill,
+            onChange = ApplyFillAlpha,
+        })
+    end
+
+    AddCheckboxRow(container, {
+        label = "Show Swipe Edge",
+        value = styleTable.cooldownSwipeEdgeEnabled == true,
+        indent = childIndent,
+        disabled = disabledByIconFill,
+        onChange = ApplyShowEdge,
+    })
+
+    if styleTable.cooldownSwipeEdgeEnabled == true then
+        -- deferCommit is deliberately absent, matching the stock color picker
+        -- this row replaced.
+        AddColorRow(container, {
+            label = "Swipe Edge Color",
+            indent = true,
+            tbl = styleTable,
+            key = "cooldownSwipeEdgeColor",
+            default = {1, 1, 1, 1},
+            hasAlpha = true,
+            disabled = disabledByIconFill,
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
+    end
+
+    return swipeRow
+end
+
+-- Aura duration swipe (12.1 compositing): the swipe is a slot-kit region that
+-- Blizzard drives directly; these keys are consumed at bind time by
+-- AuraDisplay.StyleSlotKit. Unlike the cooldown swipe there is no icon-fill
+-- coupling: the fill can no longer render aura durations, so disabling the
+-- swipe under it would leave aura entries with no timer at all.
+local AURA_BLIZZARD_SWIPE_TOOLTIP = {
+    "Blizzard Style Aura Swipe",
+    {"Uses Blizzard's fixed bright aura swipe style while Aura Duration Swipe is enabled. The other swipe settings in this panel do not affect it.", 1, 1, 1, true},
+}
+
+-- Row grammar only (RowWidgets.lua). This whole block is one parent chain
+-- hanging off Show Aura Duration Swipe, so it stays in the column that toggle
+-- sits in - splitting a chain across the grid would orphan the children from
+-- the row that gates them. Same rule the cooldown swipe follows.
+local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local blizzardStyleActive = styleTable.auraUseBlizzardSwipe == true
+    local childIndent = opts.isOverride and true or opts.indent
+
+    local blizzardRow = AddCheckboxRow(container, {
+        label = "Blizzard Style Aura Swipe",
+        value = blizzardStyleActive,
+        indent = childIndent,
+        onChange = function(val)
+            styleTable.auraUseBlizzardSwipe = val == true
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
+    -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+    -- onto the end of the row's label.
+    AnchorRowBadge(blizzardRow, CreateInfoButton(blizzardRow.frame, blizzardRow.frame, "LEFT", "LEFT", 0, 0,
+        AURA_BLIZZARD_SWIPE_TOOLTIP, blizzardRow))
+
+    AddCheckboxRow(container, {
+        label = "Reverse Swipe",
+        value = styleTable.auraDurationSwipeReverse ~= false,
+        indent = childIndent,
+        disabled = blizzardStyleActive,
+        onChange = function(val)
+            if blizzardStyleActive then return end
+            styleTable.auraDurationSwipeReverse = val
+            refreshCallback()
+        end,
+    })
+
+    AddCheckboxRow(container, {
+        label = "Show Swipe Fill",
+        value = styleTable.showAuraDurationSwipeFill ~= false,
+        indent = childIndent,
+        disabled = blizzardStyleActive,
+        onChange = function(val)
+            if blizzardStyleActive then return end
+            styleTable.showAuraDurationSwipeFill = val
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
+
+    if styleTable.showAuraDurationSwipeFill ~= false then
+        -- Row grammar has no percent readout, so this reads 0 - 1 rather than
+        -- the pre-redesign slider's 0% - 100%; same store, same range.
+        AddSliderRow(container, {
+            label = "Swipe Fill Opacity",
+            indent = true,
+            min = 0, max = 1, step = 0.05,
+            value = styleTable.auraDurationSwipeAlpha or 0.8,
+            disabled = blizzardStyleActive,
+            onChange = function(val)
+                if blizzardStyleActive then return end
+                styleTable.auraDurationSwipeAlpha = val
+                refreshCallback()
+            end,
+        })
+    end
+
+    AddCheckboxRow(container, {
+        label = "Show Swipe Edge",
+        value = styleTable.auraDurationSwipeEdgeEnabled == true,
+        indent = childIndent,
+        disabled = blizzardStyleActive,
+        onChange = function(val)
+            if blizzardStyleActive then return end
+            styleTable.auraDurationSwipeEdgeEnabled = val
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
+
+    if styleTable.auraDurationSwipeEdgeEnabled == true then
+        -- deferCommit is deliberately absent, matching the stock color picker
+        -- this row replaced.
+        AddColorRow(container, {
+            label = "Swipe Edge Color",
+            indent = true,
+            tbl = styleTable,
+            key = "auraDurationSwipeEdgeColor",
+            default = {1, 1, 1, 1},
+            hasAlpha = true,
+            disabled = blizzardStyleActive,
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
     end
 end
 
+local function BuildAuraDurationSwipeControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local showAuraDurationSwipe = styleTable.showAuraDurationSwipe
+    if showAuraDurationSwipe == nil and type(opts.fallbackStyle) == "table" then
+        showAuraDurationSwipe = opts.fallbackStyle.showAuraDurationSwipe
+    end
+
+    -- Row grammar only: one checkbox row.
+    local auraCb = AddCheckboxRow(container, {
+        label = "Show Aura Duration Swipe",
+        value = showAuraDurationSwipe ~= false,
+        indent = opts.indent,
+        onChange = function(val)
+            styleTable.showAuraDurationSwipe = val
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
+
+    if opts.showAdvancedControlsInline ~= false and showAuraDurationSwipe ~= false then
+        BuildAuraDurationSwipeAdvancedControls(container, styleTable, refreshCallback, opts)
+    end
+
+    return auraCb
+end
+
+-- Row grammar only (RowWidgets.lua). The masque note is a row tooltip rather
+-- than an inline gray line: a wrapped sentence does not fit a grid cell, and
+-- the row's own (?) badge already carries the same sentence.
 local function BuildIconFillTimerControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
     local disabledByMasque = opts.masqueEnabled == true
 
-    local cb = AceGUI:Create("CheckBox")
-    cb:SetLabel("Icon Fill Timer")
-    cb:SetValue(styleTable.iconFillEnabled == true)
-    cb:SetFullWidth(true)
-    cb:SetDisabled(disabledByMasque)
-    cb:SetCallback("OnValueChanged", function(widget, event, val)
+    local function ApplyIconFillEnabled(val)
         if disabledByMasque then return end
         styleTable.iconFillEnabled = val == true
         if styleTable.iconFillEnabled and type(opts.onEnabled) == "function" then
@@ -714,250 +1195,163 @@ local function BuildIconFillTimerControls(container, styleTable, refreshCallback
         refreshCallback()
         CooldownCompanion:UpdateAllCooldowns()
         CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(cb)
+    end
+
+    local cb = AddCheckboxRow(container, {
+        label = "Icon Fill Timer",
+        value = styleTable.iconFillEnabled == true,
+        disabled = disabledByMasque,
+        indent = opts.indent,
+        tooltip = disabledByMasque and {
+            "Icon Fill Timer",
+            {"Unavailable while Masque skinning is enabled for this group.", 1, 1, 1, true},
+        } or nil,
+        onChange = ApplyIconFillEnabled,
+    })
 
     if disabledByMasque then
-        local note = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(note)
-        note:SetText("|cff888888Unavailable while Masque skinning is enabled for this group.|r")
-        note:SetFullWidth(true)
-        container:AddChild(note)
         return cb
     end
 
     if opts.showAdvancedControlsInline ~= false then
-        BuildIconFillTimerAdvancedControls(container, styleTable, refreshCallback)
+        -- opts rides along so the inline block draws in the same shape as the
+        -- toggle above it.
+        BuildIconFillTimerAdvancedControls(container, styleTable, refreshCallback, opts)
     end
 
     return cb
 end
 
-BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCallback)
+-- Row grammar only (RowWidgets.lua). Like the aura swipe block above, these
+-- four are one parent chain under Icon Fill Timer and stay in that toggle's
+-- column.
+BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCallback, opts)
     if styleTable.iconFillEnabled ~= true then
         return
     end
 
+    opts = opts or {}
     local iconFillOrientation = styleTable.iconFillOrientation == "horizontal" and "horizontal" or "vertical"
 
-    local orientationDrop = AceGUI:Create("Dropdown")
-    orientationDrop:SetLabel("Orientation")
-    orientationDrop:SetList({
-        vertical = "Vertical",
-        horizontal = "Horizontal",
-    }, { "vertical", "horizontal" })
-    orientationDrop:SetValue(iconFillOrientation)
-    orientationDrop:SetFullWidth(true)
-    orientationDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.iconFillOrientation = val == "vertical" and "vertical" or "horizontal"
-        refreshCallback()
-        CooldownCompanion:UpdateAllCooldowns()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(orientationDrop)
-
-    local anchorEdgeDrop = AceGUI:Create("Dropdown")
-    anchorEdgeDrop:SetLabel("Anchor Edge")
-    if iconFillOrientation == "vertical" then
-        anchorEdgeDrop:SetList({
-            default = "Bottom",
-            reverse = "Top",
-        }, { "default", "reverse" })
-    else
-        anchorEdgeDrop:SetList({
-            default = "Left",
-            reverse = "Right",
-        }, { "default", "reverse" })
-    end
-    anchorEdgeDrop:SetValue(styleTable.iconFillReverse == true and "reverse" or "default")
-    anchorEdgeDrop:SetFullWidth(true)
-    anchorEdgeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.iconFillReverse = val == "reverse"
-        refreshCallback()
-        CooldownCompanion:UpdateAllCooldowns()
-    end)
-    container:AddChild(anchorEdgeDrop)
-
-    local timerMotionDrop = AceGUI:Create("Dropdown")
-    timerMotionDrop:SetLabel("Timer Motion")
-    timerMotionDrop:SetList({
-        drain = "Starts Full (Drain)",
-        fill = "Starts Empty (Fill)",
-    }, { "drain", "fill" })
-    timerMotionDrop:SetValue(styleTable.iconFillTimerBehavior == "fill" and "fill" or "drain")
-    timerMotionDrop:SetFullWidth(true)
-    timerMotionDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.iconFillTimerBehavior = val == "drain" and "drain" or "fill"
-        refreshCallback()
-        CooldownCompanion:UpdateAllCooldowns()
-    end)
-    container:AddChild(timerMotionDrop)
-
-    AddColorPicker(container, styleTable, "iconFillCooldownColor", "Cooldown Fill Color", {0.6, 0.13, 0.18, 0.55}, true, refreshCallback, refreshCallback)
-    AddColorPicker(container, styleTable, "iconFillAuraColor", "Aura Fill Color", {0.2, 1.0, 0.2, 0.55}, true, refreshCallback, refreshCallback)
-end
-
-local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, refreshCallback, opts)
-    opts = opts or {}
-    local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
-    local blizzardStyleActive = styleTable.auraUseBlizzardSwipe == true
-    local normalStyleDisabled = disabledByIconFill or blizzardStyleActive
-
-    local blizzardCb = AceGUI:Create("CheckBox")
-    blizzardCb:SetLabel("Blizzard CDM Aura Swipe Style")
-    blizzardCb:SetValue(styleTable.auraUseBlizzardSwipe == true)
-    blizzardCb:SetFullWidth(true)
-    blizzardCb:SetDisabled(disabledByIconFill)
-    blizzardCb:SetCallback("OnValueChanged", function(widget, event, val)
-        if disabledByIconFill then return end
-        styleTable.auraUseBlizzardSwipe = val == true
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(blizzardCb)
-    CreateInfoButton(blizzardCb.frame, blizzardCb.checkbg, "LEFT", "RIGHT", blizzardCb.text:GetStringWidth() + 4, 0, AURA_BLIZZARD_SWIPE_TOOLTIP, blizzardCb)
-    ApplyOverrideCheckboxIndent(blizzardCb, opts)
-
-    local reverseCb = AceGUI:Create("CheckBox")
-    reverseCb:SetLabel("Reverse Swipe")
-    reverseCb:SetValue(styleTable.auraDurationSwipeReverse or false)
-    reverseCb:SetFullWidth(true)
-    reverseCb:SetDisabled(normalStyleDisabled)
-    reverseCb:SetCallback("OnValueChanged", function(widget, event, val)
-        if normalStyleDisabled then return end
-        styleTable.auraDurationSwipeReverse = val
-        refreshCallback()
-    end)
-    container:AddChild(reverseCb)
-    ApplyOverrideCheckboxIndent(reverseCb, opts)
-
-    local fillCb = AceGUI:Create("CheckBox")
-    fillCb:SetLabel("Show Swipe Fill")
-    fillCb:SetValue(styleTable.showAuraDurationSwipeFill ~= false)
-    fillCb:SetFullWidth(true)
-    fillCb:SetDisabled(normalStyleDisabled)
-    fillCb:SetCallback("OnValueChanged", function(widget, event, val)
-        if normalStyleDisabled then return end
-        styleTable.showAuraDurationSwipeFill = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(fillCb)
-    ApplyOverrideCheckboxIndent(fillCb, opts)
-
-    if styleTable.showAuraDurationSwipeFill ~= false then
-        local alphaSlider = AceGUI:Create("Slider")
-        alphaSlider:SetLabel("Swipe Fill Opacity")
-        alphaSlider:SetSliderValues(0, 1, 0.05)
-        alphaSlider:SetIsPercent(true)
-        alphaSlider:SetValue(styleTable.auraDurationSwipeAlpha or 0.8)
-        alphaSlider:SetFullWidth(true)
-        if alphaSlider.SetDisabled then alphaSlider:SetDisabled(normalStyleDisabled) end
-        alphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            if normalStyleDisabled then return end
-            styleTable.auraDurationSwipeAlpha = val
+    -- On the Overrides tab these rows hang off the Icon Fill Timer toggle and
+    -- indent as its children; in the advanced panel's single rail the toggle
+    -- lives back on the tab, so the caller passes indent = false.
+    local childIndent = opts.indent ~= false
+    AddDropdownRow(container, {
+        label = "Orientation",
+        indent = childIndent,
+        list = { vertical = "Vertical", horizontal = "Horizontal" },
+        order = { "vertical", "horizontal" },
+        value = iconFillOrientation,
+        onChange = function(val)
+            styleTable.iconFillOrientation = val == "vertical" and "vertical" or "horizontal"
             refreshCallback()
-        end)
-        container:AddChild(alphaSlider)
-    end
+            CooldownCompanion:UpdateAllCooldowns()
+            RefreshStructuralControls(container)
+        end,
+    })
 
-    local edgeCb = AceGUI:Create("CheckBox")
-    edgeCb:SetLabel("Show Swipe Edge")
-    edgeCb:SetValue(styleTable.showAuraDurationSwipeEdge ~= false)
-    edgeCb:SetFullWidth(true)
-    edgeCb:SetDisabled(normalStyleDisabled)
-    edgeCb:SetCallback("OnValueChanged", function(widget, event, val)
-        if normalStyleDisabled then return end
-        styleTable.showAuraDurationSwipeEdge = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(edgeCb)
-    ApplyOverrideCheckboxIndent(edgeCb, opts)
-
-    if styleTable.showAuraDurationSwipeEdge ~= false then
-        local edgeColor = AddColorPicker(container, styleTable, "auraDurationSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
-        if edgeColor.SetDisabled then edgeColor:SetDisabled(normalStyleDisabled) end
+    local edgeList, edgeOrder
+    if iconFillOrientation == "vertical" then
+        edgeList, edgeOrder = { default = "Bottom", reverse = "Top" }, { "default", "reverse" }
+    else
+        edgeList, edgeOrder = { default = "Left", reverse = "Right" }, { "default", "reverse" }
     end
+    AddDropdownRow(container, {
+        label = "Anchor Edge",
+        indent = childIndent,
+        list = edgeList,
+        order = edgeOrder,
+        value = styleTable.iconFillReverse == true and "reverse" or "default",
+        onChange = function(val)
+            styleTable.iconFillReverse = val == "reverse"
+            refreshCallback()
+            CooldownCompanion:UpdateAllCooldowns()
+        end,
+    })
+
+    AddDropdownRow(container, {
+        label = "Timer Motion",
+        indent = childIndent,
+        pulloutWidth = WIDE_PULLOUT_WIDTH,
+        list = { drain = "Starts Full (Drain)", fill = "Starts Empty (Fill)" },
+        order = { "drain", "fill" },
+        value = styleTable.iconFillTimerBehavior == "fill" and "fill" or "drain",
+        onChange = function(val)
+            styleTable.iconFillTimerBehavior = val == "drain" and "drain" or "fill"
+            refreshCallback()
+            CooldownCompanion:UpdateAllCooldowns()
+        end,
+    })
+
+    -- deferCommit is deliberately absent, matching the stock color picker this
+    -- row replaced.
+    AddColorRow(container, {
+        label = "Cooldown Fill Color",
+        indent = childIndent,
+        tbl = styleTable,
+        key = "iconFillCooldownColor",
+        default = {0.6, 0.13, 0.18, 0.55},
+        hasAlpha = true,
+        onConfirm = refreshCallback,
+        onChange = refreshCallback,
+    })
 end
 
-local function BuildAuraDurationSwipeControls(container, styleTable, refreshCallback, opts)
-    opts = opts or {}
-    local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
-
-    local auraCb = AceGUI:Create("CheckBox")
-    auraCb:SetLabel("Show Aura Duration Swipe")
-    auraCb:SetValue(styleTable.showAuraDurationSwipe ~= false)
-    auraCb:SetFullWidth(true)
-    auraCb:SetDisabled(disabledByIconFill)
-    auraCb:SetCallback("OnValueChanged", function(widget, event, val)
-        if disabledByIconFill then return end
-        styleTable.showAuraDurationSwipe = val
-        refreshCallback()
-        if val == true and type(opts.onEnabled) == "function" then
-            opts.onEnabled()
-        end
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(auraCb)
-
-    if opts.showAdvancedControlsInline ~= false and styleTable.showAuraDurationSwipe ~= false then
-        BuildAuraDurationSwipeAdvancedControls(container, styleTable, refreshCallback, opts)
-    end
-
-    return auraCb
+-- Row grammar only: one checkbox row.
+local function BuildLossOfControlControls(container, styleTable, refreshCallback, opts)
+    return AddCheckboxRow(container, {
+        label = "Show Loss of Control",
+        value = styleTable.showLossOfControl or false,
+        indent = opts and opts.indent,
+        onChange = function(val)
+            styleTable.showLossOfControl = val
+            refreshCallback()
+        end,
+    })
 end
 
-local function BuildLossOfControlControls(container, styleTable, refreshCallback)
-    local locCb = AceGUI:Create("CheckBox")
-    locCb:SetLabel("Show Loss of Control")
-    locCb:SetValue(styleTable.showLossOfControl or false)
-    locCb:SetFullWidth(true)
-    locCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showLossOfControl = val
-        refreshCallback()
-    end)
-    container:AddChild(locCb)
-    return locCb
-end
-
+-- Row grammar only (RowWidgets.lua), single rail: this is the interior of the
+-- Unusable Visual advanced panel and has no other call site. `container` stays
+-- the panel scroll, which is what keeps RefreshStructuralControls routing to a
+-- panel rebuild rather than a whole-config one.
 local function BuildUnusableVisualModeControls(container, styleTable, refreshCallback)
-    local dimCb = AceGUI:Create("CheckBox")
-    dimCb:SetLabel("Dim Icon")
-    dimCb:SetValue(ST.UnusableVisualUsesDimTint(styleTable))
-    dimCb:SetFullWidth(true)
-    dimCb:SetCallback("OnValueChanged", function(widget, event, val)
-        ST.SetUnusableVisualMode(styleTable, val == true, ST.UnusableVisualUsesDesaturation(styleTable))
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(dimCb)
+    AddCheckboxRow(container, {
+        label = "Dim Icon",
+        value = ST.UnusableVisualUsesDimTint(styleTable),
+        onChange = function(val)
+            ST.SetUnusableVisualMode(styleTable, val == true, ST.UnusableVisualUsesDesaturation(styleTable))
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
 
-    local desatCb = AceGUI:Create("CheckBox")
-    desatCb:SetLabel("Desaturate Icon")
-    desatCb:SetValue(ST.UnusableVisualUsesDesaturation(styleTable))
-    desatCb:SetFullWidth(true)
-    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        ST.SetUnusableVisualMode(styleTable, ST.UnusableVisualUsesDimTint(styleTable), val == true)
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(desatCb)
+    AddCheckboxRow(container, {
+        label = "Desaturate Icon",
+        value = ST.UnusableVisualUsesDesaturation(styleTable),
+        onChange = function(val)
+            ST.SetUnusableVisualMode(styleTable, ST.UnusableVisualUsesDimTint(styleTable), val == true)
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
 end
 
+-- Row grammar only: the toggle is a CDC-CheckBoxRow whose gear chains off the
+-- label. The advanced Dim/Desaturate panel it opens is unchanged.
 local function BuildUnusableDimmingControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
 
-    local unusableCb = AceGUI:Create("CheckBox")
-    unusableCb:SetLabel("Show Unusable Visual")
-    unusableCb:SetValue(styleTable.showUnusable == true)
-    unusableCb:SetFullWidth(true)
-    unusableCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showUnusable = val == true
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(unusableCb)
+    local unusableCb = AddCheckboxRow(container, {
+        label = "Show Unusable Visual",
+        value = styleTable.showUnusable == true,
+        indent = opts.indent,
+        onChange = function(val)
+            styleTable.showUnusable = val == true
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
 
     local _, unusableAdvBtn = AddAdvancedToggle(unusableCb,
         opts.advancedKey or "unusableVisual",
@@ -972,355 +1366,328 @@ local function BuildUnusableDimmingControls(container, styleTable, refreshCallba
     return unusableCb, unusableAdvBtn
 end
 
-local function BuildAssistedHighlightControls(container, styleTable, refreshCallback, opts)
-    local hostileOnlyCb = AceGUI:Create("CheckBox")
-    hostileOnlyCb:SetLabel("Hostile Target Only")
-    hostileOnlyCb:SetValue(styleTable.assistedHighlightHostileTargetOnly ~= false)
-    hostileOnlyCb:SetFullWidth(true)
-    hostileOnlyCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.assistedHighlightHostileTargetOnly = val
-        refreshCallback()
-    end)
-    container:AddChild(hostileOnlyCb)
-    ApplyOverrideCheckboxIndent(hostileOnlyCb, opts)
+local ASSISTED_HIGHLIGHT_STYLES = {
+    blizzard = "Blizzard (Marching Ants)",
+    proc = "Proc Glow",
+    solid = "Solid Border",
+}
 
-    local highlightStyles = {
-        blizzard = "Blizzard (Marching Ants)",
-        proc = "Proc Glow",
-        solid = "Solid Border",
-    }
-    local styleDrop = AceGUI:Create("Dropdown")
-    styleDrop:SetLabel("Highlight Style")
-    styleDrop:SetList(highlightStyles)
-    styleDrop:SetValue(styleTable.assistedHighlightStyle or "blizzard")
-    styleDrop:SetFullWidth(true)
-    styleDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.assistedHighlightStyle = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(styleDrop)
+-- Row grammar only (RowWidgets.lua). LEFT column: when the highlight is allowed
+-- to show (the caller's Show Only In Combat row lands there too). RIGHT column:
+-- what it looks like - the style and whichever controls that style owns, which
+-- indent as its children.
+local function BuildAssistedHighlightControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local right = opts.rightColumn or container
+
+    AddCheckboxRow(container, {
+        label = "Hostile Target Only",
+        value = styleTable.assistedHighlightHostileTargetOnly ~= false,
+        indent = opts.indent,
+        onChange = function(val)
+            styleTable.assistedHighlightHostileTargetOnly = val
+            refreshCallback()
+        end,
+    })
+
+    AddDropdownRow(right, {
+        label = "Highlight Style",
+        pulloutWidth = WIDE_PULLOUT_WIDTH,
+        list = ASSISTED_HIGHLIGHT_STYLES,
+        value = styleTable.assistedHighlightStyle or "blizzard",
+        onChange = function(val)
+            styleTable.assistedHighlightStyle = val
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
+
+    -- deferCommit is deliberately absent throughout, matching the
+    -- stock color pickers these rows replaced.
+    local function HighlightColorRow(rowLabel, key, default)
+        AddColorRow(right, {
+            label = rowLabel,
+            indent = true,
+            tbl = styleTable,
+            key = key,
+            default = default,
+            hasAlpha = true,
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
+    end
+    local function HighlightSliderRow(rowLabel, key, minValue, maxValue, default)
+        AddSliderRow(right, {
+            label = rowLabel,
+            indent = true,
+            min = minValue, max = maxValue, step = 0.1,
+            value = styleTable[key] or default,
+            onChange = function(val)
+                styleTable[key] = val
+                refreshCallback()
+            end,
+        })
+    end
 
     if styleTable.assistedHighlightStyle == "solid" then
-        AddColorPicker(container, styleTable, "assistedHighlightColor", "Highlight Color", {0.3, 1, 0.3, 0.9}, true, refreshCallback, refreshCallback)
-
-        local hlSizeSlider = AceGUI:Create("Slider")
-        hlSizeSlider:SetLabel("Border Size")
-        hlSizeSlider:SetSliderValues(1, 6, 0.1)
-        hlSizeSlider:SetValue(styleTable.assistedHighlightBorderSize or 2)
-        hlSizeSlider:SetFullWidth(true)
-        hlSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.assistedHighlightBorderSize = val
-            refreshCallback()
-        end)
-        container:AddChild(hlSizeSlider)
+        HighlightColorRow("Highlight Color", "assistedHighlightColor", {0.3, 1, 0.3, 0.9})
+        HighlightSliderRow("Border Size", "assistedHighlightBorderSize", 1, 6, 2)
     elseif styleTable.assistedHighlightStyle == "blizzard" then
-        local blizzSlider = AceGUI:Create("Slider")
-        blizzSlider:SetLabel("Glow Size")
-        blizzSlider:SetSliderValues(0, 60, 0.1)
-        blizzSlider:SetValue(styleTable.assistedHighlightBlizzardOverhang or 32)
-        blizzSlider:SetFullWidth(true)
-        blizzSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.assistedHighlightBlizzardOverhang = val
-            refreshCallback()
-        end)
-        container:AddChild(blizzSlider)
+        HighlightSliderRow("Glow Size", "assistedHighlightBlizzardOverhang", 0, 60, 32)
     elseif styleTable.assistedHighlightStyle == "proc" then
-        AddColorPicker(container, styleTable, "assistedHighlightProcColor", "Glow Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
-
-        local procSlider = AceGUI:Create("Slider")
-        procSlider:SetLabel("Glow Size")
-        procSlider:SetSliderValues(0, 60, 0.1)
-        procSlider:SetValue(styleTable.assistedHighlightProcOverhang or 32)
-        procSlider:SetFullWidth(true)
-        procSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.assistedHighlightProcOverhang = val
-            refreshCallback()
-        end)
-        container:AddChild(procSlider)
+        HighlightColorRow("Glow Color", "assistedHighlightProcColor", {1, 1, 1, 1})
+        HighlightSliderRow("Glow Size", "assistedHighlightProcOverhang", 0, 60, 32)
     end
 end
 
 ------------------------------------------------------------------------
 -- GENERIC GLOW/EFFECT HELPERS
 ------------------------------------------------------------------------
--- Shared slider block used by both glow style controls and bar effect
--- controls. Builds conditional size/thickness/speed sliders based on
--- the current glow style.
+-- ONE SPEC, ONE RENDERER. Every per-style slider the glow vocabulary can draw
+-- is declared once here and rendered once, by AddGlowSliderRows below; the
+-- renderer owns no label, range, step, store key or fallback of its own, so a
+-- style's sliders cannot differ between the surfaces that draw them.
 --
--- keys = { size = "...", thickness = "...", speed = "...", lines = "..." }
+-- keys = { size = "...", thickness = "...", speed = "...", lines = "...",
+--          solidSizeDefault = n } - the calling glow family's store keys.
 -- pixelSizeMin: minimum for the pixel "Line Length" slider (1 for glow
---   style controls, 2 for bar effect controls)
-local function BuildGlowSliders(container, styleTable, currentStyle, keys, refreshCallback, pixelSizeMin)
-    if currentStyle == "solid" then
-        local sizeSlider = AceGUI:Create("Slider")
-        sizeSlider:SetLabel("Border Size")
-        sizeSlider:SetSliderValues(1, 8, 0.1)
-        sizeSlider:SetValue(styleTable[keys.size] or keys.solidSizeDefault or 5)
-        sizeSlider:SetFullWidth(true)
-        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.size] = val
-            refreshCallback()
-        end)
-        container:AddChild(sizeSlider)
-    elseif currentStyle == "pulsingBorder" then
-        local sizeSlider = AceGUI:Create("Slider")
-        sizeSlider:SetLabel("Border Size")
-        sizeSlider:SetSliderValues(1, 8, 0.1)
-        sizeSlider:SetValue(styleTable[keys.size] or keys.solidSizeDefault or 2)
-        sizeSlider:SetFullWidth(true)
-        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.size] = val
-            refreshCallback()
-        end)
-        container:AddChild(sizeSlider)
+--   style controls, 2 for bar effect controls).
+--
+-- Entry fields:
+--   label, min, max, step  literal slider setup
+--   keyField               which name in `keys` holds this slider's store key
+--   default                fallback when the store holds nothing
+--   defaultFrom            name in `keys` whose value outranks `default`
+--   minFrom                "pixelSizeMin": the min comes from the parameter
+--   requiresKey            skip the entry when `keys[keyField]` is absent
+--                          (the optional dash count/thickness sliders)
+--   clampToRange           a stored value outside [min, max] falls back to
+--                          `default` (autocast's particle scale)
+--
+-- A style with no list here (color, overlay, none, anything unknown) draws
+-- nothing, exactly as the old if/else chain did by falling through.
+local GLOW_SLIDER_SPEC = {
+    solid = {
+        {label = "Border Size", keyField = "size", min = 1, max = 8, step = 0.1,
+            default = 5, defaultFrom = "solidSizeDefault"},
+    },
+    pulse = {
+        {label = "Border Size", keyField = "size", min = 1, max = 8, step = 0.1,
+            default = 2, defaultFrom = "solidSizeDefault"},
+        {label = "Pulse Duration", keyField = "speed", min = 0.1, max = 2.0, step = 0.05, default = 0.5},
+    },
+    pixel = {
+        {label = "Line Length", keyField = "size", minFrom = "pixelSizeMin", max = 12, step = 0.1, default = 8},
+        {label = "Line Thickness", keyField = "thickness", min = 1, max = 6, step = 0.1, default = 4},
+        {label = "Speed", keyField = "speed", min = 10, max = 200, step = 0.1, default = 50},
+        {label = "Number of Lines", keyField = "lines", min = 1, max = 16, step = 1, default = 8, requiresKey = true},
+    },
+    glow = {
+        {label = "Glow Size", keyField = "size", min = 0, max = 60, step = 0.1, default = 30},
+    },
+    -- Same slider as glow, tighter default: the marching-ants art overhangs
+    -- less than Blizzard's proc glow at the same nominal size.
+    ants = {
+        {label = "Glow Size", keyField = "size", min = 0, max = 60, step = 0.1, default = 23},
+    },
+    colorShift = {
+        {label = "Border Size", keyField = "size", min = 1, max = 8, step = 0.1,
+            default = 2, defaultFrom = "solidSizeDefault"},
+        {label = "Shift Duration", keyField = "speed", min = 0.1, max = 2.0, step = 0.05, default = 0.8},
+    },
+    dashes = {
+        {label = "Dash Length", keyField = "size", min = 2, max = 20, step = 0.5, default = 12},
+        {label = "Dash Thickness", keyField = "thickness", min = 1, max = 8, step = 0.5, default = 3, requiresKey = true},
+        {label = "Number of Dashes", keyField = "lines", min = 1, max = 8, step = 1, default = 5, requiresKey = true},
+        {label = "Lap Duration", keyField = "speed", min = 1, max = 3, step = 0.05, default = 2},
+    },
+    autocast = {
+        {label = "Particle Scale", keyField = "size", min = 0.2, max = 3, step = 0.05, default = 2, clampToRange = true},
+        {label = "Frequency", keyField = "speed", min = 10, max = 200, step = 0.1, default = 50},
+    },
+}
+-- proc is Blizzard's glow under the aura kit's name, and pulsingBorder is the
+-- legacy spelling of pulse; a saved profile carrying either must draw the same
+-- sliders the modern value does.
+GLOW_SLIDER_SPEC.proc = GLOW_SLIDER_SPEC.glow
+GLOW_SLIDER_SPEC.pulsingBorder = GLOW_SLIDER_SPEC.pulse
 
-        local speedSlider = AceGUI:Create("Slider")
-        speedSlider:SetLabel("Pulse Duration")
-        speedSlider:SetSliderValues(0.1, 2.0, 0.05)
-        speedSlider:SetValue(styleTable[keys.speed] or 0.5)
-        speedSlider:SetFullWidth(true)
-        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.speed] = val
-            refreshCallback()
-        end)
-        container:AddChild(speedSlider)
-    elseif currentStyle == "pixel" then
-        local sizeSlider = AceGUI:Create("Slider")
-        sizeSlider:SetLabel("Line Length")
-        sizeSlider:SetSliderValues(pixelSizeMin, 12, 0.1)
-        sizeSlider:SetValue(styleTable[keys.size] or 8)
-        sizeSlider:SetFullWidth(true)
-        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.size] = val
-            refreshCallback()
-        end)
-        container:AddChild(sizeSlider)
+-- Resolve one spec entry against a caller's store. Returns false when the
+-- entry is conditional on a key this caller does not have; otherwise the store
+-- key, the resolved minimum and the value to seed the slider with.
+--
+-- storeKey may legitimately come back nil for an entry without requiresKey
+-- (the pixel thickness slider has always been emitted unconditionally); that
+-- reads as nil from the style table exactly as it did before.
+local function ResolveGlowSliderEntry(entry, styleTable, keys, pixelSizeMin)
+    local storeKey = keys[entry.keyField]
+    if entry.requiresKey and not storeKey then
+        return false
+    end
 
-        local thicknessSlider = AceGUI:Create("Slider")
-        thicknessSlider:SetLabel("Line Thickness")
-        thicknessSlider:SetSliderValues(1, 6, 0.1)
-        thicknessSlider:SetValue(styleTable[keys.thickness] or 4)
-        thicknessSlider:SetFullWidth(true)
-        thicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.thickness] = val
-            refreshCallback()
-        end)
-        container:AddChild(thicknessSlider)
+    local minValue = entry.minFrom and pixelSizeMin or entry.min
+    local default = (entry.defaultFrom and keys[entry.defaultFrom]) or entry.default
+    local value = styleTable[storeKey]
+    if entry.clampToRange and (not value or value < minValue or value > entry.max) then
+        value = default
+    end
 
-        local speedSlider = AceGUI:Create("Slider")
-        speedSlider:SetLabel("Speed")
-        speedSlider:SetSliderValues(10, 200, 0.1)
-        speedSlider:SetValue(styleTable[keys.speed] or 50)
-        speedSlider:SetFullWidth(true)
-        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.speed] = val
-            refreshCallback()
-        end)
-        container:AddChild(speedSlider)
+    return true, storeKey, minValue, value or default
+end
 
-        if keys.lines then
-            local linesSlider = AceGUI:Create("Slider")
-            linesSlider:SetLabel("Number of Lines")
-            linesSlider:SetSliderValues(1, 16, 1)
-            linesSlider:SetValue(styleTable[keys.lines] or 8)
-            linesSlider:SetFullWidth(true)
-            linesSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                styleTable[keys.lines] = val
-                refreshCallback()
-            end)
-            container:AddChild(linesSlider)
+-- The `keys` table the renderer reads, assembled from a glow cfg. Shared so
+-- every caller hands the spec the same stores.
+local function GlowSliderKeys(cfg)
+    return {
+        size = cfg.sizeKey,
+        thickness = cfg.thicknessKey,
+        speed = cfg.speedKey,
+        lines = cfg.linesKey,
+        solidSizeDefault = cfg.solidSizeDefault,
+    }
+end
+
+-- The one renderer over the spec above, so the surfaces that draw a glow
+-- (BuildGlowStyleControls and, through it, BuildBarActiveAuraControls) cannot
+-- draw one style's sliders differently. Everything that varies is already in
+-- GLOW_SLIDER_SPEC and the caller's `keys`; this function owns nothing but the
+-- row shape.
+--
+-- `previewRefresh` is the mirror-first opt-in (the resources surfaces, owner
+-- ruling 2026-08-02): with it supplied the drag tick repaints only the caller's
+-- preview and `refreshCallback` runs once on release, exactly the split
+-- BuildIconZoomControls already offers. Omitted - which is every non-resource
+-- caller - the rows keep applying on every tick, unchanged.
+local function AddGlowSliderRows(container, styleTable, currentStyle, keys, refreshCallback, pixelSizeMin, indent, previewRefresh)
+    for _, entry in ipairs(GLOW_SLIDER_SPEC[currentStyle] or {}) do
+        local ok, storeKey, minValue, value = ResolveGlowSliderEntry(entry, styleTable, keys, pixelSizeMin)
+        if ok then
+            AddSliderRow(container, {
+                label = entry.label,
+                indent = indent,
+                min = minValue, max = entry.max, step = entry.step,
+                value = value,
+                onChange = function(val)
+                    styleTable[storeKey] = val
+                    local notify = previewRefresh or refreshCallback
+                    notify()
+                end,
+                onRelease = previewRefresh and function(val)
+                    styleTable[storeKey] = val
+                    refreshCallback()
+                end or nil,
+            })
         end
-    elseif currentStyle == "glow" then
-        local sizeSlider = AceGUI:Create("Slider")
-        sizeSlider:SetLabel("Glow Size")
-        sizeSlider:SetSliderValues(0, 60, 0.1)
-        sizeSlider:SetValue(styleTable[keys.size] or 30)
-        sizeSlider:SetFullWidth(true)
-        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.size] = val
-            refreshCallback()
-        end)
-        container:AddChild(sizeSlider)
-    elseif currentStyle == "lcgButton" then
-        local speedSlider = AceGUI:Create("Slider")
-        speedSlider:SetLabel("Frequency")
-        speedSlider:SetSliderValues(10, 200, 0.1)
-        speedSlider:SetValue(styleTable[keys.speed] or 50)
-        speedSlider:SetFullWidth(true)
-        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.speed] = val
-            refreshCallback()
-        end)
-        container:AddChild(speedSlider)
-    elseif currentStyle == "lcgAutoCast" then
-        local sizeSlider = AceGUI:Create("Slider")
-        sizeSlider:SetLabel("Particle Scale")
-        sizeSlider:SetSliderValues(0.2, 3, 0.05)
-        local currentScale = styleTable[keys.size]
-        if not currentScale or currentScale < 0.2 or currentScale > 3 then
-            currentScale = 2
-        end
-        sizeSlider:SetValue(currentScale)
-        sizeSlider:SetFullWidth(true)
-        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.size] = val
-            refreshCallback()
-        end)
-        container:AddChild(sizeSlider)
-
-        local speedSlider = AceGUI:Create("Slider")
-        speedSlider:SetLabel("Frequency")
-        speedSlider:SetSliderValues(10, 200, 0.1)
-        speedSlider:SetValue(styleTable[keys.speed] or 50)
-        speedSlider:SetFullWidth(true)
-        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.speed] = val
-            refreshCallback()
-        end)
-        container:AddChild(speedSlider)
     end
 end
 
--- Legacy profile compatibility: lcgProc was removed because it duplicated Blizzard glow.
+-- Legacy profile compatibility: lcgProc duplicated Blizzard glow; lcgButton
+-- and lcgAutoCast came from the removed LibCustomGlow library (lcgButton maps
+-- to its modern Blizzard successor, lcgAutoCast to the CC-owned rebuild).
 local function NormalizeLegacyGlowStyle(style)
-    if style == "lcgProc" then
+    if style == "lcgProc" or style == "lcgButton" then
         return "glow"
+    end
+    if style == "lcgAutoCast" then
+        return "autocast"
     end
     return style
 end
 
-local LCG_GLOW_STYLE_OPTIONS = {
+local PROC_GLOW_STYLE_OPTIONS = {
     ["solid"] = "Solid Border",
     ["pixel"] = "Pixel Glow",
     ["glow"] = "Glow (Blizzard)",
-    ["lcgButton"] = "Action Button Glow",
-    ["lcgAutoCast"] = "Autocast Shine",
+    ["autocast"] = "Autocast Shine",
 }
-local LCG_GLOW_STYLE_ORDER = {"solid", "pixel", "glow", "lcgButton", "lcgAutoCast"}
+local PROC_GLOW_STYLE_ORDER = {"solid", "pixel", "glow", "autocast"}
 
-local BAR_BORDER_INDICATOR_OPTIONS = {
-    none = "None",
-    pixel = "Pixel Glow",
-    solid = "Solid Border",
-    pulsingBorder = "Pulsing Border",
-}
-local BAR_BORDER_INDICATOR_ORDER = {"none", "pixel", "solid", "pulsingBorder"}
-
-local MAX_STACK_BORDER_INDICATOR_OPTIONS = {
-    none = "None",
-    pixelGlow = "Pixel Glow",
-    solidBorder = "Solid Border",
-    pulsingBorder = "Pulsing Border",
-}
-local MAX_STACK_BORDER_INDICATOR_ORDER = {"none", "pixelGlow", "solidBorder", "pulsingBorder"}
-
-local function AddIndicatorSettingsHeading(container, text)
-    local heading = AceGUI:Create("Heading")
-    heading:SetText(text)
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    container:AddChild(heading)
-end
-
-local function NormalizeActiveAuraIndicatorSettings(styleTable)
-    local style = styleTable and styleTable.barAuraEffect or "none"
-    if style == "color" then
-        return "none"
-    elseif style == "pixel" or style == "solid" or style == "pulsingBorder" then
-        return style
-    end
-    return "none"
-end
-
-local function NormalizeMaxStackIndicatorSettings(styleTable)
-    local style = styleTable and styleTable.maxStacksGlowStyle or "solidBorder"
-    if style == "pulsingOverlay" or style == "none" then
-        return "none"
-    elseif style == "pixelGlow" or style == "solidBorder" or style == "pulsingBorder" then
-        return style
-    end
-    return "solidBorder"
-end
-
-local function IsSolidLikeBorderIndicator(style)
-    return style == "solid" or style == "pulsingBorder"
-        or style == "solidBorder"
-end
-
-local function IsPixelBorderIndicator(style)
-    return style == "pixel" or style == "pixelGlow"
-end
-
-local function ApplyBorderIndicatorDefaultSize(styleTable, sizeKey, oldStyle, newStyle, solidDefault, pixelDefault)
-    if not styleTable or not sizeKey then return end
-    if IsSolidLikeBorderIndicator(newStyle) and not IsSolidLikeBorderIndicator(oldStyle) then
-        styleTable[sizeKey] = solidDefault or 2
-    elseif IsPixelBorderIndicator(newStyle) and not IsPixelBorderIndicator(oldStyle) then
-        styleTable[sizeKey] = pixelDefault or 8
-    end
-end
-
-local function ApplyBorderIndicatorDefaultSpeed(styleTable, speedKey, oldStyle, newStyle, pulseDefault, pixelDefault)
-    if not styleTable or not speedKey then return end
-    if newStyle == "pulsingBorder" and oldStyle ~= "pulsingBorder" then
-        styleTable[speedKey] = pulseDefault or 0.5
-    elseif IsPixelBorderIndicator(newStyle) and not IsPixelBorderIndicator(oldStyle) then
-        styleTable[speedKey] = pixelDefault or 50
-    end
-end
-
--- Generic glow style builder (Group A): style dropdown + color picker +
--- conditional sliders. Replaces BuildProcGlowControls,
--- BuildPandemicGlowControls, BuildAuraIndicatorControls.
+-- Generic glow style builder (Group A), row grammar only: a style row, a color
+-- row and this style's conditional slider rows. Backs BuildProcGlowControls,
+-- BuildReadyGlowControls, BuildKeyPressHighlightControls.
 --
 -- cfg = { styleKey, colorKey, colorLabel, sizeKey, thicknessKey,
 --         speedKey, linesKey, defaultStyle, defaultColor }
 local function BuildGlowStyleControls(container, styleTable, refreshCallback, cfg, opts)
-    local isOverrideMode = opts and opts.isOverride == true
+    opts = opts or {}
+    local isOverrideMode = opts.isOverride == true
     local isEnabled
     if cfg.enableKey then
         local enabledVal = rawget(styleTable, cfg.enableKey)
         if enabledVal == nil and cfg.deriveEnableFromEffect and rawget(styleTable, cfg.effectKey) ~= nil then
             enabledVal = (styleTable[cfg.effectKey] or "none") ~= "none"
         end
-        if enabledVal == nil and opts and opts.fallbackStyle then
+        if enabledVal == nil and opts.fallbackStyle then
             enabledVal = opts.fallbackStyle[cfg.enableKey]
             if enabledVal == nil and cfg.deriveEnableFromEffect then
                 enabledVal = (opts.fallbackStyle[cfg.effectKey] or "none") ~= "none"
             end
         end
-        isEnabled = enabledVal ~= false
+        -- Default-on sections read nil as enabled; explicit-true sections
+        -- (the pandemic family) read nil as disabled, matching every
+        -- runtime resolution surface for their key.
+        if cfg.enableExplicitTrue then
+            isEnabled = enabledVal == true
+        else
+            isEnabled = enabledVal ~= false
+        end
     else
         isEnabled = styleTable[cfg.styleKey] ~= "none"
     end
 
-    if isOverrideMode and cfg.enableLabel then
-        local enableCb = AceGUI:Create("CheckBox")
-        enableCb:SetLabel(cfg.enableLabel)
-        enableCb:SetValue(isEnabled)
-        enableCb:SetFullWidth(true)
-        enableCb:SetCallback("OnValueChanged", function(widget, event, val)
-            if cfg.enableKey then
-                styleTable[cfg.enableKey] = val
-                if val and styleTable[cfg.styleKey] == "none" then
-                    styleTable[cfg.styleKey] = cfg.defaultStyle
-                end
-            else
-                styleTable[cfg.styleKey] = val and cfg.defaultStyle or "none"
+    -- The enable write both shapes perform, hoisted so neither can wire a
+    -- different store than the other.
+    local function ApplyEnabled(val)
+        if cfg.enableKey then
+            styleTable[cfg.enableKey] = val
+            if val and styleTable[cfg.styleKey] == "none" then
+                styleTable[cfg.styleKey] = cfg.defaultStyle
             end
-            refreshCallback()
-            RefreshStructuralControls(container)
-        end)
-        container:AddChild(enableCb)
+        else
+            styleTable[cfg.styleKey] = val and cfg.defaultStyle or "none"
+            -- Re-enabling forces the default style, so per-style keys must
+            -- reset with it (a proc-scale size on the pulse border renders
+            -- a 30px wall).
+            if val and cfg.onStyleChanged then
+                cfg.onStyleChanged(styleTable, cfg.defaultStyle)
+            end
+        end
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end
+    local function ApplyStyle(val)
+        if cfg.enableKey then
+            styleTable[cfg.enableKey] = true
+        end
+        styleTable[cfg.styleKey] = val
+        if cfg.onStyleChanged then
+            cfg.onStyleChanged(styleTable, val)
+        end
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end
+
+    -- LEFT column (the container handed over) is what the glow LOOKS like - the
+    -- enable toggle, the style, its colors and its sliders. RIGHT
+    -- (opts.rightColumn) is where afterEnableCallback's extras land, which on
+    -- the Overrides tab are the when-it-shows behaviour rows.
+    local extrasColumn = opts.rightColumn or container
+
+    if isOverrideMode and cfg.enableLabel then
+        AddCheckboxRow(container, {
+            label = cfg.enableLabel,
+            value = isEnabled,
+            indent = opts.indent,
+            onChange = ApplyEnabled,
+        })
 
         if not isEnabled then
             return
         end
     end
 
-    if opts and opts.afterEnableCallback then
-        opts.afterEnableCallback(container)
+    if opts.afterEnableCallback then
+        opts.afterEnableCallback(extrasColumn)
     end
 
     if styleTable[cfg.styleKey] == "lcgProc" then
@@ -1331,147 +1698,63 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
         currentStyle = cfg.defaultStyle
     end
 
-    local styleDrop = AceGUI:Create("Dropdown")
-    styleDrop:SetLabel("Glow Style")
     local styleOptions = cfg.styleOptions or {
         ["solid"] = "Solid Border",
         ["pixel"] = "Pixel Glow",
         ["glow"] = "Glow",
     }
     local styleOrder = cfg.styleOrder or {"solid", "pixel", "glow"}
-    styleDrop:SetList(styleOptions, styleOrder)
-    styleDrop:SetValue(currentStyle)
-    styleDrop:SetFullWidth(true)
-    styleDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        if cfg.enableKey then
-            styleTable[cfg.enableKey] = true
-        end
-        styleTable[cfg.styleKey] = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(styleDrop)
 
-    if not (opts and opts.hidePrimaryColorPicker) then
-        AddColorPicker(container, styleTable, cfg.colorKey, cfg.colorLabel, cfg.defaultColor, true, refreshCallback, refreshCallback)
+    -- Everything below the enable toggle belongs to it and disappears with it,
+    -- so it indents as its child - the same rule the bar aura effect follows.
+    local childIndent = (isOverrideMode and cfg.enableLabel) and true or opts.indent
+
+    AddDropdownRow(container, {
+        label = "Glow Style",
+        indent = childIndent,
+        pulloutWidth = WIDE_PULLOUT_WIDTH,
+        list = styleOptions,
+        order = styleOrder,
+        value = currentStyle,
+        onChange = ApplyStyle,
+    })
+
+    -- deferCommit is deliberately absent, matching the stock color pickers
+    -- these rows replaced. opts.previewRefresh (the mirror-first opt-in) moves
+    -- the picker-open path onto the caller's preview and leaves the commit on
+    -- refreshCallback; without it both stay on refreshCallback as before.
+    local pickerOpenRefresh = opts.previewRefresh or refreshCallback
+    -- cfg.noColorStyles: styles whose art is untinted (the pandemic CDM
+    -- look), so a color row would be a dead control.
+    if not opts.hidePrimaryColorPicker
+        and not (cfg.noColorStyles and cfg.noColorStyles[currentStyle]) then
+        AddColorRow(container, {
+            label = cfg.colorLabel,
+            indent = childIndent,
+            tbl = styleTable,
+            key = cfg.colorKey,
+            default = cfg.defaultColor,
+            hasAlpha = true,
+            onConfirm = refreshCallback,
+            onChange = pickerOpenRefresh,
+        })
     end
 
-    BuildGlowSliders(container, styleTable, currentStyle, {
-        size = cfg.sizeKey, thickness = cfg.thicknessKey, speed = cfg.speedKey, lines = cfg.linesKey,
-    }, refreshCallback, 1)
-end
-
--- Generic bar effect builder (Group B): primary color picker + effect
--- dropdown (none/pixel/solid) + conditional effect color +
--- conditional sliders. Replaces BuildPandemicBarControls,
--- BuildBarActiveAuraControls.
---
--- cfg = { colorKey, colorLabel, defaultColor, effectKey, effectLabel,
---         effectColorKey, effectColorLabel, defaultEffectColor,
---         effectSizeKey, effectThicknessKey, effectSpeedKey, effectLinesKey }
-local function BuildBarEffectControls(container, styleTable, refreshCallback, cfg, opts)
-    local isOverrideMode = opts and opts.isOverride == true
-    local isEnabled
-    if cfg.enableKey then
-        local enabledVal = rawget(styleTable, cfg.enableKey)
-        if enabledVal == nil and cfg.deriveEnableFromEffect and rawget(styleTable, cfg.effectKey) ~= nil then
-            enabledVal = (styleTable[cfg.effectKey] or "none") ~= "none"
-        end
-        if enabledVal == nil and opts and opts.fallbackStyle then
-            enabledVal = opts.fallbackStyle[cfg.enableKey]
-            if enabledVal == nil and cfg.deriveEnableFromEffect then
-                enabledVal = (opts.fallbackStyle[cfg.effectKey] or "none") ~= "none"
-            end
-        end
-        isEnabled = enabledVal ~= false
-    else
-        isEnabled = (styleTable[cfg.effectKey] or "none") ~= "none"
+    if cfg.color2Key and currentStyle == "colorShift" then
+        AddColorRow(container, {
+            label = cfg.color2Label or "Second Color",
+            indent = true,
+            tbl = styleTable,
+            key = cfg.color2Key,
+            default = cfg.defaultColor2,
+            hasAlpha = true,
+            onConfirm = refreshCallback,
+            onChange = pickerOpenRefresh,
+        })
     end
 
-    if isOverrideMode and cfg.enableLabel then
-        local enableCb = AceGUI:Create("CheckBox")
-        enableCb:SetLabel(cfg.enableLabel)
-        enableCb:SetValue(isEnabled)
-        enableCb:SetFullWidth(true)
-        enableCb:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[cfg.enableKey] = val
-            refreshCallback()
-            RefreshStructuralControls(container)
-        end)
-        container:AddChild(enableCb)
-
-        if not isEnabled then
-            return
-        end
-    end
-
-    if opts and opts.afterEnableCallback then
-        opts.afterEnableCallback(container)
-    end
-
-    if not (opts and opts.hidePrimaryColorPicker) then
-        if cfg.primaryColorSectionLabel then
-            AddIndicatorSettingsHeading(container, cfg.primaryColorSectionLabel)
-        end
-        AddColorPicker(container, styleTable, cfg.colorKey, cfg.colorLabel, cfg.defaultColor, true, refreshCallback, refreshCallback)
-    end
-
-    if cfg.effectSectionLabel then
-        AddIndicatorSettingsHeading(container, cfg.effectSectionLabel)
-    end
-
-    local effectDrop = AceGUI:Create("Dropdown")
-    effectDrop:SetLabel(cfg.effectLabel)
-    effectDrop:SetList(cfg.effectOptions or {
-        ["none"] = "None",
-        ["pixel"] = "Pixel Glow",
-        ["solid"] = "Solid Border",
-    }, cfg.effectOrder or {"none", "pixel", "solid"})
-    local currentEffect = styleTable[cfg.effectKey] or "none"
-    local displayEffect = cfg.normalizeEffectForDisplay
-        and cfg.normalizeEffectForDisplay(styleTable)
-        or currentEffect
-    effectDrop:SetValue(displayEffect)
-    effectDrop:SetFullWidth(true)
-    effectDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        local oldEffect = cfg.normalizeEffectForDisplay
-            and cfg.normalizeEffectForDisplay(styleTable)
-            or (styleTable[cfg.effectKey] or "none")
-        styleTable[cfg.effectKey] = cfg.mapEffectSelection
-            and cfg.mapEffectSelection(val)
-            or val
-        ApplyBorderIndicatorDefaultSize(
-            styleTable,
-            cfg.effectSizeKey,
-            oldEffect,
-            val,
-            cfg.effectSolidSizeDefault,
-            cfg.effectPixelSizeDefault
-        )
-        ApplyBorderIndicatorDefaultSpeed(
-            styleTable,
-            cfg.effectSpeedKey,
-            oldEffect,
-            val,
-            cfg.effectPulseSpeedDefault,
-            cfg.effectPixelSpeedDefault
-        )
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(effectDrop)
-
-    currentEffect = cfg.normalizeEffectForDisplay
-        and cfg.normalizeEffectForDisplay(styleTable)
-        or (styleTable[cfg.effectKey] or "none")
-    if currentEffect ~= "none" then
-        AddColorPicker(container, styleTable, cfg.effectColorKey, cfg.effectColorLabel, cfg.defaultEffectColor, true, refreshCallback, refreshCallback)
-
-        BuildGlowSliders(container, styleTable, currentEffect, {
-            size = cfg.effectSizeKey, thickness = cfg.effectThicknessKey, speed = cfg.effectSpeedKey, lines = cfg.effectLinesKey,
-            solidSizeDefault = cfg.effectSolidSizeDefault,
-        }, refreshCallback, 2)
-    end
+    AddGlowSliderRows(container, styleTable, currentStyle, GlowSliderKeys(cfg), refreshCallback, 1, true,
+        opts.previewRefresh)
 end
 
 ------------------------------------------------------------------------
@@ -1483,30 +1766,8 @@ local function BuildProcGlowControls(container, styleTable, refreshCallback, opt
         sizeKey = "procGlowSize", thicknessKey = "procGlowThickness", speedKey = "procGlowSpeed", linesKey = "procGlowLines",
         defaultStyle = "glow", defaultColor = {1, 1, 1, 1},
         enableLabel = "Show Proc Glow",
-        styleOptions = LCG_GLOW_STYLE_OPTIONS,
-        styleOrder = LCG_GLOW_STYLE_ORDER,
-    }, opts)
-end
-
-local function BuildPandemicGlowControls(container, styleTable, refreshCallback, opts)
-    BuildGlowStyleControls(container, styleTable, refreshCallback, {
-        styleKey = "pandemicGlowStyle", colorKey = "pandemicGlowColor", colorLabel = "Glow Color",
-        sizeKey = "pandemicGlowSize", thicknessKey = "pandemicGlowThickness", speedKey = "pandemicGlowSpeed", linesKey = "pandemicGlowLines",
-        defaultStyle = "solid", defaultColor = {1, 0.5, 0, 1},
-        enableKey = "showPandemicGlow", enableLabel = "Show Pandemic Glow",
-        styleOptions = LCG_GLOW_STYLE_OPTIONS,
-        styleOrder = LCG_GLOW_STYLE_ORDER,
-    }, opts)
-end
-
-local function BuildAuraIndicatorControls(container, styleTable, refreshCallback, opts)
-    BuildGlowStyleControls(container, styleTable, refreshCallback, {
-        styleKey = "auraGlowStyle", colorKey = "auraGlowColor", colorLabel = "Indicator Color",
-        sizeKey = "auraGlowSize", thicknessKey = "auraGlowThickness", speedKey = "auraGlowSpeed", linesKey = "auraGlowLines",
-        defaultStyle = "pixel", defaultColor = {1, 0.84, 0, 0.9},
-        enableLabel = "Show Aura Glow",
-        styleOptions = LCG_GLOW_STYLE_OPTIONS,
-        styleOrder = LCG_GLOW_STYLE_ORDER,
+        styleOptions = PROC_GLOW_STYLE_OPTIONS,
+        styleOrder = PROC_GLOW_STYLE_ORDER,
     }, opts)
 end
 
@@ -1516,9 +1777,347 @@ local function BuildReadyGlowControls(container, styleTable, refreshCallback, op
         sizeKey = "readyGlowSize", thicknessKey = "readyGlowThickness", speedKey = "readyGlowSpeed", linesKey = "readyGlowLines",
         defaultStyle = "solid", defaultColor = {0.2, 1.0, 0.2, 1},
         enableLabel = "Show Ready Glow",
-        styleOptions = LCG_GLOW_STYLE_OPTIONS,
-        styleOrder = LCG_GLOW_STYLE_ORDER,
+        styleOptions = PROC_GLOW_STYLE_OPTIONS,
+        styleOrder = PROC_GLOW_STYLE_ORDER,
     }, opts)
+end
+
+-- Aura glow styles are limited to what the aura slot kit can render: static
+-- textures and AnimationGroup-driven effects. The proc/ready-only styles
+-- (pixel/autocast) are not offered here; the kit's dashes style is the
+-- pixel equivalent.
+local AURA_GLOW_STYLE_OPTIONS = {
+    ["solid"] = "Solid Border",
+    ["pulse"] = "Pulsing Border",
+    ["colorShift"] = "Color Shift",
+    ["dashes"] = "Pixel Dashes",
+    ["ants"] = "Marching Ants",
+    ["proc"] = "Proc Glow",
+    ["overlay"] = "Overlay",
+}
+local AURA_GLOW_STYLE_ORDER = {"solid", "pulse", "colorShift", "dashes", "ants", "proc", "overlay"}
+
+-- The pandemic menu offers the aura-glow vocabulary plus Blizzard's own
+-- Cooldown Manager pandemic look (PTR 8 Phase 2). "cdm" is pandemic-only:
+-- the aura menu never emits it and the kit's aura resolver degrades it to
+-- pulse. Untinted fixed-choreography art, so it draws no color row (via
+-- noColorStyles) and no sliders (no GLOW_SLIDER_SPEC entry).
+local PANDEMIC_GLOW_STYLE_OPTIONS = {
+    ["cdm"] = "Cooldown Manager",
+}
+for k, v in pairs(AURA_GLOW_STYLE_OPTIONS) do
+    PANDEMIC_GLOW_STYLE_OPTIONS[k] = v
+end
+local PANDEMIC_GLOW_STYLE_ORDER = {"solid", "pulse", "colorShift", "dashes", "ants", "proc", "overlay", "cdm"}
+
+-- The size and speed keys change meaning per style (border/dash px vs
+-- overhang %; cycle vs lap seconds), so switching styles resets the sliders
+-- to that style's defaults.
+local AURA_GLOW_SIZE_RESETS = { proc = 30, ants = 23, dashes = 12 }
+local AURA_GLOW_SPEED_RESETS = { colorShift = 0.8, dashes = 2 }
+
+local function BuildAuraGlowControls(container, styleTable, refreshCallback, opts)
+    BuildGlowStyleControls(container, styleTable, refreshCallback, {
+        styleKey = "auraGlowStyle", colorKey = "auraGlowColor", colorLabel = "Glow Color",
+        color2Key = "auraGlowColor2", color2Label = "Second Color", defaultColor2 = {0.1, 0.3, 1, 0.9},
+        sizeKey = "auraGlowSize", speedKey = "auraGlowSpeed", linesKey = "auraGlowDashCount",
+        thicknessKey = "auraGlowDashThickness",
+        defaultStyle = "pulse", defaultColor = {1, 0.84, 0, 0.9},
+        enableLabel = "Show Aura Glow",
+        styleOptions = AURA_GLOW_STYLE_OPTIONS,
+        styleOrder = AURA_GLOW_STYLE_ORDER,
+        solidSizeDefault = 2,
+        onStyleChanged = function(targetStyle, val)
+            targetStyle.auraGlowSize = AURA_GLOW_SIZE_RESETS[val] or 2
+            targetStyle.auraGlowSpeed = AURA_GLOW_SPEED_RESETS[val] or 0.5
+            targetStyle.auraGlowDashCount = 5
+            targetStyle.auraGlowDashThickness = 3
+        end,
+    }, opts)
+end
+
+-- Pandemic glow (PTR 8): the icon-mode pandemic display, a second aura-kit
+-- glow Blizzard reveals only while the tracked aura sits inside its refresh
+-- window. Same style vocabulary as the aura glow, its own key family
+-- (the dormant-era pandemicGlow* stores, retuned to kit seconds/px). The
+-- enable is an explicit-true key: the dormant style default is "solid", so
+-- style-derived enablement would light every panel unasked.
+local function BuildPandemicGlowControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    BuildGlowStyleControls(container, styleTable, refreshCallback, {
+        styleKey = "pandemicGlowStyle", colorKey = "pandemicGlowColor", colorLabel = "Effect Color",
+        color2Key = "pandemicGlowColor2", color2Label = "Second Color", defaultColor2 = {1, 1, 1, 0.9},
+        sizeKey = "pandemicGlowSize", speedKey = "pandemicGlowSpeed", linesKey = "pandemicGlowLines",
+        thicknessKey = "pandemicGlowThickness",
+        defaultStyle = "solid", defaultColor = {1, 0.5, 0, 1},
+        enableLabel = "Show Pandemic Effect",
+        enableKey = "pandemicEffectEnabled",
+        enableExplicitTrue = true,
+        styleOptions = PANDEMIC_GLOW_STYLE_OPTIONS,
+        styleOrder = PANDEMIC_GLOW_STYLE_ORDER,
+        noColorStyles = { cdm = true },
+        solidSizeDefault = 2,
+        onStyleChanged = function(targetStyle, val)
+            targetStyle.pandemicGlowSize = AURA_GLOW_SIZE_RESETS[val] or 2
+            targetStyle.pandemicGlowSpeed = AURA_GLOW_SPEED_RESETS[val] or 0.5
+            targetStyle.pandemicGlowLines = 5
+            targetStyle.pandemicGlowThickness = 3
+        end,
+    }, opts)
+
+    -- The marker shares this override section but NOT the effect's enable: it
+    -- works with the effect off. BuildGlowStyleControls returns early in that
+    -- case, so the marker is drawn after it and in the grid's right column,
+    -- where the Overrides tab's other second-thought rows land. On the panel
+    -- (the Indicators gear) the marker has its own gear, so this stays
+    -- override-only.
+    if opts.isOverride then
+        AddPandemicMarkerControls(opts.rightColumn or container, styleTable, refreshCallback, function()
+            RefreshStructuralControls(container)
+        end)
+    end
+end
+
+-- Bar pandemic override section (PTR 8): the fill recolor is enable + color
+-- only — the window is game-computed and the display has no further styling.
+-- The color carries no alpha (owner ruling: it REPLACES the aura fill color).
+-- Enable is explicit-true, matching the panel key's semantics. The section
+-- also owns the pandemic marker, which is independent of the fill recolor and
+-- so survives its early return.
+local function BuildBarPandemicControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local isOverrideMode = opts.isOverride == true
+    local enabledVal = rawget(styleTable, "pandemicEffectEnabled")
+    if enabledVal == nil and opts.fallbackStyle then
+        enabledVal = opts.fallbackStyle.pandemicEffectEnabled
+    end
+    local isEnabled = enabledVal == true
+    if isOverrideMode then
+        AddCheckboxRow(container, {
+            label = "Show Pandemic Color",
+            value = isEnabled,
+            indent = opts.indent,
+            onChange = function(val)
+                styleTable.pandemicEffectEnabled = val and true or false
+                refreshCallback()
+                RefreshStructuralControls(container)
+            end,
+        })
+    end
+    if isEnabled or not isOverrideMode then
+        AddColorRow(container, {
+            -- "Fill Color" inside the section, where the marker's own color
+            -- sits a few rows away; only the standalone shape can afford the
+            -- unqualified name.
+            label = isOverrideMode and "Fill Color" or "Pandemic Color",
+            indent = isOverrideMode and true or opts.indent,
+            tbl = styleTable,
+            key = "barPandemicColor",
+            default = {1, 0.5, 0, 1},
+            hasAlpha = false,
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
+    end
+
+    if isOverrideMode then
+        AddPandemicMarkerControls(opts.rightColumn or container, styleTable, refreshCallback, function()
+            RefreshStructuralControls(container)
+        end)
+    end
+end
+
+-- Bar aura indicator (barActiveAura): the border effect shares the aura glow
+-- kit vocabulary plus the "color" value, which keeps the aura fill color as
+-- the only signal (the stored default). The preview renders the border
+-- effect CC-side and simulates the aura fill color plus the fill
+-- pulse/color-shift effects (BarMode.lua).
+-- Border styles only (owner ruling): the flipbook/fill styles (ants, proc,
+-- overlay) are not offered on bars.
+local BAR_AURA_EFFECT_STYLE_OPTIONS = {
+    ["color"] = "None (bar color only)",
+    ["solid"] = "Solid Border",
+    ["pulse"] = "Pulsing Border",
+    ["colorShift"] = "Color Shift",
+    ["dashes"] = "Pixel Dashes",
+}
+local BAR_AURA_EFFECT_STYLE_ORDER = {"color", "solid", "pulse", "colorShift", "dashes"}
+
+-- "None (bar color only)" runs 21 characters, past what the row grammar's
+-- 140px control column can size a menu from - the case WIDE_PULLOUT_WIDTH at
+-- the top of this file exists for, and what the shared glow builder gives every
+-- style dropdown.
+
+-- One spec, one consumer: BuildGlowStyleControls reads every key, label and
+-- default out of it, so no surface can drift from another's store.
+-- Nothing mutates it (BuildGlowStyleControls only reads cfg, and
+-- onStyleChanged writes through its targetStyle argument), so it is safe as a
+-- shared constant.
+local BAR_AURA_EFFECT_CFG = {
+    styleKey = "barAuraEffect", colorKey = "barAuraEffectColor", colorLabel = "Effect Color",
+    color2Key = "barAuraColorShiftColor", color2Label = "Second Color", defaultColor2 = {1, 1, 1, 1},
+    sizeKey = "barAuraEffectSize", speedKey = "barAuraEffectSpeed", linesKey = "barAuraEffectLines",
+    thicknessKey = "barAuraEffectThickness",
+    defaultStyle = "color", defaultColor = {1, 0.84, 0, 0.9},
+    enableLabel = "Show Active Aura Indicator",
+    enableKey = "barAuraIndicatorEnabled",
+    deriveEnableFromEffect = true, effectKey = "barAuraEffect",
+    styleOptions = BAR_AURA_EFFECT_STYLE_OPTIONS,
+    styleOrder = BAR_AURA_EFFECT_STYLE_ORDER,
+    solidSizeDefault = 2,
+    onStyleChanged = function(targetStyle, val)
+        targetStyle.barAuraEffectSize = AURA_GLOW_SIZE_RESETS[val] or 2
+        targetStyle.barAuraEffectSpeed = AURA_GLOW_SPEED_RESETS[val] or 0.5
+        targetStyle.barAuraEffectLines = 5
+        targetStyle.barAuraEffectThickness = 3
+    end,
+}
+
+local FILL_EFFECTS_TOOLTIP = {
+    "Fill Effects",
+    {"The bar fill breathes (pulse) or cycles color (color shift) while the aura is active. Use the preview toggle to see them without a live aura.", 1, 1, 1, true},
+}
+
+-- Row grammar only (RowWidgets.lua): the builder opens its own two-column grid
+-- on `container` and returns the two columns. LEFT is the border effect (style,
+-- its color, its per-style sliders); RIGHT is the two fill effects and their
+-- children.
+--
+-- opts.singleRail suppresses that grid: an advanced settings panel is ONE
+-- narrow column (AdvancedSettingsPanel.lua), where a two-column split would
+-- leave ~150px per cell, so both halves rail onto `container` itself in the
+-- order they are written. It is additive - the two tab callers that omit it get
+-- byte-identical output - and railing onto the container is also what keeps the
+-- panel's refresh seam intact, since RefreshStructuralControls only routes to
+-- the panel rebuild while it can still see the scroll's own
+-- _isAdvancedSettingsPanel marker.
+local function BuildBarActiveAuraControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+
+    -- Fill effects apply while the indicator is enabled, independent of the
+    -- border effect choice. Same enable derivation the shared glow builder
+    -- performs, so these controls collapse with the section in override mode.
+    local enabledVal = rawget(styleTable, "barAuraIndicatorEnabled")
+    if enabledVal == nil and rawget(styleTable, "barAuraEffect") ~= nil then
+        enabledVal = (styleTable.barAuraEffect or "none") ~= "none"
+    end
+    if enabledVal == nil and opts.fallbackStyle then
+        enabledVal = opts.fallbackStyle.barAuraIndicatorEnabled
+        if enabledVal == nil then
+            enabledVal = (opts.fallbackStyle.barAuraEffect or "none") ~= "none"
+        end
+    end
+    local overrideDisabled = opts.isOverride == true and enabledVal == false
+    if overrideDisabled then
+        -- The preview toggle disappears with the disabled section; make sure
+        -- a preview it owned doesn't keep rendering.
+        if CS.selectedGroup and CS.selectedButton and CooldownCompanion.SetBarAuraEffectPreview then
+            CooldownCompanion:SetBarAuraEffectPreview(CS.selectedGroup, CS.selectedButton, false)
+        end
+    end
+
+    local effectsLeft, effectsRight
+    if opts.singleRail then
+        effectsLeft, effectsRight = container, container
+    else
+        effectsLeft, effectsRight = BeginRowGrid(container)
+    end
+
+    -- The LEFT column IS the border effect, which is exactly what the shared
+    -- glow builder draws - style, its color, its per-style sliders, and in
+    -- override mode the section's own enable toggle (nothing else gates the
+    -- section there, and it stops at that toggle when the indicator is off).
+    -- Delegating rather than re-implementing is what keeps every surface on one
+    -- store.
+    BuildGlowStyleControls(effectsLeft, styleTable, refreshCallback, BAR_AURA_EFFECT_CFG, {
+        rightColumn = effectsRight,
+        isOverride = opts.isOverride,
+        fallbackStyle = opts.fallbackStyle,
+        infoButtons = opts.infoButtons,
+        previewRefresh = opts.previewRefresh,
+    })
+
+    if overrideDisabled then
+        return effectsLeft, effectsRight
+    end
+
+    local pulseRow = AddCheckboxRow(effectsRight, {
+        label = "Pulse Bar Fill",
+        value = styleTable.barAuraPulseEnabled == true,
+        onChange = function(val)
+            styleTable.barAuraPulseEnabled = val
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
+    -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+    -- onto the end of the row's label.
+    AnchorRowBadge(pulseRow, CreateInfoButton(pulseRow.frame, pulseRow.frame, "LEFT", "LEFT", 0, 0,
+        FILL_EFFECTS_TOOLTIP, opts.infoButtons))
+
+    -- Same mirror-first opt-in the delegated glow rows above take: with a
+    -- preview to drive, the drag tick stays on it and the live apply lands on
+    -- release. Nil for every caller that has not opted in.
+    local previewRefresh = opts.previewRefresh
+
+    if styleTable.barAuraPulseEnabled == true then
+        AddSliderRow(effectsRight, {
+            label = "Pulse Duration",
+            indent = true,
+            min = 0.1, max = 2.0, step = 0.05,
+            value = styleTable.barAuraPulseSpeed or 0.5,
+            onChange = function(val)
+                styleTable.barAuraPulseSpeed = val
+                local notify = previewRefresh or refreshCallback
+                notify()
+            end,
+            onRelease = previewRefresh and function(val)
+                styleTable.barAuraPulseSpeed = val
+                refreshCallback()
+            end or nil,
+        })
+    end
+
+    AddCheckboxRow(effectsRight, {
+        label = "Color Shift Bar Fill",
+        value = styleTable.barAuraColorShiftEnabled == true,
+        onChange = function(val)
+            styleTable.barAuraColorShiftEnabled = val
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
+
+    if styleTable.barAuraColorShiftEnabled == true then
+        AddSliderRow(effectsRight, {
+            label = "Shift Duration",
+            indent = true,
+            min = 0.1, max = 2.0, step = 0.05,
+            value = styleTable.barAuraColorShiftSpeed or 0.5,
+            onChange = function(val)
+                styleTable.barAuraColorShiftSpeed = val
+                local notify = previewRefresh or refreshCallback
+                notify()
+            end,
+            onRelease = previewRefresh and function(val)
+                styleTable.barAuraColorShiftSpeed = val
+                refreshCallback()
+            end or nil,
+        })
+
+        AddColorRow(effectsRight, {
+            label = "Shift Color",
+            indent = true,
+            tbl = styleTable,
+            key = "barAuraColorShiftColor",
+            default = {1, 1, 1, 1},
+            hasAlpha = true,
+            onConfirm = refreshCallback,
+            onChange = previewRefresh or refreshCallback,
+        })
+    end
+
+    return effectsLeft, effectsRight
 end
 
 local KPH_STYLE_OPTIONS = {["solid"] = "Solid Border", ["overlay"] = "Overlay"}
@@ -1535,325 +2134,275 @@ local function BuildKeyPressHighlightControls(container, styleTable, refreshCall
     }, opts)
 end
 
-local function BuildPandemicBarControls(container, styleTable, refreshCallback, opts)
-    BuildBarEffectControls(container, styleTable, refreshCallback, {
-        colorKey = "barPandemicColor", colorLabel = "Pandemic Bar Color",
-        defaultColor = {1, 0.5, 0, 1},
-        enableKey = "showPandemicGlow", enableLabel = "Show Pandemic Indicator",
-        effectKey = "pandemicBarEffect", effectLabel = "Pandemic Effect",
-        effectColorKey = "pandemicBarEffectColor", effectColorLabel = "Pandemic Effect Color",
-        defaultEffectColor = {1, 0.5, 0, 1},
-        effectSizeKey = "pandemicBarEffectSize", effectThicknessKey = "pandemicBarEffectThickness",
-        effectSpeedKey = "pandemicBarEffectSpeed", effectLinesKey = "pandemicBarEffectLines",
-    }, opts)
-end
+-- Row grammar only: LEFT the toggle and the font trio, RIGHT the two rows that
+-- decide how the name reads on the bar - which side it sits on and its color.
+local function BuildBarNameTextControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local right = opts.rightColumn or container
 
-local function BuildBarActiveAuraControls(container, styleTable, refreshCallback, opts)
-    BuildBarEffectControls(container, styleTable, refreshCallback, {
-        enableKey = "barAuraIndicatorEnabled", enableLabel = "Enable Active Aura Indicator",
-        deriveEnableFromEffect = true,
-        colorKey = "barAuraColor", colorLabel = "Active Aura Color",
-        primaryColorSectionLabel = "Active Aura Color",
-        defaultColor = {0.2, 1.0, 0.2, 1.0},
-        effectKey = "barAuraEffect", effectLabel = "Border Indicator",
-        effectSectionLabel = "Border Indicator",
-        effectOptions = BAR_BORDER_INDICATOR_OPTIONS, effectOrder = BAR_BORDER_INDICATOR_ORDER,
-        normalizeEffectForDisplay = NormalizeActiveAuraIndicatorSettings,
-        mapEffectSelection = function(value) return value == "none" and "color" or value end,
-        effectColorKey = "barAuraEffectColor", effectColorLabel = "Border Color",
-        defaultEffectColor = {1, 0.84, 0, 0.9},
-        effectSizeKey = "barAuraEffectSize", effectThicknessKey = "barAuraEffectThickness",
-        effectSpeedKey = "barAuraEffectSpeed", effectLinesKey = "barAuraEffectLines",
-        effectSolidSizeDefault = 2,
-        effectPixelSizeDefault = 8,
-        effectPulseSpeedDefault = 0.5,
-        effectPixelSpeedDefault = 50,
-    }, opts)
-end
-
-------------------------------------------------------------------------
--- BAR MODE PULSE / COLOR SHIFT CONTROLS
-------------------------------------------------------------------------
-
--- cfg = { pulseKey, pulseSpeedKey,
---         colorShiftKey, colorShiftSpeedKey, colorShiftColorKey, defaultShiftColor }
-local function BuildBarPulseControls(container, styleTable, refreshCallback, cfg, opts)
-    local fb = opts and opts.fallbackStyle
-    local function resolve(key, default)
-        local v = styleTable[key]
-        if v == nil and fb then v = fb[key] end
-        if v == nil and cfg.legacyColorShiftStyleKey
-            and styleTable[cfg.legacyColorShiftStyleKey] == cfg.legacyColorShiftStyleValue then
-            if key == cfg.colorShiftKey then
-                v = true
-            elseif key == cfg.colorShiftSpeedKey then
-                v = styleTable[cfg.legacyColorShiftSpeedKey]
-            elseif key == cfg.colorShiftColorKey then
-                v = styleTable[cfg.legacyColorShiftColorKey]
-            end
-        end
-        if v ~= nil then return v end
-        return default
-    end
-
-    if opts and opts.sectionLabel then
-        AddIndicatorSettingsHeading(container, opts.sectionLabel)
-    end
-
-    -- Alpha Pulse
-    local pulseCb = AceGUI:Create("CheckBox")
-    pulseCb:SetLabel("Alpha Pulse")
-    pulseCb:SetValue(resolve(cfg.pulseKey, false))
-    pulseCb:SetFullWidth(true)
-    pulseCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable[cfg.pulseKey] = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(pulseCb)
-
-    if resolve(cfg.pulseKey, false) then
-        local speedSlider = AceGUI:Create("Slider")
-        speedSlider:SetLabel("Pulse Duration")
-        speedSlider:SetSliderValues(0.1, 2.0, 0.05)
-        speedSlider:SetValue(resolve(cfg.pulseSpeedKey, 0.5))
-        speedSlider:SetFullWidth(true)
-        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[cfg.pulseSpeedKey] = val
+    AddCheckboxRow(container, {
+        label = "Show Name Text",
+        value = styleTable.showBarNameText ~= false,
+        indent = opts.indent,
+        onChange = function(val)
+            styleTable.showBarNameText = val
             refreshCallback()
-        end)
-        container:AddChild(speedSlider)
-    end
-
-    -- Color Shift
-    local shiftCb = AceGUI:Create("CheckBox")
-    shiftCb:SetLabel("Color Shift")
-    shiftCb:SetValue(resolve(cfg.colorShiftKey, false))
-    shiftCb:SetFullWidth(true)
-    shiftCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable[cfg.colorShiftKey] = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(shiftCb)
-
-    if resolve(cfg.colorShiftKey, false) then
-        AddColorPicker(container, styleTable, cfg.colorShiftColorKey, "Shift Color", resolve(cfg.colorShiftColorKey, cfg.defaultShiftColor), true, refreshCallback, refreshCallback)
-
-        local shiftSpeedSlider = AceGUI:Create("Slider")
-        shiftSpeedSlider:SetLabel("Shift Duration")
-        shiftSpeedSlider:SetSliderValues(0.1, 2.0, 0.05)
-        shiftSpeedSlider:SetValue(resolve(cfg.colorShiftSpeedKey, 0.5))
-        shiftSpeedSlider:SetFullWidth(true)
-        shiftSpeedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[cfg.colorShiftSpeedKey] = val
-            refreshCallback()
-        end)
-        container:AddChild(shiftSpeedSlider)
-    end
-end
-
-local function BuildBarAuraPulseControls(container, styleTable, refreshCallback, opts)
-    BuildBarPulseControls(container, styleTable, refreshCallback, {
-        pulseKey = "barAuraPulseEnabled", pulseSpeedKey = "barAuraPulseSpeed",
-        colorShiftKey = "barAuraColorShiftEnabled", colorShiftSpeedKey = "barAuraColorShiftSpeed",
-        colorShiftColorKey = "barAuraColorShiftColor", defaultShiftColor = {1, 1, 1, 1},
-    }, opts or { sectionLabel = "Bar Effect" })
-end
-
-local function BuildPandemicBarPulseControls(container, styleTable, refreshCallback, opts)
-    BuildBarPulseControls(container, styleTable, refreshCallback, {
-        pulseKey = "pandemicBarPulseEnabled", pulseSpeedKey = "pandemicBarPulseSpeed",
-        colorShiftKey = "pandemicBarColorShiftEnabled", colorShiftSpeedKey = "pandemicBarColorShiftSpeed",
-        colorShiftColorKey = "pandemicBarColorShiftColor", defaultShiftColor = {1, 1, 1, 1},
-    }, opts)
-end
-
-local function BuildMaxStacksIndicatorAdvancedControls(container, styleTable, refreshCallback)
-    AddIndicatorSettingsHeading(container, "Border Indicator")
-
-    local currentStyle = NormalizeMaxStackIndicatorSettings(styleTable)
-    local styleDrop = AceGUI:Create("Dropdown")
-    styleDrop:SetLabel("Border Indicator")
-    styleDrop:SetList(MAX_STACK_BORDER_INDICATOR_OPTIONS, MAX_STACK_BORDER_INDICATOR_ORDER)
-    styleDrop:SetValue(currentStyle)
-    styleDrop:SetFullWidth(true)
-    styleDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        local oldStyle = NormalizeMaxStackIndicatorSettings(styleTable)
-        styleTable.maxStacksGlowStyle = val
-        ApplyBorderIndicatorDefaultSize(styleTable, "maxStacksGlowSize", oldStyle, val, 2, 8)
-        ApplyBorderIndicatorDefaultSpeed(styleTable, "maxStacksGlowSpeed", oldStyle, val, 0.5, 50)
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(styleDrop)
-
-    if currentStyle ~= "none" then
-        AddColorPicker(container, styleTable, "maxStacksGlowColor", "Border Color", {1, 0.84, 0, 0.9}, true,
-            refreshCallback, refreshCallback)
-
-        BuildGlowSliders(container, styleTable, currentStyle == "pixelGlow" and "pixel" or currentStyle == "solidBorder" and "solid" or currentStyle, {
-            size = "maxStacksGlowSize",
-            thickness = "maxStacksGlowThickness",
-            speed = "maxStacksGlowSpeed",
-            lines = "maxStacksGlowLines",
-            solidSizeDefault = 2,
-        }, refreshCallback, 2)
-    end
-
-    AddIndicatorSettingsHeading(container, "Bar Effect")
-    if currentStyle == "none" and RB.HasMaxStacksBarEffects(styleTable) then
-        AddColorPicker(container, styleTable, "maxStacksGlowColor", "Bar Effect Color", {1, 0.84, 0, 0.9}, true,
-            refreshCallback, refreshCallback)
-    end
-
-    BuildBarPulseControls(container, styleTable, refreshCallback, {
-        pulseKey = "maxStacksBarPulseEnabled", pulseSpeedKey = "maxStacksBarPulseSpeed",
-        colorShiftKey = "maxStacksBarColorShiftEnabled", colorShiftSpeedKey = "maxStacksBarColorShiftSpeed",
-        colorShiftColorKey = "maxStacksBarColorShiftColor", defaultShiftColor = {1, 1, 1, 1},
-        legacyColorShiftStyleKey = "maxStacksGlowStyle", legacyColorShiftStyleValue = "pulsingOverlay",
-        legacyColorShiftSpeedKey = "maxStacksGlowSpeed", legacyColorShiftColorKey = "maxStacksGlowColor",
+            RefreshStructuralControls(container)
+        end,
     })
-end
-
-local function BuildBarNameTextControls(container, styleTable, refreshCallback)
-    local showNameCb = AceGUI:Create("CheckBox")
-    showNameCb:SetLabel("Show Name Text")
-    showNameCb:SetValue(styleTable.showBarNameText ~= false)
-    showNameCb:SetFullWidth(true)
-    showNameCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showBarNameText = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(showNameCb)
 
     if styleTable.showBarNameText ~= false then
-        local flipNameCheck = AceGUI:Create("CheckBox")
-        flipNameCheck:SetLabel("Flip Name Text")
-        flipNameCheck:SetValue(styleTable.barNameTextReverse or false)
-        flipNameCheck:SetFullWidth(true)
-        flipNameCheck:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.barNameTextReverse = val
-            refreshCallback()
-        end)
-        container:AddChild(flipNameCheck)
+        AddFontControls(container, styleTable, "barName", {size = 10, sizeMin = 6, sizeMax = 24},
+            refreshCallback, { row = true, indent = true })
 
-        AddFontControls(container, styleTable, "barName", {size = 10, sizeMin = 6, sizeMax = 24}, refreshCallback)
-        AddColorPicker(container, styleTable, "barNameFontColor", "Font Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+        AddCheckboxRow(right, {
+            label = "Flip Name Text",
+            value = styleTable.barNameTextReverse or false,
+            onChange = function(val)
+                styleTable.barNameTextReverse = val
+                refreshCallback()
+            end,
+        })
+        -- deferCommit is deliberately absent, matching the stock color picker
+        -- this row replaced.
+        AddColorRow(right, {
+            label = "Font Color",
+            tbl = styleTable,
+            key = "barNameFontColor",
+            default = {1, 1, 1, 1},
+            hasAlpha = true,
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
     end
 end
 
-local function BuildBarReadyTextControls(container, styleTable, refreshCallback)
-    local showReadyCb = AceGUI:Create("CheckBox")
-    showReadyCb:SetLabel("Show Ready Text")
-    showReadyCb:SetValue(styleTable.showBarReadyText or false)
-    showReadyCb:SetFullWidth(true)
-    showReadyCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showBarReadyText = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(showReadyCb)
+-- Row grammar only: LEFT the toggle and the font trio, RIGHT the wording and
+-- color of the text itself.
+local function BuildBarReadyTextControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local right = opts.rightColumn or container
+
+    AddCheckboxRow(container, {
+        label = "Show Ready Text",
+        value = styleTable.showBarReadyText or false,
+        indent = opts.indent,
+        onChange = function(val)
+            styleTable.showBarReadyText = val
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
 
     if styleTable.showBarReadyText then
-        local readyTextBox = AceGUI:Create("EditBox")
-        if readyTextBox.editbox.Instructions then readyTextBox.editbox.Instructions:Hide() end
-        readyTextBox:SetLabel("Ready Text")
-        readyTextBox:SetText(styleTable.barReadyText or "Ready")
-        readyTextBox:SetFullWidth(true)
-        readyTextBox:SetCallback("OnEnterPressed", function(widget, event, val)
-            styleTable.barReadyText = val
-            refreshCallback()
-        end)
-        container:AddChild(readyTextBox)
+        AddFontControls(container, styleTable, "barReady", {sizeMin = 6, sizeMax = 24},
+            refreshCallback, { row = true, indent = true })
 
-        AddColorPicker(container, styleTable, "barReadyTextColor", "Ready Text Color", {0.2, 1.0, 0.2, 1.0}, true, refreshCallback, refreshCallback)
-        AddFontControls(container, styleTable, "barReady", {sizeMin = 6, sizeMax = 24}, refreshCallback)
+        local readyRow = AddEditBoxRow(right, {
+            label = "Ready Text",
+            value = styleTable.barReadyText or "Ready",
+            onEnterPressed = function(val)
+                styleTable.barReadyText = val
+                refreshCallback()
+            end,
+        })
+        if readyRow.editbox and readyRow.editbox.Instructions then
+            readyRow.editbox.Instructions:Hide()
+        end
+
+        -- deferCommit is deliberately absent, matching the stock color picker
+        -- this row replaced.
+        AddColorRow(right, {
+            label = "Ready Text Color",
+            tbl = styleTable,
+            key = "barReadyTextColor",
+            default = {0.2, 1.0, 0.2, 1.0},
+            hasAlpha = true,
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
     end
 end
 
 ------------------------------------------------------------------------
 -- Text Mode — Text Colors
 ------------------------------------------------------------------------
-local function BuildTextBackgroundControls(container, styleTable, refreshCallback)
-    AddColorPicker(container, styleTable, "textBgColor", "Background Color", {0, 0, 0, 0}, true, refreshCallback, refreshCallback)
+-- Row grammar only (RowWidgets.lua): the backdrop and the border that frames
+-- it, reading top to bottom - four rows at most, so they stay in one column
+-- (the <4-rows rule). opts.indent makes them child rows. The pre-redesign
+-- full-width stock shape had no call sites left after the conversion packets.
+local function BuildTextBackgroundControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+
+    local borderThicknessLocked = ST.IsBorderThicknessLocked()
+
+    -- deferCommit is deliberately absent throughout, matching the
+    -- stock color pickers this section used to make.
+    AddColorRow(container, {
+        label = "Background Color",
+        indent = opts.indent,
+        tbl = styleTable,
+        key = "textBgColor",
+        default = {0, 0, 0, 0},
+        hasAlpha = true,
+        onConfirm = refreshCallback,
+        onChange = refreshCallback,
+    })
 
     local renderMode = AddBorderRenderModeDropdown(container, styleTable, "textBorderRenderMode", function()
         refreshCallback()
         RefreshStructuralControls(container)
-    end)
-    local borderThicknessLocked = ST.IsBorderThicknessLocked()
+    end, nil, { row = true, indent = opts.indent })
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-        local borderSlider = AceGUI:Create("Slider")
-        borderSlider:SetLabel("Border Size")
-        borderSlider:SetSliderValues(0, 5, 0.1)
-        borderSlider:SetValue(styleTable.textBorderSize or 0)
-        borderSlider:SetFullWidth(true)
-        borderSlider:SetDisabled(borderThicknessLocked)
-        borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            if borderThicknessLocked then return end
-            styleTable.textBorderSize = val
-            refreshCallback()
-        end)
-        container:AddChild(borderSlider)
+        AddSliderRow(container, {
+            label = "Border Size",
+            indent = true,
+            min = 0, max = 5, step = 0.1,
+            value = styleTable.textBorderSize or 0,
+            disabled = borderThicknessLocked,
+            onChange = function(val)
+                if borderThicknessLocked then return end
+                styleTable.textBorderSize = val
+                refreshCallback()
+            end,
+        })
     end
 
-    AddColorPicker(container, styleTable, "textBorderColor", "Border Color", {0, 0, 0, 1}, true, refreshCallback, refreshCallback)
-end
-
-local function BuildTextFontControls(container, styleTable, refreshCallback)
-    AddFontControls(container, styleTable, "text", {sizeMin = 6, sizeMax = 72}, refreshCallback)
-
-    local alignDrop = AceGUI:Create("Dropdown")
-    alignDrop:SetLabel("Alignment")
-    alignDrop:SetList({LEFT = "Left", CENTER = "Center", RIGHT = "Right"})
-    alignDrop:SetValue(styleTable.textAlignment or "LEFT")
-    alignDrop:SetFullWidth(true)
-    alignDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.textAlignment = val
-        refreshCallback()
-    end)
-    container:AddChild(alignDrop)
-
-    local shadowCb = AceGUI:Create("CheckBox")
-    shadowCb:SetLabel("Text Shadow")
-    shadowCb:SetValue(styleTable.textShadow == true)
-    shadowCb:SetFullWidth(true)
-    shadowCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.textShadow = val or false
-        refreshCallback()
-    end)
-    container:AddChild(shadowCb)
-end
-
-local function BuildTextColorsControls(container, styleTable, refreshCallback)
-    AddColorPicker(container, styleTable, "textFontColor", "Text Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
-    AddColorPicker(container, styleTable, "textCooldownColor", "Cooldown Color", {1, 0.3, 0.3, 1}, true, refreshCallback, refreshCallback)
-
-    local readyColorPicker = AddColorPicker(container, styleTable, "textReadyColor", "Ready Color", {0.2, 1.0, 0.2, 1}, true, refreshCallback, refreshCallback)
-
-    local function BuildReadyTextAdvanced(panel)
-        local readyTextBox = AceGUI:Create("EditBox")
-        if readyTextBox.editbox.Instructions then readyTextBox.editbox.Instructions:Hide() end
-        readyTextBox:SetLabel("Ready Text")
-        readyTextBox:SetText(styleTable.textReadyText or "Ready")
-        readyTextBox:SetFullWidth(true)
-        readyTextBox:SetCallback("OnEnterPressed", function(widget, event, val)
-            styleTable.textReadyText = val
-            refreshCallback()
-        end)
-        panel:AddChild(readyTextBox)
-    end
-
-    local _, readyAdvBtn = AddAdvancedToggle(readyColorPicker, "textReadyText", tabInfoButtons, nil, {
-        title = "Ready Color Advanced",
-        build = BuildReadyTextAdvanced,
+    AddColorRow(container, {
+        label = "Border Color",
+        indent = opts.indent,
+        tbl = styleTable,
+        key = "textBorderColor",
+        default = {0, 0, 0, 1},
+        hasAlpha = true,
+        onConfirm = refreshCallback,
+        onChange = refreshCallback,
     })
-    readyAdvBtn:SetPoint("LEFT", readyColorPicker.colorSwatch, "RIGHT", readyColorPicker.text:GetStringWidth() + 8, 0)
+end
 
-    AddColorPicker(container, styleTable, "textAuraColor", "Aura Color", {0, 0.925, 1, 1}, true, refreshCallback, refreshCallback)
+-- Row grammar only: LEFT what the text is drawn with, RIGHT how the line is
+-- laid out.
+local function BuildTextFontControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local right = opts.rightColumn or container
+
+    AddFontControls(container, styleTable, "text", {sizeMin = 6, sizeMax = 72}, refreshCallback,
+        { row = true, indent = opts.indent })
+
+    AddDropdownRow(right, {
+        label = "Alignment",
+        list = {LEFT = "Left", CENTER = "Center", RIGHT = "Right"},
+        value = styleTable.textAlignment or "LEFT",
+        onChange = function(val)
+            styleTable.textAlignment = val
+            refreshCallback()
+        end,
+    })
+
+    AddCheckboxRow(right, {
+        label = "Text Shadow",
+        value = styleTable.textShadow == true,
+        onChange = function(val)
+            styleTable.textShadow = val or false
+            refreshCallback()
+        end,
+    })
+end
+
+-- Row grammar only: the complete palette the text renderer can reach. LEFT
+-- column (the container the caller hands over): the base color and the two
+-- cooldown states. RIGHT column (opts.rightColumn): the aura color and the
+-- custom color, which no token claims on its own.
+--
+-- Every row carries a "?" badge naming the tokens it paints. A swatch says
+-- nothing about which token it reaches, and two of these five are reachable
+-- only through a color tag.
+--
+-- Ready Text is a format-vocabulary setting, so on the panel path it lives in
+-- the Format String section (TextModeTabs.lua). A per-entry override has no
+-- Format String section of its own, so the override path keeps its own row for
+-- it here - a plain row, not the advanced gear this section used to carry.
+local function BuildTextColorsControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local right = opts.rightColumn or container
+    local infoButtons = opts.infoButtons or tabInfoButtons
+
+    -- deferCommit is deliberately absent throughout, matching the
+    -- stock color pickers these rows replaced.
+    local function TextColorRow(host, rowLabel, key, default, tooltipLines)
+        local row = AddColorRow(host, {
+            label = rowLabel,
+            indent = opts.indent,
+            tbl = styleTable,
+            key = key,
+            default = default,
+            hasAlpha = true,
+            onConfirm = refreshCallback,
+            onChange = refreshCallback,
+        })
+        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+        -- onto the end of the row's label.
+        AnchorRowBadge(row, CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0,
+            tooltipLines, infoButtons))
+        return row
+    end
+
+    TextColorRow(container, "Text Color", "textFontColor", {1, 1, 1, 1}, {
+        "Text Color",
+        {"The color text falls back to.", 1, 1, 1, true},
+        " ",
+        {"Paints |cff00ff00{name}|r, |cff00ff00{keybind}|r, |cff00ff00{stacks}|r and |cff00ff00{maxcharges}|r.", 1, 1, 1, true},
+        " ",
+        {"Color tags in the format override it.", 1, 1, 1, true},
+    })
+
+    TextColorRow(container, "Cooldown Color", "textCooldownColor", {1, 0.3, 0.3, 1}, {
+        "Cooldown Color",
+        {"Paints |cff00ff00{time}|r, and |cff00ff00{status}|r while the spell is on cooldown.", 1, 1, 1, true},
+        " ",
+        {"The |cff44bbff{cooldown}|r tag paints anything with it.", 1, 1, 1, true},
+    })
+
+    TextColorRow(container, "Ready Color", "textReadyColor", {0.2, 1.0, 0.2, 1}, {
+        "Ready Color",
+        {"Paints |cff00ff00{status}|r when the spell is ready.", 1, 1, 1, true},
+        " ",
+        {"The |cff44bbff{ready}|r tag paints anything with it.", 1, 1, 1, true},
+    })
+
+    TextColorRow(right, "Aura Color", "textAuraColor", {0, 0.925, 1, 1}, {
+        "Aura Color",
+        {"The |cff44bbff{active}|r tag paints anything with it.", 1, 1, 1, true},
+    })
+
+    TextColorRow(right, "Custom Color", "textCustomColor", {1, 0.82, 0, 1}, {
+        "Custom Color",
+        {"No token paints with this color on its own.", 1, 1, 1, true},
+        " ",
+        {"The |cff44bbff{custom}|r tag paints anything with it.", 1, 1, 1, true},
+    })
+
+    if opts.isOverride then
+        -- The CDC-EditBoxRow embeds a stock EditBox, so the raw frame the
+        -- Instructions text hangs on is still reachable through row.editbox.
+        local readyTextRow = AddEditBoxRow(right, {
+            label = "Ready Text",
+            indent = opts.indent,
+            value = styleTable.textReadyText or "Ready",
+            onEnterPressed = function(val)
+                styleTable.textReadyText = val
+                refreshCallback()
+            end,
+        })
+        if readyTextRow.editbox and readyTextRow.editbox.Instructions then
+            readyTextRow.editbox.Instructions:Hide()
+        end
+        AnchorRowBadge(readyTextRow, CreateInfoButton(readyTextRow.frame, readyTextRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Ready Text",
+            {"The word |cff00ff00{status}|r shows when the spell is ready.", 1, 1, 1, true},
+        }, infoButtons))
+    end
 end
 
 ------------------------------------------------------------------------
@@ -1861,44 +2410,50 @@ end
 ------------------------------------------------------------------------
 ST._BuildCooldownTextControls = BuildCooldownTextControls
 ST._AddDurationFormatDropdown = AddDurationFormatDropdown
-ST._AddPreviewToggleButton = AddPreviewToggleButton
-ST._AddPreviewBadge = AddPreviewBadge
-ST._RefreshConfigPanelForPreviewToggle = RefreshConfigPanelForPreviewToggle
-ST._ClearActivePreviewBadgeButton = ClearActivePreviewBadgeButton
-ST._RefreshAdvancedSettingsPreviewButtons = RefreshActiveAdvancedPreviewToggleButtons
-ST._AddConditionalPreviewButton = AddConditionalPreviewButton
-ST._AddConditionalPreviewBadge = AddConditionalPreviewBadge
 ST._BuildAuraTextControls = BuildAuraTextControls
+ST._AddPandemicMarkerControls = AddPandemicMarkerControls
 ST._BuildAuraStackTextControls = BuildAuraStackTextControls
+ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
+ST._BuildAuraDurationSwipeAdvancedControls = BuildAuraDurationSwipeAdvancedControls
 ST._BuildKeybindTextControls = BuildKeybindTextControls
 ST._BuildChargeTextControls = BuildChargeTextControls
 ST._BuildBorderControls = BuildBorderControls
 ST._BuildBackgroundColorControls = BuildBackgroundColorControls
 ST._BuildDesaturationControls = BuildDesaturationControls
+ST._BuildIconZoomControls = BuildIconZoomControls
 ST._BuildShowTooltipsControls = BuildShowTooltipsControls
 ST._BuildShowOutOfRangeControls = BuildShowOutOfRangeControls
+ST._BuildAllowPingsControls = BuildAllowPingsControls
 ST._BuildShowGCDSwipeControls = BuildShowGCDSwipeControls
 ST._BuildCooldownSwipeControls = BuildCooldownSwipeControls
 ST._BuildIconFillTimerControls = BuildIconFillTimerControls
 ST._BuildIconFillTimerAdvancedControls = BuildIconFillTimerAdvancedControls
-ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
-ST._BuildAuraDurationSwipeAdvancedControls = BuildAuraDurationSwipeAdvancedControls
 ST._BuildLossOfControlControls = BuildLossOfControlControls
 ST._BuildUnusableDimmingControls = BuildUnusableDimmingControls
 ST._BuildIconTintControls = BuildIconTintControls
 ST._BuildAssistedHighlightControls = BuildAssistedHighlightControls
 ST._BuildProcGlowControls = BuildProcGlowControls
+ST._BuildAuraGlowControls = BuildAuraGlowControls
 ST._BuildPandemicGlowControls = BuildPandemicGlowControls
-ST._BuildPandemicBarControls = BuildPandemicBarControls
-ST._BuildAuraIndicatorControls = BuildAuraIndicatorControls
+ST._BuildBarPandemicControls = BuildBarPandemicControls
+-- The bare per-style slider renderer, for surfaces that own their style
+-- dropdown but must draw the same sliders (resource aura border, MW
+-- max-stack border). Callers hand a keys table in GlowSliderKeys' shape.
+ST._AddGlowSliderRows = AddGlowSliderRows
+ST._BuildBarActiveAuraControls = BuildBarActiveAuraControls
 ST._BuildReadyGlowControls = BuildReadyGlowControls
 ST._BuildKeyPressHighlightControls = BuildKeyPressHighlightControls
-ST._BuildBarActiveAuraControls = BuildBarActiveAuraControls
-ST._BuildBarAuraPulseControls = BuildBarAuraPulseControls
-ST._BuildPandemicBarPulseControls = BuildPandemicBarPulseControls
-ST._BuildMaxStacksIndicatorAdvancedControls = BuildMaxStacksIndicatorAdvancedControls
 ST._BuildBarNameTextControls = BuildBarNameTextControls
 ST._BuildBarReadyTextControls = BuildBarReadyTextControls
 ST._BuildTextFontControls = BuildTextFontControls
 ST._BuildTextColorsControls = BuildTextColorsControls
 ST._BuildTextBackgroundControls = BuildTextBackgroundControls
+
+-- Tracked-aura candidate lists (shared by the panel Aura tab and the
+-- custom-bar Aura tab).
+ST._ClassifyAuraSpellUnit = ClassifyAuraSpellUnit
+ST._GetAuraCandidateList = GetAuraCandidateList
+ST._TryAddAuraCandidate = TryAddAuraCandidate
+ST._RemoveAuraCandidate = RemoveAuraCandidate
+ST._AddAuraCandidateRow = AddAuraCandidateRow
+ST._AddAuraStackMaxStatusLabel = AddAuraStackMaxStatusLabel

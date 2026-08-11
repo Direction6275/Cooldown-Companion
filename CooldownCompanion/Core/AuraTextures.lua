@@ -145,10 +145,14 @@ local DEFAULT_TEXTURE_PULSE_ALPHA = 0.45
 local DEFAULT_TEXTURE_SHRINK_SCALE = 0.82
 local DEFAULT_TEXTURE_BOUNCE_PIXELS = 18
 
+-- No pandemic entry: Texture panels can use Blizzard-driven active-only
+-- visibility, but the addon still cannot read aura timing or pandemic state.
+-- The "aura" indicator is rendered by native AnimationGroups beneath
+-- Blizzard's AuraButton; the remaining sections use the ordinary readable
+-- Texture runtime and stay dormant while active-only Aura display is enabled.
 local TEXTURE_INDICATOR_SECTION_ORDER = {
     "proc",
     "aura",
-    "pandemic",
     "ready",
     "unusable",
 }
@@ -168,13 +172,6 @@ local TEXTURE_INDICATOR_DEFAULTS = {
         color = { 1, 0.84, 0, 1 },
         combatOnly = false,
         invert = false,
-    },
-    pandemic = {
-        enabled = false,
-        effectType = TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND,
-        speed = DEFAULT_TEXTURE_INDICATOR_SPEED,
-        color = { 1, 0.5, 0, 1 },
-        combatOnly = false,
     },
     ready = {
         enabled = false,
@@ -687,6 +684,67 @@ function CooldownCompanion:IsTexturePanelGroup(group)
     return type(group) == "table" and group.displayMode == "textures"
 end
 
+-- Primary Aura entries in Texture panels are intrinsically aura-controlled.
+-- Ordinary spell entries retain the explicit Texture-only opt-in so legacy
+-- auraTracking residue cannot silently reactivate them.
+function CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)
+    return self:IsTexturePanelGroup(group)
+        and type(buttonData) == "table"
+        and buttonData.type == "spell"
+        and (buttonData.addedAs == "aura"
+            or buttonData.textureAuraDisplayEnabled == true)
+end
+
+-- Texture-only tracking deliberately does not set the general auraTracking
+-- flag: doing so would silently turn tracking back on if the entry were later
+-- converted to an icon or bar. Resolve the same ordered candidate identity
+-- directly while the Texture Aura display is active instead.
+function CooldownCompanion:ResolveTexturePanelAuraSpellID(buttonData)
+    if not (type(buttonData) == "table"
+        and buttonData.type == "spell"
+        and (buttonData.addedAs == "aura"
+            or buttonData.textureAuraDisplayEnabled == true)
+        and self.GetOrderedAuraCandidateSpellIDs) then
+        return nil
+    end
+
+    local orderedCandidateIDs = self:GetOrderedAuraCandidateSpellIDs(buttonData)
+    return orderedCandidateIDs and orderedCandidateIDs[1] or nil
+end
+
+-- The managed Texture path has one exact condition: while the aura is active.
+-- Preserve the chosen effect/color/speed, but neutralize live-era qualifiers
+-- that would require either reading aura absence or changing child animation
+-- state at combat transitions.
+function CooldownCompanion:NormalizeTexturePanelAuraIndicatorSettings(group, createIfMissing)
+    local indicators = self:GetTexturePanelIndicatorSettings(group, createIfMissing == true)
+    local auraIndicator = indicators and indicators.aura
+    if type(auraIndicator) ~= "table" then
+        return false
+    end
+
+    local changed = auraIndicator.combatOnly == true or auraIndicator.invert == true
+    auraIndicator.combatOnly = false
+    auraIndicator.invert = false
+    return changed
+end
+
+-- Mutation helper for user actions that place a primary Aura entry into a
+-- Texture panel (new add, move, or panel conversion). Primary Aura entries do
+-- not have an opt-out in Texture panels; ordinary spell entries still do.
+function CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(group, buttonData)
+    if not (self:IsTexturePanelGroup(group)
+        and type(buttonData) == "table"
+        and buttonData.type == "spell"
+        and buttonData.addedAs == "aura") then
+        return false
+    end
+
+    buttonData.textureAuraDisplayEnabled = true
+    self:NormalizeTexturePanelAuraIndicatorSettings(group, true)
+    return true
+end
+
 function CooldownCompanion:IsTriggerPanelGroup(group)
     return type(group) == "table" and group.displayMode == "trigger"
 end
@@ -870,6 +928,7 @@ function CooldownCompanion.NormalizeTriggerIconSettings(settings)
             and settings.manualIcon
         or nil
     settings.maintainAspectRatio = settings.maintainAspectRatio ~= false
+    settings.iconZoom = Clamp(tonumber(settings.iconZoom) or 0, 0, 50)
     settings.buttonSize = Clamp(tonumber(settings.buttonSize) or 36, 10, 150)
     settings.iconWidth = Clamp(tonumber(settings.iconWidth) or settings.buttonSize, 10, 150)
     settings.iconHeight = Clamp(tonumber(settings.iconHeight) or settings.buttonSize, 10, 150)
@@ -971,6 +1030,7 @@ function CooldownCompanion:GetTriggerPanelIconSettings(groupOrId, createIfMissin
         group.triggerSettings.icon = {
             manualIcon = nil,
             maintainAspectRatio = true,
+            iconZoom = 0,
             buttonSize = 36,
             iconWidth = 36,
             iconHeight = 36,
@@ -1177,6 +1237,13 @@ function CooldownCompanion:TriggerRowUsesCondition(buttonData, conditionKey)
     return false
 end
 
+-- 12.1 aura teardown: auraActive stays VALID for stored clauses (removing it
+-- from the validation lists would make NormalizeTriggerConditionRowData drop
+-- saved aura clauses at load), but it is no longer OFFERED for new clauses.
+local RETIRED_TRIGGER_CONDITION_OFFERS = {
+    auraActive = true,
+}
+
 function CooldownCompanion:GetTriggerConditionTypeOptions(buttonData, excludedKeys)
     local order = GetTriggerConditionOrderForButtonData(buttonData)
     local excluded = {}
@@ -1196,7 +1263,7 @@ function CooldownCompanion:GetTriggerConditionTypeOptions(buttonData, excludedKe
     local options = {}
     local filteredOrder = {}
     for _, key in ipairs(order) do
-        if not excluded[key] then
+        if not excluded[key] and not RETIRED_TRIGGER_CONDITION_OFFERS[key] then
             options[key] = TRIGGER_CONDITION_LABELS[key]
             filteredOrder[#filteredOrder + 1] = key
         end

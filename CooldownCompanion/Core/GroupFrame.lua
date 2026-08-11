@@ -13,16 +13,18 @@ local math_floor = math.floor
 local math_min = math.min
 local math_max = math.max
 local math_ceil = math.ceil
+local math_abs = math.abs
 local table_insert = table.insert
+local table_sort = table.sort
 local InCombatLockdown = InCombatLockdown
 local GetCursorPosition = GetCursorPosition
+local IsShiftKeyDown = IsShiftKeyDown
 local issecretvalue = issecretvalue
 local select = select
 local wipe = wipe
 
 -- Shared click-through and border helpers from Utils.lua
 local SetFrameClickThrough = ST.SetFrameClickThrough
-local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 local HideGlowStyles = ST._HideGlowStyles
 local EntryRuntime = ST.EntryRuntime
 local UnbindDurationText = CooldownCompanion.UnbindDurationText or function() end
@@ -65,6 +67,167 @@ local CURSOR_LAYOUT_PREVIEW_LABEL_WIDTH = 118
 local CURSOR_LAYOUT_PREVIEW_LABEL_HEIGHT = 18
 local CURSOR_LAYOUT_PREVIEW_TOP_OFFSET = -120
 local CURSOR_LAYOUT_PREVIEW_TINT = { 0.35, 0.92, 1, 1 }
+local SNAP_THRESHOLD = 8
+local SNAP_VISIBLE_ALPHA_THRESHOLD = 0.05
+local SNAP_GUIDE_COLOR = { 1, 0.82, 0, 0.9 }
+local SNAP_GUIDE_THICKNESS = 2
+local dragSnapGuideOverlay = nil
+local dragSnapGuideVertical = nil
+local dragSnapGuideHorizontal = nil
+local moverChromeFadeState = {
+    active = false,
+    activeMover = nil,
+    generation = 0,
+}
+
+function CooldownCompanion:ApplyMoverChromeFadeToFrames(header, coordLabel, nudger, resizeGrip)
+    local alpha = moverChromeFadeState.active and 0 or 1
+    if header then
+        header:SetAlpha(alpha)
+    end
+    if coordLabel then
+        coordLabel:SetAlpha(alpha)
+    end
+    if nudger then
+        local isActiveTool = moverChromeFadeState.active and nudger == moverChromeFadeState.activeMover
+        nudger:SetIgnoreParentAlpha(isActiveTool)
+        nudger:SetAlpha(isActiveTool and 1 or alpha)
+    end
+    if resizeGrip then
+        local isActiveTool = moverChromeFadeState.active and resizeGrip == moverChromeFadeState.activeMover
+        resizeGrip:SetIgnoreParentAlpha(isActiveTool)
+        resizeGrip:SetAlpha(isActiveTool and 1 or alpha)
+    end
+end
+
+function CooldownCompanion:ApplyMoverChromeFadeState()
+    for _, frame in pairs(CooldownCompanion.groupFrames or {}) do
+        self:ApplyMoverChromeFadeToFrames(frame.dragHandle, frame.coordLabel, frame.nudger, frame.resizeGrip)
+        if CooldownCompanion.GetAuraTextureMoverChromeForGroupFrame then
+            self:ApplyMoverChromeFadeToFrames(
+                CooldownCompanion:GetAuraTextureMoverChromeForGroupFrame(frame)
+            )
+        end
+    end
+
+    for _, frame in pairs(CooldownCompanion.containerFrames or {}) do
+        local wrapper = frame.dragHandle
+        self:ApplyMoverChromeFadeToFrames(wrapper and wrapper.header, frame.coordLabel, frame.nudger)
+    end
+
+    if CooldownCompanion.GetIndependentCastBarMoverChrome then
+        self:ApplyMoverChromeFadeToFrames(CooldownCompanion:GetIndependentCastBarMoverChrome())
+    end
+    if CooldownCompanion.GetIndependentResourceStackMoverChrome then
+        self:ApplyMoverChromeFadeToFrames(CooldownCompanion:GetIndependentResourceStackMoverChrome())
+    end
+end
+
+function CooldownCompanion:BeginMoverChromeFade(activeMover)
+    moverChromeFadeState.generation = moverChromeFadeState.generation + 1
+    moverChromeFadeState.active = true
+    moverChromeFadeState.activeMover = activeMover
+    self:ApplyMoverChromeFadeState()
+end
+
+function CooldownCompanion:EndMoverChromeFade(activeMover)
+    if not moverChromeFadeState.active
+        or (activeMover and moverChromeFadeState.activeMover ~= activeMover) then
+        return
+    end
+
+    moverChromeFadeState.generation = moverChromeFadeState.generation + 1
+    moverChromeFadeState.active = false
+    moverChromeFadeState.activeMover = nil
+    self:ApplyMoverChromeFadeState()
+end
+
+function CooldownCompanion:EndMoverChromeFadeIfOwnedByContainer(containerId)
+    if not moverChromeFadeState.active then
+        return
+    end
+
+    local activeMover = moverChromeFadeState.activeMover
+    if not activeMover then
+        self:EndMoverChromeFade()
+        return
+    end
+
+    local containerFrame = self.containerFrames and self.containerFrames[containerId]
+    if activeMover == containerFrame
+        or (containerFrame and activeMover == containerFrame.nudger) then
+        self:EndMoverChromeFade(activeMover)
+        return
+    end
+
+    local groups = self.db
+        and self.db.profile
+        and self.db.profile.groups
+        or {}
+    for groupId, group in pairs(groups) do
+        if group.parentContainerId == containerId then
+            local groupFrame = self.groupFrames and self.groupFrames[groupId]
+            if groupFrame and groupFrame._containerUnlockPreviewActive == true then
+                local textureHost = self.GetAuraTextureHostForGroupFrame
+                    and self:GetAuraTextureHostForGroupFrame(groupFrame)
+                    or nil
+                if activeMover == groupFrame
+                    or activeMover == groupFrame.nudger
+                    or activeMover == groupFrame.resizeGrip
+                    or activeMover._resizeFrame == groupFrame
+                    or activeMover == textureHost
+                    or (textureHost and activeMover == textureHost.nudger) then
+                    self:EndMoverChromeFade(activeMover)
+                    return
+                end
+            end
+        end
+    end
+end
+
+function CooldownCompanion:VerifyMoverChromeHoverFade(pad)
+    if not moverChromeFadeState.active or moverChromeFadeState.activeMover ~= pad then
+        return false
+    end
+
+    if not pad:IsMouseOver() then
+        self:EndMoverChromeFade(pad)
+        return false
+    end
+
+    return true
+end
+
+function CooldownCompanion:BeginMoverChromeHoverFade(pad)
+    self:BeginMoverChromeFade(pad)
+    local generation = moverChromeFadeState.generation
+    local function WatchHover()
+        if moverChromeFadeState.generation ~= generation
+            or not CooldownCompanion:VerifyMoverChromeHoverFade(pad) then
+            return
+        end
+
+        C_Timer.After(0.25, WatchHover)
+    end
+    C_Timer.After(0.25, WatchHover)
+end
+
+function CooldownCompanion:ResetMoverChromeFade()
+    moverChromeFadeState.generation = moverChromeFadeState.generation + 1
+    moverChromeFadeState.active = false
+    moverChromeFadeState.activeMover = nil
+    self:ApplyMoverChromeFadeState()
+end
+
+function CooldownCompanion:BeginMoverChromeWheelFade(activeMover)
+    self:BeginMoverChromeFade(activeMover)
+    local generation = moverChromeFadeState.generation
+    C_Timer.After(0.5, function()
+        if moverChromeFadeState.active and moverChromeFadeState.generation == generation then
+            CooldownCompanion:EndMoverChromeFade(activeMover)
+        end
+    end)
+end
 
 local function IsCursorAnchor(anchor)
     return CooldownCompanion:IsCursorAnchor(anchor)
@@ -123,7 +286,7 @@ local function GetContainerState(groupId)
     end
 
     -- Legacy path (no container)
-    return group.locked or false, group.baselineAlpha or 1
+    return group.locked ~= false, group.baselineAlpha or 1
 end
 
 local function IsSecretValue(value)
@@ -222,6 +385,10 @@ local function ApplyCurrentAlphaIfPresent(owner, frame, groupId, group)
     end
 end
 
+local function GetUnlockedPanelAlpha(frame)
+    return frame and frame._unlockGhost and 0.4 or 1
+end
+
 local function GetAnchorInheritedAlpha(parentFrame)
     if not parentFrame then
         return 1
@@ -315,10 +482,209 @@ local function GetContainerPreviewSelectionState(groupId)
     return true, selected, containerId
 end
 
+-- Frame creation anchors before the coord label exists, so a position that
+-- arrives early is held on the frame. Call with no coordinates once the label
+-- is built to replay it; otherwise the label stays blank until the first move.
 local function UpdateCoordLabel(frame, x, y)
-    if frame.coordLabel then
-        frame.coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x, y))
+    x = x or frame._pendingCoordX
+    y = y or frame._pendingCoordY
+    if not (x and y) then
+        return
     end
+    if frame.coordLabel then
+        frame._pendingCoordX, frame._pendingCoordY = nil, nil
+        frame.coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x, y))
+    else
+        frame._pendingCoordX, frame._pendingCoordY = x, y
+    end
+end
+
+local function RoundCoordinate(value)
+    return math_floor(value * 10 + 0.5) / 10
+end
+
+local function CancelCoordinateEdit(coordLabel)
+    if not (coordLabel and coordLabel.xEdit and coordLabel.yEdit) then
+        return
+    end
+
+    coordLabel._editGeneration = (coordLabel._editGeneration or 0) + 1
+    coordLabel._editing = nil
+    coordLabel.xEdit:ClearFocus()
+    coordLabel.yEdit:ClearFocus()
+    coordLabel.xLabel:Hide()
+    coordLabel.yLabel:Hide()
+    coordLabel.xEdit:Hide()
+    coordLabel.yEdit:Hide()
+    coordLabel.text:Show()
+end
+
+local function CreateEditableCoordLabel(coordLabel, getCoordinates, applyCoordinates, isDragging)
+    local xLabel = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    xLabel:SetText("x:")
+    xLabel:SetTextColor(1, 1, 1, 0.8)
+    xLabel:SetPoint("LEFT", coordLabel, "LEFT", 2, 0)
+    xLabel:Hide()
+
+    local xEdit = CreateFrame("EditBox", nil, coordLabel)
+    xEdit:SetAutoFocus(false)
+    xEdit:SetFontObject(GameFontNormalSmall)
+    xEdit:SetTextColor(1, 1, 1, 1)
+    xEdit:SetJustifyH("CENTER")
+    xEdit:SetPoint("LEFT", xLabel, "RIGHT", 1, 0)
+    xEdit:SetPoint("RIGHT", coordLabel, "CENTER", -1, 0)
+    xEdit:SetHeight(13)
+    xEdit:Hide()
+
+    local yLabel = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    yLabel:SetText("y:")
+    yLabel:SetTextColor(1, 1, 1, 0.8)
+    yLabel:SetPoint("LEFT", coordLabel, "CENTER", 1, 0)
+    yLabel:Hide()
+
+    local yEdit = CreateFrame("EditBox", nil, coordLabel)
+    yEdit:SetAutoFocus(false)
+    yEdit:SetFontObject(GameFontNormalSmall)
+    yEdit:SetTextColor(1, 1, 1, 1)
+    yEdit:SetJustifyH("CENTER")
+    yEdit:SetPoint("LEFT", yLabel, "RIGHT", 1, 0)
+    yEdit:SetPoint("RIGHT", coordLabel, "RIGHT", -2, 0)
+    yEdit:SetHeight(13)
+    yEdit:Hide()
+
+    coordLabel.xLabel = xLabel
+    coordLabel.yLabel = yLabel
+    coordLabel.xEdit = xEdit
+    coordLabel.yEdit = yEdit
+    coordLabel:EnableMouse(true)
+
+    local function CommitEdit()
+        if not coordLabel._editing then
+            return
+        end
+
+        local newX = tonumber(xEdit:GetText())
+        local newY = tonumber(yEdit:GetText())
+        if newX == nil or newY == nil then
+            CancelCoordinateEdit(coordLabel)
+            return
+        end
+
+        newX = RoundCoordinate(newX)
+        newY = RoundCoordinate(newY)
+        local oldX, oldY = getCoordinates()
+        oldX = RoundCoordinate(tonumber(oldX) or 0)
+        oldY = RoundCoordinate(tonumber(oldY) or 0)
+        CancelCoordinateEdit(coordLabel)
+        if newX ~= oldX or newY ~= oldY then
+            applyCoordinates(newX, newY)
+        end
+    end
+
+    local function BeginEdit()
+        if coordLabel._editing or (isDragging and isDragging()) then
+            return
+        end
+
+        local x, y = getCoordinates()
+        coordLabel._editGeneration = (coordLabel._editGeneration or 0) + 1
+        coordLabel._editing = true
+        coordLabel.text:Hide()
+        xEdit:SetText(("%.1f"):format(tonumber(x) or 0))
+        yEdit:SetText(("%.1f"):format(tonumber(y) or 0))
+        xLabel:Show()
+        yLabel:Show()
+        xEdit:Show()
+        yEdit:Show()
+        xEdit:SetFocus()
+        xEdit:HighlightText()
+    end
+
+    local function HandleFocusLost(self)
+        self:HighlightText(0, 0)
+        local generation = coordLabel._editGeneration
+        C_Timer.After(0, function()
+            if coordLabel._editing
+                and coordLabel._editGeneration == generation
+                and not xEdit:HasFocus()
+                and not yEdit:HasFocus() then
+                CommitEdit()
+            end
+        end)
+    end
+
+    xEdit:SetScript("OnEnterPressed", CommitEdit)
+    yEdit:SetScript("OnEnterPressed", CommitEdit)
+    xEdit:SetScript("OnEscapePressed", function() CancelCoordinateEdit(coordLabel) end)
+    yEdit:SetScript("OnEscapePressed", function() CancelCoordinateEdit(coordLabel) end)
+    xEdit:SetScript("OnTabPressed", function()
+        yEdit:SetFocus()
+        yEdit:HighlightText()
+    end)
+    yEdit:SetScript("OnTabPressed", function()
+        xEdit:SetFocus()
+        xEdit:HighlightText()
+    end)
+    xEdit:SetScript("OnEditFocusLost", HandleFocusLost)
+    yEdit:SetScript("OnEditFocusLost", HandleFocusLost)
+    xEdit:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+    yEdit:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+
+    coordLabel:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(0.3, 0.3, 0.3, 0.9)
+    end)
+    coordLabel:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    end)
+    coordLabel:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" then
+            BeginEdit()
+        end
+    end)
+    coordLabel:SetScript("OnHide", function(self)
+        self:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+        CancelCoordinateEdit(self)
+    end)
+end
+
+local ComputeGroupFrameCoordinates
+local ComputeContainerFrameCoordinates
+
+local function StopCoordinateDragUpdates(frame)
+    frame._coordDragElapsed = nil
+    frame._coordDragUpdater = nil
+    frame._coordDragRelativeTo = nil
+    frame._coordDragRelativeFrame = nil
+    frame._coordDragAnchorState = nil
+    frame._coordDragReferenceReady = nil
+    frame._coordinateSnapUpdatesPerFrame = nil
+    frame:SetScript("OnUpdate", nil)
+    if CooldownCompanion.EndDragSnapSession then
+        CooldownCompanion:EndDragSnapSession(frame, false)
+    end
+end
+
+local function CoordinateDragOnUpdate(self, elapsed)
+    if not self._dragInProgress then
+        StopCoordinateDragUpdates(self)
+        return
+    end
+
+    CooldownCompanion:UpdateDragSnapSession(self)
+    self._coordDragElapsed = (self._coordDragElapsed or 0) + elapsed
+    if self._coordDragElapsed < 0.05 then
+        return
+    end
+
+    self._coordDragElapsed = 0
+    self._coordDragUpdater(self)
+end
+
+local function StartCoordinateDragUpdates(frame, updater)
+    frame._coordDragElapsed = 0
+    frame._coordDragUpdater = updater
+    frame._coordinateSnapUpdatesPerFrame = true
+    frame:SetScript("OnUpdate", CoordinateDragOnUpdate)
 end
 
 local function PreviewMapContains(map, groupId)
@@ -391,6 +757,308 @@ local function GetFrameSizeInUIParentSpace(frame)
     end
 
     return width, height
+end
+
+local function GetFrameRectInUIParentSpace(frame)
+    if not (frame and frame.GetLeft and frame.GetRight and frame.GetBottom and frame.GetTop) then
+        return nil, nil, nil, nil
+    end
+
+    local left, right = frame:GetLeft(), frame:GetRight()
+    local bottom, top = frame:GetBottom(), frame:GetTop()
+    if not (left and right and bottom and top) then
+        return nil, nil, nil, nil
+    end
+
+    local frameScale = frame.GetEffectiveScale and frame:GetEffectiveScale() or nil
+    local uiScale = UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale() or nil
+    if frameScale and uiScale and uiScale > 0 then
+        local scaleRatio = frameScale / uiScale
+        left = left * scaleRatio
+        right = right * scaleRatio
+        bottom = bottom * scaleRatio
+        top = top * scaleRatio
+    end
+
+    return left, right, bottom, top
+end
+
+local function HideDragSnapGuides()
+    if dragSnapGuideVertical then
+        dragSnapGuideVertical:Hide()
+    end
+    if dragSnapGuideHorizontal then
+        dragSnapGuideHorizontal:Hide()
+    end
+end
+
+local function EnsureDragSnapGuides()
+    if dragSnapGuideOverlay then
+        return
+    end
+
+    local overlay = CreateFrame("Frame", nil, UIParent)
+    overlay:SetAllPoints(UIParent)
+    overlay:SetFrameStrata("FULLSCREEN_DIALOG")
+    overlay:SetFrameLevel(1000)
+    overlay:EnableMouse(false)
+
+    local vertical = overlay:CreateTexture(nil, "OVERLAY")
+    vertical:SetColorTexture(SNAP_GUIDE_COLOR[1], SNAP_GUIDE_COLOR[2], SNAP_GUIDE_COLOR[3], SNAP_GUIDE_COLOR[4])
+    vertical:SetWidth(SNAP_GUIDE_THICKNESS)
+    vertical:Hide()
+
+    local horizontal = overlay:CreateTexture(nil, "OVERLAY")
+    horizontal:SetColorTexture(SNAP_GUIDE_COLOR[1], SNAP_GUIDE_COLOR[2], SNAP_GUIDE_COLOR[3], SNAP_GUIDE_COLOR[4])
+    horizontal:SetHeight(SNAP_GUIDE_THICKNESS)
+    horizontal:Hide()
+
+    dragSnapGuideOverlay = overlay
+    dragSnapGuideVertical = vertical
+    dragSnapGuideHorizontal = horizontal
+end
+
+local function AddDragSnapTarget(targets, value, kind)
+    targets[#targets + 1] = { value = value, kind = kind }
+end
+
+local function AddDragSnapRectTargets(session, frame, prefix)
+    local left, right, bottom, top = GetFrameRectInUIParentSpace(frame)
+    if not left then
+        return false
+    end
+
+    AddDragSnapTarget(session.targetsX, left, prefix .. "Left")
+    AddDragSnapTarget(session.targetsX, (left + right) / 2, prefix .. "CenterX")
+    AddDragSnapTarget(session.targetsX, right, prefix .. "Right")
+    AddDragSnapTarget(session.targetsY, bottom, prefix .. "Bottom")
+    AddDragSnapTarget(session.targetsY, (bottom + top) / 2, prefix .. "CenterY")
+    AddDragSnapTarget(session.targetsY, top, prefix .. "Top")
+    return true
+end
+
+local function AddDragSnapCandidate(session, candidateFrame, candidateGroupId, excludeFn)
+    if not (candidateFrame and candidateFrame.IsVisible and candidateFrame:IsVisible()) then
+        return
+    end
+    if excludeFn and excludeFn(candidateFrame, candidateGroupId) then
+        return
+    end
+    AddDragSnapRectTargets(session, candidateFrame, "frame")
+end
+
+local function GroupFrameRendersVisibleSnapTarget(frame, groupId)
+    local isLocked = GetContainerState(groupId)
+    if not isLocked then
+        return true
+    end
+
+    local effectiveAlpha = frame:GetEffectiveAlpha()
+    if IsSecretValue(effectiveAlpha) or effectiveAlpha == nil
+        or effectiveAlpha <= SNAP_VISIBLE_ALPHA_THRESHOLD then
+        return false
+    end
+
+    for _, button in ipairs(frame.buttons or {}) do
+        local isShown = button:IsShown()
+        -- Shell alpha 0 = the button renders nothing CC-side (icon hidden,
+        -- every region alpha-0) while button:GetAlpha() still reports 1, so
+        -- it must not count as a visible snap target. Dim shells (0.4) and
+        -- never-styled buttons (nil) do render.
+        if not IsSecretValue(isShown) and isShown and button._auraShellIconAlpha ~= 0 then
+            local alpha = button:GetAlpha()
+            if not IsSecretValue(alpha) and alpha ~= nil and alpha > SNAP_VISIBLE_ALPHA_THRESHOLD then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function SortDragSnapTargets(left, right)
+    return left.value < right.value
+end
+
+local function FindNearestDragSnap(targets, firstValue, centerValue, lastValue)
+    local bestDistance, bestDelta, bestTargetValue
+    for index = 1, #targets do
+        local targetValue = targets[index].value
+        local delta = targetValue - firstValue
+        local distance = math_abs(delta)
+        if distance <= SNAP_THRESHOLD and (bestDistance == nil or distance < bestDistance) then
+            bestDistance = distance
+            bestDelta = delta
+            bestTargetValue = targetValue
+        end
+
+        delta = targetValue - centerValue
+        distance = math_abs(delta)
+        if distance <= SNAP_THRESHOLD and (bestDistance == nil or distance < bestDistance) then
+            bestDistance = distance
+            bestDelta = delta
+            bestTargetValue = targetValue
+        end
+
+        delta = targetValue - lastValue
+        distance = math_abs(delta)
+        if distance <= SNAP_THRESHOLD and (bestDistance == nil or distance < bestDistance) then
+            bestDistance = distance
+            bestDelta = delta
+            bestTargetValue = targetValue
+        end
+    end
+    return bestDelta, bestTargetValue
+end
+
+function CooldownCompanion:BeginDragSnapSession(frame, excludeFn)
+    if not frame then
+        return
+    end
+
+    self:EndDragSnapSession(frame, false)
+    local screenLeft, screenRight, screenBottom, screenTop = GetFrameRectInUIParentSpace(UIParent)
+    if not screenLeft then
+        return
+    end
+
+    local session = {
+        targetsX = {},
+        targetsY = {},
+        dragFrame = frame._dragSnapRectFrame or frame,
+        screenLeft = screenLeft,
+        screenBottom = screenBottom,
+    }
+    AddDragSnapTarget(session.targetsX, screenLeft, "screenLeft")
+    AddDragSnapTarget(session.targetsX, (screenLeft + screenRight) / 2, "screenCenterX")
+    AddDragSnapTarget(session.targetsX, screenRight, "screenRight")
+    AddDragSnapTarget(session.targetsY, screenBottom, "screenBottom")
+    AddDragSnapTarget(session.targetsY, (screenBottom + screenTop) / 2, "screenCenterY")
+    AddDragSnapTarget(session.targetsY, screenTop, "screenTop")
+
+    for groupId, candidateFrame in pairs(self.groupFrames or {}) do
+        local group = self.db and self.db.profile and self.db.profile.groups
+            and self.db.profile.groups[groupId]
+            or nil
+        if not (group and self:IsStandaloneTexturePanelGroup(group))
+            and GroupFrameRendersVisibleSnapTarget(candidateFrame, groupId) then
+            AddDragSnapCandidate(session, candidateFrame, groupId, excludeFn)
+        end
+        local textureHost = self.GetAuraTextureHostForGroupFrame
+            and self:GetAuraTextureHostForGroupFrame(candidateFrame)
+            or nil
+        AddDragSnapCandidate(session, textureHost, groupId, excludeFn)
+    end
+
+    local castBarMover = self.GetIndependentCastBarSnapFrame and self:GetIndependentCastBarSnapFrame() or nil
+    AddDragSnapCandidate(session, castBarMover, nil, excludeFn)
+    local resourceStackWrapper = self.GetIndependentResourceStackSnapFrame
+        and self:GetIndependentResourceStackSnapFrame()
+        or nil
+    AddDragSnapCandidate(session, resourceStackWrapper, nil, excludeFn)
+
+    table_sort(session.targetsX, SortDragSnapTargets)
+    table_sort(session.targetsY, SortDragSnapTargets)
+    frame._snapSession = session
+    local tracker = frame._dragSnapUpdateTracker
+    if not tracker then
+        tracker = CreateFrame("Frame", nil, frame)
+        tracker._dragFrame = frame
+        tracker._onUpdate = function(self)
+            local dragFrame = self._dragFrame
+            if not (dragFrame and dragFrame._snapSession) then
+                self:SetScript("OnUpdate", nil)
+                return
+            end
+            if not dragFrame._coordinateSnapUpdatesPerFrame then
+                CooldownCompanion:UpdateDragSnapSession(dragFrame)
+            end
+        end
+        frame._dragSnapUpdateTracker = tracker
+    end
+    tracker:SetScript("OnUpdate", tracker._onUpdate)
+end
+
+function CooldownCompanion:UpdateDragSnapSession(frame)
+    local session = frame and frame._snapSession or nil
+    if not session then
+        return
+    end
+
+    if IsShiftKeyDown() then
+        session.snapDX = nil
+        session.snapDY = nil
+        HideDragSnapGuides()
+        return
+    end
+
+    local left, right, bottom, top = GetFrameRectInUIParentSpace(session.dragFrame)
+    if not left then
+        session.snapDX = nil
+        session.snapDY = nil
+        HideDragSnapGuides()
+        return
+    end
+
+    local snapDX, snapX = FindNearestDragSnap(session.targetsX, left, (left + right) / 2, right)
+    local snapDY, snapY = FindNearestDragSnap(session.targetsY, bottom, (bottom + top) / 2, top)
+    session.snapDX = snapDX
+    session.snapDY = snapDY
+
+    if snapDX ~= nil or snapDY ~= nil then
+        EnsureDragSnapGuides()
+    end
+    if snapDX ~= nil then
+        dragSnapGuideVertical:ClearAllPoints()
+        dragSnapGuideVertical:SetPoint("TOP", dragSnapGuideOverlay, "TOPLEFT", snapX - session.screenLeft, 0)
+        dragSnapGuideVertical:SetPoint("BOTTOM", dragSnapGuideOverlay, "BOTTOMLEFT", snapX - session.screenLeft, 0)
+        dragSnapGuideVertical:Show()
+    elseif dragSnapGuideVertical then
+        dragSnapGuideVertical:Hide()
+    end
+    if snapDY ~= nil then
+        dragSnapGuideHorizontal:ClearAllPoints()
+        dragSnapGuideHorizontal:SetPoint("LEFT", dragSnapGuideOverlay, "BOTTOMLEFT", 0, snapY - session.screenBottom)
+        dragSnapGuideHorizontal:SetPoint("RIGHT", dragSnapGuideOverlay, "BOTTOMRIGHT", 0, snapY - session.screenBottom)
+        dragSnapGuideHorizontal:Show()
+    elseif dragSnapGuideHorizontal then
+        dragSnapGuideHorizontal:Hide()
+    end
+end
+
+function CooldownCompanion:EndDragSnapSession(frame, apply)
+    local session = frame and frame._snapSession or nil
+    HideDragSnapGuides()
+    local tracker = frame and frame._dragSnapUpdateTracker
+    if tracker then
+        tracker:SetScript("OnUpdate", nil)
+    end
+    if not session then
+        return nil, nil
+    end
+
+    local snapDX, snapDY
+    if apply and not IsShiftKeyDown() then
+        snapDX = session.snapDX
+        snapDY = session.snapDY
+    end
+    frame._snapSession = nil
+    return snapDX, snapDY
+end
+
+local function BeginSelfExcludedDragSnapSession(frame)
+    CooldownCompanion:BeginDragSnapSession(frame, function(candidateFrame)
+        return candidateFrame == frame
+    end)
+end
+
+local function ApplyEndedDragSnapSession(frame, apply)
+    if apply then
+        CooldownCompanion:UpdateDragSnapSession(frame)
+    end
+    local snapDX, snapDY = CooldownCompanion:EndDragSnapSession(frame, apply)
+    if snapDX ~= nil or snapDY ~= nil then
+        frame:AdjustPointsOffset(snapDX or 0, snapDY or 0)
+    end
 end
 
 local function RoundPreviewOffset(value)
@@ -566,9 +1234,6 @@ local function ResetButtonGlowTransitionState(button)
         if button.assistedHighlight then
             HideGlowStyles(button.assistedHighlight)
         end
-        if button.barAuraEffect then
-            HideGlowStyles(button.barAuraEffect)
-        end
     end
 
     button._procGlowActive = nil
@@ -577,9 +1242,9 @@ local function ResetButtonGlowTransitionState(button)
     button._readyGlowMaxChargesStartTime = nil
     button._readyGlowMaxChargesActive = false
     button._barAuraEffectActive = nil
-    button._barPulseActive = nil
-    button._barColorShiftActive = nil
-    if button.statusBar then button.statusBar:SetAlpha(1.0) end
+    -- No statusBar alpha reset here: the deleted aura pulse animation was the
+    -- only writer it undid, and it would unhide a show-only-while-active
+    -- shell's bar on compact re-show. Shell state owns statusBar alpha now.
     if button.assistedHighlight then
         button.assistedHighlight.currentState = nil
     end
@@ -592,13 +1257,6 @@ local function ClearButtonCompactSlotCache(button)
     button._compactSlotY = nil
 end
 
-local function NeedsIconSecondaryCooldown(buttonData, style)
-    return style and style.separateTextPositions
-        and buttonData
-        and buttonData.auraTracking
-        and not buttonData.isPassive
-end
-
 local function GetButtonPoolKey(group, buttonData, style)
     local displayMode = group and group.displayMode
     if displayMode == "text" then
@@ -609,8 +1267,6 @@ local function GetButtonPoolKey(group, buttonData, style)
         return "textures"
     elseif displayMode == "trigger" then
         return "trigger"
-    elseif NeedsIconSecondaryCooldown(buttonData, style) then
-        return "icons-secondary"
     end
     return "icons"
 end
@@ -649,9 +1305,6 @@ local function GetExistingButtonPoolKey(button)
     if button and button._isBar then
         return "bars"
     end
-    if button and button.secondaryCooldown then
-        return "icons-secondary"
-    end
     return "icons"
 end
 
@@ -686,16 +1339,14 @@ local function ClearButtonPreviewState(button)
     button._procGlowPreview = nil
     button._auraGlowPreview = nil
     button._pandemicPreview = nil
+    button._barAuraEffectPreview = nil
     button._readyGlowPreview = nil
     button._keyPressHighlightPreview = nil
-    button._barAuraActivePreview = nil
     button._textureProcPreview = nil
     button._textureAuraPreview = nil
-    button._texturePandemicPreview = nil
     button._textureReadyPreview = nil
     button._textureUnusablePreview = nil
     button._textureIndicatorPreviewDirty = false
-    button._triggerEffectsPreview = nil
     button._auraTexturePreviewSelection = nil
     button._conditionalPreviewKind = nil
     button._conditionalPreviewStartTime = nil
@@ -706,13 +1357,10 @@ local function ClearButtonPreviewState(button)
     button._conditionalPreviewLoopDuration = nil
     button._conditionalPreviewDomain = nil
     button._conditionalAuraPreview = nil
-    button._conditionalAuraDurationTextPreview = nil
-    button._conditionalAuraStackTextPreview = nil
-    button._conditionalPandemicPreview = nil
     button._conditionalUnusablePreview = nil
     button._conditionalOutOfRangePreview = nil
     button._conditionalReadyPreview = nil
-    button._conditionalBarAuraActivePreview = nil
+    button._conditionalLocPreview = nil
     button._conditionalVisualPreview = nil
     button._forceVisibleByConfig = nil
     button._prevForceVisibleByConfig = nil
@@ -729,7 +1377,6 @@ local function ClearReusableButtonRuntime(button)
     button._spellOutOfRange = nil
     button._lastSpellTexture = nil
     button._lastTextureCheckAt = nil
-    button._spellTexBaseline = nil
     button._noCooldown = nil
     button._noCooldownSpellId = nil
     button._baseNoCooldown = nil
@@ -763,24 +1410,8 @@ local function ClearReusableButtonRuntime(button)
     button._auraSpellID = nil
     button._auraUnit = nil
     button._auraActive = false
-    button._auraDurationObj = nil
-    button._auraCooldownStart = nil
-    button._auraCooldownDuration = nil
-    button._auraPrimarySwipeActive = nil
     button._auraTrackingReady = nil
     button._showingAuraIcon = false
-    button._auraViewerFrame = nil
-    button._activeAuraSpellID = nil
-    button._activeAuraSpellIDFromFallback = nil
-    button._activeAuraIcon = nil
-    button._activeAuraIconAvailable = nil
-    button._lastViewerTexId = nil
-    button._auraInstanceID = nil
-    button._viewerBar = nil
-    button._viewerAuraVisualsActive = nil
-    button._auraDisplayName = nil
-    button._auraNameOverrideActive = nil
-    button._auraStackText = nil
     button._auraHasTimer = nil
     button._textSecretNameActive = nil
     EntryRuntime.ReleaseTrackedAuraScratch(button)
@@ -823,16 +1454,6 @@ local function ClearReusableButtonRuntime(button)
     button._readyGlowMaxChargesActive = nil
     button._readyGlowMaxChargesSpellID = nil
     button._barAuraEffectActive = nil
-    button._barPulseActive = nil
-    button._barColorShiftActive = nil
-    button._barAuraStackDisplay = nil
-    button._barAuraStackValue = nil
-    button._barAuraStackValueAvailable = nil
-    button._barAuraStackValueSecret = nil
-    button._barAuraStackValueDirty = nil
-    button._barAuraStackMax = nil
-    button._barAuraStackMode = nil
-    button._barAuraVisualSettings = nil
     button._barGCDSuppressed = nil
     button._barCdColor = nil
     button._barAuraColor = nil
@@ -845,10 +1466,6 @@ local function ClearReusableButtonRuntime(button)
     button._textModeSecretArgs = nil
     button._textModeSecretParts = nil
     button._savedOnUpdate = nil
-    button._inPandemic = nil
-    if EntryRuntime and EntryRuntime.ClearAuraPandemicRuntimeState then
-        EntryRuntime.ClearAuraPandemicRuntimeState(button)
-    end
     ClearButtonPreviewState(button)
     ClearButtonVisualState(button)
     if button.count then button.count:SetText("") end
@@ -889,7 +1506,7 @@ local function ResolveReusableButtonEntryState(button, buttonData)
         and CooldownCompanion:ResolveAuraSpellID(buttonData)
         or nil
     button._auraUnit = buttonData and buttonData.auraUnit or "player"
-    button._auraTrackingReady = buttonData and buttonData.isPassive == true or false
+    button._auraTrackingReady = nil
 end
 
 local function DeactivatePooledButton(self, groupId, button)
@@ -916,8 +1533,6 @@ local function DeactivatePooledButton(self, groupId, button)
     ClearCooldownWidget(button.cooldown)
     ClearCooldownWidget(button.locCooldown)
     ClearCooldownWidget(button.iconGCDCooldown)
-    ClearCooldownWidget(button.secondaryCooldown)
-    ClearCooldownWidget(button.auraBlizzardCooldown)
     HideButtonGlowContainer(button.assistedHighlight)
     HideButtonGlowContainer(button.procGlow)
     HideButtonGlowContainer(button.auraGlow)
@@ -937,13 +1552,66 @@ local function ReleaseButtonToPool(self, frame, groupId, button)
     pool[#pool + 1] = button
 end
 
-local function AcquireButtonFromPool(frame, poolKey)
+local function AcquireButtonFromPool(frame, poolKey, buttonData)
     local pools = frame._buttonFramePools
     local pool = pools and pools[poolKey]
-    if not pool then return nil end
-    local button = pool[#pool]
-    if not button then return nil end
-    pool[#pool] = nil
+    if not pool or #pool == 0 then return nil end
+    local pick
+    if InCombatLockdown() then
+        -- Aura-slot hosts are combat-locked to their entry: the slot subtree
+        -- riding a host is forbidden (untouchable) until the OOC rebind pass,
+        -- so a mismatched host would show another entry's aura on this button.
+        -- Prefer the host already bound to this entry; else any slot-free one;
+        -- else force a fresh CC-owned frame (returning nil).
+        local free
+        for i = #pool, 1, -1 do
+            local token = pool[i]._auraSlotHostToken
+            if token == buttonData then
+                pick = i
+                break
+            elseif token == nil and not free then
+                free = i
+            end
+        end
+        pick = pick or free
+        -- Refusing here sends the caller to the deterministic constructors,
+        -- which name the new frame from the entry index -- the same name the
+        -- refused pooled frame still carries. That is harmless and is not a
+        -- duplicate-name error: CreateFrame reassigns the global and no CC
+        -- surface resolves button frames by name (anchor parsing is $-anchored
+        -- to panel/container names, keybinds resolve action-bar globals, and
+        -- Masque keys by frame object). Showing another entry's aura on this
+        -- button would be the worse trade. Reviewers have flagged this four
+        -- times; the pool re-converges on the next out-of-combat rebind.
+        if not pick then return nil end
+    else
+        -- No aura-slot lock needed out of combat: the rebind pass parks every
+        -- record unconditionally before it binds, so no pooled frame can still be
+        -- carrying a live slot by the time one is handed out. (An earlier ally-gate
+        -- design did leave blocked records bound through a pass, which required a
+        -- lock here; that gate was measured unnecessary and removed.)
+        --
+        -- Prefer the frame that already hosts this entry: repeated repopulates
+        -- (config refreshes) then converge on a stable entry<->frame mapping
+        -- instead of reversing it each pass, which flip-flopped the statically
+        -- composed aura-shell visuals and churned the aura slot rebinds.
+        -- Same preference ladder as the combat branch: this entry's own host
+        -- first, then a slot-free one, and only then any host. The queued
+        -- rebind parks stale records on the NEXT frame, so handing out a host
+        -- still bound to another entry would show that entry's aura for a
+        -- frame (and through the fight if combat starts in that window).
+        local free
+        for i = #pool, 1, -1 do
+            if pool[i].buttonData == buttonData then
+                pick = i
+                break
+            elseif not free and pool[i]._auraSlotHostToken == nil then
+                free = i
+            end
+        end
+        pick = pick or free or #pool
+    end
+    local button = table.remove(pool, pick)
     button._pooled = nil
     button:SetParent(frame)
     return button
@@ -965,7 +1633,15 @@ local function PreparePooledButtonForUse(self, frame, group, button, index, butt
     if self.UpdateButtonIcon then
         self:UpdateButtonIcon(button)
     end
-    if group and (group.displayMode == "textures" or group.displayMode == "trigger") then
+    -- A text entry is auto-sized from a worst-case render of its format, and
+    -- {name} resolves through the display identity UpdateButtonIcon just
+    -- assigned (ClearReusableButtonRuntime wiped it on release). UpdateStyle
+    -- above therefore measured against the SAVED id, so re-measure here; the
+    -- ApplyActiveButtonLayout call that follows this loop re-pitches the grid.
+    if button._isText and ST._ApplyTextEntryLayout then
+        ST._ApplyTextEntryLayout(button)
+    end
+    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         button:SetAlpha(0)
         button._lastVisAlpha = 0
     else
@@ -1005,11 +1681,49 @@ end
 
 -- Nudger constants
 local NUDGE_BTN_SIZE = 12
+local PANEL_RESIZE_GRIP_SIZE = 12
+local PANEL_RESIZE_REFRESH_INTERVAL = 0.05
 
 local CreatePixelBorders = ST.CreatePixelBorders
-local GetEffectiveTextHeight = ST._GetEffectiveTextHeight
+-- Text entries are auto-sized from a measured worst-case render of their
+-- format (ButtonFrame/TextMode.lua). Cached per entry: the restyle path
+-- measures, layout paths below only read.
+-- NOTE: this file's main chunk sits on Lua's 200-local ceiling. This upvalue
+-- took over the slot of a retired one rather than adding a slot; nothing new
+-- may be localized in this chunk.
+local GetTextEntryMetrics = ST._GetTextEntryMetrics
 
 local PropagateFrameStrata
+
+local function CreateMoverLockButton(parent, buttonSize, idleColor, onLock)
+    local button = CreateFrame("Button", nil, parent)
+    button:SetSize(buttonSize, buttonSize)
+    button:RegisterForClicks("LeftButtonUp")
+
+    local icon = button:CreateTexture(nil, "OVERLAY")
+    icon:SetSize(buttonSize - 2, buttonSize - 2)
+    icon:SetPoint("CENTER")
+    icon:SetAtlas("questlog-questtypeicon-lock", false)
+    icon:SetVertexColor(idleColor, idleColor, idleColor, idleColor)
+    button.icon = icon
+
+    button:SetScript("OnEnter", function(self)
+        self.icon:SetVertexColor(1, 1, 1, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Lock")
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function(self)
+        self.icon:SetVertexColor(idleColor, idleColor, idleColor, idleColor)
+        GameTooltip:Hide()
+    end)
+    button:SetScript("OnClick", function(self)
+        self.icon:SetVertexColor(idleColor, idleColor, idleColor, idleColor)
+        onLock()
+    end)
+
+    return button
+end
 
 local function PropagateChildFrameStrata(strata, ...)
     for i = 1, select("#", ...) do
@@ -1021,7 +1735,10 @@ end
 -- Textures/FontStrings inherit from their parent frame automatically,
 -- but child Frame objects (cooldown widgets, overlay frames, glow containers)
 -- may not follow a parent strata change — so we force it explicitly.
+-- _ccNoTouch subtrees (aura slot hosts) are skipped entirely: their children
+-- are forbidden to addon code in combat, and they inherit strata implicitly.
 function PropagateFrameStrata(frame, strata)
+    if frame._ccNoTouch then return end
     frame:SetFrameStrata(strata)
     PropagateChildFrameStrata(strata, frame:GetChildren())
 end
@@ -1038,6 +1755,17 @@ local function CreateNudger(frame, groupId)
     nudger:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     nudger:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
     CreatePixelBorders(nudger)
+    nudger:SetScript("OnEnter", function(self)
+        CooldownCompanion:BeginMoverChromeHoverFade(self)
+    end)
+    nudger:SetScript("OnLeave", function(self)
+        if not self:IsMouseOver() then
+            CooldownCompanion:EndMoverChromeFade(self)
+        end
+    end)
+    nudger:SetScript("OnHide", function(self)
+        CooldownCompanion:EndMoverChromeFade(self)
+    end)
 
     local directions = {
         { atlas = "common-dropdown-icon-back", rotation = -math.pi / 2, anchor = "BOTTOM", dx =  0, dy =  1, ox = 0,         oy = NUDGE_GAP },   -- up
@@ -1071,11 +1799,15 @@ local function CreateNudger(frame, groupId)
         -- Hover highlight
         btn:SetScript("OnEnter", function(self)
             self.arrow:SetVertexColor(1, 1, 1, 1)
+            CooldownCompanion:BeginMoverChromeHoverFade(nudger)
         end)
         btn:SetScript("OnLeave", function(self)
             self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
             if not IsCursorPreviewNudge() then
                 CooldownCompanion:SaveGroupPosition(groupId)
+            end
+            if not nudger:IsMouseOver() then
+                CooldownCompanion:EndMoverChromeFade(nudger)
             end
         end)
 
@@ -1109,7 +1841,9 @@ local function CreateNudger(frame, groupId)
         end
 
         btn:SetScript("OnMouseDown", function(self)
+            CancelCoordinateEdit(frame.coordLabel)
             DoNudge()
+            CooldownCompanion:VerifyMoverChromeHoverFade(nudger)
         end)
 
         btn:SetScript("OnMouseUp", function(self)
@@ -1122,7 +1856,376 @@ local function CreateNudger(frame, groupId)
     return nudger
 end
 
-local function AddPanelDragHelpTooltipLines(tooltip, isContainerPreview, isCursorPreview)
+local function IsGroupPanelResizable(group)
+    if not group then
+        return false
+    end
+
+    local displayMode = group.displayMode
+    return displayMode == nil
+        or displayMode == "icons"
+        or displayMode == "bars"
+        or displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
+end
+
+local function CanUsePanelResizeInteractions(groupId, group)
+    if not IsGroupPanelResizable(group)
+        or IsCursorAnchor(group.anchor)
+        or CooldownCompanion._combatForcedLock
+        or InCombatLockdown() then
+        return false
+    end
+
+    if not GetContainerState(groupId) then
+        return true
+    end
+
+    return group.parentContainerId
+        and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)
+        and CooldownCompanion:IsContainerPanelSelected(group.parentContainerId, groupId)
+        or false
+end
+
+local function RoundAndClampPanelSize(value, minValue, maxValue)
+    return math_max(minValue, math_min(maxValue, math_floor(value + 0.5)))
+end
+
+local function GetPanelResizeCursorPosition()
+    if not (GetCursorPosition and UIParent) then
+        return nil, nil
+    end
+
+    local cursorX, cursorY = GetCursorPosition()
+    local scale = UIParent:GetEffectiveScale()
+    if not (cursorX and cursorY and scale and scale > 0) then
+        return nil, nil
+    end
+
+    return cursorX / scale, cursorY / scale
+end
+
+local function ApplyPanelResizeFromCursor(grip)
+    local groupId = grip._resizeGroupId
+    local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+    if not group or not CanUsePanelResizeInteractions(groupId, group) then
+        return false
+    end
+
+    local cursorX, cursorY = GetPanelResizeCursorPosition()
+    if not (cursorX and cursorY) then
+        return false
+    end
+
+    local style = group.style
+    if not style then
+        return false
+    end
+
+    local dx = cursorX - grip._resizeStartX
+    local dy = cursorY - grip._resizeStartY
+    local perButtonDW = dx / (grip._resizeCols * grip._resizeKX)
+    local perButtonDH = -dy / (grip._resizeRows * grip._resizeKY)
+    local changed = false
+
+    if grip._resizeKind == "square" then
+        local newSize = RoundAndClampPanelSize(grip._resizeStartPrimary + ((perButtonDW + perButtonDH) / 2), 10, 150)
+        if style.buttonSize ~= newSize then
+            style.buttonSize = newSize
+            changed = true
+        end
+    elseif grip._resizeKind == "icon" then
+        local newWidth = RoundAndClampPanelSize(grip._resizeStartPrimary + perButtonDW, 10, 150)
+        local newHeight = RoundAndClampPanelSize(grip._resizeStartSecondary + perButtonDH, 10, 150)
+        if style.iconWidth ~= newWidth then
+            style.iconWidth = newWidth
+            changed = true
+        end
+        if style.iconHeight ~= newHeight then
+            style.iconHeight = newHeight
+            changed = true
+        end
+    elseif grip._resizeKind == "bar" then
+        local newLength
+        local newHeight
+        if grip._resizeBarFillVertical then
+            newLength = RoundAndClampPanelSize(grip._resizeStartPrimary + perButtonDH, 10, 500)
+            newHeight = RoundAndClampPanelSize(grip._resizeStartSecondary + perButtonDW, 5, 100)
+        else
+            newLength = RoundAndClampPanelSize(grip._resizeStartPrimary + perButtonDW, 10, 500)
+            newHeight = RoundAndClampPanelSize(grip._resizeStartSecondary + perButtonDH, 5, 100)
+        end
+        if style.barLength ~= newLength then
+            style.barLength = newLength
+            changed = true
+        end
+        if style.barHeight ~= newHeight then
+            style.barHeight = newHeight
+            changed = true
+        end
+    end
+
+    return changed
+end
+
+local function RefreshConfigPanelIfShown()
+    local configState = ST._configState
+    local configFrame = configState and configState.configFrame
+    local frame = configFrame and configFrame.frame
+    if frame and frame:IsShown() then
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+local function UpdateResizedPanelContainerWrapper(groupId)
+    local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+    local containerId = group and group.parentContainerId
+    if containerId
+        and CooldownCompanion.UpdateContainerWrapperUnion
+        and CooldownCompanion.IsContainerUnlockPreviewActive
+        and CooldownCompanion:IsContainerUnlockPreviewActive(containerId) then
+        CooldownCompanion:UpdateContainerWrapperUnion(containerId)
+    end
+end
+
+local function EndPanelResizeGesture(grip, applyFinal)
+    if not grip._resizeActive then
+        grip:SetScript("OnUpdate", nil)
+        return
+    end
+
+    local groupId = grip._resizeGroupId
+    local restylePending = grip._resizeRestylePending
+    grip._resizeActive = nil
+    grip:SetScript("OnUpdate", nil)
+
+    if applyFinal and groupId then
+        ApplyPanelResizeFromCursor(grip)
+        CooldownCompanion:UpdateGroupStyle(groupId)
+        RefreshConfigPanelIfShown()
+    elseif restylePending then
+        CooldownCompanion._pendingFullRefresh = true
+    end
+
+    grip._resizeGroupId = nil
+    grip._resizeKind = nil
+    grip._resizeStartX = nil
+    grip._resizeStartY = nil
+    grip._resizeStartPrimary = nil
+    grip._resizeStartSecondary = nil
+    grip._resizeBarFillVertical = nil
+    grip._resizeCols = nil
+    grip._resizeRows = nil
+    grip._resizeKX = nil
+    grip._resizeKY = nil
+    grip._resizeElapsed = nil
+    grip._resizeRestylePending = nil
+    CooldownCompanion:EndMoverChromeFade(grip)
+end
+
+local function UpdatePanelResizeGesture(grip, elapsed)
+    if not grip._resizeActive then
+        return
+    end
+
+    grip._resizeElapsed = grip._resizeElapsed + elapsed
+    if ApplyPanelResizeFromCursor(grip) then
+        grip._resizeRestylePending = true
+    end
+
+    if grip._resizeElapsed >= PANEL_RESIZE_REFRESH_INTERVAL then
+        grip._resizeElapsed = 0
+        if grip._resizeRestylePending then
+            grip._resizeRestylePending = nil
+            CooldownCompanion:UpdateGroupStyle(grip._resizeGroupId)
+        end
+    end
+end
+
+local function BeginPanelResizeGesture(grip)
+    local frame = grip._resizeFrame
+    local groupId = frame and frame.groupId
+    local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+    if not group or not CanUsePanelResizeInteractions(groupId, group) then
+        return
+    end
+
+    CancelCoordinateEdit(frame.coordLabel)
+    local cursorX, cursorY = GetPanelResizeCursorPosition()
+    if not (cursorX and cursorY) then
+        return
+    end
+
+    local style = group.style
+    if not style then
+        return
+    end
+
+    grip._resizeGroupId = groupId
+    grip._resizeStartX = cursorX
+    grip._resizeStartY = cursorY
+    grip._resizeElapsed = 0
+    grip._resizeRestylePending = nil
+
+    local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
+    local buttonsPerRow = style.buttonsPerRow or 12
+    local numButtons = frame.visibleButtonCount
+        or (CooldownCompanion:IsRotationAssistantGroup(group) and 1)
+        or #group.buttons
+    if group.parentContainerId and not group.compactLayout and frame.layoutButtonCount then
+        numButtons = math_max(numButtons, frame.layoutButtonCount)
+    end
+    if orientation == "horizontal" then
+        grip._resizeCols = math_max(1, math_min(numButtons, buttonsPerRow))
+        grip._resizeRows = math_max(1, math_ceil(numButtons / buttonsPerRow))
+    else
+        grip._resizeRows = math_max(1, math_min(numButtons, buttonsPerRow))
+        grip._resizeCols = math_max(1, math_ceil(numButtons / buttonsPerRow))
+    end
+
+    local compactGrowthDirection = NormalizeCompactGrowthDirection(group.compactGrowthDirection)
+    local factorPoint = group.compactLayout
+        and GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, style.growthOrigin)
+        or nil
+    factorPoint = factorPoint or ((group.anchor and group.anchor.point) or "CENTER")
+    if factorPoint:find("LEFT", 1, true) then
+        grip._resizeKX = 1
+    elseif factorPoint:find("RIGHT", 1, true) then
+        grip._resizeKX = 0
+    else
+        grip._resizeKX = 0.5
+    end
+    if factorPoint:find("TOP", 1, true) then
+        grip._resizeKY = 1
+    elseif factorPoint:find("BOTTOM", 1, true) then
+        grip._resizeKY = 0
+    else
+        grip._resizeKY = 0.5
+    end
+    if grip._resizeKX == 0 then
+        grip._resizeKX = 1
+    end
+    if grip._resizeKY == 0 then
+        grip._resizeKY = 1
+    end
+
+    if group.displayMode == "bars" then
+        grip._resizeKind = "bar"
+        grip._resizeStartPrimary = style.barLength or 180
+        grip._resizeStartSecondary = style.barHeight or 20
+        grip._resizeBarFillVertical = style.barFillVertical and true or nil
+    elseif style.maintainAspectRatio then
+        grip._resizeKind = "square"
+        grip._resizeStartPrimary = style.buttonSize or ST.BUTTON_SIZE
+        grip._resizeStartSecondary = nil
+        grip._resizeBarFillVertical = nil
+    else
+        grip._resizeKind = "icon"
+        grip._resizeStartPrimary = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
+        grip._resizeStartSecondary = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
+        grip._resizeBarFillVertical = nil
+    end
+
+    grip._resizeActive = true
+    CooldownCompanion:BeginMoverChromeFade(grip)
+    grip:SetScript("OnUpdate", UpdatePanelResizeGesture)
+end
+
+local function CreatePanelResizeGrip(frame)
+    local grip = CreateFrame("Button", nil, frame.dragHandle)
+    grip._resizeFrame = frame
+    grip:SetSize(PANEL_RESIZE_GRIP_SIZE, PANEL_RESIZE_GRIP_SIZE)
+    grip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
+    grip:SetFrameStrata(frame.dragHandle:GetFrameStrata())
+    grip:SetFrameLevel(frame.dragHandle:GetFrameLevel() + 4)
+    grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+
+    grip:SetScript("OnMouseDown", function(self, button)
+        if button == "LeftButton" then
+            BeginPanelResizeGesture(self)
+        end
+    end)
+    grip:SetScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" then
+            EndPanelResizeGesture(self, not CooldownCompanion._combatForcedLock and not InCombatLockdown())
+        end
+    end)
+    grip:SetScript("OnHide", function(self)
+        GameTooltip:Hide()
+        EndPanelResizeGesture(self, not CooldownCompanion._combatForcedLock and not InCombatLockdown())
+    end)
+    grip:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Resize")
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Mouse wheel over the panel also resizes.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    grip:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    return grip
+end
+
+local function OnUnlockedPanelMouseWheel(frame, delta)
+    local groupId = frame.groupId
+    local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+    if not group
+        or not CanUsePanelResizeInteractions(groupId, group)
+        or not delta
+        or delta == 0 then
+        return
+    end
+
+    local style = group.style
+    if not style then
+        return
+    end
+
+    CancelCoordinateEdit(frame.coordLabel)
+    CooldownCompanion:BeginMoverChromeWheelFade(frame)
+    local step = delta > 0 and 1 or -1
+    local changed = false
+
+    if group.displayMode == "bars" then
+        -- barHeight is thickness: screen height for horizontal fill and screen
+        -- width after GetButtonDimensions transposes a vertical-fill bar.
+        local current = math_floor((style.barHeight or 20) + 0.5)
+        local newHeight = RoundAndClampPanelSize(current + step, 5, 100)
+        if style.barHeight ~= newHeight then
+            style.barHeight = newHeight
+            changed = true
+        end
+    elseif style.maintainAspectRatio then
+        local current = math_floor((style.buttonSize or ST.BUTTON_SIZE) + 0.5)
+        local newSize = RoundAndClampPanelSize(current + step, 10, 150)
+        if style.buttonSize ~= newSize then
+            style.buttonSize = newSize
+            changed = true
+        end
+    else
+        local currentWidth = math_floor((style.iconWidth or style.buttonSize or ST.BUTTON_SIZE) + 0.5)
+        local currentHeight = math_floor((style.iconHeight or style.buttonSize or ST.BUTTON_SIZE) + 0.5)
+        local newWidth = RoundAndClampPanelSize(currentWidth + step, 10, 150)
+        local newHeight = RoundAndClampPanelSize(currentHeight + step, 10, 150)
+        if style.iconWidth ~= newWidth then
+            style.iconWidth = newWidth
+            changed = true
+        end
+        if style.iconHeight ~= newHeight then
+            style.iconHeight = newHeight
+            changed = true
+        end
+    end
+
+    if changed then
+        CooldownCompanion:UpdateGroupStyle(groupId)
+    end
+end
+
+local function AddPanelDragHelpTooltipLines(tooltip, isCursorPreview, isResizable)
     if isCursorPreview then
         tooltip:AddLine("Cursor Offset")
         tooltip:AddLine("Drag this panel to set its saved offset from the dummy cursor.", 1, 1, 1, true)
@@ -1138,11 +2241,28 @@ local function AddPanelDragHelpTooltipLines(tooltip, isContainerPreview, isCurso
     tooltip:AddLine(" ")
     tooltip:AddLine("Use the arrow pad to nudge by 1 pixel.", 1, 1, 1, false)
     tooltip:AddLine(" ")
-    if not isContainerPreview then
-        tooltip:AddLine("Middle-click the header to lock this panel.", 1, 1, 1, false)
+    if isResizable then
+        tooltip:AddLine("Drag the corner grip or mouse wheel to resize.", 1, 1, 1, false)
         tooltip:AddLine(" ")
     end
-    tooltip:AddLine("Position coordinates are shown below while unlocked.", 1, 1, 1, false)
+    tooltip:AddLine("Click the coordinates below to type exact values.", 1, 1, 1, false)
+end
+
+local function LockPanelFromMover(groupId)
+    local group = CooldownCompanion.db.profile.groups[groupId]
+    if not group then
+        return
+    end
+    local containerPreviewActive = GetContainerPreviewSelectionState(groupId)
+    if IsCursorAnchor(group.anchor) or containerPreviewActive then
+        return
+    end
+
+    -- Lock this specific group/panel
+    CooldownCompanion:SetPanelLocked(groupId, true)
+    CooldownCompanion:CaptureArrangePanelRecord(groupId)
+    CooldownCompanion:RefreshConfigPanel()
+    CooldownCompanion:Print(group.name .. " locked.")
 end
 
 local function CreatePanelDragHelpButton(frame, groupId)
@@ -1155,14 +2275,14 @@ local function CreatePanelDragHelpButton(frame, groupId)
         frame.dragHandle,
         "RIGHT",
         "RIGHT",
-        -4,
+        -2,
         0,
         function(tooltip)
-            local previewActive = GetContainerPreviewSelectionState(groupId)
+            local group = CooldownCompanion.db.profile.groups[groupId]
             local cursorPreviewActive = CooldownCompanion.IsCursorAnchorLayoutPreviewSelected
                 and CooldownCompanion:IsCursorAnchorLayoutPreviewSelected(groupId)
                 or false
-            AddPanelDragHelpTooltipLines(tooltip, previewActive, cursorPreviewActive)
+            AddPanelDragHelpTooltipLines(tooltip, cursorPreviewActive, IsGroupPanelResizable(group))
         end
     )
 end
@@ -1187,6 +2307,10 @@ local function SyncGroupControlLevels(frame, raiseAboveWrapper)
         frame.dragHelpButton:SetFrameStrata(strata)
         frame.dragHelpButton:SetFrameLevel(baseLevel + 2)
     end
+    if frame.resizeGrip then
+        frame.resizeGrip:SetFrameStrata(strata)
+        frame.resizeGrip:SetFrameLevel(baseLevel + 4)
+    end
     if frame.nudger then
         frame.nudger:SetFrameStrata(strata)
         frame.nudger:SetFrameLevel(baseLevel + 5)
@@ -1202,8 +2326,16 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
         return
     end
 
+    local group = frame.groupId and CooldownCompanion.db.profile.groups[frame.groupId]
+    local containerPreviewActive = frame.groupId and GetContainerPreviewSelectionState(frame.groupId) or false
     if frame.dragHandle then
+        frame.dragHandle:SetIgnoreParentAlpha(shown and frame._unlockGhost == true)
         frame.dragHandle:SetShown(shown)
+        if frame.dragHandle.lockButton then
+            frame.dragHandle.lockButton:SetShown(
+                shown and not containerPreviewActive and not IsCursorAnchor(group and group.anchor)
+            )
+        end
     end
     if frame.coordLabel then
         frame.coordLabel:SetShown(shown)
@@ -1214,6 +2346,17 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
     if frame.nudger then
         frame.nudger:SetShown(shown)
     end
+    local resizeShown = shown
+        and IsGroupPanelResizable(group)
+        and not IsCursorAnchor(group.anchor)
+        or false
+    if resizeShown and not frame.resizeGrip then
+        frame.resizeGrip = CreatePanelResizeGrip(frame)
+    end
+    if frame.resizeGrip then
+        frame.resizeGrip:SetShown(resizeShown)
+    end
+    CooldownCompanion:ApplyMoverChromeFadeToFrames(frame.dragHandle, frame.coordLabel, frame.nudger, frame.resizeGrip)
 end
 
 local function GetCursorPositionInUIParentSpace(self)
@@ -1289,7 +2432,7 @@ local function ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY, 
 end
 
 local function GetCursorAnchoredStandaloneHost(frame, group)
-    if not (frame and group and (group.displayMode == "textures" or group.displayMode == "trigger")) then
+    if not (frame and CooldownCompanion:IsStandaloneTexturePanelGroup(group)) then
         return nil
     end
 
@@ -1341,7 +2484,7 @@ local function SetCursorAnchorLayoutPreviewGroupState(self, groupId, active)
     end
 
     local selected = active and IsCursorAnchorLayoutPreviewSelected(self, groupId)
-    local isStandaloneDisplay = group.displayMode == "textures" or group.displayMode == "trigger"
+    local isStandaloneDisplay = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
 
     if active then
         if not (InCombatLockdown() and frame:IsProtected()) then
@@ -1399,6 +2542,7 @@ local function BeginCursorLayoutPreviewDrag(ownerFrame, dragRegion)
         CooldownCompanion:UpdateCursorAnchoredFrames()
     end)
     ownerFrame:StartMoving()
+    CooldownCompanion:BeginMoverChromeFade(ownerFrame)
 end
 
 local function EndCursorLayoutPreviewDrag(ownerFrame, dragRegion)
@@ -1411,31 +2555,45 @@ local function EndCursorLayoutPreviewDrag(ownerFrame, dragRegion)
         activePreview.hasDefaultPosition = nil
     end
     CooldownCompanion:UpdateCursorAnchoredFrames()
+    CooldownCompanion:EndMoverChromeFade(ownerFrame)
 end
 
-local function SaveCursorAnchorLayoutPreviewPanelPosition(self, groupId)
+local function ComputeCursorAnchorLayoutPreviewPanelCoordinates(self, frame, groupId, group)
     local preview = self._cursorAnchorLayoutPreview
-    local frame = self.groupFrames and self.groupFrames[groupId] or nil
-    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
     if not (preview and frame and group and IsCursorAnchor(group.anchor)) then
-        return false
+        return nil, nil
     end
     if not IsCursorAnchorLayoutPreviewSelected(self, groupId) then
-        return false
+        return nil, nil
     end
 
     local cursorX, cursorY = GetCursorAnchorLayoutPreviewPosition(self, groupId)
     local frameCenterX, frameCenterY = frame:GetCenter()
     local frameWidth, frameHeight = GetFrameSizeInUIParentSpace(frame)
     if not (cursorX and cursorY and frameCenterX and frameCenterY and frameWidth and frameHeight) then
-        self:UpdateCursorAnchoredFrames()
-        return false
+        return nil, nil
     end
 
     local point = group.anchor.point or CURSOR_ANCHOR_POINT
     local anchorOffsetX, anchorOffsetY = GetAnchorOffset(point, frameWidth, frameHeight)
     local newX = math_floor(((frameCenterX + anchorOffsetX) - cursorX) * 10 + 0.5) / 10
     local newY = math_floor(((frameCenterY + anchorOffsetY) - cursorY) * 10 + 0.5) / 10
+    return newX, newY, cursorX, cursorY, point
+end
+
+local function SaveCursorAnchorLayoutPreviewPanelPosition(self, groupId)
+    local frame = self.groupFrames and self.groupFrames[groupId] or nil
+    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
+    local newX, newY, cursorX, cursorY, point = ComputeCursorAnchorLayoutPreviewPanelCoordinates(
+        self,
+        frame,
+        groupId,
+        group
+    )
+    if newX == nil or newY == nil then
+        self:UpdateCursorAnchoredFrames()
+        return false
+    end
 
     group.anchor.point = point
     group.anchor.relativeTo = CURSOR_ANCHOR_TARGET
@@ -1450,12 +2608,82 @@ local function SaveCursorAnchorLayoutPreviewPanelPosition(self, groupId)
     return true
 end
 
+local function UpdateGroupDragCoordinate(frame)
+    local groupId = frame and frame.groupId
+    local group = groupId and CooldownCompanion.db.profile.groups[groupId] or nil
+    if not group then
+        return
+    end
+
+    local x, y, anchorState
+    if IsCursorAnchor(group.anchor) then
+        x, y = ComputeCursorAnchorLayoutPreviewPanelCoordinates(CooldownCompanion, frame, groupId, group)
+    else
+        x, y, _, _, _, _, anchorState = ComputeGroupFrameCoordinates(
+            CooldownCompanion,
+            frame,
+            groupId,
+            group,
+            frame._coordDragReferenceReady,
+            frame._coordDragRelativeTo,
+            frame._coordDragRelativeFrame,
+            frame._coordDragAnchorState
+        )
+    end
+    if x ~= nil and y ~= nil and anchorState ~= "unsafe" then
+        UpdateCoordLabel(frame, x, y)
+    end
+end
+
+local function PrepareGroupCoordinateDragReference(frame)
+    local groupId = frame and frame.groupId
+    local group = groupId and CooldownCompanion.db.profile.groups[groupId] or nil
+    if not (frame and group) or IsCursorAnchor(group.anchor) then
+        return
+    end
+
+    local _, _, relativeTo, relativeFrame, _, _, anchorState = ComputeGroupFrameCoordinates(
+        CooldownCompanion,
+        frame,
+        groupId,
+        group
+    )
+    frame._coordDragRelativeTo = relativeTo
+    frame._coordDragRelativeFrame = relativeFrame
+    frame._coordDragAnchorState = anchorState
+    frame._coordDragReferenceReady = true
+end
+
+local function StartGroupCoordinateDragUpdates(frame)
+    PrepareGroupCoordinateDragReference(frame)
+    StartCoordinateDragUpdates(frame, UpdateGroupDragCoordinate)
+end
+
+local function ApplyPanelCoordinates(frame, groupId, x, y)
+    local group = CooldownCompanion.db.profile.groups[groupId]
+    if not (frame and group and group.anchor) then
+        return
+    end
+
+    group.anchor.x = x
+    group.anchor.y = y
+    CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
+    UpdateCoordLabel(frame, x, y)
+    if IsCursorAnchor(group.anchor) and CooldownCompanion.UpdateCursorAnchoredFrames then
+        CooldownCompanion:UpdateCursorAnchoredFrames()
+    end
+    CooldownCompanion:RefreshConfigPanel()
+    if group.parentContainerId and CooldownCompanion.RefreshContainerWrapper then
+        CooldownCompanion:RefreshContainerWrapper(group.parentContainerId)
+    end
+end
+
 local function BeginCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId)
     local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
     if not (frame and group and IsCursorAnchor(group.anchor)) then
         return false
     end
-    if group.displayMode == "textures" or group.displayMode == "trigger" then
+    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         return false
     end
     if not IsCursorAnchorLayoutPreviewSelected(self, groupId) then
@@ -1471,7 +2699,10 @@ local function BeginCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId)
     end
     frame._dragCancelPending = nil
     frame._dragInProgress = true
+    CancelCoordinateEdit(frame.coordLabel)
     frame:StartMoving()
+    self:BeginMoverChromeFade(frame)
+    StartGroupCoordinateDragUpdates(frame)
     return true
 end
 
@@ -1483,17 +2714,20 @@ local function EndCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId, cance
     if frame then
         frame._dragCancelPending = nil
         frame._dragInProgress = nil
+        StopCoordinateDragUpdates(frame)
         if not (InCombatLockdown() and frame.IsProtected and frame:IsProtected()) then
             frame:StopMovingOrSizing()
         end
     end
     if cancelSave then
         self:UpdateCursorAnchoredFrames()
+        self:EndMoverChromeFade(frame)
         return true
     end
     if not SaveCursorAnchorLayoutPreviewPanelPosition(self, groupId) then
         self:UpdateCursorAnchoredFrames()
     end
+    self:EndMoverChromeFade(frame)
     return true
 end
 
@@ -1814,6 +3048,10 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     local frame = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
     frame.groupId = groupId
     frame.buttons = {}
+    frame._containerUnlockPreviewActive = group.parentContainerId
+        and self:IsContainerUnlockPreviewActive(group.parentContainerId)
+        or nil
+    frame._panelUnlockPreviewActive = self:IsPanelUnlockPreviewActive(group) or nil
     
     -- Set initial size (will be updated when buttons are added)
     frame:SetSize(100, 50)
@@ -1833,7 +3071,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
 
     -- Make it movable when unlocked. Texture panels use direct texture dragging
     -- instead of the standard panel drag handle.
-    local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
+    local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
     frame:SetMovable(true)
     frame:EnableMouse((not isLocked) and (not isTextureMode))
     frame:RegisterForDrag("LeftButton")
@@ -1854,7 +3092,21 @@ function CooldownCompanion:CreateGroupFrame(groupId)
 
     -- Pixel nudger (parented to dragHandle, inherits show/hide)
     frame.nudger = CreateNudger(frame, groupId)
+    frame.dragHandle.lockButton = CreateMoverLockButton(frame.dragHandle, NUDGE_BTN_SIZE, 0.8, function()
+        LockPanelFromMover(groupId)
+    end)
     frame.dragHelpButton = CreatePanelDragHelpButton(frame, groupId)
+    if frame.dragHelpButton then
+        frame.dragHandle.lockButton:SetPoint("RIGHT", frame.dragHelpButton, "LEFT", -2, 0)
+    else
+        frame.dragHandle.lockButton:SetPoint("RIGHT", frame.dragHandle, "RIGHT", -2, 0)
+    end
+    -- Symmetric insets matching the badge cluster keep the name centered on the bar
+    local headerTextInset = frame.dragHelpButton and 34 or 16
+    frame.dragHandle.text:ClearAllPoints()
+    frame.dragHandle.text:SetPoint("LEFT", frame.dragHandle, "LEFT", headerTextInset, 0)
+    frame.dragHandle.text:SetPoint("RIGHT", frame.dragHandle, "RIGHT", -headerTextInset, 0)
+    frame.dragHandle.text:SetJustifyH("CENTER")
 
     -- Coordinate label (parented to dragHandle so it hides when locked)
     frame.coordLabel = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
@@ -1867,6 +3119,24 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.coordLabel.text = frame.coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     frame.coordLabel.text:SetPoint("CENTER")
     frame.coordLabel.text:SetTextColor(1, 1, 1, 1)
+    CreateEditableCoordLabel(
+        frame.coordLabel,
+        function()
+            local currentGroup = CooldownCompanion.db.profile.groups[groupId]
+            local anchor = currentGroup and currentGroup.anchor
+            if anchor and IsCursorAnchor(anchor) then
+                return anchor.x or CURSOR_ANCHOR_X, anchor.y or CURSOR_ANCHOR_Y
+            end
+            return anchor and anchor.x or 0, anchor and anchor.y or 0
+        end,
+        function(x, y)
+            ApplyPanelCoordinates(frame, groupId, x, y)
+        end,
+        function()
+            return frame._dragInProgress == true
+        end
+    )
+    UpdateCoordLabel(frame)
 
     local isCursorAnchored = IsCursorAnchor(group.anchor)
     local hasDragEntry = self:IsRotationAssistantGroup(group) or #group.buttons > 0
@@ -1874,6 +3144,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
 
     -- Drag scripts (check lock state at drag time)
     frame:SetScript("OnDragStart", function(self)
+        CancelCoordinateEdit(self.coordLabel)
         local locked = GetContainerState(self.groupId)
         local previewActive, selectedInContainer, containerId = GetContainerPreviewSelectionState(self.groupId)
         local dragGroup = CooldownCompanion.db.profile.groups[self.groupId]
@@ -1893,10 +3164,15 @@ function CooldownCompanion:CreateGroupFrame(groupId)
             self._dragCancelPending = nil
             self._dragInProgress = true
             self:StartMoving()
+            CooldownCompanion:BeginMoverChromeFade(self)
+            BeginSelfExcludedDragSnapSession(self)
         elseif not locked then
             self._dragCancelPending = nil
             self._dragInProgress = true
             self:StartMoving()
+            CooldownCompanion:BeginMoverChromeFade(self)
+            BeginSelfExcludedDragSnapSession(self)
+            StartGroupCoordinateDragUpdates(self)
         end
     end)
 
@@ -1915,19 +3191,24 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         if not (InCombatLockdown() and self:IsProtected()) then
             self:StopMovingOrSizing()
         end
+        ApplyEndedDragSnapSession(self, not cancelSave)
+        StopCoordinateDragUpdates(self)
         if selectedInContainer and containerId and CooldownCompanion.StopContainerMemberPreviewTracking then
             CooldownCompanion:StopContainerMemberPreviewTracking(containerId, self.groupId)
         end
         if cancelSave then
+            CooldownCompanion:EndMoverChromeFade(self)
             return
         end
         CooldownCompanion:SaveGroupPosition(self.groupId)
+        CooldownCompanion:EndMoverChromeFade(self)
     end)
 
     -- Also allow dragging from the handle
     frame.dragHandle:EnableMouse(true)
     frame.dragHandle:RegisterForDrag("LeftButton")
     frame.dragHandle:SetScript("OnDragStart", function()
+        CancelCoordinateEdit(frame.coordLabel)
         local locked = GetContainerState(groupId)
         local previewActive, selectedInContainer, containerId = GetContainerPreviewSelectionState(groupId)
         local dragGroup = CooldownCompanion.db.profile.groups[groupId]
@@ -1947,10 +3228,15 @@ function CooldownCompanion:CreateGroupFrame(groupId)
             frame._dragCancelPending = nil
             frame._dragInProgress = true
             frame:StartMoving()
+            CooldownCompanion:BeginMoverChromeFade(frame)
+            BeginSelfExcludedDragSnapSession(frame)
         elseif not locked then
             frame._dragCancelPending = nil
             frame._dragInProgress = true
             frame:StartMoving()
+            CooldownCompanion:BeginMoverChromeFade(frame)
+            BeginSelfExcludedDragSnapSession(frame)
+            StartGroupCoordinateDragUpdates(frame)
         end
     end)
     frame.dragHandle:SetScript("OnDragStop", function()
@@ -1968,13 +3254,17 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         if not (InCombatLockdown() and frame:IsProtected()) then
             frame:StopMovingOrSizing()
         end
+        ApplyEndedDragSnapSession(frame, not cancelSave)
+        StopCoordinateDragUpdates(frame)
         if selectedInContainer and containerId and CooldownCompanion.StopContainerMemberPreviewTracking then
             CooldownCompanion:StopContainerMemberPreviewTracking(containerId, groupId)
         end
         if cancelSave then
+            CooldownCompanion:EndMoverChromeFade(frame)
             return
         end
         CooldownCompanion:SaveGroupPosition(groupId)
+        CooldownCompanion:EndMoverChromeFade(frame)
     end)
 
     -- Update functions
@@ -2197,30 +3487,29 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
     end)
 end
 
-function CooldownCompanion:SaveGroupPosition(groupId)
-    local frame = self.groupFrames[groupId]
-    local group = self.db.profile.groups[groupId]
-
-    if not frame or not group then return end
-    if IsCursorAnchor(group.anchor) then
-        return
-    end
-
+ComputeGroupFrameCoordinates = function(
+    self,
+    frame,
+    groupId,
+    group,
+    useResolvedReference,
+    resolvedRelativeTo,
+    resolvedRelativeFrame,
+    resolvedAnchorState
+)
     -- Get the screen-space center of our frame
     local cx, cy = frame:GetCenter()
     local fw, fh = frame:GetSize()
 
     -- Determine the reference frame and its dimensions
-    local relativeTo = group.anchor.relativeTo
-    local previousRelativeTo = relativeTo
-    local relFrame
-    local anchorState
-    if relativeTo and relativeTo ~= "UIParent" then
+    local relativeTo = useResolvedReference and resolvedRelativeTo or group.anchor.relativeTo
+    local relFrame = useResolvedReference and resolvedRelativeFrame or nil
+    local anchorState = useResolvedReference and resolvedAnchorState or nil
+    if not useResolvedReference and relativeTo and relativeTo ~= "UIParent" then
         relFrame, anchorState = ResolveSafeAnchorTarget(self, groupId, "group", relativeTo)
     end
     if anchorState == "unsafe" then
-        self:AnchorGroupFrame(frame, group.anchor)
-        return
+        return nil, nil, relativeTo, nil, nil, nil, anchorState
     end
     if not relFrame then
         -- Panels: try container frame before UIParent
@@ -2257,6 +3546,29 @@ function CooldownCompanion:SaveGroupPosition(groupId)
     -- The offset is the difference, rounded to 1 decimal place
     local newX = math_floor((framePtX - refPtX) * 10 + 0.5) / 10
     local newY = math_floor((framePtY - refPtY) * 10 + 0.5) / 10
+    return newX, newY, relativeTo, relFrame, desiredPoint, desiredRelPoint, anchorState
+end
+
+function CooldownCompanion:SaveGroupPosition(groupId)
+    local frame = self.groupFrames[groupId]
+    local group = self.db.profile.groups[groupId]
+
+    if not frame or not group then return end
+    if IsCursorAnchor(group.anchor) then
+        return
+    end
+
+    local previousRelativeTo = group.anchor.relativeTo
+    local newX, newY, relativeTo, relFrame, desiredPoint, desiredRelPoint, anchorState = ComputeGroupFrameCoordinates(
+        self,
+        frame,
+        groupId,
+        group
+    )
+    if anchorState == "unsafe" then
+        self:AnchorGroupFrame(frame, group.anchor)
+        return
+    end
 
     group.anchor.x = newX
     group.anchor.y = newY
@@ -2283,27 +3595,29 @@ local function GetButtonDimensions(group, buttonUsabilityOptions, groupId)
     local style = group.style or {}
     local isBarMode = group.displayMode == "bars"
     local isTextMode = group.displayMode == "text"
-    local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
+    local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
     local w, h
     if isTextureMode then
         w, h = 1, 1
     elseif isTextMode then
-        w = style.textWidth or 200
-        if GetEffectiveTextHeight then
-            local maxHeight = GetEffectiveTextHeight(style, style.textFormat or "{name}  {status}")
+        if GetTextEntryMetrics then
+            -- The grid pitch is the widest/tallest usable entry. Each entry
+            -- frame keeps its own measured size (UpdateStyle -> ApplyTextLayout),
+            -- so short entries stay short inside a wider pitch. The group-level
+            -- format seeds a floor so an entry-less panel still has a size.
+            w, h = GetTextEntryMetrics(style, nil, style.textFormat or "{name}  {status}")
             for sourceIndex, buttonData in ipairs(group.buttons or {}) do
                 if IsSourceButtonInPreviewScope(CooldownCompanion, groupId, sourceIndex, buttonUsabilityOptions)
                     and CooldownCompanion:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
                     local effectiveStyle = CooldownCompanion:GetEffectiveStyle(style, buttonData)
                     local fmt = buttonData.textFormat or effectiveStyle.textFormat or "{name}  {status}"
-                    local buttonHeight = GetEffectiveTextHeight(effectiveStyle, fmt)
-                    w = math_max(w, effectiveStyle.textWidth or 200)
-                    maxHeight = math_max(maxHeight, buttonHeight)
+                    local buttonWidth, buttonHeight = GetTextEntryMetrics(effectiveStyle, buttonData, fmt)
+                    w = math_max(w, buttonWidth)
+                    h = math_max(h, buttonHeight)
                 end
             end
-            h = maxHeight
         else
-            h = style.textHeight or 20
+            w, h = 200, 20
         end
     elseif isBarMode then
         w, h = style.barLength or 180, style.barHeight or 20
@@ -2361,7 +3675,7 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
     local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions, groupId)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
-    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
+    local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
     local buttonsPerRow = style.buttonsPerRow or 12
     local isTriggerMode = group.displayMode == "trigger"
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
@@ -2525,7 +3839,6 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
     local isBarMode = group.displayMode == "bars"
     local style = group.style or {}
-    local isTriggerMode = group.displayMode == "trigger"
     local sourceButtons = GetRuntimeGroupButtonList(self, frame, group)
 
     -- Release existing buttons into bounded per-frame pools.
@@ -2544,7 +3857,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
             and IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
             local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
             local poolKey = GetButtonPoolKey(group, buttonData, effectiveStyle)
-            local button = AcquireButtonFromPool(frame, poolKey)
+            local button = AcquireButtonFromPool(frame, poolKey, buttonData)
             local reusedButton = button ~= nil
             if not button then
                 if group.displayMode == "text" then
@@ -2553,7 +3866,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
                     button = self:CreateBarFrame(frame, i, buttonData, effectiveStyle)
                 else
                     button = self:CreateButtonFrame(frame, i, buttonData, effectiveStyle)
-                    if group.displayMode == "textures" or isTriggerMode then
+                    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
                         button:SetAlpha(0)
                         button._lastVisAlpha = 0
                     end
@@ -2581,6 +3894,9 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     FinishGroupButtonRefresh(self, groupId, frame, group)
     -- D3: button population changed — refresh the identity index (coalesced).
     self:RequestSpellButtonIndexRebuild("populate")
+    -- Aura slots bind to materialized buttons: re-run the (coalesced,
+    -- OOC-deferred) rebind pass whenever population changes.
+    self:RequestAuraRebind("populate")
     -- _hasBeenSized is now true if the compact resize ran (set by
     -- ResizeGroupFrame), or still false if all buttons were visible and no
     -- compact resize was needed.  When compactLayout is off, it stays false
@@ -2604,7 +3920,7 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions, groupId)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
-    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
+    local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
     local buttonsPerRow = style.buttonsPerRow or 12
     local numButtons = frame.visibleButtonCount
         or (self:IsRotationAssistantGroup(group) and 1)
@@ -2647,6 +3963,15 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     end
 
     frame:SetSize(targetWidth, targetHeight)
+
+    -- ApplyTextGroupHeader runs before the layout pass in both
+    -- PopulateGroupButtons and UpdateGroupStyle, so its frame:GetWidth() read
+    -- is the pre-resize width. That was survivable while text width came from
+    -- a slider; auto-sized entries change the width on any format/font/name
+    -- change, so re-fit the header here, where the final width is known.
+    if frame._textHeaderShown and frame.textHeader then
+        frame.textHeader:SetWidth(math_max(1, targetWidth - 4))
+    end
 
     local compactGrowthDirection = NormalizeCompactGrowthDirection(group.compactGrowthDirection)
     local fixedPoint = group.compactLayout and GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, style.growthOrigin) or nil
@@ -2692,7 +4017,7 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
     local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions, groupId)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
-    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
+    local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
     local buttonsPerRow = style.buttonsPerRow or 12
     local compactGrowthDirection = NormalizeCompactGrowthDirection(group.compactGrowthDirection)
 
@@ -2753,6 +4078,13 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
 end
 
 function CooldownCompanion:RefreshGroupFrame(groupId)
+    -- Layout-only controls route here without UpdateGroupStyle; the config
+    -- mirror renders saved settings, so notify it before the combat
+    -- deferral can return early. The helper self-gates on the wide view.
+    if ST._RefreshButtonsPreviewMirror then
+        ST._RefreshButtonsPreviewMirror(groupId)
+    end
+
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
 
@@ -2812,6 +4144,10 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
             end
         end
 
+        frame._containerUnlockPreviewActive = group.parentContainerId
+            and self:IsContainerUnlockPreviewActive(group.parentContainerId)
+            or nil
+        frame._panelUnlockPreviewActive = self:IsPanelUnlockPreviewActive(group) or nil
         self:PopulateGroupButtons(groupId)
     end
 
@@ -2820,13 +4156,27 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
 
     -- Update drag handle text and lock state
     local hasButtons = self:IsRotationAssistantGroup(group) or #group.buttons > 0
-    local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
+    local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
     local isCursorAnchored = IsCursorAnchor(group.anchor)
     local isCursorLayoutPreviewSelected = isCursorAnchored
         and IsCursorAnchorLayoutPreviewSelected(self, groupId)
         or false
-    local containerPreviewActive = group.parentContainerId and self:IsContainerUnlockPreviewActive(group.parentContainerId)
+    local containerPreviewActive = frame._containerUnlockPreviewActive == true
+    local panelPreviewActive = frame._panelUnlockPreviewActive == true
     local selectedInContainer = containerPreviewActive and self:IsContainerPanelSelected(group.parentContainerId, groupId)
+    local isActive = ShouldShowGroupFrameForRuntimeOrPreview(self, groupId, group)
+    if (containerPreviewActive or panelPreviewActive) and isActive then
+        local normallyActive = self:IsGroupActive(groupId, {
+            group = group,
+            checkCharVisibility = true,
+            checkLoadConditions = true,
+            requireButtons = true,
+            ignoreUnlockPreview = true,
+        })
+        frame._unlockGhost = not normallyActive or nil
+    else
+        frame._unlockGhost = nil
+    end
     if frame.dragHandle and frame.dragHandle.text then
         frame.dragHandle.text:SetText(group.name)
     end
@@ -2846,7 +4196,6 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
 
     -- Update visibility: runtime-active groups show normally; selected config
     -- previews can also show without becoming runtime-visible.
-    local isActive = ShouldShowGroupFrameForRuntimeOrPreview(CooldownCompanion, groupId, group)
     if isActive then
         if InCombatLockdown() and frame:IsProtected() then
             if not frame:IsShown() then
@@ -2855,9 +4204,9 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         else
             frame:Show()
         end
-        -- Force 100% alpha while unlocked for easier positioning
+        -- Keep unlocked panels fully visible, except unlock ghosts.
         if IsCursorAnchorLayoutPreviewGroupActive(self, groupId) or containerPreviewActive or not isLocked then
-            frame:SetAlpha(1)
+            frame:SetAlpha(GetUnlockedPanelAlpha(frame))
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
         else
             ApplyCurrentAlphaIfPresent(CooldownCompanion, frame, groupId, group)
@@ -2867,7 +4216,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     end
 
     if isActive
-        and (group.displayMode == "textures" or group.displayMode == "trigger")
+        and CooldownCompanion:IsStandaloneTexturePanelGroup(group)
         and self.UpdateAuraTextureVisual
         and frame
         and frame.buttons
@@ -3127,6 +4476,14 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
 end
 
 function CooldownCompanion:UpdateGroupStyle(groupId)
+    -- The config's pinned mirror renders from saved settings, so it rides
+    -- every style update — before the frame guard, because the mirror must
+    -- refresh even when the group has no materialized live frame. No-op
+    -- unless the config's wide view is showing this panel.
+    if ST._RefreshButtonsPreviewMirror then
+        ST._RefreshButtonsPreviewMirror(groupId)
+    end
+
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
 
@@ -3140,12 +4497,12 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
     local entries, buttonUsabilityOptions = GetStyleUpdateEntries(self, groupId, frame, group)
     if not entries then
         self:PopulateGroupButtons(groupId)
+        UpdateResizedPanelContainerWrapper(groupId)
         return
     end
 
     local style = group.style or {}
     local isTextMode = group.displayMode == "text"
-    local isTriggerMode = group.displayMode == "trigger"
     local headerHeight = ApplyTextGroupHeader(self, frame, group, style, isTextMode)
 
     for visibleIndex = 1, entries.count do
@@ -3154,7 +4511,7 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
         if button.UpdateStyle then
             button:UpdateStyle(entry.style)
         end
-        if group.displayMode == "textures" or isTriggerMode then
+        if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
             button:SetAlpha(0)
             button._lastVisAlpha = 0
         end
@@ -3163,6 +4520,18 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
     local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
     ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
     FinishGroupButtonRefresh(self, groupId, frame, group)
+
+    -- The frame has its final size now, so the container unlock preview's
+    -- border can re-fit on the same tick — config size sliders restyle
+    -- through here, and the border must track them as tightly as it tracks
+    -- the mover grip.
+    UpdateResizedPanelContainerWrapper(groupId)
+
+    -- Style-only fast path skips PopulateGroupButtons, but the aura slot kit
+    -- consumes style keys at bind time — re-request the (coalesced) rebind so
+    -- the composed aura visuals track style edits too. The groupId scopes the
+    -- in-combat defer note to edits that actually touch an aura display.
+    self:RequestAuraRebind("style", groupId)
 end
 
 function CooldownCompanion:UpdateGroupClickthrough(groupId)
@@ -3172,18 +4541,29 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     if not frame or not group then return end
 
     local isLocked = GetContainerState(groupId)
-    local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
+    local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
     local isCursorAnchored = IsCursorAnchor(group.anchor)
     local isCursorLayoutPreviewSelected = isCursorAnchored
         and IsCursorAnchorLayoutPreviewSelected(self, groupId)
         or false
     local containerPreviewActive = group.parentContainerId and self:IsContainerUnlockPreviewActive(group.parentContainerId)
     local isSelectedInContainer = containerPreviewActive and self:IsContainerPanelSelected(group.parentContainerId, groupId)
+    local hasResizeEntry = self:IsRotationAssistantGroup(group) or #group.buttons > 0
+    local resizeWheelEnabled = hasResizeEntry
+        and (not containerPreviewActive or isSelectedInContainer)
+        and CanUsePanelResizeInteractions(groupId, group)
 
     SyncGroupControlLevels(
         frame,
         (isCursorLayoutPreviewSelected or (isSelectedInContainer and not isCursorAnchored)) and not isTextureMode
     )
+    if resizeWheelEnabled then
+        frame:EnableMouseWheel(true)
+        frame:SetScript("OnMouseWheel", OnUnlockedPanelMouseWheel)
+    else
+        frame:EnableMouseWheel(false)
+        frame:SetScript("OnMouseWheel", nil)
+    end
 
     if isCursorLayoutPreviewSelected and not isTextureMode then
         SetFrameClickThrough(frame, false, false)
@@ -3202,7 +4582,11 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     end
 
     if containerPreviewActive then
-        SetFrameClickThrough(frame, true, true)
+        if resizeWheelEnabled then
+            SetFrameClickThrough(frame, true, false)
+        else
+            SetFrameClickThrough(frame, true, true)
+        end
         if frame.dragHandle then
             if isSelectedInContainer and not isTextureMode and not isCursorAnchored then
                 SetFrameClickThrough(frame.dragHandle, false, false)
@@ -3243,18 +4627,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
             SetFrameClickThrough(frame.dragHandle, false, false)
             frame.dragHandle:EnableMouse(true)
             frame.dragHandle:RegisterForDrag("LeftButton")
-            frame.dragHandle:SetScript("OnMouseUp", function(_, btn)
-                if btn == "MiddleButton" then
-                    local g = CooldownCompanion.db.profile.groups[groupId]
-                    if g then
-                        -- Lock this specific group/panel
-                        g.locked = nil
-                        CooldownCompanion:RefreshGroupFrame(groupId)
-                        CooldownCompanion:RefreshConfigPanel()
-                        CooldownCompanion:Print(g.name .. " locked.")
-                    end
-                end
-            end)
+            frame.dragHandle:SetScript("OnMouseUp", nil)
         end
         if frame.nudger then
             SetFrameClickThrough(frame.nudger, false, false)
@@ -3275,29 +4648,53 @@ local CONTAINER_WRAPPER_HEADER_FONT_SIZE = 14
 local CONTAINER_WRAPPER_HEADER_GAP = 4
 local CONTAINER_PANEL_LABEL_HEIGHT = 15
 local CONTAINER_PANEL_LABEL_MIN_WIDTH = 70
-local CONTAINER_MEMBER_DRAG_REFRESH_INTERVAL = 0.05
+local CONTAINER_MEMBER_COORD_REFRESH_INTERVAL = 0.05
 local CONTAINER_WRAPPER_FALLBACK_WIDTH = 120
 local CONTAINER_WRAPPER_FALLBACK_HEIGHT = 18
+local CONTAINER_MOVER_COLORS = {
+    memberR = 0.6,
+    memberG = 0.8,
+    memberB = 1,
+    memberHoverAlpha = 0.10,
+    memberSelectedAlpha = 0.18,
+    wrapperBorderAlpha = 0.7,
+}
 
-local function GetRelativeFrameRect(referenceFrame, targetFrame)
+local function GetRelativeFrameRectValues(referenceFrame, targetFrame)
     if not (referenceFrame and targetFrame and referenceFrame.GetCenter and targetFrame.GetCenter) then
-        return nil
+        return nil, nil, nil, nil, nil, nil, nil, nil
     end
 
     local refX, refY = referenceFrame:GetCenter()
     local targetX, targetY = targetFrame:GetCenter()
     local width, height = GetFrameSizeInUIParentSpace(targetFrame)
     if not (refX and refY and targetX and targetY and width and height) then
+        return nil, nil, nil, nil, nil, nil, nil, nil
+    end
+
+    return targetX - (width / 2) - refX,
+        targetX + (width / 2) - refX,
+        targetY - (height / 2) - refY,
+        targetY + (height / 2) - refY,
+        targetX - refX,
+        targetY - refY,
+        width,
+        height
+end
+
+local function GetRelativeFrameRect(referenceFrame, targetFrame)
+    local left, right, bottom, top, centerX, centerY, width, height = GetRelativeFrameRectValues(referenceFrame, targetFrame)
+    if not left then
         return nil
     end
 
     return {
-        left = targetX - (width / 2) - refX,
-        right = targetX + (width / 2) - refX,
-        bottom = targetY - (height / 2) - refY,
-        top = targetY + (height / 2) - refY,
-        centerX = targetX - refX,
-        centerY = targetY - refY,
+        left = left,
+        right = right,
+        bottom = bottom,
+        top = top,
+        centerX = centerX,
+        centerY = centerY,
         width = width,
         height = height,
     }
@@ -3344,7 +4741,7 @@ local function EnsureContainerMemberOverlay(frame, index)
 
     overlay = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     overlay:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    overlay:SetBackdropColor(0.2, 0.8, 1, 0)
+    overlay:SetBackdropColor(CONTAINER_MOVER_COLORS.memberR, CONTAINER_MOVER_COLORS.memberG, CONTAINER_MOVER_COLORS.memberB, 0)
     overlay:RegisterForDrag("LeftButton")
     overlay:EnableMouse(true)
 
@@ -3409,11 +4806,14 @@ local function HideContainerMemberOverlays(frame)
         overlay._dragging = nil
         overlay._suppressClick = nil
         overlay.groupId = nil
+        for _, texture in ipairs(overlay._containerWrapperBorderTextures or {}) do
+            texture:Hide()
+        end
         overlay:Hide()
     end
 end
 
-local function EnsureContainerWrapperBorder(wrapper, r, g, b, a)
+local function EnsureContainerWrapperBorder(wrapper, r, g, b, a, borderSize)
     if not wrapper then
         return
     end
@@ -3433,7 +4833,7 @@ local function EnsureContainerWrapperBorder(wrapper, r, g, b, a)
         end
     end
 
-    local size = CONTAINER_WRAPPER_BORDER_SIZE
+    local size = borderSize or CONTAINER_WRAPPER_BORDER_SIZE
     local top = borderTextures[1]
     local bottom = borderTextures[2]
     local left = borderTextures[3]
@@ -3459,6 +4859,15 @@ local function EnsureContainerWrapperBorder(wrapper, r, g, b, a)
     PixelUtil.SetPoint(right, "TOPLEFT", wrapper, "TOPRIGHT", 0, size)
     PixelUtil.SetPoint(right, "BOTTOMLEFT", wrapper, "BOTTOMRIGHT", 0, -size)
     PixelUtil.SetWidth(right, size, 1)
+end
+
+local function HideContainerWrapperBorder(wrapper)
+    if not (wrapper and wrapper._containerWrapperBorderTextures) then
+        return
+    end
+    for _, texture in ipairs(wrapper._containerWrapperBorderTextures) do
+        texture:Hide()
+    end
 end
 
 function CooldownCompanion:GetContainerSelectedGroupId(containerId)
@@ -3488,15 +4897,23 @@ function CooldownCompanion:StartContainerMemberPreviewTracking(containerId, grou
     end
 
     frame._containerDraggingGroupId = groupId
+    local groupFrame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
+    if groupFrame then
+        PrepareGroupCoordinateDragReference(groupFrame)
+    end
     tracker._elapsed = 0
     tracker:SetScript("OnUpdate", function(self, elapsed)
+        CooldownCompanion:UpdateContainerWrapperUnion(containerId)
         self._elapsed = (self._elapsed or 0) + elapsed
-        if self._elapsed < CONTAINER_MEMBER_DRAG_REFRESH_INTERVAL then
+        if self._elapsed < CONTAINER_MEMBER_COORD_REFRESH_INTERVAL then
             return
         end
 
         self._elapsed = 0
-        CooldownCompanion:RefreshContainerWrapper(containerId)
+        local groupFrame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
+        if groupFrame and groupFrame._dragInProgress then
+            UpdateGroupDragCoordinate(groupFrame)
+        end
     end)
 end
 
@@ -3506,15 +4923,37 @@ function CooldownCompanion:StopContainerMemberPreviewTracking(containerId)
         return
     end
 
+    local groupId = frame._containerDraggingGroupId
     frame._containerDraggingGroupId = nil
+    local groupFrame = groupId and CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
+    if groupFrame then
+        CooldownCompanion:EndDragSnapSession(groupFrame, false)
+        groupFrame._coordDragRelativeTo = nil
+        groupFrame._coordDragRelativeFrame = nil
+        groupFrame._coordDragAnchorState = nil
+        groupFrame._coordDragReferenceReady = nil
+    end
+    local textureHost = groupFrame and self.GetAuraTextureHostForGroupFrame
+        and self:GetAuraTextureHostForGroupFrame(groupFrame)
+        or nil
+    if textureHost then
+        self:EndDragSnapSession(textureHost, false)
+    end
     local tracker = frame._containerMemberDragTracker
     if tracker then
         tracker._elapsed = 0
         tracker:SetScript("OnUpdate", nil)
     end
+    if groupFrame then
+        self:EndMoverChromeFade(groupFrame)
+    end
+    if textureHost then
+        self:EndMoverChromeFade(textureHost)
+    end
 end
 
 function CooldownCompanion:ClearContainerUnlockState(containerId)
+    self:EndMoverChromeFadeIfOwnedByContainer(containerId)
     local frame = self.containerFrames and self.containerFrames[containerId]
     if not frame then
         return
@@ -3576,7 +5015,7 @@ function CooldownCompanion:StartContainerPreviewMemberDrag(containerId, groupId)
     end
     self:StartContainerMemberPreviewTracking(containerId, groupId)
 
-    if group.displayMode == "textures" or group.displayMode == "trigger" then
+    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         if self.StartGroupedStandalonePreviewHostDrag and self:StartGroupedStandalonePreviewHostDrag(groupId, containerId) then
             return true
         end
@@ -3593,6 +5032,8 @@ function CooldownCompanion:StartContainerPreviewMemberDrag(containerId, groupId)
     groupFrame._dragCancelPending = nil
     groupFrame._dragInProgress = true
     groupFrame:StartMoving()
+    self:BeginMoverChromeFade(groupFrame)
+    BeginSelfExcludedDragSnapSession(groupFrame)
     return true
 end
 
@@ -3603,7 +5044,7 @@ function CooldownCompanion:StopContainerPreviewMemberDrag(containerId, groupId)
         return
     end
 
-    if group.displayMode == "textures" or group.displayMode == "trigger" then
+    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         if self.StopGroupedStandalonePreviewHostDrag then
             self:StopGroupedStandalonePreviewHostDrag(groupId, containerId)
         end
@@ -3617,6 +5058,7 @@ function CooldownCompanion:StopContainerPreviewMemberDrag(containerId, groupId)
         groupFrame:StopMovingOrSizing()
     end
     if groupFrame then
+        ApplyEndedDragSnapSession(groupFrame, not cancelSave)
         groupFrame._dragCancelPending = nil
         groupFrame._dragInProgress = nil
     end
@@ -3673,30 +5115,90 @@ local function UpdateContainerWrapperLevels(frame)
     end
 end
 
-local function GetContainerMemberDisplayRect(self, containerFrame, groupId, group)
+local function GetContainerMemberDisplayFrame(self, groupId, group)
     local groupFrame = self.groupFrames and self.groupFrames[groupId]
-    local rect = nil
-    local isStandaloneDisplay = group and (group.displayMode == "textures" or group.displayMode == "trigger")
+    local isStandaloneDisplay = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
 
     if isStandaloneDisplay then
         local driverButton = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
         local host = driverButton and driverButton.auraTextureHost or nil
         if host and host:IsShown() then
-            rect = GetRelativeFrameRect(containerFrame, host)
+            return host
         end
     end
 
-    if not rect and not isStandaloneDisplay and groupFrame and groupFrame:IsShown() then
-        rect = GetRelativeFrameRect(containerFrame, groupFrame)
+    if not isStandaloneDisplay and groupFrame and groupFrame:IsShown() then
+        return groupFrame
     end
+
+    return nil
+end
+
+local function GetContainerMemberDisplayRect(self, containerFrame, groupId, group)
+    local displayFrame = GetContainerMemberDisplayFrame(self, groupId, group)
+    local rect = displayFrame and GetRelativeFrameRect(containerFrame, displayFrame) or nil
 
     if rect then
         rect.groupId = groupId
         rect.group = group
         rect.label = group.name or ("Panel " .. groupId)
+        rect.displayFrame = displayFrame
     end
 
     return rect
+end
+
+function CooldownCompanion:UpdateContainerWrapperUnion(containerId, previewRects, headerWidth)
+    local frame = self.containerFrames and self.containerFrames[containerId]
+    local wrapper = frame and frame.dragHandle
+    if not wrapper then
+        return 0, nil, nil, CONTAINER_WRAPPER_PADDING
+    end
+
+    previewRects = previewRects or frame._containerWrapperPreviewRects
+    headerWidth = headerWidth or frame._containerWrapperHeaderWidth or 96
+    if not previewRects then
+        return 0, nil, nil, CONTAINER_WRAPPER_PADDING
+    end
+
+    local minLeft, maxRight, minBottom, maxTop = nil, nil, nil, nil
+    local visibleRectCount = 0
+    for _, rect in ipairs(previewRects) do
+        local left, right, bottom, top, centerX, centerY, width, height = GetRelativeFrameRectValues(frame, rect.displayFrame)
+        if left then
+            rect.left = left
+            rect.right = right
+            rect.bottom = bottom
+            rect.top = top
+            rect.centerX = centerX
+            rect.centerY = centerY
+            rect.width = width
+            rect.height = height
+            visibleRectCount = visibleRectCount + 1
+            minLeft = minLeft and math_min(minLeft, left) or left
+            maxRight = maxRight and math_max(maxRight, right) or right
+            minBottom = minBottom and math_min(minBottom, bottom) or bottom
+            maxTop = maxTop and math_max(maxTop, top) or top
+        end
+    end
+
+    frame._containerWrapperPreviewRects = previewRects
+    frame._containerWrapperHeaderWidth = headerWidth
+    wrapper:ClearAllPoints()
+    if visibleRectCount == 0 then
+        local fallbackWidth = math_max(headerWidth, CONTAINER_WRAPPER_FALLBACK_WIDTH)
+        local fallbackHalfWidth = RoundPreviewOffset(fallbackWidth / 2)
+        local fallbackHalfHeight = RoundPreviewOffset(CONTAINER_WRAPPER_FALLBACK_HEIGHT / 2)
+        wrapper:SetPoint("BOTTOMLEFT", frame, "CENTER", -fallbackHalfWidth, -fallbackHalfHeight)
+        wrapper:SetPoint("TOPRIGHT", frame, "CENTER", fallbackHalfWidth, fallbackHalfHeight)
+    else
+        local padding = CONTAINER_WRAPPER_PADDING
+        wrapper:SetPoint("BOTTOMLEFT", frame, "CENTER", RoundPreviewOffset(minLeft - padding), RoundPreviewOffset(minBottom - padding))
+        wrapper:SetPoint("TOPRIGHT", frame, "CENTER", RoundPreviewOffset(maxRight + padding), RoundPreviewOffset(maxTop + padding))
+    end
+    wrapper:SetShown(true)
+
+    return visibleRectCount, minLeft, minBottom, CONTAINER_WRAPPER_PADDING
 end
 
 function CooldownCompanion:RefreshContainerWrapper(containerId)
@@ -3709,6 +5211,7 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
     frame._isRefreshingContainerWrapper = true
     local wrapper = frame.dragHandle
     local header = wrapper.header
+    self:ApplyMoverChromeFadeToFrames(header, frame.coordLabel, frame.nudger)
     HideContainerPanelLabels(frame)
     UpdateContainerWrapperLevels(frame)
 
@@ -3742,17 +5245,12 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
     allPanels = allPanels or previewPanels
     local previewRects = {}
     local previewedGroupIds = {}
-    local minLeft, maxRight, minBottom, maxTop = nil, nil, nil, nil
 
     for _, panelInfo in ipairs(previewPanels) do
         local rect = GetContainerMemberDisplayRect(self, frame, panelInfo.groupId, panelInfo.group)
         if rect then
             previewRects[#previewRects + 1] = rect
             previewedGroupIds[rect.groupId] = true
-            minLeft = minLeft and math_min(minLeft, rect.left) or rect.left
-            maxRight = maxRight and math_max(maxRight, rect.right) or rect.right
-            minBottom = minBottom and math_min(minBottom, rect.bottom) or rect.bottom
-            maxTop = maxTop and math_max(maxTop, rect.top) or rect.top
         end
     end
 
@@ -3771,20 +5269,13 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         local titleText = header.text or wrapper.text
         if titleText then
             titleText:SetText(container.name or "Group")
-            headerWidth = math_max(96, math_floor((titleText:GetStringWidth() or 0) + 24.5))
+            headerWidth = math_max(96, math_floor((titleText:GetStringWidth() or 0) + 48.5))
         end
     end
 
-    if #previewRects == 0 then
+    local visibleRectCount, minLeft, minBottom, padding = self:UpdateContainerWrapperUnion(containerId, previewRects, headerWidth)
+    if visibleRectCount == 0 then
         HideContainerMemberOverlays(frame)
-        local fallbackWidth = math_max(headerWidth, CONTAINER_WRAPPER_FALLBACK_WIDTH)
-        local fallbackHalfWidth = RoundPreviewOffset(fallbackWidth / 2)
-        local fallbackHalfHeight = RoundPreviewOffset(CONTAINER_WRAPPER_FALLBACK_HEIGHT / 2)
-
-        wrapper:ClearAllPoints()
-        wrapper:SetPoint("BOTTOMLEFT", frame, "CENTER", -fallbackHalfWidth, -fallbackHalfHeight)
-        wrapper:SetPoint("TOPRIGHT", frame, "CENTER", fallbackHalfWidth, fallbackHalfHeight)
-        wrapper:SetShown(true)
         if header then
             header:SetWidth(headerWidth)
             header:Show()
@@ -3798,12 +5289,6 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         frame._isRefreshingContainerWrapper = nil
         return
     end
-
-    local padding = CONTAINER_WRAPPER_PADDING
-    wrapper:ClearAllPoints()
-    wrapper:SetPoint("BOTTOMLEFT", frame, "CENTER", RoundPreviewOffset(minLeft - padding), RoundPreviewOffset(minBottom - padding))
-    wrapper:SetPoint("TOPRIGHT", frame, "CENTER", RoundPreviewOffset(maxRight + padding), RoundPreviewOffset(maxTop + padding))
-    wrapper:SetShown(true)
 
     if header then
         header:SetWidth(headerWidth)
@@ -3821,30 +5306,32 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
     for labelIndex, rect in ipairs(previewRects) do
         local isSelected = selectedGroupId == rect.groupId
         local isHovered = hoveredGroupId == rect.groupId
-        local isStandaloneDisplay = rect.group and (rect.group.displayMode == "textures" or rect.group.displayMode == "trigger")
+        local isStandaloneDisplay = CooldownCompanion:IsStandaloneTexturePanelGroup(rect.group)
 
         local overlay = EnsureContainerMemberOverlay(frame, labelIndex)
         usedOverlayIndices[labelIndex] = true
         overlay.containerId = containerId
         overlay.groupId = rect.groupId
         overlay:ClearAllPoints()
-        overlay:SetPoint("BOTTOMLEFT", frame, "CENTER", RoundPreviewOffset(rect.left), RoundPreviewOffset(rect.bottom))
-        overlay:SetPoint("TOPRIGHT", frame, "CENTER", RoundPreviewOffset(rect.right), RoundPreviewOffset(rect.top))
+        overlay:SetPoint("BOTTOMLEFT", rect.displayFrame, "BOTTOMLEFT", 0, 0)
+        overlay:SetPoint("TOPRIGHT", rect.displayFrame, "TOPRIGHT", 0, 0)
         overlay:SetShown(true)
 
         local fillAlpha = 0
-        local borderAlpha = 0
         if not isStandaloneDisplay then
             if isSelected then
-                fillAlpha = 0.12
-                borderAlpha = 0.95
+                fillAlpha = CONTAINER_MOVER_COLORS.memberSelectedAlpha
             elseif isHovered then
-                fillAlpha = 0.08
-                borderAlpha = 0.75
+                fillAlpha = CONTAINER_MOVER_COLORS.memberHoverAlpha
             end
         end
-        overlay:SetBackdropColor(0.15, 0.45, 0.65, fillAlpha)
-        EnsureContainerWrapperBorder(overlay, 0.2, 0.8, 1, borderAlpha)
+        overlay:SetBackdropColor(
+            CONTAINER_MOVER_COLORS.memberR,
+            CONTAINER_MOVER_COLORS.memberG,
+            CONTAINER_MOVER_COLORS.memberB,
+            fillAlpha
+        )
+        HideContainerWrapperBorder(overlay)
 
         local showLabel = hoveredGroupId ~= nil and isHovered and not isSelected
 
@@ -3870,6 +5357,7 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
                 overlay._dragging = nil
                 overlay._suppressClick = nil
                 overlay.groupId = nil
+                HideContainerWrapperBorder(overlay)
                 overlay:Hide()
             end
         end
@@ -3880,7 +5368,7 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         local groupId = panelInfo.groupId
         local groupFrame = self.groupFrames and self.groupFrames[groupId] or nil
         local isSelected = selectedGroupId == groupId and previewedGroupIds[groupId]
-        local isStandaloneDisplay = group and (group.displayMode == "textures" or group.displayMode == "trigger")
+        local isStandaloneDisplay = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
         local isCursorAnchored = group and IsCursorAnchor(group.anchor)
 
         if groupFrame and not isStandaloneDisplay then
@@ -3907,6 +5395,51 @@ function CooldownCompanion:RefreshAllContainerWrappers()
     end
 end
 
+local function UpdateContainerDragCoordinate(frame)
+    local x, y = ComputeContainerFrameCoordinates(frame)
+    if x ~= nil and y ~= nil then
+        UpdateCoordLabel(frame, x, y)
+    end
+end
+
+local function BeginContainerDragSnapSession(frame)
+    local containerId = frame and frame.containerId
+    CooldownCompanion:BeginDragSnapSession(frame, function(candidateFrame, candidateGroupId)
+        if candidateFrame == frame or candidateFrame == frame.dragHandle then
+            return true
+        end
+        local group = candidateGroupId
+            and CooldownCompanion.db.profile.groups[candidateGroupId]
+            or nil
+        return group and group.parentContainerId == containerId or false
+    end)
+end
+
+local function ApplyContainerCoordinates(frame, containerId, x, y)
+    local container = CooldownCompanion.db.profile.groupContainers[containerId]
+    if not (frame and container) then
+        return
+    end
+
+    container.anchor = CooldownCompanion:NormalizeContainerAnchor(container.anchor)
+    local oldX = tonumber(container.anchor.x) or 0
+    local oldY = tonumber(container.anchor.y) or 0
+    container.anchor.x = x
+    container.anchor.y = y
+    container.anchor.point = "CENTER"
+    container.anchor.relativeTo = "UIParent"
+    container.anchor.relativePoint = "CENTER"
+    CooldownCompanion:AnchorContainerFrame(frame, container.anchor)
+    if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
+        CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, x - oldX, y - oldY)
+    end
+    UpdateCoordLabel(frame, x, y)
+    if CooldownCompanion.RefreshContainerWrapper then
+        CooldownCompanion:RefreshContainerWrapper(containerId)
+    end
+    CooldownCompanion:RefreshConfigPanel()
+end
+
 local function CreateContainerNudger(frame, containerId)
     local NUDGE_GAP = 2
 
@@ -3920,6 +5453,17 @@ local function CreateContainerNudger(frame, containerId)
     nudger:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     nudger:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
     CreatePixelBorders(nudger)
+    nudger:SetScript("OnEnter", function(self)
+        CooldownCompanion:BeginMoverChromeHoverFade(self)
+    end)
+    nudger:SetScript("OnLeave", function(self)
+        if not self:IsMouseOver() then
+            CooldownCompanion:EndMoverChromeFade(self)
+        end
+    end)
+    nudger:SetScript("OnHide", function(self)
+        CooldownCompanion:EndMoverChromeFade(self)
+    end)
 
     local directions = {
         { atlas = "common-dropdown-icon-back", rotation = -math.pi / 2, anchor = "BOTTOM", dx =  0, dy =  1, ox = 0,         oy = NUDGE_GAP },
@@ -3944,10 +5488,14 @@ local function CreateContainerNudger(frame, containerId)
 
         btn:SetScript("OnEnter", function(self)
             self.arrow:SetVertexColor(1, 1, 1, 1)
+            CooldownCompanion:BeginMoverChromeHoverFade(nudger)
         end)
         btn:SetScript("OnLeave", function(self)
             self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
             CooldownCompanion:SaveContainerPosition(containerId)
+            if not nudger:IsMouseOver() then
+                CooldownCompanion:EndMoverChromeFade(nudger)
+            end
         end)
 
         local function DoNudge()
@@ -3974,7 +5522,9 @@ local function CreateContainerNudger(frame, containerId)
         end
 
         btn:SetScript("OnMouseDown", function(self)
+            CancelCoordinateEdit(frame.coordLabel)
             DoNudge()
+            CooldownCompanion:VerifyMoverChromeHoverFade(nudger)
         end)
 
         btn:SetScript("OnMouseUp", function(self)
@@ -3983,6 +5533,22 @@ local function CreateContainerNudger(frame, containerId)
     end
 
     return nudger
+end
+
+local function LockContainerFromMover(containerId)
+    local container = CooldownCompanion.db.profile.groupContainers[containerId]
+    if not container then
+        return
+    end
+
+    if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
+        CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId)
+    end
+    CooldownCompanion:SetContainerLocked(containerId, true)
+    CooldownCompanion:CaptureArrangeContainerRecord(containerId)
+    CooldownCompanion:RefreshConfigPanel()
+    CooldownCompanion:Print(container.name .. " locked.")
+    CooldownCompanion:CheckArrangeModeAutoExit()
 end
 
 function CooldownCompanion:CreateContainerFrame(containerId)
@@ -4017,7 +5583,8 @@ function CooldownCompanion:CreateContainerFrame(containerId)
     frame.dragHandle:SetSize(1, 1)
     frame.dragHandle:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     frame.dragHandle:SetBackdropColor(0.15, 0.35, 0.55, 0.08)
-    EnsureContainerWrapperBorder(frame.dragHandle, 0.2, 0.8, 1, 0.95)
+    EnsureContainerWrapperBorder(frame.dragHandle, 0.2, 0.8, 1, CONTAINER_MOVER_COLORS.wrapperBorderAlpha)
+    frame._dragSnapRectFrame = frame.dragHandle
 
     frame.dragHandle.header = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
     frame.dragHandle.header:SetHeight(CONTAINER_WRAPPER_HEADER_HEIGHT)
@@ -4038,6 +5605,11 @@ function CooldownCompanion:CreateContainerFrame(containerId)
     frame.dragHandle.text:SetTextColor(1, 1, 1, 1)
     frame.dragHandle.header.text = frame.dragHandle.text
 
+    frame.dragHandle.lockButton = CreateMoverLockButton(frame.dragHandle.header, 16, 0.9, function()
+        LockContainerFromMover(containerId)
+    end)
+    frame.dragHandle.lockButton:SetPoint("RIGHT", frame.dragHandle.header, "RIGHT", -4, 0)
+
     -- Pixel nudger
     frame.nudger = CreateContainerNudger(frame, containerId)
 
@@ -4052,6 +5624,21 @@ function CooldownCompanion:CreateContainerFrame(containerId)
     frame.coordLabel.text = frame.coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     frame.coordLabel.text:SetPoint("CENTER")
     frame.coordLabel.text:SetTextColor(1, 1, 1, 1)
+    CreateEditableCoordLabel(
+        frame.coordLabel,
+        function()
+            local currentContainer = CooldownCompanion.db.profile.groupContainers[containerId]
+            local anchor = currentContainer and currentContainer.anchor
+            return anchor and anchor.x or 0, anchor and anchor.y or 0
+        end,
+        function(x, y)
+            ApplyContainerCoordinates(frame, containerId, x, y)
+        end,
+        function()
+            return frame._dragInProgress == true
+        end
+    )
+    UpdateCoordLabel(frame)
 
     -- Start hidden (drag handle shows only when unlocked)
     if container.locked then
@@ -4060,12 +5647,16 @@ function CooldownCompanion:CreateContainerFrame(containerId)
 
     -- Drag scripts
     frame:SetScript("OnDragStart", function(self)
+        CancelCoordinateEdit(self.coordLabel)
         local c = CooldownCompanion.db.profile.groupContainers[self.containerId]
         if c and not CooldownCompanion._combatForcedLock and CooldownCompanion:IsContainerUnlockPreviewActive(self.containerId) then
             CooldownCompanion:SelectContainerWrapper(self.containerId)
             self._dragCancelPending = nil
             self._dragInProgress = true
             self:StartMoving()
+            CooldownCompanion:BeginMoverChromeFade(self)
+            BeginContainerDragSnapSession(self)
+            StartCoordinateDragUpdates(self, UpdateContainerDragCoordinate)
         end
     end)
     frame:SetScript("OnDragStop", function(self)
@@ -4075,15 +5666,20 @@ function CooldownCompanion:CreateContainerFrame(containerId)
         if not (InCombatLockdown() and self:IsProtected()) then
             self:StopMovingOrSizing()
         end
+        ApplyEndedDragSnapSession(self, not cancelSave)
+        StopCoordinateDragUpdates(self)
         if cancelSave then
+            CooldownCompanion:EndMoverChromeFade(self)
             return
         end
         CooldownCompanion:SaveContainerPosition(self.containerId)
+        CooldownCompanion:EndMoverChromeFade(self)
     end)
 
     frame.dragHandle:EnableMouse(true)
     frame.dragHandle:RegisterForDrag("LeftButton")
     frame.dragHandle:SetScript("OnDragStart", function()
+        CancelCoordinateEdit(frame.coordLabel)
         local c = CooldownCompanion.db.profile.groupContainers[containerId]
         if c and not CooldownCompanion._combatForcedLock and CooldownCompanion:IsContainerUnlockPreviewActive(containerId) then
             frame.dragHandle._suppressClick = true
@@ -4091,6 +5687,9 @@ function CooldownCompanion:CreateContainerFrame(containerId)
             frame._dragCancelPending = nil
             frame._dragInProgress = true
             frame:StartMoving()
+            CooldownCompanion:BeginMoverChromeFade(frame)
+            BeginContainerDragSnapSession(frame)
+            StartCoordinateDragUpdates(frame, UpdateContainerDragCoordinate)
         end
     end)
     frame.dragHandle:SetScript("OnDragStop", function()
@@ -4100,10 +5699,14 @@ function CooldownCompanion:CreateContainerFrame(containerId)
         if not (InCombatLockdown() and frame:IsProtected()) then
             frame:StopMovingOrSizing()
         end
+        ApplyEndedDragSnapSession(frame, not cancelSave)
+        StopCoordinateDragUpdates(frame)
         if cancelSave then
+            CooldownCompanion:EndMoverChromeFade(frame)
             return
         end
         CooldownCompanion:SaveContainerPosition(containerId)
+        CooldownCompanion:EndMoverChromeFade(frame)
     end)
     frame.dragHandle:SetScript("OnMouseUp", function(_, button)
         if button ~= "LeftButton" then
@@ -4119,6 +5722,7 @@ function CooldownCompanion:CreateContainerFrame(containerId)
     frame.dragHandle.header:EnableMouse(true)
     frame.dragHandle.header:RegisterForDrag("LeftButton")
     frame.dragHandle.header:SetScript("OnDragStart", function()
+        CancelCoordinateEdit(frame.coordLabel)
         local c = CooldownCompanion.db.profile.groupContainers[containerId]
         if c and not CooldownCompanion._combatForcedLock and CooldownCompanion:IsContainerUnlockPreviewActive(containerId) then
             frame.dragHandle.header._suppressClick = true
@@ -4126,6 +5730,9 @@ function CooldownCompanion:CreateContainerFrame(containerId)
             frame._dragCancelPending = nil
             frame._dragInProgress = true
             frame:StartMoving()
+            CooldownCompanion:BeginMoverChromeFade(frame)
+            BeginContainerDragSnapSession(frame)
+            StartCoordinateDragUpdates(frame, UpdateContainerDragCoordinate)
         end
     end)
     frame.dragHandle.header:SetScript("OnDragStop", function()
@@ -4135,29 +5742,17 @@ function CooldownCompanion:CreateContainerFrame(containerId)
         if not (InCombatLockdown() and frame:IsProtected()) then
             frame:StopMovingOrSizing()
         end
+        ApplyEndedDragSnapSession(frame, not cancelSave)
+        StopCoordinateDragUpdates(frame)
         if cancelSave then
+            CooldownCompanion:EndMoverChromeFade(frame)
             return
         end
         CooldownCompanion:SaveContainerPosition(containerId)
+        CooldownCompanion:EndMoverChromeFade(frame)
     end)
 
-    -- Middle-click to lock
     frame.dragHandle.header:SetScript("OnMouseUp", function(_, btn)
-        if btn == "MiddleButton" then
-            local c = CooldownCompanion.db.profile.groupContainers[containerId]
-            if c then
-                if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
-                    CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId)
-                end
-                c.locked = true
-                CooldownCompanion:UpdateContainerDragHandle(containerId, true)
-                CooldownCompanion:RefreshContainerPanels(containerId)
-                CooldownCompanion:RefreshConfigPanel()
-                CooldownCompanion:Print(c.name .. " locked.")
-            end
-            return
-        end
-
         if btn == "LeftButton" then
             if frame.dragHandle.header._suppressClick then
                 frame.dragHandle.header._suppressClick = nil
@@ -4217,6 +5812,17 @@ function CooldownCompanion:AnchorContainerFrame(frame, anchor)
     UpdateCoordLabel(frame, tonumber(anchor.x) or 0, tonumber(anchor.y) or 0)
 end
 
+ComputeContainerFrameCoordinates = function(frame)
+    local cx, cy = frame:GetCenter()
+    if not cx then return nil, nil end
+    local ucx, ucy = UIParent:GetCenter()
+    if not ucx then return nil, nil end
+
+    local newX = math_floor((cx - ucx) * 10 + 0.5) / 10
+    local newY = math_floor((cy - ucy) * 10 + 0.5) / 10
+    return newX, newY
+end
+
 function CooldownCompanion:SaveContainerPosition(containerId)
     local frame = self.containerFrames[containerId]
     local container = self.db.profile.groupContainers[containerId]
@@ -4225,13 +5831,8 @@ function CooldownCompanion:SaveContainerPosition(containerId)
     local oldX = tonumber(container.anchor.x) or 0
     local oldY = tonumber(container.anchor.y) or 0
 
-    local cx, cy = frame:GetCenter()
-    if not cx then return end
-    local ucx, ucy = UIParent:GetCenter()
-    if not ucx then return end
-
-    local newX = math_floor((cx - ucx) * 10 + 0.5) / 10
-    local newY = math_floor((cy - ucy) * 10 + 0.5) / 10
+    local newX, newY = ComputeContainerFrameCoordinates(frame)
+    if newX == nil or newY == nil then return end
 
     container.anchor.x = newX
     container.anchor.y = newY

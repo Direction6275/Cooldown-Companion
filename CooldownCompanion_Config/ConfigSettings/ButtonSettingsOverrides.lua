@@ -4,17 +4,43 @@ local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 local ColorHeading = ST._ColorHeading
-local AttachCollapseButton = ST._AttachCollapseButton
-local AddAdvancedToggle = ST._AddAdvancedToggle
+local ApplyLeftAlignedHeading = ST._ApplyLeftAlignedHeading
+local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
+local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local CreateRevertButton = ST._CreateRevertButton
 local CreateInfoButton = ST._CreateInfoButton
-local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
-local AddColorPicker = ST._AddColorPicker
 local CanButtonUseConfigOverrideSection = ST._CanButtonUseConfigOverrideSection
+
+-- Imports from RowWidgets.lua (the row grammar). The rules every row-grammar
+-- section follows are stated once, in the recipe comment at the top of
+-- BuildAppearanceTab's icons path (GroupTabs.lua); this file conforms to them
+-- rather than restating them.
+--
+-- These are for the file-local section builders below. _BuildOverridesTab
+-- takes its own function-locals instead: it already carries ~45 upvalues of
+-- Lua's 60 ceiling (28 shared builders plus the core imports), so nothing new
+-- may be added to its upvalue set.
+local AddCheckboxRow = ST._AddCheckboxRow
+local AddSliderRow = ST._AddSliderRow
+local AddDropdownRow = ST._AddDropdownRow
+local AddColorRow = ST._AddColorRow
+
+-- Row-grammar section headers: caret far left, label, then a class-colored
+-- rule fading right.
+local ROW_SECTION = { leftAligned = true }
+
+-- Section actions sit on one grammar-height line (ButtonConditions.lua states
+-- the idiom): compact SetAutoWidth buttons, flush left, never page-wide.
+local ACTION_STRIP_HEIGHT = (ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT) or 30
+
+-- The override section labels run past what the 140px control column can size
+-- a menu from ("Bar Recharging Color", "Aura Duration Text").
+local PICKER_PULLOUT_WIDTH = 300
 
 local BuildCooldownTextControls = ST._BuildCooldownTextControls
 local BuildAuraTextControls = ST._BuildAuraTextControls
 local BuildAuraStackTextControls = ST._BuildAuraStackTextControls
+local BuildAuraDurationSwipeControls = ST._BuildAuraDurationSwipeControls
 local BuildKeybindTextControls = ST._BuildKeybindTextControls
 local BuildChargeTextControls = ST._BuildChargeTextControls
 local BuildBorderControls = ST._BuildBorderControls
@@ -30,22 +56,15 @@ local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildIconTintControls = ST._BuildIconTintControls
 local BuildAssistedHighlightControls = ST._BuildAssistedHighlightControls
 local BuildProcGlowControls = ST._BuildProcGlowControls
-local BuildPandemicGlowControls = ST._BuildPandemicGlowControls
-local BuildPandemicBarControls = ST._BuildPandemicBarControls
-local BuildAuraIndicatorControls = ST._BuildAuraIndicatorControls
-local BuildAuraDurationSwipeControls = ST._BuildAuraDurationSwipeControls
+local BuildAuraGlowControls = ST._BuildAuraGlowControls
+local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
-local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
-local BuildBarAuraPulseControls = ST._BuildBarAuraPulseControls
-local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
 local BuildBarNameTextControls = ST._BuildBarNameTextControls
 local BuildBarReadyTextControls = ST._BuildBarReadyTextControls
 local BuildTextFontControls = ST._BuildTextFontControls
 local BuildTextColorsControls = ST._BuildTextColorsControls
 local BuildTextBackgroundControls = ST._BuildTextBackgroundControls
-local AddPreviewToggleButton = ST._AddPreviewToggleButton
-local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 
 local function GetHiddenOverrideReasonText(reason)
     if reason == "noCooldown" then
@@ -54,18 +73,47 @@ local function GetHiddenOverrideReasonText(reason)
         return "Saved for this button, but inactive because this entry type cannot use it."
     elseif reason == "displayMode" then
         return "Saved for this button, but inactive in the current display mode."
+    elseif reason == "auraTracking" then
+        return "Saved for this button, but inactive because this entry is not tracking an aura."
     end
     return "Saved for this button, but inactive for this entry right now."
 end
 
+-- An inactive section has no rows to collapse, so it takes the caret-less
+-- left-aligned header shape (the same one BuildGroupSettingPresetControls
+-- uses) rather than a collapsible one, and its reason line stays full-width
+-- prose on the tab surface.
 local function AddHiddenOverrideSection(scroll, buttonData, hiddenSection, infoButtons)
     local heading = AceGUI:Create("Heading")
     heading:SetText(hiddenSection.sectionDef.label .. " (inactive)")
+    -- ColorHeading first: it is what re-asserts the stock label/left/right
+    -- anatomy on a recycled Heading, and the grey below is applied on top of
+    -- the class tint it lays down.
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    scroll:AddChild(heading)
+    ApplyLeftAlignedHeading(heading)
+
     if heading.label then
         heading.label:SetTextColor(0.55, 0.55, 0.55)
     end
-    heading:SetFullWidth(true)
-    scroll:AddChild(heading)
+
+    -- The grey outlives the widget otherwise: Heading:OnAcquire resets only
+    -- text/width/height, and only CC's own ColorHeading re-asserts a label
+    -- color - another addon pulling this Heading out of the shared pool would
+    -- get a grey title. Restoring from the label's font object puts back
+    -- exactly the stock appearance. Chain, don't replace: ApplyLeftAlignedHeading
+    -- and the collapse button already installed their own restore handlers.
+    local prevOnRelease = heading.events and heading.events["OnRelease"]
+    heading:SetCallback("OnRelease", function(widget, event, ...)
+        if prevOnRelease then
+            prevOnRelease(widget, event, ...)
+        end
+        local fontObject = heading.label and heading.label.GetFontObject and heading.label:GetFontObject()
+        if fontObject then
+            heading.label:SetTextColor(fontObject:GetTextColor())
+        end
+    end)
 
     local revertBtn = CreateRevertButton(heading, buttonData, hiddenSection.sectionId)
     table.insert(infoButtons, revertBtn)
@@ -105,231 +153,378 @@ local function PrimeSelectedReadyGlowNormalTransition(groupId, buttonIndex)
     button._readyGlowStartTime = GetTime()
 end
 
-local PREVIEWABLE_OVERRIDE_SECTIONS = {
-    cooldownText = true,
-    cooldownSwipe = true,
-    iconFillTimer = true,
-    desaturation = true,
-    auraText = true,
-    auraStackText = true,
-    auraDurationSwipe = true,
-    showOutOfRange = true,
-    unusableDimming = true,
-    iconTint = true,
-    procGlow = true,
-    auraIndicator = true,
-    pandemicGlow = true,
-    barActiveAura = true,
-    pandemicBar = true,
-    readyGlow = true,
+local FORMAT_OVERRIDE_TOOLTIP = {
+    {"Per-Button Format Override", 1, 0.82, 0, true},
+    " ",
+    {"Overrides the group format string for this button only.", 1, 1, 1},
+    {"Clear the override to revert to the group default.", 1, 1, 1},
 }
 
-local function AddSelectedButtonPreviewToggle(container, label, previewFlag, setPreviewFn)
-    if not AddPreviewToggleButton then
-        return
-    end
+------------------------------------------------------------------------
+-- FORMAT OVERRIDE SECTION
+--
+-- Text mode's format string is a per-entry override like any other, so it
+-- takes the same collapsible row-grammar header keyed the same way. Its body
+-- is the whole format editor - the same component the panel's Format tab
+-- hosts (TextModeTabs.lua), bound to this entry's override instead of the
+-- panel's shared format - with the destructive Clear below the content it
+-- clears.
+--
+-- Typing commits live on a short debounce, so this section has a lifecycle
+-- the other override sections do not: a controller that owns an animation
+-- driver and a pending write, both of which have to be settled before the
+-- container holding them is released or rebuilt.
+--
+-- Exactly one override editor exists at a time (one entry owns the settings
+-- surface), and it is never live at the same time as the Format tab's: a
+-- controller is only ever created inside one of the two tab groups'
+-- OnGroupSelected callbacks, and each of those releases BOTH editors before
+-- it builds. The four module-locals below are this one editor's whole
+-- state; ReleaseTextFormatOverrideEditor is the single teardown, and every
+-- seam that can take the container away calls it.
+------------------------------------------------------------------------
+local FORMAT_OVERRIDE_COMMIT_DELAY = 0.3
 
-    AddPreviewToggleButton(container, label, function()
-        return CS.selectedGroup
-            and CS.selectedButton
-            and CooldownCompanion:IsPreviewFlagActive(CS.selectedGroup, CS.selectedButton, previewFlag)
-    end, function(show)
-        if CS.selectedGroup and CS.selectedButton then
-            setPreviewFn(CooldownCompanion, CS.selectedGroup, CS.selectedButton, show)
-        end
-    end)
+local overrideController = nil
+local overrideCommitTimer = nil
+local overrideCommitTarget = nil   -- { buttonData, groupId }, captured when scheduled
+local overrideClearButton = nil    -- the live section's Clear Override button, or nil
+
+-- Writes the edited format to the entry's override and refreshes everything
+-- that reads it.
+--
+-- The commit deliberately never calls RefreshConfigPanel: that would release
+-- the very section being typed in and drop the cursor (the editor component
+-- has no commit method of its own for exactly this reason).
+-- RefreshGroupFrame is the world-side half of the write (the live
+-- panel re-parses the format through PopulateGroupButtons ->
+-- UpdateTextStyle), and it repaints the config's pinned mirror on the way in
+-- (ST._RefreshButtonsPreviewMirror, first thing in GroupFrame.lua's
+-- RefreshGroupFrame), which is the config-side half. Neither touches the
+-- settings column. Same shape as the Format tab's commit.
+--
+-- The editor seeds from the panel's format when there is no override yet, so
+-- the first edit is what CREATES the override - including an edit that lands
+-- back on the panel's own text. Clear Override is the way back.
+local function CommitTextFormatOverrideEdit()
+    overrideCommitTimer = nil
+    local target = overrideCommitTarget
+    overrideCommitTarget = nil
+    if not (target and overrideController) then return end
+
+    local raw = overrideController:GetRawText()
+    -- An empty format is never written (same guard the Format tab's commit uses).
+    if not raw or raw == "" then return end
+    if target.buttonData.textFormat == raw then return end
+
+    target.buttonData.textFormat = raw
+    -- This is the write that can CREATE the override, and it deliberately does
+    -- not rebuild the config, so nothing else would notice. Clear Override is
+    -- built disabled while there is no override; enable it in place here.
+    -- Cheap and unconditional: on an edit that only UPDATES an existing
+    -- override the button is already enabled and this is a no-op.
+    --
+    -- The reference is only ever the live section's own button - it is dropped
+    -- before this can run against a torn-down section (see
+    -- ReleaseTextFormatOverrideEditor) and again by the widget's own OnRelease
+    -- (see AddTextOverrideSection), so it never points into AceGUI's pool.
+    if overrideClearButton then
+        overrideClearButton:SetDisabled(false)
+    end
+    CooldownCompanion:RefreshGroupFrame(target.groupId)
 end
 
-local function AddSelectedBarAuraActivePreviewToggle(container, label)
-    if not AddPreviewToggleButton then
-        return
+-- The target is captured per schedule, not read at fire time, so a write that
+-- lands after the user has moved on still goes to the entry they typed it in.
+local function ScheduleTextFormatOverrideCommit(buttonData, groupId)
+    overrideCommitTarget = { buttonData = buttonData, groupId = groupId }
+    if overrideCommitTimer then
+        overrideCommitTimer:Cancel()
     end
+    overrideCommitTimer = C_Timer.NewTimer(FORMAT_OVERRIDE_COMMIT_DELAY, CommitTextFormatOverrideEdit)
+end
 
-    AddPreviewToggleButton(container, label, function()
-        return CS.selectedGroup
-            and CS.selectedButton
-            and CooldownCompanion:IsBarAuraActivePreviewActive(CS.selectedGroup, CS.selectedButton)
-    end, function(show)
-        if CS.selectedGroup and CS.selectedButton then
-            CooldownCompanion:SetBarAuraActivePreview(CS.selectedGroup, CS.selectedButton, show)
-        end
-    end)
+local function FlushTextFormatOverrideCommit()
+    if not overrideCommitTimer then return end
+    overrideCommitTimer:Cancel()
+    CommitTextFormatOverrideEdit()
+end
+
+-- Drops a pending write instead of settling it. Only Clear Override wants
+-- this: the write it would flush is the very key the clear removes.
+local function CancelTextFormatOverrideCommit()
+    if overrideCommitTimer then
+        overrideCommitTimer:Cancel()
+        overrideCommitTimer = nil
+    end
+    overrideCommitTarget = nil
+end
+
+-- Settle the pending write FIRST, then drop the controller: the container
+-- frame is about to go back into AceGUI's pool, and a commit that fires after
+-- that would write against a released editor.
+local function ReleaseTextFormatOverrideEditor()
+    -- Dropped BEFORE the flush, not with the rest of the state after it. One
+    -- caller (AddTextOverrideSection's defensive release) runs after the
+    -- container has already been recycled, so by flush time the button can be
+    -- back in AceGUI's pool wearing someone else's label. Nothing is lost by
+    -- skipping the enable here: a release is always followed by a rebuild that
+    -- reads buttonData.textFormat fresh.
+    overrideClearButton = nil
+    FlushTextFormatOverrideCommit()
+    if overrideController then
+        overrideController:Release()
+        overrideController = nil
+    end
+    overrideCommitTarget = nil
 end
 
 local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
-    local fmtHeading = AceGUI:Create("Heading")
-    fmtHeading:SetText("Format Override")
-    ColorHeading(fmtHeading)
-    fmtHeading:SetFullWidth(true)
-    scroll:AddChild(fmtHeading)
+    -- Defensive: every seam already releases before it gets here, so this is
+    -- a no-op in the normal path and the backstop for anything that is not.
+    ReleaseTextFormatOverrideEditor()
 
-    local function BuildFormatOverridePreviewAdvanced(panel)
-        if AddConditionalPreviewButton then
-            local target = { buttonIndex = function() return CS.selectedButton end, requireButton = true }
-            AddConditionalPreviewButton(panel, "Preview Cooldown State", "cooldown", target)
-            AddConditionalPreviewButton(panel, "Preview Aura Duration Text", "aura_duration_text", target)
-            AddConditionalPreviewButton(panel, "Preview Aura Stack Text", "aura_stack_text", target)
-            AddConditionalPreviewButton(panel, "Preview Pandemic State", "pandemic", target)
-            AddConditionalPreviewButton(panel, "Preview Unusable State", "unusable", target)
-            AddConditionalPreviewButton(panel, "Preview Out of Range State", "out_of_range", target)
-        end
-    end
+    local groupId = CS.selectedGroup
+    local fmtKey = groupId .. "_" .. CS.selectedButton .. "_override_textFormat"
+    local fmtHeading, fmtCollapsed = BuildCollapsibleSection(scroll, "Format Override", fmtKey,
+        nil, nil, ROW_SECTION)
 
-    local _, fmtPreviewAdvBtn = AddAdvancedToggle(fmtHeading, "buttonTextFormatPreview", infoButtons, nil, {
-        title = "Format Override Advanced",
-        build = BuildFormatOverridePreviewAdvanced,
-    })
-    fmtPreviewAdvBtn:SetPoint("LEFT", fmtHeading.label, "RIGHT", 4, 0)
+    -- The cooldown / unusable / out-of-range previews this heading used to
+    -- open now live on the preview command center.
+    local fmtInfo = CreateInfoButton(fmtHeading.frame, fmtHeading.label, "LEFT", "RIGHT", 4, 0,
+        FORMAT_OVERRIDE_TOOLTIP, infoButtons)
+    AnchorLeftAlignedHeadingRule(fmtHeading, fmtInfo)
 
-    local fmtInfo = CreateInfoButton(fmtHeading.frame, fmtPreviewAdvBtn, "LEFT", "RIGHT", 4, 0, {
-        {"Per-Button Format Override", 1, 0.82, 0, true},
-        " ",
-        {"Overrides the group format string for this button only.", 1, 1, 1},
-        {"Clear the override to revert to the group default.", 1, 1, 1},
-    }, infoButtons)
-    fmtHeading.right:ClearAllPoints()
-    fmtHeading.right:SetPoint("RIGHT", fmtHeading.frame, "RIGHT", -3, 0)
-    fmtHeading.right:SetPoint("LEFT", fmtInfo, "RIGHT", 4, 0)
+    if fmtCollapsed then return end
 
-    local effectiveFmt = buttonData.textFormat or group.style.textFormat or "{name}  {status}"
-
-    local preSpacer = AceGUI:Create("Label")
-    preSpacer:SetText(" ")
-    preSpacer:SetFullWidth(true)
-    scroll:AddChild(preSpacer)
-
-    local fmtPreview = AceGUI:Create("Label")
-    ST._ConfigureWrappedHelperLabel(fmtPreview)
-    fmtPreview:SetText(ST._RenderFormatPreview(effectiveFmt, group.style))
-    fmtPreview:SetFullWidth(true)
-    fmtPreview:SetFontObject(GameFontHighlight)
-    fmtPreview:SetJustifyH("CENTER")
-    scroll:AddChild(fmtPreview)
-
-    local postSpacer = AceGUI:Create("Label")
-    postSpacer:SetText(" ")
-    postSpacer:SetFullWidth(true)
-    scroll:AddChild(postSpacer)
-
-    if not buttonData.textFormat then
-        local defaultNote = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(defaultNote)
-        defaultNote:SetText("|cff888888Using group default|r")
-        defaultNote:SetFullWidth(true)
-        defaultNote:SetFontObject(GameFontHighlightSmall)
-        scroll:AddChild(defaultNote)
-    else
-        for _, line in ipairs(ST._BuildFormatSummary(effectiveFmt)) do
-            local fmtSummary = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(fmtSummary)
-            fmtSummary:SetText(line)
-            fmtSummary:SetFullWidth(true)
-            fmtSummary:SetFontObject(GameFontHighlightSmall)
-            scroll:AddChild(fmtSummary)
-        end
-    end
-
-    local btnSpacer = AceGUI:Create("Label")
-    btnSpacer:SetText(" ")
-    btnSpacer:SetFullWidth(true)
-    scroll:AddChild(btnSpacer)
-
-    local editBtn = AceGUI:Create("Button")
-    editBtn:SetText("Edit Format Override")
-    editBtn:SetFullWidth(true)
-    editBtn:SetCallback("OnClick", function()
-        ST._OpenFormatEditor(group.style, CS.selectedGroup, {
-            title = "Button Format Override",
+    overrideController = ST._BuildFormatEditorContent(scroll, {
+        -- saveTarget is the entry, so the component reads and writes
+        -- buttonData.textFormat; with none set yet it seeds from the panel's
+        -- format, which is what defaultFormat carries.
+        target = {
+            style = group.style,
+            groupId = groupId,
             saveTarget = buttonData,
             defaultFormat = group.style.textFormat or "{name}  {status}",
-        })
-    end)
-    scroll:AddChild(editBtn)
+        },
+        onDirty = function()
+            ScheduleTextFormatOverrideCommit(buttonData, groupId)
+        end,
+    })
 
-    if buttonData.textFormat then
-        local clearBtn = AceGUI:Create("Button")
-        clearBtn:SetText("Clear Override")
-        clearBtn:SetFullWidth(true)
-        clearBtn:SetCallback("OnClick", function()
-            buttonData.textFormat = nil
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        scroll:AddChild(clearBtn)
-    end
+    -- The destructive action sits below the content it clears, compact and
+    -- flush left on one grammar-height line.
+    --
+    -- Built ALWAYS, disabled while there is no override, rather than built
+    -- with the key: the debounced commit that creates the override does not
+    -- rebuild the config (it would drop the edit box's focus), so a strip
+    -- conditional on the key would arrive a rebuild late - the user would type
+    -- an override and see no way back until something else refreshed the
+    -- column. A row that is always present only has to change state, which the
+    -- commit can do in place, and the section's height never moves.
+    local btnRow = AceGUI:Create("SimpleGroup")
+    btnRow:SetFullWidth(true)
+    btnRow:SetLayout("Flow")
+    btnRow:SetHeight(ACTION_STRIP_HEIGHT)
+    btnRow.noAutoHeight = true
 
-end
-
-local function BuildSingleBarColorControl(key, label, defaultColor)
-    return function(container, styleTable, onChange)
-        AddColorPicker(container, styleTable, key, label, defaultColor, true, onChange, onChange)
-    end
-end
-
-local function BuildBarIconControls(container, styleTable, onChange)
-    local showIconCb = AceGUI:Create("CheckBox")
-    showIconCb:SetLabel("Show Icon")
-    showIconCb:SetValue(styleTable.showBarIcon ~= false)
-    showIconCb:SetFullWidth(true)
-    showIconCb:SetCallback("OnValueChanged", function(_, _, val)
-        styleTable.showBarIcon = val
-        onChange()
+    local clearBtn = AceGUI:Create("Button")
+    clearBtn:SetText("Clear Override")
+    clearBtn:SetAutoWidth(true)
+    -- Stock AceGUI disabled look: SetDisabled just calls Enable/Disable on the
+    -- UIPanelButtonTemplate underneath, and OnAcquire resets it to enabled, so
+    -- no state leaks into the pool and nothing here is custom-styled.
+    clearBtn:SetDisabled(buttonData.textFormat == nil)
+    clearBtn:SetCallback("OnClick", function()
+        -- A debounced write from just before the click would land back on
+        -- the key this clears, so it is dropped rather than flushed.
+        CancelTextFormatOverrideCommit()
+        buttonData.textFormat = nil
+        CooldownCompanion:RefreshGroupFrame(groupId)
+        -- The one place this section rebuilds itself: the strip comes back
+        -- disabled, and the rebuilt editor re-seeds from the panel's format.
+        -- (Typing never takes this path - see the commit above.)
         CooldownCompanion:RefreshConfigPanel()
     end)
-    container:AddChild(showIconCb)
+    -- Second half of the reference's lifecycle. ReleaseTextFormatOverrideEditor
+    -- covers every seam that knows it is taking the section away; this covers
+    -- the ones that do not, because AceGUI fires OnRelease on the way into the
+    -- pool (before it wipes the callback table), so the reference cannot
+    -- outlive the widget it names no matter who recycled it.
+    clearBtn:SetCallback("OnRelease", function(widget)
+        if overrideClearButton == widget then
+            overrideClearButton = nil
+        end
+    end)
+    overrideClearButton = clearBtn
+    btnRow:AddChild(clearBtn)
+
+    -- Added last so the List-layout parent measures a populated row.
+    scroll:AddChild(btnRow)
+end
+
+-- Lifecycle hooks for the Format Override section's live editor. Called
+-- through ST at fire time rather than captured at load, so file order does
+-- not matter:
+--   Release - every seam that releases or rebuilds the entry Overrides tab's
+--             container (both tab groups' OnGroupSelected, the entry
+--             settings refresh, the entry surfaces being hidden, the config's
+--             OnHide).
+--   Flush   - seams that do not take the container away but must not leave a
+--             write pending (the config's OnHide while collapsing).
+ST._ReleaseTextFormatOverrideEditor = ReleaseTextFormatOverrideEditor
+ST._FlushTextFormatOverrideCommit = FlushTextFormatOverrideCommit
+
+-- One color, so the left column carries it alone. deferCommit is deliberately
+-- absent, matching the stock color-picker call this replaced.
+local function BuildSingleBarColorControl(key, label, defaultColor)
+    return function(container, styleTable, onChange)
+        AddColorRow(container, {
+            label = label,
+            tbl = styleTable,
+            key = key,
+            default = defaultColor,
+            hasAlpha = true,
+            onConfirm = onChange,
+            onChange = onChange,
+        })
+    end
+end
+
+-- LEFT column: whether the icon shows at all and where it sits. RIGHT: its
+-- size override and the slider that override reveals. Everything gated on the
+-- Show Icon toggle indents under it, except the row that heads the right
+-- column - which owns its own child instead.
+local function BuildBarIconControls(container, styleTable, onChange, opts)
+    local right = (opts and opts.rightColumn) or container
+
+    AddCheckboxRow(container, {
+        label = "Show Icon",
+        value = styleTable.showBarIcon ~= false,
+        onChange = function(val)
+            styleTable.showBarIcon = val
+            onChange()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
 
     if styleTable.showBarIcon == false then
         return
     end
 
-    local flipIconCheck = AceGUI:Create("CheckBox")
-    flipIconCheck:SetLabel("Flip Icon Side")
-    flipIconCheck:SetValue(styleTable.barIconReverse or false)
-    flipIconCheck:SetFullWidth(true)
-    flipIconCheck:SetCallback("OnValueChanged", function(_, _, val)
-        styleTable.barIconReverse = val == true
-        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(flipIconCheck)
+    AddCheckboxRow(container, {
+        label = "Flip Icon Side",
+        indent = true,
+        value = styleTable.barIconReverse or false,
+        onChange = function(val)
+            styleTable.barIconReverse = val == true
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
 
-    local iconOffsetSlider = AceGUI:Create("Slider")
-    iconOffsetSlider:SetLabel("Icon Offset")
-    iconOffsetSlider:SetSliderValues(-5, 50, 0.1)
-    iconOffsetSlider:SetValue(styleTable.barIconOffset or 0)
-    iconOffsetSlider:SetFullWidth(true)
-    iconOffsetSlider:SetCallback("OnValueChanged", function(_, _, val)
-        styleTable.barIconOffset = val
-        onChange()
-    end)
-    container:AddChild(iconOffsetSlider)
+    AddSliderRow(container, {
+        label = "Icon Offset",
+        indent = true,
+        min = -5, max = 50, step = 0.1,
+        value = styleTable.barIconOffset or 0,
+        onChange = function(val)
+            styleTable.barIconOffset = val
+            onChange()
+        end,
+    })
 
-    local customIconSizeCb = AceGUI:Create("CheckBox")
-    customIconSizeCb:SetLabel("Custom Icon Size")
-    customIconSizeCb:SetValue(styleTable.barIconSizeOverride or false)
-    customIconSizeCb:SetFullWidth(true)
-    customIconSizeCb:SetCallback("OnValueChanged", function(_, _, val)
-        styleTable.barIconSizeOverride = val
-        onChange()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(customIconSizeCb)
+    AddCheckboxRow(right, {
+        label = "Custom Icon Size",
+        value = styleTable.barIconSizeOverride or false,
+        onChange = function(val)
+            styleTable.barIconSizeOverride = val
+            onChange()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
 
     if styleTable.barIconSizeOverride then
-        local iconSizeSlider = AceGUI:Create("Slider")
-        iconSizeSlider:SetLabel("Icon Size")
-        iconSizeSlider:SetSliderValues(5, 100, 0.1)
-        iconSizeSlider:SetValue(styleTable.barIconSize or 20)
-        iconSizeSlider:SetFullWidth(true)
-        iconSizeSlider:SetCallback("OnValueChanged", function(_, _, val)
-            styleTable.barIconSize = val
-            onChange()
-        end)
-        container:AddChild(iconSizeSlider)
+        AddSliderRow(right, {
+            label = "Icon Size",
+            indent = true,
+            min = 5, max = 100, step = 0.1,
+            value = styleTable.barIconSize or 20,
+            onChange = function(val)
+                styleTable.barIconSize = val
+                onChange()
+            end,
+        })
     end
 end
 
+-- Shared by the section render loop and the Add Override picker.
+local OVERRIDE_SECTION_ORDER = {
+    "borderSettings", "cooldownText", "auraText", "auraStackText",
+    "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "showOutOfRange", "showTooltips",
+    -- "pandemic" spans both display modes (like auraText above), so it sits in
+    -- the icons run rather than being listed twice.
+    "lossOfControl", "unusableDimming", "iconTint", "iconZoom", "assistedHighlight", "procGlow", "auraIndicator", "pandemic", "readyGlow", "keyPressHighlight",
+    "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText",
+    "textFont", "textColors", "textBackground",
+}
+-- The entry-slot hover tooltip lists an entry's active overrides in this
+-- same order, so the tooltip and the Overrides tab cannot disagree.
+ST._OverrideSectionOrder = OVERRIDE_SECTION_ORDER
+
+-- Zero-modal path to per-button overrides (owner ruling 2026-07-18):
+-- pick an eligible section here to promote it for this entry directly,
+-- without going through a panel-tab badge.
+local function AddOverridePicker(scroll, buttonData, group, displayMode)
+    local available, order = {}, {}
+    for _, sectionId in ipairs(OVERRIDE_SECTION_ORDER) do
+        local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
+        if sectionDef and sectionDef.modes[displayMode]
+            and not (buttonData.overrideSections and buttonData.overrideSections[sectionId])
+            and (CanButtonUseConfigOverrideSection(buttonData, sectionId)) then
+            available[sectionId] = sectionDef.label
+            order[#order + 1] = sectionId
+        end
+    end
+    if #order == 0 then return end
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText("Add Override")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    scroll:AddChild(heading)
+    -- No caret: this section has no collapse state, and the left-aligned shape
+    -- indents the label as if it had one so it lines up with the sections above.
+    ApplyLeftAlignedHeading(heading)
+
+    -- One control with nothing to pair it against, so the left column carries
+    -- it alone.
+    local pickerLeft = ST._BeginRowGrid(scroll)
+
+    local pickerRow = AddDropdownRow(pickerLeft, {
+        label = "Setting to override",
+        pulloutWidth = PICKER_PULLOUT_WIDTH,
+        list = available,
+        order = order,
+        onChange = function(sectionId)
+            if not sectionId then return end
+            CooldownCompanion:PromoteSection(buttonData, group.style, sectionId)
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+    -- Set after SetList, which is what the displayed text is read from.
+    pickerRow:SetText("Choose…")
+end
+
 function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
+    -- Function-locals, not upvalues: this function is already close to Lua's
+    -- 60-upvalue ceiling (see the note by the row-grammar imports).
+    local BeginRowGrid = ST._BeginRowGrid
+    local AddRowCheckbox = ST._AddCheckboxRow
+    local AddRowSlider = ST._AddSliderRow
+    local AnchorRowBadge = ST._AnchorRowBadge
+
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
 
@@ -339,13 +534,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
     end
 
     if not buttonData.overrideSections or not next(buttonData.overrideSections) then
-        if displayMode ~= "text" then
-            local noOverridesLabel = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(noOverridesLabel)
-            noOverridesLabel:SetText("|cff888888No appearance overrides are currently set.\n\nAppearance overrides still come from the |A:Crosshair_VehichleCursor_32:0:0|a badge next to panel-level appearance settings while this button is selected.|r")
-            noOverridesLabel:SetFullWidth(true)
-            scroll:AddChild(noOverridesLabel)
-        end
+        AddOverridePicker(scroll, buttonData, group, displayMode)
         return
     end
 
@@ -364,19 +553,12 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end
 
-    local sectionOrder = {
-        "borderSettings", "cooldownText", "auraText", "auraStackText",
-        "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "showOutOfRange", "showTooltips",
-        "lossOfControl", "unusableDimming", "iconTint", "assistedHighlight", "procGlow", "auraIndicator", "pandemicGlow", "readyGlow", "keyPressHighlight",
-        "barIcon", "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText", "pandemicBar", "barActiveAura",
-        "textFont", "textColors", "textBackground",
-    }
-
     local sectionBuilders = {
         borderSettings = BuildBorderControls,
         cooldownText = BuildCooldownTextControls,
         auraText = BuildAuraTextControls,
         auraStackText = BuildAuraStackTextControls,
+        auraDurationSwipe = BuildAuraDurationSwipeControls,
         keybindText = BuildKeybindTextControls,
         chargeText = BuildChargeTextControls,
         desaturation = BuildDesaturationControls,
@@ -387,51 +569,46 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         showTooltips = BuildShowTooltipsControls,
         lossOfControl = BuildLossOfControlControls,
         unusableDimming = BuildUnusableDimmingControls,
-        iconTint = function(container, styleTable, onChange)
-            BuildIconTintControls(container, styleTable, onChange)
-            BuildBackgroundColorControls(container, styleTable, onChange)
+        iconTint = function(container, styleTable, onChange, builderOpts)
+            local showAuraTint = buttonData.auraTracking or buttonData.addedAs == "aura"
+            local rowMode = builderOpts and builderOpts.row
+            BuildIconTintControls(container, styleTable, onChange, {
+                row = rowMode,
+                isOverride = builderOpts and builderOpts.isOverride,
+                fallbackStyle = builderOpts and builderOpts.fallbackStyle,
+                showAuraTint = showAuraTint or nil,
+            })
+            -- The section's two halves: the icon's own tints and the toggles
+            -- that reveal them on the left, the backdrop behind it on the right.
+            local backgroundHost = (rowMode and builderOpts.rightColumn) or container
+            BuildBackgroundColorControls(backgroundHost, styleTable, onChange, nil,
+                rowMode and { row = true } or nil)
         end,
+        -- Referenced through ST, not a file-top import: _BuildOverridesTab is
+        -- close to Lua's 60-upvalue ceiling (see the note at the top of it).
+        iconZoom = ST._BuildIconZoomControls,
         assistedHighlight = BuildAssistedHighlightControls,
         procGlow = BuildProcGlowControls,
-        pandemicGlow = BuildPandemicGlowControls,
-        auraIndicator = BuildAuraIndicatorControls,
-        auraDurationSwipe = function(container, styleTable, onChange, opts)
-            BuildAuraDurationSwipeControls(container, styleTable, function()
-                onChange()
-                CooldownCompanion:UpdateAllCooldowns()
-            end, opts)
+        auraIndicator = BuildAuraGlowControls,
+        -- One pandemic section across both display modes, so the builder is
+        -- picked here rather than by the section id. Referenced through ST like
+        -- iconZoom (upvalue-ceiling note above).
+        pandemic = function(container, styleTable, refreshCallback, builderOpts)
+            if displayMode == "bars" then
+                return ST._BuildBarPandemicControls(container, styleTable, refreshCallback, builderOpts)
+            end
+            return ST._BuildPandemicGlowControls(container, styleTable, refreshCallback, builderOpts)
         end,
         readyGlow = BuildReadyGlowControls,
         keyPressHighlight = BuildKeyPressHighlightControls,
         barIcon = BuildBarIconControls,
+        barActiveAura = BuildBarActiveAuraControls,
         barColor = BuildSingleBarColorControl("barColor", "Bar Color", {0.2, 0.6, 1.0, 1.0}),
         barCooldownColor = BuildSingleBarColorControl("barCooldownColor", "Bar Cooldown Color", {0.6, 0.6, 0.6, 1.0}),
         barChargeColor = BuildSingleBarColorControl("barChargeColor", "Bar Recharging Color", {1.0, 0.82, 0.0, 1.0}),
         barBgColor = BuildSingleBarColorControl("barBgColor", "Bar Background Color", {0.1, 0.1, 0.1, 0.8}),
         barNameText = BuildBarNameTextControls,
         barReadyText = BuildBarReadyTextControls,
-        pandemicBar = function(container, styleTable, onChange, opts)
-            BuildPandemicBarControls(container, styleTable, onChange, opts)
-            local panEnabled = styleTable.showPandemicGlow
-            if panEnabled == nil and opts and opts.fallbackStyle then
-                panEnabled = opts.fallbackStyle.showPandemicGlow
-            end
-            if panEnabled ~= false then
-                BuildPandemicBarPulseControls(container, styleTable, onChange, opts)
-            end
-        end,
-        barActiveAura = function(container, styleTable, onChange, opts)
-            BuildBarActiveAuraControls(container, styleTable, onChange, opts)
-            local auraStyle = styleTable
-            if rawget(styleTable, "barAuraIndicatorEnabled") == nil
-                and rawget(styleTable, "barAuraEffect") == nil
-                and opts and opts.fallbackStyle then
-                auraStyle = opts.fallbackStyle
-            end
-            if ST.IsBarAuraIndicatorEnabled(auraStyle) then
-                BuildBarAuraPulseControls(container, styleTable, onChange, opts)
-            end
-        end,
         textFont = BuildTextFontControls,
         textColors = BuildTextColorsControls,
         textBackground = BuildTextBackgroundControls,
@@ -439,93 +616,28 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
 
     local visibleOverrideSections = 0
     local hiddenOverrideSections = {}
-    for _, sectionId in ipairs(sectionOrder) do
+    for _, sectionId in ipairs(OVERRIDE_SECTION_ORDER) do
         if buttonData.overrideSections[sectionId] then
             local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
             local sectionAllowed, sectionUnavailableReason = CanButtonUseConfigOverrideSection(buttonData, sectionId)
             if sectionDef and sectionAllowed and sectionDef.modes[displayMode] then
                 visibleOverrideSections = visibleOverrideSections + 1
-                local heading = AceGUI:Create("Heading")
-                heading:SetText(sectionDef.label)
-                ColorHeading(heading)
-                heading:SetFullWidth(true)
-                scroll:AddChild(heading)
-
                 local overrideKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_override_" .. sectionId
-                local overrideCollapsed = CS.collapsedSections[overrideKey]
-                AttachCollapseButton(heading, overrideCollapsed, function()
-                    CS.collapsedSections[overrideKey] = not CS.collapsedSections[overrideKey]
-                    CooldownCompanion:RefreshConfigPanel()
-                end)
+                local heading, overrideCollapsed = BuildCollapsibleSection(scroll, sectionDef.label, overrideKey,
+                    nil, nil, ROW_SECTION)
 
                 local revertBtn = CreateRevertButton(heading, buttonData, sectionId)
                 table.insert(infoButtons, revertBtn)
 
-                local previewAdvExpanded
-                if PREVIEWABLE_OVERRIDE_SECTIONS[sectionId] then
-                    local previewAdvBtn
-                    local function BuildOverridePreviewAdvanced(panel)
-                        if sectionId == "procGlow" and overrides.procGlowStyle ~= "none" then
-                            AddSelectedButtonPreviewToggle(panel, "Preview Proc Glow", "_procGlowPreview", CooldownCompanion.SetProcGlowPreview)
-                        elseif sectionId == "auraIndicator" and overrides.auraGlowStyle ~= "none" then
-                            AddSelectedButtonPreviewToggle(panel, "Preview Aura Glow", "_auraGlowPreview", CooldownCompanion.SetAuraGlowPreview)
-                        elseif sectionId == "pandemicGlow" and GetEffectiveOverrideValue("showPandemicGlow") ~= false then
-                            AddSelectedButtonPreviewToggle(panel, "Preview Pandemic Glow", "_pandemicPreview", CooldownCompanion.SetPandemicPreview)
-                        elseif sectionId == "barActiveAura" then
-                            AddSelectedBarAuraActivePreviewToggle(panel, "Preview Active Aura Indicator")
-                        elseif sectionId == "pandemicBar" then
-                            AddSelectedButtonPreviewToggle(panel, "Preview Pandemic Effects", "_pandemicPreview", CooldownCompanion.SetPandemicPreview)
-                        elseif sectionId == "readyGlow" and overrides.readyGlowStyle and overrides.readyGlowStyle ~= "none" then
-                            AddSelectedButtonPreviewToggle(panel, "Preview Ready Glow Style", "_readyGlowPreview", CooldownCompanion.SetReadyGlowPreview)
-                        end
-
-                        if AddConditionalPreviewButton then
-                            local target = { buttonIndex = function() return CS.selectedButton end, requireButton = true }
-                            if sectionId == "cooldownText" or sectionId == "cooldownSwipe" or sectionId == "desaturation" then
-                                AddConditionalPreviewButton(panel, "Preview Cooldown State", "cooldown", target)
-                            elseif sectionId == "iconFillTimer" and overrides.iconFillEnabled == true and group.masqueEnabled ~= true then
-                                AddConditionalPreviewButton(panel, "Preview Cooldown Fill", "cooldown", target)
-                                AddConditionalPreviewButton(panel, "Preview Aura Fill", "aura_duration_text", target)
-                            elseif sectionId == "auraText" or sectionId == "auraDurationSwipe" then
-                                AddConditionalPreviewButton(panel, "Preview Aura Duration Text", "aura_duration_text", target)
-                            elseif sectionId == "auraStackText" then
-                                AddConditionalPreviewButton(panel, "Preview Aura Stack Text", "aura_stack_text", target)
-                            elseif sectionId == "showOutOfRange" then
-                                AddConditionalPreviewButton(panel, "Preview Out of Range State", "out_of_range", target)
-                            elseif sectionId == "unusableDimming" then
-                                AddConditionalPreviewButton(panel, "Preview Unusable State", "unusable", target)
-                            elseif sectionId == "iconTint" then
-                                AddConditionalPreviewButton(panel, "Preview Cooldown Tint", "cooldown", target)
-                                AddConditionalPreviewButton(panel, "Preview Aura Tint", "aura", target)
-                                AddConditionalPreviewButton(panel, "Preview Unusable State", "unusable", target)
-                                AddConditionalPreviewButton(panel, "Preview Out of Range Tint", "out_of_range", target)
-                            end
-                        end
-                    end
-
-                    previewAdvExpanded, previewAdvBtn = AddAdvancedToggle(heading, "overridePreview_" .. sectionId, infoButtons, nil, {
-                        title = sectionDef.label .. " Advanced",
-                        build = BuildOverridePreviewAdvanced,
-                        isAvailable = function()
-                            return buttonData.overrideSections and buttonData.overrideSections[sectionId]
-                        end,
-                    })
-                    previewAdvBtn:SetPoint("LEFT", revertBtn, "RIGHT", 4, 0)
-                    heading.right:ClearAllPoints()
-                    heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
-                    heading.right:SetPoint("LEFT", previewAdvBtn, "RIGHT", 4, 0)
-                end
-
+                -- Every override section's preview popout is gone: the
+                -- preview command center on the Live Preview surface is
+                -- the single home for previews now.
                 if not overrideCollapsed then
                     local builder = sectionBuilders[sectionId]
                     if builder then
                         local combatOnlyKey
                         if sectionId == "procGlow" then
                             combatOnlyKey = "procGlowCombatOnly"
-                        elseif sectionId == "auraIndicator" or sectionId == "barActiveAura" then
-                            combatOnlyKey = "auraGlowCombatOnly"
-                        elseif sectionId == "pandemicGlow" or sectionId == "pandemicBar" then
-                            combatOnlyKey = "pandemicGlowCombatOnly"
                         elseif sectionId == "readyGlow" then
                             combatOnlyKey = "readyGlowCombatOnly"
                         elseif sectionId == "assistedHighlight" then
@@ -534,116 +646,113 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                             combatOnlyKey = "keyPressHighlightCombatOnly"
                         end
 
-                        if sectionId == "assistedHighlight" and combatOnlyKey then
-                            local combatCb = AceGUI:Create("CheckBox")
-                            combatCb:SetLabel("Show Only In Combat")
-                            combatCb:SetValue(overrides[combatOnlyKey] or false)
-                            combatCb:SetFullWidth(true)
-                            combatCb:SetCallback("OnValueChanged", function(_, _, val)
-                                overrides[combatOnlyKey] = val
-                                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                            end)
-                            scroll:AddChild(combatCb)
-                            ApplyCheckboxIndent(combatCb, 20)
-                        end
-
-                        local afterEnableCallback
-                        if combatOnlyKey and sectionId ~= "assistedHighlight" then
-                            afterEnableCallback = function(cont)
-                                local combatCb = AceGUI:Create("CheckBox")
-                                combatCb:SetLabel("Show Only In Combat")
-                                combatCb:SetValue(overrides[combatOnlyKey] or false)
-                                combatCb:SetFullWidth(true)
-                                combatCb:SetCallback("OnValueChanged", function(_, _, val)
-                                    overrides[combatOnlyKey] = val
-                                    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                                end)
-                                cont:AddChild(combatCb)
-                                ApplyCheckboxIndent(combatCb, 20)
-
-                                if sectionId == "auraIndicator" then
-                                    local auraInvertCb = AceGUI:Create("CheckBox")
-                                    auraInvertCb:SetLabel("Show When Missing")
-                                    auraInvertCb:SetValue(overrides.auraGlowInvert or false)
-                                    auraInvertCb:SetFullWidth(true)
-                                    auraInvertCb:SetCallback("OnValueChanged", function(_, _, val)
-                                        overrides.auraGlowInvert = val
-                                        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                                    end)
-                                    cont:AddChild(auraInvertCb)
-                                    ApplyCheckboxIndent(auraInvertCb, 20)
-
-                                end
-
-                                if sectionId == "readyGlow" then
-                                    local cappedCb = AceGUI:Create("CheckBox")
-                                    cappedCb:SetLabel("Glow When Charges Are Capped")
-                                    cappedCb:SetValue(GetEffectiveOverrideValue("readyGlowOnlyAtMaxCharges") or false)
-                                    cappedCb:SetFullWidth(true)
-                                    cappedCb:SetCallback("OnValueChanged", function(_, _, val)
-                                        overrides.readyGlowOnlyAtMaxCharges = val == true
-                                        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                                        if (GetEffectiveOverrideValue("readyGlowDuration") or 0) > 0 then
-                                            if val then
-                                                PrimeSelectedReadyGlowCappedChargeTransition(CS.selectedGroup, CS.selectedButton)
-                                            else
-                                                PrimeSelectedReadyGlowNormalTransition(CS.selectedGroup, CS.selectedButton)
-                                            end
-                                        end
-                                        CooldownCompanion:UpdateAllCooldowns()
-                                    end)
-                                    cont:AddChild(cappedCb)
-                                    ApplyCheckboxIndent(cappedCb, 20)
-                                    CreateInfoButton(cappedCb.frame, cappedCb.checkbg, "LEFT", "RIGHT", cappedCb.text:GetStringWidth() + 6, 0, {
-                                        "Glow When Charges Are Capped",
-                                        {"When this toggle is enabled, the glow will only appear for charge based spells when at max charges.", 1, 1, 1, true},
-                                    }, infoButtons)
-
-                                    local durCb = AceGUI:Create("CheckBox")
-                                    durCb:SetLabel("Auto-Hide After Duration")
-                                    durCb:SetValue((GetEffectiveOverrideValue("readyGlowDuration") or 0) > 0)
-                                    durCb:SetFullWidth(true)
-                                    durCb:SetCallback("OnValueChanged", function(_, _, val)
-                                        overrides.readyGlowDuration = val and 3 or 0
-                                        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                                        if val then
-                                            if GetEffectiveOverrideValue("readyGlowOnlyAtMaxCharges") then
-                                                PrimeSelectedReadyGlowCappedChargeTransition(CS.selectedGroup, CS.selectedButton)
-                                            else
-                                                PrimeSelectedReadyGlowNormalTransition(CS.selectedGroup, CS.selectedButton)
-                                            end
-                                        end
-                                        CooldownCompanion:UpdateAllCooldowns()
-                                        CooldownCompanion:RefreshConfigPanel()
-                                    end)
-                                    cont:AddChild(durCb)
-                                    ApplyCheckboxIndent(durCb, 20)
-
-                                    if (GetEffectiveOverrideValue("readyGlowDuration") or 0) > 0 then
-                                        local durSlider = AceGUI:Create("Slider")
-                                        durSlider:SetLabel("Duration (seconds)")
-                                        durSlider:SetSliderValues(0.5, 5, 0.5)
-                                        durSlider:SetValue(GetEffectiveOverrideValue("readyGlowDuration") or 3)
-                                        durSlider:SetFullWidth(true)
-                                        durSlider:SetCallback("OnValueChanged", function(_, _, val)
-                                            overrides.readyGlowDuration = val
-                                            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                                            CooldownCompanion:RefreshConfigPanel()
-                                        end)
-                                        cont:AddChild(durSlider)
-                                    end
-                                end
-                            end
-                        end
-
-                        builder(scroll, overrides, refreshCallback, {
+                        local builderOpts = {
+                            row = true,
                             isOverride = true,
                             fallbackStyle = group.style,
-                            afterEnableCallback = afterEnableCallback,
                             masqueEnabled = group.masqueEnabled == true,
                             infoButtons = infoButtons,
                             advancedKey = "overrideSetting_" .. sectionId,
-                        })
+                        }
+
+                        if sectionId == "barActiveAura" then
+                            -- This builder opens its OWN two-column grid on the
+                            -- container it is handed and returns the columns, so
+                            -- it is called on the tab surface directly - the same
+                            -- way the custom-bar Effects section calls it.
+                            builder(scroll, overrides, refreshCallback, builderOpts)
+                        else
+                            local left, right = BeginRowGrid(scroll)
+                            builderOpts.rightColumn = right
+
+                            if sectionId == "assistedHighlight" and combatOnlyKey then
+                                AddRowCheckbox(left, {
+                                    label = "Show Only In Combat",
+                                    value = overrides[combatOnlyKey] or false,
+                                    onChange = function(val)
+                                        overrides[combatOnlyKey] = val
+                                        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                                    end,
+                                })
+                            end
+
+                            -- In row mode the glow builders hand this callback
+                            -- the grid column the extras belong in (the right
+                            -- one), so the when-it-shows rows sit beside the
+                            -- what-it-looks-like rows instead of under them.
+                            if combatOnlyKey and sectionId ~= "assistedHighlight" then
+                                builderOpts.afterEnableCallback = function(cont)
+                                    AddRowCheckbox(cont, {
+                                        label = "Show Only In Combat",
+                                        value = overrides[combatOnlyKey] or false,
+                                        onChange = function(val)
+                                            overrides[combatOnlyKey] = val
+                                            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                                        end,
+                                    })
+
+                                    if sectionId == "readyGlow" then
+                                        local cappedRow = AddRowCheckbox(cont, {
+                                            label = "Glow When Charges Are Capped",
+                                            value = GetEffectiveOverrideValue("readyGlowOnlyAtMaxCharges") or false,
+                                            onChange = function(val)
+                                                overrides.readyGlowOnlyAtMaxCharges = val == true
+                                                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                                                if (GetEffectiveOverrideValue("readyGlowDuration") or 0) > 0 then
+                                                    if val then
+                                                        PrimeSelectedReadyGlowCappedChargeTransition(CS.selectedGroup, CS.selectedButton)
+                                                    else
+                                                        PrimeSelectedReadyGlowNormalTransition(CS.selectedGroup, CS.selectedButton)
+                                                    end
+                                                end
+                                                CooldownCompanion:UpdateAllCooldowns()
+                                            end,
+                                        })
+                                        -- Anchor args are a placeholder -
+                                        -- AnchorRowBadge re-points the button onto
+                                        -- the end of the row's label.
+                                        AnchorRowBadge(cappedRow, CreateInfoButton(cappedRow.frame, cappedRow.frame, "LEFT", "LEFT", 0, 0, {
+                                            "Glow When Charges Are Capped",
+                                            {"When this toggle is enabled, the glow will only appear for charge based spells when at max charges.", 1, 1, 1, true},
+                                        }, infoButtons))
+
+                                        AddRowCheckbox(cont, {
+                                            label = "Auto-Hide After Duration",
+                                            value = (GetEffectiveOverrideValue("readyGlowDuration") or 0) > 0,
+                                            onChange = function(val)
+                                                overrides.readyGlowDuration = val and 3 or 0
+                                                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                                                if val then
+                                                    if GetEffectiveOverrideValue("readyGlowOnlyAtMaxCharges") then
+                                                        PrimeSelectedReadyGlowCappedChargeTransition(CS.selectedGroup, CS.selectedButton)
+                                                    else
+                                                        PrimeSelectedReadyGlowNormalTransition(CS.selectedGroup, CS.selectedButton)
+                                                    end
+                                                end
+                                                CooldownCompanion:UpdateAllCooldowns()
+                                                CooldownCompanion:RefreshConfigPanel()
+                                            end,
+                                        })
+
+                                        if (GetEffectiveOverrideValue("readyGlowDuration") or 0) > 0 then
+                                            AddRowSlider(cont, {
+                                                label = "Duration (seconds)",
+                                                indent = true,
+                                                min = 0.5, max = 5, step = 0.5,
+                                                value = GetEffectiveOverrideValue("readyGlowDuration") or 3,
+                                                onChange = function(val)
+                                                    overrides.readyGlowDuration = val
+                                                    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                                                    CooldownCompanion:RefreshConfigPanel()
+                                                end,
+                                            })
+                                        end
+                                    end
+                                end
+                            end
+
+                            builder(left, overrides, refreshCallback, builderOpts)
+                        end
 
                     end
                 end
@@ -668,4 +777,6 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
     for _, hiddenSection in ipairs(hiddenOverrideSections) do
         AddHiddenOverrideSection(scroll, buttonData, hiddenSection, infoButtons)
     end
+
+    AddOverridePicker(scroll, buttonData, group, displayMode)
 end

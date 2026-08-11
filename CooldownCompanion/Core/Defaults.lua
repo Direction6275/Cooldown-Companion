@@ -10,6 +10,14 @@ ST.ROTATION_ASSISTANT_NAME = "Assistant Panel"
 ST.ROTATION_ASSISTANT_ACTION_SPELL_ID = 1229376
 ST.ROTATION_ASSISTANT_FALLBACK_ICON = 6718291
 
+-- The one dim strength every "dim instead of hide" rule renders at: the
+-- aura-inactive shell and the seven cooldown-family rules alike. These used
+-- to read the panel's Baseline Alpha, which defaults to 1 and therefore made
+-- the toggles do nothing on a stock panel. Baseline Alpha still governs panel
+-- alpha fade; it no longer governs dimming. Lives here so it is defined
+-- before Aura.lua and Visibility.lua and readable from the config addon.
+CooldownCompanion.DIM_FALLBACK_ALPHA = 0.4
+
 -- Default database structure
 local defaults = {
     global = {
@@ -92,22 +100,31 @@ local defaults = {
                         auraTextFontSize = 12,
                         auraTextFontOutline = "OUTLINE",
                         auraTextFontColor = {0, 0.925, 1, 1},
+                        pandemicMarkerEnabled = true, -- group-wide kill switch for the marker feature
+                        pandemicMarkerText = "!!",
+                        pandemicMarkerColorMode = "marker", -- "off" / "marker" / "whole"
+                        pandemicMarkerColor = {1, 0.5, 0, 1},
                         iconWidthRatio = 1.0, -- 1.0 = square, <1 = taller, >1 = wider
                         maintainAspectRatio = true, -- Prevent icon image stretching
+                        iconZoom = 0, -- % the artwork is cropped toward center (WeakAuras-style zoom)
                         showTooltips = false,
+                        tooltipAnchor = "default", -- "default"/"above"/"below"/"left"/"right"/"cursor"
+                        tooltipHideInCombat = false,
+                        allowPings = false, -- Entries answer the ping keybind like Cooldown Manager items
                         desaturateOnCooldown = true, -- Desaturate icon while on cooldown
                         showCooldownSwipe = true,
                         showAuraDurationSwipe = true,
                         showCooldownSwipeFill = true,
                         cooldownSwipeReverse = false,
-                        showCooldownSwipeEdge = true,
+                        cooldownSwipeEdgeEnabled = false, -- explicit-true; Blizzard's 12.1 cooldowns draw no edge
                         cooldownSwipeAlpha = 0.8,
                         cooldownSwipeEdgeColor = {1, 1, 1, 1},
                         showAuraDurationSwipeFill = true,
-                        auraDurationSwipeReverse = false,
-                        showAuraDurationSwipeEdge = true,
+                        auraDurationSwipeReverse = true,
+                        auraDurationSwipeEdgeEnabled = false, -- explicit-true; mirrors the cooldown edge default
                         auraDurationSwipeAlpha = 0.8,
                         auraDurationSwipeEdgeColor = {1, 1, 1, 1},
+                        auraUseBlizzardSwipe = false,
                         showGCDSwipe = false, -- Show GCD swipe animation on icons
                         showOutOfRange = true, -- Red-tint icons when target is out of range
                         showAssistedHighlight = false, -- Highlight the assisted combat recommended spell
@@ -132,7 +149,6 @@ local defaults = {
                         iconFillReverse = false,
                         iconFillTimerBehavior = "drain",
                         iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55},
-                        iconFillAuraColor = {0.2, 1.0, 0.2, 0.55},
                         showLossOfControl = true,
                         procGlowOverhang = 32,
                         procGlowColor = {1, 1, 1, 1},
@@ -142,34 +158,22 @@ local defaults = {
                         procGlowSpeed = 50,
                         procGlowLines = 8,
                         procGlowCombatOnly = false,
-                        pandemicGlowStyle = "solid",
+                        pandemicEffectEnabled = false, -- explicit-true master switch (PTR 8 pandemic display)
+                        pandemicGlowStyle = "solid", -- kit styles, same menu as auraGlowStyle
                         pandemicGlowColor = {1, 0.5, 0, 1},
-                        pandemicGlowSize = 5,
-                        pandemicGlowThickness = 4,
-                        pandemicGlowSpeed = 50,
-                        pandemicGlowLines = 8,
-                        pandemicGlowCombatOnly = false,
+                        pandemicGlowColor2 = {1, 1, 1, 0.9}, -- colorShift second color
+                        pandemicGlowSize = 2,        -- border/dash px, or overhang % (proc/ants)
+                        pandemicGlowThickness = 3,   -- dash thickness px
+                        pandemicGlowSpeed = 0.5,     -- seconds: pulse/shift cycle, or dashes lap
+                        pandemicGlowLines = 5,       -- dash count
                         barPandemicColor = {1, 0.5, 0, 1},
-                        pandemicBarEffect = "none",
-                        pandemicBarEffectColor = {1, 0.5, 0, 1},
-                        pandemicBarEffectSize = 5,
-                        pandemicBarEffectThickness = 4,
-                        pandemicBarEffectSpeed = 50,
-                        pandemicBarEffectLines = 8,
-                        pandemicBarPulseEnabled = false,
-                        pandemicBarPulseSpeed = 0.5,
-                        pandemicBarColorShiftEnabled = false,
-                        pandemicBarColorShiftSpeed = 0.5,
-                        pandemicBarColorShiftColor = {1, 1, 1, 1},
-                        auraGlowStyle = "pixel",
+                        auraGlowStyle = "pulse", -- kit styles: none/solid/pulse/colorShift/dashes/ants/proc/overlay
                         auraGlowColor = {1, 0.84, 0, 0.9},
-                        auraGlowSize = 8,
-                        auraGlowThickness = 4,
-                        auraGlowSpeed = 50,
-                        auraGlowLines = 8,
-                        auraUseBlizzardSwipe = false,
-                        auraGlowInvert = false,
-                        auraGlowCombatOnly = false,
+                        auraGlowColor2 = {0.1, 0.3, 1, 0.9}, -- colorShift second color
+                        auraGlowSize = 2,        -- border/dash px, or overhang % (proc/ants)
+                        auraGlowSpeed = 0.5,     -- seconds: pulse/shift cycle, or dashes lap
+                        auraGlowDashCount = 5,   -- dashes style only (1..8)
+                        auraGlowDashThickness = 3, -- dashes style only, line thickness px
                         readyGlowStyle = "none",
                         readyGlowColor = {0.2, 1.0, 0.2, 1},
                         readyGlowSize = 5,
@@ -194,7 +198,7 @@ local defaults = {
                         barAuraColorShiftEnabled = false,
                         barAuraColorShiftSpeed = 0.5,
                         barAuraColorShiftColor = {1, 1, 1, 1},
-                        strataOrder = nil, -- custom layer order (array of 4 keys) or nil for default
+                        strataOrder = nil, -- custom layer order (ST.DEFAULT_STRATA_ORDER length) or nil for default
                         showKeybindText = false,
                         keybindFont = "Friz Quadrata TT",
                         keybindFontSize = 10,
@@ -252,10 +256,8 @@ local defaults = {
             ]]
         },
         nextGroupId = 1,
-        groupContainers = {},  -- [containerId] = { name, order, folderId, enabled, locked, specs, heroTalents, loadConditions, alpha/fade, anchor, ... }
+        groupContainers = {},  -- [containerId] = { name, order, enabled, locked, specs, heroTalents, loadConditions, alpha/fade, anchor, ... }
         nextContainerId = 1,
-        folders = {},       -- [folderId] = { name, order, section, manualIcon?, specs?, heroTalents?, loadConditions? }
-        nextFolderId = 1,
         globalStyle = {
             buttonSize = 36,
             buttonSpacing = 2,
@@ -273,22 +275,30 @@ local defaults = {
             auraTextAnchor = "TOPLEFT",
             auraTextXOffset = 2,
             auraTextYOffset = -2,
+            pandemicMarkerEnabled = true,
+            pandemicMarkerText = "!!",
+            pandemicMarkerColorMode = "marker",
+            pandemicMarkerColor = {1, 0.5, 0, 1},
             iconWidthRatio = 1.0,
             maintainAspectRatio = true,
             showTooltips = false,
+            tooltipAnchor = "default",
+            tooltipHideInCombat = false,
+            allowPings = false,
             desaturateOnCooldown = true,
             showCooldownSwipe = true,
             showAuraDurationSwipe = true,
             showCooldownSwipeFill = true,
             cooldownSwipeReverse = false,
-            showCooldownSwipeEdge = true,
+            cooldownSwipeEdgeEnabled = false, -- explicit-true; Blizzard's 12.1 cooldowns draw no edge
             cooldownSwipeAlpha = 0.8,
             cooldownSwipeEdgeColor = {1, 1, 1, 1},
             showAuraDurationSwipeFill = true,
-            auraDurationSwipeReverse = false,
-            showAuraDurationSwipeEdge = true,
+            auraDurationSwipeReverse = true,
+            auraDurationSwipeEdgeEnabled = false, -- explicit-true; mirrors the cooldown edge default
             auraDurationSwipeAlpha = 0.8,
             auraDurationSwipeEdgeColor = {1, 1, 1, 1},
+            auraUseBlizzardSwipe = false,
             showGCDSwipe = false,
             showOutOfRange = true,
             showAssistedHighlight = false,
@@ -312,7 +322,6 @@ local defaults = {
             iconFillReverse = false,
             iconFillTimerBehavior = "drain",
             iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55},
-            iconFillAuraColor = {0.2, 1.0, 0.2, 0.55},
             showLossOfControl = true,
             procGlowOverhang = 32,
             procGlowColor = {1, 1, 1, 1},
@@ -322,34 +331,22 @@ local defaults = {
             procGlowSpeed = 50,
             procGlowLines = 8,
             procGlowCombatOnly = false,
-            pandemicGlowStyle = "solid",
+            pandemicEffectEnabled = false, -- explicit-true master switch (PTR 8 pandemic display)
+            pandemicGlowStyle = "solid", -- kit styles, same menu as auraGlowStyle
             pandemicGlowColor = {1, 0.5, 0, 1},
-            pandemicGlowSize = 5,
-            pandemicGlowThickness = 4,
-            pandemicGlowSpeed = 50,
-            pandemicGlowLines = 8,
-            pandemicGlowCombatOnly = false,
+            pandemicGlowColor2 = {1, 1, 1, 0.9}, -- colorShift second color
+            pandemicGlowSize = 2,        -- border/dash px, or overhang % (proc/ants)
+            pandemicGlowThickness = 3,   -- dash thickness px
+            pandemicGlowSpeed = 0.5,     -- seconds: pulse/shift cycle, or dashes lap
+            pandemicGlowLines = 5,       -- dash count
             barPandemicColor = {1, 0.5, 0, 1},
-            pandemicBarEffect = "none",
-            pandemicBarEffectColor = {1, 0.5, 0, 1},
-            pandemicBarEffectSize = 5,
-            pandemicBarEffectThickness = 4,
-            pandemicBarEffectSpeed = 50,
-            pandemicBarEffectLines = 8,
-            pandemicBarPulseEnabled = false,
-            pandemicBarPulseSpeed = 0.5,
-            pandemicBarColorShiftEnabled = false,
-            pandemicBarColorShiftSpeed = 0.5,
-            pandemicBarColorShiftColor = {1, 1, 1, 1},
-            auraGlowStyle = "pixel",
+            auraGlowStyle = "pulse", -- kit styles: none/solid/pulse/colorShift/dashes/ants/proc/overlay
             auraGlowColor = {1, 0.84, 0, 0.9},
-            auraGlowSize = 8,
-            auraGlowThickness = 4,
-            auraGlowSpeed = 50,
-            auraGlowLines = 8,
-            auraUseBlizzardSwipe = false,
-            auraGlowInvert = false,
-            auraGlowCombatOnly = false,
+            auraGlowColor2 = {0.1, 0.3, 1, 0.9}, -- colorShift second color
+            auraGlowSize = 2,        -- border/dash px, or overhang % (proc/ants)
+            auraGlowSpeed = 0.5,     -- seconds: pulse/shift cycle, or dashes lap
+            auraGlowDashCount = 5,   -- dashes style only (1..8)
+            auraGlowDashThickness = 3, -- dashes style only, line thickness px
             readyGlowStyle = "none",
             readyGlowColor = {0.2, 1.0, 0.2, 1},
             readyGlowSize = 5,
@@ -378,7 +375,6 @@ local defaults = {
             textureIndicators = {
                 proc = { enabled = false, effectType = "pulse", speed = 0.5, color = {1, 1, 1, 1}, combatOnly = false },
                 aura = { enabled = false, effectType = "colorShift", speed = 0.5, color = {1, 0.84, 0, 1}, combatOnly = false, invert = false },
-                pandemic = { enabled = false, effectType = "shrinkExpand", speed = 0.5, color = {1, 0.5, 0, 1}, combatOnly = false },
                 ready = { enabled = false, effectType = "bounce", speed = 0.5, color = {0.2, 1.0, 0.2, 1}, combatOnly = false },
                 unusable = { enabled = false, effectType = "pulse", speed = 0.5, color = {1, 0.35, 0.35, 1}, combatOnly = false },
             },
@@ -425,8 +421,11 @@ local defaults = {
             barReadyFontOutline = "OUTLINE",
             barTexture = "Solid",
             -- Text display mode defaults
-            textWidth = 200,
-            textHeight = 20,
+            -- Text entries auto-size from a measured worst-case render of
+            -- their format, so textPadding is the only manual size knob. The
+            -- retired textWidth/textHeight pair is stripped from saved data
+            -- by StripRetiredTextSizeKeys in Core/Migrations.lua.
+            textPadding = 4,
             textFormat = "{name}  {status}",
             textFont = "Friz Quadrata TT",
             textFontSize = 12,
@@ -449,7 +448,6 @@ local defaults = {
             textHeaderFontColor = {1, 1, 1, 1},
         },
         locked = false,
-        cdmHidden = false,
         resourceBarsByClass = {},
         resourceBarMigration = {
             conflicts = {},
@@ -572,7 +570,6 @@ local defaults = {
         },
         castBar = {
             enabled = false,
-            stylingEnabled = true,
             anchorGroupId = nil,
             position = "below",
             order = 2000,
@@ -584,6 +581,7 @@ local defaults = {
             barTexture = "Solid",
             showIcon = true,
             iconSize = 16,
+            iconZoom = 0,
             iconFlipSide = false,
             iconOffset = false,
             iconOffsetX = 0,
@@ -664,12 +662,30 @@ function CooldownCompanion:IsIconLikeDisplayMode(displayMode)
     return ST.IsIconLikeDisplayMode(displayMode)
 end
 
-function CooldownCompanion:GetPanelManualEntryRejectMessage(group)
+function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData)
     if self:IsRotationAssistantGroup(group) then
         return "Assistant Panels are populated automatically."
     end
     if group and group.displayMode == "textures" and group.buttons and #group.buttons >= 1 then
         return "Texture Panels can only hold one entry. Remove the current entry first if you want to replace it."
+    end
+    -- Primary aura entries (addedAs == "aura") only display through the aura
+    -- system, which binds to icon, bar, and Texture panels; refuse moving them
+    -- anywhere else. Ordinary spell entries that
+    -- merely have aura tracking enabled keep a valid cooldown display and
+    -- stay movable. entryData is a single
+    -- buttonData table or an array of them (move paths pass it; add paths
+    -- gate aura adds before reaching here).
+    if entryData and group then
+        local displayMode = group.displayMode or "icons"
+        if displayMode ~= "icons" and displayMode ~= "bars" and displayMode ~= "textures" then
+            local entries = entryData[1] and entryData or { entryData }
+            for _, bd in ipairs(entries) do
+                if bd and bd.addedAs == "aura" then
+                    return "Use an icon or bar panel for Aura tracking."
+                end
+            end
+        end
     end
     return nil
 end
@@ -779,7 +795,6 @@ function CooldownCompanion:ClearRotationAssistantButtonRuntime(button)
     button._liveOverrideSpellId = nil
     button._lastSpellTexture = nil
     button._lastTextureCheckAt = nil
-    button._spellTexBaseline = nil
     button._baseNoCooldown = nil
     button._baseNoCooldownSpellId = nil
     button._noCooldown = nil
@@ -790,14 +805,6 @@ function CooldownCompanion:ClearRotationAssistantButtonRuntime(button)
     button._baseResourceGateCostSpellId = nil
     button._spellOutOfRange = nil
     button._auraActive = false
-    button._auraDurationObj = nil
-    button._auraCooldownStart = nil
-    button._auraCooldownDuration = nil
-    button._auraPrimarySwipeActive = nil
-    button._activeAuraSpellID = nil
-    button._activeAuraSpellIDFromFallback = nil
-    button._activeAuraIcon = nil
-    button._activeAuraIconAvailable = nil
     button._procOverlayActive = false
 end
 
@@ -858,6 +865,12 @@ ST.OVERRIDE_SECTIONS = {
         keys = {"showCooldownText", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor", "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset"},
         modes = {icons = true, bars = true},
     },
+    -- The four pandemicMarker* keys used to ride this list, because the marker
+    -- is drawn into this text. They moved to the pandemic sections below when
+    -- the config grew a Pandemic section, so one override covers the whole
+    -- refresh-window feature. MigratePandemicOverrideOwnership re-homes the
+    -- overrides that were promoted under the old list; the two edits ship as
+    -- one unit, or RevertSection stops clearing keys it no longer owns.
     auraText = {
         label = "Aura Duration Text",
         keys = {"showAuraText", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor", "separateTextPositions", "auraTextAnchor", "auraTextXOffset", "auraTextYOffset"},
@@ -886,7 +899,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     cooldownSwipe = {
         label = "Cooldown Swipe",
-        keys = {"showCooldownSwipe", "showCooldownSwipeFill", "cooldownSwipeReverse", "showCooldownSwipeEdge", "cooldownSwipeAlpha", "cooldownSwipeEdgeColor"},
+        keys = {"showCooldownSwipe", "showCooldownSwipeFill", "cooldownSwipeReverse", "cooldownSwipeEdgeEnabled", "cooldownSwipeAlpha", "cooldownSwipeEdgeColor"},
         modes = {icons = true, rotationAssistant = true},
     },
     showGCDSwipe = {
@@ -919,9 +932,15 @@ ST.OVERRIDE_SECTIONS = {
         keys = {"iconTintColor", "iconCooldownTintEnabled", "iconCooldownTintColor", "iconAuraTintEnabled", "iconAuraTintColor", "backgroundColor"},
         modes = {icons = true, bars = true},
     },
+    iconZoom = {
+        label = "Icon Zoom",
+        keys = {"iconZoom"},
+        modes = {icons = true, bars = true, rotationAssistant = true},
+        defaults = {iconZoom = 0},
+    },
     iconFillTimer = {
         label = "Icon Fill Timer",
-        keys = {"iconFillEnabled", "iconFillOrientation", "iconFillReverse", "iconFillTimerBehavior", "iconFillCooldownColor", "iconFillAuraColor"},
+        keys = {"iconFillEnabled", "iconFillOrientation", "iconFillReverse", "iconFillTimerBehavior", "iconFillCooldownColor"},
         modes = {icons = true},
     },
     assistedHighlight = {
@@ -934,19 +953,42 @@ ST.OVERRIDE_SECTIONS = {
         keys = {"procGlowStyle", "procGlowColor", "procGlowSize", "procGlowThickness", "procGlowSpeed", "procGlowLines", "procGlowCombatOnly"},
         modes = {icons = true},
     },
-    pandemicGlow = {
-        label = "Pandemic Glow",
-        keys = {"showPandemicGlow", "pandemicGlowStyle", "pandemicGlowColor", "pandemicGlowSize", "pandemicGlowThickness", "pandemicGlowSpeed", "pandemicGlowLines", "pandemicGlowCombatOnly"},
-        modes = {icons = true},
+    -- PTR 8 lit the pandemic key family up (the kit rig in AuraDisplay.lua);
+    -- the enable is now explicit-true pandemicEffectEnabled. Offered as a
+    -- per-entry override section (owner ruling) alongside the plain
+    -- pandemicEffect checkbox; live-era promotions carry forward with
+    -- their values sanitized by the aura-glow migration. The retired
+    -- live-era keys left these lists with the Phase 3 retirement: the
+    -- migration's every-import strip owns their cleanup now.
+    -- ONE section for the whole refresh-window feature across both display
+    -- modes: the glow (icons) or the fill recolor (bars), plus the marker that
+    -- decorates the duration text in either. It replaces the old pandemicGlow
+    -- and pandemicBar pair, which MigratePandemicOverrideOwnership renames.
+    --
+    -- One section, not two, because the two would share keys. Sections are the
+    -- unit promote copies and revert deletes, and nothing clears an override
+    -- when a panel changes display mode, so an icons entry converted to bars
+    -- would carry a stored pandemicGlow the Overrides tab draws as inactive
+    -- (with a live revert button) while offering pandemicBar to promote. Either
+    -- click would then write or wipe keys the other section still listed. The
+    -- marker keys made that overlap span user-authored text and colour, which
+    -- is not recoverable; merging removes the collision instead of policing it.
+    pandemic = {
+        label = "Pandemic",
+        keys = {"pandemicEffectEnabled",
+            "pandemicGlowStyle", "pandemicGlowColor", "pandemicGlowColor2", "pandemicGlowSize", "pandemicGlowThickness", "pandemicGlowSpeed", "pandemicGlowLines",
+            "barPandemicColor",
+            "pandemicMarkerEnabled", "pandemicMarkerText", "pandemicMarkerColorMode", "pandemicMarkerColor"},
+        modes = {icons = true, bars = true},
     },
     auraIndicator = {
         label = "Show Aura Glow",
-        keys = {"auraGlowStyle", "auraGlowColor", "auraGlowSize", "auraGlowThickness", "auraGlowSpeed", "auraGlowLines", "auraGlowInvert", "auraGlowCombatOnly"},
+        keys = {"auraGlowStyle", "auraGlowColor", "auraGlowColor2", "auraGlowSize", "auraGlowSpeed", "auraGlowDashCount", "auraGlowDashThickness"},
         modes = {icons = true},
     },
     auraDurationSwipe = {
         label = "Aura Duration Swipe",
-        keys = {"showAuraDurationSwipe", "showAuraDurationSwipeFill", "auraDurationSwipeReverse", "showAuraDurationSwipeEdge", "auraDurationSwipeAlpha", "auraDurationSwipeEdgeColor", "auraUseBlizzardSwipe"},
+        keys = {"showAuraDurationSwipe", "showAuraDurationSwipeFill", "auraDurationSwipeReverse", "auraDurationSwipeEdgeEnabled", "auraDurationSwipeAlpha", "auraDurationSwipeEdgeColor", "auraUseBlizzardSwipe"},
         modes = {icons = true},
     },
     readyGlow = {
@@ -960,14 +1002,15 @@ ST.OVERRIDE_SECTIONS = {
         modes = {icons = true},
     },
     -- Bar Mode — Appearance Tab
-    pandemicBar = {
-        label = "Pandemic Indicator",
-        keys = {"showPandemicGlow", "barPandemicColor", "pandemicBarEffect", "pandemicBarEffectColor", "pandemicBarEffectSize", "pandemicBarEffectThickness", "pandemicBarEffectSpeed", "pandemicBarEffectLines", "pandemicGlowCombatOnly", "pandemicBarPulseEnabled", "pandemicBarPulseSpeed", "pandemicBarColorShiftEnabled", "pandemicBarColorShiftSpeed", "pandemicBarColorShiftColor"},
-        modes = {bars = true},
-    },
+    -- The bar pandemic display (the fill recolor: pandemicEffectEnabled +
+    -- barPandemicColor) is NOT here: it shares the mode-spanning "pandemic"
+    -- section above with the icons glow and the marker. The dormant
+    -- pandemicBarEffect/Pulse/ColorShift families retired in Phase 3 (the
+    -- migration's every-import strip owns their cleanup). barActiveAura is
+    -- live (LCG-removal project wired it through the aura kit).
     barActiveAura = {
         label = "Active Aura Indicator",
-        keys = {"barAuraIndicatorEnabled", "barAuraColor", "barAuraEffect", "barAuraEffectColor", "barAuraEffectSize", "barAuraEffectThickness", "barAuraEffectSpeed", "barAuraEffectLines", "auraGlowCombatOnly", "barAuraPulseEnabled", "barAuraPulseSpeed", "barAuraColorShiftEnabled", "barAuraColorShiftSpeed", "barAuraColorShiftColor"},
+        keys = {"barAuraIndicatorEnabled", "barAuraColor", "barAuraEffect", "barAuraEffectColor", "barAuraEffectSize", "barAuraEffectThickness", "barAuraEffectSpeed", "barAuraEffectLines", "barAuraPulseEnabled", "barAuraPulseSpeed", "barAuraColorShiftEnabled", "barAuraColorShiftSpeed", "barAuraColorShiftColor"},
         modes = {bars = true},
     },
     barIcon = {
@@ -1013,16 +1056,9 @@ ST.OVERRIDE_SECTIONS = {
         modes = {bars = true},
     },
     -- Text Mode
-    textDimensions = {
-        label = "Text Dimensions",
-        keys = {"textWidth", "textHeight", "showTextGroupHeader", "textHeaderFontSize", "textHeaderFontColor"},
-        modes = {text = true},
-    },
-    textFormat = {
-        label = "Format String",
-        keys = {"textFormat"},
-        modes = {text = true},
-    },
+    -- (No textFormat section: the per-entry format override is the flat
+    -- buttonData.textFormat field, edited inline on the Overrides tab, and
+    -- never went through the styleOverrides section machinery.)
     textFont = {
         label = "Text Font",
         keys = {"textFont", "textFontSize", "textFontOutline", "textAlignment", "textShadow"},
@@ -1046,9 +1082,8 @@ ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS = {
     auraDurationSwipe = true,
     assistedHighlight = true,
     procGlow = true,
-    pandemicGlow = true,
     auraIndicator = true,
-    pandemicBar = true,
+    pandemic = true,
     barActiveAura = true,
 }
 
@@ -1057,12 +1092,39 @@ ST.NO_COOLDOWN_DENIED_OVERRIDE_SECTIONS = {
     readyGlow = true,
 }
 
+-- Standalone aura entries (addedAs == "aura") have no cast, cooldown, or
+-- charges, so the sections styling those mechanics can never apply. Add
+-- intent is immutable, which makes it safe for GetEffectiveStyle's prune pass
+-- to drop stored overrides for these sections. Gates that CAN toggle (aura
+-- tracking on ordinary entries) must stay config-side only, or the prune pass
+-- would delete saved overrides the moment the toggle turns off. NOT denied:
+-- keybindText (custom keybind text renders on aura entries) and cooldownText
+-- (its position keys place the aura duration text in shared-position mode).
+ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS = {
+    cooldownSwipe = true,
+    showGCDSwipe = true,
+    desaturation = true,
+    showOutOfRange = true,
+    iconFillTimer = true,
+    chargeText = true,
+    lossOfControl = true,
+    unusableDimming = true,
+    assistedHighlight = true,
+    procGlow = true,
+    readyGlow = true,
+    keyPressHighlight = true,
+}
+
 function ST.CanButtonUseOverrideSection(buttonData, sectionId)
     if buttonData and buttonData.type == "equipmentSlot" then
         if ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS[sectionId] then
             return false, "entryType"
         end
         return true
+    end
+    if buttonData and buttonData.addedAs == "aura"
+        and ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS[sectionId] then
+        return false, "entryType"
     end
     return true
 end

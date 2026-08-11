@@ -1,414 +1,403 @@
 --[[
-    CooldownCompanion - ConfigSettings/TextModeTabs.lua: Text-mode appearance tab builder
+    CooldownCompanion - ConfigSettings/TextModeTabs.lua: Text-mode tab builders
+    (the Format tab and the Appearance tab)
 ]]
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 -- Imports from Helpers.lua
-local ColorHeading = ST._ColorHeading
-local AttachCollapseButton = ST._AttachCollapseButton
-local AddAdvancedToggle = ST._AddAdvancedToggle
+local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
 local CreatePromoteButton = ST._CreatePromoteButton
-local BuildTextColorsControls = ST._BuildTextColorsControls
-local OpenFormatEditor = ST._OpenFormatEditor
-local AddColorPicker = ST._AddColorPicker
-local RenderFormatPreview = ST._RenderFormatPreview
-local ParseFormatString = ST._ParseFormatString
-local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
+
+-- Imports from ButtonFrame/TextMode.lua (the renderer this tab configures).
+-- Text entries auto-size from a measured worst-case render of their format, so
+-- this tab reports the measurement rather than offering width/height sliders.
+local GetTextEntryMetrics = ST._GetTextEntryMetrics
+
+-- Imports from SectionBuilders.lua
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
-local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
+local BuildTextFontControls = ST._BuildTextFontControls
+local BuildTextColorsControls = ST._BuildTextColorsControls
+local BuildTextBackgroundControls = ST._BuildTextBackgroundControls
+
+-- Imports from RowWidgets.lua (the row grammar)
+local AddCheckboxRow = ST._AddCheckboxRow
+local AddSliderRow = ST._AddSliderRow
+local AddColorRow = ST._AddColorRow
+local AddEditBoxRow = ST._AddEditBoxRow
+local AddLabelRow = ST._AddLabelRow
+local AnchorRowBadge = ST._AnchorRowBadge
+local BeginRowGrid = ST._BeginRowGrid
 
 local tabInfoButtons = CS.tabInfoButtons
-local appearanceTabElements = CS.appearanceTabElements
 
--- Syntax colors for summary (matching FormatEditor.lua)
-local SUM_TOKEN  = "ff00ff00"
-local SUM_COND_P = "ffffff00"
-local SUM_COND_N = "ffff8844"
-local SUM_EFFECT = "ffcc44ff"
-local SUM_COLOR  = "ff44bbff"
-local SUM_GRAY   = "ff888888"
+-- Row-grammar section headers: caret far left, label, then a class-colored
+-- rule fading right. The rules every row-grammar section follows are stated
+-- once, in the recipe comment at the top of BuildAppearanceTab's icons path in
+-- GroupTabs.lua; the sections below conform to them rather than restating them.
+local ROW_SECTION = { leftAligned = true }
 
-local function BuildFormatSummary(formatString)
-    local segments = ParseFormatString(formatString)
-    local tokens, colors, effects, conds = {}, {}, {}, {}
-    local seen = {}
-    for _, seg in ipairs(segments) do
-        if seg.type == "token" and not seg.unknown and not seen["t:" .. seg.value] then
-            tokens[#tokens + 1] = "|c" .. SUM_TOKEN .. seg.value .. "|r"
-            seen["t:" .. seg.value] = true
-        elseif seg.type == "color_start" and not seen["c:" .. seg.value] then
-            colors[#colors + 1] = "|c" .. SUM_COLOR .. seg.value .. "|r"
-            seen["c:" .. seg.value] = true
-        elseif seg.type == "effect_start" and not seen["e:" .. seg.value] then
-            effects[#effects + 1] = "|c" .. SUM_EFFECT .. seg.value .. "|r"
-            seen["e:" .. seg.value] = true
-        elseif seg.type == "cond_start" then
-            local prefix = seg.negated and "!" or "?"
-            local key = prefix .. seg.value
-            if not seen["d:" .. key] then
-                local c = seg.negated and SUM_COND_N or SUM_COND_P
-                conds[#conds + 1] = "|c" .. c .. key .. "|r"
-                seen["d:" .. key] = true
-            end
+------------------------------------------------------------------------
+-- FORMAT TAB
+--
+-- The whole format editor, hosted on a text panel's first tab, plus the two
+-- settings that are format vocabulary. Typing commits live on a short
+-- debounce, so this tab has a lifecycle the other tabs do not: a controller
+-- that owns an animation driver and a pending write, both of which have to be
+-- settled before the container that holds them is released or rebuilt.
+--
+-- Exactly one tab editor exists at a time, and it is never live at the same
+-- time as the entry Format Override section's twin (ButtonSettingsOverrides.lua
+-- states that contract). The three module-locals below are this one editor's
+-- whole state; ReleaseTextFormatTabEditor is the single teardown, and every
+-- seam that can take the container away calls it.
+------------------------------------------------------------------------
+local FORMAT_COMMIT_DELAY = 0.3
+
+local formatTabController = nil
+local formatCommitTimer = nil
+local formatCommitTarget = nil   -- { style, groupId }, captured when scheduled
+
+-- Writes the edited format and refreshes everything that reads it.
+--
+-- The commit is deliberately the host's: the editor component owns no commit
+-- method at all, because a shared one would have to end in RefreshConfigPanel
+-- and that releases the very tab being typed in, dropping the cursor.
+-- RefreshGroupFrame is everything this write needs. It covers the world side,
+-- where the live panel re-parses the format through PopulateGroupButtons ->
+-- UpdateTextStyle, and the config side, where it repaints the pinned mirror on
+-- the way in (ST._RefreshButtonsPreviewMirror, the first thing GroupFrame.lua's
+-- RefreshGroupFrame does). Neither touches the settings column.
+local function CommitTextFormatTabEdit()
+    formatCommitTimer = nil
+    local target = formatCommitTarget
+    formatCommitTarget = nil
+    if not (target and formatTabController) then return end
+
+    local raw = formatTabController:GetRawText()
+    -- An empty format is never written: it would leave the panel with nothing
+    -- to render and no way back except retyping the string from scratch.
+    if not raw or raw == "" then return end
+    if target.style.textFormat == raw then return end
+
+    target.style.textFormat = raw
+    CooldownCompanion:RefreshGroupFrame(target.groupId)
+end
+
+-- The target is captured per schedule, not read at fire time, so a write that
+-- lands after the user has moved on still goes to the panel they typed it in.
+local function ScheduleTextFormatTabCommit(style, groupId)
+    formatCommitTarget = { style = style, groupId = groupId }
+    if formatCommitTimer then
+        formatCommitTimer:Cancel()
+    end
+    formatCommitTimer = C_Timer.NewTimer(FORMAT_COMMIT_DELAY, CommitTextFormatTabEdit)
+end
+
+local function FlushTextFormatTabCommit()
+    if not formatCommitTimer then return end
+    formatCommitTimer:Cancel()
+    CommitTextFormatTabEdit()
+end
+
+-- Settle the pending write FIRST, then drop the controller: the container
+-- frame is about to go back into AceGUI's pool, and a commit that fires after
+-- that would write against a released editor.
+local function ReleaseTextFormatTabEditor()
+    FlushTextFormatTabCommit()
+    if formatTabController then
+        formatTabController:Release()
+        formatTabController = nil
+    end
+    formatCommitTarget = nil
+end
+
+local function BuildTextFormatTab(container)
+    -- Defensive: every seam already releases before it gets here, so this is
+    -- a no-op in the normal path and the backstop for anything that is not.
+    ReleaseTextFormatTabEditor()
+
+    if not CS.selectedGroup then return end
+    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    if not group or group.displayMode ~= "text" then return end
+    local style = group.style
+    if not style then return end
+    local groupId = CS.selectedGroup
+
+    -- Component-internal DoLayout calls are no-ops while the container is
+    -- paused, so the whole tab lays out once at the end.
+    container:PauseLayout()
+
+    formatTabController = ST._BuildFormatEditorContent(container, {
+        -- The Format tab always edits the PANEL's format, whether or not an
+        -- entry is selected: per-entry overrides live on the entry's own
+        -- Overrides section. No saveTarget, so the component targets the
+        -- style table itself.
+        target = { style = style, groupId = groupId },
+        onDirty = function()
+            ScheduleTextFormatTabCommit(style, groupId)
+        end,
+    })
+
+    -- Repaints the editor's preview and swatches from the style that just
+    -- changed. The flush comes FIRST, before both of the reads below.
+    --
+    -- Against SetTarget it is what makes the refresh lossless: SetTarget
+    -- re-reads style.textFormat, so any typing still sitting in the debounce
+    -- has to be written before it is read back.
+    --
+    -- Against UpdateGroupStyle it is what keeps the panel from rendering a
+    -- format the user has already replaced: restyling first laid the panel out
+    -- against the stale string and then had the flush's own RefreshGroupFrame
+    -- re-measure it a moment later, so the panel showed one frame of the old
+    -- format for nothing.
+    local function refreshStyleAndPreview()
+        FlushTextFormatTabCommit()
+        CooldownCompanion:UpdateGroupStyle(groupId)
+        if formatTabController and not formatTabController.released then
+            formatTabController:SetTarget({ style = style, groupId = groupId })
         end
     end
 
-    local parts = {}
-    if #tokens > 0 then
-        parts[#parts + 1] = "|c" .. SUM_GRAY .. "Tokens:|r " .. table.concat(tokens, ", ")
-    end
-    if #conds > 0 then
-        parts[#parts + 1] = "|c" .. SUM_GRAY .. "Conditions:|r " .. table.concat(conds, ", ")
-    end
-    if #colors > 0 then
-        parts[#parts + 1] = "|c" .. SUM_GRAY .. "Colors:|r " .. table.concat(colors, ", ")
-    end
-    if #effects > 0 then
-        parts[#parts + 1] = "|c" .. SUM_GRAY .. "Effects:|r " .. table.concat(effects, ", ")
+    -- ================================================================
+    -- Format Settings
+    --
+    -- LEFT: how a duration reads wherever the format prints one. RIGHT: the
+    -- word {status} falls back to. Both are vocabulary the format spends, so
+    -- they sit under the editor that spends it rather than with the panel's
+    -- geometry on Appearance.
+    -- ================================================================
+    local _, settingsCollapsed = BuildCollapsibleSection(container, "Format Settings", "textformat_settings", nil, nil, ROW_SECTION)
+
+    if not settingsCollapsed then
+    local fmtLeft, fmtRight = BeginRowGrid(container)
+
+    -- The shared builder has no tooltip of its own, so the row gets one here.
+    local durationRow = AddDurationFormatDropdown(fmtLeft, style, refreshStyleAndPreview, { row = true })
+    if durationRow and durationRow.SetRowTooltip then
+        durationRow:SetRowTooltip({
+            "Duration Format",
+            {"How a countdown reads wherever the format prints one.", 1, 1, 1, true},
+        })
     end
 
-    if #parts == 0 then return {} end
-    return parts
+    -- The CDC-EditBoxRow embeds a stock EditBox, so the raw frame the
+    -- Instructions text hangs on is still reachable through row.editbox.
+    local readyTextRow = AddEditBoxRow(fmtRight, {
+        label = "Ready Text",
+        value = style.textReadyText or "Ready",
+        onEnterPressed = function(val)
+            style.textReadyText = val
+            refreshStyleAndPreview()
+        end,
+    })
+    if readyTextRow.editbox and readyTextRow.editbox.Instructions then
+        readyTextRow.editbox.Instructions:Hide()
+    end
+    -- Anchor args are a placeholder - AnchorRowBadge re-points the button onto
+    -- the end of the row's label.
+    AnchorRowBadge(readyTextRow, CreateInfoButton(readyTextRow.frame, readyTextRow.frame, "LEFT", "LEFT", 0, 0, {
+        "Ready Text",
+        {"The word |cff00ff00{status}|r shows when the spell is ready.", 1, 1, 1, true},
+    }, tabInfoButtons))
+    end -- not settingsCollapsed
+
+    container:ResumeLayout()
+    container:DoLayout()
 end
 
 local function BuildTextAppearanceTab(container, group, style)
     local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
     local refreshFrame = function() CooldownCompanion:RefreshGroupFrame(CS.selectedGroup) end
 
-    -- ================================================================
-    -- Text Settings (width, height, spacing)
-    -- ================================================================
-    local textHeading = AceGUI:Create("Heading")
-    textHeading:SetText("Text Settings")
-    ColorHeading(textHeading)
-    textHeading:SetFullWidth(true)
-    container:AddChild(textHeading)
-
-    local textSettingsCollapsed = CS.collapsedSections["textappearance_settings"]
-    AttachCollapseButton(textHeading, textSettingsCollapsed, function()
-        CS.collapsedSections["textappearance_settings"] = not CS.collapsedSections["textappearance_settings"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-
-    if not textSettingsCollapsed then
-    local widthSlider = AceGUI:Create("Slider")
-    widthSlider:SetLabel("Text Width")
-    widthSlider:SetSliderValues(50, 600, 1)
-    widthSlider:SetValue(style.textWidth or 200)
-    widthSlider:SetFullWidth(true)
-    widthSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.textWidth = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(widthSlider)
-
-    local heightSlider = AceGUI:Create("Slider")
-    heightSlider:SetLabel("Text Height")
-    heightSlider:SetSliderValues(10, 100, 1)
-    heightSlider:SetValue(style.textHeight or 20)
-    heightSlider:SetFullWidth(true)
-    heightSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.textHeight = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(heightSlider)
-
-    if group.buttons and #group.buttons > 1 then
-        local spacingSlider = AceGUI:Create("Slider")
-        spacingSlider:SetLabel("Entry Spacing")
-        spacingSlider:SetSliderValues(-10, 100, 0.1)
-        spacingSlider:SetValue(style.buttonSpacing or ST.BUTTON_SPACING)
-        spacingSlider:SetFullWidth(true)
-        spacingSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.buttonSpacing = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(spacingSlider)
-    end
-
-    AddDurationFormatDropdown(container, style, refreshStyle)
-
-    local headerCb = AceGUI:Create("CheckBox")
-    headerCb:SetLabel("Show Group Header")
-    headerCb:SetValue(style.showTextGroupHeader == true)
-    headerCb:SetFullWidth(true)
-    headerCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showTextGroupHeader = val or false
-        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(headerCb)
-
-    if style.showTextGroupHeader then
-        local headerSizeSlider = AceGUI:Create("Slider")
-        headerSizeSlider:SetLabel("Header Font Size")
-        headerSizeSlider:SetSliderValues(6, 72, 1)
-        headerSizeSlider:SetValue(style.textHeaderFontSize or 12)
-        headerSizeSlider:SetFullWidth(true)
-        headerSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.textHeaderFontSize = val
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-        end)
-        container:AddChild(headerSizeSlider)
-
-        AddColorPicker(container, style, "textHeaderFontColor", "Header Color", {1, 1, 1, 1}, true, refreshFrame, refreshFrame)
-    end
-    end -- not textSettingsCollapsed
-
-    -- ================================================================
-    -- Format String
-    -- ================================================================
-    local fmtHeading = AceGUI:Create("Heading")
-    fmtHeading:SetText("Format String")
-    ColorHeading(fmtHeading)
-    fmtHeading:SetFullWidth(true)
-    container:AddChild(fmtHeading)
-
-    local fmtCollapsed = CS.collapsedSections["textappearance_format"]
-    local fmtCollapseBtn = AttachCollapseButton(fmtHeading, fmtCollapsed, function()
-        CS.collapsedSections["textappearance_format"] = not CS.collapsedSections["textappearance_format"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    local function BuildFormatPreviewAdvanced(panel)
-        if AddConditionalPreviewButton then
-            AddConditionalPreviewButton(panel, "Preview Cooldown State", "cooldown")
-            AddConditionalPreviewButton(panel, "Preview Aura Duration Text", "aura_duration_text")
-            AddConditionalPreviewButton(panel, "Preview Aura Stack Text", "aura_stack_text")
-            AddConditionalPreviewButton(panel, "Preview Pandemic State", "pandemic")
-            AddConditionalPreviewButton(panel, "Preview Unusable State", "unusable")
-            AddConditionalPreviewButton(panel, "Preview Out of Range State", "out_of_range")
-        end
-    end
-
-    local _, fmtPreviewAdvBtn = AddAdvancedToggle(fmtHeading, "textFormatPreview", tabInfoButtons, nil, {
-        title = "Format String Advanced",
-        build = BuildFormatPreviewAdvanced,
-    })
-    fmtPreviewAdvBtn:SetPoint("LEFT", fmtCollapseBtn, "RIGHT", 4, 0)
-
-    -- Token reference info button
-    local fmtInfo = CreateInfoButton(fmtHeading.frame, fmtPreviewAdvBtn, "LEFT", "RIGHT", 4, 0, {
-        {"Format String", 1, 0.82, 0, true},
-        " ",
-        {"Controls what each button displays using", 1, 1, 1, true},
-        {"|cff00ff00{tokens}|r that resolve to live spell/item data.", 1, 1, 1, true},
-        " ",
-        {"Use |cffffff00{?token}|r...|cffffff00{/token}|r to show content only", 1, 1, 1, true},
-        {"when a condition is met, or |cffff8844{!token}|r to show", 1, 1, 1, true},
-        {"content when it is not.", 1, 1, 1, true},
-        " ",
-        {"Wrap text in |cff44bbff{color}|r...|cff44bbff{/color}|r tags to", 1, 1, 1, true},
-        {"override its color, or |cffcc44ff{pulse}|r...|cffcc44ff{/pulse}|r", 1, 1, 1, true},
-        {"for a pulsing alpha effect.", 1, 1, 1, true},
-        " ",
-        {"Use |cff00ff00{br}|r to force a new line within one entry.", 1, 1, 1, true},
-        " ",
-        {"Click |cffffffffEdit Format|r to open the full editor", 1, 1, 1, true},
-        {"with token lists, insertion buttons, and live preview.", 1, 1, 1, true},
-    }, tabInfoButtons)
-    fmtHeading.right:ClearAllPoints()
-    fmtHeading.right:SetPoint("RIGHT", fmtHeading.frame, "RIGHT", -3, 0)
-    fmtHeading.right:SetPoint("LEFT", fmtInfo, "RIGHT", 4, 0)
-
-    if not fmtCollapsed then
-    local fmt = style.textFormat or "{name}  {status}"
-
-    local preSpacer = AceGUI:Create("Label")
-    preSpacer:SetText(" ")
-    preSpacer:SetFullWidth(true)
-    container:AddChild(preSpacer)
-
-    local fmtPreview = AceGUI:Create("Label")
-    ST._ConfigureWrappedHelperLabel(fmtPreview)
-    fmtPreview:SetText(RenderFormatPreview(fmt, style))
-    fmtPreview:SetFullWidth(true)
-    fmtPreview:SetFontObject(GameFontHighlight)
-    fmtPreview:SetJustifyH("CENTER")
-    container:AddChild(fmtPreview)
-
-    local postSpacer = AceGUI:Create("Label")
-    postSpacer:SetText(" ")
-    postSpacer:SetFullWidth(true)
-    container:AddChild(postSpacer)
-
-    local summaryParts = BuildFormatSummary(fmt)
-    for _, line in ipairs(summaryParts) do
-        local fmtSummary = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(fmtSummary)
-        fmtSummary:SetText(line)
-        fmtSummary:SetFullWidth(true)
-        fmtSummary:SetFontObject(GameFontHighlightSmall)
-        container:AddChild(fmtSummary)
-    end
-
-    local btnSpacer = AceGUI:Create("Label")
-    btnSpacer:SetText(" ")
-    btnSpacer:SetFullWidth(true)
-    container:AddChild(btnSpacer)
-
-    local editBtn = AceGUI:Create("Button")
-    editBtn:SetText("Edit Format")
-    editBtn:SetFullWidth(true)
-    editBtn:SetCallback("OnClick", function()
-        OpenFormatEditor(style, CS.selectedGroup)
-    end)
-    container:AddChild(editBtn)
-
-    end -- not fmtCollapsed
+    -- The format itself, and the two settings that are format vocabulary
+    -- rather than panel geometry, now own the Format tab (BuildTextFormatTab
+    -- below). What is left here decorates what the format already decided to
+    -- say: Font, Colors, Panel, Background & Border, Compact Mode.
 
     -- ================================================================
     -- Font
     -- ================================================================
-    local fontHeading = AceGUI:Create("Heading")
-    fontHeading:SetText("Font")
-    ColorHeading(fontHeading)
-    fontHeading:SetFullWidth(true)
-    container:AddChild(fontHeading)
-
-    local fontCollapsed = CS.collapsedSections["textappearance_font"]
-    AttachCollapseButton(fontHeading, fontCollapsed, function()
-        CS.collapsedSections["textappearance_font"] = not CS.collapsedSections["textappearance_font"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local fontHeading, fontCollapsed = BuildCollapsibleSection(container, "Font", "textappearance_font", nil, nil, ROW_SECTION)
 
     CreatePromoteButton(fontHeading, "textFont", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     if not fontCollapsed then
-    local fontDrop = AceGUI:Create("Dropdown")
-    fontDrop:SetLabel("Font")
-    CS.SetupFontDropdown(fontDrop)
-    fontDrop:SetValue(style.textFont or "Friz Quadrata TT")
-    fontDrop:SetFullWidth(true)
-    CS.SetFontDropdownCallback(fontDrop, function(widget, event, val)
-        style.textFont = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(fontDrop)
-
-    local fontSizeSlider = AceGUI:Create("Slider")
-    fontSizeSlider:SetLabel("Font Size")
-    fontSizeSlider:SetSliderValues(6, 72, 1)
-    fontSizeSlider:SetValue(style.textFontSize or 12)
-    fontSizeSlider:SetFullWidth(true)
-    fontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.textFontSize = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(fontSizeSlider)
-
-    local outlineDrop = AceGUI:Create("Dropdown")
-    outlineDrop:SetLabel("Font Outline")
-    CS.SetupFontOutlineDropdown(outlineDrop)
-    outlineDrop:SetValue(style.textFontOutline or "OUTLINE")
-    outlineDrop:SetFullWidth(true)
-    CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
-        style.textFontOutline = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(outlineDrop)
-
-    local alignDrop = AceGUI:Create("Dropdown")
-    alignDrop:SetLabel("Alignment")
-    alignDrop:SetList({LEFT = "Left", CENTER = "Center", RIGHT = "Right"})
-    alignDrop:SetValue(style.textAlignment or "LEFT")
-    alignDrop:SetFullWidth(true)
-    alignDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        style.textAlignment = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(alignDrop)
-
-    local shadowCb = AceGUI:Create("CheckBox")
-    shadowCb:SetLabel("Text Shadow")
-    shadowCb:SetValue(style.textShadow == true)
-    shadowCb:SetFullWidth(true)
-    shadowCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.textShadow = val or false
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(shadowCb)
+    -- The shared builder splits its own rows: LEFT what the text is drawn
+    -- with, RIGHT how the line is laid out.
+    local fontLeft, fontRight = BeginRowGrid(container)
+    BuildTextFontControls(fontLeft, style, refreshStyle, { row = true, rightColumn = fontRight })
     end -- not fontCollapsed
 
     -- ================================================================
     -- Colors
     -- ================================================================
-    local colorsHeading = AceGUI:Create("Heading")
-    colorsHeading:SetText("Colors")
-    ColorHeading(colorsHeading)
-    colorsHeading:SetFullWidth(true)
-    container:AddChild(colorsHeading)
-
-    local colorsCollapsed = CS.collapsedSections["textappearance_colors"]
-    AttachCollapseButton(colorsHeading, colorsCollapsed, function()
-        CS.collapsedSections["textappearance_colors"] = not CS.collapsedSections["textappearance_colors"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local colorsHeading, colorsCollapsed = BuildCollapsibleSection(container, "Colors", "textappearance_colors", nil, nil, ROW_SECTION)
 
     CreatePromoteButton(colorsHeading, "textColors", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     if not colorsCollapsed then
-    BuildTextColorsControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
+    -- The whole palette the text renderer can reach. The shared builder splits
+    -- its own rows: LEFT the base color and the two cooldown states, RIGHT the
+    -- aura color and the tag-only custom color.
+    local colorsLeft, colorsRight = BeginRowGrid(container)
+    BuildTextColorsControls(colorsLeft, style, refreshStyle, { row = true, rightColumn = colorsRight })
     end -- not colorsCollapsed
+
+    -- ================================================================
+    -- Panel (padding, spacing, header)
+    --
+    -- There is no width or height slider here. A text entry measures itself
+    -- from its format and its font (ButtonFrame/TextMode.lua renders a
+    -- worst-case mock of the format onto a hidden FontString), so the only
+    -- manual size knob is how much room to leave around that text. What the
+    -- measurement produced is reported below it, read-only.
+    -- ================================================================
+    local _, panelCollapsed = BuildCollapsibleSection(container, "Panel", "textappearance_settings", nil, nil, ROW_SECTION)
+
+    if not panelCollapsed then
+    -- LEFT column: how one entry is sized and how the entries stack.
+    -- RIGHT column: the optional group header with the two rows it owns.
+    local panelLeft, panelRight = BeginRowGrid(container)
+
+    -- Declared ahead of the slider that changes it: dragging Padding resizes
+    -- the entry, so the reported size has to move with the drag rather than
+    -- wait for the next tab rebuild.
+    local entrySizeRow
+
+    -- The panel's grid pitch, computed exactly the way GroupFrame's
+    -- GetButtonDimensions and the mirror's GetPanelGeometry compute it: the
+    -- panel's own baseline entry (no entry data) as a floor, then the max over
+    -- every entry measured through its OWN effective style and format.
+    --
+    -- The baseline alone measures {name} as an empty string, which under-reports
+    -- a real panel by roughly the width of its longest spell name.
+    local function FormatEntrySize()
+        if not GetTextEntryMetrics then return "" end
+        local entryWidth, entryHeight = GetTextEntryMetrics(style, nil, style.textFormat)
+        for _, buttonData in ipairs(group.buttons or {}) do
+            local effectiveStyle = CooldownCompanion.GetEffectiveStyle
+                and CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+            local fmt = buttonData.textFormat or effectiveStyle.textFormat
+            local width, height = GetTextEntryMetrics(effectiveStyle, buttonData, fmt)
+            if width > entryWidth then entryWidth = width end
+            if height > entryHeight then entryHeight = height end
+        end
+        return string.format("%d \195\151 %d", math.floor(entryWidth + 0.5), math.floor(entryHeight + 0.5))
+    end
+
+    AddSliderRow(panelLeft, {
+        label = "Padding",
+        min = 0, max = 20, step = 1,
+        value = style.textPadding or 4,
+        onChange = function(val)
+            style.textPadding = val
+            -- Re-measures both halves: the mirror re-runs GetPanelGeometry,
+            -- and each live entry's UpdateStyle -> ApplyTextLayout forces a
+            -- fresh measure before ApplyActiveButtonLayout re-pitches the grid.
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            if entrySizeRow then
+                entrySizeRow:SetControlText(FormatEntrySize())
+            end
+        end,
+    })
+
+    if GetTextEntryMetrics then
+        entrySizeRow = AddLabelRow(panelLeft, {
+            label = "Entry Size",
+            controlText = FormatEntrySize(),
+        })
+        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+        -- onto the end of the row's label.
+        AnchorRowBadge(entrySizeRow, CreateInfoButton(entrySizeRow.frame, entrySizeRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Entry Size",
+            {"The panel sizes each entry from its format and its font.", 1, 1, 1, true},
+            " ",
+            {"Padding adds room around the text.", 1, 1, 1, true},
+        }, tabInfoButtons))
+    end
+
+    if group.buttons and #group.buttons > 1 then
+        AddSliderRow(panelLeft, {
+            label = "Entry Spacing",
+            min = -10, max = 100, step = 0.1,
+            value = style.buttonSpacing or ST.BUTTON_SPACING,
+            onChange = function(val)
+                style.buttonSpacing = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end,
+        })
+    end
+
+    AddCheckboxRow(panelRight, {
+        label = "Show Group Header",
+        value = style.showTextGroupHeader == true,
+        onChange = function(val)
+            style.showTextGroupHeader = val or false
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+
+    if style.showTextGroupHeader then
+        AddSliderRow(panelRight, {
+            label = "Header Font Size",
+            indent = true,
+            min = 6, max = 72, step = 1,
+            value = style.textHeaderFontSize or 12,
+            onChange = function(val)
+                style.textHeaderFontSize = val
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            end,
+        })
+
+        AddColorRow(panelRight, {
+            label = "Header Color",
+            indent = true,
+            tbl = style, key = "textHeaderFontColor",
+            default = {1, 1, 1, 1}, hasAlpha = true,
+            onConfirm = refreshFrame, onChange = refreshFrame,
+        })
+    end
+    end -- not panelCollapsed
 
     -- ================================================================
     -- Background & Border
     -- ================================================================
-    local bgHeading = AceGUI:Create("Heading")
-    bgHeading:SetText("Background & Border")
-    ColorHeading(bgHeading)
-    bgHeading:SetFullWidth(true)
-    container:AddChild(bgHeading)
-
-    local bgCollapsed = CS.collapsedSections["textappearance_bg"]
-    AttachCollapseButton(bgHeading, bgCollapsed, function()
-        CS.collapsedSections["textappearance_bg"] = not CS.collapsedSections["textappearance_bg"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local bgHeading, bgCollapsed = BuildCollapsibleSection(container, "Background & Border", "textappearance_bg", nil, nil, ROW_SECTION)
 
     CreatePromoteButton(bgHeading, "textBackground", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     if not bgCollapsed then
-    AddColorPicker(container, style, "textBgColor", "Background Color", {0, 0, 0, 0}, true, refreshStyle, refreshStyle)
-
-    local renderMode = AddBorderRenderModeDropdown(container, style, "textBorderRenderMode", function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    local borderThicknessLocked = ST.IsBorderThicknessLocked()
-
-    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-        local borderSlider = AceGUI:Create("Slider")
-        borderSlider:SetLabel("Border Size")
-        borderSlider:SetSliderValues(0, 5, 0.1)
-        borderSlider:SetValue(style.textBorderSize or 0)
-        borderSlider:SetFullWidth(true)
-        borderSlider:SetDisabled(borderThicknessLocked)
-        borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            if borderThicknessLocked then return end
-            style.textBorderSize = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(borderSlider)
-    end
-
-    AddColorPicker(container, style, "textBorderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
-
+    -- The backdrop and the border that frames it read together, so they stay
+    -- in one column. The right column is deliberately empty.
+    local bgLeft = BeginRowGrid(container)
+    BuildTextBackgroundControls(bgLeft, style, refreshStyle, { row = true })
     end -- not bgCollapsed
 
     -- ================================================================
     -- Compact Mode Controls
     -- ================================================================
-    BuildCompactModeControls(container, group, tabInfoButtons)
+    -- One row, in a grid of its own so it keeps the grammar's half-width cell
+    -- rather than stretching its control column across the whole tab.
+    local compactLeft = BeginRowGrid(container)
+    BuildCompactModeControls(compactLeft, group, tabInfoButtons)
 end
 
 -- Exports
 ST._BuildTextAppearanceTab = BuildTextAppearanceTab
-ST._BuildFormatSummary = BuildFormatSummary
+ST._BuildTextFormatTab = BuildTextFormatTab
+
+-- Lifecycle hooks for the Format tab's live editor. Called through ST at fire
+-- time rather than captured at load, so file order does not matter:
+--   Release - every seam that releases or rebuilds the tab's container
+--             (GroupSettingsHost's tab callback and refresh, the config's
+--             OnHide).
+--   Flush   - seams that do not take the container away but must not read a
+--             stale format (the popout opening over a live tab).
+ST._ReleaseTextFormatTabEditor = ReleaseTextFormatTabEditor
+ST._FlushTextFormatTabCommit = FlushTextFormatTabCommit

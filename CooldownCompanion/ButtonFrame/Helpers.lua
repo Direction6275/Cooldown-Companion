@@ -17,7 +17,6 @@ local type = type
 
 -- Color constants
 local DEFAULT_BAR_AURA_COLOR = {0.2, 1.0, 0.2, 1.0}
-local DEFAULT_BAR_PANDEMIC_COLOR = {1.0, 0.5, 0.0, 1.0}
 local DEFAULT_BAR_CHARGE_COLOR = {1.0, 0.82, 0.0, 1.0}
 local HEALTHSTONE_ITEM_ID = 5512
 local EQUIPMENT_SLOT_TYPE = "equipmentSlot"
@@ -77,6 +76,121 @@ local function IsEntryItemLike(buttonData)
 end
 CooldownCompanion.IsEntryItemLike = IsEntryItemLike
 
+--------------------------------------------------------------------------------
+-- Entry Pings (12.1 ping system)
+--
+-- Mirrors Blizzard's PingableType contract (Blizzard_SharedXML/PingableType.lua):
+-- the hover surface carries a "ping-receiver" attribute and implements
+-- GetIsPingable / GetAllowRadialWheel / GetTargetInfo. Blizzard's PingManager
+-- finds the surface via a secure hit test, then calls these methods insecurely
+-- (securecallfunction) and performs the secure send itself, so no C_PingSecure
+-- access is needed. Target info is plain config-owned IDs; nothing secret
+-- crosses the boundary.
+--------------------------------------------------------------------------------
+
+-- Cooldown-style entries only: aura declarations are not pingable, mirroring
+-- the Cooldown Manager, which pings its Essential/Utility viewers but never
+-- tracked buffs (owner ruling 2026-07-31). Spell entries that also track their
+-- aura keep their cooldown identity and stay pingable.
+local function IsEntryPingEligible(buttonData)
+    if not buttonData or buttonData.addedAs == "aura" then
+        return false
+    end
+    return buttonData.type == "spell" or IsEntryItemLike(buttonData)
+end
+CooldownCompanion.IsEntryPingEligible = IsEntryPingEligible
+
+-- Same resolution the tooltip path uses (Glows.lua ShowButtonTooltip): the
+-- ping should name what the tooltip shows.
+local function ResolvePingTarget(owner)
+    local buttonData = owner.buttonData
+    if not IsEntryPingEligible(buttonData) then
+        return nil
+    end
+    -- A Rotation Assistant placeholder stores the fallback action spell as its
+    -- id; never announce that while no recommendation exists.
+    if buttonData._rotationAssistantMissing then
+        return nil
+    end
+    if buttonData.type == "spell" then
+        local spellID = tonumber(owner._displaySpellId or buttonData.id)
+        if spellID then
+            return "spellID", spellID
+        end
+        return nil
+    end
+    local itemID = tonumber(owner._resolvedItemId or buttonData.id)
+    if itemID then
+        return "itemID", itemID
+    end
+    return nil
+end
+
+-- Live pingability, re-read at ping time (same pattern as
+-- PrepareButtonTooltip). Answering false here does NOT pass the ping through
+-- to the world: Blizzard treats a found receiver that declines as blocking UI
+-- and shows its ping-failed message. Pass-through requires the attribute to
+-- be absent, which the style passes and visibility edges manage; these checks
+-- are the backstop for any stale window between those passes.
+local function IsPingAllowedForButton(owner)
+    local groups = CooldownCompanion.db and CooldownCompanion.db.profile.groups
+    local group = groups and owner._groupId and groups[owner._groupId]
+    local style = group and group.style
+    if not (style ~= nil and style.allowPings == true) then
+        return false
+    end
+    if owner._visibilityHidden then
+        return false
+    end
+    if CooldownCompanion.IsStandaloneTexturePanelGroup ~= nil
+        and CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
+        return false
+    end
+    return true
+end
+
+local function Ping_GetIsPingable(self)
+    local owner = self._ccPingOwner or self
+    return IsPingAllowedForButton(owner) and ResolvePingTarget(owner) ~= nil
+end
+
+local function Ping_GetAllowRadialWheel(self)
+    -- Contextual pings only, matching Cooldown Manager items.
+    return false
+end
+
+local function Ping_GetTargetInfo(self)
+    local owner = self._ccPingOwner or self
+    local info = {}
+    local key, id = ResolvePingTarget(owner)
+    if key then
+        info[key] = id
+    end
+    return info
+end
+
+-- Install or remove the ping receiver on a hover surface. `owner` is the entry
+-- button carrying buttonData; omit it when the surface is the button itself
+-- (icon mode). Bar mode passes its _iconBounds child as the surface.
+function ST.SetEntryPingReceiver(surface, enabled, owner)
+    if not surface or not surface.SetAttribute then
+        return
+    end
+    if enabled then
+        surface._ccPingOwner = (owner ~= nil and owner ~= surface) and owner or nil
+        surface.GetIsPingable = Ping_GetIsPingable
+        surface.GetAllowRadialWheel = Ping_GetAllowRadialWheel
+        surface.GetTargetInfo = Ping_GetTargetInfo
+        surface:SetAttribute("ping-receiver", true)
+    elseif surface.GetIsPingable ~= nil then
+        surface._ccPingOwner = nil
+        surface.GetIsPingable = nil
+        surface.GetAllowRadialWheel = nil
+        surface.GetTargetInfo = nil
+        surface:SetAttribute("ping-receiver", nil)
+    end
+end
+
 -- Format remaining seconds for time display (shared across bar, text, and preview modes).
 local DURATION_FORMAT_CLOCK = "clock"
 local DURATION_FORMAT_UNITS = "units"
@@ -111,19 +225,6 @@ CooldownCompanion.DURATION_FORMAT_DECIMAL_UNDER_60 = DURATION_FORMAT_DECIMAL_UND
 
 local secondsFormatterCache = {}
 local durationTextFormatterCache = {}
-local durationTextBindingCounters = {
-    bindAttempts = 0,
-    bindSuccesses = 0,
-    bindingsCreated = 0,
-    bindingsReused = 0,
-    formatterUpdates = 0,
-    durationUpdates = 0,
-    unbinds = 0,
-    unsupported = 0,
-    manualUpdates = 0,
-    manualUpdatesBySurface = {},
-    nativeBindsBySurface = {},
-}
 
 local function NormalizeDurationFormat(value, decimalTimers)
     if DURATION_FORMAT_SET[value] then
@@ -234,38 +335,6 @@ local function GetDurationSecretFormatSpec(source)
 end
 CooldownCompanion.GetDurationSecretFormatSpec = GetDurationSecretFormatSpec
 
-local function IncrementDurationTextCounter(key, surface)
-    durationTextBindingCounters[key] = (durationTextBindingCounters[key] or 0) + 1
-    if surface then
-        local bySurfaceKey = key == "manualUpdates" and "manualUpdatesBySurface" or "nativeBindsBySurface"
-        local bySurface = durationTextBindingCounters[bySurfaceKey]
-        bySurface[surface] = (bySurface[surface] or 0) + 1
-    end
-end
-
-function CooldownCompanion:GetDurationTextBindingDebugCounters()
-    return durationTextBindingCounters
-end
-
-function CooldownCompanion:ResetDurationTextBindingDebugCounters()
-    for key, value in pairs(durationTextBindingCounters) do
-        if type(value) == "table" then
-            for childKey in pairs(value) do
-                value[childKey] = nil
-            end
-        else
-            durationTextBindingCounters[key] = 0
-        end
-    end
-    for key in pairs(durationTextFormatterCache) do
-        durationTextFormatterCache[key] = nil
-    end
-end
-
-function CooldownCompanion.RecordDurationTextManualUpdate(surface)
-    IncrementDurationTextCounter("manualUpdates", surface)
-end
-
 local function GetDurationTextRoundingDown()
     return GetEnumValue("NumericRuleFormatRounding", "Down", 2)
 end
@@ -279,38 +348,61 @@ local function FloorComponent(divisor, modulo)
     }
 end
 
-local function AddFloorBreakpoint(formatter, threshold, format)
-    formatter:AddBreakpoint({
+local function FloorBreakpoint(threshold, format)
+    return {
         threshold = threshold,
         step = 1,
         rounding = GetDurationTextRoundingDown(),
         format = format,
-    })
+    }
 end
 
-local function AddClockBreakpoints(formatter, decimalThreshold)
-    if decimalThreshold and decimalThreshold > 0 then
-        formatter:AddBreakpoint({
-            threshold = 0,
-            format = "%.1f",
-        })
+-- One ascending breakpoint list per format key: the single definition of what
+-- each Duration Format looks like for NumericRuleFormatter consumers. The
+-- cooldown text formatter below builds straight from it, and the aura display
+-- reads it to derive per-spell pandemic marker formatters that keep the same
+-- shape. Cached lists are shared and must never be mutated.
+local function BuildDurationFormatBrackets(formatKey)
+    local brackets = {}
+
+    if formatKey == DURATION_FORMAT_UNITS then
+        brackets[1] = FloorBreakpoint(0, "%.0fs")
+        brackets[2] = {
+            threshold = 60,
+            format = "%.0fm %.0fs",
+            components = {
+                FloorComponent(60),
+                FloorComponent(nil, 60),
+            },
+        }
+        brackets[3] = {
+            threshold = 3600,
+            format = "%.0fh %.0fm",
+            components = {
+                FloorComponent(3600),
+                FloorComponent(60, 60),
+            },
+        }
+        return brackets
+    end
+
+    if formatKey == DURATION_FORMAT_DECIMAL_UNDER_10 then
+        brackets[#brackets + 1] = { threshold = 0, format = "%.1f" }
+        brackets[#brackets + 1] = FloorBreakpoint(10, "%.0f")
+    elseif formatKey == DURATION_FORMAT_DECIMAL_UNDER_60 then
+        brackets[#brackets + 1] = { threshold = 0, format = "%.1f" }
     else
-        AddFloorBreakpoint(formatter, 0, "%.0f")
+        brackets[#brackets + 1] = FloorBreakpoint(0, "%.0f")
     end
-
-    if decimalThreshold == 10 then
-        AddFloorBreakpoint(formatter, 10, "%.0f")
-    end
-
-    formatter:AddBreakpoint({
+    brackets[#brackets + 1] = {
         threshold = 60,
         format = "%.0f:%02.0f",
         components = {
             FloorComponent(60),
             FloorComponent(nil, 60),
         },
-    })
-    formatter:AddBreakpoint({
+    }
+    brackets[#brackets + 1] = {
         threshold = 3600,
         format = "%.0f:%02.0f:%02.0f",
         components = {
@@ -318,28 +410,22 @@ local function AddClockBreakpoints(formatter, decimalThreshold)
             FloorComponent(60, 60),
             FloorComponent(nil, 60),
         },
-    })
+    }
+    return brackets
 end
 
-local function AddUnitsBreakpoints(formatter)
-    AddFloorBreakpoint(formatter, 0, "%.0fs")
-    formatter:AddBreakpoint({
-        threshold = 60,
-        format = "%.0fm %.0fs",
-        components = {
-            FloorComponent(60),
-            FloorComponent(nil, 60),
-        },
-    })
-    formatter:AddBreakpoint({
-        threshold = 3600,
-        format = "%.0fh %.0fm",
-        components = {
-            FloorComponent(3600),
-            FloorComponent(60, 60),
-        },
-    })
+local durationFormatBracketsCache = {}
+
+local function GetDurationFormatBrackets(source)
+    local formatKey = GetDurationFormat(source)
+    local brackets = durationFormatBracketsCache[formatKey]
+    if not brackets then
+        brackets = BuildDurationFormatBrackets(formatKey)
+        durationFormatBracketsCache[formatKey] = brackets
+    end
+    return brackets, formatKey
 end
+CooldownCompanion.GetDurationFormatBrackets = GetDurationFormatBrackets
 
 local function CreateDurationTextFormatter(formatKey)
     if not (C_StringUtil and C_StringUtil.CreateNumericRuleFormatter) then
@@ -351,14 +437,8 @@ local function CreateDurationTextFormatter(formatKey)
         return nil
     end
 
-    if formatKey == DURATION_FORMAT_UNITS then
-        AddUnitsBreakpoints(formatter)
-    elseif formatKey == DURATION_FORMAT_DECIMAL_UNDER_10 then
-        AddClockBreakpoints(formatter, 10)
-    elseif formatKey == DURATION_FORMAT_DECIMAL_UNDER_60 then
-        AddClockBreakpoints(formatter, 60)
-    else
-        AddClockBreakpoints(formatter)
+    for _, breakpoint in ipairs(BuildDurationFormatBrackets(formatKey)) do
+        formatter:AddBreakpoint(breakpoint)
     end
 
     return formatter
@@ -378,6 +458,7 @@ local function GetDurationTextFormatter(source)
     durationTextFormatterCache[formatKey] = formatter or false
     return formatter, formatKey
 end
+CooldownCompanion.GetDurationTextFormatter = GetDurationTextFormatter
 
 local function DurationTextBindingHasMethods(binding)
     return binding
@@ -407,7 +488,6 @@ local function UnbindDurationText(fontString, clearText)
     local wasActive = fontString._ccDurationTextBindingActive
     if binding and wasActive and type(binding.Disable) == "function" then
         binding:Disable()
-        IncrementDurationTextCounter("unbinds")
     end
 
     fontString._ccDurationTextBindingActive = nil
@@ -419,18 +499,14 @@ local function UnbindDurationText(fontString, clearText)
 end
 CooldownCompanion.UnbindDurationText = UnbindDurationText
 
-local function BindDurationText(fontString, durationObj, source, surface)
-    IncrementDurationTextCounter("bindAttempts")
-
+local function BindDurationText(fontString, durationObj, source)
     if not (fontString and durationObj and IsDurationTextBindingSupported()) then
-        IncrementDurationTextCounter("unsupported")
         UnbindDurationText(fontString, true)
         return false
     end
 
     local formatter, formatKey = GetDurationTextFormatter(source)
     if not formatter then
-        IncrementDurationTextCounter("unsupported")
         UnbindDurationText(fontString, true)
         return false
     end
@@ -439,7 +515,6 @@ local function BindDurationText(fontString, durationObj, source, surface)
     if not binding then
         binding = C_DurationUtil.CreateDurationTextBinding()
         if not DurationTextBindingHasMethods(binding) then
-            IncrementDurationTextCounter("unsupported")
             UnbindDurationText(fontString, true)
             return false
         end
@@ -450,21 +525,17 @@ local function BindDurationText(fontString, durationObj, source, surface)
         binding:SetUpdateInterval(0.1)
         fontString._ccDurationTextBinding = binding
         fontString._ccDurationTextBindingReady = true
-        IncrementDurationTextCounter("bindingsCreated")
     elseif not fontString._ccDurationTextBindingReady and not DurationTextBindingHasMethods(binding) then
-        IncrementDurationTextCounter("unsupported")
         UnbindDurationText(fontString, true)
         return false
     else
         fontString._ccDurationTextBindingReady = true
-        IncrementDurationTextCounter("bindingsReused")
     end
 
     local changed = false
     if fontString._ccDurationTextFormatterKey ~= formatKey then
         binding:SetFormatter(formatter)
         fontString._ccDurationTextFormatterKey = formatKey
-        IncrementDurationTextCounter("formatterUpdates")
         changed = true
     end
 
@@ -472,7 +543,6 @@ local function BindDurationText(fontString, durationObj, source, surface)
     if fontString._ccDurationTextDuration ~= durationObj then
         binding:SetDuration(durationObj)
         fontString._ccDurationTextDuration = durationObj
-        IncrementDurationTextCounter("durationUpdates")
         changed = true
     end
 
@@ -484,7 +554,6 @@ local function BindDurationText(fontString, durationObj, source, surface)
         binding:UpdateFontString()
     end
     fontString._ccDurationTextBindingActive = true
-    IncrementDurationTextCounter("bindSuccesses", surface)
     return true
 end
 CooldownCompanion.BindDurationText = BindDurationText
@@ -513,16 +582,22 @@ local function ApplyDurationFormatToCooldown(cooldown, source)
 end
 CooldownCompanion.ApplyDurationFormatToCooldown = ApplyDurationFormatToCooldown
 
+-- Advertised config default for aura duration text: the color pickers offer
+-- this same literal, and saved styles carry no key until the user changes it,
+-- so every aura-text styling site must fall back to this instead of white.
+CooldownCompanion.DEFAULT_AURA_TEXT_COLOR = {0, 0.925, 1, 1}
+
 -- Apply font, size, outline, and text color to a FontString from a style table.
 -- Keys are derived from prefix: e.g. prefix="charge" reads chargeFont, chargeFontSize,
--- chargeFontOutline, chargeFontColor. defaultSize overrides the 12pt fallback.
-local function ApplyFontStyle(region, source, prefix, defaultSize)
+-- chargeFontOutline, chargeFontColor. defaultSize overrides the 12pt fallback and
+-- defaultColor the white fallback.
+local function ApplyFontStyle(region, source, prefix, defaultSize, defaultColor)
     local font = CooldownCompanion:FetchFont(source[prefix .. "Font"] or "Friz Quadrata TT")
     local size = source[prefix .. "FontSize"] or defaultSize or 12
     local outline = ST.GetEffectiveFontOutline(source[prefix .. "FontOutline"] or "OUTLINE")
     region:SetFont(font, size, outline)
     ST.ApplyFontShadowForOutline(region, outline)
-    local color = source[prefix .. "FontColor"] or {1, 1, 1, 1}
+    local color = source[prefix .. "FontColor"] or defaultColor or {1, 1, 1, 1}
     region:SetTextColor(color[1], color[2], color[3], color[4])
 end
 CooldownCompanion.ApplyFontStyle = ApplyFontStyle
@@ -1027,31 +1102,80 @@ local function ResolveEffectiveItem(buttonData, requestLoad)
 end
 CooldownCompanion.ResolveEffectiveItem = ResolveEffectiveItem
 
--- Apply configurable strata (frame level) ordering to button sub-elements.
--- order: array of 6 keys or nil for default.
--- Index 1 = lowest layer (baseLevel+1), index 6 = highest (baseLevel+6).
--- Loss of Control is always baseLevel+7 (above all configurable elements).
-local function ApplyStrataOrder(button, order)
-    if not order or #order ~= #ST.DEFAULT_STRATA_ORDER then
+local STRATA_VALID_KEYS = {}
+for _, key in ipairs(ST.DEFAULT_STRATA_ORDER) do
+    STRATA_VALID_KEYS[key] = true
+end
+
+-- Will the renderer actually honor this saved order? Length alone is not
+-- enough: an old import can carry the right count with a retired key in it (the
+-- aura display replaced "auraGlow"), which would leave a layer unassigned.
+--
+-- Exported, because the profile normalizer and the preset-apply path have to
+-- test the SAME definition of valid. When they each kept their own length
+-- check, a saved order could be rejected here while both of those still
+-- believed it was fine, leaving the Custom Icon Strata checkbox reading ON with
+-- none of its values in effect.
+local function IsUsableStrataOrder(order)
+    if type(order) ~= "table" or #order ~= #ST.DEFAULT_STRATA_ORDER then
+        return false
+    end
+    local seen = {}
+    for _, key in ipairs(order) do
+        if not STRATA_VALID_KEYS[key] or seen[key] then
+            return false
+        end
+        seen[key] = true
+    end
+    return true
+end
+
+-- Resolve the frame level of every configurable icon layer.
+--
+-- Slots are NOT one level each: ST.STRATA_SLOT_SPANS gives the aura display a
+-- reserved band because its subtree occupies five levels (Core/Init.lua has
+-- the map). Levels therefore accumulate spans instead of using the slot index,
+-- which is what lets a slot sit genuinely ABOVE the whole aura display.
+--
+-- Returns (levels, top): a key -> level map, and the highest occupied level so
+-- the pinned elements above the stack derive from it instead of repeating a
+-- magic offset. THE single source of truth for icon button levels — callers
+-- outside this file (EnsureAuraLayer) ask here rather than computing their own.
+local function ResolveStrataLevels(button, order)
+    if not IsUsableStrataOrder(order) then
         order = ST.DEFAULT_STRATA_ORDER
     end
-    local baseLevel = button:GetFrameLevel()
+    local levels = {}
+    local cursor = button:GetFrameLevel()
+    for _, key in ipairs(order) do
+        cursor = cursor + 1
+        levels[key] = cursor
+        cursor = cursor + (ST.STRATA_SLOT_SPANS[key] or 1) - 1
+    end
+    return levels, cursor
+end
+
+-- Apply the resolved levels to a button's sub-elements.
+local function ApplyStrataOrder(button, order)
+    local levels, top = ResolveStrataLevels(button, order)
 
     -- Map element keys to their frames
     local frameMap = {
+        iconFill = {button.iconFill},
         cooldown = {button.cooldown},
         chargeText = {button.overlayFrame},
+        auraDisplay = {button.auraLayer},
         procGlow = {
             button.procGlow and button.procGlow.solidFrame,
             button.procGlow and button.procGlow.procFrame,
         },
-        auraGlow = {
-            button.auraGlow and button.auraGlow.solidFrame,
-            button.auraGlow and button.auraGlow.procFrame,
-        },
         readyGlow = {
             button.readyGlow and button.readyGlow.solidFrame,
             button.readyGlow and button.readyGlow.procFrame,
+        },
+        keyPressHighlight = {
+            button.keyPressHighlight and button.keyPressHighlight.solidFrame,
+            button.keyPressHighlight and button.keyPressHighlight.procFrame,
         },
         assistedHighlight = {
             button.assistedHighlight and button.assistedHighlight.solidFrame,
@@ -1060,20 +1184,46 @@ local function ApplyStrataOrder(button, order)
         },
     }
 
-    for i, key in ipairs(order) do
-        local frames = frameMap[key]
-        if frames then
+    for key, frames in pairs(frameMap) do
+        local level = levels[key]
+        if level then
             for _, frame in ipairs(frames) do
                 if frame then
-                    frame:SetFrameLevel(baseLevel + i)
+                    frame:SetFrameLevel(level)
                 end
             end
         end
     end
 
-    -- LoC always on top
+    -- Preview stand-ins ride INSIDE the aura display's band, at the offsets
+    -- their live counterparts occupy, so a config preview draws where the real
+    -- thing will. button.auraGlow is preview-only on 12.1: the live aura and
+    -- pandemic glows are the kit's, inside the aura display.
+    local auraLevel = levels.auraDisplay
+    if auraLevel then
+        if button.auraGlow then
+            if button.auraGlow.solidFrame then
+                button.auraGlow.solidFrame:SetFrameLevel(auraLevel + 3)
+            end
+            if button.auraGlow.procFrame then
+                button.auraGlow.procFrame:SetFrameLevel(auraLevel + 3)
+            end
+        end
+        if button._auraSwipePreviewCooldown then
+            button._auraSwipePreviewCooldown:SetFrameLevel(auraLevel + 2)
+        end
+    end
+
+    -- Pinned above the whole configurable stack, derived from its top rather
+    -- than hardcoded. Loss of Control is a "you cannot act" alert and must
+    -- never be buried, not even by an aura display. The pinned text host rides
+    -- above even that: it carries keybind text (owner ruling: never underneath
+    -- anything) and the countdown text when Separate Text Positions lifts it.
     if button.locCooldown then
-        button.locCooldown:SetFrameLevel(baseLevel + #ST.DEFAULT_STRATA_ORDER + 1)
+        button.locCooldown:SetFrameLevel(top + 1)
+    end
+    if button.pinnedTextFrame then
+        button.pinnedTextFrame:SetFrameLevel(top + 2)
     end
 end
 
@@ -1088,9 +1238,15 @@ end
 
 -- Apply aspect-ratio-aware texture cropping to an icon.
 -- Crops the narrower dimension so the icon image stays undistorted.
-local function ApplyIconTexCoord(icon, width, height)
+-- zoom (0-100, optional) shrinks the crop window toward the center on top of
+-- the standard 0.08-0.92 border trim: the frame keeps its size, the artwork
+-- enlarges. Clamped below 100 so the window can never collapse to a point.
+local function ApplyIconTexCoord(icon, width, height, zoom)
+    zoom = tonumber(zoom) or 0
+    if zoom < 0 then zoom = 0 elseif zoom > 99 then zoom = 99 end
+    local halfRange = 0.42 * (1 - zoom / 100)
+    local texMin, texMax = 0.5 - halfRange, 0.5 + halfRange
     if width ~= height then
-        local texMin, texMax = 0.08, 0.92
         local texRange = texMax - texMin
         local aspectRatio = width / height
         if aspectRatio > 1.0 then
@@ -1101,13 +1257,9 @@ local function ApplyIconTexCoord(icon, width, height)
             icon:SetTexCoord(texMin + crop, texMax - crop, texMin, texMax)
         end
     else
-        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        icon:SetTexCoord(texMin, texMax, texMin, texMax)
     end
 end
-
--- Shared click-through helpers from Utils.lua
-local SetFrameClickThrough = ST.SetFrameClickThrough
-local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 
 -- Fit a Blizzard highlight template frame to a button.
 -- The flipbook texture must overhang the button edges to create the border effect.
@@ -1155,12 +1307,13 @@ end
 
 -- Exports
 ST._DEFAULT_BAR_AURA_COLOR = DEFAULT_BAR_AURA_COLOR
-ST._DEFAULT_BAR_PANDEMIC_COLOR = DEFAULT_BAR_PANDEMIC_COLOR
 ST._DEFAULT_BAR_CHARGE_COLOR = DEFAULT_BAR_CHARGE_COLOR
 ST._SetIconAreaPoints = SetIconAreaPoints
 ST._SetBarAreaPoints = SetBarAreaPoints
 ST._AnchorBarCountText = AnchorBarCountText
 ST._ApplyStrataOrder = ApplyStrataOrder
+ST._ResolveStrataLevels = ResolveStrataLevels
+ST._IsUsableStrataOrder = IsUsableStrataOrder
 ST._ApplyEdgePositions = ApplyEdgePositions
 ST._ApplyBorderEdgePositions = ApplyBorderEdgePositions
 ST._ApplyIconTexCoord = ApplyIconTexCoord

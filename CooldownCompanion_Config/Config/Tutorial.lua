@@ -59,27 +59,27 @@ local STEP_DATA = {
         placement = "center",
     },
     groups_column_intro = {
-        title = "Groups",
-        text = "Groups are containers for panels. By default, groups are shared by characters of the same class.",
+        title = "Navigator Groups",
+        text = "The Navigator lists your groups and their panels. Groups organize related panels and are shared by characters of the same class by default.",
         anchor = "groups_column_area",
         placement = "right",
     },
     create_group = {
         title = "Create a Group",
-        text = "Click New Group to create a group.",
+        text = "Click New Group.",
         anchor = "new_group_button",
         placement = "above",
     },
     panels_column_intro = {
-        title = "Panels",
-        text = "Panels are containers for the things you want to track, like spells, auras, and items. The type of panel you choose determines how tracked entries are displayed.\n\nRead the descriptions of each type of panel in the column to become familiar with available panel types.",
+        title = "Panels in the Navigator",
+        text = "Panels live inside groups and contain the things you want to track, like spells and items. A panel's type determines how those entries are displayed.",
         anchor = "panels_column_area",
         placement = "right",
     },
     create_panel = {
         title = "Create an Icon Panel",
-        text = "Click Icon Panel to create a new icon panel.",
-        anchor = "icon_panel_button",
+        text = "Click Icon Panel to create your first panel.",
+        anchor = "empty_state_icon_button",
         placement = "above",
     },
     add_one_spell = {
@@ -90,20 +90,20 @@ local STEP_DATA = {
     },
     entry_settings_intro = {
         title = "Entry Settings",
-        text = "This column is dedicated to editing and styling single, specific entries. Aura tracking settings, per-button visibility rules, sound alerts, and more is configured in this column.",
+        text = "Your panel is previewed at the top of this column. Click a button in the preview to select it - its settings appear below: cooldown settings, per-button visibility rules, sound alerts, and more.",
         anchor = "col3_area",
         placement = "right",
     },
     panel_settings_intro = {
         title = "Panel Settings",
-        text = "This column is dedicated to editing and styling all entries in a panel. Panel layout, text elements, and indicators are all found here.\n\nImportant:\n\n|A:Crosshair_VehichleCursor_32:14:14|a: Whenever you see the |A:Crosshair_VehichleCursor_32:14:14|a next to a setting, that means you can override a panel-wide setting for a specific entry.\n\n|A:QuestLog-icon-setting:14:14|a: Whenever you see the |A:QuestLog-icon-setting:14:14|a next to a setting, that opens advanced settings for it.",
-        anchor = "col4_area",
-        placement = "left",
+        text = "Click the selected button again to deselect it, and this same column shows the panel's settings - layout, text elements, and indicators, applying to every entry in the panel.\n\nImportant:\n\n|A:Crosshair_VehichleCursor_32:14:14|a: Whenever you see the |A:Crosshair_VehichleCursor_32:14:14|a next to a setting, that means you can override a panel-wide setting for a specific entry.\n\n|A:QuestLog-icon-setting:14:14|a: Whenever you see the |A:QuestLog-icon-setting:14:14|a next to a setting, that opens advanced settings for it.",
+        anchor = "col3_area",
+        placement = "right",
     },
     view_modes_intro = {
-        title = "Bars And Frames",
-        text = "This button switches between the main Buttons view and optional extras like resource bars, cast bar anchoring and styling, and unit frame anchoring.",
-        anchor = "mode_toggle_button",
+        title = "Resources, Cast Bar & Unit Frames",
+        text = "This button opens one workspace for your resource bars, Custom Bars, the cast bar, and your unit frames.\n\nClick a bar in the preview, or one of the entries listed below it, to configure it.",
+        anchor = "resources_button",
         placement = "above",
     },
     finish = {
@@ -438,8 +438,6 @@ local function NormalizeTutorialContext()
 
     if ST._SetConfigPrimaryMode then
         ST._SetConfigPrimaryMode("buttons", { skipRefresh = true })
-    else
-        CS.resourceBarPanelActive = false
     end
 
     CooldownCompanion:RefreshConfigPanel()
@@ -658,6 +656,12 @@ local function CancelFirstIconPanelTutorial(reason)
         CS.tutorialFrame:Hide()
     end
     HideHighlight()
+
+    -- The empty picker locks its non-icon cards while the tutorial waits for
+    -- an Icon Panel; if it is the surface on screen, a rebuild hands them back.
+    if ST._GetEmptyPickerCardFrame and ST._GetEmptyPickerCardFrame("icons") then
+        CooldownCompanion:RefreshConfigPanel()
+    end
 end
 
 local function RebuildTutorialAnchors()
@@ -671,48 +675,56 @@ local function RebuildTutorialAnchors()
     if CS.gearButton and CS.gearButton:IsShown() then
         anchors.gear_button = CS.gearButton
     end
-    if CS.modeToggleButton and CS.modeToggleButton:IsShown() then
-        anchors.mode_toggle_button = CS.modeToggleButton
-    end
 
     if CS.configFrame and CS.configFrame.col1 and CS.configFrame.col1.frame then
         anchors.groups_column_area = CS.configFrame.col1.frame
     end
-    if CS.configFrame and CS.configFrame.col2 and CS.configFrame.col2.frame then
-        anchors.panels_column_area = CS.configFrame.col2.frame
+    if CS.configFrame and CS.configFrame.col1 and CS.configFrame.col1.frame then
+        anchors.panels_column_area = CS.configFrame.col1.frame
     end
 
-    local col1Widgets = CS.col1BarWidgets or {}
-    local firstCol1Button = col1Widgets[1]
-    if firstCol1Button and firstCol1Button.frame then
-        anchors.new_group_button = firstCol1Button.frame
+    -- Named handle, not a bar position: Browse Other Classes swaps the New
+    -- Group button out for its own toggle, and only the named field goes nil
+    -- there.
+    local createButton = CS.col1CreateButton
+    if createButton and createButton.frame then
+        anchors.new_group_button = createButton.frame
     end
-
-    local col2Widgets = CS.col2BarWidgets or {}
-    local firstCol2Button = col2Widgets[1]
-    if firstCol2Button and firstCol2Button.frame and CS.col2ButtonBar and CS.col2ButtonBar:IsShown() then
-        anchors.icon_panel_button = firstCol2Button.frame
+    -- The empty state's Icon Panel card exists only while the Group overview is
+    -- on screen for an empty Group that can take a new Panel. Anywhere else the
+    -- anchor stays unset, which centers the tutorial box with no highlight
+    -- instead of pointing at the wrong control.
+    local emptyStateIconCard = ST._GetEmptyPickerCardFrame
+        and ST._GetEmptyPickerCardFrame("icons")
+    if emptyStateIconCard then
+        anchors.empty_state_icon_button = emptyStateIconCard
+    end
+    local resourcesButton = CS.col1ResourcesButton
+    local resourcesFrame = resourcesButton and (resourcesButton.frame or resourcesButton)
+    if resourcesFrame then
+        anchors.resources_button = resourcesFrame
     end
 
     local selectedPanelId = CS.selectedGroup
-    local selectedPanelMeta
-    for _, panelMeta in ipairs(CS.lastCol2PanelMetas or {}) do
-        if panelMeta.panelId == selectedPanelId then
-            selectedPanelMeta = panelMeta
+    local selectedPanelRow
+    for _, row in ipairs(CS.lastCol1RenderedRows or {}) do
+        if row.rowType == "panel" and row.id == selectedPanelId then
+            selectedPanelRow = row
             break
         end
     end
 
-    if selectedPanelMeta then
-        anchors.selected_panel_area = selectedPanelMeta.panelFrame or selectedPanelMeta.headerFrame
-        anchors.selected_panel_add_input = selectedPanelMeta.addInputFrame
+    if selectedPanelRow then
+        anchors.selected_panel_area = selectedPanelRow.widget and selectedPanelRow.widget.frame
+        local col3 = CS.configFrame and CS.configFrame.col3
+        local addBox = col3 and col3.buttonsAddBox
+        if addBox and addBox.frame and addBox.frame:IsShown() then
+            anchors.selected_panel_add_input = addBox.frame
+        end
     end
 
     if CS.configFrame and CS.configFrame.col3 and CS.configFrame.col3.frame then
         anchors.col3_area = CS.configFrame.col3.frame
-    end
-    if CS.configFrame and CS.configFrame.col4 and CS.configFrame.col4.frame then
-        anchors.col4_area = CS.configFrame.col4.frame
     end
 end
 
@@ -790,6 +802,17 @@ local function NotifyTutorialAction(action, payload)
     end
 end
 
+-- The empty picker's non-icon create cards stand down while this is true, so
+-- the guided first-panel path cannot dead-end: creating any other panel type
+-- removes the picker (the create_panel step's anchor) without advancing the
+-- tutorial.
+local function IsTutorialAwaitingIconPanel()
+    local runtime = GetRuntime()
+    return (runtime and runtime.active
+        and (runtime.step == "panels_column_intro" or runtime.step == "create_panel")) == true
+end
+
+ST._IsTutorialAwaitingIconPanel = IsTutorialAwaitingIconPanel
 ST._MaybeAutoStartFirstIconPanelTutorial = MaybeAutoStartFirstIconPanelTutorial
 ST._StartFirstIconPanelTutorial = StartFirstIconPanelTutorial
 ST._CancelFirstIconPanelTutorial = CancelFirstIconPanelTutorial

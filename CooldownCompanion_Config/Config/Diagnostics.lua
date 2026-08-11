@@ -57,6 +57,7 @@ local function SummarizeButton(button)
         name = button.name,
         auraTracking = button.auraTracking == true,
         auraUnit = button.auraUnit,
+        auraTrackGroup = button.auraTrackGroup == true,
         hideWhenInactive = button.hideWhenInactive == true,
         loadConditionCount = CountTableEntries(button.loadConditions),
         overrideCount = CountTableEntries(button.styleOverrides),
@@ -89,7 +90,6 @@ local function SummarizeContainer(containerId, container)
         name = container.name,
         enabled = container.enabled ~= false,
         locked = container.locked ~= false,
-        folderId = container.folderId,
         specCount = CountTableEntries(container.specs),
         heroTalentCount = CountTableEntries(container.heroTalents),
         loadConditionCount = CountTableEntries(container.loadConditions),
@@ -174,7 +174,6 @@ local function BuildConfigDiagnosticSummary(profile, groupFrameStates, container
     end
 
     return {
-        selectedFolder = CS and CS.selectedFolder or nil,
         selectedContainer = selectedContainerId,
         selectedGroup = selectedPanelId,
         selectedButton = selectedButtonIndex,
@@ -182,10 +181,11 @@ local function BuildConfigDiagnosticSummary(profile, groupFrameStates, container
         selectedContainerTab = CS and CS.selectedContainerTab or nil,
         buttonSettingsTab = CS and CS.buttonSettingsTab or nil,
         panelSettingsTab = CS and CS.panelSettingsTab or nil,
-        resourceBarPanelActive = CS and CS.resourceBarPanelActive == true,
-        barPanelTab = CS and CS.barPanelTab or nil,
-        resourceStylingTab = CS and CS.resourceStylingTab or nil,
-        castBarStylingTab = CS and CS.castBarStylingTab or nil,
+        unifiedRowScope = CS and CS.unifiedRowScope or nil,
+        barsEntrySelected = CS and CS.barsEntrySelected == true,
+        castFramesSelectedItem = CS and CS.castFramesSelectedItem or nil,
+        resourcesSettingsTab = CS and CS.resourcesSettingsTab or nil,
+        castBarHomeTab = CS and CS.castBarHomeTab or nil,
         customBarSettingsTab = CS and CS.customBarSettingsTab or nil,
         selectedCustomBarId = CS and CS.selectedCustomBarId or nil,
         selectedButtons = CS and SortedSelectionString(CS.selectedButtons) or "",
@@ -331,7 +331,6 @@ local function BuildDiagnosticSnapshot()
         currentSpecId = CooldownCompanion._currentSpecId,
         currentHeroSpecId = CooldownCompanion._currentHeroSpecId,
         isResting = CooldownCompanion._isResting,
-        cdmHidden = db.profile.cdmHidden,
         assistedSpellID = CooldownCompanion.assistedSpellID,
         viewerAuraSpells = viewerAuraSpells,
         procOverlaySpells = procOverlaySpells,
@@ -364,9 +363,6 @@ local function BuildDiagnosticSnapshot()
     end
     for _, container in pairs(db.profile.groupContainers) do
         cacheSpecsFromTable(container.specs)
-    end
-    for _, folder in pairs(db.profile.folders) do
-        cacheSpecsFromTable(folder.specs)
     end
     local function cacheSpecsFromResourceStores(resourceStores)
         if type(resourceStores) ~= "table" then
@@ -495,8 +491,7 @@ local function AddVisualStateDiagnosticsLines(add, visualStateDiagnostics)
                     if row.visuals.auraGlowActive
                         or row.visuals.auraGlowPandemicIntent
                         or row.visuals.auraGlowPreview
-                        or row.visuals.auraGlowCombatSuppressed
-                        or auraGlowReason == "target-missing" then
+                        or row.visuals.auraGlowCombatSuppressed then
                         parts[#parts + 1] = "auraGlow=" .. tostring(row.visuals.auraGlowActive)
                         if row.visuals.auraGlowPandemicIntent or row.visuals.auraGlowPandemicApplied then
                             parts[#parts + 1] = "pandemicGlow=true"
@@ -716,8 +711,7 @@ local function AddAgentDebugSignals(add, diag)
     add("Profile Shape: panelModes=" .. FormatCountMap(shape.panelModes)
         .. " | buttonTypes=" .. FormatCountMap(shape.buttonTypes))
 
-    if not c.selectedFolder
-        and not c.selectedContainer
+    if not c.selectedContainer
         and not c.selectedGroup
         and not c.selectedButton
         and not c.selectedCustomBarId then
@@ -761,8 +755,8 @@ local function FormatDiagnosticBugReportAsText(diag)
         tostring(m.charName or "?"), tostring(m.realmName or "?"),
         tostring(m.specName or "?"), tostring(m.className or "?"),
         tostring(m.classID or "?"), tostring(m.specID or "?")))
-    add(("Instance: %s | Resting: %s | CDM Hidden: %s"):format(
-        tostring(m.instanceType or "?"), tostring(r.isResting), tostring(r.cdmHidden)))
+    add(("Instance: %s | Resting: %s"):format(
+        tostring(m.instanceType or "?"), tostring(r.isResting)))
     add(("Timestamp: %s"):format(tostring(m.timestamp or "?")))
     add(("Containers: %s | Panels: %s | Total Buttons: %s"):format(
         tostring(m.containerCount or "?"), tostring(m.groupCount or "?"), tostring(m.totalButtons or "?")))
@@ -772,18 +766,19 @@ local function FormatDiagnosticBugReportAsText(diag)
 
     add("")
     add("--- Current Config Context ---")
-    add(("Selection: folder=%s group=%s panel=%s button=%s customBar=%s"):format(
-        tostring(c.selectedFolder or "nil"),
+    add(("Selection: group=%s panel=%s button=%s customBar=%s"):format(
         tostring(c.selectedContainer or "nil"),
         tostring(c.selectedGroup or "nil"),
         tostring(c.selectedButton or "nil"),
         tostring(c.selectedCustomBarId or "nil")))
-    add(("Tabs: selected=%s container=%s panel=%s button=%s resource=%s customBar=%s"):format(
+    add(("Tabs: scope=%s selected=%s container=%s panel=%s button=%s resources=%s castBar=%s customBar=%s"):format(
+        tostring(c.unifiedRowScope or "nil"),
         tostring(c.selectedTab or "nil"),
         tostring(c.selectedContainerTab or "nil"),
         tostring(c.panelSettingsTab or "nil"),
         tostring(c.buttonSettingsTab or "nil"),
-        tostring(c.resourceStylingTab or "nil"),
+        tostring(c.resourcesSettingsTab or "nil"),
+        tostring(c.castBarHomeTab or "nil"),
         tostring(c.customBarSettingsTab or "nil")))
     if c.selectedButtons ~= "" or c.selectedPanels ~= "" or c.selectedGroups ~= "" or c.selectedCustomBars ~= "" then
         add(("Multi-select: buttons=%s panels=%s groups=%s customBars=%s"):format(
@@ -819,12 +814,13 @@ local function FormatDiagnosticBugReportAsText(diag)
     end
     if c.selectedButtonSummary then
         local button = c.selectedButtonSummary
-        add(("Selected Entry: %s:%s %q auraTracking=%s auraUnit=%s hideWhenInactive=%s loadConditions=%s overrides=%s"):format(
+        add(("Selected Entry: %s:%s %q auraTracking=%s auraUnit=%s auraTrackGroup=%s hideWhenInactive=%s loadConditions=%s overrides=%s"):format(
             tostring(button.type or "?"),
             tostring(button.id or "?"),
             tostring(button.name or "?"),
             tostring(button.auraTracking),
             tostring(button.auraUnit or "nil"),
+            tostring(button.auraTrackGroup),
             tostring(button.hideWhenInactive),
             tostring(button.loadConditionCount or 0),
             tostring(button.overrideCount or 0)))
@@ -870,6 +866,21 @@ local function FormatDiagnosticBugReportAsText(diag)
                 parts[#parts + 1] = "hideWhenInactive=true"
             end
             add("  " .. table.concat(parts, " "))
+        end
+    end
+    if r.resourceBarRuntime and r.resourceBarRuntime.auraBlock then
+        add("Aura Blocks:")
+        -- Fixed side order so two snapshots stay diffable.
+        for _, side in ipairs({ "above", "below", "left", "right" }) do
+            local block = r.resourceBarRuntime.auraBlock[side]
+            if block then
+                add(("  [%s] offset=%s unlockAssist=%s units=%s targetFirst=%s bars=%s"):format(
+                    tostring(side), tostring(block.offset or 0),
+                    tostring(block.unlockAssist or false),
+                    tostring(block.units or "none"),
+                    tostring(block.targetFirst or false),
+                    table.concat(block.customBarIds or {}, ", ")))
+            end
         end
     end
 

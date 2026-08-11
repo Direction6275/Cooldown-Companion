@@ -22,7 +22,6 @@ local tonumber = tonumber
 local type = type
 local issecretvalue = issecretvalue
 
-local DEFAULT_TEXTURE_SIZE = AT.DEFAULT_TEXTURE_SIZE
 local UI_PARENT_NAME = AT.UI_PARENT_NAME
 local CopyColor = AT.CopyColor
 local Clamp = AT.Clamp
@@ -37,25 +36,31 @@ local DoesTriggerPanelMatch = AT.DoesTriggerPanelMatch
 
 local NUDGE_BTN_SIZE = 12
 local NUDGE_GAP = 2
+local PANEL_HIGHLIGHT_R = 0.6
+local PANEL_HIGHLIGHT_G = 0.8
+local PANEL_HIGHLIGHT_B = 1
+local PANEL_HIGHLIGHT_HOVER_ALPHA = 0.10
+local PANEL_HIGHLIGHT_SELECTED_ALPHA = 0.18
+local PANEL_HIGHLIGHT_HAIRLINE_ALPHA = 0.35
 
 local function CreateAuraTextureOutline(host)
     local fill = host:CreateTexture(nil, "OVERLAY")
-    fill:SetPoint("TOPLEFT", host, "TOPLEFT", -4, 4)
-    fill:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 4, -4)
-    fill:SetColorTexture(0.05, 0.35, 0.5, 0.12)
+    fill:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+    fill:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
+    fill:SetColorTexture(PANEL_HIGHLIGHT_R, PANEL_HIGHLIGHT_G, PANEL_HIGHLIGHT_B, 0)
     fill:Hide()
 
     local edges = {}
     local edgeSpecs = {
-        { point1 = "TOPLEFT", point2 = "TOPRIGHT", x1 = -4, y1 = 4, x2 = 4, y2 = 4, width = 1, height = nil },
-        { point1 = "BOTTOMLEFT", point2 = "BOTTOMRIGHT", x1 = -4, y1 = -4, x2 = 4, y2 = -4, width = 1, height = nil },
-        { point1 = "TOPLEFT", point2 = "BOTTOMLEFT", x1 = -4, y1 = 4, x2 = -4, y2 = -4, width = nil, height = 1 },
-        { point1 = "TOPRIGHT", point2 = "BOTTOMRIGHT", x1 = 4, y1 = 4, x2 = 4, y2 = -4, width = nil, height = 1 },
+        { point1 = "TOPLEFT", point2 = "TOPRIGHT", x1 = 0, y1 = 0, x2 = 0, y2 = 0, width = 1, height = nil },
+        { point1 = "BOTTOMLEFT", point2 = "BOTTOMRIGHT", x1 = 0, y1 = 0, x2 = 0, y2 = 0, width = 1, height = nil },
+        { point1 = "TOPLEFT", point2 = "BOTTOMLEFT", x1 = 0, y1 = 0, x2 = 0, y2 = 0, width = nil, height = 1 },
+        { point1 = "TOPRIGHT", point2 = "BOTTOMRIGHT", x1 = 0, y1 = 0, x2 = 0, y2 = 0, width = nil, height = 1 },
     }
 
     for index, spec in ipairs(edgeSpecs) do
         local edge = host:CreateTexture(nil, "OVERLAY")
-        edge:SetColorTexture(0.2, 0.8, 1, 0.95)
+        edge:SetColorTexture(1, 1, 1, PANEL_HIGHLIGHT_HAIRLINE_ALPHA)
         edge:SetPoint(spec.point1, host, spec.point1, spec.x1, spec.y1)
         edge:SetPoint(spec.point2, host, spec.point2, spec.x2, spec.y2)
         if spec.width then
@@ -72,14 +77,26 @@ local function CreateAuraTextureOutline(host)
     host.auraTextureOutlineEdges = edges
 end
 
-local function SetAuraTextureOutlineShown(host, shown)
+local function SetAuraTextureOutlineShown(host, isSelected, isHovered)
     if not host.auraTextureOutlineFill then
         CreateAuraTextureOutline(host)
     end
 
-    host.auraTextureOutlineFill:SetShown(shown)
+    local fillAlpha = 0
+    if isSelected then
+        fillAlpha = PANEL_HIGHLIGHT_SELECTED_ALPHA
+    elseif isHovered then
+        fillAlpha = PANEL_HIGHLIGHT_HOVER_ALPHA
+    end
+    host.auraTextureOutlineFill:SetColorTexture(
+        PANEL_HIGHLIGHT_R,
+        PANEL_HIGHLIGHT_G,
+        PANEL_HIGHLIGHT_B,
+        fillAlpha
+    )
+    host.auraTextureOutlineFill:SetShown(fillAlpha > 0)
     for _, edge in ipairs(host.auraTextureOutlineEdges or {}) do
-        edge:SetShown(shown)
+        edge:SetShown(isSelected == true)
     end
 end
 
@@ -87,6 +104,154 @@ local function UpdateTextureHostCoordLabel(host, x, y)
     if host and host.coordLabel and host.coordLabel.text then
         host.coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x or 0, y or 0))
     end
+end
+
+local function RoundCoordinate(value)
+    return math_floor(value * 10 + 0.5) / 10
+end
+
+local function CancelCoordinateEdit(coordLabel)
+    if not (coordLabel and coordLabel.xEdit and coordLabel.yEdit) then
+        return
+    end
+
+    coordLabel._editGeneration = (coordLabel._editGeneration or 0) + 1
+    coordLabel._editing = nil
+    coordLabel.xEdit:ClearFocus()
+    coordLabel.yEdit:ClearFocus()
+    coordLabel.xLabel:Hide()
+    coordLabel.yLabel:Hide()
+    coordLabel.xEdit:Hide()
+    coordLabel.yEdit:Hide()
+    coordLabel.text:Show()
+end
+
+local function CreateEditableCoordLabel(coordLabel, getCoordinates, applyCoordinates, isDragging)
+    local xLabel = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    xLabel:SetText("x:")
+    xLabel:SetTextColor(1, 1, 1, 0.8)
+    xLabel:SetPoint("LEFT", coordLabel, "LEFT", 2, 0)
+    xLabel:Hide()
+
+    local xEdit = CreateFrame("EditBox", nil, coordLabel)
+    xEdit:SetAutoFocus(false)
+    xEdit:SetFontObject(GameFontNormalSmall)
+    xEdit:SetTextColor(1, 1, 1, 1)
+    xEdit:SetJustifyH("CENTER")
+    xEdit:SetPoint("LEFT", xLabel, "RIGHT", 1, 0)
+    xEdit:SetPoint("RIGHT", coordLabel, "CENTER", -1, 0)
+    xEdit:SetHeight(13)
+    xEdit:Hide()
+
+    local yLabel = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    yLabel:SetText("y:")
+    yLabel:SetTextColor(1, 1, 1, 0.8)
+    yLabel:SetPoint("LEFT", coordLabel, "CENTER", 1, 0)
+    yLabel:Hide()
+
+    local yEdit = CreateFrame("EditBox", nil, coordLabel)
+    yEdit:SetAutoFocus(false)
+    yEdit:SetFontObject(GameFontNormalSmall)
+    yEdit:SetTextColor(1, 1, 1, 1)
+    yEdit:SetJustifyH("CENTER")
+    yEdit:SetPoint("LEFT", yLabel, "RIGHT", 1, 0)
+    yEdit:SetPoint("RIGHT", coordLabel, "RIGHT", -2, 0)
+    yEdit:SetHeight(13)
+    yEdit:Hide()
+
+    coordLabel.xLabel = xLabel
+    coordLabel.yLabel = yLabel
+    coordLabel.xEdit = xEdit
+    coordLabel.yEdit = yEdit
+    coordLabel:EnableMouse(true)
+
+    local function CommitEdit()
+        if not coordLabel._editing then
+            return
+        end
+
+        local newX = tonumber(xEdit:GetText())
+        local newY = tonumber(yEdit:GetText())
+        if newX == nil or newY == nil then
+            CancelCoordinateEdit(coordLabel)
+            return
+        end
+
+        newX = RoundCoordinate(newX)
+        newY = RoundCoordinate(newY)
+        local oldX, oldY = getCoordinates()
+        oldX = RoundCoordinate(tonumber(oldX) or 0)
+        oldY = RoundCoordinate(tonumber(oldY) or 0)
+        CancelCoordinateEdit(coordLabel)
+        if newX ~= oldX or newY ~= oldY then
+            applyCoordinates(newX, newY)
+        end
+    end
+
+    local function BeginEdit()
+        if coordLabel._editing or (isDragging and isDragging()) then
+            return
+        end
+
+        local x, y = getCoordinates()
+        coordLabel._editGeneration = (coordLabel._editGeneration or 0) + 1
+        coordLabel._editing = true
+        coordLabel.text:Hide()
+        xEdit:SetText(("%.1f"):format(tonumber(x) or 0))
+        yEdit:SetText(("%.1f"):format(tonumber(y) or 0))
+        xLabel:Show()
+        yLabel:Show()
+        xEdit:Show()
+        yEdit:Show()
+        xEdit:SetFocus()
+        xEdit:HighlightText()
+    end
+
+    local function HandleFocusLost(self)
+        self:HighlightText(0, 0)
+        local generation = coordLabel._editGeneration
+        C_Timer.After(0, function()
+            if coordLabel._editing
+                and coordLabel._editGeneration == generation
+                and not xEdit:HasFocus()
+                and not yEdit:HasFocus() then
+                CommitEdit()
+            end
+        end)
+    end
+
+    xEdit:SetScript("OnEnterPressed", CommitEdit)
+    yEdit:SetScript("OnEnterPressed", CommitEdit)
+    xEdit:SetScript("OnEscapePressed", function() CancelCoordinateEdit(coordLabel) end)
+    yEdit:SetScript("OnEscapePressed", function() CancelCoordinateEdit(coordLabel) end)
+    xEdit:SetScript("OnTabPressed", function()
+        yEdit:SetFocus()
+        yEdit:HighlightText()
+    end)
+    yEdit:SetScript("OnTabPressed", function()
+        xEdit:SetFocus()
+        xEdit:HighlightText()
+    end)
+    xEdit:SetScript("OnEditFocusLost", HandleFocusLost)
+    yEdit:SetScript("OnEditFocusLost", HandleFocusLost)
+    xEdit:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+    yEdit:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+
+    coordLabel:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(0.3, 0.3, 0.3, 0.9)
+    end)
+    coordLabel:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    end)
+    coordLabel:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" then
+            BeginEdit()
+        end
+    end)
+    coordLabel:SetScript("OnHide", function(self)
+        self:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+        CancelCoordinateEdit(self)
+    end)
 end
 
 local function GetAnchorOffset(point, width, height)
@@ -434,9 +599,9 @@ local function SaveGroupedStandalonePreviewSettings(host, group, settings, group
     return true
 end
 
-local function SaveTextureHostPosition(host)
+local function GetTextureHostPositionContext(host)
     if not host then
-        return
+        return nil, nil, nil
     end
 
     local owner = host._ownerButton
@@ -450,9 +615,35 @@ local function SaveTextureHostPosition(host)
         requiresConfiguredTexture = true
     end
     if not settings then
-        return
+        return owner, group, nil
     end
     if requiresConfiguredTexture and not settings.sourceType then
+        return owner, group, nil
+    end
+    return owner, group, settings
+end
+
+local function ApplyTextureHostCoordinates(host, x, y)
+    local owner, group, settings = GetTextureHostPositionContext(host)
+    if not settings then
+        return
+    end
+
+    settings.x = x
+    settings.y = y
+    CooldownCompanion:UpdateAuraTextureVisual(owner)
+    UpdateTextureHostCoordLabel(host, x, y)
+    if group and group.parentContainerId and CooldownCompanion.RefreshContainerWrapper then
+        CooldownCompanion:RefreshContainerWrapper(group.parentContainerId)
+    end
+    if ST._configState and ST._configState.configFrame and ST._configState.configFrame.frame and ST._configState.configFrame.frame:IsShown() then
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+local function SaveTextureHostPosition(host)
+    local owner, group, settings = GetTextureHostPositionContext(host)
+    if not settings then
         return
     end
 
@@ -511,10 +702,15 @@ local function BeginTextureHostDrag(host)
         return false
     end
 
+    CancelCoordinateEdit(host.coordLabel)
     host._dragCancelPending = nil
     host._isDragging = true
     StartGroupedStandaloneWrapperTracking(host)
     host:StartMoving()
+    CooldownCompanion:BeginMoverChromeFade(host)
+    CooldownCompanion:BeginDragSnapSession(host, function(candidateFrame)
+        return candidateFrame == host
+    end)
     return true
 end
 
@@ -529,12 +725,21 @@ local function FinishTextureHostDrag(host)
     if not (InCombatLockdown() and host:IsProtected()) then
         host:StopMovingOrSizing()
     end
+    if not cancelSave then
+        CooldownCompanion:UpdateDragSnapSession(host)
+    end
+    local snapDX, snapDY = CooldownCompanion:EndDragSnapSession(host, not cancelSave)
+    if snapDX ~= nil or snapDY ~= nil then
+        host:AdjustPointsOffset(snapDX or 0, snapDY or 0)
+    end
     StopGroupedStandaloneWrapperTracking(host)
     if cancelSave then
+        CooldownCompanion:EndMoverChromeFade(host)
         return false
     end
 
     SaveTextureHostPosition(host)
+    CooldownCompanion:EndMoverChromeFade(host)
     return true
 end
 
@@ -569,6 +774,17 @@ local function EnsureAuraTextureNudger(host)
     nudger:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
     ST.CreatePixelBorders(nudger)
     nudger.buttons = {}
+    nudger:SetScript("OnEnter", function(self)
+        CooldownCompanion:BeginMoverChromeHoverFade(self)
+    end)
+    nudger:SetScript("OnLeave", function(self)
+        if not self:IsMouseOver() then
+            CooldownCompanion:EndMoverChromeFade(self)
+        end
+    end)
+    nudger:SetScript("OnHide", function(self)
+        CooldownCompanion:EndMoverChromeFade(self)
+    end)
 
     local directions = {
         { atlas = "common-dropdown-icon-back", rotation = -math_pi / 2, anchor = "BOTTOM", dx =  0, dy =  1, ox = 0,         oy = NUDGE_GAP },
@@ -630,14 +846,20 @@ local function EnsureAuraTextureNudger(host)
 
         btn:SetScript("OnEnter", function(self)
             self.arrow:SetVertexColor(1, 1, 1, 1)
+            CooldownCompanion:BeginMoverChromeHoverFade(nudger)
         end)
         btn:SetScript("OnLeave", function(self)
             self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
             SaveTextureHostPosition(host)
+            if not nudger:IsMouseOver() then
+                CooldownCompanion:EndMoverChromeFade(nudger)
+            end
         end)
 
         btn:SetScript("OnMouseDown", function(self)
+            CancelCoordinateEdit(host.coordLabel)
             DoNudge(dir.dx, dir.dy)
+            CooldownCompanion:VerifyMoverChromeHoverFade(nudger)
         end)
 
         btn:SetScript("OnMouseUp", function(self)
@@ -648,17 +870,43 @@ local function EnsureAuraTextureNudger(host)
     host.nudger = nudger
 end
 
-local function AddTexturePanelDragHelpTooltipLines(tooltip, isGroupedPreview)
+local function AddTexturePanelDragHelpTooltipLines(tooltip)
     tooltip:AddLine("Panel Controls")
     tooltip:AddLine("Drag anywhere on the panel to move it.", 1, 1, 1, false)
     tooltip:AddLine(" ")
     tooltip:AddLine("Use the arrow pad to nudge by 1 pixel.", 1, 1, 1, false)
     tooltip:AddLine(" ")
-    if not isGroupedPreview then
-        tooltip:AddLine("Middle-click the header to lock this panel.", 1, 1, 1, false)
-        tooltip:AddLine(" ")
-    end
-    tooltip:AddLine("Position coordinates are shown below while unlocked.", 1, 1, 1, false)
+    tooltip:AddLine("Click the coordinates below to type exact values.", 1, 1, 1, false)
+end
+
+local function CreateAuraTextureLockButton(parent, onLock)
+    local button = CreateFrame("Button", nil, parent)
+    button:SetSize(12, 12)
+    button:RegisterForClicks("LeftButtonUp")
+
+    local icon = button:CreateTexture(nil, "OVERLAY")
+    icon:SetSize(10, 10)
+    icon:SetPoint("CENTER")
+    icon:SetAtlas("questlog-questtypeicon-lock", false)
+    icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+    button.icon = icon
+
+    button:SetScript("OnEnter", function(self)
+        self.icon:SetVertexColor(1, 1, 1, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Lock")
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function(self)
+        self.icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+        GameTooltip:Hide()
+    end)
+    button:SetScript("OnClick", function(self)
+        self.icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+        onLock()
+    end)
+
+    return button
 end
 
 local function IsTextureHostGroupedPreviewActive(host)
@@ -671,6 +919,22 @@ local function IsTextureHostGroupedPreviewActive(host)
         or false
 end
 
+local function LockAuraTexturePanelFromMover(host)
+    local owner = host._ownerButton
+    local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
+    if not group or IsTextureHostGroupedPreviewActive(host) then
+        return
+    end
+
+    CooldownCompanion:SetPanelLocked(owner._groupId, true)
+    CooldownCompanion:CaptureArrangePanelRecord(owner._groupId)
+    CooldownCompanion:RefreshAllAuraTextureVisuals()
+    if ST._configState and ST._configState.configFrame and ST._configState.configFrame.frame and ST._configState.configFrame.frame:IsShown() then
+        CooldownCompanion:RefreshConfigPanel()
+    end
+    CooldownCompanion:Print((group.name or "Texture Panel") .. " locked.")
+end
+
 local function CreateAuraTextureDragHelpButton(host, dragHandle)
     if not (host and dragHandle and ST.CreateRuntimeInfoButton) then
         return nil
@@ -681,10 +945,10 @@ local function CreateAuraTextureDragHelpButton(host, dragHandle)
         dragHandle,
         "RIGHT",
         "RIGHT",
-        -4,
+        -2,
         0,
         function(tooltip)
-            AddTexturePanelDragHelpTooltipLines(tooltip, IsTextureHostGroupedPreviewActive(host))
+            AddTexturePanelDragHelpTooltipLines(tooltip)
         end
     )
 end
@@ -709,7 +973,21 @@ local function EnsureAuraTextureDragHandle(host)
     text:SetTextColor(1, 1, 1, 1)
     dragHandle.text = text
 
+    dragHandle.lockButton = CreateAuraTextureLockButton(dragHandle, function()
+        LockAuraTexturePanelFromMover(host)
+    end)
     host.dragHelpButton = CreateAuraTextureDragHelpButton(host, dragHandle)
+    if host.dragHelpButton then
+        dragHandle.lockButton:SetPoint("RIGHT", host.dragHelpButton, "LEFT", -2, 0)
+    else
+        dragHandle.lockButton:SetPoint("RIGHT", dragHandle, "RIGHT", -2, 0)
+    end
+    -- Symmetric insets matching the badge cluster keep the name centered on the bar
+    local headerTextInset = host.dragHelpButton and 34 or 16
+    text:ClearAllPoints()
+    text:SetPoint("LEFT", dragHandle, "LEFT", headerTextInset, 0)
+    text:SetPoint("RIGHT", dragHandle, "RIGHT", -headerTextInset, 0)
+    text:SetJustifyH("CENTER")
 
     local coordLabel = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
     coordLabel:SetHeight(15)
@@ -728,35 +1006,24 @@ local function EnsureAuraTextureDragHandle(host)
     dragHandle:SetScript("OnDragStop", function()
         FinishTextureHostDrag(host)
     end)
-    dragHandle:SetScript("OnMouseUp", function(_, button)
-        if button ~= "MiddleButton" then
-            return
-        end
-
-        local owner = host._ownerButton
-        local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
-        if not group then
-            return
-        end
-        if group.parentContainerId
-            and CooldownCompanion.IsContainerUnlockPreviewActive
-            and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)
-        then
-            return
-        end
-
-        group.locked = nil
-        CooldownCompanion:RefreshGroupFrame(owner._groupId)
-        CooldownCompanion:RefreshAllAuraTextureVisuals()
-        if ST._configState and ST._configState.configFrame and ST._configState.configFrame.frame and ST._configState.configFrame.frame:IsShown() then
-            CooldownCompanion:RefreshConfigPanel()
-        end
-        CooldownCompanion:Print((group.name or "Texture Panel") .. " locked.")
-    end)
 
     host.dragHandle = dragHandle
     host.coordLabel = coordLabel
+    CreateEditableCoordLabel(
+        coordLabel,
+        function()
+            local _, _, settings = GetTextureHostPositionContext(host)
+            return settings and settings.x or 0, settings and settings.y or 0
+        end,
+        function(x, y)
+            ApplyTextureHostCoordinates(host, x, y)
+        end,
+        function()
+            return host._isDragging == true
+        end
+    )
     EnsureAuraTextureNudger(host)
+    CooldownCompanion:ApplyMoverChromeFadeToFrames(host.dragHandle, host.coordLabel, host.nudger)
 end
 
 local function SyncAuraTextureControlLevels(host, raiseAboveWrapper)
@@ -789,8 +1056,50 @@ local function SyncAuraTextureControlLevels(host, raiseAboveWrapper)
     end
 end
 
-local function EnsureAuraTextureHost(button)
+local function SetAuraTextureDragControlsShown(host, shown, unlockGhost)
+    if not host then return end
+    if host.dragHandle then
+        host.dragHandle:SetIgnoreParentAlpha(shown and unlockGhost == true)
+        host.dragHandle:SetShown(shown)
+        if host.dragHandle.lockButton then
+            local ownerFrame = host._ownerButton and host._ownerButton:GetParent()
+            host.dragHandle.lockButton:SetShown(
+                shown and not (ownerFrame and ownerFrame._containerUnlockPreviewActive == true)
+            )
+        end
+    end
+    if host.coordLabel then
+        host.coordLabel:SetShown(shown)
+    end
+    if ST.SetRuntimeInfoButtonShown then
+        ST.SetRuntimeInfoButtonShown(host.dragHelpButton, shown)
+    end
+    if host.nudger then
+        host.nudger:SetShown(shown)
+    end
+    CooldownCompanion:ApplyMoverChromeFadeToFrames(host.dragHandle, host.coordLabel, host.nudger)
+end
+
+local function EnsureAuraTextureRuntimeRoot(host)
+    if host.auraRuntimeRoot then
+        return host.auraRuntimeRoot
+    end
+
+    -- Plain safe parent for AuraContainer -> AuraButton -> selected-texture
+    -- kit. Recursive frame sweeps stop here; AuraDisplay exclusively owns its
+    -- descendants. Alpha is the preview/production switch and is safe because
+    -- this frame itself is outside Blizzard's forbidden AuraButton subtree.
+    local root = CreateFrame("Frame", nil, host)
+    root:SetAllPoints(host)
+    root:SetAlpha(0)
+    root._ccNoTouch = true
+    host.auraRuntimeRoot = root
+    return root
+end
+
+function CooldownCompanion:EnsureAuraTextureHost(button)
     if button.auraTextureHost then
+        EnsureAuraTextureRuntimeRoot(button.auraTextureHost)
         return button.auraTextureHost
     end
 
@@ -814,6 +1123,8 @@ local function EnsureAuraTextureHost(button)
     host.primaryTexture = primary
     host.secondaryTexture = secondary
 
+    EnsureAuraTextureRuntimeRoot(host)
+
     host:SetScript("OnDragStart", function(self)
         BeginTextureHostDrag(self)
     end)
@@ -831,6 +1142,11 @@ end
 function CooldownCompanion:GetAuraTextureHostForGroupFrame(groupFrame)
     local button = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
     return button and button.auraTextureHost or nil
+end
+
+function CooldownCompanion:GetAuraTextureMoverChromeForGroupFrame(groupFrame)
+    local host = self:GetAuraTextureHostForGroupFrame(groupFrame)
+    return host and host.dragHandle, host and host.coordLabel, host and host.nudger
 end
 
 function CooldownCompanion.EnsureTriggerIconVisual(host)
@@ -983,9 +1299,12 @@ local function GetTexturePanelAlphaModuleId(groupId)
     return "texture_panel_" .. tostring(groupId)
 end
 
-local function GetTexturePanelLayoutPreviewAlpha(button)
+-- The Baseline Alpha slider lives on the panel Visibility tab (internal
+-- tab key "loadconditions"), so the preview only applies while that tab
+-- is the one holding the slider.
+local function GetTexturePanelAlphaPreview(button)
     local CS = ST._configState
-    if not button or not CS or CS.panelSettingsTab ~= "layout" or CS.selectedGroup ~= button._groupId then
+    if not button or not CS or CS.panelSettingsTab ~= "loadconditions" or CS.selectedGroup ~= button._groupId then
         return nil
     end
 
@@ -1013,28 +1332,27 @@ function CooldownCompanion:HideAuraTextureVisual(button)
     if host._isDragging then
         host._isDragging = nil
         host:StopMovingOrSizing()
+        StopGroupedStandaloneWrapperTracking(host)
+        self:EndMoverChromeFade(host)
     end
+    CooldownCompanion:EndDragSnapSession(host, false)
     CooldownCompanion.HideStandaloneDisplayVisuals(host)
+    if host.visualRoot then
+        host.visualRoot:SetAlpha(1)
+    end
+    if host.auraRuntimeRoot then
+        host.auraRuntimeRoot:SetAlpha(0)
+    end
     host._activeDisplayType = nil
     host._activeTextureSettings = nil
     host._activeTextureGeometry = nil
     host._dragEnabled = nil
     host._wrapperManaged = nil
+    host._unlockGhost = nil
     SetTextureHostMouseEnabled(host, false)
     host:SetAlpha(1)
     SetAuraTextureOutlineShown(host, false)
-    if host.dragHandle then
-        host.dragHandle:Hide()
-    end
-    if host.coordLabel then
-        host.coordLabel:Hide()
-    end
-    if ST.SetRuntimeInfoButtonShown then
-        ST.SetRuntimeInfoButtonShown(host.dragHelpButton, false)
-    end
-    if host.nudger then
-        host.nudger:Hide()
-    end
+    SetAuraTextureDragControlsShown(host, false)
     host:Hide()
 
     local group = button and button._groupId and ResolveGroup(button._groupId) or nil
@@ -1053,8 +1371,13 @@ function CooldownCompanion:ReleaseAuraTextureVisual(button)
     if alphaModuleId then
         self:UnregisterModuleAlpha(alphaModuleId)
     end
-    button.auraTextureHost:SetParent(nil)
-    button.auraTextureHost = nil
+    -- AuraButton has a permanent ChangeParent forbidden aspect. Once this
+    -- host owns an AuraContainer, retain the whole topology across pooling;
+    -- AuraDisplay parks the container and owns the pool token reconciliation.
+    if not button.auraTextureHost._auraSlotOwned then
+        button.auraTextureHost:SetParent(nil)
+        button.auraTextureHost = nil
+    end
 end
 
 local function IsStandaloneTextureEditingButton(button)
@@ -1071,7 +1394,10 @@ local function IsStandaloneTextureEditingButton(button)
         return false
     end
 
-    if CS.panelSettingsTab == "appearance" or CS.panelSettingsTab == "effects" or CS.panelSettingsTab == "layout" then
+    -- "loadconditions" is the Visibility tab, which carries the Alpha
+    -- section (Baseline Alpha previews against the shown visual).
+    if CS.panelSettingsTab == "appearance" or CS.panelSettingsTab == "effects"
+        or CS.panelSettingsTab == "layout" or CS.panelSettingsTab == "loadconditions" then
         if CooldownCompanion:IsTriggerPanelGroup(group) then
             return true
         end
@@ -1080,8 +1406,13 @@ local function IsStandaloneTextureEditingButton(button)
         end
     end
 
-    local pickerWindow = CS.auraTexturePickerWindow
-    return pickerWindow and pickerWindow._targetGroupId == button._groupId
+    -- The inline texture browser being open for this button's panel keeps it
+    -- editing-visible on the states the checks above miss (e.g. an entry
+    -- selected). Migrated from the retired floating
+    -- picker window's _targetGroupId check; CS.inlineTextureBrowserOpen holds
+    -- the open panel's group id.
+    return CS.inlineTextureBrowserOpen ~= nil
+        and CS.inlineTextureBrowserOpen == button._groupId
 end
 
 local function IsTexturePanelConfigForceVisible(button)
@@ -1198,7 +1529,7 @@ function CooldownCompanion.ApplyTriggerIconVisual(host, settings)
         iconTint[3] or 1,
         iconTint[4] ~= nil and iconTint[4] or 1
     )
-    ST._ApplyIconTexCoord(iconFrame.icon, width, height)
+    ST._ApplyIconTexCoord(iconFrame.icon, width, height, settings.iconZoom)
 
     for _, border in ipairs(iconFrame.borderTextures) do
         border:SetColorTexture(
@@ -1278,7 +1609,6 @@ function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, dri
         groupedPreviewFrame = groupedPreviewFrame,
         isUnlocked = not isCursorAnchored and not combatForcedLock and group and (group.locked == false or groupedPreviewFrame ~= nil),
         hasPreviewSelection = displayType == "texture" and type(driverButton._auraTexturePreviewSelection) == "table",
-        hasTriggerEffectPreview = isTriggerPanel and driverButton._triggerEffectsPreview == true,
         triggerMatched = isTriggerPanel and frame and frame:IsShown() and DoesTriggerPanelMatch(frame) or false,
         showDisplay = false,
     }
@@ -1289,7 +1619,7 @@ function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, dri
         elseif state.isCursorLayoutPreview then
             state.showDisplay = true
         elseif isTriggerPanel then
-            state.showDisplay = state.triggerMatched or state.hasTriggerEffectPreview or state.isEditing or state.isUnlocked
+            state.showDisplay = state.triggerMatched or state.isEditing or state.isUnlocked
         elseif state.isEditing then
             state.showDisplay = true
         elseif state.isConfigForceVisible then
@@ -1322,11 +1652,7 @@ function CooldownCompanion:RenderStandaloneDisplay(host, driverButton, group, se
     SyncAuraTextureControlLevels(host, false)
 
     if displayType == "texture" then
-        local baseAlpha = Clamp((settings.color and settings.color[4] or 1) * settings.alpha, 0.05, 1)
-        local alpha = Clamp(baseAlpha, 0, 1)
-        local sourceWidth = settings.width and settings.width > 0 and settings.width or DEFAULT_TEXTURE_SIZE
-        local sourceHeight = settings.height and settings.height > 0 and settings.height or DEFAULT_TEXTURE_SIZE
-        local geometry = self:BuildTexturePanelGeometry(settings, sourceWidth * settings.scale, sourceHeight * settings.scale)
+        local geometry, alpha = self:GetTexturePanelRenderGeometry(settings)
         CooldownCompanion.HideStandaloneDisplayVisuals(host)
         hostWidth = geometry.boundsWidth
         hostHeight = geometry.boundsHeight
@@ -1343,6 +1669,8 @@ function CooldownCompanion:RenderStandaloneDisplay(host, driverButton, group, se
             SetTextureIndicatorBaseVisuals(host)
             if isTriggerPanel then
                 self:ApplyTriggerPanelEffects(host, driverButton, group, effectsActive)
+            elseif self:IsTexturePanelAuraDisplayEnabled(group, driverButton.buttonData) then
+                StopAllTextureIndicatorEffects(host)
             else
                 ApplyTextureIndicatorEffects(host, driverButton, group)
             end
@@ -1369,6 +1697,41 @@ function CooldownCompanion:RenderStandaloneDisplay(host, driverButton, group, se
     end
 
     return shown
+end
+
+-- Locked Aura-controlled Texture panels keep the ordinary host for anchoring,
+-- load visibility, and alpha, but render their production pixels only beneath
+-- Blizzard's AuraButton. This prepares the safe outer shell without touching
+-- any AuraContainer descendant; AuraDisplay styles that subtree OOC.
+function CooldownCompanion:PrepareManagedAuraTextureDisplay(host, driverButton, settings, revealRuntime)
+    local resolvedSourceType = self:ResolveAuraTextureAsset(
+        settings.sourceType,
+        settings.sourceValue,
+        settings.mediaType
+    )
+    local geometry = self:GetTexturePanelRenderGeometry(settings)
+    if not resolvedSourceType or not geometry then
+        return false
+    end
+
+    host:SetFrameStrata(driverButton:GetFrameStrata())
+    host:SetFrameLevel((driverButton:GetFrameLevel() or 1) + 20)
+    SyncAuraTextureControlLevels(host, false)
+    StopAllTextureIndicatorEffects(host)
+    CooldownCompanion.HideStandaloneDisplayVisuals(host)
+    host:SetSize(geometry.boundsWidth, geometry.boundsHeight)
+    if host.visualRoot then
+        host.visualRoot:SetSize(geometry.boundsWidth, geometry.boundsHeight)
+        host.visualRoot:SetAlpha(0)
+    end
+    if host.auraRuntimeRoot then
+        host.auraRuntimeRoot:SetAlpha(revealRuntime and 1 or 0)
+    end
+    host._activeDisplayType = nil
+    host._activeTextureSettings = nil
+    host._activeTextureGeometry = nil
+    host._indicatorBaseVisualsReady = nil
+    return true
 end
 
 function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, group, settings, displayType, isTriggerPanel, visibilityState)
@@ -1423,7 +1786,9 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
     host:Show()
 
     local alphaModuleId = GetTexturePanelAlphaModuleId(driverButton._groupId)
-    local layoutPreviewAlpha = GetTexturePanelLayoutPreviewAlpha(driverButton)
+    local layoutPreviewAlpha = GetTexturePanelAlphaPreview(driverButton)
+    host._unlockGhost = frame and frame._unlockGhost or nil
+    local bypassAlpha = layoutPreviewAlpha ~= nil and layoutPreviewAlpha or (host._unlockGhost and 0.4 or 1)
     local visibilityAlpha = Clamp(driverButton._rawVisibilityAlphaOverride or 1, 0, 1)
     local panelAlphaTarget = GetStandalonePanelAlphaTargetFrame(group, sharedSettings, driverButton._groupId)
     local containerAlphaId, containerAlphaConfig
@@ -1436,7 +1801,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         end
         if visibilityState.bypassModuleAlpha then
             StopStandalonePanelAlphaSync(host)
-            host:SetAlpha(layoutPreviewAlpha ~= nil and layoutPreviewAlpha or 1)
+            host:SetAlpha(bypassAlpha)
         else
             StartStandalonePanelAlphaSync(host, panelAlphaTarget, visibilityAlpha)
         end
@@ -1444,7 +1809,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         StopStandalonePanelAlphaSync(host)
         if visibilityState.bypassModuleAlpha then
             self:UnregisterModuleAlpha(alphaModuleId, true)
-            host:SetAlpha(layoutPreviewAlpha ~= nil and layoutPreviewAlpha or 1)
+            host:SetAlpha(bypassAlpha)
         elseif containerAlphaConfig then
             self:UnregisterModuleAlpha(alphaModuleId, true)
             local alpha = self.GetContainerAlphaValue
@@ -1467,7 +1832,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         end
     else
         StopStandalonePanelAlphaSync(host)
-        host:SetAlpha(visibilityState.bypassModuleAlpha and (layoutPreviewAlpha ~= nil and layoutPreviewAlpha or 1) or visibilityAlpha)
+        host:SetAlpha(visibilityState.bypassModuleAlpha and bypassAlpha or visibilityAlpha)
     end
 
     local savedSettings = isTriggerPanel and group and group.triggerSettings and group.triggerSettings.signal or group and group.textureSettings or nil
@@ -1497,10 +1862,14 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         and (not visibilityState.isGroupedPreview or isGroupedPreviewSelected)
     host._wrapperManaged = visibilityState.isGroupedPreview or nil
     SetTextureHostMouseEnabled(host, host._dragEnabled == true and not visibilityState.isGroupedPreview)
-    SetAuraTextureOutlineShown(host, visibilityState.isGroupedPreview and (isGroupedPreviewSelected or isGroupedPreviewHovered) or false)
+    SetAuraTextureOutlineShown(
+        host,
+        visibilityState.isGroupedPreview and isGroupedPreviewSelected or false,
+        visibilityState.isGroupedPreview and isGroupedPreviewHovered or false
+    )
     if host.dragHandle and host.coordLabel then
         host.dragHandle.text:SetText(group and group.name or "Texture Panel")
-        if visibilityState.isGroupedPreview then
+        if visibilityState.isGroupedPreview and not HasStandaloneAnchorTarget(sharedSettings) then
             local displayX, displayY = GetTextureHostDisplayCoords(
                 host,
                 sharedSettings.point or "CENTER",
@@ -1517,7 +1886,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
                 end
             end
             UpdateTextureHostCoordLabel(host, displayX, displayY)
-        elseif host._isDragging then
+        elseif not visibilityState.isGroupedPreview and host._isDragging then
             local _, _, _, currentX, currentY = host:GetPoint()
             UpdateTextureHostCoordLabel(host, currentX, currentY)
         else
@@ -1525,14 +1894,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         end
         local showHeader = host._dragEnabled == true and (not visibilityState.isGroupedPreview or isGroupedPreviewSelected)
         SyncAuraTextureControlLevels(host, visibilityState.isGroupedPreview and isGroupedPreviewSelected)
-        host.dragHandle:SetShown(showHeader)
-        host.coordLabel:SetShown(showHeader)
-        if ST.SetRuntimeInfoButtonShown then
-            ST.SetRuntimeInfoButtonShown(host.dragHelpButton, showHeader)
-        end
-        if host.nudger then
-            host.nudger:SetShown(showHeader)
-        end
+        SetAuraTextureDragControlsShown(host, showHeader, frame and frame._unlockGhost)
     end
     if driverButton:GetAlpha() ~= 0 then
         driverButton:SetAlpha(0)
@@ -1574,20 +1936,9 @@ function CooldownCompanion:UpdateGroupedStandalonePreviewSelection(groupId)
 
     host._dragEnabled = showControls
     SyncAuraTextureControlLevels(host, showControls)
-    SetAuraTextureOutlineShown(host, isSelected or isHovered)
+    SetAuraTextureOutlineShown(host, isSelected, isHovered)
 
-    if host.dragHandle then
-        host.dragHandle:SetShown(showControls)
-    end
-    if host.coordLabel then
-        host.coordLabel:SetShown(showControls)
-    end
-    if ST.SetRuntimeInfoButtonShown then
-        ST.SetRuntimeInfoButtonShown(host.dragHelpButton, showControls)
-    end
-    if host.nudger then
-        host.nudger:SetShown(showControls)
-    end
+    SetAuraTextureDragControlsShown(host, showControls, groupFrame and groupFrame._unlockGhost)
 end
 
 function CooldownCompanion:StartGroupedStandalonePreviewHostDrag(groupId, containerId)
@@ -1733,16 +2084,43 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         return
     end
 
-    local host = EnsureAuraTextureHost(driverButton)
-    local shown = self:RenderStandaloneDisplay(
-        host,
-        driverButton,
-        group,
-        settings,
-        displayType,
-        isTriggerPanel,
-        visibilityState.triggerMatched or visibilityState.hasTriggerEffectPreview
-    )
+    local host = self:EnsureAuraTextureHost(driverButton)
+    local auraControlled = displayType == "texture"
+        and not isTriggerPanel
+        and self:IsTexturePanelAuraDisplayEnabled(group, driverButton.buttonData)
+    -- The production artwork lives inside the slot kit, so the managed path
+    -- draws NOTHING until the OOC rebind has bound a slot for this entry. That
+    -- is invisible when the queued pass lands next frame, but a pass BLOCKED by
+    -- combat (reload mid-fight, or Aura control enabled in combat) would leave
+    -- the panel dark for the whole fight - so keep the ordinary render until
+    -- the slot exists. A pooled host can also carry the previous entry's
+    -- still-bound slot; the ordinary branch suppresses that root too, and
+    -- BindDisplay re-runs this once it installs the matching pool token.
+    local slotToken = driverButton._auraSlotHostToken
+    local hasBoundSlot = slotToken ~= nil and slotToken == driverButton.buttonData
+    local useManagedRuntime = auraControlled
+        and not visibilityState.bypassModuleAlpha
+        and (hasBoundSlot or self:CanRunAuraRebindNow())
+    local shown
+    if useManagedRuntime then
+        shown = self:PrepareManagedAuraTextureDisplay(host, driverButton, settings, hasBoundSlot)
+    else
+        if host.auraRuntimeRoot then
+            host.auraRuntimeRoot:SetAlpha(0)
+        end
+        if host.visualRoot then
+            host.visualRoot:SetAlpha(1)
+        end
+        shown = self:RenderStandaloneDisplay(
+            host,
+            driverButton,
+            group,
+            settings,
+            displayType,
+            isTriggerPanel,
+            visibilityState.triggerMatched
+        )
+    end
 
     if not shown then
         self:HideAuraTextureVisual(driverButton)

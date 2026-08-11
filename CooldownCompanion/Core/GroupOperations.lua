@@ -18,6 +18,10 @@ local UnitCanAttack = UnitCanAttack
 local InCombatLockdown = InCombatLockdown
 local C_CVar_GetCVarBool = C_CVar.GetCVarBool
 
+local function GetUnlockedPanelAlpha(frame)
+    return frame and frame._unlockGhost and 0.4 or 1
+end
+
 local function ClearButtonVisualState(button)
     local clear = ST._ClearButtonVisualState
     if clear then
@@ -228,12 +232,6 @@ local function AddEntityEffectiveSpecSource(sources, entity, inherited)
     )
 end
 
-local function AddFolderEffectiveSpecSource(sources, profile, folderId)
-    local folders = profile and profile.folders
-    local folder = folderId and folders and folders[folderId]
-    AddEntityEffectiveSpecSource(sources, folder, true)
-end
-
 local function MergeEligibilityAllowlist(state, key, map, normalizer)
     local normalized, malformed, hasRestriction = NormalizeTruthyMap(map, normalizer, true)
     if malformed then
@@ -325,9 +323,9 @@ ST.LOAD_CONDITION_OPTIONS = ST.LOAD_CONDITION_OPTIONS or {
 -- LibSharedMedia for font/texture selection
 local LSM = LibStub("LibSharedMedia-3.0")
 
---- Return the per-spec order for a container or folder, falling back to the
+--- Return the per-spec order for a container, falling back to the
 --- global .order field and then to the supplied default (typically the ID).
---- @param obj table  groupContainer or folder table with optional specOrders
+--- @param obj table  groupContainer with optional specOrders
 --- @param specId number|nil  current specialization ID
 --- @param default number|nil  fallback when no order exists
 function CooldownCompanion:GetOrderForSpec(obj, specId, default)
@@ -338,7 +336,7 @@ function CooldownCompanion:GetOrderForSpec(obj, specId, default)
     return obj.order or default
 end
 
---- Write a per-spec order value to a container or folder.
+--- Write a per-spec order value to a container.
 --- Creates the specOrders table if it doesn't exist.
 function CooldownCompanion:SetOrderForSpec(obj, specId, value)
     if not specId then
@@ -638,6 +636,18 @@ function CooldownCompanion:IsContainerUnlockPreviewActive(containerOrContainerId
     return true
 end
 
+function CooldownCompanion:IsPanelUnlockPreviewActive(groupOrGroupId)
+    local group = groupOrGroupId
+    if type(groupOrGroupId) == "number" then
+        group = self.db.profile.groups[groupOrGroupId]
+    end
+    return group
+        and group.locked == false
+        and not self._combatForcedLock
+        and not (self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group))
+        or false
+end
+
 local function ForceCombatMouseLock(frame)
     if not frame then
         return
@@ -697,6 +707,500 @@ local function RestoreFrameVisibilityAfterCombat(frame)
     frame._combatForcedAlpha = nil
 end
 
+local ARRANGE_PANEL_SIZE_KEYS = {
+    "buttonSize",
+    "iconWidth",
+    "iconHeight",
+    "barLength",
+    "barHeight",
+}
+local ARRANGE_TEXTURE_POSITION_KEYS = {
+    "point",
+    "relativePoint",
+    "relativeTo",
+    "x",
+    "y",
+    "buttonSize",
+}
+
+local function CopyArrangeTable(source)
+    if type(source) ~= "table" then
+        return nil
+    end
+
+    local copy = {}
+    for key, value in pairs(source) do
+        copy[key] = value
+    end
+    return copy
+end
+
+local function CaptureArrangeFields(source, keys)
+    if type(source) ~= "table" then
+        return nil
+    end
+
+    local record = { values = {}, present = {} }
+    for _, key in ipairs(keys) do
+        if rawget(source, key) ~= nil then
+            record.values[key] = source[key]
+            record.present[key] = true
+        end
+    end
+    return record
+end
+
+local function RestoreArrangeTable(owner, key, record)
+    if record == nil then
+        owner[key] = nil
+        return
+    end
+
+    local target = owner[key]
+    if type(target) ~= "table" then
+        target = {}
+        owner[key] = target
+    end
+    for existingKey in pairs(target) do
+        target[existingKey] = nil
+    end
+    for recordKey, value in pairs(record) do
+        target[recordKey] = value
+    end
+end
+
+local function RestoreArrangeFields(target, record, keys)
+    for _, key in ipairs(keys) do
+        if record.present[key] then
+            target[key] = record.values[key]
+        else
+            target[key] = nil
+        end
+    end
+end
+
+function CooldownCompanion:CaptureArrangePanelRecord(groupId)
+    local snapshot = self._arrangeSnapshot
+    if not snapshot then
+        return
+    end
+
+    local group = self.db.profile.groups[groupId]
+    if not group then
+        return
+    end
+
+    snapshot.panels[groupId] = {
+        anchor = CopyArrangeTable(group.anchor),
+        size = CaptureArrangeFields(group.style, ARRANGE_PANEL_SIZE_KEYS),
+        texture = CaptureArrangeFields(group.textureSettings, ARRANGE_TEXTURE_POSITION_KEYS),
+        signal = CaptureArrangeFields(
+            group.triggerSettings and group.triggerSettings.signal,
+            ARRANGE_TEXTURE_POSITION_KEYS
+        ),
+        locked = group.locked,
+    }
+end
+
+function CooldownCompanion:CaptureArrangeContainerRecord(containerId)
+    local snapshot = self._arrangeSnapshot
+    if not snapshot then
+        return
+    end
+
+    local container = self.db.profile.groupContainers[containerId]
+    if not container then
+        return
+    end
+
+    snapshot.containers[containerId] = {
+        anchor = CopyArrangeTable(container.anchor),
+        locked = container.locked,
+    }
+    for groupId, group in pairs(self.db.profile.groups) do
+        if group.parentContainerId == containerId then
+            self:CaptureArrangePanelRecord(groupId)
+        end
+    end
+end
+
+function CooldownCompanion:CaptureArrangeCastBarRecord()
+    local snapshot = self._arrangeSnapshot
+    if not snapshot then
+        return
+    end
+
+    local settings = self.GetCastBarSettings and self:GetCastBarSettings()
+    if not settings then
+        snapshot.castBar = nil
+        return
+    end
+
+    snapshot.castBar = {
+        settings = settings,
+        anchor = CopyArrangeTable(settings.independentAnchor),
+        locked = settings.independentAnchorLocked,
+        width = settings.independentWidth,
+    }
+end
+
+function CooldownCompanion:CaptureArrangeResourceRecord()
+    local snapshot = self._arrangeSnapshot
+    if not snapshot then
+        return
+    end
+
+    local resourceBar = ST._RB
+    local settings = resourceBar
+        and resourceBar.GetResourceBarSettings
+        and resourceBar.GetResourceBarSettings()
+    local placementSettings = settings
+        and resourceBar.GetSpecLayoutOrder
+        and resourceBar.GetSpecLayoutOrder(settings)
+    if not placementSettings then
+        snapshot.resource = nil
+        return
+    end
+
+    snapshot.resource = {
+        settings = placementSettings,
+        anchor = CopyArrangeTable(placementSettings.independentAnchor),
+        locked = placementSettings.independentAnchorLocked,
+        width = placementSettings.independentWidth,
+    }
+end
+
+function CooldownCompanion:CaptureArrangeSnapshot()
+    self._arrangeSnapshot = {
+        panels = {},
+        containers = {},
+    }
+
+    for groupId in pairs(self.db.profile.groups) do
+        self:CaptureArrangePanelRecord(groupId)
+    end
+    for containerId in pairs(self.db.profile.groupContainers or {}) do
+        self:CaptureArrangeContainerRecord(containerId)
+    end
+    self:CaptureArrangeCastBarRecord()
+    self:CaptureArrangeResourceRecord()
+end
+
+local function RestoreArrangeSnapshot(addon, snapshot)
+    if not snapshot then
+        return
+    end
+
+    for groupId, record in pairs(snapshot.panels or {}) do
+        local group = addon.db.profile.groups[groupId]
+        if group then
+            RestoreArrangeTable(group, "anchor", record.anchor)
+            if record.size then
+                group.style = type(group.style) == "table" and group.style or {}
+                RestoreArrangeFields(group.style, record.size, ARRANGE_PANEL_SIZE_KEYS)
+            end
+            if record.texture then
+                group.textureSettings = type(group.textureSettings) == "table" and group.textureSettings or {}
+                RestoreArrangeFields(group.textureSettings, record.texture, ARRANGE_TEXTURE_POSITION_KEYS)
+            end
+            if record.signal then
+                group.triggerSettings = type(group.triggerSettings) == "table" and group.triggerSettings or {}
+                group.triggerSettings.signal = type(group.triggerSettings.signal) == "table"
+                    and group.triggerSettings.signal
+                    or {}
+                RestoreArrangeFields(group.triggerSettings.signal, record.signal, ARRANGE_TEXTURE_POSITION_KEYS)
+            end
+            group.locked = record.locked
+        end
+    end
+
+    for containerId, record in pairs(snapshot.containers or {}) do
+        local container = addon.db.profile.groupContainers[containerId]
+        if container then
+            RestoreArrangeTable(container, "anchor", record.anchor)
+            container.locked = record.locked
+            -- Push the restored anchor back onto the frame directly. The refresh
+            -- pass below only re-anchors a container when normalization changes
+            -- its anchor, and a restored anchor is already normalized, so nothing
+            -- else moves the frame off the position the drag left it at. Panels
+            -- anchor relative to their container, so they follow from here.
+            local frame = addon.containerFrames and addon.containerFrames[containerId]
+            if frame and type(container.anchor) == "table" then
+                addon:AnchorContainerFrame(frame, container.anchor)
+            end
+        end
+    end
+
+    if snapshot.castBar and snapshot.castBar.settings then
+        local record = snapshot.castBar
+        RestoreArrangeTable(record.settings, "independentAnchor", record.anchor)
+        record.settings.independentAnchorLocked = record.locked
+        record.settings.independentWidth = record.width
+    end
+    if snapshot.resource and snapshot.resource.settings then
+        local record = snapshot.resource
+        RestoreArrangeTable(record.settings, "independentAnchor", record.anchor)
+        record.settings.independentAnchorLocked = record.locked
+        record.settings.independentWidth = record.width
+    end
+
+    addon:UnlockAllFrames()
+    addon:ApplyCastBarSettings()
+    addon:ApplyResourceBars()
+    addon:RefreshAllAuraTextureVisuals()
+    if addon.RefreshConfigPanel then
+        addon:RefreshConfigPanel()
+    end
+    addon:CheckConfigReExpandAfterLock()
+end
+
+function CooldownCompanion:IsArrangeModeActive()
+    return self._arrangeModeActive == true
+end
+
+function CooldownCompanion:IsAnyFrameUnlocked()
+    for _, container in pairs(self.db.profile.groupContainers or {}) do
+        if container.locked == false then
+            return true
+        end
+    end
+
+    for _, group in pairs(self.db.profile.groups or {}) do
+        if group.locked == false then
+            return true
+        end
+    end
+
+    local castSettings = self.GetCastBarSettings and self:GetCastBarSettings()
+    if castSettings
+        and castSettings.enabled == true
+        and castSettings.independentAnchorEnabled == true
+        and not castSettings.independentAnchorLocked then
+        return true
+    end
+
+    local resourceSettings = self.GetResourceBarSettings and self:GetResourceBarSettings()
+    local resourceLayout = resourceSettings and self.GetSpecLayoutOrder and self:GetSpecLayoutOrder()
+    if resourceSettings
+        and resourceSettings.enabled == true
+        and resourceLayout
+        and resourceLayout.independentAnchorEnabled == true
+        and not resourceLayout.independentAnchorLocked then
+        return true
+    end
+
+    return false
+end
+
+function CooldownCompanion:CheckConfigReExpandAfterLock()
+    if InCombatLockdown() or self._combatForcedLock then
+        return
+    end
+    if self:IsAnyFrameUnlocked() then
+        return
+    end
+    if ST.ExpandConfigAfterLock then
+        ST.ExpandConfigAfterLock()
+    end
+end
+
+function CooldownCompanion:CheckArrangeModeAutoExit()
+    self:CheckConfigReExpandAfterLock()
+
+    if not self:IsArrangeModeActive() then
+        return
+    end
+
+    for containerId, container in pairs(self.db.profile.groupContainers or {}) do
+        if self:IsContainerVisibleToCurrentChar(containerId)
+            and container.locked == false then
+            return
+        end
+    end
+
+    local castSettings = self.GetCastBarSettings and self:GetCastBarSettings()
+    if castSettings
+        and castSettings.enabled == true
+        and castSettings.independentAnchorEnabled == true
+        and not castSettings.independentAnchorLocked then
+        return
+    end
+
+    local resourceSettings = self.GetResourceBarSettings and self:GetResourceBarSettings()
+    local resourceLayout = resourceSettings and self.GetSpecLayoutOrder and self:GetSpecLayoutOrder()
+    if resourceSettings
+        and resourceSettings.enabled == true
+        and resourceLayout
+        and resourceLayout.independentAnchorEnabled == true
+        and not resourceLayout.independentAnchorLocked then
+        return
+    end
+
+    self:ExitArrangeMode()
+end
+
+local function GetArrangeModePill(addon)
+    if addon._arrangeModePill then
+        return addon._arrangeModePill
+    end
+
+    local pill = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    pill:SetPoint("TOP", UIParent, "TOP", 0, -80)
+    pill:SetFrameStrata("FULLSCREEN_DIALOG")
+    pill:SetClampedToScreen(true)
+    pill:SetMovable(true)
+    pill:EnableMouse(true)
+    pill:RegisterForDrag("LeftButton")
+    pill:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    pill:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
+    -- Gold accents tie the pill to the snap guides shown while arranging.
+    ST.CreatePixelBorders(pill, 1, 0.82, 0, 0.45)
+
+    local icon = pill:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(16, 16)
+    icon:SetPoint("LEFT", pill, "LEFT", 10, 0)
+    icon:SetAtlas("questlog-questtypeicon-lock", false)
+    icon:SetVertexColor(1, 0.82, 0, 0.9)
+
+    local title = pill:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("LEFT", icon, "RIGHT", 8, 0)
+    title:SetText("Arranging panels")
+    title:SetTextColor(1, 0.82, 0, 1)
+
+    local helpButton = ST.CreateRuntimeInfoButton(pill, title, "LEFT", "RIGHT", 4, 0, function(tooltip)
+        tooltip:AddLine("Arranging panels")
+        tooltip:AddLine(" ")
+        tooltip:AddLine("Esc or Cancel reverts unsaved changes.", 1, 1, 1, false)
+        tooltip:AddLine(" ")
+        tooltip:AddLine("Done, a padlock, or /cdc lock saves.", 1, 1, 1, false)
+    end)
+    ST.SetRuntimeInfoButtonShown(helpButton, true)
+
+    local doneButton = CreateFrame("Button", nil, pill, "BackdropTemplate")
+    doneButton:SetSize(52, 20)
+    doneButton:SetPoint("RIGHT", pill, "RIGHT", -10, 0)
+    doneButton:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    doneButton:SetBackdropColor(0.16, 0.16, 0.16, 1)
+    ST.CreatePixelBorders(doneButton, 0.3, 0.85, 0.3, 0.7)
+    local doneText = doneButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    doneText:SetPoint("CENTER")
+    doneText:SetText("Done")
+    doneText:SetTextColor(1, 1, 1, 1)
+
+    local cancelButton = CreateFrame("Button", nil, pill, "BackdropTemplate")
+    cancelButton:SetPoint("RIGHT", doneButton, "LEFT", -6, 0)
+    cancelButton:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    cancelButton:SetBackdropColor(0.16, 0.16, 0.16, 1)
+    ST.CreatePixelBorders(cancelButton, 0.9, 0.3, 0.3, 0.7)
+    local cancelText = cancelButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    cancelText:SetPoint("CENTER")
+    cancelText:SetText("Cancel")
+    cancelText:SetTextColor(1, 1, 1, 1)
+    local cancelButtonWidth = math.ceil(cancelText:GetStringWidth() + 16)
+    cancelButton:SetSize(cancelButtonWidth, 20)
+
+    -- One row: [icon] title [?] ... [Cancel] [Done], everything on the center line.
+    pill:SetSize(
+        math.ceil(10 + 16 + 8 + title:GetStringWidth() + 4 + 16 + 14 + cancelButtonWidth + 6 + 52 + 10),
+        30
+    )
+
+    cancelButton:SetScript("OnClick", function()
+        CooldownCompanion:CancelArrangeMode()
+    end)
+    cancelButton:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(0.3, 0.13, 0.13, 1)
+    end)
+    cancelButton:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(0.16, 0.16, 0.16, 1)
+    end)
+
+    doneButton:SetScript("OnClick", function()
+        CooldownCompanion:ExitArrangeMode()
+    end)
+    doneButton:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(0.12, 0.26, 0.12, 1)
+    end)
+    doneButton:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(0.16, 0.16, 0.16, 1)
+    end)
+
+    pill:SetScript("OnDragStart", function(self)
+        if InCombatLockdown() then return end
+        self._dragInProgress = true
+        self:StartMoving()
+    end)
+    pill:SetScript("OnDragStop", function(self)
+        self._dragInProgress = nil
+        self:StopMovingOrSizing()
+    end)
+    pill:EnableKeyboard(true)
+    pill:SetScript("OnKeyDown", function(self, key)
+        if key == "ESCAPE" then
+            if not InCombatLockdown() then
+                self:SetPropagateKeyboardInput(false)
+            end
+            CooldownCompanion:CancelArrangeMode()
+        elseif not InCombatLockdown() then
+            self:SetPropagateKeyboardInput(true)
+        end
+    end)
+    pill:SetScript("OnShow", function(self)
+        if not InCombatLockdown() then
+            self:SetPropagateKeyboardInput(true)
+        end
+    end)
+    pill:SetScript("OnHide", function(self)
+        if self._dragInProgress then
+            self._dragInProgress = nil
+            self:StopMovingOrSizing()
+        end
+        GameTooltip:Hide()
+    end)
+    pill:Hide()
+
+    addon._arrangeModePill = pill
+    return pill
+end
+
+local function CancelActiveMoverDrag(addon, frame, activeField)
+    if not (frame and frame[activeField]) then
+        return
+    end
+
+    frame._dragCancelPending = true
+    if not (InCombatLockdown() and frame:IsProtected()) then
+        frame:StopMovingOrSizing()
+    end
+    if addon.EndDragSnapSession then
+        addon:EndDragSnapSession(frame, false)
+    end
+    frame[activeField] = nil
+end
+
+local function CancelActiveMoverGestures(addon)
+    if addon.ResetMoverChromeFade then
+        addon:ResetMoverChromeFade()
+    end
+    if addon.CancelIndependentCastBarDrag then
+        addon:CancelIndependentCastBarDrag()
+    end
+    if addon.CancelIndependentResourceStackDrag then
+        addon:CancelIndependentResourceStackDrag()
+    end
+
+    for _, frame in pairs(addon.groupFrames or {}) do
+        CancelActiveMoverDrag(addon, frame, "_dragInProgress")
+        for _, button in ipairs(frame.buttons or {}) do
+            CancelActiveMoverDrag(addon, button and button.auraTextureHost, "_isDragging")
+        end
+    end
+
+    for _, frame in pairs(addon.containerFrames or {}) do
+        CancelActiveMoverDrag(addon, frame, "_dragInProgress")
+    end
+end
+
 function CooldownCompanion:BeginCombatForcedLock()
     if self._combatForcedLock then
         return false
@@ -732,8 +1236,16 @@ function CooldownCompanion:BeginCombatForcedLock()
     self._combatForcedLock = true
     self._combatForcedLockSnapshot = snapshot
 
+    if self._arrangeModePill then
+        self._arrangeModePill:Hide()
+    end
+    CancelActiveMoverGestures(self)
+
     for groupId, frame in pairs(self.groupFrames or {}) do
         local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
+        frame._containerUnlockPreviewActive = nil
+        frame._panelUnlockPreviewActive = nil
+        frame._unlockGhost = nil
         local active = group and self:IsGroupActive(groupId, {
             group = group,
             checkCharVisibility = true,
@@ -741,13 +1253,6 @@ function CooldownCompanion:BeginCombatForcedLock()
             requireButtons = true,
         }) or false
 
-        if frame._dragInProgress then
-            frame._dragCancelPending = true
-            if not frame:IsProtected() then
-                frame:StopMovingOrSizing()
-            end
-            frame._dragInProgress = nil
-        end
         frame._combatForcedHidden = not active or nil
         SuppressFrameVisibilityForCombat(frame.dragHandle)
         SuppressFrameVisibilityForCombat(frame.coordLabel)
@@ -758,15 +1263,13 @@ function CooldownCompanion:BeginCombatForcedLock()
         ForceCombatMouseLock(frame.dragHelpButton)
         ForceCombatMouseLock(frame.nudger)
         for _, button in ipairs(frame.buttons or {}) do
+            local buttonData = button and button.buttonData
+            if CooldownCompanion:IsAuraShellEntry(buttonData) then
+                ST._ApplyShellVisualsForButton(button, buttonData)
+            end
             local host = button and button.auraTextureHost or nil
             if host then
-                if host._isDragging then
-                    host._dragCancelPending = true
-                    if not host:IsProtected() then
-                        host:StopMovingOrSizing()
-                    end
-                    host._isDragging = nil
-                end
+                host._unlockGhost = nil
                 host._dragEnabled = false
                 ForceCombatMouseLock(host)
                 SuppressFrameVisibilityForCombat(host.dragHandle)
@@ -799,13 +1302,6 @@ function CooldownCompanion:BeginCombatForcedLock()
 
     if self.containerFrames then
         for containerId, frame in pairs(self.containerFrames) do
-            if frame._dragInProgress then
-                frame._dragCancelPending = true
-                if not frame:IsProtected() then
-                    frame:StopMovingOrSizing()
-                end
-                frame._dragInProgress = nil
-            end
             self:UpdateContainerDragHandle(containerId, true)
         end
     end
@@ -847,6 +1343,35 @@ function CooldownCompanion:EndCombatForcedLock()
         end
     end
 
+    local arrangeModeActive = self._arrangeModeActive == true
+    local castSettings = self.GetCastBarSettings and self:GetCastBarSettings()
+    local restoreCastMover = arrangeModeActive
+        or (castSettings
+            and castSettings.enabled == true
+            and castSettings.independentAnchorEnabled == true
+            and not castSettings.independentAnchorLocked)
+    if restoreCastMover and self.ApplyCastBarSettings then
+        self:ApplyCastBarSettings()
+    end
+
+    local resourceSettings = self.GetResourceBarSettings and self:GetResourceBarSettings()
+    local resourceLayout = resourceSettings
+        and self.GetSpecLayoutOrder
+        and self:GetSpecLayoutOrder()
+    local restoreResourceMover = arrangeModeActive
+        or (resourceSettings
+            and resourceSettings.enabled == true
+            and resourceLayout
+            and resourceLayout.independentAnchorEnabled == true
+            and not resourceLayout.independentAnchorLocked)
+    if restoreResourceMover and self.ApplyResourceBars then
+        self:ApplyResourceBars()
+    end
+
+    if self._arrangeModeActive and self._arrangeModePill then
+        self._arrangeModePill:Show()
+    end
+
     return snapshot
 end
 
@@ -854,17 +1379,32 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
     opts = opts or {}
 
     local group = opts.group or self.db.profile.groups[groupId]
-    if not (group and group.parentContainerId) then
+    if not group then
         return false
     end
 
-    local container = opts.container or self:GetParentContainer(group)
-    if not self:IsContainerUnlockPreviewActive(container) then
-        return false
+    if opts.panelUnlockPreview then
+        if not self:IsPanelUnlockPreviewActive(group) then
+            return false
+        end
+    else
+        if not group.parentContainerId then
+            return false
+        end
+
+        local container = opts.container or self:GetParentContainer(group)
+        if not opts.assumeContainerUnlocked and not self:IsContainerUnlockPreviewActive(container) then
+            return false
+        end
     end
 
     local isRotationAssistant = self:IsRotationAssistantGroup(group)
     if not isRotationAssistant and not (group.buttons and #group.buttons > 0) then
+        return false
+    end
+    if not isRotationAssistant and not self:GroupHasUsableButtons(group, {
+        checkLoadConditions = false,
+    }) then
         return false
     end
 
@@ -884,14 +1424,22 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
         return false
     end
 
-    if self.IsGroupEligibilityMet and not self:IsGroupEligibilityMet(group) then
+    if not opts.ignoreOtherClassBrowseSuppression
+        and groupId
+        and self:IsGroupSuppressedForOtherClassBrowse(groupId, group) then
         return false
     end
 
-    local effectiveSpecs, _, hasSpecFilter = self:GetEffectiveSpecs(group)
-    if hasSpecFilter then
-        if not (self._currentSpecId and effectiveSpecs[self._currentSpecId]) then
+    if not opts.panelUnlockPreview then
+        if self.IsGroupEligibilityMet and not self:IsGroupEligibilityMet(group) then
             return false
+        end
+
+        local effectiveSpecs, _, hasSpecFilter = self:GetEffectiveSpecs(group)
+        if hasSpecFilter then
+            if not (self._currentSpecId and effectiveSpecs[self._currentSpecId]) then
+                return false
+            end
         end
     end
 
@@ -913,19 +1461,29 @@ function CooldownCompanion:GetContainerUnlockPreviewPanels(containerId, panels)
     return previewPanels
 end
 
+function CooldownCompanion:ContainerHasArrangeEligiblePanel(containerId)
+    for _, panelInfo in ipairs(self:GetPanels(containerId)) do
+        if not self:IsGroupSuppressedForOtherClassBrowse(panelInfo.groupId, panelInfo.group)
+            and self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
+                group = panelInfo.group,
+                checkCharVisibility = true,
+                assumeContainerUnlocked = true,
+            }) then
+            return true
+        end
+    end
+    return false
+end
+
 function CooldownCompanion:GetEffectiveSpecs(group)
     if not group then return nil, false end
 
     local sources = {}
-    local profile = self.db and self.db.profile
-
     local container = self:GetParentContainer(group)
     if container then
-        AddFolderEffectiveSpecSource(sources, profile, container.folderId)
         AddEntityEffectiveSpecSource(sources, container, true)
         AddEntityEffectiveSpecSource(sources, group, false)
     else
-        AddFolderEffectiveSpecSource(sources, profile, group.folderId)
         AddEntityEffectiveSpecSource(sources, group, false)
     end
 
@@ -936,14 +1494,9 @@ function CooldownCompanion:GetInheritedEffectiveSpecs(group)
     if not group then return nil, false end
 
     local sources = {}
-    local profile = self.db and self.db.profile
-
     local container = self:GetParentContainer(group)
     if container then
-        AddFolderEffectiveSpecSource(sources, profile, container.folderId)
         AddEntityEffectiveSpecSource(sources, container, true)
-    else
-        AddFolderEffectiveSpecSource(sources, profile, group.folderId)
     end
 
     return ResolveEffectiveSources(sources)
@@ -956,21 +1509,9 @@ function CooldownCompanion:GetEffectiveHeroTalents(group)
 
     local container = self:GetParentContainer(group)
     if container then
-        local folderId = container.folderId
-        if folderId then
-            local folders = self.db and self.db.profile and self.db.profile.folders
-            local folder = folders and folders[folderId]
-            AddEffectiveSource(sources, folder and folder.heroTalents, true, NormalizeSpecKey)
-        end
         AddEffectiveSource(sources, container.heroTalents, true, NormalizeSpecKey)
         AddEffectiveSource(sources, group.heroTalents, false, NormalizeSpecKey)
     else
-        local folderId = group.folderId
-        if folderId then
-            local folders = self.db and self.db.profile and self.db.profile.folders
-            local folder = folders and folders[folderId]
-            AddEffectiveSource(sources, folder and folder.heroTalents, true, NormalizeSpecKey)
-        end
         AddEffectiveSource(sources, group.heroTalents, false, NormalizeSpecKey)
     end
 
@@ -1169,32 +1710,6 @@ function CooldownCompanion:NormalizeTalentConditions(conditions)
     return normalized, true
 end
 
--- Folder spec filters are stamped onto child containers so that runtime checks
--- (which read container.specs) pick up folder-level restrictions. Stamping occurs
--- both here (when folder specs change) and in MoveGroupToFolder (when a container
--- joins a folder). Hero talents are NOT stamped — they cascade at read time via
--- GetEffectiveHeroTalents.
-function CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
-    local db = self.db and self.db.profile
-    local folder = db and db.folders and db.folders[folderId]
-    if not (db and folder) then return end
-
-    local folderSpecs = folder.specs
-    local hasFolderSpecs = folderSpecs and next(folderSpecs)
-
-    -- Post-migration: folderId lives on containers, not groups
-    local containers = db.groupContainers or {}
-    for _, container in pairs(containers) do
-        if container.folderId == folderId then
-            if hasFolderSpecs then
-                container.specs = CopyTable(folderSpecs)
-            else
-                container.specs = nil
-            end
-        end
-    end
-end
-
 function CooldownCompanion:IsHeroTalentAllowed(group)
     local effectiveHeroTalents, _, hasHeroTalentFilter = self:GetEffectiveHeroTalents(group)
     if not hasHeroTalentFilter then return true end
@@ -1257,6 +1772,10 @@ local CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS = {
     ignoreTalentConditions = true,
     configPreview = true,
     selectionDrivenConfigPreview = true,
+}
+
+local UNLOCK_PREVIEW_BUTTON_USABILITY_OPTIONS = {
+    checkLoadConditions = false,
 }
 
 local function IsGroupEnabledForConfigPreview(addon, group)
@@ -1352,21 +1871,23 @@ local function GroupHasConfigPreviewButtons(addon, groupId, group)
 end
 
 function CooldownCompanion:GetGroupButtonUsabilityOptions(groupId, group)
-    if not (groupId and IsSelectionDrivenConfigPreviewScope(self, groupId)) then
-        return nil
+    if groupId and IsSelectionDrivenConfigPreviewScope(self, groupId) then
+        local db = self.db and self.db.profile
+        group = group or (db and db.groups and db.groups[groupId])
+        if IsGroupEnabledForConfigPreview(self, group)
+            and GroupHasConfigPreviewButtons(self, groupId, group) then
+            return CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS
+        end
     end
 
-    local db = self.db and self.db.profile
-    group = group or (db and db.groups and db.groups[groupId])
-    if not IsGroupEnabledForConfigPreview(self, group) then
-        return nil
+    local frame = groupId and self.groupFrames and self.groupFrames[groupId]
+    if frame
+        and (frame._containerUnlockPreviewActive == true
+            or frame._panelUnlockPreviewActive == true) then
+        return UNLOCK_PREVIEW_BUTTON_USABILITY_OPTIONS
     end
 
-    if not GroupHasConfigPreviewButtons(self, groupId, group) then
-        return nil
-    end
-
-    return CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS
+    return nil
 end
 
 function CooldownCompanion:GetGroupLayoutButtonUsabilityOptions(groupId, group)
@@ -1381,11 +1902,20 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
 
     -- If this panel has a parent container, check container-level state first
     local container = self:GetParentContainer(group)
-    if container and self:IsContainerUnlockPreviewActive(container) then
+    if container and not opts.ignoreUnlockPreview and self:IsContainerUnlockPreviewActive(container) then
         return self:IsGroupVisibleInUnlockPreview(groupId, {
             group = group,
             container = container,
             checkCharVisibility = opts.checkCharVisibility,
+            ignoreOtherClassBrowseSuppression = opts.ignoreOtherClassBrowseSuppression,
+        })
+    end
+    if not opts.ignoreUnlockPreview and self:IsPanelUnlockPreviewActive(group) then
+        return self:IsGroupVisibleInUnlockPreview(groupId, {
+            group = group,
+            panelUnlockPreview = true,
+            checkCharVisibility = opts.checkCharVisibility,
+            ignoreOtherClassBrowseSuppression = opts.ignoreOtherClassBrowseSuppression,
         })
     end
     if container then
@@ -1554,6 +2084,7 @@ function CooldownCompanion:IsGroupSuppressedForOtherClassBrowse(groupId, group)
         checkCharVisibility = false,
         checkLoadConditions = true,
         requireButtons = true,
+        ignoreOtherClassBrowseSuppression = true,
     }) == true
 end
 
@@ -1800,50 +2331,6 @@ function CooldownCompanion:ResolveContainerClassScope(containerOrContainerId, op
     return ResolveProfileEntityClassScope(self, container, opts)
 end
 
-function CooldownCompanion:ResolveFolderClassScope(folderOrFolderId, opts)
-    local folder = folderOrFolderId
-    if type(folderOrFolderId) == "number" then
-        local db = self.db and self.db.profile
-        folder = db and db.folders and db.folders[folderOrFolderId] or nil
-    end
-    opts = opts and CopyTable(opts) or {}
-    opts.isGlobal = type(folder) == "table" and folder.section == "global"
-    return ResolveProfileEntityClassScope(self, folder, opts)
-end
-
-function CooldownCompanion:CanMoveContainerToFolder(containerOrContainerId, folderOrFolderId, opts)
-    opts = opts or {}
-    if folderOrFolderId == nil then
-        return true
-    end
-
-    local containerScope = self:ResolveContainerClassScope(containerOrContainerId)
-    local folderScope = self:ResolveFolderClassScope(folderOrFolderId)
-    if containerScope.isInvalid or folderScope.isInvalid then
-        return false, "invalid-class-scope"
-    end
-
-    if containerScope.scope == folderScope.scope then
-        if containerScope.scope == "global" then
-            return true
-        end
-        return containerScope.ownerClassKey == folderScope.ownerClassKey, "mixed-class-folder"
-    end
-
-    if opts.allowScopeChange == true then
-        if containerScope.scope == "global" and folderScope.scope == "current-class" then
-            return true
-        end
-        if folderScope.scope == "global"
-            and (containerScope.scope == "current-class" or containerScope.scope == "other-class")
-        then
-            return true
-        end
-    end
-
-    return false, "scope-mismatch"
-end
-
 function CooldownCompanion:CanMovePanelToContainer(groupOrGroupId, targetContainerOrContainerId)
     local db = self.db and self.db.profile
     if not (db and db.groups and db.groupContainers) then
@@ -2076,29 +2563,6 @@ function CooldownCompanion:NormalizeContainerEligibilityForCharacterScope(contai
     return changed
 end
 
-function CooldownCompanion:NormalizeFolderEligibilityForCharacterScope(folderId, opts)
-    local db = self.db and self.db.profile
-    if not (db and db.folders) then return false end
-    local folder = db.folders[folderId]
-    if not folder then return false end
-    opts = WithOwnerCharKey(opts, folder.createdBy or (self.db and self.db.keys and self.db.keys.char))
-
-    local changed = self:NormalizeEligibilityForCharacterScope(folder, opts)
-    local childContainerIds = {}
-    for containerId, container in pairs(db.groupContainers or {}) do
-        if type(container) == "table" and container.folderId == folderId then
-            childContainerIds[containerId] = true
-            changed = self:NormalizeEligibilityForCharacterScope(container, opts) or changed
-        end
-    end
-    for _, group in pairs(db.groups or {}) do
-        if type(group) == "table" and childContainerIds[group.parentContainerId] then
-            changed = self:NormalizeEligibilityForCharacterScope(group, opts) or changed
-        end
-    end
-    return changed
-end
-
 function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
@@ -2109,6 +2573,7 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
         return false
     end
     if self.IsIconLikeDisplayMode and not self:IsIconLikeDisplayMode(group.displayMode) then return false end
+    if group.anchorEligible == false then return false end
     local container = self:GetParentContainer(group)
     if container and container.isGlobal and not container.anchorEligible then return false end
     if container and not container.isGlobal and container.anchorEligible == false then return false end
@@ -2131,7 +2596,7 @@ function CooldownCompanion:IsGroupAvailableForPanelAnchorTarget(groupId)
     else
         if not group.parentContainerId then return false end
         if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then return false end
-        if group.displayMode == "textures" or group.displayMode == "trigger" then return false end
+        if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then return false end
     end
 
     local container = self:GetParentContainer(group)
@@ -2155,56 +2620,21 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup()
     if not groups then return nil end
     local containers = db.groupContainers
     if not containers then return nil end
-    local folders = db.folders or {}
     local specId = self._currentSpecId
 
-    -- Build container-to-folder mapping
-    local folderContainers = {}  -- [folderId] = { {id, order}, ... }
-    local looseContainers = {}   -- { {id, order}, ... }
-
+    local orderedContainers = {}
     for cid, container in pairs(containers) do
-        local fid = container.folderId
-        if fid and folders[fid] then
-            if not folderContainers[fid] then
-                folderContainers[fid] = {}
-            end
-            folderContainers[fid][#folderContainers[fid] + 1] = { id = cid, order = self:GetOrderForSpec(container, specId, cid) }
-        else
-            looseContainers[#looseContainers + 1] = { id = cid, order = self:GetOrderForSpec(container, specId, cid) }
-        end
+        orderedContainers[#orderedContainers + 1] = {
+            id = cid,
+            order = self:GetOrderForSpec(container, specId, cid),
+        }
     end
+    table.sort(orderedContainers, function(a, b) return a.order < b.order end)
 
-    -- Sort containers within each folder by per-spec order
-    for _, children in pairs(folderContainers) do
-        table.sort(children, function(a, b) return a.order < b.order end)
-    end
-    table.sort(looseContainers, function(a, b) return a.order < b.order end)
-
-    -- Build top-level items: folders + loose containers, sorted by order
-    -- (mirrors Column1.lua BuildSectionItems)
-    local topItems = {}
-    for fid in pairs(folderContainers) do
-        topItems[#topItems + 1] = { kind = "folder", id = fid, order = self:GetOrderForSpec(folders[fid], specId, fid) }
-    end
-    for _, lc in ipairs(looseContainers) do
-        topItems[#topItems + 1] = { kind = "container", id = lc.id, order = lc.order }
-    end
-    table.sort(topItems, function(a, b) return a.order < b.order end)
-
-    -- Iterate in visual order, return first available panel
-    for _, item in ipairs(topItems) do
-        local containerList
-        if item.kind == "folder" then
-            containerList = folderContainers[item.id]
-        else
-            containerList = { item }
-        end
-        for _, cInfo in ipairs(containerList) do
-            local panels = self:GetPanels(cInfo.id)
-            for _, panelInfo in ipairs(panels) do
-                if self:IsGroupAvailableForAnchoring(panelInfo.groupId) then
-                    return panelInfo.groupId
-                end
+    for _, containerInfo in ipairs(orderedContainers) do
+        for _, panelInfo in ipairs(self:GetPanels(containerInfo.id)) do
+            if self:IsGroupAvailableForAnchoring(panelInfo.groupId) then
+                return panelInfo.groupId
             end
         end
     end
@@ -2223,6 +2653,11 @@ local function IsResourceBarIndependentAnchor(settings, specId)
         independent = layout.independentAnchorEnabled == true
     end
     return independent
+end
+
+function CooldownCompanion:IsResourceBarAnchorIndependent()
+    local settings = self.GetResourceBarSettings and self:GetResourceBarSettings() or nil
+    return IsResourceBarIndependentAnchor(settings, self._currentSpecId)
 end
 
 function CooldownCompanion:IsGroupStableExternalAnchor(groupId)
@@ -2291,9 +2726,7 @@ end
 function CooldownCompanion:PopulatePanelAnchorTargetDropdown(dropdown, sourceGroupId)
     local db = self.db.profile
     local containers = db.groupContainers or {}
-    local folders = db.folders or {}
-    local folderContainers = {}
-    local looseContainers = {}
+    local groupedPanels = {}
     local eligibleCount = 0
 
     dropdown:SetList({}, {})
@@ -2307,114 +2740,47 @@ function CooldownCompanion:PopulatePanelAnchorTargetDropdown(dropdown, sourceGro
             eligibleCount = eligibleCount + 1
             local cid = group.parentContainerId
             local ctr = containers[cid]
-            local fid = ctr and ctr.folderId
             local contName = ctr and ctr.name or "Group"
-            local panelName = group.name or ("Panel " .. groupId)
-            local panelEntry = {
+            local containerBucket = groupedPanels[cid]
+            if not containerBucket then
+                containerBucket = {
+                    id = cid,
+                    name = contName,
+                    order = self:GetOrderForSpec(ctr or {}, self._currentSpecId, cid),
+                    panels = {},
+                }
+                groupedPanels[cid] = containerBucket
+            end
+            table.insert(containerBucket.panels, {
                 id = groupId,
                 key = tostring(groupId),
-                name = panelName,
+                name = group.name or ("Panel " .. groupId),
                 contName = contName,
                 order = group.order or groupId,
-            }
-            local containerBucket
-            local entry = {
-                id = cid,
-                name = contName,
-                order = self:GetOrderForSpec(ctr or {}, self._currentSpecId, cid),
-                panels = {},
-            }
-            if fid and folders[fid] then
-                folderContainers[fid] = folderContainers[fid] or {}
-                containerBucket = folderContainers[fid][cid]
-                if not containerBucket then
-                    containerBucket = entry
-                    folderContainers[fid][cid] = containerBucket
-                end
-            else
-                containerBucket = looseContainers[cid]
-                if not containerBucket then
-                    containerBucket = entry
-                    looseContainers[cid] = containerBucket
-                end
-            end
-            table.insert(containerBucket.panels, panelEntry)
-        end
-    end
-
-    local sortedFolders = {}
-    for fid, folder in pairs(folders) do
-        if folderContainers[fid] then
-            table.insert(sortedFolders, {
-                id = fid,
-                name = folder.name or ("Folder " .. fid),
-                order = self:GetOrderForSpec(folder, self._currentSpecId, fid),
             })
         end
     end
-    table.sort(sortedFolders, function(a, b) return a.order < b.order end)
 
-    local hasHeaders = #sortedFolders > 0
+    local sortedContainers = {}
+    for _, container in pairs(groupedPanels) do
+        table.insert(sortedContainers, container)
+    end
+    table.sort(sortedContainers, function(a, b)
+        if a.order ~= b.order then return a.order < b.order end
+        return a.name < b.name
+    end)
+    for _, container in ipairs(sortedContainers) do
+        local containerHdrKey = "_panel_ctr_" .. tostring(container.id)
+        dropdown:AddItem(containerHdrKey, "|cffffd100" .. container.name .. "|r")
+        dropdown:SetItemDisabled(containerHdrKey, true)
 
-    for _, folder in ipairs(sortedFolders) do
-        local hdrKey = "_panel_hdr_" .. folder.id
-        dropdown:AddItem(hdrKey, "|cffffd100" .. folder.name .. "|r")
-        dropdown:SetItemDisabled(hdrKey, true)
-
-        local sortedContainers = {}
-        for _, container in pairs(folderContainers[folder.id]) do
-            table.insert(sortedContainers, container)
-        end
-        table.sort(sortedContainers, function(a, b)
+        table.sort(container.panels, function(a, b)
             if a.order ~= b.order then return a.order < b.order end
             return a.name < b.name
         end)
-
-        for _, container in ipairs(sortedContainers) do
-            local containerHdrKey = "_panel_ctr_" .. folder.id .. "_" .. tostring(container.id)
-            dropdown:AddItem(containerHdrKey, "   |cffffd100" .. container.name .. "|r")
-            dropdown:SetItemDisabled(containerHdrKey, true)
-
-            table.sort(container.panels, function(a, b)
-                if a.order ~= b.order then return a.order < b.order end
-                return a.name < b.name
-            end)
-            for _, panel in ipairs(container.panels) do
-                dropdown:AddItem(panel.key, "      " .. panel.name)
-                dropdown.list[panel.key] = panel.contName .. ": " .. panel.name
-            end
-        end
-    end
-
-    local sortedLooseContainers = {}
-    for _, container in pairs(looseContainers) do
-        table.insert(sortedLooseContainers, container)
-    end
-
-    if #sortedLooseContainers > 0 then
-        if hasHeaders then
-            dropdown:AddItem("_panel_hdr_none", "|cffffd100No Folder|r")
-            dropdown:SetItemDisabled("_panel_hdr_none", true)
-        end
-        table.sort(sortedLooseContainers, function(a, b)
-            if a.order ~= b.order then return a.order < b.order end
-            return a.name < b.name
-        end)
-        for _, container in ipairs(sortedLooseContainers) do
-            local containerHdrKey = "_panel_ctr_none_" .. tostring(container.id)
-            local containerPrefix = hasHeaders and "   " or ""
-            dropdown:AddItem(containerHdrKey, containerPrefix .. "|cffffd100" .. container.name .. "|r")
-            dropdown:SetItemDisabled(containerHdrKey, true)
-
-            table.sort(container.panels, function(a, b)
-                if a.order ~= b.order then return a.order < b.order end
-                return a.name < b.name
-            end)
-            for _, panel in ipairs(container.panels) do
-                local panelPrefix = hasHeaders and "      " or "   "
-                dropdown:AddItem(panel.key, panelPrefix .. panel.name)
-                dropdown.list[panel.key] = panel.contName .. ": " .. panel.name
-            end
+        for _, panel in ipairs(container.panels) do
+            dropdown:AddItem(panel.key, "   " .. panel.name)
+            dropdown.list[panel.key] = panel.contName .. ": " .. panel.name
         end
     end
 
@@ -2474,7 +2840,7 @@ function CooldownCompanion:EvaluateLoadConditions(loadConditions, defaults)
     if lc.rested and self._isResting then return false end
 
     -- If pet battle condition is enabled and player is in a pet battle, unload.
-    -- Group/panel scopes default this on; folder/entry scopes default it off.
+    -- Group/panel scopes default this on; entry scopes default it off.
     local petBattle = lc.petBattle
     if petBattle == nil then petBattle = defaults.petBattle or false end
     if petBattle and self._inPetBattle then return false end
@@ -2520,10 +2886,6 @@ local function HasEligibilityAllowlist(loadConditions, allowClassEligibility)
         or loadConditions.characterAllowlist ~= nil
 end
 
-local function IsFolderGlobalScope(folder)
-    return type(folder) == "table" and folder.section == "global"
-end
-
 local function IsContainerGlobalScope(container)
     return type(container) == "table" and container.isGlobal == true
 end
@@ -2535,14 +2897,9 @@ function CooldownCompanion:GetInheritedLoadConditionSources(group)
 
     local container = self:GetParentContainer(group)
     if container then
-        local folder = container.folderId and db.folders and db.folders[container.folderId]
-        AddLoadConditionSource(sources, "Folder", folder, LOCAL_LOAD_CONDITION_DEFAULTS, IsFolderGlobalScope(folder))
         AddLoadConditionSource(sources, "Group", container, LOAD_CONDITION_DEFAULTS, IsContainerGlobalScope(container))
         return sources
     end
-
-    local folder = group.folderId and db.folders and db.folders[group.folderId]
-    AddLoadConditionSource(sources, "Folder", folder, LOCAL_LOAD_CONDITION_DEFAULTS, IsFolderGlobalScope(folder))
     return sources
 end
 
@@ -2839,10 +3196,6 @@ function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
                 button._iconDirty = true
                 button._cooldownDeferred = nil
                 button._durationObj = nil
-                button._auraDurationObj = nil
-                button._auraCooldownStart = nil
-                button._auraCooldownDuration = nil
-                button._auraPrimarySwipeActive = nil
                 button._chargeDurationObj = nil
                 button._chargeRecharging = nil
                 button._chargeState = nil
@@ -3196,10 +3549,20 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                     if self:GroupButtonSetNeedsRebuild(groupId, group, {
                         allowConfigPreviewButtonUsability = previewEligible,
                     }) then
-                        self:DiscardDormantFrame(groupId)
+                        -- Recover the shell and repopulate it rather than
+                        -- discarding it: frames cannot be destroyed, so a
+                        -- discard leaks the whole tree (buttons, cooldowns and
+                        -- their irremovable aura slot containers) and leaves a
+                        -- second frame answering to the same global name, which
+                        -- the by-name anchor checks then match against.
+                        -- RefreshGroupFrame recovers the dormant shell into
+                        -- groupFrames and repopulates its children.
+                        self:RefreshGroupFrame(groupId)
+                        frame = self.groupFrames[groupId]
+                    else
+                        -- Recover dormant frame with buttons intact (no repopulation needed)
+                        frame = self:RecoverDormantFrame(groupId)
                     end
-                    -- Recover dormant frame with buttons intact (no repopulation needed)
-                    frame = self:RecoverDormantFrame(groupId)
                 end
                 if not frame then
                     if InCombatLockdown() then
@@ -3218,19 +3581,16 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                     else
                         frame:Show()
                     end
-                    -- Resolve locked from container (panels defer to container lock)
-                    local container = self:GetParentContainer(group)
-                    local isLocked
+                    local isLocked = not (
+                        frame._containerUnlockPreviewActive == true
+                        or frame._panelUnlockPreviewActive == true
+                    )
                     if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then
                         isLocked = true
-                    elseif container then
-                        isLocked = container.locked ~= false
-                    else
-                        isLocked = group.locked
                     end
-                    -- Force 100% alpha while unlocked for easier positioning
+                    -- Keep unlocked panels fully visible, except unlock ghosts.
                     if not isLocked then
-                        frame:SetAlpha(1)
+                        frame:SetAlpha(GetUnlockedPanelAlpha(frame))
                     -- Apply current alpha from the alpha fade system so frame
                     -- doesn't flash at 1.0 when baseline alpha is configured.
                     else
@@ -3269,25 +3629,25 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     end
 end
 
--- Fully unload a group: save/clear button OnUpdate scripts, remove from
--- Masque, clear runtime state, hide the frame, and move it to a dormant
--- cache for reuse. Config data (db.profile.groups) is preserved so the
--- group can reload when load conditions change. Buttons remain attached
--- to the frame so visibility-only transitions can reuse them without
--- creating new C-side frame objects.
+-- Fully unload a group: save/clear button OnUpdate scripts, clear runtime
+-- state, hide the frame, and move it to a dormant cache for reuse. Config
+-- data (db.profile.groups) is preserved so the group can reload when load
+-- conditions change. Buttons remain attached to the frame so visibility-only
+-- transitions can reuse them without creating new C-side frame objects, and
+-- Masque registration is left intact for the same reason -- it is torn down
+-- in DiscardDormantFrame, the true-teardown path.
 function CooldownCompanion:UnloadGroup(groupId)
     local frame = self.groupFrames[groupId]
     if not frame then return end
     UnregisterKeyPressHighlightFrame(frame)
 
-    -- Save and clear button OnUpdate scripts, remove from Masque.
+    -- Save and clear button OnUpdate scripts.
     -- Buttons stay attached to the frame for potential reuse.
     if frame.buttons then
         for _, button in ipairs(frame.buttons) do
             if self.HideAuraTextureVisual then
                 self:HideAuraTextureVisual(button)
             end
-            self:RemoveButtonFromMasque(groupId, button)
             local onUpdate = button:GetScript("OnUpdate")
             if onUpdate then
                 button._savedOnUpdate = onUpdate
@@ -3298,9 +3658,6 @@ function CooldownCompanion:UnloadGroup(groupId)
             ST.EntryRuntime.ReleaseTrackedAuraScratch(button)
         end
     end
-
-    -- Delete Masque group
-    self:DeleteMasqueGroup(groupId)
 
     -- Clear alpha fade state
     if self.alphaState then
@@ -3327,6 +3684,11 @@ function CooldownCompanion:UnloadGroup(groupId)
     self.groupFrames[groupId] = nil
     -- D3: frame left the live set — refresh the identity index (coalesced).
     self:RequestSpellButtonIndexRebuild("unload")
+    -- Native aura sounds are Blizzard-side registrations keyed on unit+spell,
+    -- not on this frame, so parking the panel does not stop them: a hidden
+    -- panel keeps alerting until a pass parks its records. Same reason the
+    -- delete paths rebind.
+    self:RequestAuraRebind("unload")
     if self.RefreshCursorAnchorTicker then
         self:RefreshCursorAnchorTicker()
     end
@@ -3335,9 +3697,9 @@ function CooldownCompanion:UnloadGroup(groupId)
     end
 end
 
--- Recover a dormant frame: restore it to groupFrames, re-enable button
--- OnUpdate scripts, and recreate Masque group. Used by visibility-only
--- transitions to avoid recreating buttons.
+-- Recover a dormant frame: restore it to groupFrames and re-enable button
+-- OnUpdate scripts. Used by visibility-only transitions to avoid recreating
+-- buttons.
 function CooldownCompanion:RecoverDormantFrame(groupId)
     if not self._dormantFrames then return nil end
     local frame = self._dormantFrames[groupId]
@@ -3357,13 +3719,23 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
     end
     RefreshKeyPressHighlightFrame(frame)
 
-    -- Recreate Masque group and re-add buttons
+    -- Masque registration survives dormancy, so reconcile it in both directions:
+    -- rebuild it when the group should be skinned but isn't, and release it when
+    -- the group stopped being skinned while the frame was parked. The second case
+    -- matters because writers that bypass ToggleGroupMasque (preset/style copies,
+    -- combat-deferred edits) can clear masqueEnabled on a dormant group, and only
+    -- RemoveButtonFromMasque restores CC's native borders.
     local group = self.db.profile.groups[groupId]
-    if group and group.masqueEnabled and self.Masque then
+    if group and group.masqueEnabled and self.Masque and not self.MasqueGroups[groupId] then
         self:CreateMasqueGroup(groupId)
         for _, button in ipairs(frame.buttons) do
             self:AddButtonToMasque(groupId, button)
         end
+    elseif self.Masque and self.MasqueGroups[groupId] and not (group and group.masqueEnabled) then
+        for _, button in ipairs(frame.buttons) do
+            self:RemoveButtonFromMasque(groupId, button)
+        end
+        self:DeleteMasqueGroup(groupId)
     end
 
     -- Restore alpha sync if this frame inherits alpha from a parent frame.
@@ -3376,23 +3748,34 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
     -- D3: frame re-entered the live set without repopulation — refresh the
     -- identity index (coalesced).
     self:RequestSpellButtonIndexRebuild("recover")
+    -- The counterpart to the unload rebind: recovery skips PopulateGroupButtons
+    -- (that is the point of the dormant path), so nothing else re-binds these
+    -- buttons. Any pass that ran while the panel was parked left its records
+    -- parked — container hidden, sounds released — and they stay that way.
+    self:RequestAuraRebind("recover")
 
     return frame
 end
 
--- Discard a dormant frame permanently (used by delete operations).
+-- Discard a dormant frame permanently (used by delete operations). This is the
+-- true-teardown path, so the Masque group is released here rather than when the
+-- frame is merely parked.
 function CooldownCompanion:DiscardDormantFrame(groupId)
-    if self._dormantFrames then
-        local frame = self._dormantFrames[groupId]
-        UnregisterKeyPressHighlightFrame(frame)
-        if frame and frame.buttons and self.ReleaseAuraTextureVisual then
-            for _, button in ipairs(frame.buttons) do
+    local frame = self._dormantFrames and self._dormantFrames[groupId] or nil
+    UnregisterKeyPressHighlightFrame(frame)
+    if frame and frame.buttons then
+        for _, button in ipairs(frame.buttons) do
+            self:RemoveButtonFromMasque(groupId, button)
+            if self.ReleaseAuraTextureVisual then
                 self:ReleaseAuraTextureVisual(button)
             end
         end
-        if frame and self.ReleaseGroupButtonPools then
-            self:ReleaseGroupButtonPools(frame)
-        end
+    end
+    self:DeleteMasqueGroup(groupId)
+    if frame and self.ReleaseGroupButtonPools then
+        self:ReleaseGroupButtonPools(frame)
+    end
+    if self._dormantFrames then
         self._dormantFrames[groupId] = nil
     end
 end
@@ -3504,6 +3887,42 @@ function CooldownCompanion:UpdateAllGroupLayouts()
     end
 end
 
+-- Shared by the group context menu and the group multi-select surface;
+-- callers own the config-panel refresh.
+function CooldownCompanion:SetContainerEnabled(containerId, enabled)
+    local container = self.db.profile.groupContainers[containerId]
+    if not container then return end
+    container.enabled = enabled
+    self:RefreshContainerPanels(containerId)
+end
+
+function CooldownCompanion:SetContainerLocked(containerId, locked)
+    local container = self.db.profile.groupContainers[containerId]
+    if not container then return end
+    container.locked = locked
+    self:UpdateContainerDragHandle(containerId, locked)
+    self:RefreshContainerPanels(containerId)
+end
+
+function CooldownCompanion:SetPanelLocked(panelId, locked)
+    local group = self.db.profile.groups[panelId]
+    if not group then return end
+    if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then return end
+    if locked then
+        group.locked = nil
+    else
+        group.locked = false
+    end
+    self:RefreshGroupFrame(panelId)
+    -- Panels are not part of the arrange-managed set (arrange unlocks containers,
+    -- and panel padlocks hide while their container is unlocked), so this must not
+    -- be the broader CheckArrangeModeAutoExit: a bulk multi-select lock would then
+    -- evaluate an arrange exit once per panel and could exit partway through.
+    if locked then
+        self:CheckConfigReExpandAfterLock()
+    end
+end
+
 -- Refresh all panel frames belonging to a container.
 function CooldownCompanion:RefreshContainerPanels(containerId)
     for gid, group in pairs(self.db.profile.groups) do
@@ -3540,6 +3959,10 @@ function CooldownCompanion:UpdateContainerDragHandle(containerId, locked)
 end
 
 function CooldownCompanion:LockAllFrames()
+    -- Lock every container, including containers hidden for this character.
+    for containerId in pairs(self.db.profile.groupContainers or {}) do
+        self:SetContainerLocked(containerId, true)
+    end
     -- Also lock any individually-unlocked panels
     for groupId, group in pairs(self.db.profile.groups) do
         if group.locked == false then
@@ -3581,7 +4004,7 @@ function CooldownCompanion:UnlockAllFrames()
                 frame.dragHandle:Show()
             end
             if panelUnlocked then
-                frame:SetAlpha(1)
+                frame:SetAlpha(GetUnlockedPanelAlpha(frame))
             end
         end
     end
@@ -3589,10 +4012,84 @@ function CooldownCompanion:UnlockAllFrames()
     if self.containerFrames then
         for containerId in pairs(self.containerFrames) do
             local container = self.db.profile.groupContainers[containerId]
-            self:UpdateContainerDragHandle(containerId, not container or container.locked)
+            -- nil means locked; only an explicit false unlocks a container.
+            self:UpdateContainerDragHandle(containerId, not container or container.locked ~= false)
         end
     end
     self:RefreshAllGroups()
+end
+
+function CooldownCompanion:EnterArrangeMode()
+    if InCombatLockdown() or self._combatForcedLock then
+        self:Print("Cannot arrange during combat.")
+        return
+    end
+    if self._arrangeModeActive then
+        return
+    end
+
+    self:CaptureArrangeSnapshot()
+    self._arrangeModeActive = true
+    for containerId in pairs(self.db.profile.groupContainers or {}) do
+        if self:IsContainerVisibleToCurrentChar(containerId)
+            and self:ContainerHasArrangeEligiblePanel(containerId) then
+            self:SetContainerLocked(containerId, false)
+        end
+    end
+    if self.SetIndependentCastBarLocked then
+        self:SetIndependentCastBarLocked(false)
+    end
+    if self.SetIndependentResourceStackLocked then
+        self:SetIndependentResourceStackLocked(false)
+    end
+    if ST.CollapseConfigForUnlock then
+        ST.CollapseConfigForUnlock()
+    end
+    GetArrangeModePill(self):Show()
+    self:Print("All frames unlocked. Drag to move.")
+end
+
+function CooldownCompanion:ExitArrangeMode(opts)
+    self._arrangeSnapshot = nil
+    self._arrangeModeActive = nil
+    CancelActiveMoverGestures(self)
+    self:LockAllFrames()
+    if self.SetIndependentCastBarLocked then
+        self:SetIndependentCastBarLocked(true)
+    end
+    if self.SetIndependentResourceStackLocked then
+        self:SetIndependentResourceStackLocked(true)
+    end
+    if self._arrangeModePill then
+        self._arrangeModePill:Hide()
+    end
+    if self.RefreshConfigPanel then
+        self:RefreshConfigPanel()
+    end
+    if not (opts and opts.silent) then
+        self:Print("All frames locked.")
+    end
+    if not (opts and opts.skipConfigReExpand) then
+        self:CheckConfigReExpandAfterLock()
+    end
+end
+
+function CooldownCompanion:CancelArrangeMode()
+    if not self._arrangeModeActive then
+        return
+    end
+    if InCombatLockdown() or self._combatForcedLock then
+        self:Print("Cannot cancel arranging during combat.")
+        return
+    end
+
+    local snapshot = self._arrangeSnapshot
+    self._arrangeSnapshot = nil
+    self:ExitArrangeMode({ silent = true, skipConfigReExpand = true })
+    if snapshot then
+        RestoreArrangeSnapshot(self, snapshot)
+    end
+    self:Print("Arranging cancelled. Unsaved changes reverted.")
 end
 
 -- TALENT NODE CACHE (for per-button talent conditions)

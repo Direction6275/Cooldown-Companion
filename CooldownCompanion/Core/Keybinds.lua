@@ -511,8 +511,16 @@ function CooldownCompanion:RefreshKeybindState()
     self:OnKeybindsChanged()
 end
 
+-- Text-mode panels whose grid pitch has to be recomputed after this pass.
+-- Module-scoped and wiped after use so the walk allocates nothing.
+local pendingTextRelayoutGroups = {}
+
 -- Refresh keybind text and binding key caches on all buttons.
 function CooldownCompanion:OnKeybindsChanged()
+    -- ButtonFrame/TextMode.lua loads after this file, so resolve its export
+    -- at call time rather than at file scope.
+    local RefreshTextEntryLayout = ST._RefreshTextEntryLayout
+
     self:ForEachButton(function(button, buttonData)
         if button.keybindText then
             local text = CooldownCompanion:GetDisplayedKeybindText(buttonData, button._resolvedItemId, button)
@@ -521,7 +529,32 @@ function CooldownCompanion:OnKeybindsChanged()
         end
         -- Rebuild key press highlight binding cache
         CacheButtonBindingKeys(button, buttonData)
+
+        -- Text entries have no keybind overlay: a {keybind} token renders
+        -- INSIDE the entry's text, and the entry is auto-sized from a
+        -- worst-case render of its format. A rebind can therefore change how
+        -- wide the box has to be. The re-read goes through TextMode's metrics
+        -- cache, which now compares the resolved name and keybind strings, so
+        -- an unchanged entry costs a few comparisons and this same pass also
+        -- heals an entry whose spell/item name only just resolved.
+        if RefreshTextEntryLayout and button._isText then
+            local relayoutGroupId = RefreshTextEntryLayout(button)
+            if relayoutGroupId then
+                pendingTextRelayoutGroups[relayoutGroupId] = true
+            end
+        end
     end)
+
+    -- After the walk, never inside it: UpdateGroupStyle can fall back to
+    -- repopulating the panel, which rebuilds the very button list being
+    -- iterated. One restyle per panel settles any number of changed entries,
+    -- because the pitch is the max over all of them.
+    if next(pendingTextRelayoutGroups) then
+        for relayoutGroupId in pairs(pendingTextRelayoutGroups) do
+            self:UpdateGroupStyle(relayoutGroupId)
+        end
+        wipe(pendingTextRelayoutGroups)
+    end
 end
 
 -- Exports for key press highlight

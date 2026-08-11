@@ -99,16 +99,32 @@ function CooldownCompanion:ToggleGroupMasque(groupId, enable)
 
     group.masqueEnabled = enable
 
+    -- Dormant frames keep their buttons and Masque registration, so an unloaded
+    -- group must be reskinned here too or it recovers in the wrong state.
+    local frame = self.groupFrames[groupId] or (self._dormantFrames and self._dormantFrames[groupId])
+
     if enable then
         -- Force square icons when Masque is enabled (non-square causes stretching)
         group.style.maintainAspectRatio = true
+
+        -- Zero out icon zoom: Masque skins own the icon's texture coordinates,
+        -- so a CC-side crop would fight the skin. Entry-level overrides shadow
+        -- the group value through the effective style, so they are zeroed too;
+        -- the config locks both zoom rows while Masque is on.
+        group.style.iconZoom = 0
+        if group.buttons then
+            for _, buttonData in ipairs(group.buttons) do
+                if buttonData.styleOverrides and buttonData.styleOverrides.iconZoom then
+                    buttonData.styleOverrides.iconZoom = 0
+                end
+            end
+        end
 
         -- Create Masque group if it doesn't exist
         if not MasqueGroups[groupId] then
             self:CreateMasqueGroup(groupId)
         end
         -- Add all existing buttons to Masque
-        local frame = self.groupFrames[groupId]
         if frame and frame.buttons then
             for _, button in ipairs(frame.buttons) do
                 self:AddButtonToMasque(groupId, button)
@@ -116,7 +132,6 @@ function CooldownCompanion:ToggleGroupMasque(groupId, enable)
         end
     else
         -- Remove all buttons from Masque and restore borders
-        local frame = self.groupFrames[groupId]
         if frame and frame.buttons then
             for _, button in ipairs(frame.buttons) do
                 self:RemoveButtonFromMasque(groupId, button)

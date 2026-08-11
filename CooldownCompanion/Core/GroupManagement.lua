@@ -1,5 +1,5 @@
 --[[
-    CooldownCompanion - Core/GroupManagement.lua: Group/folder CRUD, AddButtonToGroup,
+    CooldownCompanion - Core/GroupManagement.lua: Group CRUD, AddButtonToGroup,
     RemoveButtonFromGroup, spell search (FindTalentSpellByName)
 ]]
 
@@ -123,22 +123,6 @@ local function NormalizeCopiedEntityForContainerScope(self, entity, container)
             for _, button in ipairs(entity.buttons) do
                 self:NormalizeEligibilityForCharacterScope(button, opts)
             end
-        end
-    end
-end
-
-local function ClearInvalidCopiedFolderId(self, entity, sourceEntity)
-    if type(entity) ~= "table" or not entity.folderId then
-        return
-    end
-    if sourceEntity and sourceEntity.isGlobal then
-        entity.folderId = nil
-        return
-    end
-    if self.CanMoveContainerToFolder then
-        local ok = self:CanMoveContainerToFolder(entity, entity.folderId)
-        if not ok then
-            entity.folderId = nil
         end
     end
 end
@@ -393,6 +377,20 @@ local function GetGroupDisplayMode(group)
     return "icons"
 end
 
+-- Panel arrangement orientation is remembered PER MODE so a display-mode
+-- swap can never destroy another mode's layout: bars and text panels read
+-- their own keys (unset = vertical), everything else keeps style.orientation
+-- (unset = horizontal). Every layout read goes through here.
+function ST.GetPanelLayoutOrientation(displayMode, style)
+    if displayMode == "bars" then
+        return style.barOrientation or "vertical"
+    end
+    if displayMode == "text" then
+        return style.textOrientation or "vertical"
+    end
+    return style.orientation or "horizontal"
+end
+
 local function GroupMatchesDirectStyleCopyMode(group, mode)
     if not group or not IsValidDirectStyleCopyMode(mode) then
         return false
@@ -467,10 +465,11 @@ end
 
 local function BuildGroupSettingPresetBaseline(profile, mode)
     local style = CopyTable(profile.globalStyle or {})
+    style.orientation = "horizontal"
     if mode == "bars" then
-        style.orientation = "vertical"
-    else
-        style.orientation = "horizontal"
+        style.barOrientation = "vertical"
+    elseif mode == "text" then
+        style.textOrientation = "vertical"
     end
     style.buttonsPerRow = 12
     style.showCooldownText = true
@@ -526,18 +525,29 @@ local function ApplyGroupSettingPresetData(profile, group, mode, presetData)
         for key, value in pairs(styleData) do
             group.style[key] = CopyPresetValue(value)
         end
+        -- Presets captured before the per-mode orientation split carry the
+        -- bar/text layout only in the legacy shared key. A preset can be
+        -- imported after login (same reasoning as strataOrder below), so map
+        -- it here rather than relying on the load-time pass alone.
+        if mode == "bars" and styleData.barOrientation == nil and styleData.orientation ~= nil then
+            group.style.barOrientation = styleData.orientation
+        elseif mode == "text" and styleData.textOrientation == nil and styleData.orientation ~= nil then
+            group.style.textOrientation = styleData.orientation
+        end
     end
 
-    -- Expand legacy 4-element strataOrder from older presets
+    -- Drop a strataOrder from an older layer set rather than trying to grow it.
+    -- This replaces the 4->6 expander from a1871266, which inserted the since
+    -- retired "auraGlow" key and would now produce an order that is both the
+    -- wrong length and unrecognized: rendering would fall back to the default
+    -- while the Custom Icon Strata checkbox still read ON.
+    --
+    -- A preset can also be imported after login, so this cannot rely on the
+    -- load-time pass in Core/Migrations.lua alone. Nil is the honest value: the
+    -- panel drops to the default order and the checkbox reflects that.
     local so = group.style.strataOrder
-    if type(so) == "table" and #so == 4 then
-        local cooldownPos
-        for i = 1, 4 do
-            if so[i] == "cooldown" then cooldownPos = i; break end
-        end
-        local insertAt = (cooldownPos or 0) + 1
-        table.insert(so, insertAt, "auraGlow")
-        table.insert(so, insertAt + 1, "readyGlow")
+    if type(so) == "table" and #so > 0 and not ST._IsUsableStrataOrder(so) then
+        group.style.strataOrder = nil
     end
 end
 
@@ -901,6 +911,7 @@ function CooldownCompanion:DeleteContainer(containerId)
         self:ClearContainerAlphaRuntimeState(containerId)
     end
     RefreshPanelAlphaDependencyTargets(self)
+    self:RequestAuraRebind("delete")
 end
 
 local function GetStandalonePanelAnchorSettings(panel)
@@ -1030,7 +1041,7 @@ local function ResetCopiedStandalonePanelAnchor(panel, groups, sourceGroupId, so
     end
 end
 
-function CooldownCompanion:DuplicateContainer(containerId)
+function CooldownCompanion:DuplicateContainer(containerId, skipFinalize)
     local db = self.db.profile
     local sourceContainer = db.groupContainers[containerId]
     if not sourceContainer then return nil end
@@ -1045,7 +1056,6 @@ function CooldownCompanion:DuplicateContainer(containerId)
     newContainer.createdBy = self.db.keys.char
     newContainer.isGlobal = false
     NormalizeCopiedEntityForContainerScope(self, newContainer, newContainer)
-    ClearInvalidCopiedFolderId(self, newContainer, sourceContainer)
 
     db.groupContainers[newContainerId] = newContainer
 
@@ -1093,12 +1103,30 @@ function CooldownCompanion:DuplicateContainer(containerId)
     if self.CreateContainerFrame then
         self:CreateContainerFrame(newContainerId)
     end
-    if self.FinalizeContainerAnchorsToScreenOffsets then
-        self:FinalizeContainerAnchorsToScreenOffsets()
+    if not skipFinalize then
+        if self.FinalizeContainerAnchorsToScreenOffsets then
+            self:FinalizeContainerAnchorsToScreenOffsets()
+        end
+        RefreshPanelAlphaDependencyTargets(self)
     end
-    RefreshPanelAlphaDependencyTargets(self)
 
     return newContainerId
+end
+
+-- Batch duplicate: one global anchor-finalize pass instead of one per copy.
+function CooldownCompanion:DuplicateContainers(containerIds)
+    local duplicatedAny = false
+    for _, containerId in ipairs(containerIds) do
+        if self:DuplicateContainer(containerId, true) then
+            duplicatedAny = true
+        end
+    end
+    if duplicatedAny then
+        if self.FinalizeContainerAnchorsToScreenOffsets then
+            self:FinalizeContainerAnchorsToScreenOffsets()
+        end
+        RefreshPanelAlphaDependencyTargets(self)
+    end
 end
 
 ------------------------------------------------------------------------
@@ -1152,6 +1180,15 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     -- Style defaults (nil-guard respects user-customized globalStyle)
     local style = db.groups[groupId].style
     style.orientation = "horizontal"
+    -- Stamp the per-mode orientation key at birth: new-format bar/text
+    -- panels must always carry it, or the sentinel-stripped re-run of the
+    -- orientation migration after a profile import would mistake them for
+    -- pre-split panels and copy the icons key over their layout.
+    if displayMode == "bars" then
+        style.barOrientation = "vertical"
+    elseif displayMode == "text" then
+        style.textOrientation = "vertical"
+    end
     style.growthOrigin = "TOPLEFT"
     style.buttonsPerRow = 12
     style.showCooldownText = true
@@ -1166,17 +1203,15 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     if style.showAuraDurationSwipe == nil then style.showAuraDurationSwipe = style.showCooldownSwipe ~= false end
     if style.showCooldownSwipeFill == nil then style.showCooldownSwipeFill = true end
     if style.showAuraDurationSwipeFill == nil then style.showAuraDurationSwipeFill = style.showCooldownSwipeFill ~= false end
-    if style.auraDurationSwipeReverse == nil then style.auraDurationSwipeReverse = style.cooldownSwipeReverse or false end
-    if style.showAuraDurationSwipeEdge == nil then style.showAuraDurationSwipeEdge = style.showCooldownSwipeEdge ~= false end
+    if style.auraDurationSwipeReverse == nil then style.auraDurationSwipeReverse = true end
+    if style.auraDurationSwipeEdgeEnabled == nil then style.auraDurationSwipeEdgeEnabled = style.cooldownSwipeEdgeEnabled == true end
     if style.auraDurationSwipeAlpha == nil then style.auraDurationSwipeAlpha = style.cooldownSwipeAlpha or 0.8 end
     if style.auraDurationSwipeEdgeColor == nil then style.auraDurationSwipeEdgeColor = CopyTable(style.cooldownSwipeEdgeColor or {1, 1, 1, 1}) end
-    if style.auraUseBlizzardSwipe == nil then style.auraUseBlizzardSwipe = false end
     if style.iconFillEnabled == nil then style.iconFillEnabled = false end
     if style.iconFillOrientation == nil then style.iconFillOrientation = "vertical" end
     if style.iconFillReverse == nil then style.iconFillReverse = false end
     if style.iconFillTimerBehavior == nil then style.iconFillTimerBehavior = "drain" end
     if style.iconFillCooldownColor == nil then style.iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55} end
-    if style.iconFillAuraColor == nil then style.iconFillAuraColor = {0.2, 1.0, 0.2, 0.55} end
     if style.barAuraEffect == nil then style.barAuraEffect = "color" end
     if style.barAuraIndicatorEnabled == nil then
         style.barAuraIndicatorEnabled = (style.barAuraEffect or "none") ~= "none"
@@ -1198,7 +1233,6 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
         style.readyGlowStyle = "none"
         style.keyPressHighlightStyle = "none"
         style.iconFillEnabled = false
-        style.auraUseBlizzardSwipe = false
     end
 
     if displayMode == "textures" then
@@ -1239,6 +1273,10 @@ function CooldownCompanion:DeletePanel(containerId, groupId)
     self:DiscardDormantFrame(groupId)
     db.groups[groupId] = nil
     RefreshPanelAlphaDependencyTargets(self)
+    -- Native aura sounds are held by the display bindings, not the frame, so
+    -- unloading alone leaves a deleted entry's alert registered and firing.
+    -- The rebind pass parks every record and re-registers from current config.
+    self:RequestAuraRebind("delete")
     return true
 end
 
@@ -1323,27 +1361,62 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
     return true, sourceDeleted
 end
 
-function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
+local DISPLAY_MODE_CHANGE_REFUSALS = {
+    assistant = "Assistant Panels cannot be converted. Create a new Assistant Panel instead.",
+    trigger = "Trigger Panels cannot be converted. Create a new Trigger Panel instead.",
+    ["texture-entry-limit"] = "Texture Panels can only hold one entry. Remove extra entries first, or create a new Texture Panel.",
+    ["aura-entries"] = "This panel contains aura entries, which can only be tracked in icon, bar, or Texture panels. Remove them first, or convert to one of those modes.",
+}
+
+function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
     local group = self.db.profile.groups[groupId]
-    if not group then return end
+    if not group then return false end
 
     local oldMode = group.displayMode
     if oldMode ~= newMode
         and (ST.IsRotationAssistantDisplayMode(oldMode) or ST.IsRotationAssistantDisplayMode(newMode)) then
-        self:Print("Assistant Panels cannot be converted. Create a new Assistant Panel instead.")
-        return false
+        return false, "assistant"
     end
 
     if oldMode ~= newMode and (oldMode == "trigger" or newMode == "trigger") then
-        self:Print("Trigger Panels cannot be converted. Create a new Trigger Panel instead.")
+        return false, "trigger"
+    end
+
+    if newMode == "textures" and #(group.buttons or {}) > 1 then
+        return false, "texture-entry-limit"
+    end
+
+    -- Primary aura entries only display through the aura system, which binds
+    -- to icon, bar, and Texture panels; refuse conversions that would strand
+    -- them.
+    if oldMode ~= newMode
+        and newMode ~= "icons"
+        and newMode ~= "bars"
+        and newMode ~= "textures"
+        and newMode ~= nil then
+        for _, bd in ipairs(group.buttons or {}) do
+            if bd.addedAs == "aura" then
+                return false, "aura-entries"
+            end
+        end
+    end
+
+    return true
+end
+
+function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
+    local group = self.db.profile.groups[groupId]
+    if not group then return end
+
+    local ok, reason = self:CanChangePanelDisplayMode(groupId, newMode)
+    if not ok then
+        if DISPLAY_MODE_CHANGE_REFUSALS[reason] then
+            self:Print(DISPLAY_MODE_CHANGE_REFUSALS[reason])
+        end
         return false
     end
 
-    if newMode == "textures" and #group.buttons > 1 then
-        self:Print("Texture Panels can only hold one entry. Remove extra entries first, or create a new Texture Panel.")
-        return false
-    end
-
+    local oldMode = group.displayMode
     if (oldMode == "textures" or oldMode == "trigger") and newMode ~= oldMode then
         -- Leaving texture mode should carry the standalone texture position
         -- back into the normal panel anchor so the panel does not jump back.
@@ -1351,11 +1424,28 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     end
 
     group.displayMode = newMode
+    if oldMode ~= newMode and newMode == "textures" and self.EnableTexturePanelAuraDisplayForEntry then
+        for _, buttonData in ipairs(group.buttons or {}) do
+            self:EnableTexturePanelAuraDisplayForEntry(group, buttonData)
+        end
+    end
     if oldMode ~= newMode and ShouldClearCDMPanelSourceForDisplayMode(group, newMode) then
         group.cdmPanelSource = nil
     end
-    if newMode == "bars" or newMode == "text" then
-        group.style.orientation = "vertical"
+    -- Config previews are stored per-group and gated by the panel's mirror
+    -- surface at APPLY time; a transition across the mirror boundary (e.g.
+    -- icons -> textures) would migrate previews armed for the config mirror
+    -- onto the live world buttons. Clear them on every mode change.
+    if oldMode ~= newMode and self.ClearAllConfigPreviews then
+        self:ClearAllConfigPreviews()
+    end
+    -- Orientation is remembered per mode (ST.GetPanelLayoutOrientation), so
+    -- entering bars/text no longer stomps the icons layout: only stamp the
+    -- mode's own key on first entry so new-format panels always carry it.
+    if newMode == "bars" and group.style.barOrientation == nil then
+        group.style.barOrientation = "vertical"
+    elseif newMode == "text" and group.style.textOrientation == nil then
+        group.style.textOrientation = "vertical"
     end
     if newMode ~= "icons" and group.masqueEnabled and self.ToggleGroupMasque then
         self:ToggleGroupMasque(groupId, false)
@@ -1433,6 +1523,7 @@ function CooldownCompanion:DeleteGroup(id)
         self:DeleteContainer(parentId)
     end
     RefreshPanelAlphaDependencyTargets(self)
+    self:RequestAuraRebind("delete")
 end
 
 function CooldownCompanion:DuplicateGroup(id)
@@ -1461,121 +1552,10 @@ function CooldownCompanion:DuplicateGroup(id)
     newGroup.createdBy = self.db.keys.char
     newGroup.isGlobal = false
     NormalizeCopiedEntityForContainerScope(self, newGroup, newGroup)
-    ClearInvalidCopiedFolderId(self, newGroup, sourceGroup)
-
     self.db.profile.groups[newGroupId] = newGroup
     self:CreateGroupFrame(newGroupId)
     RefreshPanelAlphaDependencyTargets(self)
     return newGroupId
-end
-
-function CooldownCompanion:CreateFolder(name, section)
-    local db = self.db.profile
-    local folderId = db.nextFolderId
-    db.nextFolderId = folderId + 1
-    db.folders[folderId] = {
-        name = name,
-        order = folderId,
-        section = section or "char",
-        createdBy = self.db.keys.char,
-    }
-    return folderId
-end
-
-function CooldownCompanion:DeleteFolder(folderId)
-    local db = self.db.profile
-    if not db.folders[folderId] then return end
-    -- Collect child container IDs first (avoid modifying table during pairs iteration)
-    local childIds = {}
-    for containerId, container in pairs(db.groupContainers) do
-        if container.folderId == folderId then
-            childIds[#childIds + 1] = containerId
-        end
-    end
-    for _, containerId in ipairs(childIds) do
-        self:DeleteContainer(containerId)
-    end
-    db.folders[folderId] = nil
-end
-
-function CooldownCompanion:RenameFolder(folderId, newName)
-    local folder = self.db.profile.folders[folderId]
-    if not folder then return false end
-    local normalizedName = tostring(newName or ""):match("^%s*(.-)%s*$")
-    if normalizedName == "" then return false end
-    folder.name = normalizedName
-    return true
-end
-
-function CooldownCompanion:MoveGroupToFolder(id, folderId, opts)
-    local db = self.db.profile
-
-    -- Resolve to container (id may be containerId or panel groupId)
-    local containerId = id
-    local container = db.groupContainers[id]
-    if not container then
-        local group = db.groups[id]
-        if group and group.parentContainerId then
-            containerId = group.parentContainerId
-            container = db.groupContainers[containerId]
-        end
-    end
-    if not container then return end
-
-    if folderId and self.CanMoveContainerToFolder then
-        local ok = self:CanMoveContainerToFolder(containerId, folderId, opts)
-        if not ok then
-            if self.Print then
-                self:Print("Groups cannot be moved into folders owned by another class.")
-            end
-            return false
-        end
-    end
-
-    container.folderId = folderId  -- nil = loose (no folder)
-
-    -- When moving into a folder: clear custom icon (icons only shown on non-foldered
-    -- containers) and stamp folder spec filters onto this container.
-    if folderId then
-        container.manualIcon = nil
-        local folder = db.folders and db.folders[folderId]
-        if folder and folder.specs and next(folder.specs) then
-            container.specs = CopyTable(folder.specs)
-        end
-    end
-
-    -- Refresh all panels in this container (folder change may affect visibility)
-    local panels = self:GetPanels(containerId)
-    for _, p in ipairs(panels) do
-        self:RefreshGroupFrame(p.groupId)
-    end
-    return true
-end
-
-function CooldownCompanion:ToggleFolderGlobal(folderId)
-    local db = self.db.profile
-    local folder = db.folders[folderId]
-    if not folder then return end
-    local newSection = (folder.section == "global") and "char" or "global"
-    folder.section = newSection
-    if newSection == "char" then
-        folder.createdBy = self.db.keys.char
-    end
-    -- Move all child containers to the new section
-    for _, container in pairs(db.groupContainers) do
-        if container.folderId == folderId then
-            if newSection == "global" then
-                container.isGlobal = true
-            else
-                container.isGlobal = false
-                container.createdBy = self.db.keys.char
-            end
-        end
-    end
-    if newSection == "char" and self.NormalizeFolderEligibilityForCharacterScope then
-        self:NormalizeFolderEligibilityForCharacterScope(folderId)
-    end
-    self:RefreshAllGroups()
 end
 
 function CooldownCompanion:ToggleGroupGlobal(containerId)
@@ -1593,6 +1573,27 @@ function CooldownCompanion:ToggleGroupGlobal(containerId)
     end
 
     self:RefreshAllGroups()
+end
+
+-- A panel whose entries currently fit a single row/column keeps that single
+-- line as entries are added; only a panel the user deliberately wrapped
+-- (wrap count below the entry count) may start a new row or column. Every
+-- path that grows a panel's entry list calls this with the count from
+-- before the growth, after inserting.
+function CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount)
+    if not group then return end
+    local displayMode = group.displayMode or "icons"
+    if displayMode ~= "icons" and displayMode ~= "bars" and displayMode ~= "text" then
+        return
+    end
+    local style = group.style
+    if not style then return end
+    previousCount = tonumber(previousCount) or 0
+    local newCount = #(group.buttons or {})
+    local perLine = tonumber(style.buttonsPerRow) or 12
+    if perLine >= previousCount and newCount > perLine then
+        style.buttonsPerRow = newCount
+    end
 end
 
 function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot, preserveSpellID)
@@ -1705,6 +1706,14 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     if buttonType == "spell" then
         if forceAura == true or (isPassive and forceAura ~= false) then
             group.buttons[buttonIndex].addedAs = "aura"
+            -- Explicit aura adds (picked as an aura, not a passive that
+            -- auto-classified) default to showing only while the aura is
+            -- active — the entry exists to display the aura. Icon and bar
+            -- groups both compose a full shell; text mode has no aura display.
+            local displayMode = group.displayMode or "icons"
+            if forceAura == true and (displayMode == "icons" or displayMode == "bars") then
+                group.buttons[buttonIndex].hideWhileAuraNotActive = true
+            end
         else
             group.buttons[buttonIndex].addedAs = "spell"
         end
@@ -1725,7 +1734,6 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         if buttonType == "spell" then
             local newButton = group.buttons[buttonIndex]
             local viewerFrame
-            local foundViaAbilityBuffOverride = false
             local resolvedAuraId = C_UnitAuras.GetCooldownAuraBySpellID(id)
             viewerFrame = (resolvedAuraId and resolvedAuraId ~= 0
                     and self.viewerAuraFrames[resolvedAuraId])
@@ -1737,18 +1745,6 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                     viewerFrame = child
                 end
             end
-            if not viewerFrame then
-                local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[id]
-                if overrideBuffs then
-                    for buffId in overrideBuffs:gmatch("%d+") do
-                        viewerFrame = self.viewerAuraFrames[tonumber(buffId)]
-                        if viewerFrame then
-                            foundViaAbilityBuffOverride = true
-                            break
-                        end
-                    end
-                end
-            end
             local hasViewerFrame = false
             if viewerFrame and GetCVarBool("cooldownViewerEnabled") then
                 local parent = viewerFrame:GetParent()
@@ -1756,7 +1752,6 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                 hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
             end
             if hasViewerFrame
-                and not foundViaAbilityBuffOverride
                 and IsDistinctAuraViewerFrameForSpell(newButton, viewerFrame) then
                 newButton.auraTracking = false
                 newButton.auraIndicatorEnabled = false
@@ -1765,10 +1760,6 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             if hasViewerFrame then
                 newButton.auraTracking = true
                 newButton.auraIndicatorEnabled = true
-                local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[id]
-                if overrideBuffs and newButton.addedAs ~= "aura" then
-                    newButton.auraSpellID = overrideBuffs
-                end
             end
         end
     end
@@ -1794,10 +1785,15 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         )
     end
 
+    if self.EnableTexturePanelAuraDisplayForEntry then
+        self:EnableTexturePanelAuraDisplayForEntry(group, newButton)
+    end
+
     if group.displayMode == "trigger" and self.NormalizeTriggerConditionRowData then
         self:NormalizeTriggerConditionRowData(newButton)
     end
 
+    self:KeepPanelSingleLineOnGrowth(group, buttonIndex - 1)
     self:RefreshGroupFrame(groupId)
     return buttonIndex, transformNotified
 end
@@ -1830,6 +1826,7 @@ function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKi
         self:NormalizeTriggerConditionRowData(newButton)
     end
 
+    self:KeepPanelSingleLineOnGrowth(group, buttonIndex - 1)
     self:RefreshGroupFrame(groupId)
     return buttonIndex
 end
@@ -1894,6 +1891,58 @@ local function FindDisplaySpell(matcher)
         end
     end
     return nil
+end
+
+-- Add-time eligibility check only; do not call from per-frame or combat paths.
+function CooldownCompanion:CanPlayerEverCastSpell(spellID)
+    local id = tonumber(spellID)
+    if not id then return false, false end
+
+    -- Resolve at call time: SpellQueries.lua loads before this file, and keeping
+    -- the lookup here avoids capturing an unavailable helper at file scope.
+    local baseID = ST.ResolveToBaseSpell(id)
+    local hasBaseVariant = baseID ~= id
+    local spellExists = C_Spell.DoesSpellExist(id)
+        or (hasBaseVariant and C_Spell.DoesSpellExist(baseID))
+    if not spellExists then return false, false end
+
+    if C_SpellBook.IsSpellKnownOrInSpellBook(id, Enum.SpellBookSpellBank.Player)
+        or (hasBaseVariant and C_SpellBook.IsSpellKnownOrInSpellBook(baseID, Enum.SpellBookSpellBank.Player)) then
+        return true, true
+    end
+    if C_SpellBook.IsSpellKnownOrInSpellBook(id, Enum.SpellBookSpellBank.Pet)
+        or (hasBaseVariant and C_SpellBook.IsSpellKnownOrInSpellBook(baseID, Enum.SpellBookSpellBank.Pet)) then
+        return true, true
+    end
+
+    local slotIndex = C_SpellBook.FindSpellBookSlotForSpell(id, true, true, true, true)
+    if not slotIndex and hasBaseVariant then
+        slotIndex = C_SpellBook.FindSpellBookSlotForSpell(baseID, true, true, true, true)
+    end
+    if slotIndex then return true, true end
+
+    if WalkTalentTree(function(defInfo)
+        return defInfo.spellID == id or (hasBaseVariant and defInfo.spellID == baseID)
+    end) then
+        return true, true
+    end
+
+    return FindDisplaySpell(function(displaySpellID)
+        return displaySpellID == id or (hasBaseVariant and displaySpellID == baseID)
+    end) == true, true
+end
+
+-- Group-scoped aura tracking is owned by the spell entry's castable identity.
+-- Standalone aura entries have no separate castable identity, so their primary
+-- aura remains the ownership probe. The castability primitive normalizes both.
+function CooldownCompanion:EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
+    if type(buttonData) ~= "table" then return false, false end
+
+    if buttonData.type == "spell" and buttonData.addedAs ~= "aura" then
+        return self:CanPlayerEverCastSpell(buttonData.id)
+    end
+    if not primaryAuraSpellID then return false, false end
+    return self:CanPlayerEverCastSpell(primaryAuraSpellID)
 end
 
 -- Search the off-spec spellbook for a spell by name or ID.
@@ -1986,11 +2035,6 @@ function CooldownCompanion:EnumerateActiveProfileCharacters()
         for _, container in pairs(profile.groupContainers or {}) do
             if type(container) == "table" and not container.isGlobal then
                 AddCharKey(container.createdBy)
-            end
-        end
-        for _, folder in pairs(profile.folders or {}) do
-            if type(folder) == "table" and folder.section == "char" then
-                AddCharKey(folder.createdBy)
             end
         end
     end

@@ -1,104 +1,74 @@
 --[[
-    CooldownCompanion - Config/Column3
-    RefreshColumn3 (button settings / Custom Bars column).
+    CooldownCompanion - Config/WorkspaceRouter
+    Routes the workspace to button, Resources / Cast Bar & Unit Frames,
+    or Other Class browsing surfaces.
 ]]
 
-local ADDON_NAME, ST = ...
+local _, ST = ...
 local CS = ST._configState
-local AceGUI = LibStub("AceGUI-3.0")
 
 ------------------------------------------------------------------------
--- COLUMN 3: Button Settings (normal) / Custom Bars (bars mode)
+-- Workspace: button settings / Resources, Cast Bar & Unit Frames home
 ------------------------------------------------------------------------
 local function RefreshColumn3()
-    -- Hide browse placeholder when not showing it
-    local col3BrowseClean = CS.configFrame and CS.configFrame.col3
-    if col3BrowseClean and col3BrowseClean._browsePlaceholder then
-        col3BrowseClean._browsePlaceholder:Hide()
+    -- Export and import modes own the whole workspace with their flat
+    -- surfaces. Those surfaces are unknown to the normal dispatchers, so
+    -- they are also hidden here whenever their mode is off.
+    local modeCol3 = CS.configFrame and CS.configFrame.col3
+    if modeCol3 and modeCol3._exportSummaryScroll and not CS.exportMode then
+        modeCol3._exportSummaryScroll.frame:Hide()
+    end
+    if modeCol3 and not CS.importMode then
+        if modeCol3._importPasteBox then
+            modeCol3._importPasteBox.frame:Hide()
+        end
+        if modeCol3._importReviewScroll then
+            modeCol3._importReviewScroll.frame:Hide()
+        end
+    end
+    if CS.exportMode then
+        if modeCol3 and ST._RenderExportModeSummary then
+            ST._RenderExportModeSummary(modeCol3)
+        end
+        return
+    end
+    if CS.importMode then
+        if modeCol3 and ST._RenderImportModeSurface then
+            ST._RenderImportModeSurface(modeCol3)
+        end
+        return
     end
 
-    -- Bars & Frames panel mode: show Custom Bars
-    if CS.resourceBarPanelActive then
+    -- Plain buttons view: the workspace owns the editing surface.
+    if ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() then
+        return ST._RefreshButtonsWideColumn()
+    end
+
+    -- Resources, Cast Bar & Unit Frames: one workspace preview, whose
+    -- selected object decides which settings surface shows beneath it. The
+    -- Navigator keeps only the destination row here.
+    if CS.barsEntrySelected then
         local col3 = CS.configFrame and CS.configFrame.col3
         if not col3 then ST._RefreshButtonSettingsColumn() return end
 
         -- Hide button settings content that lives on the same col3 content area
         if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
         if col3.bsPlaceholder then col3.bsPlaceholder:Hide() end
-        if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
-        if col3._panelTabGroup then col3._panelTabGroup.frame:Hide() end
-        if col3._panelMultiSelectScroll then col3._panelMultiSelectScroll.frame:Hide() end
+        if col3._multiSelectActionsScroll then col3._multiSelectActionsScroll.frame:Hide() end
+        if col3._customAuraTabGroup then col3._customAuraTabGroup.frame:Hide() end
+        if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
+        if ST._HideButtonsPanelPreviewSurfaces then ST._HideButtonsPanelPreviewSurfaces(col3) end
 
-        if col3._customAuraTabGroup then
-            col3._customAuraTabGroup.frame:Hide()
-        end
-
-        if not col3._customBarsScroll then
-            local scroll = AceGUI:Create("ScrollFrame")
-            scroll:SetLayout("List")
-            scroll.frame:SetParent(col3.content)
-            col3._customBarsScroll = scroll
-        end
-
-        col3._customBarsScroll.frame:ClearAllPoints()
-        col3._customBarsScroll.frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
-        col3._customBarsScroll.frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
-        col3._customBarsScroll:ReleaseChildren()
-        col3._customBarsScroll.frame:Show()
-        ST._BuildCustomBarsListPanel(col3._customBarsScroll)
-        return
+        -- One dispatcher for the whole destination: it picks the canvas,
+        -- the overview pane, or the conflict gate on its own.
+        return ST._RefreshResourcesWideColumn(col3)
     end
 
-    -- Normal mode: hide Custom Bars panel
-    local col3Normal = CS.configFrame and CS.configFrame.col3
-    if col3Normal and col3Normal._customAuraTabGroup then
-        col3Normal._customAuraTabGroup.frame:Hide()
-    end
-    if col3Normal then
-        col3Normal._customAuraSubScroll = nil
-    end
-    if col3Normal and col3Normal._customAuraScroll then
-        col3Normal._customAuraScroll.frame:Hide()
-    end
-    if col3Normal and col3Normal._customBarsScroll then
-        col3Normal._customBarsScroll.frame:Hide()
-    end
-
-    -- Panel multi-select: batch operations in Column 3
-    local panelMultiCount = 0
-    local multiPanelIds = {}
-    for pid in pairs(CS.selectedPanels) do
-        panelMultiCount = panelMultiCount + 1
-        multiPanelIds[#multiPanelIds + 1] = pid
-    end
-    if panelMultiCount >= 2 and CS.selectedContainer then
-        if col3Normal then
-            if col3Normal.bsTabGroup then col3Normal.bsTabGroup.frame:Hide() end
-            if col3Normal.bsPlaceholder then col3Normal.bsPlaceholder:Hide() end
-            if col3Normal.multiSelectScroll then col3Normal.multiSelectScroll.frame:Hide() end
-            if col3Normal._panelTabGroup then col3Normal._panelTabGroup.frame:Hide() end
-
-            if not col3Normal._panelMultiSelectScroll then
-                local scroll = AceGUI:Create("ScrollFrame")
-                scroll:SetLayout("List")
-                scroll.frame:SetParent(col3Normal.content)
-                scroll.frame:ClearAllPoints()
-                scroll.frame:SetPoint("TOPLEFT", col3Normal.content, "TOPLEFT", 0, 0)
-                scroll.frame:SetPoint("BOTTOMRIGHT", col3Normal.content, "BOTTOMRIGHT", 0, 0)
-                col3Normal._panelMultiSelectScroll = scroll
-            end
-            col3Normal._panelMultiSelectScroll:ReleaseChildren()
-            col3Normal._panelMultiSelectScroll.frame:Show()
-            ST._RefreshPanelMultiSelect(col3Normal._panelMultiSelectScroll, panelMultiCount, multiPanelIds)
-        end
-        return
-    end
-    -- Hide panel multi-select scroll when not active
-    if col3Normal and col3Normal._panelMultiSelectScroll then
-        col3Normal._panelMultiSelectScroll.frame:Hide()
-    end
-
-    ST._RefreshButtonSettingsColumn()
+    -- Other Class browsing (and any residual state): the same merged wide
+    -- column. RefreshButtonsWideColumn skips the pinned preview cluster
+    -- while browsing - browsed panels render live in the world - and its
+    -- first refresh after a view switch releases the buttons preview.
+    return ST._RefreshButtonsWideColumn()
 end
 
 ------------------------------------------------------------------------

@@ -15,7 +15,6 @@ local GetShapeshiftFormInfo = GetShapeshiftFormInfo
 local pairs = pairs
 local ipairs = ipairs
 local type = type
-local issecretvalue = issecretvalue
 
 local SOAR_SPELL_ID = 430747
 
@@ -154,6 +153,10 @@ local function GetFrameAlphaWithContainerMultiplier(frame, alpha)
     return alpha
 end
 
+local function GetUnlockedPanelAlpha(frame)
+    return frame and frame._unlockGhost and 0.4 or 1
+end
+
 local function ContainerAlphaIsUnlocked(self, container)
     return container and container.locked == false and not self._combatForcedLock
 end
@@ -170,7 +173,7 @@ local function ApplyContainerAlphaFrame(self, frame, groupId, alpha, naturalAlph
         frameAlpha = GetFrameAlphaWithContainerMultiplier(frame, frameAlpha)
     elseif unlocked then
         frame._naturalAlpha = nil
-        frameAlpha = 1
+        frameAlpha = GetUnlockedPanelAlpha(frame)
     elseif configSelected then
         frame._naturalAlpha = naturalAlpha
         frameAlpha = 1
@@ -315,7 +318,9 @@ local function ContainerAlphaNeedsUpdate(self, containerId, container, entries)
             return true
         end
         if ContainerAlphaEntryIsUnlocked(self, container, entry) then
-            if entry.frame and (entry.frame._naturalAlpha ~= nil or FrameAlphaDiffers(entry.frame, 1)) then
+            if entry.frame
+                and (entry.frame._naturalAlpha ~= nil
+                    or FrameAlphaDiffers(entry.frame, GetUnlockedPanelAlpha(entry.frame))) then
                 return true
             end
         elseif FrameAlphaDiffers(entry.frame, GetFrameAlphaWithContainerMultiplier(entry.frame, 1)) then
@@ -434,25 +439,21 @@ function CooldownCompanion:ResolveMountedAlphaStates(mounted)
         if not soarAura and unitAuras.GetUnitAuraBySpellID then
             soarAura = unitAuras.GetUnitAuraBySpellID("player", SOAR_SPELL_ID)
         end
-        -- Fallback: direct lookups can miss Soar in some runtime states.
-        -- Restrict the full helpful-aura scan to dirty recomputes.
-        if not soarAura and mounted and self._mountAlphaDirty and self._isDracthyr and unitAuras.GetUnitAuras then
-            local helpfulAuras = unitAuras.GetUnitAuras("player", "HELPFUL")
-            if type(helpfulAuras) == "table" then
-                for _, auraData in ipairs(helpfulAuras) do
-                    local auraSpellID = auraData and auraData.spellId
-                    if issecretvalue then
-                        if not issecretvalue(auraSpellID) and auraSpellID == SOAR_SPELL_ID then
-                            soarAura = auraData
-                            break
-                        end
-                    elseif auraSpellID == SOAR_SPELL_ID then
-                        soarAura = auraData
-                        break
-                    end
-                end
-            end
-        end
+        -- The two lookups above are the whole supported path. A full
+        -- GetUnitAuras scan used to sit here as a fallback; it was removed
+        -- because it could never help. It matched the same SOAR_SPELL_ID over
+        -- a narrower set (player HELPFUL only), and the one documented state
+        -- where the per-spell reads return nothing for a present aura is the
+        -- aura being secret -- in which case the scan's own entries are secret
+        -- too and its guard skips every one. It also carried
+        -- RequiresUnitAuraAccess, which hard-errors without aura access, and
+        -- the restriction windows are not limited to player combat (Encounter,
+        -- ChallengeMode, PvPMatch and Map are separate restriction types, and
+        -- no supported predicate exists to test access before calling).
+        --
+        -- Consequence: while auras are restricted, a Soaring Dracthyr reads as
+        -- regular-mounted until the next aura change. OnCombatEnd re-dirties
+        -- the cache so combat exits reclassify immediately.
     end
     local soarActive = soarAura ~= nil
     if not mounted and not soarActive then
@@ -572,15 +573,18 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
         locked = true
     end
 
-    -- Force 100% alpha while group is unlocked for easier positioning
+    -- Keep unlocked panels fully visible, except unlock ghosts.
     if not locked then
+        local unlockedAlpha = GetUnlockedPanelAlpha(frame)
         frame._naturalAlpha = nil
-        if state.currentAlpha ~= 1 or state.lastAlpha ~= 1 or FrameAlphaDiffers(frame, 1) then
-            frame:SetAlpha(1)
-            state.currentAlpha = 1
-            state.desiredAlpha = 1
+        if state.currentAlpha ~= unlockedAlpha
+            or state.lastAlpha ~= unlockedAlpha
+            or FrameAlphaDiffers(frame, unlockedAlpha) then
+            frame:SetAlpha(unlockedAlpha)
+            state.currentAlpha = unlockedAlpha
+            state.desiredAlpha = unlockedAlpha
             state.fadeDuration = 0
-            state.lastAlpha = 1
+            state.lastAlpha = unlockedAlpha
         end
         return
     end

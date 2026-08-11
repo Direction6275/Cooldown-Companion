@@ -4,15 +4,53 @@ local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 -- Imports from Helpers.lua
-local ColorHeading = ST._ColorHeading
+local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateCharacterCopyButton = ST._CreateCharacterCopyButton
-local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
-local HookSliderEditBox = ST._HookSliderEditBox
+local AddFontControls = ST._AddFontControls
 local BuildIndependentAnchorTargetRow = ST._BuildIndependentAnchorTargetRow
-local RefreshConfigPanelForPreviewToggle = ST._RefreshConfigPanelForPreviewToggle
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
+
+-- Imports from RowWidgets.lua (the row grammar). The rules every row-grammar
+-- section follows are stated once, in the recipe comment at the top of
+-- BuildAppearanceTab's icons path (GroupTabs.lua); this file conforms to them
+-- rather than restating them.
+local AddCheckboxRow = ST._AddCheckboxRow
+local AddSliderRow = ST._AddSliderRow
+local AddDropdownRow = ST._AddDropdownRow
+local AddColorRow = ST._AddColorRow
+local BeginRowGrid = ST._BeginRowGrid
+
+-- Row-grammar section headers: caret far left, label, then a class-colored
+-- rule fading right.
+local ROW_SECTION = { leftAligned = true }
+
+-- LibSharedMedia texture names (and the longer anchoring-mode label) run past
+-- the 140px control column, and a dropdown sizes its menu from the control.
+local WIDE_PULLOUT_WIDTH = 300
+
+-- The workspace Live Preview draws the attached cast bar's own facsimile from
+-- these settings and does NOT rebuild with the settings column, so every row
+-- whose effect lands there repaints it directly. ResourceBarPanelsHelpers.lua
+-- publishes the three helpers and loads AFTER this file (TOC), so they are read
+-- at call time rather than aliased at file scope - the same rule Helpers.lua
+-- follows for the row builders.
+local function RefreshBarsCanvas()
+    if ST._RefreshResourcesCanvas then
+        ST._RefreshResourcesCanvas()
+    end
+end
+
+local function RefreshBarsCanvasForDrag()
+    if ST._RefreshResourcesCanvasForDrag then
+        ST._RefreshResourcesCanvasForDrag()
+    end
+end
+
+local function AddMirrorFirstSliderRow(container, opts)
+    return ST._AddMirrorFirstSliderRow(container, opts)
+end
 
 ------------------------------------------------------------------------
 -- CAST BAR SETTINGS PANEL
@@ -34,6 +72,9 @@ local function RefreshAttachedCastBarOffset(refreshConfig)
     end
 end
 
+-- Two rows, both of them row-grammar: every call site is a grid column now
+-- (the Resource Bars Layout section's right column, and this file's own
+-- Layout tab), so there is no stock shape left to keep.
 local function BuildAttachedCastBarOffsetControls(container, layout)
     local rbSettings = CooldownCompanion:GetResourceBarSettings()
     local cbSettings = CooldownCompanion:GetCastBarSettings()
@@ -46,28 +87,26 @@ local function BuildAttachedCastBarOffsetControls(container, layout)
     end
     local castLayout = layout.castBar
 
-    local offsetToggle = AceGUI:Create("CheckBox")
-    offsetToggle:SetLabel("Enable Cast Bar-Only Y Offset")
-    offsetToggle:SetValue(castLayout.panelAnchorYOffsetEnabled == true)
-    offsetToggle:SetFullWidth(true)
-    offsetToggle:SetCallback("OnValueChanged", function(widget, event, val)
-        castLayout.panelAnchorYOffsetEnabled = val == true
-        RefreshAttachedCastBarOffset(true)
-    end)
-    container:AddChild(offsetToggle)
+    AddCheckboxRow(container, {
+        label = "Enable Cast Bar-Only Y Offset",
+        value = castLayout.panelAnchorYOffsetEnabled == true,
+        onChange = function(val)
+            castLayout.panelAnchorYOffsetEnabled = val == true
+            RefreshAttachedCastBarOffset(true)
+        end,
+    })
 
     if castLayout.panelAnchorYOffsetEnabled then
-        local offsetSlider = AceGUI:Create("Slider")
-        offsetSlider:SetLabel("Cast Bar Y Offset")
-        offsetSlider:SetSliderValues(-100, 100, 0.1)
-        offsetSlider:SetValue(castLayout.panelAnchorYOffset or 0)
-        offsetSlider:SetFullWidth(true)
-        offsetSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            castLayout.panelAnchorYOffset = val
-            RefreshAttachedCastBarOffset(false)
-        end)
-        HookSliderEditBox(offsetSlider)
-        container:AddChild(offsetSlider)
+        AddSliderRow(container, {
+            label = "Cast Bar Y Offset",
+            indent = true,
+            min = -100, max = 100, step = 0.1,
+            value = castLayout.panelAnchorYOffset or 0,
+            onChange = function(val)
+                castLayout.panelAnchorYOffset = val
+                RefreshAttachedCastBarOffset(false)
+            end,
+        })
     end
 
     return true
@@ -77,104 +116,108 @@ local function BuildCastBarAnchoringPanel(container)
     local db = CooldownCompanion.db.profile
     local settings = CooldownCompanion:GetCastBarSettings()
 
-    -- Enable Anchoring
-    local enableCb = AceGUI:Create("CheckBox")
-    enableCb:SetLabel("Enable Cast Bar Anchoring")
-    enableCb:SetValue(settings.enabled)
-    enableCb:SetFullWidth(true)
-    enableCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.enabled = val
-        CooldownCompanion:EvaluateCastBar()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(enableCb)
+    -- ================================================================
+    -- Cast Bar (the module switch and how the bar is placed)
+    -- ================================================================
+    -- The module switch lives INSIDE this section rather than above it: every
+    -- row-grammar tab opens on a section header, and a free-standing control
+    -- over the first caret has nowhere to belong. Disabling the module ends
+    -- the section after one row and builds nothing below it, exactly as the
+    -- pre-row tab returned early after the same checkbox.
+    local _, generalCollapsed = BuildCollapsibleSection(container, "Cast Bar",
+        "castbar_general", nil, nil, ROW_SECTION)
 
-    CreateCharacterCopyButton(enableCb, "castBar", "Cast Bar", function()
-        CooldownCompanion:EvaluateCastBar()
-        CooldownCompanion:UpdateAnchorStacking()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    if not generalCollapsed then
+        -- The mode only means anything while the bar is on, so the two stay
+        -- adjacent in one column rather than splitting a gate from what it
+        -- gates. The right column is deliberately empty.
+        local generalLeft = BeginRowGrid(container)
+
+        local enableRow = AddCheckboxRow(generalLeft, {
+            label = "Enable Cast Bar Anchoring",
+            value = settings.enabled,
+            onChange = function(val)
+                settings.enabled = val
+                CooldownCompanion:EvaluateCastBar()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        CreateCharacterCopyButton(enableRow, "castBar", "Cast Bar", function()
+            CooldownCompanion:EvaluateCastBar()
+            CooldownCompanion:UpdateAnchorStacking()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+
+        if settings.enabled then
+            AddDropdownRow(generalLeft, {
+                label = "Anchoring Mode",
+                pulloutWidth = WIDE_PULLOUT_WIDTH,
+                list = {
+                    attached = "Attached to Panel",
+                    independent = "Independent",
+                },
+                order = { "attached", "independent" },
+                value = settings.independentAnchorEnabled == true and "independent" or "attached",
+                onChange = function(val)
+                    settings.independentAnchorEnabled = (val == "independent")
+                    CooldownCompanion:EvaluateCastBar()
+                    CooldownCompanion:UpdateAnchorStacking()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+        end
+    end
 
     if not settings.enabled then return end
 
-    local isIndependent = settings.independentAnchorEnabled == true
-
-    -- Anchoring Mode dropdown
-    local anchorModeDrop = AceGUI:Create("Dropdown")
-    anchorModeDrop:SetLabel("Anchoring Mode")
-    anchorModeDrop:SetList({
-        attached = "Attached to Panel",
-        independent = "Independent",
-    }, { "attached", "independent" })
-    anchorModeDrop:SetValue(isIndependent and "independent" or "attached")
-    anchorModeDrop:SetFullWidth(true)
-    anchorModeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.independentAnchorEnabled = (val == "independent")
-        CooldownCompanion:EvaluateCastBar()
-        CooldownCompanion:UpdateAnchorStacking()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(anchorModeDrop)
-
-    -- Preview toggle (ephemeral — not saved to DB)
-    local previewCb = AceGUI:Create("CheckBox")
-    previewCb:SetLabel("Preview Cast Bar")
-    previewCb:SetValue(CooldownCompanion:IsCastBarPreviewActive())
-    previewCb:SetFullWidth(true)
-    previewCb:SetCallback("OnValueChanged", function(widget, event, val)
-        if val then
-            CooldownCompanion:ClearAllConfigPreviews()
-            CooldownCompanion:StartCastBarPreview()
-        else
-            CooldownCompanion:StopCastBarPreview()
-        end
-        if RefreshConfigPanelForPreviewToggle then
-            RefreshConfigPanelForPreviewToggle()
-        end
-    end)
-    container:AddChild(previewCb)
-
+    -- ================================================================
     -- Cast Effects
-    local sparkTrailCb = AceGUI:Create("CheckBox")
-    sparkTrailCb:SetLabel("Show Spark Trail")
-    sparkTrailCb:SetValue(settings.showSparkTrail ~= false)
-    sparkTrailCb:SetFullWidth(true)
-    sparkTrailCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.showSparkTrail = val
-        CooldownCompanion:ApplyCastBarSettings()
-    end)
-    container:AddChild(sparkTrailCb)
+    -- ================================================================
+    local _, effectsCollapsed = BuildCollapsibleSection(container, "Cast Effects",
+        "castbar_effects", nil, nil, ROW_SECTION)
 
-    local intShakeCb = AceGUI:Create("CheckBox")
-    intShakeCb:SetLabel("Show Interrupt Shake")
-    intShakeCb:SetValue(settings.showInterruptShake ~= false)
-    intShakeCb:SetFullWidth(true)
-    intShakeCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.showInterruptShake = val
-        CooldownCompanion:ApplyCastBarSettings()
-    end)
-    container:AddChild(intShakeCb)
+    if not effectsCollapsed then
+        -- LEFT column: what the bar does while the cast runs and when it
+        -- lands. RIGHT column: the interrupt pair, which reads as one choice.
+        local effectsLeft, effectsRight = BeginRowGrid(container)
 
-    local intGlowCb = AceGUI:Create("CheckBox")
-    intGlowCb:SetLabel("Show Interrupt Glow")
-    intGlowCb:SetValue(settings.showInterruptGlow ~= false)
-    intGlowCb:SetFullWidth(true)
-    intGlowCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.showInterruptGlow = val
-        CooldownCompanion:ApplyCastBarSettings()
-    end)
-    container:AddChild(intGlowCb)
+        AddCheckboxRow(effectsLeft, {
+            label = "Show Spark Trail",
+            value = settings.showSparkTrail ~= false,
+            onChange = function(val)
+                settings.showSparkTrail = val
+                CooldownCompanion:ApplyCastBarSettings()
+            end,
+        })
 
-    local castFinishCb = AceGUI:Create("CheckBox")
-    castFinishCb:SetLabel("Show Cast Finish FX")
-    castFinishCb:SetValue(settings.showCastFinishFX ~= false)
-    castFinishCb:SetFullWidth(true)
-    castFinishCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.showCastFinishFX = val
-        CooldownCompanion:ApplyCastBarSettings()
-    end)
-    container:AddChild(castFinishCb)
+        AddCheckboxRow(effectsLeft, {
+            label = "Show Cast Finish FX",
+            value = settings.showCastFinishFX ~= false,
+            onChange = function(val)
+                settings.showCastFinishFX = val
+                CooldownCompanion:ApplyCastBarSettings()
+            end,
+        })
 
+        AddCheckboxRow(effectsRight, {
+            label = "Show Interrupt Shake",
+            value = settings.showInterruptShake ~= false,
+            onChange = function(val)
+                settings.showInterruptShake = val
+                CooldownCompanion:ApplyCastBarSettings()
+            end,
+        })
+
+        AddCheckboxRow(effectsRight, {
+            label = "Show Interrupt Glow",
+            value = settings.showInterruptGlow ~= false,
+            onChange = function(val)
+                settings.showInterruptGlow = val
+                CooldownCompanion:ApplyCastBarSettings()
+            end,
+        })
+    end
 end
 
 local function BuildCastBarPositioningPanel(container)
@@ -190,452 +233,481 @@ local function BuildCastBarPositioningPanel(container)
     end
 
     if not settings.independentAnchorEnabled then
+        local _, layoutCollapsed = BuildCollapsibleSection(container, "Layout",
+            "castbar_layout", nil, nil, ROW_SECTION)
+
+        if layoutCollapsed then return end
+
         local rbSettings = CooldownCompanion:GetResourceBarSettings()
         local layout = CooldownCompanion:GetSpecLayoutOrder()
-        local ySlider = AceGUI:Create("Slider")
-        ySlider:SetLabel("Y Offset")
-        ySlider:SetSliderValues(-100, 100, 0.1)
-        ySlider:SetValue((layout and (layout.yOffset or layout.verticalXOffset)) or (rbSettings and rbSettings.yOffset) or 3)
-        ySlider:SetFullWidth(true)
-        ySlider:SetCallback("OnValueChanged", function(widget, event, val)
-            if layout then layout.yOffset = val end
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RepositionCastBar()
-            CooldownCompanion:UpdateAnchorStacking()
-        end)
-        container:AddChild(ySlider)
 
-        BuildAttachedCastBarOffsetControls(container, layout)
+        -- LEFT column: the gap between the whole bar stack and the panel it
+        -- hangs off. RIGHT column: the cast bar's own override of that gap.
+        -- Same split as the Resource Bars Layout section, which shows the
+        -- same two controls from the other side.
+        local posLeft, posRight = BeginRowGrid(container)
+
+        AddSliderRow(posLeft, {
+            label = "Y Offset",
+            min = -100, max = 100, step = 0.1,
+            value = (layout and (layout.yOffset or layout.verticalXOffset))
+                or (rbSettings and rbSettings.yOffset) or 3,
+            onChange = function(val)
+                if layout then layout.yOffset = val end
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:RepositionCastBar()
+                CooldownCompanion:UpdateAnchorStacking()
+            end,
+        })
+
+        BuildAttachedCastBarOffsetControls(posRight, layout)
         return
     end
 
-    -- Anchor Settings
-    local castPosHeading = AceGUI:Create("Heading")
-    castPosHeading:SetText("Anchor Settings")
-    ColorHeading(castPosHeading)
-    castPosHeading:SetFullWidth(true)
-    container:AddChild(castPosHeading)
-
+    -- The anchor table is a stored setting, not a rendered control, so it is
+    -- seeded whether or not the section below is expanded.
     if type(settings.independentAnchor) ~= "table" then
         settings.independentAnchor = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0 }
     end
     local anchor = settings.independentAnchor
 
-    local unlockCb = AceGUI:Create("CheckBox")
-    unlockCb:SetLabel("Unlock Placement")
-    unlockCb:SetValue(not settings.independentAnchorLocked)
-    unlockCb:SetFullWidth(true)
-    unlockCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.independentAnchorLocked = not val
-        CooldownCompanion:ApplyCastBarSettings()
-    end)
-    container:AddChild(unlockCb)
+    -- ================================================================
+    -- Anchor Settings (independent mode only)
+    -- ================================================================
+    local _, anchorCollapsed = BuildCollapsibleSection(container, "Anchor Settings",
+        "castbar_anchor", nil, nil, ROW_SECTION)
 
-    local widthSlider = AceGUI:Create("Slider")
-    widthSlider:SetLabel("Cast Bar Width")
-    widthSlider:SetSliderValues(20, 600, 1)
-    widthSlider:SetValue(settings.independentWidth or 200)
-    widthSlider:SetFullWidth(true)
-    widthSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.independentWidth = val
-        CooldownCompanion:ApplyCastBarSettings()
-    end)
-    container:AddChild(widthSlider)
+    if anchorCollapsed then return end
 
     local function refreshCastBarAnchor()
         CooldownCompanion:ApplyCastBarSettings()
     end
 
-    BuildIndependentAnchorTargetRow(container, anchor, refreshCastBarAnchor)
+    -- A frame name needs the whole 140px control column to stay readable, so
+    -- Pick does not share it: the editbox row takes a grid of its own and
+    -- Pick sits at the head of that grid's right column, immediately across
+    -- the 16px gutter.
+    local targetLeft, targetRight = BeginRowGrid(container)
+    BuildIndependentAnchorTargetRow(targetLeft, anchor, refreshCastBarAnchor, {
+        row = true,
+        pickContainer = targetRight,
+    })
 
-    AddAnchorDropdown(container, anchor, "point", "CENTER", refreshCastBarAnchor, "Anchor Point")
-    AddAnchorDropdown(container, anchor, "relativePoint", "CENTER", refreshCastBarAnchor, "Relative Point")
+    -- LEFT column: how the bar is placed - the drag toggle and the two points
+    -- that have to be read together (mine, then the target's). RIGHT column:
+    -- its size and the offset applied on top of those points.
+    local anchorLeft, anchorRight = BeginRowGrid(container)
 
-    local xSlider = AceGUI:Create("Slider")
-    xSlider:SetLabel("X Offset")
-    xSlider:SetSliderValues(-2000, 2000, 0.1)
-    xSlider:SetValue(anchor.x or 0)
-    xSlider:SetFullWidth(true)
-    xSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        anchor.x = val
-        CooldownCompanion:ApplyCastBarSettings()
-    end)
-    HookSliderEditBox(xSlider)
-    container:AddChild(xSlider)
+    AddCheckboxRow(anchorLeft, {
+        label = "Unlock Placement",
+        value = not settings.independentAnchorLocked,
+        onChange = function(val)
+            settings.independentAnchorLocked = not val
+            CooldownCompanion:ApplyCastBarSettings()
+            if not val then
+                CooldownCompanion:CheckArrangeModeAutoExit()
+            end
+        end,
+    })
 
-    local ySlider = AceGUI:Create("Slider")
-    ySlider:SetLabel("Y Offset")
-    ySlider:SetSliderValues(-2000, 2000, 0.1)
-    ySlider:SetValue(anchor.y or 0)
-    ySlider:SetFullWidth(true)
-    ySlider:SetCallback("OnValueChanged", function(widget, event, val)
-        anchor.y = val
-        CooldownCompanion:ApplyCastBarSettings()
-    end)
-    HookSliderEditBox(ySlider)
-    container:AddChild(ySlider)
+    AddAnchorDropdown(anchorLeft, anchor, "point", "CENTER", refreshCastBarAnchor, "Anchor Point", { row = true })
+    AddAnchorDropdown(anchorLeft, anchor, "relativePoint", "CENTER", refreshCastBarAnchor, "Relative Point", { row = true })
+
+    AddSliderRow(anchorRight, {
+        label = "Cast Bar Width",
+        min = 20, max = 600, step = 1,
+        value = settings.independentWidth or 200,
+        onChange = function(val)
+            settings.independentWidth = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end,
+    })
+
+    AddSliderRow(anchorRight, {
+        label = "X Offset",
+        min = -2000, max = 2000, step = 0.1,
+        value = anchor.x or 0,
+        onChange = function(val)
+            anchor.x = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end,
+    })
+
+    AddSliderRow(anchorRight, {
+        label = "Y Offset",
+        min = -2000, max = 2000, step = 0.1,
+        value = anchor.y or 0,
+        onChange = function(val)
+            anchor.y = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end,
+    })
 end
 
 local function BuildCastBarStylingPanel(container)
     local settings = CooldownCompanion:GetCastBarSettings()
-    local applyCastBar = function() CooldownCompanion:ApplyCastBarSettings() end
 
-    -- Enable Styling checkbox — always visible, but grayed out when anchoring is off
-    local styleCb = AceGUI:Create("CheckBox")
-    styleCb:SetLabel("Enable Cast Bar Styling")
-    styleCb:SetValue(settings.stylingEnabled ~= false)
-    styleCb:SetFullWidth(true)
-    styleCb:SetDisabled(not settings.enabled)
-    styleCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.stylingEnabled = val
+    -- The retired styling switch used to carry this gate too: with the
+    -- module off, styling rows would commit to a bar that immediately
+    -- reverts. Same disabled-state surface as the positioning panel.
+    if not settings.enabled then
+        local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
+        label:SetText("Enable Cast Bar Anchoring to configure appearance.")
+        label:SetFullWidth(true)
+        container:AddChild(label)
+        return
+    end
+
+    -- Everything on this panel is the cast bar's LOOK, and the canvas draws
+    -- that look; so the commit path applies to the live bar and repaints the
+    -- canvas together, and the drag/picker-open path stays on the canvas alone.
+    local applyCastBar = function()
         CooldownCompanion:ApplyCastBarSettings()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(styleCb)
-
-    if not settings.enabled then return end
-    if not settings.stylingEnabled then return end
-
+        RefreshBarsCanvas()
+    end
+    local castPreviewOnly = RefreshBarsCanvasForDrag
     local cbAdvBtns = {}
 
-    -- ============ Texture & Colors ============
+    -- ================================================================
+    -- Bar (the fill itself, what shows behind it, and how tall it is)
+    -- ================================================================
+    -- The CC bar is always CC-styled: the old "Enable Cast Bar Styling"
+    -- switch meant "restyle Blizzard's bar or leave it native", and that
+    -- choice died with the frame replacement (owner ruling 2026-08-08).
+    local _, barCollapsed = BuildCollapsibleSection(container, "Bar",
+        "castbar_bar", nil, nil, ROW_SECTION)
 
-    -- Bar Texture
-    local texDrop = AceGUI:Create("Dropdown")
-    texDrop:SetLabel("Bar Texture")
-    CS.SetupBarTextureDropdown(texDrop)
-    texDrop:SetValue(settings.barTexture or "Solid")
-    texDrop:SetFullWidth(true)
-    CS.SetBarTextureDropdownCallback(texDrop, function(widget, event, val)
-        settings.barTexture = val
-        CooldownCompanion:ApplyCastBarSettings()
-    end)
-    container:AddChild(texDrop)
+    if not barCollapsed then
+        -- LEFT column: the bar's own shape. RIGHT column: the two colors it
+        -- draws with.
+        local barLeft, barRight = BeginRowGrid(container)
 
-    -- Bar Color
-    AddColorPicker(container, settings, "barColor", "Bar Color", {1.0, 0.7, 0.0, 1.0}, true, applyCastBar)
-
-    -- Background Color
-    AddColorPicker(container, settings, "backgroundColor", "Background Color", {0, 0, 0, 0.5}, true, applyCastBar)
-
-    -- ============ Border ============
-
-    -- Border Style
-    local borderDrop = AceGUI:Create("Dropdown")
-    borderDrop:SetLabel("Border Style")
-    borderDrop:SetList({
-        blizzard = "Blizzard",
-        pixel = "Pixel",
-        none = "None",
-    }, { "blizzard", "pixel", "none" })
-    borderDrop:SetValue(settings.borderStyle or "pixel")
-    borderDrop:SetFullWidth(true)
-    borderDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.borderStyle = val
-        CooldownCompanion:ApplyCastBarSettings()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(borderDrop)
-
-    -- Border Color and Size (only when pixel)
-    if settings.borderStyle == "pixel" then
-        AddColorPicker(container, settings, "borderColor", "Border Color", {0, 0, 0, 1}, true, applyCastBar)
-
-        local renderMode = AddBorderRenderModeDropdown(container, settings, "borderRenderMode", function()
-            CooldownCompanion:ApplyCastBarSettings()
-            CooldownCompanion:RefreshConfigPanel()
+        -- LibSharedMedia names run past the control column, so the menu is
+        -- widened - a 140px control would otherwise open a 140px menu.
+        local texRow = AddDropdownRow(barLeft, {
+            label = "Bar Texture",
+            pulloutWidth = WIDE_PULLOUT_WIDTH,
+        })
+        CS.SetupBarTextureDropdown(texRow)
+        texRow:SetValue(settings.barTexture or "Solid")
+        CS.SetBarTextureDropdownCallback(texRow, function(widget, event, val)
+            settings.barTexture = val
+            applyCastBar()
         end)
-        local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
-        if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-            local borderSizeSlider = AceGUI:Create("Slider")
-            borderSizeSlider:SetLabel("Border Size")
-            borderSizeSlider:SetSliderValues(0, 5, 0.1)
-            borderSizeSlider:SetValue(settings.borderSize or 1)
-            borderSizeSlider:SetFullWidth(true)
-            borderSizeSlider:SetDisabled(borderThicknessLocked)
-            borderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                if borderThicknessLocked then return end
-                settings.borderSize = val
+        -- The canvas sizes the cast slot from this value, so the whole
+        -- stack reflows under the drag; the live bar restyles on release.
+        AddMirrorFirstSliderRow(barLeft, {
+            label = "Height",
+            min = 4, max = 40, step = 0.1,
+            value = settings.height or 15,
+            set = function(val) settings.height = val end,
+            apply = applyCastBar,
+        })
+
+        AddColorRow(barRight, {
+            label = "Bar Color",
+            tbl = settings,
+            key = "barColor",
+            default = {1.0, 0.7, 0.0, 1.0},
+            hasAlpha = true,
+            onConfirm = applyCastBar,
+            onChange = castPreviewOnly,
+        })
+
+        AddColorRow(barRight, {
+            label = "Background Color",
+            tbl = settings,
+            key = "backgroundColor",
+            default = {0, 0, 0, 0.5},
+            hasAlpha = true,
+            onConfirm = applyCastBar,
+            onChange = castPreviewOnly,
+        })
+    end
+
+    -- ================================================================
+    -- Border
+    -- ================================================================
+    local _, borderCollapsed = BuildCollapsibleSection(container, "Border",
+        "castbar_border", nil, nil, ROW_SECTION)
+
+    if not borderCollapsed then
+        -- LEFT column: which border is drawn, and the color it is drawn in.
+        -- RIGHT column: how thick it is - the mode and the size it gates, which
+        -- have to stay adjacent.
+        local borderLeft, borderRight = BeginRowGrid(container)
+
+        AddDropdownRow(borderLeft, {
+            label = "Border Style",
+            list = {
+                blizzard = "Blizzard",
+                pixel = "Pixel",
+                none = "None",
+            },
+            order = { "blizzard", "pixel", "none" },
+            value = settings.borderStyle or "pixel",
+            onChange = function(val)
+                settings.borderStyle = val
                 CooldownCompanion:ApplyCastBarSettings()
-            end)
-            container:AddChild(borderSizeSlider)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        if settings.borderStyle == "pixel" then
+            AddColorRow(borderLeft, {
+                label = "Border Color",
+                indent = true,
+                tbl = settings,
+                key = "borderColor",
+                default = {0, 0, 0, 1},
+                hasAlpha = true,
+                onConfirm = applyCastBar,
+                onChange = castPreviewOnly,
+            })
+
+            local renderMode = AddBorderRenderModeDropdown(borderRight, settings, "borderRenderMode", function()
+                CooldownCompanion:ApplyCastBarSettings()
+                CooldownCompanion:RefreshConfigPanel()
+            end, nil, { row = true })
+            local borderThicknessLocked = ST.IsBorderThicknessLocked()
+
+            if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+                AddMirrorFirstSliderRow(borderRight, {
+                    label = "Border Size",
+                    indent = true,
+                    min = 0, max = 5, step = 0.1,
+                    value = settings.borderSize or 1,
+                    disabled = borderThicknessLocked,
+                    set = function(val)
+                        if borderThicknessLocked then return end
+                        settings.borderSize = val
+                    end,
+                    apply = applyCastBar,
+                })
+            end
         end
     end
 
-    -- ============ Size ============
+    -- ================================================================
+    -- Contents (what the bar draws on top of the fill)
+    -- ================================================================
+    local _, contentsCollapsed = BuildCollapsibleSection(container, "Contents",
+        "castbar_contents", nil, nil, ROW_SECTION)
 
-    -- Height
-    local hSlider = AceGUI:Create("Slider")
-    hSlider:SetLabel("Height")
-    hSlider:SetSliderValues(4, 40, 0.1)
-    hSlider:SetValue(settings.height or 15)
-    hSlider:SetFullWidth(true)
-    hSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.height = val
-        CooldownCompanion:ApplyCastBarSettings()
-    end)
-    container:AddChild(hSlider)
+    if contentsCollapsed then return end
 
-    -- ============ Feature Toggles ============
+    -- LEFT column: the marks that ride the fill. RIGHT column: the two texts.
+    local contentsLeft, contentsRight = BeginRowGrid(container)
 
-    -- Show Spell Icon
-    local iconCb = AceGUI:Create("CheckBox")
-    iconCb:SetLabel("Show Spell Icon")
-    iconCb:SetValue(settings.showIcon ~= false)
-    iconCb:SetFullWidth(true)
-    iconCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.showIcon = val
-        CooldownCompanion:ApplyCastBarSettings()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(iconCb)
+    local iconRow = AddCheckboxRow(contentsLeft, {
+        label = "Show Spell Icon",
+        value = settings.showIcon ~= false,
+        onChange = function(val)
+            settings.showIcon = val
+            CooldownCompanion:ApplyCastBarSettings()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
 
+    -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
+    -- every row goes straight onto the panel scroll. All of these hang off the
+    -- Icon Offset toggle, which lives in the same panel, so they indent as its
+    -- children.
     local function BuildIconOffsetAdvanced(panel)
-        -- Icon Size slider (offset mode only)
-        local iconSizeSlider = AceGUI:Create("Slider")
-        iconSizeSlider:SetLabel("Icon Size")
-        iconSizeSlider:SetSliderValues(8, 64, 0.1)
-        iconSizeSlider:SetValue(settings.iconSize or 16)
-        iconSizeSlider:SetFullWidth(true)
-        iconSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.iconSize = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(iconSizeSlider)
+        -- The canvas reserves the icon's square out of the bar's length, so
+        -- the fill re-measures under the drag.
+        AddMirrorFirstSliderRow(panel, {
+            label = "Icon Size",
+            indent = true,
+            min = 8, max = 64, step = 0.1,
+            value = settings.iconSize or 16,
+            set = function(val) settings.iconSize = val end,
+            apply = applyCastBar,
+        })
 
-        -- Icon X Offset slider
-        local iconXSlider = AceGUI:Create("Slider")
-        iconXSlider:SetLabel("Icon X Offset")
-        iconXSlider:SetSliderValues(-50, 50, 0.1)
-        iconXSlider:SetValue(settings.iconOffsetX or 0)
-        iconXSlider:SetFullWidth(true)
-        iconXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.iconOffsetX = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(iconXSlider)
+        -- The two offsets below are NOT on the canvas: the facsimile pins its
+        -- icon flush to the slot's edge and never reads them.
+        AddSliderRow(panel, {
+            label = "Icon X Offset",
+            indent = true,
+            min = -50, max = 50, step = 0.1,
+            value = settings.iconOffsetX or 0,
+            onChange = function(val)
+                settings.iconOffsetX = val
+                CooldownCompanion:ApplyCastBarSettings()
+            end,
+        })
 
-        -- Icon Y Offset slider
-        local iconYSlider = AceGUI:Create("Slider")
-        iconYSlider:SetLabel("Icon Y Offset")
-        iconYSlider:SetSliderValues(-50, 50, 0.1)
-        iconYSlider:SetValue(settings.iconOffsetY or 0)
-        iconYSlider:SetFullWidth(true)
-        iconYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.iconOffsetY = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(iconYSlider)
+        AddSliderRow(panel, {
+            label = "Icon Y Offset",
+            indent = true,
+            min = -50, max = 50, step = 0.1,
+            value = settings.iconOffsetY or 0,
+            onChange = function(val)
+                settings.iconOffsetY = val
+                CooldownCompanion:ApplyCastBarSettings()
+            end,
+        })
 
-        -- Icon Border Size slider (offset mode only)
+        -- Only the advanced panel rebuilds here, not the config column, so the
+        -- canvas repaint has to be asked for.
         local iconRenderMode = AddBorderRenderModeDropdown(panel, settings, "iconBorderRenderMode", function()
-            CooldownCompanion:ApplyCastBarSettings()
+            applyCastBar()
             if CS.RefreshAdvancedSettingsPanel then
                 CS.RefreshAdvancedSettingsPanel()
             end
-        end)
+        end, nil, { row = true, indent = true })
         local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
         if iconRenderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-            local iconBorderSlider = AceGUI:Create("Slider")
-            iconBorderSlider:SetLabel("Icon Border Size")
-            iconBorderSlider:SetSliderValues(0, 4, 0.1)
-            iconBorderSlider:SetValue(settings.iconBorderSize or 1)
-            iconBorderSlider:SetFullWidth(true)
-            iconBorderSlider:SetDisabled(borderThicknessLocked)
-            iconBorderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                if borderThicknessLocked then return end
-                settings.iconBorderSize = val
-                CooldownCompanion:ApplyCastBarSettings()
-            end)
-            panel:AddChild(iconBorderSlider)
+            AddMirrorFirstSliderRow(panel, {
+                label = "Icon Border Size",
+                indent = true,
+                min = 0, max = 4, step = 0.1,
+                value = settings.iconBorderSize or 1,
+                disabled = borderThicknessLocked,
+                set = function(val)
+                    if borderThicknessLocked then return end
+                    settings.iconBorderSize = val
+                end,
+                apply = applyCastBar,
+            })
         end
     end
 
     local function BuildIconAdvanced(panel)
-        -- Icon on Right Side
-        local iconFlipCb = AceGUI:Create("CheckBox")
-        iconFlipCb:SetLabel("Icon on Right Side")
-        iconFlipCb:SetValue(settings.iconFlipSide or false)
-        iconFlipCb:SetFullWidth(true)
-        iconFlipCb:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.iconFlipSide = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(iconFlipCb)
+        ST._BuildIconZoomControls(panel, settings, applyCastBar, {
+            previewRefresh = castPreviewOnly,
+        })
 
-        -- Icon Offset toggle
-        local iconOffsetCb = AceGUI:Create("CheckBox")
-        iconOffsetCb:SetLabel("Icon Offset")
-        iconOffsetCb:SetValue(settings.iconOffset or false)
-        iconOffsetCb:SetFullWidth(true)
-        iconOffsetCb:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.iconOffset = val
-            CooldownCompanion:ApplyCastBarSettings()
-            if CS.RefreshAdvancedSettingsPanel then
-                CS.RefreshAdvancedSettingsPanel()
-            end
-        end)
-        panel:AddChild(iconOffsetCb)
+        AddCheckboxRow(panel, {
+            label = "Icon on Right Side",
+            value = settings.iconFlipSide or false,
+            onChange = function(val)
+                settings.iconFlipSide = val
+                applyCastBar()
+            end,
+        })
+
+        AddCheckboxRow(panel, {
+            label = "Icon Offset",
+            value = settings.iconOffset or false,
+            onChange = function(val)
+                settings.iconOffset = val
+                applyCastBar()
+                if CS.RefreshAdvancedSettingsPanel then
+                    CS.RefreshAdvancedSettingsPanel()
+                end
+            end,
+        })
 
         if settings.iconOffset then
             BuildIconOffsetAdvanced(panel)
         end
     end
 
-    AddAdvancedToggle(iconCb, "castbarIcon", cbAdvBtns, settings.showIcon ~= false, {
+    AddAdvancedToggle(iconRow, "castbarIcon", cbAdvBtns, settings.showIcon ~= false, {
         title = "Spell Icon Advanced",
         build = BuildIconAdvanced,
     })
 
-    -- Show Spark
-    local sparkCb = AceGUI:Create("CheckBox")
-    sparkCb:SetLabel("Show Spark")
-    sparkCb:SetValue(settings.showSpark ~= false)
-    sparkCb:SetFullWidth(true)
-    sparkCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.showSpark = val
-        CooldownCompanion:ApplyCastBarSettings()
-    end)
-    container:AddChild(sparkCb)
+    AddCheckboxRow(contentsLeft, {
+        label = "Show Spark",
+        value = settings.showSpark ~= false,
+        onChange = function(val)
+            settings.showSpark = val
+            applyCastBar()
+        end,
+    })
 
-    -- Show Spell Name
-    local nameCb = AceGUI:Create("CheckBox")
-    nameCb:SetLabel("Show Spell Name")
-    nameCb:SetValue(settings.showNameText ~= false)
-    nameCb:SetFullWidth(true)
-    nameCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.showNameText = val
-        CooldownCompanion:ApplyCastBarSettings()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(nameCb)
+    local nameRow = AddCheckboxRow(contentsRight, {
+        label = "Show Spell Name",
+        value = settings.showNameText ~= false,
+        onChange = function(val)
+            settings.showNameText = val
+            CooldownCompanion:ApplyCastBarSettings()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
 
+    -- Single rail: the font trio comes from the shared helper (its keys are
+    -- exactly nameFont / nameFontSize / nameFontOutline) and the color follows.
     local function BuildNameTextAdvanced(panel)
-        -- Font
-        local nameFontDrop = AceGUI:Create("Dropdown")
-        nameFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(nameFontDrop)
-        nameFontDrop:SetValue(settings.nameFont or "Friz Quadrata TT")
-        nameFontDrop:SetFullWidth(true)
-        CS.SetFontDropdownCallback(nameFontDrop, function(widget, event, val)
-            settings.nameFont = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(nameFontDrop)
+        AddFontControls(panel, settings, "name", {
+            size = 10, sizeMin = 6, sizeMax = 24, sizeStep = 0.1,
+            font = "Friz Quadrata TT", outline = "OUTLINE",
+        }, applyCastBar, { row = true, previewRefresh = castPreviewOnly })
 
-        -- Size
-        local nameSizeSlider = AceGUI:Create("Slider")
-        nameSizeSlider:SetLabel("Font Size")
-        nameSizeSlider:SetSliderValues(6, 24, 0.1)
-        nameSizeSlider:SetValue(settings.nameFontSize or 10)
-        nameSizeSlider:SetFullWidth(true)
-        nameSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.nameFontSize = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(nameSizeSlider)
-
-        -- Outline
-        local nameOutlineDrop = AceGUI:Create("Dropdown")
-        nameOutlineDrop:SetLabel("Outline")
-        CS.SetupFontOutlineDropdown(nameOutlineDrop)
-        nameOutlineDrop:SetValue(settings.nameFontOutline or "OUTLINE")
-        nameOutlineDrop:SetFullWidth(true)
-        CS.SetFontOutlineDropdownCallback(nameOutlineDrop, function(widget, event, val)
-            settings.nameFontOutline = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(nameOutlineDrop)
-
-        -- Color
-        AddColorPicker(panel, settings, "nameFontColor", "Font Color", {1, 1, 1, 1}, true, applyCastBar)
+        -- deferCommit is deliberately absent, matching the stock color-picker call
+        -- this row replaced.
+        AddColorRow(panel, {
+            label = "Font Color",
+            tbl = settings,
+            key = "nameFontColor",
+            default = {1, 1, 1, 1},
+            hasAlpha = true,
+            onConfirm = applyCastBar,
+            onChange = castPreviewOnly,
+        })
     end
 
-    AddAdvancedToggle(nameCb, "castbarNameText", cbAdvBtns, settings.showNameText ~= false, {
+    AddAdvancedToggle(nameRow, "castbarNameText", cbAdvBtns, settings.showNameText ~= false, {
         title = "Spell Name Advanced",
         build = BuildNameTextAdvanced,
     })
 
-    -- Show Cast Time
-    local ctCb = AceGUI:Create("CheckBox")
-    ctCb:SetLabel("Show Cast Time")
-    ctCb:SetValue(settings.showCastTimeText ~= false)
-    ctCb:SetFullWidth(true)
-    ctCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.showCastTimeText = val
-        CooldownCompanion:ApplyCastBarSettings()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(ctCb)
+    local castTimeRow = AddCheckboxRow(contentsRight, {
+        label = "Show Cast Time",
+        value = settings.showCastTimeText ~= false,
+        onChange = function(val)
+            settings.showCastTimeText = val
+            CooldownCompanion:ApplyCastBarSettings()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
 
+    -- Single rail. The two offsets are hand-written rather than routed through
+    -- AddOffsetSliders: that helper takes ONE symmetric range, and this pair is
+    -- deliberately +/-50 across and only +/-20 up the bar.
     local function BuildCastTimeAdvanced(panel)
-        -- Font
-        local ctFontDrop = AceGUI:Create("Dropdown")
-        ctFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(ctFontDrop)
-        ctFontDrop:SetValue(settings.castTimeFont or "Friz Quadrata TT")
-        ctFontDrop:SetFullWidth(true)
-        CS.SetFontDropdownCallback(ctFontDrop, function(widget, event, val)
-            settings.castTimeFont = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(ctFontDrop)
+        AddFontControls(panel, settings, "castTime", {
+            size = 10, sizeMin = 6, sizeMax = 24, sizeStep = 0.1,
+            font = "Friz Quadrata TT", outline = "OUTLINE",
+        }, applyCastBar, { row = true, previewRefresh = castPreviewOnly })
 
-        -- Size
-        local ctSizeSlider = AceGUI:Create("Slider")
-        ctSizeSlider:SetLabel("Font Size")
-        ctSizeSlider:SetSliderValues(6, 24, 0.1)
-        ctSizeSlider:SetValue(settings.castTimeFontSize or 10)
-        ctSizeSlider:SetFullWidth(true)
-        ctSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.castTimeFontSize = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(ctSizeSlider)
+        -- deferCommit is deliberately absent, matching the stock color-picker call
+        -- this row replaced.
+        AddColorRow(panel, {
+            label = "Font Color",
+            tbl = settings,
+            key = "castTimeFontColor",
+            default = {1, 1, 1, 1},
+            hasAlpha = true,
+            onConfirm = applyCastBar,
+            onChange = castPreviewOnly,
+        })
 
-        -- Outline
-        local ctOutlineDrop = AceGUI:Create("Dropdown")
-        ctOutlineDrop:SetLabel("Outline")
-        CS.SetupFontOutlineDropdown(ctOutlineDrop)
-        ctOutlineDrop:SetValue(settings.castTimeFontOutline or "OUTLINE")
-        ctOutlineDrop:SetFullWidth(true)
-        CS.SetFontOutlineDropdownCallback(ctOutlineDrop, function(widget, event, val)
-            settings.castTimeFontOutline = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(ctOutlineDrop)
+        -- Both offsets place the countdown on the canvas facsimile too.
+        AddMirrorFirstSliderRow(panel, {
+            label = "X Offset",
+            min = -50, max = 50, step = 0.1,
+            value = settings.castTimeXOffset or 0,
+            set = function(val) settings.castTimeXOffset = val end,
+            apply = applyCastBar,
+        })
 
-        -- Color
-        AddColorPicker(panel, settings, "castTimeFontColor", "Font Color", {1, 1, 1, 1}, true, applyCastBar)
-
-        -- X Offset
-        local ctXSlider = AceGUI:Create("Slider")
-        ctXSlider:SetLabel("X Offset")
-        ctXSlider:SetSliderValues(-50, 50, 0.1)
-        ctXSlider:SetValue(settings.castTimeXOffset or 0)
-        ctXSlider:SetFullWidth(true)
-        ctXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.castTimeXOffset = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(ctXSlider)
-
-        -- Y Offset
-        local ctYSlider = AceGUI:Create("Slider")
-        ctYSlider:SetLabel("Y Offset")
-        ctYSlider:SetSliderValues(-20, 20, 0.1)
-        ctYSlider:SetValue(settings.castTimeYOffset or 0)
-        ctYSlider:SetFullWidth(true)
-        ctYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.castTimeYOffset = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        panel:AddChild(ctYSlider)
+        AddMirrorFirstSliderRow(panel, {
+            label = "Y Offset",
+            min = -20, max = 20, step = 0.1,
+            value = settings.castTimeYOffset or 0,
+            set = function(val) settings.castTimeYOffset = val end,
+            apply = applyCastBar,
+        })
     end
 
-    AddAdvancedToggle(ctCb, "castbarCastTime", cbAdvBtns, settings.showCastTimeText ~= false, {
+    AddAdvancedToggle(castTimeRow, "castbarCastTime", cbAdvBtns, settings.showCastTimeText ~= false, {
         title = "Cast Time Advanced",
         build = BuildCastTimeAdvanced,
     })

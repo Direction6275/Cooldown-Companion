@@ -1,0 +1,1897 @@
+--[[
+    CooldownCompanion - Config/ButtonsWideColumn
+    Workspace for the plain buttons view and Other Class browsing:
+    hosts the entry settings surfaces (bsTabGroup, entry multi-select),
+    the panel batch actions, and the group-side settings surfaces (via
+    GroupSettingsHost) in one unified surface. It frames two labeled areas:
+    the pinned Live Preview above the split divider (the column title names
+    it) and the editing surface
+    below it (the "Editing:" path and selected-entry context on one line,
+    followed by the add box and settings).
+    Browsing skips the pinned preview cluster
+    (panels render live in the world).
+]]
+
+local ADDON_NAME, ST = ...
+local CooldownCompanion = ST.Addon
+local CS = ST._configState
+local AceGUI = LibStub("AceGUI-3.0")
+local ShouldSubmitRawAddOnEnter = ST._ShouldSubmitRawAddOnEnter
+local CreateAddBoxInfoButton = ST._CreateAddBoxInfoButton
+
+local PREVIEW_GAP = 4
+-- The one destination that owns resources, custom bars, the cast bar, and
+-- the unit frames; every crumb under it names it as the parent.
+local BARS_HOME_LABEL = "Resources, Cast Bar & Unit Frames"
+local ADD_BOX_HEIGHT = 26
+local EDIT_CONTEXT_ICON_SIZE = 16
+local EDIT_CONTEXT_BADGE_SIZE = 16
+local EDIT_CONTEXT_BADGE_GAP = 3
+local DIVIDER_HEIGHT = 9
+local DIVIDER_HIT_EXTEND = 5
+local PREVIEW_SPLIT_DEFAULT = 0.42
+local PREVIEW_MIN_HEIGHT = 100
+local SETTINGS_MIN_HEIGHT = 150
+local EDIT_INSET = 6
+local EDIT_HEADER_TOP_GAP = 6
+local EDIT_HEADER_HEIGHT = 18
+local EDIT_HEADER_GAP = 5
+local EDIT_BOTTOM_INSET = 6
+local EDIT_CHIPS_HEIGHT = 18
+local EDIT_CHIPS_GAP = 4
+local EDIT_CHIPS_SCROLL_STEP = 80
+local EDIT_CHIPS_SCROLL_BUTTON_WIDTH = 18
+
+-- The preview/settings split is owner-adjustable via the drag divider below;
+-- the chosen fraction persists per profile.
+local function GetPreviewSplit()
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    local fraction = db and db.configPreviewSplit
+    if type(fraction) ~= "number" then
+        return PREVIEW_SPLIT_DEFAULT, false
+    end
+    return math.max(0.1, math.min(fraction, 0.75)), true
+end
+
+local function SetPreviewSplit(fraction)
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    if db then
+        db.configPreviewSplit = fraction
+    end
+end
+
+local function HideEntrySurfaces(col3)
+    -- The entry Overrides tab can host a live format editor. These branches
+    -- hide the surface without re-selecting a tab, so nothing else would
+    -- settle its pending write or stop its animation driver.
+    if ST._ReleaseTextFormatOverrideEditor then
+        ST._ReleaseTextFormatOverrideEditor()
+    end
+    if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
+    if col3.bsPlaceholder then col3.bsPlaceholder:Hide() end
+end
+
+-- The wide col3 layout hosts exactly one pinned preview at a time: the
+-- buttons panel mirror or the Resources home's Layout & Order preview.
+-- The split divider, persisted fraction, and height clamps below are
+-- shared; each view registers its host frame and rebuild function while
+-- its preview is showing, and clears the registration when it hides.
+-- `refit` is optional: a cheap geometry-only pass the divider drag can
+-- afford every frame, where the full rebuild only runs on its throttle.
+local function SetActiveWidePreview(col3, host, rebuild, refit)
+    col3._cdcActiveWideHost = host
+    col3._cdcActiveWideRebuild = rebuild
+    col3._cdcActiveWideRefit = refit
+end
+
+local function ClearActiveWidePreview(col3, host)
+    if col3._cdcActiveWideHost == host then
+        col3._cdcActiveWideHost = nil
+        col3._cdcActiveWideRebuild = nil
+        col3._cdcActiveWideRefit = nil
+    end
+end
+
+local function RebuildActiveWidePreview(col3)
+    local host = col3._cdcActiveWideHost
+    local rebuild = col3._cdcActiveWideRebuild
+    if host and rebuild then
+        rebuild(host)
+    end
+end
+
+-- Structural container below the split divider. The divider itself separates
+-- Live Preview from Editing; this frame only hosts the Editing path (including
+-- any selected entry context), the add box, and the settings surfaces.
+local function EnsureEditingSurface(col3)
+    local surface = col3._cdcEditingSurface
+    if surface then return surface end
+
+    surface = CreateFrame("Frame", nil, col3.content)
+    -- Keep the structural host at content level; its child header and
+    -- badges then sit alongside the sibling settings widgets.
+    surface:SetFrameLevel(col3.content:GetFrameLevel())
+
+    local headerLine = CreateFrame("Frame", nil, surface)
+    headerLine:SetPoint("TOPLEFT", surface, "TOPLEFT", EDIT_INSET, -EDIT_HEADER_TOP_GAP)
+    headerLine:SetPoint("TOPRIGHT", surface, "TOPRIGHT", -EDIT_INSET, -EDIT_HEADER_TOP_GAP)
+    headerLine:SetHeight(EDIT_HEADER_HEIGHT)
+    headerLine.badges = {}
+
+    local text = headerLine:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    text:SetPoint("LEFT", headerLine, "LEFT", 0, 0)
+    text:SetPoint("RIGHT", headerLine, "RIGHT", 0, 0)
+    text:SetHeight(EDIT_HEADER_HEIGHT)
+    text:SetJustifyH("LEFT")
+    text:SetWordWrap(false)
+    headerLine.text = text
+
+    -- Breadcrumb pieces: when the path has clickable ancestor scopes, the
+    -- line renders as the "Editing: " prefix + one crumb button per
+    -- ancestor + the main text (the current selection). With no clickable
+    -- ancestors everything but the main text stays hidden and it renders
+    -- the whole line exactly as before.
+    local prefix = headerLine:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    prefix:SetPoint("LEFT", headerLine, "LEFT", 0, 0)
+    prefix:SetHeight(EDIT_HEADER_HEIGHT)
+    prefix:SetJustifyH("LEFT")
+    prefix:SetWordWrap(false)
+    prefix:Hide()
+    headerLine.prefix = prefix
+    headerLine.crumbs = {}
+
+    surface._cdcHeader = headerLine
+
+    col3._cdcEditingSurface = surface
+    return surface
+end
+
+local function GetActiveEditingAddBox(col3)
+    local alternate = col3._cdcAlternateEditingAddBox
+    if alternate and alternate.frame and alternate.frame:IsShown() then
+        return alternate
+    end
+    local panelAddBox = col3.buttonsAddBox
+    if panelAddBox and panelAddBox.frame and panelAddBox.frame:IsShown() then
+        return panelAddBox
+    end
+    return nil
+end
+
+-- The texture panel's single tracked entry shows as a compact "quiet row" in
+-- the editing surface (it replaces the entry-icon strip, which texture panels
+-- no longer render). It occupies the same chrome slot as the add box and is
+-- mutually exclusive with it (add box: no entry; row: one entry).
+local function GetActiveEditingRow(col3)
+    local row = col3.buttonsQuietRow
+    if row and row:IsShown() then
+        return row
+    end
+    return nil
+end
+
+local function SetWideEditingAddBox(col3, widget)
+    local previous = col3._cdcAlternateEditingAddBox
+    if previous and previous ~= widget and previous.frame then
+        previous.frame:Hide()
+    end
+    col3._cdcAlternateEditingAddBox = widget
+    if widget and widget.frame then
+        widget.frame._cdcEditingHeight = widget.frame._cdcEditingHeight or ADD_BOX_HEIGHT
+        widget.frame:Show()
+    end
+end
+
+local function LayoutWideEditingChips(frame)
+    if not (frame and frame:IsShown()) then return end
+    local label = frame._cdcPrefix
+    local clip = frame._cdcClip
+    local content = frame._cdcContent
+    local previous = frame._cdcPrevious
+    local next = frame._cdcNext
+    local buttons = frame._cdcButtons or {}
+    label:ClearAllPoints()
+    label:SetPoint("LEFT", frame, "LEFT", 0, 0)
+
+    local contentWidth = 0
+    local selectedLeft
+    local selectedRight
+    for _, button in ipairs(buttons) do
+        if button:IsShown() then
+            button:ClearAllPoints()
+            button:SetPoint("LEFT", content, "LEFT", contentWidth, 0)
+            if button._cdcSelected then
+                selectedLeft = contentWidth
+                selectedRight = contentWidth + button:GetWidth()
+            end
+            contentWidth = contentWidth + button:GetWidth()
+        end
+    end
+
+    local labelWidth = math.ceil(label:GetStringWidth())
+    local unscrolledWidth = math.max(0, frame:GetWidth() - labelWidth)
+    local hasOverflow = contentWidth > unscrolledWidth
+    previous:SetShown(hasOverflow)
+    next:SetShown(hasOverflow)
+
+    clip:ClearAllPoints()
+    if hasOverflow then
+        previous:ClearAllPoints()
+        previous:SetPoint("LEFT", label, "RIGHT", 0, 0)
+        next:ClearAllPoints()
+        next:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+        clip:SetPoint("LEFT", previous, "RIGHT", 0, 0)
+        clip:SetPoint("RIGHT", next, "LEFT", 0, 0)
+    else
+        clip:SetPoint("LEFT", label, "RIGHT", 0, 0)
+        clip:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+    end
+
+    local visibleWidth = math.max(0, unscrolledWidth
+        - (hasOverflow and (EDIT_CHIPS_SCROLL_BUTTON_WIDTH * 2) or 0))
+    local maxOffset = math.max(0, contentWidth - visibleWidth)
+    local offset = math.max(0, math.min(frame._cdcScrollOffset or 0, maxOffset))
+    if frame._cdcEnsureSelectedVisible then
+        if selectedLeft and selectedLeft < offset then
+            offset = selectedLeft
+        elseif selectedRight and selectedRight > offset + visibleWidth then
+            offset = selectedRight - visibleWidth
+        end
+        frame._cdcEnsureSelectedVisible = nil
+    end
+    frame._cdcScrollOffset = math.max(0, math.min(offset, maxOffset))
+
+    content:ClearAllPoints()
+    content:SetPoint("LEFT", clip, "LEFT", -frame._cdcScrollOffset, 0)
+    content:SetSize(math.max(1, contentWidth), EDIT_CHIPS_HEIGHT)
+    previous:SetEnabled(frame._cdcScrollOffset > 0)
+    next:SetEnabled(frame._cdcScrollOffset < maxOffset)
+end
+
+local function SetWideEditingChips(col3, prefix, items)
+    local surface = EnsureEditingSurface(col3)
+    local frame = col3._cdcEditingChips
+    if not frame then
+        frame = CreateFrame("Frame", nil, surface)
+        frame:SetHeight(EDIT_CHIPS_HEIGHT)
+        frame._cdcPrefix = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        frame._cdcPrefix:SetJustifyH("LEFT")
+        frame._cdcClip = CreateFrame("Frame", nil, frame)
+        frame._cdcClip:SetHeight(EDIT_CHIPS_HEIGHT)
+        frame._cdcClip:SetClipsChildren(true)
+        frame._cdcContent = CreateFrame("Frame", nil, frame._cdcClip)
+        frame._cdcContent:SetHeight(EDIT_CHIPS_HEIGHT)
+        frame._cdcPrevious = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        frame._cdcPrevious:SetSize(EDIT_CHIPS_SCROLL_BUTTON_WIDTH, EDIT_CHIPS_HEIGHT)
+        frame._cdcPrevious:SetText("<")
+        frame._cdcPrevious:SetScript("OnClick", function()
+            frame._cdcScrollOffset = math.max(0,
+                (frame._cdcScrollOffset or 0) - EDIT_CHIPS_SCROLL_STEP)
+            LayoutWideEditingChips(frame)
+        end)
+        frame._cdcNext = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        frame._cdcNext:SetSize(EDIT_CHIPS_SCROLL_BUTTON_WIDTH, EDIT_CHIPS_HEIGHT)
+        frame._cdcNext:SetText(">")
+        frame._cdcNext:SetScript("OnClick", function()
+            frame._cdcScrollOffset = (frame._cdcScrollOffset or 0) + EDIT_CHIPS_SCROLL_STEP
+            LayoutWideEditingChips(frame)
+        end)
+        frame._cdcButtons = {}
+        frame:SetScript("OnSizeChanged", LayoutWideEditingChips)
+        col3._cdcEditingChips = frame
+    end
+
+    if not items or #items == 0 then
+        frame:Hide()
+        return
+    end
+
+    frame._cdcPrefix:SetText((prefix or "Not currently shown:") .. " ")
+    for index, item in ipairs(items) do
+        local captured = item
+        local button = frame._cdcButtons[index]
+        if not button then
+            button = CreateFrame("Button", nil, frame._cdcContent)
+            button:RegisterForClicks("AnyUp")
+            button.text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            button.text:SetAllPoints()
+            button.text:SetJustifyH("LEFT")
+            button:SetScript("OnEnter", function(self)
+                self.text:SetTextColor(1, 0.82, 0)
+                if self._cdcTooltip then
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:SetText(self._cdcTooltip, 1, 1, 1)
+                    GameTooltip:Show()
+                end
+            end)
+            button:SetScript("OnLeave", function(self)
+                local color = self._cdcSelected and self._cdcSelectedColor or self._cdcNormalColor
+                self.text:SetTextColor(color[1], color[2], color[3])
+                GameTooltip:Hide()
+            end)
+            frame._cdcButtons[index] = button
+        end
+        button.text:SetText((index > 1 and "  \194\183  " or "") .. tostring(item.label or ""))
+        button:SetSize(math.ceil(button.text:GetStringWidth()) + 2, EDIT_CHIPS_HEIGHT)
+        button._cdcSelected = item.selected == true
+        button._cdcNormalColor = { 0.70, 0.68, 0.64 }
+        button._cdcSelectedColor = { 1, 1, 1 }
+        button._cdcTooltip = item.tooltip
+        local color = button._cdcSelected and button._cdcSelectedColor or button._cdcNormalColor
+        button.text:SetTextColor(color[1], color[2], color[3])
+        button:SetScript("OnClick", function(_, mouseButton)
+            if mouseButton == "RightButton" and captured.onRightClick then
+                captured.onRightClick()
+            elseif mouseButton == "LeftButton" and captured.onClick then
+                captured.onClick()
+            end
+        end)
+        button:Show()
+    end
+    for index = #items + 1, #frame._cdcButtons do
+        frame._cdcButtons[index]:Hide()
+    end
+    frame:Show()
+    frame._cdcEnsureSelectedVisible = true
+    LayoutWideEditingChips(frame)
+end
+
+local function ClearWideEditingExtras(col3)
+    local alternate = col3._cdcAlternateEditingAddBox
+    if alternate and alternate.frame then
+        alternate.frame:Hide()
+    end
+    col3._cdcAlternateEditingAddBox = nil
+    if col3._cdcEditingChips then
+        col3._cdcEditingChips:Hide()
+    end
+end
+
+local function AcquireEditingHeaderBadge(headerLine, index)
+    local badge = headerLine.badges[index]
+    if badge then return badge end
+
+    badge = CreateFrame("Frame", nil, headerLine)
+    badge:SetSize(EDIT_CONTEXT_BADGE_SIZE, EDIT_CONTEXT_BADGE_SIZE)
+    badge:EnableMouse(true)
+    badge.icon = badge:CreateTexture(nil, "ARTWORK")
+    badge.icon:SetAllPoints()
+    badge:SetScript("OnEnter", function(self)
+        if not self._cdcLabel then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(self._cdcLabel, 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    badge:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    headerLine.badges[index] = badge
+    return badge
+end
+
+-- Path shown in the editing header: the parent context dimmed, the leaf
+-- (what the settings below actually edit) emphasized.
+local function GetEditingHeaderPath()
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    if CS.barsEntrySelected and CS.castFramesSelectedItem then
+        if CS.castFramesSelectedItem == "player" then
+            return BARS_HOME_LABEL, "Player Frame"
+        elseif CS.castFramesSelectedItem == "target" then
+            return BARS_HOME_LABEL, "Target Frame"
+        end
+        return BARS_HOME_LABEL, "Cast Bar"
+    end
+    if CS.barsEntrySelected then
+        local multiCount = 0
+        for _ in pairs(CS.selectedCustomBars) do multiCount = multiCount + 1 end
+        if multiCount >= 2 then
+            return BARS_HOME_LABEL, "Custom Bars"
+        end
+        local settings = CooldownCompanion.GetResourceBarSettings
+            and CooldownCompanion:GetResourceBarSettings()
+        if CS.selectedResourcePowerType and ST._RBP
+            and ST._RBP.IsResourceEditableInColumn4
+            and ST._RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, settings, true) then
+            local powerNames = ST._RB and ST._RB.POWER_NAMES
+            local resourceName = powerNames and powerNames[tonumber(CS.selectedResourcePowerType)]
+            return BARS_HOME_LABEL, resourceName or "Resource"
+        end
+        if CS.selectedCustomBarId then
+            local entry = ST._FindSelectedConfigCustomBar and ST._FindSelectedConfigCustomBar()
+            if entry then
+                return BARS_HOME_LABEL, entry.label or "Custom Bar"
+            end
+        end
+        return nil, "Resources"
+    end
+    local group = db and CS.selectedGroup and db.groups[CS.selectedGroup]
+    if not group then return nil, nil end
+    local containerId = group.parentContainerId or CS.selectedContainer
+    local container = containerId and db.groupContainers and db.groupContainers[containerId]
+    return container and container.name, group.name or "Panel"
+end
+
+local function AcquireHeaderCrumb(headerLine, index)
+    local crumb = headerLine.crumbs[index]
+    if crumb then return crumb end
+
+    crumb = CreateFrame("Button", nil, headerLine)
+    crumb:SetHeight(EDIT_HEADER_HEIGHT)
+    local crumbText = crumb:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    crumbText:SetAllPoints()
+    crumbText:SetJustifyH("LEFT")
+    crumbText:SetWordWrap(false)
+    crumbText:SetTextColor(0.616, 0.584, 0.529)
+    crumb.text = crumbText
+    crumb:SetScript("OnEnter", function(self)
+        self.text:SetTextColor(1, 1, 1)
+        if self._cdcTooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(self._cdcTooltip, 1, 1, 1)
+            GameTooltip:Show()
+        end
+    end)
+    crumb:SetScript("OnLeave", function(self)
+        self.text:SetTextColor(0.616, 0.584, 0.529)
+        GameTooltip:Hide()
+    end)
+    crumb:SetScript("OnClick", function(self)
+        if self._cdcOnClick then
+            self._cdcOnClick()
+        end
+    end)
+    headerLine.crumbs[index] = crumb
+    return crumb
+end
+
+-- Breadcrumb click handlers: every ancestor scope in the path navigates.
+-- The group crumb opens the group's own settings (same landing as clicking
+-- the group in the navigator); the panel crumb deselects the entry or
+-- attached bar; the Resources crumb returns to the Resources overview.
+local function BreadcrumbToGroup()
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    local group = db and CS.selectedGroup and db.groups[CS.selectedGroup]
+    local containerId = (group and group.parentContainerId) or CS.selectedContainer
+    if not (containerId and ST._SelectConfigContainer) then return end
+    CS.unifiedBarKind = nil
+    ST._SelectConfigContainer(containerId)
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function BreadcrumbToPanel()
+    CS.unifiedBarKind = nil
+    if ST._ClearConfigButtonSelection then
+        ST._ClearConfigButtonSelection()
+    end
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function BreadcrumbToResourcesHome()
+    -- Drops the resource, custom bar, or cast/frames item being edited, so
+    -- the workspace falls back to its Resources home.
+    if ST._ClearConfigBarsHomeSelection then
+        ST._ClearConfigBarsHomeSelection()
+    end
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function UpdateEditingHeader(col3)
+    local headerLine = EnsureEditingSurface(col3)._cdcHeader
+    local header = headerLine.text
+    local parent, leaf = GetEditingHeaderPath()
+    local context = col3._cdcEditingContext
+
+    -- Status badges fill the header's right edge, chaining leftward.
+    local shown = 0
+    local rightAnchor
+    local badgeStatus = context and context.badgeStatus
+    if badgeStatus and ST._EntryStatusBadges then
+        for _, desc in ipairs(ST._EntryStatusBadges) do
+            if badgeStatus[desc.key] then
+                shown = shown + 1
+                local badge = AcquireEditingHeaderBadge(headerLine, shown)
+                badge.icon:SetAtlas(desc.atlas, false)
+                badge._cdcLabel = (desc.key == "warn" and badgeStatus.loadBlocked)
+                    and "Hidden by visibility rules" or desc.label
+                badge:ClearAllPoints()
+                if rightAnchor then
+                    badge:SetPoint("RIGHT", rightAnchor, "LEFT", -EDIT_CONTEXT_BADGE_GAP, 0)
+                else
+                    badge:SetPoint("RIGHT", headerLine, "RIGHT", 0, 0)
+                end
+                badge:Show()
+                rightAnchor = badge
+            end
+        end
+    end
+    for i = shown + 1, #headerLine.badges do
+        headerLine.badges[i]:Hide()
+    end
+
+    header:ClearAllPoints()
+    header:SetPoint("LEFT", headerLine, "LEFT", 0, 0)
+    if rightAnchor then
+        header:SetPoint("RIGHT", rightAnchor, "LEFT", -EDIT_CONTEXT_BADGE_GAP - 3, 0)
+    else
+        header:SetPoint("RIGHT", headerLine, "RIGHT", 0, 0)
+    end
+
+    local prefix = headerLine.prefix
+    local crumbs = headerLine.crumbs
+
+    local function HideCrumbsFrom(startIndex)
+        for i = startIndex, #crumbs do
+            crumbs[i]:Hide()
+        end
+    end
+
+    if not leaf then
+        prefix:Hide()
+        HideCrumbsFrom(1)
+        header:SetText("Editing")
+        return
+    end
+
+    -- Every ancestor scope in the dimmed path is a clickable crumb; only
+    -- the current selection stays plain text. In the bars workspace that
+    -- ancestor is its Resources home, which every object it edits - bars,
+    -- cast bar, unit frames - returns to.
+    local segments = {}
+    local currentText
+    if context and context.name then
+        if parent then
+            segments[#segments + 1] = { label = parent,
+                tooltip = "Back to group settings", onClick = BreadcrumbToGroup }
+        end
+        segments[#segments + 1] = { label = leaf,
+            tooltip = "Back to panel settings", onClick = BreadcrumbToPanel }
+        local contextName = context.name
+        if context.icon then
+            contextName = "|T" .. context.icon .. ":" .. EDIT_CONTEXT_ICON_SIZE
+                .. ":" .. EDIT_CONTEXT_ICON_SIZE .. ":0:0:64:64:5:59:5:59|t " .. contextName
+        end
+        if context.kindText then
+            contextName = contextName .. " |cff7d7566(" .. context.kindText .. ")|r"
+        end
+        currentText = contextName
+    elseif CS.barsEntrySelected and parent == BARS_HOME_LABEL then
+        segments[1] = { label = parent,
+            tooltip = "Back to Resources", onClick = BreadcrumbToResourcesHome }
+        currentText = leaf
+    elseif parent and not CS.barsEntrySelected then
+        -- Panel scope in the buttons workspace: the group is the one
+        -- clickable ancestor.
+        segments[1] = { label = parent,
+            tooltip = "Back to group settings", onClick = BreadcrumbToGroup }
+        currentText = leaf
+    end
+
+    if #segments > 0 then
+        prefix:SetText("Editing: ")
+        prefix:Show()
+        local anchor = prefix
+        for index, segment in ipairs(segments) do
+            local crumb = AcquireHeaderCrumb(headerLine, index)
+            crumb.text:SetText(segment.label .. " \194\187 ")
+            crumb.text:SetTextColor(0.616, 0.584, 0.529)
+            crumb:SetWidth(crumb.text:GetStringWidth() + 1)
+            crumb._cdcTooltip = segment.tooltip
+            crumb._cdcOnClick = segment.onClick
+            crumb:ClearAllPoints()
+            crumb:SetPoint("LEFT", anchor, "RIGHT", 0, 0)
+            crumb:Show()
+            anchor = crumb
+        end
+        HideCrumbsFrom(#segments + 1)
+        header:ClearAllPoints()
+        header:SetPoint("LEFT", anchor, "RIGHT", 0, 0)
+        if rightAnchor then
+            header:SetPoint("RIGHT", rightAnchor, "LEFT", -EDIT_CONTEXT_BADGE_GAP - 3, 0)
+        else
+            header:SetPoint("RIGHT", headerLine, "RIGHT", 0, 0)
+        end
+        header:SetFormattedText("|cffffffff%s|r", currentText)
+        return
+    end
+
+    prefix:Hide()
+    HideCrumbsFrom(1)
+    if parent then
+        header:SetFormattedText("Editing: |cff9d9587%s \194\187 |r|cffffffff%s|r", parent, leaf)
+    else
+        header:SetFormattedText("Editing: |cffffffff%s|r", leaf)
+    end
+end
+
+-- Shared hide for the divider and the editing surface: every path that
+-- stops showing the preview/editing split must run this so the chrome
+-- never lingers over a full-column surface.
+local function HideEditingChrome(col3)
+    if col3.buttonsSplitDivider then
+        col3.buttonsSplitDivider:CancelDrag()
+        col3.buttonsSplitDivider:Hide()
+    end
+    if col3._cdcEditingSurface then
+        col3._cdcEditingSurface:Hide()
+    end
+end
+
+-- Vertical space the editing surface's fixed chrome (header, add box, gaps,
+-- and insets) claims below the split divider before the settings surface
+-- (shared by the divider drag and the height computation below).
+local function GetEditingOverhead(col3)
+    local overhead = EDIT_HEADER_TOP_GAP + EDIT_HEADER_HEIGHT
+        + PREVIEW_GAP + EDIT_BOTTOM_INSET
+    local addBox = GetActiveEditingAddBox(col3)
+    if addBox then
+        overhead = overhead + EDIT_HEADER_GAP
+            + (addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
+    end
+    if GetActiveEditingRow(col3) then
+        overhead = overhead + EDIT_HEADER_GAP + ADD_BOX_HEIGHT
+    end
+    local chips = col3._cdcEditingChips
+    if chips and chips:IsShown() then
+        overhead = overhead + EDIT_CHIPS_GAP + EDIT_CHIPS_HEIGHT
+    end
+    return overhead
+end
+
+-- Single source of truth for the preview host height: the persisted split
+-- fraction, floored at the preview minimum (taller default floor when no
+-- custom split is saved) and capped so the settings region below the
+-- divider keeps its own minimum — the same clamp the divider drag applies.
+local function ComputePreviewHostHeight(col3)
+    local columnHeight = col3.content:GetHeight() or 0
+    local fraction, custom = GetPreviewSplit()
+    local minHeight = custom and PREVIEW_MIN_HEIGHT or 170
+    local desired = math.max(minHeight, math.floor(columnHeight * fraction))
+    local maxHeight = columnHeight - DIVIDER_HEIGHT
+        - GetEditingOverhead(col3) - SETTINGS_MIN_HEIGHT
+    -- Degenerate tiny column: the preview floor wins (the config window's
+    -- own minimum height makes this a transient state at worst).
+    if maxHeight < PREVIEW_MIN_HEIGHT then
+        maxHeight = PREVIEW_MIN_HEIGHT
+    end
+    return math.min(desired, maxHeight)
+end
+
+-- Anchored widths are not guaranteed to settle until the frame after the
+-- config columns resize. Coalesce resize traffic into one trailing pass so
+-- the preview always rebuilds from the latest propagated host dimensions.
+local function ScheduleFinalWidePreviewLayout(col3, host, forceRebuild)
+    col3._cdcFinalWidePreviewHost = host
+    if forceRebuild then
+        col3._cdcFinalWidePreviewForceRebuild = true
+    end
+    if col3._cdcFinalWidePreviewLayoutScheduled then return end
+    col3._cdcFinalWidePreviewLayoutScheduled = true
+
+    C_Timer.After(0, function()
+        col3._cdcFinalWidePreviewLayoutScheduled = nil
+        local requestedHost = col3._cdcFinalWidePreviewHost
+        local requestedForceRebuild = col3._cdcFinalWidePreviewForceRebuild
+        col3._cdcFinalWidePreviewHost = nil
+        col3._cdcFinalWidePreviewForceRebuild = nil
+        if not (requestedHost
+            and col3._cdcActiveWideHost == requestedHost
+            and requestedHost:IsShown()) then
+            return
+        end
+        if (col3.content:GetHeight() or 0) <= 0 then return end
+
+        local newHeight = ComputePreviewHostHeight(col3)
+        local heightChanged = math.abs(
+            (requestedHost:GetHeight() or 0) - newHeight) >= 0.5
+        if heightChanged then
+            requestedHost:SetHeight(newHeight)
+        end
+
+        local width = requestedHost:GetWidth() or 0
+        local widthChanged = math.abs(
+            (requestedHost._cdcLastLayoutWidth or 0) - width) >= 0.5
+        if not (requestedForceRebuild or heightChanged or widthChanged) then
+            return
+        end
+
+        requestedHost._cdcLastLayoutWidth = width
+        RebuildActiveWidePreview(col3)
+    end)
+end
+
+-- Re-apply the persisted split against the CURRENT column height and
+-- overhead. Called from LayoutColumns (which runs on every window resize)
+-- and as the refresh pass's final step — the preview builds before the add
+-- box settles its visibility, so the first computation can run against
+-- stale overhead.
+local function ReapplyPanelPreviewSplit()
+    local col3 = CS.configFrame and CS.configFrame.col3
+    local host = col3 and col3._cdcActiveWideHost
+    if not (host and host:IsShown()) then return end
+    if (col3.content:GetHeight() or 0) <= 0 then return end
+    local newHeight = ComputePreviewHostHeight(col3)
+    local heightChanged = math.abs((host:GetHeight() or 0) - newHeight) >= 0.5
+    -- The preview's scale-to-fit reads the host width too, so a width-only
+    -- window resize still needs a rebuild even when the split height held.
+    local width = host:GetWidth() or 0
+    local widthChanged = math.abs((host._cdcLastLayoutWidth or 0) - width) >= 0.5
+    if heightChanged then
+        host:SetHeight(newHeight)
+    end
+    ScheduleFinalWidePreviewLayout(col3, host, heightChanged or widthChanged)
+end
+
+-- Draggable divider between the pinned preview and the editing surface:
+-- drag to rebalance the split, double-click to reset to the default. The
+-- fraction persists per profile.
+local function EnsurePreviewDivider(col3)
+    local divider = col3.buttonsSplitDivider
+    if divider then return divider end
+
+    -- A Button, not a Frame: OnDoubleClick is a Button-only script handler.
+    divider = CreateFrame("Button", nil, col3.content)
+    divider:SetHeight(DIVIDER_HEIGHT)
+    divider:EnableMouse(true)
+    -- The visual bar stays slim; the invisible drag target extends a few
+    -- pixels above and below it.
+    divider:SetHitRectInsets(0, 0, -DIVIDER_HIT_EXTEND, -DIVIDER_HIT_EXTEND)
+
+    -- All ornament geometry is specified in whole physical pixels via
+    -- the same one-physical-pixel unit the profile one-pixel-border
+    -- feature uses (PixelUtil with size 0 / minPixels 1). Sizes given
+    -- in UI units are fractional in physical pixels, and that fraction
+    -- is what made earlier lines change thickness with panel position
+    -- and earlier diamonds shimmer: exact-integer pixel sizes plus the
+    -- engine's default grid snapping render identically everywhere.
+    -- The lines are 2 pixels because exact 1-pixel hairlines can round
+    -- to zero rows and vanish at some positions.
+    local leftLine = divider:CreateTexture(nil, "ARTWORK")
+    leftLine:SetColorTexture(0.52, 0.44, 0.34, 0.42)
+    local rightLine = divider:CreateTexture(nil, "ARTWORK")
+    rightLine:SetColorTexture(0.52, 0.44, 0.34, 0.42)
+
+    -- Two-tone diamond ornament (the original design): a gold diamond
+    -- with a dark core, each a flat color square clipped by Blizzard's
+    -- pre-antialiased diamond mask, revived on the pixel-exact recipe
+    -- above after the UI-unit-sized version wobbled.
+    local diamond = divider:CreateTexture(nil, "OVERLAY")
+    diamond:SetColorTexture(0.62, 0.48, 0.28, 0.72)
+    diamond:SetPoint("CENTER")
+    local diamondMask = divider:CreateMaskTexture()
+    diamondMask:SetTexture("Interface\\Common\\common-mask-diamond",
+        "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    diamondMask:SetAllPoints(diamond)
+    diamond:AddMaskTexture(diamondMask)
+
+    local diamondCore = divider:CreateTexture(nil, "OVERLAY", nil, 1)
+    diamondCore:SetColorTexture(0.12, 0.08, 0.04, 0.95)
+    diamondCore:SetPoint("CENTER")
+    local coreMask = divider:CreateMaskTexture()
+    coreMask:SetTexture("Interface\\Common\\common-mask-diamond",
+        "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    coreMask:SetAllPoints(diamondCore)
+    diamondCore:AddMaskTexture(coreMask)
+
+    local LINE_HEIGHT_PIXELS = 2
+    local DIAMOND_PIXELS = 12
+    local CORE_PIXELS = 4 -- keeps the original 7:3 outer-to-core feel
+    -- Center to each line's inner end: the 6px half-diamond plus the
+    -- ~6px of clearance the original pre-pixel-recipe design had.
+    local LINE_GAP_PIXELS = 12
+
+    local function ApplyOrnamentLayout()
+        local onePx = PixelUtil.GetNearestPixelSize(0, divider:GetEffectiveScale(), 1)
+        leftLine:SetHeight(onePx * LINE_HEIGHT_PIXELS)
+        rightLine:SetHeight(onePx * LINE_HEIGHT_PIXELS)
+        diamond:SetSize(onePx * DIAMOND_PIXELS, onePx * DIAMOND_PIXELS)
+        diamondCore:SetSize(onePx * CORE_PIXELS, onePx * CORE_PIXELS)
+        local gap = onePx * LINE_GAP_PIXELS
+        leftLine:ClearAllPoints()
+        leftLine:SetPoint("LEFT", divider, "LEFT", 0, 0)
+        leftLine:SetPoint("RIGHT", divider, "CENTER", -gap, 0)
+        rightLine:ClearAllPoints()
+        rightLine:SetPoint("LEFT", divider, "CENTER", gap, 0)
+        rightLine:SetPoint("RIGHT", divider, "RIGHT", 0, 0)
+    end
+    ApplyOrnamentLayout()
+
+    local OPEN_HAND_CURSOR = "Interface\\CURSOR\\openhand"
+
+    -- The engine's mouse-focus list is the same source of truth that
+    -- drives OnEnter/OnLeave (hit rect extension included). A plain
+    -- IsMouseOver() rect test disagrees with it here.
+    local function IsMouseOnDivider()
+        return DoesAncestryIncludeAny(divider, GetMouseFoci())
+    end
+
+    -- Hover affordance is the open-hand cursor plus the normal instant
+    -- tooltip; the gold light-up is reserved for active drags (owner
+    -- ruling: no hover highlight, no delays).
+    local function SetDragLit(lit)
+        if lit then
+            leftLine:SetColorTexture(1, 0.72, 0.18, 0.85)
+            rightLine:SetColorTexture(1, 0.72, 0.18, 0.85)
+            diamond:SetColorTexture(1, 0.72, 0.18, 0.92)
+        else
+            leftLine:SetColorTexture(0.52, 0.44, 0.34, 0.42)
+            rightLine:SetColorTexture(0.52, 0.44, 0.34, 0.42)
+            diamond:SetColorTexture(0.62, 0.48, 0.28, 0.72)
+        end
+    end
+
+    -- The preview rebuild at the end of every drag hides and re-shows
+    -- the divider, which can break the engine's OnEnter/OnLeave pairing
+    -- and strand the open-hand cursor. While the cursor is claimed, this
+    -- watcher rechecks real mouse state every frame and releases it the
+    -- moment the mouse is gone; it is hidden (free) otherwise. It is
+    -- parented to UIParent, not the divider: a child of a hidden frame
+    -- gets no OnUpdate, so a divider-parented watcher would go dead on
+    -- exactly the hide paths it has to clean up after.
+    local cursorWatch = CreateFrame("Frame", nil, UIParent)
+    cursorWatch:Hide()
+
+    local function ReleaseCursor()
+        cursorWatch:Hide()
+        SetCursor(nil)
+    end
+
+    cursorWatch:SetScript("OnUpdate", function()
+        if divider._dragging then return end
+        if not (divider:IsVisible() and IsMouseOnDivider()) then
+            ReleaseCursor()
+        end
+    end)
+
+    divider:SetScript("OnShow", function()
+        -- Re-derive pixel-exact geometry on every show so UI scale
+        -- changes made while hidden can't leave stale fractional sizes.
+        ApplyOrnamentLayout()
+    end)
+    -- Hiding a frame under the cursor does not reliably deliver OnLeave,
+    -- so release the open hand here rather than trusting the pairing.
+    divider:SetScript("OnHide", ReleaseCursor)
+
+    -- Scale and resolution changes alter the physical-pixel factor, so
+    -- the ornament has to be rebuilt even while it stays visible -
+    -- otherwise its sizes silently go fractional again.
+    local scaleWatch = CreateFrame("Frame", nil, UIParent)
+    scaleWatch:RegisterEvent("UI_SCALE_CHANGED")
+    scaleWatch:RegisterEvent("DISPLAY_SIZE_CHANGED")
+    scaleWatch:SetScript("OnEvent", ApplyOrnamentLayout)
+
+    -- View switches and config close can hide the divider mid-drag; the
+    -- OnUpdate persists on hidden frames and would resume on re-show with
+    -- no mouse button down, so every hide path must cancel the drag.
+    function divider:CancelDrag()
+        if not self._dragging then return end
+        self._dragging = false
+        self:SetScript("OnUpdate", nil)
+        SetDragLit(false)
+        -- Hide paths can cancel the drag while the cursor is elsewhere;
+        -- only release the open hand if the mouse has actually left.
+        if not IsMouseOnDivider() then
+            ReleaseCursor()
+        end
+    end
+
+    -- No tooltip here by design: the open-hand cursor is the only hover
+    -- indicator, and the drag/double-click help lives in the workspace
+    -- header's (?) Settings tooltip.
+    divider:SetScript("OnEnter", function()
+        SetCursor(OPEN_HAND_CURSOR)
+        cursorWatch:Show()
+    end)
+    divider:SetScript("OnLeave", function(self)
+        if not self._dragging then
+            ReleaseCursor()
+        end
+    end)
+
+    divider:SetScript("OnMouseDown", function(self, button)
+        if button ~= "LeftButton" then return end
+        local host = col3._cdcActiveWideHost
+        if not (host and host:IsShown()) then return end
+        self._dragging = true
+        self._rebuildElapsed = 0
+        self._lastRefitHeight = host:GetHeight() or 0
+        SetDragLit(true)
+        self:SetScript("OnUpdate", function(dividerSelf, elapsed)
+            local contentTop = col3.content:GetTop()
+            local columnHeight = col3.content:GetHeight() or 0
+            if not contentTop or columnHeight <= 0 then return end
+            local _, cursorY = GetCursorPosition()
+            cursorY = cursorY / col3.content:GetEffectiveScale()
+            local maxHeight = columnHeight - DIVIDER_HEIGHT
+                - GetEditingOverhead(col3) - SETTINGS_MIN_HEIGHT
+            if maxHeight < PREVIEW_MIN_HEIGHT then return end
+            local desired = (contentTop - cursorY) - (DIVIDER_HEIGHT / 2)
+            desired = math.max(PREVIEW_MIN_HEIGHT, math.min(desired, maxHeight))
+            host:SetHeight(desired)
+            -- Cheap geometry-only catch-up every frame the height actually
+            -- moves, so anchored chrome (tile borders) tracks the divider at
+            -- frame rate even though the full rebuild below is throttled.
+            local refit = col3._cdcActiveWideRefit
+            if refit and math.abs(dividerSelf._lastRefitHeight - desired) >= 0.5 then
+                dividerSelf._lastRefitHeight = desired
+                refit(host)
+            end
+            -- Rescale the preview as the host resizes, throttled.
+            dividerSelf._rebuildElapsed = dividerSelf._rebuildElapsed + elapsed
+            if dividerSelf._rebuildElapsed >= 0.08 then
+                dividerSelf._rebuildElapsed = 0
+                RebuildActiveWidePreview(col3)
+            end
+        end)
+    end)
+    divider:SetScript("OnMouseUp", function(self)
+        if not self._dragging then return end
+        self:CancelDrag()
+        local host = col3._cdcActiveWideHost
+        local columnHeight = col3.content:GetHeight() or 0
+        if host and columnHeight > 0 then
+            SetPreviewSplit(host:GetHeight() / columnHeight)
+            RebuildActiveWidePreview(col3)
+        end
+    end)
+    divider:SetScript("OnDoubleClick", function(self)
+        self:CancelDrag()
+        SetPreviewSplit(nil)
+        local host = col3._cdcActiveWideHost
+        if host and (col3.content:GetHeight() or 0) > 0 then
+            host:SetHeight(ComputePreviewHostHeight(col3))
+            RebuildActiveWidePreview(col3)
+        end
+    end)
+
+    col3.buttonsSplitDivider = divider
+    return divider
+end
+
+-- Settings surfaces anchor inside the editing surface below the split
+-- divider (which sits directly under the pinned preview), beneath the
+-- editing header and add box; they fill the whole column when no preview
+-- is active.
+local function AnchorButtonsContentFrame(col3, frame)
+    frame:ClearAllPoints()
+    local previewHost = col3._cdcActiveWideHost
+    if previewHost and previewHost:IsShown() then
+        local divider = EnsurePreviewDivider(col3)
+        divider:ClearAllPoints()
+        divider:SetPoint("TOPLEFT", previewHost, "BOTTOMLEFT", 0, 0)
+        divider:SetPoint("TOPRIGHT", previewHost, "BOTTOMRIGHT", 0, 0)
+        divider:Show()
+
+        local surface = EnsureEditingSurface(col3)
+        surface:ClearAllPoints()
+        surface:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 0, 0)
+        surface:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+        surface:Show()
+        UpdateEditingHeader(col3)
+
+        local topAnchor = surface._cdcHeader
+        local addBox = GetActiveEditingAddBox(col3)
+        if addBox then
+            addBox.frame:ClearAllPoints()
+            addBox.frame:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
+            addBox.frame:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
+            addBox.frame:SetHeight(addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
+            topAnchor = addBox.frame
+        end
+        local quietRow = GetActiveEditingRow(col3)
+        if quietRow then
+            quietRow:ClearAllPoints()
+            quietRow:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
+            quietRow:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
+            quietRow:SetHeight(ADD_BOX_HEIGHT)
+            topAnchor = quietRow
+        end
+        local chips = col3._cdcEditingChips
+        if chips and chips:IsShown() then
+            chips:SetParent(surface)
+            chips:ClearAllPoints()
+            chips:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_CHIPS_GAP)
+            chips:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_CHIPS_GAP)
+            chips:SetHeight(EDIT_CHIPS_HEIGHT)
+            topAnchor = chips
+        end
+        frame:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -PREVIEW_GAP)
+        frame:SetPoint("BOTTOMRIGHT", surface, "BOTTOMRIGHT", -EDIT_INSET, EDIT_BOTTOM_INSET)
+    else
+        local addBox = GetActiveEditingAddBox(col3)
+        local quietRow = GetActiveEditingRow(col3)
+        local chips = col3._cdcEditingChips
+        local hasChips = chips and chips:IsShown()
+        if addBox or hasChips or quietRow then
+            if col3.buttonsSplitDivider then
+                col3.buttonsSplitDivider:CancelDrag()
+                col3.buttonsSplitDivider:Hide()
+            end
+            local surface = EnsureEditingSurface(col3)
+            surface:ClearAllPoints()
+            surface:SetAllPoints(col3.content)
+            surface:Show()
+            UpdateEditingHeader(col3)
+
+            local topAnchor = surface._cdcHeader
+            if addBox then
+                addBox.frame:ClearAllPoints()
+                addBox.frame:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
+                addBox.frame:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
+                addBox.frame:SetHeight(addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
+                topAnchor = addBox.frame
+            end
+            if quietRow then
+                quietRow:ClearAllPoints()
+                quietRow:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
+                quietRow:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
+                quietRow:SetHeight(ADD_BOX_HEIGHT)
+                topAnchor = quietRow
+            end
+            if hasChips then
+                chips:SetParent(surface)
+                chips:ClearAllPoints()
+                chips:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_CHIPS_GAP)
+                chips:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_CHIPS_GAP)
+                chips:SetHeight(EDIT_CHIPS_HEIGHT)
+                topAnchor = chips
+            end
+            frame:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -PREVIEW_GAP)
+            frame:SetPoint("BOTTOMRIGHT", surface, "BOTTOMRIGHT", -EDIT_INSET, EDIT_BOTTOM_INSET)
+        else
+            HideEditingChrome(col3)
+            frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
+            frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+        end
+    end
+end
+
+local function CanManuallyAddToPanel(group)
+    if not group then return false end
+    if group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then return false end
+    if group.displayMode == "textures" and #(group.buttons or {}) >= 1 then return false end
+    return true
+end
+
+local function IsCursorDropPayload(cursorType)
+    return cursorType == "spell" or cursorType == "item" or cursorType == "petaction"
+end
+
+-- Drop-to-add overlay over the preview: shown while a spell/item is on the
+-- cursor, mirroring the Navigator panel drop overlays. TryReceiveCursorDrop
+-- targets CS.selectedGroup, which is exactly the previewed panel.
+local function EnsurePreviewDropOverlay(host)
+    local overlay = host._cdcDropOverlay
+    if not overlay then
+        overlay = CreateFrame("Frame", nil, host, "BackdropTemplate")
+        overlay:SetAllPoints(host)
+        overlay:SetBackdrop({ bgFile = "Interface\\BUTTONS\\WHITE8X8" })
+        overlay:SetBackdropColor(0.15, 0.55, 0.85, 0.25)
+        overlay:EnableMouse(true)
+
+        local inner = overlay:CreateTexture(nil, "ARTWORK")
+        inner:SetPoint("TOPLEFT", 2, -2)
+        inner:SetPoint("BOTTOMRIGHT", -2, 2)
+        inner:SetColorTexture(0.05, 0.15, 0.25, 0.6)
+
+        overlay._cdcText = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        overlay._cdcText:SetPoint("CENTER", 0, 0)
+        overlay._cdcText:SetText("|cffAADDFFDrop here|r")
+
+        local function ReceiveDrop()
+            if ST._TryReceiveCursorDrop then
+                ST._TryReceiveCursorDrop()
+            end
+        end
+        overlay:SetScript("OnReceiveDrag", ReceiveDrop)
+        overlay:SetScript("OnMouseUp", function(self, button)
+            if button == "LeftButton" and GetCursorInfo() then
+                ReceiveDrop()
+            end
+        end)
+        overlay:Hide()
+        host._cdcDropOverlay = overlay
+    end
+    overlay:SetFrameLevel(host:GetFrameLevel() + 30)
+    return overlay
+end
+
+local function UpdatePreviewDropOverlay()
+    local col3 = CS.configFrame and CS.configFrame.col3
+    local host = col3 and col3.buttonsPreviewHost
+    if not host then return end
+    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    local show = host:IsShown()
+        and IsCursorDropPayload(GetCursorInfo())
+        and CanManuallyAddToPanel(group)
+        and ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()
+    if show then
+        EnsurePreviewDropOverlay(host):Show()
+    elseif host._cdcDropOverlay then
+        host._cdcDropOverlay:Hide()
+    end
+end
+
+local previewCursorWatcher = CreateFrame("Frame")
+previewCursorWatcher:RegisterEvent("CURSOR_CHANGED")
+previewCursorWatcher:SetScript("OnEvent", UpdatePreviewDropOverlay)
+
+-- Close the inline texture browser from ButtonsWideColumn's side: hide its
+-- grid host and, if it was open, drop the flag and clear both staged previews
+-- (the mirror stage and the live-world staged texture). Clearing the staging
+-- matters when the browser is left without a thumbnail OnLeave firing first --
+-- e.g. Escape-to-close or a jump to Resources with the cursor still on a tile.
+local function CloseInlineTextureBrowser(col3)
+    if col3._inlineTextureBrowserHost then
+        col3._inlineTextureBrowserHost:Hide()
+    end
+    if CS.inlineTextureBrowserOpen then
+        CS.inlineTextureBrowserOpen = nil
+        CS.textureMirrorStage = nil
+        CooldownCompanion:ClearAllAuraTexturePickerPreviews()
+    end
+end
+
+local function ReleaseButtonsPreviewRenderer(host)
+    if not host then return end
+    if host._cdcButtonsPreviewMode == "group-overview" then
+        if ST._ReleaseGroupPanelOverview then
+            ST._ReleaseGroupPanelOverview(host)
+        end
+    else
+        if ST._ReleaseAnchorAwarePanelPreview then
+            ST._ReleaseAnchorAwarePanelPreview(host)
+        elseif ST._ReleaseButtonPanelPreview then
+            ST._ReleaseButtonPanelPreview(host)
+        end
+    end
+    host._cdcButtonsPreviewMode = nil
+end
+
+local function SetButtonsPreviewRenderer(host, mode)
+    if host._cdcButtonsPreviewMode == mode then return end
+    ReleaseButtonsPreviewRenderer(host)
+    host._cdcButtonsPreviewMode = mode
+end
+
+local function HidePanelPreview(col3)
+    local host = col3.buttonsPreviewHost
+    if host then
+        ClearActiveWidePreview(col3, host)
+        host:Hide()
+        if host._cdcDropOverlay then
+            host._cdcDropOverlay:Hide()
+        end
+        ReleaseButtonsPreviewRenderer(host)
+    end
+    if col3.buttonsAddBox then
+        col3.buttonsAddBox.frame:Hide()
+    end
+    -- The quiet row is a col3.content sibling of the editing surface (like the
+    -- add box), so HideEditingChrome does not reach it; hide it here too or it
+    -- lingers, still clickable, over browse / multi-select / Resources / Cast.
+    if col3.buttonsQuietRow then
+        col3.buttonsQuietRow:Hide()
+    end
+    -- The inline texture browser is another col3.content sibling with the same
+    -- hazard. Leaving the buttons preview (Resources/Cast/talent/config close,
+    -- all routed through here) hides its grid, drops the flag, and clears any
+    -- staged preview so the browser cannot reappear or strand a texture.
+    CloseInlineTextureBrowser(col3)
+    col3._cdcEditingContext = nil
+    HideEditingChrome(col3)
+end
+
+-- Pinned preview of the selected Panel, or an organized navigation overview
+-- when a single editable Group is selected with no child Panel selected.
+local function UpdatePanelPreview(col3)
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    local panelId = CS.selectedGroup
+    local containerId = not panelId and CS.selectedContainer or nil
+    local hasGroupMulti = next(CS.selectedGroups) ~= nil
+    local hasPanelMulti = next(CS.selectedPanels) ~= nil
+    local container = containerId and db and db.groupContainers
+        and db.groupContainers[containerId] or nil
+
+    if not panelId and (not container
+        or hasGroupMulti
+        or hasPanelMulti) then
+        HidePanelPreview(col3)
+        return
+    end
+
+    local host = col3.buttonsPreviewHost
+    if not host then
+        host = CreateFrame("Frame", nil, col3.content)
+        host:SetClipsChildren(false)
+        col3.buttonsPreviewHost = host
+    end
+    host:ClearAllPoints()
+    host:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
+    host:SetPoint("TOPRIGHT", col3.content, "TOPRIGHT", 0, 0)
+    local function BuildPreview(hostFrame)
+        -- Owns the host's bottom reserve, so it must settle before either
+        -- renderer measures itself. Sits inside the build closure so every
+        -- rebuild path (selection, resize, divider drag, preview toggle)
+        -- refreshes the strip without its own hook.
+        if ST._UpdatePreviewCommandCenter then
+            ST._UpdatePreviewCommandCenter(hostFrame)
+        end
+
+        local activePanelId = CS.selectedGroup
+        if activePanelId then
+            SetButtonsPreviewRenderer(hostFrame, "panel")
+            -- Anchor-aware build: the unified preview (real mirror + attached
+            -- bar lanes) on the anchor panel, the plain mirror elsewhere.
+            if ST._BuildAnchorAwarePanelPreview then
+                ST._BuildAnchorAwarePanelPreview(hostFrame, activePanelId)
+            elseif ST._BuildButtonPanelPreview then
+                ST._BuildButtonPanelPreview(hostFrame, activePanelId)
+            end
+            return
+        end
+
+        local activeContainerId = CS.selectedContainer
+        local activeContainer = activeContainerId and CooldownCompanion.db.profile.groupContainers
+            and CooldownCompanion.db.profile.groupContainers[activeContainerId] or nil
+        if activeContainer and ST._BuildGroupPanelOverview then
+            SetButtonsPreviewRenderer(hostFrame, "group-overview")
+            ST._BuildGroupPanelOverview(hostFrame, activeContainerId)
+        end
+    end
+    -- The group overview alone offers a cheap per-frame refit: its tile
+    -- geometry re-flows without re-rendering the panel previews inside. The
+    -- panel mirror has no such split, so it keeps the throttled rebuild only.
+    local function RefitPreview(hostFrame)
+        if CS.selectedGroup then return end
+        if ST._ReflowGroupPanelOverview then
+            ST._ReflowGroupPanelOverview(hostFrame)
+        end
+    end
+    SetActiveWidePreview(col3, host, BuildPreview, RefitPreview)
+    host:SetHeight(ComputePreviewHostHeight(col3))
+    host:Show()
+    BuildPreview(host)
+    UpdatePreviewDropOverlay()
+end
+
+-- Add-entry box inside the editing surface (under its header), scoped to
+-- the selected panel. Reuses the same TryAdd/autocomplete plumbing as the
+-- shared inline add.
+local function EnsureAddBox(col3)
+    local addBox = col3.buttonsAddBox
+    if addBox then return addBox end
+
+    addBox = AceGUI:Create("EditBox")
+    if addBox.editbox.Instructions then addBox.editbox.Instructions:Hide() end
+    addBox:SetLabel("")
+    addBox:SetText("")
+    addBox:DisableButton(true)
+    addBox.frame:SetParent(col3.content)
+
+    local editFrame = addBox.editbox
+    local instructions = editFrame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    instructions:SetPoint("LEFT", editFrame, "LEFT", 6, 0)
+    instructions:SetPoint("RIGHT", editFrame, "RIGHT", -6, 0)
+    instructions:SetJustifyH("LEFT")
+    instructions:SetTextColor(0.5, 0.5, 0.5)
+    instructions:SetText("Add spell, item, trinket slot, or ID")
+    addBox._cdcInstructions = instructions
+    editFrame:SetPoint("BOTTOMRIGHT", addBox.frame, "BOTTOMRIGHT", -18, 0)
+    addBox._cdcInfoButton = CreateAddBoxInfoButton(addBox.frame, addBox.frame)
+
+    addBox:SetCallback("OnEnterPressed", function(widget, event, text)
+        if CS.ConsumeAutocompleteEnter() then return end
+        text = text or ""
+        if not ShouldSubmitRawAddOnEnter(text) then return end
+        CS.HideAutocomplete()
+        if text == "" or not CS.selectedGroup then return end
+        -- The workspace box always targets the selected panel; a stale
+        -- inline-add target left over from browse mode must not win.
+        CS.addingToPanelId = nil
+        local targetGroupId = CS.selectedGroup
+        if not ST._TryAdd(text) then return end
+        if ST._NotifyTutorialAction and CS.selectedButton then
+            ST._NotifyTutorialAction("inline_add_succeeded", {
+                groupId = targetGroupId,
+                buttonIndex = CS.selectedButton,
+                rawInput = text,
+            })
+        end
+        widget:SetText("")
+        local targetGroup = CooldownCompanion.db.profile.groups[targetGroupId]
+        if not (targetGroup and targetGroup.displayMode == "textures") then
+            CS.pendingWideAddFocus = true
+        end
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    addBox:SetCallback("OnTextChanged", function(widget, event, text)
+        instructions:SetShown((text or "") == "")
+        CS.addingToPanelId = nil
+        if text and #text >= 1 then
+            local results = ST._SearchAutocomplete(text)
+            -- This box is persistent (not rebuilt from CS.newInput like the
+            -- inline box), so a successful pick must clear it here
+            -- or the stale text re-adds on the next Enter press.
+            CS.ShowAutocompleteResults(results, widget, function(entry)
+                -- Explicit target: the shared select handler prefers
+                -- CS.addingToPanelId, which never belongs to this box.
+                CS.addingToPanelId = nil
+                if ST._OnAutocompleteSelect(entry) then
+                    widget:SetText("")
+                    instructions:Show()
+                end
+            end, {
+                requireExactNumericEnter = true,
+                requireExplicitChoice = true,
+            })
+        else
+            CS.HideAutocomplete()
+        end
+    end)
+    CS.SetupAutocompleteKeyHandler(addBox)
+
+    col3.buttonsAddBox = addBox
+    return addBox
+end
+
+local function UpdateAddBox(col3)
+    local host = col3.buttonsPreviewHost
+    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    if not (host and host:IsShown() and CanManuallyAddToPanel(group)) then
+        if col3.buttonsAddBox then
+            col3.buttonsAddBox.frame:Hide()
+        end
+        return
+    end
+
+    local addBox = EnsureAddBox(col3)
+    local header = EnsureEditingSurface(col3)._cdcHeader
+    addBox.frame:ClearAllPoints()
+    addBox.frame:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
+    addBox.frame:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
+    addBox.frame:SetHeight(ADD_BOX_HEIGHT)
+    addBox.frame:Show()
+
+    -- Also consume the shared autocomplete focus flag when an inline
+    -- inline add isn't open (its box consumes it when addingToPanelId is set).
+    local wantFocus = CS.pendingWideAddFocus
+    if not wantFocus and CS.pendingEditBoxFocus and not CS.addingToPanelId then
+        CS.pendingEditBoxFocus = false
+        wantFocus = true
+    end
+    if wantFocus then
+        CS.pendingWideAddFocus = false
+        C_Timer.After(0, function()
+            if addBox.editbox and addBox.frame:IsShown() then
+                addBox:SetFocus()
+            end
+        end)
+    end
+end
+
+-- Build the quiet entry row once, using raw frames on col3.content (like the
+-- add box) so it stays off recycled AceGUI frames. Left-click selects the
+-- entry, right/middle-click opens its shared context menu, and the x removes it
+-- via the shared delete confirmation.
+local function EnsureQuietRow(col3)
+    local row = col3.buttonsQuietRow
+    if row then return row end
+
+    row = CreateFrame("Button", nil, col3.content)
+    row:SetHeight(ADD_BOX_HEIGHT)
+    row:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
+
+    -- HIGHLIGHT layer on a Button is mouse-gated automatically.
+    local hover = row:CreateTexture(nil, "HIGHLIGHT")
+    hover:SetAllPoints()
+    hover:SetColorTexture(1, 1, 1, 0.06)
+
+    local icon = row:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(18, 18)
+    icon:SetPoint("LEFT", row, "LEFT", EDIT_INSET, 0)
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    row.icon = icon
+
+    local remove = CreateFrame("Button", nil, row)
+    remove:SetSize(16, 16)
+    remove:SetPoint("RIGHT", row, "RIGHT", -EDIT_INSET, 0)
+    remove:RegisterForClicks("LeftButtonUp")
+    local rx = remove:CreateTexture(nil, "ARTWORK")
+    rx:SetAllPoints()
+    rx:SetAtlas("common-icon-redx", false)
+    rx:SetAlpha(0.65)
+    remove:SetScript("OnEnter", function() rx:SetAlpha(1) end)
+    remove:SetScript("OnLeave", function() rx:SetAlpha(0.65) end)
+    row.remove = remove
+
+    local name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    name:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+    name:SetPoint("RIGHT", remove, "LEFT", -6, 0)
+    name:SetJustifyH("LEFT")
+    name:SetWordWrap(false)
+    row.nameText = name
+
+    row:SetScript("OnClick", function(_, mouseButton)
+        if mouseButton == "LeftButton" and ST._SelectConfigButton and CS.selectedGroup then
+            -- force: the lone texture entry stays selected, so a repeat
+            -- click must not run the deselect half of the toggle.
+            ST._SelectConfigButton(CS.selectedGroup, 1, { force = true })
+            CooldownCompanion:RefreshConfigPanel()
+        elseif (mouseButton == "RightButton" or mouseButton == "MiddleButton")
+            and ST._ShowEntryContextMenu and CS.selectedGroup
+        then
+            local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+            local buttonData = group and group.buttons and group.buttons[1]
+            if buttonData then
+                ST._ShowEntryContextMenu(CS.selectedGroup, 1, buttonData)
+            end
+        end
+    end)
+    remove:SetScript("OnClick", function()
+        local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+        local buttonData = group and group.buttons and group.buttons[1]
+        if not buttonData then return end
+        local entryName = (ST._GetConfigEntryDisplayName and ST._GetConfigEntryDisplayName(buttonData))
+            or buttonData.name or "this entry"
+        if ST._ShowPopupAboveConfig then
+            ST._ShowPopupAboveConfig("CDC_DELETE_BUTTON", entryName, {
+                groupId = CS.selectedGroup,
+                buttonIndex = 1,
+            })
+        end
+    end)
+
+    col3.buttonsQuietRow = row
+    return row
+end
+
+local function UpdateQuietRow(col3)
+    local host = col3.buttonsPreviewHost
+    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    local buttonData = group and group.buttons and group.buttons[1]
+    local show = host and host:IsShown()
+        and group and CooldownCompanion:IsTexturePanelGroup(group)
+        and buttonData ~= nil
+    if not show then
+        if col3.buttonsQuietRow then
+            col3.buttonsQuietRow:Hide()
+        end
+        return
+    end
+
+    local row = EnsureQuietRow(col3)
+    row.icon:SetTexture((ST._GetLayoutPreviewIcon and ST._GetLayoutPreviewIcon(buttonData)) or 134400)
+    row.nameText:SetText((ST._GetConfigEntryDisplayName and ST._GetConfigEntryDisplayName(buttonData))
+        or buttonData.name or "")
+
+    local header = EnsureEditingSurface(col3)._cdcHeader
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
+    row:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
+    row:SetHeight(ADD_BOX_HEIGHT)
+    row:Show()
+end
+
+-- Async adds (uncached item IDs) complete after the add box's Enter
+-- handler already returned false; the loader calls this on success so the
+-- persistent box doesn't keep the added item's text armed for a duplicate
+-- Enter. The text guard skips the clear if the user has typed since; a
+-- hidden box still clears (its text would otherwise re-arm on re-show).
+local function ClearWideAddBoxAfterAdd(originalInput)
+    local col3 = CS.configFrame and CS.configFrame.col3
+    local addBox = col3 and col3.buttonsAddBox
+    if not addBox then return end
+    if originalInput and addBox:GetText() ~= originalInput then return end
+    addBox:SetText("")
+    if addBox._cdcInstructions then
+        addBox._cdcInstructions:Show()
+    end
+end
+
+-- Extend the Editing path with a selected entry or attached bar. The entry
+-- icon, tracking kind, and status badges all share that header line instead
+-- of consuming a separate identity row below the add box.
+local function UpdateEditingContext(col3)
+    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    local icon, name, badgeStatus, kindText
+    if group then
+        local multiCount = 0
+        for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
+        if CS.unifiedBarKind then
+            -- Unified anchor preview: name the selected attached bar.
+            if CS.unifiedBarKind == "resource" and CS.selectedResourcePowerType then
+                local powerNames = ST._RB and ST._RB.POWER_NAMES
+                name = powerNames and powerNames[tonumber(CS.selectedResourcePowerType)]
+                    or "Resource"
+                kindText = "Resource"
+            elseif CS.unifiedBarKind == "custom" then
+                local entry = ST._FindSelectedConfigCustomBar and ST._FindSelectedConfigCustomBar()
+                name = (entry and entry.label) or "Custom Bar"
+                kindText = "Custom Bar"
+            elseif CS.unifiedBarKind == "cast" then
+                name = "Cast Bar"
+            end
+        elseif multiCount >= 2 then
+            -- Entry multi-select surface lists its members itself.
+        elseif CS.selectedRotationAssistantEntry == true
+            and CooldownCompanion:IsRotationAssistantGroup(group) then
+            local spellID = CooldownCompanion:GetRotationAssistantActionSpellID()
+            icon = CooldownCompanion:GetRotationAssistantFallbackIcon(spellID)
+            name = ST.ROTATION_ASSISTANT_NAME
+        elseif CS.selectedButton and group.buttons[CS.selectedButton] then
+            local buttonData = group.buttons[CS.selectedButton]
+            icon = ST._GetLayoutPreviewIcon and ST._GetLayoutPreviewIcon(buttonData)
+            -- Undecorated name: the decoration marks and tracking kind live
+            -- in the preview icons' hover tooltip instead.
+            name = ST._GetConfigEntryDisplayName
+                and ST._GetConfigEntryDisplayName(buttonData)
+                or buttonData.name
+            -- Same addedAs fallback the name decorations use.
+            if buttonData.type == "spell" then
+                local addedAs = buttonData.addedAs
+                if addedAs ~= "spell" and addedAs ~= "aura" then
+                    addedAs = buttonData.isPassive and "aura" or "spell"
+                end
+                kindText = addedAs == "aura" and "Aura" or "Spell"
+            end
+            badgeStatus = ST._CollectEntryStatus and ST._CollectEntryStatus(buttonData, group)
+        end
+    end
+
+    if name then
+        col3._cdcEditingContext = {
+            icon = icon,
+            name = name,
+            badgeStatus = badgeStatus,
+            kindText = kindText,
+        }
+    else
+        col3._cdcEditingContext = nil
+    end
+    UpdateEditingHeader(col3)
+end
+
+-- Validate the unified bar selection before showing its settings: clears
+-- it (returning nil) when the panel stopped being the anchor target, the
+-- bar was deleted, or its module was disabled.
+local function GetValidatedUnifiedBarKind()
+    local kind = CS.unifiedBarKind
+    if not kind then return nil end
+    if not (ST._ShouldUseUnifiedAnchorPreview
+        and ST._ShouldUseUnifiedAnchorPreview(CS.selectedGroup)) then
+        CS.unifiedBarKind = nil
+        return nil
+    end
+    if kind == "resource" then
+        local settings = CooldownCompanion:GetResourceBarSettings()
+        local RBP = ST._RBP
+        if not (CS.selectedResourcePowerType and RBP and RBP.IsResourceEditableInColumn4
+            and RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, settings)) then
+            CS.unifiedBarKind = nil
+            return nil
+        end
+    elseif kind == "custom" then
+        if not (CS.selectedCustomBarId and ST._FindSelectedConfigCustomBar
+            and ST._FindSelectedConfigCustomBar()) then
+            CS.unifiedBarKind = nil
+            return nil
+        end
+    elseif kind == "cast" then
+        local cb = CooldownCompanion:GetCastBarSettings()
+        local independent = cb and (cb.independentAnchorEnabled == true or cb.independentAnchorEnabled == 1)
+        if not (cb and cb.enabled == true and not independent) then
+            CS.unifiedBarKind = nil
+            return nil
+        end
+    else
+        CS.unifiedBarKind = nil
+        return nil
+    end
+    return kind
+end
+
+-- True when the column should show entry settings instead of the
+-- group-side surfaces: a valid single entry (including the rotation
+-- assistant's virtual entry) or an entry multi-select.
+local function IsEntrySelectionActive()
+    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    if not group then
+        return false
+    end
+    local multiCount = 0
+    for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
+    if multiCount >= 2 then
+        return true
+    end
+    if CS.selectedRotationAssistantEntry == true
+        and CooldownCompanion:IsRotationAssistantGroup(group) then
+        return true
+    end
+    return CS.selectedButton ~= nil and group.buttons[CS.selectedButton] ~= nil
+end
+
+-- Raw host for the panel-scope settings surfaces. It carries the panel half
+-- of the unified tab row, so it is shown for an entry selection too - the
+-- entry cluster is appended beside those tabs rather than replacing them.
+local function EnsureGroupSettingsHost(col3)
+    local host = col3.groupSettingsHost
+    if not host then
+        host = CreateFrame("Frame", nil, col3.content)
+        col3.groupSettingsHost = host
+    end
+    return host
+end
+
+-- Persistent raw host for the inline texture browser, parked on col3.content
+-- (same discipline as the quiet row). ButtonsWideColumn owns its lifecycle;
+-- AuraTexturePicker renders its grid + chrome into it via
+-- ST._RenderInlineTextureBrowser. Never an AceGUI-recycled frame, so nothing
+-- bleeds onto sibling surfaces.
+local function EnsureInlineTextureBrowserHost(col3)
+    local host = col3._inlineTextureBrowserHost
+    if host then return host end
+    host = CreateFrame("Frame", nil, col3.content)
+    col3._inlineTextureBrowserHost = host
+    return host
+end
+
+local function ShowMultiSelectActions(col3, refreshFn, multiCount, selectedIds)
+    HideEntrySurfaces(col3)
+    HidePanelPreview(col3)
+    if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
+
+    if not col3._multiSelectActionsScroll then
+        local scroll = AceGUI:Create("ScrollFrame")
+        scroll:SetLayout("List")
+        scroll.frame:SetParent(col3.content)
+        scroll.frame:ClearAllPoints()
+        scroll.frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
+        scroll.frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+        col3._multiSelectActionsScroll = scroll
+    end
+    col3._multiSelectActionsScroll:ReleaseChildren()
+    col3._multiSelectActionsScroll.frame:Show()
+    refreshFn(col3._multiSelectActionsScroll, multiCount, selectedIds)
+    -- AddChild lays out on every insertion, so width overrides applied after a
+    -- builder returns are invisible until one final layout pass.
+    col3._multiSelectActionsScroll:DoLayout()
+end
+
+local function CollectSelection(set)
+    local count, ids = 0, {}
+    for id in pairs(set) do
+        count = count + 1
+        ids[#ids + 1] = id
+    end
+    return count, ids
+end
+
+local function RefreshButtonsWideColumn()
+    local col3 = CS.configFrame and CS.configFrame.col3
+    if not col3 then return end
+
+    -- Hide surfaces owned by the resources/cast homes that share col3
+    if col3._customAuraTabGroup then col3._customAuraTabGroup.frame:Hide() end
+    col3._customAuraSubScroll = nil
+    if col3._customAuraScroll then col3._customAuraScroll.frame:Hide() end
+    if ST._HideResourcesWideSurfaces then ST._HideResourcesWideSurfaces(col3) end
+    if col3._inlineTextureBrowserHost then col3._inlineTextureBrowserHost:Hide() end
+
+    -- Group multi-select: batch operations replace everything else.
+    local groupMultiCount, multiGroupIds = CollectSelection(CS.selectedGroups)
+    if groupMultiCount >= 2 then
+        ShowMultiSelectActions(col3, ST._RefreshGroupMultiSelect,
+            groupMultiCount, multiGroupIds)
+        return
+    end
+
+    -- Panel multi-select uses the same batch-action host.
+    local panelMultiCount, multiPanelIds = CollectSelection(CS.selectedPanels)
+    if panelMultiCount >= 2 and CS.selectedContainer then
+        ShowMultiSelectActions(col3, ST._RefreshPanelMultiSelect,
+            panelMultiCount, multiPanelIds)
+        return
+    end
+    if col3._multiSelectActionsScroll then
+        col3._multiSelectActionsScroll.frame:Hide()
+    end
+
+    -- The inline texture browser is scoped to its own panel; drop a stale flag
+    -- when the selection moved away, so IsAuraTexturePickerOpen never reports
+    -- it open over the wrong surface.
+    if CS.inlineTextureBrowserOpen
+        and CS.inlineTextureBrowserOpen ~= CS.selectedGroup
+    then
+        CloseInlineTextureBrowser(col3)
+    end
+
+    -- Inline texture browser takeover: while open for the selected standalone
+    -- texture or trigger panel, the browse grid owns the settings area. The
+    -- pinned preview, editing header, and quiet row stay above it so hovering a
+    -- thumbnail live-updates the big preview (texture panels) and the live
+    -- world (both types). The flag is set/cleared by AuraTexturePicker.
+    if CS.inlineTextureBrowserOpen and ST._RenderInlineTextureBrowser then
+        local browserGroup = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+        if browserGroup and CooldownCompanion:IsStandaloneTexturePanelGroup(browserGroup) then
+            HideEntrySurfaces(col3)
+            if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
+            UpdatePanelPreview(col3)
+            UpdateAddBox(col3)
+            UpdateQuietRow(col3)
+            UpdateEditingContext(col3)
+            ReapplyPanelPreviewSplit()
+            local host = EnsureInlineTextureBrowserHost(col3)
+            AnchorButtonsContentFrame(col3, host)
+            host:Show()
+            ST._RenderInlineTextureBrowser(host)
+            return
+        end
+        -- Selected panel is no longer a standalone texture/trigger panel; drop
+        -- the flag and fall through to the normal branches.
+        CloseInlineTextureBrowser(col3)
+    end
+
+    -- Attached bar selected in the unified anchor preview: that bar's
+    -- settings own the settings area
+    local unifiedBarKind = GetValidatedUnifiedBarKind()
+    if unifiedBarKind then
+        HideEntrySurfaces(col3)
+        UpdatePanelPreview(col3)
+        UpdateAddBox(col3)
+        UpdateQuietRow(col3)
+        UpdateEditingContext(col3)
+        ReapplyPanelPreviewSplit()
+
+        -- The bar's tabs join the panel tabs in the row, same as an entry's:
+        -- panel tabs first, since the bar strip is offset by their width.
+        -- Without a selected panel there is no panel scope to offer, so the
+        -- bar keeps the row to itself.
+        if CS.selectedGroup then
+            local host = EnsureGroupSettingsHost(col3)
+            AnchorButtonsContentFrame(col3, host)
+            host:Show()
+            ST._RefreshGroupSettingsHost(host, nil, ST._UnifiedRowGetScope() ~= "primary")
+        elseif col3.groupSettingsHost then
+            col3.groupSettingsHost:Hide()
+        end
+
+        local shown = false
+        if unifiedBarKind == "resource" then
+            shown = ST._ShowResourceSettingsSurface
+                and ST._ShowResourceSettingsSurface(col3) == true
+        elseif unifiedBarKind == "custom" then
+            local entry = ST._FindSelectedConfigCustomBar and ST._FindSelectedConfigCustomBar()
+            if entry and ST._ShowCustomBarDetailSurface then
+                ST._ShowCustomBarDetailSurface(col3, entry)
+                shown = true
+            end
+        else
+            if ST._ShowCastBarSettingsSurface then
+                ST._ShowCastBarSettingsSurface(col3)
+                shown = true
+            end
+        end
+        if shown then
+            return
+        end
+        -- The surface didn't materialize (transient state); clear the bar
+        -- selection and run a clean pass through the normal branches.
+        CS.unifiedBarKind = nil
+        return RefreshButtonsWideColumn()
+    end
+
+    -- Entry selected: the entry tabs join the panel tabs in one row, and
+    -- whichever scope owns the surface builds its content there.
+    if IsEntrySelectionActive() then
+        UpdatePanelPreview(col3)
+        UpdateAddBox(col3)
+        UpdateQuietRow(col3)
+        UpdateEditingContext(col3)
+        -- Final height pass: the add box just settled its visibility,
+        -- which feeds the settings-minimum clamp.
+        ReapplyPanelPreviewSplit()
+
+        local host = EnsureGroupSettingsHost(col3)
+        AnchorButtonsContentFrame(col3, host)
+        host:Show()
+        -- Panel tabs first: the entry strip is offset by their measured
+        -- width, and only one of the two builds content.
+        ST._RefreshGroupSettingsHost(host, nil, ST._UnifiedRowGetScope() ~= "primary")
+
+        if col3.bsTabGroup then
+            AnchorButtonsContentFrame(col3, col3.bsTabGroup.frame)
+        end
+        ST._RefreshButtonSettingsColumn()
+        return
+    end
+
+    -- Otherwise the group-side surfaces (panel and Group settings,
+    -- placeholders) own the settings area
+    HideEntrySurfaces(col3)
+    UpdatePanelPreview(col3)
+    UpdateAddBox(col3)
+    UpdateQuietRow(col3)
+    UpdateEditingContext(col3)
+    -- Final height pass (see the entry branch above).
+    ReapplyPanelPreviewSplit()
+
+    local host = EnsureGroupSettingsHost(col3)
+    AnchorButtonsContentFrame(col3, host)
+    host:Show()
+    ST._RefreshGroupSettingsHost(host)
+    -- No entry cluster in the row: the panel strip owns the surface again.
+    ST._UnifiedRowApply()
+end
+
+-- The mirror owns a panel's config previews only while the wide buttons
+-- view is showing that panel's pinned preview. That now includes Other
+-- Class browsing, which shares the full workspace; only the bars
+-- workspace and the talent picker route around the mirror.
+local function IsPanelMirrorPreviewActive(groupId)
+    if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then return false end
+    return groupId ~= nil and groupId == CS.selectedGroup
+end
+
+-- Rebuild just the pinned mirror (e.g. after a preview toggle flips, or
+-- from UpdateGroupStyle so style edits reflect immediately) without a full
+-- config refresh. An optional groupId scopes the rebuild: updates to a
+-- panel other than the mirrored one are skipped.
+local function RefreshButtonsPreviewMirror(groupId)
+    if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then return end
+    local col3 = CS.configFrame and CS.configFrame.col3
+    local host = col3 and col3.buttonsPreviewHost
+    if not (host and host:IsShown() and col3._cdcActiveWideHost == host) then return end
+
+    if CS.selectedGroup then
+        if groupId and groupId ~= CS.selectedGroup then return end
+        if col3._cdcActiveWideRebuild then
+            col3._cdcActiveWideRebuild(host)
+        end
+        -- The Editing header shares the mirror's selection identity and
+        -- status badges, so keep it in step with targeted rebuilds.
+        UpdateEditingContext(col3)
+        UpdateQuietRow(col3)
+        return
+    end
+
+    local containerId = CS.selectedContainer
+    if not containerId or host._cdcButtonsPreviewMode ~= "group-overview" then return end
+    if groupId then
+        local belongsToSelectedContainer = false
+        for _, panelInfo in ipairs(CooldownCompanion:GetPanels(containerId) or {}) do
+            if tostring(panelInfo.groupId) == tostring(groupId) then
+                belongsToSelectedContainer = true
+                break
+            end
+        end
+        if not belongsToSelectedContainer then return end
+    end
+    if col3._cdcActiveWideRebuild then
+        col3._cdcActiveWideRebuild(host)
+    end
+end
+
+ST._RefreshButtonsWideColumn = RefreshButtonsWideColumn
+ST._AnchorButtonsContentFrame = AnchorButtonsContentFrame
+-- Shared wide-preview plumbing (also used by the Resources wide column):
+-- host registration for the split divider, the height computation, and
+-- the persisted-split reapply.
+ST._SetActiveWidePreview = SetActiveWidePreview
+ST._ClearActiveWidePreview = ClearActiveWidePreview
+ST._ComputeWidePreviewHostHeight = ComputePreviewHostHeight
+ST._RefreshButtonsPreviewMirror = RefreshButtonsPreviewMirror
+ST._IsPanelMirrorPreviewActive = IsPanelMirrorPreviewActive
+ST._ReapplyPanelPreviewSplit = ReapplyPanelPreviewSplit
+ST._ClearWideAddBoxAfterAdd = ClearWideAddBoxAfterAdd
+ST._SetWideEditingAddBox = SetWideEditingAddBox
+ST._SetWideEditingChips = SetWideEditingChips
+ST._ClearWideEditingExtras = ClearWideEditingExtras
+-- Divider + editing-surface hide for view branches that release the split
+-- while their own preview host holds it (Resources/cast homes).
+ST._HideWideEditingChrome = HideEditingChrome
+-- Shared teardown for view switches away from the buttons view (resources,
+-- cast frames, talent picker, config close): hides the preview surfaces AND
+-- releases the preview so its conditional ticker stops and override
+-- targeting disarms. Transient same-view hides must NOT use this - the
+-- following rebuild pass re-shows the preview and targeting should survive.
+ST._HideButtonsPanelPreviewSurfaces = HidePanelPreview

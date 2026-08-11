@@ -18,13 +18,15 @@ local pairs = pairs
 local ipairs = ipairs
 local unpack = unpack
 local math_floor = math.floor
+local math_ceil = math.ceil
+local math_max = math.max
+local math_abs = math.abs
 local math_sin = math.sin
 local math_pi = math.pi
 local string_format = string.format
 local table_concat = table.concat
 local issecretvalue = issecretvalue
 local wipe = wipe
-local C_UnitAuras_GetAuraApplicationDisplayCount = C_UnitAuras.GetAuraApplicationDisplayCount
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
 -- Imports from Helpers
@@ -68,6 +70,14 @@ end
 --   { {type="literal", value="  "}, {type="token", value="name"}, ... }
 -- Parsed once at creation/style-change; per-tick substitution walks the list.
 ------------------------------------------------------------------------
+-- No pandemic token: it needed readable pandemic state, which 12.1 made
+-- permanently secret (retired Phase 3; migrations scrub saved formats).
+--
+-- Text panels are AURA-BLIND on 12.1. {aura} is kept as a known token only so
+-- saved formats holding it keep parsing instead of degrading to literal
+-- braces; it emits nothing (SubstituteTokens below). A client-owned docked
+-- readout was trialed and removed by owner decision, so there is deliberately
+-- no {aurastacks} token and no reserved space for either.
 local KNOWN_TOKENS = {
     name = true,
     time = true,
@@ -77,7 +87,6 @@ local KNOWN_TOKENS = {
     zerocharges = true,
     stacks = true,
     aura = true,
-    pandemic = true,
     proc = true,
     unusable = true,
     oor = true,
@@ -89,6 +98,10 @@ local KNOWN_TOKENS = {
     br = true,
 }
 
+-- `aura` is kept ONLY so saved {?aura}/{!aura} formats keep parsing as
+-- conditionals instead of degrading to literal braces. It can no longer be
+-- true: the aura's presence lives entirely on the client now, so
+-- EvaluateTokenPresence has nothing to answer with.
 local KNOWN_CONDITIONAL_TOKENS = {
     time = true,
     charges = true,
@@ -98,7 +111,6 @@ local KNOWN_CONDITIONAL_TOKENS = {
     stacks = true,
     aura = true,
     keybind = true,
-    pandemic = true,
     proc = true,
     unusable = true,
     oor = true,
@@ -191,40 +203,686 @@ local function HasAnyEffects(segments)
     return false
 end
 
-local function EstimateFormatLineCount(segments)
-    local lines = 1
-    for _, seg in ipairs(segments) do
-        if seg.type == "token" and not seg.unknown and seg.value == "br" then
-            lines = lines + 1
-        elseif seg.type == "literal" and seg.value and seg.value ~= "" then
-            local _, literalBreaks = seg.value:gsub("\n", "\n")
-            lines = lines + literalBreaks
-        end
+------------------------------------------------------------------------
+-- TEXT ENTRY AUTO-SIZING
+--
+-- A text entry is sized from what it can actually render, not from manual
+-- width/height sliders. Height is the format's line count times the
+-- measured single-line height of its font; width is a worst-case MOCK
+-- render of the entry's format measured on a dedicated hidden FontString.
+-- style.textPadding is the only manual size knob.
+--
+-- The LIVE FontString is never measured. Text-mode content can hold secret
+-- values (secret cooldown/aura durations, secret stacks, secret aura
+-- names), and getters on a secret-holding FontString can return secrets,
+-- which may not feed Lua arithmetic (agent-reference/secret-values.md,
+-- agent-reference/hotfix-overrides-12.1.md). The mock renderer below only
+-- ever feeds plain, addon-authored strings into the measuring FontString.
+--
+-- Measurement runs on create/restyle paths plus two bounded invalidation
+-- paths, and nothing here is reachable from a per-tick display path.
+--
+--   * IDENTITY: the cache stores the resolved name and keybind strings the
+--     measurement consumed, and a read whose re-resolve disagrees is a miss.
+--     That is what notices an override spell, a resolved item or a rebound key
+--     changing the box, none of which touch a style key. Re-resolving is
+--     capped at one probe per cache entry per rendered frame.
+--   * PROVISIONAL: an entry whose {name} had not resolved when it was first
+--     measured is cached as PROVISIONAL and re-measured on the next layout
+--     pass, capped at one measurement per pass, so a box sized against a
+--     missing login-time spell name heals instead of staying wrong.
+--
+-- A changed measurement only moves the live frame through
+-- RefreshTextEntryLayout, which event handlers call; layout passes themselves
+-- are dirty-flag gated. Every other cache hit costs a few comparisons plus the
+-- once-per-frame probe and never re-renders the mock.
+------------------------------------------------------------------------
+local TEXT_PADDING_DEFAULT = 4
+
+-- "|Ttexture:0|t" sizes the inline texture to the font's line height, so
+-- the measured width does not depend on which texture is used. Measuring
+-- with a fixed placeholder means the mock never depends on the button's
+-- icon having resolved yet, and the data-only path (no live frame, used by
+-- GroupFrame layout math) produces the same number as the per-button path.
+local MEASURE_ICON_ESCAPE = "|TInterface\\Icons\\INV_Misc_QuestionMark:0|t"
+
+-- Worst-case substitution values. WORST_CASE_SECONDS drives both candidate
+-- time renders: the readable clock string from FormatTime, and the secret
+-- pass-through render (a bare seconds number via the duration secret format
+-- spec). Those are materially different widths, so both are measured.
+--
+-- 5999 is a DELIBERATE trade, not an upper bound: it reserves for the widest
+-- render under 100 minutes ("99:59"). A cooldown of an hour or more renders
+-- wider than that (an "1:39:59"-class clock, or a 5+ digit secret seconds
+-- pass-through) and will clip inside its reserved box. Reserving for the real
+-- ceiling would widen every text entry in the game for a case almost no
+-- tracked cooldown reaches, so the clip is accepted.
+local WORST_CASE_SECONDS = 5999
+-- Stacks are reserved three digits wide: aura stack counts routinely pass 99.
+local WORST_CASE_STACKS = "888"
+local WORST_CASE_CHARGES = "8"
+local STATUS_ACTIVE_TEXT = "Active"
+local STATUS_DEFERRED_TEXT = "..."
+
+local measureHostFrame
+local measureFontString
+local function GetMeasureFontString()
+    if not measureFontString then
+        measureHostFrame = CreateFrame("Frame", nil, UIParent)
+        measureHostFrame:Hide()
+        measureFontString = measureHostFrame:CreateFontString(nil, "ARTWORK")
+        -- Unbounded measurement: no wrap, no line cap, no width constraint
+        -- (same recipe as Core/AuraTexturesDisplay GetTriggerTextDisplayMetrics).
+        measureFontString:SetWordWrap(false)
+        measureFontString:SetMaxLines(0)
+        measureFontString:SetWidth(0)
     end
-    return lines
+    return measureFontString
 end
 
-local function GetEffectiveTextHeight(style, formatString)
-    local fmt = formatString or style.textFormat or DEFAULT_TEXT_FORMAT
-    local baseHeight = style.textHeight or 20
-    local segments = ParseFormatString(fmt)
-    local lineCount = EstimateFormatLineCount(segments)
-    if lineCount <= 1 then
-        return baseHeight, false
+local function MeasureStringWidth(fs, text)
+    fs:SetText(text or "")
+    local width = fs.GetUnboundedStringWidth and fs:GetUnboundedStringWidth() or fs:GetStringWidth()
+    return width or 0
+end
+
+local function PickWidestString(fs, current, candidate)
+    if not candidate or candidate == "" then return current end
+    if not current or current == "" then return candidate end
+    if MeasureStringWidth(fs, candidate) > MeasureStringWidth(fs, current) then
+        return candidate
+    end
+    return current
+end
+
+-- Same resolution chain SubstituteTokens uses for {name}, minus the secret
+-- aura-name override (a secret string that cannot be measured at all).
+--
+-- Second return is `pending`: true when the name came back empty AND there was
+-- something to look up. Early in a session the client has not cached spell/item
+-- names yet, so C_Spell.GetSpellName / C_Item.GetItemNameByID answer nil for an
+-- id that will resolve moments later; measuring then freezes a too-small box.
+-- What the inputs let us distinguish:
+--   * no buttonData (the group-level baseline)      -> final, never pending
+--   * a customName (even "")                        -> final, user-authored
+--   * a stored buttonData.name fallback             -> final, we have a name
+--   * spell/item type WITH an id, lookup empty      -> PENDING (retry later)
+--   * spell/item type WITHOUT an id, or any other
+--     entry type, and no stored name                -> final, genuinely nameless
+-- The last two are the load-bearing split: a nameless entry must not retry
+-- forever, and an unresolved id must not be cached as final.
+local function ResolveMockEntryName(buttonData, identity)
+    if not buttonData then return "", false end
+    local name = buttonData.customName or buttonData.name or ""
+    if buttonData.customName then
+        return name, false
+    end
+    local hasLookupSource = false
+    if buttonData.type == "spell" then
+        local spellId = identity.spellId or buttonData.id
+        hasLookupSource = spellId ~= nil
+        local spellName = spellId and C_Spell.GetSpellName(spellId)
+        if spellName and spellName ~= "" then return spellName, false end
+    elseif IsEntryItemLike(buttonData) then
+        local itemID = identity.itemId or buttonData.id
+        hasLookupSource = itemID ~= nil
+        local itemName = itemID and C_Item.GetItemNameByID(itemID)
+        if itemName and itemName ~= "" then return itemName, false end
+    end
+    return name, (name == "" and hasLookupSource)
+end
+
+-- Which ids the mock render resolves {name} and the keybind through.
+--
+-- A live button can be displaying an OVERRIDE spell (IconMode's
+-- UpdateButtonIcon writes button._displaySpellId) or a RESOLVED item
+-- (CooldownUpdate's UpdateResolvedItemState writes button._resolvedItemId),
+-- and both are assigned after the frame exists. Neither id is visible to a
+-- data-only reader -- GroupFrame's grid pitch, the config mirror and the
+-- config's Entry Size row all measure with buttonData and no button.
+--
+-- So the ids the last button-bearing measurement used are stored on the cache
+-- entry and reused when there is no button. Without that the pitch measures
+-- the BASE spell's name while the entry frame is sized from the override's,
+-- and a longer override overflows its own slot.
+local measureIdentity = { spellId = nil, itemId = nil }
+local function ResolveMeasureIdentity(buttonData, button, cached)
+    if button then
+        measureIdentity.spellId = button._displaySpellId
+        measureIdentity.itemId = button._resolvedItemId
+    else
+        measureIdentity.spellId = cached and cached.identitySpellId or nil
+        measureIdentity.itemId = cached and cached.identityItemId or nil
+    end
+    return measureIdentity
+end
+
+-- The two client-resolved strings a measurement consumes. They are the cache's
+-- identity: everything else the mock renders is derived from style keys and the
+-- format string, which the cache already compares.
+--
+-- Both lookups are cache reads (C_Spell.GetSpellName / C_Item.GetItemNameByID
+-- answer from the client's own name cache; GetKeybindText walks the addon's
+-- slot maps), and GetTextEntryMetrics caps them at one probe per cache entry
+-- per rendered frame.
+local function ProbeMeasureStrings(buttonData, button, identity)
+    if not buttonData then return "", "" end
+    local name = ResolveMockEntryName(buttonData, identity)
+    local keybind = CooldownCompanion:GetKeybindText(buttonData, identity.itemId, button)
+    return name, (keybind and keybind ~= "") and keybind or ""
+end
+
+-- Worst-case value per token. The measuring FontString must already wear
+-- the entry's font when this runs: the widest-candidate picks measure.
+local function BuildMockContext(fs, style, buttonData, button, identity)
+    local ctx = {}
+    local mockName, namePending = ResolveMockEntryName(buttonData, identity)
+    ctx.name = mockName
+    ctx.namePending = namePending
+
+    local clockText = FormatTime(WORST_CASE_SECONDS, style)
+    local secretText = string_format(GetDurationSecretFormatSpec(style), WORST_CASE_SECONDS + 0.9)
+    ctx.time = PickWidestString(fs, clockText, secretText)
+
+    if IsAuraOnlyEntry(buttonData) then
+        -- Aura-only entries have no ready/cooldown fallback in {status}.
+        ctx.status = PickWidestString(fs, ctx.time, STATUS_ACTIVE_TEXT)
+    else
+        local status = PickWidestString(fs, style.textReadyText or "Ready", ctx.time)
+        status = PickWidestString(fs, status, STATUS_ACTIVE_TEXT)
+        ctx.status = PickWidestString(fs, status, STATUS_DEFERRED_TEXT)
     end
 
+    local keybind = buttonData
+        and CooldownCompanion:GetKeybindText(buttonData, identity.itemId, button)
+        or nil
+    ctx.keybind = (keybind and keybind ~= "") and keybind or ""
+
+    local maxCharges = buttonData and buttonData.maxCharges
+    -- {charges} only ever renders for charge-behavior entries.
+    ctx.charges = UsesChargeBehavior(buttonData)
+        and (maxCharges and tostring(maxCharges) or WORST_CASE_CHARGES)
+        or ""
+    -- {maxcharges} renders only when the max is known and above 1; an
+    -- unknown max is a worst case, not an empty render.
+    if maxCharges then
+        ctx.maxcharges = (maxCharges > 1) and tostring(maxCharges) or ""
+    else
+        ctx.maxcharges = WORST_CASE_CHARGES
+    end
+
+    ctx.stacks = WORST_CASE_STACKS
+    -- No {aura} entry: the token renders nothing on 12.1, so it reserves no
+    -- width either.
+    return ctx
+end
+
+-- Emission-shape twin of SubstituteTokens, with every value replaced by its
+-- worst case and every colour/effect tag dropped (the renderer strips those,
+-- so they contribute no width). `presence` is a per-token map: a {?x} region
+-- renders when presence[x] is true, a {!x} region renders when it is false,
+-- exactly as EvaluateTokenPresence drives SubstituteTokens at runtime. One
+-- presence map is therefore a runtime-reachable render, and enumerating every
+-- map over the format's distinct conditional tokens is a TRUE upper bound --
+-- unlike a single all-present / all-absent pair, which cannot produce a string
+-- that mixes polarities across different tokens.
+-- Tokens outside conditional regions always emit their worst case.
+local mockParts = {}
+
+-- One emission point, so the nil/empty guard cannot be forgotten at a call
+-- site. Line splitting is MeasureMockText's job; this only collects.
+local function MockEmit(value)
+    if value == nil or value == "" then return end
+    mockParts[#mockParts + 1] = value
+end
+
+-- Sentinel presence map: every conditional region renders regardless of its
+-- polarity, so one render is a per-line SUPERSET of every reachable render.
+-- Not itself reachable at runtime (a {?x} and a {!x} region on the same token
+-- cannot both show), which is exactly why it is only used as a structural
+-- upper bound where enumeration is refused -- see MeasureWorstCaseVariant.
+local MOCK_PRESENCE_EMIT_ALL = {}
+
+local function BuildMockText(segments, ctx, presence)
+    wipe(mockParts)
+    local emitAll = presence == MOCK_PRESENCE_EMIT_ALL
+    local skipDepth = 0
+    for _, seg in ipairs(segments) do
+        local segType = seg.type
+        if segType == "cond_start" then
+            if skipDepth > 0 then
+                skipDepth = skipDepth + 1
+            elseif not emitAll then
+                local present = presence[seg.value] == true
+                local shouldShow = (seg.negated and not present) or (not seg.negated and present)
+                if not shouldShow then
+                    skipDepth = 1
+                end
+            end
+        elseif segType == "cond_end" then
+            if skipDepth > 0 then
+                skipDepth = skipDepth - 1
+            end
+        elseif skipDepth > 0 then
+            -- Inside a hidden conditional region
+
+        elseif segType == "literal" then
+            MockEmit(seg.value)
+        elseif segType == "token" and not seg.unknown then
+            local token = seg.value
+            if token == "name" then
+                MockEmit(ctx.name)
+            elseif token == "time" then
+                MockEmit(ctx.time)
+            elseif token == "status" then
+                MockEmit(ctx.status)
+            elseif token == "charges" then
+                MockEmit(ctx.charges)
+            elseif token == "maxcharges" then
+                MockEmit(ctx.maxcharges)
+            elseif token == "stacks" then
+                MockEmit(ctx.stacks)
+            elseif token == "keybind" then
+                MockEmit(ctx.keybind)
+            elseif token == "icon" then
+                MockEmit(MEASURE_ICON_ESCAPE)
+            elseif token == "br" then
+                MockEmit("\n")
+            end
+            -- missingcharges/zerocharges are conditional-only: as bare
+            -- tokens SubstituteTokens emits nothing for them either. {aura}
+            -- renders nothing at all on 12.1, so it is absent here too.
+        end
+        -- effect_start/effect_end/color_start/color_end and unknown tokens
+        -- contribute no width.
+    end
+    return table_concat(mockParts)
+end
+
+local function MeasureMockText(fs, text)
+    local maxWidth = 0
+    local lineCount = 1
+    local lineStart = 1
+    while true do
+        local lineBreak = text:find("\n", lineStart, true)
+        local lineText = lineBreak and text:sub(lineStart, lineBreak - 1) or text:sub(lineStart)
+        if lineText ~= "" then
+            local lineWidth = MeasureStringWidth(fs, lineText)
+            if lineWidth > maxWidth then
+                maxWidth = lineWidth
+            end
+        end
+        if not lineBreak then break end
+        lineCount = lineCount + 1
+        lineStart = lineBreak + 1
+    end
+    return maxWidth, lineCount
+end
+
+-- The gap between the frame edge and the FontString, on both axes.
+--
+-- ONE owner for three call sites: the measurement (which sizes the box) and
+-- the two live anchor sites (UpdateTextStyle / CreateTextFrame, which position
+-- the FontString inside it). They must agree or the padding never becomes
+-- visible breathing room -- a left-justified string hugs the left edge while
+-- the whole padding budget piles up on the right.
+--
+-- `region` differs per site on purpose: measurement passes the shared
+-- measuring host so the data-only and per-button paths agree to the pixel,
+-- while the live sites pass the button itself (crisp border mode reads the
+-- region's effective scale). Only the formula is shared.
+--
+-- The border edge is a hard floor: the frame must clear it before any padding
+-- counts, so padX is floored by the inset. padY is floored at 1 (the old fixed
+-- inset) and is symmetric top/bottom, which keeps a single-line entry's
+-- MIDDLE justification centered.
+local function GetTextStringPadding(style, region)
+    local borderSize = style.textBorderSize or 0
+    local borderRenderMode = ST.GetBorderRenderMode(style, "textBorderRenderMode")
+    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(region, borderSize, borderRenderMode)
+    local hasEdge = borderSize > 0
+        or ST.IsEffectiveCrispBorderRenderMode(borderRenderMode, nil, borderSize)
+    local insetX = (hasEdge and borderLayoutSize or 0) + 2
+    local padding = style.textPadding or TEXT_PADDING_DEFAULT
+    return math_max(insetX, padding), math_max(1, padding)
+end
+
+-- Conditional-variant enumeration. 2^k renders bound a format holding k
+-- distinct conditional tokens; the cap keeps the worst case at 16 SetText
+-- rounds on a hidden FontString, which is nothing at config/restyle rates.
+-- Formats above the cap (5+ distinct conditional tokens) do not occur in
+-- practice. They fall back to three renders: the all-absent and all-present
+-- pair (both runtime-reachable), plus the MOCK_PRESENCE_EMIT_ALL superset,
+-- which emits every conditional region regardless of polarity and so is never
+-- narrower than any reachable render of the same line. The pair alone could
+-- under-measure a format that mixes polarities across different tokens; the
+-- superset closes that. Raising the cap is still the exact fix if such a
+-- format ever shows up -- the cost is exponential, not the correctness.
+--
+-- Residual: the superset is a per-LINE bound only while no line break lives
+-- inside a conditional region. A skipped region holding {br} merges two lines
+-- into one longer line that the superset never renders. Bounding that would
+-- mean reserving the whole format on one line, which would visibly over-widen
+-- every legitimate multiline format, so the enumerated path (<= 4 tokens,
+-- which is every format seen in practice) stays the exact answer and the
+-- fallback stays a close bound.
+local MAX_ENUMERATED_COND_TOKENS = 4
+
+local mockCondTokens = {}
+local mockCondSeen = {}
+local mockPresence = {}
+local MOCK_PRESENCE_NONE = {}
+
+-- Distinct conditional tokens in format order. Both {?x} and {!x} parse to a
+-- cond_start on x, so one pass over cond_start collects the whole set.
+local function CollectConditionalTokens(segments)
+    wipe(mockCondTokens)
+    wipe(mockCondSeen)
+    for _, seg in ipairs(segments) do
+        if seg.type == "cond_start" then
+            local token = seg.value
+            if not mockCondSeen[token] then
+                mockCondSeen[token] = true
+                mockCondTokens[#mockCondTokens + 1] = token
+            end
+        end
+    end
+    return mockCondTokens
+end
+
+local function FormatHasNameToken(segments)
+    for _, seg in ipairs(segments) do
+        if seg.type == "token" and seg.value == "name" and not seg.unknown then
+            return true
+        end
+    end
+    return false
+end
+
+-- Widest/tallest render across every conditional variant of this format.
+local function MeasureWorstCaseVariant(fs, segments, ctx)
+    local condTokens = CollectConditionalTokens(segments)
+    local tokenCount = #condTokens
+
+    if tokenCount == 0 then
+        return MeasureMockText(fs, BuildMockText(segments, ctx, MOCK_PRESENCE_NONE))
+    end
+
+    local width, lineCount = 0, 1
+    local variantCount, assignsPerVariant
+    if tokenCount <= MAX_ENUMERATED_COND_TOKENS then
+        variantCount = 2 ^ tokenCount
+        assignsPerVariant = tokenCount
+    else
+        -- Fallback pair: variant 0 = all absent, variant 1 = all present.
+        variantCount = 2
+        assignsPerVariant = 0
+    end
+
+    for variant = 0, variantCount - 1 do
+        wipe(mockPresence)
+        if assignsPerVariant > 0 then
+            local bits = variant
+            for i = 1, tokenCount do
+                mockPresence[condTokens[i]] = (bits % 2) == 1
+                bits = math_floor(bits / 2)
+            end
+        else
+            local allPresent = (variant == 1)
+            for i = 1, tokenCount do
+                mockPresence[condTokens[i]] = allPresent
+            end
+        end
+
+        local variantWidth, variantLines = MeasureMockText(fs, BuildMockText(segments, ctx, mockPresence))
+        if variantWidth > width then width = variantWidth end
+        if variantLines > lineCount then lineCount = variantLines end
+    end
+
+    if tokenCount > MAX_ENUMERATED_COND_TOKENS then
+        -- Structural upper bound for the un-enumerated case (see the cap
+        -- comment): every conditional region emits, so no reachable render can
+        -- put more on a line than this one does.
+        local supersetWidth, supersetLines =
+            MeasureMockText(fs, BuildMockText(segments, ctx, MOCK_PRESENCE_EMIT_ALL))
+        if supersetWidth > width then width = supersetWidth end
+        if supersetLines > lineCount then lineCount = supersetLines end
+    end
+
+    return width, lineCount
+end
+
+-- Returns width, height, lineCount, provisional. `provisional` means the
+-- numbers were measured against a {name} the client had not resolved yet, so
+-- the caller must not treat them as final (see GetTextEntryMetrics).
+local function MeasureTextEntry(style, buttonData, formatString, button, identity)
+    local fs = GetMeasureFontString()
+    local font = CooldownCompanion:FetchFont(style.textFont or "Friz Quadrata TT")
     local fontSize = style.textFontSize or 12
-    local minHeight = math_floor(lineCount * fontSize + 4 + 0.5)
-    return math.max(baseHeight, minHeight), true
+    local fontOutline = ST.GetEffectiveFontOutline(style.textFontOutline or "OUTLINE")
+    fs:SetFont(font, fontSize, fontOutline)
+
+    -- Line height comes from the client, not from the point size: only the
+    -- client knows this font's real line box.
+    fs:SetText("Ag")
+    local lineHeight = math_max(1, math_floor((fs:GetStringHeight() or 0) + 0.999))
+
+    local segments = ParseFormatString(formatString)
+    local ctx = BuildMockContext(fs, style, buttonData, button, identity)
+
+    local width, lineCount = MeasureWorstCaseVariant(fs, segments, ctx)
+
+    -- Only a format that actually renders {name} is wrong because of an
+    -- unresolved name; every other format measures the same either way.
+    local provisional = ctx.namePending == true and FormatHasNameToken(segments)
+
+    -- Same helper the live FontString anchors through, against the measuring
+    -- host (see GetTextStringPadding).
+    local padX, padY = GetTextStringPadding(style, measureHostFrame)
+
+    local boxWidth = math_max(1, math_ceil(width) + padX * 2)
+    local boxHeight = math_max(1, lineCount * lineHeight + padY * 2)
+
+    fs:SetText("")
+
+    return boxWidth, boxHeight, lineCount, provisional
+end
+
+-- Per-entry metrics cache. Keyed by buttonData (or the style table for the
+-- group-level baseline, which has no entry); both are stable identities --
+-- GetEffectiveStyle returns either the group style table or the entry's own
+-- styleOverrides table, never a fresh copy. Weak keys so deleted entries and
+-- destroyed groups drop out on their own.
+--
+-- INVARIANT: cached.style is stored ONLY when the style table is not itself the
+-- cache key; a nil cached.style therefore means "the key IS the style" (the
+-- group-level baseline entry, which has no buttonData). Storing it on those
+-- entries made the value table strongly reference its own weak key, and Lua 5.1
+-- has no ephemerons, so the entry -- and the style table it pointed at -- could
+-- never be collected even after the group was deleted.
+local textMetricsCache = setmetatable({}, { __mode = "k" })
+
+local function GetTextEntryMetrics(style, buttonData, formatString, button, forceRefresh)
+    if type(style) ~= "table" then
+        return 1, 1, 1
+    end
+    local fmt = formatString or style.textFormat or DEFAULT_TEXT_FORMAT
+    local cacheKey = buttonData or style
+    local cached = textMetricsCache[cacheKey]
+    local now = GetTime()
+    local inputsMatch = cached
+        and cached.fmt == fmt
+        -- See the cache's INVARIANT: a baseline entry stores no style, because
+        -- its key already IS the style table.
+        and (cached.style or cacheKey) == style
+        and cached.font == style.textFont
+        and cached.fontSize == style.textFontSize
+        and cached.outline == style.textFontOutline
+        and cached.padding == style.textPadding
+        and cached.readyText == style.textReadyText
+        and cached.durationFormat == style.durationFormat
+        and cached.decimalTimers == style.decimalTimers
+        and cached.borderSize == style.textBorderSize
+        and cached.borderMode == style.textBorderRenderMode
+
+    -- The style keys above are only half the inputs. The other half is what the
+    -- CLIENT resolved: the entry's displayed name and its keybind text. Both
+    -- can change with no style edit at all -- a spell transforms into a longer
+    -- override, an equipment slot resolves to a different item, a bind is
+    -- rebound, or a login-time name simply arrives late -- and a cache that
+    -- does not compare them hands back a box measured for the old strings
+    -- forever. GetTime() advances once per rendered frame, so re-resolving is
+    -- capped at one probe per cache entry per frame no matter how many readers
+    -- hit it in the same layout pass.
+    if not forceRefresh and inputsMatch and cached.probePass == now
+        and (not cached.provisional or cached.provisionalPass == now) then
+        return cached.width, cached.height, cached.lineCount
+    end
+
+    local identity = ResolveMeasureIdentity(buttonData, button, cached)
+    local probeName, probeKeybind = ProbeMeasureStrings(buttonData, button, identity)
+
+    if not forceRefresh and inputsMatch
+        and cached.name == probeName
+        and cached.keybind == probeKeybind then
+        cached.probePass = now
+        if not cached.provisional then
+            return cached.width, cached.height, cached.lineCount
+        end
+        -- Provisional entry: these numbers were measured against a {name} the
+        -- client had not cached yet, so a hit must NOT be trusted -- it would
+        -- freeze a too-small box until the next restyle. Re-measure so the
+        -- layout self-heals within a pass or two of the name arriving.
+        --
+        -- Cost bound: the same one-pass-per-frame stamp as above, which caps a
+        -- never-resolving entry (a deleted spell id) at one measurement per
+        -- pass instead of one per call. Layout passes are dirty-flag gated;
+        -- per-tick display code never reaches this function at all.
+        if cached.provisionalPass == now then
+            return cached.width, cached.height, cached.lineCount
+        end
+    end
+
+    local width, height, lineCount, provisional =
+        MeasureTextEntry(style, buttonData, fmt, button, identity)
+
+    if not cached then
+        cached = {}
+        textMetricsCache[cacheKey] = cached
+    end
+    cached.fmt = fmt
+    -- See the cache's INVARIANT: never store the style on the entry whose key
+    -- it already is, or the weak key can never be collected.
+    if cacheKey ~= style then
+        cached.style = style
+    else
+        cached.style = nil
+    end
+    cached.font = style.textFont
+    cached.fontSize = style.textFontSize
+    cached.outline = style.textFontOutline
+    cached.padding = style.textPadding
+    cached.readyText = style.textReadyText
+    cached.durationFormat = style.durationFormat
+    cached.decimalTimers = style.decimalTimers
+    cached.borderSize = style.textBorderSize
+    cached.borderMode = style.textBorderRenderMode
+    -- The client-resolved half of the inputs, plus the ids they were resolved
+    -- through so a later data-only read reproduces the same strings.
+    cached.name = probeName
+    cached.keybind = probeKeybind
+    cached.identitySpellId = identity.spellId
+    cached.identityItemId = identity.itemId
+    cached.probePass = now
+    cached.width = width
+    cached.height = height
+    cached.lineCount = lineCount
+    -- Stored only once the name resolved; until then the entry stays flagged
+    -- and stamped with the pass that last measured it.
+    cached.provisional = provisional or nil
+    cached.provisionalPass = provisional and now or nil
+    return width, height, lineCount
 end
 
 local function ApplyTextLayout(button, style, formatString)
-    local width = style.textWidth or 200
-    local height, isMultiline = GetEffectiveTextHeight(style, formatString)
+    -- Force a re-measure: this is the restyle path, and it is the one place
+    -- that re-resolves late-arriving inputs (spell/item name, keybind).
+    local width, height, lineCount =
+        GetTextEntryMetrics(style, button.buttonData, formatString, button, true)
+    local isMultiline = lineCount > 1
 
     button:SetSize(width, height)
     button.textString:SetJustifyV(isMultiline and "TOP" or "MIDDLE")
     button.textString:SetWordWrap(isMultiline)
+end
+
+-- Re-measure and resize one text entry NOW, with no dirty flag and no combat
+-- deferral. For callers that are already mid-rebuild and will re-pitch the
+-- panel themselves on the same pass -- GroupFrame's PreparePooledButtonForUse
+-- restyles a pooled frame BEFORE UpdateButtonIcon assigns its display
+-- identity, exactly like CreateTextFrame used to, and ApplyActiveButtonLayout
+-- runs immediately afterwards.
+local function ApplyTextEntryLayout(button)
+    if not button or not button._isText then return end
+    local style = button.style
+    local buttonData = button.buttonData
+    if not style or not buttonData or not button.textString then return end
+    ApplyTextLayout(button, style, buttonData.textFormat or style.textFormat or DEFAULT_TEXT_FORMAT)
+end
+
+-- Invalidation entry point. Re-reads one text entry's metrics through the
+-- cache -- so it costs a few comparisons when nothing moved -- and, when the
+-- box the entry SHOULD have no longer matches the frame it HAS, resizes the
+-- frame and marks its panel for a re-pitch.
+--
+-- Returns the group id when the panel needs re-pitching, nil otherwise. The
+-- caller batches: the grid pitch is the max over every entry, so one restyle
+-- per panel settles any number of changed entries. The dirty flags are set for
+-- the ticker's compact-reflow pass (Core/Lifecycle -> UpdateAllGroupLayouts);
+-- a non-compact panel's slots are only re-placed by ApplyActiveButtonLayout,
+-- which is why the caller still has to run one UpdateGroupStyle.
+--
+-- NOT reachable from any per-tick display path -- callers are event handlers.
+local function RefreshTextEntryLayout(button)
+    if not button or not button._isText then return nil end
+    local style = button.style
+    local buttonData = button.buttonData
+    if not style or not buttonData or not button.textString then return nil end
+
+    -- The once-per-frame probe cap exists to stop repeated LAYOUT readers from
+    -- re-resolving the same strings inside one pass. An explicit invalidation
+    -- is the opposite case and must always re-probe, so drop the stamp first.
+    -- The measurement itself still only re-runs if a string actually moved.
+    local cached = textMetricsCache[buttonData]
+    if cached then
+        cached.probePass = nil
+    end
+
+    local fmt = buttonData.textFormat or style.textFormat or DEFAULT_TEXT_FORMAT
+    local width, height = GetTextEntryMetrics(style, buttonData, fmt, button)
+    local currentWidth, currentHeight = button:GetSize()
+    -- Measured box sizes are whole numbers, so this is an equality test with a
+    -- sub-pixel guard: nothing here may turn a frequent event (action bar slot
+    -- changes route through OnKeybindsChanged) into a per-event panel restyle.
+    if math_abs(width - currentWidth) < 0.5 and math_abs(height - currentHeight) < 0.5 then
+        return nil
+    end
+
+    if InCombatLockdown() then
+        -- A text entry never resizes mid-combat. Ride the same out-of-combat
+        -- recovery the deferred group refreshes use (Core/Lifecycle
+        -- OnCombatEnd -> RefreshAllGroups).
+        CooldownCompanion._pendingFullRefresh = true
+        return nil
+    end
+
+    ApplyTextLayout(button, style, fmt)
+    local groupFrame = button:GetParent()
+    if groupFrame then
+        groupFrame._sizeDirty = true
+        groupFrame._layoutDirty = true
+    end
+    return button._groupId
 end
 
 local function ComputePulse(now)
@@ -245,27 +903,6 @@ local function WrapColor(text, color)
 end
 
 local function ResolveTextModeStackDisplay(button)
-    if button._conditionalAuraStackTextPreview then
-        local previewStackText = button._auraStackText
-        if previewStackText and (issecretvalue(previewStackText) or previewStackText ~= "") then
-            return previewStackText, "aura"
-        end
-    end
-
-    local auraUnit = button._auraUnit
-    local auraInstanceID = button._auraInstanceID
-    if auraUnit and auraInstanceID then
-        local displayCount = C_UnitAuras_GetAuraApplicationDisplayCount(auraUnit, auraInstanceID, 1)
-        if displayCount and (issecretvalue(displayCount) or displayCount ~= "") then
-            return displayCount, "aura"
-        end
-    end
-
-    local stackText = button._auraStackText
-    if stackText and (issecretvalue(stackText) or stackText ~= "") then
-        return stackText, "aura"
-    end
-
     local itemCount = button._itemCount
     if itemCount and itemCount > 0 then
         return tostring(itemCount), "item"
@@ -384,12 +1021,14 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
     elseif tokenName == "stacks" then
         return stackDisplayKind ~= nil
     elseif tokenName == "aura" then
+        -- Structurally false on 12.1: nothing sets _auraActive true any more
+        -- and the aura's remaining duration is the client's, not the addon's.
+        -- Kept as a defined answer so legacy {?aura} regions render empty
+        -- rather than erroring or falling through to an unknown token.
         return button._auraActive == true or auraIsSecret or (auraRemaining and auraRemaining > 0)
     elseif tokenName == "keybind" then
         local kb = CooldownCompanion:GetKeybindText(button.buttonData, button._resolvedItemId, button)
         return kb and kb ~= ""
-    elseif tokenName == "pandemic" then
-        return button._inPandemic == true
     elseif tokenName == "proc" then
         return button._procOverlayActive == true
     elseif tokenName == "unusable" then
@@ -451,35 +1090,32 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
     local currentCharges = button._currentReadableCharges
     local maxCharges = button.buttonData.maxCharges
     local stackDisplayText, stackDisplayKind = ResolveTextModeStackDisplay(button)
-    local auraDurationTextPreview = button._conditionalAuraDurationTextPreview == true
-    local auraActive = button._auraActive or auraDurationTextPreview
-    local auraHasTimer = button._auraHasTimer == true or auraDurationTextPreview
+    local auraActive = button._auraActive
+    local auraHasTimer = button._auraHasTimer == true
     -- _durationObj holds either cooldown remaining or aura remaining (when aura override is active).
     -- Determine which domain owns it this tick.
     local durationRemaining = nil
     local durationIsSecret = false
-    if button._conditionalPreviewRemaining and button._conditionalPreviewRemaining > 0 then
-        durationRemaining = button._conditionalPreviewRemaining
-    elseif button._durationObj then
+    if button._durationObj then
         local rem = button._durationObj:GetRemainingDuration()
         if button._durationObj:HasSecretValues() then
             -- F2 canary: secret remaining text is still a time-driven render,
             -- and the combat ticker floor skips in combat too -- this branch
             -- must feed the false-idle canary like the readable one below.
-            if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
+            RefreshTelemetry:NoteTimeRender()
             durationIsSecret = true
             durationRemaining = rem
         elseif rem and rem > 0 then
             -- F2 canary: spell-cooldown / aura remaining text is drawn from the
             -- duration object this walk (covered by the _cooldownState ==
             -- COOLDOWN / _auraActive classifier terms).
-            if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
+            RefreshTelemetry:NoteTimeRender()
             durationRemaining = rem
         end
     elseif not auraActive and button._itemCdStart and button._itemCdDuration and button._itemCdDuration > 0 then
         -- F2 canary: item cooldown text remaining is drawn this walk (covered by
         -- the _cooldownState == COOLDOWN classifier term).
-        if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
+        RefreshTelemetry:NoteTimeRender()
         local now = GetTime()
         local elapsed = now - button._itemCdStart
         local rem = button._itemCdDuration - elapsed
@@ -575,8 +1211,6 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
                         hasSecretNameValue = true
                         parts[#parts + 1] = WrapColor("%NAME%", colorOverride or baseColor)
                         name = nil
-                    elseif button._auraActive and button._auraDisplayName then
-                        name = button._auraDisplayName
                     else
                         local spellName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
                         if spellName then name = spellName end
@@ -632,15 +1266,12 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
                 end
 
             elseif token == "aura" then
-                if auraHasTimer and auraIsSecret then
-                    if not secretValue then
-                        secretValue = auraRemaining
-                        secretColorToken = "aura"
-                    end
-                    parts[#parts + 1] = WrapColor("%AURA%", colorOverride or auraColor)
-                elseif auraHasTimer and auraRemaining then
-                    parts[#parts + 1] = WrapColor(FormatTime(auraRemaining, style), colorOverride or auraColor)
-                end
+                -- Emits NOTHING: text panels are aura-blind on 12.1, which
+                -- made the tracked aura's remaining time and stack count
+                -- unreadable to the addon. A client-drawn docked readout was
+                -- trialed and removed by owner decision, so the token is kept
+                -- only to stop saved formats degrading to literal braces.
+                -- The config's format editor flags it.
 
             elseif token == "keybind" then
                 local kb = CooldownCompanion:GetKeybindText(buttonData, button._resolvedItemId, button)
@@ -923,12 +1554,13 @@ local function UpdateTextStyle(button, newStyle)
     -- Text shadow
     ST.ApplyFontShadowForOutline(button.textString, fontOutline, newStyle.textShadow == true)
 
-    -- Anchor text within frame respecting border
+    -- Anchor text within frame respecting border and padding. Same helper the
+    -- measurement sizes the box with, so the padding it reserved is the
+    -- padding the FontString actually gets on all four sides.
     button.textString:ClearAllPoints()
-    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode)
-    local inset = ((borderSize > 0 or ST.IsEffectiveCrispBorderRenderMode(borderRenderMode, nil, borderSize)) and borderLayoutSize or 0) + 2
-    button.textString:SetPoint("TOPLEFT", inset, -1)
-    button.textString:SetPoint("BOTTOMRIGHT", -inset, 1)
+    local padX, padY = GetTextStringPadding(newStyle, button)
+    button.textString:SetPoint("TOPLEFT", padX, -padY)
+    button.textString:SetPoint("BOTTOMRIGHT", -padX, padY)
 
     -- Re-parse format string
     local fmt = button.buttonData.textFormat or newStyle.textFormat or DEFAULT_TEXT_FORMAT
@@ -945,8 +1577,24 @@ end
 ------------------------------------------------------------------------
 function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     local fmt = buttonData.textFormat or style.textFormat or DEFAULT_TEXT_FORMAT
-    local w = style.textWidth or 200
-    local h = GetEffectiveTextHeight(style, fmt)
+
+    -- Provisional size only. Every region created below anchors RELATIVELY to
+    -- this frame (bg SetAllPoints, the four border edges through
+    -- ApplyBorderEdgePositions, the FontString's TOPLEFT/BOTTOMRIGHT insets),
+    -- so they all follow the real SetSize that ApplyTextLayout does at the end
+    -- of this function -- after UpdateButtonIcon has assigned the display
+    -- identity {name} measures through. Reading the cache directly instead of
+    -- calling GetTextEntryMetrics keeps a cold entry from paying for a full
+    -- mock render whose numbers are thrown away one measurement later.
+    -- GetButtonDimensions runs immediately before this on every path that
+    -- creates a text entry, and it measures the panel's baseline (keyed by the
+    -- style) and then each entry (keyed by its buttonData), so one of the two
+    -- lookups below is normally already warm with the right box.
+    local w, h = 1, 1
+    local warmMetrics = textMetricsCache[buttonData] or textMetricsCache[style]
+    if warmMetrics and warmMetrics.width and warmMetrics.height then
+        w, h = warmMetrics.width, warmMetrics.height
+    end
 
     -- Main frame
     local button = CreateFrame("Frame", parent:GetName() .. "Text" .. index, parent)
@@ -990,10 +1638,10 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     -- Text shadow
     ST.ApplyFontShadowForOutline(button.textString, fontOutline, style.textShadow == true)
 
-    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode)
-    local inset = ((borderSize > 0 or ST.IsEffectiveCrispBorderRenderMode(borderRenderMode, nil, borderSize)) and borderLayoutSize or 0) + 2
-    button.textString:SetPoint("TOPLEFT", inset, -1)
-    button.textString:SetPoint("BOTTOMRIGHT", -inset, 1)
+    -- Same padding the measurement reserved (GetTextStringPadding).
+    local padX, padY = GetTextStringPadding(style, button)
+    button.textString:SetPoint("TOPLEFT", padX, -padY)
+    button.textString:SetPoint("BOTTOMRIGHT", -padX, padY)
 
     -- Hidden icon (required by UpdateButtonIcon pipeline)
     button.icon = button:CreateTexture(nil, "ARTWORK")
@@ -1032,9 +1680,10 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
         buttonData._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(buttonData.id)
     end
 
-    -- Parse format string
+    -- Parse format string. The measuring pass is deliberately NOT here: it
+    -- runs after UpdateButtonIcon below, which is what assigns the entry's
+    -- display identity.
     button._textSegments = ParseFormatString(fmt)
-    ApplyTextLayout(button, style, fmt)
 
     -- Install effect animation if format uses effect tags
     InstallEffectOnUpdate(button)
@@ -1043,22 +1692,8 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
     button._auraUnit = buttonData.auraUnit or "player"
     button._auraActive = false
-    button._auraDurationObj = nil
-    button._auraCooldownStart = nil
-    button._auraCooldownDuration = nil
-    button._auraPrimarySwipeActive = nil
-    button._auraTrackingReady = buttonData.isPassive == true
+    button._auraTrackingReady = nil
     button._showingAuraIcon = false
-    button._auraViewerFrame = nil
-    button._activeAuraSpellID = nil
-    button._activeAuraSpellIDFromFallback = nil
-    button._activeAuraIcon = nil
-    button._activeAuraIconAvailable = nil
-    button._lastViewerTexId = nil
-    button._auraInstanceID = nil
-    button._viewerBar = nil
-    button._auraDisplayName = nil
-    button._auraNameOverrideActive = nil
     button._textSecretNameActive = nil
 
     if IsEntryItemLike(buttonData) then
@@ -1089,6 +1724,14 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     -- Set icon (populates button._displaySpellId, updates button.icon texture)
     self:UpdateButtonIcon(button)
 
+    -- Measure LAST. The box is sized from a worst-case render of the format,
+    -- and {name} resolves through button._displaySpellId (set by
+    -- UpdateButtonIcon just above) and button._resolvedItemId (set in the
+    -- item block above). Measuring before either existed sized every override
+    -- spell and every resolved item against the SAVED id's name, so a longer
+    -- displayed name overflowed its box for the life of the frame.
+    ApplyTextLayout(button, style, fmt)
+
     -- Click-through (text buttons are non-interactive by default)
     SetFrameClickThroughRecursive(button, true, true)
     SetFrameClickThroughRecursive(button.cooldown, true, true)
@@ -1101,4 +1744,14 @@ end
 ------------------------------------------------------------------------
 ST._UpdateTextDisplay = UpdateTextDisplay
 ST._ParseFormatString = ParseFormatString
-ST._GetEffectiveTextHeight = GetEffectiveTextHeight
+-- (style, buttonData, formatString, button, forceRefresh) -> width, height, lineCount
+ST._GetTextEntryMetrics = GetTextEntryMetrics
+-- (button) -> groupId when the entry's box changed and its panel needs a
+-- re-pitch, nil otherwise. Event-driven invalidation only.
+ST._RefreshTextEntryLayout = RefreshTextEntryLayout
+-- (button) -> nothing. Immediate re-measure + resize for rebuild paths that
+-- re-pitch the panel themselves on the same pass.
+ST._ApplyTextEntryLayout = ApplyTextEntryLayout
+-- (style, region) -> padX, padY. The config text mirror anchors its replica
+-- FontString with the same padding the live renderer uses.
+ST._GetTextStringPadding = GetTextStringPadding

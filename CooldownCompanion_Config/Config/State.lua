@@ -146,15 +146,25 @@ local function GetProfileWideBarTexturePickerValue()
 end
 
 -- Strata ordering element definitions
+-- Dropdown labels. Order below matches ST.DEFAULT_STRATA_ORDER (lowest first);
+-- the section renders the stack top-down, so the list order is presentational
+-- only. "Aura Display" is the whole Blizzard slot subtree — aura glow,
+-- pandemic glow, aura duration swipe and aura text move together, because CC
+-- cannot reorder inside it.
 local strataElementLabels = {
+    iconFill = "Icon Fill Timer",
     cooldown = "Cooldown Swipe",
-    auraGlow = "Aura / Pandemic Glow",
     readyGlow = "Ready Glow",
+    keyPressHighlight = "Key Press Highlight",
     chargeText = "Text Overlay",
-    procGlow = "Proc Glow",
     assistedHighlight = "Assisted Highlight",
+    procGlow = "Proc Glow",
+    auraDisplay = "Aura Display",
 }
-local strataElementKeys = {"cooldown", "auraGlow", "readyGlow", "chargeText", "assistedHighlight", "procGlow"}
+local strataElementKeys = {
+    "iconFill", "cooldown", "readyGlow", "keyPressHighlight",
+    "chargeText", "assistedHighlight", "procGlow", "auraDisplay",
+}
 
 -- Anchor point options
 local anchorPoints = {
@@ -189,9 +199,8 @@ local COLUMN_PADDING = 8
 ------------------------------------------------------------------------
 ST._configState = {
     -- Selection state
-    selectedFolder = nil,        -- folderId selected in Column 1
-    selectedContainer = nil,     -- containerId selected in Column 1
-    selectedGroup = nil,         -- panelId (groupId) selected in Column 2 panel list
+    selectedContainer = nil,     -- Group container selected in the Navigator
+    selectedGroup = nil,         -- Panel selected in the Navigator
     selectedButton = nil,
     selectedRotationAssistantEntry = nil,
     selectedButtons = {},
@@ -204,6 +213,18 @@ ST._configState = {
     selectedContainerTab = "general",
     buttonSettingsTab = "settings",
     panelSettingsTab = "appearance",
+    -- Whether `selectedTab` above is an explicit choice — a tab the user
+    -- clicked, or one a route deliberately sent them to — rather than the
+    -- shipped default. Until it is, a text panel lands on its Format tab
+    -- instead of honoring it. Set beside every deliberate assignment of
+    -- selectedTab; the panel tab callback sets it for clicks.
+    panelSettingsTabExplicit = false,
+    -- Which half of the unified tab row owns the settings surface while a
+    -- detail cluster (entry, entry multi-select, attached bar, resource) is
+    -- in it: "detail" (the default - selecting one zooms into it) or
+    -- "primary" (a panel or module tab was opened without dropping that
+    -- selection).
+    unifiedRowScope = "detail",
     newInput = "",
     tutorialAnchors = {},
     tutorialFrame = nil,
@@ -217,15 +238,21 @@ ST._configState = {
 
     -- Column content frames
     col1Scroll = nil,
+    col1DestinationBar = nil,
     col1ButtonBar = nil,
-    col2Scroll = nil,
-    col2ButtonBar = nil,
-    col4Container = nil,
+    -- Group-settings scroll inside the active workspace host. The legacy
+    -- name remains internal so existing builders do not need a broad rename.
     col4Scroll = nil,
+
+    -- The group id the inline texture browser is open for (nil = closed). Set
+    -- by AuraTexturePicker; drives the takeover branch in ButtonsWideColumn.
+    inlineTextureBrowserOpen = nil,
+    -- Config-only texture appearance values staged during slider/color edits.
+    -- ButtonPanelPreview consumes them; runtime reads only the saved settings.
+    textureConfigPreviewStage = nil,
 
     -- AceGUI widget tracking for cleanup
     col1BarWidgets = {},
-    col2BarWidgets = {},
     profileBarAceWidgets = {},
     buttonSettingsInfoButtons = {},
 
@@ -238,13 +265,10 @@ ST._configState = {
     gearDropdownFrame = nil,
     profileWideFontWindow = nil,
     profileWideBarTextureWindow = nil,
-    folderContextMenu = nil,
-    folderIconPickerFrame = nil,
     buttonIconPickerFrame = nil,
     triggerPanelIconPickerFrame = nil,
     containerIconPickerFrame = nil,
     panelContextMenu = nil,
-    col2PanelTypeMenu = nil,
     charCopyMenu = nil,
 
     -- Drag-reorder state
@@ -253,9 +277,6 @@ ST._configState = {
     dragTracker = nil,
     showPhantomSections = false,
     lastCol1RenderedRows = nil,
-    lastCol2PanelMetas = nil,
-    col1Preview = nil,
-    col2Preview = nil,
 
     -- Pending strata order state
     pendingStrataOrder = nil,
@@ -263,14 +284,20 @@ ST._configState = {
 
     -- Collapsed sections state
     collapsedSections = {},
-    collapsedFolders = {},
     collapsedPanels = {},
+    expandedContainer = nil,
+    peekedContainers = {},
+    springOpenContainer = nil,
+    configFinderExpansionSnapshot = nil,
+    configFinderNavigated = nil,
+    configFinderRestoredCollapsedContainerId = nil,
+    pendingConfigFinderEntryScrollReset = nil,
     otherClassLibraryActive = false,
     otherClassLibraryClassKey = nil,
+    otherClassLibrarySnapshot = nil,
     hideActiveCurrentClassPanels = false,
     panelClickTimes = {},
     addingToPanelId = nil,
-    folderAccentBars = {},
     _panelDropTargets = {},
 
     -- Talent picker mode (2-column layout)
@@ -279,6 +306,7 @@ ST._configState = {
     -- Autocomplete state
     autocompleteCache = nil,
     pendingEditBoxFocus = false,
+    pendingWideAddFocus = false,
 
     -- Config finder state
     configSearchText = "",
@@ -292,15 +320,20 @@ ST._configState = {
     tabInfoButtons = {},
     customBarInfoButtons = {},
     appearanceTabElements = {},
-    resourceBarPanelActive = false,
-    barPanelTab = "resource_anchoring",
-    resourceStylingTab = "bar_text",
-    castBarStylingTab = "styling",
-    resourceAuraOverlayDrafts = {},
     customBarSettingsTab = "appearance",
     selectedCustomBarId = nil,
     customBarSpecExpandedId = nil,
-    customBarIndicatorPreviewActive = nil,
+    -- The unified Resources, Cast Bar & Unit Frames workspace
+    barsEntrySelected = false,
+    -- Which cast/frames object that workspace is editing
+    -- ("castbar" | "player" | "target"); nil is the Resources home, where a
+    -- resource or a custom bar can be selected instead
+    castFramesSelectedItem = nil,
+    -- Buttons view, unified anchor preview: which attached bar's settings
+    -- own the settings area ("resource" | "custom" | "cast", nil = none).
+    -- The matching id lives in selectedResourcePowerType/selectedCustomBarId.
+    unifiedBarKind = nil,
+    resourcesSettingsTab = "general",
     groupPresetSelection = {
         icons = nil,
         bars = nil,
@@ -314,7 +347,6 @@ ST._configState = {
     SetFontOutlineDropdownCallback = SetFontOutlineDropdownCallback,
     GetProfileWideFontPickerValue = GetProfileWideFontPickerValue,
     GetProfileWideFontOutlinePickerValue = GetProfileWideFontOutlinePickerValue,
-    GetBarTextureOptions = GetBarTextureOptions,
     SetupBarTextureDropdown = SetupBarTextureDropdown,
     SetBarTextureDropdownCallback = SetBarTextureDropdownCallback,
     GetProfileWideBarTexturePickerValue = GetProfileWideBarTexturePickerValue,
@@ -329,13 +361,10 @@ ST._configState = {
     IsStrataOrderComplete = nil,
     InitPendingStrataOrder = nil,
     StartPickFrame = nil,
-    StartPickCDM = nil,
     ShowPopupAboveConfig = nil,
     ShowAutocompleteResults = nil,
     HideAutocomplete = nil,
     SearchAutocompleteInCache = nil,
-    SearchCDMAuraAutocomplete = nil,
-    ResolveCDMAuraAutocompleteEntry = nil,
     HandleAutocompleteKeyDown = nil,
     ConsumeAutocompleteEnter = nil,
     SetupAutocompleteKeyHandler = nil,
@@ -485,23 +514,15 @@ local function GetConfigEntryDisplayName(buttonData, opts)
             if addedAs ~= "spell" and addedAs ~= "aura" then
                 addedAs = buttonData.isPassive and "aura" or "spell"
             end
-            local icons = ""
-            if addedAs ~= "aura" then
-                icons = icons .. "|A:ui_adv_atk:15:15|a"
-            end
-            if addedAs == "aura" or buttonData.auraTracking then
-                icons = icons .. "|A:ui_adv_health:15:15|a"
-            end
-            if icons ~= "" then
-                entryName = (entryName or ("Unknown " .. tostring(buttonData.type))) .. "  " .. icons
-            end
+            entryName = (entryName or ("Unknown " .. tostring(buttonData.type)))
+                .. " |cff7d7566(" .. (addedAs == "aura" and "Aura" or "Spell") .. ")|r"
         end
     elseif buttonData.type == "item" and includeDecorations then
         entryName = entryName or ("Unknown " .. tostring(buttonData.type))
         if C_Item.IsEquippableItem(buttonData.id) then
-            entryName = entryName .. "  |A:Crosshair_repairnpc_32:15:15|a"
+            entryName = entryName .. " |cff7d7566(Equipment)|r"
         else
-            entryName = entryName .. "  |A:auctionhouse-icon-coin-gold:12:12|a"
+            entryName = entryName .. " |cff7d7566(Item)|r"
         end
     end
 
@@ -518,6 +539,11 @@ local function NormalizeConfigFinderText(text)
         :gsub("^%s*(.-)%s*$", "%1")
     return strlower(text)
 end
+
+-- The Global section's identity colour. Shared so the Navigator heading and the
+-- drag insertion line cannot drift apart: consumed by Column1's RenderSection
+-- call and by DragReorderTargets' GetCol1SectionColor.
+ST._COL1_GLOBAL_SECTION_COLOR = { 0.4, 0.67, 1.0 }
 
 local CONFIG_FINDER_MIN_QUERY_LENGTH = 2
 local CONFIG_FINDER_MAX_PANEL_RESULTS = 80
@@ -555,8 +581,7 @@ local function ConfigFinderEntryMatches(entryRecord, query)
 end
 
 local function IsConfigFinderAvailable()
-    return not CS.resourceBarPanelActive
-        and not CS.talentPickerMode
+    return not CS.talentPickerMode
         and not CooldownCompanion._unsupportedLegacyProfile
 end
 
@@ -581,18 +606,170 @@ local function ClearOtherClassHideActive(opts)
     return SetHideActiveCurrentClassPanels(false, opts)
 end
 
+local RefreshAlphaDriverForConfigSelection
+
+local function CopyConfigStateMap(source)
+    local copy = {}
+    for key, value in pairs(source or {}) do
+        copy[key] = value
+    end
+    return copy
+end
+
+local function SnapshotOtherClassLibraryState()
+    if CS.otherClassLibrarySnapshot then
+        return
+    end
+    CS.otherClassLibrarySnapshot = {
+        selectedContainer = CS.selectedContainer,
+        selectedGroup = CS.selectedGroup,
+        selectedButton = CS.selectedButton,
+        selectedRotationAssistantEntry = CS.selectedRotationAssistantEntry,
+        selectedGroups = CopyConfigStateMap(CS.selectedGroups),
+        selectedPanels = CopyConfigStateMap(CS.selectedPanels),
+        selectedButtons = CopyConfigStateMap(CS.selectedButtons),
+        selectedCustomBars = CopyConfigStateMap(CS.selectedCustomBars),
+        selectedCustomBarId = CS.selectedCustomBarId,
+        selectedResourcePowerType = CS.selectedResourcePowerType,
+        resourceSettingsSpecID = CS.resourceSettingsSpecID,
+        barsEntrySelected = CS.barsEntrySelected,
+        castFramesSelectedItem = CS.castFramesSelectedItem,
+        unifiedBarKind = CS.unifiedBarKind,
+        addingToPanelId = CS.addingToPanelId,
+        newInput = CS.newInput,
+        expandedContainer = CS.expandedContainer,
+        peekedContainers = CopyConfigStateMap(CS.peekedContainers),
+        selectedTab = CS.selectedTab,
+        panelSettingsTab = CS.panelSettingsTab,
+        panelSettingsTabExplicit = CS.panelSettingsTabExplicit,
+        selectedContainerTab = CS.selectedContainerTab,
+        buttonSettingsTab = CS.buttonSettingsTab,
+        unifiedRowScope = CS.unifiedRowScope,
+    }
+end
+
+local function RestoreOtherClassLibrarySnapshot()
+    local snapshot = CS.otherClassLibrarySnapshot
+    if not snapshot then
+        return
+    end
+
+    CS.selectedContainer = snapshot.selectedContainer
+    CS.selectedGroup = snapshot.selectedGroup
+    CS.selectedButton = snapshot.selectedButton
+    CS.selectedRotationAssistantEntry = snapshot.selectedRotationAssistantEntry
+    wipe(CS.selectedGroups)
+    wipe(CS.selectedPanels)
+    wipe(CS.selectedButtons)
+    wipe(CS.selectedCustomBars)
+    for id, selected in pairs(snapshot.selectedGroups or {}) do CS.selectedGroups[id] = selected end
+    for id, selected in pairs(snapshot.selectedPanels or {}) do CS.selectedPanels[id] = selected end
+    for id, selected in pairs(snapshot.selectedButtons or {}) do CS.selectedButtons[id] = selected end
+    for id, selected in pairs(snapshot.selectedCustomBars or {}) do CS.selectedCustomBars[id] = selected end
+    CS.selectedCustomBarId = snapshot.selectedCustomBarId
+    CS.selectedResourcePowerType = snapshot.selectedResourcePowerType
+    CS.resourceSettingsSpecID = snapshot.resourceSettingsSpecID
+    CS.barsEntrySelected = snapshot.barsEntrySelected
+    CS.castFramesSelectedItem = snapshot.castFramesSelectedItem
+    CS.unifiedBarKind = snapshot.unifiedBarKind
+    CS.addingToPanelId = snapshot.addingToPanelId
+    CS.newInput = snapshot.newInput
+    CS.expandedContainer = snapshot.expandedContainer
+    wipe(CS.peekedContainers)
+    for id, expanded in pairs(snapshot.peekedContainers or {}) do CS.peekedContainers[id] = expanded end
+    CS.selectedTab = snapshot.selectedTab
+    CS.panelSettingsTab = snapshot.panelSettingsTab
+    CS.panelSettingsTabExplicit = snapshot.panelSettingsTabExplicit
+    CS.selectedContainerTab = snapshot.selectedContainerTab
+    CS.buttonSettingsTab = snapshot.buttonSettingsTab
+    CS.unifiedRowScope = snapshot.unifiedRowScope
+    CS.otherClassLibrarySnapshot = nil
+end
+
+local function EnterOtherClassLibraryState(classKey)
+    if not CS.otherClassLibraryActive then
+        SnapshotOtherClassLibraryState()
+    end
+    ClearOtherClassHideActive()
+    CS.otherClassLibraryActive = true
+    CS.otherClassLibraryClassKey = classKey
+end
+
 local function ResetOtherClassLibraryState(opts)
+    local wasActive = CS.otherClassLibraryActive == true
     CS.otherClassLibraryActive = false
     CS.otherClassLibraryClassKey = nil
-    return ClearOtherClassHideActive(opts)
+    local hideChanged = ClearOtherClassHideActive(opts)
+    if wasActive then
+        if opts and opts.discardSelectionSnapshot then
+            -- The snapshot belongs to the selection we are throwing away, so
+            -- writing it back would resurrect ids the caller just cleared.
+            CS.otherClassLibrarySnapshot = nil
+        else
+            RestoreOtherClassLibrarySnapshot()
+        end
+        if RefreshAlphaDriverForConfigSelection then
+            RefreshAlphaDriverForConfigSelection()
+        end
+    end
+    return hideChanged
 end
 
 local ClearConfigPrimarySelection
+
+local function CopyConfigFinderExpansionMap(source)
+    return CopyConfigStateMap(source)
+end
+
+local function SnapshotConfigFinderExpansion()
+    CS.configFinderExpansionSnapshot = {
+        expandedContainer = CS.expandedContainer,
+        peekedContainers = CopyConfigFinderExpansionMap(CS.peekedContainers),
+    }
+    CS.configFinderNavigated = nil
+    CS.configFinderRestoredCollapsedContainerId = nil
+end
+
+local function RestoreConfigFinderExpansion()
+    local snapshot = CS.configFinderExpansionSnapshot
+    if not snapshot then
+        return
+    end
+
+    CS.expandedContainer = snapshot.expandedContainer
+    CS.peekedContainers = CS.peekedContainers or {}
+    wipe(CS.peekedContainers)
+    for containerId in pairs(snapshot.peekedContainers or {}) do
+        CS.peekedContainers[containerId] = true
+    end
+
+    local selectedPanel = CS.selectedGroup
+        and CooldownCompanion.db
+        and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groups
+        and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+        or nil
+    local selectedContainerId = selectedPanel and selectedPanel.parentContainerId or nil
+    if selectedContainerId
+        and CS.expandedContainer ~= selectedContainerId
+        and CS.peekedContainers[selectedContainerId] ~= true then
+        CS.configFinderRestoredCollapsedContainerId = selectedContainerId
+    else
+        CS.configFinderRestoredCollapsedContainerId = nil
+    end
+
+    CS.configFinderExpansionSnapshot = nil
+end
 
 local function SetConfigFinderText(text, opts)
     text = type(text) == "string" and text or ""
     local wasSearching = IsConfigFinderQueryUsable(CS.configSearchText)
     local willSearch = IsConfigFinderQueryUsable(text)
+    if not wasSearching and willSearch then
+        SnapshotConfigFinderExpansion()
+    elseif wasSearching and not willSearch then
+        RestoreConfigFinderExpansion()
+    end
     if CS.configSearchText ~= text then
         CS._configFinderResults = nil
         CS._configFinderResultsQuery = nil
@@ -601,10 +778,17 @@ local function SetConfigFinderText(text, opts)
     end
     CS.configSearchText = text
     if wasSearching and not willSearch and CS.otherClassLibraryActive then
-        if not (opts and opts.preservePrimarySelection) and ClearConfigPrimarySelection then
+        if not CS.configFinderNavigated
+            and not (opts and opts.preservePrimarySelection)
+            and ClearConfigPrimarySelection then
             ClearConfigPrimarySelection()
         end
-        ResetOtherClassLibraryState()
+        if not CS.configFinderNavigated then
+            ResetOtherClassLibraryState()
+        end
+    end
+    if wasSearching and not willSearch then
+        CS.configFinderNavigated = nil
     end
 
     if opts and opts.syncWidget == false then
@@ -856,8 +1040,6 @@ local function BuildConfigFinderResults()
     return results
 end
 
-local RefreshAlphaDriverForConfigSelection
-
 local function ResolveConfigContainerClassScope(containerId)
     local selectedContainer = containerId
         and CooldownCompanion.db
@@ -873,9 +1055,7 @@ end
 
 local function RestoreOtherClassLibraryForScope(scope)
     if scope and scope.isOtherClass then
-        ClearOtherClassHideActive()
-        CS.otherClassLibraryActive = true
-        CS.otherClassLibraryClassKey = scope.ownerClassKey
+        EnterOtherClassLibraryState(scope.ownerClassKey)
         return true
     end
     return false
@@ -884,19 +1064,27 @@ end
 local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CooldownCompanion:ClearAllConfigPreviews()
     local selectedScope = ResolveConfigContainerClassScope(containerId)
+    if selectedScope and selectedScope.isOtherClass then
+        EnterOtherClassLibraryState(selectedScope.ownerClassKey)
+    else
+        ResetOtherClassLibraryState({ skipRefresh = true })
+    end
     wipe(CS.selectedGroups)
     wipe(CS.selectedPanels)
     wipe(CS.selectedButtons)
     wipe(CS.selectedCustomBars)
     CS.selectedResourcePowerType = nil
     CS.resourceSettingsSpecID = nil
-    CS.selectedFolder = nil
     CS.selectedContainer = containerId
     CS.selectedGroup = panelId
     CS.selectedButton = buttonIndex
     CS.selectedRotationAssistantEntry = nil
+    CS.barsEntrySelected = false
+    CS.castFramesSelectedItem = nil
+    CS.unifiedBarKind = nil
     CS.addingToPanelId = nil
-    ClearConfigFinderText({ preservePrimarySelection = true })
+    CS.configFinderNavigated = true
+    CS.pendingConfigFinderEntryScrollReset = buttonIndex ~= nil
     RestoreOtherClassLibraryForScope(selectedScope)
     RefreshAlphaDriverForConfigSelection()
     CooldownCompanion:RefreshConfigPanel()
@@ -969,62 +1157,38 @@ local function GetContainerIcon(containerId, db)
 end
 
 ------------------------------------------------------------------------
--- Helper: Get icon for a folder (manual override, else first child group's first button)
+-- Shared compact panel-row presentation helpers
 ------------------------------------------------------------------------
-local function GetAutoFolderIcon(folderId, db)
-    if not db then
-        return 134400
+local function GetConfigPanelTypeBadgeAtlas(displayMode)
+    if displayMode == "bars" then
+        return "CreditsScreen-Assets-Buttons-Pause"
+    elseif displayMode == "text" then
+        return "poi-workorders"
+    elseif displayMode == "textures" or displayMode == "trigger" then
+        return "UI-HUD-MicroMenu-Communities-Icon-Notification"
     end
-    -- Post-migration: folderId lives on containers, not groups
-    local containers = db.groupContainers
-    if containers then
-        local children = {}
-        for cid, container in pairs(containers) do
-            if container.folderId == folderId then
-                table.insert(children, { id = cid, order = CooldownCompanion:GetOrderForSpec(container, CooldownCompanion._currentSpecId, cid) })
-            end
-        end
-        table.sort(children, function(a, b) return a.order < b.order end)
-        if children[1] and db.groups then
-            -- Find first panel of this container for its icon
-            local firstPanel = GetFirstPanelForContainer(children[1].id, db)
-            if firstPanel then
-                return GetGroupIcon(firstPanel)
-            end
-        end
-    end
-    return 134400
+
+    return "UI-QuestPoi-QuestNumber-SuperTracked"
 end
 
-local function GetFolderIcon(folderId, db)
-    if not db then
-        return 134400
+local function GetConfigPanelEntryCount(panel)
+    if panel and panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+        return 1
     end
-    local folder = db.folders and db.folders[folderId]
-    if folder and IsValidIconTexture(folder.manualIcon) then
-        return folder.manualIcon
-    end
-    return GetAutoFolderIcon(folderId, db)
+    return panel and panel.buttons and #panel.buttons or 0
 end
 
-------------------------------------------------------------------------
--- Helper: generate a unique folder name
-------------------------------------------------------------------------
-local function GenerateFolderName(base)
-    local db = CooldownCompanion.db.profile
-    local existing = {}
-    for _, f in pairs(db.folders) do
-        existing[f.name] = true
-    end
-    local name = base
-    if existing[name] then
-        local n = 1
-        while existing[name .. " " .. n] do
-            n = n + 1
+local function IsConfigPanelEntryUsable(panel, buttonData)
+    return CooldownCompanion:IsButtonUsable(buttonData, panel)
+end
+
+local function ConfigPanelHasWarning(panel)
+    for _, buttonData in ipairs(panel and panel.buttons or {}) do
+        if buttonData.enabled ~= false and not IsConfigPanelEntryUsable(panel, buttonData) then
+            return true
         end
-        name = name .. " " .. n
     end
-    return name
+    return false
 end
 
 ------------------------------------------------------------------------
@@ -1032,7 +1196,6 @@ end
 ------------------------------------------------------------------------
 local STANDALONE_ICON_BROWSER_ADDON = "IconBrowser"
 local CONFIG_ICON_PICKER_CACHE_KEYS = {
-    "folderIconPickerFrame",
     "buttonIconPickerFrame",
     "triggerPanelIconPickerFrame",
     "containerIconPickerFrame",
@@ -1375,31 +1538,6 @@ local function ConfigureMovableIconPickerFrame(frame)
     AttachConfigIconPickerDragScripts(frame.BorderBox, frame)
 end
 
-local FOLDER_ICON_PICKER_SPEC = {
-    cacheKey = "folderIconPickerFrame",
-    frameName = "CDCFolderIconPickerFrame",
-    unavailableMessage = "Folder icon picker is unavailable on this client build.",
-    configureFrame = ConfigureMovableIconPickerFrame,
-    validateContext = function(context, db)
-        local folderId = context and context.folderId
-        return db and db.folders and db.folders[folderId]
-    end,
-    getCurrentIcon = function(folder, context, db)
-        local currentIcon = folder.manualIcon
-        if not IsValidIconTexture(currentIcon) then
-            currentIcon = GetAutoFolderIcon(context.folderId, db)
-        end
-        return currentIcon
-    end,
-    applySelection = function(iconTexture, folder)
-        folder.manualIcon = iconTexture
-        CooldownCompanion:RefreshConfigPanel()
-    end,
-    clearContext = function(frame)
-        frame._cdcPickerContext = nil
-    end,
-}
-
 local BUTTON_ICON_PICKER_SPEC = {
     cacheKey = "buttonIconPickerFrame",
     frameName = "CDCButtonIconPickerFrame",
@@ -1486,15 +1624,6 @@ local CONTAINER_ICON_PICKER_SPEC = {
 }
 
 ------------------------------------------------------------------------
--- Folder icon picker
-------------------------------------------------------------------------
-local function OpenFolderIconPicker(folderId)
-    return OpenConfigIconPicker(FOLDER_ICON_PICKER_SPEC, {
-        folderId = folderId,
-    })
-end
-
-------------------------------------------------------------------------
 -- Button icon picker (per-entry icon art override)
 ------------------------------------------------------------------------
 local function OpenButtonIconPicker(groupId, buttonIndex)
@@ -1514,7 +1643,7 @@ local function OpenTriggerPanelIconPicker(groupId)
 end
 
 ------------------------------------------------------------------------
--- Container icon picker (per-group icon in Column 1)
+-- Container icon picker (per-Group icon in the Navigator)
 ------------------------------------------------------------------------
 local function OpenContainerIconPicker(containerId)
     return OpenConfigIconPicker(CONTAINER_ICON_PICKER_SPEC, {
@@ -1736,6 +1865,8 @@ local function ClearConfigRowLayout(entry, restoreHandlers)
         icon:SetTexture(nil)
         icon:SetAtlas(nil)
         icon:SetAlpha(1)
+        icon:SetVertexColor(1, 1, 1, 1)
+        icon:SetTexCoord(0, 1, 0, 1)
         if icon.SetDesaturated then
             icon:SetDesaturated(false)
         end
@@ -1777,17 +1908,23 @@ local function ApplyConfigRowLayout(entry)
     local frame = entry.frame
     local label = entry.label
     local leftPad = 0
+    local indent = row.indent or 0
+    local iconSize = row.iconSize or CONFIG_ROW_ICON_SIZE
+    local iconGap = row.iconGap or CONFIG_ROW_ICON_GAP
 
     if not compact then
         if hasIcon then
-            leftPad = CONFIG_ROW_ICON_SIZE + CONFIG_ROW_ICON_GAP
+            leftPad = indent + iconSize + iconGap
         else
-            leftPad = row.normalLeftPad or 0
+            leftPad = indent + (row.normalLeftPad or 0)
         end
+    else
+        leftPad = indent
     end
 
-    entry:SetHeight(COMPACT_ROW_HEIGHT)
-    frame.height = COMPACT_ROW_HEIGHT
+    local rowHeight = compact and (row.compactRowHeight or COMPACT_ROW_HEIGHT) or (row.rowHeight or COMPACT_ROW_HEIGHT)
+    entry:SetHeight(rowHeight)
+    frame.height = rowHeight
 
     label:ClearAllPoints()
     label:SetPoint("LEFT", frame, "LEFT", leftPad, 0)
@@ -1812,8 +1949,8 @@ local function ApplyConfigRowLayout(entry)
     local icon = entry.image
     if icon then
         icon:ClearAllPoints()
-        icon:SetSize(CONFIG_ROW_ICON_SIZE, CONFIG_ROW_ICON_SIZE)
-        icon:SetPoint("LEFT", frame, "LEFT", 0, 0)
+        icon:SetSize(iconSize, iconSize)
+        icon:SetPoint("LEFT", frame, "LEFT", indent, 0)
 
         if hasIcon and not compact and (row.texture or row.atlas) then
             if row.atlas then
@@ -1821,7 +1958,18 @@ local function ApplyConfigRowLayout(entry)
             else
                 icon:SetAtlas(nil)
                 icon:SetTexture(row.texture)
-                icon:SetTexCoord(0, 1, 0, 1)
+                local texCoord = row.texCoord
+                if texCoord then
+                    icon:SetTexCoord(texCoord[1], texCoord[2], texCoord[3], texCoord[4])
+                else
+                    icon:SetTexCoord(0, 1, 0, 1)
+                end
+            end
+            local vertexColor = row.vertexColor
+            if vertexColor then
+                icon:SetVertexColor(vertexColor[1], vertexColor[2], vertexColor[3], vertexColor[4] or 1)
+            else
+                icon:SetVertexColor(1, 1, 1, 1)
             end
             icon:SetAlpha(1)
             if icon.SetDesaturated then
@@ -1864,15 +2012,6 @@ local function EnsureConfigRowHandlers(entry)
 end
 
 local function CleanRecycledEntry(entry)
-    local function CleanFrameButton(button)
-        if not button then return end
-        button:Hide()
-        button:ClearAllPoints()
-        button:SetScript("OnClick", nil)
-        button:SetScript("OnEnter", nil)
-        button:SetScript("OnLeave", nil)
-    end
-
     if entry._cdcModeBadge then entry._cdcModeBadge:Hide() end
     if entry._cdcModeBadgeHitRect then entry._cdcModeBadgeHitRect:Hide() end
     if entry.frame._cdcBadges then
@@ -1884,13 +2023,36 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcWarnBtn then entry.frame._cdcWarnBtn:Hide() end
     if entry.frame._cdcOverrideBadge then entry.frame._cdcOverrideBadge:Hide() end
     if entry.frame._cdcSoundBadge then entry.frame._cdcSoundBadge:Hide() end
-    if entry.frame._cdcAuraBadge then entry.frame._cdcAuraBadge:Hide() end
     if entry.frame._cdcFallbackBadge then entry.frame._cdcFallbackBadge:Hide() end
     if entry.frame._cdcTalentBadge then entry.frame._cdcTalentBadge:Hide() end
     if entry.frame._cdcCollapseIcon then entry.frame._cdcCollapseIcon:Hide() end
     if entry.frame._cdcCollapseBtn then entry.frame._cdcCollapseBtn:Hide() end
     if entry.frame._cdcAddBtn then entry.frame._cdcAddBtn:Hide() end
     if entry.frame._cdcGenericRenameBadge then entry.frame._cdcGenericRenameBadge:Hide() end
+    if entry.frame._cdcTreeExpandButton then
+        entry.frame._cdcTreeExpandButton:Hide()
+        entry.frame._cdcTreeExpandButton:ClearAllPoints()
+        entry.frame._cdcTreeExpandButton:SetScript("OnClick", nil)
+        entry.frame._cdcTreeExpandButton:SetScript("OnEnter", nil)
+        entry.frame._cdcTreeExpandButton:SetScript("OnLeave", nil)
+    end
+    if entry.frame._cdcTreePanelMeta then
+        entry.frame._cdcTreePanelMeta:Hide()
+        entry.frame._cdcTreePanelMeta:ClearAllPoints()
+    end
+    if entry.frame._cdcDropOverlay then
+        entry.frame._cdcDropOverlay:Hide()
+        entry.frame._cdcDropOverlay:SetScript("OnReceiveDrag", nil)
+        entry.frame._cdcDropOverlay:SetScript("OnMouseUp", nil)
+    end
+    if entry.highlight then
+        entry.highlight:ClearAllPoints()
+        entry.highlight:SetAllPoints(entry.frame)
+        entry.highlight:SetVertexColor(1, 1, 1, 1)
+        entry.highlight:SetAlpha(1)
+    end
+    if entry.label then entry.label:SetAlpha(1) end
+    entry.frame:SetAlpha(1)
     if entry.frame._cdcCursorAnchorBadge then entry.frame._cdcCursorAnchorBadge:Hide() end
     if entry.frame._cdcCDMRefreshBadge then
         entry.frame._cdcCDMRefreshBadge:Hide()
@@ -1898,10 +2060,13 @@ local function CleanRecycledEntry(entry)
         entry.frame._cdcCDMRefreshBadge:SetScript("OnClick", nil)
     end
     if entry.frame._cdcAnchorBadge then entry.frame._cdcAnchorBadge:Hide() end
+    if entry.frame._cdcResourcePinBadge then
+        entry.frame._cdcResourcePinBadge:Hide()
+        entry.frame._cdcResourcePinBadge:EnableMouse(false)
+    end
     if entry.frame._cdcHeaderDisabledBadge then entry.frame._cdcHeaderDisabledBadge:Hide() end
     if entry.frame._cdcDisabledBadge then entry.frame._cdcDisabledBadge:Hide() end
     if entry.frame._cdcCustomBarTypeBadge then entry.frame._cdcCustomBarTypeBadge:Hide() end
-    if entry.frame._cdcCustomBarAuraStatusBadge then entry.frame._cdcCustomBarAuraStatusBadge:Hide() end
     if entry.frame._cdcCustomBarDisabledBadge then entry.frame._cdcCustomBarDisabledBadge:Hide() end
     if entry.frame._cdcCustomBarSpecBadges then
         for _, badge in ipairs(entry.frame._cdcCustomBarSpecBadges) do badge:Hide() end
@@ -1911,16 +2076,9 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcPriorityDownBtn then entry.frame._cdcPriorityDownBtn:Hide() end
     if entry.frame._cdcFallbackUpBtn then entry.frame._cdcFallbackUpBtn:Hide() end
     if entry.frame._cdcFallbackDownBtn then entry.frame._cdcFallbackDownBtn:Hide() end
-    CleanFrameButton(entry.frame._cdcCustomBarAuraUpBtn)
-    CleanFrameButton(entry.frame._cdcCustomBarAuraDownBtn)
-    CleanFrameButton(entry.frame._cdcResourceAuraClearBtn)
-    if entry.frame._cdcMarkerLeft then entry.frame._cdcMarkerLeft:Hide() end
-    if entry.frame._cdcMarkerRight then entry.frame._cdcMarkerRight:Hide() end
     entry._cdcAfterConfigRowLayout = nil
     entry.frame:SetScript("OnMouseUp", nil)
     entry.frame:SetScript("OnReceiveDrag", nil)
-    entry.frame._cdcOnMouseDown = nil
-    entry.frame._cdcLastClickTime = nil
     ClearConfigRowLayout(entry, true)
 end
 
@@ -1931,6 +2089,13 @@ local function ApplyConfigRowIcon(entry, texture, opts)
         texture = texture,
         atlas = opts.atlas,
         desaturated = opts.desaturated == true,
+        indent = opts.indent,
+        iconSize = opts.iconSize,
+        iconGap = opts.iconGap,
+        rowHeight = opts.rowHeight,
+        compactRowHeight = opts.compactRowHeight,
+        texCoord = opts.texCoord,
+        vertexColor = opts.vertexColor,
         rightPad = opts.rightPad,
     }
     EnsureConfigRowHandlers(entry)
@@ -1972,23 +2137,22 @@ local function ReapplyConfigRowLayouts(widget)
     end
 end
 
-local function UpdateConfigFolderAccentBars()
-    local showBars = not CS.compactConfigRows
-    for _, bar in ipairs(CS.folderAccentBars or {}) do
-        if showBars and bar._cdcFolderAccentActive then
-            bar:Show()
-        else
-            bar:Hide()
-        end
+local function UpdateNestedPanelAccents(widget)
+    if not widget then return end
+    local frame = widget.frame
+    local accent = frame and frame._cdcNestedPanelAccent
+    if accent then
+        accent:SetShown(CS.compactConfigRows ~= true and frame._cdcNestedPanelAccentActive == true)
+    end
+    for _, child in ipairs(widget.children or {}) do
+        UpdateNestedPanelAccents(child)
     end
 end
 
 local function RefreshVisibleConfigCompactRows()
     ReapplyConfigRowLayouts(CS.col1Scroll)
-    ReapplyConfigRowLayouts(CS.col2Scroll)
-    UpdateConfigFolderAccentBars()
+    UpdateNestedPanelAccents(CS.col1Scroll)
     if CS.col1Scroll and CS.col1Scroll.DoLayout then CS.col1Scroll:DoLayout() end
-    if CS.col2Scroll and CS.col2Scroll.DoLayout then CS.col2Scroll:DoLayout() end
 end
 
 local function AcquireBadge(frame, index)
@@ -2014,6 +2178,9 @@ local function AcquireBadge(frame, index)
     badge:SetSize(BADGE_SIZE, BADGE_SIZE)
     badge.text:SetText("")
     badge:SetFrameLevel(frame:GetFrameLevel() + 5)
+    badge:EnableMouse(false)
+    badge:SetScript("OnEnter", nil)
+    badge:SetScript("OnLeave", nil)
     return badge
 end
 
@@ -2058,100 +2225,45 @@ local function SetupGroupRowIndicators(entry, group)
         and not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(group)) then
         AddAtlasBadge("ShipMissionIcon-Training-Map")
     end
-    -- Look up folder data for per-badge filtering: badges that exist at the
-    -- folder level are shown on the folder row only, not on child containers.
-    local folderId = group.folderId
-    local folderSpecs, folderHeroTalents
-    if folderId then
-        local folders = CooldownCompanion.db and CooldownCompanion.db.profile
-            and CooldownCompanion.db.profile.folders
-        local folder = folders and folders[folderId]
-        if folder then
-            folderSpecs = BuildEligibilityBadgeMap(
-                folder.specs,
-                folder.loadConditions and folder.loadConditions.specAllowlist
-            )
-            folderHeroTalents = folder.heroTalents
+    -- Resource Bars anchored to a panel in this group (pin badge).
+    -- Mouse is enabled for the tooltip with clicks propagating to the row;
+    -- SetPropagateMouseClicks is protected in combat, so the tooltip is
+    -- skipped when refreshed mid-combat.
+    -- ST._ lookup: GetResourcesEntryPlacement is declared later in this file.
+    if ST._GetResourcesEntryPlacement then
+        local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
+        if placement == "attached" and anchorPanelId then
+            local dbProfile = CooldownCompanion.db and CooldownCompanion.db.profile
+            local anchorGroup = dbProfile and dbProfile.groups and dbProfile.groups[anchorPanelId]
+            local anchorContainer = anchorGroup and dbProfile.groupContainers
+                and dbProfile.groupContainers[anchorGroup.parentContainerId]
+            if anchorContainer ~= nil and anchorContainer == group then
+                local anchorPanelName = anchorGroup.name or "a panel"
+                badgeIndex = badgeIndex + 1
+                local badge = AcquireBadge(frame, badgeIndex)
+                badge.icon:SetAtlas("Waypoint-MapPin-Tracked", false)
+                if not InCombatLockdown() and badge.SetPropagateMouseClicks then
+                    badge:EnableMouse(true)
+                    badge:SetPropagateMouseClicks(true)
+                    badge:SetScript("OnEnter", function(self)
+                        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                        GameTooltip:AddLine("Resource Bars")
+                        GameTooltip:AddLine("Your resource bars are anchored to " .. anchorPanelName .. " in this group.", 1, 1, 1, true)
+                        GameTooltip:Show()
+                    end)
+                    badge:SetScript("OnLeave", function() GameTooltip:Hide() end)
+                end
+                badge:Show()
+            end
         end
     end
-
-    -- Spec filter badges: show own specs, skip any that exist at folder level
+    -- Spec filter badges
     local SPEC_BADGE_SIZE = 16
     local specs = BuildEligibilityBadgeMap(
         group.specs,
         group.loadConditions and group.loadConditions.specAllowlist
     )
     if specs then
-        for specId in pairs(specs) do
-            if not (folderSpecs and folderSpecs[specId]) then
-                local _, _, _, specIcon = GetSpecializationInfoForSpecID(specId)
-                if specIcon then
-                    badgeIndex = badgeIndex + 1
-                    local badge = AcquireBadge(frame, badgeIndex)
-                    badge:SetSize(SPEC_BADGE_SIZE, SPEC_BADGE_SIZE)
-                    badge.icon:SetTexture(specIcon)
-                    badge.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-                    if not badge._cdcCircleMask then
-                        local mask = badge:CreateMaskTexture()
-                        mask:SetAllPoints(badge.icon)
-                        mask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask")
-                        badge._cdcCircleMask = mask
-                    end
-                    badge.icon:AddMaskTexture(badge._cdcCircleMask)
-                    badge:Show()
-                end
-            end
-        end
-    end
-
-    -- Hero talent filter badges: show own, skip any that exist at folder level
-    local HERO_BADGE_SIZE = SPEC_BADGE_SIZE
-    local heroTalents = group.heroTalents
-    if heroTalents then
-        local configID = C_ClassTalents.GetActiveConfigID()
-        if configID then
-            for subTreeID in pairs(heroTalents) do
-                if not (folderHeroTalents and folderHeroTalents[subTreeID]) then
-                    local subTreeInfo = C_Traits.GetSubTreeInfo(configID, subTreeID)
-                    if subTreeInfo and subTreeInfo.iconElementID then
-                        badgeIndex = badgeIndex + 1
-                        local badge = AcquireBadge(frame, badgeIndex)
-                        badge:SetSize(HERO_BADGE_SIZE, HERO_BADGE_SIZE)
-                        badge.icon:SetAtlas(subTreeInfo.iconElementID, false)
-                        badge:Show()
-                    end
-                end
-            end
-        end
-    end
-
-    -- Position badges right-to-left
-    local offsetX = -BADGE_RIGHT_PAD
-    if frame._cdcBadges then
-        for i = 1, badgeIndex do
-            local badge = frame._cdcBadges[i]
-            if badge:IsShown() then
-                badge:ClearAllPoints()
-                badge:SetPoint("RIGHT", frame, "RIGHT", offsetX, 0)
-                offsetX = offsetX - badge:GetWidth() - BADGE_SPACING
-            end
-        end
-    end
-end
-
-local function SetupFolderRowIndicators(entry, folder)
-    local frame = entry.frame
-    if frame._cdcBadges then
-        for _, b in ipairs(frame._cdcBadges) do b:Hide() end
-    end
-
-    local badgeIndex = 0
-    local SPEC_BADGE_SIZE = 16
-    local specs = folder and BuildEligibilityBadgeMap(
-        folder.specs,
-        folder.loadConditions and folder.loadConditions.specAllowlist
-    )
-    if specs and next(specs) then
         for specId in pairs(specs) do
             local _, _, _, specIcon = GetSpecializationInfoForSpecID(specId)
             if specIcon then
@@ -2172,11 +2284,13 @@ local function SetupFolderRowIndicators(entry, folder)
         end
     end
 
+    -- Hero talent filter badges
     local HERO_BADGE_SIZE = SPEC_BADGE_SIZE
-    if folder and folder.heroTalents and next(folder.heroTalents) then
+    local heroTalents = group.heroTalents
+    if heroTalents then
         local configID = C_ClassTalents.GetActiveConfigID()
         if configID then
-            for subTreeID in pairs(folder.heroTalents) do
+            for subTreeID in pairs(heroTalents) do
                 local subTreeInfo = C_Traits.GetSubTreeInfo(configID, subTreeID)
                 if subTreeInfo and subTreeInfo.iconElementID then
                     badgeIndex = badgeIndex + 1
@@ -2189,6 +2303,7 @@ local function SetupFolderRowIndicators(entry, folder)
         end
     end
 
+    -- Position badges right-to-left
     local offsetX = -BADGE_RIGHT_PAD
     if frame._cdcBadges then
         for i = 1, badgeIndex do
@@ -2219,306 +2334,6 @@ local function GetConfigRowBadgeReserve(frame)
     end
 
     return reserve
-end
-
-local function EnsureColumn1MarkerParts(frame)
-    if not frame._cdcMarkerLeft then
-        local left = frame:CreateTexture(nil, "ARTWORK")
-        left:SetHeight(1)
-        frame._cdcMarkerLeft = left
-    end
-    if not frame._cdcMarkerRight then
-        local right = frame:CreateTexture(nil, "ARTWORK")
-        right:SetHeight(1)
-        frame._cdcMarkerRight = right
-    end
-end
-
-local function ClearColumn1MarkerAppearance(target)
-    local frame = target and target.frame
-    if not frame then
-        return
-    end
-    if frame._cdcMarkerLeft then
-        frame._cdcMarkerLeft:Hide()
-        frame._cdcMarkerLeft:ClearAllPoints()
-    end
-    if frame._cdcMarkerRight then
-        frame._cdcMarkerRight:Hide()
-        frame._cdcMarkerRight:ClearAllPoints()
-    end
-end
-
-local function ApplyColumn1MarkerAppearance(target, opts)
-    opts = opts or {}
-    local frame = target and target.frame
-    local label = target and (target.label or target._cdcLabel)
-    if not (frame and label) then
-        return
-    end
-
-    ClearColumn1MarkerAppearance(target)
-    EnsureColumn1MarkerParts(frame)
-
-    if frame._cdcBadges then
-        for _, badge in ipairs(frame._cdcBadges) do
-            badge:Hide()
-        end
-    end
-
-    local text = opts.text or ""
-    local color = opts.color or { 0.8, 0.8, 0.8 }
-    local inset = opts.inset or 8
-    local gap = opts.gap or 6
-    local lineAlpha = opts.lineAlpha or 0.55
-    local lineYOffset = opts.lineYOffset or 0
-
-    label:SetText(text)
-    if label.SetFontObject then
-        label:SetFontObject(GameFontHighlight)
-    end
-    if label.SetWordWrap then
-        label:SetWordWrap(false)
-    end
-    label:SetJustifyH("CENTER")
-    label:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1)
-    label:ClearAllPoints()
-    label:SetPoint("CENTER", frame, "CENTER", opts.textOffsetX or 0, opts.textOffsetY or 0)
-    if label.SetWidth then
-        local frameWidth = frame.GetWidth and frame:GetWidth() or 0
-        local desiredWidth = math.max(1, (label.GetStringWidth and label:GetStringWidth() or 0) + 2)
-        if frameWidth > 0 then
-            desiredWidth = math.min(desiredWidth, math.max(1, frameWidth - ((inset + gap) * 2)))
-        end
-        label:SetWidth(desiredWidth)
-    end
-
-    if target.image then
-        target.image:Hide()
-    end
-    if target._cdcIcon then
-        target._cdcIcon:Hide()
-    end
-
-    frame._cdcMarkerLeft:SetColorTexture(color[1] or 1, color[2] or 1, color[3] or 1, lineAlpha)
-    frame._cdcMarkerLeft:ClearAllPoints()
-    frame._cdcMarkerRight:SetColorTexture(color[1] or 1, color[2] or 1, color[3] or 1, lineAlpha)
-    frame._cdcMarkerRight:ClearAllPoints()
-    local frameWidth = frame.GetWidth and frame:GetWidth() or 0
-    local textWidth = label.GetStringWidth and label:GetStringWidth() or 0
-    local textOffsetX = opts.textOffsetX or 0
-    if frameWidth > 0 and textWidth > 0 then
-        local centerX = (frameWidth / 2) + textOffsetX
-        local leftWidth = math.max(0, centerX - (textWidth / 2) - gap - inset)
-        local rightStart = centerX + (textWidth / 2) + gap
-        local rightWidth = math.max(0, frameWidth - inset - rightStart)
-
-        frame._cdcMarkerLeft:SetPoint("LEFT", frame, "LEFT", inset, lineYOffset)
-        frame._cdcMarkerLeft:SetWidth(leftWidth)
-        frame._cdcMarkerLeft:Show()
-
-        frame._cdcMarkerRight:SetPoint("LEFT", frame, "LEFT", rightStart, lineYOffset)
-        frame._cdcMarkerRight:SetWidth(rightWidth)
-        frame._cdcMarkerRight:Show()
-    else
-        frame._cdcMarkerLeft:SetPoint("LEFT", frame, "LEFT", inset, lineYOffset)
-        frame._cdcMarkerLeft:SetPoint("RIGHT", label, "LEFT", -gap, lineYOffset)
-        frame._cdcMarkerLeft:SetPoint("CENTER", frame, "CENTER", 0, lineYOffset)
-        frame._cdcMarkerLeft:Show()
-
-        frame._cdcMarkerRight:SetPoint("LEFT", label, "RIGHT", gap, lineYOffset)
-        frame._cdcMarkerRight:SetPoint("RIGHT", frame, "RIGHT", -inset, lineYOffset)
-        frame._cdcMarkerRight:SetPoint("CENTER", frame, "CENTER", 0, lineYOffset)
-        frame._cdcMarkerRight:Show()
-    end
-end
-
-local function SetupColumn1MarkerRow(widget, opts)
-    if not widget then
-        return
-    end
-    if not widget._cdcMarkerWidthHooked then
-        local previousOnWidthSet = widget.OnWidthSet
-        widget.OnWidthSet = function(self, width)
-            if previousOnWidthSet then
-                previousOnWidthSet(self, width)
-            end
-            if self._cdcMarkerOpts then
-                ApplyColumn1MarkerAppearance(self, self._cdcMarkerOpts)
-            end
-        end
-        widget._cdcMarkerWidthHooked = true
-    end
-    if not widget._cdcMarkerReleaseHooked then
-        local previousOnRelease = widget.OnRelease
-        widget.OnRelease = function(self, ...)
-            self._cdcMarkerOpts = nil
-            ClearColumn1MarkerAppearance(self)
-            if previousOnRelease then
-                previousOnRelease(self, ...)
-            end
-        end
-        widget._cdcMarkerReleaseHooked = true
-    end
-    if widget.SetFullWidth then
-        widget:SetFullWidth(true)
-    end
-    if widget.SetHeight then
-        widget:SetHeight((opts and opts.height) or 18)
-    elseif widget.frame and widget.frame.SetHeight then
-        widget.frame:SetHeight((opts and opts.height) or 18)
-    end
-    if widget.SetText then
-        widget:SetText((opts and opts.text) or "")
-    end
-    widget._cdcMarkerOpts = opts
-    ApplyColumn1MarkerAppearance(widget, opts)
-end
-
-------------------------------------------------------------------------
--- Shared helper: persistent overlay host for column drag/drop previews
-------------------------------------------------------------------------
-local function EnsureColumnPreviewHost(previewKey, scrollWidget)
-    local preview = CS[previewKey]
-    if not preview then
-        preview = {
-            rows = {},
-            panels = {},
-            hiddenFrames = {},
-            hiddenRegions = {},
-            tweens = {},
-        }
-        CS[previewKey] = preview
-    end
-
-    if not preview.root then
-        local root = CreateFrame("Frame", nil, UIParent)
-        root:SetFrameStrata("FULLSCREEN_DIALOG")
-        root:EnableMouse(false)
-        root:SetClipsChildren(false)
-        root:Hide()
-        preview.root = root
-    end
-
-    if not preview.ghost then
-        local ghost = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
-        ghost:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 1,
-        })
-        ghost:SetBackdropColor(0.10, 0.115, 0.16, 0.92)
-        ghost:SetBackdropBorderColor(0.24, 0.27, 0.33, 1)
-        ghost:SetFrameStrata("TOOLTIP")
-        ghost:EnableMouse(false)
-        ghost.icon = ghost:CreateTexture(nil, "ARTWORK")
-        ghost.icon:SetSize(24, 24)
-        ghost.icon:SetPoint("LEFT", ghost, "LEFT", 8, 0)
-        ghost.label = ghost:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        ghost.label:SetPoint("LEFT", ghost.icon, "RIGHT", 8, 0)
-        ghost.label:SetPoint("RIGHT", ghost, "RIGHT", -8, 0)
-        ghost.label:SetJustifyH("LEFT")
-        ghost:Hide()
-        preview.ghost = ghost
-    end
-
-    local content = scrollWidget and scrollWidget.content
-    if content then
-        preview.root:SetParent(content)
-        preview.root:ClearAllPoints()
-        preview.root:SetAllPoints(content)
-        preview.root:SetFrameLevel((content:GetFrameLevel() or 1) + 100)
-    else
-        preview.root:SetParent(UIParent)
-    end
-
-    return preview
-end
-
-local function ClearColumnPreviewHost(previewKey)
-    local preview = CS[previewKey]
-    if not preview then
-        return
-    end
-
-    if preview.hiddenFrames then
-        for frame, alpha in pairs(preview.hiddenFrames) do
-            if frame and frame.SetAlpha then
-                frame:SetAlpha(alpha)
-            end
-            preview.hiddenFrames[frame] = nil
-        end
-    end
-
-    if preview.hiddenRegions then
-        for region, alpha in pairs(preview.hiddenRegions) do
-            if region and region.SetAlpha then
-                region:SetAlpha(alpha)
-            end
-            preview.hiddenRegions[region] = nil
-        end
-    end
-
-    if preview.rows then
-        for _, row in ipairs(preview.rows) do
-            if row.frame then
-                row.frame:Hide()
-            end
-        end
-    end
-
-    if preview.panels then
-        for _, panel in ipairs(preview.panels) do
-            if panel.frame then
-                panel.frame:Hide()
-            end
-        end
-    end
-
-    if preview.tweens then
-        for frame in pairs(preview.tweens) do
-            preview.tweens[frame] = nil
-        end
-    end
-
-    if preview.root then
-        preview.root:Hide()
-        preview.root:SetScript("OnUpdate", nil)
-    end
-
-    if preview.ghost then
-        preview.ghost:Hide()
-    end
-
-    preview.ghostActive = false
-    preview.mode = nil
-    preview.compactEntries = nil
-end
-
-local function EnsureCol1PreviewHost()
-    return EnsureColumnPreviewHost("col1Preview", CS.col1Scroll)
-end
-
-local function EnsureCol2PreviewHost()
-    return EnsureColumnPreviewHost("col2Preview", CS.col2Scroll)
-end
-
-local function ClearCol1PreviewHost()
-    ClearColumnPreviewHost("col1Preview")
-end
-
-local function ClearCol2PreviewHost()
-    ClearColumnPreviewHost("col2Preview")
-end
-
-------------------------------------------------------------------------
--- Shared helper: apply checkbox indentation for pooled AceGUI checkboxes.
-------------------------------------------------------------------------
-local function ApplyCheckboxIndent(checkbox, offsetX)
-    if not (checkbox and checkbox.checkbg) then return end
-    -- AceGUI checkboxes are pooled; normalize anchor state before applying offset.
-    checkbox.checkbg:ClearAllPoints()
-    checkbox.checkbg:SetPoint("TOPLEFT", offsetX or 0, 0)
 end
 
 ------------------------------------------------------------------------
@@ -2575,9 +2390,10 @@ end
 
 ClearConfigPrimarySelection = function()
     CooldownCompanion:ClearAllConfigPreviews()
-    CS.selectedFolder = nil
     CS.selectedContainer = nil
     CS.selectedGroup = nil
+    CS.barsEntrySelected = false
+    CS.castFramesSelectedItem = nil
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     wipe(CS.selectedGroups)
@@ -2586,24 +2402,12 @@ ClearConfigPrimarySelection = function()
     RefreshAlphaDriverForConfigSelection()
 end
 
-local function SelectConfigFolder(folderId)
-    CooldownCompanion:ClearAllConfigPreviews()
-    CS.selectedFolder = folderId
-    CS.selectedContainer = nil
-    CS.selectedGroup = nil
-    ClearSelectedButton()
-    wipe(CS.selectedGroups)
-    wipe(CS.selectedPanels)
-    RefreshAlphaDriverForConfigSelection()
-end
-
 local function SelectConfigContainer(containerId, opts)
     CooldownCompanion:ClearAllConfigPreviews()
+    CS.configFinderRestoredCollapsedContainerId = nil
     if not (opts and opts.keepContainerMulti) then
         wipe(CS.selectedGroups)
     end
-    CS.selectedFolder = nil
-
     if opts and opts.toggle and CS.selectedContainer == containerId then
         if CS.selectedGroup then
             CS.selectedGroup = nil
@@ -2615,6 +2419,8 @@ local function SelectConfigContainer(containerId, opts)
         CS.selectedGroup = nil
     end
 
+    CS.barsEntrySelected = false
+    CS.castFramesSelectedItem = nil
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     if opts and opts.clearFinder then
@@ -2636,9 +2442,10 @@ local function ToggleConfigContainerMultiSelect(containerId)
         CS.selectedGroups[CS.selectedContainer] = true
     end
 
-    CS.selectedFolder = nil
     CS.selectedContainer = nil
     CS.selectedGroup = nil
+    CS.barsEntrySelected = false
+    CS.castFramesSelectedItem = nil
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     wipe(CS.selectedCustomBars)
@@ -2647,12 +2454,12 @@ end
 
 local function SelectConfigPanel(panelId, opts)
     CooldownCompanion:ClearAllConfigPreviews()
+    CS.configFinderRestoredCollapsedContainerId = nil
     if opts and opts.containerId ~= nil then
         CS.selectedContainer = opts.containerId
     end
-    if not (opts and opts.keepPanelMulti) then
-        wipe(CS.selectedPanels)
-    end
+    wipe(CS.selectedPanels)
+    wipe(CS.selectedGroups)
 
     if opts and opts.toggle
         and CS.selectedGroup == panelId
@@ -2663,6 +2470,8 @@ local function SelectConfigPanel(panelId, opts)
         CS.selectedGroup = panelId
     end
 
+    CS.barsEntrySelected = false
+    CS.castFramesSelectedItem = nil
     ClearSelectedButton()
     RefreshAlphaDriverForConfigSelection()
 end
@@ -2679,23 +2488,31 @@ local function ToggleConfigPanelMultiSelect(panelId)
     end
 
     CS.selectedGroup = nil
+    CS.barsEntrySelected = false
+    CS.castFramesSelectedItem = nil
     ClearSelectedButton()
+    wipe(CS.selectedGroups)
     CS.addingToPanelId = nil
     RefreshAlphaDriverForConfigSelection()
 end
 
 local function SelectConfigButton(panelId, buttonIndex, opts)
+    -- Selecting an entry always jumps to its cluster in the tab row, even
+    -- if a panel tab was the last thing shown.
+    CS.unifiedRowScope = "detail"
     local panelChanged = CS.selectedGroup ~= panelId
     if opts and opts.containerId ~= nil then
         CS.selectedContainer = opts.containerId
     end
+    CS.barsEntrySelected = false
+    CS.castFramesSelectedItem = nil
+    CS.unifiedBarKind = nil
     if panelChanged then
         CS.selectedGroup = panelId
         ClearSelectedButton()
     end
-    if not (opts and opts.keepPanelMulti) then
-        wipe(CS.selectedPanels)
-    end
+    wipe(CS.selectedPanels)
+    wipe(CS.selectedGroups)
 
     if opts and opts.multi then
         if CS.selectedButtons[buttonIndex] then
@@ -2728,23 +2545,31 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
     if opts and opts.containerId ~= nil then
         CS.selectedContainer = opts.containerId
     end
-    if not (opts and opts.keepPanelMulti) then
-        wipe(CS.selectedPanels)
-    end
+    wipe(CS.selectedPanels)
+    wipe(CS.selectedGroups)
 
     CS.selectedGroup = panelId
     CS.selectedButton = nil
     CS.selectedRotationAssistantEntry = true
+    CS.barsEntrySelected = false
+    CS.castFramesSelectedItem = nil
+    CS.unifiedBarKind = nil
     wipe(CS.selectedButtons)
     CS.buttonSettingsTab = "loadconditions"
+    CS.unifiedRowScope = "detail"
     CooldownCompanion:ClearAllConfigPreviews()
     RefreshAlphaDriverForConfigSelection()
 end
 
 local function SelectConfigButtonPanel(panelId, opts)
+    -- Selecting the panel (even the already-selected one) always returns
+    -- the settings area to panel settings, so any unified bar selection ends.
+    CS.unifiedBarKind = nil
     if CS.selectedGroup ~= panelId then
         CooldownCompanion:ClearAllConfigPreviews()
         CS.selectedGroup = panelId
+        CS.barsEntrySelected = false
+        CS.castFramesSelectedItem = nil
         ClearSelectedButton()
         RefreshAlphaDriverForConfigSelection()
     end
@@ -2754,26 +2579,11 @@ local function SelectConfigButtonPanel(panelId, opts)
     end
 end
 
-local function ClearConfigCustomBarPreviewState()
-    if CooldownCompanion.ClearAllCustomAuraBarPreviews then
-        CooldownCompanion:ClearAllCustomAuraBarPreviews()
-    end
-    if CS.customBarIndicatorPreviewActive and CooldownCompanion.StopResourceBarPreview then
-        CooldownCompanion:StopResourceBarPreview()
-    end
-end
-
-local function SetConfigCustomBarSettingsTab(tab, clearPreviewOnNonIndicator)
+local function SetConfigCustomBarSettingsTab(tab)
     CS.customBarSettingsTab = tab or "appearance"
-    if clearPreviewOnNonIndicator and CS.customBarSettingsTab ~= "indicators" then
-        ClearConfigCustomBarPreviewState()
-    end
 end
 
-local function ClearConfigCustomBarSelection(clearPreview, opts)
-    if clearPreview then
-        ClearConfigCustomBarPreviewState()
-    end
+local function ClearConfigCustomBarSelection(opts)
     CS.selectedCustomBarId = nil
     if opts and opts.clearExpanded then
         CS.customBarSpecExpandedId = nil
@@ -2782,17 +2592,27 @@ local function ClearConfigCustomBarSelection(clearPreview, opts)
     SetConfigCustomBarSettingsTab("appearance")
 end
 
+-- The unified bars workspace edits one object at a time: a resource, a
+-- custom bar, or a cast/frames item. Clearing all three is "back to the
+-- Resources home".
+local function ClearConfigBarsHomeSelection()
+    ClearConfigResourceSelection()
+    ClearConfigCustomBarSelection({ clearExpanded = true })
+    CS.castFramesSelectedItem = nil
+end
+
 local function SelectConfigCustomBar(customBarId, opts)
     local selectionChanged = CS.selectedCustomBarId ~= customBarId
     if opts and opts.toggle and not selectionChanged then
-        ClearConfigCustomBarSelection(opts.clearPreview)
+        ClearConfigCustomBarSelection()
         return true
     end
 
     ClearConfigResourceSelection()
-    if selectionChanged and opts and opts.clearPreview then
-        ClearConfigCustomBarPreviewState()
-    end
+    CS.castFramesSelectedItem = nil
+    -- Selecting a bar jumps to its own tabs, the same way selecting an
+    -- entry does, even if a module tab was the last thing shown.
+    CS.unifiedRowScope = "detail"
     CS.selectedCustomBarId = customBarId
     if opts and opts.resetTab then
         SetConfigCustomBarSettingsTab("appearance")
@@ -2807,6 +2627,7 @@ end
 
 local function ToggleConfigCustomBarMultiSelect(customBarId)
     ClearConfigResourceSelection()
+    CS.castFramesSelectedItem = nil
     if CS.selectedCustomBars[customBarId] then
         CS.selectedCustomBars[customBarId] = nil
     else
@@ -2815,7 +2636,6 @@ local function ToggleConfigCustomBarMultiSelect(customBarId)
     if CS.selectedCustomBarId and not CS.selectedCustomBars[CS.selectedCustomBarId] and next(CS.selectedCustomBars) then
         CS.selectedCustomBars[CS.selectedCustomBarId] = true
     end
-    ClearConfigCustomBarPreviewState()
 end
 
 local function SetConfigResourceSettingsSpecID(specID)
@@ -2848,10 +2668,13 @@ local function SelectConfigResource(powerType, opts)
         return true
     end
 
-    ClearConfigCustomBarPreviewState()
     CS.selectedCustomBarId = nil
     CS.customBarSpecExpandedId = nil
     wipe(CS.selectedCustomBars)
+    CS.castFramesSelectedItem = nil
+    -- Selecting a resource jumps to its own tabs, the same way selecting an
+    -- entry does, even if a module tab was the last thing shown.
+    CS.unifiedRowScope = "detail"
     SetConfigCustomBarSettingsTab("appearance")
     if opts and opts.clearButtonMulti then
         CS.selectedRotationAssistantEntry = nil
@@ -2898,11 +2721,169 @@ local function PruneConfigCustomBarSelection(customBarExists, resetTab)
     end
 end
 
+-- Unified anchor preview (buttons view): clicking an attached bar in the
+-- pinned preview selects it for editing below the divider. Toggle
+-- semantics by default; `opts.toggle = false` selects without the
+-- toggle-off (the right-click menu must keep an already-selected bar
+-- selected under its menu). A bar selection replaces any entry
+-- selection, and the entry/panel selectors clear unifiedBarKind in
+-- return.
+local function SelectUnifiedAnchorBar(slot, opts)
+    if type(slot) ~= "table" then
+        return false
+    end
+    local allowToggle = not (opts and opts.toggle == false)
+
+    if slot.kind == "resource" and slot.powerType ~= nil then
+        if allowToggle
+            and CS.unifiedBarKind == "resource"
+            and tostring(CS.selectedResourcePowerType) == tostring(slot.powerType) then
+            CS.unifiedBarKind = nil
+            ClearConfigResourceSelection()
+            return true
+        end
+        SelectConfigResource(slot.powerType)
+        if CS.selectedResourcePowerType == nil then
+            return false
+        end
+        CS.unifiedBarKind = "resource"
+    elseif slot.kind == "custom" and slot.customBarId ~= nil then
+        if allowToggle
+            and CS.unifiedBarKind == "custom"
+            and tostring(CS.selectedCustomBarId) == tostring(slot.customBarId) then
+            CS.unifiedBarKind = nil
+            ClearConfigCustomBarSelection()
+            return true
+        end
+        SelectConfigCustomBar(slot.customBarId)
+        CS.unifiedBarKind = "custom"
+    elseif slot.kind == "cast" then
+        if allowToggle and CS.unifiedBarKind == "cast" then
+            CS.unifiedBarKind = nil
+            return true
+        end
+        ClearConfigResourceSelection()
+        ClearConfigCustomBarSelection()
+        CS.unifiedBarKind = "cast"
+    else
+        return false
+    end
+
+    -- The bar's settings own the settings area; entry selection ends. Like
+    -- selecting an entry, this jumps to the bar's own tabs even if a panel
+    -- tab was the last thing shown.
+    CS.unifiedRowScope = "detail"
+    ClearSelectedButton()
+    return true
+end
+
+-- The unified Resources, Cast Bar & Unit Frames workspace: the pinned
+-- preview and the inactive chips select the resource, custom bar, or
+-- cast/frames item whose settings show beneath it. The destination row is a
+-- "go home" click - entering, or clicking it again while an object is
+-- selected, lands on the Resources home with nothing selected.
+local function SelectConfigBarsEntry(opts)
+    CooldownCompanion:ClearAllConfigPreviews()
+    ResetOtherClassLibraryState()
+    -- Destination navigation exits the temporary filtered-tree view.
+    ClearConfigFinderText({ preservePrimarySelection = true })
+    if opts and opts.toggle and CS.barsEntrySelected then
+        CS.barsEntrySelected = false
+    else
+        CS.barsEntrySelected = true
+    end
+    CS.selectedGroup = nil
+    CS.unifiedBarKind = nil
+    ClearSelectedButton()
+    wipe(CS.selectedPanels)
+    wipe(CS.selectedGroups)
+    ClearConfigBarsHomeSelection()
+    RefreshAlphaDriverForConfigSelection()
+end
+
+-- A cast/frames item belongs to the same mutually exclusive family as the
+-- resources and custom bars beside it, so selecting one drops any bar.
+local function SelectConfigCastFramesItem(item)
+    if item ~= "castbar" and item ~= "player" and item ~= "target" then
+        return false
+    end
+    local changed = CS.castFramesSelectedItem ~= item
+    ClearConfigResourceSelection()
+    ClearConfigCustomBarSelection({ clearExpanded = true })
+    CS.castFramesSelectedItem = item
+    return changed
+end
+
+-- Where the "Resource Bars" entry lives in the panel list right now.
+-- Returns "disabled" | "independent" | "attached", anchorPanelId (nil when
+-- enabled+dependent but no eligible anchor panel exists).
+local function GetResourcesEntryPlacement()
+    local settings = CooldownCompanion.GetResourceBarSettings
+        and CooldownCompanion:GetResourceBarSettings()
+        or nil
+    if not settings or settings.enabled ~= true then
+        return "disabled"
+    end
+    if CooldownCompanion.IsResourceBarAnchorIndependent
+        and CooldownCompanion:IsResourceBarAnchorIndependent() then
+        return "independent"
+    end
+    return "attached", CooldownCompanion:GetFirstAvailableAnchorGroup()
+end
+
+-- With all three of the workspace's modules disabled there is nothing for
+-- the canvas to draw and nothing to select, so the workspace becomes a
+-- single wide overview pane offering each module its own enable button. A
+-- profile conflict keeps the normal layout so its gate stays reachable.
+local function IsBarsOverviewActive()
+    if not CS.barsEntrySelected then
+        return false
+    end
+    if CooldownCompanion.GetCurrentResourceBarConflict
+        and CooldownCompanion:GetCurrentResourceBarConflict() then
+        return false
+    end
+    local resourceBars = CooldownCompanion.GetResourceBarSettings
+        and CooldownCompanion:GetResourceBarSettings()
+        or nil
+    if resourceBars and resourceBars.enabled == true then
+        return false
+    end
+    local castBar = CooldownCompanion.GetCastBarSettings
+        and CooldownCompanion:GetCastBarSettings()
+        or nil
+    if castBar and castBar.enabled == true then
+        return false
+    end
+    local frameAnchoring = CooldownCompanion.GetFrameAnchoringSettings
+        and CooldownCompanion:GetFrameAnchoringSettings()
+        or nil
+    if frameAnchoring and frameAnchoring.enabled == true then
+        return false
+    end
+    return true
+end
+
+-- True for the normal panel workspace, including Other Class browsing,
+-- which shares it wholesale. The bars workspace and the talent picker have
+-- their own workspace routing even though the cutover now gives every
+-- non-picker view the same Navigator + workspace frame.
+local function IsButtonsWideViewActive()
+    return not (CS.barsEntrySelected
+        or CS.talentPickerMode)
+end
+
+-- Every cutover view uses the merged workspace except the talent picker,
+-- which temporarily replaces it with its own two-column layout.
+local function IsWideCol3LayoutActive()
+    return not CS.talentPickerMode
+end
+
 local function ResetConfigSelection(full)
     CooldownCompanion:ClearAllConfigPreviews()
-    CS.selectedFolder = nil
     CS.selectedButton = nil
     CS.selectedRotationAssistantEntry = nil
+    CS.unifiedBarKind = nil
     CS.selectedCustomBarId = nil
     CS.customBarSpecExpandedId = nil
     CS.customBarSettingsTab = "appearance"
@@ -2913,38 +2894,25 @@ local function ResetConfigSelection(full)
     if full then
         CS.selectedContainer = nil
         CS.selectedGroup = nil
+        CS.barsEntrySelected = false
+        CS.castFramesSelectedItem = nil
         wipe(CS.selectedGroups)
         wipe(CS.selectedCustomBars)
         CS.addingToPanelId = nil
-        ResetOtherClassLibraryState()
+        ResetOtherClassLibraryState({ discardSelectionSnapshot = true })
     end
     RefreshAlphaDriverForConfigSelection()
 end
 
+-- The legacy Bars & Frames mode is gone; only "buttons" remains and it is
+-- a plain view refresh. The calls still matter: ResourceBarLifecycle
+-- hooksecurefuncs the exported wrapper (ST._SetConfigPrimaryMode) to
+-- re-apply bars whenever the config opens or resets its view — never
+-- delete or replace that wrapper symbol, change only this impl.
 local function SetConfigPrimaryMode(mode, opts)
-    local toBars
-    if mode == "bars" then
-        toBars = true
-    elseif mode == "buttons" then
-        toBars = false
-    else
+    if mode ~= "buttons" then
         return false
     end
-
-    local wasBars = CS.resourceBarPanelActive == true
-    if toBars and not wasBars then
-        -- Preserve existing behavior when entering Bars & Frames mode.
-        ResetConfigSelection(true)
-    elseif (not toBars) and wasBars then
-        -- Stop preview loops when returning to button settings mode.
-        CooldownCompanion:ClearAllConfigPreviews()
-        CS.selectedCustomBarId = nil
-        CS.customBarSettingsTab = "appearance"
-        ClearConfigResourceSelection()
-        ResetOtherClassLibraryState()
-    end
-
-    CS.resourceBarPanelActive = toBars
     if not (opts and opts.skipRefresh) and CS.configFrame and CS.configFrame.frame and CS.configFrame.frame:IsShown() then
         CooldownCompanion:RefreshConfigPanel()
     end
@@ -3167,35 +3135,6 @@ local function GroupsHaveForeignSpecs(groups, requireGlobal)
     return false
 end
 
-local function FolderHasForeignSpecs(folderId)
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    if not (db and db.folders) then return false end
-
-    local folder = db.folders[folderId]
-    if not folder then return false end
-
-    local playerSpecIds = BuildPlayerSpecSet()
-    local playerClassKey = BuildPlayerClassKey()
-    local playerCharKey = BuildPlayerCharacterKey()
-    local playerHeroTalentIds, hasHeroTalentData = BuildPlayerHeroTalentSet(playerSpecIds)
-    if EntityHasForeignEligibility(folder, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData) then
-        return true
-    end
-    -- Post-migration: specs live on containers, not folders
-    local containers = db.groupContainers
-    if containers then
-        for _, container in pairs(containers) do
-            if container.folderId == folderId then
-                if EntityOrChildPanelsHaveForeignEligibility(container, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData) then
-                    return true
-                end
-            end
-        end
-    end
-
-    return false
-end
-
 ------------------------------------------------------------------------
 -- CompactUntitledInlineGroupConfig (shared utility for bordered panels)
 ------------------------------------------------------------------------
@@ -3239,6 +3178,11 @@ local function CompactUntitledInlineGroupConfig(group)
         releaseContent:ClearAllPoints()
         releaseContent:SetPoint("TOPLEFT", 10, -10)
         releaseContent:SetPoint("BOTTOMRIGHT", -10, 10)
+        if widget.frame and widget.frame._cdcNestedPanelAccent then
+            widget.frame._cdcNestedPanelAccent:Hide()
+            widget.frame._cdcNestedPanelAccent:ClearAllPoints()
+            widget.frame._cdcNestedPanelAccentActive = nil
+        end
         widget.LayoutFinished = originalLayoutFinished
     end)
 end
@@ -3251,16 +3195,8 @@ ST._CleanRecycledEntry = CleanRecycledEntry
 ST._ApplyConfigRowIcon = ApplyConfigRowIcon
 ST._ApplyConfigTextRow = ApplyConfigTextRow
 ST._RefreshVisibleConfigCompactRows = RefreshVisibleConfigCompactRows
-ST._BuildEligibilityBadgeMap = BuildEligibilityBadgeMap
 ST._SetupGroupRowIndicators = SetupGroupRowIndicators
-ST._SetupFolderRowIndicators = SetupFolderRowIndicators
 ST._GetConfigRowBadgeReserve = GetConfigRowBadgeReserve
-ST._ApplyColumn1MarkerAppearance = ApplyColumn1MarkerAppearance
-ST._SetupColumn1MarkerRow = SetupColumn1MarkerRow
-ST._EnsureCol1PreviewHost = EnsureCol1PreviewHost
-ST._EnsureCol2PreviewHost = EnsureCol2PreviewHost
-ST._ClearCol1PreviewHost = ClearCol1PreviewHost
-ST._ClearCol2PreviewHost = ClearCol2PreviewHost
 ST._GetButtonIcon = GetButtonIcon
 ST._GetConfigEntryDisplayName = GetConfigEntryDisplayName
 ST._IsConfigFinderAvailable = IsConfigFinderAvailable
@@ -3270,31 +3206,32 @@ ST._ClearConfigFinderText = ClearConfigFinderText
 ST._SetHideActiveCurrentClassPanels = SetHideActiveCurrentClassPanels
 ST._ClearOtherClassHideActive = ClearOtherClassHideActive
 ST._ResetOtherClassLibraryState = ResetOtherClassLibraryState
+ST._EnterOtherClassLibraryState = EnterOtherClassLibraryState
 ST._BuildConfigFinderResults = BuildConfigFinderResults
 ST._InvalidateConfigFinderResults = InvalidateConfigFinderResults
 ST._SelectConfigFinderResult = SelectConfigFinderResult
 ST._GetContainerIcon = GetContainerIcon
-ST._GetFolderIcon = GetFolderIcon
-ST._OpenFolderIconPicker = OpenFolderIconPicker
+ST._GetConfigPanelTypeBadgeAtlas = GetConfigPanelTypeBadgeAtlas
+ST._GetConfigPanelEntryCount = GetConfigPanelEntryCount
+ST._IsConfigPanelEntryUsable = IsConfigPanelEntryUsable
+ST._ConfigPanelHasWarning = ConfigPanelHasWarning
 ST._OpenButtonIconPicker = OpenButtonIconPicker
 ST._OpenTriggerPanelIconPicker = OpenTriggerPanelIconPicker
 ST._OpenContainerIconPicker = OpenContainerIconPicker
 ST._CloseConfigIconPicker = CloseConfigIconPicker
 ST._IsValidIconTexture = IsValidIconTexture
-ST._GenerateFolderName = GenerateFolderName
 ST._ShowPopupAboveConfig = ShowPopupAboveConfig
 ST._BindConfigShiftTooltip = BindConfigShiftTooltip
+ST._ActivateConfigShiftTooltip = ActivateConfigShiftTooltip
 ST._ConfigureWrappedHelperLabel = ConfigureWrappedHelperLabel
 ST._ClearConfigShiftTooltipHover = ClearConfigShiftTooltipHover
 ST._COLUMN_PADDING = COLUMN_PADDING
-ST._ApplyCheckboxIndent = ApplyCheckboxIndent
 ST._ClearConfigButtonSelection = ClearConfigButtonSelection
 ST._ClearConfigPanelSelection = ClearConfigPanelSelection
 ST._ClearConfigContainerSelection = ClearConfigContainerSelection
 ST._ClearConfigPanelMultiSelection = ClearConfigPanelMultiSelection
 ST._ClearConfigContainerMultiSelection = ClearConfigContainerMultiSelection
 ST._ClearConfigPrimarySelection = ClearConfigPrimarySelection
-ST._SelectConfigFolder = SelectConfigFolder
 ST._SelectConfigContainer = SelectConfigContainer
 ST._ToggleConfigContainerMultiSelect = ToggleConfigContainerMultiSelect
 ST._SelectConfigPanel = SelectConfigPanel
@@ -3302,20 +3239,25 @@ ST._ToggleConfigPanelMultiSelect = ToggleConfigPanelMultiSelect
 ST._SelectConfigButton = SelectConfigButton
 ST._SelectConfigRotationAssistantEntry = SelectConfigRotationAssistantEntry
 ST._SelectConfigButtonPanel = SelectConfigButtonPanel
-ST._ClearConfigCustomBarPreviewState = ClearConfigCustomBarPreviewState
 ST._SetConfigCustomBarSettingsTab = SetConfigCustomBarSettingsTab
 ST._ClearConfigCustomBarSelection = ClearConfigCustomBarSelection
+ST._ClearConfigBarsHomeSelection = ClearConfigBarsHomeSelection
 ST._SelectConfigCustomBar = SelectConfigCustomBar
 ST._ToggleConfigCustomBarMultiSelect = ToggleConfigCustomBarMultiSelect
 ST._PruneConfigCustomBarSelection = PruneConfigCustomBarSelection
 ST._SelectConfigResource = SelectConfigResource
+ST._SelectUnifiedAnchorBar = SelectUnifiedAnchorBar
 ST._SetConfigResourceSettingsSpecID = SetConfigResourceSettingsSpecID
 ST._PruneConfigResourceSelection = PruneConfigResourceSelection
+ST._SelectConfigBarsEntry = SelectConfigBarsEntry
+ST._SelectConfigCastFramesItem = SelectConfigCastFramesItem
+ST._GetResourcesEntryPlacement = GetResourcesEntryPlacement
+ST._IsBarsOverviewActive = IsBarsOverviewActive
+ST._IsButtonsWideViewActive = IsButtonsWideViewActive
 ST._ResetConfigSelection = ResetConfigSelection
 ST._SetConfigPrimaryModeImpl = SetConfigPrimaryMode
 ST._GroupsHaveForeignSpecs = GroupsHaveForeignSpecs
 ST._ContainersHaveForeignSpecs = ContainersHaveForeignSpecs
-ST._FolderHasForeignSpecs = FolderHasForeignSpecs
 
 ------------------------------------------------------------------------
 -- Helper: Get class-colored text for current player

@@ -4,8 +4,26 @@ local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 -- Imports from Helpers.lua
-local ColorHeading = ST._ColorHeading
+local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local CreateCharacterCopyButton = ST._CreateCharacterCopyButton
+
+-- Imports from RowWidgets.lua (the row grammar). The rules every row-grammar
+-- section follows are stated once, in the recipe comment at the top of
+-- BuildAppearanceTab's icons path (GroupTabs.lua); this file conforms to them
+-- rather than restating them.
+local AddCheckboxRow = ST._AddCheckboxRow
+local AddSliderRow = ST._AddSliderRow
+local AddDropdownRow = ST._AddDropdownRow
+local AddEditBoxRow = ST._AddEditBoxRow
+local BeginRowGrid = ST._BeginRowGrid
+
+-- Row-grammar section headers: caret far left, label, then a class-colored
+-- rule fading right.
+local ROW_SECTION = { leftAligned = true }
+
+-- The unit-frame addon names run well past the 140px control column, and a
+-- dropdown sizes its menu from the control.
+local UNIT_FRAME_PULLOUT_WIDTH = 300
 
 ------------------------------------------------------------------------
 -- Frame Anchoring panels
@@ -57,271 +75,251 @@ local function SetCustomUnitFrameName(settings, key, frameName)
     return true
 end
 
+-- A frame name needs the whole 140px control column to stay readable, so Pick
+-- does not share it: the name row sits in the grid's LEFT column and its Pick
+-- button on the matching line of the RIGHT one. Both columns are List-layout,
+-- so line N on the left meets line N on the right across the 16px gutter.
+local function AddCustomFrameNameRow(nameLeft, nameRight, settings, key, label)
+    AddEditBoxRow(nameLeft, {
+        label = label,
+        indent = true,
+        value = settings[key] or "",
+        onEnterPressed = function(text)
+            if not SetCustomUnitFrameName(settings, key, text) then
+                CooldownCompanion:RefreshConfigPanel()
+            end
+        end,
+    })
+
+    -- Exactly one grammar row tall so the button's centre lands on the
+    -- editbox's: Flow insets its single row by 3px and the button is 24 tall,
+    -- so 3 + 24 + 3 fills the 30px band. noAutoHeight keeps Flow's own 27px
+    -- report from shrinking it back.
+    local pickRow = AceGUI:Create("SimpleGroup")
+    pickRow:SetFullWidth(true)
+    pickRow:SetLayout("Flow")
+    pickRow:SetHeight(ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT or 30)
+    pickRow.noAutoHeight = true
+
+    local pickBtn = AceGUI:Create("Button")
+    pickBtn:SetText("Pick")
+    pickBtn:SetAutoWidth(true)
+    pickBtn:SetCallback("OnClick", function()
+        CS.StartPickFrame(function(name)
+            if CS.configFrame then
+                CS.configFrame.frame:Show()
+            end
+            if name then
+                SetCustomUnitFrameName(settings, key, name)
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end, nil, { domain = "external" })
+    end)
+    pickRow:AddChild(pickBtn)
+
+    -- Added last so the List-layout column measures a populated row.
+    nameRight:AddChild(pickRow)
+end
+
+-- The nine anchor points, as the two dropdown rows every position section
+-- opens with: mine first, then the target's.
+local function AddFramePositionRows(posLeft, posRight, frameSettings, anchorDefault, relativeDefault, onChanged)
+    AddDropdownRow(posLeft, {
+        label = "Anchor Point",
+        list = ANCHOR_POINT_LABELS,
+        order = ANCHOR_POINTS,
+        value = frameSettings.anchorPoint or anchorDefault,
+        onChange = function(val)
+            frameSettings.anchorPoint = val
+            onChanged()
+        end,
+    })
+
+    AddDropdownRow(posLeft, {
+        label = "Relative Anchor Point",
+        list = ANCHOR_POINT_LABELS,
+        order = ANCHOR_POINTS,
+        value = frameSettings.relativePoint or relativeDefault,
+        onChange = function(val)
+            frameSettings.relativePoint = val
+            onChanged()
+        end,
+    })
+
+    AddSliderRow(posRight, {
+        label = "X Offset",
+        min = -200, max = 200, step = 0.1,
+        value = frameSettings.xOffset or 0,
+        onChange = function(val)
+            frameSettings.xOffset = val
+            CooldownCompanion:ApplyFrameAnchoring()
+        end,
+    })
+
+    AddSliderRow(posRight, {
+        label = "Y Offset",
+        min = -200, max = 200, step = 0.1,
+        value = frameSettings.yOffset or 0,
+        onChange = function(val)
+            frameSettings.yOffset = val
+            CooldownCompanion:ApplyFrameAnchoring()
+        end,
+    })
+end
+
 local function BuildFrameAnchoringPlayerPanel(container)
     local db = CooldownCompanion.db.profile
     local settings = CooldownCompanion:GetFrameAnchoringSettings()
 
-    -- Enable Frame Anchoring
-    local enableCb = AceGUI:Create("CheckBox")
-    enableCb:SetLabel("Enable Frame Anchoring")
-    enableCb:SetValue(settings.enabled)
-    enableCb:SetFullWidth(true)
-    enableCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.enabled = val
-        CooldownCompanion:EvaluateFrameAnchoring()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(enableCb)
+    -- ================================================================
+    -- Frame Anchoring (the module switch, which unit frames it drives, and
+    -- what the anchored frames inherit)
+    -- ================================================================
+    -- The module switch lives INSIDE this section rather than above it: every
+    -- row-grammar tab opens on a section header, and a free-standing control
+    -- over the first caret has nowhere to belong. Disabling the module ends
+    -- the section after one row and builds nothing below it, exactly as the
+    -- pre-row panel returned early after the same checkbox.
+    local _, anchoringCollapsed = BuildCollapsibleSection(container, "Frame Anchoring",
+        "unitframe_player_anchoring", nil, nil, ROW_SECTION)
 
-    CreateCharacterCopyButton(enableCb, "frameAnchoring", "Frame Anchoring", function()
-        CooldownCompanion:EvaluateFrameAnchoring()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    if not anchoringCollapsed then
+        -- LEFT column: the switch and which unit frames it drives. RIGHT
+        -- column: what the target frame and the anchored group take from
+        -- elsewhere. The right side is empty until the module is on.
+        local generalLeft, generalRight = BeginRowGrid(container)
+
+        local enableRow = AddCheckboxRow(generalLeft, {
+            label = "Enable Frame Anchoring",
+            value = settings.enabled,
+            onChange = function(val)
+                settings.enabled = val
+                CooldownCompanion:EvaluateFrameAnchoring()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        CreateCharacterCopyButton(enableRow, "frameAnchoring", "Frame Anchoring", function()
+            CooldownCompanion:EvaluateFrameAnchoring()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+
+        if settings.enabled then
+            -- Unit-frame addon names run past the control column, so the menu
+            -- is widened - a 140px control would otherwise open a 140px menu.
+            AddDropdownRow(generalLeft, {
+                label = "Unit Frames",
+                pulloutWidth = UNIT_FRAME_PULLOUT_WIDTH,
+                list = UNIT_FRAME_OPTIONS,
+                order = UNIT_FRAME_ORDER,
+                value = settings.unitFrameAddon or "",
+                onChange = function(val)
+                    settings.unitFrameAddon = val ~= "" and val or nil
+                    CooldownCompanion:EvaluateFrameAnchoring()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+
+            AddCheckboxRow(generalRight, {
+                label = "Mirror target from player",
+                value = settings.mirroring,
+                onChange = function(val)
+                    settings.mirroring = val
+                    CooldownCompanion:ApplyFrameAnchoring()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+
+            AddCheckboxRow(generalRight, {
+                label = "Inherit group alpha",
+                value = settings.inheritAlpha,
+                onChange = function(val)
+                    settings.inheritAlpha = val
+                    CooldownCompanion:ApplyFrameAnchoring()
+                end,
+            })
+        end
+
+        -- Custom frame names (only when "Custom" is selected). Their own grid,
+        -- so each name row's Pick button lands beside it rather than under
+        -- whatever the section grid above happened to end on.
+        if settings.enabled and settings.unitFrameAddon == "custom" then
+            local nameLeft, nameRight = BeginRowGrid(container)
+            AddCustomFrameNameRow(nameLeft, nameRight, settings, "customPlayerFrame", "Player Frame Name")
+            AddCustomFrameNameRow(nameLeft, nameRight, settings, "customTargetFrame", "Target Frame Name")
+        end
+    end
 
     if not settings.enabled then return end
 
-    -- Unit Frames dropdown
-    local ufDrop = AceGUI:Create("Dropdown")
-    ufDrop:SetLabel("Unit Frames")
-    ufDrop:SetList(UNIT_FRAME_OPTIONS, UNIT_FRAME_ORDER)
-    ufDrop:SetValue(settings.unitFrameAddon or "")
-    ufDrop:SetFullWidth(true)
-    ufDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.unitFrameAddon = val ~= "" and val or nil
-        CooldownCompanion:EvaluateFrameAnchoring()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(ufDrop)
+    -- ================================================================
+    -- Player Frame Position
+    -- ================================================================
+    local _, positionCollapsed = BuildCollapsibleSection(container, "Player Frame Position",
+        "unitframe_player_position", nil, nil, ROW_SECTION)
 
-    -- Custom frame name editboxes (only when "Custom" selected)
-    if settings.unitFrameAddon == "custom" then
-        -- Player frame row (editbox + pick button)
-        local playerRow = AceGUI:Create("SimpleGroup")
-        playerRow:SetFullWidth(true)
-        playerRow:SetLayout("Flow")
-
-        local playerEdit = AceGUI:Create("EditBox")
-        playerEdit:SetLabel("Player Frame Name")
-        playerEdit:SetText(settings.customPlayerFrame or "")
-        playerEdit:SetRelativeWidth(0.68)
-        playerEdit:SetCallback("OnEnterPressed", function(widget, event, text)
-            if not SetCustomUnitFrameName(settings, "customPlayerFrame", text) then
-                CooldownCompanion:RefreshConfigPanel()
-            end
+    if not positionCollapsed then
+        -- LEFT column: the two points that have to be read together (mine,
+        -- then the frame's). RIGHT column: the offset applied on top of them.
+        local posLeft, posRight = BeginRowGrid(container)
+        AddFramePositionRows(posLeft, posRight, settings.player, "RIGHT", "LEFT", function()
+            CooldownCompanion:ApplyFrameAnchoring()
+            CooldownCompanion:RefreshConfigPanel()
         end)
-        playerRow:AddChild(playerEdit)
-
-        local playerPickBtn = AceGUI:Create("Button")
-        playerPickBtn:SetText("Pick")
-        playerPickBtn:SetRelativeWidth(0.24)
-        playerPickBtn:SetCallback("OnClick", function()
-            CS.StartPickFrame(function(name)
-                if CS.configFrame then
-                    CS.configFrame.frame:Show()
-                end
-                if name then
-                    SetCustomUnitFrameName(settings, "customPlayerFrame", name)
-                end
-                CooldownCompanion:RefreshConfigPanel()
-            end, nil, { domain = "external" })
-        end)
-        playerRow:AddChild(playerPickBtn)
-
-        container:AddChild(playerRow)
-
-        -- Target frame row (editbox + pick button)
-        local targetRow = AceGUI:Create("SimpleGroup")
-        targetRow:SetFullWidth(true)
-        targetRow:SetLayout("Flow")
-
-        local targetEdit = AceGUI:Create("EditBox")
-        targetEdit:SetLabel("Target Frame Name")
-        targetEdit:SetText(settings.customTargetFrame or "")
-        targetEdit:SetRelativeWidth(0.68)
-        targetEdit:SetCallback("OnEnterPressed", function(widget, event, text)
-            if not SetCustomUnitFrameName(settings, "customTargetFrame", text) then
-                CooldownCompanion:RefreshConfigPanel()
-            end
-        end)
-        targetRow:AddChild(targetEdit)
-
-        local targetPickBtn = AceGUI:Create("Button")
-        targetPickBtn:SetText("Pick")
-        targetPickBtn:SetRelativeWidth(0.24)
-        targetPickBtn:SetCallback("OnClick", function()
-            CS.StartPickFrame(function(name)
-                if CS.configFrame then
-                    CS.configFrame.frame:Show()
-                end
-                if name then
-                    SetCustomUnitFrameName(settings, "customTargetFrame", name)
-                end
-                CooldownCompanion:RefreshConfigPanel()
-            end, nil, { domain = "external" })
-        end)
-        targetRow:AddChild(targetPickBtn)
-
-        container:AddChild(targetRow)
     end
-
-    -- Mirroring checkbox
-    local mirrorCb = AceGUI:Create("CheckBox")
-    mirrorCb:SetLabel("Mirror target from player")
-    mirrorCb:SetValue(settings.mirroring)
-    mirrorCb:SetFullWidth(true)
-    mirrorCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.mirroring = val
-        CooldownCompanion:ApplyFrameAnchoring()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(mirrorCb)
-
-    -- Inherit group alpha checkbox
-    local alphaCb = AceGUI:Create("CheckBox")
-    alphaCb:SetLabel("Inherit group alpha")
-    alphaCb:SetValue(settings.inheritAlpha)
-    alphaCb:SetFullWidth(true)
-    alphaCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.inheritAlpha = val
-        CooldownCompanion:ApplyFrameAnchoring()
-    end)
-    container:AddChild(alphaCb)
-
-    -- Player Frame section heading
-    local playerHeading = AceGUI:Create("Heading")
-    playerHeading:SetText("Player Frame Position")
-    ColorHeading(playerHeading)
-    playerHeading:SetFullWidth(true)
-    container:AddChild(playerHeading)
-
-    local ps = settings.player
-
-    -- Anchor Point
-    local apDrop = AceGUI:Create("Dropdown")
-    apDrop:SetLabel("Anchor Point")
-    apDrop:SetList(ANCHOR_POINT_LABELS, ANCHOR_POINTS)
-    apDrop:SetValue(ps.anchorPoint or "RIGHT")
-    apDrop:SetFullWidth(true)
-    apDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        ps.anchorPoint = val
-        CooldownCompanion:ApplyFrameAnchoring()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(apDrop)
-
-    -- Relative Anchor Point
-    local rpDrop = AceGUI:Create("Dropdown")
-    rpDrop:SetLabel("Relative Anchor Point")
-    rpDrop:SetList(ANCHOR_POINT_LABELS, ANCHOR_POINTS)
-    rpDrop:SetValue(ps.relativePoint or "LEFT")
-    rpDrop:SetFullWidth(true)
-    rpDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        ps.relativePoint = val
-        CooldownCompanion:ApplyFrameAnchoring()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(rpDrop)
-
-    -- X Offset
-    local xSlider = AceGUI:Create("Slider")
-    xSlider:SetLabel("X Offset")
-    xSlider:SetSliderValues(-200, 200, 0.1)
-    xSlider:SetValue(ps.xOffset or 0)
-    xSlider:SetFullWidth(true)
-    xSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        ps.xOffset = val
-        CooldownCompanion:ApplyFrameAnchoring()
-    end)
-    container:AddChild(xSlider)
-
-    -- Y Offset
-    local ySlider = AceGUI:Create("Slider")
-    ySlider:SetLabel("Y Offset")
-    ySlider:SetSliderValues(-200, 200, 0.1)
-    ySlider:SetValue(ps.yOffset or 0)
-    ySlider:SetFullWidth(true)
-    ySlider:SetCallback("OnValueChanged", function(widget, event, val)
-        ps.yOffset = val
-        CooldownCompanion:ApplyFrameAnchoring()
-    end)
-    container:AddChild(ySlider)
 end
 
 local function BuildFrameAnchoringTargetPanel(container)
     local settings = CooldownCompanion:GetFrameAnchoringSettings()
 
-    if not settings.enabled then
-        local disabledLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(disabledLabel)
-        disabledLabel:SetText("Enable Frame Anchoring in the Player Frame column to configure target settings.")
-        disabledLabel:SetFullWidth(true)
-        container:AddChild(disabledLabel)
-        return
+    -- The module switch, as on the Player Frame panel: either frame can be
+    -- selected on its own in the workspace, so each one has to be able to
+    -- turn frame anchoring on rather than pointing at the other.
+    local _, anchoringCollapsed = BuildCollapsibleSection(container, "Frame Anchoring",
+        "unitframe_target_anchoring", nil, nil, ROW_SECTION)
+
+    if not anchoringCollapsed then
+        -- One switch with nothing to pair it against, so the left column
+        -- carries it alone.
+        local generalLeft = BeginRowGrid(container)
+
+        AddCheckboxRow(generalLeft, {
+            label = "Enable Frame Anchoring",
+            value = settings.enabled,
+            onChange = function(val)
+                settings.enabled = val
+                CooldownCompanion:EvaluateFrameAnchoring()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
     end
 
+    if not settings.enabled then return end
+
     if settings.mirroring then
+        -- Mirrored: there is no independent position to show, so the notice
+        -- takes the place of the position section rather than sitting in it.
         local infoLabel = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(infoLabel)
         infoLabel:SetText("Target frame is mirrored from player frame settings.")
         infoLabel:SetFullWidth(true)
         container:AddChild(infoLabel)
-    else
-        -- Independent target settings
-        local targetHeading = AceGUI:Create("Heading")
-        targetHeading:SetText("Target Frame Position")
-        ColorHeading(targetHeading)
-        targetHeading:SetFullWidth(true)
-        container:AddChild(targetHeading)
+        return
+    end
 
-        local ts = settings.target
+    -- ================================================================
+    -- Target Frame Position
+    -- ================================================================
+    local _, positionCollapsed = BuildCollapsibleSection(container, "Target Frame Position",
+        "unitframe_target_position", nil, nil, ROW_SECTION)
 
-        -- Anchor Point
-        local apDrop = AceGUI:Create("Dropdown")
-        apDrop:SetLabel("Anchor Point")
-        apDrop:SetList(ANCHOR_POINT_LABELS, ANCHOR_POINTS)
-        apDrop:SetValue(ts.anchorPoint or "LEFT")
-        apDrop:SetFullWidth(true)
-        apDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            ts.anchorPoint = val
+    if not positionCollapsed then
+        -- Same split as the player panel: the two points on the left, the
+        -- offset applied on top of them on the right.
+        local posLeft, posRight = BeginRowGrid(container)
+        AddFramePositionRows(posLeft, posRight, settings.target, "LEFT", "RIGHT", function()
             CooldownCompanion:ApplyFrameAnchoring()
         end)
-        container:AddChild(apDrop)
-
-        -- Relative Anchor Point
-        local rpDrop = AceGUI:Create("Dropdown")
-        rpDrop:SetLabel("Relative Anchor Point")
-        rpDrop:SetList(ANCHOR_POINT_LABELS, ANCHOR_POINTS)
-        rpDrop:SetValue(ts.relativePoint or "RIGHT")
-        rpDrop:SetFullWidth(true)
-        rpDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            ts.relativePoint = val
-            CooldownCompanion:ApplyFrameAnchoring()
-        end)
-        container:AddChild(rpDrop)
-
-        -- X Offset
-        local xSlider = AceGUI:Create("Slider")
-        xSlider:SetLabel("X Offset")
-        xSlider:SetSliderValues(-200, 200, 0.1)
-        xSlider:SetValue(ts.xOffset or 0)
-        xSlider:SetFullWidth(true)
-        xSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            ts.xOffset = val
-            CooldownCompanion:ApplyFrameAnchoring()
-        end)
-        container:AddChild(xSlider)
-
-        -- Y Offset
-        local ySlider = AceGUI:Create("Slider")
-        ySlider:SetLabel("Y Offset")
-        ySlider:SetSliderValues(-200, 200, 0.1)
-        ySlider:SetValue(ts.yOffset or 0)
-        ySlider:SetFullWidth(true)
-        ySlider:SetCallback("OnValueChanged", function(widget, event, val)
-            ts.yOffset = val
-            CooldownCompanion:ApplyFrameAnchoring()
-        end)
-        container:AddChild(ySlider)
     end
 end
 
