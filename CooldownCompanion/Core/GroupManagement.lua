@@ -911,6 +911,7 @@ function CooldownCompanion:DeleteContainer(containerId)
         self:ClearContainerAlphaRuntimeState(containerId)
     end
     RefreshPanelAlphaDependencyTargets(self)
+    self:RequestAuraRebind("delete")
 end
 
 local function GetStandalonePanelAnchorSettings(panel)
@@ -1211,7 +1212,6 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     if style.iconFillReverse == nil then style.iconFillReverse = false end
     if style.iconFillTimerBehavior == nil then style.iconFillTimerBehavior = "drain" end
     if style.iconFillCooldownColor == nil then style.iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55} end
-    if style.iconFillAuraColor == nil then style.iconFillAuraColor = {0.2, 1.0, 0.2, 0.55} end
     if style.barAuraEffect == nil then style.barAuraEffect = "color" end
     if style.barAuraIndicatorEnabled == nil then
         style.barAuraIndicatorEnabled = (style.barAuraEffect or "none") ~= "none"
@@ -1273,6 +1273,10 @@ function CooldownCompanion:DeletePanel(containerId, groupId)
     self:DiscardDormantFrame(groupId)
     db.groups[groupId] = nil
     RefreshPanelAlphaDependencyTargets(self)
+    -- Native aura sounds are held by the display bindings, not the frame, so
+    -- unloading alone leaves a deleted entry's alert registered and firing.
+    -- The rebind pass parks every record and re-registers from current config.
+    self:RequestAuraRebind("delete")
     return true
 end
 
@@ -1519,6 +1523,7 @@ function CooldownCompanion:DeleteGroup(id)
         self:DeleteContainer(parentId)
     end
     RefreshPanelAlphaDependencyTargets(self)
+    self:RequestAuraRebind("delete")
 end
 
 function CooldownCompanion:DuplicateGroup(id)

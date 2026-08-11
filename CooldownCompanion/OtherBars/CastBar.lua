@@ -41,6 +41,7 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local RB = ST._RB
+local format = string.format
 
 local isApplied = false
 local hooksInstalled = false
@@ -1315,8 +1316,18 @@ end
 local function SetCastTimeText(remaining)
     local frame = castBarFrame
     if not frame then return end
+    -- Hidden = the cast-time text setting is off (the style pass hides the
+    -- string once); skip the per-frame format entirely.
+    local castTimeText = frame.castTimeText
+    if not castTimeText:IsShown() then return end
     if remaining < 0 then remaining = 0 end
-    frame.castTimeText:SetText(format(CAST_BAR_CAST_TIME or "%.1f", remaining))
+    -- Same dedupe as BarMode's SetBarTimeText: the rendered tenth changes
+    -- ~10x/sec while this runs every frame, so skip unchanged strings.
+    local text = format(CAST_BAR_CAST_TIME or "%.1f", remaining)
+    if text ~= frame._lastCastTimeText then
+        frame._lastCastTimeText = text
+        castTimeText:SetText(text)
+    end
 end
 
 local function ClearCastBarEffects()
@@ -1517,6 +1528,16 @@ local function BeginCast(kind)
     -- A Blizzard overlay cast bar (crafting, talent commit) owns the player
     -- cast for now; showing it here too would double it.
     if overlayReplacingPlayerBar then
+        HideCastBar()
+        return
+    end
+
+    -- Some game modes disable the player cast bar outright
+    -- (Enum.GameRule.PlayerCastBarDisabled); Blizzard's own bar hides under
+    -- the same rule, so CC must not draw a replacement there. Checked per
+    -- cast so a mid-session mode change is honored without a callback.
+    local shouldShowPlayerCastBar = GameRulesUtil and GameRulesUtil.ShouldShowPlayerCastBar
+    if shouldShowPlayerCastBar and not shouldShowPlayerCastBar() then
         HideCastBar()
         return
     end
@@ -1911,7 +1932,8 @@ ApplyCastBarUnlockPreview = function()
     frame:Show()
     SetCastFill(0.65, true)
     frame.nameText:SetText("Preview Cast")
-    frame.castTimeText:SetText(format(CAST_BAR_CAST_TIME or "%.1f", 1.5))
+    -- Through the shared setter so its last-text dedupe cache stays coherent.
+    SetCastTimeText(1.5)
 end
 
 function CooldownCompanion:StartCastBarUnlockAssist()
@@ -2015,6 +2037,14 @@ InstallHooks = function()
         -- bar and suppresses Blizzard's own via SetAndUpdateShowCastbar,
         -- which CC may never call. These registry events are the sanctioned
         -- signal for the same yield.
+        -- The registry reports transitions only, so seed the current state:
+        -- hooks install the first time the feature applies, which can happen
+        -- while an overlay cast is already on screen (enabling CC mid-craft).
+        -- IsShown is a C-level read and writes nothing, per this file's taint
+        -- rules.
+        local overlayBar = OverlayPlayerCastingBarFrame
+        overlayReplacingPlayerBar = (overlayBar ~= nil and overlayBar:IsShown()) or false
+
         EventRegistry:RegisterCallback("OverlayPlayerCastBar.OnShow", function()
             overlayReplacingPlayerBar = true
             if isApplied then

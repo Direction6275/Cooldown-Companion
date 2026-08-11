@@ -1752,3 +1752,6 @@ ST._RefreshTextEntryLayout = RefreshTextEntryLayout
 -- (button) -> nothing. Immediate re-measure + resize for rebuild paths that
 -- re-pitch the panel themselves on the same pass.
 ST._ApplyTextEntryLayout = ApplyTextEntryLayout
+-- (style, region) -> padX, padY. The config text mirror anchors its replica
+-- FontString with the same padding the live renderer uses.
+ST._GetTextStringPadding = GetTextStringPadding

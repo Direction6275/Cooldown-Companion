@@ -1586,13 +1586,21 @@ local function AcquireButtonFromPool(frame, poolKey, buttonData)
         -- (config refreshes) then converge on a stable entry<->frame mapping
         -- instead of reversing it each pass, which flip-flopped the statically
         -- composed aura-shell visuals and churned the aura slot rebinds.
+        -- Same preference ladder as the combat branch: this entry's own host
+        -- first, then a slot-free one, and only then any host. The queued
+        -- rebind parks stale records on the NEXT frame, so handing out a host
+        -- still bound to another entry would show that entry's aura for a
+        -- frame (and through the fight if combat starts in that window).
+        local free
         for i = #pool, 1, -1 do
             if pool[i].buttonData == buttonData then
                 pick = i
                 break
+            elseif not free and pool[i]._auraSlotHostToken == nil then
+                free = i
             end
         end
-        pick = pick or #pool
+        pick = pick or free or #pool
     end
     local button = table.remove(pool, pick)
     button._pooled = nil

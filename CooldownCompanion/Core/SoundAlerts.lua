@@ -831,7 +831,10 @@ function CooldownCompanion:GetAuraSoundFileForButton(buttonData, eventKey)
     if not soundName or soundName == SOUND_NONE_KEY then return nil end
     if ParseBlizzardSoundSelection(soundName) then return nil end
 
-    local soundSource = LSM:Fetch("sound", soundName)
+    -- noDefault: a missing/not-yet-registered sound must resolve to nil here,
+    -- not LSM's default file — AddAuraSound would register the default natively
+    -- and keep playing it even after the intended media loads.
+    local soundSource = LSM:Fetch("sound", soundName, true)
     if type(soundSource) == "string" and soundSource ~= "" then
         return soundSource, self:GetButtonSoundAlertChannel(buttonData)
     end

@@ -202,9 +202,12 @@ local RunAuraRebind
 -- player's combat state and reported accessible for an ally slot while that ally
 -- fought.
 --
--- Not covered by that probe: whether an encounter/M+/PvP restriction window
--- restricts while the player is out of combat. That would affect the player token
--- too, so it is a question about this function, not about ally units.
+-- The one gap that probe left — whether an encounter/M+/PvP restriction
+-- window restricts while the player is out of combat — is closed: owner
+-- validation 2026-08-11 (12.1 PTR) played restricted content on this
+-- combat-only gate with no access errors and no display breakage. OOC
+-- windows inside restricted content do not forbid the player's slots;
+-- combat lockdown stays the only gate needed.
 local function CanRunRebindNow()
     return not InCombatLockdown()
 end

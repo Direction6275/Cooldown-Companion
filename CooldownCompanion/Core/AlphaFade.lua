@@ -442,7 +442,17 @@ function CooldownCompanion:ResolveMountedAlphaStates(mounted)
         end
         -- Fallback: direct lookups can miss Soar in some runtime states.
         -- Restrict the full helpful-aura scan to dirty recomputes.
-        if not soarAura and mounted and self._mountAlphaDirty and self._isDracthyr and unitAuras.GetUnitAuras then
+        --
+        -- OUT OF COMBAT ONLY: GetUnitAuras carries RequiresUnitAuraAccess and
+        -- hard-errors when aura access is restricted (the per-spell lookups
+        -- above are RequiresNonSecretAura and return nothing instead, which is
+        -- exactly what arms this fallback). Erroring here also skips the dirty
+        -- clear below, so an unguarded scan re-errors every tick and takes the
+        -- whole alpha pass with it. Combat lockdown is a superset of the
+        -- restriction windows; the cost is that a Soaring Dracthyr classifies
+        -- as regular-mounted until combat ends (OnCombatEnd re-dirties).
+        if not soarAura and mounted and self._mountAlphaDirty and self._isDracthyr
+            and unitAuras.GetUnitAuras and not InCombatLockdown() then
             local helpfulAuras = unitAuras.GetUnitAuras("player", "HELPFUL")
             if type(helpfulAuras) == "table" then
                 for _, auraData in ipairs(helpfulAuras) do

@@ -86,6 +86,10 @@ function CooldownCompanion:OnInitialize()
             end
         elseif mediatype == "sound" then
             self:RefreshConfigPanel()
+            -- Native aura sounds are registered during the rebind pass, and a
+            -- sound that was not registered yet resolved to nil there. Rebind
+            -- so late-loading media addons' sounds actually take effect.
+            self:RequestAuraRebind("sound-media")
         end
     end)
 
@@ -485,6 +489,10 @@ end
 function CooldownCompanion:OnCombatEnd()
     local combatLockSnapshot = self:EndCombatForcedLock()
     self:QueueCooldownRefresh("combat-event")
+    -- The mounted-alpha Soar fallback scan is out-of-combat only, so any
+    -- recompute that happened during combat may have settled on the
+    -- regular-mounted branch. Re-dirty so the first OOC tick reclassifies.
+    self:InvalidateMountAlphaCache()
     if self._pendingUnsupportedLegacyHide or self._unsupportedLegacyProfile then
         self._pendingUnsupportedLegacyHide = nil
         self._pendingFullRefresh = nil

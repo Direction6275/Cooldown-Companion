@@ -896,6 +896,52 @@ local function StripRetiredSwipeEdgeKeys(profile)
     end
 end
 
+-- 12.1 icon-fill aura-color retirement: the aura leg of the icon fill was
+-- removed with the AuraContainer rework (aura visuals are Blizzard-driven),
+-- so iconFillAuraColor has no runtime reader, no picker, and no seed left.
+-- Strip every stored copy so profiles and exports stop carrying a dead
+-- color table. Deleting keeps this pass a no-op on migrated data.
+local function StripRetiredIconFillAuraColorFromStyle(style)
+    if type(style) == "table" and rawget(style, "iconFillAuraColor") ~= nil then
+        style.iconFillAuraColor = nil
+    end
+end
+
+local function StripRetiredIconFillAuraColor(profile)
+    if type(profile) ~= "table" then
+        return
+    end
+
+    StripRetiredIconFillAuraColorFromStyle(profile.globalStyle)
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            if type(group) == "table" then
+                StripRetiredIconFillAuraColorFromStyle(group.style)
+                if type(group.buttons) == "table" then
+                    for _, buttonData in ipairs(group.buttons) do
+                        if type(buttonData) == "table" then
+                            StripRetiredIconFillAuraColorFromStyle(buttonData.styleOverrides)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if type(profile.groupSettingPresets) == "table" then
+        for _, presetStore in pairs(profile.groupSettingPresets) do
+            if type(presetStore) == "table" then
+                for _, presetData in pairs(presetStore) do
+                    if type(presetData) == "table" then
+                        StripRetiredIconFillAuraColorFromStyle(presetData.style)
+                    end
+                end
+            end
+        end
+    end
+end
+
 -- 12.1 cast-bar styling retirement: the CC-owned cast bar is always
 -- CC-styled, so the old "restyle Blizzard's bar or leave it native" switch
 -- has no runtime reader. Deleting rather than flipping keeps this pass a
@@ -2573,6 +2619,7 @@ function CooldownCompanion:RunAllMigrations()
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
     BackfillAuraDurationSwipeSettings(self.db and self.db.profile, checkpointState and checkpointState.auraDurationSwipe)
     StripRetiredSwipeEdgeKeys(self.db and self.db.profile)
+    StripRetiredIconFillAuraColor(self.db and self.db.profile)
     StripRetiredCastBarStylingKey(self.db and self.db.profile)
     if StripRetiredTextSizeKeys(self.db and self.db.profile) then
         self:Print("Updated for 12.1: text panels now size themselves from their format and font. Use Padding for breathing room.")

@@ -3549,10 +3549,20 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                     if self:GroupButtonSetNeedsRebuild(groupId, group, {
                         allowConfigPreviewButtonUsability = previewEligible,
                     }) then
-                        self:DiscardDormantFrame(groupId)
+                        -- Recover the shell and repopulate it rather than
+                        -- discarding it: frames cannot be destroyed, so a
+                        -- discard leaks the whole tree (buttons, cooldowns and
+                        -- their irremovable aura slot containers) and leaves a
+                        -- second frame answering to the same global name, which
+                        -- the by-name anchor checks then match against.
+                        -- RefreshGroupFrame recovers the dormant shell into
+                        -- groupFrames and repopulates its children.
+                        self:RefreshGroupFrame(groupId)
+                        frame = self.groupFrames[groupId]
+                    else
+                        -- Recover dormant frame with buttons intact (no repopulation needed)
+                        frame = self:RecoverDormantFrame(groupId)
                     end
-                    -- Recover dormant frame with buttons intact (no repopulation needed)
-                    frame = self:RecoverDormantFrame(groupId)
                 end
                 if not frame then
                     if InCombatLockdown() then

@@ -149,7 +149,6 @@ local defaults = {
                         iconFillReverse = false,
                         iconFillTimerBehavior = "drain",
                         iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55},
-                        iconFillAuraColor = {0.2, 1.0, 0.2, 0.55},
                         showLossOfControl = true,
                         procGlowOverhang = 32,
                         procGlowColor = {1, 1, 1, 1},
@@ -323,7 +322,6 @@ local defaults = {
             iconFillReverse = false,
             iconFillTimerBehavior = "drain",
             iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55},
-            iconFillAuraColor = {0.2, 1.0, 0.2, 0.55},
             showLossOfControl = true,
             procGlowOverhang = 32,
             procGlowColor = {1, 1, 1, 1},
@@ -942,7 +940,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     iconFillTimer = {
         label = "Icon Fill Timer",
-        keys = {"iconFillEnabled", "iconFillOrientation", "iconFillReverse", "iconFillTimerBehavior", "iconFillCooldownColor", "iconFillAuraColor"},
+        keys = {"iconFillEnabled", "iconFillOrientation", "iconFillReverse", "iconFillTimerBehavior", "iconFillCooldownColor"},
         modes = {icons = true},
     },
     assistedHighlight = {
