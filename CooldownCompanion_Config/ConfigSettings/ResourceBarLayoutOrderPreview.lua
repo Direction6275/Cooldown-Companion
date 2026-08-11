@@ -2812,10 +2812,18 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         end)
         slotFrame:SetScript("OnMouseUp", function(self, button)
             if button == "RightButton" then
-                if IsBarsWorkspaceActive() and slotModel.kind == "custom"
-                    and slotModel.customBarId ~= nil then
-                    ST._SelectConfigCustomBar(slotModel.customBarId)
-                    CooldownCompanion:RefreshConfigPanel()
+                if slotModel.kind == "custom" and slotModel.customBarId ~= nil then
+                    if IsBarsWorkspaceActive() then
+                        ST._SelectConfigCustomBar(slotModel.customBarId)
+                        CooldownCompanion:RefreshConfigPanel()
+                    elseif ST._SelectUnifiedAnchorBar
+                        and ST._SelectUnifiedAnchorBar(slotModel, { toggle = false }) then
+                        -- Unified anchor preview (buttons view): right-click
+                        -- selects like a left click, minus the toggle-off -
+                        -- re-right-clicking the selected bar must keep it
+                        -- selected under its menu.
+                        CooldownCompanion:RefreshConfigPanel()
+                    end
                     if ST._OpenConfigCustomBarMenu then
                         ST._OpenConfigCustomBarMenu(slotModel.customBarId)
                     end
@@ -2857,8 +2865,14 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
                 and "Click to edit. Drag to reorder this independent bar."
                 or "Click to edit. Drag to reorder this attached bar."
             GameTooltip:AddLine(dragHelp, 0.75, 0.82, 0.92, true)
-            if IsBarsWorkspaceActive() and slotModel.kind == "custom" then
-                GameTooltip:AddLine("Ctrl+Click to multi-select. Right-click for actions.", 0.75, 0.82, 0.92, true)
+            if slotModel.kind == "custom" then
+                -- Multi-select is a workspace-only affordance; the unified
+                -- anchor preview offers the menu alone.
+                if IsBarsWorkspaceActive() then
+                    GameTooltip:AddLine("Ctrl+Click to multi-select. Right-click for actions.", 0.75, 0.82, 0.92, true)
+                else
+                    GameTooltip:AddLine("Right-click for actions.", 0.75, 0.82, 0.92, true)
+                end
             end
             local customConfig = slotModel.customEntry and slotModel.customEntry.config
             if IsAuraBlockCustomBar(customConfig) then

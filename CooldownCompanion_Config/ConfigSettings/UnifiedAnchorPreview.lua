@@ -18,7 +18,17 @@ local CS = ST._configState
 -- Order preview afterwards.
 local UNIFIED_MEASURE_SIZE = 4000
 
-local function ShouldUseUnifiedAnchorPreview(groupId)
+-- The attached-bars badge: the same pin the group overview stamps on the
+-- anchor panel's tile, worn here as a quick toggle in the preview's
+-- top-right corner (the inside corner opposite the command center).
+local BADGE_ATLAS = "Waypoint-MapPin-Tracked"
+-- The pin atlas carries transparent margins of its own, so the frame hugs
+-- the corner tighter than the spellbook badge's numbers to LOOK the same
+-- distance in.
+local BADGE_SIZE = 20
+local BADGE_INSET = 1
+
+local function IsUnifiedAnchorPreviewEligible(groupId)
     if not groupId then
         return false
     end
@@ -49,6 +59,94 @@ local function ShouldUseUnifiedAnchorPreview(groupId)
     end
     return ST._HasAttachedBarLanesToRender
         and ST._HasAttachedBarLanesToRender() == true
+end
+
+-- The unified composition renders only while the quick toggle has not
+-- hidden it. Exported under this name, so the toggle also clears a
+-- lane-selected bar's settings through the shipped validation
+-- (GetValidatedUnifiedBarKind): with the lanes off screen there is no
+-- lane to have clicked.
+local function ShouldUseUnifiedAnchorPreview(groupId)
+    return IsUnifiedAnchorPreviewEligible(groupId)
+        and not CS.unifiedAnchorBarsHidden
+end
+
+------------------------------------------------------------------------
+-- The quick toggle: hide the attached bar lanes from this preview
+------------------------------------------------------------------------
+
+-- The full-colour look: the shown state at rest, and every hovered state.
+local function ApplyBadgeHover(badge)
+    badge.icon:SetDesaturated(false)
+    badge.icon:SetVertexColor(1, 1, 1, 1)
+end
+
+local function ApplyBadgeTint(badge)
+    if CS.unifiedAnchorBarsHidden then
+        badge.icon:SetDesaturated(true)
+        badge.icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
+    else
+        ApplyBadgeHover(badge)
+    end
+end
+
+local function ShowBadgeTooltip(badge)
+    GameTooltip:SetOwner(badge, "ANCHOR_LEFT")
+    if CS.unifiedAnchorBarsHidden then
+        GameTooltip:SetText("Show attached bars")
+    else
+        GameTooltip:SetText("Hide attached bars")
+    end
+    GameTooltip:Show()
+end
+
+-- Session state, view only: the flag lives in CS and the live bars never
+-- move. Shown whenever the panel would wear the lanes, hidden or not, so
+-- the way back is always on screen.
+local function UpdateAttachedBarsBadge(host, eligible)
+    local badge = host._cdcAttachedBarsBadge
+    if not eligible then
+        if badge then badge:Hide() end
+        return
+    end
+    if not badge then
+        badge = CreateFrame("Button", nil, host)
+        badge:SetSize(BADGE_SIZE, BADGE_SIZE)
+        badge:SetPoint("TOPRIGHT", host, "TOPRIGHT", -BADGE_INSET, -BADGE_INSET)
+        badge.icon = badge:CreateTexture(nil, "ARTWORK")
+        badge.icon:SetAllPoints()
+        badge.icon:SetAtlas(BADGE_ATLAS, false)
+        badge:SetScript("OnEnter", function(self)
+            ApplyBadgeHover(self)
+            ShowBadgeTooltip(self)
+        end)
+        badge:SetScript("OnLeave", function(self)
+            ApplyBadgeTint(self)
+            GameTooltip:Hide()
+        end)
+        badge:SetScript("OnClick", function(self)
+            CS.unifiedAnchorBarsHidden = not CS.unifiedAnchorBarsHidden or nil
+            -- Hiding the lanes takes a lane-selected bar's settings with
+            -- them; only the full refresh revalidates that selection.
+            if CS.unifiedBarKind then
+                CooldownCompanion:RefreshConfigPanel()
+            elseif ST._RefreshButtonsPreviewMirror then
+                ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
+            end
+            -- The rebuild retinted the badge under the cursor; keep the
+            -- hover look and the tooltip current until the mouse leaves.
+            if GameTooltip:GetOwner() == self then
+                ApplyBadgeHover(self)
+                ShowBadgeTooltip(self)
+            end
+        end)
+        host._cdcAttachedBarsBadge = badge
+    end
+    -- Above the mirror's slots for the same reason the command center
+    -- band is: overhanging slot art must not draw over a hit target.
+    badge:SetFrameLevel(host:GetFrameLevel() + 20)
+    ApplyBadgeTint(badge)
+    badge:Show()
 end
 
 -- The mirror content carries the natural (unscaled) panel size; shrink the
@@ -147,7 +245,11 @@ end
 -- stops the conditional ticker and disarms override targeting, so it only
 -- runs when the surface actually changes hands).
 local function BuildAnchorAwarePanelPreview(host, groupId)
-    if ShouldUseUnifiedAnchorPreview(groupId) then
+    -- Resolved once: the eligibility chain ends in a full lane-slot collect,
+    -- so the badge and the render branch share one answer per build.
+    local eligible = IsUnifiedAnchorPreviewEligible(groupId)
+    UpdateAttachedBarsBadge(host, eligible)
+    if eligible and not CS.unifiedAnchorBarsHidden then
         local plain = host._cdcPanelPreview
         if plain and plain.root and plain.root:IsShown() then
             ST._ReleaseButtonPanelPreview(host)
@@ -174,6 +276,9 @@ end
 -- Full release for view switches and config close: both the plain mirror
 -- and the unified composition (inner mirror + lanes) go quiet.
 local function ReleaseAnchorAwarePanelPreview(host)
+    if host._cdcAttachedBarsBadge then
+        host._cdcAttachedBarsBadge:Hide()
+    end
     if ST._ReleaseButtonPanelPreview then
         ST._ReleaseButtonPanelPreview(host)
         if host._cdcUnifiedMirrorHost then

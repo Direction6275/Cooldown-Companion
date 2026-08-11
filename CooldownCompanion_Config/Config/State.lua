@@ -2717,15 +2717,20 @@ end
 
 -- Unified anchor preview (buttons view): clicking an attached bar in the
 -- pinned preview selects it for editing below the divider. Toggle
--- semantics; a bar selection replaces any entry selection, and the
--- entry/panel selectors clear unifiedBarKind in return.
-local function SelectUnifiedAnchorBar(slot)
+-- semantics by default; `opts.toggle = false` selects without the
+-- toggle-off (the right-click menu must keep an already-selected bar
+-- selected under its menu). A bar selection replaces any entry
+-- selection, and the entry/panel selectors clear unifiedBarKind in
+-- return.
+local function SelectUnifiedAnchorBar(slot, opts)
     if type(slot) ~= "table" then
         return false
     end
+    local allowToggle = not (opts and opts.toggle == false)
 
     if slot.kind == "resource" and slot.powerType ~= nil then
-        if CS.unifiedBarKind == "resource"
+        if allowToggle
+            and CS.unifiedBarKind == "resource"
             and tostring(CS.selectedResourcePowerType) == tostring(slot.powerType) then
             CS.unifiedBarKind = nil
             ClearConfigResourceSelection()
@@ -2737,7 +2742,8 @@ local function SelectUnifiedAnchorBar(slot)
         end
         CS.unifiedBarKind = "resource"
     elseif slot.kind == "custom" and slot.customBarId ~= nil then
-        if CS.unifiedBarKind == "custom"
+        if allowToggle
+            and CS.unifiedBarKind == "custom"
             and tostring(CS.selectedCustomBarId) == tostring(slot.customBarId) then
             CS.unifiedBarKind = nil
             ClearConfigCustomBarSelection()
@@ -2746,7 +2752,7 @@ local function SelectUnifiedAnchorBar(slot)
         SelectConfigCustomBar(slot.customBarId)
         CS.unifiedBarKind = "custom"
     elseif slot.kind == "cast" then
-        if CS.unifiedBarKind == "cast" then
+        if allowToggle and CS.unifiedBarKind == "cast" then
             CS.unifiedBarKind = nil
             return true
         end
