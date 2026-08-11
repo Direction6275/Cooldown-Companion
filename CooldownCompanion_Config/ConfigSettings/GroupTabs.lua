@@ -4299,6 +4299,7 @@ local function BuildAppearanceTab(container)
             style.iconTintColor = {1, 1, 1, 1}
             style.iconCooldownTintColor = {1, 0, 0.102, 1}
             style.iconUnusableTintColor = {0.4, 0.4, 0.4, 1}
+            style.iconAuraTintColor = {0, 0.925, 1, 1}
             style.backgroundColor = {0, 0, 0, 0.5}
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()

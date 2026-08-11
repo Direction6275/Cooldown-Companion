@@ -403,7 +403,14 @@ end
 -- exposure rules live in Core/Aura.lua.
 local function ApplyBarAuraShellVisuals(button, buttonData)
     local alpha = CooldownCompanion:GetAuraShellAlpha(button, buttonData)
-    button.bg:SetAlpha(alpha)
+    -- While per-stack blocks are up, UpdateBarStackBlocks owns bg and the
+    -- whole-bar ring (both suppressed to 0) and is the only thing that
+    -- restores them; the preview and per-tick paths that reach here never
+    -- re-run it, so writing live alpha would resurrect the slab and the
+    -- single ring wrapping every stack until the next OOC restyle.
+    if not button._stackBlocksActive then
+        button.bg:SetAlpha(alpha)
+    end
     if button.iconBg then button.iconBg:SetAlpha(alpha) end
     -- The icon must be hidden by shown-state, not alpha: the per-tick tint
     -- pipeline's 4-arg SetVertexColor overwrites the texture's alpha through
@@ -411,7 +418,7 @@ local function ApplyBarAuraShellVisuals(button, buttonData)
     -- Dimmed shells keep it shown; the tint pipeline applies the stamp.
     button._auraShellIconAlpha = alpha
     button.icon:SetShown(alpha > 0)
-    if button.borderTextures then
+    if button.borderTextures and not button._stackBlocksActive then
         for _, tex in ipairs(button.borderTextures) do
             tex:SetAlpha(alpha)
         end

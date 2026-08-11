@@ -2081,6 +2081,10 @@ local function UpdatePreviewCommandCenter(host)
     local panelId, group, buttonIndex = ResolveContext()
     if not panelId then
         HideBar(host)
+        -- Same bookkeeping the empty-band teardown does: with no surface up
+        -- there is nothing to carry forward, and leaving this set lets the
+        -- next pass migrate a preview the user has already left.
+        CS.previewCommandCenterWasRunning = false
         return
     end
 

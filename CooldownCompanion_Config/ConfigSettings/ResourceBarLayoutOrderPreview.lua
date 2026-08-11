@@ -1297,10 +1297,26 @@ local function SortSlotsForSide(slots, side, reversed, targetFirst)
         if rankResult ~= nil then
             return rankResult
         end
-        if reversed then
-            return a.getOrder() > b.getOrder()
+        local aOrder = a.getOrder()
+        local bOrder = b.getOrder()
+        if aOrder ~= bOrder then
+            if reversed then
+                return aOrder > bOrder
+            end
+            return aOrder < bOrder
         end
-        return a.getOrder() < b.getOrder()
+        -- Saved orders collide (a duplicated bar takes source order + 1), so a
+        -- tie has to break on the same key CompareBarOrder uses in
+        -- OtherBars/ResourceBar.lua or the canvas can draw a tied pair the
+        -- other way round from the stack it is supposed to mirror. A reversed
+        -- lane runs the ascending live sequence backwards, so the tie-break
+        -- follows the primary comparison's direction.
+        local aKey = tostring(a.powerType or a.customBarId or "")
+        local bKey = tostring(b.powerType or b.customBarId or "")
+        if reversed then
+            return aKey > bKey
+        end
+        return aKey < bKey
     end)
     return out
 end

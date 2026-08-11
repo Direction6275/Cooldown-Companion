@@ -522,6 +522,10 @@ local function ClearRotationAssistantMissingState(button, buttonData, style)
 
     if button.icon then
         button.icon:SetDesaturated(false)
+        -- Same memo hazard as the tint below: the direct write has to be
+        -- mirrored into _desaturated, or a returning entry that resolves to
+        -- desaturated again is skipped as a no-op and stays saturated.
+        button._desaturated = false
         button.icon:SetVertexColor(1, 1, 1, 1)
         -- Writing the texture directly leaves UpdateIconTint's memo holding
         -- the pre-reset tint, so when the entry comes back and resolves to

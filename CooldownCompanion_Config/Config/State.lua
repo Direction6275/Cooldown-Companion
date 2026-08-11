@@ -701,7 +701,13 @@ local function ResetOtherClassLibraryState(opts)
     CS.otherClassLibraryClassKey = nil
     local hideChanged = ClearOtherClassHideActive(opts)
     if wasActive then
-        RestoreOtherClassLibrarySnapshot()
+        if opts and opts.discardSelectionSnapshot then
+            -- The snapshot belongs to the selection we are throwing away, so
+            -- writing it back would resurrect ids the caller just cleared.
+            CS.otherClassLibrarySnapshot = nil
+        else
+            RestoreOtherClassLibrarySnapshot()
+        end
         if RefreshAlphaDriverForConfigSelection then
             RefreshAlphaDriverForConfigSelection()
         end
@@ -2893,7 +2899,7 @@ local function ResetConfigSelection(full)
         wipe(CS.selectedGroups)
         wipe(CS.selectedCustomBars)
         CS.addingToPanelId = nil
-        ResetOtherClassLibraryState()
+        ResetOtherClassLibraryState({ discardSelectionSnapshot = true })
     end
     RefreshAlphaDriverForConfigSelection()
 end

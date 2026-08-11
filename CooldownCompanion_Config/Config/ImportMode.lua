@@ -620,6 +620,12 @@ local function RenderModeRadioRow(scroll, review)
                 widget:SetValue(true)
                 return
             end
+            -- The confirm holds this same review table, so a mode switch would
+            -- rewrite what an open popup applies out from under its own wording.
+            if pendingConfirm then
+                pendingConfirm = nil
+                StaticPopup_Hide(IMPORT_MODE_CONFIRM_POPUP)
+            end
             review.mode = optionMode
             RenderImportModeReview()
             UpdateImportModePill()
@@ -733,6 +739,12 @@ local function ResetImportModePaste()
     local mode = CS.importMode
     local col3 = CS.configFrame and CS.configFrame.col3
     if not (mode and col3) then return end
+    -- Clearing the paste box programmatically never reaches ReviewImportModeText,
+    -- so retire the confirm here: its captured review is about to leave the screen.
+    if pendingConfirm then
+        pendingConfirm = nil
+        StaticPopup_Hide(IMPORT_MODE_CONFIRM_POPUP)
+    end
     mode.review = nil
     mode.statusText = nil
     mode.skipResources = false

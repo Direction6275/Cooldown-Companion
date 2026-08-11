@@ -4729,6 +4729,18 @@ function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost, options
             slot.icon:SetDesaturated(not status.usable)
         elseif slot.icon then
             slot.icon:SetDesaturated(false)
+            -- No conditional pass runs on a read-only mirror, so nothing else
+            -- would write the configured icon tint (same resolution the
+            -- focused mirror uses, base tint only - saved settings, no state).
+            local tintStyle = effectiveStyle or group.style or {}
+            if not effectiveStyle and CooldownCompanion.GetEffectiveStyle then
+                tintStyle = CooldownCompanion:GetEffectiveStyle(tintStyle, buttonData) or tintStyle
+            end
+            local baseTint = tintStyle.iconTintColor
+            slot.icon:SetVertexColor(baseTint and baseTint[1] or 1,
+                baseTint and baseTint[2] or 1,
+                baseTint and baseTint[3] or 1,
+                baseTint and baseTint[4] or 1)
         end
         if readOnly and isTextMode then
             ApplyTextSlotConditionalPreview(slot, buttonData, group, panelId, index, true)

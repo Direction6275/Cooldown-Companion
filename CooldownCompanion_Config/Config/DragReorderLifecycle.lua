@@ -815,7 +815,13 @@ local function StartDragTracking()
                             break
                         end
                     end
-                elseif CS.dragState.widget then
+                elseif CS.dragState.widget and CS.dragState.kind ~= "layout-slot" then
+                    -- A layout drag owns its own alpha: onActivate above already
+                    -- took the dragged slot to 0 (the cursor ghost stands in for
+                    -- it), so dimming here would record that 0 as the pre-drag
+                    -- alpha and restore it over onCancel's reset, leaving the
+                    -- slot invisible. The other layout surface sidesteps this by
+                    -- passing no widget at all; this one needs it for the ghost.
                     DimDraggedWidget(CS.dragState, CS.dragState.widget)
                 end
                 -- Check if we need phantom sections for cross-section drops

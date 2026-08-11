@@ -2191,10 +2191,10 @@ local function RefreshColumn1(preserveDrag)
 
                 if CS.selectedPanels[panelId] then
                     panelEntry:SetColor(0.4, 0.7, 1.0)
-                elseif panel.enabled == false or isInactive then
-                    panelEntry:SetColor(0.5, 0.5, 0.5)
                 elseif CS.selectedGroup == panelId then
                     panelEntry:SetColor(0, 1, 0)
+                elseif panel.enabled == false or isInactive then
+                    panelEntry:SetColor(0.5, 0.5, 0.5)
                 end
 
                 groupUnit:AddChild(panelEntry)
