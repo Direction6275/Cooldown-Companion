@@ -473,6 +473,11 @@ local function BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
             value = CooldownCompanion:GetCustomBarSoundAlertSelection(cab, eventKey),
             onChange = function(val)
                 CooldownCompanion:SetCustomBarSoundAlertEvent(cab, eventKey, val)
+                if isAuraEvent then
+                    -- The native registration lives on the aura display
+                    -- binding, so the edit only lands on the next rebind.
+                    CooldownCompanion:RequestAuraRebind("config")
+                end
                 CooldownCompanion:RefreshConfigPanel()
             end,
             onPreview = function(value)

@@ -977,6 +977,14 @@ end
 -- SHOW / HIDE TALENT PICKER
 ------------------------------------------------------------------------
 local function ShowTalentPicker(configFrame, initialConditions, group)
+    -- Stored command-center previews must not outlive the workspace view:
+    -- with the picker up the mirror is no longer the preview surface, so a
+    -- live-frame repopulate would re-apply them to world buttons (the one
+    -- path that reaches the live stand-ins). Clear them like every other
+    -- selection/tab change does.
+    if CooldownCompanion.ClearAllConfigPreviews then
+        CooldownCompanion:ClearAllConfigPreviews()
+    end
     CS.talentPickerMode = true
     pickerGroup = group
     pickerSelectedSpecID = nil

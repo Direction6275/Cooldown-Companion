@@ -1121,7 +1121,7 @@ local function BuildRailPanelDropTarget(rowMeta, rowIndex, cursorY, sourcePanelI
             rowIndex = rowIndex,
             anchorFrame = frame,
             anchorAbove = false,
-            springContainerId = rowMeta.isExpanded and nil or rowMeta.id,
+            springContainerId = (not rowMeta.isExpanded) and rowMeta.id or nil,
         }
     end
 

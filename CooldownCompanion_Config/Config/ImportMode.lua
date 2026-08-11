@@ -348,6 +348,13 @@ end
 local function ReviewImportModeText(text)
     local mode = CS.importMode
     if not mode then return end
+    -- A reclassify invalidates any confirm popup still open from the previous
+    -- paste: its captured review no longer matches what the screen describes,
+    -- and Restore must never apply a backup the user is no longer looking at.
+    if pendingConfirm then
+        pendingConfirm = nil
+        StaticPopup_Hide(IMPORT_MODE_CONFIRM_POPUP)
+    end
     mode.review = nil
     mode.statusText = nil
     mode.skipResources = false

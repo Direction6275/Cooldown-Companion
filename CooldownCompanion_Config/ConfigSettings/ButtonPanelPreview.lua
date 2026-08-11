@@ -1913,6 +1913,56 @@ end
 
 local function StyleIconEntry(slot, buttonData, group)
     StyleMirroredIconFrame(slot, { buttonData = buttonData }, group)
+
+    -- Keybind label: live icon buttons pin this above every layer so it stays
+    -- readable whatever is drawn over the icon (IconMode.lua). Same font keys,
+    -- anchor contract, and resolver as live icons - GetDisplayedKeybindText,
+    -- which honors customKeybindText (the text mirror stays on GetKeybindText
+    -- by design; see Keybinds.lua). Static lookups only, never live frame
+    -- state.
+    local style = group and group.style or {}
+    if CooldownCompanion.GetEffectiveStyle then
+        style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+    end
+    local text
+    if style.showKeybindText and CooldownCompanion.GetDisplayedKeybindText then
+        -- Item entries resolve their bind by the EQUIPPED/effective item id,
+        -- and equipment-slot entries carry no id of their own, so pass the
+        -- same override live passes. ResolveEffectiveItem is pure C_Item /
+        -- ItemLocation; requestLoad = false keeps the preview from kicking off
+        -- item-data loads.
+        local overrideId
+        if CooldownCompanion.IsEntryItemLike and CooldownCompanion.IsEntryItemLike(buttonData)
+            and CooldownCompanion.ResolveEffectiveItem then
+            local effectiveItem = CooldownCompanion.ResolveEffectiveItem(buttonData, false)
+            overrideId = effectiveItem and effectiveItem.itemID
+        end
+        text = CooldownCompanion:GetDisplayedKeybindText(buttonData, overrideId, nil)
+        if text == "" then text = nil end
+    end
+    if text then
+        local host = slot.keybindHost
+        if not host then
+            host = CreateFrame("Frame", nil, slot)
+            host:SetAllPoints(slot)
+            slot.keybindHost = host
+            slot.keybindText = host:CreateFontString(nil, "OVERLAY")
+        end
+        -- Live pins the keybind above everything, including the loss-of-control
+        -- cooldown (Helpers.lua: locCooldown at top+1, pinned text at top+2).
+        -- Mirror that order here: aura swipe +0, text overlay +1, LoC +2, so
+        -- the keybind takes +3 or the LoC swipe draws over the label.
+        host:SetFrameLevel(slot.cooldown:GetFrameLevel() + 3)
+        local kb = slot.keybindText
+        CooldownCompanion.ApplyFontStyle(kb, style, "keybind", 10)
+        kb:ClearAllPoints()
+        kb:SetPoint(style.keybindAnchor or "TOPRIGHT",
+            style.keybindXOffset or -2, style.keybindYOffset or -2)
+        kb:SetText(text)
+        kb:Show()
+    elseif slot.keybindText then
+        slot.keybindText:Hide()
+    end
 end
 
 ------------------------------------------------------------------------
@@ -3050,12 +3100,17 @@ local function StyleTextEntry(slot, buttonData, group)
     ts:SetTextColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4] or 1)
     ts:SetJustifyH(style.textAlignment or "LEFT")
     ST.ApplyFontShadowForOutline(ts, fontOutline, style.textShadow == true)
-    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(slot, borderSize, borderRenderMode)
-    local inset = ((borderSize > 0
-        or ST.IsEffectiveCrispBorderRenderMode(borderRenderMode, nil, borderSize)) and borderLayoutSize or 0) + 2
+    -- Same padding contract as the live renderer: the slot box already
+    -- reserves textPadding (GetTextEntryMetrics), so the string must be
+    -- inset by it too or the mirror pins text to the border while the
+    -- live button pads it.
+    local padX, padY = 2, 1
+    if ST._GetTextStringPadding then
+        padX, padY = ST._GetTextStringPadding(style, slot)
+    end
     ts:ClearAllPoints()
-    ts:SetPoint("TOPLEFT", inset, -1)
-    ts:SetPoint("BOTTOMRIGHT", -inset, 1)
+    ts:SetPoint("TOPLEFT", padX, -padY)
+    ts:SetPoint("BOTTOMRIGHT", -padX, padY)
     -- Text content is rendered by ApplyTextSlotConditionalPreview (the
     -- entry's real token format, in its base or previewed state).
     slot.style = style
@@ -3607,6 +3662,7 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly, layo
         ResetSlotConditionalVisuals(slot)
         slot.icon:SetVertexColor(1, 1, 1, 1)
         ClearSlotEffectPreviews(slot)
+        if slot.keybindText then slot.keybindText:Hide() end
 
         if readOnly then
             slot.icon:SetDesaturated(false)

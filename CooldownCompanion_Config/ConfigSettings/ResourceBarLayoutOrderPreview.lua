@@ -298,6 +298,11 @@ local function ResetPreviewState(preview)
     preview.layoutDrag = nil
     preview.animated = preview.animated or {}
     wipe(preview.animated)
+    -- Fresh static layout: discard any tweens the canceled drag queued so they
+    -- can't replay against the rebuilt slot positions once the animation
+    -- driver re-arms (the drop path cancels the drag mid-rebuild, so its
+    -- settle tweens target pre-rebuild geometry and parents).
+    wipe(preview.tweens)
     preview.root:Show()
     preview.root:SetScript("OnUpdate", nil)
 end
@@ -328,6 +333,16 @@ local function AcquireContainer(preview, parent)
         frame:SetClipsChildren(false)
         pool[index] = frame
     end
+    -- Containers shift roles between builds (a placeholder pass slides the
+    -- lane indices), so acquire must strip everything a previous role set:
+    -- the icon-panel click shield's scripts + mouse capture, and any visible
+    -- backdrop. Consumers that want either re-apply after acquiring.
+    frame:EnableMouse(false)
+    frame:SetScript("OnEnter", nil)
+    frame:SetScript("OnLeave", nil)
+    frame:SetScript("OnMouseDown", nil)
+    frame:SetScript("OnMouseUp", nil)
+    frame:SetBackdrop(nil)
     frame:SetParent(parent)
     frame:Show()
     return frame

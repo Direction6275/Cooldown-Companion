@@ -415,6 +415,34 @@ local function BuildCurrentCompactProfileDefaults()
         -- and always serialize explicitly when set.
         compactDefaults.globalStyle.cooldownSwipeEdgeEnabled = nil
         compactDefaults.globalStyle.auraDurationSwipeEdgeEnabled = nil
+        -- Preserve the shipped compact5 baseline exactly: live shipped this
+        -- default as false, and compact5 exports from live omit the key when
+        -- it matched. 12.1 flipped the runtime default to true, so the
+        -- baseline must stay pinned at false or those imports silently flip
+        -- to reversed aura swipes. The new default serializes explicitly.
+        compactDefaults.globalStyle.auraDurationSwipeReverse = false
+        -- Same rule for the glow families the LibCustomGlow retirement
+        -- re-defaulted. An export made on live omitted these when they matched
+        -- live's defaults, so the baseline has to keep answering with the
+        -- live-era values; the glow migrations then map them exactly as they
+        -- map an in-place-upgraded profile (pixel -> dashes, speed 50 -> the
+        -- new default, and so on). Without the pins those imports land on the
+        -- 12.1 defaults instead and render a different glow than the same
+        -- profile upgraded in place.
+        compactDefaults.globalStyle.auraGlowStyle = "pixel"
+        compactDefaults.globalStyle.auraGlowSize = 8
+        compactDefaults.globalStyle.auraGlowSpeed = 50
+        compactDefaults.globalStyle.pandemicGlowSize = 5
+        compactDefaults.globalStyle.pandemicGlowThickness = 4
+        compactDefaults.globalStyle.pandemicGlowSpeed = 50
+        compactDefaults.globalStyle.pandemicGlowLines = 8
+        -- Retired keys, pinned as migration INPUTS only: the pixel -> dashes
+        -- pass reads them for the dash count/thickness and deletes them on its
+        -- way out, so they never persist into live data. Without them a filled
+        -- baseline would migrate to the new dash defaults instead of the
+        -- exporter's line/thickness values.
+        compactDefaults.globalStyle.auraGlowLines = 8
+        compactDefaults.globalStyle.auraGlowThickness = 4
     end
     return compactDefaults
 end
