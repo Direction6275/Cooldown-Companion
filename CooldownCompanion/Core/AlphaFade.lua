@@ -15,7 +15,6 @@ local GetShapeshiftFormInfo = GetShapeshiftFormInfo
 local pairs = pairs
 local ipairs = ipairs
 local type = type
-local issecretvalue = issecretvalue
 
 local SOAR_SPELL_ID = 430747
 
@@ -440,35 +439,21 @@ function CooldownCompanion:ResolveMountedAlphaStates(mounted)
         if not soarAura and unitAuras.GetUnitAuraBySpellID then
             soarAura = unitAuras.GetUnitAuraBySpellID("player", SOAR_SPELL_ID)
         end
-        -- Fallback: direct lookups can miss Soar in some runtime states.
-        -- Restrict the full helpful-aura scan to dirty recomputes.
+        -- The two lookups above are the whole supported path. A full
+        -- GetUnitAuras scan used to sit here as a fallback; it was removed
+        -- because it could never help. It matched the same SOAR_SPELL_ID over
+        -- a narrower set (player HELPFUL only), and the one documented state
+        -- where the per-spell reads return nothing for a present aura is the
+        -- aura being secret -- in which case the scan's own entries are secret
+        -- too and its guard skips every one. It also carried
+        -- RequiresUnitAuraAccess, which hard-errors without aura access, and
+        -- the restriction windows are not limited to player combat (Encounter,
+        -- ChallengeMode, PvPMatch and Map are separate restriction types, and
+        -- no supported predicate exists to test access before calling).
         --
-        -- OUT OF COMBAT ONLY: GetUnitAuras carries RequiresUnitAuraAccess and
-        -- hard-errors when aura access is restricted (the per-spell lookups
-        -- above are RequiresNonSecretAura and return nothing instead, which is
-        -- exactly what arms this fallback). Erroring here also skips the dirty
-        -- clear below, so an unguarded scan re-errors every tick and takes the
-        -- whole alpha pass with it. Combat lockdown is a superset of the
-        -- restriction windows; the cost is that a Soaring Dracthyr classifies
-        -- as regular-mounted until combat ends (OnCombatEnd re-dirties).
-        if not soarAura and mounted and self._mountAlphaDirty and self._isDracthyr
-            and unitAuras.GetUnitAuras and not InCombatLockdown() then
-            local helpfulAuras = unitAuras.GetUnitAuras("player", "HELPFUL")
-            if type(helpfulAuras) == "table" then
-                for _, auraData in ipairs(helpfulAuras) do
-                    local auraSpellID = auraData and auraData.spellId
-                    if issecretvalue then
-                        if not issecretvalue(auraSpellID) and auraSpellID == SOAR_SPELL_ID then
-                            soarAura = auraData
-                            break
-                        end
-                    elseif auraSpellID == SOAR_SPELL_ID then
-                        soarAura = auraData
-                        break
-                    end
-                end
-            end
-        end
+        -- Consequence: while auras are restricted, a Soaring Dracthyr reads as
+        -- regular-mounted until the next aura change. OnCombatEnd re-dirties
+        -- the cache so combat exits reclassify immediately.
     end
     local soarActive = soarAura ~= nil
     if not mounted and not soarActive then

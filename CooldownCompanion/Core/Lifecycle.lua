@@ -489,9 +489,9 @@ end
 function CooldownCompanion:OnCombatEnd()
     local combatLockSnapshot = self:EndCombatForcedLock()
     self:QueueCooldownRefresh("combat-event")
-    -- The mounted-alpha Soar fallback scan is out-of-combat only, so any
-    -- recompute that happened during combat may have settled on the
-    -- regular-mounted branch. Re-dirty so the first OOC tick reclassifies.
+    -- Soar reads return nothing while auras are restricted, so a recompute
+    -- during combat can have settled on the regular-mounted branch. Re-dirty
+    -- so the first out-of-combat tick reclassifies.
     self:InvalidateMountAlphaCache()
     if self._pendingUnsupportedLegacyHide or self._unsupportedLegacyProfile then
         self._pendingUnsupportedLegacyHide = nil

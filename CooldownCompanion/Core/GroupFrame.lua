@@ -1574,6 +1574,15 @@ local function AcquireButtonFromPool(frame, poolKey, buttonData)
             end
         end
         pick = pick or free
+        -- Refusing here sends the caller to the deterministic constructors,
+        -- which name the new frame from the entry index -- the same name the
+        -- refused pooled frame still carries. That is harmless and is not a
+        -- duplicate-name error: CreateFrame reassigns the global and no CC
+        -- surface resolves button frames by name (anchor parsing is $-anchored
+        -- to panel/container names, keybinds resolve action-bar globals, and
+        -- Masque keys by frame object). Showing another entry's aura on this
+        -- button would be the worse trade. Reviewers have flagged this four
+        -- times; the pool re-converges on the next out-of-combat rebind.
         if not pick then return nil end
     else
         -- No aura-slot lock needed out of combat: the rebind pass parks every
