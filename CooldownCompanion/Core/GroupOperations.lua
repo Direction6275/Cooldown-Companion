@@ -3684,6 +3684,11 @@ function CooldownCompanion:UnloadGroup(groupId)
     self.groupFrames[groupId] = nil
     -- D3: frame left the live set — refresh the identity index (coalesced).
     self:RequestSpellButtonIndexRebuild("unload")
+    -- Native aura sounds are Blizzard-side registrations keyed on unit+spell,
+    -- not on this frame, so parking the panel does not stop them: a hidden
+    -- panel keeps alerting until a pass parks its records. Same reason the
+    -- delete paths rebind.
+    self:RequestAuraRebind("unload")
     if self.RefreshCursorAnchorTicker then
         self:RefreshCursorAnchorTicker()
     end
@@ -3743,6 +3748,11 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
     -- D3: frame re-entered the live set without repopulation — refresh the
     -- identity index (coalesced).
     self:RequestSpellButtonIndexRebuild("recover")
+    -- The counterpart to the unload rebind: recovery skips PopulateGroupButtons
+    -- (that is the point of the dormant path), so nothing else re-binds these
+    -- buttons. Any pass that ran while the panel was parked left its records
+    -- parked — container hidden, sounds released — and they stay that way.
+    self:RequestAuraRebind("recover")
 
     return frame
 end
