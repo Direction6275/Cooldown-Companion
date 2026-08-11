@@ -12,6 +12,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.0",
         "1.22.1",
         "1.22",
         "1.21",
@@ -29,6 +30,110 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.0"] = {
+            markdown = [[
+## Cooldown Companion 2.0
+
+Cooldown Companion 2.0 is the 12.1 release, and it is the largest update the addon has ever shipped. The settings interface has been redesigned from scratch, aura tracking has been rebuilt on a new foundation, and layout editing is completely new. One goal drove virtually every interface decision: make the addon more approachable and intuitive. Your displays themselves should still look and behave the way you remember. Existing profiles migrate automatically, but export a backup before updating.
+
+## The 12.1 Rework
+
+### The aura rebuild
+
+- **Why everything aura changed:** 12.1 tightened addon security, and auras were the main target. Blizzard's reasoning: just knowing an aura appeared is enough for an addon to detect a combat event and automate a decision around it. So while you are in combat, in an encounter, in Mythic+, or in a PvP match, the game no longer answers addon questions about auras at all. No addon can ask what auras a unit has, how much time is left on one, or how many stacks it is at. Instead, Blizzard provides new display building blocks: the addon builds and styles the display and declares what it should track, and the game itself fills in the icon, timer, and stacks and decides when it appears. The addon can never read back what its own display is showing; even asking whether one of its own aura icons is currently visible returns a value it is not allowed to look at.
+- **Aura tracking, rebuilt from the ground up:** Cooldown Companion's aura tracking is rebuilt on those building blocks, so every aura display keeps working and always agrees with the game. The trade shows up all through this changelog as one rule: showing aura state works, reacting to it does not. That is why features like glowing while an aura is missing, hiding while it is active, stack-reactive effects, and live tooltip values are gone; Changed & Removed below covers each one. Tracking is also narrower by design: an entry tracks your own buffs on yourself (or your group, see below) or your own debuffs on your target, and never a mix of buffs and debuffs. The rebuild also upgraded what these systems can do:
+  - **Aura glow styles:** Active auras can now glow with Solid, Pulse, Color Shift, Dashes, Ants, Proc, or Overlay styles, each with its own controls.
+  - **Pandemic visuals:** Pandemic display now uses the game's own pandemic timing, with one Pandemic section in the config covering the glow, the bar marker, and the duration-text marker.
+  - **Smarter aura search:** Autocomplete and typed names now resolve to the aura a spell actually applies, so entries like Rake find the debuff instead of the ability.
+  - **Aura sounds:** Sound alerts now play through the game's native aura sound system and can fire on aura applied, stack gained, and removed.
+  - **No more Cooldown Manager dependency:** Aura tracking no longer relies on Blizzard's Cooldown Manager in any way. You can disable the Cooldown Manager entirely in Blizzard's settings and keep full addon functionality.
+  - **Snappier aura displays:** The old system needed layers of addon work to keep aura displays feeling responsive; the game now drives them directly. Target-based auras no longer have any update delay, so switching targets shows the right auras instantly.
+### The interface redesign
+
+- **A brand-new settings window:** The configuration interface has been redesigned end to end. A searchable Navigator tree on the left replaces the old column layout, and everything is edited in one wide workspace with a Live Preview at the top and settings laid out in clean two-column rows below.
+  - **Edit from the preview:** Click an entry in the Live Preview to select it, drag entries to reorder them, and watch every setting apply to the preview as you change it. Previews never touch your real displays.
+  - **Visibility, in one place:** Load Conditions mixed two different ideas under a name that suggested neither. It is now a Visibility tab split into two plain questions, who can use this and where to hide it, with the panel's Alpha settings moved in alongside.
+  - **One home for bars:** Resource Bars, Cast Bar, and Unit Frames now live in a single Bars & Frames workspace with the same preview-first editing.
+  - **Panels are created from the group overview:** Selecting a group shows a preview of all its panels, and new panels are created right there from panel-type cards.
+  - **One Import and Export:** All of the scattered import and export buttons are consolidated into single Import and Export modes that handle profiles, groups, panels, Custom Bars, and Resources.
+- **Unlocking and arranging, redone:** Unlocking your layout now opens a full arrange mode with drag snapping, edge resizing, one-pixel nudging, and live coordinates. Escape or the Cancel button reverts every move you have not yet saved (locking a frame saves its position), the minimap button toggles arrange mode with a right-click, and the config shows clear locked/unlocked state at all times.
+
+## New Features
+
+- **Track a buff on your group:** Buff entries have a new Track on Group Members option for spells like Lifebloom that usually sit on someone else. It tracks your own casts across your party or raid, with the same 12.1 limits as everything else: it cannot tell you who has the buff, and if several people have it at once the displays overlap.
+- **Entry pings:** Turn on Allow Pings for a panel and its entries answer the ping keybind exactly like Blizzard's Cooldown Manager, letting you ping your cooldowns to your group. Spell entries ping; aura entries stay quiet, matching what Blizzard pings in the Cooldown Manager.
+- **Spellbook window:** A compact spellbook side window lists your known spells so you can drag them straight into panels while configuring.
+- **Icon Zoom:** Icons, bar icons, the cast bar icon, and trigger icon displays now offer a WeakAuras-style zoom that crops the icon's borders.
+- **Duration Format:** One Duration Format setting now controls how both cooldown countdowns and aura duration text are written, per panel.
+- **Custom Icon Strata:** The icon layering editor now exposes eight real, reorderable layers. Put Cooldown Swipe above Aura Display to keep a spell's own cooldown visible while its aura runs.
+- **Text panel redesign:** Text panels now size themselves automatically from their font and content, with a Padding control, and formats are edited in a live in-config editor instead of a popup.
+- **Resource bar aura borders and stack lane:** Resource aura tracking can now draw a whole-bar border and an independent stack lane, each with its own toggle and color.
+- **Maelstrom Weapon stack shapes:** Maelstrom Weapon's stack display now offers three shapes: the classic overlay, one segment per stack, or a single continuous bar.
+- **Group multi-select actions:** Groups now support batch actions from the group list, including enable, disable, duplicate, and delete across many panels at once.
+- **Tooltip controls:** Tooltips now have position options and a hide-in-combat setting.
+- **Per-panel auto-anchoring control:** Individual panels can now be included in or excluded from resource bar, cast bar, and unit frame auto-anchoring.
+
+## Polish | QoL
+
+- **Preview command center:** All config previews (glows, conditional visuals, health effects, casts, and more) are grouped into one picker with a play/stop button on the Live Preview.
+- **Browse Other Classes, full workspace:** Browsing another class now opens the same full editing workspace as your own class instead of a limited read-only view.
+- **Segmented stack bars restyled:** Each stack block now draws its own border ring in place of the bar's single outer ring and background, so stacks read as separate blocks.
+- **Panel orientation sticks per mode:** Icon, bar, and text panels each remember their own horizontal or vertical arrangement, and switching display modes no longer resets a panel to vertical. Existing panels keep their current layout on update.
+- **Adding entries keeps single-line panels single-line:** When a panel shows one full row or column, adding entries now widens the line instead of starting a surprise second row. Deliberately wrapped panels are untouched.
+- **UI skin friendly:** Addon skins such as ElvUI can now style the config window's checkboxes and sliders, and a skinned settings pane keeps its own colors.
+- **The config window remembers itself:** Window size and position persist between sessions, the preview/settings split is draggable, and double-clicking the resize grip resets it.
+- **Clickable breadcrumbs:** Every ancestor in the Editing breadcrumb is clickable for fast navigation back up.
+- **Color pickers save on close:** Color changes apply live while you drag and save when the picker closes, so previews and undo behave predictably.
+- **Slider input polish:** Typed slider values snap to the slider's step, and mouse-wheel edits apply to the live display immediately.
+- **Clearer preview tooltips:** Preview entries spell out their status (hidden, unavailable, overridden) instead of leaving you guessing.
+
+## Changed & Removed
+
+12.1 aura restrictions (Blizzard-imposed; no addon can work around these):
+
+- **Aura tracking is player-and-target only:** An aura entry tracks your own buffs on yourself or your own debuffs on your current target. Tracking auras on arbitrary units, or auras cast by other players, is no longer possible for any addon. This also means debuffs that enemies put on you cannot be tracked; the game hides which debuffs you have from every addon. Existing entries are converted automatically based on whether the aura is a buff or a debuff. Custom bars follow the same rule: the manual tracked-unit picker is gone, and any saved unit choice switches to automatic on update.
+- **Buffs or debuffs, never both:** An entry tracks buffs or debuffs, never a mixed list. Mixed lists from old profiles keep whichever side had more auras.
+- **Live aura tooltip values are gone:** Tooltips on active tracked auras can no longer show live values such as Ignite's damage or Blazing Barrier's absorb. The game no longer shares that live aura data with addons; entries show the normal spell tooltip instead.
+- **Trigger panels no longer take aura conditions:** Aura conditions on trigger panels have been retired. Saved aura conditions stay in your profile but never count as met, so a trigger relying on one will not fire until you reconfigure it.
+- **Hide While Aura Active is gone:** 12.1 gives addons no allowed way to hide an entry only while its aura is running, so Hide While Aura Active and its Except in Pandemic variant are removed everywhere, including custom bars. The settings are cleared on update and those entries stay visible.
+- **Aura glows only show while the aura is active:** Glowing while an aura is missing and combat-only glows cannot run on the protected aura display, so the Show When Missing and Show Only In Combat glow options are removed on update. The same qualifiers on Texture panel aura effects are removed for the same reason; those effects keep their chosen style, color, and speed.
+- **The Icon Fill Timer no longer fills for auras:** The fill has to know how much time is left in order to animate, and the game no longer shares that, so the Icon Fill Timer now runs for cooldowns only. Its Aura Fill Color setting is removed and cleared on update. The aura's own duration text and swipe still show the time remaining.
+- **Stack effects that react to the count are removed:** Stack counts are protected values in combat, so the features that read them are gone: the Overlay stack display (existing bars convert to Segmented), the Max Stack Color and threshold colors, the Max Stack Indicator glow, pulse, and color shift, the Stack Text Format choice, and the manual Max Stacks value. This applies to panel entries and custom bars alike; the maximum now comes from the game's spell data.
+- **The {?pandemic} text tag is retired:** Pandemic state can no longer be read by addons, so custom text formats cannot branch on it. Saved formats that used the tag are rewritten automatically; the duration-text pandemic marker replaces it.
+- **Aura sounds are sound files only:** The addon can no longer hear aura changes, so it cannot play its own sounds anymore; each sound is registered with the game up front and the game plays it, and the game only accepts actual sound files. Aura sound choices that used a built-in Blizzard sound or text-to-speech are cleared on update and need re-picking from file-based sounds.
+- **Hidden aura entries reserve their slot:** In Compact Mode, an aura entry that is hidden still holds its layout position. The addon is never told whether an aura is active, so it cannot know a gap opened up, let alone close it mid-combat. Every other hide rule reflows normally; only aura entries hold their space.
+- **Dracthyr Soar counts as a regular mount while auras are restricted:** Soar is a buff, and the addon cannot see buffs in combat, encounters, Mythic+, or PvP. In those situations the Regular Mount alpha rule applies instead of the Skyriding one. It corrects itself as soon as auras are readable again.
+- **Hide-when-inactive aura bars live in buckets:** Aura custom bars that hide while inactive now collapse through the game's own aura containers, grouped into a player bucket and a target bucket on each side of the resource bar. Bars order freely inside their bucket, a swap control flips which bucket comes first, and an empty bucket can leave a small gap the addon cannot close, because aura state is secret. New aura entries now default to hiding while inactive.
+
+Other changes on update:
+
+- **Folders are retired:** The new Navigator tree took over the organizing job folders used to do, so the folder level above groups is gone. On update, the groups inside each folder move to the top level of the list in the folder's place, keeping their order, and folder-level visibility rules (spec, hero talent, class, character, load conditions) are applied directly to those groups so nothing loads differently. No group is created for the folder itself, so that layer of organization is lost.
+- **Adding an entry asks Spell or Aura:** The addon no longer guesses what you meant. New entries always state whether they track the spell's cooldown or the aura it applies, the autocomplete labels each result, and suggestions only offer what can actually work under the 12.1 rules. The rule of thumb the suggestions follow: if it can appear as a buff on you, or it is yours, you can track it. Existing entries keep their converted behavior.
+- **Cooldown swipe edge is off by default:** The 12.1 client draws the swipe edge detached from the swipe, and Blizzard's own cooldowns ship with it off. All existing panels flip to edge-off once on update; you can re-enable it per display in the swipe advanced settings.
+- **Glows use a new engine:** The LibCustomGlow library is retired; glows are now drawn by Cooldown Companion's own engine. Autocast Shine survives as an addon-rendered style, and the separate Action Button Glow choice merges into the standard Glow. Existing glow settings convert to the closest new style; minor visual differences are possible.
+- **Resource aura overlays are borders now:** The old Resource Aura Overlay recolored the bar while the tracked aura ran. That is no longer possible: under the new aura system the addon cannot tell when the aura is active, so it cannot change the bar's own fill color. The only aura-driven look left was covering the whole bar with a translucent wash, which hurt readability, so the overlay now draws an Aura Border around the whole bar instead, in Solid Border or Pixel Glow styles. Your existing overlay settings and color carry over automatically and keep working in combat. The stack lane's maximum now comes from the game's spell data rather than a manual setting.
+- **The cast bar is now Cooldown Companion's own:** Blizzard's player cast bar can no longer anchor into the new aura displays, so the addon now draws its own cast bar and hides Blizzard's while the feature is on. It still steps aside for Blizzard's special cast bars, such as crafting and talent commits, and it now always sits at the end of its side of the bar stack instead of at a saved position in the order. The old Enable Cast Bar Styling switch is retired; styling lives behind the Appearance tab's enable toggle.
+- **The Hide Cooldown Manager toggle is removed:** Cooldown Companion no longer offers hiding Blizzard's Cooldown Manager. If you hid it through the addon, it will be visible again; use Blizzard's own Edit Mode and settings to manage it. Since aura tracking no longer depends on the Cooldown Manager, disabling it there is completely safe.
+- **Custom Icon Strata orders reset:** The layer set changed from six entries to eight real ones, so saved custom layer orders no longer apply and the Custom Icon Strata checkbox turns off. The old per-entry Keep Spell Cooldown Swipe option is also cleared on update; to get the effect back, enable Custom Icon Strata and place the Cooldown Swipe layer above the Aura Display layer.
+- **Text panels size themselves:** The manual Width and Height sliders are gone. Custom sizes from old profiles are recalculated automatically.
+- **Bar aura effects are border styles now:** The bar Active Aura effect is limited to border styles. Old fill-style choices convert to the closest border style (Pixel becomes Dashes, glow-type fills become Pulse).
+- **Dim Instead Of Hide:** The old Use Baseline Alpha Fallback options under the Hide While rules are now called Dim Instead Of Hide (Dim While Aura Inactive for aura entries) and dim at one consistent strength instead of the group's baseline alpha.
+- **Middle-click locking is retired:** Middle-click was an undiscoverable second way to lock that behaved differently depending on where you clicked. Use arrange mode, the minimap button, or `/cdc lock`, which now toggles.
+- **Slash commands trimmed:** `/cdc bars`, `/cdc frames`, and `/cdc buttons` are retired; the redesigned config makes them unnecessary.
+- **Entry reordering is drag-only:** The old reorder menu actions are gone; drag entries in the Live Preview instead.
+- **Item fallbacks come from the add box only:** You can no longer set an item fallback by dropping an item from your bags. Use the add box and autocomplete instead.
+- **Eclipse is no longer special:** Nothing in the game's data connects the Eclipse ability to its Solar and Lunar buffs, and the built-in exception that papered over that gap aged badly. Druid Eclipse now presents like everything else: one spell entry, plus its two buffs as ordinary aura entries.
+
+## Bug Fixes
+
+- **Rotation Assistant icons show the right state again:** When the recommended action briefly disappeared and came back, the icon could return bright and untinted even though the ability was unusable, because the reset left the addon believing the icon was already dimmed. Dimming and tint now clear properly, so a returning recommendation always draws its real state.
+
+## Profile Compatibility
+
+- **Automatic migration:** Existing profiles migrate automatically on first login, including the folder flattening and every aura conversion above. The addon prints one-time chat notices listing settings it had to adjust or drop; a few documented changes, like the swipe edge default and the Custom Icon Strata reset, happen without a notice. Exporting a profile backup before updating is strongly recommended.
+- **1.15 checkpoint unchanged:** Import strings and backups must still have passed through the 1.15 compatibility checkpoint. Strings older than that continue to show recovery guidance.
+]],
+        },
         ["1.22.1"] = {
             markdown = [[
 ## New Features
