@@ -1418,6 +1418,18 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     local bgColor = style.backgroundColor or {0, 0, 0, 0.5}
     button.bg:SetColorTexture(unpack(bgColor))
 
+    -- The countdown FontString is reparented outside the Cooldown frame, so
+    -- SetCooldown(0, 0) can leave its last rendered value behind. A restyle
+    -- re-enables and recolors the region below; clear it while the button has
+    -- no live/preview timer rather than resurrecting that stale ready text.
+    if button._cdTextRegion
+        and button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
+        and button._chargeCooldownVisualActive ~= true
+        and button._conditionalVisualPreview == nil
+    then
+        button._cdTextRegion:SetText("")
+    end
+
     -- Countdown number visibility is controlled per-tick via SetHideCountdownNumbers
     button.cooldown:SetHideCountdownNumbers(false)
     ApplyDurationFormatToCooldown(button.cooldown, style)
