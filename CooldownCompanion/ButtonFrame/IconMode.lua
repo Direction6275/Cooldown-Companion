@@ -709,7 +709,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
     button.cooldown:SetAllPoints(button.icon)
     ApplyDefaultCooldownSwipeStyle(button, style)
-    button.cooldown:SetHideCountdownNumbers(false) -- Always allow; visibility controlled via text alpha
+    button.cooldown:SetHideCountdownNumbers(false) -- Initial state; the per-tick update owns visibility.
     ApplyDurationFormatToCooldown(button.cooldown, style)
     -- Recursively disable mouse on cooldown and all its children (CooldownFrameTemplate has children)
     -- Always fully non-interactive: disable both clicks and motion
@@ -1199,7 +1199,17 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             -- Passive aura entry: no cooldown text (cooldown frame hidden)
             button._cdTextRegion:SetTextColor(0, 0, 0, 0)
         else
-            showText = style.showCooldownText
+            -- The countdown FontString is hosted outside the Cooldown frame,
+            -- so hiding/clearing the widget does not hide an old value that
+            -- its animation wrote. Only expose the region while a timer owns
+            -- it; ready icons must keep it hidden even after a config restyle.
+            local timerActive = (button._cooldownState == COOLDOWN_STATE_COOLDOWN
+                    and button._cooldownDeferred ~= true)
+                or button._chargeCooldownVisualActive == true
+                or button._conditionalPreviewDomain == "cooldown"
+                or button._conditionalPreviewDomain == "cooldown_text"
+                or (isGCDOnly and style.showGCDSwipe == true)
+            showText = style.showCooldownText and timerActive
             if showText and button._hideCooldownChargesActive then
                 showText = false
             end
@@ -1221,6 +1231,9 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         -- because WoW's CooldownFrame animation resets text color each tick)
         local wantHide = not showText
         if button._cdTextHidden ~= wantHide then
+            if wantHide then
+                button._cdTextRegion:SetText("")
+            end
             button._cdTextHidden = wantHide
             button.cooldown:SetHideCountdownNumbers(wantHide)
         end
@@ -1430,8 +1443,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button._cdTextRegion:SetText("")
     end
 
-    -- Countdown number visibility is controlled per-tick via SetHideCountdownNumbers
-    button.cooldown:SetHideCountdownNumbers(false)
+    -- Countdown number visibility is controlled per-tick by
+    -- UpdateIconModeVisuals. Do not unhide it during a restyle: the detached
+    -- FontString may still contain the widget's previous value until that pass.
     ApplyDurationFormatToCooldown(button.cooldown, style)
     ApplyDefaultCooldownSwipeStyle(button, style)
 
