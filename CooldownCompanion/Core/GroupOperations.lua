@@ -3960,8 +3960,11 @@ end
 
 function CooldownCompanion:LockAllFrames()
     -- Lock every container, including containers hidden for this character.
-    for containerId in pairs(self.db.profile.groupContainers or {}) do
-        self:SetContainerLocked(containerId, true)
+    -- Write the bulk state directly: SetContainerLocked refreshes that
+    -- container's panels, while the single RefreshAllGroups below reconciles
+    -- the complete runtime once after every lock value is settled.
+    for _, container in pairs(self.db.profile.groupContainers or {}) do
+        container.locked = true
     end
     -- Also lock any individually-unlocked panels
     for groupId, group in pairs(self.db.profile.groups) do
