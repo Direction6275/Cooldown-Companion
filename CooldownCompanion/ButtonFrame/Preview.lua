@@ -327,10 +327,23 @@ local function BuildConditionalVisualPreviewState(previewKind, sampleState)
 end
 
 local function ClearConditionalVisualPreviewDerivedFields(button)
-    -- Aura and loss-of-control previews write CC-side visuals that nothing
-    -- else rewrites per tick (the live aura visuals are Blizzard-driven on
-    -- the slot kit; live LoC skips the widget while the preview flag is up),
-    -- so ending the preview must clear them explicitly.
+    -- Preview-owned visuals can outlive their flags when normal runtime state
+    -- has nothing new to paint, so ending the preview clears them explicitly.
+    local previewKind = button._conditionalPreviewKind
+    if previewKind == "cooldown"
+        or previewKind == "cooldown_text"
+        or previewKind == "cooldown_swipe"
+    then
+        -- The countdown FontString is reparented outside the Cooldown frame.
+        -- Clear both halves of the preview before the live refresh below so a
+        -- ready icon cannot retain the preview's last number indefinitely.
+        if button.cooldown then
+            button.cooldown:SetCooldown(0, 0)
+        end
+        if button._cdTextRegion then
+            button._cdTextRegion:SetText("")
+        end
+    end
     if button._conditionalPreviewKind == "aura_stack_text" and button.auraStackCount then
         button.auraStackCount:SetText("")
     end
