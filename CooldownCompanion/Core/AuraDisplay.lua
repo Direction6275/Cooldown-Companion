@@ -96,7 +96,7 @@ local PARK_SENTINEL = {
 local ALLY_CONTRACT = { polarity = "HELPFUL", filter = "HELPFUL|PLAYER", ownOnly = true }
 local SLOT_CONTRACT = {
     player = { polarity = "HELPFUL", filter = "HELPFUL", ownOnly = false },
-    target = { polarity = "HARMFUL", filter = "HARMFUL", ownOnly = true },
+    target = { polarity = "HARMFUL", filter = "HARMFUL|PLAYER", ownOnly = true },
 }
 
 -- The contract depends on the ENTRY'S SCOPE as well as the unit, not on the unit
