@@ -54,11 +54,11 @@ local blizzardSuppressed = false
 -- touches the world.
 local isUnlockAssistActive = false
 local isCanvasPreviewActive = false
--- Blizzard systems (Professions crafting, the talent frame) can replace the
--- player cast bar with their own overlay bar (OverlayPlayerCastingBarMixin);
--- while one is up CC yields exactly like Blizzard's own bar does, or the
--- player would see the cast twice.
+-- Blizzard's talent UI replaces the player cast bar with its ApplyingTalents
+-- overlay. CC yields only to that overlay; other contextual overlays stay
+-- hidden while CC owns the player cast bar.
 local overlayReplacingPlayerBar = false
+local nonTalentOverlayHiddenByCC = false
 local independentMoverFrame = nil
 local InstallHooks
 local UpdateIndependentCastBarDragState
@@ -79,6 +79,13 @@ end
 
 local function GetCastBarSettings()
     return CooldownCompanion:GetCastBarSettings()
+end
+
+local function ShouldOwnBlizzardCastBar()
+    local settings = GetCastBarSettings()
+    return not CooldownCompanion._unsupportedLegacyProfile
+        and type(settings) == "table"
+        and settings.enabled == true
 end
 
 function CooldownCompanion:SetIndependentCastBarLocked(locked)
@@ -909,12 +916,13 @@ local BLIZZARD_CAST_UNIT_EVENTS = {
 }
 
 local function SuppressBlizzardCastBar()
-    if blizzardSuppressed then return end
     local cb = PlayerCastingBarFrame
     if not cb then return end
     blizzardSuppressed = true
 
-    -- Method on the CONTAINER, not on the cast bar (we do NOT write
+    -- Re-apply every part of suppression even when CC already owns the bar:
+    -- Edit Mode and overlay teardown can show/re-manage it later. This method
+    -- is on the CONTAINER, not on the cast bar (we do NOT write
     -- cb.ignoreFramePositionManager — that taints OnEvent).
     if cb.layoutParent then
         cb.layoutParent:RemoveManagedFrame(cb)
@@ -980,6 +988,26 @@ local function RestoreBlizzardCastBar()
     -- Blizzard's frame shows itself again on the next cast START; its cached
     -- casting state is refreshed by that event and by PLAYER_ENTERING_WORLD.
     hide(cb)
+end
+
+local function RestoreBlizzardOverlayCastBar()
+    if not nonTalentOverlayHiddenByCC then return end
+    nonTalentOverlayHiddenByCC = false
+
+    local overlayBar = OverlayPlayerCastingBarFrame
+    if not overlayBar or overlayBar:IsShown() then return end
+
+    -- CC only hides this frame after Blizzard shows it for an active cast.
+    -- If that cast is still running when the feature is disabled, reveal the
+    -- existing overlay with the preserved C method. Future casts need no
+    -- intervention: the persistent OnShow hook stops hiding them once CC no
+    -- longer owns the player cast bar.
+    local castName = UnitCastingInfo("player")
+    local channelName = UnitChannelInfo("player")
+    if not castName and not channelName then return end
+
+    local show = overlayBar.ShowBase or overlayBar.Show
+    show(overlayBar)
 end
 
 ------------------------------------------------------------------------
@@ -1717,10 +1745,9 @@ local function DisableCastEventFrame()
 end
 
 ------------------------------------------------------------------------
--- Revert: hide CC's bar and give Blizzard's back
+-- Teardown: suspend CC's drawable bar separately from releasing ownership
 ------------------------------------------------------------------------
-function CooldownCompanion:RevertCastBar()
-    if not isApplied then return end
+local function TearDownCastBarDisplay()
     isApplied = false
 
     HideIndependentCastBarMover()
@@ -1730,19 +1757,35 @@ function CooldownCompanion:RevertCastBar()
     -- End the unlock stand-in if active: it paints THIS bar, so it goes when
     -- the bar does.
     --
-    -- The config-canvas preview deliberately does NOT go with it. This
-    -- teardown runs for transient live conditions -- no anchor group yet, an
-    -- anchor frame that is momentarily hidden, an anchor that is not
-    -- icon-like -- and the canvas keeps rendering from saved settings through
-    -- all of them, the same reason RevertResourceBars leaves canvas state
-    -- alone. Clearing here killed a running preview because of live-frame
-    -- availability it has nothing to do with. Ownership sits with
+    -- The config-canvas preview deliberately does NOT go with live teardown.
+    -- It keeps rendering from saved settings through transient frame
+    -- availability, the same reason RevertResourceBars leaves canvas state
+    -- alone. Ownership sits with
     -- ClearAllConfigPreviews and the command center's stranded-preview stop,
     -- which ask whether the cast bar is configured at all rather than whether
     -- it happens to be drawable this instant.
     isUnlockAssistActive = false
+end
+
+local function SuspendCastBar()
+    TearDownCastBarDisplay()
+    SuppressBlizzardCastBar()
+end
+
+function CooldownCompanion:RevertCastBar()
+    -- A configured module owns Blizzard suppression even when CC's attached
+    -- bar is temporarily undrawable. Only a true feature/profile teardown
+    -- releases Blizzard's player bar.
+    if ShouldOwnBlizzardCastBar() then
+        SuspendCastBar()
+        return
+    end
+    if not isApplied and not blizzardSuppressed and not nonTalentOverlayHiddenByCC then return end
+
+    TearDownCastBarDisplay()
 
     RestoreBlizzardCastBar()
+    RestoreBlizzardOverlayCastBar()
 end
 
 ------------------------------------------------------------------------
@@ -1766,6 +1809,7 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
         return
     end
     InstallHooks()
+    SuppressBlizzardCastBar()
 
     local isIndependent = settings.independentAnchorEnabled == true
 
@@ -1787,25 +1831,25 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
     else
         local groupId = GetEffectiveAnchorGroupId(settings)
         if not groupId then
-            self:RevertCastBar()
+            SuspendCastBar()
             return
         end
 
         local group = self.db.profile.groups[groupId]
         if not group then
-            self:RevertCastBar()
+            SuspendCastBar()
             return
         end
 
         local groupFrame = CooldownCompanion.groupFrames[groupId]
         if not groupFrame or not groupFrame:IsShown() then
-            self:RevertCastBar()
+            SuspendCastBar()
             return
         end
 
         -- Only anchor to icon-like groups
         if not CooldownCompanion:IsIconLikeDisplayMode(group.displayMode) then
-            self:RevertCastBar()
+            SuspendCastBar()
             return
         end
 
@@ -1814,14 +1858,14 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
 
     local width = ResolveCastBarWidth(settings)
     if not width then
-        self:RevertCastBar()
+        SuspendCastBar()
         return
     end
     local height = GetCastBarHeight(settings)
 
     EnsureCastBarFrame()
     if not ApplyCastBarPosition(settings, width, height) then
-        self:RevertCastBar()
+        SuspendCastBar()
         return
     end
     ApplyCastBarLayout(settings, width, height)
@@ -2032,32 +2076,88 @@ InstallHooks = function()
             RepositionFromHook(groupId)
         end)
 
-        -- Yield to Blizzard's overlay cast bars (Professions crafting, the
-        -- talent commit): OverlayPlayerCastingBarMixin replaces the player
-        -- bar and suppresses Blizzard's own via SetAndUpdateShowCastbar,
-        -- which CC may never call. These registry events are the sanctioned
-        -- signal for the same yield.
+        -- Yield only to Blizzard's ApplyingTalents overlay. Other contextual
+        -- overlays use the same frame, but CC remains the cast-bar owner and
+        -- hides them. OverlayPlayerCastingBarMixin also re-enables the regular
+        -- player bar after OnHide, so hook the end of that handoff and
+        -- reassert suppression after Blizzard's write.
         -- The registry reports transitions only, so seed the current state:
         -- hooks install the first time the feature applies, which can happen
-        -- while an overlay cast is already on screen (enabling CC mid-craft).
-        -- IsShown is a C-level read and writes nothing, per this file's taint
-        -- rules.
+        -- while an overlay cast is already on screen. IsShown is a C-level
+        -- read and overrideBarType is read-only from CC's side.
+        local function IsTalentOverlayShown()
+            local overlayBar = OverlayPlayerCastingBarFrame
+            local applyingTalentsType = CastingBarType and CastingBarType.ApplyingTalents
+            return overlayBar ~= nil
+                and overlayBar:IsShown()
+                and applyingTalentsType ~= nil
+                and overlayBar.overrideBarType == applyingTalentsType
+        end
+
+        local function HideNonTalentOverlay()
+            local overlayBar = OverlayPlayerCastingBarFrame
+            if not overlayBar or not overlayBar:IsShown() then return end
+            nonTalentOverlayHiddenByCC = true
+            local hide = overlayBar.HideBase or overlayBar.Hide
+            hide(overlayBar)
+        end
+
+        local overlayEndHookInstalled = false
+        local function InstallOverlayEndHook()
+            if overlayEndHookInstalled then return end
+            local overlayBar = OverlayPlayerCastingBarFrame
+            if not overlayBar or type(overlayBar.EndReplacingPlayerBar) ~= "function" then return end
+            hooksecurefunc(overlayBar, "EndReplacingPlayerBar", function()
+                nonTalentOverlayHiddenByCC = false
+                if ShouldOwnBlizzardCastBar() then
+                    SuppressBlizzardCastBar()
+                end
+            end)
+            overlayEndHookInstalled = true
+        end
+
         local overlayBar = OverlayPlayerCastingBarFrame
-        overlayReplacingPlayerBar = (overlayBar ~= nil and overlayBar:IsShown()) or false
+        overlayReplacingPlayerBar = IsTalentOverlayShown()
+        if overlayBar and overlayBar:IsShown() and not overlayReplacingPlayerBar then
+            HideNonTalentOverlay()
+        end
+        InstallOverlayEndHook()
 
         EventRegistry:RegisterCallback("OverlayPlayerCastBar.OnShow", function()
-            overlayReplacingPlayerBar = true
-            if isApplied then
+            InstallOverlayEndHook()
+            overlayReplacingPlayerBar = IsTalentOverlayShown()
+            if overlayReplacingPlayerBar and isApplied then
                 HideCastBar()
+            elseif not overlayReplacingPlayerBar and ShouldOwnBlizzardCastBar() then
+                HideNonTalentOverlay()
+                SuppressBlizzardCastBar()
             end
         end, CooldownCompanion)
         EventRegistry:RegisterCallback("OverlayPlayerCastBar.OnHide", function()
+            local shouldResume = overlayReplacingPlayerBar
             overlayReplacingPlayerBar = false
-            -- Pick an in-flight cast back up exactly like the login resync.
-            if isApplied and not isUnlockAssistActive then
-                HandleCastEvent(castEventFrame, "PLAYER_ENTERING_WORLD")
+            -- Pick an in-flight cast back up after Blizzard finishes the
+            -- current overlay transition.
+            if shouldResume then
+                C_Timer.After(0, function()
+                    if isApplied and not isUnlockAssistActive then
+                        HandleCastEvent(castEventFrame, "PLAYER_ENTERING_WORLD")
+                    end
+                end)
             end
         end, CooldownCompanion)
+
+        -- Edit Mode explicitly shows PlayerCastingBarFrame regardless of its
+        -- current cast state. Its registry events fire after Blizzard's own
+        -- enter/exit updates, making them the narrow point to reassert CC's
+        -- existing C-level suppression.
+        local function ReassertBlizzardCastBarSuppression()
+            if ShouldOwnBlizzardCastBar() then
+                SuppressBlizzardCastBar()
+            end
+        end
+        EventRegistry:RegisterCallback("EditMode.Enter", ReassertBlizzardCastBarSuppression, CooldownCompanion)
+        EventRegistry:RegisterCallback("EditMode.Exit", ReassertBlizzardCastBarSuppression, CooldownCompanion)
     end
 end
 
