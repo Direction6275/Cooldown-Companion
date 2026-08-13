@@ -90,6 +90,12 @@ local AUTOCOMPLETE_TYPE_LABEL_WIDTH = 68
 local AUTOCOMPLETE_TYPE_RIGHT_PAD = 6
 local AUTOCOMPLETE_TYPE_GAP = 4
 
+-- Player-owned auras applied indirectly by a passive can lack their own
+-- spellbook or Cooldown Manager suggestion row.
+local INDIRECT_AURA_AUTOCOMPLETE = {
+    { ownerSpellID = 1246769, auraSpellID = 1221389 }, -- Shatter -> Freezing
+}
+
 local ADD_BOX_TRACKABILITY_TOOLTIP = {
     "What Can Be Tracked",
     {"Spells: anything your class can cast or learn. Tracks cooldowns and charges.", 1, 1, 1, true},
@@ -782,6 +788,7 @@ local function BuildAutocompleteCache()
     end
 
     local seenAuras = {}
+    local auraRows = {}
     for _, cat in ipairs({ Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar }) do
         local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
         if ids then
@@ -818,8 +825,33 @@ local function BuildAutocompleteCache()
                             isItem = false,
                             forceAura = true,
                         })
+                        auraRows[id] = true
                     end
                 end
+            end
+        end
+    end
+
+    for _, suggestion in ipairs(INDIRECT_AURA_AUTOCOMPLETE) do
+        local auraID = suggestion.auraSpellID
+        if not auraRows[auraID]
+            and CanPlayerEverCastSpellCached(suggestion.ownerSpellID)
+            and not IsNeverTrackableSpell(auraID) then
+            local spellInfo = C_Spell.GetSpellInfo(auraID)
+            if spellInfo and spellInfo.name then
+                table.insert(cache, {
+                    id = auraID,
+                    trackedAuraID = auraID,
+                    name = spellInfo.name,
+                    displayName = ("%s |cff999999(%d)|r"):format(spellInfo.name, auraID),
+                    nameLower = spellInfo.name:lower(),
+                    icon = spellInfo.iconID or 134400,
+                    category = "Aura",
+                    autocompleteKind = "aura",
+                    isItem = false,
+                    forceAura = true,
+                })
+                auraRows[auraID] = true
             end
         end
     end
