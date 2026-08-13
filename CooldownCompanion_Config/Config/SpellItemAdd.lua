@@ -226,8 +226,11 @@ local function GetSpellOfferability(input, spellId)
     local canEverCast = CanPlayerEverCastSpellCached(spellId)
     local isHarmful = C_Spell.IsSpellHarmful(spellId)
     local canOfferSpell = canEverCast and not IsPassiveOrProc(spellId)
+    -- Exact numeric entry is explicit Aura intent. Some player-applied
+    -- harmful auras (for example, passive/proc effects) are not themselves
+    -- castable spells; runtime target tracking still filters to PLAYER auras.
     local canOfferAura = not isHarmful
-        or (IsExactNumericSpellInput(input, spellId) and canEverCast)
+        or IsExactNumericSpellInput(input, spellId)
     return canOfferSpell, canOfferAura
 end
 
