@@ -295,7 +295,6 @@ ST._configState = {
     otherClassLibraryActive = false,
     otherClassLibraryClassKey = nil,
     otherClassLibrarySnapshot = nil,
-    hideActiveCurrentClassPanels = false,
     panelClickTimes = {},
     addingToPanelId = nil,
     _panelDropTargets = {},
@@ -589,25 +588,6 @@ local function IsConfigFinderActive()
     return IsConfigFinderAvailable() and IsConfigFinderQueryUsable(CS.configSearchText)
 end
 
-local function SetHideActiveCurrentClassPanels(active, opts)
-    local enabled = active == true and CS.otherClassLibraryActive == true
-    if CS.hideActiveCurrentClassPanels == enabled then
-        return false
-    end
-
-    CS.hideActiveCurrentClassPanels = enabled
-    if not (opts and opts.skipRefresh) and CooldownCompanion.RefreshAllGroupsVisibilityOnly then
-        CooldownCompanion:RefreshAllGroupsVisibilityOnly()
-    end
-    return true
-end
-
-local function ClearOtherClassHideActive(opts)
-    return SetHideActiveCurrentClassPanels(false, opts)
-end
-
-local RefreshAlphaDriverForConfigSelection
-
 local function CopyConfigStateMap(source)
     local copy = {}
     for key, value in pairs(source or {}) do
@@ -690,7 +670,6 @@ local function EnterOtherClassLibraryState(classKey)
     if not CS.otherClassLibraryActive then
         SnapshotOtherClassLibraryState()
     end
-    ClearOtherClassHideActive()
     CS.otherClassLibraryActive = true
     CS.otherClassLibraryClassKey = classKey
 end
@@ -699,7 +678,6 @@ local function ResetOtherClassLibraryState(opts)
     local wasActive = CS.otherClassLibraryActive == true
     CS.otherClassLibraryActive = false
     CS.otherClassLibraryClassKey = nil
-    local hideChanged = ClearOtherClassHideActive(opts)
     if wasActive then
         if opts and opts.discardSelectionSnapshot then
             -- The snapshot belongs to the selection we are throwing away, so
@@ -708,11 +686,8 @@ local function ResetOtherClassLibraryState(opts)
         else
             RestoreOtherClassLibrarySnapshot()
         end
-        if RefreshAlphaDriverForConfigSelection then
-            RefreshAlphaDriverForConfigSelection()
-        end
     end
-    return hideChanged
+    return wasActive
 end
 
 local ClearConfigPrimarySelection
@@ -1086,7 +1061,6 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CS.configFinderNavigated = true
     CS.pendingConfigFinderEntryScrollReset = buttonIndex ~= nil
     RestoreOtherClassLibraryForScope(selectedScope)
-    RefreshAlphaDriverForConfigSelection()
     CooldownCompanion:RefreshConfigPanel()
 end
 
@@ -2346,28 +2320,18 @@ local function ClearSelectedButton()
     wipe(CS.selectedButtons)
 end
 
-function RefreshAlphaDriverForConfigSelection()
-    if CooldownCompanion.RefreshAlphaUpdateDriver then
-        CooldownCompanion:RefreshAlphaUpdateDriver()
-    end
-end
-
 local function ClearConfigButtonSelection()
     ClearSelectedButton()
 end
 
-local function ClearConfigPanelSelection(opts)
+local function ClearConfigPanelSelection()
     CS.selectedGroup = nil
     ClearSelectedButton()
-    if not (opts and opts.deferAlphaRefresh) then
-        RefreshAlphaDriverForConfigSelection()
-    end
 end
 
 local function ClearConfigContainerSelection()
     CS.selectedContainer = nil
-    ClearConfigPanelSelection({ deferAlphaRefresh = true })
-    RefreshAlphaDriverForConfigSelection()
+    ClearConfigPanelSelection()
 end
 
 local function ClearConfigPanelMultiSelection(opts)
@@ -2375,12 +2339,10 @@ local function ClearConfigPanelMultiSelection(opts)
     if opts and opts.selectContainerId ~= nil then
         CS.selectedContainer = opts.selectContainerId
     end
-    RefreshAlphaDriverForConfigSelection()
 end
 
 local function ClearConfigContainerMultiSelection()
     wipe(CS.selectedGroups)
-    RefreshAlphaDriverForConfigSelection()
 end
 
 local function ClearConfigResourceSelection()
@@ -2399,7 +2361,6 @@ ClearConfigPrimarySelection = function()
     wipe(CS.selectedGroups)
     wipe(CS.selectedCustomBars)
     ClearConfigResourceSelection()
-    RefreshAlphaDriverForConfigSelection()
 end
 
 local function SelectConfigContainer(containerId, opts)
@@ -2428,7 +2389,6 @@ local function SelectConfigContainer(containerId, opts)
         ClearConfigFinderText({ preservePrimarySelection = true })
         RestoreOtherClassLibraryForScope(selectedScope)
     end
-    RefreshAlphaDriverForConfigSelection()
 end
 
 local function ToggleConfigContainerMultiSelect(containerId)
@@ -2449,7 +2409,6 @@ local function ToggleConfigContainerMultiSelect(containerId)
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     wipe(CS.selectedCustomBars)
-    RefreshAlphaDriverForConfigSelection()
 end
 
 local function SelectConfigPanel(panelId, opts)
@@ -2473,7 +2432,6 @@ local function SelectConfigPanel(panelId, opts)
     CS.barsEntrySelected = false
     CS.castFramesSelectedItem = nil
     ClearSelectedButton()
-    RefreshAlphaDriverForConfigSelection()
 end
 
 local function ToggleConfigPanelMultiSelect(panelId)
@@ -2493,7 +2451,6 @@ local function ToggleConfigPanelMultiSelect(panelId)
     ClearSelectedButton()
     wipe(CS.selectedGroups)
     CS.addingToPanelId = nil
-    RefreshAlphaDriverForConfigSelection()
 end
 
 local function SelectConfigButton(panelId, buttonIndex, opts)
@@ -2538,7 +2495,6 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
     end
 
     CooldownCompanion:ClearAllConfigPreviews()
-    RefreshAlphaDriverForConfigSelection()
 end
 
 local function SelectConfigRotationAssistantEntry(panelId, opts)
@@ -2558,7 +2514,6 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
     CS.buttonSettingsTab = "loadconditions"
     CS.unifiedRowScope = "detail"
     CooldownCompanion:ClearAllConfigPreviews()
-    RefreshAlphaDriverForConfigSelection()
 end
 
 local function SelectConfigButtonPanel(panelId, opts)
@@ -2571,11 +2526,9 @@ local function SelectConfigButtonPanel(panelId, opts)
         CS.barsEntrySelected = false
         CS.castFramesSelectedItem = nil
         ClearSelectedButton()
-        RefreshAlphaDriverForConfigSelection()
     end
     if opts and opts.clearPanelMulti then
         wipe(CS.selectedPanels)
-        RefreshAlphaDriverForConfigSelection()
     end
 end
 
@@ -2798,7 +2751,6 @@ local function SelectConfigBarsEntry(opts)
     wipe(CS.selectedPanels)
     wipe(CS.selectedGroups)
     ClearConfigBarsHomeSelection()
-    RefreshAlphaDriverForConfigSelection()
 end
 
 -- A cast/frames item belongs to the same mutually exclusive family as the
@@ -2901,7 +2853,6 @@ local function ResetConfigSelection(full)
         CS.addingToPanelId = nil
         ResetOtherClassLibraryState({ discardSelectionSnapshot = true })
     end
-    RefreshAlphaDriverForConfigSelection()
 end
 
 -- The legacy Bars & Frames mode is gone; only "buttons" remains and it is
@@ -3203,8 +3154,6 @@ ST._IsConfigFinderAvailable = IsConfigFinderAvailable
 ST._IsConfigFinderActive = IsConfigFinderActive
 ST._SetConfigFinderText = SetConfigFinderText
 ST._ClearConfigFinderText = ClearConfigFinderText
-ST._SetHideActiveCurrentClassPanels = SetHideActiveCurrentClassPanels
-ST._ClearOtherClassHideActive = ClearOtherClassHideActive
 ST._ResetOtherClassLibraryState = ResetOtherClassLibraryState
 ST._EnterOtherClassLibraryState = EnterOtherClassLibraryState
 ST._BuildConfigFinderResults = BuildConfigFinderResults

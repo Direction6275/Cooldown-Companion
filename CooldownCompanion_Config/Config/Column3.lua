@@ -10,7 +10,7 @@ local CS = ST._configState
 ------------------------------------------------------------------------
 -- Workspace: button settings / Resources, Cast Bar & Unit Frames home
 ------------------------------------------------------------------------
-local function RefreshColumn3()
+local function RefreshColumn3(selectionOnly)
     -- Export and import modes own the whole workspace with their flat
     -- surfaces. Those surfaces are unknown to the normal dispatchers, so
     -- they are also hidden here whenever their mode is off.
@@ -41,7 +41,7 @@ local function RefreshColumn3()
 
     -- Plain buttons view: the workspace owns the editing surface.
     if ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() then
-        return ST._RefreshButtonsWideColumn()
+        return ST._RefreshButtonsWideColumn(selectionOnly)
     end
 
     -- Resources, Cast Bar & Unit Frames: one workspace preview, whose
@@ -64,11 +64,9 @@ local function RefreshColumn3()
         return ST._RefreshResourcesWideColumn(col3)
     end
 
-    -- Other Class browsing (and any residual state): the same merged wide
-    -- column. RefreshButtonsWideColumn skips the pinned preview cluster
-    -- while browsing - browsed panels render live in the world - and its
-    -- first refresh after a view switch releases the buttons preview.
-    return ST._RefreshButtonsWideColumn()
+    -- Other Class browsing (and any residual state) uses the same merged wide
+    -- column and pinned preview as the normal buttons workspace.
+    return ST._RefreshButtonsWideColumn(selectionOnly)
 end
 
 ------------------------------------------------------------------------

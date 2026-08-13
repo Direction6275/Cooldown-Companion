@@ -604,9 +604,10 @@ end
 ------------------------------------------------------------------------
 -- Mirror-first slider wiring (owner ruling 2026-08-02)
 --
--- While a slider on a resources surface is DRAGGED, only the saved value and
--- the workspace's pinned canvas move; the live display restyles once, on
--- release. The canvas wraps the real read-only panel mirror, so it is an
+-- While a slider on a resources surface is DRAGGED, the candidate value is
+-- exposed only for the workspace's pinned canvas render, then restored. The
+-- saved value and live display update once, on release. The canvas wraps the
+-- real read-only panel mirror, so it is an
 -- honest stand-in for the edit - and driving the live bars from every
 -- OnValueChanged tick was what made these sliders feel heavy.
 --
@@ -615,7 +616,7 @@ end
 -- and applies live in the same breath with no extra handling here.
 --
 -- Call sites supply two closures instead of onChange/onRelease:
---   opts.set(value)  writes the saved value (and carries whatever guard the
+--   opts.set(value)  exposes the candidate value (and carries whatever guard the
 --                    row had - a locked border, a disabled resource)
 --   opts.apply()     the row's own live-display chain, verbatim: whatever it
 --                    used to run on every drag tick, now run once on release
@@ -642,11 +643,43 @@ end
 local function AddMirrorFirstSliderRow(container, opts)
     local set = opts.set
     local apply = opts.apply
+    local captureState = opts.captureState
+    local restoreState = opts.restoreState
+    local stateOwner = opts.stateOwner
+    local stateKeys = opts.stateKeys
     opts.set = nil
     opts.apply = nil
+    opts.captureState = nil
+    opts.restoreState = nil
+    opts.stateOwner = nil
+    opts.stateKeys = nil
+
+    if type(stateKeys) == "string" then
+        stateKeys = { stateKeys }
+    end
+    if not captureState then
+        local nilSetting = {}
+        captureState = function()
+            local state = {}
+            for index, key in ipairs(stateKeys) do
+                local value = stateOwner[key]
+                state[index] = value == nil and nilSetting or value
+            end
+            return state
+        end
+        restoreState = function(state)
+            for index, key in ipairs(stateKeys) do
+                local value = state[index]
+                stateOwner[key] = value == nilSetting and nil or value
+            end
+        end
+    end
+
     opts.onChange = function(value)
+        local state = captureState()
         set(value)
         RefreshResourcesCanvasForDrag()
+        restoreState(state)
     end
     opts.onRelease = function(value)
         set(value)

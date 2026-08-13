@@ -65,7 +65,7 @@ local ClearIconFillVisualState = ST._ClearIconFillVisualState
 -- Imports from BarMode
 local ApplyBarCountTextStyle = ST._ApplyBarCountTextStyle
 local UpdateBarDisplay = ST._UpdateBarDisplay
-local IsConfigButtonForceVisible = ST.IsConfigButtonForceVisible
+local IsRuntimeLayoutPreviewButtonForceVisible = ST.IsRuntimeLayoutPreviewButtonForceVisible
 
 -- Imports from TextMode
 local UpdateTextDisplay = ST._UpdateTextDisplay
@@ -1473,19 +1473,20 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         visibilityOverrideSource = "trigger"
     end
 
-    -- Config panel QOL: selected buttons in column 2 are always fully visible.
-    local forceVisibleByConfig = IsConfigButtonForceVisible(button)
+    -- Explicit positioning previews stay visible on the real display. Ordinary
+    -- config selection is rendered only by the pinned config mirror.
+    local forceVisibleByLayoutPreview = IsRuntimeLayoutPreviewButtonForceVisible(button)
     local forceVisibleByPreview = conditionalPreview ~= nil and not isTriggerPanel
     if forceVisibleByUnlockPreview or forceVisibleByPreview then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = 1
         visibilityOverrideSource = forceVisibleByUnlockPreview and "unlock-preview" or "conditional-preview"
-    elseif forceVisibleByConfig and not isTriggerPanel then
+    elseif forceVisibleByLayoutPreview and not isTriggerPanel then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = 1
-        visibilityOverrideSource = "config"
+        visibilityOverrideSource = "layout-preview"
     end
-    button._forceVisibleByConfig = ((forceVisibleByConfig or forceVisibleByUnlockPreview or forceVisibleByPreview) and not isTriggerPanel) or nil
+    button._forceVisibleByConfig = ((forceVisibleByLayoutPreview or forceVisibleByUnlockPreview or forceVisibleByPreview) and not isTriggerPanel) or nil
     if button._visibilityHidden == true then
         button._visibilityFinalMode = "hidden"
     elseif button._visibilityAlphaOverride ~= nil and button._visibilityAlphaOverride ~= 1 then

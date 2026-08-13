@@ -71,20 +71,55 @@ local WIDE_PULLOUT_WIDTH = 300
 -- rule fading right.
 local ROW_SECTION = { leftAligned = true }
 
--- Size-slider wiring for edits the pinned mirror can stand in for: while
--- the slider is dragged only the saved value and the mirror update; the
--- live panel restyles once on release. The slider's edit box fires
+-- Slider wiring for edits the pinned mirror can stand in for: while the
+-- slider is dragged the candidate value exists only for the mirror render;
+-- the saved value and live panel update once on release. The slider's edit box fires
 -- OnMouseUp on Enter too, so typed values also apply live.
-local function WireMirrorFirstSlider(slider, applyValue)
+--
+-- stateOwner/stateKeys name the exact raw fields applyValue touches. They are
+-- snapshotted on every preview tick instead of restoring slider:GetValue(): a
+-- slider can display a fallback for an absent field, and writing that fallback
+-- back would silently materialize an override before the user commits.
+local NIL_SETTING = {}
+local function WireMirrorFirstSlider(slider, applyValue, commitFn, previewFn, stateOwner, stateKeys)
+    if type(stateKeys) == "string" then
+        stateKeys = { stateKeys }
+    end
+    local function CaptureState()
+        local state = {}
+        for index, key in ipairs(stateKeys) do
+            local value = stateOwner[key]
+            state[index] = value == nil and NIL_SETTING or value
+        end
+        return state
+    end
+    local function RestoreState(state)
+        for index, key in ipairs(stateKeys) do
+            local value = state[index]
+            stateOwner[key] = value == NIL_SETTING and nil or value
+        end
+    end
+
     slider:SetCallback("OnValueChanged", function(_, _, value)
+        local state = CaptureState()
         applyValue(value)
-        if ST._RefreshButtonsPreviewMirror then
+        if previewFn == false then
+            -- Some sliders change screen-space placement, which the pinned
+            -- mirror intentionally does not represent.
+        elseif previewFn then
+            previewFn()
+        elseif ST._RefreshButtonsPreviewMirror then
             ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
         end
+        RestoreState(state)
     end)
     slider:SetCallback("OnMouseUp", function(_, _, value)
         applyValue(value)
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        if commitFn then
+            commitFn()
+        else
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end
     end)
 end
 
@@ -377,7 +412,7 @@ end
 ST._UpdateTexturePanelPreview = UpdateTexturePanelPreview
 
 -- Texture-slider wiring keeps the config preview smooth without continuously
--- redrawing the runtime panel. The value is stored and previewed during drag;
+-- redrawing the runtime panel. The value is staged and previewed during drag;
 -- the runtime visual applies once on mouse release (or edit-box confirmation).
 local function AttachTexturePreviewSliderRefresh(sliderWidget, applyValue, previewFn, confirmFn, cancelFn)
     if not sliderWidget or not sliderWidget.slider or type(applyValue) ~= "function" then
@@ -746,37 +781,46 @@ local function BuildTriggerIconAppearanceTab(container, group)
     })
 
     if settings.maintainAspectRatio ~= false then
-        AddSliderRow(iconLeft, {
+        local sizeRow = AddSliderRow(iconLeft, {
             label = "Button Size",
             min = 10, max = 150, step = 0.1,
             value = settings.buttonSize or ST.BUTTON_SIZE,
-            onChange = function(value)
-                settings.buttonSize = value
-                settings.iconWidth = value
-                settings.iconHeight = value
-                RefreshIconPreview()
-            end,
         })
+        WireMirrorFirstSlider(sizeRow, function(value)
+            settings.buttonSize = value
+            settings.iconWidth = value
+            settings.iconHeight = value
+        end, function()
+            RefreshStandaloneTriggerDisplay(groupId)
+        end, function()
+            RefreshTriggerPreviewMirror(groupId)
+        end, settings, { "buttonSize", "iconWidth", "iconHeight" })
     else
-        AddSliderRow(iconLeft, {
+        local widthRow = AddSliderRow(iconLeft, {
             label = "Icon Width",
             min = 10, max = 150, step = 0.1,
             value = settings.iconWidth or settings.buttonSize or ST.BUTTON_SIZE,
-            onChange = function(value)
-                settings.iconWidth = value
-                RefreshIconPreview()
-            end,
         })
+        WireMirrorFirstSlider(widthRow, function(value)
+            settings.iconWidth = value
+        end, function()
+            RefreshStandaloneTriggerDisplay(groupId)
+        end, function()
+            RefreshTriggerPreviewMirror(groupId)
+        end, settings, "iconWidth")
 
-        AddSliderRow(iconLeft, {
+        local heightRow = AddSliderRow(iconLeft, {
             label = "Icon Height",
             min = 10, max = 150, step = 0.1,
             value = settings.iconHeight or settings.buttonSize or ST.BUTTON_SIZE,
-            onChange = function(value)
-                settings.iconHeight = value
-                RefreshIconPreview()
-            end,
         })
+        WireMirrorFirstSlider(heightRow, function(value)
+            settings.iconHeight = value
+        end, function()
+            RefreshStandaloneTriggerDisplay(groupId)
+        end, function()
+            RefreshTriggerPreviewMirror(groupId)
+        end, settings, "iconHeight")
     end
 
     ST._BuildIconZoomControls(iconLeft, settings, RefreshIconPreview, {
@@ -809,18 +853,23 @@ local function BuildTriggerIconAppearanceTab(container, group)
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-        AddSliderRow(iconRight, {
+        local borderRow = AddSliderRow(iconRight, {
             label = "Border Size",
             indent = true,
             min = 0, max = 5, step = 0.1,
             value = settings.borderSize or ST.DEFAULT_BORDER_SIZE,
             disabled = borderThicknessLocked and true or false,
-            onChange = function(value)
-                if borderThicknessLocked then return end
-                settings.borderSize = value
-                RefreshIconPreview()
-            end,
         })
+        WireMirrorFirstSlider(borderRow, function(value)
+            if borderThicknessLocked then return end
+            settings.borderSize = value
+        end, function()
+            if borderThicknessLocked then return end
+            RefreshStandaloneTriggerDisplay(groupId)
+        end, function()
+            if borderThicknessLocked then return end
+            RefreshTriggerPreviewMirror(groupId)
+        end, settings, "borderSize")
     end
 
     AddColorRow(iconRight, {
@@ -831,7 +880,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
     })
     end -- not iconCollapsed
 
-    RefreshIconPreview()
+    RefreshTriggerPreviewMirror(groupId)
 end
 
 -- Row grammar (RowWidgets.lua): one collapsible section. The rendered text is
@@ -860,17 +909,32 @@ local function BuildTriggerTextAppearanceTab(container, group)
     textBox:SetNumLines(maxTextLines)
     textBox.button:Hide()
     textBox:SetText(settings.value or "")
+    local pendingTextValue = settings.value
+    local textDirty = false
+    local function CommitTriggerText()
+        if textDirty then
+            settings.value = pendingTextValue
+            textDirty = false
+            RefreshStandaloneTriggerDisplay(groupId)
+        end
+    end
     local function HandleTextChanged(widget, _, value)
         local sanitized = CooldownCompanion.SanitizeTriggerPanelTextValue and CooldownCompanion.SanitizeTriggerPanelTextValue(value) or (value or "")
-        settings.value = sanitized
+        pendingTextValue = sanitized
+        textDirty = true
         if widget and widget.SetText and widget:GetText() ~= sanitized and not widget._ccSyncingText then
             widget._ccSyncingText = true
             widget:SetText(sanitized)
             widget._ccSyncingText = nil
         end
-        RefreshTextPreview()
+        local committed = settings.value
+        settings.value = sanitized
+        RefreshTriggerPreviewMirror(groupId)
+        settings.value = committed
     end
     textBox:SetCallback("OnTextChanged", HandleTextChanged)
+    textBox:SetCallback("OnEditFocusLost", CommitTriggerText)
+    textBox:SetCallback("OnRelease", CommitTriggerText)
     container:AddChild(textBox)
 
     local limitLabel = AceGUI:Create("Label")
@@ -891,7 +955,12 @@ local function BuildTriggerTextAppearanceTab(container, group)
         sizeMax = 72,
         font = "Friz Quadrata TT",
         outline = "OUTLINE",
-    }, RefreshTextPreview, { row = true })
+    }, RefreshTextPreview, {
+        row = true,
+        previewRefresh = function()
+            RefreshTriggerPreviewMirror(groupId)
+        end,
+    })
 
     -- The stock Dropdown had no order table and drew these three in whatever
     -- order pairs() produced; the row states the reading order outright.
@@ -923,7 +992,7 @@ local function BuildTriggerTextAppearanceTab(container, group)
     })
     end -- not textCollapsed
 
-    RefreshTextPreview()
+    RefreshTriggerPreviewMirror(groupId)
 end
 
 local function BuildLayoutTab(container)
@@ -1060,6 +1129,9 @@ local function BuildLayoutTab(container)
         end
 
         local function RefreshCursorAnchor()
+            if CooldownCompanion.ClearCursorAnchorLayoutPreviewOffset then
+                CooldownCompanion:ClearCursorAnchorLayoutPreviewOffset(textureGroupId)
+            end
             local frame = CooldownCompanion.groupFrames[textureGroupId]
             if frame then
                 CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
@@ -1289,7 +1361,18 @@ local function BuildLayoutTab(container)
                 y = 16,
                 range = 2000,
                 step = 1,
-            }, RefreshCursorAnchor, { row = true })
+            }, RefreshCursorAnchor, {
+                row = true,
+                previewRefresh = function()
+                    if CooldownCompanion.SetCursorAnchorLayoutPreviewOffset then
+                        CooldownCompanion:SetCursorAnchorLayoutPreviewOffset(
+                            textureGroupId,
+                            group.anchor.x or 0,
+                            group.anchor.y or 0
+                        )
+                    end
+                end,
+            })
 
             -- Destructive, and it replaces the whole anchor - the Panel Point
             -- above included - so it sits with what it clears.
@@ -1627,27 +1710,43 @@ local function BuildLayoutTab(container)
             refreshGroupAnchor, "Relative Point", { row = true })
     end
 
-    -- Offsets restyle the live panel on every tick by design: the anchor
-    -- is re-applied from OnValueChanged, not deferred to release.
-    AddSliderRow(positionRight, {
+    -- Screen position is not represented inside the pinned mirror. Store the
+    -- drag value and re-anchor the live panel once on release.
+    local xOffsetRow = AddSliderRow(positionRight, {
         label = "X Offset",
         min = -2000, max = 2000, step = 0.1,
         value = group.anchor.x or 0,
-        onChange = function(val)
-            group.anchor.x = val
-            refreshGroupAnchor()
-        end,
     })
+    local function PreviewCursorOffset()
+        if targetMode == "cursor" and CooldownCompanion.SetCursorAnchorLayoutPreviewOffset then
+            CooldownCompanion:SetCursorAnchorLayoutPreviewOffset(
+                CS.selectedGroup,
+                group.anchor.x or 0,
+                group.anchor.y or 0
+            )
+        end
+    end
+    local function CommitGroupOffset()
+        if CooldownCompanion.ClearCursorAnchorLayoutPreviewOffset then
+            CooldownCompanion:ClearCursorAnchorLayoutPreviewOffset(CS.selectedGroup)
+        end
+        refreshGroupAnchor()
+    end
 
-    AddSliderRow(positionRight, {
+    WireMirrorFirstSlider(xOffsetRow, function(val)
+        group.anchor.x = val
+    end, CommitGroupOffset, targetMode == "cursor" and PreviewCursorOffset or false,
+        group.anchor, "x")
+
+    local yOffsetRow = AddSliderRow(positionRight, {
         label = "Y Offset",
         min = -2000, max = 2000, step = 0.1,
         value = group.anchor.y or 0,
-        onChange = function(val)
-            group.anchor.y = val
-            refreshGroupAnchor()
-        end,
     })
+    WireMirrorFirstSlider(yOffsetRow, function(val)
+        group.anchor.y = val
+    end, CommitGroupOffset, targetMode == "cursor" and PreviewCursorOffset or false,
+        group.anchor, "y")
     end -- not positionCollapsed
 
     -- ============================================================
@@ -1760,15 +1859,16 @@ local function BuildLayoutTab(container)
     -- once there is something to wrap.
     if not isTextMode or #group.buttons > 1 then
         local numButtons = math.max(1, #group.buttons)
-        AddSliderRow(arrangeRight, {
+        local wrapRow = AddSliderRow(arrangeRight, {
             label = isTextMode and "Entries per Row/Column" or "Buttons Per Row/Column",
             min = 1, max = numButtons, step = 1,
             value = math.min(style.buttonsPerRow or 12, numButtons),
-            onChange = function(val)
-                style.buttonsPerRow = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end,
         })
+        WireMirrorFirstSlider(wrapRow, function(val)
+            style.buttonsPerRow = val
+        end, function()
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+        end, nil, style, "buttonsPerRow")
     end
 
     -- Auto-Anchoring eligibility (icon-like modes only - others are never eligible)
@@ -1991,12 +2091,22 @@ end
 -- editbox hook it replaced did. Aura-controlled Texture effects also use this
 -- inline on the Indicators tab, so the caller decides whether it is indented.
 local function BuildTextureIndicatorSpeedSlider(container, config, label, onChange, indent)
+    local function RefreshSpeedPreview()
+        local refreshedMirror = ST._RefreshTextureIndicatorMirrorEffect
+            and ST._RefreshTextureIndicatorMirrorEffect(CS.selectedGroup)
+        if not refreshedMirror and ST._RefreshButtonsPreviewMirror then
+            ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
+        end
+    end
     AddSliderRow(container, {
         label = label,
         indent = indent == true,
         min = 0.1, max = 2.0, step = 0.05,
         value = config.speed or 0.5,
         onChange = function(value)
+            ST._PreviewScalarSetting(config, "speed", value, RefreshSpeedPreview)
+        end,
+        onRelease = function(value)
             config.speed = value
             if onChange then
                 onChange()
@@ -2162,7 +2272,13 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
                 default = { 1, 1, 1, 1 },
                 hasAlpha = true,
                 onConfirm = function() CooldownCompanion:RefreshAllAuraTextureVisuals() end,
-                onChange = function() CooldownCompanion:RefreshAllAuraTextureVisuals() end,
+                onChange = function()
+                    local refreshedMirror = ST._RefreshTextureIndicatorMirrorEffect
+                        and ST._RefreshTextureIndicatorMirrorEffect(CS.selectedGroup)
+                    if not refreshedMirror then
+                        ST._RefreshSelectedButtonsPreview()
+                    end
+                end,
             })
         end
 
@@ -2307,16 +2423,15 @@ local function MakeCooldownSwipeAdvancedDescriptor()
             -- no percent readout, so this reads 0 - 1 rather than the stock
             -- slider's 0% - 100%; same store, same range.
             if style.showCooldownSwipeFill ~= false then
-                AddSliderRow(panel, {
+                local opacityRow = AddSliderRow(panel, {
                     label = "Swipe Fill Opacity",
                     indent = true,
                     min = 0, max = 1, step = 0.05,
                     value = style.cooldownSwipeAlpha or 0.8,
-                    onChange = function(val)
-                        style.cooldownSwipeAlpha = val
-                        RefreshSelectedGroupStyle()
-                    end,
                 })
+                WireMirrorFirstSlider(opacityRow, function(val)
+                    style.cooldownSwipeAlpha = val
+                end, RefreshSelectedGroupStyle, nil, style, "cooldownSwipeAlpha")
             end
 
             -- Show Swipe Edge
@@ -2753,16 +2868,15 @@ local function BuildReadyGlowSection(container, group, style)
         })
 
         if (style.readyGlowDuration or 0) > 0 then
-            AddSliderRow(panel, {
+            local durationRow = AddSliderRow(panel, {
                 label = "Duration (seconds)",
                 indent = true,
                 min = 0.5, max = 5, step = 0.5,
                 value = style.readyGlowDuration or 3,
-                onChange = function(val)
-                    style.readyGlowDuration = val
-                    UpdateSelectedGroupStyle()
-                end,
             })
+            WireMirrorFirstSlider(durationRow, function(val)
+                style.readyGlowDuration = val
+            end, UpdateSelectedGroupStyle, nil, style, "readyGlowDuration")
         end
 
         BuildReadyGlowControls(panel, style, UpdateSelectedGroupStyle, { row = true })
@@ -3277,19 +3391,16 @@ local function BuildTexturePanelAppearanceTab(container, group)
     -- panels need a separate config-only copy while an interaction is in
     -- progress. Otherwise a normal cooldown refresh could repaint the live
     -- display before the user releases the slider or confirms the color.
-    local previewSettings = settings
-    if not isTriggerPanel then
-        previewSettings = {}
-        for key, value in pairs(settings) do
-            if type(value) == "table" then
-                local valueCopy = {}
-                for nestedKey, nestedValue in pairs(value) do
-                    valueCopy[nestedKey] = nestedValue
-                end
-                previewSettings[key] = valueCopy
-            else
-                previewSettings[key] = value
+    local previewSettings = {}
+    for key, value in pairs(settings) do
+        if type(value) == "table" then
+            local valueCopy = {}
+            for nestedKey, nestedValue in pairs(value) do
+                valueCopy[nestedKey] = nestedValue
             end
+            previewSettings[key] = valueCopy
+        else
+            previewSettings[key] = value
         end
     end
 
@@ -3303,11 +3414,13 @@ local function BuildTexturePanelAppearanceTab(container, group)
     end
 
     local function RefreshTexturePreview()
-        if not isTriggerPanel and ST._RefreshButtonsPreviewMirror then
-            CS.textureConfigPreviewStage = {
-                groupId = groupId,
-                settings = previewSettings,
-            }
+        CS.textureConfigPreviewStage = {
+            groupId = groupId,
+            settings = previewSettings,
+        }
+        if isTriggerPanel then
+            RefreshTriggerPreviewMirror(groupId)
+        elseif ST._RefreshButtonsPreviewMirror then
             ST._RefreshButtonsPreviewMirror(groupId)
         end
     end
@@ -3327,10 +3440,9 @@ local function BuildTexturePanelAppearanceTab(container, group)
 
     local function RefreshTextureVisual(requestAuraRestyle)
         ClearTextureConfigPreviewStage()
-        -- Both panel kinds repaint the pinned mirror. Trigger drag ticks route
-        -- here directly (their sliders write the saved table live), so they
-        -- take the display-only repaint; texture panels have no strip to spare
-        -- and rebuild the mirror outright.
+        -- Both panel kinds repaint the pinned mirror after the saved value has
+        -- been committed. Trigger panels can reuse their display-only repaint;
+        -- texture panels rebuild the mirror outright.
         if isTriggerPanel then
             RefreshTriggerPreviewMirror(groupId)
         elseif ST._RefreshButtonsPreviewMirror then
@@ -3347,28 +3459,20 @@ local function BuildTexturePanelAppearanceTab(container, group)
         end
     end
 
-    -- Trigger panels keep their existing live-write behavior (saved table +
-    -- runtime + mirror every tick). Texture panels use the pinned mirror
-    -- during continuous edits and touch the runtime panel only when the
-    -- interaction is confirmed.
-    local textureValueChanged = isTriggerPanel and RefreshTextureVisual or RefreshTexturePreview
+    local textureValueChanged = RefreshTexturePreview
 
     local function AttachTextureValueSlider(slider, key)
-        local confirmValue
-        local cancelValue
-        if not isTriggerPanel then
-            confirmValue = function(value)
-                settings[key] = value
-                previewSettings[key] = value
-                RefreshTextureVisual()
+        local confirmValue = function(value)
+            settings[key] = value
+            previewSettings[key] = value
+            RefreshTextureVisual()
+        end
+        local cancelValue = function(widget)
+            previewSettings[key] = settings[key]
+            if widget and widget.SetValue then
+                widget:SetValue(settings[key])
             end
-            cancelValue = function(widget)
-                previewSettings[key] = settings[key]
-                if widget and widget.SetValue then
-                    widget:SetValue(settings[key])
-                end
-                CancelTexturePreviewChange()
-            end
+            CancelTexturePreviewChange()
         end
 
         AttachTexturePreviewSliderRefresh(slider, function(value)
@@ -3428,7 +3532,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
             OpenOrRebindStandaloneTexturePicker(group, settings, false)
         end
 
-        RefreshTextureVisual(false)
+        RefreshTexturePreview()
         return
     end
 
@@ -3516,10 +3620,8 @@ local function BuildTexturePanelAppearanceTab(container, group)
     AttachTextureValueSlider(alphaRow, "alpha")
 
     local function ConfirmTextureColor()
-        if not isTriggerPanel then
-            local color = previewSettings.color or { 1, 1, 1, 1 }
-            settings.color = { color[1], color[2], color[3], color[4] }
-        end
+        local color = previewSettings.color or { 1, 1, 1, 1 }
+        settings.color = { color[1], color[2], color[3], color[4] }
         RefreshTextureVisual()
     end
 
@@ -3538,11 +3640,10 @@ local function BuildTexturePanelAppearanceTab(container, group)
         onChange = textureValueChanged,
     })
 
-    if not isTriggerPanel then
-        -- The cancel triad hangs on the row's embedded stock ColorPicker -
-        -- the same widget SetupColorCallbacks was pointed at - so releasing
-        -- the row (which releases the child) and hiding the tab both roll the
-        -- staged color back exactly as they did before.
+    -- The cancel triad hangs on the row's embedded stock ColorPicker - the
+    -- same widget SetupColorCallbacks was pointed at - so releasing the row
+    -- (which releases the child) and hiding the tab both roll the staged color
+    -- back.
         local colorPicker = colorRow.colorPicker
         colorPicker._ccCancelTextureValue = function(widget)
             local color = settings.color or { 1, 1, 1, 1 }
@@ -3573,7 +3674,6 @@ local function BuildTexturePanelAppearanceTab(container, group)
                 end
             end)
         end
-    end
     end -- not textureCollapsed
 
     local shouldOpenPicker = CS.pendingTexturePickerOpen == CS.selectedGroup
@@ -3588,7 +3688,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
         OpenOrRebindStandaloneTexturePicker(group, settings, false)
     end
 
-    RefreshTextureVisual(false)
+    RefreshTexturePreview()
 end
 
 local function BuildAppearanceTab(container)
@@ -3664,7 +3764,7 @@ local function BuildAppearanceTab(container)
             WireMirrorFirstSlider(sizeRow, function(value)
                 style.buttonSize = value
                 style.buttonsPerRow = 1
-            end)
+            end, nil, nil, style, { "buttonSize", "buttonsPerRow" })
         else
             local widthRow = AddSliderRow(assistLeft, {
                 label = "Icon Width",
@@ -3674,7 +3774,7 @@ local function BuildAppearanceTab(container)
             WireMirrorFirstSlider(widthRow, function(value)
                 style.iconWidth = value
                 style.buttonsPerRow = 1
-            end)
+            end, nil, nil, style, { "iconWidth", "buttonsPerRow" })
 
             local heightRow = AddSliderRow(assistLeft, {
                 label = "Icon Height",
@@ -3684,7 +3784,7 @@ local function BuildAppearanceTab(container)
             WireMirrorFirstSlider(heightRow, function(value)
                 style.iconHeight = value
                 style.buttonsPerRow = 1
-            end)
+            end, nil, nil, style, { "iconHeight", "buttonsPerRow" })
         end
 
         ST._BuildIconZoomControls(assistLeft, style, refreshStyle, {
@@ -3826,7 +3926,7 @@ local function BuildAppearanceTab(container)
         })
         WireMirrorFirstSlider(sizeRow, function(val)
             style.buttonSize = val
-        end)
+        end, nil, nil, style, "buttonSize")
     else
         local wRow = AddSliderRow(iconLeft, {
             label = "Icon Width",
@@ -3835,7 +3935,7 @@ local function BuildAppearanceTab(container)
         })
         WireMirrorFirstSlider(wRow, function(val)
             style.iconWidth = val
-        end)
+        end, nil, nil, style, "iconWidth")
 
         local hRow = AddSliderRow(iconLeft, {
             label = "Icon Height",
@@ -3844,7 +3944,7 @@ local function BuildAppearanceTab(container)
         })
         WireMirrorFirstSlider(hRow, function(val)
             style.iconHeight = val
-        end)
+        end, nil, nil, style, "iconHeight")
     end
 
     ST._BuildIconZoomControls(iconLeft, style, function()
@@ -3859,15 +3959,14 @@ local function BuildAppearanceTab(container)
     })
 
     if group.buttons and #group.buttons > 1 then
-        AddSliderRow(iconRight, {
+        local spacingRow = AddSliderRow(iconRight, {
             label = "Button Spacing",
             min = 0, max = 30, step = 0.1,
             value = style.buttonSpacing or ST.BUTTON_SPACING,
-            onChange = function(val)
-                style.buttonSpacing = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end,
         })
+        WireMirrorFirstSlider(spacingRow, function(val)
+            style.buttonSpacing = val
+        end, nil, nil, style, "buttonSpacing")
     end
 
     -- Compact Mode toggle + advanced (growth direction, max visible buttons)
@@ -4165,18 +4264,20 @@ local function BuildAppearanceTab(container)
     local borderThicknessLocked = group.masqueEnabled or ST.IsBorderThicknessLocked()
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-        AddSliderRow(borderLeft, {
+        local borderSizeRow = AddSliderRow(borderLeft, {
             label = "Border Size",
             indent = true,
             min = 0, max = 5, step = 0.1,
             value = style.borderSize or ST.DEFAULT_BORDER_SIZE,
             disabled = borderThicknessLocked and true or false,
-            onChange = function(val)
-                if borderThicknessLocked then return end
-                style.borderSize = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end,
         })
+        WireMirrorFirstSlider(borderSizeRow, function(val)
+            if borderThicknessLocked then return end
+            style.borderSize = val
+        end, function()
+            if borderThicknessLocked then return end
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end, nil, style, "borderSize")
     end
     end -- not borderCollapsed
 
@@ -4397,9 +4498,14 @@ local function BuildContainerGeneralTab(scroll, containerId)
 
     if not layoutCollapsed then
         container.anchor = CooldownCompanion:NormalizeContainerAnchor(container.anchor)
+        local committedOffsets = {
+            x = tonumber(container.anchor.x) or 0,
+            y = tonumber(container.anchor.y) or 0,
+        }
         local function ApplyContainerOffset(axis, value)
-            local oldValue = tonumber(container.anchor[axis]) or 0
+            local oldValue = committedOffsets[axis] or 0
             container.anchor[axis] = value
+            committedOffsets[axis] = value
 
             local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
             if containerFrame then
@@ -4429,7 +4535,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
             label = "X Offset",
             min = -2000, max = 2000, step = 0.1,
             value = container.anchor.x or 0,
-            onChange = function(val)
+            onRelease = function(val)
                 ApplyContainerOffset("x", val)
             end,
         })
@@ -4438,7 +4544,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
             label = "Y Offset",
             min = -2000, max = 2000, step = 0.1,
             value = container.anchor.y or 0,
-            onChange = function(val)
+            onRelease = function(val)
                 ApplyContainerOffset("y", val)
             end,
         })
@@ -4483,7 +4589,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
                 row = true,
                 isGlobal = container.isGlobal,
                 hideHeading = true,
-                onBaselineChanged = function(val)
+                onBaselineCommitted = function(val)
                     if CooldownCompanion.ApplyContainerAlphaPreview then
                         CooldownCompanion:ApplyContainerAlphaPreview(containerId, val)
                     end

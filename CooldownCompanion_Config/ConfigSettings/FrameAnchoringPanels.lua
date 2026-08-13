@@ -150,7 +150,7 @@ local function AddFramePositionRows(posLeft, posRight, frameSettings, anchorDefa
         label = "X Offset",
         min = -200, max = 200, step = 0.1,
         value = frameSettings.xOffset or 0,
-        onChange = function(val)
+        onRelease = function(val)
             frameSettings.xOffset = val
             CooldownCompanion:ApplyFrameAnchoring()
         end,
@@ -160,7 +160,7 @@ local function AddFramePositionRows(posLeft, posRight, frameSettings, anchorDefa
         label = "Y Offset",
         min = -200, max = 200, step = 0.1,
         value = frameSettings.yOffset or 0,
-        onChange = function(val)
+        onRelease = function(val)
             frameSettings.yOffset = val
             CooldownCompanion:ApplyFrameAnchoring()
         end,

@@ -1764,7 +1764,7 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
             end
             if HandleOverrideTargetingClick(panelId, index, buttonData) then return end
             SelectConfigButton(panelId, index, { multi = IsControlKeyDown() })
-            CooldownCompanion:RefreshConfigPanel()
+            CooldownCompanion:RefreshConfigSelection()
         elseif mouseButton == "RightButton" or mouseButton == "MiddleButton" then
             if CS.dragState and CS.dragState.phase == "active" then return end
             if GetActiveOverrideTargeting(panelId) then
@@ -3670,13 +3670,17 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly, layo
         elseif entryInfo.isRotationAssistant then
             slot:EnableMouse(true)
             slot.icon:SetDesaturated(false)
+            slot._cdcPreviewButtonData = buttonData
+            ApplySlotEffectPreviews(slot, buttonData, group, panelId, 1, false)
+            ApplySlotConditionalPreview(slot, buttonData, group, panelId, 1)
             if slot.problemBadge then slot.problemBadge:Hide() end
             if slot.problemBadgeBack then slot.problemBadgeBack:Hide() end
             if slot.overrideBadge then slot.overrideBadge:Hide() end
             if slot.overrideBadgeBack then slot.overrideBadgeBack:Hide() end
             -- Recycled slots may carry a drag handler from a grid render
             slot:SetScript("OnMouseDown", nil)
-            if CS.selectedRotationAssistantEntry == true then
+            if CS.selectedRotationAssistantEntry == true
+                and not IsGlowPreviewActiveOnEntry(panelId, 1) then
                 slot.selectedHighlight:SetFrameLevel(slot:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
                 ST.ApplyBorderTextures(slot.selectedHighlight.ringTextures, slot.selectedHighlight,
                     PANEL_PREVIEW_RING_COLOR, 1, ST.GetEffectiveBorderRenderMode(nil, nil, 1))
@@ -3691,7 +3695,7 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly, layo
                 else
                     ST._SelectConfigRotationAssistantEntry(panelId, { containerId = CS.selectedContainer })
                 end
-                CooldownCompanion:RefreshConfigPanel()
+                CooldownCompanion:RefreshConfigSelection()
             end)
             slot:SetScript("OnEnter", function(self)
                 self.hoverHighlight:SetFrameLevel(self:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
@@ -3704,6 +3708,7 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly, layo
                 self.hoverHighlight:Hide()
                 GameTooltip:Hide()
             end)
+            layoutDrag.slots[1] = slot
         else
             local status = CollectEntryStatus(buttonData, group)
             slot.icon:SetDesaturated(not status.usable)
@@ -3717,6 +3722,17 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly, layo
             layoutDrag.slots[entryInfo.index] = slot
             WireEntryInteraction(slot, panelId, entryInfo.index, buttonData, status, dragModel)
         end
+    end
+
+    local anyAnimated = false
+    for _, slot in pairs(layoutDrag.slots) do
+        if slot and slot._cdcCondAnim then
+            anyAnimated = true
+            break
+        end
+    end
+    if not readOnly and anyAnimated then
+        EnsureConditionalTicker(preview)
     end
 
     content:SetScale(scale)
@@ -4357,12 +4373,14 @@ local function RenderTriggerDisplayVisual(mirror, group, panelId, boxWidth, boxH
         RenderTriggerTextMirror(mirror, settings, boxWidth, boxHeight)
     else
         mirror.placeholder:SetText("No texture selected")
-        -- Same staged-selection precedence as BuildTextureMirror. Trigger panels
-        -- have no config staging copy: their sliders write the saved table live
-        -- (owner-validated), so saved is always current here.
+        -- Same staged-selection precedence as BuildTextureMirror: picker
+        -- selection first, then the config-only continuous-edit copy, then the
+        -- saved trigger texture.
         local staged = CS.textureMirrorStage
+        local configStaged = CS.textureConfigPreviewStage
         settings = readOnly and CooldownCompanion:GetTriggerPanelSignalSettings(group)
             or (staged and staged.groupId == panelId and staged.selection)
+            or (configStaged and configStaged.groupId == panelId and configStaged.settings)
             or CooldownCompanion:GetTriggerPanelSignalSettings(group)
         local render = ST._UpdateTexturePanelPreview
         if render then
@@ -4553,6 +4571,14 @@ function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost, options
     end
 
     local preview = EnsurePreviewState(host)
+    preview.panelId = panelId
+    preview.readOnly = readOnly
+    if not readOnly and panelId == CS.selectedGroup then
+        -- A full build reconciles the cleared stores by construction; do not
+        -- make the next selection-only pass repeat that work.
+        CS.panelPreviewVisualsNeedReconcile = nil
+    end
+    preview.layoutDrag = nil
     StopTextureMirrorEffects(preview.textureMirror)
     -- Unified previews render the icon layout inside a measured inner frame,
     -- but the targeting instruction belongs to the outer Live Preview area.
@@ -4800,6 +4826,108 @@ function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost, options
     content:SetPoint("CENTER", preview.root, "CENTER", 0, 0)
 
     FinalizePreviewState(preview)
+end
+
+-- Entry selection does not change the saved panel geometry or any mirrored
+-- visuals. Update the existing selection rings (and bar ghost exposure) in
+-- place so the high-frequency click path does not rebuild every preview slot.
+function ST._RefreshButtonPanelPreviewSelection(host, panelId)
+    local preview = host and host._cdcPanelPreview
+    if not (preview and preview.panelId == panelId and preview.readOnly ~= true) then
+        return false
+    end
+
+    local reconcileVisuals = CS.panelPreviewVisualsNeedReconcile == true
+    CS.panelPreviewVisualsNeedReconcile = nil
+
+    local group = panelId and CooldownCompanion.db.profile.groups[panelId]
+    if not group then
+        return false
+    end
+
+    local slots = preview.layoutDrag and preview.layoutDrag.slots
+    if CooldownCompanion:IsTexturePanelGroup(group) then
+        return true
+    end
+    if not slots then
+        return false
+    end
+
+    if CooldownCompanion:IsRotationAssistantGroup(group) then
+        local slot = slots[1]
+        if not slot then
+            return false
+        end
+        local buttonData = slot._cdcPreviewButtonData
+        if buttonData and reconcileVisuals then
+            local status = CollectEntryStatus(buttonData, group)
+            if slot.icon then
+                slot.icon:SetDesaturated(not status.usable)
+            end
+            ApplySlotEffectPreviews(slot, buttonData, group, panelId, 1, false)
+            ApplySlotConditionalPreview(slot, buttonData, group, panelId, 1)
+            if slot._cdcCondAnim then
+                EnsureConditionalTicker(preview)
+            end
+        end
+        if CS.selectedRotationAssistantEntry == true
+            and not IsGlowPreviewActiveOnEntry(panelId, 1) then
+            slot.selectedHighlight:SetFrameLevel(slot:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
+            ST.ApplyBorderTextures(slot.selectedHighlight.ringTextures, slot.selectedHighlight,
+                PANEL_PREVIEW_RING_COLOR, 1, ST.GetEffectiveBorderRenderMode(nil, nil, 1))
+            slot.selectedHighlight:Show()
+        else
+            slot.selectedHighlight:Hide()
+        end
+        return true
+    end
+
+    local isBarMode = group.displayMode == "bars"
+    local isTextMode = group.displayMode == "text"
+    local isGridPanel = isBarMode or isTextMode or IsIconModePanel(group)
+    if reconcileVisuals then
+        StopConditionalTicker(preview)
+    end
+    local anyAnimated = false
+    for index, slot in pairs(slots) do
+        local buttonData = group.buttons and group.buttons[index]
+        if reconcileVisuals and isGridPanel and buttonData then
+            local status = isBarMode and CollectBarEntryStatus(buttonData, group)
+                or CollectEntryStatus(buttonData, group)
+            if slot.icon then
+                slot.icon:SetDesaturated(not status.usable)
+            end
+            if isBarMode then
+                local effectiveStyle = group.style or {}
+                if CooldownCompanion.GetEffectiveStyle then
+                    effectiveStyle = CooldownCompanion:GetEffectiveStyle(effectiveStyle, buttonData)
+                        or effectiveStyle
+                end
+                local barPreviewState = GetStoredBarPreviewState(panelId, index)
+                ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, true,
+                    effectiveStyle, barPreviewState)
+                ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, index,
+                    effectiveStyle, barPreviewState)
+            elseif isTextMode then
+                ApplyTextSlotConditionalPreview(slot, buttonData, group, panelId, index)
+            else
+                ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, false)
+                ApplySlotConditionalPreview(slot, buttonData, group, panelId, index)
+            end
+        end
+        anyAnimated = anyAnimated or slot._cdcCondAnim ~= nil
+        if slot._cdcBarPreviewVisibility then
+            RefreshBarSlotWorkspacePresentation(slot)
+        end
+        local exactBarPreview = slot._cdcBarPreviewVisibility
+            and slot._cdcBarPreviewVisibility.exactPreview == true
+        ApplySelectionVisuals(slot, index,
+            exactBarPreview or IsGlowPreviewActiveOnEntry(panelId, index))
+    end
+    if reconcileVisuals and anyAnimated then
+        EnsureConditionalTicker(preview)
+    end
+    return true
 end
 
 -- Saved-design mirror used by Group Panel Overview tiles. The overview owns

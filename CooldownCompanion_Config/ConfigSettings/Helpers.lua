@@ -6,6 +6,33 @@ local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
 local IsNoCooldownSpellID = ST.IsNoCooldownSpell
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
+-- Continuous controls in the Buttons workspace render against the pinned
+-- mirror while they are being manipulated.  The mirror helper is published
+-- later in the config load order, so resolve it at call time.
+local function RefreshSelectedButtonsPreview()
+    if ST._RefreshButtonsPreviewMirror then
+        ST._RefreshButtonsPreviewMirror(CS.selectedGroup, true)
+    end
+end
+
+local function RefreshActiveConfigPreview()
+    -- The Resources destination intentionally leaves selectedContainer in
+    -- memory when it clears selectedGroup, so workspace ownership has to win
+    -- over the stale Buttons selection here.
+    if CS.barsEntrySelected and ST._RefreshResourcesLayoutPreview then
+        ST._RefreshResourcesLayoutPreview()
+    elseif CS.selectedGroup or CS.selectedContainer then
+        RefreshSelectedButtonsPreview()
+    end
+end
+
+local function PreviewScalarSetting(tbl, key, value, previewFn)
+    local committed = tbl[key]
+    tbl[key] = value
+    previewFn()
+    tbl[key] = committed
+end
+
 -- Helper: tint AceGUI Heading labels with player class color.
 -- Also restores the stock right-line anchors: AceGUI recycles Heading
 -- widgets and neither OnAcquire nor SetText repairs the right line, so a
@@ -1188,19 +1215,27 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
         }, tabInfoButtons))
 
         local totalButtons = #group.buttons
+        local function SetMaxVisibleButtons(val)
+            val = math.floor(val + 0.5)
+            if val >= totalButtons then
+                group.maxVisibleButtons = 0
+            else
+                group.maxVisibleButtons = val
+            end
+        end
         local maxVisRow = ST._AddSliderRow(panel, {
             label = "Max Visible Buttons",
             min = 1, max = math.max(totalButtons, 1), step = 1,
             value = group.maxVisibleButtons == 0 and totalButtons or group.maxVisibleButtons,
             onChange = function(val)
-                val = math.floor(val + 0.5)
-                if val >= totalButtons then
-                    group.maxVisibleButtons = 0
-                else
-                    group.maxVisibleButtons = val
-                end
-                local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-                if frame then frame._layoutDirty = true end
+                local committed = group.maxVisibleButtons
+                SetMaxVisibleButtons(val)
+                RefreshSelectedButtonsPreview()
+                group.maxVisibleButtons = committed
+            end,
+            onRelease = function(val)
+                SetMaxVisibleButtons(val)
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
             end,
         })
         ST._AnchorRowBadge(maxVisRow, CreateInfoButton(maxVisRow.frame, maxVisRow.frame, "LEFT", "LEFT", 0, 0, {
@@ -1650,12 +1685,11 @@ local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts
     local sizeKey = prefix .. "FontSize"
     local outlineKey = prefix .. "FontOutline"
     local indent = opts and opts.indent
-    -- Mirror-first opt-in for the one control here with a drag phase (the
-    -- resources surfaces, owner ruling 2026-08-02): the drag tick drives the
-    -- caller's preview and refreshFn applies once on release. Omitted - which
-    -- is every caller that has not opted in - the slider applies per tick as
-    -- before. The two dropdowns have no drag phase and stay on refreshFn.
-    local previewRefresh = opts and opts.previewRefresh
+    -- The slider is mirror-first everywhere. Resources and cast bars provide
+    -- their own canvas callback; ordinary panel controls use the pinned
+    -- Buttons preview. Dropdowns have no drag phase and remain discrete live
+    -- commits through refreshFn.
+    local previewRefresh = (opts and opts.previewRefresh) or RefreshSelectedButtonsPreview
 
     ST._AddSliderRow(container, {
         label = "Font Size",
@@ -1665,14 +1699,12 @@ local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts
         step = defaults.sizeStep or 1,
         value = tbl[sizeKey] or defaults.size or 12,
         onChange = function(val)
-            tbl[sizeKey] = val
-            local notify = previewRefresh or refreshFn
-            notify()
+            PreviewScalarSetting(tbl, sizeKey, val, previewRefresh)
         end,
-        onRelease = previewRefresh and function(val)
+        onRelease = function(val)
             tbl[sizeKey] = val
             refreshFn()
-        end or nil,
+        end,
     })
 
     -- FONT ROW (the Item Settings pilot's rule, stated at that call site):
@@ -1721,6 +1753,7 @@ local function AddOffsetSliders(container, tbl, xKey, yKey, defaults, refreshFn,
     local range = defaults.range or 20
     local step = defaults.step or 0.1
     local indent = opts and opts.indent
+    local previewRefresh = (opts and opts.previewRefresh) or RefreshSelectedButtonsPreview
 
     ST._AddSliderRow(container, {
         label = "X Offset",
@@ -1728,6 +1761,9 @@ local function AddOffsetSliders(container, tbl, xKey, yKey, defaults, refreshFn,
         min = -range, max = range, step = step,
         value = tbl[xKey] or defaults.x or 0,
         onChange = function(val)
+            PreviewScalarSetting(tbl, xKey, val, previewRefresh)
+        end,
+        onRelease = function(val)
             tbl[xKey] = val
             refreshFn()
         end,
@@ -1739,6 +1775,9 @@ local function AddOffsetSliders(container, tbl, xKey, yKey, defaults, refreshFn,
         min = -range, max = range, step = step,
         value = tbl[yKey] or defaults.y or 0,
         onChange = function(val)
+            PreviewScalarSetting(tbl, yKey, val, previewRefresh)
+        end,
+        onRelease = function(val)
             tbl[yKey] = val
             refreshFn()
         end,
@@ -1831,6 +1870,9 @@ ST._BuildCompactModeControls = BuildCompactModeControls
 ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls
 ST._CreateCharacterCopyButton = CreateCharacterCopyButton
 ST._AddAnchorDropdown = AddAnchorDropdown
+ST._RefreshSelectedButtonsPreview = RefreshSelectedButtonsPreview
+ST._RefreshActiveConfigPreview = RefreshActiveConfigPreview
+ST._PreviewScalarSetting = PreviewScalarSetting
 -- Exposed so the row-grammar color row can bind the exact same
 -- commit-on-close contract described above (see RowWidgets.lua).
 ST._SetupColorCallbacks = SetupColorCallbacks
@@ -1841,7 +1883,9 @@ ST._SetupColorCallbacks = SetupColorCallbacks
 -- config: table with alpha fields (baselineAlpha, forceAlpha*, forceHide*, fade*, etc.)
 -- refreshFn: function called after value changes (typically RefreshConfigPanel)
 -- collapseKey: string key for CS.collapsedSections
--- opts (optional): { onBaselineChanged = fn(val), isGlobal = bool, disabled = bool, disabledText = string, infoButtons = table, hideHeading = bool }
+-- opts (optional): { previewRefresh = fn(), onBaselinePreview = fn(val),
+-- onBaselineCommitted = fn(val), isGlobal = bool, disabled = bool,
+-- disabledText = string, infoButtons = table, hideHeading = bool }
 --
 -- Row grammar only (RowWidgets.lua): a collapsible left-aligned section header
 -- and a two-column grid of fixed-height rows. Every caller opts in, so there is
@@ -1851,6 +1895,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
     opts = opts or {}
     local tabInfoBtns = opts.infoButtons or CS.tabInfoButtons
     local controlsDisabled = opts.disabled == true
+    local previewRefresh = opts.previewRefresh or RefreshSelectedButtonsPreview
 
     local function ApplyAlphaSettingChange(refreshPanel)
         if CooldownCompanion.RefreshAlphaUpdateDriver then
@@ -1898,11 +1943,14 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
 
     local function ApplyBaselineAlpha(val)
         if controlsDisabled then return end
+        local committed = config.baselineAlpha
         config.baselineAlpha = val
-        if opts.onBaselineChanged then
-            opts.onBaselineChanged(val)
+        if opts.onBaselinePreview then
+            opts.onBaselinePreview(val)
+        else
+            previewRefresh()
         end
-        ApplyAlphaSettingChange(false)
+        config.baselineAlpha = committed
     end
 
     ST._AddSliderRow(leftTarget, {
@@ -1911,6 +1959,14 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         value = config.baselineAlpha or 1,
         disabled = controlsDisabled,
         onChange = ApplyBaselineAlpha,
+        onRelease = function(val)
+            if controlsDisabled then return end
+            config.baselineAlpha = val
+            if opts.onBaselineCommitted then
+                opts.onBaselineCommitted(val)
+            end
+            ApplyAlphaSettingChange(false)
+        end,
     })
 
     do
@@ -2048,7 +2104,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
                 min = 0, max = 5, step = 0.1,
                 value = config[key] or default,
                 disabled = controlsDisabled,
-                onChange = function(val)
+                onRelease = function(val)
                     if controlsDisabled then return end
                     config[key] = val
                     ApplyAlphaSettingChange(false)

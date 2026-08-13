@@ -1299,23 +1299,6 @@ local function GetTexturePanelAlphaModuleId(groupId)
     return "texture_panel_" .. tostring(groupId)
 end
 
--- The Baseline Alpha slider lives on the panel Visibility tab (internal
--- tab key "loadconditions"), so the preview only applies while that tab
--- is the one holding the slider.
-local function GetTexturePanelAlphaPreview(button)
-    local CS = ST._configState
-    if not button or not CS or CS.panelSettingsTab ~= "loadconditions" or CS.selectedGroup ~= button._groupId then
-        return nil
-    end
-
-    local preview = CS.texturePanelAlphaPreview
-    if type(preview) ~= "table" then
-        return nil
-    end
-
-    return preview[button._groupId]
-end
-
 function CooldownCompanion:HideAuraTextureVisual(button)
     local alphaModuleId = button and GetTexturePanelAlphaModuleId(button._groupId) or nil
     if alphaModuleId then
@@ -1380,54 +1363,6 @@ function CooldownCompanion:ReleaseAuraTextureVisual(button)
     end
 end
 
-local function IsStandaloneTextureEditingButton(button)
-    local CS = ST._configState
-    if not CS or not CS.configFrame or not CS.configFrame.frame or not CS.configFrame.frame:IsShown() then
-        return false
-    end
-    if CS.selectedGroup ~= button._groupId then
-        return false
-    end
-
-    local group = button._groupId and ResolveGroup(button._groupId) or nil
-    if not CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
-        return false
-    end
-
-    -- "loadconditions" is the Visibility tab, which carries the Alpha
-    -- section (Baseline Alpha previews against the shown visual).
-    if CS.panelSettingsTab == "appearance" or CS.panelSettingsTab == "effects"
-        or CS.panelSettingsTab == "layout" or CS.panelSettingsTab == "loadconditions" then
-        if CooldownCompanion:IsTriggerPanelGroup(group) then
-            return true
-        end
-        if CS.selectedButton == nil then
-            return true
-        end
-    end
-
-    -- The inline texture browser being open for this button's panel keeps it
-    -- editing-visible on the states the checks above miss (e.g. an entry
-    -- selected). Migrated from the retired floating
-    -- picker window's _targetGroupId check; CS.inlineTextureBrowserOpen holds
-    -- the open panel's group id.
-    return CS.inlineTextureBrowserOpen ~= nil
-        and CS.inlineTextureBrowserOpen == button._groupId
-end
-
-local function IsTexturePanelConfigForceVisible(button)
-    if not button then
-        return false
-    end
-
-    local group = button._groupId and ResolveGroup(button._groupId) or nil
-    if not CooldownCompanion:IsTexturePanelGroup(group) then
-        return false
-    end
-
-    return ST.IsConfigButtonForceVisible(button)
-end
-
 local function GetStandaloneTextureSettings(group)
     if CooldownCompanion:IsTriggerPanelGroup(group) then
         return CooldownCompanion:GetTriggerPanelSignalSettings(group)
@@ -1457,11 +1392,6 @@ function CooldownCompanion.ResolveActiveStandaloneDisplay(button)
     end
 
     local displayType = CooldownCompanion.GetStandaloneDisplayType(group)
-    local preview = button._auraTexturePreviewSelection
-    if displayType == "texture" and type(preview) == "table" then
-        return "texture", NormalizeAuraTextureSettings(preview)
-    end
-
     if displayType == "icon" then
         local settings = CooldownCompanion:GetTriggerPanelIconSettings(group, false)
         if not settings or settings.manualIcon == nil then
@@ -1482,7 +1412,7 @@ function CooldownCompanion.ResolveActiveStandaloneDisplay(button)
     if not settings or not settings.sourceType or settings.sourceValue == nil then
         return "texture", nil
     end
-    if not settings.enabled and not IsStandaloneTextureEditingButton(button) then
+    if not settings.enabled then
         return "texture", nil
     end
 
@@ -1602,28 +1532,19 @@ function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, dri
         and self:IsCursorAnchorLayoutPreviewGroupActive(driverButton._groupId)
         or false
     local state = {
-        isEditing = IsStandaloneTextureEditingButton(driverButton),
-        isConfigForceVisible = (not isTriggerPanel) and IsTexturePanelConfigForceVisible(driverButton),
         isCursorLayoutPreview = isCursorLayoutPreview,
         isGroupedPreview = groupedPreviewFrame ~= nil,
         groupedPreviewFrame = groupedPreviewFrame,
         isUnlocked = not isCursorAnchored and not combatForcedLock and group and (group.locked == false or groupedPreviewFrame ~= nil),
-        hasPreviewSelection = displayType == "texture" and type(driverButton._auraTexturePreviewSelection) == "table",
         triggerMatched = isTriggerPanel and frame and frame:IsShown() and DoesTriggerPanelMatch(frame) or false,
         showDisplay = false,
     }
 
     if settings then
-        if state.hasPreviewSelection then
-            state.showDisplay = true
-        elseif state.isCursorLayoutPreview then
+        if state.isCursorLayoutPreview then
             state.showDisplay = true
         elseif isTriggerPanel then
-            state.showDisplay = state.triggerMatched or state.isEditing or state.isUnlocked
-        elseif state.isEditing then
-            state.showDisplay = true
-        elseif state.isConfigForceVisible then
-            state.showDisplay = true
+            state.showDisplay = state.triggerMatched or state.isUnlocked
         elseif state.isUnlocked then
             state.showDisplay = true
         elseif driverButton:GetParent()
@@ -1635,10 +1556,7 @@ function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, dri
     end
 
     state.triggerSoundVisible = settings ~= nil and state.triggerMatched and state.showDisplay
-    state.bypassModuleAlpha = state.hasPreviewSelection
-        or state.isEditing
-        or state.isConfigForceVisible
-        or state.isCursorLayoutPreview
+    state.bypassModuleAlpha = state.isCursorLayoutPreview
         or state.isUnlocked
     return state
 end
@@ -1786,9 +1704,8 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
     host:Show()
 
     local alphaModuleId = GetTexturePanelAlphaModuleId(driverButton._groupId)
-    local layoutPreviewAlpha = GetTexturePanelAlphaPreview(driverButton)
     host._unlockGhost = frame and frame._unlockGhost or nil
-    local bypassAlpha = layoutPreviewAlpha ~= nil and layoutPreviewAlpha or (host._unlockGhost and 0.4 or 1)
+    local bypassAlpha = host._unlockGhost and 0.4 or 1
     local visibilityAlpha = Clamp(driverButton._rawVisibilityAlphaOverride or 1, 0, 1)
     local panelAlphaTarget = GetStandalonePanelAlphaTargetFrame(group, sharedSettings, driverButton._groupId)
     local containerAlphaId, containerAlphaConfig

@@ -103,6 +103,9 @@ local function BuildAttachedCastBarOffsetControls(container, layout)
             min = -100, max = 100, step = 0.1,
             value = castLayout.panelAnchorYOffset or 0,
             onChange = function(val)
+                ST._PreviewScalarSetting(castLayout, "panelAnchorYOffset", val, RefreshBarsCanvasForDrag)
+            end,
+            onRelease = function(val)
                 castLayout.panelAnchorYOffset = val
                 RefreshAttachedCastBarOffset(false)
             end,
@@ -253,6 +256,11 @@ local function BuildCastBarPositioningPanel(container)
             value = (layout and (layout.yOffset or layout.verticalXOffset))
                 or (rbSettings and rbSettings.yOffset) or 3,
             onChange = function(val)
+                if layout then
+                    ST._PreviewScalarSetting(layout, "yOffset", val, RefreshBarsCanvasForDrag)
+                end
+            end,
+            onRelease = function(val)
                 if layout then layout.yOffset = val end
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:RepositionCastBar()
@@ -318,6 +326,9 @@ local function BuildCastBarPositioningPanel(container)
         min = 20, max = 600, step = 1,
         value = settings.independentWidth or 200,
         onChange = function(val)
+            ST._PreviewScalarSetting(settings, "independentWidth", val, RefreshBarsCanvasForDrag)
+        end,
+        onRelease = function(val)
             settings.independentWidth = val
             CooldownCompanion:ApplyCastBarSettings()
         end,
@@ -327,7 +338,7 @@ local function BuildCastBarPositioningPanel(container)
         label = "X Offset",
         min = -2000, max = 2000, step = 0.1,
         value = anchor.x or 0,
-        onChange = function(val)
+        onRelease = function(val)
             anchor.x = val
             CooldownCompanion:ApplyCastBarSettings()
         end,
@@ -337,7 +348,7 @@ local function BuildCastBarPositioningPanel(container)
         label = "Y Offset",
         min = -2000, max = 2000, step = 0.1,
         value = anchor.y or 0,
-        onChange = function(val)
+        onRelease = function(val)
             anchor.y = val
             CooldownCompanion:ApplyCastBarSettings()
         end,
@@ -404,6 +415,8 @@ local function BuildCastBarStylingPanel(container)
             value = settings.height or 15,
             set = function(val) settings.height = val end,
             apply = applyCastBar,
+            stateOwner = settings,
+            stateKeys = "height",
         })
 
         AddColorRow(barRight, {
@@ -485,6 +498,8 @@ local function BuildCastBarStylingPanel(container)
                         settings.borderSize = val
                     end,
                     apply = applyCastBar,
+                    stateOwner = settings,
+                    stateKeys = "borderSize",
                 })
             end
         end
@@ -525,6 +540,8 @@ local function BuildCastBarStylingPanel(container)
             value = settings.iconSize or 16,
             set = function(val) settings.iconSize = val end,
             apply = applyCastBar,
+            stateOwner = settings,
+            stateKeys = "iconSize",
         })
 
         -- The two offsets below are NOT on the canvas: the facsimile pins its
@@ -534,7 +551,7 @@ local function BuildCastBarStylingPanel(container)
             indent = true,
             min = -50, max = 50, step = 0.1,
             value = settings.iconOffsetX or 0,
-            onChange = function(val)
+            onRelease = function(val)
                 settings.iconOffsetX = val
                 CooldownCompanion:ApplyCastBarSettings()
             end,
@@ -545,7 +562,7 @@ local function BuildCastBarStylingPanel(container)
             indent = true,
             min = -50, max = 50, step = 0.1,
             value = settings.iconOffsetY or 0,
-            onChange = function(val)
+            onRelease = function(val)
                 settings.iconOffsetY = val
                 CooldownCompanion:ApplyCastBarSettings()
             end,
@@ -573,6 +590,8 @@ local function BuildCastBarStylingPanel(container)
                     settings.iconBorderSize = val
                 end,
                 apply = applyCastBar,
+                stateOwner = settings,
+                stateKeys = "iconBorderSize",
             })
         end
     end
@@ -696,6 +715,8 @@ local function BuildCastBarStylingPanel(container)
             value = settings.castTimeXOffset or 0,
             set = function(val) settings.castTimeXOffset = val end,
             apply = applyCastBar,
+            stateOwner = settings,
+            stateKeys = "castTimeXOffset",
         })
 
         AddMirrorFirstSliderRow(panel, {
@@ -704,6 +725,8 @@ local function BuildCastBarStylingPanel(container)
             value = settings.castTimeYOffset or 0,
             set = function(val) settings.castTimeYOffset = val end,
             apply = applyCastBar,
+            stateOwner = settings,
+            stateKeys = "castTimeYOffset",
         })
     end
 

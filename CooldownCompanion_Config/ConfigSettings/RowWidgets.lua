@@ -1449,8 +1449,21 @@ local function AddColorRow(container, opts)
     row:SetDisabled(opts.disabled == true)
 
     if opts.tbl and opts.key and SetupColorCallbacks then
+        local onChange = opts.onChange
+        local deferCommit = opts.deferCommit
+        if opts.onConfirm then
+            -- A picker drag is another continuous edit: unless the caller has
+            -- a distinct canvas-only callback, keep it on the active config
+            -- preview and apply the saved color to live displays on close.
+            if not onChange or onChange == opts.onConfirm then
+                onChange = ST._RefreshActiveConfigPreview
+            end
+            if deferCommit == nil then
+                deferCommit = true
+            end
+        end
         SetupColorCallbacks(row.colorPicker, opts.tbl, opts.key,
-            opts.onConfirm, opts.onChange, opts.deferCommit)
+            opts.onConfirm, onChange, deferCommit)
     end
 
     container:AddChild(row)

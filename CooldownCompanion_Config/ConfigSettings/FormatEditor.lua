@@ -495,6 +495,8 @@ end
 -- opts.target   initial target table, same shape as SetTarget's argument
 -- opts.onDirty  optional; called with the controller whenever the raw format
 --               string changes from typing, a starter chip, or an insert
+-- opts.onCommit optional; called when editing is explicitly finished by focus
+--               loss or Enter so the host can flush its debounced write
 --
 -- Hosts carry their own bookkeeping in the same target table (the groupId they
 -- refresh through); the component reads only the three keys listed above.
@@ -530,6 +532,12 @@ local function BuildFormatEditorContent(container, opts)
     local function NotifyDirty()
         if opts.onDirty then
             opts.onDirty(controller)
+        end
+    end
+
+    local function NotifyCommit()
+        if opts.onCommit then
+            opts.onCommit(controller)
         end
     end
 
@@ -929,6 +937,8 @@ local function BuildFormatEditorContent(container, opts)
         UpdateDisplay()
         NotifyDirty()
     end)
+    editGroup:SetCallback("OnEditFocusLost", NotifyCommit)
+    editGroup:SetCallback("OnEnterPressed", NotifyCommit)
 
     -- ================================================================
     -- CONTROLLER
