@@ -2089,12 +2089,13 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         and not isTriggerPanel
         and self:IsTexturePanelAuraDisplayEnabled(group, driverButton.buttonData)
     -- The production artwork lives inside the slot kit, so the managed path
-    -- draws NOTHING until the OOC rebind has bound a slot for this entry. That
-    -- is invisible when the queued pass lands next frame, but a pass BLOCKED by
-    -- combat (reload mid-fight, or Aura control enabled in combat) would leave
-    -- the panel dark for the whole fight - so keep the ordinary render until
-    -- the slot exists. A pooled host can also carry the previous entry's
-    -- still-bound slot; the ordinary branch suppresses that root too, and
+    -- draws NOTHING until the access-gated rebind has bound a slot for this
+    -- entry. That is invisible when the queued pass lands next frame, but a pass
+    -- blocked while auras are secret (reload mid-fight, or Aura control enabled
+    -- in combat) would leave the panel dark for the whole fight - so keep the
+    -- ordinary render until the slot exists. A pooled host can also carry the
+    -- previous entry's still-bound slot; the ordinary branch suppresses that
+    -- root too, and
     -- BindDisplay re-runs this once it installs the matching pool token.
     local slotToken = driverButton._auraSlotHostToken
     local hasBoundSlot = slotToken ~= nil and slotToken == driverButton.buttonData

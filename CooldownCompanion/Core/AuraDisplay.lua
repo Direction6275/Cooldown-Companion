@@ -4,14 +4,16 @@
 
     THE SINGLE-WRITER RULE: this file is the ONLY code in the addon allowed to
     hold or touch aura slot buttons or the regions created under them. Once
-    auras are secret (combat), the entire slot subtree is FORBIDDEN to addon
+    auras are secret, the entire slot subtree is FORBIDDEN to addon
     code — reads and writes both error, an error freezes the display, and
-    IsForbidden() does NOT report the state. Safety is structural, not checked:
-      * All slot work happens in the OOC rebind pass (RequestAuraRebind).
+    IsForbidden() does NOT report the state. Safety is structural and uses
+    Blizzard's aura-secrecy predicate alongside combat lockdown:
+      * All slot work happens in the restriction-gated rebind pass
+        (RequestAuraRebind).
       * Slot buttons live under an _ccNoTouch mount: button.auraLayer for
         icon/bar hosts, or the Texture panel's UIParent-level runtime root.
         Frame sweeps never recurse into either flagged frame.
-      * In combat the only permitted aura-system calls are container-level
+      * While auras are secret the only permitted aura-system calls are container-level
         (UpdateAllAuras, SetAuraSlotCandidateFilters).
 
     PTR 7 (tracker D-A0): aura buttons carry a permanent ChangeParent
@@ -145,30 +147,19 @@ local rebindRequestCount = 0
 local rebindPassCount = 0
 local lastRebindPassAt = nil
 
--- Deferred-rebind retry events: PLAYER_REGEN_ENABLED for player combat, and
--- target-scoped UNIT_FLAGS for the case where ONLY target combat blocks (an
--- OOC player never gets a regen event, so the target's own combat-flag change
--- must wake the retry). The handler re-checks the gate, so extra fires are
--- harmless; PLAYER_TARGET_CHANGED retries live on the target watcher.
+-- A blocked rebind keeps its current bindings intact and retries after player
+-- combat. The gates below are player-global combat lockdown and aura secrecy;
+-- target and ally combat flags are not part of that contract, so UNIT_FLAGS
+-- has no role in this retry path.
 local rebindDeferFrame = CreateFrame("Frame")
 
--- `anyUnit` widens UNIT_FLAGS from target-only to unfiltered. Ally tokens can
--- block a pass, and RegisterUnitEvent accepts at most two units, so there is no
--- way to filter party1..raid40 — an ally's combat ENDING would otherwise produce
--- no event at all (PLAYER_REGEN_ENABLED cannot fire for a player who never
--- entered combat), leaving the retry armed with no trigger. Blizzard registers
--- unfiltered UNIT_FLAGS for exactly this purpose in
--- Blizzard_CompactRaidFrames/Mainline/Blizzard_CompactRaidFrameManager.lua:80.
--- The handler disarms and re-checks the gate first, so extra fires are harmless.
 local function ArmRebindRetry()
     pendingRebind = true
     rebindDeferFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    rebindDeferFrame:RegisterUnitEvent("UNIT_FLAGS", "target")
 end
 
 local function DisarmRebindRetry()
     rebindDeferFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
-    rebindDeferFrame:UnregisterEvent("UNIT_FLAGS")
 end
 
 ------------------------------------------------------------------------
@@ -179,44 +170,19 @@ local targetWatcher
 local groupWatcher
 local RunAuraRebind
 
--- The player's own combat is the ONLY gate. There is deliberately no per-unit
--- rebind gate — do not re-add one.
---
--- P11 assumed aura secrecy follows each unit's own state, so a slot on a fighting
--- ally would be untouchable even with the player at rest. That extrapolated from
--- aura-DATA secrecy (which may well be per-unit) to slot-ACCESS (which is not),
--- and CC never reads aura data — the rebind pass only writes filters and styling.
---
--- Measured in game 2026-07-29 (`/ccat g2 write`), three states, writes chosen to
--- mirror this file's own bind calls (a container mutator, two slot-button
--- methods, and a write to a region under the slot button):
---   * player OOC, ally OOC          -> all succeed
---   * player IN COMBAT              -> slot-button and kit-region writes ERROR
---     ("Attempt to access forbidden object"), proving the test detects failure
---   * player OOC, ALLY IN COMBAT    -> all succeed, and the slot kept being
---     shown and hidden by Blizzard afterwards
--- So slot forbidden-ness is player-scoped, consistent with PTR 5 ("AuraButtons
--- are forbidden whenever auras are secret") and with the restriction windows
--- — combat, encounter, challenge mode, PvP — all being conditions about the
--- player. `slotButton:CanBeAccessedInContext()` agrees: it flips with the
--- player's combat state and reported accessible for an ally slot while that ally
--- fought.
---
--- The one gap that probe left — whether an encounter/M+/PvP restriction
--- window restricts while the player is out of combat — is closed: owner
--- validation 2026-08-11 (12.1 PTR) played restricted content on this
--- combat-only gate with no access errors and no display breakage. OOC
--- windows inside restricted content do not forbid the player's slots;
--- combat lockdown stays the only gate needed.
+-- Custom AuraButtons carry DenyTaintedAccessWhenAurasAreSecret, so use the
+-- matching global secrecy predicate. This pass also performs layout/topology
+-- writes, which remain gated by combat lockdown. Texture rendering uses the
+-- same helper, so keep it O(1).
 local function CanRunRebindNow()
-    return not InCombatLockdown()
+    return not InCombatLockdown() and not C_Secrets.ShouldAurasBeSecret()
 end
 
 -- Exported for display code that must decide what to draw while no slot is
 -- bound yet. A Texture panel's production artwork lives entirely inside the
 -- slot kit, so "not bound" means "nothing to show" — and the caller needs to
 -- know whether that is a frame-long wait for the queued pass or a wait for the
--- whole combat, which is far too long to leave the panel dark.
+-- current aura-restriction window, which is far too long to leave the panel dark.
 function CooldownCompanion:CanRunAuraRebindNow()
     return CanRunRebindNow()
 end
@@ -282,21 +248,14 @@ local function EnsureTargetWatcher()
         -- UpdateAllAuras, so a container that missed swaps while hidden
         -- catches up the moment its host shows again.
         RefreshRecordsForToken(IsTargetToken)
-        -- Opportunistic: service a rebind that was deferred by player combat if we
-        -- are already out of it. PLAYER_REGEN_ENABLED normally gets there first, so
-        -- this is a cheap extra wake rather than the primary path.
-        if pendingRebind and CanRunRebindNow() then
-            pendingRebind = false
-            DisarmRebindRetry()
-            RunAuraRebind()
-        end
     end)
 end
 
 -- Ally-scope entries derive their token set from group size, so the set changes
 -- whenever the roster does — and joining a raid switches the whole set from
--- party* to raid*. Slots can only be created out of combat, so a mid-fight join
--- is covered from the next OOC pass, not immediately.
+-- party* to raid*. Slots can only be created while the aura objects are
+-- accessible, so a restricted mid-fight join is covered by the deferred pass,
+-- not immediately.
 -- Armed from the ENTRY'S OPT-IN, not from ally record creation: while solo a
 -- group-scoped entry resolves to { "player" } only, so waiting for a party/raid
 -- record meant the watcher never existed and joining a group did nothing until
@@ -2775,6 +2734,13 @@ end
 function RunAuraRebind()
     local self = CooldownCompanion
     if not (self.db and self.groupFrames) then return end
+    -- Authoritative guard at the mutation boundary. Callers also check so they
+    -- can coalesce/defer early, but no caller timing may reach the destructive
+    -- park-all phase after the AuraButton subtree becomes inaccessible.
+    if not CanRunRebindNow() then
+        ArmRebindRetry()
+        return
+    end
     deferNoteShown = false
     rebindPassCount = rebindPassCount + 1
     lastRebindPassAt = GetTime()
@@ -2852,9 +2818,9 @@ function RunAuraRebind()
     end
 
     -- Park everything, then bind fresh — simple and idempotent; runs at
-    -- config-change frequency, never per tick. No per-unit gate: the player's
-    -- combat state is the only thing that can make a slot untouchable (see
-    -- CanRunRebindNow), and every caller has already checked it.
+    -- config-change frequency, never per tick. The mutation-boundary guard
+    -- above has established that combat lockdown and aura secrecy are both
+    -- clear before any binding is hidden or rewritten.
     for _, record in ipairs(records) do
         ParkDisplay(record)
     end
@@ -2918,14 +2884,16 @@ rebindDeferFrame:SetScript("OnEvent", function()
     if CanRunRebindNow() then
         RunAuraRebind()
     else
-        -- Still in combat lockdown (a pull started before the retry landed).
+        -- Combat lockdown or aura secrecy is still enforced (a pull may have
+        -- restarted before the retry landed).
         ArmRebindRetry()
     end
 end)
 
--- Single entry point. OOC requests coalesce into one next-frame pass (group
+-- Single entry point. Accessible requests coalesce into one next-frame pass (group
 -- populates arrive once per group on a reload); the timer callback re-checks
--- combat and re-defers if a pull started in between.
+-- combat lockdown and aura secrecy and re-defers if restrictions started in
+-- between.
 function CooldownCompanion:RequestAuraRebind(reason, groupId)
     if not self.db then return end
     rebindRequestCount = rebindRequestCount + 1
