@@ -48,6 +48,7 @@ local hooksInstalled = false
 local castEventFrame = nil
 local castEventFrameEnabled = false
 local blizzardSuppressed = false
+local blizzardSuppressionYielded = false
 -- Two different things, deliberately separate (owner ruling 2026-07-26).
 -- The unlock assist paints the real bar so an independent cast bar can be
 -- positioned; the command-center preview is a config-canvas state and never
@@ -916,9 +917,15 @@ local BLIZZARD_CAST_UNIT_EVENTS = {
 }
 
 local function SuppressBlizzardCastBar()
+    -- Blizzard owns the full transition while its ApplyingTalents overlay is
+    -- active. Re-evaluations may still run as spec-specific panels settle, but
+    -- they must not take player-bar ownership back until the overlay ends.
+    if overlayReplacingPlayerBar then return end
+
     local cb = PlayerCastingBarFrame
     if not cb then return end
     blizzardSuppressed = true
+    blizzardSuppressionYielded = false
 
     -- Re-apply every part of suppression even when CC already owns the bar:
     -- Edit Mode and overlay teardown can show/re-manage it later. This method
@@ -936,9 +943,26 @@ local function SuppressBlizzardCastBar()
     hide(cb)
 end
 
+local function YieldBlizzardCastBarSuppression()
+    if not blizzardSuppressed or blizzardSuppressionYielded then return end
+
+    local cb = PlayerCastingBarFrame
+    if not cb then return end
+
+    -- StartReplacingPlayerBarAt has already disabled the regular player bar.
+    -- Restore only its event registrations here: the Blizzard overlay remains
+    -- the visible owner, and CC does not reposition or show the regular bar.
+    for _, event in ipairs(BLIZZARD_CAST_UNIT_EVENTS) do
+        cb:RegisterUnitEvent(event, "player")
+    end
+    cb:RegisterEvent("PLAYER_ENTERING_WORLD")
+    blizzardSuppressionYielded = true
+end
+
 local function RestoreBlizzardCastBar()
     if not blizzardSuppressed then return end
     blizzardSuppressed = false
+    blizzardSuppressionYielded = false
 
     local cb = PlayerCastingBarFrame
     if not cb then return end
@@ -1945,6 +1969,7 @@ function CooldownCompanion:GetCastBarRuntimeDebugInfo()
         hooksInstalled = hooksInstalled == true,
         castEventsActive = castEventFrameEnabled == true,
         blizzardSuppressed = blizzardSuppressed == true,
+        blizzardSuppressionYielded = blizzardSuppressionYielded == true,
     }
 end
 
@@ -2102,18 +2127,41 @@ InstallHooks = function()
             hide(overlayBar)
         end
 
-        local overlayEndHookInstalled = false
-        local function InstallOverlayEndHook()
-            if overlayEndHookInstalled then return end
+        local overlayHandoffHooksInstalled = false
+        local function InstallOverlayHandoffHooks()
+            if overlayHandoffHooksInstalled then return end
             local overlayBar = OverlayPlayerCastingBarFrame
-            if not overlayBar or type(overlayBar.EndReplacingPlayerBar) ~= "function" then return end
+            if not overlayBar
+                or type(overlayBar.StartReplacingPlayerBarAt) ~= "function"
+                or type(overlayBar.EndReplacingPlayerBar) ~= "function" then
+                return
+            end
+            hooksecurefunc(overlayBar, "StartReplacingPlayerBarAt", function(_, _, overrideInfo)
+                local applyingTalentsType = CastingBarType and CastingBarType.ApplyingTalents
+                if not applyingTalentsType
+                    or not overrideInfo
+                    or overrideInfo.overrideBarType ~= applyingTalentsType then
+                    return
+                end
+                overlayReplacingPlayerBar = true
+                if isApplied then
+                    HideCastBar()
+                end
+                YieldBlizzardCastBarSuppression()
+            end)
             hooksecurefunc(overlayBar, "EndReplacingPlayerBar", function()
                 nonTalentOverlayHiddenByCC = false
+                overlayReplacingPlayerBar = false
                 if ShouldOwnBlizzardCastBar() then
                     SuppressBlizzardCastBar()
+                    C_Timer.After(0, function()
+                        if ShouldOwnBlizzardCastBar() then
+                            CooldownCompanion:EvaluateCastBar({ reason = "castbar-talent-handoff" })
+                        end
+                    end)
                 end
             end)
-            overlayEndHookInstalled = true
+            overlayHandoffHooksInstalled = true
         end
 
         local overlayBar = OverlayPlayerCastingBarFrame
@@ -2121,13 +2169,16 @@ InstallHooks = function()
         if overlayBar and overlayBar:IsShown() and not overlayReplacingPlayerBar then
             HideNonTalentOverlay()
         end
-        InstallOverlayEndHook()
+        InstallOverlayHandoffHooks()
 
         EventRegistry:RegisterCallback("OverlayPlayerCastBar.OnShow", function()
-            InstallOverlayEndHook()
+            InstallOverlayHandoffHooks()
             overlayReplacingPlayerBar = IsTalentOverlayShown()
-            if overlayReplacingPlayerBar and isApplied then
-                HideCastBar()
+            if overlayReplacingPlayerBar then
+                if isApplied then
+                    HideCastBar()
+                end
+                YieldBlizzardCastBarSuppression()
             elseif not overlayReplacingPlayerBar and ShouldOwnBlizzardCastBar() then
                 HideNonTalentOverlay()
                 SuppressBlizzardCastBar()
@@ -2135,9 +2186,9 @@ InstallHooks = function()
         end, CooldownCompanion)
         EventRegistry:RegisterCallback("OverlayPlayerCastBar.OnHide", function()
             local shouldResume = overlayReplacingPlayerBar
-            overlayReplacingPlayerBar = false
-            -- Pick an in-flight cast back up after Blizzard finishes the
-            -- current overlay transition.
+            -- OnHide can run inside EndReplacingPlayerBar before Blizzard has
+            -- restored its regular player bar. Keep yielding until the end
+            -- hook completes the handoff, then pick up any in-flight cast.
             if shouldResume then
                 C_Timer.After(0, function()
                     if isApplied and not isUnlockAssistActive then
