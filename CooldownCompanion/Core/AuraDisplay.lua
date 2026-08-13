@@ -20,10 +20,10 @@
     forbidden aspect — SetParent on a slot button errors even out of combat.
     The display therefore uses ONE AuraContainer PER (HOST BUTTON, UNIT
     TOKEN, HOST KIND) — a host needs more than one only when an entry is
-    tracked on several units at once — created as
-    a child of that button's auraLayer (containers are plain CC frames; the
-    parent is set at CreateFrame and never changed — only the BUTTONS carry
-    the forbidden aspects), with the slot button anchored once inside
+    tracked on several units at once — created beneath that button's
+    auraLayer through a plain CC visibility parent (the parent is set at
+    CreateFrame and never changed — only the BUTTONS carry the forbidden
+    aspects), with the slot button anchored once inside
     initializeFrame and never moved, re-leveled, or reparented afterwards.
     Bind is a container-mutator filter swap. Park is a polarity-crossed
     sentinel filter PLUS container:Hide() — the sentinel is applied inside
@@ -45,6 +45,7 @@ local ipairs = ipairs
 local pairs = pairs
 local InCombatLockdown = InCombatLockdown
 local CreateFrame = CreateFrame
+local UnitCanAssist = UnitCanAssist
 local IsInRaid = IsInRaid
 local GetNumGroupMembers = GetNumGroupMembers
 local GetNumSubgroupMembers = GetNumSubgroupMembers
@@ -118,6 +119,28 @@ local function SlotContract(unit, groupScoped)
     return SLOT_CONTRACT[unit] or ALLY_CONTRACT
 end
 
+-- Blizzard applies includeSpellIDs only when the aura's polarity agrees with
+-- the unit's current reaction to the player. When that relationship flips
+-- (vehicle possession, charm, or a friendly/hostile target transition), an
+-- incompatible slot would otherwise accept every aura of its base polarity.
+-- Fail closed until the relationship agrees again; the visibility switch is
+-- on a CC-owned parent, never on the restricted AuraButton subtree.
+local function CanApplySpellIdentityFilter(unit, groupScoped)
+    local isAssistable = UnitCanAssist("player", unit) == true
+    if SlotContract(unit, groupScoped).polarity == "HELPFUL" then
+        return isAssistable
+    end
+    return not isAssistable
+end
+
+local function SetIdentityVisibility(record, shown)
+    shown = shown == true
+    local changed = record.identityVisible ~= shown
+    record.identityVisible = shown
+    record.visibilityRoot:SetShown(shown)
+    return changed
+end
+
 -- Module state. Display records (container + slot + kit) live only here — no
 -- slot-button references are ever stored on CC buttons, so no sweep or
 -- diagnostic walk can reach the forbidden subtree by accident.
@@ -168,7 +191,9 @@ end
 
 local targetWatcher
 local groupWatcher
+local identityWatcher
 local RunAuraRebind
+local RefreshIdentityVisibilityForToken
 
 -- Custom AuraButtons carry DenyTaintedAccessWhenAurasAreSecret, so use the
 -- matching global secrecy predicate. This pass also performs layout/topology
@@ -224,6 +249,10 @@ end
 local RefreshBlockRecordsForToken
 
 local function RefreshRecordsForToken(isMatch)
+    local identityChanged
+    if RefreshIdentityVisibilityForToken then
+        identityChanged = RefreshIdentityVisibilityForToken(isMatch)
+    end
     for _, record in ipairs(records) do
         if isMatch(record.unit) then
             record.container:UpdateAllAuras()
@@ -232,10 +261,29 @@ local function RefreshRecordsForToken(isMatch)
     if RefreshBlockRecordsForToken then
         RefreshBlockRecordsForToken(isMatch)
     end
+    return identityChanged
 end
 
 local function IsTargetToken(unit) return unit == "target" end
 local function IsAllyToken(unit) return unit ~= "player" and unit ~= "target" end
+
+local function EnsureIdentityWatcher()
+    if identityWatcher then return end
+    identityWatcher = CreateFrame("Frame")
+    identityWatcher:RegisterEvent("UNIT_FACTION")
+    identityWatcher:SetScript("OnEvent", function(_, _, unit)
+        -- A player faction change can alter the player's relationship to
+        -- every tracked unit, not just the player token. Blizzard's target
+        -- frame follows the same rule when reconfiguring its aura container.
+        local refreshUnit = unit
+        if unit == "player" then refreshUnit = nil end
+        if CooldownCompanion:RefreshAuraIdentityVisibility(refreshUnit) then
+            -- A block bucket suppressed by the previous relationship needs a
+            -- fresh topology pass before it can rejoin its side's chain.
+            CooldownCompanion:RequestAuraRebind("unit-faction")
+        end
+    end)
+end
 
 local function EnsureTargetWatcher()
     if targetWatcher then return end
@@ -247,7 +295,9 @@ local function EnsureTargetWatcher()
         -- Hidden hosts self-heal instead: OnShow_Intrinsic re-runs
         -- UpdateAllAuras, so a container that missed swaps while hidden
         -- catches up the moment its host shows again.
-        RefreshRecordsForToken(IsTargetToken)
+        if RefreshRecordsForToken(IsTargetToken) then
+            CooldownCompanion:RequestAuraRebind("target-reaction")
+        end
     end)
 end
 
@@ -1962,16 +2012,16 @@ local function EnsureTexturePanelAuraLayer(button)
     return host.auraRuntimeRoot
 end
 
--- One display per host button (D-A0 rung (c)): the container is a plain CC
--- frame whose parent is set once at CreateFrame and never changed (only the
--- BUTTONS carry the ChangeParent aspect), and the slot button is anchored
+-- One display per host button (D-A0 rung (c)): the container's parent is a
+-- plain CC visibility frame set once at CreateFrame and never changed (only
+-- the BUTTONS carry the ChangeParent aspect), and the slot button is anchored
 -- inside initializeFrame — the sanctioned setup window — and never moved,
 -- re-leveled, or reparented afterwards. The container is pinned to the
 -- layer's frame level so the slot lands at layer+1, exactly where the
 -- pre-PTR 7 design put it — but the layer's own level is now a configurable
 -- slot, so where that band SITS follows the panel's strata order.
--- Visibility, alpha, and strata all reach the
--- slot through plain parentage; a hidden container is inert (P1a) and
+-- Visibility, alpha, and strata all reach the slot through plain parentage;
+-- a hidden container is inert (P1a) and
 -- re-registers + refreshes itself on show (OnShow_Intrinsic).
 -- Keyed by (button, host kind, unit), which makes record.unit IMMUTABLE: a
 -- record is for one unit for its whole life, and the container's SetUnit is
@@ -2005,11 +2055,19 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
         hostKind = hostKind,
         layer = layer,
     }
+    -- This plain frame is the runtime fail-closed switch for reaction changes.
+    -- Hiding it cannot inspect or mutate the restricted aura subtree, while
+    -- still suppressing every Blizzard-owned region below the container.
+    local visibilityRoot = CreateFrame("Frame", nil, layer)
+    visibilityRoot:SetAllPoints(layer)
+    visibilityRoot:SetFrameLevel(layer:GetFrameLevel())
+    visibilityRoot:Hide()
+    record.visibilityRoot = visibilityRoot
     -- Direct calls, no pcall: the TOC pins this client generation, so the
     -- AuraContainer API always exists — a failure here is a real setup error
     -- that must surface, not read as "feature unavailable".
-    local container = CreateFrame("AuraContainer", nil, layer, "CustomAuraContainerTemplate")
-    container:SetAllPoints(layer)
+    local container = CreateFrame("AuraContainer", nil, visibilityRoot, "CustomAuraContainerTemplate")
+    container:SetAllPoints(visibilityRoot)
     container:SetFrameLevel(layer:GetFrameLevel())
     container:SetUnit(unit)
     local slotButton = container:AddAuraSlot(record.key, SlotContract(unit, groupScoped).filter, {
@@ -2033,6 +2091,7 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
     end
     byUnit[recordKey] = record
     records[#records + 1] = record
+    EnsureIdentityWatcher()
     if unit == "target" then
         EnsureTargetWatcher()
     end
@@ -2083,6 +2142,8 @@ local function ParkDisplay(record)
     if not record.parked then
         record.parked = true
         record.boundEntry = nil
+        record.boundGroupScoped = nil
+        SetIdentityVisibility(record, false)
         -- CC-side tag only: the registered max stays whatever the last bind
         -- wrote (the fill is alpha-0; the next bind converges it).
         record.boundStackMax = nil
@@ -2159,6 +2220,7 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     -- Re-pin after the layer's level dance: the cascade keeps the subtree's
     -- relative levels on its own; this heals any drift without ever touching
     -- the slot button.
+    record.visibilityRoot:SetFrameLevel(layer:GetFrameLevel())
     record.container:SetFrameLevel(layer:GetFrameLevel())
     -- No unit swap here: records are keyed by (button, unit), so record.unit is
     -- immutable and always equals `unit`. SetUnit is called once, in
@@ -2219,6 +2281,9 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
         record.hostKind == "texturePanel" or style.tooltipHideInCombat == true)
     record.parked = nil
     record.boundEntry = buttonData
+    record.boundGroupScoped = groupScoped
+    record.identityApplicable = CanApplySpellIdentityFilter(unit, groupScoped)
+    SetIdentityVisibility(record, record.identityApplicable)
     -- Combat pool lock: while this button is pooled in combat it may only be
     -- re-acquired for the same entry (GroupFrame.AcquireButtonFromPool).
     button._auraSlotHostToken = buttonData
@@ -2311,6 +2376,47 @@ local blockContainers = {} -- side .. "\031" .. unit -> block record
 local blockRecords = {}    -- flat, append-only list of every block record
 local blockChainBlocked = 0 -- entries the last bind dropped for a dead chain
 
+local function RefreshSlotIdentityVisibility(record)
+    local applicable = CanApplySpellIdentityFilter(record.unit, record.boundGroupScoped)
+    local changed = record.identityApplicable ~= applicable
+    record.identityApplicable = applicable
+    return SetIdentityVisibility(record, record.boundEntry ~= nil and applicable) or changed
+end
+
+local function RefreshBlockIdentityVisibility(record)
+    local applicable = CanApplySpellIdentityFilter(record.unit)
+    local changed = record.identityApplicable ~= applicable
+    record.identityApplicable = applicable
+    return SetIdentityVisibility(record, record.shown == true and applicable) or changed
+end
+
+-- Relationship-only refresh: no AuraButton reads or writes. UNIT_FACTION,
+-- target swaps, roster remaps, and vehicle transitions can therefore suppress
+-- an unsafe record immediately even while a full rebind is deferred.
+function RefreshIdentityVisibilityForToken(isMatch)
+    local changed = false
+    for _, record in ipairs(records) do
+        if isMatch(record.unit) then
+            changed = RefreshSlotIdentityVisibility(record) or changed
+        end
+    end
+    for _, record in ipairs(blockRecords) do
+        if isMatch(record.unit) then
+            changed = RefreshBlockIdentityVisibility(record) or changed
+        end
+    end
+    return changed
+end
+
+function CooldownCompanion:RefreshAuraIdentityVisibility(unit)
+    if unit then
+        return RefreshIdentityVisibilityForToken(function(token)
+            return token == unit
+        end)
+    end
+    return RefreshIdentityVisibilityForToken(function() return true end)
+end
+
 -- The watcher-side half of the token refresh (forward-declared above the
 -- watchers). Same container-level call the slot loop makes: sanctioned
 -- combat surface, and hidden containers self-heal on show regardless.
@@ -2374,7 +2480,7 @@ end
 function ST._GetCustomBarAuraBlockContainer(side)
     local head
     for _, record in ipairs(blockRecords) do
-        if record.side == side and record.shown then
+        if record.side == side and record.shown and record.identityVisible then
             if record.chainAnchor then return record.container end
             head = head or record.container
         end
@@ -2388,16 +2494,18 @@ local function EnsureBlockContainer(side, unit)
     if record then return record end
     local flow = BLOCK_FLOW[side]
     if not flow then return nil end
-    -- Parented to the custom-bar aura host root, like the holders: the root
-    -- already carries the resource stack's applied state and alpha, so block
-    -- bars fade and go dark with the bars they belong to without any
-    -- per-container registration.
+    -- Parented through a plain CC visibility root beneath the custom-bar aura
+    -- host. The host still carries resource-stack state and alpha; the extra
+    -- parent is only the fail-closed identity switch.
     -- Both templates, always: DisableUntrustedLayoutScriptsTemplate is what
     -- lets a second container anchor to this one's edge and ride its secret
     -- size, and which container ends up serving as a chain anchor is not
     -- known at creation time.
+    local hostRoot = CooldownCompanion:GetCustomBarAuraHostRoot()
+    local visibilityRoot = CreateFrame("Frame", nil, hostRoot)
+    visibilityRoot:Hide()
     local container = CreateFrame("AuraContainer", nil,
-        CooldownCompanion:GetCustomBarAuraHostRoot(),
+        visibilityRoot,
         "CustomAuraContainerTemplate, DisableUntrustedLayoutScriptsTemplate")
     -- Seed only; Blizzard resizes from its own layout pass once a group
     -- exists, and that size is never CC's to read.
@@ -2413,6 +2521,7 @@ local function EnsureBlockContainer(side, unit)
         side = side,
         unit = unit,
         container = container,
+        visibilityRoot = visibilityRoot,
         -- Stamped at creation, never inferred later: a container built before
         -- this rule (same session, code swapped under a live client) has no
         -- way back to the aspect, and anchoring one errors.
@@ -2422,6 +2531,7 @@ local function EnsureBlockContainer(side, unit)
     }
     blockContainers[key] = record
     blockRecords[#blockRecords + 1] = record
+    EnsureIdentityWatcher()
     if unit == "target" then
         EnsureTargetWatcher()
     end
@@ -2612,8 +2722,13 @@ end
 -- stack-end mount; non-nil means it chains off that bucket's trailing edge.
 -- Returns the bound record, or nil when nothing could be mounted.
 local function BindBlockBucket(side, unit, entries, anchorRecord)
+    -- Mounting an incompatible unit would let Blizzard ignore includeSpellIDs
+    -- for every non-exempt aura candidate. Leave the whole unit bucket parked;
+    -- the reaction watcher requests another topology pass if it becomes safe.
     local record = EnsureBlockContainer(side, unit)
     if not record then return nil end
+    record.identityApplicable = CanApplySpellIdentityFilter(unit)
+    if not record.identityApplicable then return nil end
     local mounted
     if anchorRecord then
         if not (record.chainable and anchorRecord.chainable) then
@@ -2638,6 +2753,8 @@ local function BindBlockBucket(side, unit, entries, anchorRecord)
     end
     record.container:Show()
     record.shown = true
+    record.identityApplicable = true
+    SetIdentityVisibility(record, true)
     return record
 end
 
@@ -2651,6 +2768,7 @@ local function RebindCustomBarAuraBlocks(self)
         end
         record.container:Hide()
         record.shown = false
+        SetIdentityVisibility(record, false)
         record.chainAnchor = nil
     end
     blockChainBlocked = 0

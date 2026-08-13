@@ -23,6 +23,13 @@ local pendingSpellAvailabilityRefreshToken = 0
 local pendingSlotChangeToken = 0
 local pendingSlotChangedSlots = {}
 
+local function IsPlayerInVehicleUI()
+    return UnitInVehicle("player")
+        or UnitHasVehicleUI("player")
+        or C_ActionBar.HasVehicleActionBar()
+        or C_ActionBar.HasOverrideActionBar()
+end
+
 local function QueueTalentChargeRefresh(addon)
     pendingTalentChargeRefreshToken = pendingTalentChargeRefreshToken + 1
     local token = pendingTalentChargeRefreshToken
@@ -392,9 +399,7 @@ function CooldownCompanion:CachePlayerState()
     end
     self._isResting = IsResting()
     self._inPetBattle = C_PetBattles.IsInBattle()
-    self._inVehicleUI = UnitHasVehicleUI("player")
-        or C_ActionBar.HasVehicleActionBar()
-        or C_ActionBar.HasOverrideActionBar()
+    self._inVehicleUI = IsPlayerInVehicleUI()
 end
 
 function CooldownCompanion:OnZoneChanged()
@@ -436,9 +441,9 @@ end
 
 function CooldownCompanion:OnVehicleUIChanged(event, unit)
     if unit and unit ~= "player" then return end
-    self._inVehicleUI = UnitHasVehicleUI("player")
-        or C_ActionBar.HasVehicleActionBar()
-        or C_ActionBar.HasOverrideActionBar()
+    self._inVehicleUI = IsPlayerInVehicleUI()
+    self:RefreshAuraIdentityVisibility()
+    self:RequestAuraRebind("vehicle-ui")
     self:RefreshAllGroupsVisibilityOnly()
     self:EvaluateBarsAndFramesRuntime("vehicle-ui-changed")
     self:RefreshConfigPanel()
@@ -527,10 +532,10 @@ function CooldownCompanion:OnActionBarLayoutChanged()
     -- keybind rebuilds; piggyback vehicle UI state check to avoid duplicate
     -- AceEvent registrations (AceEvent allows only one handler per event).
     local wasInVehicleUI = self._inVehicleUI
-    self._inVehicleUI = UnitHasVehicleUI("player")
-        or C_ActionBar.HasVehicleActionBar()
-        or C_ActionBar.HasOverrideActionBar()
+    self._inVehicleUI = IsPlayerInVehicleUI()
     if self._inVehicleUI ~= wasInVehicleUI then
+        self:RefreshAuraIdentityVisibility()
+        self:RequestAuraRebind("vehicle-actionbar")
         self:RefreshAllGroupsVisibilityOnly()
         self:EvaluateBarsAndFramesRuntime("actionbar-layout-vehicle-state")
     end
