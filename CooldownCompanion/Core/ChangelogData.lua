@@ -12,6 +12,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.0.1",
         "2.0",
         "1.22.1",
         "1.22",
@@ -30,6 +31,23 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.0.1"] = {
+            markdown = [[
+## Bug Fixes
+
+- **Indirect target aura tracking:** Frost Mages can now add Freezing from Aura suggestions when Shatter is available. Other player-applied harmful auras that are not directly castable can be added by entering their exact spell ID.
+- **No stale cooldown numbers:** Ready icons no longer retain old countdowns after config changes or cooldown previews. Real cooldown, charge-recharge, displayed GCD, and preview timers remain visible while active.
+- **Reliable cast bar ownership:** The Blizzard player cast bar remains hidden whenever Cooldown Companion's cast bar is enabled, even after Edit Mode changes or overlay transitions. The talent-change progress bar still appears, and disabling Cooldown Companion's cast bar restores an active Blizzard contextual overlay.
+- **Player-owned target debuffs:** Harmful target aura trackers no longer activate for the same debuff applied by another group member. Helpful aura tracking on yourself or group members is unchanged.
+- **Combat-safe aura displays:** Aura displays continue updating through combat instead of freezing. Changes requested while aura access is restricted wait safely and apply after combat ends.
+- **Correct aura state in vehicles:** Aura icons, bars, texture panels, and custom aura bars no longer all appear active from an unrelated aura when vehicle or unit reaction changes. Groups hidden for Vehicle / Override UI also now recognize vehicle occupancy even without a vehicle action bar.
+
+## Performance
+
+- **Smoother panel configuration:** Selecting entries and adjusting settings now causes fewer unnecessary updates to gameplay displays, reducing short stutters. Changes still appear immediately in Live Preview and apply to gameplay displays when you finish the interaction.
+- **Faster Arrange Mode exit:** Finishing Arrange Mode now uses one combined layout refresh, reducing the noticeable pause on larger profiles.
+]],
+        },
         ["2.0"] = {
             markdown = [[
 ## Cooldown Companion 2.0
