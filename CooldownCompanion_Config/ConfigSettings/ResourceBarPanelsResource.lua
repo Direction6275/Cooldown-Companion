@@ -322,6 +322,8 @@ function HealthResource.AddOpacitySlider(container, health, key, label, defaultV
         value = tonumber(health[key]) or defaultValue,
         set = function(val) health[key] = val end,
         apply = applyBars,
+        stateOwner = health,
+        stateKeys = key,
     })
 end
 
@@ -530,6 +532,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
             value = ReadDisplaySetting(baseSettings, resSettings, "textFontSize", DEFAULT_RESOURCE_TEXT_SIZE),
             set = function(val) resSettings.textFontSize = val end,
             apply = applyBars,
+            stateOwner = resSettings,
+            stateKeys = "textFontSize",
         })
 
         -- FONT ROW: created with a label and a widened pullout but NO list and
@@ -588,6 +592,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
             value = ReadDisplaySetting(baseSettings, resSettings, "textXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET),
             set = function(val) resSettings.textXOffset = val end,
             apply = applyBars,
+            stateOwner = resSettings,
+            stateKeys = "textXOffset",
         })
 
         AddMirrorFirstSliderRow(panel, {
@@ -596,6 +602,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
             value = ReadDisplaySetting(baseSettings, resSettings, "textYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET),
             set = function(val) resSettings.textYOffset = val end,
             apply = applyBars,
+            stateOwner = resSettings,
+            stateKeys = "textYOffset",
         })
 
         if HIDE_AT_ZERO_ELIGIBLE[capturedPt] then
@@ -675,6 +683,9 @@ local function BuildResourceTextControls(container, settings, powerType, display
             min = 6, max = 24, step = 1,
             value = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextFontSize", DEFAULT_RESOURCE_TEXT_SIZE),
             onChange = function(val)
+                ST._PreviewScalarSetting(resSettings, "rechargeTextFontSize", val, RefreshLayoutOrderPreviewForDrag)
+            end,
+            onRelease = function(val)
                 resSettings.rechargeTextFontSize = val
                 CooldownCompanion:ApplyResourceBars()
             end,
@@ -726,6 +737,9 @@ local function BuildResourceTextControls(container, settings, powerType, display
             min = -50, max = 50, step = 0.1,
             value = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET),
             onChange = function(val)
+                ST._PreviewScalarSetting(resSettings, "rechargeTextXOffset", val, RefreshLayoutOrderPreviewForDrag)
+            end,
+            onRelease = function(val)
                 resSettings.rechargeTextXOffset = val
                 CooldownCompanion:ApplyResourceBars()
             end,
@@ -736,6 +750,9 @@ local function BuildResourceTextControls(container, settings, powerType, display
             min = -50, max = 50, step = 0.1,
             value = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET),
             onChange = function(val)
+                ST._PreviewScalarSetting(resSettings, "rechargeTextYOffset", val, RefreshLayoutOrderPreviewForDrag)
+            end,
+            onRelease = function(val)
                 resSettings.rechargeTextYOffset = val
                 CooldownCompanion:ApplyResourceBars()
             end,
@@ -1158,6 +1175,7 @@ local function BuildResourceBarAnchoringPanel(container)
         row = true,
         isGlobal = group and group.isGlobal,
         disabled = not isIndependentStack and layout.inheritAlpha == true,
+        previewRefresh = RefreshLayoutOrderPreviewForDrag,
     })
 end
 
@@ -1302,6 +1320,8 @@ local function BuildResourceBarPositioningPanel(container)
                 CooldownCompanion:RepositionCastBar()
                 CooldownCompanion:UpdateAnchorStacking()
             end,
+            stateOwner = layout,
+            stateKeys = "barSpacing",
         })
 
         -- Segment Gap
@@ -1313,6 +1333,8 @@ local function BuildResourceBarPositioningPanel(container)
             apply = function()
                 CooldownCompanion:ApplyResourceBars()
             end,
+            stateOwner = layout,
+            stateKeys = "segmentGap",
         })
     end
 
@@ -1371,15 +1393,18 @@ local function BuildResourceBarPositioningPanel(container)
                     CooldownCompanion:ApplyResourceBars()
                     CooldownCompanion:UpdateAnchorStacking()
                 end,
+                stateOwner = layout,
+                stateKeys = "independentWidth",
             })
 
             -- The two offsets below place the stack on SCREEN, which the canvas
-            -- does not draw; they stay on the live display alone.
+            -- does not draw. Store during the drag and move the live stack once
+            -- on release.
             AddSliderRow(stackRight, {
                 label = "X Offset",
                 min = -2000, max = 2000, step = 0.1,
                 value = anchor.x or 0,
-                onChange = function(val)
+                onRelease = function(val)
                     anchor.x = val
                     CooldownCompanion:ApplyResourceBars()
                     CooldownCompanion:UpdateAnchorStacking()
@@ -1390,7 +1415,7 @@ local function BuildResourceBarPositioningPanel(container)
                 label = "Y Offset",
                 min = -2000, max = 2000, step = 0.1,
                 value = anchor.y or 0,
-                onChange = function(val)
+                onRelease = function(val)
                     anchor.y = val
                     CooldownCompanion:ApplyResourceBars()
                     CooldownCompanion:UpdateAnchorStacking()
@@ -1421,6 +1446,9 @@ local function BuildResourceBarPositioningPanel(container)
                 min = -100, max = 100, step = 0.1,
                 value = gapValue,
                 onChange = function(val)
+                    ST._PreviewScalarSetting(layout, gapField, val, RefreshLayoutOrderPreviewForDrag)
+                end,
+                onRelease = function(val)
                     layout[gapField] = val
                     CooldownCompanion:ApplyResourceBars()
                     CooldownCompanion:RepositionCastBar()
@@ -1476,6 +1504,8 @@ local function BuildBarHeightControls(container, settings, layout)
             CooldownCompanion:RepositionCastBar()
             CooldownCompanion:UpdateAnchorStacking()
         end,
+        stateOwner = layout,
+        stateKeys = thicknessField,
     })
 
     local customHeightsCb = AddCheckboxRow(container, {
@@ -1540,6 +1570,21 @@ local function BuildBarHeightControls(container, settings, layout)
                     CooldownCompanion:ApplyResourceBars()
                     CooldownCompanion:RepositionCastBar()
                     CooldownCompanion:UpdateAnchorStacking()
+                end,
+                captureState = function()
+                    local current = layout.resources[capturedPt]
+                    return {
+                        owner = current,
+                        value = current and current[thicknessField] or nil,
+                    }
+                end,
+                restoreState = function(state)
+                    if state.owner then
+                        state.owner[thicknessField] = state.value
+                        layout.resources[capturedPt] = state.owner
+                    else
+                        layout.resources[capturedPt] = nil
+                    end
                 end,
             })
         end
@@ -1667,8 +1712,10 @@ local function BuildResourceColorControls(container, settings, powerType, specID
             -- throwaway, so the store is the only place the canvas can read
             -- it from); repainting here is what makes the swatch track live.
             onChange = function()
+                local committed = ReadSpecOverrideKey(settings, powerType, specID, capturedKey, capturedDefault)
                 WriteSpecOverrideKey(settings, powerType, specID, capturedKey, proxy[capturedKey])
                 RefreshLayoutOrderPreviewForDrag()
+                WriteSpecOverrideKey(settings, powerType, specID, capturedKey, committed)
             end,
         })
     end
@@ -1950,13 +1997,12 @@ local function AddThresholdTickEntryEditor(panel, options)
             -- bar at maximum). The entry is already written above, so the
             -- repaint has something to read.
             onChange = function()
-                local updated = CopyThresholdTickEntryList(entries)
-                if updated[index] then
+                local updated = options.previewRefresh and CopyThresholdTickEntryList(entries) or nil
+                if updated and updated[index] then
                     updated[index].color = proxy[proxyKey]
                     options.writeEntries(updated)
-                    if options.previewRefresh then
-                        options.previewRefresh()
-                    end
+                    options.previewRefresh()
+                    options.writeEntries(CopyThresholdTickEntryList(entries))
                 end
             end,
         })
@@ -2563,6 +2609,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                 displayProfile.classBarBrightness = val
             end,
             apply = applyBars,
+            stateOwner = displayProfile,
+            stateKeys = "classBarBrightness",
         })
     end
 
@@ -2656,6 +2704,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                     displayProfile.borderSize = val
                 end,
                 apply = applyBars,
+                stateOwner = displayProfile,
+                stateKeys = "borderSize",
             })
         end
     end
@@ -2851,6 +2901,16 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                                 WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickWidth", val)
                             end,
                             apply = applyBars,
+                            captureState = function()
+                                local resource = settings.resources and settings.resources[capturedPt]
+                                local specTable = resource and resource.specOverrides
+                                    and resource.specOverrides[_colorSpecID]
+                                return specTable and specTable.continuousTickWidth or nil
+                            end,
+                            restoreState = function(value)
+                                WriteSpecOverrideKey(settings, capturedPt, _colorSpecID,
+                                    "continuousTickWidth", value)
+                            end,
                         })
                     end
 

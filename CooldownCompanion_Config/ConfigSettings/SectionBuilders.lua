@@ -630,16 +630,12 @@ end
 -- splitting a parent from its children would orphan the indent.
 local function BuildBorderControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
+    local previewRefresh = opts.previewRefresh or ST._RefreshSelectedButtonsPreview
 
     local function ApplyRenderModeChanged()
         refreshCallback()
         RefreshStructuralControls(container)
     end
-    local function ApplyBorderSize(val)
-        styleTable.borderSize = val
-        refreshCallback()
-    end
-
     local renderMode = AddBorderRenderModeDropdown(container, styleTable, "borderRenderMode",
         ApplyRenderModeChanged, nil, { row = true, indent = opts.indent })
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
@@ -653,7 +649,12 @@ local function BuildBorderControls(container, styleTable, refreshCallback, opts)
             disabled = borderThicknessLocked,
             onChange = function(val)
                 if borderThicknessLocked then return end
-                ApplyBorderSize(val)
+                ST._PreviewScalarSetting(styleTable, "borderSize", val, previewRefresh)
+            end,
+            onRelease = function(val)
+                if borderThicknessLocked then return end
+                styleTable.borderSize = val
+                refreshCallback()
             end,
         })
     end
@@ -700,7 +701,7 @@ local function BuildIconZoomControls(container, styleTable, refreshCallback, opt
     -- Masque skins own the icon's texture coordinates, so the row locks
     -- whenever the panel is skinned (mirrors the Square Icons row).
     local locked = opts and (opts.disabled or opts.masqueEnabled) or false
-    local previewRefresh = opts and opts.previewRefresh
+    local previewRefresh = (opts and opts.previewRefresh) or ST._RefreshSelectedButtonsPreview
     return AddSliderRow(container, {
         label = "Icon Zoom",
         indent = opts and opts.indent,
@@ -709,14 +710,13 @@ local function BuildIconZoomControls(container, styleTable, refreshCallback, opt
         value = styleTable.iconZoom or 0,
         onChange = function(val)
             if locked then return end
-            styleTable.iconZoom = val
-            if previewRefresh then previewRefresh() else refreshCallback() end
+            ST._PreviewScalarSetting(styleTable, "iconZoom", val, previewRefresh)
         end,
-        onRelease = previewRefresh and function(val)
+        onRelease = function(val)
             if locked then return end
             styleTable.iconZoom = val
             refreshCallback()
-        end or nil,
+        end,
     })
 end
 
@@ -948,6 +948,7 @@ local BuildIconFillTimerAdvancedControls
 local function BuildCooldownSwipeControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
     local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
+    local previewRefresh = opts.previewRefresh or ST._RefreshSelectedButtonsPreview
 
     -- The writes both shapes perform, hoisted so neither can wire a different
     -- store than the other. RefreshStructuralControls is on exactly the calls
@@ -970,8 +971,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     end
     local function ApplyFillAlpha(val)
         if disabledByIconFill then return end
-        styleTable.cooldownSwipeAlpha = val
-        refreshCallback()
+        ST._PreviewScalarSetting(styleTable, "cooldownSwipeAlpha", val, previewRefresh)
     end
     local function ApplyShowEdge(val)
         if disabledByIconFill then return end
@@ -1017,6 +1017,11 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
             value = styleTable.cooldownSwipeAlpha or 0.8,
             disabled = disabledByIconFill,
             onChange = ApplyFillAlpha,
+            onRelease = function(val)
+                if disabledByIconFill then return end
+                styleTable.cooldownSwipeAlpha = val
+                refreshCallback()
+            end,
         })
     end
 
@@ -1065,6 +1070,7 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
     opts = opts or {}
     local blizzardStyleActive = styleTable.auraUseBlizzardSwipe == true
     local childIndent = opts.isOverride and true or opts.indent
+    local previewRefresh = opts.previewRefresh or ST._RefreshSelectedButtonsPreview
 
     local blizzardRow = AddCheckboxRow(container, {
         label = "Blizzard Style Aura Swipe",
@@ -1116,6 +1122,10 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
             value = styleTable.auraDurationSwipeAlpha or 0.8,
             disabled = blizzardStyleActive,
             onChange = function(val)
+                if blizzardStyleActive then return end
+                ST._PreviewScalarSetting(styleTable, "auraDurationSwipeAlpha", val, previewRefresh)
+            end,
+            onRelease = function(val)
                 if blizzardStyleActive then return end
                 styleTable.auraDurationSwipeAlpha = val
                 refreshCallback()
@@ -1379,6 +1389,7 @@ local ASSISTED_HIGHLIGHT_STYLES = {
 local function BuildAssistedHighlightControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
     local right = opts.rightColumn or container
+    local previewRefresh = opts.previewRefresh or ST._RefreshSelectedButtonsPreview
 
     AddCheckboxRow(container, {
         label = "Hostile Target Only",
@@ -1423,6 +1434,9 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
             min = minValue, max = maxValue, step = 0.1,
             value = styleTable[key] or default,
             onChange = function(val)
+                ST._PreviewScalarSetting(styleTable, key, val, previewRefresh)
+            end,
+            onRelease = function(val)
                 styleTable[key] = val
                 refreshCallback()
             end,
@@ -1553,12 +1567,11 @@ end
 -- GLOW_SLIDER_SPEC and the caller's `keys`; this function owns nothing but the
 -- row shape.
 --
--- `previewRefresh` is the mirror-first opt-in (the resources surfaces, owner
--- ruling 2026-08-02): with it supplied the drag tick repaints only the caller's
--- preview and `refreshCallback` runs once on release, exactly the split
--- BuildIconZoomControls already offers. Omitted - which is every non-resource
--- caller - the rows keep applying on every tick, unchanged.
+-- `previewRefresh` lets resource/cast surfaces name their own canvas. Ordinary
+-- panel callers fall back to the pinned Buttons preview. Every live apply runs
+-- once on release.
 local function AddGlowSliderRows(container, styleTable, currentStyle, keys, refreshCallback, pixelSizeMin, indent, previewRefresh)
+    previewRefresh = previewRefresh or ST._RefreshSelectedButtonsPreview
     for _, entry in ipairs(GLOW_SLIDER_SPEC[currentStyle] or {}) do
         local ok, storeKey, minValue, value = ResolveGlowSliderEntry(entry, styleTable, keys, pixelSizeMin)
         if ok then
@@ -1568,14 +1581,12 @@ local function AddGlowSliderRows(container, styleTable, currentStyle, keys, refr
                 min = minValue, max = entry.max, step = entry.step,
                 value = value,
                 onChange = function(val)
-                    styleTable[storeKey] = val
-                    local notify = previewRefresh or refreshCallback
-                    notify()
+                    ST._PreviewScalarSetting(styleTable, storeKey, val, previewRefresh)
                 end,
-                onRelease = previewRefresh and function(val)
+                onRelease = function(val)
                     styleTable[storeKey] = val
                     refreshCallback()
-                end or nil,
+                end,
             })
         end
     end
@@ -2055,10 +2066,9 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
     AnchorRowBadge(pulseRow, CreateInfoButton(pulseRow.frame, pulseRow.frame, "LEFT", "LEFT", 0, 0,
         FILL_EFFECTS_TOOLTIP, opts.infoButtons))
 
-    -- Same mirror-first opt-in the delegated glow rows above take: with a
-    -- preview to drive, the drag tick stays on it and the live apply lands on
-    -- release. Nil for every caller that has not opted in.
-    local previewRefresh = opts.previewRefresh
+    -- Resource/cast callers can name their own canvas; ordinary panels use the
+    -- pinned Buttons preview. The live apply lands on release in either case.
+    local previewRefresh = opts.previewRefresh or ST._RefreshSelectedButtonsPreview
 
     if styleTable.barAuraPulseEnabled == true then
         AddSliderRow(effectsRight, {
@@ -2067,14 +2077,12 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
             min = 0.1, max = 2.0, step = 0.05,
             value = styleTable.barAuraPulseSpeed or 0.5,
             onChange = function(val)
-                styleTable.barAuraPulseSpeed = val
-                local notify = previewRefresh or refreshCallback
-                notify()
+                ST._PreviewScalarSetting(styleTable, "barAuraPulseSpeed", val, previewRefresh)
             end,
-            onRelease = previewRefresh and function(val)
+            onRelease = function(val)
                 styleTable.barAuraPulseSpeed = val
                 refreshCallback()
-            end or nil,
+            end,
         })
     end
 
@@ -2095,14 +2103,12 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
             min = 0.1, max = 2.0, step = 0.05,
             value = styleTable.barAuraColorShiftSpeed or 0.5,
             onChange = function(val)
-                styleTable.barAuraColorShiftSpeed = val
-                local notify = previewRefresh or refreshCallback
-                notify()
+                ST._PreviewScalarSetting(styleTable, "barAuraColorShiftSpeed", val, previewRefresh)
             end,
-            onRelease = previewRefresh and function(val)
+            onRelease = function(val)
                 styleTable.barAuraColorShiftSpeed = val
                 refreshCallback()
-            end or nil,
+            end,
         })
 
         AddColorRow(effectsRight, {
@@ -2233,6 +2239,7 @@ end
 -- full-width stock shape had no call sites left after the conversion packets.
 local function BuildTextBackgroundControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
+    local previewRefresh = opts.previewRefresh or ST._RefreshSelectedButtonsPreview
 
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
@@ -2262,6 +2269,10 @@ local function BuildTextBackgroundControls(container, styleTable, refreshCallbac
             value = styleTable.textBorderSize or 0,
             disabled = borderThicknessLocked,
             onChange = function(val)
+                if borderThicknessLocked then return end
+                ST._PreviewScalarSetting(styleTable, "textBorderSize", val, previewRefresh)
+            end,
+            onRelease = function(val)
                 if borderThicknessLocked then return end
                 styleTable.textBorderSize = val
                 refreshCallback()

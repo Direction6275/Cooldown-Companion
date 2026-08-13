@@ -561,6 +561,9 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
         min = 8, max = 32, step = 1,
         value = buttonData.itemCountFontSize or 12,
         onChange = function(val)
+            ST._PreviewScalarSetting(buttonData, "itemCountFontSize", val, ST._RefreshSelectedButtonsPreview)
+        end,
+        onRelease = function(val)
             buttonData.itemCountFontSize = val
             refreshGroup()
         end,
@@ -622,6 +625,9 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
         min = -20, max = 20, step = 0.1,
         value = buttonData.itemCountXOffset or defItemX,
         onChange = function(val)
+            ST._PreviewScalarSetting(buttonData, "itemCountXOffset", val, ST._RefreshSelectedButtonsPreview)
+        end,
+        onRelease = function(val)
             buttonData.itemCountXOffset = val
             refreshGroup()
         end,
@@ -632,6 +638,9 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
         min = -20, max = 20, step = 0.1,
         value = buttonData.itemCountYOffset or defItemY,
         onChange = function(val)
+            ST._PreviewScalarSetting(buttonData, "itemCountYOffset", val, ST._RefreshSelectedButtonsPreview)
+        end,
+        onRelease = function(val)
             buttonData.itemCountYOffset = val
             refreshGroup()
         end,

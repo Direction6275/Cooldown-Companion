@@ -23,7 +23,6 @@ local IsConfigFinderAvailable = ST._IsConfigFinderAvailable
 local IsConfigFinderActive = ST._IsConfigFinderActive
 local SetConfigFinderText = ST._SetConfigFinderText
 local ClearConfigFinderText = ST._ClearConfigFinderText
-local ClearHideActiveCurrentClassPanels = ST._ClearOtherClassHideActive
 local InvalidateConfigFinderResults = ST._InvalidateConfigFinderResults
 local BuildConfigFinderResults = ST._BuildConfigFinderResults
 local MaybeAutoStartFirstIconPanelTutorial = ST._MaybeAutoStartFirstIconPanelTutorial
@@ -35,13 +34,9 @@ local SetupChangelogOverlay = ST._SetupChangelogOverlay
 local RefreshVisibleConfigCompactRows = ST._RefreshVisibleConfigCompactRows
 
 local function ClearTransientConfigPreviewState()
-    ClearHideActiveCurrentClassPanels()
     CS.textureConfigPreviewStage = nil
     if CooldownCompanion.ClearAllConfigPreviews then
         CooldownCompanion:ClearAllConfigPreviews()
-    end
-    if CooldownCompanion.RefreshConfigSelectedGroupFrames then
-        CooldownCompanion:RefreshConfigSelectedGroupFrames()
     end
 end
 
@@ -2402,6 +2397,40 @@ function ST.ExpandConfigAfterLock()
 end
 
 ------------------------------------------------------------------------
+-- Refresh only the editing workspace after an in-preview selection change.
+-- The Navigator's structure and selected panel do not change, so rebuilding
+-- it here is both unnecessary and the largest remaining source of click work.
+------------------------------------------------------------------------
+function CooldownCompanion:RefreshConfigSelection()
+    if not (CS.configFrame and CS.configFrame.frame:IsShown()) then return end
+    if CS.talentPickerMode then return end
+    if CS.configRefreshInProgress or CS.advancedSettingsPanelRefreshing then return end
+
+    CS.configRefreshInProgress = true
+    local savedButtonSettings = SaveScrollState(buttonSettingsScroll)
+    if ClearConfigShiftTooltipHover then
+        ClearConfigShiftTooltipHover()
+    end
+    RefreshColumn3(true)
+    ApplyConfigColumnTitles(CS.configFrame)
+    RestoreScrollState(buttonSettingsScroll, savedButtonSettings)
+    CS.configRefreshInProgress = false
+
+    if CS.RefreshAdvancedSettingsPanel then
+        CS.RefreshAdvancedSettingsPanel()
+    end
+    if RebuildTutorialAnchors then
+        RebuildTutorialAnchors()
+    end
+    if RefreshTutorialPlacement then
+        RefreshTutorialPlacement()
+    end
+    if ST.UpdateArrangeBadge then
+        ST.UpdateArrangeBadge()
+    end
+end
+
+------------------------------------------------------------------------
 -- Refresh entire panel
 ------------------------------------------------------------------------
 function CooldownCompanion:_configRefreshPanelImpl()
@@ -2409,9 +2438,6 @@ function CooldownCompanion:_configRefreshPanelImpl()
     if not CS.configFrame.frame:IsShown() then return end
     if CS.talentPickerMode then return end
     if CS.configRefreshInProgress or CS.advancedSettingsPanelRefreshing then return end
-    if self.RefreshConfigSelectedGroupFrames then
-        self:RefreshConfigSelectedGroupFrames()
-    end
     CS.configRefreshInProgress = true
 
     -- Texture panels only ever hold one entry, so the config never asks the
@@ -2518,7 +2544,6 @@ function CooldownCompanion:_configToggleImpl()
     end
 
     if CS.configFrame.frame:IsShown() then
-        ClearHideActiveCurrentClassPanels()
         CS.configFrame.frame:Hide()
     else
         SetConfigPrimaryMode("buttons", { skipRefresh = true })

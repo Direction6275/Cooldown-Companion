@@ -1265,6 +1265,8 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                             CooldownCompanion:RepositionCastBar()
                             CooldownCompanion:UpdateAnchorStacking()
                         end,
+                        stateOwner = slotLayout,
+                        stateKeys = thicknessField,
                     })
                 end
             end

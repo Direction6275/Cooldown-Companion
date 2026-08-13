@@ -595,6 +595,12 @@ local function ReleaseResourcesMirrorHost(host, index)
     if not inner then
         return
     end
+    -- Hosts are retained for reuse. Buttons-view selection refreshes call the
+    -- resources teardown defensively, so an already released hidden host must
+    -- not walk its preview pools again on every entry click.
+    if inner._cdcMirrorPanelId == nil and not inner:IsShown() then
+        return
+    end
     if ST._ReleaseReadOnlyPanelPreview then
         ST._ReleaseReadOnlyPanelPreview(inner)
     end
@@ -808,7 +814,7 @@ local function RefreshResourcesLayoutPreview(mirrorReuse)
     -- Buttons view: the lanes live inside the unified anchor preview on
     -- the buttons preview host; the mirror refresh self-gates.
     if ST._RefreshButtonsPreviewMirror then
-        ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
+        ST._RefreshButtonsPreviewMirror(CS.selectedGroup, mirrorReuse == true)
     end
 end
 

@@ -368,7 +368,8 @@ local function ApplyGroupOwnAlpha(frame)
         end
     end
 
-    if ST.IsGroupConfigSelected and ST.IsGroupConfigSelected(frame.groupId) then
+    if ST.IsGroupRuntimeLayoutPreviewActive
+        and ST.IsGroupRuntimeLayoutPreviewActive(frame.groupId) then
         frame._naturalAlpha = alpha
         frame:SetAlpha(1)
         return
@@ -452,13 +453,6 @@ local function GetGroupButtonSizingOptions(self, groupId, group, buttonUsability
         return self:GetGroupLayoutButtonUsabilityOptions(groupId, group)
     end
     return nil
-end
-
-local function IsSourceButtonInPreviewScope(self, groupId, sourceIndex, opts)
-    if self.IsButtonInConfigPreviewScope then
-        return self:IsButtonInConfigPreviewScope(groupId, sourceIndex, opts)
-    end
-    return true
 end
 
 local function GetContainerPreviewSelectionState(groupId)
@@ -1347,7 +1341,6 @@ local function ClearButtonPreviewState(button)
     button._textureReadyPreview = nil
     button._textureUnusablePreview = nil
     button._textureIndicatorPreviewDirty = false
-    button._auraTexturePreviewSelection = nil
     button._conditionalPreviewKind = nil
     button._conditionalPreviewStartTime = nil
     button._conditionalPreviewDuration = nil
@@ -2449,6 +2442,16 @@ local function GetCursorAnchorLayoutPreviewPosition(self, groupId)
     return nil, nil
 end
 
+local function GetCursorAnchorLayoutPreviewAnchor(self, groupId, fallbackAnchor)
+    local preview = self._cursorAnchorLayoutPreview
+    local stagedAnchors = preview and preview.stagedAnchors
+    local stagedAnchor = stagedAnchors and stagedAnchors[tostring(groupId)] or nil
+    if stagedAnchor and IsCursorAnchorLayoutPreviewGroupActive(self, groupId) then
+        return stagedAnchor
+    end
+    return fallbackAnchor
+end
+
 local function BuildCursorAnchorLayoutPreviewGroupMap(self)
     local activeGroupIds = {}
     local profile = self.db and self.db.profile
@@ -2886,6 +2889,7 @@ function CooldownCompanion:ShowCursorAnchorLayoutPreview(groupId)
     local activeGroupIds = BuildCursorAnchorLayoutPreviewGroupMap(self)
     preview.selectedGroupId = groupId
     preview.activeGroupIds = activeGroupIds
+    preview.stagedAnchors = nil
     if not preview.hasCustomPosition and not preview.hasDefaultPosition then
         frame:ClearAllPoints()
         frame:SetPoint("TOP", UIParent, "TOP", 0, CURSOR_LAYOUT_PREVIEW_TOP_OFFSET)
@@ -2905,9 +2909,74 @@ function CooldownCompanion:ShowCursorAnchorLayoutPreview(groupId)
     self:UpdateCursorAnchoredFrames()
 end
 
+-- Slider drags in config may move the explicit dummy-cursor layout preview,
+-- but must not write the profile or make the ordinary runtime cursor panels
+-- consume an unconfirmed offset. The staged copy lives only as long as that
+-- preview surface and is discarded on commit, rebuild, or config close.
+function CooldownCompanion:SetCursorAnchorLayoutPreviewOffset(groupId, x, y)
+    if not IsCursorAnchorLayoutPreviewGroupActive(self, groupId) then
+        return false
+    end
+
+    local group = self.db and self.db.profile and self.db.profile.groups
+        and self.db.profile.groups[groupId]
+    local anchor = group and group.anchor
+    if not IsCursorAnchor(anchor) then
+        return false
+    end
+
+    local preview = self._cursorAnchorLayoutPreview
+    preview.stagedAnchors = preview.stagedAnchors or {}
+    preview.stagedAnchors[tostring(groupId)] = {
+        point = anchor.point,
+        relativeTo = anchor.relativeTo,
+        relativePoint = anchor.relativePoint,
+        x = x,
+        y = y,
+    }
+    self:UpdateCursorAnchoredFrames()
+    return true
+end
+
+function CooldownCompanion:ClearCursorAnchorLayoutPreviewOffset(groupId)
+    local preview = self._cursorAnchorLayoutPreview
+    local stagedAnchors = preview and preview.stagedAnchors
+    if not stagedAnchors then
+        return false
+    end
+
+    local key = groupId ~= nil and tostring(groupId) or nil
+    if key then
+        if not stagedAnchors[key] then
+            return false
+        end
+        stagedAnchors[key] = nil
+        if not next(stagedAnchors) then
+            preview.stagedAnchors = nil
+        end
+    else
+        preview.stagedAnchors = nil
+    end
+
+    self:UpdateCursorAnchoredFrames()
+    return true
+end
+
 function CooldownCompanion:ClearCursorAnchorLayoutPreview()
     local preview = self._cursorAnchorLayoutPreview
     if not preview then
+        return
+    end
+
+    -- The preview shell is retained after first use. Ordinary config
+    -- selection clears preview state frequently, so do not re-run runtime
+    -- alpha restoration, ticker ownership, and every cursor-anchor position
+    -- when that retained shell is already inactive.
+    if not preview.activeGroupIds
+        and not preview.selectedGroupId
+        and not preview.draggedGroupId
+        and not preview.stagedAnchors
+        and not (preview.frame and preview.frame:IsShown()) then
         return
     end
 
@@ -2915,6 +2984,7 @@ function CooldownCompanion:ClearCursorAnchorLayoutPreview()
     preview.selectedGroupId = nil
     preview.activeGroupIds = nil
     preview.draggedGroupId = nil
+    preview.stagedAnchors = nil
     if preview.frame then
         preview.frame._dragInProgress = nil
         preview.frame:StopMovingOrSizing()
@@ -2971,10 +3041,11 @@ function CooldownCompanion:UpdateCursorAnchoredFrames()
                 local previewX, previewY = GetCursorAnchorLayoutPreviewPosition(self, groupId)
                 local anchorX = previewX or cursorX
                 local anchorY = previewY or cursorY
-                ApplyCursorAnchorPosition(self, frame, group.anchor, anchorX, anchorY)
+                local anchor = GetCursorAnchorLayoutPreviewAnchor(self, groupId, group.anchor)
+                ApplyCursorAnchorPosition(self, frame, anchor, anchorX, anchorY)
                 local host = GetCursorAnchoredStandaloneHost(frame, group)
                 if host and host:IsShown() then
-                    ApplyCursorAnchorPosition(self, host, group.anchor, anchorX, anchorY)
+                    ApplyCursorAnchorPosition(self, host, anchor, anchorX, anchorY)
                 end
             end
         end
@@ -3013,18 +3084,7 @@ function CooldownCompanion:RefreshCursorAnchorTicker()
     end
 end
 
-local function ShouldShowGroupFrameForRuntimeOrPreview(addon, groupId, group)
-    if addon:IsGroupEligibleForConfigPreview(groupId, {
-        group = group,
-    }) then
-        return true
-    end
-
-    if addon.IsGroupSuppressedForOtherClassBrowse
-        and addon:IsGroupSuppressedForOtherClassBrowse(groupId, group) then
-        return false
-    end
-
+local function ShouldShowGroupFrameForRuntime(addon, groupId, group)
     return addon:IsGroupActive(groupId, {
         group = group,
         checkCharVisibility = true,
@@ -3289,8 +3349,8 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- Create buttons
     self:PopulateGroupButtons(groupId)
     
-    -- Show/hide based on runtime activity, plus selected config previews.
-    if ShouldShowGroupFrameForRuntimeOrPreview(self, groupId, group) then
+    -- Show/hide from runtime activity only. Config selection is mirror-only.
+    if ShouldShowGroupFrameForRuntime(self, groupId, group) then
         frame:Show()
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
         ApplyCurrentAlphaIfPresent(self, frame, groupId, group)
@@ -3449,7 +3509,7 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
     if lastAlpha ~= nil then
         SetExternalAnchorAlphaSyncActive(frame, inheritsExternalAlpha)
         frame:SetAlpha(lastAlpha)
-    elseif ST.IsGroupConfigSelected(frame.groupId) then
+    elseif ST.IsGroupRuntimeLayoutPreviewActive(frame.groupId) then
         lastAlpha = 1
         frame:SetAlpha(1)
     end
@@ -3469,8 +3529,9 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
             local alpha = GetAnchorInheritedAlpha(frame.anchoredToParent)
             if alpha == nil then return end
             SetExternalAnchorAlphaSyncActive(frame, inheritsExternalAlpha)
-            -- Config-selected: store natural alpha for further downstream chains, force own frame to full
-            if ST.IsGroupConfigSelected(frame.groupId) then
+            -- Explicit layout preview: retain natural alpha for downstream
+            -- chains while the positioned frame itself stays fully visible.
+            if ST.IsGroupRuntimeLayoutPreviewActive(frame.groupId) then
                 frame._naturalAlpha = alpha
                 if lastAlpha ~= 1 then
                     lastAlpha = 1
@@ -3606,9 +3667,8 @@ local function GetButtonDimensions(group, buttonUsabilityOptions, groupId)
             -- so short entries stay short inside a wider pitch. The group-level
             -- format seeds a floor so an entry-less panel still has a size.
             w, h = GetTextEntryMetrics(style, nil, style.textFormat or "{name}  {status}")
-            for sourceIndex, buttonData in ipairs(group.buttons or {}) do
-                if IsSourceButtonInPreviewScope(CooldownCompanion, groupId, sourceIndex, buttonUsabilityOptions)
-                    and CooldownCompanion:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
+            for _, buttonData in ipairs(group.buttons or {}) do
+                if CooldownCompanion:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
                     local effectiveStyle = CooldownCompanion:GetEffectiveStyle(style, buttonData)
                     local fmt = buttonData.textFormat or effectiveStyle.textFormat or "{name}  {status}"
                     local buttonWidth, buttonHeight = GetTextEntryMetrics(effectiveStyle, buttonData, fmt)
@@ -3723,10 +3783,6 @@ local function FinishGroupButtonRefresh(self, groupId, frame, group)
     -- Update clickthrough state
     self:UpdateGroupClickthrough(groupId)
 
-    if self.ApplyConfigPreviewsToGroup then
-        self:ApplyConfigPreviewsToGroup(groupId)
-    end
-
     -- Initial cooldown update
     frame:UpdateCooldowns()
 
@@ -3789,8 +3845,7 @@ local function GetStyleUpdateEntries(self, groupId, frame, group)
     local previousCount = entries.count or 0
     local visibleIndex = 0
     for sourceIndex, buttonData in ipairs(sourceButtons) do
-        if IsSourceButtonInPreviewScope(self, groupId, sourceIndex, buttonUsabilityOptions)
-            and IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
+        if IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
             visibleIndex = visibleIndex + 1
             local button = frame.buttons and frame.buttons[visibleIndex]
             if not button then
@@ -3853,8 +3908,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
 
     -- Create new buttons (skip untalented spells)
     for i, buttonData in ipairs(sourceButtons) do
-        if IsSourceButtonInPreviewScope(self, groupId, i, buttonUsabilityOptions)
-            and IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
+        if IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
             local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
             local poolKey = GetButtonPoolKey(group, buttonData, effectiveStyle)
             local button = AcquireButtonFromPool(frame, poolKey, buttonData)
@@ -4164,7 +4218,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     local containerPreviewActive = frame._containerUnlockPreviewActive == true
     local panelPreviewActive = frame._panelUnlockPreviewActive == true
     local selectedInContainer = containerPreviewActive and self:IsContainerPanelSelected(group.parentContainerId, groupId)
-    local isActive = ShouldShowGroupFrameForRuntimeOrPreview(self, groupId, group)
+    local isActive = ShouldShowGroupFrameForRuntime(self, groupId, group)
     if (containerPreviewActive or panelPreviewActive) and isActive then
         local normallyActive = self:IsGroupActive(groupId, {
             group = group,
@@ -4194,8 +4248,8 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     )
     self:UpdateGroupClickthrough(groupId)
 
-    -- Update visibility: runtime-active groups show normally; selected config
-    -- previews can also show without becoming runtime-visible.
+    -- Update visibility from runtime state. Arrange/unlock and the explicit
+    -- cursor positioning preview are handled by the active-state checks above.
     if isActive then
         if InCombatLockdown() and frame:IsProtected() then
             if not frame:IsShown() then
@@ -5216,12 +5270,9 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
     UpdateContainerWrapperLevels(frame)
 
     local allPanels = self.GetPanels and self:GetPanels(containerId) or nil
-    local suppressedForOtherClassBrowse = self.IsContainerSuppressedForOtherClassBrowse
-        and self:IsContainerSuppressedForOtherClassBrowse(containerId, allPanels)
     if self._combatForcedLock
         or container.locked ~= false
-        or not self:IsContainerVisibleToCurrentChar(containerId)
-        or suppressedForOtherClassBrowse then
+        or not self:IsContainerVisibleToCurrentChar(containerId) then
         if self.UpdateContainerDragHandle then
             self:UpdateContainerDragHandle(containerId, true)
         else

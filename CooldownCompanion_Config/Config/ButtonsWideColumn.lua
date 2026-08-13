@@ -8,8 +8,8 @@
     it) and the editing surface
     below it (the "Editing:" path and selected-entry context on one line,
     followed by the add box and settings).
-    Browsing skips the pinned preview cluster
-    (panels render live in the world).
+    Other Class browsing uses the same pinned preview cluster, so it never
+    needs to surface browsed panels in the live world.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -1183,7 +1183,7 @@ end
 
 -- Pinned preview of the selected Panel, or an organized navigation overview
 -- when a single editable Group is selected with no child Panel selected.
-local function UpdatePanelPreview(col3)
+local function UpdatePanelPreview(col3, selectionOnly)
     local db = CooldownCompanion.db and CooldownCompanion.db.profile
     local panelId = CS.selectedGroup
     local containerId = not panelId and CS.selectedContainer or nil
@@ -1247,6 +1247,29 @@ local function UpdatePanelPreview(col3)
             ST._ReflowGroupPanelOverview(hostFrame)
         end
     end
+
+    if selectionOnly and panelId and host:IsShown()
+        and col3._cdcActiveWideHost == host
+        and ST._RefreshButtonPanelPreviewSelection then
+        local previousReserve = host._cdcPreviewReserveBottom or 0
+        if ST._UpdatePreviewCommandCenter then
+            ST._UpdatePreviewCommandCenter(host)
+        end
+        if previousReserve == (host._cdcPreviewReserveBottom or 0) then
+            local selectionRefreshed = ST._RefreshButtonPanelPreviewSelection(host, panelId)
+            if not selectionRefreshed and host._cdcUnifiedMirrorHost then
+                selectionRefreshed = ST._RefreshButtonPanelPreviewSelection(
+                    host._cdcUnifiedMirrorHost,
+                    panelId
+                )
+            end
+            if selectionRefreshed then
+                UpdatePreviewDropOverlay()
+                return
+            end
+        end
+    end
+
     SetActiveWidePreview(col3, host, BuildPreview, RefitPreview)
     host:SetHeight(ComputePreviewHostHeight(col3))
     host:Show()
@@ -1416,7 +1439,7 @@ local function EnsureQuietRow(col3)
             -- force: the lone texture entry stays selected, so a repeat
             -- click must not run the deselect half of the toggle.
             ST._SelectConfigButton(CS.selectedGroup, 1, { force = true })
-            CooldownCompanion:RefreshConfigPanel()
+            CooldownCompanion:RefreshConfigSelection()
         elseif (mouseButton == "RightButton" or mouseButton == "MiddleButton")
             and ST._ShowEntryContextMenu and CS.selectedGroup
         then
@@ -1666,7 +1689,7 @@ local function CollectSelection(set)
     return count, ids
 end
 
-local function RefreshButtonsWideColumn()
+local function RefreshButtonsWideColumn(selectionOnly)
     local col3 = CS.configFrame and CS.configFrame.col3
     if not col3 then return end
 
@@ -1708,14 +1731,14 @@ local function RefreshButtonsWideColumn()
     -- Inline texture browser takeover: while open for the selected standalone
     -- texture or trigger panel, the browse grid owns the settings area. The
     -- pinned preview, editing header, and quiet row stay above it so hovering a
-    -- thumbnail live-updates the big preview (texture panels) and the live
-    -- world (both types). The flag is set/cleared by AuraTexturePicker.
+    -- thumbnail live-updates the pinned preview. The flag is set/cleared by
+    -- AuraTexturePicker.
     if CS.inlineTextureBrowserOpen and ST._RenderInlineTextureBrowser then
         local browserGroup = CooldownCompanion.db.profile.groups[CS.selectedGroup]
         if browserGroup and CooldownCompanion:IsStandaloneTexturePanelGroup(browserGroup) then
             HideEntrySurfaces(col3)
             if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
-            UpdatePanelPreview(col3)
+            UpdatePanelPreview(col3, selectionOnly)
             UpdateAddBox(col3)
             UpdateQuietRow(col3)
             UpdateEditingContext(col3)
@@ -1736,7 +1759,7 @@ local function RefreshButtonsWideColumn()
     local unifiedBarKind = GetValidatedUnifiedBarKind()
     if unifiedBarKind then
         HideEntrySurfaces(col3)
-        UpdatePanelPreview(col3)
+        UpdatePanelPreview(col3, selectionOnly)
         UpdateAddBox(col3)
         UpdateQuietRow(col3)
         UpdateEditingContext(col3)
@@ -1783,7 +1806,7 @@ local function RefreshButtonsWideColumn()
     -- Entry selected: the entry tabs join the panel tabs in one row, and
     -- whichever scope owns the surface builds its content there.
     if IsEntrySelectionActive() then
-        UpdatePanelPreview(col3)
+        UpdatePanelPreview(col3, selectionOnly)
         UpdateAddBox(col3)
         UpdateQuietRow(col3)
         UpdateEditingContext(col3)
@@ -1808,7 +1831,7 @@ local function RefreshButtonsWideColumn()
     -- Otherwise the group-side surfaces (panel and Group settings,
     -- placeholders) own the settings area
     HideEntrySurfaces(col3)
-    UpdatePanelPreview(col3)
+    UpdatePanelPreview(col3, selectionOnly)
     UpdateAddBox(col3)
     UpdateQuietRow(col3)
     UpdateEditingContext(col3)
@@ -1836,7 +1859,7 @@ end
 -- from UpdateGroupStyle so style edits reflect immediately) without a full
 -- config refresh. An optional groupId scopes the rebuild: updates to a
 -- panel other than the mirrored one are skipped.
-local function RefreshButtonsPreviewMirror(groupId)
+local function RefreshButtonsPreviewMirror(groupId, visualOnly)
     if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then return end
     local col3 = CS.configFrame and CS.configFrame.col3
     local host = col3 and col3.buttonsPreviewHost
@@ -1847,10 +1870,13 @@ local function RefreshButtonsPreviewMirror(groupId)
         if col3._cdcActiveWideRebuild then
             col3._cdcActiveWideRebuild(host)
         end
-        -- The Editing header shares the mirror's selection identity and
-        -- status badges, so keep it in step with targeted rebuilds.
-        UpdateEditingContext(col3)
-        UpdateQuietRow(col3)
+        if not visualOnly then
+            -- Discrete edits can change identity/status chrome. Continuous
+            -- controls pass visualOnly because repainting this metadata on
+            -- every drag tick is unrelated to the visual candidate.
+            UpdateEditingContext(col3)
+            UpdateQuietRow(col3)
+        end
         return
     end
 

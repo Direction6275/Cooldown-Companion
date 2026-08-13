@@ -45,8 +45,9 @@ local ROW_SECTION = { leftAligned = true }
 -- FORMAT TAB
 --
 -- The whole format editor, hosted on a text panel's first tab, plus the two
--- settings that are format vocabulary. Typing commits live on a short
--- debounce, so this tab has a lifecycle the other tabs do not: a controller
+-- settings that are format vocabulary. Typing repaints the pinned preview on
+-- a short debounce and commits the live panel when the edit surface is left,
+-- so this tab has a lifecycle the other tabs do not: a controller
 -- that owns an animation driver and a pending write, both of which have to be
 -- settled before the container that holds them is released or rebuilt.
 --
@@ -61,8 +62,12 @@ local FORMAT_COMMIT_DELAY = 0.3
 local formatTabController = nil
 local formatCommitTimer = nil
 local formatCommitTarget = nil   -- { style, groupId }, captured when scheduled
+local formatLiveCommitTarget = nil
+local formatPendingValue = nil
 
--- Writes the edited format and refreshes everything that reads it.
+-- Temporarily exposes the edited format while repainting the pinned preview.
+-- FlushTextFormatTabCommit saves it and updates the live panel when the editor
+-- loses its surface.
 --
 -- The commit is deliberately the host's: the editor component owns no commit
 -- method at all, because a shared one would have to end in RefreshConfigPanel
@@ -82,10 +87,25 @@ local function CommitTextFormatTabEdit()
     -- An empty format is never written: it would leave the panel with nothing
     -- to render and no way back except retyping the string from scratch.
     if not raw or raw == "" then return end
-    if target.style.textFormat == raw then return end
+    if target.style.textFormat == raw then
+        if formatLiveCommitTarget then
+            formatLiveCommitTarget = nil
+            formatPendingValue = nil
+            if ST._RefreshButtonsPreviewMirror then
+                ST._RefreshButtonsPreviewMirror(target.groupId)
+            end
+        end
+        return
+    end
 
+    formatLiveCommitTarget = target
+    formatPendingValue = raw
+    local committed = target.style.textFormat
     target.style.textFormat = raw
-    CooldownCompanion:RefreshGroupFrame(target.groupId)
+    if ST._RefreshButtonsPreviewMirror then
+        ST._RefreshButtonsPreviewMirror(target.groupId)
+    end
+    target.style.textFormat = committed
 end
 
 -- The target is captured per schedule, not read at fire time, so a write that
@@ -99,9 +119,17 @@ local function ScheduleTextFormatTabCommit(style, groupId)
 end
 
 local function FlushTextFormatTabCommit()
-    if not formatCommitTimer then return end
-    formatCommitTimer:Cancel()
-    CommitTextFormatTabEdit()
+    if formatCommitTimer then
+        formatCommitTimer:Cancel()
+        CommitTextFormatTabEdit()
+    end
+    local target = formatLiveCommitTarget
+    formatLiveCommitTarget = nil
+    if target then
+        target.style.textFormat = formatPendingValue
+        CooldownCompanion:RefreshGroupFrame(target.groupId)
+    end
+    formatPendingValue = nil
 end
 
 -- Settle the pending write FIRST, then drop the controller: the container
@@ -114,6 +142,8 @@ local function ReleaseTextFormatTabEditor()
         formatTabController = nil
     end
     formatCommitTarget = nil
+    formatLiveCommitTarget = nil
+    formatPendingValue = nil
 end
 
 local function BuildTextFormatTab(container)
@@ -141,6 +171,7 @@ local function BuildTextFormatTab(container)
         onDirty = function()
             ScheduleTextFormatTabCommit(style, groupId)
         end,
+        onCommit = FlushTextFormatTabCommit,
     })
 
     -- Repaints the editor's preview and swatches from the style that just
@@ -295,14 +326,17 @@ local function BuildTextAppearanceTab(container, group, style)
         min = 0, max = 20, step = 1,
         value = style.textPadding or 4,
         onChange = function(val)
+            local committed = style.textPadding
             style.textPadding = val
-            -- Re-measures both halves: the mirror re-runs GetPanelGeometry,
-            -- and each live entry's UpdateStyle -> ApplyTextLayout forces a
-            -- fresh measure before ApplyActiveButtonLayout re-pitches the grid.
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            ST._RefreshSelectedButtonsPreview()
             if entrySizeRow then
                 entrySizeRow:SetControlText(FormatEntrySize())
             end
+            style.textPadding = committed
+        end,
+        onRelease = function(val)
+            style.textPadding = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end,
     })
 
@@ -327,6 +361,9 @@ local function BuildTextAppearanceTab(container, group, style)
             min = -10, max = 100, step = 0.1,
             value = style.buttonSpacing or ST.BUTTON_SPACING,
             onChange = function(val)
+                ST._PreviewScalarSetting(style, "buttonSpacing", val, ST._RefreshSelectedButtonsPreview)
+            end,
+            onRelease = function(val)
                 style.buttonSpacing = val
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             end,
@@ -350,6 +387,9 @@ local function BuildTextAppearanceTab(container, group, style)
             min = 6, max = 72, step = 1,
             value = style.textHeaderFontSize or 12,
             onChange = function(val)
+                ST._PreviewScalarSetting(style, "textHeaderFontSize", val, ST._RefreshSelectedButtonsPreview)
+            end,
+            onRelease = function(val)
                 style.textHeaderFontSize = val
                 CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
             end,

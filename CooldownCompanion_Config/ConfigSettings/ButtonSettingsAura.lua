@@ -476,9 +476,21 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
                     min = 0, max = 20, step = 1,
                     value = CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData),
                     onChange = function(value)
+                        local previousAuraBar = buttonData.auraBar
+                        local hadAuraBar = type(previousAuraBar) == "table"
+                        local previous = hadAuraBar and previousAuraBar.segmentGap or nil
                         CooldownCompanion:SetBarPanelAuraSegmentGap(buttonData, value)
-                        -- Rebind only: the gap is pure slot-kit styling, so no group
-                        -- refresh and no panel rebuild (which would break the drag).
+                        ST._RefreshSelectedButtonsPreview()
+                        if hadAuraBar then
+                            buttonData.auraBar.segmentGap = previous
+                        else
+                            buttonData.auraBar = previousAuraBar
+                        end
+                    end,
+                    onRelease = function(value)
+                        CooldownCompanion:SetBarPanelAuraSegmentGap(buttonData, value)
+                        -- Rebind only: the gap is pure slot-kit styling, so no
+                        -- group refresh or panel rebuild is needed.
                         CooldownCompanion:RequestAuraRebind("config")
                     end,
                 })

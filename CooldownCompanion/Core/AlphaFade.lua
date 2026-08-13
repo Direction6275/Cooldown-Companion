@@ -117,7 +117,8 @@ local function GroupNeedsAlphaUpdate(self, group, groupId, frame)
     if frame and frame._inheritsExternalAnchorAlpha then
         return false
     end
-    if ST.IsGroupConfigSelected and ST.IsGroupConfigSelected(groupId) then
+    if ST.IsGroupRuntimeLayoutPreviewActive
+        and ST.IsGroupRuntimeLayoutPreviewActive(groupId) then
         return true
     end
     return ConfigNeedsAlphaUpdate(self, group, groupId)
@@ -166,7 +167,8 @@ local function ApplyContainerAlphaFrame(self, frame, groupId, alpha, naturalAlph
         return
     end
 
-    local configSelected = ST.IsGroupConfigSelected and ST.IsGroupConfigSelected(groupId)
+    local layoutPreviewActive = ST.IsGroupRuntimeLayoutPreviewActive
+        and ST.IsGroupRuntimeLayoutPreviewActive(groupId)
     local frameAlpha = alpha
     if previewAlpha then
         frame._naturalAlpha = naturalAlpha
@@ -174,7 +176,7 @@ local function ApplyContainerAlphaFrame(self, frame, groupId, alpha, naturalAlph
     elseif unlocked then
         frame._naturalAlpha = nil
         frameAlpha = GetUnlockedPanelAlpha(frame)
-    elseif configSelected then
+    elseif layoutPreviewActive then
         frame._naturalAlpha = naturalAlpha
         frameAlpha = 1
     else
@@ -314,7 +316,8 @@ local function ContainerAlphaNeedsUpdate(self, containerId, container, entries)
 
     for i = 1, #entries do
         local entry = entries[i]
-        if ST.IsGroupConfigSelected and ST.IsGroupConfigSelected(entry.groupId) then
+        if ST.IsGroupRuntimeLayoutPreviewActive
+            and ST.IsGroupRuntimeLayoutPreviewActive(entry.groupId) then
             return true
         end
         if ContainerAlphaEntryIsUnlocked(self, container, entry) then
@@ -589,13 +592,13 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
         return
     end
 
-    local configSelected = ST.IsGroupConfigSelected(groupId)
+    local layoutPreviewActive = ST.IsGroupRuntimeLayoutPreviewActive(groupId)
 
     -- Skip processing when feature is entirely unused (baseline=1, no forceHide toggles)
     local hasForceHide = group.forceHideInCombat or group.forceHideOutOfCombat
         or group.forceHideRegularMounted or group.forceHideDragonriding
     if group.baselineAlpha == 1 and not hasForceHide then
-        if configSelected then
+        if layoutPreviewActive then
             frame._naturalAlpha = 1
         else
             frame._naturalAlpha = nil
@@ -606,7 +609,7 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
             state.desiredAlpha = 1
             state.fadeDuration = 0
         end
-        if configSelected then
+        if layoutPreviewActive then
             state.lastAlpha = 1
         end
         return
@@ -628,9 +631,9 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
 
     local desired = forceFull and 1 or (forceHidden and 0 or baseline)
 
-    -- Config-selected override: store the natural alpha for downstream consumers,
-    -- then force the frame itself to full alpha for config visibility.
-    if configSelected then
+    -- The explicit cursor-layout preview stores natural alpha for downstream
+    -- consumers, then forces the positioned frame itself fully visible.
+    if layoutPreviewActive then
         frame._naturalAlpha = desired
         if state.lastAlpha ~= 1 or FrameAlphaDiffers(frame, 1) then
             frame:SetAlpha(1)

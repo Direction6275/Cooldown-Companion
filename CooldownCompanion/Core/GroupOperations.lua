@@ -1424,12 +1424,6 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
         return false
     end
 
-    if not opts.ignoreOtherClassBrowseSuppression
-        and groupId
-        and self:IsGroupSuppressedForOtherClassBrowse(groupId, group) then
-        return false
-    end
-
     if not opts.panelUnlockPreview then
         if self.IsGroupEligibilityMet and not self:IsGroupEligibilityMet(group) then
             return false
@@ -1450,8 +1444,7 @@ function CooldownCompanion:GetContainerUnlockPreviewPanels(containerId, panels)
     local previewPanels = {}
     local panelList = panels or self:GetPanels(containerId)
     for _, panelInfo in ipairs(panelList) do
-        if not self:IsGroupSuppressedForOtherClassBrowse(panelInfo.groupId, panelInfo.group)
-            and self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
+        if self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
                 group = panelInfo.group,
                 checkCharVisibility = true,
             }) then
@@ -1463,8 +1456,7 @@ end
 
 function CooldownCompanion:ContainerHasArrangeEligiblePanel(containerId)
     for _, panelInfo in ipairs(self:GetPanels(containerId)) do
-        if not self:IsGroupSuppressedForOtherClassBrowse(panelInfo.groupId, panelInfo.group)
-            and self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
+        if self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
                 group = panelInfo.group,
                 checkCharVisibility = true,
                 assumeContainerUnlocked = true,
@@ -1749,137 +1741,21 @@ function CooldownCompanion:GetGroupLayoutButtonCount(groupId, group, opts)
     end
 
     local buttonUsabilityOptions = opts.buttonUsabilityOptions
-    if not buttonUsabilityOptions
-        and opts.allowConfigPreviewButtonUsability
-        and self.GetGroupLayoutButtonUsabilityOptions then
-        buttonUsabilityOptions = self:GetGroupLayoutButtonUsabilityOptions(groupId, group)
-    end
 
     local count = 0
-    for sourceIndex, buttonData in ipairs(group.buttons) do
-        if self:IsButtonInConfigPreviewScope(groupId, sourceIndex, buttonUsabilityOptions)
-            and self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
+    for _, buttonData in ipairs(group.buttons) do
+        if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
             count = count + 1
         end
     end
     return count
 end
 
-local CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS = {
-    checkLoadConditions = false,
-    ignoreSpellAvailability = true,
-    ignoreItemAvailability = true,
-    ignoreTalentConditions = true,
-    configPreview = true,
-    selectionDrivenConfigPreview = true,
-}
-
 local UNLOCK_PREVIEW_BUTTON_USABILITY_OPTIONS = {
     checkLoadConditions = false,
 }
 
-local function IsGroupEnabledForConfigPreview(addon, group)
-    if not group then return false end
-
-    local container = addon:GetParentContainer(group)
-    if container then
-        if container.enabled == false or group.enabled == false then return false end
-    elseif group.enabled == false then
-        return false
-    end
-
-    if group.parentContainerId then
-        if not addon.ResolveContainerClassScope then
-            return false
-        end
-        local scope = addon:ResolveContainerClassScope(group.parentContainerId)
-        if not scope or scope.isInvalid == true then
-            return false
-        end
-    end
-
-    return true
-end
-
-local function IsConfigSelectionPreviewShown()
-    local CS = ST and ST._configState
-    local configFrame = CS and CS.configFrame
-    local frame = configFrame and configFrame.frame
-    if not (frame and frame.IsShown and frame:IsShown()) then
-        return nil
-    end
-    return CS
-end
-
-local function IsSelectionDrivenConfigPreviewScope(addon, groupId, sourceIndex)
-    local CS = IsConfigSelectionPreviewShown()
-    if not CS then
-        return false
-    end
-
-    if CS.selectedGroup == groupId then
-        if not sourceIndex then
-            return true
-        end
-        if CS.selectedButton then
-            return CS.selectedButton == sourceIndex
-        end
-        if CS.selectedButtons and next(CS.selectedButtons) then
-            return CS.selectedButtons[sourceIndex] or false
-        end
-        return true
-    end
-
-    if CS.selectedPanels and CS.selectedPanels[groupId] then
-        return true
-    end
-
-    if CS.selectedContainer and not CS.selectedGroup
-        and not (CS.selectedPanels and next(CS.selectedPanels)) then
-        local db = addon.db
-        local group = db and db.profile and db.profile.groups and db.profile.groups[groupId]
-        if group and group.parentContainerId == CS.selectedContainer then
-            return true
-        end
-    end
-
-    return false
-end
-
-function CooldownCompanion:IsButtonInConfigPreviewScope(groupId, sourceIndex, opts)
-    if not (opts and opts.configPreview) then
-        return true
-    end
-    if opts.selectionDrivenConfigPreview then
-        return IsSelectionDrivenConfigPreviewScope(self, groupId, sourceIndex) == true
-    end
-    if not ST.IsConfigButtonForceVisible then
-        return true
-    end
-
-    local previewButton = {
-        _groupId = groupId,
-        index = sourceIndex,
-    }
-    return ST.IsConfigButtonForceVisible(previewButton) == true
-end
-
-local function GroupHasConfigPreviewButtons(addon, groupId, group)
-    return addon:GetGroupLayoutButtonCount(groupId, group, {
-        buttonUsabilityOptions = CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS,
-    }) > 0
-end
-
 function CooldownCompanion:GetGroupButtonUsabilityOptions(groupId, group)
-    if groupId and IsSelectionDrivenConfigPreviewScope(self, groupId) then
-        local db = self.db and self.db.profile
-        group = group or (db and db.groups and db.groups[groupId])
-        if IsGroupEnabledForConfigPreview(self, group)
-            and GroupHasConfigPreviewButtons(self, groupId, group) then
-            return CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS
-        end
-    end
-
     local frame = groupId and self.groupFrames and self.groupFrames[groupId]
     if frame
         and (frame._containerUnlockPreviewActive == true
@@ -1907,7 +1783,6 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
             group = group,
             container = container,
             checkCharVisibility = opts.checkCharVisibility,
-            ignoreOtherClassBrowseSuppression = opts.ignoreOtherClassBrowseSuppression,
         })
     end
     if not opts.ignoreUnlockPreview and self:IsPanelUnlockPreviewActive(group) then
@@ -1915,7 +1790,6 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
             group = group,
             panelUnlockPreview = true,
             checkCharVisibility = opts.checkCharVisibility,
-            ignoreOtherClassBrowseSuppression = opts.ignoreOtherClassBrowseSuppression,
         })
     end
     if container then
@@ -1950,11 +1824,6 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
     end
 
     local buttonUsabilityOptions = opts.buttonUsabilityOptions
-    if not buttonUsabilityOptions
-        and opts.allowConfigPreviewButtonUsability
-        and self.GetGroupButtonUsabilityOptions then
-        buttonUsabilityOptions = self:GetGroupButtonUsabilityOptions(groupId, group)
-    end
 
     if opts.requireButtons and not self:GroupHasUsableButtons(group, {
         checkLoadConditions = opts.checkLoadConditions,
@@ -1966,149 +1835,6 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
     end
 
     return true
-end
-
-function CooldownCompanion:IsGroupEligibleForConfigPreview(groupId, opts)
-    opts = opts or {}
-    if not (groupId and IsSelectionDrivenConfigPreviewScope(self, groupId)) then
-        return false
-    end
-
-    local db = self.db and self.db.profile
-    local group = opts.group or (db and db.groups and db.groups[groupId])
-    if not IsGroupEnabledForConfigPreview(self, group) then
-        return false
-    end
-
-    return GroupHasConfigPreviewButtons(self, groupId, group)
-end
-
-local function BuildConfigPreviewEligibility(addon)
-    local groups = addon.db and addon.db.profile and addon.db.profile.groups
-    if not groups then
-        return nil, nil
-    end
-
-    local containerIds
-    local groupIds
-    for groupId, group in pairs(groups) do
-        local containerId = group and group.parentContainerId
-        if containerId and addon:IsGroupEligibleForConfigPreview(groupId, {
-            group = group,
-        }) then
-            containerIds = containerIds or {}
-            containerIds[containerId] = true
-            groupIds = groupIds or {}
-            groupIds[groupId] = true
-        end
-    end
-    return containerIds, groupIds
-end
-
-local function EnsureConfigPreviewContainerFrame(addon, group, previewEligible)
-    if not (previewEligible and group and group.parentContainerId and addon.containerFrames) then
-        return
-    end
-    if InCombatLockdown() then
-        addon._pendingVisibilityRefresh = true
-        return
-    end
-
-    local containerFrame = addon.containerFrames[group.parentContainerId]
-    if containerFrame then
-        containerFrame:Show()
-    elseif addon.CreateContainerFrame then
-        addon:CreateContainerFrame(group.parentContainerId)
-    end
-end
-
-local function CleanupInactiveConfigPreviewContainerFrames(addon)
-    if not addon.containerFrames then
-        return false
-    end
-
-    local previewContainerIds = BuildConfigPreviewEligibility(addon)
-    local cleaned = false
-    for containerId, frame in pairs(addon.containerFrames) do
-        if frame
-            and not addon:IsContainerVisibleToCurrentChar(containerId)
-            and not (previewContainerIds and previewContainerIds[containerId]) then
-            if InCombatLockdown() and frame.IsProtected and frame:IsProtected() then
-                addon._pendingVisibilityRefresh = true
-            else
-                if addon.ClearContainerUnlockState then
-                    addon:ClearContainerUnlockState(containerId)
-                end
-                local wasShown = not frame.IsShown or frame:IsShown()
-                frame:Hide()
-                cleaned = cleaned or wasShown
-            end
-        end
-    end
-    return cleaned
-end
-
-local function IsConfigFrameShown()
-    local configState = ST and ST._configState
-    local frame = configState and configState.configFrame and configState.configFrame.frame
-    return frame and frame.IsShown and frame:IsShown()
-end
-
-function CooldownCompanion:IsGroupSuppressedForOtherClassBrowse(groupId, group)
-    local configState = ST and ST._configState
-    if not (configState
-        and configState.otherClassLibraryActive == true
-        and configState.hideActiveCurrentClassPanels == true
-        and IsConfigFrameShown()) then
-        return false
-    end
-
-    local db = self.db and self.db.profile
-    group = group or (db and db.groups and db.groups[groupId])
-    if not group then
-        return false
-    end
-
-    local visibleToCurrentChar = self:IsGroupVisibleToCurrentChar(groupId)
-    if not visibleToCurrentChar then
-        return false
-    end
-
-    local frame = self.groupFrames and self.groupFrames[groupId]
-    if frame and frame.IsShown and frame:IsShown() then
-        return true
-    end
-
-    return self:IsGroupActive(groupId, {
-        group = group,
-        checkCharVisibility = false,
-        checkLoadConditions = true,
-        requireButtons = true,
-        ignoreOtherClassBrowseSuppression = true,
-    }) == true
-end
-
-function CooldownCompanion:IsContainerSuppressedForOtherClassBrowse(containerId, panels)
-    if not containerId then
-        return false
-    end
-
-    local panelList = panels or (self.GetPanels and self:GetPanels(containerId)) or nil
-    local hasSuppressedPanel = false
-    for _, panelInfo in ipairs(panelList or {}) do
-        local groupId = panelInfo.groupId
-        local group = panelInfo.group
-        if self:IsGroupSuppressedForOtherClassBrowse(groupId, group) then
-            hasSuppressedPanel = true
-        elseif self:IsGroupVisibleInUnlockPreview(groupId, {
-            group = group,
-            checkCharVisibility = true,
-        }) then
-            return false
-        end
-    end
-
-    return hasSuppressedPanel
 end
 
 function CooldownCompanion:CleanHeroTalentsForSpec(group, specId)
@@ -3126,14 +2852,8 @@ function CooldownCompanion:GroupButtonSetNeedsRebuild(groupId, group, opts)
     local usableButtons = {}
     local usableCount = 0
     local buttonUsabilityOptions = opts.buttonUsabilityOptions
-    if not buttonUsabilityOptions
-        and opts.allowConfigPreviewButtonUsability
-        and self.GetGroupButtonUsabilityOptions then
-        buttonUsabilityOptions = self:GetGroupButtonUsabilityOptions(groupId, group)
-    end
-    for sourceIndex, buttonData in ipairs(group.buttons) do
-        if self:IsButtonInConfigPreviewScope(groupId, sourceIndex, buttonUsabilityOptions)
-            and self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
+    for _, buttonData in ipairs(group.buttons) do
+        if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
             usableCount = usableCount + 1
             usableButtons[usableCount] = buttonData
         end
@@ -3256,80 +2976,6 @@ function CooldownCompanion:CreateAllGroupFrames()
     end
 end
 
-function CooldownCompanion:RefreshConfigSelectedGroupFrames()
-    if self._refreshingConfigSelectedGroupFrames then
-        return
-    end
-    if InCombatLockdown() then
-        self._pendingFullRefresh = true
-        if self.RefreshAlphaUpdateDriver then
-            self:RefreshAlphaUpdateDriver()
-        end
-        return
-    end
-    if not (self.db and self.db.profile and self.db.profile.groups) then
-        return
-    end
-
-    self._refreshingConfigSelectedGroupFrames = true
-    local groups = self.db.profile.groups
-    local previousPreviewed = self._configPreviewedGroupFrames
-    local currentPreviewed = nil
-    local candidates = {}
-
-    for groupId in pairs(groups) do
-        if IsSelectionDrivenConfigPreviewScope(self, groupId) then
-            currentPreviewed = currentPreviewed or {}
-            currentPreviewed[groupId] = true
-            candidates[groupId] = true
-        end
-    end
-    if previousPreviewed then
-        for groupId in pairs(previousPreviewed) do
-            candidates[groupId] = true
-        end
-    end
-    self._configPreviewedGroupFrames = currentPreviewed
-
-    local refreshed = false
-    for groupId in pairs(candidates) do
-        local group = groups[groupId]
-        if group then
-            local frame = self.groupFrames and self.groupFrames[groupId]
-            local wasPreviewed = previousPreviewed and previousPreviewed[groupId]
-            local isPreviewed = currentPreviewed and currentPreviewed[groupId]
-            local previewEligible = self:IsGroupEligibleForConfigPreview(groupId, {
-                group = group,
-            })
-            local active = self:IsGroupActive(groupId, {
-                group = group,
-                checkCharVisibility = true,
-                checkLoadConditions = true,
-                requireButtons = true,
-            }) or previewEligible
-            if (active or (wasPreviewed and frame))
-                and (not frame
-                    or (wasPreviewed and not isPreviewed)
-                    or self:GroupButtonSetNeedsRebuild(groupId, group, {
-                        allowConfigPreviewButtonUsability = isPreviewed,
-                    })) then
-                EnsureConfigPreviewContainerFrame(self, group, previewEligible)
-                self:RefreshGroupFrame(groupId)
-                refreshed = true
-            end
-        end
-    end
-    self._refreshingConfigSelectedGroupFrames = nil
-    local containersCleaned = CleanupInactiveConfigPreviewContainerFrames(self)
-
-    if refreshed or containersCleaned then
-        self:FinalizePanelAnchors()
-        if self.RefreshAllContainerWrappers then
-            self:RefreshAllContainerWrappers()
-        end
-    end
-end
-
 function CooldownCompanion:FinalizePanelAnchors()
     local groups = self.db and self.db.profile and self.db.profile.groups
     if not (groups and self.groupFrames) then
@@ -3346,11 +2992,7 @@ function CooldownCompanion:FinalizePanelAnchors()
                 self:NormalizeStableExternalAnchorCompactLayout(groupId, group)
             end
             if not group.compactLayout then
-                frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group, {
-                    allowConfigPreviewButtonUsability = self:IsGroupEligibleForConfigPreview(groupId, {
-                        group = group,
-                    }),
-                })
+                frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group)
             else
                 frame.layoutButtonCount = nil
             end
@@ -3417,7 +3059,6 @@ function CooldownCompanion:RefreshAllGroups()
         return
     end
     -- Clean up stale container frames (e.g. after profile switch)
-    local previewContainerIds, previewGroupIds = BuildConfigPreviewEligibility(self)
     if self.containerFrames then
         local containers = self.db.profile.groupContainers or {}
         for containerId, frame in pairs(self.containerFrames) do
@@ -3428,8 +3069,7 @@ function CooldownCompanion:RefreshAllGroups()
         end
         -- Ensure all current-profile containers have frames
         for containerId, _ in pairs(containers) do
-            if self:IsContainerVisibleToCurrentChar(containerId)
-                or (previewContainerIds and previewContainerIds[containerId]) then
+            if self:IsContainerVisibleToCurrentChar(containerId) then
                 if not self.containerFrames[containerId] then
                     self:CreateContainerFrame(containerId)
                 else
@@ -3463,17 +3103,14 @@ function CooldownCompanion:RefreshAllGroups()
     -- Refresh current profile's groups: load active ones, unload inactive ones
     for groupId, group in pairs(self.db.profile.groups) do
         local visible = self:IsGroupVisibleToCurrentChar(groupId)
-        local previewEligible = previewGroupIds and previewGroupIds[groupId] == true
-        if not visible and not previewEligible then
-            self:UnloadGroup(groupId)
-        elseif self:IsGroupSuppressedForOtherClassBrowse(groupId, group) then
+        if not visible then
             self:UnloadGroup(groupId)
         elseif self:IsGroupActive(groupId, {
             group = group,
             checkCharVisibility = false,
             checkLoadConditions = true,
             requireButtons = false,
-        }) or previewEligible then
+        }) then
             self:RefreshGroupFrame(groupId)
         else
             self:UnloadGroup(groupId)
@@ -3520,13 +3157,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
 
     for groupId, group in pairs(self.db.profile.groups) do
         local visible = self:IsGroupVisibleToCurrentChar(groupId)
-        local previewEligible = self:IsGroupEligibleForConfigPreview(groupId, {
-            group = group,
-        })
-        EnsureConfigPreviewContainerFrame(self, group, previewEligible)
-        if not visible and not previewEligible then
-            self:UnloadGroup(groupId)
-        elseif self:IsGroupSuppressedForOtherClassBrowse(groupId, group) then
+        if not visible then
             self:UnloadGroup(groupId)
         else
             local active = self:IsGroupActive(groupId, {
@@ -3534,21 +3165,17 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                 checkCharVisibility = true,
                 checkLoadConditions = true,
                 requireButtons = true,
-            }) or previewEligible
+            })
 
             if not active then
                 self:UnloadGroup(groupId)
             else
                 local frame = self.groupFrames[groupId]
-                if frame and self:GroupButtonSetNeedsRebuild(groupId, group, {
-                    allowConfigPreviewButtonUsability = previewEligible,
-                }) then
+                if frame and self:GroupButtonSetNeedsRebuild(groupId, group) then
                     self:RefreshGroupFrame(groupId)
                     frame = self.groupFrames[groupId]
                 elseif not frame then
-                    if self:GroupButtonSetNeedsRebuild(groupId, group, {
-                        allowConfigPreviewButtonUsability = previewEligible,
-                    }) then
+                    if self:GroupButtonSetNeedsRebuild(groupId, group) then
                         -- Recover the shell and repopulate it rather than
                         -- discarding it: frames cannot be destroyed, so a
                         -- discard leaks the whole tree (buttons, cooldowns and

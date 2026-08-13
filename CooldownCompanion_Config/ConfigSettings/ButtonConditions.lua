@@ -3054,29 +3054,8 @@ local function BuildLoadConditionsTab(container)
             row = true,
             disabled = alphaControlsDisabled,
             disabledText = alphaDisabledText,
-            onBaselineChanged = function(val)
-                CS.texturePanelAlphaPreview = CS.texturePanelAlphaPreview or {}
-                CS.texturePanelAlphaPreview[groupId] = val
-
-                local alphaModuleId = "texture_panel_" .. tostring(groupId)
-                CooldownCompanion.alphaState = CooldownCompanion.alphaState or {}
-                local state = CooldownCompanion.alphaState[alphaModuleId]
-                if not state then
-                    state = {}
-                    CooldownCompanion.alphaState[alphaModuleId] = state
-                end
-                state.currentAlpha = val
-                state.desiredAlpha = val
-                state.lastAlpha = val
-                state.fadeDuration = 0
-                state.fadeStartAlpha = val
-
-                local frame = CooldownCompanion.groupFrames[groupId]
-                local button = frame and frame.buttons and frame.buttons[1] or nil
-                local host = button and button.auraTextureHost or nil
-                if host and host:IsShown() then
-                    host:SetAlpha(val)
-                end
+            onBaselineCommitted = function()
+                CooldownCompanion:RefreshAllAuraTextureVisuals()
             end,
         })
     else
@@ -3087,19 +3066,6 @@ local function BuildLoadConditionsTab(container)
             row = true,
             disabled = alphaControlsDisabled,
             disabledText = alphaDisabledText,
-            onBaselineChanged = function(val)
-                local frame = CooldownCompanion.groupFrames[groupId]
-                if frame and frame:IsShown() then
-                    frame:SetAlpha(val)
-                end
-                local state = CooldownCompanion.alphaState and CooldownCompanion.alphaState[groupId]
-                if state then
-                    state.currentAlpha = val
-                    state.desiredAlpha = val
-                    state.lastAlpha = val
-                    state.fadeDuration = 0
-                end
-            end,
         })
     end
 end

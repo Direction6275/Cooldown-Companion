@@ -38,7 +38,6 @@ local ToggleConfigPanelMultiSelect = ST._ToggleConfigPanelMultiSelect
 local GetConfigPanelTypeBadgeAtlas = ST._GetConfigPanelTypeBadgeAtlas
 local GetConfigPanelEntryCount = ST._GetConfigPanelEntryCount
 local ConfigPanelHasWarning = ST._ConfigPanelHasWarning
-local SetHideActiveCurrentClassPanels = ST._SetHideActiveCurrentClassPanels
 local ClearOtherClassBrowseState = ST._ResetOtherClassLibraryState
 local TryReceiveCursorDrop = ST._TryReceiveCursorDrop
 
@@ -977,13 +976,6 @@ end
 
 local function ClearColumn1ButtonBar()
     for _, widget in ipairs(CS.col1BarWidgets) do
-        local frame = widget and widget.frame
-        if frame and frame._cdcHideActiveOtherClassBrowse then
-            frame:SetScript("OnEnter", nil)
-            frame:SetScript("OnLeave", nil)
-            frame._cdcHideActiveOtherClassBrowse = nil
-            GameTooltip:Hide()
-        end
         widget:Release()
     end
     wipe(CS.col1BarWidgets)
@@ -1109,45 +1101,9 @@ local function PopulateOtherClassBrowseButtonBar()
     end
 
     ClearColumn1ButtonBar()
-
-    local toggleBtn = AceGUI:Create("Button")
-    local function UpdateToggleText()
-        toggleBtn:SetText(CS.hideActiveCurrentClassPanels == true and "Show Active" or "Hide Active")
-    end
-    UpdateToggleText()
-    toggleBtn:SetCallback("OnClick", function()
-        local hideActive = not (CS.hideActiveCurrentClassPanels == true)
-        SetHideActiveCurrentClassPanels(hideActive)
-        UpdateToggleText()
-    end)
-    toggleBtn.frame:SetParent(CS.col1ButtonBar)
-    toggleBtn.frame:ClearAllPoints()
-    toggleBtn.frame:SetPoint("TOPLEFT", CS.col1ButtonBar, "TOPLEFT", 0, -1)
-    toggleBtn.frame:SetPoint("TOPRIGHT", CS.col1ButtonBar, "TOPRIGHT", 0, -1)
-    toggleBtn.frame:SetHeight(28)
-    toggleBtn.frame._cdcHideActiveOtherClassBrowse = true
-    toggleBtn.frame:SetScript("OnEnter", function(self)
-        local hidden = CS.hideActiveCurrentClassPanels == true
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine(hidden and "Show Active" or "Hide Active")
-        GameTooltip:AddLine(hidden and "Show your current character's panels again." or "Hide your current character's panels.", 1, 1, 1, true)
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Other-class previews stay visible.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    toggleBtn.frame:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    toggleBtn.frame:Show()
-    table.insert(CS.col1BarWidgets, toggleBtn)
-
-    CS.col1ButtonBar._topRowBtns = { toggleBtn.frame }
-    CS.col1ButtonBar:SetScript("OnSizeChanged", function(self, w)
-        if self._topRowBtns and self._topRowBtns[1] then
-            self._topRowBtns[1]:SetWidth(w)
-        end
-    end)
-    CS.col1ButtonBar:Show()
+    -- Other-class panels are rendered by the pinned mirror. Browsing them no
+    -- longer offers a control that hides or rebuilds the current live display.
+    CS.col1ButtonBar:Hide()
 end
 
 ------------------------------------------------------------------------

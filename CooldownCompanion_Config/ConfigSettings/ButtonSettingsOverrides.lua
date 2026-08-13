@@ -170,7 +170,8 @@ local FORMAT_OVERRIDE_TOOLTIP = {
 -- panel's shared format - with the destructive Clear below the content it
 -- clears.
 --
--- Typing commits live on a short debounce, so this section has a lifecycle
+-- Typing repaints the pinned preview on a short debounce and commits the live
+-- panel when the edit surface is left, so this section has a lifecycle
 -- the other override sections do not: a controller that owns an animation
 -- driver and a pending write, both of which have to be settled before the
 -- container holding them is released or rebuilt.
@@ -188,10 +189,12 @@ local FORMAT_OVERRIDE_COMMIT_DELAY = 0.3
 local overrideController = nil
 local overrideCommitTimer = nil
 local overrideCommitTarget = nil   -- { buttonData, groupId }, captured when scheduled
+local overrideLiveCommitTarget = nil
+local overridePendingValue = nil
 local overrideClearButton = nil    -- the live section's Clear Override button, or nil
 
--- Writes the edited format to the entry's override and refreshes everything
--- that reads it.
+-- Temporarily exposes the edited override while repainting the pinned preview;
+-- the saved override and live panel update when this edit surface is left.
 --
 -- The commit deliberately never calls RefreshConfigPanel: that would release
 -- the very section being typed in and drop the cursor (the editor component
@@ -215,9 +218,17 @@ local function CommitTextFormatOverrideEdit()
     local raw = overrideController:GetRawText()
     -- An empty format is never written (same guard the Format tab's commit uses).
     if not raw or raw == "" then return end
-    if target.buttonData.textFormat == raw then return end
+    if target.buttonData.textFormat == raw then
+        if overrideLiveCommitTarget then
+            overrideLiveCommitTarget = nil
+            overridePendingValue = nil
+            if ST._RefreshButtonsPreviewMirror then
+                ST._RefreshButtonsPreviewMirror(target.groupId)
+            end
+        end
+        return
+    end
 
-    target.buttonData.textFormat = raw
     -- This is the write that can CREATE the override, and it deliberately does
     -- not rebuild the config, so nothing else would notice. Clear Override is
     -- built disabled while there is no override; enable it in place here.
@@ -231,7 +242,14 @@ local function CommitTextFormatOverrideEdit()
     if overrideClearButton then
         overrideClearButton:SetDisabled(false)
     end
-    CooldownCompanion:RefreshGroupFrame(target.groupId)
+    overrideLiveCommitTarget = target
+    overridePendingValue = raw
+    local committed = target.buttonData.textFormat
+    target.buttonData.textFormat = raw
+    if ST._RefreshButtonsPreviewMirror then
+        ST._RefreshButtonsPreviewMirror(target.groupId)
+    end
+    target.buttonData.textFormat = committed
 end
 
 -- The target is captured per schedule, not read at fire time, so a write that
@@ -245,9 +263,17 @@ local function ScheduleTextFormatOverrideCommit(buttonData, groupId)
 end
 
 local function FlushTextFormatOverrideCommit()
-    if not overrideCommitTimer then return end
-    overrideCommitTimer:Cancel()
-    CommitTextFormatOverrideEdit()
+    if overrideCommitTimer then
+        overrideCommitTimer:Cancel()
+        CommitTextFormatOverrideEdit()
+    end
+    local target = overrideLiveCommitTarget
+    overrideLiveCommitTarget = nil
+    if target then
+        target.buttonData.textFormat = overridePendingValue
+        CooldownCompanion:RefreshGroupFrame(target.groupId)
+    end
+    overridePendingValue = nil
 end
 
 -- Drops a pending write instead of settling it. Only Clear Override wants
@@ -258,6 +284,8 @@ local function CancelTextFormatOverrideCommit()
         overrideCommitTimer = nil
     end
     overrideCommitTarget = nil
+    overrideLiveCommitTarget = nil
+    overridePendingValue = nil
 end
 
 -- Settle the pending write FIRST, then drop the controller: the container
@@ -277,6 +305,8 @@ local function ReleaseTextFormatOverrideEditor()
         overrideController = nil
     end
     overrideCommitTarget = nil
+    overrideLiveCommitTarget = nil
+    overridePendingValue = nil
 end
 
 local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
@@ -310,6 +340,7 @@ local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
         onDirty = function()
             ScheduleTextFormatOverrideCommit(buttonData, groupId)
         end,
+        onCommit = FlushTextFormatOverrideCommit,
     })
 
     -- The destructive action sits below the content it clears, compact and
@@ -429,6 +460,9 @@ local function BuildBarIconControls(container, styleTable, onChange, opts)
         min = -5, max = 50, step = 0.1,
         value = styleTable.barIconOffset or 0,
         onChange = function(val)
+            ST._PreviewScalarSetting(styleTable, "barIconOffset", val, ST._RefreshSelectedButtonsPreview)
+        end,
+        onRelease = function(val)
             styleTable.barIconOffset = val
             onChange()
         end,
@@ -451,6 +485,9 @@ local function BuildBarIconControls(container, styleTable, onChange, opts)
             min = 5, max = 100, step = 0.1,
             value = styleTable.barIconSize or 20,
             onChange = function(val)
+                ST._PreviewScalarSetting(styleTable, "barIconSize", val, ST._RefreshSelectedButtonsPreview)
+            end,
+            onRelease = function(val)
                 styleTable.barIconSize = val
                 onChange()
             end,

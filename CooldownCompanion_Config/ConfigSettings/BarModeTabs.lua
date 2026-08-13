@@ -146,6 +146,9 @@ local function BuildBarAppearanceTab(container, group, style)
         min = 10, max = 500, step = 0.1,
         value = style.barLength or 180,
         onChange = function(val)
+            ST._PreviewScalarSetting(style, "barLength", val, ST._RefreshSelectedButtonsPreview)
+        end,
+        onRelease = function(val)
             style.barLength = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end,
@@ -156,6 +159,9 @@ local function BuildBarAppearanceTab(container, group, style)
         min = 5, max = 100, step = 0.1,
         value = style.barHeight or 20,
         onChange = function(val)
+            ST._PreviewScalarSetting(style, "barHeight", val, ST._RefreshSelectedButtonsPreview)
+        end,
+        onRelease = function(val)
             style.barHeight = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end,
@@ -167,6 +173,9 @@ local function BuildBarAppearanceTab(container, group, style)
             min = -10, max = 100, step = 0.1,
             value = style.buttonSpacing or ST.BUTTON_SPACING,
             onChange = function(val)
+                ST._PreviewScalarSetting(style, "buttonSpacing", val, ST._RefreshSelectedButtonsPreview)
+            end,
+            onRelease = function(val)
                 style.buttonSpacing = val
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             end,
@@ -311,6 +320,9 @@ local function BuildBarAppearanceTab(container, group, style)
             min = -5, max = 50, step = 0.1,
             value = style.barIconOffset or 0,
             onChange = function(val)
+                ST._PreviewScalarSetting(style, "barIconOffset", val, ST._RefreshSelectedButtonsPreview)
+            end,
+            onRelease = function(val)
                 style.barIconOffset = val
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             end,
@@ -333,6 +345,9 @@ local function BuildBarAppearanceTab(container, group, style)
                 min = 5, max = 100, step = 0.1,
                 value = style.barIconSize or 20,
                 onChange = function(val)
+                    ST._PreviewScalarSetting(style, "barIconSize", val, ST._RefreshSelectedButtonsPreview)
+                end,
+                onRelease = function(val)
                     style.barIconSize = val
                     CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
                 end,
@@ -745,7 +760,7 @@ local function BuildBarPandemicSection(container, group, style)
                 default = {1, 0.5, 0, 1},
                 hasAlpha = false,
                 onConfirm = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end,
-                onChange = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end,
+                onChange = ST._RefreshSelectedButtonsPreview,
             })
         end
     end

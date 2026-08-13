@@ -248,17 +248,21 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     -- format editor).
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     local isTextMode = group and group.displayMode == "text"
-    local tabs = {}
-    if isTextMode then
-        tabs[#tabs + 1] = { value = "format", text = "Format" }
+    local tabsMode = isTextMode and "text" or "standard"
+    if container._cdcPanelSettingsTabsMode ~= tabsMode then
+        local tabs = {}
+        if isTextMode then
+            tabs[#tabs + 1] = { value = "format", text = "Format" }
+        end
+        tabs[#tabs + 1] = { value = "appearance", text = "Appearance" }
+        if not isTextMode then
+            tabs[#tabs + 1] = { value = "effects", text = "Indicators" }
+        end
+        tabs[#tabs + 1] = { value = "layout",          text = "Layout" }
+        tabs[#tabs + 1] = { value = "loadconditions",  text = "Visibility" }
+        container.tabGroup:SetTabs(tabs)
+        container._cdcPanelSettingsTabsMode = tabsMode
     end
-    tabs[#tabs + 1] = { value = "appearance", text = "Appearance" }
-    if not isTextMode then
-        tabs[#tabs + 1] = { value = "effects", text = "Indicators" }
-    end
-    tabs[#tabs + 1] = { value = "layout",          text = "Layout" }
-    tabs[#tabs + 1] = { value = "loadconditions",  text = "Visibility" }
-    container.tabGroup:SetTabs(tabs)
 
     -- Migrate stale tab keys from previous layout
     if CS.selectedTab == "extras" then CS.selectedTab = "effects" end
