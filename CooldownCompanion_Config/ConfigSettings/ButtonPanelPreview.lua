@@ -761,12 +761,13 @@ local function ApplySelectionVisuals(slot, index, suppress)
 end
 
 local function CollectEntryMetadata(buttonData, group)
-    -- The per-entry text format override is the flat buttonData.textFormat
-    -- field (never part of the styleOverrides sections), so it needs its own
-    -- check to count as an appearance override on text panels.
+    -- The per-entry text format is the flat buttonData.textFormat field (never
+    -- part of the styleOverrides sections), so it needs its own check to count
+    -- as a customization. Counted in EVERY display mode: a format stranded on
+    -- a panel that left text mode is still saved, and the Customizations list
+    -- and this badge must agree about whether the entry customizes anything.
     local hasOverrides = CooldownCompanion:HasStyleOverrides(buttonData) and true or false
-    if not hasOverrides and group and group.displayMode == "text"
-        and buttonData.textFormat ~= nil then
+    if not hasOverrides and buttonData.textFormat ~= nil then
         hasOverrides = true
     end
     local status = {
@@ -831,7 +832,7 @@ end
 local ENTRY_STATUS_BADGES = {
     { key = "disabled", atlas = "GM-icon-visibleDis-pressed", label = "Disabled" },
     { key = "warn", atlas = "Ping_Marker_Icon_Warning", label = "Spell/item unavailable" },
-    { key = "override", atlas = "Crosshair_VehichleCursor_32", label = "Has appearance overrides" },
+    { key = "override", atlas = "Crosshair_VehichleCursor_32", label = "Has customized sections" },
     { key = "fallback", atlas = "banker", label = "Uses item fallbacks" },
     { key = "sound", atlas = "common-icon-sound", label = "Sound alerts enabled" },
     { key = "talent", atlas = "UI-HUD-MicroMenu-SpecTalents-Mouseover", label = "Has talent conditions" },
@@ -1436,8 +1437,8 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
         local canUse = ST._CanButtonUseConfigOverrideSection
         local sections = buttonData.overrideSections or {}
         local lines = {}
-        if displayMode == "text" and buttonData.textFormat ~= nil then
-            lines[#lines + 1] = { label = "Text Format", active = true }
+        if buttonData.textFormat ~= nil then
+            lines[#lines + 1] = { label = "Text Format", active = displayMode == "text" }
         end
         for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER or {}) do
             if sections[sectionId] then
@@ -1454,7 +1455,7 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
         GameTooltip:AddLine(" ")
         if #lines > 0 then
             GameTooltip:AddLine(
-                ("|A:%s:14:14|a Appearance overrides:"):format(ENTRY_STATUS_BADGE_ATLAS.override),
+                ("|A:%s:14:14|a Customized:"):format(ENTRY_STATUS_BADGE_ATLAS.override),
                 1, 1, 1)
             for _, line in ipairs(lines) do
                 if line.active then
@@ -1465,7 +1466,7 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
             end
         else
             GameTooltip:AddLine(
-                ("|A:%s:14:14|a Has appearance overrides"):format(ENTRY_STATUS_BADGE_ATLAS.override),
+                ("|A:%s:14:14|a Has customized sections"):format(ENTRY_STATUS_BADGE_ATLAS.override),
                 1, 1, 1)
         end
     end

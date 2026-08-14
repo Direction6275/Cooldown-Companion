@@ -24,6 +24,8 @@ local BuildCompactModeControls = ST._BuildCompactModeControls
 local ResolveStyleLens = ST._ResolveStyleLens
 local ResolveLensSection = ST._ResolveLensSection
 local BeginLensSection = ST._BeginLensSection
+local ResolveLensCollapseKey = ST._ResolveLensCollapseKey
+local AddLensPanelScopeNote = ST._AddLensPanelScopeNote
 
 -- Imports from ButtonFrame/TextMode.lua (the renderer this tab configures).
 -- Text entries auto-size from a measured worst-case render of their format, so
@@ -92,7 +94,7 @@ local formatCommitTimer = nil
 local formatCommitTarget = nil   -- { style, saveTarget, groupId }, captured when scheduled
 local formatLiveCommitTarget = nil
 local formatPendingValue = nil
--- The live tab's ENTRY chrome, or nil under a panel/multi lens: the Clear
+-- The live tab's ENTRY chrome, or nil under a panel/multi lens: the revert
 -- button and the scope note, both of which the debounced commit flips in place
 -- on the edit that creates the entry's format.
 local formatClearButton = nil
@@ -261,6 +263,11 @@ local function BuildTextFormatTab(container)
     -- paused, so the whole tab lays out once at the end.
     container:PauseLayout()
 
+    -- Under a multi selection this tab edits the PANEL's format, and only this
+    -- line says so. No-op in every other lens mode. Added while the layout is
+    -- paused, like every other child of this tab.
+    AddLensPanelScopeNote(container, lens)
+
     -- Fresh table per call: the component keeps the one it is handed, and the
     -- commit captures its own per schedule, so no two may be the same table.
     -- defaultFormat is the seeding contract - an entry with no format of its
@@ -277,14 +284,15 @@ local function BuildTextFormatTab(container)
         return { style = style, groupId = groupId }
     end
 
-    -- Whose format is being edited, in the scope chrome's language. Bespoke
-    -- rather than ST._AttachHeadingScopeChrome: that chrome's actions are the
-    -- section machinery's Promote and Revert, and this field is a flat one
-    -- outside it - Clear below is its only way back.
+    -- Whose format is being edited, in the scope chrome's language - the same
+    -- two strings a section heading shows, grey "Panel setting" and gold
+    -- "Customized for <name>", off the same name resolver and truncation
+    -- (ST._GetLensEntryName). Bespoke only in its plumbing rather than its
+    -- wording: that chrome's actions are the section machinery's Promote and
+    -- Revert, and this field is a flat one outside it - Revert to Panel Format
+    -- below is its only way back.
     if entryData then
-        local entryName = ST._GetConfigEntryDisplayName
-            and ST._GetConfigEntryDisplayName(entryData)
-            or entryData.name
+        local entryName = ST._GetLensEntryName and ST._GetLensEntryName(lens)
         formatScopeCustomText = "Customized for " .. (entryName or "this entry")
 
         local note = AceGUI:Create("Label")
@@ -298,8 +306,8 @@ local function BuildTextFormatTab(container)
             note:SetText("Panel setting")
             note:SetColor(FORMAT_SCOPE_GREY[1], FORMAT_SCOPE_GREY[2], FORMAT_SCOPE_GREY[3])
         end
-        -- Second half of the reference's lifecycle, same shape as Clear's
-        -- below: AceGUI fires OnRelease on the way into the pool, so the
+        -- Second half of the reference's lifecycle, same shape as the revert
+        -- button's below: AceGUI fires OnRelease on the way into the pool, so the
         -- reference cannot outlive the widget it names. Chain, don't replace -
         -- ConfigureWrappedHelperLabel already installed its own restore handler.
         local prevOnRelease = note.events and note.events["OnRelease"]
@@ -323,8 +331,8 @@ local function BuildTextFormatTab(container)
         onCommit = FlushTextFormatTabCommit,
     })
 
-    -- The destructive action sits below the content it clears, compact and
-    -- flush left on one grammar-height line.
+    -- The way back to the panel's format sits below the content it replaces,
+    -- compact and flush left on one grammar-height line.
     --
     -- Built ALWAYS under an entry lens, disabled while the entry has no format
     -- of its own, rather than built with the field: the debounced commit that
@@ -341,7 +349,10 @@ local function BuildTextFormatTab(container)
         btnRow.noAutoHeight = true
 
         local clearBtn = AceGUI:Create("Button")
-        clearBtn:SetText("Clear Override")
+        -- Named for where the click LANDS, the way the section chrome's Revert
+        -- is. SetAutoWidth measures the string it is given (SetText recomputes
+        -- through the same path), so the longer label needs no sizing of its own.
+        clearBtn:SetText("Revert to Panel Format")
         clearBtn:SetAutoWidth(true)
         -- Stock AceGUI disabled look: SetDisabled just calls Enable/Disable on
         -- the UIPanelButtonTemplate underneath, and OnAcquire resets it to
@@ -405,7 +416,10 @@ local function BuildTextFormatTab(container)
     -- a panel-wide edit be made from an entry's page - the same rule the
     -- Appearance tab's panel-only sections follow.
     -- ================================================================
-    local _, settingsCollapsed = BuildCollapsibleSection(container, "Format Settings", "textformat_settings", nil, nil, ROW_SECTION)
+    -- Panel-only under an entry lens, so the collapse key is lens-scoped and
+    -- opens folded the first time (ST._ResolveLensCollapseKey owns that rule).
+    local _, settingsCollapsed = BuildCollapsibleSection(container, "Format Settings",
+        ResolveLensCollapseKey(lens, group, nil, "textformat_settings"), nil, nil, ROW_SECTION)
 
     if not settingsCollapsed then
     local settingsSec = BeginLensSection(lens, group, nil)
@@ -501,6 +515,11 @@ local function BuildTextAppearanceTab(container, group, style)
     -- rows go in read-only and no callback of its own can reach a saved table.
     local lens = ResolveStyleLens(group)
 
+    -- Under a multi selection these sections edit the PANEL, and only this line
+    -- says so - the per-section scope chrome speaks under an entry lens alone.
+    -- No-op in every other lens mode.
+    AddLensPanelScopeNote(container, lens)
+
     -- Sections with NO override identity of their own (the panel's padding,
     -- spacing and group header; Compact Mode): an entry cannot own them, so
     -- under an entry lens they say "Applies to all entries" and go read-only
@@ -518,7 +537,10 @@ local function BuildTextAppearanceTab(container, group, style)
     -- ================================================================
     -- Font
     -- ================================================================
-    local fontHeading, fontCollapsed = BuildCollapsibleSection(container, "Font", "textappearance_font", nil, nil, ROW_SECTION)
+    -- The whole collapsible IS the textFont section, so its collapse key
+    -- follows that section's scope through ST._ResolveLensCollapseKey.
+    local fontHeading, fontCollapsed = BuildCollapsibleSection(container, "Font",
+        ResolveLensCollapseKey(lens, group, "textFont", "textappearance_font"), nil, nil, ROW_SECTION)
     local fontSec = BeginLensSection(lens, group, "textFont")
     fontSec:HeadingChrome(fontHeading)
 
@@ -551,7 +573,8 @@ local function BuildTextAppearanceTab(container, group, style)
     -- ================================================================
     -- Colors
     -- ================================================================
-    local colorsHeading, colorsCollapsed = BuildCollapsibleSection(container, "Colors", "textappearance_colors", nil, nil, ROW_SECTION)
+    local colorsHeading, colorsCollapsed = BuildCollapsibleSection(container, "Colors",
+        ResolveLensCollapseKey(lens, group, "textColors", "textappearance_colors"), nil, nil, ROW_SECTION)
     local colorsSec = BeginLensSection(lens, group, "textColors")
     colorsSec:HeadingChrome(colorsHeading)
 
@@ -623,7 +646,8 @@ local function BuildTextAppearanceTab(container, group, style)
     -- manual size knob is how much room to leave around that text. What the
     -- measurement produced is reported below it, read-only.
     -- ================================================================
-    local panelHeading, panelCollapsed = BuildCollapsibleSection(container, "Panel", "textappearance_settings", nil, nil, ROW_SECTION)
+    local panelHeading, panelCollapsed = BuildCollapsibleSection(container, "Panel",
+        ResolveLensCollapseKey(lens, group, nil, "textappearance_settings"), nil, nil, ROW_SECTION)
     -- Panel-only (sectionId nil). Safe with no entry selected: panel and multi
     -- scope attach no chrome at all.
     local panelSec = BeginLensSection(lens, group, nil)
@@ -760,7 +784,8 @@ local function BuildTextAppearanceTab(container, group, style)
     -- ================================================================
     -- Background & Border
     -- ================================================================
-    local bgHeading, bgCollapsed = BuildCollapsibleSection(container, "Background & Border", "textappearance_bg", nil, nil, ROW_SECTION)
+    local bgHeading, bgCollapsed = BuildCollapsibleSection(container, "Background & Border",
+        ResolveLensCollapseKey(lens, group, "textBackground", "textappearance_bg"), nil, nil, ROW_SECTION)
     local bgSec = BeginLensSection(lens, group, "textBackground")
     bgSec:HeadingChrome(bgHeading)
 

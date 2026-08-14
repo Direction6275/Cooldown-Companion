@@ -426,6 +426,12 @@ end
 -- The button opens the shared side editor when options.build is provided.
 local ADVANCED_TOGGLE_ATLAS = "QuestLog-icon-setting"
 local ADVANCED_TOGGLE_INERT_ALPHA = 0.4
+-- The gear's idle tint. Named because the Customizations list's own gear wears
+-- it too (ApplyAdvancedGlyphLook below), and two copies of the same four
+-- numbers is two chances for the two gears to stop looking like one control.
+local ADVANCED_TOGGLE_IDLE_COLOR = { 0.72, 0.72, 0.72, 0.85 }
+-- What the gear says under the pointer. Shared for the same reason.
+local ADVANCED_TOGGLE_OPEN_TOOLTIP = "Open advanced settings"
 
 local function GetAdvancedToggleTitle(parentWidget, options)
     if options and options.title and options.title ~= "" then
@@ -465,7 +471,8 @@ local function SetAdvancedToggleActive(btn, active)
         if active then
             btn._icon:SetVertexColor(1, 0.82, 0, 1)
         else
-            btn._icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
+            btn._icon:SetVertexColor(ADVANCED_TOGGLE_IDLE_COLOR[1], ADVANCED_TOGGLE_IDLE_COLOR[2],
+                ADVANCED_TOGGLE_IDLE_COLOR[3], ADVANCED_TOGGLE_IDLE_COLOR[4])
         end
     end
 end
@@ -622,7 +629,7 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         local active = CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(settingKey, options and options.context)
-        GameTooltip:AddLine(active and "Close advanced settings" or "Open advanced settings")
+        GameTooltip:AddLine(active and "Close advanced settings" or ADVANCED_TOGGLE_OPEN_TOOLTIP)
         GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -910,8 +917,8 @@ local function ApplyInertRange(column, mark)
 end
 
 -- Why an entry cannot use a section, single-sourced as one clause per reason:
--- the scope chrome's denied tooltip AND the Inactive Customizations list both
--- explain the same denials, and the two must never describe one differently.
+-- the scope chrome's denied tooltip AND the Customizations list both explain
+-- the same denials, and the two must never describe one differently.
 -- Each surface supplies only its own framing around the shared clause.
 -- displayMode is list-only: a section from another display mode is never
 -- DRAWN, so no chrome ever asks about it.
@@ -941,25 +948,54 @@ local function GetOverrideSectionLabel(sectionId)
     return sectionDef and sectionDef.label or sectionId
 end
 
--- The revert glyph's look, wording and click flow. Shared by the scope
--- chrome's heading and row reverts so the two cannot drift apart. The caller
--- owns creating and placing the button.
-local function WireRevertGlyph(revertBtn, icon, buttonData, sectionId)
+-- The revert's WORDING and its CLICK, split out from the glyph so the heading
+-- chrome's text affordance is the same action in a different shape. Any change
+-- to what reverting says or does lands here for both.
+--
+-- The label form exists because ONE revert in the config is not a style section:
+-- the per-entry text format is a flat field (buttonData.textFormat) outside the
+-- section machinery, and it must still read as the same action.
+local function GetRevertTooltipTextForLabel(label)
+    return "Revert " .. label .. " to group defaults"
+end
+
+local function GetRevertTooltipText(sectionId)
+    return GetRevertTooltipTextForLabel(GetOverrideSectionLabel(sectionId))
+end
+
+local function PerformSectionRevert(buttonData, sectionId)
+    CooldownCompanion:RevertSection(buttonData, sectionId)
+    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+-- The revert glyph's LOOK and its HOVER/CLICK contract, split so a revert that
+-- is not a style section wears exactly the same control without restating the
+-- atlas, the size or the tooltip shape.
+local function ApplyRevertGlyphLook(icon)
     icon:SetSize(REVERT_GLYPH_SIZE, REVERT_GLYPH_SIZE)
     icon:ClearAllPoints()
     icon:SetPoint("CENTER")
     icon:SetAtlas(REVERT_GLYPH_ATLAS)
+end
 
+local function BindRevertGlyph(revertBtn, tooltipText, onClick)
     revertBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Revert " .. GetOverrideSectionLabel(sectionId) .. " to group defaults")
+        GameTooltip:AddLine(tooltipText)
         GameTooltip:Show()
     end)
     revertBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    revertBtn:SetScript("OnClick", function()
-        CooldownCompanion:RevertSection(buttonData, sectionId)
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
+    revertBtn:SetScript("OnClick", onClick)
+end
+
+-- The revert glyph's look, wording and click flow. Worn by the scope chrome's
+-- ROW reverts (the heading uses the text affordance below). The caller owns
+-- creating and placing the button.
+local function WireRevertGlyph(revertBtn, icon, buttonData, sectionId)
+    ApplyRevertGlyphLook(icon)
+    BindRevertGlyph(revertBtn, GetRevertTooltipText(sectionId), function()
+        PerformSectionRevert(buttonData, sectionId)
     end)
 end
 
@@ -992,8 +1028,23 @@ local SCOPE_GLYPH_ICON_SIZE = 12
 -- column) off the line, so the NAME is cut rather than the sentence round it.
 local SCOPE_ENTRY_NAME_MAX_CHARS = 18
 
-local HEADING_SCOPE_FIELDS = { "_cdcScopeNote", "_cdcScopeAction", "_cdcScopeRevert" }
+-- _cdcScopeRevert is the heading's RETIRED glyph. The heading reverts through
+-- _cdcScopeRevertText now, but a Heading frame that already carries the glyph
+-- from an earlier build must still have it hidden, so the field stays on the
+-- cleanup list. Rows keep the glyph and use their own field.
+local HEADING_SCOPE_FIELDS = { "_cdcScopeNote", "_cdcScopeAction", "_cdcScopeRevert", "_cdcScopeRevertText" }
 local ROW_SCOPE_FIELDS = { "_cdcScopeRowAction", "_cdcScopeRowRevert", "_cdcScopeRowPanel" }
+
+-- A grey row has no affordance to explain itself, so the explanation is a
+-- HOVER - on the CONTROL, not the row. It rides RowWidgets' SetScopeTooltip,
+-- which stores the lines and raises a transparent overlay over the row's
+-- control region; the row frame's own OnEnter never renders them, so hovering
+-- the label or the empty middle of a grey row says nothing about scope (owner
+-- ruling 2026-08-14: a row-wide scope hover was tooltip soup).
+local ROW_SCOPE_INHERITED_TOOLTIP = {
+    "Panel setting",
+    { "Follows the panel. Customize to edit.", 1, 1, 1, true },
+}
 
 -- Cutting a multi-byte character in half renders as a broken glyph, so walk
 -- whole UTF-8 sequences instead of taking a byte slice.
@@ -1065,6 +1116,28 @@ local function HideScopeChrome(frame, fields)
     end
 end
 
+-- The scope tooltip is DATA on the widget, and the row - not this file - owns
+-- the overlay that shows it, so it is cleared the same way it is set: through
+-- the row. Every path that hides row chrome clears it in the same breath, which
+-- is what lowers the overlay. Guarded because only the row-grammar widgets
+-- carry the channel.
+local function SetRowScopeTooltip(rowWidget, lines)
+    if rowWidget and rowWidget.SetScopeTooltip then
+        rowWidget:SetScopeTooltip(lines)
+    end
+end
+
+-- Denied rows explain themselves with the SHARED denial clause, so the row
+-- hover and the heading's denied tooltip can never describe one denial
+-- differently. Built per call because the clause depends on the reason.
+local function BuildRowDeniedScopeTooltip(reason)
+    local clause = GetSectionDenialClause(reason)
+    return {
+        "Not available",
+        { clause:sub(1, 1):upper() .. clause:sub(2) .. ".", 1, 1, 1, true },
+    }
+end
+
 -- Text chrome: a note (plain Frame) or an affordance (Button), both a single
 -- line of text sized to the string so the badge chain can measure them.
 local function EnsureScopeText(frame, field, clickable)
@@ -1123,7 +1196,9 @@ local function EnsureScopeGlyph(frame, field)
     return btn
 end
 
-local function WireScopeAction(action, lens, group, sectionId, tooltipText)
+-- The gold text affordance's hover language: brighten, and say what the click
+-- does. Shared so Customize and Revert read as one family of controls.
+local function WireScopeTextHover(action, tooltipText)
     action:SetScript("OnEnter", function(self)
         self.text:SetTextColor(SCOPE_CHROME_GOLD_HOVER[1], SCOPE_CHROME_GOLD_HOVER[2], SCOPE_CHROME_GOLD_HOVER[3])
         if tooltipText then
@@ -1136,8 +1211,22 @@ local function WireScopeAction(action, lens, group, sectionId, tooltipText)
         self.text:SetTextColor(SCOPE_CHROME_GOLD[1], SCOPE_CHROME_GOLD[2], SCOPE_CHROME_GOLD[3])
         GameTooltip:Hide()
     end)
+end
+
+local function WireScopeAction(action, lens, group, sectionId, tooltipText)
+    WireScopeTextHover(action, tooltipText)
     action:SetScript("OnClick", function()
         PromoteLensSection(lens, group, sectionId)
+    end)
+end
+
+-- Revert as text, for section headings. Same wording and same click as the row
+-- glyph (both go through GetRevertTooltipText / PerformSectionRevert); only the
+-- shape differs, so a heading's pair of controls reads as one line.
+local function WireScopeRevertAction(action, buttonData, sectionId)
+    WireScopeTextHover(action, GetRevertTooltipText(sectionId))
+    action:SetScript("OnClick", function()
+        PerformSectionRevert(buttonData, sectionId)
     end)
 end
 
@@ -1172,8 +1261,11 @@ local function AttachHeadingScopeChrome(heading, lens, group, sectionId)
         SetScopeText(note, "Customized for " .. (entryName or "this entry"), SCOPE_CHROME_GOLD)
         ChainHeadingBadges(heading, note)
 
-        local revert = EnsureScopeGlyph(frame, "_cdcScopeRevert")
-        WireRevertGlyph(revert, revert.icon, lens.buttonData, sectionId)
+        -- The note already carries the state, so the action beside it is the
+        -- bare verb: "Customized for X" then "Revert", not two sentences.
+        local revert = EnsureScopeText(frame, "_cdcScopeRevertText", true)
+        SetScopeText(revert, "Revert", SCOPE_CHROME_GOLD)
+        WireScopeRevertAction(revert, lens.buttonData, sectionId)
         ChainHeadingBadges(heading, revert)
         attached = true
 
@@ -1224,8 +1316,9 @@ local function AttachRowScopeChrome(rowWidget, lens, group, sectionId)
         return nil
     end
 
-    local scope = ResolveLensSection(lens, group, sectionId)
+    local scope, _, _, deniedReason = ResolveLensSection(lens, group, sectionId)
     HideScopeChrome(frame, ROW_SCOPE_FIELDS)
+    SetRowScopeTooltip(rowWidget, nil)
 
     local attached = false
 
@@ -1235,6 +1328,10 @@ local function AttachRowScopeChrome(rowWidget, lens, group, sectionId)
         WireScopeAction(action, lens, group, sectionId,
             "Customize " .. GetOverrideSectionLabel(sectionId) .. " for this entry")
         ST._AnchorRowBadge(rowWidget, action)
+        -- The grey row states WHOSE values it shows only on the CONTROL's
+        -- hover; the gold affordance beside the label is the visible half of
+        -- the same message.
+        SetRowScopeTooltip(rowWidget, ROW_SCOPE_INHERITED_TOOLTIP)
         attached = true
 
     elseif scope == "customized" then
@@ -1247,11 +1344,16 @@ local function AttachRowScopeChrome(rowWidget, lens, group, sectionId)
         ST._AnchorRowBadge(rowWidget, revert)
         attached = true
 
+    elseif scope == "denied" then
+        -- Still no BADGE on a denied row: the row is already inert-dimmed, and
+        -- per-row badges read as clutter (owner ruling 2026-08-14). The reason
+        -- is a hover on the CONTROL instead, so a row whose section heading is
+        -- off screen can still say why it cannot be edited - and reaching for
+        -- the control it cannot use is exactly when the owner asks.
+        SetRowScopeTooltip(rowWidget, BuildRowDeniedScopeTooltip(deniedReason))
+        attached = true
+
     end
-    -- Denied rows carry NO chrome: the row is already inert-dimmed, and the
-    -- missing Customize affordance is the signal that this entry type cannot
-    -- own the setting. The denial reason lives on the section heading where
-    -- one exists; per-row badges read as clutter (owner ruling 2026-08-14).
 
     if attached then
         local prevOnRelease = rowWidget.events and rowWidget.events["OnRelease"]
@@ -1260,6 +1362,7 @@ local function AttachRowScopeChrome(rowWidget, lens, group, sectionId)
                 prevOnRelease(widget, event, ...)
             end
             HideScopeChrome(frame, ROW_SCOPE_FIELDS)
+            SetRowScopeTooltip(widget, nil)
             if frame._cdcScopeRowTinted then
                 frame._cdcScopeRowTinted = nil
                 -- Hand the label colour back to the row: SetIndent re-derives
@@ -1286,6 +1389,9 @@ local function AttachPanelSettingRowChrome(rowWidget)
     end
 
     HideScopeChrome(frame, ROW_SCOPE_FIELDS)
+    -- The note is visible, so this row needs no hover explanation - but it must
+    -- not keep one a previous tenant of the pooled row left behind.
+    SetRowScopeTooltip(rowWidget, nil)
 
     local note = EnsureScopeText(frame, "_cdcScopeRowPanel", false)
     SetScopeText(note, "Panel setting", SCOPE_CHROME_GREY)
@@ -1297,6 +1403,7 @@ local function AttachPanelSettingRowChrome(rowWidget)
             prevOnRelease(widget, event, ...)
         end
         HideScopeChrome(frame, ROW_SCOPE_FIELDS)
+        SetRowScopeTooltip(widget, nil)
     end)
 end
 
@@ -1428,6 +1535,84 @@ local function BeginLensSection(lens, group, sectionId, opts)
         sec.mark = MarkInertRange(column)
     end
     return sec
+end
+
+------------------------------------------------------------------------
+-- LENS NAVIGATION CHROME
+------------------------------------------------------------------------
+
+-- THE one decision point for which collapse key a section uses under the
+-- current lens. Every navigation and section-building caller must route its
+-- collapse key through here rather than testing the lens itself, so "which
+-- sections open by default for this selection" has a single owner.
+--
+-- Sections an entry cannot edit ("panelOnly", "denied") are noise in an entry
+-- lens, so they get their OWN key and open COLLAPSED the first time that key is
+-- seen. The key is per SECTION, never per entry: collapsing one entry's inert
+-- sections collapses them for the next entry too, which is the point - the
+-- owner is expressing "hide what I cannot edit here", not a per-entry state.
+-- Everything else keeps its base key, so a section's normal collapse state
+-- survives selecting an entry and coming back.
+--
+-- Seeding writes to CS.collapsedSections, the store BuildCollapsibleSection
+-- defaults to (truthy = collapsed). Lens sections must use that default store;
+-- a caller with its own store would seed the wrong table.
+local function ResolveLensCollapseKey(lens, group, sectionId, baseKey, opts)
+    if not baseKey or not (lens and lens.mode == "entry") then
+        return baseKey
+    end
+
+    local scope = ResolveLensSection(lens, group, sectionId)
+    if scope ~= "panelOnly" and scope ~= "denied" then
+        return baseKey
+    end
+
+    -- A panel-only collapsible can HOST an override section (Icon Settings
+    -- hosts Icon Zoom). While the entry has CUSTOMIZED a hosted section it has
+    -- live business inside, so the fold-by-default gives way (owner ruling
+    -- 2026-08-14); an inherited hosted section stays behind the fold with its
+    -- Customize one click away.
+    local hosts = opts and opts.hostsSections
+    if hosts then
+        for i = 1, #hosts do
+            if ResolveLensSection(lens, group, hosts[i]) == "customized" then
+                return baseKey
+            end
+        end
+    end
+
+    local lensKey = "lens_" .. baseKey
+    local store = CS.collapsedSections
+    -- nil means never seen, which is exactly what the default-collapsed seed
+    -- must not overwrite once the owner has expanded it (false is stored).
+    if store and store[lensKey] == nil then
+        store[lensKey] = true
+    end
+    return lensKey
+end
+
+-- One grey line at the top of a styling tab when several entries are selected.
+-- The tabs edit the PANEL under a multi selection, and nothing else on the
+-- surface says so: the per-section scope chrome only speaks under an entry
+-- lens. Any other lens mode draws nothing.
+--
+-- A plain AceGUI Label, the shape every other single-line note in the config
+-- uses. Its stock font is already the small one the scope chrome wears, so
+-- only the colour is set.
+local function AddLensPanelScopeNote(container, lens)
+    if not (container and lens and lens.mode == "multi") then
+        return nil
+    end
+
+    local note = AceGUI:Create("Label")
+    if ST._ConfigureWrappedHelperLabel then
+        ST._ConfigureWrappedHelperLabel(note)
+    end
+    note:SetFullWidth(true)
+    note:SetText("Editing panel settings. Changes apply to every entry.")
+    note:SetColor(SCOPE_CHROME_GREY[1], SCOPE_CHROME_GREY[2], SCOPE_CHROME_GREY[3])
+    container:AddChild(note)
+    return note
 end
 
 ------------------------------------------------------------------------
@@ -1673,27 +1858,51 @@ local function GetCompactGrowthDirectionLabels(group)
 end
 
 ------------------------------------------------------------------------
--- INACTIVE CUSTOMIZATIONS (entry Settings pane)
+-- CUSTOMIZATIONS (entry Settings pane)
 --
--- Customized sections the in-place scope chrome cannot reach: the styling
--- tabs draw a section only where the current display mode offers it, and a
--- section the entry can no longer use resolves "denied" with no revert. The
--- saved keys survive either state on purpose - they apply again when the
--- block lifts - so this list is the one surface that can still revert them.
--- Built only while at least one exists (owner ruling 2026-08-14: a compact
--- list on the entry Settings pane, replacing the retired Overrides tab's
--- inactive listings).
+-- The one actionable index of everything this entry customizes. The styling
+-- tabs chrome a customization IN PLACE, but only where they draw it: a section
+-- belongs to one display mode's tabs, and a section the entry can no longer use
+-- resolves "denied" with no revert at all. The saved keys survive either state
+-- on purpose - they apply again when the block lifts - so a list that only
+-- showed the unreachable ones answered "how do I undo this?" for the hard cases
+-- and stayed silent for the easy ones.
+--
+-- So the list shows them ALL (owner ruling 2026-08-14, superseding the earlier
+-- inactive-only list): active ones plain, inactive ones carrying the same
+-- denial clause the scope chrome uses, each with its own revert, the name a
+-- link to where the section is edited, and one Revert All on the heading.
+-- Built only while at least one customization exists.
 ------------------------------------------------------------------------
 
-local INACTIVE_ROW_FIELDS = { "_cdcInactiveRevert" }
+-- One list for both frames the chrome lands on: a heading frame has no row
+-- field and a row frame has no heading field, so HideScopeChrome skipping the
+-- absent ones costs a nil read and removes a second constant.
+local CUSTOMIZATIONS_CHROME_FIELDS = {
+    "_cdcCustomizationsRevertAll",
+    "_cdcCustomizationsRevert",
+    "_cdcCustomizationsGear",
+    "_cdcCustomizationsName",
+}
 
-local INACTIVE_CUSTOMIZATIONS_TOOLTIP = {
-    "Inactive Customizations",
-    {"Customizations saved for this entry that cannot apply right now.", 1, 1, 1, true},
+-- The per-entry text format is a FLAT field (buttonData.textFormat) outside the
+-- styleOverrides section machinery, so it has no section id, no label of its
+-- own, and no home in ST._SECTION_HOME. It is still a customization, and the
+-- one index of them cannot be the surface that forgets it.
+--
+-- Named for the THING, not its state: inside a section titled Customizations
+-- every row is already custom. Word-for-word what the entry-slot hover tooltip
+-- (ButtonPanelPreview) calls the same field, because Defaults.lua contracts
+-- these two surfaces to never list a customization differently.
+local FORMAT_ROW_LABEL = "Text Format"
+
+local CUSTOMIZATIONS_TOOLTIP = {
+    "Customizations",
+    {"Everything this entry has its own settings for.", 1, 1, 1, true},
     " ",
-    {"They come back on their own when whatever blocks them changes.", 1, 1, 1, true},
+    {"Click a name to open where it is edited.", 1, 1, 1, true},
     " ",
-    {"Revert removes one permanently.", 1, 1, 1, true},
+    {"Inactive ones stay saved and apply again when whatever blocks them changes.", 1, 1, 1, true},
 }
 
 -- This list's framing around the single-sourced denial clause (see
@@ -1702,9 +1911,216 @@ local function GetInactiveCustomizationReason(reason)
     return "Saved for this entry, but inactive: " .. GetSectionDenialClause(reason) .. "."
 end
 
-local function BuildInactiveCustomizationsSection(scroll, group, buttonData, infoButtons)
-    local sections = buttonData and buttonData.overrideSections
-    if not (group and sections and next(sections)) then
+-- Where this section is EDITED in the panel's display mode. Read straight off
+-- the registry the tab builders state (ST._SECTION_HOME), because the answer is
+-- only needed to decide whether the row's name is a link at all; the navigation
+-- itself belongs to PreviewCommandCenter's route core and is never rebuilt here.
+-- A mode with no home for the section (another mode's section, a trigger panel,
+-- the rotation assistant) answers nil and the name stays plain text.
+--
+-- The WHOLE entry, not just its tab: the home also carries the optional
+-- availability predicates the two helpers below consult (contract stated at the
+-- first registration, ST._SECTION_HOME.bars in BarModeTabs.lua).
+local function GetSectionHome(displayMode, sectionId)
+    local homes = ST._SECTION_HOME
+    local byMode = homes and homes[displayMode]
+    return byMode and byMode[sectionId] or nil
+end
+
+-- Sections are drawn CONDITIONALLY. A bar panel with the icon hidden draws no
+-- Icon Tint and no Timers/States block at all; the aura sections exist only
+-- while the group tracks an aura. A name link into a section that is not there
+-- lands on a tab where nothing answers the click, so the list asks the home
+-- first. A section whose home registers no predicate is always drawn.
+local function IsSectionHomeAvailable(home, group, style)
+    local available = home and home.available
+    if not available then
+        return true
+    end
+    return available(group, style) and true or false
+end
+
+-- Same question for the section's advanced GEAR, which has a gate of its own:
+-- a drawn section whose parent readout toggle is off builds no gear
+-- (AddAdvancedToggle's isEnabled), and a queued advanced key with no gear left
+-- to consume it would open a panel behind a gear that is not on screen.
+local function IsSectionHomeGearBuilt(home, group, style)
+    local gearEnabled = home and home.gearEnabled
+    if not gearEnabled then
+        return true
+    end
+    return gearEnabled(group, style) and true or false
+end
+
+-- Which advanced GEAR a section owns in the panel's display mode, inverted from
+-- the per-mode maps the tab builders state (those are keyed advancedKey ->
+-- sectionId; this list wants the other direction).
+--
+-- The maps are named, not referenced: every file that declares one loads AFTER
+-- this one (the .toc), so they are fetched off ST at build time, exactly as
+-- ST._SECTION_HOME is above.
+--
+-- A mode's sources are EXACTLY the maps that mode's own builders sweep, so this
+-- list can never offer a gear the mode does not draw. Icons builds both the
+-- Appearance and Indicators tabs and each of those sweeps both maps; bars builds
+-- its two tabs off the one bars map (its pandemic, unusable and tooltip gears
+-- are listed there, so the indicators map is not a bars source); text's map is
+-- deliberately empty today. Textures has no override sections at all, so it has
+-- no entry and no row here ever resolves a gear.
+local CUSTOMIZATIONS_GEAR_MAPS_BY_MODE = {
+    icons = { "_APPEARANCE_SECTION_BY_ADVANCED_KEY", "_INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY" },
+    bars = { "_BARMODE_SECTION_BY_ADVANCED_KEY" },
+    text = { "_TEXTMODE_SECTION_BY_ADVANCED_KEY" },
+}
+
+-- A section with TWO OR MORE gears in one mode gets NO gear on its row. Pandemic
+-- is the live case: the glow and the marker are two advanced panels under one
+-- override section. Two gears on one list row is clutter, and silently picking
+-- either one would misstate where the click lands - the name link already opens
+-- the section with both gears in view, which is the honest answer.
+--
+-- A sentinel rather than a delete, so a third key arriving later cannot re-claim
+-- the row the first pair disqualified.
+local CUSTOMIZATIONS_GEAR_AMBIGUOUS = {}
+
+local function BuildCustomizationsGearMap(displayMode)
+    local sources = CUSTOMIZATIONS_GEAR_MAPS_BY_MODE[displayMode]
+    if not sources then
+        return nil
+    end
+
+    local bySection
+    for i = 1, #sources do
+        local map = ST[sources[i]]
+        if map then
+            for advancedKey, sectionId in pairs(map) do
+                bySection = bySection or {}
+                local current = bySection[sectionId]
+                if current == nil then
+                    bySection[sectionId] = advancedKey
+                elseif current ~= advancedKey then
+                    bySection[sectionId] = CUSTOMIZATIONS_GEAR_AMBIGUOUS
+                end
+            end
+        end
+    end
+    return bySection
+end
+
+-- The list gear wears the settings-side gear's LOOK (AddAdvancedToggle's atlas,
+-- icon size and idle tint) on the scope chrome's 16px glyph hit area, so it sits
+-- in a row's badge chain beside the revert glyph rather than at the gear's own
+-- 14px settings size.
+--
+-- Only the look and the panel QUEUE are shared with that gear. This one has no
+-- live panel binding: it never goes gold, never rebinds a descriptor and never
+-- toggles a panel shut. It is a link that happens to end in a panel.
+local ADVANCED_GLYPH_ICON_SIZE = 13
+
+local function ApplyAdvancedGlyphLook(icon)
+    icon:SetSize(ADVANCED_GLYPH_ICON_SIZE, ADVANCED_GLYPH_ICON_SIZE)
+    icon:ClearAllPoints()
+    icon:SetPoint("CENTER")
+    icon:SetAtlas(ADVANCED_TOGGLE_ATLAS, false)
+    icon:SetVertexColor(ADVANCED_TOGGLE_IDLE_COLOR[1], ADVANCED_TOGGLE_IDLE_COLOR[2],
+        ADVANCED_TOGGLE_IDLE_COLOR[3], ADVANCED_TOGGLE_IDLE_COLOR[4])
+end
+
+-- The row NAME as a link: a transparent hit area pinned over the label's text,
+-- carrying the row's OWN FontString as its `text` so the scope chrome's
+-- hover-brighten (WireScopeTextHover) works on the real label rather than a
+-- second string laid over it.
+--
+-- Cached on the row FRAME like every other piece of chrome, and permanently
+-- paired with that frame's label (BuildRowBase creates both, and neither
+-- outlives the other), so the stored reference can never name another row's
+-- text. The width is re-measured per build because the label is set per build.
+local function EnsureRowNameButton(row, field)
+    local frame = row.frame
+    local btn = frame[field]
+    if not btn then
+        btn = CreateFrame("Button", nil, frame)
+        btn:SetHeight(SCOPE_CHROME_HEIGHT)
+        btn.text = row.rowLabel
+        frame[field] = btn
+    end
+
+    btn:SetParent(frame)
+    btn:ClearAllPoints()
+    btn:SetPoint("LEFT", row.rowLabel, "LEFT", 0, 0)
+    btn:SetWidth(math.max(row.rowLabel:GetStringWidth(), 1))
+    btn:EnableMouse(true)
+    btn:Enable()
+    btn:SetScript("OnEnter", nil)
+    btn:SetScript("OnLeave", nil)
+    btn:SetScript("OnClick", nil)
+    btn:Show()
+    return btn
+end
+
+-- Clearing the entry's text format. Same two refreshes the Format tab's own
+-- "Revert to Panel Format" makes, minus its CancelTextFormatTabCommit: a
+-- debounced format write cannot be pending while this list is on screen. The
+-- format editor is torn down at every seam that takes its container away, and
+-- selecting the entry Settings tab is one of them - Panel.lua's entry TabGroup
+-- calls ST._ReleaseTextFormatTabEditor before it builds anything, which flushes
+-- the pending write and drops the timer. No guard, because there is nothing
+-- reachable to guard against.
+local function PerformFormatRevert(buttonData)
+    buttonData.textFormat = nil
+    CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+-- Every customization on one entry, in one pass. Deliberately NOT a loop over
+-- PerformSectionRevert: that helper ends in UpdateGroupStyle plus a full config
+-- rebuild, and paying for both once per section would rebuild the pane N times
+-- to arrive exactly where one rebuild lands.
+--
+-- Resolved from ids rather than handed live tables: this runs behind a confirm
+-- popup, and the entry it names can be gone by the time the click comes back.
+local function RevertAllEntryCustomizations(groupId, buttonIndex)
+    local profile = CooldownCompanion.db and CooldownCompanion.db.profile
+    local group = profile and profile.groups and profile.groups[groupId]
+    local buttonData = group and group.buttons and group.buttons[buttonIndex]
+    if not buttonData then
+        return
+    end
+
+    local sections = buttonData.overrideSections
+    if sections then
+        -- RevertSection clears keys out of this same table, so the local stays
+        -- in step with it even on the call that empties it and detaches it from
+        -- the entry.
+        for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER or {}) do
+            if sections[sectionId] then
+                CooldownCompanion:RevertSection(buttonData, sectionId)
+            end
+        end
+    end
+
+    -- Gated on being SET, which is the same gate the list draws the row on, so
+    -- Revert All clears exactly the rows it was shown beside - including a
+    -- format stranded on a panel that is no longer a text panel, which the list
+    -- shows as inactive rather than hiding.
+    local formatCleared = false
+    if buttonData.textFormat ~= nil then
+        buttonData.textFormat = nil
+        formatCleared = true
+    end
+
+    CooldownCompanion:UpdateGroupStyle(groupId)
+    -- The format is re-parsed on the way through PopulateGroupButtons, which
+    -- only the frame refresh reaches. Paid once, and only when a format was
+    -- actually cleared.
+    if formatCleared then
+        CooldownCompanion:RefreshGroupFrame(groupId)
+    end
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons)
+    if not (group and buttonData) then
         return
     end
 
@@ -1712,29 +2128,103 @@ local function BuildInactiveCustomizationsSection(scroll, group, buttonData, inf
     -- Same order and gates the entry-slot hover tooltip uses for these
     -- sections, so the two surfaces can never list them differently.
     local displayMode = group.displayMode or "icons"
-    local inactive = {}
-    for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER or {}) do
-        if sections[sectionId] then
-            local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
-            local allowed, deniedReason = CanButtonUseConfigOverrideSection(buttonData, sectionId)
-            local modeOk = sectionDef and sectionDef.modes and sectionDef.modes[displayMode] == true
-            if not allowed or not modeOk then
-                inactive[#inactive + 1] = {
+    local sections = buttonData.overrideSections
+    local items = {}
+
+    -- The style the section homes' availability predicates are asked about.
+    -- This list is built with exactly ONE entry selected, so the lens resolves
+    -- "entry" and hands over the detached effective style - the same table a
+    -- builder's `sec.read` resolves to there, which is what those predicates
+    -- mirror. The fallback is the panel style for the same reason: under any
+    -- other lens that is what the builders' gates read.
+    local lens = ResolveStyleLens(group)
+    local predicateStyle = (lens and lens.mode == "entry" and lens.effective) or group.style or {}
+
+    -- Leads the list: the format is what a text entry IS, so its customization
+    -- reads first rather than under the style sections.
+    --
+    -- A saved format on a panel that is no longer a text panel is stranded, not
+    -- gone - the same "saved but unreachable" state the sections have - so it
+    -- takes the same inactive shape: the displayMode clause, its own revert, and
+    -- NO name link, because the Format tab it would open only exists in text
+    -- mode (tab = nil is what drives that, exactly as it does for a section
+    -- with no home in this mode).
+    if buttonData.textFormat ~= nil then
+        local textMode = displayMode == "text"
+        items[#items + 1] = {
+            format = true,
+            label = FORMAT_ROW_LABEL,
+            reason = (not textMode) and "displayMode" or nil,
+            tab = textMode and "format" or nil,
+        }
+    end
+
+    if sections then
+        for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER or {}) do
+            if sections[sectionId] then
+                local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
+                local allowed, deniedReason = CanButtonUseConfigOverrideSection(buttonData, sectionId)
+                local modeOk = sectionDef and sectionDef.modes and sectionDef.modes[displayMode] == true
+                local reason
+                if not allowed then
+                    reason = deniedReason or "entryType"
+                elseif not modeOk then
+                    reason = "displayMode"
+                end
+                local home = GetSectionHome(displayMode, sectionId)
+                items[#items + 1] = {
                     sectionId = sectionId,
-                    reason = (not allowed) and (deniedReason or "entryType") or "displayMode",
+                    label = GetOverrideSectionLabel(sectionId),
+                    reason = reason,
+                    home = home,
+                    tab = home and home.tab or nil,
                 }
             end
         end
     end
-    if #inactive == 0 then
+
+    if #items == 0 then
         return
     end
 
-    local heading, collapsed = BuildCollapsibleSection(scroll, "Inactive Customizations",
-        CS.selectedGroup .. "_" .. CS.selectedButton .. "_inactive_customizations",
+    local heading, collapsed = BuildCollapsibleSection(scroll, "Customizations",
+        CS.selectedGroup .. "_" .. CS.selectedButton .. "_customizations",
         nil, nil, { leftAligned = true })
     ChainHeadingBadges(heading, CreateInfoButton(heading.frame, heading.label,
-        "LEFT", "RIGHT", 4, 0, INACTIVE_CUSTOMIZATIONS_TOOLTIP, infoButtons))
+        "LEFT", "RIGHT", 4, 0, CUSTOMIZATIONS_TOOLTIP, infoButtons))
+
+    -- Heading-level action in the scope chrome's own shape: gold text that
+    -- brightens on hover, beside the thing it acts on. Behind a confirm popup
+    -- because it is the one control here that cannot be undone one row at a
+    -- time. Attached whether or not the section is collapsed - the whole point
+    -- of a folded list is still being able to empty it.
+    local groupId, buttonIndex = CS.selectedGroup, CS.selectedButton
+    local headingFrame = heading.frame
+    local revertAll = EnsureScopeText(headingFrame, "_cdcCustomizationsRevertAll", true)
+    SetScopeText(revertAll, "Revert All", SCOPE_CHROME_GOLD)
+    WireScopeTextHover(revertAll, "Revert every customization on this entry")
+    revertAll:SetScript("OnClick", function()
+        local entryName = ST._GetConfigEntryDisplayName
+            and ST._GetConfigEntryDisplayName(buttonData)
+            or buttonData.name
+        -- Through the house raiser, not StaticPopup_Show: the config window
+        -- sits high enough to cover a stock dialog.
+        local showPopup = ST._ShowPopupAboveConfig
+        if showPopup then
+            showPopup("CDC_REVERT_ENTRY_CUSTOMIZATIONS", entryName or "this entry",
+                { groupId = groupId, buttonIndex = buttonIndex })
+        end
+    end)
+    ChainHeadingBadges(heading, revertAll)
+
+    -- Chain, don't replace: BuildCollapsibleSection installs its own handler.
+    local prevHeadingRelease = heading.events and heading.events["OnRelease"]
+    heading:SetCallback("OnRelease", function(widget, event, ...)
+        if prevHeadingRelease then
+            prevHeadingRelease(widget, event, ...)
+        end
+        HideScopeChrome(headingFrame, CUSTOMIZATIONS_CHROME_FIELDS)
+    end)
 
     if collapsed then
         return
@@ -1748,32 +2238,131 @@ local function BuildInactiveCustomizationsSection(scroll, group, buttonData, inf
     local AddLabelRow = ST._AddLabelRow
     local AnchorRowBadge = ST._AnchorRowBadge
     local listLeft = ST._BeginRowGrid(scroll)
+    -- Built once for the whole list: the mode is fixed for this pane, and the
+    -- inversion walks every gear map the mode owns.
+    local gearBySection = BuildCustomizationsGearMap(displayMode)
 
-    for _, item in ipairs(inactive) do
-        local label = GetOverrideSectionLabel(item.sectionId)
+    for _, item in ipairs(items) do
+        local label = item.label
+        local reasonText = item.reason and GetInactiveCustomizationReason(item.reason) or nil
         local row = AddLabelRow(listLeft, {
             label = label,
-            controlText = "Inactive",
-            tooltip = {
-                label,
-                {GetInactiveCustomizationReason(item.reason), 1, 1, 1, true},
-            },
+            -- Active rows say nothing in the control column: the section is
+            -- listed here, which already means it is customized. Only the
+            -- inactive ones have news.
+            controlText = item.reason and "Inactive" or nil,
+            tooltip = reasonText and { label, {reasonText, 1, 1, 1, true} } or nil,
         })
 
-        -- The glyph is cached on the row's FRAME (the pool recycles frames),
-        -- re-wired per build, and hidden on release so a recycled row never
-        -- wears a previous tenant's revert.
+        -- Every piece of chrome is cached on the row's FRAME (the pool recycles
+        -- frames), re-wired per build, and hidden on release so a recycled row
+        -- never wears a previous tenant's revert or link.
         local frame = row.frame
-        local revert = EnsureScopeGlyph(frame, "_cdcInactiveRevert")
-        WireRevertGlyph(revert, revert.icon, buttonData, item.sectionId)
+
+        -- Read before the badges so the gear can require it: a gear whose
+        -- section has no home in this mode - or whose home is not DRAWN for
+        -- this group and this entry - would navigate nowhere. An unavailable
+        -- row keeps everything else it had: its revert, and its inactive clause
+        -- when it has one. Only the link goes.
+        local navigable = item.tab ~= nil
+            and IsSectionHomeAvailable(item.home, group, predicateStyle)
+
+        -- ADVANCED GEAR (owner ruling 2026-08-14): a row whose section has an
+        -- advanced panel carries the gear too, so the list is one click from the
+        -- deep settings rather than a stop on the way to them.
+        --
+        -- ACTIVE rows only, and never the Text Format row. An inactive section
+        -- is not drawn anywhere in this mode, so the tab it would land on builds
+        -- no gear to consume the queue and the panel would never open; the
+        -- format row is a flat field with no section and no advanced panel at
+        -- all. Both fall out of the gates below rather than being special-cased.
+        --
+        -- The gear ALSO has to exist at the destination: its section can be
+        -- drawn with the gear itself unbuilt (parent readout toggled off), and
+        -- the queue is consumed before that gate runs, so a panel would open
+        -- behind a gear that is not on screen.
+        local advancedKey
+        if navigable and not item.reason and item.sectionId and gearBySection
+            and IsSectionHomeGearBuilt(item.home, group, predicateStyle) then
+            advancedKey = gearBySection[item.sectionId]
+            if advancedKey == CUSTOMIZATIONS_GEAR_AMBIGUOUS then
+                advancedKey = nil
+            end
+        end
+
+        -- Anchored FIRST, so the chain reads [name][gear][revert]. That is the
+        -- row grammar's own order (RowWidgets' AnchorRowBadge: gear, then info,
+        -- then scope chrome), and the revert is scope chrome.
+        if advancedKey then
+            local gear = EnsureScopeGlyph(frame, "_cdcCustomizationsGear")
+            ApplyAdvancedGlyphLook(gear.icon)
+            gear:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine(ADVANCED_TOGGLE_OPEN_TOOLTIP)
+                GameTooltip:Show()
+            end)
+            gear:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            -- Same route the name link takes, plus the key: the destination is
+            -- resolved by PreviewCommandCenter from the section registry, and
+            -- the panel is queued there after every navigation write.
+            local gearSectionId = item.sectionId
+            gear:SetScript("OnClick", function()
+                local navigate = ST._NavigateToSectionHome
+                if navigate then
+                    navigate(gearSectionId, { advancedKey = advancedKey })
+                end
+            end)
+            AnchorRowBadge(row, gear)
+        end
+
+        local revert = EnsureScopeGlyph(frame, "_cdcCustomizationsRevert")
+        if item.format then
+            ApplyRevertGlyphLook(revert.icon)
+            BindRevertGlyph(revert, GetRevertTooltipTextForLabel(label), function()
+                PerformFormatRevert(buttonData)
+            end)
+        else
+            WireRevertGlyph(revert, revert.icon, buttonData, item.sectionId)
+        end
         AnchorRowBadge(row, revert)
+
+        -- The name becomes a link only where there is somewhere to go. Gold is
+        -- the affordance here, not the "customized" tint the scope chrome uses
+        -- on a row label: inside a section titled Customizations every row is
+        -- customized, so the colour is free to mean "clickable".
+        if navigable then
+            row.rowLabel:SetTextColor(SCOPE_CHROME_GOLD[1], SCOPE_CHROME_GOLD[2], SCOPE_CHROME_GOLD[3])
+            local nav = EnsureRowNameButton(row, "_cdcCustomizationsName")
+            -- The link covers the label, so the row frame's own hover no longer
+            -- fires there; the clause rides the link's tooltip so an inactive
+            -- row still explains itself under the pointer.
+            WireScopeTextHover(nav, reasonText)
+            -- The route resolves the destination itself, from the same
+            -- registry consulted above; the format row has no section and
+            -- names its tab instead.
+            local sectionId, formatRow = item.sectionId, item.format
+            nav:SetScript("OnClick", function()
+                local navigate = ST._NavigateToSectionHome
+                if navigate then
+                    navigate(sectionId, formatRow and { tab = "format" } or nil)
+                end
+            end)
+        end
 
         local prevOnRelease = row.events and row.events["OnRelease"]
         row:SetCallback("OnRelease", function(widget, event, ...)
             if prevOnRelease then
                 prevOnRelease(widget, event, ...)
             end
-            HideScopeChrome(frame, INACTIVE_ROW_FIELDS)
+            HideScopeChrome(frame, CUSTOMIZATIONS_CHROME_FIELDS)
+            if navigable then
+                -- Hand the label colour back to the row: SetIndent re-derives
+                -- it from the row's own disabled/indented state. The row's
+                -- OnAcquire does this again on reuse; this just does not wait.
+                if widget.SetIndent then
+                    widget:SetIndent(widget.indented)
+                end
+            end
         end)
     end
 end
@@ -2381,7 +2970,7 @@ local function AddOffsetSliders(container, tbl, xKey, yKey, defaults, refreshFn,
     local indent = opts and opts.indent
     local previewRefresh = (opts and opts.previewRefresh) or RefreshSelectedButtonsPreview
 
-    ST._AddSliderRow(container, {
+    local xRow = ST._AddSliderRow(container, {
         label = "X Offset",
         indent = indent,
         min = -range, max = range, step = step,
@@ -2395,7 +2984,7 @@ local function AddOffsetSliders(container, tbl, xKey, yKey, defaults, refreshFn,
         end,
     })
 
-    ST._AddSliderRow(container, {
+    local yRow = ST._AddSliderRow(container, {
         label = "Y Offset",
         indent = indent,
         min = -range, max = range, step = step,
@@ -2408,6 +2997,8 @@ local function AddOffsetSliders(container, tbl, xKey, yKey, defaults, refreshFn,
             refreshFn()
         end,
     })
+
+    return xRow, yRow
 end
 
 local BORDER_THICKNESS_MODE_TOOLTIPS = {
@@ -2493,9 +3084,17 @@ ST._ResolveLensSection = ResolveLensSection
 ST._AttachHeadingScopeChrome = AttachHeadingScopeChrome
 ST._AttachRowScopeChrome = AttachRowScopeChrome
 ST._BeginLensSection = BeginLensSection
+ST._ResolveLensCollapseKey = ResolveLensCollapseKey
+ST._AddLensPanelScopeNote = AddLensPanelScopeNote
+-- The text Format tab writes its own scope note (its field lives outside the
+-- section machinery), so it borrows the NAME the chrome would have shown
+-- rather than re-deriving one and truncating it differently.
+ST._GetLensEntryName = GetLensEntryName
 ST._GroupHasAuraTrackingEntry = GroupHasAuraTrackingEntry
 ST._CreateInfoButton = CreateInfoButton
-ST._BuildInactiveCustomizationsSection = BuildInactiveCustomizationsSection
+ST._BuildCustomizationsSection = BuildCustomizationsSection
+-- Reached from the confirm popup (Config/Popups.lua), not from a builder.
+ST._RevertAllEntryCustomizations = RevertAllEntryCustomizations
 ST._BuildCompactModeControls = BuildCompactModeControls
 ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls
 ST._CreateCharacterCopyButton = CreateCharacterCopyButton

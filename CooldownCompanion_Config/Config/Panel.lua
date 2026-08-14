@@ -1949,7 +1949,11 @@ local function CreateConfigPanel()
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine("With a button selected, each section shows whose settings you are looking at.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("Use Customize on a section to give that button its own settings there.", 1, 1, 1, true)
+                GameTooltip:AddLine("Use Customize on a section to give that button its own settings there. Revert hands them back to the panel.", 1, 1, 1, true)
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("The Customizations section in the Settings tab lists everything that button customizes, each with its own Revert.", 1, 1, 1, true)
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("The Visibility tab shows the selected button's conditions. Deselect to see the panel's own.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine("Drag the line under the preview to resize it. Double-click to reset.", 1, 1, 1, true)
             end
@@ -2068,13 +2072,16 @@ local function CreateConfigPanel()
             if tab == "settings" then
                 ST._BuildEntryIdentityHeading(scroll, buttonData)
 
+                -- Customizations leads the tab (owner ruling): it is the
+                -- entry's index of what it changes, it builds nothing until
+                -- something is customized, and when it exists it is likely
+                -- why the entry was selected.
+                ST._BuildCustomizationsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
+
                 if group.displayMode == "trigger" then
                     ST._BuildTriggerConditionSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
-                    -- Trigger panels have no Talent Conditions section to sit above.
+                    -- Trigger panels have no Talent Conditions section.
                     ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
-                    -- Trigger entries customize sections like any other, so
-                    -- their stranded customizations need the same way out.
-                    ST._BuildInactiveCustomizationsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
                 else
                     if buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
                         ST._BuildItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
@@ -2098,11 +2105,6 @@ local function CreateConfigPanel()
                         ST._BuildCustomNameSection(scroll, buttonData)
                         ST._BuildItemFallbacksSection(scroll, buttonData, CS.buttonSettingsInfoButtons)
                         ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
-                        -- Last in the hook, so it sits directly above Talent
-                        -- Conditions (which stays the final section, owner
-                        -- ruling). Builds nothing while every customization
-                        -- is reachable through the styling tabs' own chrome.
-                        ST._BuildInactiveCustomizationsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
                     end)
                 end
             end

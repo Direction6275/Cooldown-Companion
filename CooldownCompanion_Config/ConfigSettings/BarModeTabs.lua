@@ -29,6 +29,8 @@ local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local ResolveStyleLens = ST._ResolveStyleLens
 local ResolveLensSection = ST._ResolveLensSection
 local BeginLensSection = ST._BeginLensSection
+local ResolveLensCollapseKey = ST._ResolveLensCollapseKey
+local AddLensPanelScopeNote = ST._AddLensPanelScopeNote
 
 -- Imports from SectionBuilders.lua
 local BuildBorderControls = ST._BuildBorderControls
@@ -104,6 +106,31 @@ ST._BARMODE_SECTION_BY_ADVANCED_KEY = {
     tooltipBehavior = "showTooltips",
 }
 
+-- Does the active aura indicator actually RENDER for these values: enabled AND
+-- at least one visible effect chosen. Declared here rather than inside
+-- BuildBarActiveAuraSection because the section home below has to answer the
+-- same question for a consumer that is not on this tab - one owner, so the two
+-- can never drift.
+local function BarAuraIndicatorRenders(read)
+    local hasBorderEffect = read.barAuraEffect ~= nil
+        and read.barAuraEffect ~= "color" and read.barAuraEffect ~= "none"
+    local anyEffect = hasBorderEffect
+        or read.barAuraPulseEnabled == true
+        or read.barAuraColorShiftEnabled == true
+    return ST.IsBarAuraIndicatorEnabled(read) and anyEffect
+end
+
+-- The two gates the bars tabs draw whole regions behind, named once because
+-- each covers several sections below. Both mirror a builder gate exactly; the
+-- gate site is cited on the sections that carry them.
+local function BarsIconShown(_, style)
+    return style.showBarIcon ~= false
+end
+
+local function BarsGroupTracksAura(group)
+    return GroupHasAuraTrackingEntry(group)
+end
+
 -- Where each bars override section is EDITED, now that the panel tabs are the
 -- lens onto a selected entry: the tab that draws it and the collapse key of the
 -- section it is drawn in. Per-MODE axis, because the same section id is drawn
@@ -116,6 +143,37 @@ ST._BARMODE_SECTION_BY_ADVANCED_KEY = {
 -- No collapseKey where a section has no collapsible of its own: the four bar
 -- colors sit in a heading-less grid that is always drawn, so there is nothing
 -- to uncollapse on the way to them.
+--
+-- OPTIONAL PREDICATES - the contract for every mode's axis, stated here because
+-- this file registers the first one (.toc order):
+--
+--   available(group, style)   - is the section DRAWN at all on that tab, for
+--                               this group and this entry's effective style?
+--   gearEnabled(group, style) - would that section's advanced gear be BUILT
+--                               there?
+--
+-- `style` is the entry's DETACHED EFFECTIVE style (ST._ResolveStyleLens'
+-- `lens.effective`), which is exactly what a builder's own `sec.read` resolves
+-- to under an entry lens.
+--
+-- Registered ONLY where a builder has a gate; a missing predicate means
+-- "always". The BUILDERS' inline gates remain the authority - these mirror
+-- them for a consumer that cannot see the tab, and each is a one-liner copied
+-- from the gate it cites so drift shows up in a diff.
+--
+-- The consumer is the entry Settings pane's Customizations list (Helpers.lua):
+-- it gates a row's name LINK on `available`, because a click landing on a tab
+-- that never draws the section goes nowhere, and its advanced gear on both,
+-- because a gear queues a panel that a gear which was never built can never
+-- consume.
+--
+-- gearEnabled mirrors AddAdvancedToggle's own gate, which hides the gear on an
+-- EXACT `false` and builds it for nil - so each one is its call site's
+-- isEnabled expression tested `~= false`, copied rather than simplified.
+--
+-- Only sections the entry has CUSTOMIZED are ever asked, so a builder reading
+-- `sec.tbl` (the override store) and one reading `sec.read` (the effective
+-- style) agree about that section's own keys: promotion copies them across.
 ST._SECTION_HOME = ST._SECTION_HOME or {}
 ST._SECTION_HOME.bars = {
     barColor = { tab = "appearance" },
@@ -123,28 +181,85 @@ ST._SECTION_HOME.bars = {
     barCooldownColor = { tab = "appearance" },
     barChargeColor = { tab = "appearance" },
     borderSettings = { tab = "appearance", collapseKey = "barappearance_border" },
-    iconTint = { tab = "appearance", collapseKey = "barappearance_iconTint" },
-    barIcon = { tab = "appearance", collapseKey = "barappearance_textIcon" },
-    barNameText = { tab = "appearance", collapseKey = "barappearance_textIcon" },
-    cooldownText = { tab = "appearance", collapseKey = "barappearance_textIcon" },
-    chargeText = { tab = "appearance", collapseKey = "barappearance_textIcon" },
-    barReadyText = { tab = "appearance", collapseKey = "barappearance_textIcon" },
-    auraText = { tab = "appearance", collapseKey = "barappearance_textIcon" },
-    auraStackText = { tab = "appearance", collapseKey = "barappearance_textIcon" },
+    -- Icon Tint is drawn only while the icon renders for the current selection
+    -- (BuildBarAppearanceTab's `iconVisSec.read.showBarIcon ~= false`).
+    iconTint = {
+        tab = "appearance", collapseKey = "barappearance_iconTint",
+        available = BarsIconShown,
+    },
+    barIcon = {
+        tab = "appearance", collapseKey = "barappearance_textIcon",
+        gearEnabled = function(_, style) return (style.showBarIcon ~= false) ~= false end,
+    },
+    barNameText = {
+        tab = "appearance", collapseKey = "barappearance_textIcon",
+        gearEnabled = function(_, style) return (style.showBarNameText ~= false) ~= false end,
+    },
+    cooldownText = {
+        tab = "appearance", collapseKey = "barappearance_textIcon",
+        gearEnabled = function(_, style) return (style.showCooldownText) ~= false end,
+    },
+    chargeText = {
+        tab = "appearance", collapseKey = "barappearance_textIcon",
+        gearEnabled = function(_, style) return (style.showChargeText ~= false) ~= false end,
+    },
+    barReadyText = {
+        tab = "appearance", collapseKey = "barappearance_textIcon",
+        gearEnabled = function(_, style) return (style.showBarReadyText) ~= false end,
+    },
+    -- The bar aura block is drawn only while the GROUP tracks an aura.
+    auraText = {
+        tab = "appearance", collapseKey = "barappearance_textIcon",
+        available = BarsGroupTracksAura,
+        gearEnabled = function(_, style) return (style.showAuraText ~= false) ~= false end,
+    },
+    auraStackText = {
+        tab = "appearance", collapseKey = "barappearance_textIcon",
+        available = BarsGroupTracksAura,
+        gearEnabled = function(_, style) return (style.showAuraStackText ~= false) ~= false end,
+    },
     -- Icon Zoom is edited inside the Show Icon gear's advanced panel in bar
     -- mode, so its home is that gear's section.
     iconZoom = { tab = "appearance", collapseKey = "barappearance_textIcon" },
-    barActiveAura = { tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION },
-    pandemic = { tab = "effects", collapseKey = EFFECTS_PANDEMIC_SECTION },
-    -- The Timers and States sections are drawn only while the PANEL shows the
-    -- bar icon (BuildBarEffectsTab): everything in them renders on the icon
-    -- square. A consumer that navigates here still lands on the right tab and
-    -- section key either way.
-    showGCDSwipe = { tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION },
-    desaturation = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
-    unusableDimming = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
-    lossOfControl = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
-    showTooltips = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
+    barActiveAura = {
+        tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION,
+        available = BarsGroupTracksAura,
+        gearEnabled = function(_, style) return BarAuraIndicatorRenders(style) ~= false end,
+    },
+    pandemic = {
+        tab = "effects", collapseKey = EFFECTS_PANDEMIC_SECTION,
+        available = BarsGroupTracksAura,
+        -- One gear on this section in bar mode (barPandemicMarker), so the
+        -- list can resolve it - unlike icons, where the glow and the marker
+        -- are two and the row carries none.
+        gearEnabled = function(_, style) return (style.pandemicMarkerEnabled ~= false) ~= false end,
+    },
+    -- The Timers and States sections are drawn only while the bar icon renders
+    -- for the current selection (BuildBarEffectsTab's
+    -- `effIconSec.read.showBarIcon ~= false`): everything in them renders on
+    -- the icon square.
+    showGCDSwipe = {
+        tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION,
+        available = BarsIconShown,
+    },
+    desaturation = {
+        tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
+        available = BarsIconShown,
+    },
+    unusableDimming = {
+        tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
+        available = BarsIconShown,
+        gearEnabled = function(_, style) return (style.showUnusable == true) ~= false end,
+    },
+    lossOfControl = {
+        tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
+        available = BarsIconShown,
+    },
+    showTooltips = {
+        tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
+        available = BarsIconShown,
+        gearEnabled = function(_, style) return (style.showTooltips == true) ~= false end,
+    },
 }
 
 -- Cooldown text advanced, as a descriptor.
@@ -253,6 +368,11 @@ local function BuildBarAppearanceTab(container, group, style)
     -- section - the way back out of it.
     local lens = ResolveStyleLens(group)
 
+    -- Under a multi selection this tab edits the PANEL, and only this line says
+    -- so - the per-section scope chrome speaks under an entry lens alone. No-op
+    -- in every other lens mode.
+    AddLensPanelScopeNote(container, lens)
+
     -- Sections with NO override identity of their own (bar geometry, the bar
     -- texture): an entry cannot own them, so under an entry lens they say
     -- "Applies to all entries" and go read-only rather than quietly letting a
@@ -265,7 +385,10 @@ local function BuildBarAppearanceTab(container, group, style)
     -- ================================================================
     -- Bar Settings (length, height, spacing, texture)
     -- ================================================================
-    local barSettingsHeading, barSettingsCollapsed = BuildCollapsibleSection(container, "Bar Settings", "barappearance_settings", nil, nil, ROW_SECTION)
+    -- Panel-only under an entry lens, so the collapse key is lens-scoped and
+    -- opens folded the first time (ST._ResolveLensCollapseKey owns that rule).
+    local barSettingsHeading, barSettingsCollapsed = BuildCollapsibleSection(container, "Bar Settings",
+        ResolveLensCollapseKey(lens, group, nil, "barappearance_settings"), nil, nil, ROW_SECTION)
     -- Panel-only (sectionId nil). Safe with no entry selected: panel and multi
     -- scope attach no chrome at all.
     local barSettingsSec = BeginLensSection(lens, group, nil)
@@ -411,7 +534,10 @@ local function BuildBarAppearanceTab(container, group, style)
     -- ================================================================
     -- Border (thickness, size, color - mirrors the icon-mode Border section)
     -- ================================================================
-    local borderHeading, borderCollapsed = BuildCollapsibleSection(container, "Border", "barappearance_border", nil, nil, ROW_SECTION)
+    -- The whole collapsible IS the borderSettings section, so its collapse key
+    -- follows that section's scope through ST._ResolveLensCollapseKey.
+    local borderHeading, borderCollapsed = BuildCollapsibleSection(container, "Border",
+        ResolveLensCollapseKey(lens, group, "borderSettings", "barappearance_border"), nil, nil, ROW_SECTION)
     local borderSec = BeginLensSection(lens, group, "borderSettings")
     borderSec:HeadingChrome(borderHeading)
 
@@ -451,7 +577,8 @@ local function BuildBarAppearanceTab(container, group, style)
     -- ================================================================
     local iconVisSec = BeginLensSection(lens, group, "barIcon")
     if iconVisSec.read.showBarIcon ~= false then
-    local iconTintHeading, iconTintCollapsed = BuildCollapsibleSection(container, "Icon Tint", "barappearance_iconTint", nil, nil, ROW_SECTION)
+    local iconTintHeading, iconTintCollapsed = BuildCollapsibleSection(container, "Icon Tint",
+        ResolveLensCollapseKey(lens, group, "iconTint", "barappearance_iconTint"), nil, nil, ROW_SECTION)
     local tintSec = BeginLensSection(lens, group, "iconTint")
 
     -- The (?) badge chains off the heading label, and the lens' scope chrome
@@ -634,12 +761,6 @@ local function BuildBarAppearanceTab(container, group, style)
     })
 
     -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
-    --
-    -- The two name-text offsets are NOT barNameText keys (ST.OVERRIDE_SECTIONS
-    -- in Defaults.lua): they place the name on every bar the panel draws. They
-    -- are drawn only while this panel edits the panel style, for the reason
-    -- stated on the cooldown text descriptor at the top of this file - an
-    -- override would store a key RevertSection cannot clear.
     local function BuildBarNameTextAdvanced(panel)
         AddCheckboxRow(panel, {
             label = "Flip Name Text",
@@ -663,9 +784,16 @@ local function BuildBarAppearanceTab(container, group, style)
             onConfirm = refreshStyle,
             onChange = refreshStyle,
         })
-        if nameSec.scope ~= "customized" then
-            AddOffsetSliders(panel, nameSec.write, "barNameTextOffsetX", "barNameTextOffsetY", {range = 50}, refreshStyle, { row = true })
-        end
+        -- barNameTextOffsetX/Y are not one of this section's override keys, so
+        -- the rows are openly PANEL-OWNED: they read and write group.style
+        -- whatever the lens shows, and stay live when an entry owns the
+        -- section. They used to hide themselves once the section was
+        -- customized, which stranded the setting on some other selection
+        -- state. Duration Format answers the same problem the same way (see
+        -- the row in the Text section).
+        local offsetXRow, offsetYRow = AddOffsetSliders(panel, group.style, "barNameTextOffsetX", "barNameTextOffsetY", {range = 50}, refreshStyle, { row = true })
+        nameSec:PanelRowChrome(offsetXRow)
+        nameSec:PanelRowChrome(offsetYRow)
     end
 
     if nameSec.write then
@@ -1010,12 +1138,10 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
     -- clearing is the safe direction, and never starts anything.
     local auraSec = BeginLensSection(lens, group, "barActiveAura")
 
-    local hasBorderEffect = auraSec.read.barAuraEffect ~= nil
-        and auraSec.read.barAuraEffect ~= "color" and auraSec.read.barAuraEffect ~= "none"
-    local anyEffect = hasBorderEffect
-        or auraSec.read.barAuraPulseEnabled == true
-        or auraSec.read.barAuraColorShiftEnabled == true
-    local indicatorOn = ST.IsBarAuraIndicatorEnabled(auraSec.read) and anyEffect
+    -- Shared with this section's home entry (BarAuraIndicatorRenders at the top
+    -- of this file), so the tab and a consumer that cannot see it can never
+    -- disagree about whether the indicator renders.
+    local indicatorOn = BarAuraIndicatorRenders(auraSec.read)
 
     if container then
         -- The host column only exists under this guard, so the section's
@@ -1216,6 +1342,10 @@ local function BuildBarEffectsTab(container, group, style)
     -- for what the scopes mean and why the write table is the only gate.
     local lens = ResolveStyleLens(group)
 
+    -- Under a multi selection this tab edits the PANEL, and only this line says
+    -- so. No-op in every other lens mode.
+    AddLensPanelScopeNote(container, lens)
+
     -- ================================================================
     -- Glows
     -- ================================================================
@@ -1242,8 +1372,10 @@ local function BuildBarEffectsTab(container, group, style)
     -- Glows above.
     local pandemicLeft, pandemicRight
     if GroupHasAuraTrackingEntry(group) then
+        -- Both halves are the one "pandemic" section, so the collapsible's key
+        -- follows that section's scope through ST._ResolveLensCollapseKey.
         local _, pandemicCollapsed = BuildCollapsibleSection(container, "Pandemic",
-            EFFECTS_PANDEMIC_SECTION, nil, nil, ROW_SECTION)
+            ResolveLensCollapseKey(lens, group, "pandemic", EFFECTS_PANDEMIC_SECTION), nil, nil, ROW_SECTION)
         if not pandemicCollapsed then
             -- LEFT the fill half, RIGHT the text half.
             pandemicLeft, pandemicRight = BeginRowGrid(container)

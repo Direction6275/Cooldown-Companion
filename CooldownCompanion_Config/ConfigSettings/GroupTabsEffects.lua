@@ -9,6 +9,8 @@ local CreateInfoButton = ST._CreateInfoButton
 local AddPandemicMarkerControls = ST._AddPandemicMarkerControls
 local ResolveLensSection = ST._ResolveLensSection
 local BeginLensSection = ST._BeginLensSection
+local ResolveLensCollapseKey = ST._ResolveLensCollapseKey
+local AddLensPanelScopeNote = ST._AddLensPanelScopeNote
 
 -- Imports from SectionBuilders.lua
 local BuildDesaturationControls = ST._BuildDesaturationControls
@@ -786,6 +788,13 @@ local function BuildEffectsTab(container)
     -- disagree with itself about which entry it is showing.
     local lens = ST._ResolveStyleLens(group)
 
+    -- Under a multi selection these sections edit the PANEL, and only this line
+    -- says so - the per-section scope chrome speaks under an entry lens alone.
+    -- No-op in every other lens mode. The trigger, texture, assistant and
+    -- bar-mode paths returned above, so only the standard icons path carries
+    -- it; the modes with their own builders add their own.
+    AddLensPanelScopeNote(container, lens)
+
     -- ================================================================
     -- Glows
     -- ================================================================
@@ -862,8 +871,10 @@ local function BuildEffectsTab(container)
     -- since PTR 8 and this side needs it for the same reason.
     local pandemicLeft, pandemicRight
     if GroupHasAuraTrackingEntry(group) then
+        -- Both halves are the one "pandemic" section, so the collapsible's key
+        -- follows that section's scope through ST._ResolveLensCollapseKey.
         local pandemicHeading, pandemicCollapsed = BuildCollapsibleSection(container, "Pandemic",
-            EFFECTS_PANDEMIC_SECTION, nil, nil, ROW_SECTION)
+            ResolveLensCollapseKey(lens, group, "pandemic", EFFECTS_PANDEMIC_SECTION), nil, nil, ROW_SECTION)
         -- ONE scope chrome for the whole feature, on the HEADING (owner ruling):
         -- the glow and the marker are two rows of one override section, so a
         -- per-row affordance would offer the same customize twice and revert

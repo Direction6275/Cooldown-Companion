@@ -90,13 +90,13 @@ local STEP_DATA = {
     },
     entry_settings_intro = {
         title = "Entry Settings",
-        text = "Your panel is previewed at the top of this column. Click a button in the preview to select it - its settings appear below: cooldown settings, sound alerts, visibility rules, and more.",
+        text = "Your panel is previewed at the top of this column. Click a button in the preview to select it - its settings sections appear below: cooldown settings, sound alerts, and more.",
         anchor = "col3_area",
         placement = "right",
     },
     panel_settings_intro = {
         title = "Panel Settings",
-        text = "Click the selected button again to deselect it. These same tabs then show the panel's settings, applying to every entry.\n\nSelect an entry again and the tabs show that entry's settings. A section that still follows the panel offers Customize for this entry.\n\n|A:QuestLog-icon-setting:14:14|a next to a setting opens advanced options for it.",
+        text = "With a button selected, the styling tabs show that button's values. Each section reads Panel setting until Customize gives the button its own copy, and Revert hands it back.\n\n|A:QuestLog-icon-setting:14:14|a next to a setting opens advanced options for it.",
         anchor = "col3_area",
         placement = "right",
     },

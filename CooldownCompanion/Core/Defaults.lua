@@ -1078,8 +1078,8 @@ ST.OVERRIDE_SECTIONS = {
 }
 
 -- Display order for the registry above, wherever an entry's overrides are
--- listed (the entry-slot hover tooltip and the config's Inactive
--- Customizations list both walk this).
+-- listed (the entry-slot hover tooltip and the config's Customizations list
+-- both walk this).
 ST.OVERRIDE_SECTION_ORDER = {
     "borderSettings", "cooldownText", "auraText", "auraStackText",
     "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "showOutOfRange", "showTooltips",

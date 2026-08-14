@@ -3143,6 +3143,11 @@ local function BuildVisibilityTab(container)
                 local buttonData = CooldownCompanion:GetRotationAssistantConfigButtonData(group)
                 if buttonData then
                     ReleaseVisibilityTabScratch()
+                    -- The tab is a lens, so its entry scope names its subject
+                    -- the way the entry pane does. Emitted by the dispatcher,
+                    -- not the builder: the builder is the panel's own content
+                    -- in every other caller.
+                    ST._BuildEntryIdentityHeading(container, buttonData)
                     BuildEntryLoadConditionsTab(container, buttonData, tabInfoButtons)
                     return
                 end
@@ -3150,6 +3155,7 @@ local function BuildVisibilityTab(container)
                 local buttonData = group.buttons and group.buttons[CS.selectedButton]
                 if buttonData then
                     ReleaseVisibilityTabScratch()
+                    ST._BuildEntryIdentityHeading(container, buttonData)
                     BuildEntryLoadConditionsTab(container, buttonData, tabInfoButtons)
                     return
                 end

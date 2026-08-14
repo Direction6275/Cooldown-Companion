@@ -1370,6 +1370,109 @@ local function ResolveSectionHome(sectionId)
     return byMode and byMode[sectionId] or nil
 end
 
+-- Force one collapsible open, on BOTH sides of the style lens.
+--
+-- Which key a collapsible actually uses is ST._ResolveLensCollapseKey's call
+-- (Helpers.lua): a section the selected entry cannot edit gets its OWN
+-- lens-scoped key and opens collapsed the first time that key is seen. Which
+-- side a given collapse key landed on is a per-tab fact - the same key names a
+-- whole mixed section on one panel and one lens section on another - so this
+-- opens both rather than guessing, and the sectionId handed to the resolver is
+-- deliberately nil: a nil section resolves the lens-scoped variant under an
+-- entry lens and the base key everywhere else, which is exactly the pair.
+--
+-- The lens key is set to FALSE, not nil. nil reads as "never seen", and the
+-- resolver seeds that straight back to collapsed on the rebuild this
+-- navigation is about to trigger.
+local function ForceSectionOpen(collapseKey, lens, group)
+    if not collapseKey then
+        return
+    end
+    CS.collapsedSections[collapseKey] = nil
+    local resolve = ST._ResolveLensCollapseKey
+    local lensKey = resolve and resolve(lens, group, nil, collapseKey)
+    if lensKey and lensKey ~= collapseKey then
+        CS.collapsedSections[lensKey] = false
+    end
+end
+
+-- The navigate-to-a-section core of ApplyGearRoute below, without the gear:
+-- no advanced-panel queue, no route object, no preview to carry across. The
+-- entry Settings pane's Customizations list clicks a section NAME and wants
+-- exactly this - land on the tab that edits it, with the section unfolded.
+--
+-- ORDERING, same as the gear's: every navigation write lands BEFORE the
+-- refresh. The rebuild reads CS.selectedTab / CS.panelSettingsTab and the
+-- collapse table, so a refresh made first would build the surface the click
+-- was leaving and then be told where to go.
+--
+-- Context comes from ResolveContext, not from the caller: the destination has
+-- to be the panel the config is actually showing, and taking a group would let
+-- a stale row navigate against one it is not on.
+--
+-- `opts.tab` is for a destination that is not an override section at all - the
+-- text panel's Format tab, where the flat per-entry textFormat is edited.
+--
+-- Deliberately does NOT consult the home's `available` / `gearEnabled`
+-- predicates. Every other route into here starts at a control that is on screen
+-- (a preview gear must be visible to be clicked), so its section is drawn by
+-- definition; the one caller that can name a section it cannot see - the
+-- Customizations list - pre-gates on those predicates and never calls with an
+-- unavailable destination.
+--
+-- `opts.advancedKey` additionally opens that section's advanced-settings panel
+-- once the destination rebuilds, which is what the Customizations list's gear
+-- adds over its name link. Queued in exactly the place the gear route queues it
+-- (NavigateToPreviewSettings below): after every navigation write, before the
+-- refresh. QueueAdvancedSettingsPanelOpen SNAPSHOTS the config context, and
+-- that context reads CS.selectedTab / CS.panelSettingsTab, so a queue made any
+-- earlier is stamped with the surface the click was leaving and expires against
+-- a gear that never sees it.
+local function NavigateToSectionHome(sectionId, opts)
+    local _, group = ResolveContext()
+    if not group then
+        return false
+    end
+
+    local home = ResolveSectionHome(sectionId)
+    local tab = (opts and opts.tab) or (home and home.tab)
+    if not tab then
+        return false
+    end
+
+    -- The inline texture browser takes over the settings area; leave it
+    -- before landing somewhere underneath it.
+    if CS.CancelPickAuraTexture then
+        CS.CancelPickAuraTexture()
+    end
+
+    SetRowScope("primary")
+    CS.selectedTab = tab
+    CS.panelSettingsTab = tab
+    -- A deliberate destination, so it outranks a display mode's own default
+    -- landing tab.
+    CS.panelSettingsTabExplicit = true
+    if type(CS.collapsedSections) == "table" then
+        local resolveLens = ST._ResolveStyleLens
+        local lens = resolveLens and resolveLens(group) or nil
+        ForceSectionOpen(home and home.collapseKey, lens, group)
+    end
+
+    -- Every write above is made; the rebuild below is what consumes this. The
+    -- already-open guard is the gear route's, for the same reason: a panel still
+    -- up on this key would be re-opened through the queue rather than left
+    -- alone, and nothing here means "toggle".
+    local advancedKey = opts and opts.advancedKey
+    if advancedKey
+        and CS.QueueAdvancedSettingsPanelOpen
+        and not (CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(advancedKey)) then
+        CS.QueueAdvancedSettingsPanelOpen(advancedKey)
+    end
+
+    CooldownCompanion:RefreshConfigPanel()
+    return true
+end
+
 -- `queueKey` is the key that is about to ride the queue, already resolved by
 -- the caller - passed in so the uncollapse below only opens the section whose
 -- gear actually has to build, not one the route merely names. `sectionId` is
@@ -1391,16 +1494,20 @@ local function ApplyGearRoute(route, queueKey, sectionId)
     -- A collapsed section never builds its checkbox, and a queued key with
     -- no gear to consume it expires silently.
     if type(CS.collapsedSections) == "table" then
+        -- The lens the section keys below are opened against - the same one the
+        -- tab builder will resolve when it rebuilds a moment from now.
+        local _, routeGroup = ResolveContext()
+        local resolveLens = ST._ResolveStyleLens
+        local lens = (routeGroup and resolveLens) and resolveLens(routeGroup) or nil
+
         -- Landing on the tab with the section collapsed shows a header and
         -- nothing else, so open it whether or not a key rides along: with an
         -- entry that only inherits the section there is no key at all, and the
-        -- section's scope chrome is the whole point of arriving.
-        if home and home.collapseKey then
-            CS.collapsedSections[home.collapseKey] = nil
-        end
-        if route.uncollapse then
-            CS.collapsedSections[route.uncollapse] = nil
-        end
+        -- section's scope chrome is the whole point of arriving. A section the
+        -- entry cannot edit at all folds itself by default under the lens, and
+        -- the same reasoning applies harder there.
+        ForceSectionOpen(home and home.collapseKey, lens, routeGroup)
+        ForceSectionOpen(route.uncollapse, lens, routeGroup)
         -- Same rule, read off the key rather than named on the route: the
         -- Indicators tab collapses all three of its sections, and which one
         -- holds a given gear is GroupTabs' fact to state - it owns both the
@@ -1408,10 +1515,7 @@ local function ApplyGearRoute(route, queueKey, sectionId)
         -- reached in a display mode that has no such section just clear one
         -- nothing uses.
         local sectionByKey = queueKey and ST._INDICATORS_SECTION_BY_ADVANCED_KEY
-        local sectionKey = sectionByKey and sectionByKey[queueKey]
-        if sectionKey then
-            CS.collapsedSections[sectionKey] = nil
-        end
+        ForceSectionOpen(sectionByKey and sectionByKey[queueKey], lens, routeGroup)
     end
     return BUTTONS_SURFACE
 end
@@ -2202,3 +2306,6 @@ ST._RefreshPreviewCommandCenterGear = RefreshPreviewCommandCenterGear
 ST._RefreshPreviewCommandCenterSpellbook = RefreshPreviewCommandCenterSpellbook
 -- Read by the bars canvas while it places its bottom-right enable cluster.
 ST._GetPreviewCommandCenterOccupiedWidth = GetPreviewCommandCenterOccupiedWidth
+-- The gear's navigate-to-a-section half, for surfaces that want the destination
+-- without the gear: the entry Settings pane's Customizations list.
+ST._NavigateToSectionHome = NavigateToSectionHome

@@ -15,6 +15,8 @@ local AddOffsetSliders = ST._AddOffsetSliders
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 local ResolveLensSection = ST._ResolveLensSection
 local BeginLensSection = ST._BeginLensSection
+local ResolveLensCollapseKey = ST._ResolveLensCollapseKey
+local AddLensPanelScopeNote = ST._AddLensPanelScopeNote
 local ChainHeadingBadges = ST._ChainHeadingBadges
 
 -- Imports from SectionBuilders.lua
@@ -96,6 +98,21 @@ ST._APPEARANCE_SECTION_BY_ADVANCED_KEY = {
     keybindText = "keybindText",
 }
 
+-- The one gate the icons tabs draw whole aura sections behind, named once
+-- because it covers five sections below. The Indicators-tab gate sites are
+-- cited on the sections that carry it.
+local function IconsGroupTracksAura(group)
+    return GroupHasAuraTrackingEntry(group)
+end
+
+-- The fill timer's own interlock, exactly as BuildEffectsTab derives it
+-- (`fillSec.read.iconFillEnabled == true and group.masqueEnabled ~= true`):
+-- Masque is GROUP data with no override section, so that half stays
+-- group-level. It gates two gears, so it is named rather than copied twice.
+local function IconsFillTimerActive(group, style)
+    return style.iconFillEnabled == true and group.masqueEnabled ~= true
+end
+
 -- Where each override section is EDITED, now that the panel tabs are the lens
 -- onto a selected entry: the tab that draws it and the collapse key of the
 -- section it is drawn in.
@@ -106,13 +123,42 @@ ST._APPEARANCE_SECTION_BY_ADVANCED_KEY = {
 -- map could only ever describe one mode. Later packets add the `bars` and
 -- `text` axes beside this one; a lookup that misses its mode has no home yet
 -- rather than the wrong one.
+--
+-- The optional `available` / `gearEnabled` predicates are contracted at the
+-- FIRST registration (ST._SECTION_HOME.bars, BarModeTabs.lua) - read that note
+-- before adding one. In short: they mirror the builder's own gate, the builder
+-- stays the authority, and a missing predicate means "always".
+--
+-- The Indicators-tab rows below carry predicates for gates GroupTabsEffects.lua
+-- owns, for the same reason their collapse keys are imported from that file
+-- rather than written as literals: this axis is ONE table, and the icons homes
+-- for both tabs have always been stated here together. Each cites its gate.
 ST._SECTION_HOME = ST._SECTION_HOME or {}
 ST._SECTION_HOME.icons = {
-    cooldownText = { tab = "appearance", collapseKey = "appearance_text" },
-    chargeText = { tab = "appearance", collapseKey = "appearance_text" },
-    auraText = { tab = "appearance", collapseKey = "appearance_text" },
-    auraStackText = { tab = "appearance", collapseKey = "appearance_text" },
-    keybindText = { tab = "appearance", collapseKey = "appearance_text" },
+    cooldownText = {
+        tab = "appearance", collapseKey = "appearance_text",
+        gearEnabled = function(_, style) return (style.showCooldownText) ~= false end,
+    },
+    chargeText = {
+        tab = "appearance", collapseKey = "appearance_text",
+        gearEnabled = function(_, style) return (style.showChargeText ~= false) ~= false end,
+    },
+    -- The aura text sections are drawn only while the GROUP tracks an aura
+    -- (BuildAppearanceTab's `if groupHasAuraEntry then`).
+    auraText = {
+        tab = "appearance", collapseKey = "appearance_text",
+        available = IconsGroupTracksAura,
+        gearEnabled = function(_, style) return (style.showAuraText ~= false) ~= false end,
+    },
+    auraStackText = {
+        tab = "appearance", collapseKey = "appearance_text",
+        available = IconsGroupTracksAura,
+        gearEnabled = function(_, style) return (style.showAuraStackText ~= false) ~= false end,
+    },
+    keybindText = {
+        tab = "appearance", collapseKey = "appearance_text",
+        gearEnabled = function(_, style) return (style.showKeybindText) ~= false end,
+    },
     borderSettings = { tab = "appearance", collapseKey = "appearance_border" },
     iconTint = { tab = "appearance", collapseKey = "appearance_iconTint" },
     -- Icon Zoom is one row inside the panel's own Icon Settings section, which
@@ -121,23 +167,71 @@ ST._SECTION_HOME.icons = {
     -- Indicators tab. The collapse keys come from the section constants
     -- imported from GroupTabsEffects.lua, never from literals: the bar tab
     -- shares those same constants, and a copy could drift from them.
-    procGlow = { tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION },
-    auraIndicator = { tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION },
-    readyGlow = { tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION },
-    keyPressHighlight = { tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION },
-    assistedHighlight = { tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION },
+    procGlow = {
+        tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION,
+        gearEnabled = function(_, style) return (style.procGlowStyle ~= "none") ~= false end,
+    },
+    -- BuildAuraGlowSection returns early without an aura-tracking entry.
+    auraIndicator = {
+        tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION,
+        available = IconsGroupTracksAura,
+        gearEnabled = function(_, style) return ((style.auraGlowStyle or "pulse") ~= "none") ~= false end,
+    },
+    readyGlow = {
+        tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION,
+        gearEnabled = function(_, style)
+            return (style.readyGlowStyle and style.readyGlowStyle ~= "none") ~= false
+        end,
+    },
+    keyPressHighlight = {
+        tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION,
+        gearEnabled = function(_, style)
+            return (style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none") ~= false
+        end,
+    },
+    assistedHighlight = {
+        tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION,
+        gearEnabled = function(_, style) return (style.showAssistedHighlight or false) ~= false end,
+    },
     -- Both halves of the refresh window live in one section, so the feature has
-    -- one home whichever half a consumer was looking for.
-    pandemic = { tab = "effects", collapseKey = EFFECTS_PANDEMIC_SECTION },
-    iconFillTimer = { tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION },
-    cooldownSwipe = { tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION },
-    auraDurationSwipe = { tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION },
+    -- one home whichever half a consumer was looking for. The whole Pandemic
+    -- heading is gated on an aura-tracking entry (BuildEffectsTab), and both
+    -- halves return early without one.
+    --
+    -- No gearEnabled: this section owns TWO gears in icons mode (pandemicGlow
+    -- and pandemicMarker), so the Customizations list resolves none for it.
+    pandemic = {
+        tab = "effects", collapseKey = EFFECTS_PANDEMIC_SECTION,
+        available = IconsGroupTracksAura,
+    },
+    iconFillTimer = {
+        tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION,
+        gearEnabled = function(group, style) return IconsFillTimerActive(group, style) ~= false end,
+    },
+    cooldownSwipe = {
+        tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION,
+        gearEnabled = function(group, style)
+            return (style.showCooldownSwipe ~= false and not IconsFillTimerActive(group, style)) ~= false
+        end,
+    },
+    -- The aura duration swipe is drawn only while the GROUP tracks an aura.
+    auraDurationSwipe = {
+        tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION,
+        available = IconsGroupTracksAura,
+        gearEnabled = function(_, style) return (style.showAuraDurationSwipe ~= false) ~= false end,
+    },
     showGCDSwipe = { tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION },
     desaturation = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
-    unusableDimming = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
+    unusableDimming = {
+        tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
+        gearEnabled = function(_, style) return (style.showUnusable == true) ~= false end,
+    },
     showOutOfRange = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
     lossOfControl = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
-    showTooltips = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
+    showTooltips = {
+        tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
+        gearEnabled = function(_, style) return (style.showTooltips == true) ~= false end,
+    },
 }
 
 local function BuildAppearanceTab(container)
@@ -333,6 +427,13 @@ local function BuildAppearanceTab(container)
     -- disagree with itself about which entry it is showing.
     local lens = ST._ResolveStyleLens(group)
 
+    -- Under a multi selection these tabs edit the PANEL, and only this line
+    -- says so - the per-section scope chrome speaks under an entry lens alone.
+    -- No-op in every other lens mode. The trigger, texture, assistant and
+    -- other-mode paths returned above, so only the standard icons path carries
+    -- it; the modes with their own builders add their own.
+    AddLensPanelScopeNote(container, lens)
+
     -- Sections with NO override identity of their own (the panel's layout, its
     -- Masque skinning): an entry cannot own them, so under an entry lens they
     -- say "Applies to all entries" and go read-only rather than quietly letting
@@ -343,7 +444,12 @@ local function BuildAppearanceTab(container)
     -- ================================================================
     -- Icon Settings (shape, size, spacing, packing)
     -- ================================================================
-    local iconHeading, iconSettingsCollapsed = BuildCollapsibleSection(container, "Icon Settings", "appearance_icons", nil, nil, ROW_SECTION)
+    -- Panel-only under an entry lens, so the collapse key is lens-scoped and
+    -- opens folded the first time (ST._ResolveLensCollapseKey owns that rule).
+    -- Icon Zoom lives INSIDE this section, so an entry that customized it
+    -- keeps the section open (the hostsSections exception).
+    local iconHeading, iconSettingsCollapsed = BuildCollapsibleSection(container, "Icon Settings",
+        ResolveLensCollapseKey(lens, group, nil, "appearance_icons", { hostsSections = { "iconZoom" } }), nil, nil, ROW_SECTION)
     -- Panel-only (sectionId nil): shape, size and packing belong to the panel.
     -- Icon Zoom is the one exception inside this section - it IS an override
     -- section, so it resolves its own scope further down.
@@ -804,7 +910,10 @@ local function BuildAppearanceTab(container)
     -- ================================================================
     -- Border
     -- ================================================================
-    local borderHeading, borderCollapsed = BuildCollapsibleSection(container, "Border", "appearance_border", nil, nil, ROW_SECTION)
+    -- The whole collapsible IS the borderSettings section, so its collapse key
+    -- follows that section's scope through ST._ResolveLensCollapseKey.
+    local borderHeading, borderCollapsed = BuildCollapsibleSection(container, "Border",
+        ResolveLensCollapseKey(lens, group, "borderSettings", "appearance_border"), nil, nil, ROW_SECTION)
     -- The lens' section scope: with an entry selected the heading says whose
     -- border this is and offers the one action that changes that.
     local borderSec = BeginLensSection(lens, group, "borderSettings")
@@ -869,7 +978,8 @@ local function BuildAppearanceTab(container)
     -- ================================================================
     -- Icon Tint
     -- ================================================================
-    local iconTintHeading, iconTintCollapsed = BuildCollapsibleSection(container, "Icon Tint", "appearance_iconTint", nil, nil, ROW_SECTION)
+    local iconTintHeading, iconTintCollapsed = BuildCollapsibleSection(container, "Icon Tint",
+        ResolveLensCollapseKey(lens, group, "iconTint", "appearance_iconTint"), nil, nil, ROW_SECTION)
     local tintSec = BeginLensSection(lens, group, "iconTint")
 
     local iconTintTooltip = {
@@ -924,7 +1034,8 @@ local function BuildAppearanceTab(container)
     -- Masque skinning (icon-only)
     -- ================================================================
     if CooldownCompanion.Masque then
-        local masqueHeading, masqueCollapsed = BuildCollapsibleSection(container, "Masque", "appearance_masque", nil, nil, ROW_SECTION)
+        local masqueHeading, masqueCollapsed = BuildCollapsibleSection(container, "Masque",
+            ResolveLensCollapseKey(lens, group, nil, "appearance_masque"), nil, nil, ROW_SECTION)
         -- Panel-only (sectionId nil): skinning is switched on for the whole
         -- panel, and there is no per-entry form of it to offer.
         local masqueSec = BeginLensSection(lens, group, nil)
