@@ -2957,7 +2957,7 @@ local function BuildLoadConditionsTab(container)
     -- The tab reads as two halves under an optional inherited summary: who the
     -- panel is for, then where it stays hidden. Row grammar (RowWidgets.lua)
     -- throughout - see the recipe comment at the top of BuildAppearanceTab's
-    -- icons path in GroupTabs.lua. Nothing on this tab carries a gear, so
+    -- icons path in GroupTabsAppearance.lua. Nothing on this tab carries a gear, so
     -- there is no advanced-panel queue to keep uncollapsed.
     AddInheritedLoadSummary(container, inheritedSources, "loadconditions_panel_inherited")
 

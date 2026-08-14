@@ -17,11 +17,13 @@ local BuildCompactModeControls = ST._BuildCompactModeControls
 -- view of that entry's effective values, with per-section scope deciding where
 -- - or whether - each section writes. Helpers.lua loads first (the .toc), so
 -- these resolve at load like every other import above.
+--
+-- BeginLensSection owns the per-section ritual on both tabs. ResolveLensSection
+-- stays only for the sweep at the foot of the Appearance tab, which wants a
+-- section's write table and nothing else.
 local ResolveStyleLens = ST._ResolveStyleLens
 local ResolveLensSection = ST._ResolveLensSection
-local AttachHeadingScopeChrome = ST._AttachHeadingScopeChrome
-local MarkInertRange = ST._MarkInertRange
-local ApplyInertRange = ST._ApplyInertRange
+local BeginLensSection = ST._BeginLensSection
 
 -- Imports from ButtonFrame/TextMode.lua (the renderer this tab configures).
 -- Text entries auto-size from a measured worst-case render of their format, so
@@ -48,7 +50,8 @@ local tabInfoButtons = CS.tabInfoButtons
 -- Row-grammar section headers: caret far left, label, then a class-colored
 -- rule fading right. The rules every row-grammar section follows are stated
 -- once, in the recipe comment at the top of BuildAppearanceTab's icons path in
--- GroupTabs.lua; the sections below conform to them rather than restating them.
+-- GroupTabsAppearance.lua; the sections below conform to them rather than
+-- restating them.
 local ROW_SECTION = { leftAligned = true }
 
 -- Section actions sit on one grammar-height line (ButtonConditions.lua states
@@ -405,10 +408,10 @@ local function BuildTextFormatTab(container)
     local _, settingsCollapsed = BuildCollapsibleSection(container, "Format Settings", "textformat_settings", nil, nil, ROW_SECTION)
 
     if not settingsCollapsed then
-    local settingsInert = entryData ~= nil
+    local settingsSec = BeginLensSection(lens, group, nil)
     local fmtLeft, fmtRight = BeginRowGrid(container)
-    local fmtLeftInertMark = settingsInert and MarkInertRange(fmtLeft) or nil
-    local fmtRightInertMark = settingsInert and MarkInertRange(fmtRight) or nil
+    settingsSec:Mark(fmtLeft)
+    local fmtRightBracket = settingsSec:Bracket(fmtRight)
 
     -- The shared builder has no tooltip of its own, so the row gets one here.
     local durationRow = AddDurationFormatDropdown(fmtLeft, style, refreshStyleAndPreview, { row = true })
@@ -424,7 +427,7 @@ local function BuildTextFormatTab(container)
     local readyTextRow = AddEditBoxRow(fmtRight, {
         label = "Ready Text",
         value = style.textReadyText or "Ready",
-        disabled = settingsInert,
+        disabled = settingsSec.disabled,
         onEnterPressed = function(val)
             style.textReadyText = val
             refreshStyleAndPreview()
@@ -442,10 +445,8 @@ local function BuildTextFormatTab(container)
         {"The word |cff00ff00{status}|r shows when the spell is ready.", 1, 1, 1, true},
     }, tabInfoButtons))
 
-    if fmtLeftInertMark then
-        ApplyInertRange(fmtLeft, fmtLeftInertMark)
-        ApplyInertRange(fmtRight, fmtRightInertMark)
-    end
+    settingsSec:Finish()
+    settingsSec:FinishBracket(fmtRightBracket)
     end -- not settingsCollapsed
 
     container:ResumeLayout()
@@ -453,7 +454,7 @@ local function BuildTextFormatTab(container)
 end
 
 -- Text mode's advanced gears, by the OVERRIDE SECTION each one belongs to.
--- Shaped and named after ST._APPEARANCE_SECTION_BY_ADVANCED_KEY (GroupTabs.lua)
+-- Shaped and named after ST._APPEARANCE_SECTION_BY_ADVANCED_KEY (GroupTabsAppearance.lua)
 -- and ST._BARMODE_SECTION_BY_ADVANCED_KEY (BarModeTabs.lua): those answer "which
 -- OVERRIDE section owns this gear's values", and so does this one.
 --
@@ -475,7 +476,8 @@ ST._TEXTMODE_SECTION_BY_ADVANCED_KEY = {}
 -- section it is drawn in. Per-MODE axis, because the same question has a
 -- different answer on an icons or bars panel.
 --
--- BarModeTabs.lua loads BEFORE this file (the .toc) and GroupTabs.lua after it;
+-- BarModeTabs.lua loads BEFORE this file (the .toc) and GroupTabsAppearance.lua
+-- after it;
 -- all three create the table the same way, so no axis assignment can clobber
 -- another. Never replace the root - only add this axis to it.
 ST._SECTION_HOME = ST._SECTION_HOME or {}
@@ -503,10 +505,10 @@ local function BuildTextAppearanceTab(container, group, style)
     -- spacing and group header; Compact Mode): an entry cannot own them, so
     -- under an entry lens they say "Applies to all entries" and go read-only
     -- rather than quietly letting a panel-wide edit be made from an entry's
-    -- page. They keep reading and writing the PANEL style, which is the value
-    -- they claim to apply to; the rows are disabled, so no callback of theirs
-    -- can run.
-    local panelOnlyInert = lens.mode == "entry"
+    -- page. They begin a lens section with a nil sectionId, which resolves to
+    -- no write table exactly under an entry lens. They keep reading and writing
+    -- the PANEL style, which is the value they claim to apply to; the rows are
+    -- disabled, so no callback of theirs can run.
 
     -- The format itself, and the two settings that are format vocabulary
     -- rather than panel geometry, now own the Format tab (BuildTextFormatTab
@@ -517,39 +519,41 @@ local function BuildTextAppearanceTab(container, group, style)
     -- Font
     -- ================================================================
     local fontHeading, fontCollapsed = BuildCollapsibleSection(container, "Font", "textappearance_font", nil, nil, ROW_SECTION)
-    local fontScope, fontRead, fontWrite = ResolveLensSection(lens, group, "textFont")
-    AttachHeadingScopeChrome(fontHeading, lens, group, "textFont")
+    local fontSec = BeginLensSection(lens, group, "textFont")
+    fontSec:HeadingChrome(fontHeading)
 
     if not fontCollapsed then
     -- The shared builder splits its own rows: LEFT what the text is drawn
     -- with, RIGHT how the line is laid out - so BOTH columns are bracketed.
     local fontLeft, fontRight = BeginRowGrid(container)
-    local fontLeftInertMark = (fontWrite == nil) and MarkInertRange(fontLeft) or nil
-    local fontRightInertMark = (fontWrite == nil) and MarkInertRange(fontRight) or nil
+
+    -- The columns only exist here, so the section's primary bracket is taken
+    -- now rather than at Begin, and the right column takes a second one.
+    fontSec:Mark(fontLeft)
+    local fontRightBracket = fontSec:Bracket(fontRight)
 
     -- The shared builder reads and writes ONE table, so it is handed the
     -- section's WRITE table with the panel style behind it in opts - the
     -- styleTable + fallbackStyle pair a customized section passes - or, inert,
     -- the read-only snapshot whose stray writes go nowhere by design. The lens
-    -- draws one shape for both scopes.
-    BuildTextFontControls(fontLeft, fontWrite or fontRead, refreshStyle, {
+    -- draws one shape for both scopes. The builder takes no `disabled` of its
+    -- own: the brackets are the whole gate.
+    BuildTextFontControls(fontLeft, fontSec.tbl, refreshStyle, {
         row = true,
         rightColumn = fontRight,
-        fallbackStyle = (fontScope == "customized") and style or nil,
+        fallbackStyle = fontSec.fallbackStyle,
     })
 
-    if fontLeftInertMark then
-        ApplyInertRange(fontLeft, fontLeftInertMark)
-        ApplyInertRange(fontRight, fontRightInertMark)
-    end
+    fontSec:Finish()
+    fontSec:FinishBracket(fontRightBracket)
     end -- not fontCollapsed
 
     -- ================================================================
     -- Colors
     -- ================================================================
     local colorsHeading, colorsCollapsed = BuildCollapsibleSection(container, "Colors", "textappearance_colors", nil, nil, ROW_SECTION)
-    local colorsScope, colorsRead, colorsWrite = ResolveLensSection(lens, group, "textColors")
-    AttachHeadingScopeChrome(colorsHeading, lens, group, "textColors")
+    local colorsSec = BeginLensSection(lens, group, "textColors")
+    colorsSec:HeadingChrome(colorsHeading)
 
     if not colorsCollapsed then
     -- The whole palette the text renderer can reach. The shared builder splits
@@ -560,16 +564,19 @@ local function BuildTextAppearanceTab(container, group, style)
     -- inert section: the inert walk reaches AceGUI children and the gear, not
     -- the badges on a row's frame.
     local colorsLeft, colorsRight = BeginRowGrid(container)
-    local colorsLeftInertMark = (colorsWrite == nil) and MarkInertRange(colorsLeft) or nil
-    local colorsRightInertMark = (colorsWrite == nil) and MarkInertRange(colorsRight) or nil
+
+    -- The columns only exist here, so the section's primary bracket is taken
+    -- now rather than at Begin, and the right column takes a second one.
+    colorsSec:Mark(colorsLeft)
+    local colorsRightBracket = colorsSec:Bracket(colorsRight)
 
     -- Same styleTable + fallbackStyle pair as the Font section above. Ready
     -- Text is not drawn here on the panel: on this tab it belongs to the
     -- Format tab (the row below is the one exception).
-    BuildTextColorsControls(colorsLeft, colorsWrite or colorsRead, refreshStyle, {
+    BuildTextColorsControls(colorsLeft, colorsSec.tbl, refreshStyle, {
         row = true,
         rightColumn = colorsRight,
-        fallbackStyle = (colorsScope == "customized") and style or nil,
+        fallbackStyle = colorsSec.fallbackStyle,
     })
 
     -- Ready Text is a key of THIS section (ST.OVERRIDE_SECTIONS lists
@@ -578,17 +585,17 @@ local function BuildTextAppearanceTab(container, group, style)
     -- the section, the promoted copy would be frozen with no editor anywhere
     -- - so the row is drawn here, in the section that owns the key, exactly
     -- while that is true. Everywhere else the Format tab remains its one home.
-    if colorsScope == "customized" then
+    if colorsSec.scope == "customized" then
         -- write-or-read fallback like every sibling: "customized" promises a
         -- section flag, not a store, so the write table is never indexed on
         -- faith (a half-migrated or hand-edited profile can carry the flag
-        -- with no styleOverrides table behind it).
+        -- with no styleOverrides table behind it). sec.tbl IS that fallback.
         local readyTextRow = AddEditBoxRow(colorsRight, {
             label = "Ready Text",
-            value = (colorsWrite or colorsRead).textReadyText or "Ready",
+            value = colorsSec.tbl.textReadyText or "Ready",
             onEnterPressed = function(val)
-                if not colorsWrite then return end
-                colorsWrite.textReadyText = val
+                if not colorsSec.write then return end
+                colorsSec.write.textReadyText = val
                 refreshStyle()
             end,
         })
@@ -603,10 +610,8 @@ local function BuildTextAppearanceTab(container, group, style)
         }, tabInfoButtons))
     end
 
-    if colorsLeftInertMark then
-        ApplyInertRange(colorsLeft, colorsLeftInertMark)
-        ApplyInertRange(colorsRight, colorsRightInertMark)
-    end
+    colorsSec:Finish()
+    colorsSec:FinishBracket(colorsRightBracket)
     end -- not colorsCollapsed
 
     -- ================================================================
@@ -621,14 +626,18 @@ local function BuildTextAppearanceTab(container, group, style)
     local panelHeading, panelCollapsed = BuildCollapsibleSection(container, "Panel", "textappearance_settings", nil, nil, ROW_SECTION)
     -- Panel-only (sectionId nil). Safe with no entry selected: panel and multi
     -- scope attach no chrome at all.
-    AttachHeadingScopeChrome(panelHeading, lens, group, nil)
+    local panelSec = BeginLensSection(lens, group, nil)
+    panelSec:HeadingChrome(panelHeading)
 
     if not panelCollapsed then
     -- LEFT column: how one entry is sized and how the entries stack.
     -- RIGHT column: the optional group header with the two rows it owns.
     local panelLeft, panelRight = BeginRowGrid(container)
-    local panelLeftInertMark = panelOnlyInert and MarkInertRange(panelLeft) or nil
-    local panelRightInertMark = panelOnlyInert and MarkInertRange(panelRight) or nil
+
+    -- The columns only exist here, so the section's primary bracket is taken
+    -- now rather than at Begin, and the right column takes a second one.
+    panelSec:Mark(panelLeft)
+    local panelRightBracket = panelSec:Bracket(panelRight)
 
     -- Declared ahead of the slider that changes it: dragging Padding resizes
     -- the entry, so the reported size has to move with the drag rather than
@@ -660,7 +669,7 @@ local function BuildTextAppearanceTab(container, group, style)
         label = "Padding",
         min = 0, max = 20, step = 1,
         value = style.textPadding or 4,
-        disabled = panelOnlyInert,
+        disabled = panelSec.disabled,
         onChange = function(val)
             local committed = style.textPadding
             style.textPadding = val
@@ -696,7 +705,7 @@ local function BuildTextAppearanceTab(container, group, style)
             label = "Entry Spacing",
             min = -10, max = 100, step = 0.1,
             value = style.buttonSpacing or ST.BUTTON_SPACING,
-            disabled = panelOnlyInert,
+            disabled = panelSec.disabled,
             onChange = function(val)
                 ST._PreviewScalarSetting(style, "buttonSpacing", val, ST._RefreshSelectedButtonsPreview)
             end,
@@ -710,7 +719,7 @@ local function BuildTextAppearanceTab(container, group, style)
     AddCheckboxRow(panelRight, {
         label = "Show Group Header",
         value = style.showTextGroupHeader == true,
-        disabled = panelOnlyInert,
+        disabled = panelSec.disabled,
         onChange = function(val)
             style.showTextGroupHeader = val or false
             CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
@@ -724,7 +733,7 @@ local function BuildTextAppearanceTab(container, group, style)
             indent = true,
             min = 6, max = 72, step = 1,
             value = style.textHeaderFontSize or 12,
-            disabled = panelOnlyInert,
+            disabled = panelSec.disabled,
             onChange = function(val)
                 ST._PreviewScalarSetting(style, "textHeaderFontSize", val, ST._RefreshSelectedButtonsPreview)
             end,
@@ -739,40 +748,39 @@ local function BuildTextAppearanceTab(container, group, style)
             indent = true,
             tbl = style, key = "textHeaderFontColor",
             default = {1, 1, 1, 1}, hasAlpha = true,
-            disabled = panelOnlyInert,
+            disabled = panelSec.disabled,
             onConfirm = refreshFrame, onChange = refreshFrame,
         })
     end
 
-    if panelLeftInertMark then
-        ApplyInertRange(panelLeft, panelLeftInertMark)
-        ApplyInertRange(panelRight, panelRightInertMark)
-    end
+    panelSec:Finish()
+    panelSec:FinishBracket(panelRightBracket)
     end -- not panelCollapsed
 
     -- ================================================================
     -- Background & Border
     -- ================================================================
     local bgHeading, bgCollapsed = BuildCollapsibleSection(container, "Background & Border", "textappearance_bg", nil, nil, ROW_SECTION)
-    local bgScope, bgRead, bgWrite = ResolveLensSection(lens, group, "textBackground")
-    AttachHeadingScopeChrome(bgHeading, lens, group, "textBackground")
+    local bgSec = BeginLensSection(lens, group, "textBackground")
+    bgSec:HeadingChrome(bgHeading)
 
     if not bgCollapsed then
     -- The backdrop and the border that frames it read together, so they stay
     -- in one column. The right column is deliberately empty, so there is one
     -- column to bracket.
     local bgLeft = BeginRowGrid(container)
-    local bgInertMark = (bgWrite == nil) and MarkInertRange(bgLeft) or nil
+
+    -- The column only exists here, so the section's bracket is taken now
+    -- rather than at Begin.
+    bgSec:Mark(bgLeft)
 
     -- Same styleTable + fallbackStyle pair as the two sections above.
-    BuildTextBackgroundControls(bgLeft, bgWrite or bgRead, refreshStyle, {
+    BuildTextBackgroundControls(bgLeft, bgSec.tbl, refreshStyle, {
         row = true,
-        fallbackStyle = (bgScope == "customized") and style or nil,
+        fallbackStyle = bgSec.fallbackStyle,
     })
 
-    if bgInertMark then
-        ApplyInertRange(bgLeft, bgInertMark)
-    end
+    bgSec:Finish()
     end -- not bgCollapsed
 
     -- ================================================================
@@ -789,11 +797,9 @@ local function BuildTextAppearanceTab(container, group, style)
     -- dims it instead (both other modes' tabs do exactly this). The "?" badge
     -- stays readable - the inert walk only reaches AceGUI children and the gear.
     local compactLeft = BeginRowGrid(container)
-    local compactInertMark = panelOnlyInert and MarkInertRange(compactLeft) or nil
+    local compactSec = BeginLensSection(lens, group, nil, { column = compactLeft })
     BuildCompactModeControls(compactLeft, group, tabInfoButtons)
-    if compactInertMark then
-        ApplyInertRange(compactLeft, compactInertMark)
-    end
+    compactSec:Finish()
 
     -- Inert-section sweep. A section the lens resolved read-only builds no
     -- gear, so nothing rebound or closed an advanced panel that was already

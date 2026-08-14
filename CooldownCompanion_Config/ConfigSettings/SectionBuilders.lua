@@ -479,6 +479,127 @@ local function BuildIconZoomControls(container, styleTable, refreshCallback, opt
     })
 end
 
+-- Row grammar only (RowWidgets.lua). The icons and bars styling tabs draw the
+-- SAME Icon Tint block over the same keys - the tint pipeline is shared
+-- (ButtonFrame/Tracking.lua serves both display modes) - so the rows live here
+-- once and each tab keeps its own heading, info badge, gates and brackets.
+--
+-- Unlike the (container, styleTable, refreshCallback) builders above, this one
+-- takes BOTH grid columns and the tab's already-begun iconTint lens section:
+-- the block's natural split is always-on colors LEFT, conditional state tints
+-- RIGHT, and every row binds sec.tbl / takes sec.disabled / guards its commit
+-- on sec.write. Brackets stay with the caller, which owns both columns.
+--
+-- opts.mode          "icons" | "bars". Bars omits the Background Color ROW (the
+--                    bar's icon square never renders a backdrop - Bar
+--                    Background Color owns that) but the reset still writes the
+--                    key: it belongs to this section, and a value left pinned
+--                    would surface as a stale icon backdrop if the panel ever
+--                    converts to icons.
+-- opts.hasAuraEntry  the caller's ST._GroupHasAuraTrackingEntry(group) result.
+--                    The aura tint applies to the slot-kit aura layer (consumed
+--                    at bind time by AuraDisplay.StyleSlotKit), so it is only
+--                    offered where an aura display exists.
+-- opts.refresh       the tab's style-only refresh, run on every value change.
+local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
+    opts = opts or {}
+    local refresh = opts.refresh
+    -- A color row binds its picker to one table for both reading and writing,
+    -- so it gets the write table where the section has one and the lens'
+    -- detached snapshot where it does not.
+    local tintTbl = sec.tbl
+
+    AddColorRow(leftColumn, {
+        label = "Base Icon Color",
+        tbl = tintTbl, key = "iconTintColor",
+        default = {1, 1, 1, 1}, hasAlpha = true,
+        disabled = sec.disabled,
+        onConfirm = refresh, onChange = refresh,
+    })
+
+    if opts.mode == "icons" then
+        AddColorRow(leftColumn, {
+            label = "Background Color",
+            tbl = tintTbl, key = "backgroundColor",
+            default = {0, 0, 0, 0.5}, hasAlpha = true,
+            disabled = sec.disabled,
+            onConfirm = refresh, onChange = refresh,
+        })
+    end
+
+    AddCheckboxRow(leftColumn, {
+        label = "Use Separate Cooldown Tint",
+        value = sec.read.iconCooldownTintEnabled or false,
+        disabled = sec.disabled,
+        onChange = function(val)
+            if not sec.write then return end
+            sec.write.iconCooldownTintEnabled = val
+            refresh()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+
+    if sec.read.iconCooldownTintEnabled then
+        AddColorRow(leftColumn, {
+            label = "Cooldown Icon Color",
+            indent = true,
+            tbl = tintTbl, key = "iconCooldownTintColor",
+            default = {1, 0, 0.102, 1}, hasAlpha = true,
+            disabled = sec.disabled,
+            onConfirm = refresh, onChange = refresh,
+        })
+    end
+
+    if opts.hasAuraEntry then
+        AddCheckboxRow(rightColumn, {
+            label = "Use Separate Aura Tint",
+            value = sec.read.iconAuraTintEnabled or false,
+            disabled = sec.disabled,
+            onChange = function(val)
+                if not sec.write then return end
+                sec.write.iconAuraTintEnabled = val
+                refresh()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        if sec.read.iconAuraTintEnabled then
+            AddColorRow(rightColumn, {
+                label = "Aura Active Icon Color",
+                indent = true,
+                tbl = tintTbl, key = "iconAuraTintColor",
+                default = {0, 0.925, 1, 1}, hasAlpha = true,
+                disabled = sec.disabled,
+                onConfirm = refresh, onChange = refresh,
+            })
+        end
+    end
+
+    -- The right column runs 2-3 rows short of the left one, so the section
+    -- action fills its empty tail instead of hanging off the bottom of the
+    -- grid. No wrapper needed: SetAutoWidth leaves widget.width nil, so the
+    -- column's List layout neither stretches nor right-anchors it and it sits
+    -- flush left under the last row.
+    --
+    -- Not built at all while the section is inert: a section with nowhere to
+    -- write has no defaults to restore, and a greyed-out button under a
+    -- read-only section is one more thing to explain.
+    if sec.write then
+        local resetTintBtn = AceGUI:Create("Button")
+        resetTintBtn:SetText("Reset Colors to Default")
+        resetTintBtn:SetAutoWidth(true)
+        resetTintBtn:SetCallback("OnClick", function()
+            sec.write.iconTintColor = {1, 1, 1, 1}
+            sec.write.iconCooldownTintColor = {1, 0, 0.102, 1}
+            sec.write.iconAuraTintColor = {0, 0.925, 1, 1}
+            sec.write.backgroundColor = {0, 0, 0, 0.5}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        rightColumn:AddChild(resetTintBtn)
+    end
+end
+
 -- Row grammar only: one checkbox row.
 local function BuildDesaturationControls(container, styleTable, refreshCallback, opts)
     return AddCheckboxRow(container, {
@@ -1027,6 +1148,28 @@ local function BuildUnusableVisualModeControls(container, styleTable, refreshCal
             RefreshStructuralControls(container)
         end,
     })
+
+    -- The dim color is this section's own key (ST.OVERRIDE_SECTIONS lists
+    -- iconUnusableTintColor under unusableDimming) and it colors nothing until
+    -- the dim mode is on, so it rides here as the Dim Icon row's child rather
+    -- than in the styling tabs' Icon Tint block, where it read as a tint but
+    -- resolved a foreign section. The toggle above reruns this panel through
+    -- RefreshStructuralControls, which is what keeps the conditional build live.
+    if ST.UnusableVisualUsesDimTint(styleTable) then
+        -- Style-only refresh, matching the row's previous home: refreshCallback
+        -- here also rebuilds the whole config panel, which would tear down this
+        -- advanced panel out from under the open picker.
+        local tintRefresh = function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end
+        AddColorRow(container, {
+            label = "Unusable Dim Color",
+            indent = true,
+            tbl = styleTable, key = "iconUnusableTintColor",
+            default = {0.4, 0.4, 0.4, 1}, hasAlpha = true,
+            onConfirm = tintRefresh, onChange = tintRefresh,
+        })
+    end
 
     AddCheckboxRow(container, {
         label = "Desaturate Icon",
@@ -1840,6 +1983,7 @@ ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
 ST._BuildAuraDurationSwipeAdvancedControls = BuildAuraDurationSwipeAdvancedControls
 ST._BuildKeybindTextControls = BuildKeybindTextControls
 ST._BuildBorderControls = BuildBorderControls
+ST._BuildIconTintControls = BuildIconTintControls
 ST._BuildDesaturationControls = BuildDesaturationControls
 ST._BuildIconZoomControls = BuildIconZoomControls
 ST._BuildShowTooltipsControls = BuildShowTooltipsControls

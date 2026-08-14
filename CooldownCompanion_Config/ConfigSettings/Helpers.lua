@@ -993,7 +993,7 @@ local SCOPE_GLYPH_ICON_SIZE = 12
 local SCOPE_ENTRY_NAME_MAX_CHARS = 18
 
 local HEADING_SCOPE_FIELDS = { "_cdcScopeNote", "_cdcScopeAction", "_cdcScopeRevert" }
-local ROW_SCOPE_FIELDS = { "_cdcScopeRowAction", "_cdcScopeRowRevert" }
+local ROW_SCOPE_FIELDS = { "_cdcScopeRowAction", "_cdcScopeRowRevert", "_cdcScopeRowPanel" }
 
 -- Cutting a multi-byte character in half renders as a broken glyph, so walk
 -- whole UTF-8 sequences instead of taking a byte slice.
@@ -1273,6 +1273,161 @@ local function AttachRowScopeChrome(rowWidget, lens, group, sectionId)
     end
 
     return scope
+end
+
+-- Chrome for a row that stays PANEL-OWNED inside an entry-scope section: its
+-- key has no override identity, so it always reads and writes the panel style,
+-- and under an entry lens the grey label says so instead of the section's
+-- Customize/Revert chrome. No affordance - there is nothing to promote.
+local function AttachPanelSettingRowChrome(rowWidget)
+    local frame = rowWidget and rowWidget.frame
+    if not (frame and rowWidget.badgeAnchor) then
+        return
+    end
+
+    HideScopeChrome(frame, ROW_SCOPE_FIELDS)
+
+    local note = EnsureScopeText(frame, "_cdcScopeRowPanel", false)
+    SetScopeText(note, "Panel setting", SCOPE_CHROME_GREY)
+    ST._AnchorRowBadge(rowWidget, note)
+
+    local prevOnRelease = rowWidget.events and rowWidget.events["OnRelease"]
+    rowWidget:SetCallback("OnRelease", function(widget, event, ...)
+        if prevOnRelease then
+            prevOnRelease(widget, event, ...)
+        end
+        HideScopeChrome(frame, ROW_SCOPE_FIELDS)
+    end)
+end
+
+------------------------------------------------------------------------
+-- LENS SECTION HOST
+------------------------------------------------------------------------
+-- One context object owns the ritual every overridable section otherwise
+-- repeats by hand: resolve the scope, pick the write-or-read table, derive the
+-- disabled flag and shared-builder fallback, bracket the section's rows for
+-- the inert pass, and attach scope chrome. Sections read fields and call
+-- methods off the context instead of re-deriving the rules, so a convention
+-- change lands here once.
+--
+--   local sec = ST._BeginLensSection(lens, group, "cooldownText", { column = textLeft })
+--   ...rows bind tbl = sec.tbl, pass disabled = sec.disabled, guard commits
+--      with `if not sec.write then return end`...
+--   sec:Chrome(row)   -- row-level scope chrome, AFTER the row's disabled state is final
+--   sec:Finish()      -- applies the inert bracket when the section is read-only
+--
+-- Field contract, all derived once at Begin:
+--   scope         "panel" | "multi" | "panelOnly" | "denied" | "customized" | "inherited"
+--   read / write  ResolveLensSection's tables; write == nil is the inert marker
+--   tbl           write or read: the table value-displaying controls bind to.
+--                 NOT for panel-only (nil sectionId) sections - their read is
+--                 the detached snapshot, so writes would silently vanish;
+--                 panel-only rows keep binding group.style and take only
+--                 disabled/brackets from the host
+--   disabled      write == nil: what row builders take as `disabled`
+--   inert         the same test, named for bracket decisions
+--   fallbackStyle group.style under "customized", else nil: what shared
+--                 builders that layer overrides over panel values expect
+--   deniedReason  ResolveLensSection's fourth return, for denial copy
+--
+-- A nil sectionId resolves "panelOnly" with no write table exactly under an
+-- entry lens - the idiom for panel-only blocks that only need the bracket.
+--
+-- disabled/inert lean on group.style being non-nil in panel and multi modes
+-- (a real panel always has one); a nil style would read as inert there. And
+-- fallbackStyle IS group.style: sites that hand shared builders a local
+-- `style` stay equivalent only while that local is the group's own style.
+--
+-- Brackets: passing opts.column marks it at Begin and Finish applies the inert
+-- sweep to everything added since. A row that must stay live ahead of the
+-- sweep is built first and the mark retaken with sec:Mark() (the foreign
+-- dim-color row pattern), and a section spanning two columns takes a second
+-- bracket with sec:Bracket()/sec:FinishBracket(). In practice opts.column fits
+-- only sections whose column exists before Begin; heading-owning sections
+-- create their columns after the chrome attaches, so they take their first
+-- mark with sec:Mark() - that is the common path, not the exception.
+local LensSection = {}
+LensSection.__index = LensSection
+
+-- The explicit-false rule for boolean override keys: under "customized" a
+-- false must be STORED (deleting the key would fall back to the panel value
+-- through the runtime __index), everywhere else false clears the key.
+-- Spelled as statements: `and false or nil` collapses to nil, which is the
+-- trap that kept explicit false from ever landing.
+function LensSection:BoolValue(val)
+    if val then
+        return true
+    end
+    if self.scope == "customized" then
+        return false
+    end
+    return nil
+end
+
+function LensSection:Chrome(row)
+    return AttachRowScopeChrome(row, self.lens, self.group, self.sectionId)
+end
+
+function LensSection:HeadingChrome(heading)
+    return AttachHeadingScopeChrome(heading, self.lens, self.group, self.sectionId)
+end
+
+-- Chrome for a panel-owned row inside this section (see
+-- AttachPanelSettingRowChrome): label only, and only under an entry lens.
+function LensSection:PanelRowChrome(row)
+    if self.lens and self.lens.mode == "entry" then
+        AttachPanelSettingRowChrome(row)
+    end
+end
+
+-- Take (or retake) the primary bracket mark. Heading-owning sections take
+-- their FIRST mark here - their columns do not exist until after the heading
+-- chrome attaches - and the dim-color pattern retakes it so rows already in
+-- the column stay live.
+function LensSection:Mark(column)
+    self.column = column or self.column
+    self.mark = MarkInertRange(self.column)
+end
+
+-- A second, independent bracket for sections spanning more than one column.
+function LensSection:Bracket(column)
+    return { column = column, mark = MarkInertRange(column) }
+end
+
+function LensSection:FinishBracket(bracket)
+    if self.inert and bracket and bracket.column then
+        ApplyInertRange(bracket.column, bracket.mark)
+    end
+end
+
+function LensSection:Finish()
+    if self.inert and self.column then
+        ApplyInertRange(self.column, self.mark)
+    end
+end
+
+local function BeginLensSection(lens, group, sectionId, opts)
+    local scope, read, write, deniedReason = ResolveLensSection(lens, group, sectionId)
+    local sec = setmetatable({
+        lens = lens,
+        group = group,
+        sectionId = sectionId,
+        scope = scope,
+        read = read,
+        write = write,
+        deniedReason = deniedReason,
+        tbl = write or read,
+        disabled = write == nil,
+        inert = write == nil,
+        fallbackStyle = (scope == "customized") and group and group.style or nil,
+    }, LensSection)
+
+    local column = opts and opts.column
+    if column then
+        sec.column = column
+        sec.mark = MarkInertRange(column)
+    end
+    return sec
 end
 
 ------------------------------------------------------------------------
@@ -2335,10 +2490,9 @@ ST._AddAdvancedToggle = AddAdvancedToggle
 ST._CanButtonUseConfigOverrideSection = CanButtonUseConfigOverrideSection
 ST._ResolveStyleLens = ResolveStyleLens
 ST._ResolveLensSection = ResolveLensSection
-ST._MarkInertRange = MarkInertRange
-ST._ApplyInertRange = ApplyInertRange
 ST._AttachHeadingScopeChrome = AttachHeadingScopeChrome
 ST._AttachRowScopeChrome = AttachRowScopeChrome
+ST._BeginLensSection = BeginLensSection
 ST._GroupHasAuraTrackingEntry = GroupHasAuraTrackingEntry
 ST._CreateInfoButton = CreateInfoButton
 ST._BuildInactiveCustomizationsSection = BuildInactiveCustomizationsSection
