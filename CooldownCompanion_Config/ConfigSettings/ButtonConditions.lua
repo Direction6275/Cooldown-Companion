@@ -2903,7 +2903,10 @@ end
 -- VISIBILITY TAB (internal tab key stays "loadconditions")
 ------------------------------------------------------------------------
 
-local function BuildLoadConditionsTab(container)
+-- Raw (non-AceGUI) frames the previous tab left parented to widgets AceGUI
+-- is about to recycle. Cleared on the way in to whichever half of the
+-- Visibility tab builds, so a leftover badge cannot ride a pooled frame.
+local function ReleaseVisibilityTabScratch()
     for _, btn in ipairs(tabInfoButtons) do
         btn:ClearAllPoints()
         btn:Hide()
@@ -2916,6 +2919,10 @@ local function BuildLoadConditionsTab(container)
         elem:SetParent(nil)
     end
     wipe(appearanceTabElements)
+end
+
+local function BuildLoadConditionsTab(container)
+    ReleaseVisibilityTabScratch()
 
     if not CS.selectedGroup then return end
     local groupId = CS.selectedGroup
@@ -3115,12 +3122,51 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
     end
 end
 
+-- There is one Visibility tab, and it is a lens: with a single entry
+-- selected it edits that entry's rules, and with nothing (or a multi-select)
+-- selected it edits the panel's. The rotation assistant's virtual entry is
+-- served here too - it has no entry tabs of its own.
+--
+-- The info buttons go into CS.tabInfoButtons, not the entry-tab host's
+-- CS.buttonSettingsInfoButtons: this tab is built by the panel host, and
+-- that is the list its tab callback cleans.
+local function BuildVisibilityTab(container)
+    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+
+    if group then
+        local multiCount = 0
+        for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
+
+        if multiCount < 2 then
+            if CS.selectedRotationAssistantEntry == true
+                and CooldownCompanion:IsRotationAssistantGroup(group) then
+                local buttonData = CooldownCompanion:GetRotationAssistantConfigButtonData(group)
+                if buttonData then
+                    ReleaseVisibilityTabScratch()
+                    BuildEntryLoadConditionsTab(container, buttonData, tabInfoButtons)
+                    return
+                end
+            elseif CS.selectedButton then
+                local buttonData = group.buttons and group.buttons[CS.selectedButton]
+                if buttonData then
+                    ReleaseVisibilityTabScratch()
+                    BuildEntryLoadConditionsTab(container, buttonData, tabInfoButtons)
+                    return
+                end
+            end
+        end
+    end
+
+    BuildLoadConditionsTab(container)
+end
+
 ------------------------------------------------------------------------
 -- EXPORTS
 ------------------------------------------------------------------------
 ST._BuildVisibilitySettings = BuildVisibilitySettings
 ST._BuildLoadConditionsTab = BuildLoadConditionsTab
 ST._BuildEntryLoadConditionsTab = BuildEntryLoadConditionsTab
+ST._BuildVisibilityTab = BuildVisibilityTab
 ST._AddScopedLoadConditionToggles = AddScopedLoadConditionToggles
 ST._BuildWhereToHideTooltip = BuildWhereToHideTooltip
 ST._AddCharacterEligibilityControls = AddCharacterEligibilityControls

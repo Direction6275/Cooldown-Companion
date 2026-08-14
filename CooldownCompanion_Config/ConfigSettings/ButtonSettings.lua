@@ -43,7 +43,6 @@ local CONDITION_PULLOUT_WIDTH = 300
 
 local RefreshButtonSettingsMultiSelect = ST._RefreshButtonSettingsMultiSelect
 local RefreshPanelMultiSelect = ST._RefreshPanelMultiSelect
-local BuildOverridesTab = ST._BuildOverridesTab
 
 local function GroupUsesTexturePanelEntries(group)
     return group and (group.displayMode or "icons") == "textures"
@@ -58,6 +57,11 @@ end
 -- on 12.1 (a client-drawn readout docked into the format was trialed and
 -- removed by owner decision), and Trigger panels retain their separate
 -- condition system.
+--
+-- This used to gate a second entry TAB; it now gates the Aura Tracking SECTION
+-- of the one entry Settings pane (owner ruling: Show Conditions' aura toggles
+-- configure behavior that depends on the aura setup, so they belong on one
+-- pane). Panel.lua reads it through the export at the foot of this block.
 local function EntryOffersAuraTab(group, buttonData)
     if not (buttonData and buttonData.type == "spell") then return false end
     if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
@@ -70,68 +74,69 @@ local function EntryOffersAuraTab(group, buttonData)
             and CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData))
 end
 
+ST._EntryOffersAuraTab = EntryOffersAuraTab
+
+-- nil means "this selection has no entry tabs at all". The rotation
+-- assistant entry is the only one: everything it can be configured with is
+-- visibility, and the panel-side Visibility tab is a lens onto the selected
+-- entry, so there is nothing left for an entry cluster to carry.
 local function BuildButtonSettingsTabs(group, buttonData)
     if CooldownCompanion:IsRotationAssistantGroup(group) then
-        return {
-            { value = "loadconditions", text = "Visibility" },
-        }
+        return nil
     end
 
-    -- Sound Alerts and Item Fallbacks are not tabs: they live as bottom
-    -- sections of this entry's Settings ("Condition" on trigger panels) tab.
+    -- Sound Alerts, Item Fallbacks and Aura Tracking are not tabs: they live
+    -- as sections of this entry's Settings ("Condition" on trigger panels)
+    -- tab. Entry Visibility is not a tab either - the one Visibility tab on
+    -- the left reads whichever entry is selected. So the entry cluster is
+    -- exactly one tab, whatever the entry and panel type.
     if GroupUsesTriggerPanelEntries(group) then
         return {
             { value = "settings", text = "Condition" },
-            { value = "loadconditions", text = "Visibility" },
         }
     end
 
-    local tabs = {
+    return {
         { value = "settings", text = "Settings" },
     }
-    if EntryOffersAuraTab(group, buttonData) then
-        tabs[#tabs + 1] = { value = "aura", text = "Aura" }
-    end
-
-    -- Texture panels only ever manage a single texture entry, so the
-    -- per-button Overrides tab does not apply there and just creates noise.
-    if not GroupUsesTexturePanelEntries(group) then
-        tabs[#tabs + 1] = { value = "overrides", text = "Overrides" }
-    end
-    tabs[#tabs + 1] = { value = "loadconditions", text = "Visibility" }
-
-    return tabs
 end
 
--- Entry tabs are appended to the panel tabs in one shared row. The gap in
--- front of the cluster, the entry's own icon on its first tab, and the
--- selection accent on every entry label are what separate the two scopes -
--- and what tells the two "Visibility" tabs apart without renaming
--- either of them.
+-- Entry tabs are appended to the panel tabs in one shared row, running
+-- straight on from them across a fixed seam. What separates the two scopes
+-- is the entry cluster itself: the selection accent on every entry label,
+-- and the selected entry's icon riding INSIDE the labels. The icon is label
+-- markup rather than a texture in the seam because a lone icon between two
+-- tab shapes belongs to neither cluster.
 local function EntryTabIconMarkup(icon)
     if not icon or icon == "" then return "" end
     return string.format("|T%s:13:13:0:0|t ", tostring(icon))
 end
 
+-- The entry's icon. The rotation assistant entry never gets here - it has no
+-- entry tabs at all.
+local function GetSelectedEntryIcon(buttonData)
+    if not buttonData then return nil end
+    return ST._GetButtonIcon(buttonData)
+end
+
+-- EVERY tab in the cluster is stamped with the icon, not just the leading
+-- one (owner ruling): at this size a uniform stamp reads as consistency
+-- rather than repetition. The cluster is one tab today - the ruling was made
+-- while Aura was a second one - so the loop is what keeps that true if the
+-- cluster ever grows again.
+--
 -- `text` stays untinted: it is what BuildTabs measures the tab against, and
 -- what the tab shows while it is the selected one, so selection still reads
 -- as a highlight. `accentText` is the tinted variant the row swaps in on
--- every other entry tab.
-local function DecorateEntryTabs(tabs, iconMarkup)
-    for index, tab in ipairs(tabs) do
-        local prefix = (index == 1) and iconMarkup or ""
-        tab.accentText = prefix .. ST._GetClassColoredText(tab.text)
-        tab.text = prefix .. tab.text
+-- every other entry tab; the markup is spliced OUTSIDE the colour escape on
+-- both, so the artwork is never tinted with the label.
+local function DecorateEntryTabs(tabs, icon)
+    local markup = EntryTabIconMarkup(icon)
+    for _, tab in ipairs(tabs) do
+        tab.accentText = markup .. ST._GetClassColoredText(tab.text)
+        tab.text = markup .. tab.text
     end
     return tabs
-end
-
-local function GetSelectedEntryIconMarkup(group, buttonData)
-    if CooldownCompanion:IsRotationAssistantGroup(group) then
-        return EntryTabIconMarkup(CooldownCompanion:GetRotationAssistantFallbackIcon())
-    end
-    if not buttonData then return "" end
-    return EntryTabIconMarkup(ST._GetButtonIcon(buttonData))
 end
 
 -- Multi-select is one appended tab: a stacked marker built from the first
@@ -1097,17 +1102,6 @@ local function RefreshButtonSettingsColumn()
     local bsCol = cf.col3
     if not bsCol or not bsCol.bsTabGroup then return end
 
-    -- The entry Overrides tab can host a live format editor with a pending
-    -- debounced write and an animation driver on the container frame. Settle
-    -- both here, at the top, before any branch below decides what owns the
-    -- surface: the no-selection branch takes the tab content away without
-    -- re-selecting a tab, and the branch that does re-select one releases
-    -- again from the callback (Release is idempotent). Same shape as the
-    -- panel-side host refresh in GroupSettingsHost.
-    if ST._ReleaseTextFormatOverrideEditor then
-        ST._ReleaseTextFormatOverrideEditor()
-    end
-
     -- Check for multiselect
     local multiCount = 0
     local multiIndices = {}
@@ -1143,30 +1137,43 @@ local function RefreshButtonSettingsColumn()
     elseif hasSelection then
         local buttonData = group and group.buttons and group.buttons[CS.selectedButton]
 
-        if rotationAssistantSelection then
-            CS.buttonSettingsTab = "loadconditions"
-        elseif CS.buttonSettingsTab == "soundalerts" or CS.buttonSettingsTab == "fallbacks" then
-            -- Both are sections of Settings now; migrate saved tab keys.
-            CS.buttonSettingsTab = "settings"
-        elseif GroupUsesTriggerPanelEntries(group)
-            and CS.buttonSettingsTab ~= "settings"
-            and CS.buttonSettingsTab ~= "loadconditions" then
-            CS.buttonSettingsTab = "settings"
-        elseif GroupUsesTexturePanelEntries(group) and CS.buttonSettingsTab == "overrides" then
-            CS.buttonSettingsTab = "settings"
-        elseif CS.buttonSettingsTab == "aura" and not EntryOffersAuraTab(group, buttonData) then
+        -- The remembered tab can only hold values from the current tab list
+        -- ("settings" today - retired tab names have no writer left and CS
+        -- state is session-only). This normalizes a remembered tab a trigger
+        -- panel does not offer, which matters again if the cluster regrows.
+        if GroupUsesTriggerPanelEntries(group) and CS.buttonSettingsTab ~= "settings" then
             CS.buttonSettingsTab = "settings"
         end
 
-        entryTabs = DecorateEntryTabs(
-            BuildButtonSettingsTabs(group, buttonData),
-            GetSelectedEntryIconMarkup(group, buttonData)
-        )
-        activeTab = CS.buttonSettingsTab or (rotationAssistantSelection and "loadconditions" or "settings")
+        local tabs = BuildButtonSettingsTabs(group, buttonData)
+        if tabs then
+            entryTabs = DecorateEntryTabs(tabs, GetSelectedEntryIcon(buttonData))
+            activeTab = CS.buttonSettingsTab or "settings"
+        end
     end
+
+    -- The entry cluster flows straight on from the panel tabs rather than
+    -- taking the row's right edge. That is a property of this strip, not of
+    -- any one selection, so it is asserted once before the tabs are set and
+    -- covers every state below: a single entry, a multi-select, and none.
+    ST._UnifiedRowSetSeamFlow(bsCol.bsTabGroup)
 
     if not entryTabs then
         bsCol.bsTabGroup.frame:Hide()
+
+        -- Third state: something IS selected, it just has no entry tabs (the
+        -- rotation assistant entry). No strip and no placeholder - the panel
+        -- tabs own the surface, and the Visibility tab among them is what
+        -- configures this entry. The scope is written directly rather than
+        -- through _UnifiedRowSetScope's reader twin: inside a refresh
+        -- transition _UnifiedRowPrimaryOwnsSurface is order-dependent.
+        if hasSelection then
+            if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
+            CS.unifiedRowScope = "primary"
+            ST._UnifiedRowApply()
+            return
+        end
+
         if bsCol.bsPlaceholder then
             local placeholderText
             if GroupUsesTriggerPanelEntries(group) then
@@ -1334,6 +1341,5 @@ ST._RefreshButtonSettingsMultiSelect = RefreshButtonSettingsMultiSelect
 ST._RefreshPanelMultiSelect = RefreshPanelMultiSelect
 ST._BuildCustomNameSection = BuildCustomNameSection
 ST._BuildCustomKeybindSection = BuildCustomKeybindSection
-ST._BuildOverridesTab = BuildOverridesTab
 ST._BuildEntrySoundAlertsSection = BuildEntrySoundAlertsSection
 ST._BuildTriggerConditionSettings = BuildTriggerConditionSettings

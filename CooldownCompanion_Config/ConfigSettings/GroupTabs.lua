@@ -11,8 +11,6 @@ local tonumber = tonumber
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
 local AddAdvancedToggle = ST._AddAdvancedToggle
-local CreatePromoteButton = ST._CreatePromoteButton
-local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
@@ -123,7 +121,11 @@ local function WireMirrorFirstSlider(slider, applyValue, commitFn, previewFn, st
     end)
 end
 
-local function PrimeReadyGlowCappedChargeTransitions(groupId)
+-- Both primers take an optional entry: the transition state they re-arm is
+-- per-BUTTON runtime state, so an edit made through the entry lens re-arms
+-- only the entry it changed. nil primes the whole panel (a panel-scope edit
+-- changed every entry's config).
+local function PrimeReadyGlowCappedChargeTransitions(groupId, onlyButtonData)
     local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
     if not (frame and frame.buttons) then
         return
@@ -132,6 +134,7 @@ local function PrimeReadyGlowCappedChargeTransitions(groupId)
     for _, button in ipairs(frame.buttons) do
         local buttonData = button.buttonData
         if buttonData
+           and (onlyButtonData == nil or buttonData == onlyButtonData)
            and buttonData.type == "spell"
            and buttonData.hasCharges == true
            and not buttonData._hasDisplayCount then
@@ -142,7 +145,7 @@ local function PrimeReadyGlowCappedChargeTransitions(groupId)
     end
 end
 
-local function PrimeReadyGlowNormalTransitions(groupId)
+local function PrimeReadyGlowNormalTransitions(groupId, onlyButtonData)
     local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
     if not (frame and frame.buttons) then
         return
@@ -152,6 +155,7 @@ local function PrimeReadyGlowNormalTransitions(groupId)
     for _, button in ipairs(frame.buttons) do
         local buttonData = button.buttonData
         if buttonData
+           and (onlyButtonData == nil or buttonData == onlyButtonData)
            and not buttonData.isPassive
            and button._noCooldown ~= true
            and button._visibilityHidden ~= true
@@ -2333,6 +2337,12 @@ end
 -- assigns a fresh group.style outright - would leave a captured table
 -- orphaned and every control in the panel writing into nothing. The tab
 -- callers are unaffected either way: they rebuild and rebind every refresh.
+--
+-- A caller whose values do NOT live in the group style passes its own table
+-- (`styleTable`): with an entry selected, the style lens hands the styling tabs
+-- that entry's override store for the sections it owns, and there is no
+-- resolver for those. Only a caller that rebinds every refresh may do this -
+-- which the tab builders do, and the command center's tab-less opens do not.
 ------------------------------------------------------------------------
 
 local function RefreshSelectedGroupStyle()
@@ -2346,12 +2356,12 @@ local function ResolveSelectedGroupStyle()
     return group and group.style or nil
 end
 
-local function MakeCooldownTextAdvancedDescriptor()
+local function MakeCooldownTextAdvancedDescriptor(styleTable)
     return {
         settingKey = "cooldownText",
         title = "Cooldown Text Advanced",
         build = function(panel)
-            local style = ResolveSelectedGroupStyle()
+            local style = styleTable or ResolveSelectedGroupStyle()
             if not style then
                 return
             end
@@ -2379,12 +2389,12 @@ local function MakeCooldownTextAdvancedDescriptor()
     }
 end
 
-local function MakeCooldownSwipeAdvancedDescriptor()
+local function MakeCooldownSwipeAdvancedDescriptor(styleTable)
     return {
         settingKey = "cooldownSwipe",
         title = "Cooldown Swipe Advanced",
         build = function(panel)
-            local style = ResolveSelectedGroupStyle()
+            local style = styleTable or ResolveSelectedGroupStyle()
             if not style then
                 return
             end
@@ -2613,12 +2623,40 @@ end
 -- once, from BuildEffectsTab's icons path, so they were converted to the row
 -- grammar outright rather than growing an opts.row mode. `container` is the
 -- grid column the row belongs to.
-local function BuildProcGlowSection(container, group, style)
+--
+-- STYLE LENS (Helpers.lua): each takes the tab's lens, resolved ONCE in
+-- BuildEffectsTab and handed down, and resolves its OWN section against it -
+-- the same shape the bars twins use. With an entry selected the rows read that
+-- entry's effective values and write only where the entry owns the section; a
+-- nil write table is the inert marker, and the scope chrome attached last is
+-- the only way back out of it.
+--
+-- The lens helpers are taken as function-locals rather than hoisted to file
+-- scope: BuildAppearanceTab already sits on Lua 5.1's hard 60-upvalue ceiling
+-- (see the note by the row-grammar imports), so this file adds no new
+-- file-scope locals.
+local function BuildProcGlowSection(container, group, style, lens)
+    local ResolveLensSection = ST._ResolveLensSection
+    local MarkInertRange = ST._MarkInertRange
+    local ApplyInertRange = ST._ApplyInertRange
+    local AttachRowScopeChrome = ST._AttachRowScopeChrome
+
+    -- Passive entries are not special-cased here. The retired promote badge on
+    -- this row skipped itself for them, which no other surface did:
+    -- CanButtonUseConfigOverrideSection allows Proc Glow on a passive entry.
+    -- The lens asks that same question, so an entry that genuinely cannot use
+    -- the section resolves "denied" and renders inert with no Customize
+    -- affordance.
+    local _, procRead, procWrite = ResolveLensSection(lens, group, "procGlow")
+    local procInertMark = (procWrite == nil) and MarkInertRange(container) or nil
+
     local procEnableCb = AddCheckboxRow(container, {
         label = "Show Proc Glow",
-        value = style.procGlowStyle ~= "none",
+        value = procRead.procGlowStyle ~= "none",
+        disabled = procWrite == nil,
         onChange = function(val)
-            style.procGlowStyle = val and "glow" or "none"
+            if not procWrite then return end
+            procWrite.procGlowStyle = val and "glow" or "none"
             UpdateSelectedGroupStyle(true)
         end,
     })
@@ -2626,39 +2664,56 @@ local function BuildProcGlowSection(container, group, style)
     -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
     -- the shared glow builder runs in row mode with NO rightColumn - its row
     -- path puts the extras in `container` when none is given.
+    --
+    -- The panel captures the section's WRITE table, which is the group style or
+    -- the selected entry's override store depending on scope. Only built while
+    -- there is one: an inert section has no gear to open it from.
     local function BuildProcGlowAdvanced(panel)
         AddCheckboxRow(panel, {
             label = "Show Only In Combat",
-            value = style.procGlowCombatOnly or false,
+            value = procWrite.procGlowCombatOnly or false,
             onChange = function(val)
-                style.procGlowCombatOnly = val
+                procWrite.procGlowCombatOnly = val
                 UpdateSelectedGroupStyle()
             end,
         })
 
-        BuildProcGlowControls(panel, style, UpdateSelectedGroupStyle, { row = true })
+        BuildProcGlowControls(panel, procWrite, UpdateSelectedGroupStyle, { row = true })
 
     end
 
-    local _, procAdvBtn = AddAdvancedToggle(procEnableCb, "procGlow", tabInfoButtons, style.procGlowStyle ~= "none", {
-        title = "Proc Glow Advanced",
-        build = BuildProcGlowAdvanced,
-    })
-    local procBtnData = CS.selectedButton and group.buttons[CS.selectedButton]
-    local procPromoteBtn
-    if not (procBtnData and procBtnData.isPassive) then
-        procPromoteBtn = CreateCheckboxPromoteButton(procEnableCb, procAdvBtn, "procGlow", group, style)
+    if procWrite then
+        AddAdvancedToggle(procEnableCb, "procGlow", tabInfoButtons, procRead.procGlowStyle ~= "none", {
+            title = "Proc Glow Advanced",
+            build = BuildProcGlowAdvanced,
+        })
     end
-    if style.procGlowStyle == "none" then
+    AttachRowScopeChrome(procEnableCb, lens, group, "procGlow")
+
+    if procInertMark then
+        ApplyInertRange(container, procInertMark)
+    end
+
+    -- Preview reconciliation follows the same READ the row does, so a group
+    -- preview is cleared whenever what is on screen would not render. Clearing
+    -- is the safe direction; nothing here ever starts a preview.
+    if procRead.procGlowStyle == "none" then
         CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
-        return
     end
 end
 
 -- Aura glow: kit-rendered on the aura slot button, so it appears exactly
 -- while the tracked aura is active. Shown only when the group has an
 -- aura-tracking entry (Phase 3 gating pattern).
-local function BuildAuraGlowSection(container, group, style)
+local function BuildAuraGlowSection(container, group, style, lens)
+    local ResolveLensSection = ST._ResolveLensSection
+    local MarkInertRange = ST._MarkInertRange
+    local ApplyInertRange = ST._ApplyInertRange
+    local AttachRowScopeChrome = ST._AttachRowScopeChrome
+
+    -- The gate stays on the GROUP: with an entry selected that tracks no aura
+    -- the row is still drawn and the lens resolves it "not available" for that
+    -- entry, which states the reason rather than hiding it.
     if not GroupHasAuraTrackingEntry(group) then
         -- The section owning an active preview just disappeared (last aura
         -- entry removed); don't leave the preview glow orphaned.
@@ -2666,55 +2721,77 @@ local function BuildAuraGlowSection(container, group, style)
         return
     end
 
-    local auraGlowEnabled = (style.auraGlowStyle or "pulse") ~= "none"
+    local _, auraRead, auraWrite = ResolveLensSection(lens, group, "auraIndicator")
+    local auraInertMark = (auraWrite == nil) and MarkInertRange(container) or nil
+
+    local auraGlowEnabled = (auraRead.auraGlowStyle or "pulse") ~= "none"
     local auraEnableCb = AddCheckboxRow(container, {
         label = "Show Aura Glow",
         value = auraGlowEnabled,
+        disabled = auraWrite == nil,
         onChange = function(val)
-            style.auraGlowStyle = val and "pulse" or "none"
+            if not auraWrite then return end
+            auraWrite.auraGlowStyle = val and "pulse" or "none"
             if val then
                 -- Re-enabling forces the pulse style; reset its per-style keys
                 -- so a leftover proc-scale size can't render as a 30px border.
-                style.auraGlowSize = 2
-                style.auraGlowSpeed = 0.5
+                auraWrite.auraGlowSize = 2
+                auraWrite.auraGlowSpeed = 0.5
             end
             UpdateSelectedGroupStyle(true)
         end,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn. The
+    -- panel captures the section's WRITE table and is only built while there is
+    -- one - an inert section has no gear to open it from.
     local function BuildAuraGlowAdvanced(panel)
-        BuildAuraGlowControls(panel, style, UpdateSelectedGroupStyle, { row = true })
+        BuildAuraGlowControls(panel, auraWrite, UpdateSelectedGroupStyle, { row = true })
     end
 
-    local _, auraAdvBtn = AddAdvancedToggle(auraEnableCb, "auraGlow", tabInfoButtons, auraGlowEnabled, {
-        title = "Aura Glow Advanced",
-        build = BuildAuraGlowAdvanced,
-    })
-    CreateCheckboxPromoteButton(auraEnableCb, auraAdvBtn, "auraIndicator", group, style)
-    -- Third badge in the chain: gear, promote, then this. The anchor args are a
-    -- placeholder - AnchorRowBadge re-points the button onto the chain's end.
+    if auraWrite then
+        AddAdvancedToggle(auraEnableCb, "auraGlow", tabInfoButtons, auraGlowEnabled, {
+            title = "Aura Glow Advanced",
+            build = BuildAuraGlowAdvanced,
+        })
+    end
+    -- Second badge in the chain: gear, then this, then the scope chrome the lens
+    -- attaches last. The anchor args are a placeholder - AnchorRowBadge
+    -- re-points the button onto the chain's end.
     AnchorRowBadge(auraEnableCb, CreateInfoButton(auraEnableCb.frame, auraEnableCb.frame, "LEFT", "LEFT", 0, 0, {
         "Aura Glow",
         {"Adds a glow to a button while its tracked aura is active.", 1, 1, 1, true},
     }, tabInfoButtons))
+    AttachRowScopeChrome(auraEnableCb, lens, group, "auraIndicator")
+
+    if auraInertMark then
+        ApplyInertRange(container, auraInertMark)
+    end
 
     if not auraGlowEnabled then
         CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
-        return
     end
 end
 
 -- Pandemic effect (PTR 8): a second kit glow the game reveals only while the
 -- tracked aura sits inside its refresh window. It shares the Pandemic section,
 -- and the "pandemic" OVERRIDE section, with the marker below — one feature,
--- one promote badge target, two rows.
+-- two rows.
+--
+-- The section's ONE scope chrome sits on the Pandemic HEADING (owner ruling),
+-- so neither half carries a row affordance of its own: both resolve the same
+-- "pandemic" section and flip together, silently. The bars twin makes the same
+-- ruling with the chrome on its enable row.
 --
 -- Nil-container contract, copied from the bars twin (BarModeTabs' Glows note):
 -- the builder runs with whatever host it ends up with, because a glow left
 -- running by a deleted aura entry - or by a collapsed section - still has to
 -- be cleared. Guarding the CALL instead would strand the preview.
-local function BuildPandemicGlowSection(container, group, style)
+local function BuildPandemicGlowSection(container, group, style, lens)
+    local ResolveLensSection = ST._ResolveLensSection
+    local MarkInertRange = ST._MarkInertRange
+    local ApplyInertRange = ST._ApplyInertRange
+
     local function ClearPandemicPreview()
         if CooldownCompanion.SetGroupPandemicPreview then
             CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
@@ -2725,27 +2802,41 @@ local function BuildPandemicGlowSection(container, group, style)
         return
     end
 
-    local pandemicEnabled = style.pandemicEffectEnabled == true
+    local pandemicScope, pandemicRead, pandemicWrite = ResolveLensSection(lens, group, "pandemic")
+    local pandemicEnabled = pandemicRead.pandemicEffectEnabled == true
     if container then
+        local pandemicInertMark = (pandemicWrite == nil) and MarkInertRange(container) or nil
+
         local pandemicCb = AddCheckboxRow(container, {
             label = "Show Pandemic Effect",
             value = pandemicEnabled,
+            disabled = pandemicWrite == nil,
             onChange = function(val)
-                style.pandemicEffectEnabled = val and true or false
+                if not pandemicWrite then return end
+                pandemicWrite.pandemicEffectEnabled = val and true or false
                 UpdateSelectedGroupStyle(true)
             end,
         })
 
         -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+        -- The panel captures the section's WRITE table with the panel style
+        -- behind it: this glow family resolves its enable from an explicit-true
+        -- key, so an override store that has not stored one yet reads the
+        -- panel's. The section's enable toggle lives on the row above, never in
+        -- the shared builder.
         local function BuildPandemicAdvanced(panel)
-            BuildPandemicGlowControls(panel, style, UpdateSelectedGroupStyle, { row = true })
+            BuildPandemicGlowControls(panel, pandemicWrite, UpdateSelectedGroupStyle, {
+                row = true,
+                fallbackStyle = (pandemicScope == "customized") and style or nil,
+            })
         end
 
-        local _, pandemicAdvBtn = AddAdvancedToggle(pandemicCb, "pandemicGlow", tabInfoButtons, pandemicEnabled, {
-            title = "Pandemic Effect Advanced",
-            build = BuildPandemicAdvanced,
-        })
-        CreateCheckboxPromoteButton(pandemicCb, pandemicAdvBtn, "pandemic", group, style)
+        if pandemicWrite then
+            AddAdvancedToggle(pandemicCb, "pandemicGlow", tabInfoButtons, pandemicEnabled, {
+                title = "Pandemic Effect Advanced",
+                build = BuildPandemicAdvanced,
+            })
+        end
         AnchorRowBadge(pandemicCb, CreateInfoButton(pandemicCb.frame, pandemicCb.frame, "LEFT", "LEFT", 0, 0, {
             "Pandemic Effect",
             {"Glows a button while its tracked aura is in the refresh window, where recasting adds bonus time.", 1, 1, 1, true},
@@ -2754,6 +2845,10 @@ local function BuildPandemicGlowSection(container, group, style)
             {" ", 1, 1, 1, true},
             {"Draws over the Aura Glow when both are on.", 1, 1, 1, true},
         }, tabInfoButtons))
+
+        if pandemicInertMark then
+            ApplyInertRange(container, pandemicInertMark)
+        end
     end
 
     if not pandemicEnabled then
@@ -2770,39 +2865,65 @@ end
 -- The rows stay visible when that text is off and the info tooltip says what
 -- happens; a control that vanishes onto another tab is harder to find than an
 -- inert one.
-local function BuildPandemicMarkerSection(container, group, style)
+local function BuildPandemicMarkerSection(container, group, style, lens)
+    local ResolveLensSection = ST._ResolveLensSection
+    local MarkInertRange = ST._MarkInertRange
+    local ApplyInertRange = ST._ApplyInertRange
+
     if not container or not GroupHasAuraTrackingEntry(group) then
         return
     end
 
+    -- Same override section as the effect row in the left column, so this half
+    -- FOLLOWS that section's scope silently: one feature, one affordance, and
+    -- the chrome for it is on the section's heading.
+    local _, markerRead, markerWrite = ResolveLensSection(lens, group, "pandemic")
+    local markerInertMark = (markerWrite == nil) and MarkInertRange(container) or nil
+
     local applyStyle = function() UpdateSelectedGroupStyle(false) end
-    local markerRow = AddPandemicMarkerControls(container, style, applyStyle, function()
+    local markerRow = AddPandemicMarkerControls(container, markerWrite or markerRead, applyStyle, function()
         CooldownCompanion:RefreshConfigPanel()
     end, { enableOnly = true })
 
     -- Single rail (AdvancedSettingsPanel.lua): the three styling rows fill the
-    -- panel, so they carry no indent - childrenOnly drops it.
+    -- panel, so they carry no indent - childrenOnly drops it. The panel
+    -- captures the section's WRITE table, and is only built while there is one.
     local function BuildPandemicMarkerAdvanced(panel)
-        AddPandemicMarkerControls(panel, style, applyStyle, RefreshActiveAdvancedSettingsPanel,
+        AddPandemicMarkerControls(panel, markerWrite, applyStyle, RefreshActiveAdvancedSettingsPanel,
             { childrenOnly = true })
     end
 
-    local _, markerAdvBtn = AddAdvancedToggle(markerRow, "pandemicMarker", tabInfoButtons,
-        style.pandemicMarkerEnabled ~= false, {
-            title = "Pandemic Marker Advanced",
-            build = BuildPandemicMarkerAdvanced,
-        })
-    -- Same override section as the effect row above: the badge is offered on
-    -- both so a marker-only user never has to reach for the other row.
-    CreateCheckboxPromoteButton(markerRow, markerAdvBtn, "pandemic", group, style)
+    if markerWrite then
+        AddAdvancedToggle(markerRow, "pandemicMarker", tabInfoButtons,
+            markerRead.pandemicMarkerEnabled ~= false, {
+                title = "Pandemic Marker Advanced",
+                build = BuildPandemicMarkerAdvanced,
+            })
+    end
+
+    -- The shared helper takes no `disabled`, so the inert bracket is what makes
+    -- this half read-only along with the rest of the section.
+    if markerInertMark then
+        ApplyInertRange(container, markerInertMark)
+    end
 end
 
-local function BuildReadyGlowSection(container, group, style)
+local function BuildReadyGlowSection(container, group, style, lens)
+    local ResolveLensSection = ST._ResolveLensSection
+    local MarkInertRange = ST._MarkInertRange
+    local ApplyInertRange = ST._ApplyInertRange
+    local AttachRowScopeChrome = ST._AttachRowScopeChrome
+
+    local _, readyRead, readyWrite = ResolveLensSection(lens, group, "readyGlow")
+    local readyInertMark = (readyWrite == nil) and MarkInertRange(container) or nil
+
     local readyEnableCb = AddCheckboxRow(container, {
         label = "Show Ready Glow",
-        value = style.readyGlowStyle and style.readyGlowStyle ~= "none",
+        value = readyRead.readyGlowStyle and readyRead.readyGlowStyle ~= "none",
+        disabled = readyWrite == nil,
         onChange = function(val)
-            style.readyGlowStyle = val and "solid" or "none"
+            if not readyWrite then return end
+            readyWrite.readyGlowStyle = val and "solid" or "none"
             UpdateSelectedGroupStyle(true)
         end,
     })
@@ -2810,12 +2931,22 @@ local function BuildReadyGlowSection(container, group, style)
     -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
     -- every row goes straight onto the panel scroll and the shared glow builder
     -- runs in row mode with NO rightColumn.
+    --
+    -- The panel captures the section's WRITE table, which is the group style or
+    -- the selected entry's override store depending on scope; the whole
+    -- when-it-shows chain below follows the section it belongs to. Only built
+    -- while there is a write table: an inert section has no gear to open it
+    -- from. The Prime* calls follow the same scope: an entry-lens edit changed
+    -- ONE entry's glow config, so only that entry's per-button transition
+    -- state re-arms - re-priming the panel would restart auto-hide windows on
+    -- entries the edit never touched.
+    local primeTarget = (lens and lens.mode == "entry") and lens.buttonData or nil
     local function BuildReadyGlowAdvanced(panel)
         AddCheckboxRow(panel, {
             label = "Show Only In Combat",
-            value = style.readyGlowCombatOnly or false,
+            value = readyWrite.readyGlowCombatOnly or false,
             onChange = function(val)
-                style.readyGlowCombatOnly = val
+                readyWrite.readyGlowCombatOnly = val
                 UpdateSelectedGroupStyle()
             end,
         })
@@ -2825,16 +2956,16 @@ local function BuildReadyGlowSection(container, group, style)
         -- risking a silent truncation at a narrower config width.
         local readyChargesRow = AddCheckboxRow(panel, {
             label = "Glow When Charges Are Capped",
-            value = style.readyGlowOnlyAtMaxCharges or false,
+            value = readyWrite.readyGlowOnlyAtMaxCharges or false,
             tooltip = { "Glow When Charges Are Capped" },
             onChange = function(val)
-                style.readyGlowOnlyAtMaxCharges = val == true
+                readyWrite.readyGlowOnlyAtMaxCharges = val == true
                 UpdateSelectedGroupStyle()
-                if (style.readyGlowDuration or 0) > 0 then
+                if (readyWrite.readyGlowDuration or 0) > 0 then
                     if val then
-                        PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup)
+                        PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup, primeTarget)
                     else
-                        PrimeReadyGlowNormalTransitions(CS.selectedGroup)
+                        PrimeReadyGlowNormalTransitions(CS.selectedGroup, primeTarget)
                     end
                 end
                 CooldownCompanion:UpdateAllCooldowns()
@@ -2849,15 +2980,15 @@ local function BuildReadyGlowSection(container, group, style)
 
         AddCheckboxRow(panel, {
             label = "Auto-Hide After Duration",
-            value = (style.readyGlowDuration or 0) > 0,
+            value = (readyWrite.readyGlowDuration or 0) > 0,
             onChange = function(val)
-                style.readyGlowDuration = val and 3 or 0
+                readyWrite.readyGlowDuration = val and 3 or 0
                 UpdateSelectedGroupStyle()
                 if val then
-                    if style.readyGlowOnlyAtMaxCharges then
-                        PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup)
+                    if readyWrite.readyGlowOnlyAtMaxCharges then
+                        PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup, primeTarget)
                     else
-                        PrimeReadyGlowNormalTransitions(CS.selectedGroup)
+                        PrimeReadyGlowNormalTransitions(CS.selectedGroup, primeTarget)
                     end
                 end
                 CooldownCompanion:UpdateAllCooldowns()
@@ -2867,78 +2998,102 @@ local function BuildReadyGlowSection(container, group, style)
             end,
         })
 
-        if (style.readyGlowDuration or 0) > 0 then
+        if (readyWrite.readyGlowDuration or 0) > 0 then
             local durationRow = AddSliderRow(panel, {
                 label = "Duration (seconds)",
                 indent = true,
                 min = 0.5, max = 5, step = 0.5,
-                value = style.readyGlowDuration or 3,
+                value = readyWrite.readyGlowDuration or 3,
             })
             WireMirrorFirstSlider(durationRow, function(val)
-                style.readyGlowDuration = val
-            end, UpdateSelectedGroupStyle, nil, style, "readyGlowDuration")
+                readyWrite.readyGlowDuration = val
+            end, UpdateSelectedGroupStyle, nil, readyWrite, "readyGlowDuration")
         end
 
-        BuildReadyGlowControls(panel, style, UpdateSelectedGroupStyle, { row = true })
+        BuildReadyGlowControls(panel, readyWrite, UpdateSelectedGroupStyle, { row = true })
 
     end
 
-    local _, readyAdvBtn = AddAdvancedToggle(readyEnableCb, "readyGlow", tabInfoButtons, style.readyGlowStyle and style.readyGlowStyle ~= "none", {
-        title = "Ready Glow Advanced",
-        build = BuildReadyGlowAdvanced,
-    })
-    CreateCheckboxPromoteButton(readyEnableCb, readyAdvBtn, "readyGlow", group, style)
-    -- Third badge in the chain; the anchor args are a placeholder.
+    if readyWrite then
+        AddAdvancedToggle(readyEnableCb, "readyGlow", tabInfoButtons, readyRead.readyGlowStyle and readyRead.readyGlowStyle ~= "none", {
+            title = "Ready Glow Advanced",
+            build = BuildReadyGlowAdvanced,
+        })
+    end
+    -- Second badge in the chain: gear, then this, then the scope chrome the lens
+    -- attaches last. The anchor args are a placeholder.
     AnchorRowBadge(readyEnableCb, CreateInfoButton(readyEnableCb.frame, readyEnableCb.frame, "LEFT", "LEFT", 0, 0, {
         "Ready Glow",
         {"Adds a glow to spells/items that are not on cooldown.", 1, 1, 1, true},
     }, tabInfoButtons))
+    AttachRowScopeChrome(readyEnableCb, lens, group, "readyGlow")
 
-    if not (style.readyGlowStyle and style.readyGlowStyle ~= "none") then
+    if readyInertMark then
+        ApplyInertRange(container, readyInertMark)
+    end
+
+    if not (readyRead.readyGlowStyle and readyRead.readyGlowStyle ~= "none") then
         CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
-        return
     end
 end
 
-local function BuildKeyPressHighlightSection(container, group, style)
+local function BuildKeyPressHighlightSection(container, group, style, lens)
+    local ResolveLensSection = ST._ResolveLensSection
+    local MarkInertRange = ST._MarkInertRange
+    local ApplyInertRange = ST._ApplyInertRange
+    local AttachRowScopeChrome = ST._AttachRowScopeChrome
+
+    local _, kphRead, kphWrite = ResolveLensSection(lens, group, "keyPressHighlight")
+    local kphInertMark = (kphWrite == nil) and MarkInertRange(container) or nil
+
     local kphEnableCb = AddCheckboxRow(container, {
         label = "Show Key Press Highlight",
-        value = style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none",
+        value = kphRead.keyPressHighlightStyle and kphRead.keyPressHighlightStyle ~= "none",
+        disabled = kphWrite == nil,
         onChange = function(val)
-            style.keyPressHighlightStyle = val and "solid" or "none"
+            if not kphWrite then return end
+            kphWrite.keyPressHighlightStyle = val and "solid" or "none"
             UpdateSelectedGroupStyle(true)
         end,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn. The
+    -- panel captures the section's WRITE table and is only built while there is
+    -- one - an inert section has no gear to open it from.
     local function BuildKeyPressHighlightAdvanced(panel)
         AddCheckboxRow(panel, {
             label = "Show Only In Combat",
-            value = style.keyPressHighlightCombatOnly or false,
+            value = kphWrite.keyPressHighlightCombatOnly or false,
             onChange = function(val)
-                style.keyPressHighlightCombatOnly = val
+                kphWrite.keyPressHighlightCombatOnly = val
                 UpdateSelectedGroupStyle()
             end,
         })
 
-        BuildKeyPressHighlightControls(panel, style, UpdateSelectedGroupStyle, { row = true })
+        BuildKeyPressHighlightControls(panel, kphWrite, UpdateSelectedGroupStyle, { row = true })
 
     end
 
-    local _, kphAdvBtn = AddAdvancedToggle(kphEnableCb, "keyPressHighlight", tabInfoButtons, style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none", {
-        title = "Key Press Highlight Advanced",
-        build = BuildKeyPressHighlightAdvanced,
-    })
-    CreateCheckboxPromoteButton(kphEnableCb, kphAdvBtn, "keyPressHighlight", group, style)
-    -- Third badge in the chain; the anchor args are a placeholder.
+    if kphWrite then
+        AddAdvancedToggle(kphEnableCb, "keyPressHighlight", tabInfoButtons, kphRead.keyPressHighlightStyle and kphRead.keyPressHighlightStyle ~= "none", {
+            title = "Key Press Highlight Advanced",
+            build = BuildKeyPressHighlightAdvanced,
+        })
+    end
+    -- Second badge in the chain: gear, then this, then the scope chrome the lens
+    -- attaches last. The anchor args are a placeholder.
     AnchorRowBadge(kphEnableCb, CreateInfoButton(kphEnableCb.frame, kphEnableCb.frame, "LEFT", "LEFT", 0, 0, {
         "Key Press Highlight",
         {"Shows a glow overlay on buttons while their action bar keybind is physically held down.", 1, 1, 1, true},
     }, tabInfoButtons))
+    AttachRowScopeChrome(kphEnableCb, lens, group, "keyPressHighlight")
 
-    if not (style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none") then
+    if kphInertMark then
+        ApplyInertRange(container, kphInertMark)
+    end
+
+    if not (kphRead.keyPressHighlightStyle and kphRead.keyPressHighlightStyle ~= "none") then
         CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
-        return
     end
 end
 
@@ -2994,6 +3149,47 @@ ST._INDICATORS_SECTION_BY_ADVANCED_KEY = {
     textureIndicator_unusable = EFFECTS_TEXTURE_INDICATORS_SECTION,
 }
 
+-- The icons Indicators tab's advanced gears, by the OVERRIDE SECTION each one
+-- belongs to. A SECOND map for the same gears, because it answers a different
+-- question than the collapse map directly above: that one says "which
+-- COLLAPSE section is this gear inside", this one says "which OVERRIDE section
+-- owns this gear's values". Shaped and named after the appearance, bars and
+-- text maps (ST._APPEARANCE_SECTION_BY_ADVANCED_KEY and friends) - never feed
+-- one map's values to the other's consumer.
+--
+-- The style lens reads it at the foot of BOTH icons builders: a section the
+-- selected entry only INHERITS builds no gear at all, so nothing rebinds or
+-- closes an advanced panel that was already open on it, and that panel's
+-- controls still point at the table the previous build handed them. Only one
+-- panel tab is ever built at a time, so each icons builder sweeps this map AND
+-- ST._APPEARANCE_SECTION_BY_ADVANCED_KEY below.
+--
+-- It lists every icons-mode gear on the tab. Bars-only gears (barActiveAura,
+-- barPandemicMarker) are NOT here - BarModeTabs owns and sweeps its own map -
+-- and neither are the textures gears, which have no override sections at all.
+--
+-- A gear added to any section on this tab belongs here the same day.
+ST._INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY = {
+    procGlow = "procGlow",
+    readyGlow = "readyGlow",
+    keyPressHighlight = "keyPressHighlight",
+    auraGlow = "auraIndicator",
+    assistedHighlight = "assistedHighlight",
+
+    -- One section for the whole refresh window, so both gears name it.
+    pandemicGlow = "pandemic",
+    pandemicMarker = "pandemic",
+
+    iconFillTimer = "iconFillTimer",
+    cooldownSwipe = "cooldownSwipe",
+    auraDurationSwipe = "auraDurationSwipe",
+
+    -- Named by the shared builders themselves (SectionBuilders.lua), which is
+    -- why these two keys read differently from their section ids.
+    unusableVisual = "unusableDimming",
+    tooltipBehavior = "showTooltips",
+}
+
 local function BuildEffectsTab(container)
     ClearEffectsTabWidgets()
 
@@ -3026,8 +3222,8 @@ local function BuildEffectsTab(container)
         -- (the bar-mode precedent stated above the section map): one entry per
         -- advanced key covers every mode that draws the section, so the
         -- `unusableVisual` and `tooltipBehavior` gears in here are queue-safe
-        -- for free. No promotes exist on this tab - a rotation assistant panel
-        -- has no per-entry style to promote to - so none are added.
+        -- for free. A rotation assistant panel has no per-entry style, so no
+        -- section in here carries scope chrome.
         local _, raTimersCollapsed = BuildCollapsibleSection(container, "Timers", EFFECTS_TIMERS_SECTION, nil, nil, ROW_SECTION)
 
         if not raTimersCollapsed then
@@ -3090,7 +3286,7 @@ local function BuildEffectsTab(container)
     -- ================================================================
     -- Row grammar (RowWidgets.lua) - icons mode only; every other display
     -- mode returned above. Each setting is a fixed-height row (label left,
-    -- control right-aligned in a 140px column, gear/promote/info badges
+    -- control right-aligned in a 140px column, gear/info/scope badges
     -- chained off the end of the label), and each section splits its rows
     -- into a curated two-column grid from BeginRowGrid.
     --
@@ -3107,6 +3303,20 @@ local function BuildEffectsTab(container)
     -- move off a wide control.
     -- ================================================================
 
+    -- STYLE LENS (Helpers.lua). With an entry selected these sections stop
+    -- being the panel's settings and become a view of that entry's EFFECTIVE
+    -- ones, with per-section scope deciding where - or whether - they write.
+    -- Resolved ONCE here and handed to every section below, so one tab cannot
+    -- disagree with itself about which entry it is showing.
+    --
+    -- Function-locals, not upvalues: see the note by the row-grammar imports.
+    local ResolveLensSection = ST._ResolveLensSection
+    local AttachRowScopeChrome = ST._AttachRowScopeChrome
+    local AttachHeadingScopeChrome = ST._AttachHeadingScopeChrome
+    local MarkInertRange = ST._MarkInertRange
+    local ApplyInertRange = ST._ApplyInertRange
+    local lens = ST._ResolveStyleLens(group)
+
     -- ================================================================
     -- Glows
     -- ================================================================
@@ -3117,45 +3327,63 @@ local function BuildEffectsTab(container)
     -- RIGHT column: the conditional one (aura) and the Blizzard-driven extra.
     local glowLeft, glowRight = BeginRowGrid(container)
 
-    BuildProcGlowSection(glowLeft, group, style)
-    BuildReadyGlowSection(glowLeft, group, style)
-    BuildKeyPressHighlightSection(glowLeft, group, style)
+    BuildProcGlowSection(glowLeft, group, style, lens)
+    BuildReadyGlowSection(glowLeft, group, style, lens)
+    BuildKeyPressHighlightSection(glowLeft, group, style, lens)
 
     -- Gated on the group tracking an aura, so this column can run a row short;
     -- the grid top-aligns its columns, so a short side just ends early.
-    BuildAuraGlowSection(glowRight, group, style)
+    BuildAuraGlowSection(glowRight, group, style, lens)
+
+    -- Assisted Highlight is an override section like the four glows above, and
+    -- gets its FIRST per-entry affordance here: it never carried a promote
+    -- badge, so under the lens the scope chrome is the whole of it (the
+    -- appearance tab's Icon Zoom row set the precedent).
+    local _, assistedRead, assistedWrite = ResolveLensSection(lens, group, "assistedHighlight")
+    local assistedInertMark = (assistedWrite == nil) and MarkInertRange(glowRight) or nil
 
     local assistedCb = AddCheckboxRow(glowRight, {
         label = "Show Assisted Highlight",
-        value = style.showAssistedHighlight or false,
+        value = assistedRead.showAssistedHighlight or false,
+        disabled = assistedWrite == nil,
         onChange = function(val)
-            style.showAssistedHighlight = val
+            if not assistedWrite then return end
+            assistedWrite.showAssistedHighlight = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end,
     })
 
     -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn - the
-    -- builder's row path falls back to `container` for its right-hand rows.
+    -- builder's row path falls back to `container` for its right-hand rows. The
+    -- panel captures the section's WRITE table and is only built while there is
+    -- one - an inert section has no gear to open it from.
     local function BuildAssistedHighlightAdvanced(panel)
         AddCheckboxRow(panel, {
             label = "Show Only In Combat",
-            value = style.assistedHighlightCombatOnly or false,
+            value = assistedWrite.assistedHighlightCombatOnly or false,
             onChange = function(val)
-                style.assistedHighlightCombatOnly = val
+                assistedWrite.assistedHighlightCombatOnly = val
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             end,
         })
 
-        BuildAssistedHighlightControls(panel, style, function()
+        BuildAssistedHighlightControls(panel, assistedWrite, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end, { row = true })
     end
 
-    AddAdvancedToggle(assistedCb, "assistedHighlight", tabInfoButtons, style.showAssistedHighlight or false, {
-        title = "Assisted Highlight Advanced",
-        build = BuildAssistedHighlightAdvanced,
-    })
+    if assistedWrite then
+        AddAdvancedToggle(assistedCb, "assistedHighlight", tabInfoButtons, assistedRead.showAssistedHighlight or false, {
+            title = "Assisted Highlight Advanced",
+            build = BuildAssistedHighlightAdvanced,
+        })
+    end
+    AttachRowScopeChrome(assistedCb, lens, group, "assistedHighlight")
+
+    if assistedInertMark then
+        ApplyInertRange(glowRight, assistedInertMark)
+    end
     end -- not glowsCollapsed
 
     -- ================================================================
@@ -3168,15 +3396,21 @@ local function BuildEffectsTab(container)
     -- since PTR 8 and this side needs it for the same reason.
     local pandemicLeft, pandemicRight
     if GroupHasAuraTrackingEntry(group) then
-        local _, pandemicCollapsed = BuildCollapsibleSection(container, "Pandemic",
+        local pandemicHeading, pandemicCollapsed = BuildCollapsibleSection(container, "Pandemic",
             EFFECTS_PANDEMIC_SECTION, nil, nil, ROW_SECTION)
+        -- ONE scope chrome for the whole feature, on the HEADING (owner ruling):
+        -- the glow and the marker are two rows of one override section, so a
+        -- per-row affordance would offer the same customize twice and revert
+        -- from either would silently take the other with it. Both halves resolve
+        -- "pandemic" and flip together, silently.
+        AttachHeadingScopeChrome(pandemicHeading, lens, group, "pandemic")
         if not pandemicCollapsed then
             -- LEFT the glow half, RIGHT the text half.
             pandemicLeft, pandemicRight = BeginRowGrid(container)
         end
     end
-    BuildPandemicGlowSection(pandemicLeft, group, style)
-    BuildPandemicMarkerSection(pandemicRight, group, style)
+    BuildPandemicGlowSection(pandemicLeft, group, style, lens)
+    BuildPandemicMarkerSection(pandemicRight, group, style, lens)
 
     -- ================================================================
     -- Timers
@@ -3191,39 +3425,59 @@ local function BuildEffectsTab(container)
     -- is the GCD swipe alone.
     local timerLeft, timerRight = BeginRowGrid(container)
 
-    local iconFillTimerActive = style.iconFillEnabled == true and group.masqueEnabled ~= true
-    local iconFillCb = BuildIconFillTimerControls(timerLeft, style, function()
+    -- Each of the four sections below resolves its own scope against the lens.
+    -- The write table is the whole gate: nil means the section is INERT, so its
+    -- rows go in read-only, it builds no gear, and no callback of its own can
+    -- reach a saved table. The scope chrome is attached LAST on the row (after
+    -- the gear, after any info button, after the row's disabled state is
+    -- final), because it is the one control that stays live in an inert section
+    -- - the way back out of it.
+    local fillScope, fillRead, fillWrite = ResolveLensSection(lens, group, "iconFillTimer")
+    -- The shared builder takes no `disabled` option of its own, so an inert
+    -- scope is applied by bracketing its rows instead - the same shape the bars
+    -- States section uses for its two shared builders. The gear below is
+    -- caller-built, so it is gated the ordinary way.
+    local fillInertMark = (fillWrite == nil) and MarkInertRange(timerLeft) or nil
+
+    -- The interlock derives from the RESOLVED READ table, not the panel style:
+    -- an entry whose effective fill timer differs from the panel's has to see
+    -- its own swipe row greyed (or not). Masque is GROUP data with no override
+    -- section, so that half of the gate stays group-level.
+    local iconFillTimerActive = fillRead.iconFillEnabled == true and group.masqueEnabled ~= true
+    local iconFillCb = BuildIconFillTimerControls(timerLeft, fillWrite or fillRead, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end, {
         row = true,
         masqueEnabled = group.masqueEnabled == true,
         showAdvancedControlsInline = false,
+        fallbackStyle = (fillScope == "customized") and style or nil,
         onEnabled = function()
             if CS.QueueAdvancedSettingsPanelOpen then
                 CS.QueueAdvancedSettingsPanelOpen("iconFillTimer")
             end
         end,
     })
-    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn. The
+    -- panel captures the section's WRITE table and is only built while there is
+    -- one - an inert section has no gear to open it from.
     local function BuildIconFillAdvanced(panel)
         if BuildIconFillTimerAdvancedControls then
-            BuildIconFillTimerAdvancedControls(panel, style, function()
+            BuildIconFillTimerAdvancedControls(panel, fillWrite, function()
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             end, { row = true, indent = false })
         end
     end
 
-    local _, iconFillAdvBtn = AddAdvancedToggle(iconFillCb, "iconFillTimer", tabInfoButtons, iconFillTimerActive, {
-        title = "Icon Fill Timer Advanced",
-        build = BuildIconFillAdvanced,
-    })
-    if not group.masqueEnabled then
-        CreateCheckboxPromoteButton(iconFillCb, iconFillAdvBtn, "iconFillTimer", group, style)
+    if fillWrite then
+        AddAdvancedToggle(iconFillCb, "iconFillTimer", tabInfoButtons, iconFillTimerActive, {
+            title = "Icon Fill Timer Advanced",
+            build = BuildIconFillAdvanced,
+        })
     end
-    -- Third badge in the chain: gear, promote, then this. AnchorRowBadge
-    -- appends to whatever the chain actually ends at (the gear is not chained
-    -- while it is hidden, and the promote badge is skipped under Masque), so
-    -- the anchor args below are a placeholder.
+    -- Second badge in the chain: gear, then this, then the scope chrome the
+    -- lens attaches last. AnchorRowBadge appends to whatever the chain actually
+    -- ends at (the gear is not chained while it is hidden or unbuilt), so the
+    -- anchor args below are a placeholder.
     AnchorRowBadge(iconFillCb, CreateInfoButton(iconFillCb.frame, iconFillCb.frame, "LEFT", "LEFT", 0, 0, {
         "Icon Fill Timer",
         {"Shows cooldowns as a rectangular fill over the icon instead of radial swipes.", 1, 1, 1, true},
@@ -3232,59 +3486,93 @@ local function BuildEffectsTab(container)
         " ",
         {"Show Cooldown Swipe is unavailable while Icon Fill Timer is active.", 0.7, 0.7, 0.7, true},
     }, tabInfoButtons))
+    AttachRowScopeChrome(iconFillCb, lens, group, "iconFillTimer")
 
+    if fillInertMark then
+        ApplyInertRange(timerLeft, fillInertMark)
+    end
+
+    -- One row, no gear of its own to bracket: `disabled` is the whole gate, and
+    -- the chrome that undoes it is attached after.
+    local swipeScope, swipeRead, swipeWrite = ResolveLensSection(lens, group, "cooldownSwipe")
     local swipeCb = AddCheckboxRow(timerLeft, {
         label = "Show Cooldown Swipe",
-        value = style.showCooldownSwipe ~= false,
-        disabled = iconFillTimerActive,
+        value = swipeRead.showCooldownSwipe ~= false,
+        disabled = swipeWrite == nil or iconFillTimerActive,
         onChange = function(val)
-            if iconFillTimerActive then return end
-            style.showCooldownSwipe = val
+            if not swipeWrite or iconFillTimerActive then return end
+            swipeWrite.showCooldownSwipe = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end,
     })
 
-    local swipeAdvanced = MakeCooldownSwipeAdvancedDescriptor()
+    if swipeWrite then
+        -- Panel scope hands the descriptor NO table, so it keeps resolving the
+        -- live group style itself (see the factory's note). An entry's override
+        -- store has no such resolver, so that one is handed over explicitly.
+        local swipeAdvanced = MakeCooldownSwipeAdvancedDescriptor(
+            swipeScope == "customized" and swipeWrite or nil)
 
-    local _, swipeAdvBtn = AddAdvancedToggle(swipeCb, swipeAdvanced.settingKey, tabInfoButtons, style.showCooldownSwipe ~= false and not iconFillTimerActive, {
-        title = swipeAdvanced.title,
-        build = swipeAdvanced.build,
-    })
-    if not iconFillTimerActive then
-        CreateCheckboxPromoteButton(swipeCb, swipeAdvBtn, "cooldownSwipe", group, style)
+        AddAdvancedToggle(swipeCb, swipeAdvanced.settingKey, tabInfoButtons,
+            swipeRead.showCooldownSwipe ~= false and not iconFillTimerActive, {
+                title = swipeAdvanced.title,
+                build = swipeAdvanced.build,
+            })
     end
+    AttachRowScopeChrome(swipeCb, lens, group, "cooldownSwipe")
 
-    -- Aura duration swipe (shown only while the group has an aura-tracking entry)
+    -- Aura duration swipe (shown only while the group has an aura-tracking
+    -- entry). The gate stays on the GROUP: an entry that tracks no aura still
+    -- sees the row, and the lens resolves it "not available" for that entry
+    -- rather than hiding it.
     if GroupHasAuraTrackingEntry(group) then
-        local auraDurationCb = BuildAuraDurationSwipeControls(timerRight, style, function()
+        local auraSwipeScope, auraSwipeRead, auraSwipeWrite = ResolveLensSection(lens, group, "auraDurationSwipe")
+        local auraSwipeInertMark = (auraSwipeWrite == nil) and MarkInertRange(timerRight) or nil
+
+        local auraDurationCb = BuildAuraDurationSwipeControls(timerRight, auraSwipeWrite or auraSwipeRead, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end, {
             row = true,
             showAdvancedControlsInline = false,
+            fallbackStyle = (auraSwipeScope == "customized") and style or nil,
         })
-        -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+        -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn. The
+        -- panel captures the section's WRITE table and is only built while there
+        -- is one - an inert section has no gear to open it from.
         local function BuildAuraDurationSwipeAdvanced(panel)
-            BuildAuraDurationSwipeAdvancedControls(panel, style, function()
+            BuildAuraDurationSwipeAdvancedControls(panel, auraSwipeWrite, function()
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             end, { row = true })
         end
-        local _, auraDurationAdvBtn = AddAdvancedToggle(auraDurationCb, "auraDurationSwipe", tabInfoButtons, style.showAuraDurationSwipe ~= false, {
-            title = "Aura Duration Swipe Advanced",
-            build = BuildAuraDurationSwipeAdvanced,
-        })
-        CreateCheckboxPromoteButton(auraDurationCb, auraDurationAdvBtn, "auraDurationSwipe", group, style)
+        if auraSwipeWrite then
+            AddAdvancedToggle(auraDurationCb, "auraDurationSwipe", tabInfoButtons, auraSwipeRead.showAuraDurationSwipe ~= false, {
+                title = "Aura Duration Swipe Advanced",
+                build = BuildAuraDurationSwipeAdvanced,
+            })
+        end
+        AttachRowScopeChrome(auraDurationCb, lens, group, "auraDurationSwipe")
+
+        if auraSwipeInertMark then
+            ApplyInertRange(timerRight, auraSwipeInertMark)
+        end
     end
 
+    -- One row, no gear: `disabled` is the whole gate, so no inert bracket is
+    -- needed - the chrome that undoes it is attached after. Same shape the bars
+    -- Timers section uses for this setting.
+    local _, gcdRead, gcdWrite = ResolveLensSection(lens, group, "showGCDSwipe")
     local gcdCb = AddCheckboxRow(timerRight, {
         label = "Show GCD Swipe",
-        value = style.showGCDSwipe == true,
+        value = gcdRead.showGCDSwipe == true,
+        disabled = gcdWrite == nil,
         onChange = function(val)
-            style.showGCDSwipe = val
+            if not gcdWrite then return end
+            gcdWrite.showGCDSwipe = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end,
     })
-    CreateCheckboxPromoteButton(gcdCb, nil, "showGCDSwipe", group, style)
+    AttachRowScopeChrome(gcdCb, lens, group, "showGCDSwipe")
     end -- not timersCollapsed
 
     -- ================================================================
@@ -3298,62 +3586,135 @@ local function BuildEffectsTab(container)
     -- RIGHT column: the situational state and the hover behavior.
     local stateLeft, stateRight = BeginRowGrid(container)
 
+    -- Same per-section resolve the Timers section above states: the write table
+    -- is the whole gate, and the scope chrome goes on LAST.
+    local _, desatRead, desatWrite = ResolveLensSection(lens, group, "desaturation")
     local desatCb = AddCheckboxRow(stateLeft, {
         label = "Show Desaturate On Cooldown",
-        value = style.desaturateOnCooldown or false,
+        value = desatRead.desaturateOnCooldown or false,
+        disabled = desatWrite == nil,
         onChange = function(val)
-            style.desaturateOnCooldown = val
+            if not desatWrite then return end
+            desatWrite.desaturateOnCooldown = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end,
     })
-    CreateCheckboxPromoteButton(desatCb, nil, "desaturation", group, style)
+    AttachRowScopeChrome(desatCb, lens, group, "desaturation")
 
-    -- Unusable Visual
-    local unusableCb, unusableAdvBtn = BuildUnusableDimmingControls(stateLeft, style, function()
+    -- Unusable Visual. This shared builder owns its OWN gear, so an inert scope
+    -- cannot skip building one the way the hand-written sections do: the inert
+    -- pass gates the gear it finds on the row (_cdcAdvancedBtn), and the sweep
+    -- at the foot of this builder closes a panel it rebound.
+    local unusableScope, unusableRead, unusableWrite = ResolveLensSection(lens, group, "unusableDimming")
+    local unusableInertMark = (unusableWrite == nil) and MarkInertRange(stateLeft) or nil
+    local unusableCb = BuildUnusableDimmingControls(stateLeft, unusableWrite or unusableRead, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
-    end, { row = true })
-    CreateCheckboxPromoteButton(unusableCb, unusableAdvBtn, "unusableDimming", group, style)
+    end, {
+        row = true,
+        fallbackStyle = (unusableScope == "customized") and style or nil,
+    })
+    AttachRowScopeChrome(unusableCb, lens, group, "unusableDimming")
+    if unusableInertMark then
+        ApplyInertRange(stateLeft, unusableInertMark)
+    end
 
     -- Inlined rather than given an opts.row mode: BuildShowOutOfRangeControls
     -- is one checkbox with no file-private state, the same call the Duration
     -- Format dropdown made on the Appearance tab. The shared builder is
     -- untouched for the override editor and the other display modes.
+    local _, oorRead, oorWrite = ResolveLensSection(lens, group, "showOutOfRange")
     local oorCb = AddCheckboxRow(stateLeft, {
         label = "Show Out of Range",
-        value = style.showOutOfRange or false,
+        value = oorRead.showOutOfRange or false,
+        disabled = oorWrite == nil,
         onChange = function(val)
-            style.showOutOfRange = val
+            if not oorWrite then return end
+            oorWrite.showOutOfRange = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end,
     })
-    CreateCheckboxPromoteButton(oorCb, nil, "showOutOfRange", group, style)
+    AttachRowScopeChrome(oorCb, lens, group, "showOutOfRange")
 
     -- Loss of Control - inlined for the same reason as Out of Range.
+    local _, locRead, locWrite = ResolveLensSection(lens, group, "lossOfControl")
     local locCb = AddCheckboxRow(stateRight, {
         label = "Show Loss of Control",
-        value = style.showLossOfControl or false,
+        value = locRead.showLossOfControl or false,
+        disabled = locWrite == nil,
         onChange = function(val)
-            style.showLossOfControl = val
+            if not locWrite then return end
+            locWrite.showLossOfControl = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end,
     })
-    CreateCheckboxPromoteButton(locCb, nil, "lossOfControl", group, style)
+    AttachRowScopeChrome(locCb, lens, group, "lossOfControl")
 
     -- Show Tooltips (panel refresh: the advanced gear only shows while the
-    -- toggle is on)
-    local tooltipCb, tooltipAdvBtn = BuildShowTooltipsControls(stateRight, style, function()
+    -- toggle is on). Its gear is the builder's own, so it is bracketed rather
+    -- than skipped - see the Unusable Visual note above.
+    local tooltipScope, tooltipRead, tooltipWrite = ResolveLensSection(lens, group, "showTooltips")
+    local tooltipInertMark = (tooltipWrite == nil) and MarkInertRange(stateRight) or nil
+    local tooltipCb = BuildShowTooltipsControls(stateRight, tooltipWrite or tooltipRead, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
-    end, { row = true, advanced = true, infoButtons = tabInfoButtons })
-    CreateCheckboxPromoteButton(tooltipCb, tooltipAdvBtn, "showTooltips", group, style)
+    end, {
+        row = true,
+        advanced = true,
+        infoButtons = tabInfoButtons,
+        fallbackStyle = (tooltipScope == "customized") and style or nil,
+    })
+    AttachRowScopeChrome(tooltipCb, lens, group, "showTooltips")
+    if tooltipInertMark then
+        ApplyInertRange(stateRight, tooltipInertMark)
+    end
 
+    -- Allow Pings is a PANEL setting with no override section of its own
+    -- (ST.OVERRIDE_SECTIONS), so under an entry lens it goes read-only with the
+    -- rest of the panel-only content instead of letting a panel-wide edit be
+    -- made from an entry's page - no scope chrome, and its reads and writes
+    -- stay on the group style. The shared builder takes no `disabled` option,
+    -- so the bracket is what greys it. Its "?" badge stays readable: the inert
+    -- walk only reaches AceGUI children and the gear.
+    local pingsInertMark = (lens.mode == "entry") and MarkInertRange(stateRight) or nil
     BuildAllowPingsControls(stateRight, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end, { row = true })
+    if pingsInertMark then
+        ApplyInertRange(stateRight, pingsInertMark)
+    end
     end -- not statesCollapsed
 
+    -- Inert-section sweep, over BOTH icons gear maps. A section the lens
+    -- resolved read-only builds no gear, so nothing rebound or closed an
+    -- advanced panel that was already open on that gear - and its controls
+    -- still write to the table the PREVIOUS build handed them. Close those here.
+    --
+    -- Scope-driven, not collapse-driven: a collapsed section builds no gear
+    -- either, and a panel left over from before an entry was selected is just
+    -- as live behind a closed section as behind an open one.
+    --
+    -- Both maps, not just this tab's: only one panel tab is ever built at a
+    -- time, so a stale panel whose gear lives on the icons Appearance tab is
+    -- just as live from here as one of this tab's own. The bars pair has swept
+    -- across its two tabs the same way since they were converted.
+    --
+    -- OVERRIDE maps, never the collapse map beside them: they are keyed the
+    -- same and answer different questions, and a collapse key handed to the lens
+    -- would resolve as a section no entry can own and close every gear on the
+    -- tab.
+    if CS.CloseAdvancedSettingsPanel then
+        local gearMaps = { ST._INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY, ST._APPEARANCE_SECTION_BY_ADVANCED_KEY }
+        for i = 1, #gearMaps do
+            for advancedKey, sectionId in pairs(gearMaps[i]) do
+                local _, _, sectionWrite = ResolveLensSection(lens, group, sectionId)
+                if sectionWrite == nil then
+                    CS.CloseAdvancedSettingsPanel({ settingKey = advancedKey })
+                end
+            end
+        end
+    end
 end
 
 -- Row grammar (RowWidgets.lua): one collapsible section of display rows. The
@@ -3691,6 +4052,74 @@ local function BuildTexturePanelAppearanceTab(container, group)
     RefreshTexturePreview()
 end
 
+-- The icons Appearance tab's advanced gears, by the OVERRIDE SECTION each one
+-- belongs to. Shaped and named after ST._INDICATORS_SECTION_BY_ADVANCED_KEY
+-- above, with one deliberate difference: that map answers "which COLLAPSE
+-- section is this gear inside", this one answers "which OVERRIDE section owns
+-- this gear's values". Keep them apart - they are read for different reasons.
+--
+-- The style lens reads it at the foot of BOTH icons builders: a section the
+-- selected entry only INHERITS builds no gear at all, so nothing rebinds or
+-- closes an advanced panel that was already open on it, and that panel's
+-- controls still point at the table the previous build handed them. The sweeps
+-- close those, each over this map AND the indicators map above.
+--
+-- A gear added to one of these five sections belongs here the same day. The
+-- tab's other lens sections (Border, Icon Tint, Icon Zoom) carry no gear at
+-- all, and Compact Mode's gear is not listed because compact mode is group
+-- data with no override section - see the note at its call site.
+ST._APPEARANCE_SECTION_BY_ADVANCED_KEY = {
+    cooldownText = "cooldownText",
+    chargeText = "chargeText",
+    auraText = "auraText",
+    auraStackText = "auraStackText",
+    keybindText = "keybindText",
+}
+
+-- Where each override section is EDITED, now that the panel tabs are the lens
+-- onto a selected entry: the tab that draws it and the collapse key of the
+-- section it is drawn in.
+--
+-- Keyed by DISPLAY MODE first. The same section id is drawn in different
+-- places depending on the mode - borderSettings sits under "Border" on the
+-- icons Appearance tab and somewhere else entirely on a bar panel - so a flat
+-- map could only ever describe one mode. Later packets add the `bars` and
+-- `text` axes beside this one; a lookup that misses its mode has no home yet
+-- rather than the wrong one.
+ST._SECTION_HOME = ST._SECTION_HOME or {}
+ST._SECTION_HOME.icons = {
+    cooldownText = { tab = "appearance", collapseKey = "appearance_text" },
+    chargeText = { tab = "appearance", collapseKey = "appearance_text" },
+    auraText = { tab = "appearance", collapseKey = "appearance_text" },
+    auraStackText = { tab = "appearance", collapseKey = "appearance_text" },
+    keybindText = { tab = "appearance", collapseKey = "appearance_text" },
+    borderSettings = { tab = "appearance", collapseKey = "appearance_border" },
+    iconTint = { tab = "appearance", collapseKey = "appearance_iconTint" },
+    -- Icon Zoom is one row inside the panel's own Icon Settings section, which
+    -- is where its collapse key comes from.
+    iconZoom = { tab = "appearance", collapseKey = "appearance_icons" },
+    -- Indicators tab. The collapse keys come from the section constants
+    -- declared with the gear-to-section maps above, never from literals: the
+    -- bar tab shares those same constants, and a copy could drift from them.
+    procGlow = { tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION },
+    auraIndicator = { tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION },
+    readyGlow = { tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION },
+    keyPressHighlight = { tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION },
+    assistedHighlight = { tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION },
+    -- Both halves of the refresh window live in one section, so the feature has
+    -- one home whichever half a consumer was looking for.
+    pandemic = { tab = "effects", collapseKey = EFFECTS_PANDEMIC_SECTION },
+    iconFillTimer = { tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION },
+    cooldownSwipe = { tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION },
+    auraDurationSwipe = { tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION },
+    showGCDSwipe = { tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION },
+    desaturation = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
+    unusableDimming = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
+    showOutOfRange = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
+    lossOfControl = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
+    showTooltips = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
+}
+
 local function BuildAppearanceTab(container)
     local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
     -- Function-local, not an upvalue: see the note by the row-grammar imports.
@@ -3832,7 +4261,7 @@ local function BuildAppearanceTab(container)
     -- ================================================================
     -- Row grammar (RowWidgets.lua): every setting below is a fixed-height row
     -- - label left, control right-aligned in a 140px control column,
-    -- gear/promote/info badges chained off the end of the label. Rows sit in
+    -- gear/info/scope badges chained off the end of the label. Rows sit in
     -- curated two-column grids from BeginRowGrid, each section splitting its
     -- rows along whatever line reads naturally for that section. Sections with
     -- too little to split keep the left column only.
@@ -3879,20 +4308,47 @@ local function BuildAppearanceTab(container)
     -- ================================================================
     local groupHasAuraEntry = GroupHasAuraTrackingEntry(group)
 
+    -- STYLE LENS (Helpers.lua). With an entry selected these sections stop
+    -- being the panel's settings and become a view of that entry's EFFECTIVE
+    -- ones, with per-section scope deciding where - or whether - they write.
+    -- Resolved ONCE here and handed to every section below, so one tab cannot
+    -- disagree with itself about which entry it is showing.
+    --
+    -- Function-locals, not upvalues: see the note by the row-grammar imports.
+    local ResolveLensSection = ST._ResolveLensSection
+    local AttachRowScopeChrome = ST._AttachRowScopeChrome
+    local AttachHeadingScopeChrome = ST._AttachHeadingScopeChrome
+    local ChainHeadingBadges = ST._ChainHeadingBadges
+    local MarkInertRange = ST._MarkInertRange
+    local ApplyInertRange = ST._ApplyInertRange
+    local lens = ST._ResolveStyleLens(group)
+
+    -- Sections with NO override identity of their own (the panel's layout, its
+    -- Masque skinning): an entry cannot own them, so under an entry lens they
+    -- say "Applies to all entries" and go read-only rather than quietly letting
+    -- a panel-wide edit be made from an entry's page.
+    local panelOnlyInert = lens.mode == "entry"
+
     -- ================================================================
     -- Icon Settings (shape, size, spacing, packing)
     -- ================================================================
     local iconHeading, iconSettingsCollapsed = BuildCollapsibleSection(container, "Icon Settings", "appearance_icons", nil, nil, ROW_SECTION)
+    -- Panel-only (sectionId nil): shape, size and packing belong to the panel.
+    -- Icon Zoom is the one exception inside this section - it IS an override
+    -- section, so it resolves its own scope further down.
+    AttachHeadingScopeChrome(iconHeading, lens, group, nil)
 
     if not iconSettingsCollapsed then
     -- LEFT column: how a single icon is shaped and sized.
     -- RIGHT column: how the icons sit together as a group.
     local iconLeft, iconRight = BeginRowGrid(container)
 
+    local iconLeftInertMark = panelOnlyInert and MarkInertRange(iconLeft) or nil
+
     local squareRow = AddCheckboxRow(iconLeft, {
         label = "Square Icons",
         value = style.maintainAspectRatio or false,
-        disabled = group.masqueEnabled == true,
+        disabled = panelOnlyInert or group.masqueEnabled == true,
         onChange = function(val)
             style.maintainAspectRatio = val
             if not val then
@@ -3923,6 +4379,7 @@ local function BuildAppearanceTab(container)
             label = "Button Size",
             min = 10, max = 150, step = 0.1,
             value = style.buttonSize or ST.BUTTON_SIZE,
+            disabled = panelOnlyInert,
         })
         WireMirrorFirstSlider(sizeRow, function(val)
             style.buttonSize = val
@@ -3932,6 +4389,7 @@ local function BuildAppearanceTab(container)
             label = "Icon Width",
             min = 10, max = 150, step = 0.1,
             value = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE,
+            disabled = panelOnlyInert,
         })
         WireMirrorFirstSlider(wRow, function(val)
             style.iconWidth = val
@@ -3941,36 +4399,69 @@ local function BuildAppearanceTab(container)
             label = "Icon Height",
             min = 10, max = 150, step = 0.1,
             value = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE,
+            disabled = panelOnlyInert,
         })
         WireMirrorFirstSlider(hRow, function(val)
             style.iconHeight = val
         end, nil, nil, style, "iconHeight")
     end
 
-    ST._BuildIconZoomControls(iconLeft, style, function()
+    -- Closed BEFORE the zoom row goes in. An inert range covers the children
+    -- already in the column, and Icon Zoom is not one of the panel's own
+    -- settings: it is an override section that follows the lens like any other.
+    if iconLeftInertMark then
+        ApplyInertRange(iconLeft, iconLeftInertMark)
+    end
+
+    -- Icon Zoom - an override section living inside a panel-only one. The
+    -- shared builder reads and writes one table, so it is handed the section's
+    -- WRITE table where there is one and the lens' detached snapshot where
+    -- there is not (an inert row is disabled, and a write into the snapshot
+    -- would go nowhere anyway).
+    local _, zoomRead, zoomWrite = ResolveLensSection(lens, group, "iconZoom")
+    local zoomInertMark = (zoomWrite == nil) and MarkInertRange(iconLeft) or nil
+
+    local zoomRow = ST._BuildIconZoomControls(iconLeft, zoomWrite or zoomRead, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end, {
-        disabled = group.masqueEnabled == true,
+        disabled = group.masqueEnabled == true or zoomWrite == nil,
         previewRefresh = function()
             if ST._RefreshButtonsPreviewMirror then
                 ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
             end
         end,
     })
+    AttachRowScopeChrome(zoomRow, lens, group, "iconZoom")
+
+    if zoomInertMark then
+        ApplyInertRange(iconLeft, zoomInertMark)
+    end
+
+    local iconRightInertMark = panelOnlyInert and MarkInertRange(iconRight) or nil
 
     if group.buttons and #group.buttons > 1 then
         local spacingRow = AddSliderRow(iconRight, {
             label = "Button Spacing",
             min = 0, max = 30, step = 0.1,
             value = style.buttonSpacing or ST.BUTTON_SPACING,
+            disabled = panelOnlyInert,
         })
         WireMirrorFirstSlider(spacingRow, function(val)
             style.buttonSpacing = val
         end, nil, nil, style, "buttonSpacing")
     end
 
-    -- Compact Mode toggle + advanced (growth direction, max visible buttons)
+    -- Compact Mode toggle + advanced (growth direction, max visible buttons).
+    -- Its gear is not skipped under an entry lens the way the Text sections'
+    -- are: compact mode is group data with no override section, so there is no
+    -- second table to bind it to. The inert walk disables and dims it instead,
+    -- and an advanced panel left open from before the selection closes itself
+    -- on the next refresh (its descriptor context carries selectedButton).
     BuildCompactModeControls(iconRight, group, tabInfoButtons)
+
+    if iconRightInertMark then
+        ApplyInertRange(iconRight, iconRightInertMark)
+    end
     end -- not iconSettingsCollapsed
 
     -- ================================================================
@@ -3985,48 +4476,82 @@ local function BuildAppearanceTab(container)
     -- grid top-aligns its columns, so a short side just ends early.
     local textLeft, textRight = BeginRowGrid(container)
 
+    -- Each of the five sections below resolves its own scope against the lens.
+    -- The write table is the whole gate: nil means the section is INERT, so its
+    -- rows go in read-only, it builds no gear, and no callback of its own can
+    -- reach a saved table. The scope chrome is attached LAST on the row (after
+    -- the gear, after any info button, after the row's disabled state is
+    -- final), because it is the one control that stays live in an inert
+    -- section - the way back out of it.
+
     -- Show Cooldown Text toggle
+    local cdTextScope, cdTextRead, cdTextWrite = ResolveLensSection(lens, group, "cooldownText")
+    local cdTextInertMark = (cdTextWrite == nil) and MarkInertRange(textLeft) or nil
+
     local cdTextRow = AddCheckboxRow(textLeft, {
         label = "Show Cooldown Text",
-        value = style.showCooldownText or false,
+        value = cdTextRead.showCooldownText or false,
+        disabled = cdTextWrite == nil,
         onChange = function(val)
-            style.showCooldownText = val
+            if not cdTextWrite then return end
+            cdTextWrite.showCooldownText = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end,
     })
 
-    local cdTextAdvanced = MakeCooldownTextAdvancedDescriptor()
+    if cdTextWrite then
+        -- Panel scope hands the descriptor NO table, so it keeps resolving the
+        -- live group style itself (see the factory's note). An entry's override
+        -- store has no such resolver, so that one is handed over explicitly.
+        local cdTextAdvanced = MakeCooldownTextAdvancedDescriptor(
+            cdTextScope == "customized" and cdTextWrite or nil)
 
-    local _, cdTextAdvBtn = AddAdvancedToggle(cdTextRow, cdTextAdvanced.settingKey, tabInfoButtons, style.showCooldownText, {
-        title = cdTextAdvanced.title,
-        build = cdTextAdvanced.build,
-    })
-    CreateCheckboxPromoteButton(cdTextRow, cdTextAdvBtn, "cooldownText", group, style)
+        AddAdvancedToggle(cdTextRow, cdTextAdvanced.settingKey, tabInfoButtons, cdTextRead.showCooldownText, {
+            title = cdTextAdvanced.title,
+            build = cdTextAdvanced.build,
+        })
+    end
+    AttachRowScopeChrome(cdTextRow, lens, group, "cooldownText")
 
-    -- Duration Format — an indented child of Show Cooldown Text
-    if style.showCooldownText and CooldownCompanion.GetDurationFormatOptions then
+    -- Duration Format — an indented child of Show Cooldown Text.
+    --
+    -- Never shown once an entry OWNS this section: the format is not one of the
+    -- section's keys, so an override would store a key revert could not clear.
+    -- The bars tab draws it the same way (BarModeTabs.lua).
+    if cdTextScope ~= "customized" and cdTextRead.showCooldownText and CooldownCompanion.GetDurationFormatOptions then
         local formatOptions, formatOrder = CooldownCompanion:GetDurationFormatOptions()
         AddDropdownRow(textLeft, {
             label = "Duration Format",
             indent = true,
+            disabled = cdTextWrite == nil,
             list = formatOptions,
             order = formatOrder,
-            value = CooldownCompanion.GetDurationFormat(style),
+            value = CooldownCompanion.GetDurationFormat(cdTextRead),
             onChange = function(val)
-                style.durationFormat = CooldownCompanion.NormalizeDurationFormat(val)
-                style.decimalTimers = nil
+                if not cdTextWrite then return end
+                cdTextWrite.durationFormat = CooldownCompanion.NormalizeDurationFormat(val)
+                cdTextWrite.decimalTimers = nil
                 refreshStyle()
             end,
         })
     end
 
+    if cdTextInertMark then
+        ApplyInertRange(textLeft, cdTextInertMark)
+    end
+
     -- Show Charge Text toggle
+    local _, chargeRead, chargeWrite = ResolveLensSection(lens, group, "chargeText")
+    local chargeInertMark = (chargeWrite == nil) and MarkInertRange(textLeft) or nil
+
     local chargeTextRow = AddCheckboxRow(textLeft, {
         label = "Show Count Text (Charges/Uses)",
-        value = style.showChargeText ~= false,
+        value = chargeRead.showChargeText ~= false,
+        disabled = chargeWrite == nil,
         onChange = function(val)
-            style.showChargeText = val
+            if not chargeWrite then return end
+            chargeWrite.showChargeText = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end,
@@ -4042,14 +4567,18 @@ local function BuildAppearanceTab(container)
     --
     -- deferCommit is deliberately absent throughout, matching the
     -- stock color pickers these rows replaced.
+    --
+    -- The panel captures the section's WRITE table, which is the group style or
+    -- the selected entry's override store depending on scope. Only built while
+    -- there is one: an inert section has no gear to open it from.
     local function BuildChargeTextAdvanced(panel)
-        AddFontControls(panel, style, "charge", { size = 12 }, refreshStyle, { row = true })
+        AddFontControls(panel, chargeWrite, "charge", { size = 12 }, refreshStyle, { row = true })
 
         local function ChargeColorRow(rowLabel, key)
             AddColorRow(panel, {
                 label = rowLabel,
                 tooltip = { rowLabel },
-                tbl = style,
+                tbl = chargeWrite,
                 key = key,
                 default = {1, 1, 1, 1},
                 hasAlpha = true,
@@ -4061,24 +4590,35 @@ local function BuildAppearanceTab(container)
         ChargeColorRow("Font Color (Missing Charges)", "chargeFontColorMissing")
         ChargeColorRow("Font Color (Zero Charges)", "chargeFontColorZero")
 
-        AddAnchorDropdown(panel, style, "chargeAnchor", "BOTTOMRIGHT", refreshStyle, nil, { row = true })
-        AddOffsetSliders(panel, style, "chargeXOffset", "chargeYOffset", { x = -2, y = 2 }, refreshStyle, { row = true })
+        AddAnchorDropdown(panel, chargeWrite, "chargeAnchor", "BOTTOMRIGHT", refreshStyle, nil, { row = true })
+        AddOffsetSliders(panel, chargeWrite, "chargeXOffset", "chargeYOffset", { x = -2, y = 2 }, refreshStyle, { row = true })
     end
 
-    local _, chargeAdvBtn = AddAdvancedToggle(chargeTextRow, "chargeText", tabInfoButtons, style.showChargeText ~= false, {
-        title = "Count Text Advanced",
-        build = BuildChargeTextAdvanced,
-    })
-    CreateCheckboxPromoteButton(chargeTextRow, chargeAdvBtn, "chargeText", group, style)
+    if chargeWrite then
+        AddAdvancedToggle(chargeTextRow, "chargeText", tabInfoButtons, chargeRead.showChargeText ~= false, {
+            title = "Count Text Advanced",
+            build = BuildChargeTextAdvanced,
+        })
+    end
+    AttachRowScopeChrome(chargeTextRow, lens, group, "chargeText")
+
+    if chargeInertMark then
+        ApplyInertRange(textLeft, chargeInertMark)
+    end
 
     -- Aura text sections (shown only while the group has an aura-tracking entry)
     if groupHasAuraEntry then
         -- Show Aura Duration Text toggle
+        local _, auraTextRead, auraTextWrite = ResolveLensSection(lens, group, "auraText")
+        local auraTextInertMark = (auraTextWrite == nil) and MarkInertRange(textRight) or nil
+
         local auraTextRow = AddCheckboxRow(textRight, {
             label = "Show Aura Duration Text",
-            value = style.showAuraText ~= false,
+            value = auraTextRead.showAuraText ~= false,
+            disabled = auraTextWrite == nil,
             onChange = function(val)
-                style.showAuraText = val
+                if not auraTextWrite then return end
+                auraTextWrite.showAuraText = val
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
                 CooldownCompanion:RefreshConfigPanel()
             end,
@@ -4088,13 +4628,13 @@ local function BuildAppearanceTab(container)
         -- { row = true } and no rightColumn, and the position rows the separate
         -- -positions toggle owns indent as its children.
         local function BuildAuraDurationTextAdvanced(panel)
-            AddFontControls(panel, style, "auraText", { size = 12 }, refreshStyle, { row = true })
+            AddFontControls(panel, auraTextWrite, "auraText", { size = 12 }, refreshStyle, { row = true })
 
             -- deferCommit is deliberately absent, matching the stock color picker
             -- this row replaced.
             AddColorRow(panel, {
                 label = "Font Color",
-                tbl = style,
+                tbl = auraTextWrite,
                 key = "auraTextFontColor",
                 default = {0, 0.925, 1, 1},
                 onConfirm = refreshStyle,
@@ -4103,9 +4643,9 @@ local function BuildAppearanceTab(container)
 
             local sepPosRow = AddCheckboxRow(panel, {
                 label = "Separate Text Positions",
-                value = style.separateTextPositions or false,
+                value = auraTextWrite.separateTextPositions or false,
                 onChange = function(val)
-                    style.separateTextPositions = val
+                    auraTextWrite.separateTextPositions = val
                     CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
                     -- Rebuilds THIS panel, not the whole config, which is what
                     -- makes the two position rows appear in place.
@@ -4121,34 +4661,45 @@ local function BuildAppearanceTab(container)
                 {"The cooldown text also draws above the aura display, so both timers stay visible while the aura runs.", 1, 1, 1, true},
             }, sepPosRow))
 
-            if style.separateTextPositions then
-                AddAnchorDropdown(panel, style, "auraTextAnchor", "TOPLEFT", refreshStyle, nil, { row = true, indent = true })
-                AddOffsetSliders(panel, style, "auraTextXOffset", "auraTextYOffset", { x = 2, y = -2 }, refreshStyle, { row = true, indent = true })
+            if auraTextWrite.separateTextPositions then
+                AddAnchorDropdown(panel, auraTextWrite, "auraTextAnchor", "TOPLEFT", refreshStyle, nil, { row = true, indent = true })
+                AddOffsetSliders(panel, auraTextWrite, "auraTextXOffset", "auraTextYOffset", { x = 2, y = -2 }, refreshStyle, { row = true, indent = true })
             end
         end
 
-        local _, auraTextAdvBtn = AddAdvancedToggle(auraTextRow, "auraText", tabInfoButtons, style.showAuraText ~= false, {
-            title = "Aura Duration Text Advanced",
-            build = BuildAuraDurationTextAdvanced,
-        })
-        CreateCheckboxPromoteButton(auraTextRow, auraTextAdvBtn, "auraText", group, style)
-        -- Third badge in the chain: gear, promote, then this. The anchor args
-        -- below are a placeholder - AnchorRowBadge re-points the button onto
-        -- the end of the chain.
+        if auraTextWrite then
+            AddAdvancedToggle(auraTextRow, "auraText", tabInfoButtons, auraTextRead.showAuraText ~= false, {
+                title = "Aura Duration Text Advanced",
+                build = BuildAuraDurationTextAdvanced,
+            })
+        end
+        -- Second badge in the chain: gear, then this, then the scope chrome the
+        -- lens attaches last. The anchor args below are a placeholder -
+        -- AnchorRowBadge re-points the button onto the end of the chain.
         local auraPosInfo = AnchorRowBadge(auraTextRow, CreateInfoButton(auraTextRow.frame, auraTextRow.frame, "LEFT", "LEFT", 0, 0, {
             "Shared Position",
             {"Position is shared with Cooldown Text by default. Enable 'Separate Text Positions' in advanced settings to use independent positions.", 1, 1, 1, true},
         }, auraTextRow))
-        if style.showAuraText == false then
+        if auraTextRead.showAuraText == false then
             auraPosInfo:Hide()
+        end
+        AttachRowScopeChrome(auraTextRow, lens, group, "auraText")
+
+        if auraTextInertMark then
+            ApplyInertRange(textRight, auraTextInertMark)
         end
 
         -- Show Aura Stack Text toggle
+        local _, auraStackRead, auraStackWrite = ResolveLensSection(lens, group, "auraStackText")
+        local auraStackInertMark = (auraStackWrite == nil) and MarkInertRange(textRight) or nil
+
         local auraStackRow = AddCheckboxRow(textRight, {
             label = "Show Aura Stack Text",
-            value = style.showAuraStackText ~= false,
+            value = auraStackRead.showAuraStackText ~= false,
+            disabled = auraStackWrite == nil,
             onChange = function(val)
-                style.showAuraStackText = val
+                if not auraStackWrite then return end
+                auraStackWrite.showAuraStackText = val
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
                 CooldownCompanion:RefreshConfigPanel()
             end,
@@ -4156,35 +4707,46 @@ local function BuildAppearanceTab(container)
 
         -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
         local function BuildAuraStackTextAdvanced(panel)
-            AddFontControls(panel, style, "auraStack", { size = 12 }, refreshStyle, { row = true })
+            AddFontControls(panel, auraStackWrite, "auraStack", { size = 12 }, refreshStyle, { row = true })
             -- deferCommit is deliberately absent, matching the stock color picker
             -- this row replaced.
             AddColorRow(panel, {
                 label = "Font Color",
-                tbl = style,
+                tbl = auraStackWrite,
                 key = "auraStackFontColor",
                 default = {1, 1, 1, 1},
                 hasAlpha = true,
                 onConfirm = refreshStyle,
                 onChange = refreshStyle,
             })
-            AddAnchorDropdown(panel, style, "auraStackAnchor", "BOTTOMLEFT", refreshStyle, nil, { row = true })
-            AddOffsetSliders(panel, style, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle, { row = true })
+            AddAnchorDropdown(panel, auraStackWrite, "auraStackAnchor", "BOTTOMLEFT", refreshStyle, nil, { row = true })
+            AddOffsetSliders(panel, auraStackWrite, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle, { row = true })
         end
 
-        local _, auraStackAdvBtn = AddAdvancedToggle(auraStackRow, "auraStackText", tabInfoButtons, style.showAuraStackText ~= false, {
-            title = "Aura Stack Text Advanced",
-            build = BuildAuraStackTextAdvanced,
-        })
-        CreateCheckboxPromoteButton(auraStackRow, auraStackAdvBtn, "auraStackText", group, style)
+        if auraStackWrite then
+            AddAdvancedToggle(auraStackRow, "auraStackText", tabInfoButtons, auraStackRead.showAuraStackText ~= false, {
+                title = "Aura Stack Text Advanced",
+                build = BuildAuraStackTextAdvanced,
+            })
+        end
+        AttachRowScopeChrome(auraStackRow, lens, group, "auraStackText")
+
+        if auraStackInertMark then
+            ApplyInertRange(textRight, auraStackInertMark)
+        end
     end
 
     -- Show Keybind/Custom Text toggle
+    local _, kbRead, kbWrite = ResolveLensSection(lens, group, "keybindText")
+    local kbInertMark = (kbWrite == nil) and MarkInertRange(textRight) or nil
+
     local kbRow = AddCheckboxRow(textRight, {
         label = KEYBIND_CUSTOM_LABEL,
-        value = style.showKeybindText or false,
+        value = kbRead.showKeybindText or false,
+        disabled = kbWrite == nil,
         onChange = function(val)
-            style.showKeybindText = val
+            if not kbWrite then return end
+            kbWrite.showKeybindText = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end,
@@ -4202,20 +4764,20 @@ local function BuildAppearanceTab(container)
                 BOTTOMRIGHT = "Bottom Right",
                 BOTTOMLEFT = "Bottom Left",
             },
-            value = style.keybindAnchor or "TOPRIGHT",
+            value = kbWrite.keybindAnchor or "TOPRIGHT",
             onChange = function(val)
-                style.keybindAnchor = val
+                kbWrite.keybindAnchor = val
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             end,
         })
 
-        AddOffsetSliders(panel, style, "keybindXOffset", "keybindYOffset", { x = -2, y = -2 }, refreshStyle, { row = true })
-        AddFontControls(panel, style, "keybind", { size = 10, sizeMin = 6, sizeMax = 24 }, refreshStyle, { row = true })
+        AddOffsetSliders(panel, kbWrite, "keybindXOffset", "keybindYOffset", { x = -2, y = -2 }, refreshStyle, { row = true })
+        AddFontControls(panel, kbWrite, "keybind", { size = 10, sizeMin = 6, sizeMax = 24 }, refreshStyle, { row = true })
         -- deferCommit is deliberately absent, matching the stock color picker
         -- this row replaced.
         AddColorRow(panel, {
             label = "Font Color",
-            tbl = style,
+            tbl = kbWrite,
             key = "keybindFontColor",
             default = {1, 1, 1, 1},
             hasAlpha = true,
@@ -4224,43 +4786,57 @@ local function BuildAppearanceTab(container)
         })
     end
 
-    local _, kbAdvBtn = AddAdvancedToggle(kbRow, "keybindText", tabInfoButtons, style.showKeybindText, {
-        title = KEYBIND_CUSTOM_LABEL .. " Advanced",
-        build = BuildKeybindTextAdvanced,
-    })
-    CreateCheckboxPromoteButton(kbRow, kbAdvBtn, "keybindText", group, style)
-    -- The gear and promote badge are already chained off the label; this info
-    -- button lands to their right. Anchor args are a placeholder.
+    if kbWrite then
+        AddAdvancedToggle(kbRow, "keybindText", tabInfoButtons, kbRead.showKeybindText, {
+            title = KEYBIND_CUSTOM_LABEL .. " Advanced",
+            build = BuildKeybindTextAdvanced,
+        })
+    end
+    -- The gear is already chained off the label; this info button lands to its
+    -- right, and the lens' scope chrome after that. Anchor args are a placeholder.
     AnchorRowBadge(kbRow, CreateInfoButton(kbRow.frame, kbRow.frame, "LEFT", "LEFT", 0, 0, KEYBIND_CUSTOM_TOOLTIP, kbRow))
+    AttachRowScopeChrome(kbRow, lens, group, "keybindText")
+
+    if kbInertMark then
+        ApplyInertRange(textRight, kbInertMark)
+    end
     end -- not textCollapsed
 
     -- ================================================================
     -- Border
     -- ================================================================
     local borderHeading, borderCollapsed = BuildCollapsibleSection(container, "Border", "appearance_border", nil, nil, ROW_SECTION)
-    CreatePromoteButton(borderHeading, "borderSettings", CS.selectedButton and group.buttons[CS.selectedButton], style)
+    -- The lens' section scope: with an entry selected the heading says whose
+    -- border this is and offers the one action that changes that.
+    local _, borderRead, borderWrite = ResolveLensSection(lens, group, "borderSettings")
+    AttachHeadingScopeChrome(borderHeading, lens, group, "borderSettings")
 
     if not borderCollapsed then
     -- Three related rows, so they stay in one column rather than splitting a
     -- parent from its children. The right column is deliberately empty.
     local borderLeft = BeginRowGrid(container)
 
+    local borderInertMark = (borderWrite == nil) and MarkInertRange(borderLeft) or nil
+
+    -- Masque gating stays on the GROUP flag, not the lens: skinning owns the
+    -- border art for the whole panel, and no entry can override that.
+    --
     -- Border Color owns the section; thickness and size are its children.
     AddColorRow(borderLeft, {
         label = "Border Color",
-        tbl = style,
+        tbl = borderWrite or borderRead,
         key = "borderColor",
         default = {0, 0, 0, 1},
         hasAlpha = true,
-        disabled = group.masqueEnabled == true,
+        disabled = borderWrite == nil or group.masqueEnabled == true,
         onConfirm = refreshStyle,
         onChange = refreshStyle,
     })
 
-    local renderMode = AddBorderRenderModeDropdown(borderLeft, style, "borderRenderMode", function()
+    local renderMode = AddBorderRenderModeDropdown(borderLeft, borderWrite or borderRead, "borderRenderMode", function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
-    end, group.masqueEnabled, { row = true, indent = true })
+    end, group.masqueEnabled or borderWrite == nil, { row = true, indent = true })
     local borderThicknessLocked = group.masqueEnabled or ST.IsBorderThicknessLocked()
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
@@ -4268,16 +4844,26 @@ local function BuildAppearanceTab(container)
             label = "Border Size",
             indent = true,
             min = 0, max = 5, step = 0.1,
-            value = style.borderSize or ST.DEFAULT_BORDER_SIZE,
-            disabled = borderThicknessLocked and true or false,
+            value = borderRead.borderSize or ST.DEFAULT_BORDER_SIZE,
+            disabled = (borderWrite == nil or borderThicknessLocked) and true or false,
         })
-        WireMirrorFirstSlider(borderSizeRow, function(val)
-            if borderThicknessLocked then return end
-            style.borderSize = val
-        end, function()
-            if borderThicknessLocked then return end
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, nil, style, "borderSize")
+        -- Not wired at all while the section is inert. The mirror-first path
+        -- SNAPSHOTS AND RESTORES its state owner on every drag tick, so wiring
+        -- it to anything is wiring a write path; the read-only lens has no
+        -- table for one, so it gets no wiring instead of a harmless-looking one.
+        if borderWrite then
+            WireMirrorFirstSlider(borderSizeRow, function(val)
+                if borderThicknessLocked then return end
+                borderWrite.borderSize = val
+            end, function()
+                if borderThicknessLocked then return end
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end, nil, borderWrite, "borderSize")
+        end
+    end
+
+    if borderInertMark then
+        ApplyInertRange(borderLeft, borderInertMark)
     end
     end -- not borderCollapsed
 
@@ -4285,7 +4871,7 @@ local function BuildAppearanceTab(container)
     -- Icon Tint
     -- ================================================================
     local iconTintHeading, iconTintCollapsed = BuildCollapsibleSection(container, "Icon Tint", "appearance_iconTint", nil, nil, ROW_SECTION)
-    local iconTintPromoteBtn = CreatePromoteButton(iconTintHeading, "iconTint", CS.selectedButton and group.buttons[CS.selectedButton], style)
+    local _, tintRead, tintWrite = ResolveLensSection(lens, group, "iconTint")
 
     local iconTintTooltip = {
         "Icon Tint",
@@ -4305,11 +4891,13 @@ local function BuildAppearanceTab(container)
         table.insert(iconTintTooltip, {"Aura Tint:", 1, 0.82, 0})
         table.insert(iconTintTooltip, {"A separate color used only while a tracked aura is active.", 1, 1, 1, true})
     end
-    local iconTintInfoBtn = CreateInfoButton(iconTintHeading.frame,
-        iconTintPromoteBtn or iconTintHeading.label, "LEFT", "RIGHT",
-        iconTintPromoteBtn and 2 or 4, 0, iconTintTooltip, tabInfoButtons)
+    -- The (?) badge chains off the heading label, and the lens' scope chrome
+    -- lands after it: label -> (?) -> scope. Chaining also keeps the fading
+    -- rule behind whichever decoration ends up last.
+    ChainHeadingBadges(iconTintHeading, CreateInfoButton(iconTintHeading.frame,
+        iconTintHeading.label, "LEFT", "RIGHT", 4, 0, iconTintTooltip, tabInfoButtons))
 
-    AnchorLeftAlignedHeadingRule(iconTintHeading, iconTintInfoBtn)
+    AttachHeadingScopeChrome(iconTintHeading, lens, group, "iconTint")
 
     if not iconTintCollapsed then
         local tintRefresh = function()
@@ -4320,48 +4908,77 @@ local function BuildAppearanceTab(container)
         -- RIGHT column: the conditional state tints.
         local tintLeft, tintRight = BeginRowGrid(container)
 
+        -- Both columns bracket separately: an inert range is a contiguous slice
+        -- of ONE column's children, and this section fills two. The right
+        -- column's bracket is taken further down, after the Unusable Dim
+        -- Color row: that row belongs to another section and must not be
+        -- gated by this one's scope.
+        local tintLeftInertMark = (tintWrite == nil) and MarkInertRange(tintLeft) or nil
+        -- A color row binds its picker to one table for both reading and
+        -- writing, so it gets the write table where the section has one and the
+        -- lens' detached snapshot where it does not.
+        local tintTbl = tintWrite or tintRead
+
         AddColorRow(tintLeft, {
             label = "Base Icon Color",
-            tbl = style, key = "iconTintColor",
+            tbl = tintTbl, key = "iconTintColor",
             default = {1, 1, 1, 1}, hasAlpha = true,
+            disabled = tintWrite == nil,
             onConfirm = tintRefresh, onChange = tintRefresh,
         })
 
         AddColorRow(tintLeft, {
             label = "Background Color",
-            tbl = style, key = "backgroundColor",
+            tbl = tintTbl, key = "backgroundColor",
             default = {0, 0, 0, 0.5}, hasAlpha = true,
+            disabled = tintWrite == nil,
             onConfirm = tintRefresh, onChange = tintRefresh,
         })
 
         AddCheckboxRow(tintLeft, {
             label = "Use Separate Cooldown Tint",
-            value = style.iconCooldownTintEnabled or false,
+            value = tintRead.iconCooldownTintEnabled or false,
+            disabled = tintWrite == nil,
             onChange = function(val)
-                style.iconCooldownTintEnabled = val
+                if not tintWrite then return end
+                tintWrite.iconCooldownTintEnabled = val
                 tintRefresh()
                 CooldownCompanion:RefreshConfigPanel()
             end,
         })
 
-        if style.iconCooldownTintEnabled then
+        if tintRead.iconCooldownTintEnabled then
             AddColorRow(tintLeft, {
                 label = "Cooldown Icon Color",
                 indent = true,
-                tbl = style, key = "iconCooldownTintColor",
+                tbl = tintTbl, key = "iconCooldownTintColor",
                 default = {1, 0, 0.102, 1}, hasAlpha = true,
+                disabled = tintWrite == nil,
                 onConfirm = tintRefresh, onChange = tintRefresh,
             })
         end
 
-        if style.showUnusable and ST.UnusableVisualUsesDimTint(style) then
+        -- Unusable Dim Color is an Unusable Visual key (ST.OVERRIDE_SECTIONS
+        -- lists iconUnusableTintColor under unusableDimming), shown here only
+        -- because it reads as one of the icon's tints. So it resolves and
+        -- follows THAT section's scope silently - writing it through Icon
+        -- Tint's store would leave a key Icon Tint's revert cannot clear. Its
+        -- chrome lives on the Indicators tab's Unusable Visual row; the
+        -- lens-resolved read decides whether the dim mode has it on show.
+        local _, dimRead, dimWrite = ResolveLensSection(lens, group, "unusableDimming")
+        if dimRead.showUnusable and ST.UnusableVisualUsesDimTint(dimRead) then
             AddColorRow(tintRight, {
                 label = "Unusable Dim Color",
-                tbl = style, key = "iconUnusableTintColor",
+                tbl = dimWrite or dimRead, key = "iconUnusableTintColor",
                 default = {0.4, 0.4, 0.4, 1}, hasAlpha = true,
+                disabled = dimWrite == nil,
                 onConfirm = tintRefresh, onChange = tintRefresh,
             })
         end
+
+        -- Taken AFTER the dim row so the Icon Tint bracket never reaches a row
+        -- another section owns; everything below is this section's own.
+        local tintRightInertMark = (tintWrite == nil) and MarkInertRange(tintRight) or nil
 
         -- Aura tint applies to the slot-kit aura layer (consumed at bind time
         -- by AuraDisplay.StyleSlotKit); only offered where an aura display
@@ -4369,20 +4986,23 @@ local function BuildAppearanceTab(container)
         if groupHasAuraEntry then
             AddCheckboxRow(tintRight, {
                 label = "Use Separate Aura Tint",
-                value = style.iconAuraTintEnabled or false,
+                value = tintRead.iconAuraTintEnabled or false,
+                disabled = tintWrite == nil,
                 onChange = function(val)
-                    style.iconAuraTintEnabled = val
+                    if not tintWrite then return end
+                    tintWrite.iconAuraTintEnabled = val
                     tintRefresh()
                     CooldownCompanion:RefreshConfigPanel()
                 end,
             })
 
-            if style.iconAuraTintEnabled then
+            if tintRead.iconAuraTintEnabled then
                 AddColorRow(tintRight, {
                     label = "Aura Active Icon Color",
                     indent = true,
-                    tbl = style, key = "iconAuraTintColor",
+                    tbl = tintTbl, key = "iconAuraTintColor",
                     default = {0, 0.925, 1, 1}, hasAlpha = true,
+                    disabled = tintWrite == nil,
                     onConfirm = tintRefresh, onChange = tintRefresh,
                 })
             end
@@ -4393,19 +5013,37 @@ local function BuildAppearanceTab(container)
         -- grid. No wrapper needed: SetAutoWidth leaves widget.width nil, so the
         -- column's List layout neither stretches nor right-anchors it and it
         -- sits flush left under the last row.
-        local resetTintBtn = AceGUI:Create("Button")
-        resetTintBtn:SetText("Reset Colors to Default")
-        resetTintBtn:SetAutoWidth(true)
-        resetTintBtn:SetCallback("OnClick", function()
-            style.iconTintColor = {1, 1, 1, 1}
-            style.iconCooldownTintColor = {1, 0, 0.102, 1}
-            style.iconUnusableTintColor = {0.4, 0.4, 0.4, 1}
-            style.iconAuraTintColor = {0, 0.925, 1, 1}
-            style.backgroundColor = {0, 0, 0, 0.5}
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        tintRight:AddChild(resetTintBtn)
+        --
+        -- Not built at all while the section is inert: a section with nowhere
+        -- to write has no defaults to restore, and a greyed-out button under a
+        -- read-only section is one more thing to explain.
+        if tintWrite then
+            local resetTintBtn = AceGUI:Create("Button")
+            resetTintBtn:SetText("Reset Colors to Default")
+            resetTintBtn:SetAutoWidth(true)
+            resetTintBtn:SetCallback("OnClick", function()
+                tintWrite.iconTintColor = {1, 1, 1, 1}
+                tintWrite.iconCooldownTintColor = {1, 0, 0.102, 1}
+                tintWrite.iconAuraTintColor = {0, 0.925, 1, 1}
+                tintWrite.backgroundColor = {0, 0, 0, 0.5}
+                -- The dim color is Unusable Visual's key, so it resets through
+                -- that section's own write table - and only while it has one,
+                -- never into a store that section does not own.
+                if dimWrite then
+                    dimWrite.iconUnusableTintColor = {0.4, 0.4, 0.4, 1}
+                end
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            tintRight:AddChild(resetTintBtn)
+        end
+
+        if tintLeftInertMark then
+            ApplyInertRange(tintLeft, tintLeftInertMark)
+        end
+        if tintRightInertMark then
+            ApplyInertRange(tintRight, tintRightInertMark)
+        end
     end -- not iconTintCollapsed
 
     -- ================================================================
@@ -4413,14 +5051,20 @@ local function BuildAppearanceTab(container)
     -- ================================================================
     if CooldownCompanion.Masque then
         local masqueHeading, masqueCollapsed = BuildCollapsibleSection(container, "Masque", "appearance_masque", nil, nil, ROW_SECTION)
+        -- Panel-only (sectionId nil): skinning is switched on for the whole
+        -- panel, and there is no per-entry form of it to offer.
+        AttachHeadingScopeChrome(masqueHeading, lens, group, nil)
 
         if not masqueCollapsed then
         -- One setting; the right column stays empty.
         local masqueLeft = BeginRowGrid(container)
 
+        local masqueInertMark = panelOnlyInert and MarkInertRange(masqueLeft) or nil
+
         local masqueRow = AddCheckboxRow(masqueLeft, {
             label = "Enable Masque Skinning",
             value = group.masqueEnabled or false,
+            disabled = panelOnlyInert,
             onChange = function(val)
                 CooldownCompanion:ToggleGroupMasque(CS.selectedGroup, val)
                 CooldownCompanion:RefreshConfigPanel()
@@ -4436,11 +5080,39 @@ local function BuildAppearanceTab(container)
             {"Overridden Settings:", 1, 0.82, 0},
             {"Border Thickness, Border Size, Border Color, Square Icons (forced on)", 0.7, 0.7, 0.7, true},
         }, tabInfoButtons))
+
+        if masqueInertMark then
+            ApplyInertRange(masqueLeft, masqueInertMark)
+        end
         end -- not masqueCollapsed
     end
 
     BuildGroupSettingPresetControls(container, group, "icons", tabInfoButtons)
 
+    -- Inert-section sweep, over BOTH icons gear maps. A section the lens
+    -- resolved read-only builds no gear, so nothing rebound or closed an
+    -- advanced panel that was already open on that gear - and its controls
+    -- still write to the table the PREVIOUS build handed them. Close those here.
+    --
+    -- Scope-driven, not collapse-driven: a collapsed section builds no gear
+    -- either, and a panel left over from before an entry was selected is just
+    -- as live behind a closed section as behind an open one.
+    --
+    -- Both maps, not just this tab's: only one panel tab is ever built at a
+    -- time, so a stale panel whose gear lives on the icons Indicators tab is
+    -- just as live from here as one of this tab's own. See the twin sweep at
+    -- the foot of BuildEffectsTab.
+    if CS.CloseAdvancedSettingsPanel then
+        local gearMaps = { ST._APPEARANCE_SECTION_BY_ADVANCED_KEY, ST._INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY }
+        for i = 1, #gearMaps do
+            for advancedKey, sectionId in pairs(gearMaps[i]) do
+                local _, _, sectionWrite = ResolveLensSection(lens, group, sectionId)
+                if sectionWrite == nil then
+                    CS.CloseAdvancedSettingsPanel({ settingKey = advancedKey })
+                end
+            end
+        end
+    end
 end
 
 ------------------------------------------------------------------------

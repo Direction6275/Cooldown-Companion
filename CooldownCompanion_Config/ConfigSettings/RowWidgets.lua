@@ -3,7 +3,7 @@
 
     Every setting in the redesigned config is a fixed-height row: label on the
     LEFT, its control right-aligned into a fixed-width (140px) control column
-    on the RIGHT, and its gear/promote/info badges chained left-to-right off
+    on the RIGHT, and its gear/info/scope badges chained left-to-right off
     the end of the label text. Rows live in two-column grids built by
     BeginRowGrid, so a cell is roughly 400px wide and the badge scatter stays
     bounded inside the label's own cell. This file registers the custom AceGUI
@@ -114,17 +114,17 @@ local DEBUG_ROW_GRID = false
 ------------------------------------------------------------------------
 
 -- Reposition the invisible badge anchor at the end of the label text so the
--- gear/info/promote badge creators in Helpers.lua can hang off it.
+-- gear/info/scope badge creators in Helpers.lua can hang off it.
 local function UpdateBadgeAnchor(self)
     local label = self.rowLabel
     self.badgeAnchor:ClearAllPoints()
     self.badgeAnchor:SetPoint("LEFT", label, "LEFT", label:GetStringWidth() or 0, 0)
 end
 
--- Chain a badge (gear / promote / info) off the end of the row's label text,
--- growing LEFT to RIGHT: the first badge hangs off badgeAnchor, each further
--- one off the previous badge. Creation order gear -> promote -> info therefore
--- reads on screen as gear, promote, info - the pre-redesign order.
+-- Chain a badge (gear / info / scope chrome) off the end of the row's label
+-- text, growing LEFT to RIGHT: the first badge hangs off badgeAnchor, each
+-- further one off the previous badge. Creation order gear -> info -> scope
+-- therefore reads on screen as gear, info, scope.
 --
 -- Badges belong to the label, not to a shared rail. A full-width rail was
 -- tried and reversed: with ~600px between a label and its control, badges
@@ -280,7 +280,7 @@ local function BuildRowBase(widgetType)
     rowLabel:SetPoint("RIGHT", controlColumn, "LEFT", -LABEL_CONTROL_GAP, 0)
 
     -- Zero-size anchor sitting at the end of the label text. Everything that
-    -- belongs to the label hangs off it: the gear/promote/info badge chain via
+    -- belongs to the label hangs off it: the gear/info/scope badge chain via
     -- AnchorRowBadge, and one-off notes like the green "(Masque skinning is
     -- active)" line. It re-points itself whenever SetLabel or SetIndent runs,
     -- so the whole chain follows the text.

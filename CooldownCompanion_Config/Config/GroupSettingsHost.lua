@@ -171,15 +171,11 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             end
             -- Flush the Format tab's pending write and release its controller
             -- BEFORE ReleaseChildren hands the container frame back to
-            -- AceGUI's pool. The entry Overrides tab hosts the same editor
-            -- against an entry's override, and selecting a panel tab takes the
-            -- surface off it, so it is settled here too - that is what keeps
-            -- the two from ever being live at once.
+            -- AceGUI's pool. There is exactly ONE format editor in the config
+            -- (the Format tab's, panel or entry lens alike), so this single
+            -- release is the whole contract.
             if ST._ReleaseTextFormatTabEditor then
                 ST._ReleaseTextFormatTabEditor()
-            end
-            if ST._ReleaseTextFormatOverrideEditor then
-                ST._ReleaseTextFormatOverrideEditor()
             end
             local previousTab = container._activePanelSettingsTab
             local tabChanged = previousTab ~= nil and previousTab ~= tab
@@ -218,7 +214,11 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             elseif tab == "effects" then
                 ST._BuildEffectsTab(scroll)
             elseif tab == "loadconditions" then
-                ST._BuildLoadConditionsTab(scroll)
+                -- One Visibility tab for both scopes: the dispatcher edits
+                -- the selected entry's rules when there is one (including
+                -- the rotation assistant's virtual entry, which has no entry
+                -- tabs of its own) and the panel's otherwise.
+                ST._BuildVisibilityTab(scroll)
             end
 
             -- Re-run the layout with final widths: AddChild lays out on every

@@ -966,13 +966,13 @@ ST.OVERRIDE_SECTIONS = {
     -- and pandemicBar pair, which MigratePandemicOverrideOwnership renames.
     --
     -- One section, not two, because the two would share keys. Sections are the
-    -- unit promote copies and revert deletes, and nothing clears an override
+    -- unit Customize copies and Revert deletes, and nothing clears an override
     -- when a panel changes display mode, so an icons entry converted to bars
-    -- would carry a stored pandemicGlow the Overrides tab draws as inactive
-    -- (with a live revert button) while offering pandemicBar to promote. Either
-    -- click would then write or wipe keys the other section still listed. The
-    -- marker keys made that overlap span user-authored text and colour, which
-    -- is not recoverable; merging removes the collision instead of policing it.
+    -- would carry a stored pandemicGlow it could revert while pandemicBar still
+    -- offered Customize. Either action would then write or wipe keys the other
+    -- section still listed. The marker keys made that overlap span
+    -- user-authored text and colour, which is not recoverable; merging removes
+    -- the collision instead of policing it.
     pandemic = {
         label = "Pandemic",
         keys = {"pandemicEffectEnabled",
@@ -1057,8 +1057,9 @@ ST.OVERRIDE_SECTIONS = {
     },
     -- Text Mode
     -- (No textFormat section: the per-entry format override is the flat
-    -- buttonData.textFormat field, edited inline on the Overrides tab, and
-    -- never went through the styleOverrides section machinery.)
+    -- buttonData.textFormat field, edited on the panel's Format tab as a lens
+    -- onto the selected entry, and never went through the styleOverrides
+    -- section machinery.)
     textFont = {
         label = "Text Font",
         keys = {"textFont", "textFontSize", "textFontOutline", "textAlignment", "textShadow"},
@@ -1075,6 +1076,41 @@ ST.OVERRIDE_SECTIONS = {
         modes = {text = true},
     },
 }
+
+-- Display order for the registry above, wherever an entry's overrides are
+-- listed (the entry-slot hover tooltip and the config's Inactive
+-- Customizations list both walk this).
+ST.OVERRIDE_SECTION_ORDER = {
+    "borderSettings", "cooldownText", "auraText", "auraStackText",
+    "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "showOutOfRange", "showTooltips",
+    -- "pandemic" spans both display modes (like auraText above), so it sits in
+    -- the icons run rather than being listed twice.
+    "lossOfControl", "unusableDimming", "iconTint", "iconZoom", "assistedHighlight", "procGlow", "auraIndicator", "pandemic", "readyGlow", "keyPressHighlight",
+    "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText",
+    "textFont", "textColors", "textBackground",
+}
+
+-- Completeness backstop: a section added to ST.OVERRIDE_SECTIONS but
+-- forgotten above would still customize, revert and render - and silently
+-- vanish from every listing that walks the order. Append any such section
+-- (alphabetically, at the end) so the curated order stays hand-authored but
+-- can never disagree with the registry about MEMBERSHIP.
+do
+    local listed = {}
+    for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER) do
+        listed[sectionId] = true
+    end
+    local missing = {}
+    for sectionId in pairs(ST.OVERRIDE_SECTIONS) do
+        if not listed[sectionId] then
+            missing[#missing + 1] = sectionId
+        end
+    end
+    table.sort(missing)
+    for _, sectionId in ipairs(missing) do
+        ST.OVERRIDE_SECTION_ORDER[#ST.OVERRIDE_SECTION_ORDER + 1] = sectionId
+    end
+end
 
 ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS = {
     auraText = true,

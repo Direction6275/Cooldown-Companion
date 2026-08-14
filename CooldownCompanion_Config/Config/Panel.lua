@@ -1116,20 +1116,12 @@ local function CreateConfigPanel()
         if ST._FlushTextFormatTabCommit then
             ST._FlushTextFormatTabCommit()
         end
-        -- The entry Overrides tab hosts the same editor against an entry's
-        -- override, on the same debounce, for the same reason.
-        if ST._FlushTextFormatOverrideCommit then
-            ST._FlushTextFormatOverrideCommit()
-        end
         if isCollapsing then return end
         -- Truly closing: the next open runs RefreshConfigPanel, which rebuilds
         -- the tab and its editor, so drop this one's animation driver and any
         -- confirmation it left standing.
         if ST._ReleaseTextFormatTabEditor then
             ST._ReleaseTextFormatTabEditor()
-        end
-        if ST._ReleaseTextFormatOverrideEditor then
-            ST._ReleaseTextFormatOverrideEditor()
         end
         if frame.HideChangelogOverlay then
             frame.HideChangelogOverlay()
@@ -1155,7 +1147,7 @@ local function CreateConfigPanel()
         end
         ClearTransientConfigPreviewState()
         -- Release the panel-preview mirror: stops its conditional ticker
-        -- and disarms override targeting while the config is closed.
+        -- while the config is closed.
         if ST._HideButtonsPanelPreviewSurfaces and CS.configFrame and CS.configFrame.col3 then
             ST._HideButtonsPanelPreviewSurfaces(CS.configFrame.col3)
         end
@@ -1955,7 +1947,9 @@ local function CreateConfigPanel()
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine("Panel settings apply to every button in the panel. Selecting a button shows that entry's own settings; deselect it to return to the panel settings.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("To override a panel setting for one button, click the |A:Crosshair_VehichleCursor_32:14:14|a badge next to that setting while the button is selected.", 1, 1, 1, true)
+                GameTooltip:AddLine("With a button selected, each section shows whose settings you are looking at.", 1, 1, 1, true)
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("Use Customize on a section to give that button its own settings there.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine("Drag the line under the preview to resize it. Double-click to reset.", 1, 1, 1, true)
             end
@@ -2003,27 +1997,20 @@ local function CreateConfigPanel()
     scroll1.frame:Show()
     CS.col1Scroll = scroll1
 
-    -- Button Settings TabGroup. The tab list is refreshed later based on the
-    -- selected group's display mode, so texture panels can omit Overrides.
+    -- Button Settings TabGroup. The tab list is refreshed later from the
+    -- selected entry: one Settings tab (labelled "Condition" on trigger
+    -- panels), or the single appended multi-select tab.
     local bsTabGroup = AceGUI:Create("TabGroup")
     bsTabGroup:SetTabs({
-        { value = "settings",  text = "Settings" },
-        { value = "overrides", text = "Overrides" },
-        { value = "loadconditions", text = "Visibility" },
+        { value = "settings", text = "Settings" },
     })
     bsTabGroup:SetLayout("Fill")
 
     bsTabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
-        -- Both text-format editors are settled here, before anything else:
-        -- the entry Overrides one because ReleaseChildren below hands its
-        -- container frame back to the pool, and the panel Format tab one
-        -- because selecting an entry tab hands the settings surface to entry
-        -- scope. A controller is only ever created inside this callback or the
-        -- panel tabs' twin, and both release both, so the two are never live
-        -- at once. Release is idempotent.
-        if ST._ReleaseTextFormatOverrideEditor then
-            ST._ReleaseTextFormatOverrideEditor()
-        end
+        -- The config's one text-format editor is settled here, before anything
+        -- else: it lives on the panel Format tab, and selecting an entry tab
+        -- hands the settings surface away from it. Release is idempotent, so
+        -- the panel-side seams releasing again costs nothing.
         if ST._ReleaseTextFormatTabEditor then
             ST._ReleaseTextFormatTabEditor()
         end
@@ -2067,23 +2054,27 @@ local function CreateConfigPanel()
                 return
             end
 
-            if group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
-                and CS.selectedRotationAssistantEntry == true then
-                if tab == "loadconditions" then
-                    local buttonData = CooldownCompanion:GetRotationAssistantConfigButtonData(group)
-                    ST._BuildEntryLoadConditionsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
-                end
-                return
-            end
+            -- The rotation assistant entry has no entry tabs at all: its one
+            -- surface is Visibility, which the panel-side tab now builds for
+            -- whichever entry is selected. Nothing to build here.
 
             local buttonData = CS.selectedButton and group.buttons[CS.selectedButton]
             if not buttonData then return end
 
+            -- One identity line at the top of the entry pane, emitted here
+            -- rather than inside the builders so it appears exactly once
+            -- whatever they go on to add. Multi-select returned above: it
+            -- heads its own "<n> Selected".
             if tab == "settings" then
+                ST._BuildEntryIdentityHeading(scroll, buttonData)
+
                 if group.displayMode == "trigger" then
                     ST._BuildTriggerConditionSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
                     -- Trigger panels have no Talent Conditions section to sit above.
                     ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
+                    -- Trigger entries customize sections like any other, so
+                    -- their stranded customizations need the same way out.
+                    ST._BuildInactiveCustomizationsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
                 else
                     if buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
                         ST._BuildItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
@@ -2094,18 +2085,26 @@ local function CreateConfigPanel()
                     -- so everything below Show Conditions is emitted through the
                     -- visibility builder's mid-point hook rather than after it.
                     ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons, nil, function()
+                        -- Aura Tracking leads the hook, so it lands directly
+                        -- under Show Conditions (owner ruling): the aura
+                        -- toggles up there configure behavior that depends on
+                        -- the setup made here. Gated exactly as the retired
+                        -- Aura tab was, so entries that never offered it still
+                        -- get nothing.
+                        if ST._EntryOffersAuraTab(group, buttonData) then
+                            ST._BuildAuraTrackingSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
+                        end
                         ST._BuildCustomKeybindSection(scroll, buttonData)
                         ST._BuildCustomNameSection(scroll, buttonData)
                         ST._BuildItemFallbacksSection(scroll, buttonData, CS.buttonSettingsInfoButtons)
                         ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
+                        -- Last in the hook, so it sits directly above Talent
+                        -- Conditions (which stays the final section, owner
+                        -- ruling). Builds nothing while every customization
+                        -- is reachable through the styling tabs' own chrome.
+                        ST._BuildInactiveCustomizationsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
                     end)
                 end
-            elseif tab == "aura" then
-                ST._BuildAuraTab(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
-            elseif tab == "loadconditions" then
-                ST._BuildEntryLoadConditionsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
-            elseif tab == "overrides" then
-                ST._BuildOverridesTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
             end
         end
 

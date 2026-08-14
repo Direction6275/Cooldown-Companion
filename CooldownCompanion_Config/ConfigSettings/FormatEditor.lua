@@ -1,8 +1,8 @@
 --[[
     CooldownCompanion - ConfigSettings/FormatEditor.lua
     The text-mode format editor: syntax highlighting, validation, token and
-    conditional pickers. Built into whichever config surface hosts it (the
-    panel's Format tab, an entry's Format Override section) through the
+    conditional pickers. Built into its one config surface - the panel's
+    Format tab, which is a lens onto the selected entry - through the
     component below; this file owns no window of its own.
 
     There is no scenario preview here: the pinned live mirror above the config
@@ -498,14 +498,14 @@ end
 -- opts.onCommit optional; called when editing is explicitly finished by focus
 --               loss or Enter so the host can flush its debounced write
 --
--- Hosts carry their own bookkeeping in the same target table (the groupId they
--- refresh through); the component reads only the three keys listed above.
+-- The host carries its own bookkeeping in the same target table (the groupId it
+-- refreshes through); the component reads only the three keys listed above.
 --
--- The host owns the window or tab, the title, and EVERY commit: this component
--- never writes to the profile and deliberately offers no commit method of its
--- own. Both hosts debounce their write and end it at RefreshGroupFrame,
--- because a commit path that reached RefreshConfigPanel would release the very
--- editor being typed in and drop the cursor.
+-- The host owns the tab, the title, and EVERY commit: this component never
+-- writes to the profile and deliberately offers no commit method of its own.
+-- The host debounces its write and ends it at RefreshGroupFrame, because a
+-- commit path that reached RefreshConfigPanel would release the very editor
+-- being typed in and drop the cursor.
 ------------------------------------------------------------------------
 local function BuildFormatEditorContent(container, opts)
     opts = opts or {}
@@ -976,7 +976,6 @@ end
 ------------------------------------------------------------------------
 -- EXPORTS
 ------------------------------------------------------------------------
--- The editor body, built into whichever config surface hosts it (the panel's
--- Format tab, an entry's Format Override section). See the component's header
--- comment for the controller API.
+-- The editor body, built into its one config surface (the panel's Format tab).
+-- See the component's header comment for the controller API.
 ST._BuildFormatEditorContent = BuildFormatEditorContent

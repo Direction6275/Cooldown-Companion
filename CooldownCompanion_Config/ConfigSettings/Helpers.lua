@@ -246,6 +246,50 @@ local function AnchorLeftAlignedHeadingRule(heading, afterFrame)
     return true
 end
 
+-- Append one decoration to a heading's badge line and keep the trailing rule
+-- (or the stock right line) behind it.
+--
+-- The chain grows label -> first badge -> second badge, so N decorations
+-- compose without any caller having to know what came before it: the tail is
+-- kept on the heading's FRAME, which is what AceGUI recycles. The tail is
+-- cleared on release for the same reason ApplyLeftAlignedHeading restores the
+-- stock anatomy there - a Heading that comes back out of the shared pool must
+-- not still be chaining off a decoration from its previous life.
+local HEADING_BADGE_GAP = 4
+
+local function ChainHeadingBadges(heading, widget)
+    local frame = heading and heading.frame
+    if not (frame and widget) then
+        return widget
+    end
+
+    local tail = frame._cdcHeadingBadgeTail or heading.label
+    widget:SetParent(frame)
+    widget:ClearAllPoints()
+    widget:SetPoint("LEFT", tail, "RIGHT", HEADING_BADGE_GAP, 0)
+    frame._cdcHeadingBadgeTail = widget
+
+    -- Left-aligned headings fade a rule out to the right of the line; centered
+    -- ones use the stock right texture. Same branch every badge helper takes.
+    if not AnchorLeftAlignedHeadingRule(heading, widget) then
+        heading.right:ClearAllPoints()
+        heading.right:SetPoint("RIGHT", frame, "RIGHT", -3, 0)
+        heading.right:SetPoint("LEFT", widget, "RIGHT", HEADING_BADGE_GAP, 0)
+    end
+
+    -- Chain, don't replace: the collapse button and the left-aligned variant
+    -- already installed handlers of their own on this heading.
+    local prevOnRelease = heading.events and heading.events["OnRelease"]
+    heading:SetCallback("OnRelease", function(w, event, ...)
+        if prevOnRelease then
+            prevOnRelease(w, event, ...)
+        end
+        frame._cdcHeadingBadgeTail = nil
+    end)
+
+    return widget
+end
+
 -- Helper: build a class-colored collapsible section Heading wired to a
 -- collapse-state store. store defaults to CS.collapsedSections (the config
 -- columns' store); resource-bar panels pass their own. refreshFn defaults to
@@ -280,9 +324,108 @@ local function BuildCollapsibleSection(container, title, key, store, refreshFn, 
     return heading, collapsed, btn
 end
 
+------------------------------------------------------------------------
+-- Entry identity heading
+------------------------------------------------------------------------
+
+-- One quiet line at the top of an entry pane (Settings, Aura, and the
+-- trigger panels' Condition) naming what the tabs below are editing: the
+-- entry's icon, its display name, and its tracking kind. Informational, not
+-- a section, so it carries no caret and no collapse state - but it keeps the
+-- row grammar's shape, so the sections that follow line up under it.
+local IDENTITY_ICON_SIZE = 18
+-- Spell and item art ships with a baked border that reads as a pasted
+-- sticker at this size, so the outer 8% is trimmed off - the crop every
+-- other icon in the config wears.
+local IDENTITY_ICON_CROP = 0.08
+-- The "Editing:" breadcrumb's muted grey, so "(Spell)" reads the same in
+-- both places.
+local IDENTITY_KIND_COLOR = "|cff7d7566"
+-- Stock GameFontNormal gold. The section headings below wear the class
+-- colour; this line names the entry rather than opening a section, so it
+-- stays the plain heading gold and does not read as one of them.
+local IDENTITY_LABEL_COLOR = { 1, 0.82, 0 }
+
+-- Cached on the heading's FRAME, which is what AceGUI recycles, so a heading
+-- that passes through here twice does not stack duplicate textures. Hidden
+-- again on release (below) for the same reason the fading rule is: the
+-- Heading pool is shared with every other user of it.
+local function EnsureIdentityHeadingIcon(heading)
+    local frame = heading.frame
+    local icon = frame._cdcIdentityIcon
+    if not icon then
+        icon = frame:CreateTexture(nil, "OVERLAY")
+        icon:SetSize(IDENTITY_ICON_SIZE, IDENTITY_ICON_SIZE)
+        -- Set once: the crop survives every later SetTexture.
+        icon:SetTexCoord(IDENTITY_ICON_CROP, 1 - IDENTITY_ICON_CROP,
+            IDENTITY_ICON_CROP, 1 - IDENTITY_ICON_CROP)
+        frame._cdcIdentityIcon = icon
+    end
+    return icon
+end
+
+-- The "Editing:" breadcrumb's kind string, replicated rather than shared:
+-- its owner (UpdateEditingContext in Config/ButtonsWideColumn.lua) keeps it
+-- in local scope. Same addedAs fallback the entry name decorations use.
+-- Change the two together. Only spell entries carry a kind; items and
+-- trigger entries show icon and name alone, exactly as the breadcrumb does.
+local function GetEntryIdentityKindText(buttonData)
+    if buttonData.type ~= "spell" then return nil end
+    local addedAs = buttonData.addedAs
+    if addedAs ~= "spell" and addedAs ~= "aura" then
+        addedAs = buttonData.isPassive and "aura" or "spell"
+    end
+    return addedAs == "aura" and "Aura" or "Spell"
+end
+
+local function BuildEntryIdentityHeading(container, buttonData)
+    if not (container and buttonData) then return nil end
+
+    local name = (ST._GetConfigEntryDisplayName
+        and ST._GetConfigEntryDisplayName(buttonData)) or buttonData.name
+    if not name or name == "" then return nil end
+
+    local kindText = GetEntryIdentityKindText(buttonData)
+    if kindText then
+        name = name .. " " .. IDENTITY_KIND_COLOR .. "(" .. kindText .. ")|r"
+    end
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(name)
+    -- Restores the stock label/left/right anatomy a recycled Heading can
+    -- arrive with stale; the class tint it also applies is overwritten below.
+    ColorHeading(heading)
+    heading.label:SetTextColor(IDENTITY_LABEL_COLOR[1], IDENTITY_LABEL_COLOR[2],
+        IDENTITY_LABEL_COLOR[3])
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+
+    -- The icon takes the caret column, so the label sits at the same inset as
+    -- every collapsible section heading under it and the whole pane reads on
+    -- one left edge.
+    local icon = EnsureIdentityHeadingIcon(heading)
+    icon:SetTexture((ST._GetButtonIcon and ST._GetButtonIcon(buttonData)) or 134400)
+    ApplyLeftAlignedHeading(heading, icon)
+    icon:Show()
+
+    -- Chain, don't replace: ApplyLeftAlignedHeading just installed its own
+    -- restore handler on this heading.
+    local prevOnRelease = heading.events and heading.events["OnRelease"]
+    heading:SetCallback("OnRelease", function(widget, event, ...)
+        if prevOnRelease then
+            prevOnRelease(widget, event, ...)
+        end
+        icon:Hide()
+        icon:ClearAllPoints()
+    end)
+
+    return heading
+end
+
 -- Helper: add an advanced-settings button on a parent widget (CheckBox or Heading).
 -- The button opens the shared side editor when options.build is provided.
 local ADVANCED_TOGGLE_ATLAS = "QuestLog-icon-setting"
+local ADVANCED_TOGGLE_INERT_ALPHA = 0.4
 
 local function GetAdvancedToggleTitle(parentWidget, options)
     if options and options.title and options.title ~= "" then
@@ -327,6 +470,18 @@ local function SetAdvancedToggleActive(btn, active)
     end
 end
 
+-- A gear that sits inside a read-only (inert) section is dimmed with
+-- desaturation plus frame-level alpha, deliberately NOT with the vertex color
+-- SetAdvancedToggleActive owns: object alpha and vertex alpha multiply, so the
+-- two states stay independent and either one can be restored without having to
+-- know the other's current value.
+local function SetAdvancedToggleInert(btn, inert)
+    if btn and btn._icon then
+        btn._icon:SetDesaturated(inert and true or false)
+        btn._icon:SetAlpha(inert and ADVANCED_TOGGLE_INERT_ALPHA or 1)
+    end
+end
+
 local function SetActiveAdvancedSettingsToggleButton(btn)
     local current = CS.activeAdvancedSettingsToggleButton
     if current and current ~= btn then
@@ -365,6 +520,12 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
 
     btn:SetParent(frame)
     btn:ClearAllPoints()
+    -- The gear is cached on the widget's frame and outlives the build that put
+    -- it there, so an inert section (ApplyInertRange below) can leave it
+    -- disabled and dimmed. Re-assert the interactive state here: the next
+    -- tenant of a recycled frame must never inherit the previous one's gate.
+    btn:Enable()
+    SetAdvancedToggleInert(btn, false)
     btn._isAdvancedToggle = true
     btn._advancedSettingKey = settingKey
 
@@ -471,7 +632,6 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
     return isActive, btn
 end
 
-local tabInfoButtons = CS.tabInfoButtons
 CS.SetActiveAdvancedSettingsToggleButton = SetActiveAdvancedSettingsToggleButton
 
 local function GroupSupportsPerButtonOverrides(group)
@@ -580,183 +740,219 @@ local function CanButtonUseConfigOverrideSection(buttonData, sectionId)
 end
 
 ------------------------------------------------------------------------
--- One-shot override targeting (owner ruling 2026-07-18): with no entry
--- selected in the wide view, promote badges stay active and arm a
--- targeting mode; the next click on an entry in the mirror preview
--- promotes the section for that entry and lands in its Overrides tab.
--- ButtonPanelPreview.lua owns the banner, slot highlights, click
--- consumption, and the cancel paths.
+-- STYLE LENS
+--
+-- Selecting an entry turns the panel's styling tabs into a lens onto that
+-- entry: every control reads the entry's effective value, and only the
+-- sections the entry has actually customized write anywhere.
+--
+-- The lens is resolved once per build and handed down, so a single tab cannot
+-- disagree with itself about which entry (or none) it is showing.
 ------------------------------------------------------------------------
-local function CanArmOverrideTargeting(group, sectionId)
-    if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then
-        return false
+
+-- One level deep is the whole contract: style tables are colors and other
+-- flat value bags, and rows edit them IN PLACE. Handing a row the group's own
+-- table would make a panel edit land on the entry's lens (or the reverse), so
+-- every table value gets a fresh copy.
+local function CopyDetachedStyleValue(value)
+    if type(value) ~= "table" then
+        return value
     end
-    if CS.selectedButton ~= nil or (CS.selectedButtons and next(CS.selectedButtons)) then
-        return false
+    local copy = {}
+    for k, v in pairs(value) do
+        copy[k] = v
     end
-    if not group or group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
-        return false
-    end
-    -- Arm only when the click can actually land somewhere: at least one
-    -- entry must be able to use this section (already-overridden entries
-    -- count — targeting them jumps to their Overrides tab).
-    for _, buttonData in ipairs(group.buttons or {}) do
-        if (CanButtonUseConfigOverrideSection(buttonData, sectionId)) then
-            return true
-        end
-    end
-    return false
+    return copy
 end
 
-local function IsOverrideTargetingArmed(sectionId)
-    local targeting = CS.overrideTargeting
-    return targeting ~= nil
-        and targeting.sectionId == sectionId
-        and targeting.panelId == CS.selectedGroup
+-- Build a DETACHED snapshot of what an entry actually renders with: the
+-- panel's style with the entry's overrides laid on top.
+--
+-- Deliberately not GetEffectiveStyle: that returns buttonData.styleOverrides
+-- itself wearing an __index metatable pointing at the group style, i.e. a live
+-- alias of saved data. A config row handed that table would write straight
+-- into the override store even for a section the entry never customized.
+--
+-- `pairs` never walks __index, so a metatable the runtime left on
+-- styleOverrides is simply not seen here.
+local function BuildDetachedEffectiveStyle(groupStyle, buttonData)
+    local effective = {}
+    for key, value in pairs(groupStyle or {}) do
+        effective[key] = CopyDetachedStyleValue(value)
+    end
+    for key, value in pairs(buttonData and buttonData.styleOverrides or {}) do
+        effective[key] = CopyDetachedStyleValue(value)
+    end
+    return effective
 end
 
-local function ToggleOverrideTargeting(sectionId)
-    if IsOverrideTargetingArmed(sectionId) then
-        CS.overrideTargeting = nil
-    else
-        CS.overrideTargeting = { sectionId = sectionId, panelId = CS.selectedGroup }
-    end
-    CooldownCompanion:RefreshConfigPanel()
-end
-
-local function ApplyPromoteBadgeState(icon, promoteBtn, canPromote, canTarget, sectionId)
-    if canPromote or canTarget then
-        icon:SetAtlas("Crosshair_VehichleCursor_32")
-        promoteBtn:Enable()
-    else
-        icon:SetAtlas("Crosshair_unableVehichleCursor_32")
-        promoteBtn:Disable()
-    end
-    if canTarget and IsOverrideTargetingArmed(sectionId) then
-        icon:SetVertexColor(0.2, 1, 0.4)
-    else
-        icon:SetVertexColor(1, 1, 1)
-    end
-end
-
-local function AddPromoteBadgeTooltipLines(canPromote, canTarget, sectionId, sectionLabel,
-        btnData, sectionAllowed, sectionUnavailableReason)
-    if canPromote then
-        GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
-    elseif canTarget and IsOverrideTargetingArmed(sectionId) then
-        GameTooltip:AddLine("Click an entry in the preview to override " .. sectionLabel)
-        GameTooltip:AddLine("Click again, right-click the preview, or press Esc to cancel", 0.7, 0.7, 0.7)
-    elseif canTarget then
-        GameTooltip:AddLine("Override " .. sectionLabel .. " for one entry")
-        GameTooltip:AddLine("Click, then choose the entry in the preview", 0.7, 0.7, 0.7)
-    elseif btnData and sectionUnavailableReason == "noCooldown" then
-        GameTooltip:AddLine("This override is not available for spells without a real cooldown", 0.5, 0.5, 0.5)
-    elseif btnData and sectionUnavailableReason == "auraTracking" then
-        GameTooltip:AddLine("This override is only available for entries that track an aura", 0.5, 0.5, 0.5)
-    elseif btnData and not sectionAllowed then
-        GameTooltip:AddLine("This override is not available for this entry type", 0.5, 0.5, 0.5)
-    else
-        GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
-    end
-end
-
-local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupStyle)
-    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+-- Resolve which lens the styling tabs are looking through:
+--   "panel" - no entry selected (or the panel has no per-entry overrides at
+--             all, as with texture panels): tabs edit the panel style.
+--   "entry" - exactly one entry selected: tabs read that entry's effective
+--             style; per-section scope decides where (or whether) they write.
+--   "multi" - two or more entries selected: no single entry to show, so the
+--             tabs stay on the panel style.
+-- Multi-select is counted the same way every other per-entry surface counts
+-- it, so scope chrome availability and lens mode can never disagree.
+local function ResolveStyleLens(group)
     if not GroupSupportsPerButtonOverrides(group) then
-        return nil
+        return { mode = "panel" }
     end
 
-    local promoteBtn = CreateFrame("Button", nil, headingWidget.frame)
-    promoteBtn:SetSize(16, 16)
-    -- Left-aligned row-grammar headings put the caret first and the label
-    -- second, so badges follow the label and push the fading rule right. The
-    -- stock `right` texture is hidden on those headings - leave it alone.
-    if headingWidget.frame._cdcHeadingRule and headingWidget.frame._cdcHeadingRule:IsShown() then
-        promoteBtn:SetPoint("LEFT", headingWidget.label, "RIGHT", 4, 0)
-        AnchorLeftAlignedHeadingRule(headingWidget, promoteBtn)
-    else
-        local anchorAfter = headingWidget.frame._cdcCollapseBtn or headingWidget.label
-        promoteBtn:SetPoint("LEFT", anchorAfter, "RIGHT", 4, 0)
-        headingWidget.right:ClearAllPoints()
-        headingWidget.right:SetPoint("RIGHT", headingWidget.frame, "RIGHT", -3, 0)
-        headingWidget.right:SetPoint("LEFT", promoteBtn, "RIGHT", 4, 0)
-    end
-
-    local icon = promoteBtn:CreateTexture(nil, "OVERLAY")
-    icon:SetSize(12, 12)
-    icon:SetPoint("CENTER")
-
-    -- Determine if promote is available
     local multiCount = 0
     if CS.selectedButtons then
         for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
     end
-    local sectionAllowed, sectionUnavailableReason = CanButtonUseConfigOverrideSection(buttonData, sectionId)
-    local canPromote = CS.selectedButton ~= nil and multiCount < 2
-        and buttonData ~= nil
-        and sectionAllowed
-        and not (buttonData.overrideSections and buttonData.overrideSections[sectionId])
-    local canTarget = not canPromote and CanArmOverrideTargeting(group, sectionId)
 
-    ApplyPromoteBadgeState(icon, promoteBtn, canPromote, canTarget, sectionId)
+    local buttonData = CS.selectedButton and group.buttons and group.buttons[CS.selectedButton]
+    if buttonData and multiCount < 2 then
+        return {
+            mode = "entry",
+            buttonIndex = CS.selectedButton,
+            buttonData = buttonData,
+            effective = BuildDetachedEffectiveStyle(group.style, buttonData),
+        }
+    end
 
-    local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
-    local sectionLabel = sectionDef and sectionDef.label or sectionId
+    if multiCount >= 2 then
+        return { mode = "multi" }
+    end
 
-    promoteBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        AddPromoteBadgeTooltipLines(canPromote, canTarget, sectionId, sectionLabel,
-            buttonData, sectionAllowed, sectionUnavailableReason)
-        GameTooltip:Show()
-    end)
-    promoteBtn:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    promoteBtn:SetScript("OnClick", function()
-        if canPromote then
-            CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CS.buttonSettingsTab = "overrides"
-            CooldownCompanion:RefreshConfigPanel()
-        elseif canTarget then
-            ToggleOverrideTargeting(sectionId)
+    return { mode = "panel" }
+end
+
+-- Resolve one section against the lens. Returns scope, the table its controls
+-- READ from, and the table they WRITE to.
+--
+-- A nil writeStyle is the inert marker and needs no separate flag: there is
+-- nowhere for the section's controls to commit, so they are read-only.
+--   "panel"/"multi" - panel style, read and written.
+--   "panelOnly"     - a section with no override identity at all (sectionId
+--                     nil): shown through the lens, never written per entry.
+--   "denied"        - this entry type cannot use the section.
+--   "customized"    - the entry owns this section: writes land in its
+--                     styleOverrides.
+--   "inherited"     - the entry follows the panel here: shown, not written.
+local function ResolveLensSection(lens, group, sectionId)
+    local mode = lens and lens.mode or "panel"
+
+    if mode ~= "entry" then
+        local groupStyle = group and group.style
+        return (mode == "multi") and "multi" or "panel", groupStyle, groupStyle
+    end
+
+    if sectionId == nil then
+        return "panelOnly", lens.effective, nil
+    end
+
+    local buttonData = lens.buttonData
+    -- The denied REASON rides along as a fourth return so scope chrome can
+    -- show the centralized copy for it. Callers that only want the first three
+    -- are unaffected.
+    local allowed, deniedReason = CanButtonUseConfigOverrideSection(buttonData, sectionId)
+    if not allowed then
+        return "denied", lens.effective, nil, deniedReason
+    end
+
+    if buttonData.overrideSections and buttonData.overrideSections[sectionId] then
+        return "customized", lens.effective, buttonData.styleOverrides
+    end
+
+    return "inherited", lens.effective, nil
+end
+
+-- Inert sections are built exactly like live ones and then gated afterwards,
+-- so a read-only section can never drift from the section it mirrors. Mark the
+-- column before the section's widgets go in, apply after.
+local function MarkInertRange(column)
+    local children = column and column.children
+    return children and #children or 0
+end
+
+local function MakeWidgetTreeInert(widget)
+    if widget.SetDisabled then
+        widget:SetDisabled(true)
+    end
+
+    -- Badges live on the widget's FRAME, not in the AceGUI child tree, so the
+    -- walk below would never reach a gear. Gate it here instead - an inert
+    -- section's advanced panel is just more controls for the same values.
+    local frame = widget.frame
+    local advancedBtn = frame and frame._cdcAdvancedBtn
+    if advancedBtn then
+        advancedBtn:Disable()
+        SetAdvancedToggleInert(advancedBtn, true)
+    end
+
+    local children = widget.children
+    if children then
+        for i = 1, #children do
+            local child = children[i]
+            if child then
+                MakeWidgetTreeInert(child)
+            end
         end
-    end)
+    end
+end
 
-    table.insert(tabInfoButtons, promoteBtn)
-    return promoteBtn
+local function ApplyInertRange(column, mark)
+    local children = column and column.children
+    if not children then
+        return
+    end
+    for i = (mark or 0) + 1, #children do
+        local child = children[i]
+        if child then
+            MakeWidgetTreeInert(child)
+        end
+    end
+end
+
+-- Why an entry cannot use a section, single-sourced as one clause per reason:
+-- the scope chrome's denied tooltip AND the Inactive Customizations list both
+-- explain the same denials, and the two must never describe one differently.
+-- Each surface supplies only its own framing around the shared clause.
+-- displayMode is list-only: a section from another display mode is never
+-- DRAWN, so no chrome ever asks about it.
+local SECTION_DENIAL_CLAUSES = {
+    noCooldown = "this spell does not have a real cooldown",
+    auraTracking = "this entry is not tracking an aura",
+    displayMode = "the panel's current display mode does not use it",
+    entryType = "this entry type cannot use it",
+}
+
+local function GetSectionDenialClause(reason)
+    return SECTION_DENIAL_CLAUSES[reason] or SECTION_DENIAL_CLAUSES.entryType
+end
+
+local function AddSectionDeniedTooltipLines(reason)
+    GameTooltip:AddLine("Not available: " .. GetSectionDenialClause(reason) .. ".", 0.5, 0.5, 0.5)
 end
 
 ------------------------------------------------------------------------
--- REVERT BUTTON HELPER (for Overrides tab headings)
+-- REVERT GLYPH HELPER (shared by the per-section scope chrome below)
 ------------------------------------------------------------------------
-local function CreateRevertButton(headingWidget, buttonData, sectionId)
-    local revertBtn = CreateFrame("Button", nil, headingWidget.frame)
-    revertBtn:SetSize(16, 16)
-    -- Left-aligned row-grammar headings put the caret first and the label
-    -- second, so badges follow the label and push the fading rule right. The
-    -- stock `right` texture is hidden on those headings - leave it alone.
-    -- Same branch CreatePromoteButton takes, for the same reason.
-    if headingWidget.frame._cdcHeadingRule and headingWidget.frame._cdcHeadingRule:IsShown() then
-        revertBtn:SetPoint("LEFT", headingWidget.label, "RIGHT", 4, 0)
-        AnchorLeftAlignedHeadingRule(headingWidget, revertBtn)
-    else
-    local anchorAfter = headingWidget.frame._cdcCollapseBtn or headingWidget.label
-    revertBtn:SetPoint("LEFT", anchorAfter, "RIGHT", 4, 0)
-    headingWidget.right:ClearAllPoints()
-    headingWidget.right:SetPoint("RIGHT", headingWidget.frame, "RIGHT", -3, 0)
-    headingWidget.right:SetPoint("LEFT", revertBtn, "RIGHT", 4, 0)
-    end
+local REVERT_GLYPH_ATLAS = "common-search-clearbutton"
+local REVERT_GLYPH_SIZE = 12
 
-    local icon = revertBtn:CreateTexture(nil, "OVERLAY")
-    icon:SetSize(12, 12)
+local function GetOverrideSectionLabel(sectionId)
+    local sectionDef = sectionId and ST.OVERRIDE_SECTIONS[sectionId]
+    return sectionDef and sectionDef.label or sectionId
+end
+
+-- The revert glyph's look, wording and click flow. Shared by the scope
+-- chrome's heading and row reverts so the two cannot drift apart. The caller
+-- owns creating and placing the button.
+local function WireRevertGlyph(revertBtn, icon, buttonData, sectionId)
+    icon:SetSize(REVERT_GLYPH_SIZE, REVERT_GLYPH_SIZE)
+    icon:ClearAllPoints()
     icon:SetPoint("CENTER")
-    icon:SetAtlas("common-search-clearbutton")
+    icon:SetAtlas(REVERT_GLYPH_ATLAS)
 
     revertBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
-        GameTooltip:AddLine("Revert " .. (sectionDef and sectionDef.label or sectionId) .. " to group defaults")
+        GameTooltip:AddLine("Revert " .. GetOverrideSectionLabel(sectionId) .. " to group defaults")
         GameTooltip:Show()
     end)
     revertBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -765,149 +961,318 @@ local function CreateRevertButton(headingWidget, buttonData, sectionId)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
-
-    return revertBtn
 end
 
-local function CreateCheckboxPromoteButton(cbWidget, anchorAfterFrame, sectionId, group, groupStyle)
-    if not GroupSupportsPerButtonOverrides(group) then
+------------------------------------------------------------------------
+-- SCOPE CHROME
+--
+-- With an entry selected the styling tabs become a lens onto that entry, and
+-- each section has to say whose values it is showing plus offer the one action
+-- that changes that: Customize on a section the entry inherits from the panel,
+-- Revert on one the entry owns. Sections the entry cannot use say so instead.
+--
+-- The chrome is the ESCAPE HATCH out of a read-only section, so it must stay
+-- live where everything else is gated: it hangs off the widget's FRAME under
+-- _cdcScope* names, and MakeWidgetTreeInert only ever walks AceGUI children
+-- plus _cdcAdvancedBtn. Keep it that way - a scope control the inert pass can
+-- reach would strand the entry with no way back out.
+--
+-- Every element is cached on that frame, re-styled from scratch on each
+-- attach, and hidden both at attach time and on widget release, because the
+-- Heading and row pools are shared and a recycled frame must never wear the
+-- previous tenant's scope.
+------------------------------------------------------------------------
+local SCOPE_CHROME_GOLD = { 1, 0.82, 0 }
+local SCOPE_CHROME_GOLD_HOVER = { 1, 0.93, 0.45 }
+local SCOPE_CHROME_GREY = { 0.5, 0.5, 0.5 }
+local SCOPE_CHROME_HEIGHT = 14
+local SCOPE_GLYPH_BUTTON_SIZE = 16
+local SCOPE_GLYPH_ICON_SIZE = 12
+-- A long entry name would push the heading's fading rule (or a row's control
+-- column) off the line, so the NAME is cut rather than the sentence round it.
+local SCOPE_ENTRY_NAME_MAX_CHARS = 18
+
+local HEADING_SCOPE_FIELDS = { "_cdcScopeNote", "_cdcScopeAction", "_cdcScopeRevert" }
+local ROW_SCOPE_FIELDS = { "_cdcScopeRowAction", "_cdcScopeRowRevert" }
+
+-- Cutting a multi-byte character in half renders as a broken glyph, so walk
+-- whole UTF-8 sequences instead of taking a byte slice.
+local function TruncateEntryName(name)
+    if not name or name == "" then
+        return nil
+    end
+    local pos, count, len = 1, 0, #name
+    while pos <= len do
+        if count >= SCOPE_ENTRY_NAME_MAX_CHARS then
+            return name:sub(1, pos - 1) .. "..."
+        end
+        local byte = name:byte(pos)
+        pos = pos + ((byte < 0xC0 and 1) or (byte < 0xE0 and 2) or (byte < 0xF0 and 3) or 4)
+        count = count + 1
+    end
+    return name
+end
+
+local function GetLensEntryName(lens)
+    local buttonData = lens and lens.buttonData
+    if not buttonData then
+        return nil
+    end
+    -- The config already has one entry-name resolver (override spells, custom
+    -- names, equipment slots, CDM child slots); never grow a second.
+    local name = ST._GetConfigEntryDisplayName
+        and ST._GetConfigEntryDisplayName(buttonData)
+        or buttonData.name
+    return TruncateEntryName(name)
+end
+
+-- Customize: copy the panel's values for this section onto the entry, then
+-- rebuild. Deliberately no tab navigation - the section the owner is looking
+-- at is the section that just became editable, in place.
+local function PromoteLensSection(lens, group, sectionId)
+    local buttonData = lens and lens.buttonData
+    local groupStyle = group and group.style
+    if not (buttonData and groupStyle and sectionId) then
+        return
+    end
+    CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
+    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function HideScopeChrome(frame, fields)
+    for i = 1, #fields do
+        local element = frame[fields[i]]
+        if element then
+            element:ClearAllPoints()
+            element:Hide()
+            element:EnableMouse(false)
+            element:SetScript("OnEnter", nil)
+            element:SetScript("OnLeave", nil)
+            -- Frames have no OnClick script to clear, and asking for one is an
+            -- error. Dropping it on the buttons releases the build's lens and
+            -- group upvalues with the chrome.
+            if element:GetObjectType() == "Button" then
+                element:SetScript("OnClick", nil)
+            end
+            element:SetParent(nil)
+            -- Re-attaching on the same frame in one build must not chain off
+            -- the chrome that was just hidden.
+            if frame._cdcHeadingBadgeTail == element then
+                frame._cdcHeadingBadgeTail = nil
+            end
+        end
+    end
+end
+
+-- Text chrome: a note (plain Frame) or an affordance (Button), both a single
+-- line of text sized to the string so the badge chain can measure them.
+local function EnsureScopeText(frame, field, clickable)
+    local element = frame[field]
+    if not element then
+        element = CreateFrame(clickable and "Button" or "Frame", nil, frame)
+        element:SetHeight(SCOPE_CHROME_HEIGHT)
+        element.text = element:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        element.text:SetPoint("LEFT")
+        frame[field] = element
+    end
+
+    element:SetParent(frame)
+    element:ClearAllPoints()
+    element:EnableMouse(clickable and true or false)
+    element:SetScript("OnEnter", nil)
+    element:SetScript("OnLeave", nil)
+    if clickable then
+        element:SetScript("OnClick", nil)
+    end
+    element:Show()
+    element.text:Show()
+    return element
+end
+
+local function SetScopeText(element, text, color)
+    element.text:SetText(text or "")
+    element.text:SetTextColor(color[1], color[2], color[3])
+    element:SetWidth(math.max(element.text:GetStringWidth(), 1))
+end
+
+-- Glyph chrome: one 16px hit area carrying a 12px icon, worn by the revert
+-- glyph. Every icon state it can wear is re-asserted here for pool reuse.
+local function EnsureScopeGlyph(frame, field)
+    local btn = frame[field]
+    if not btn then
+        btn = CreateFrame("Button", nil, frame)
+        btn:SetSize(SCOPE_GLYPH_BUTTON_SIZE, SCOPE_GLYPH_BUTTON_SIZE)
+        btn.icon = btn:CreateTexture(nil, "OVERLAY")
+        btn.icon:SetSize(SCOPE_GLYPH_ICON_SIZE, SCOPE_GLYPH_ICON_SIZE)
+        btn.icon:SetPoint("CENTER")
+        frame[field] = btn
+    end
+
+    btn:SetParent(frame)
+    btn:ClearAllPoints()
+    btn:EnableMouse(true)
+    btn:Enable()
+    btn:SetScript("OnEnter", nil)
+    btn:SetScript("OnLeave", nil)
+    btn:SetScript("OnClick", nil)
+    btn:Show()
+    btn.icon:Show()
+    btn.icon:SetDesaturated(false)
+    btn.icon:SetVertexColor(1, 1, 1)
+    return btn
+end
+
+local function WireScopeAction(action, lens, group, sectionId, tooltipText)
+    action:SetScript("OnEnter", function(self)
+        self.text:SetTextColor(SCOPE_CHROME_GOLD_HOVER[1], SCOPE_CHROME_GOLD_HOVER[2], SCOPE_CHROME_GOLD_HOVER[3])
+        if tooltipText then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(tooltipText)
+            GameTooltip:Show()
+        end
+    end)
+    action:SetScript("OnLeave", function(self)
+        self.text:SetTextColor(SCOPE_CHROME_GOLD[1], SCOPE_CHROME_GOLD[2], SCOPE_CHROME_GOLD[3])
+        GameTooltip:Hide()
+    end)
+    action:SetScript("OnClick", function()
+        PromoteLensSection(lens, group, sectionId)
+    end)
+end
+
+-- Scope chrome for a section HEADING: the note says whose values the section
+-- is showing, and the affordance after it is the only way to change that.
+-- Returns the resolved scope for callers that also gate the section's body.
+local function AttachHeadingScopeChrome(heading, lens, group, sectionId)
+    local frame = heading and heading.frame
+    if not frame then
         return nil
     end
 
-    local btnData = CS.selectedButton and group.buttons[CS.selectedButton]
-    local promoteBtn = CreateFrame("Button", nil, cbWidget.frame)
-    promoteBtn:SetSize(16, 16)
+    local scope, _, _, deniedReason = ResolveLensSection(lens, group, sectionId)
+    HideScopeChrome(frame, HEADING_SCOPE_FIELDS)
 
-    -- Row-grammar widgets ignore anchorAfterFrame entirely: AnchorRowBadge
-    -- appends to the label's badge chain, which already ends at the gear when
-    -- there is one. Stock checkboxes keep the old anchorAfterFrame behaviour.
-    if cbWidget.badgeAnchor then
-        ST._AnchorRowBadge(cbWidget, promoteBtn)
-    elseif anchorAfterFrame and anchorAfterFrame:IsShown() then
-        promoteBtn:SetPoint("LEFT", anchorAfterFrame, "RIGHT", 4, 0)
-    else
-        promoteBtn:SetPoint("LEFT", cbWidget.checkbg, "RIGHT", cbWidget.text:GetStringWidth() + 6, 0)
+    local attached = false
+
+    if scope == "inherited" then
+        local note = EnsureScopeText(frame, "_cdcScopeNote", false)
+        SetScopeText(note, "Panel setting", SCOPE_CHROME_GREY)
+        ChainHeadingBadges(heading, note)
+
+        local action = EnsureScopeText(frame, "_cdcScopeAction", true)
+        SetScopeText(action, "Customize for this entry", SCOPE_CHROME_GOLD)
+        WireScopeAction(action, lens, group, sectionId)
+        ChainHeadingBadges(heading, action)
+        attached = true
+
+    elseif scope == "customized" then
+        local entryName = GetLensEntryName(lens)
+        local note = EnsureScopeText(frame, "_cdcScopeNote", false)
+        SetScopeText(note, "Customized for " .. (entryName or "this entry"), SCOPE_CHROME_GOLD)
+        ChainHeadingBadges(heading, note)
+
+        local revert = EnsureScopeGlyph(frame, "_cdcScopeRevert")
+        WireRevertGlyph(revert, revert.icon, lens.buttonData, sectionId)
+        ChainHeadingBadges(heading, revert)
+        attached = true
+
+    elseif scope == "denied" then
+        local note = EnsureScopeText(frame, "_cdcScopeNote", false)
+        SetScopeText(note, "Not available", SCOPE_CHROME_GREY)
+        note:EnableMouse(true)
+        note:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            AddSectionDeniedTooltipLines(deniedReason)
+            GameTooltip:Show()
+        end)
+        note:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        ChainHeadingBadges(heading, note)
+        attached = true
+
+    elseif scope == "panelOnly" then
+        local note = EnsureScopeText(frame, "_cdcScopeNote", false)
+        SetScopeText(note, "Applies to all entries", SCOPE_CHROME_GREY)
+        ChainHeadingBadges(heading, note)
+        attached = true
     end
 
-    local icon = promoteBtn:CreateTexture(nil, "OVERLAY")
-    icon:SetSize(12, 12)
-    icon:SetPoint("CENTER")
-
-    local multiCount = 0
-    if CS.selectedButtons then
-        for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
+    if attached then
+        -- Chain, don't replace: the collapse button, the left-aligned heading
+        -- variant and ChainHeadingBadges all keep handlers here.
+        local prevOnRelease = heading.events and heading.events["OnRelease"]
+        heading:SetCallback("OnRelease", function(widget, event, ...)
+            if prevOnRelease then
+                prevOnRelease(widget, event, ...)
+            end
+            HideScopeChrome(frame, HEADING_SCOPE_FIELDS)
+        end)
     end
-    local sectionAllowed, sectionUnavailableReason = CanButtonUseConfigOverrideSection(btnData, sectionId)
-    local canPromote = CS.selectedButton ~= nil and multiCount < 2
-        and btnData ~= nil
-        and sectionAllowed
-        and not (btnData.overrideSections and btnData.overrideSections[sectionId])
-    local canTarget = not canPromote and CanArmOverrideTargeting(group, sectionId)
 
-    ApplyPromoteBadgeState(icon, promoteBtn, canPromote, canTarget, sectionId)
-
-    local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
-    local sectionLabel = sectionDef and sectionDef.label or sectionId
-
-    promoteBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        AddPromoteBadgeTooltipLines(canPromote, canTarget, sectionId, sectionLabel,
-            btnData, sectionAllowed, sectionUnavailableReason)
-        GameTooltip:Show()
-    end)
-    promoteBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    promoteBtn:SetScript("OnClick", function()
-        if canPromote then
-            CooldownCompanion:PromoteSection(btnData, groupStyle, sectionId)
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CS.buttonSettingsTab = "overrides"
-            CooldownCompanion:RefreshConfigPanel()
-        elseif canTarget then
-            ToggleOverrideTargeting(sectionId)
-        end
-    end)
-
-    table.insert(tabInfoButtons, promoteBtn)
-    return promoteBtn
+    return scope
 end
 
-local function CreateColorPickerPromoteButton(colorPickerWidget, sectionId, group, groupStyle)
-    if not GroupSupportsPerButtonOverrides(group) then
+-- Scope chrome for a single ROW, for sections whose identity is one setting
+-- rather than a whole heading. Chained through the row's badge anchor so it
+-- composes with the gear and info badges instead of fighting them.
+--
+-- Call this AFTER the row's disabled state is set: a row greyed out by its own
+-- dependency keeps that grey, and the revert glyph still shows ownership.
+local function AttachRowScopeChrome(rowWidget, lens, group, sectionId)
+    local frame = rowWidget and rowWidget.frame
+    if not (frame and rowWidget.badgeAnchor) then
         return nil
     end
 
-    local btnData = CS.selectedButton and group.buttons[CS.selectedButton]
-    local frame = colorPickerWidget.frame
-    local promoteBtn = frame._cdcColorPromoteBtn
+    local scope = ResolveLensSection(lens, group, sectionId)
+    HideScopeChrome(frame, ROW_SCOPE_FIELDS)
 
-    if not promoteBtn then
-        promoteBtn = CreateFrame("Button", nil, frame)
-        promoteBtn:SetSize(16, 16)
-        promoteBtn.icon = promoteBtn:CreateTexture(nil, "OVERLAY")
-        promoteBtn.icon:SetSize(12, 12)
-        promoteBtn.icon:SetPoint("CENTER")
-        frame._cdcColorPromoteBtn = promoteBtn
-    end
+    local attached = false
 
-    promoteBtn:SetParent(frame)
-    promoteBtn:ClearAllPoints()
-    if colorPickerWidget.badgeAnchor then
-        -- Row-grammar color row: badges chain off the end of the label text.
-        ST._AnchorRowBadge(colorPickerWidget, promoteBtn)
-    else
-        promoteBtn:SetPoint("LEFT", colorPickerWidget.colorSwatch, "RIGHT", colorPickerWidget.text:GetStringWidth() + 8, 0)
-    end
-    promoteBtn:Show()
-    promoteBtn.icon:Show()
+    if scope == "inherited" then
+        local action = EnsureScopeText(frame, "_cdcScopeRowAction", true)
+        SetScopeText(action, "Customize", SCOPE_CHROME_GOLD)
+        WireScopeAction(action, lens, group, sectionId,
+            "Customize " .. GetOverrideSectionLabel(sectionId) .. " for this entry")
+        ST._AnchorRowBadge(rowWidget, action)
+        attached = true
 
-    local multiCount = 0
-    if CS.selectedButtons then
-        for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
-    end
-    local sectionAllowed, sectionUnavailableReason = CanButtonUseConfigOverrideSection(btnData, sectionId)
-    local canPromote = CS.selectedButton ~= nil and multiCount < 2
-        and btnData ~= nil
-        and sectionAllowed
-        and not (btnData.overrideSections and btnData.overrideSections[sectionId])
-    local canTarget = not canPromote and CanArmOverrideTargeting(group, sectionId)
-
-    ApplyPromoteBadgeState(promoteBtn.icon, promoteBtn, canPromote, canTarget, sectionId)
-
-    local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
-    local sectionLabel = sectionDef and sectionDef.label or sectionId
-
-    promoteBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        AddPromoteBadgeTooltipLines(canPromote, canTarget, sectionId, sectionLabel,
-            btnData, sectionAllowed, sectionUnavailableReason)
-        GameTooltip:Show()
-    end)
-    promoteBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    promoteBtn:SetScript("OnClick", function()
-        if canPromote then
-            CooldownCompanion:PromoteSection(btnData, groupStyle, sectionId)
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CS.buttonSettingsTab = "overrides"
-            CooldownCompanion:RefreshConfigPanel()
-        elseif canTarget then
-            ToggleOverrideTargeting(sectionId)
+    elseif scope == "customized" then
+        if rowWidget.rowLabel and not rowWidget.disabled then
+            rowWidget.rowLabel:SetTextColor(SCOPE_CHROME_GOLD[1], SCOPE_CHROME_GOLD[2], SCOPE_CHROME_GOLD[3])
+            frame._cdcScopeRowTinted = true
         end
-    end)
+        local revert = EnsureScopeGlyph(frame, "_cdcScopeRowRevert")
+        WireRevertGlyph(revert, revert.icon, lens.buttonData, sectionId)
+        ST._AnchorRowBadge(rowWidget, revert)
+        attached = true
 
-    -- Chain, don't replace: a color row can also carry a gear whose own
-    -- OnRelease detach would otherwise be clobbered here.
-    local prevOnRelease = colorPickerWidget.events and colorPickerWidget.events["OnRelease"]
-    colorPickerWidget:SetCallback("OnRelease", function(widget, event, ...)
-        if prevOnRelease then
-            prevOnRelease(widget, event, ...)
-        end
-        promoteBtn:ClearAllPoints()
-        promoteBtn:Hide()
-        promoteBtn:SetParent(nil)
-    end)
+    end
+    -- Denied rows carry NO chrome: the row is already inert-dimmed, and the
+    -- missing Customize affordance is the signal that this entry type cannot
+    -- own the setting. The denial reason lives on the section heading where
+    -- one exists; per-row badges read as clutter (owner ruling 2026-08-14).
 
-    table.insert(tabInfoButtons, promoteBtn)
-    return promoteBtn
+    if attached then
+        local prevOnRelease = rowWidget.events and rowWidget.events["OnRelease"]
+        rowWidget:SetCallback("OnRelease", function(widget, event, ...)
+            if prevOnRelease then
+                prevOnRelease(widget, event, ...)
+            end
+            HideScopeChrome(frame, ROW_SCOPE_FIELDS)
+            if frame._cdcScopeRowTinted then
+                frame._cdcScopeRowTinted = nil
+                -- Hand the label colour back to the row: SetIndent re-derives
+                -- it from the row's own disabled/indented state. The row's
+                -- OnAcquire does this again on reuse; this just does not wait.
+                if widget.SetIndent then
+                    widget:SetIndent(widget.indented)
+                end
+            end
+        end)
+    end
+
+    return scope
 end
 
 ------------------------------------------------------------------------
@@ -1150,6 +1515,112 @@ local function GetCompactGrowthDirectionLabels(group)
         center = "Center",
         ["end"] = startIsLeft and "Right" or "Left",
     }
+end
+
+------------------------------------------------------------------------
+-- INACTIVE CUSTOMIZATIONS (entry Settings pane)
+--
+-- Customized sections the in-place scope chrome cannot reach: the styling
+-- tabs draw a section only where the current display mode offers it, and a
+-- section the entry can no longer use resolves "denied" with no revert. The
+-- saved keys survive either state on purpose - they apply again when the
+-- block lifts - so this list is the one surface that can still revert them.
+-- Built only while at least one exists (owner ruling 2026-08-14: a compact
+-- list on the entry Settings pane, replacing the retired Overrides tab's
+-- inactive listings).
+------------------------------------------------------------------------
+
+local INACTIVE_ROW_FIELDS = { "_cdcInactiveRevert" }
+
+local INACTIVE_CUSTOMIZATIONS_TOOLTIP = {
+    "Inactive Customizations",
+    {"Customizations saved for this entry that cannot apply right now.", 1, 1, 1, true},
+    " ",
+    {"They come back on their own when whatever blocks them changes.", 1, 1, 1, true},
+    " ",
+    {"Revert removes one permanently.", 1, 1, 1, true},
+}
+
+-- This list's framing around the single-sourced denial clause (see
+-- SECTION_DENIAL_CLAUSES above - never word a denial here directly).
+local function GetInactiveCustomizationReason(reason)
+    return "Saved for this entry, but inactive: " .. GetSectionDenialClause(reason) .. "."
+end
+
+local function BuildInactiveCustomizationsSection(scroll, group, buttonData, infoButtons)
+    local sections = buttonData and buttonData.overrideSections
+    if not (group and sections and next(sections)) then
+        return
+    end
+
+    -- Collect first, build second: the heading only exists when a row does.
+    -- Same order and gates the entry-slot hover tooltip uses for these
+    -- sections, so the two surfaces can never list them differently.
+    local displayMode = group.displayMode or "icons"
+    local inactive = {}
+    for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER or {}) do
+        if sections[sectionId] then
+            local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
+            local allowed, deniedReason = CanButtonUseConfigOverrideSection(buttonData, sectionId)
+            local modeOk = sectionDef and sectionDef.modes and sectionDef.modes[displayMode] == true
+            if not allowed or not modeOk then
+                inactive[#inactive + 1] = {
+                    sectionId = sectionId,
+                    reason = (not allowed) and (deniedReason or "entryType") or "displayMode",
+                }
+            end
+        end
+    end
+    if #inactive == 0 then
+        return
+    end
+
+    local heading, collapsed = BuildCollapsibleSection(scroll, "Inactive Customizations",
+        CS.selectedGroup .. "_" .. CS.selectedButton .. "_inactive_customizations",
+        nil, nil, { leftAligned = true })
+    ChainHeadingBadges(heading, CreateInfoButton(heading.frame, heading.label,
+        "LEFT", "RIGHT", 4, 0, INACTIVE_CUSTOMIZATIONS_TOOLTIP, infoButtons))
+
+    if collapsed then
+        return
+    end
+
+    -- Row-grammar label rows in the grid's left column, so the list keeps the
+    -- config's half-width cell instead of stretching across the pane. The
+    -- revert glyph rides the label's badge chain; the reason is the row's
+    -- hover tooltip. Read at call time, not load time: RowWidgets and Helpers
+    -- have no load-order contract between them.
+    local AddLabelRow = ST._AddLabelRow
+    local AnchorRowBadge = ST._AnchorRowBadge
+    local listLeft = ST._BeginRowGrid(scroll)
+
+    for _, item in ipairs(inactive) do
+        local label = GetOverrideSectionLabel(item.sectionId)
+        local row = AddLabelRow(listLeft, {
+            label = label,
+            controlText = "Inactive",
+            tooltip = {
+                label,
+                {GetInactiveCustomizationReason(item.reason), 1, 1, 1, true},
+            },
+        })
+
+        -- The glyph is cached on the row's FRAME (the pool recycles frames),
+        -- re-wired per build, and hidden on release so a recycled row never
+        -- wears a previous tenant's revert.
+        local frame = row.frame
+        local revert = EnsureScopeGlyph(frame, "_cdcInactiveRevert")
+        WireRevertGlyph(revert, revert.icon, buttonData, item.sectionId)
+        AnchorRowBadge(row, revert)
+
+        local prevOnRelease = row.events and row.events["OnRelease"]
+        row:SetCallback("OnRelease", function(widget, event, ...)
+            if prevOnRelease then
+                prevOnRelease(widget, event, ...)
+            end
+            HideScopeChrome(frame, INACTIVE_ROW_FIELDS)
+        end)
+    end
 end
 
 -- Builds the compact mode section shared by the icon (GroupTabs), bar
@@ -1857,15 +2328,20 @@ ST._ColorHeading = ColorHeading
 ST._AttachCollapseButton = AttachCollapseButton
 ST._ApplyLeftAlignedHeading = ApplyLeftAlignedHeading
 ST._AnchorLeftAlignedHeadingRule = AnchorLeftAlignedHeadingRule
+ST._BuildEntryIdentityHeading = BuildEntryIdentityHeading
+ST._ChainHeadingBadges = ChainHeadingBadges
 ST._BuildCollapsibleSection = BuildCollapsibleSection
 ST._AddAdvancedToggle = AddAdvancedToggle
-ST._CreatePromoteButton = CreatePromoteButton
-ST._CreateRevertButton = CreateRevertButton
-ST._CreateCheckboxPromoteButton = CreateCheckboxPromoteButton
-ST._CreateColorPickerPromoteButton = CreateColorPickerPromoteButton
 ST._CanButtonUseConfigOverrideSection = CanButtonUseConfigOverrideSection
+ST._ResolveStyleLens = ResolveStyleLens
+ST._ResolveLensSection = ResolveLensSection
+ST._MarkInertRange = MarkInertRange
+ST._ApplyInertRange = ApplyInertRange
+ST._AttachHeadingScopeChrome = AttachHeadingScopeChrome
+ST._AttachRowScopeChrome = AttachRowScopeChrome
 ST._GroupHasAuraTrackingEntry = GroupHasAuraTrackingEntry
 ST._CreateInfoButton = CreateInfoButton
+ST._BuildInactiveCustomizationsSection = BuildInactiveCustomizationsSection
 ST._BuildCompactModeControls = BuildCompactModeControls
 ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls
 ST._CreateCharacterCopyButton = CreateCharacterCopyButton

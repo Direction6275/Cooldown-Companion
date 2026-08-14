@@ -610,48 +610,35 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
 
             -- A text panel IS its format string, so the editor that owns it
             -- leads the menu. The editor is config surface now rather than a
-            -- popout, so this is navigation: an entry already carrying its own
-            -- override lands on its Format Override section, everything else
-            -- on the panel's Format tab.
+            -- popout, and the panel's Format tab is a LENS onto the selected
+            -- entry, so there is one destination for every entry: select it,
+            -- keep the surface on the panel tabs, and open Format.
             if sourceGroup and sourceGroup.displayMode == "text" then
                 local formatInfo = UIDropDownMenu_CreateInfo()
                 formatInfo.text = "Edit Format..."
                 formatInfo.notCheckable = true
                 formatInfo.func = function()
                     CloseDropDownMenus()
-                    if entryData.textFormat then
-                        -- Entry scope. force: this names an entry, so it must
-                        -- end selected even if clicking it would normally
-                        -- toggle the selection off.
-                        if SelectConfigButton then
-                            SelectConfigButton(sourceGroupId, sourceIndex, { force = true })
-                        end
-                        CS.buttonSettingsTab = "overrides"
-                        -- The destination is a collapsible row-grammar section
-                        -- keyed per entry, so landing on the tab with it
-                        -- collapsed would show a header and nothing else.
-                        if type(CS.collapsedSections) == "table" then
-                            CS.collapsedSections[sourceGroupId .. "_" .. sourceIndex
-                                .. "_override_textFormat"] = nil
-                        end
-                    else
-                        -- Panel scope. The panel tab keeps any entry selected
-                        -- beside it, so the selection is only moved when the
-                        -- menu came from a panel that is not the selected one.
-                        if CS.selectedGroup ~= sourceGroupId then
-                            SelectConfigPanel(sourceGroupId, {
-                                containerId = sourceGroup.parentContainerId,
-                            })
-                        end
-                        if ST._UnifiedRowSetScope then
-                            ST._UnifiedRowSetScope("primary")
-                        end
-                        CS.selectedTab = "format"
-                        CS.panelSettingsTab = "format"
-                        -- A deliberate destination, so it outranks a display
-                        -- mode's own default landing tab.
-                        CS.panelSettingsTabExplicit = true
+                    -- The menu can be opened on a panel that is not the
+                    -- selected one; move the selection there first so the
+                    -- container crumb follows too.
+                    if CS.selectedGroup ~= sourceGroupId then
+                        SelectConfigPanel(sourceGroupId, {
+                            containerId = sourceGroup.parentContainerId,
+                        })
                     end
+                    -- force: this names an entry, so it must end selected even
+                    -- if clicking it would normally toggle the selection off.
+                    -- scope "primary": the panel tabs keep the surface, which
+                    -- is where the format editor now lives.
+                    if SelectConfigButton then
+                        SelectConfigButton(sourceGroupId, sourceIndex, { force = true, scope = "primary" })
+                    end
+                    CS.selectedTab = "format"
+                    CS.panelSettingsTab = "format"
+                    -- A deliberate destination, so it outranks a display
+                    -- mode's own default landing tab.
+                    CS.panelSettingsTabExplicit = true
                     CooldownCompanion:RefreshConfigPanel()
                 end
                 UIDropDownMenu_AddButton(formatInfo, level)

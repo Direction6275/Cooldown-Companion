@@ -36,7 +36,9 @@ local function SelectNewButton(panelId, buttonIndex)
         CooldownCompanion:ClearAllConfigPreviews()
         return
     end
-    SelectConfigButton(panelId, buttonIndex, { force = true })
+    -- scope: an entry that was just added is a named destination, so its own
+    -- Settings tab wins over whatever panel tab happened to be open.
+    SelectConfigButton(panelId, buttonIndex, { force = true, scope = "detail" })
 end
 
 local function GetTargetGroup(groupId)

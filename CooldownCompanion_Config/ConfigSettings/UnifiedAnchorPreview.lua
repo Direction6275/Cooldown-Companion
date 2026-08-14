@@ -214,9 +214,9 @@ local function BuildUnifiedAnchorPreview(host, groupId)
     end
     inner:SetSize(UNIFIED_MEASURE_SIZE, UNIFIED_MEASURE_SIZE)
     inner:Show()
-    -- Keep the mirror's measured layout inside `inner`, but pin override
-    -- targeting guidance to the outer Live Preview host above the layout.
-    ST._BuildButtonPanelPreview(inner, groupId, host)
+    -- The mirror's measured layout stays inside `inner`, which the caller
+    -- shrinks to its content; `host` keeps the Live Preview's own chrome.
+    ST._BuildButtonPanelPreview(inner, groupId)
     ShrinkMirrorHostToContent(inner)
 
     -- Instance 1 is this interactive mirror. Instance 2 is built only when
@@ -242,8 +242,8 @@ end
 -- Single build entry for the wide buttons preview: unified when the panel
 -- is the live anchor target with bars to show, the plain mirror otherwise.
 -- Transitions release whichever surface is being vacated (the release
--- stops the conditional ticker and disarms override targeting, so it only
--- runs when the surface actually changes hands).
+-- stops the conditional ticker, so it only runs when the surface actually
+-- changes hands).
 local function BuildAnchorAwarePanelPreview(host, groupId)
     -- Resolved once: the eligibility chain ends in a full lane-slot collect,
     -- so the badge and the render branch share one answer per build.

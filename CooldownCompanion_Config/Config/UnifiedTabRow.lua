@@ -8,25 +8,55 @@
     pipeline, scroll restore and info-button lifecycle; only their tab
     strips are made to share a row.
 
-    Selecting an entry or a bar appends its tabs to the right, pinned to
-    the right edge so the clear space between the clusters carries the
-    resize; when they no longer fit, the row is split between them and both
-    wrap. Exactly one tab reads as selected across the row, and only the
-    scope that owns the surface shows content, so a left-hand tab can be
-    opened without dropping the entry or bar selection.
+    Selecting an entry or a bar appends its tabs to the right. The entry
+    cluster flows straight on from the panel tabs across a fixed seam;
+    every other detail cluster is pinned to the right edge so the clear
+    space between the clusters carries the resize. When the two no longer
+    fit, the row is split between them and both wrap. Exactly one tab reads
+    as selected across the row, and only the scope that owns the surface
+    shows content, so a left-hand tab can be opened without dropping the
+    entry or bar selection.
 ]]
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CS = ST._configState
 
--- The detail cluster is right-aligned, so the clear space between the two
--- clusters is normally whatever the window leaves over - it grows and
--- shrinks as the window is resized. This is the floor: once the clusters
--- would be closer than this, the row is split between them instead.
--- Delineation also carries the entry icon at the cluster head (entry tabs)
--- and the accent tint, both supplied by the tab-text builders.
+-- A right-aligned detail cluster leaves whatever the window has over as the
+-- clear space between the two clusters - it grows and shrinks as the window
+-- is resized. This is the floor: once the clusters would be closer than
+-- this, the row is split between them instead.
 local MIN_CLUSTER_GAP = 40
+
+-- The seam. A detail cluster that flows straight on from the primary tabs
+-- (the entry cluster - see SetSeamFlow) keeps a fixed gap instead of the
+-- elastic one, because it is read as running on from them rather than as
+-- the far end of the row. What delineates the two clusters is the entry
+-- cluster itself: the accent tint on its labels, and the selected entry's
+-- icon inside them, both supplied by the tab-text builders.
+--
+-- This is the gap between the tab FRAMES, which is not the gap that is
+-- seen. Every Ace tab is a PanelTemplates tab: its art is Left (20) +
+-- Middle (the padded text width) + Right (20), filling the frame edge to
+-- edge, and the Left and Right pieces each carry transparent flare beyond
+-- the drawn edge of the tab. Call that flare F per side. Inside a strip
+-- BuildTabs chains each tab at LEFT/RIGHT -10, so two neighbours show a
+-- visible gap of 2F - TAB_OVERLAP. Across the seam the frames do not
+-- overlap at all (the detail strip is offset by the primary's full width,
+-- and BuildTabs anchors a row's first tab at x = 0 with no leading inset),
+-- so the visible gap there is 2F + SEAM_GAP. F cancels between the two,
+-- whatever it turns out to be:
+--
+--     visible seam gap = visible gap inside a strip + TAB_OVERLAP + SEAM_GAP
+--
+-- The seam is EXACTLY ordinary tab spacing (owner ruling 2026-08-14): the
+-- entry cluster reads as more tabs in the same row, delineated only by the
+-- accent tint and the entry icon in its labels. That means the seam gets the
+-- same 10px frame overlap BuildTabs gives neighbours inside a strip, so
+-- SEAM_GAP is 0 - TAB_OVERLAP = -10. The two strip frames overlap by their
+-- transparent flare exactly as adjacent tabs within one strip already do.
+-- (Literal, not -TAB_OVERLAP: that local is declared below this line.)
+local SEAM_GAP = -10
 
 -- AceGUI BuildTabs geometry, mirrored here so the strips can be re-laid
 -- out without duplicating its row math: rows sit 20px apart, an untitled
@@ -137,6 +167,16 @@ local function PlaceStrip(tabGroup)
     end
 end
 
+-- The entry surface's one hook into the row: it names the strip that flows
+-- straight on from the primary tabs instead of being pinned to the right
+-- edge. The flow is a property of the STRIP, not of any one selection, so
+-- this is set once and stands for every state the cluster passes through -
+-- a single entry, an entry multi-select, and the gap between them.
+local function SetSeamFlow(tabGroup)
+    if not tabGroup then return end
+    tabGroup._cdcSeamFlow = true
+end
+
 -- The accent tint lives in the label text as a colour escape, because
 -- PanelTemplates rewrites tab fontstring colours on every select, deselect
 -- and hover. Selection still has to read though, so the selected tab drops
@@ -202,27 +242,39 @@ local function LayoutUnifiedRow(trigger)
     local primaryWidth = primary and MeasureStripWidth(primary) or 0
     local detailWidth = detail and MeasureStripWidth(detail) or 0
 
+    -- A seam strip runs on from the primary tabs across a fixed gap; every
+    -- other detail strip keeps the right-aligned cluster and the elastic gap
+    -- that comes with it.
+    local seamFlow = (detail and detail._cdcSeamFlow) == true
+    local gap = seamFlow and SEAM_GAP or MIN_CLUSTER_GAP
+
     if full <= 0 then
         -- No usable width yet (a first pass before the rect resolves).
         -- Leave both at natural; AceGUI's deferred rebuild re-runs this.
     elseif primaryWidth > 0 and detailWidth > 0 then
-        if primaryWidth + MIN_CLUSTER_GAP + detailWidth <= full then
-            -- Both clusters fit side by side: the primary tabs stay put on
-            -- the left and the detail cluster is pinned to the right edge,
-            -- so the clear space between them carries the resize.
-            detail._cdcStripOffset = full - detailWidth
+        if primaryWidth + gap + detailWidth <= full then
+            -- Both clusters fit side by side. A seam strip is laid down
+            -- immediately after the primary tabs, so the row reads as one
+            -- flow and the leftover width falls at the end of it; every
+            -- other detail cluster is pinned to the right edge instead, so
+            -- the clear space between them carries the resize.
+            if seamFlow then
+                detail._cdcStripOffset = primaryWidth + gap
+            else
+                detail._cdcStripOffset = full - detailWidth
+            end
         else
             -- Too tight for one row. Split the row between the clusters in
             -- proportion to their natural widths so they wrap by the same
             -- amount and the stack stays balanced, instead of one of them
             -- absorbing all of it.
-            local available = math.max(MIN_STRIP_WIDTH * 2, full - MIN_CLUSTER_GAP)
+            local available = math.max(MIN_STRIP_WIDTH * 2, full - gap)
             local primaryShare = math.floor(available * primaryWidth / (primaryWidth + detailWidth))
             primaryShare = math.max(MIN_STRIP_WIDTH, primaryShare)
             local detailShare = math.max(MIN_STRIP_WIDTH, available - primaryShare)
             BuildStrip(primary, primaryShare)
             BuildStrip(detail, detailShare)
-            detail._cdcStripOffset = primaryShare + MIN_CLUSTER_GAP
+            detail._cdcStripOffset = primaryShare + gap
         end
     elseif math.max(primaryWidth, detailWidth) > full then
         -- One cluster owning the whole row (nothing selected, or a
@@ -413,6 +465,9 @@ end
 -- Every strip installs the same layout; the role decides which side of the
 -- row it takes ("primary" is the default, "detail" the right-hand slot).
 ST._UnifiedRowInstallStrip = InstallStripLayout
+-- (tabGroup): marks the strip as the one that flows from the primary tabs
+-- across the fixed seam instead of taking the row's right edge.
+ST._UnifiedRowSetSeamFlow = SetSeamFlow
 ST._UnifiedRowGetScope = GetScope
 ST._UnifiedRowSetScope = SetScope
 ST._UnifiedRowPrimaryOwnsSurface = PrimaryOwnsSurface

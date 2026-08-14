@@ -2453,10 +2453,13 @@ local function ToggleConfigPanelMultiSelect(panelId)
     CS.addingToPanelId = nil
 end
 
+-- Selecting an entry does NOT move the tab row: the panel tabs are a lens
+-- onto whatever is selected, so a panel tab that is already open stays open
+-- and simply re-reads the new entry. Only two things pull the surface to the
+-- entry cluster: growing a multi-select (its one tab is the only place that
+-- surface lives), and a caller that names a destination with opts.scope -
+-- adding a spell, whose new entry is the destination.
 local function SelectConfigButton(panelId, buttonIndex, opts)
-    -- Selecting an entry always jumps to its cluster in the tab row, even
-    -- if a panel tab was the last thing shown.
-    CS.unifiedRowScope = "detail"
     local panelChanged = CS.selectedGroup ~= panelId
     if opts and opts.containerId ~= nil then
         CS.selectedContainer = opts.containerId
@@ -2482,6 +2485,13 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
         end
         CS.selectedButton = nil
         CS.selectedRotationAssistantEntry = nil
+        -- A multi-select of two or more only exists as the entry cluster's
+        -- one appended tab, so the surface has to follow it there.
+        local multiCount = 0
+        for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
+        if multiCount >= 2 then
+            CS.unifiedRowScope = "detail"
+        end
     else
         wipe(CS.selectedButtons)
         CS.selectedRotationAssistantEntry = nil
@@ -2492,6 +2502,11 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
         else
             CS.selectedButton = buttonIndex
         end
+    end
+
+    -- An explicit destination outranks the lens rule, in both directions.
+    if opts and (opts.scope == "detail" or opts.scope == "primary") then
+        CS.unifiedRowScope = opts.scope
     end
 
     CooldownCompanion:ClearAllConfigPreviews()
@@ -2511,8 +2526,15 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
     CS.castFramesSelectedItem = nil
     CS.unifiedBarKind = nil
     wipe(CS.selectedButtons)
-    CS.buttonSettingsTab = "loadconditions"
-    CS.unifiedRowScope = "detail"
+    -- The rotation assistant entry has no entry tabs of its own. Everything
+    -- it offers is visibility, and the panel-side Visibility tab reads the
+    -- selected entry, so this selection lands on the panel tabs and names
+    -- Visibility as its destination. The explicit flag is what stops a
+    -- display mode's own default landing tab from overriding that.
+    CS.unifiedRowScope = "primary"
+    CS.selectedTab = "loadconditions"
+    CS.panelSettingsTab = "loadconditions"
+    CS.panelSettingsTabExplicit = true
     CooldownCompanion:ClearAllConfigPreviews()
 end
 

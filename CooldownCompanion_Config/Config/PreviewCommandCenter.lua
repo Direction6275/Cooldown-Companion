@@ -444,9 +444,9 @@ local GROUP_READOUTS = "Text & Timers"
 -- effective style - the cooldown swipe gear follows the icon fill timer's
 -- ownership of the cooldown visual.
 --
--- `overrideSection` is only set where the section id differs from the
--- control's own `section`; the gear reads one or the other to decide whether
--- the selected entry's Overrides tab is the truer destination.
+-- `lensSection` is only set where the style section this preview shows differs
+-- from the control's own `section`; the gear reads one or the other to find
+-- the section's home tab and open the collapsible it is drawn in.
 ------------------------------------------------------------------------
 
 -- The conditional states share a shape: their visuals live on the Indicators
@@ -638,7 +638,7 @@ local CONTROLS = {
         group = GROUP_STATES,
         modes = { icons = true, bars = true, text = true, rotationAssistant = true },
         styleKey = "showUnusable",
-        overrideSection = "unusableDimming",
+        lensSection = "unusableDimming",
         settings = StateRoute("unusableVisual"),
         preview = ConditionalPreview("unusable"),
     },
@@ -648,7 +648,7 @@ local CONTROLS = {
         group = GROUP_STATES,
         modes = { icons = true, text = true, rotationAssistant = true },
         styleKey = "showOutOfRange",
-        overrideSection = "showOutOfRange",
+        lensSection = "showOutOfRange",
         settings = StateRoute(nil),
         preview = ConditionalPreview("out_of_range"),
     },
@@ -830,30 +830,22 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
     return true
 end
 
+-- The style section this preview is showing, or nil for previews that are not
+-- a section's look (the object previews, the texture indicators).
+local function ControlSectionId(control)
+    return control.lensSection or control.section
+end
+
 -- Where the gear goes for the control the chooser is naming. Returns nil
 -- when the preview has no settings destination, which is what hides the
 -- button.
 --
--- An entry that overrides the section wins: with that entry selected the
--- preview is running on ITS look, and the panel-scope controls the advanced
--- panel would open are not the ones driving it. The entry's Overrides tab
--- carries the section inline, so there is no advanced key to queue - the tab
--- IS the destination. Panel-wide previews are excluded: an entry's override
--- is not what they are showing, so the panel setting is still the right
--- destination even with that entry selected.
-local function ResolveGearRoute(control, group, displayMode, buttonIndex)
-    local sectionId = control.overrideSection or control.section
-    if buttonIndex and sectionId and group and not control.preview.groupScoped then
-        local buttonData = (group.buttons or {})[buttonIndex]
-        local canUse = ST._CanButtonUseConfigOverrideSection
-        if buttonData
-            and type(buttonData.overrideSections) == "table"
-            and buttonData.overrideSections[sectionId]
-            and (canUse == nil or canUse(buttonData, sectionId) == true) then
-            return { overrideSection = sectionId }
-        end
-    end
-
+-- One destination whatever is selected: the styling tabs ARE the lens onto a
+-- selected entry, so the tab that draws the section is the right landing
+-- whether that entry customizes it, inherits it, or nothing is selected at
+-- all. What changes with the selection is only whether the section can be
+-- edited there, and the section's own scope chrome says that.
+local function ResolveGearRoute(control, displayMode)
     local settings = control.settings
     if type(settings) ~= "table" then
         return nil
@@ -1361,42 +1353,51 @@ local function ApplyObjectRoute(route)
     return RESOURCES_SURFACE
 end
 
+-- Where the styling tabs DRAW this section: the tab that owns it in this
+-- display mode, plus the collapse key of the collapsible it sits in. The
+-- registry is stated by the tab builders themselves (ST._SECTION_HOME), keyed
+-- by mode first, so a section drawn somewhere else on a bar panel than on an
+-- icons one still resolves to the place the user will actually be looking.
+-- A mode with no home for the section answers nil, and the route's own tab
+-- constant carries the navigation as before.
+local function ResolveSectionHome(sectionId)
+    if not sectionId then
+        return nil
+    end
+    local homes = ST._SECTION_HOME
+    local _, group = ResolveContext()
+    local byMode = homes and homes[(group and group.displayMode) or "icons"]
+    return byMode and byMode[sectionId] or nil
+end
+
 -- `queueKey` is the key that is about to ride the queue, already resolved by
 -- the caller - passed in so the uncollapse below only opens the section whose
--- gear actually has to build, not one the route merely names.
-local function ApplyGearRoute(route, queueKey)
-    if route.overrideSection then
-        SetRowScope("detail")
-        CS.buttonSettingsTab = "overrides"
-        -- Every override section is a collapsible row-grammar section keyed
-        -- per entry, so landing on the tab with this one collapsed would show
-        -- the user a header and nothing else - the same rule the object routes
-        -- above follow. The context is still the one ResolveGearRoute read the
-        -- route from (nothing between them touches the selection), and it only
-        -- produces an overrideSection route with an entry selected, so
-        -- CS.selectedButton is set and the key resolves to this entry's copy of
-        -- the section. There is no advanced key to queue here: the tab carries
-        -- the section inline, which is why the route has no `key`.
-        if CS.selectedGroup and CS.selectedButton and type(CS.collapsedSections) == "table" then
-            CS.collapsedSections[CS.selectedGroup .. "_" .. CS.selectedButton
-                .. "_override_" .. route.overrideSection] = nil
-        end
-        return BUTTONS_SURFACE
-    end
-
+-- gear actually has to build, not one the route merely names. `sectionId` is
+-- the style section the preview shows, when it is one.
+local function ApplyGearRoute(route, queueKey, sectionId)
     if route.object then
         return ApplyObjectRoute(route)
     end
 
+    local home = ResolveSectionHome(sectionId)
+
     SetRowScope("primary")
-    CS.selectedTab = route.tab
-    CS.panelSettingsTab = route.tab
+    local tab = (home and home.tab) or route.tab
+    CS.selectedTab = tab
+    CS.panelSettingsTab = tab
     -- A deliberate destination, so it outranks a display mode's own default
     -- landing tab (text panels otherwise land on Format).
     CS.panelSettingsTabExplicit = true
     -- A collapsed section never builds its checkbox, and a queued key with
     -- no gear to consume it expires silently.
     if type(CS.collapsedSections) == "table" then
+        -- Landing on the tab with the section collapsed shows a header and
+        -- nothing else, so open it whether or not a key rides along: with an
+        -- entry that only inherits the section there is no key at all, and the
+        -- section's scope chrome is the whole point of arriving.
+        if home and home.collapseKey then
+            CS.collapsedSections[home.collapseKey] = nil
+        end
         if route.uncollapse then
             CS.collapsedSections[route.uncollapse] = nil
         end
@@ -1447,6 +1448,35 @@ local function IsRoutePanelOpen(route)
     return key ~= nil and CS.IsAdvancedSettingsPanelOpen(key) == true
 end
 
+-- Will the section's controls land INERT for the current selection? Under the
+-- style lens a section the selected entry only inherits builds read-only, gear
+-- included, so a queued advanced key would open a panel on controls that
+-- cannot commit - or expire against a gear that was never enabled. Arriving on
+-- the tab with the section open, where its Customize chrome explains the
+-- state, is the whole answer there.
+local function RouteSectionIsInert(sectionId)
+    if not sectionId then
+        return false
+    end
+    local resolveLens = ST._ResolveStyleLens
+    local resolveSection = ST._ResolveLensSection
+    if not (resolveLens and resolveSection) then
+        return false
+    end
+    local _, group = ResolveContext()
+    if not group then
+        return false
+    end
+    local lens = resolveLens(group)
+    -- Only the entry lens can be inert; panel and multi always write the panel
+    -- style, and asking about them would misread a styleless panel as inert.
+    if not (lens and lens.mode == "entry") then
+        return false
+    end
+    local _, _, writeStyle = resolveSection(lens, group, sectionId)
+    return writeStyle == nil
+end
+
 local function NavigateToPreviewSettings(bar)
     local control = bar._selected
     local route = bar._gearRoute
@@ -1462,7 +1492,12 @@ local function NavigateToPreviewSettings(bar)
         return
     end
 
+    local sectionId = ControlSectionId(control)
     local queueKey = ResolveRouteAdvancedKey(route)
+    -- Read BEFORE ApplyGearRoute: the lens is resolved from the selection,
+    -- which navigation does not touch, but keeping the read on this side of it
+    -- keeps the answer tied to the state the click was made in.
+    local suppressQueue = queueKey ~= nil and RouteSectionIsInert(sectionId)
 
     local surface = bar._surface
     local ok, panelId, buttonIndex = surface.ResolveTarget()
@@ -1482,7 +1517,7 @@ local function NavigateToPreviewSettings(bar)
         CS.CancelPickAuraTexture()
     end
 
-    local destination = ApplyGearRoute(route, queueKey)
+    local destination = ApplyGearRoute(route, queueKey, sectionId)
 
     -- Queued last, with every navigation write already made, so the context
     -- it snapshots is the one the rebuild will consume it under. The
@@ -1490,6 +1525,7 @@ local function NavigateToPreviewSettings(bar)
     -- this guard keeps a stale open from flapping the panel shut if the
     -- post-navigation context still matches it.
     if queueKey
+        and not suppressQueue
         and CS.QueueAdvancedSettingsPanelOpen
         and not (CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(queueKey)) then
         CS.QueueAdvancedSettingsPanelOpen(queueKey)
@@ -2057,7 +2093,7 @@ local function UpdateBar(host, surface, applicable, group, displayMode)
     local bar = EnsureBar(host, surface)
     bar._applicable = applicable
     ApplyBarState(bar, selected, running,
-        ResolveGearRoute(selected, group, displayMode, buttonIndex), group)
+        ResolveGearRoute(selected, displayMode), group)
 
     host._cdcPreviewReserveBottom = BAR_RESERVE
     bar:Show()
