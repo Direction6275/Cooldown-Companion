@@ -74,7 +74,6 @@ local function BuildContext(extra)
         unifiedBarKind = CS.unifiedBarKind,
         resourcesSettingsTab = CS.resourcesSettingsTab,
         castBarHomeTab = CS.castBarHomeTab,
-        customBarSettingsTab = CS.customBarSettingsTab,
         selectedCustomBarId = CS.selectedCustomBarId,
         selectedResourcePowerType = CS.selectedResourcePowerType,
         resourceSettingsSpecID = CS.resourceSettingsSpecID,

@@ -166,15 +166,23 @@ local function GetCustomBarSpecOptions()
     return specs
 end
 
--- Every collapsible section on a Custom Bar's tabs is keyed per bar, so
--- collapsing one bar's section leaves the next bar's alone.
+-- Every collapsible section on a Custom Bar's Settings pane is keyed per
+-- bar, so collapsing one bar's section leaves the next bar's alone.
 local function GetCustomBarCollapseKey(cab)
     return tostring((type(cab) == "table" and cab.customBarId) or "")
 end
 
 local function AddCustomBarSection(container, title, name, key)
-    return BuildCollapsibleSection(container, title, "cab_" .. name .. "_" .. key,
+    local fullKey = "cab_" .. name .. "_" .. key
+    local heading, collapsed = BuildCollapsibleSection(container, title, fullKey,
         resourceBarCollapsedSections, nil, ROW_SECTION)
+    -- A routed gear click (PreviewCommandCenter) names one section of the
+    -- pane; remember its heading so the caller can scroll it into view
+    -- after this rebuild lays out.
+    if CS.pendingCustomBarScrollSection == fullKey then
+        container._cdcPendingScrollHeading = heading
+    end
+    return heading, collapsed
 end
 
 -- One CDC-CheckBoxRow per spec this class can play, split down the middle of
@@ -370,9 +378,7 @@ local function OpenCustomBarRowMenu(customBars, specID, customBarId, entry)
             CloseDropDownMenus()
             local newId = DuplicateCustomBarById(CooldownCompanion:GetResourceBarSettings(), specID, customBars, customBarId)
             if newId then
-                SelectConfigCustomBar(newId, {
-                    resetTab = true,
-                })
+                SelectConfigCustomBar(newId)
             end
             ApplyCustomAuraBarPanelChanges({
                 updateAnchors = true,
@@ -1102,7 +1108,33 @@ local function BuildCustomBarWorkspaceAddBox(container)
     return actionControls, addBox
 end
 
-local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
+-- Helpers.lua loads before this file, so the shared builder is importable
+-- directly.
+local BuildEntryIdentityHeading = ST._BuildEntryIdentityHeading
+
+-- The identity heading at the top of the Settings pane, panel-entry parity:
+-- the shared builder reads a buttonData-shaped table, so the cab is adapted
+-- into one. customName pins the title to the custom-bar naming rule -
+-- label > spell name > "Custom Bar" (GetCustomBarDisplayName) - so the
+-- entry namer never rederives it; spellID feeds the icon and the
+-- (Spell)/(Aura) kind suffix, and bars without one take the plain-name
+-- path and the stock icon.
+local function BuildCustomBarIdentityHeading(container, cab)
+    if type(cab) ~= "table" then return end
+    local spellID = tonumber(cab.spellID)
+    BuildEntryIdentityHeading(container, {
+        type = spellID and "spell" or nil,
+        id = spellID,
+        addedAs = IsSpellCustomBarConfig(cab) and "spell" or "aura",
+        customName = GetCustomBarDisplayName(cab),
+    })
+end
+
+-- The whole Custom Bar entry surface as ONE Settings pane (panel-entry
+-- parity): identity heading, then every former tab as collapsible sections,
+-- Talent Conditions last. Collapse keys are unchanged from the tab era, so
+-- expand state and the command-center deep links survived the merge.
+local function BuildCustomAuraBarPanel(container, customBarId)
     if BuildResourceBarConflictGate(container, "Custom Bars", false) then
         return
     end
@@ -1172,62 +1204,8 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
     local layout = RB.GetSpecLayoutOrder and RB.GetSpecLayoutOrder(settings, layoutSpecID) or CooldownCompanion:GetSpecLayoutOrder()
     local thicknessField, thicknessLabel = GetResourceThicknessFieldConfig(settings, layout)
     local isSpellCustomBar = IsSpellCustomBarConfig(cab)
-    activeTab = activeTab or "appearance"
 
-    if activeTab == "settings" or activeTab == "layout" or activeTab == "anchor" or activeTab == "alpha" then
-        activeTab = "appearance"
-    end
-
-    if activeTab == "soundalerts" then
-        ST._BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
-        return
-    end
-
-    if activeTab == "loadconditions" then
-        ST._BuildCustomBarLoadConditionsTab(container, cab, infoButtons)
-        return
-    end
-
-    -- Aura tab (the aura pass): the tracking section plus the active-aura
-    -- effects, the same shape as the panel entry Aura tab. Aura-look
-    -- colors and texts stay on Appearance with the rest of the bar style.
-    if activeTab == "aura" then
-        if cab.spellID then
-            BuildCustomBarAuraTrackingSection(container, cab, infoButtons, capturedKey)
-
-            -- Shared builder (SectionBuilders): the cabConfig speaks the
-            -- same barAura* key family as the panel bar style tables. The
-            -- builder is row-only now and opens its own grid on this
-            -- container - LEFT the border effect, RIGHT the two fill effects -
-            -- so this section reads like every other one on the tab. Only a
-            -- caller passing opts.singleRail suppresses that grid: the
-            -- bar-mode advanced panel, whose popout is too narrow for two
-            -- columns.
-            local isAuraTracked = (not isSpellCustomBar) or cab.auraTracking == true
-            if isAuraTracked and ST._BuildBarActiveAuraControls then
-                local _, effectsCollapsed = AddCustomBarSettingsHeading(container, "Effects",
-                    "aura_effects", capturedKey, infoButtons, {
-                        "Effects the bar plays while the tracked aura is active: a border effect, a fill pulse, and a fill color shift.",
-                        "Use the preview in the command center below the bar list to see them without a live aura.",
-                    })
-                if not effectsCollapsed then
-                    -- These effects render on the canvas too (its Active Aura
-                    -- stand-in draws them), and nothing here rebuilds the
-                    -- settings column - so the commit path repaints it and
-                    -- previewRefresh keeps drags and open pickers on it alone.
-                    ST._BuildBarActiveAuraControls(container, cab, function()
-                        CooldownCompanion:ApplyResourceBars()
-                        RefreshLayoutOrderPreview()
-                    end, {
-                        row = true,
-                        infoButtons = infoButtons,
-                        previewRefresh = RefreshLayoutOrderPreviewForDrag,
-                    })
-                end
-            end
-        end
-        return
-    end
+    BuildCustomBarIdentityHeading(container, cab)
 
             -- Per-slot bar thickness override
             if layout and layout.customBarHeights then
@@ -1462,8 +1440,60 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         build = BuildStackTextAdvanced,
                     })
                 end -- not textsCollapsed
+            end -- cab.spellID (Colors/Texts)
 
-                -- ---- Talent Conditions section ----
+            -- ---- Aura Tracking + Effects ----
+            -- The former Aura tab body (the aura pass): the tracking section
+            -- plus the active-aura effects, the same shape as the panel
+            -- entry's Aura Tracking section. Aura-look colors and texts stay
+            -- above with the rest of the bar style. Panel-entry order (owner
+            -- ruling): aura near the top, visibility toward the bottom.
+            if cab.spellID then
+                BuildCustomBarAuraTrackingSection(container, cab, infoButtons, capturedKey)
+
+                -- Shared builder (SectionBuilders): the cabConfig speaks the
+                -- same barAura* key family as the panel bar style tables. The
+                -- builder is row-only now and opens its own grid on this
+                -- container - LEFT the border effect, RIGHT the two fill effects -
+                -- so this section reads like every other one on the pane. Only a
+                -- caller passing opts.singleRail suppresses that grid: the
+                -- bar-mode advanced panel, whose popout is too narrow for two
+                -- columns.
+                local isAuraTracked = (not isSpellCustomBar) or cab.auraTracking == true
+                if isAuraTracked and ST._BuildBarActiveAuraControls then
+                    local _, effectsCollapsed = AddCustomBarSettingsHeading(container, "Effects",
+                        "aura_effects", capturedKey, infoButtons, {
+                            "Effects the bar plays while the tracked aura is active: a border effect, a fill pulse, and a fill color shift.",
+                            "Use the preview in the command center below the bar list to see them without a live aura.",
+                        })
+                    if not effectsCollapsed then
+                        -- These effects render on the canvas too (its Active Aura
+                        -- stand-in draws them), and nothing here rebuilds the
+                        -- settings column - so the commit path repaints it and
+                        -- previewRefresh keeps drags and open pickers on it alone.
+                        ST._BuildBarActiveAuraControls(container, cab, function()
+                            CooldownCompanion:ApplyResourceBars()
+                            RefreshLayoutOrderPreview()
+                        end, {
+                            row = true,
+                            infoButtons = infoButtons,
+                            previewRefresh = RefreshLayoutOrderPreviewForDrag,
+                        })
+                    end
+                end
+            end
+
+            -- ---- Sound Alerts ----
+            BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
+
+            -- ---- Visibility ----
+            -- The former Visibility tab body: the Specializations and
+            -- Where To Hide It sections, each its own collapsible.
+            BuildCustomBarLoadConditionsTab(container, cab, infoButtons)
+
+            -- ---- Talent Conditions (LAST, panel-entry parity) ----
+            if cab.spellID then
+                local cabIdx = capturedIdx
                 -- Key unchanged from the pre-row tab, so a bar's collapse
                 -- state survives this conversion.
                 local talentHeading, talentCollapsed =
@@ -1629,5 +1659,3 @@ ST._BuildCustomBarWorkspaceAddBox = BuildCustomBarWorkspaceAddBox
 ST._OpenConfigCustomBarMenu = OpenConfigCustomBarMenu
 ST._DeleteConfigCustomBar = DeleteConfigCustomBar
 ST._BuildCustomAuraBarPanel = BuildCustomAuraBarPanel
-ST._BuildCustomBarSoundAlertsTab = BuildCustomBarSoundAlertsTab
-ST._BuildCustomBarLoadConditionsTab = BuildCustomBarLoadConditionsTab

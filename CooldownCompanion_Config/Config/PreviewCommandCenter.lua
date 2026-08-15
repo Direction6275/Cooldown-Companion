@@ -1107,8 +1107,8 @@ local function CollectObjectControls(objects)
                             settings = {
                                 object = "customBarAura",
                                 customBarId = cab.customBarId,
-                                -- The bar's Aura tab only exists for a spell
-                                -- entry (GetCustomBarEntryTabs).
+                                -- The aura sections exist only on a
+                                -- spell-backed bar's Settings pane.
                                 auraTab = cab.spellID ~= nil,
                             },
                             preview = CustomBarAuraPreview(cab),
@@ -1333,15 +1333,12 @@ local function ApplyObjectRoute(route)
         if ST._SelectConfigCustomBar then
             ST._SelectConfigCustomBar(route.customBarId)
         end
-        if ST._SetConfigCustomBarSettingsTab then
-            ST._SetConfigCustomBarSettingsTab(route.auraTab and "aura" or "appearance")
-        end
         SetRowScope("detail")
-        -- Both halves of the Aura tab are collapsible and keyed per bar, so a
-        -- route that lands there has to open the two it means: the tracking
-        -- section and the effects this preview is showing. An Appearance-tab
-        -- route names its own section instead (the cooldown previews land on
-        -- Colors).
+        -- The bar's sections all live on its one Settings pane, collapsible
+        -- and keyed per bar, so a route has to open the ones it means: an
+        -- aura route opens the tracking section and the effects this preview
+        -- is showing; a cooldown-preview route names its own section instead
+        -- (those land on Colors).
         if RBP then
             local barKey = tostring(route.customBarId)
             if route.auraTab then
@@ -1350,6 +1347,16 @@ local function ApplyObjectRoute(route)
             end
             if route.appearanceSection then
                 RBP.collapsedSections["cab_" .. route.appearanceSection .. "_" .. barKey] = nil
+            end
+            -- Opening the sections is not enough to show them: the merged
+            -- pane keeps one scroll offset per bar, so the routed section
+            -- can sit below the fold at the restored position. Name it, and
+            -- the rebuild scrolls its heading into view (consumed by
+            -- ShowCustomBarDetail).
+            if route.auraTab then
+                CS.pendingCustomBarScrollSection = "cab_aura_" .. barKey
+            elseif route.appearanceSection then
+                CS.pendingCustomBarScrollSection = "cab_" .. route.appearanceSection .. "_" .. barKey
             end
         end
     elseif route.object == "resourceAura" then

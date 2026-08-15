@@ -17,7 +17,6 @@ local AceGUI = LibStub("AceGUI-3.0")
 local RB = ST._RB
 
 -- Imports from earlier Config/ files
-local SetConfigCustomBarSettingsTab = ST._SetConfigCustomBarSettingsTab
 local PruneConfigCustomBarSelection = ST._PruneConfigCustomBarSelection
 local SetConfigResourceSettingsSpecID = ST._SetConfigResourceSettingsSpecID
 local PruneConfigResourceSelection = ST._PruneConfigResourceSelection
@@ -486,32 +485,26 @@ local function ShowStrip(col3, tabGroup, tabs, activeTab, scrollKey, stripOnly)
     end
 end
 
+-- One Settings tab, panel-entry parity: the bar's icon rides the label the
+-- same way an entry's does (DecorateEntryTabs, read at call time -
+-- ButtonSettings.lua loads after this file). Bars without a tracked spell
+-- get the accent-only label, same as today's iconless tabs.
 local function GetCustomBarEntryTabs(entry)
     local tabs = {
-        { value = "appearance", text = "Appearance" },
+        { value = "settings", text = "Settings" },
     }
 
-    if type(entry) == "table" and entry.spellID then
-        tabs[#tabs + 1] = { value = "aura", text = "Aura" }
+    local decorate = ST._DecorateEntryTabs
+    if decorate then
+        local spellID = type(entry) == "table" and tonumber(entry.spellID) or nil
+        return decorate(tabs, spellID and C_Spell.GetSpellTexture(spellID) or nil)
     end
-    tabs[#tabs + 1] = { value = "soundalerts", text = "Sound Alerts" }
-    tabs[#tabs + 1] = { value = "loadconditions", text = "Visibility" }
     return AddTabAccent(tabs)
-end
-
-local function IsCustomBarEntryTabAllowed(entry, tab)
-    if tab == "appearance" or tab == "soundalerts" or tab == "loadconditions" then
-        return true
-    end
-    if tab == "aura" then
-        return type(entry) == "table" and entry.spellID ~= nil
-    end
-    return false
 end
 
 local function GetCustomBarDetailScrollKey()
     if not CS.selectedCustomBarId then return nil end
-    return tostring(CS.selectedCustomBarId) .. ":" .. tostring(CS.customBarSettingsTab or "appearance")
+    return tostring(CS.selectedCustomBarId)
 end
 
 local function GetResourceSettingsDetailScrollKey()
@@ -939,26 +932,14 @@ local function ShowResourceSettingsPanel(col3)
 end
 
 local function ShowCustomBarDetail(col3, selectedEntry)
-    if CS.customBarSettingsTab == "settings"
-        or CS.customBarSettingsTab == "layout"
-        or CS.customBarSettingsTab == "anchor"
-        or CS.customBarSettingsTab == "alpha"
-    then
-        SetConfigCustomBarSettingsTab("appearance")
-    end
-    if not IsCustomBarEntryTabAllowed(selectedEntry, CS.customBarSettingsTab) then
-        SetConfigCustomBarSettingsTab("appearance")
-    end
-
     if not col3._customBarEntryTabGroup then
         local tabGroup = AceGUI:Create("TabGroup")
         tabGroup:SetLayout("Fill")
         tabGroup.frame:SetParent(col3.content)
-        tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
-            -- Selecting a bar tab hands the settings surface to the bar;
+        tabGroup:SetCallback("OnGroupSelected", function(widget)
+            -- Selecting the bar's tab hands the settings surface to the bar;
             -- any panel tabs sharing the row just go unselected.
             ST._UnifiedRowSetScope("detail")
-            SetConfigCustomBarSettingsTab(tab)
             ClearInfoButtons(CS.customBarInfoButtons)
             widget:ReleaseChildren()
 
@@ -967,21 +948,48 @@ local function ShowCustomBarDetail(col3, selectedEntry)
             widget:AddChild(scroll)
             widget._cdcScroll = scroll
             widget._cdcScrollKey = GetCustomBarDetailScrollKey()
-            ST._BuildCustomAuraBarPanel(scroll, CS.selectedCustomBarId, CS.customBarSettingsTab)
+            ST._BuildCustomAuraBarPanel(scroll, CS.selectedCustomBarId)
             -- Re-run the layout with final widths: nested Flow rows resize
             -- themselves after their children land, and that height never
             -- reaches the scroll frame until something relayouts it.
             scroll:DoLayout()
         end)
         ST._UnifiedRowInstallStrip(tabGroup, "detail")
+        -- The bar's Settings tab runs straight on from the primary tabs
+        -- across the fixed seam, the same grammar as the panel entry
+        -- cluster, instead of being pinned to the right edge.
+        ST._UnifiedRowSetSeamFlow(tabGroup)
         col3._customBarEntryTabGroup = tabGroup
     end
 
     -- A primary tab is showing its own content: the bar keeps its place in
     -- the row and stays selected, it just does not own the surface.
     ShowStrip(col3, col3._customBarEntryTabGroup, GetCustomBarEntryTabs(selectedEntry),
-        CS.customBarSettingsTab or "appearance", GetCustomBarDetailScrollKey(),
+        "settings", GetCustomBarDetailScrollKey(),
         ST._UnifiedRowPrimaryOwnsSurface())
+
+    -- A routed gear click named one section of the pane; the build above
+    -- remembered its heading. Writing the pixel offset into the scroll
+    -- state here wins over ShowStrip's saved-offset restore - the widget's
+    -- deferred FixScroll applies (and clamps) it next frame. The pending
+    -- name is dropped either way, so a stale target never re-scrolls a
+    -- later rebuild.
+    local tabGroup = col3._customBarEntryTabGroup
+    local scroll = tabGroup and tabGroup._cdcScroll
+    local heading = scroll and scroll._cdcPendingScrollHeading
+    if heading then
+        scroll._cdcPendingScrollHeading = nil
+        local state = GetStripScrollState(tabGroup)
+        local contentTop = scroll.content and scroll.content:GetTop()
+        local headingTop = heading.frame and heading.frame:GetTop()
+        if state and contentTop and headingTop then
+            -- scrollvalue is left alone: the deferred FixScroll rederives
+            -- it from the offset, and nil would break a mousewheel that
+            -- lands before it runs.
+            state.offset = math.max(0, contentTop - headingTop)
+        end
+    end
+    CS.pendingCustomBarScrollSection = nil
 end
 
 -- Default page for the Resources home: the tabbed shared settings view.
@@ -1075,7 +1083,7 @@ local function ShowResourcesHomeSurfaces(col3, CustomBarExists)
     end
     if not barShown then
         if CS.selectedCustomBarId then
-            PruneConfigCustomBarSelection(CustomBarExists, true)
+            PruneConfigCustomBarSelection(CustomBarExists)
         end
         if wantsBarDetail then
             -- The bar surface did not materialise after all (a resource
@@ -1224,7 +1232,7 @@ local function RefreshBarsWideColumn(col3)
     local function CustomBarExists(customBarId)
         return FindCustomBarById(settings, customBarId) ~= nil
     end
-    PruneConfigCustomBarSelection(CustomBarExists, true)
+    PruneConfigCustomBarSelection(CustomBarExists)
     if PruneConfigResourceSelection then
         local RBP = ST._RBP
         PruneConfigResourceSelection(function(powerType)
