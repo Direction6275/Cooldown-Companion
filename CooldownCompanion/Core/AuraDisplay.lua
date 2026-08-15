@@ -463,6 +463,19 @@ local function BuildSlotKit(slotButton)
         kit.stackFillCsAG:SetLooping("BOUNCE")
         kit.stackFillCsAnim = kit.stackFillCsAG:CreateAnimation("VertexColor")
 
+        -- Stack threshold bands (2026-08-15 program): recolor textures over
+        -- the stack fill, created here (write-once subtree) and dressed at
+        -- bind time by StyleStackThresholdBands. ARTWORK 1/2: above the
+        -- fill texture, below the OVERLAY separator stripes — so painted
+        -- gaps stay visible over a band. The max band spans only the FINAL
+        -- segment ((max-1)/max onward); where it overlaps the threshold
+        -- band on that stretch, the higher sublayer wins by draw order,
+        -- never by comparison.
+        kit.stackThresholdBand = kit.stackFill:CreateTexture(nil, "ARTWORK", nil, 1)
+        kit.stackThresholdBand:SetAlpha(0)
+        kit.stackMaxBand = kit.stackFill:CreateTexture(nil, "ARTWORK", nil, 2)
+        kit.stackMaxBand:SetAlpha(0)
+
         kit.stackSegments = {}
         for i = 1, ST.STACK_SEGMENT_ATLAS_MAX - 1 do
             local tex = kit.stackFill:CreateTexture(nil, "OVERLAY")
@@ -544,6 +557,17 @@ local function BuildSlotKit(slotButton)
     kit.stackText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmallOutline")
     kit.stackText:SetPoint("TOPRIGHT", slotButton, "TOPRIGHT", -1, -1)
     slotButton:SetApplicationCount(kit.stackText)
+
+    -- Stack threshold colors: a per-slot NumericRuleFormatter whose
+    -- breakpoints the engine compares against the SECRET count when
+    -- formatting the stack text (FormatNumber is ConstSecretAccessor — the
+    -- comparison never happens in Lua). Created here, mutated at bind time
+    -- by ConvergeApplicationCount; the creation registration above stays
+    -- formatter-FREE so non-threshold entries keep stock behavior.
+    if C_StringUtil and C_StringUtil.CreateNumericRuleFormatter then
+        kit.stackFormatter = C_StringUtil.CreateNumericRuleFormatter()
+        kit.stackCountFormatterKey = "off"
+    end
 
     -- Bar name replica: the bar backdrop occludes the CC name text along with
     -- everything else on the bar, so the kit re-renders the entry name.
@@ -898,6 +922,71 @@ local function StyleStackSegments(kit, button, buttonData, style, boundMax, show
         else
             tex:SetAlpha(0)
         end
+    end
+end
+
+-- Stack threshold bands (2026-08-15 program): recolor the portion of the
+-- stack fill beyond a stack boundary. Geometry is engine-driven: the fixed
+-- edge sits at the boundary (a static offset from CC-owned geometry at bind
+-- time), the moving edge anchors to the creation-captured fill texture
+-- region, which the ENGINE resizes with the SECRET count (the
+-- pandemicFillClone precedent). Below the boundary the rect has crossed
+-- anchors and renders nothing; the count is never read in Lua. Widget/block
+-- binds are excluded (their atlas fill has transparent gaps a solid band
+-- would paint over); the OVERLAY separator stripes draw above the bands.
+local function DressStackThresholdBand(band, kit, button, style, boundMax, atStack, color, length)
+    local off = length * (atStack - 1) / boundMax
+    local vertical = button._isVertical
+    local reverse = style.barReverseFill or false
+    band:ClearAllPoints()
+    if vertical then
+        if reverse then
+            band:SetPoint("TOPLEFT", kit.stackFill, "TOPLEFT", 0, -off)
+            band:SetPoint("BOTTOMRIGHT", kit.stackFillTexture, "BOTTOMRIGHT", 0, 0)
+        else
+            band:SetPoint("BOTTOMLEFT", kit.stackFill, "BOTTOMLEFT", 0, off)
+            band:SetPoint("TOPRIGHT", kit.stackFillTexture, "TOPRIGHT", 0, 0)
+        end
+    else
+        if reverse then
+            band:SetPoint("TOPRIGHT", kit.stackFill, "TOPRIGHT", -off, 0)
+            band:SetPoint("BOTTOMLEFT", kit.stackFillTexture, "BOTTOMLEFT", 0, 0)
+        else
+            band:SetPoint("TOPLEFT", kit.stackFill, "TOPLEFT", off, 0)
+            band:SetPoint("BOTTOMRIGHT", kit.stackFillTexture, "BOTTOMRIGHT", 0, 0)
+        end
+    end
+    band:SetTexture(CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
+    -- 4-arg SetVertexColor LAST (pandemic clone rule): it replaces region
+    -- alpha through the non-SetAlpha C slot, so this write is also what
+    -- makes the band visible. Forced opaque — the band REPLACES the fill
+    -- color (same ruling as the pandemic recolor).
+    band:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, 1)
+end
+
+local function StyleStackThresholdBands(kit, button, buttonData, style, boundMax, shown)
+    local tBand, mBand = kit.stackThresholdBand, kit.stackMaxBand
+    if not (tBand and mBand) then return end
+    -- All clamp/prefer rules live in ResolveAuraStackThresholdPolicy; the
+    -- only band-local rule is the defensive cap at boundMax (the bound
+    -- geometry), which normally equals the policy's maxStacks.
+    local policy = shown and boundMax and boundMax > 1
+        and CooldownCompanion:ResolveAuraStackThresholdPolicy(buttonData) or nil
+    local threshold = policy and policy.threshold
+    if threshold and threshold > boundMax then threshold = boundMax end
+    local rectW, rectH = HostRectSize(button)
+    local length = (button._isVertical and rectH or rectW) or 0
+    if threshold and length > 0 then
+        DressStackThresholdBand(tBand, kit, button, style, boundMax, threshold,
+            policy.thresholdColor, length)
+    else
+        tBand:SetAlpha(0)
+    end
+    if policy and policy.maxOn and length > 0 then
+        DressStackThresholdBand(mBand, kit, button, style, boundMax, boundMax,
+            policy.maxColor, length)
+    else
+        mBand:SetAlpha(0)
     end
 end
 
@@ -1604,6 +1693,8 @@ local function StyleSlotKit(slot, button, buttonData, style)
             end
         end
         StyleStackSegments(kit, button, buttonData, style, nil, false)
+        -- Resource-lane bands deferred (v1 ruling): always off here.
+        StyleStackThresholdBands(kit, button, buttonData, style, nil, false)
     elseif isBar then
         -- Fill mode (tracker C2): a stack-mode bind carries boundStackMax
         -- (resolved by the rebind pass, re-called onto the registered stack
@@ -1720,6 +1811,8 @@ local function StyleSlotKit(slot, button, buttonData, style)
         end
         StyleStackSegments(kit, button, buttonData, style, slot.boundStackMax,
             segmentedStyle and not widgetStack)
+        StyleStackThresholdBands(kit, button, buttonData, style, slot.boundStackMax,
+            useStackFill and not widgetStack)
     else
         kit.barBackdrop:SetAlpha(0)
         ST.HideStackBlocks(kit.stackBgBlocks)
@@ -1731,6 +1824,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
             RestBarFill(kit.stackFill, kit.stackFillTexture, kit.stackFillPulseAG, kit.stackFillCsAG)
         end
         StyleStackSegments(kit, button, buttonData, style, nil, false)
+        StyleStackThresholdBands(kit, button, buttonData, style, nil, false)
     end
 
     -- Aura active glow: icon hosts style from the auraGlow* keys, bar hosts
@@ -2213,6 +2307,63 @@ local function ConvergeApplicationBar(slotButton, kit, buttonData, stackBarMax)
     end
 end
 
+-- Stack text threshold colors (2026-08-15 program): converge the stack
+-- text registration to this bind's threshold policy. Same per-bind re-call
+-- family as ConvergeApplicationBar above and the C9 SetDurationText call —
+-- structurally OOC in the rebind pass, skipped when unchanged via a
+-- CC-side fingerprint (registered regions are write-only; never a
+-- read-back). Threshold entries re-register WITH the per-slot formatter
+-- (breakpoints rebuilt first); entries without threshold config converge
+-- back to the bare stock registration. All clamp/prefer rules live in
+-- ResolveAuraStackThresholdPolicy — never re-derive them here.
+--
+-- Breakpoint contract: the engine picks the highest breakpoint whose
+-- threshold is <= the (secret) count. {0, ""} reproduces stock
+-- hidden-below-2 behavior (a formatter otherwise formats EVERY count);
+-- {2, "%d"} renders plain counts in the fontstring's styled color; the
+-- threshold/max entries wrap the number in their color escape. Max wins a
+-- collision with the threshold by overwriting its slot in the map.
+local function ConvergeApplicationCount(slotButton, kit, buttonData)
+    if not (kit and kit.stackText and kit.stackFormatter) then return end
+    local policy = CooldownCompanion:ResolveAuraStackThresholdPolicy(buttonData)
+    local wantKey = "off"
+    if policy then
+        local parts = {}
+        if policy.threshold then
+            parts[#parts + 1] = "t" .. policy.threshold .. PandemicColorEscape(policy.thresholdColor)
+        end
+        if policy.maxOn then
+            parts[#parts + 1] = "m" .. policy.maxStacks .. PandemicColorEscape(policy.maxColor)
+        end
+        wantKey = table.concat(parts, "/")
+    end
+    if kit.stackCountFormatterKey == wantKey then return end
+    if not policy then
+        slotButton:SetApplicationCount(kit.stackText)
+    else
+        -- threshold -> format map; later writes win collisions (max last).
+        local formats = { [0] = "", [2] = "%d" }
+        if policy.threshold then
+            formats[policy.threshold] = PandemicColorEscape(policy.thresholdColor) .. "%d|r"
+        end
+        if policy.maxOn then
+            formats[policy.maxStacks < 2 and 2 or policy.maxStacks] =
+                PandemicColorEscape(policy.maxColor) .. "%d|r"
+        end
+        local thresholds = {}
+        for value in pairs(formats) do thresholds[#thresholds + 1] = value end
+        table.sort(thresholds)
+        local breakpoints = {}
+        for i = 1, #thresholds do
+            breakpoints[i] = { threshold = thresholds[i], format = formats[thresholds[i]] }
+        end
+        kit.stackFormatter:ClearBreakpoints()
+        kit.stackFormatter:SetBreakpoints(breakpoints)
+        slotButton:SetApplicationCount(kit.stackText, { formatter = kit.stackFormatter })
+    end
+    kit.stackCountFormatterKey = wantKey
+end
+
 local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMax, soundsAllowed, groupScoped, textureSettings, textureIndicator)
     local button = record.button
     local wasParked = record.parked
@@ -2254,6 +2405,7 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
         BuildCandidateFilters(unit, spellSet, groupScoped))
     if record.hostKind ~= "texturePanel" then
         ConvergeApplicationBar(record.slotButton, record.kit, buttonData, stackBarMax)
+        ConvergeApplicationCount(record.slotButton, record.kit, buttonData)
     end
     -- Set before styling: StyleSlotKit selects the stack fill from this tag.
     record.boundStackMax = stackBarMax
@@ -2715,6 +2867,7 @@ local function BindBlockGroup(group, entry)
     for _, host in ipairs(group.hosts) do
         ApplyBlockHostGeometry(group, host)
         ConvergeApplicationBar(host.frame, host.kit, entry.buttonData, entry.stackBarMax)
+        ConvergeApplicationCount(host.frame, host.kit, entry.buttonData)
         StyleSlotKit({
             kit = host.kit,
             slotButton = host.frame,

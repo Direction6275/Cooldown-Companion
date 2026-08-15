@@ -2497,7 +2497,12 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
             fs:ClearAllPoints()
             fs:SetPoint(style.auraStackAnchor or "BOTTOMLEFT",
                 style.auraStackXOffset or 2, style.auraStackYOffset or 2)
-            fs:SetText(state.stackText or "3")
+            -- Threshold-aware stand-in (2026-08-15 program); helper lives in
+            -- ButtonFrame/Helpers.lua (200-local ceiling here).
+            local asText, asR, asG, asB, asA = CooldownCompanion:GetAuraStackPreviewCountAndColor(
+                buttonData, style, state.stackText)
+            fs:SetText(asText)
+            fs:SetTextColor(asR, asG, asB, asA)
             fs:Show()
         end
     elseif kind == "aura_duration_swipe" and GetConditionalPreviewTiming then
@@ -2995,7 +3000,12 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
             else
                 fs:SetPoint(asAnchor, slot, asAnchor, asX, asY)
             end
-            fs:SetText(state.stackText or "3")
+            -- Threshold-aware stand-in (2026-08-15 program); helper lives in
+            -- ButtonFrame/Helpers.lua (200-local ceiling here).
+            local asText, asR, asG, asB, asA = CooldownCompanion:GetAuraStackPreviewCountAndColor(
+                buttonData, style, state.stackText)
+            fs:SetText(asText)
+            fs:SetTextColor(asR, asG, asB, asA)
             fs:Show()
         end
     elseif kind == "loss_of_control" and GetConditionalPreviewTiming then

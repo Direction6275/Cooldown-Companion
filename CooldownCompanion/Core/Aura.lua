@@ -1021,6 +1021,84 @@ function CooldownCompanion:SetBarPanelAuraSegmentedSmoothing(buttonData, value)
     buttonData.auraBar.segmentedSmoothing = value ~= ST.SEGMENTED_SMOOTHING_ON and value or nil
 end
 
+-- Stack threshold colors (2026-08-15 program): one mid threshold + one
+-- at-max color per entry. The live count is SECRET in combat, so nothing
+-- here is ever compared against it at runtime — these settings only shape
+-- engine-side renderers (NumericRuleFormatter breakpoints for the stack
+-- text, statically-anchored band textures for the stack fill). Stored in
+-- auraBar beside the other per-entry stack settings; nil keys mean off.
+ST.AURA_STACK_THRESHOLD_COLOR_DEFAULT = { 1, 0.82, 0, 1 }
+ST.AURA_STACK_MAX_COLOR_DEFAULT = { 1, 0.25, 0.1, 1 }
+
+function CooldownCompanion:GetAuraStackThresholdValue(buttonData)
+    local auraBar = buttonData and buttonData.auraBar
+    local value = type(auraBar) == "table" and tonumber(auraBar.thresholdValue) or nil
+    if not value then return nil end
+    value = math.floor(value + 0.5)
+    if value < 2 then return 2 end
+    return value
+end
+
+function CooldownCompanion:SetAuraStackThresholdValue(buttonData, value)
+    if type(buttonData.auraBar) ~= "table" then
+        if value == nil then return end
+        buttonData.auraBar = {}
+    end
+    buttonData.auraBar.thresholdValue = value
+end
+
+function CooldownCompanion:GetAuraStackThresholdColor(buttonData)
+    local auraBar = buttonData and buttonData.auraBar
+    local color = type(auraBar) == "table" and auraBar.thresholdColor or nil
+    if type(color) == "table" then return color end
+    return ST.AURA_STACK_THRESHOLD_COLOR_DEFAULT
+end
+
+function CooldownCompanion:IsAuraStackMaxColorEnabled(buttonData)
+    local auraBar = buttonData and buttonData.auraBar
+    return type(auraBar) == "table" and auraBar.maxColorEnabled == true
+end
+
+function CooldownCompanion:SetAuraStackMaxColorEnabled(buttonData, enabled)
+    if type(buttonData.auraBar) ~= "table" then
+        if not enabled then return end
+        buttonData.auraBar = {}
+    end
+    buttonData.auraBar.maxColorEnabled = enabled and true or nil
+end
+
+function CooldownCompanion:GetAuraStackMaxColor(buttonData)
+    local auraBar = buttonData and buttonData.auraBar
+    local color = type(auraBar) == "table" and auraBar.maxColor or nil
+    if type(color) == "table" then return color end
+    return ST.AURA_STACK_MAX_COLOR_DEFAULT
+end
+
+-- The ONE resolver for the whole feature (review batch 2026-08-15): every
+-- consumer — formatter breakpoints, fill bands, config previews — reads
+-- this same clamped view, so the clamp/prefer rules cannot drift between
+-- them. Returns nil when the feature is off for this entry.
+--   threshold      integer >= 2, capped at maxStacks when one resolved
+--   maxOn          true only when enabled AND maxStacks resolved
+--   maxStacks      automatic max (nil when the game reports none)
+--   thresholdColor / maxColor   display-only tables; never mutate them
+function CooldownCompanion:ResolveAuraStackThresholdPolicy(buttonData)
+    local threshold = self:GetAuraStackThresholdValue(buttonData)
+    local maxOn = self:IsAuraStackMaxColorEnabled(buttonData)
+    if not (threshold or maxOn) then return nil end
+    local maxStacks = self:GetAuraStackBarMax(buttonData, true)
+    if maxOn and not maxStacks then maxOn = false end
+    if threshold and maxStacks and threshold > maxStacks then threshold = maxStacks end
+    if not (threshold or maxOn) then return nil end
+    return {
+        threshold = threshold,
+        maxOn = maxOn,
+        maxStacks = maxStacks,
+        thresholdColor = self:GetAuraStackThresholdColor(buttonData),
+        maxColor = self:GetAuraStackMaxColor(buttonData),
+    }
+end
+
 -- Automatic max-stacks resolution (owner ruling: automatic only, no manual
 -- field). The lookup is talent-aware and returns 0 for IDs that carry no
 -- stacking aura (V24), so the highest candidate wins and anything ≤ 1 means

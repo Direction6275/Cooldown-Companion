@@ -27,6 +27,7 @@ local AddCheckboxRow = ST._AddCheckboxRow
 local AddSliderRow = ST._AddSliderRow
 local AddDropdownRow = ST._AddDropdownRow
 local AddEditBoxRow = ST._AddEditBoxRow
+local AddColorRow = ST._AddColorRow
 local AddLabelRow = ST._AddLabelRow
 local AnchorRowBadge = ST._AnchorRowBadge
 
@@ -227,6 +228,15 @@ local SEGMENTED_SMOOTHING_TOOLTIP = {
     {"Continuous stack bars always animate smoothly.", 1, 1, 1, true},
     " ",
     {"Gaining or losing the aura entirely always snaps; the game only animates stack changes.", 1, 1, 1, true},
+}
+
+local STACK_THRESHOLD_TOOLTIP = {
+    "Stack Threshold Color",
+    {"Recolors the stack count text when it reaches the chosen number of stacks.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Stack-filled bars also recolor the fill past the threshold. Bars using the block style recolor the text only.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"The game applies the color itself, so it keeps working in combat while the exact count is hidden from addons.", 1, 1, 1, true},
 }
 
 local PANDEMIC_MARKER_TOOLTIP = {
@@ -515,6 +525,106 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
             end
 
             AddAuraStackMaxStatusLabel(auraRight, maxStacks, { row = true })
+        end
+    end
+
+    -- Stack threshold colors (2026-08-15 program): the count text recolors
+    -- at a chosen stack count and again at max stacks; stack-filled bars
+    -- add matching band recolors. Mode-agnostic (the text half runs on
+    -- icons too), so this sits outside the bars gate. The comparison
+    -- against the live count is engine-side (formatter breakpoints and
+    -- band geometry); nothing here ever reads the secret count.
+    do
+        local maxStacks = CooldownCompanion:GetAuraStackBarMax(buttonData, true)
+        local threshold = CooldownCompanion:GetAuraStackThresholdValue(buttonData)
+        local thresholdRow = AddCheckboxRow(auraRight, {
+            label = "Stack Threshold Color",
+            value = threshold ~= nil,
+            onChange = function(value)
+                if value then
+                    local default = maxStacks and math.max(2, maxStacks - 1) or 2
+                    CooldownCompanion:SetAuraStackThresholdValue(buttonData, default)
+                else
+                    CooldownCompanion:SetAuraStackThresholdValue(buttonData, nil)
+                end
+                RefreshAuraConfig()
+            end,
+        })
+        AnchorRowBadge(thresholdRow, CreateInfoButton(thresholdRow.frame, thresholdRow.frame, "LEFT", "LEFT", 0, 0,
+            STACK_THRESHOLD_TOOLTIP, infoButtons))
+        if threshold then
+            -- Displayed value is the EFFECTIVE threshold (capped by the
+            -- resolved max, matching the live clamp); the stored value is
+            -- preserved so a talent swap that restores a higher max
+            -- restores the user's setting. (review batch 2026-08-15)
+            local effectiveThreshold = threshold
+            if maxStacks and effectiveThreshold > maxStacks then
+                effectiveThreshold = maxStacks
+            end
+            AddSliderRow(auraRight, {
+                label = "Threshold Stacks",
+                indent = true,
+                min = 2, max = maxStacks or 20, step = 1,
+                value = effectiveThreshold,
+                onChange = function(value)
+                    -- Live-preview shape (segment-gap slider convention):
+                    -- write, refresh the preview, restore — the drag never
+                    -- rests in the store.
+                    local previousAuraBar = buttonData.auraBar
+                    local hadAuraBar = type(previousAuraBar) == "table"
+                    local previous = hadAuraBar and previousAuraBar.thresholdValue or nil
+                    CooldownCompanion:SetAuraStackThresholdValue(buttonData, value)
+                    ST._RefreshSelectedButtonsPreview()
+                    if hadAuraBar then
+                        buttonData.auraBar.thresholdValue = previous
+                    else
+                        buttonData.auraBar = previousAuraBar
+                    end
+                end,
+                onRelease = function(value)
+                    CooldownCompanion:SetAuraStackThresholdValue(buttonData, value)
+                    ST._RefreshSelectedButtonsPreview()
+                    CooldownCompanion:RequestAuraRebind("config")
+                end,
+            })
+            AddColorRow(auraRight, {
+                label = "Threshold Color",
+                indent = true,
+                tbl = buttonData.auraBar,
+                key = "thresholdColor",
+                default = ST.AURA_STACK_THRESHOLD_COLOR_DEFAULT,
+                hasAlpha = false,
+                onConfirm = function()
+                    ST._RefreshSelectedButtonsPreview()
+                    CooldownCompanion:RequestAuraRebind("config")
+                end,
+            })
+        end
+        -- Max color needs a resolved max; auras the game reports as
+        -- non-stacking never show the row.
+        if maxStacks then
+            AddCheckboxRow(auraRight, {
+                label = "Max Stacks Color",
+                value = CooldownCompanion:IsAuraStackMaxColorEnabled(buttonData),
+                onChange = function(value)
+                    CooldownCompanion:SetAuraStackMaxColorEnabled(buttonData, value)
+                    RefreshAuraConfig()
+                end,
+            })
+            if CooldownCompanion:IsAuraStackMaxColorEnabled(buttonData) then
+                AddColorRow(auraRight, {
+                    label = "Max Color",
+                    indent = true,
+                    tbl = buttonData.auraBar,
+                    key = "maxColor",
+                    default = ST.AURA_STACK_MAX_COLOR_DEFAULT,
+                    hasAlpha = false,
+                    onConfirm = function()
+                        ST._RefreshSelectedButtonsPreview()
+                        CooldownCompanion:RequestAuraRebind("config")
+                    end,
+                })
+            end
         end
     end
 
