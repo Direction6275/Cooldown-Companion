@@ -51,6 +51,50 @@ function ST.ResolveCDMAuraSpellID(cooldownInfo)
     return nil
 end
 
+-- The identity the APPLIED aura actually carries, for a CDM data row. The
+-- row's resolved spellID is the cast or talent spell; when the game applies
+-- the aura under a different spellID, that identity exists only in
+-- linkedSpellIDs (Fire Breath 357208 applies DoT 357209; Rake 1822 applies
+-- bleed 155722). Blizzard's own matcher (GetAssociatedAuraSpellPriority)
+-- ranks linked IDs above the row spellID, so when the row ID is absent from
+-- a non-empty linked list, the aura that actually gets tracked is the linked
+-- one. Same rule the autocomplete attach surfaces validated 2026-08-08.
+function ST.ResolveCDMAppliedAuraSpellID(cooldownInfo, resolvedID)
+    if type(cooldownInfo) ~= "table" or not IsConcreteSpellID(resolvedID) then
+        return resolvedID
+    end
+    local linked = cooldownInfo.linkedSpellIDs
+    if type(linked) ~= "table" or #linked == 0 then
+        return resolvedID
+    end
+    for _, linkedID in ipairs(linked) do
+        if linkedID == resolvedID then
+            return resolvedID
+        end
+    end
+    -- The row ID is absent from a non-empty linked list, so it is not a
+    -- matchable aura identity at all — never fall back to it here (that
+    -- fallback mis-polarized Shield of the Righteous the moment its live
+    -- row grew a second link). With several links (Hot Streak links Heating
+    -- Up 48107 AND Hot Streak 48108) the FIRST existing one is promoted,
+    -- Blizzard data order; the second return flags that ambiguity so
+    -- display surfaces can keep the row's own name instead of naming one
+    -- stage. The candidate-set path carries every stage regardless.
+    local appliedID, ambiguous
+    for _, linkedID in ipairs(linked) do
+        if IsConcreteSpellID(linkedID) and C_Spell.DoesSpellExist(linkedID) then
+            if appliedID then
+                if linkedID ~= appliedID then
+                    ambiguous = true
+                end
+            else
+                appliedID = linkedID
+            end
+        end
+    end
+    return appliedID or resolvedID, ambiguous
+end
+
 function ST.IsDistinctCDMAuraIdentity(spellID, auraID)
     if not IsConcreteSpellID(spellID) or not IsConcreteSpellID(auraID) then
         return false
