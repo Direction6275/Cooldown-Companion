@@ -245,6 +245,21 @@ local PANDEMIC_EFFECT_TOOLTIP = {
     {"Style and color are in the panel's Pandemic settings.", 1, 1, 1, true},
 }
 
+local KEEP_SWIPE_TOOLTIP = {
+    "Keep Spell Cooldown Swipe",
+    {"Keeps this entry's own icon and cooldown swipe while the tracked aura is active.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Aura stack text, duration text, and glows still follow their own settings.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"The aura's duration swipe is hidden so two swipes never overlap.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"With Show Aura Icon While Active on, the aura icon covers the swipe unless Layer Order raises Cooldown Swipe above the aura display.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"The aura icon tint does not apply. The icon keeps its own tint.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Icon panels only.", 1, 1, 1, true},
+}
+
 local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     local BeginRowGrid = ST._BeginRowGrid
 
@@ -515,6 +530,24 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
                 RefreshAuraConfig()
             end,
         })
+
+        -- Icon panels only: bars have no cover to skip (their aura model is
+        -- the drain/stack fill), and a shell entry's CC layer is hidden so
+        -- there is no swipe to keep. The stored flag stays put either way;
+        -- the row just hides while it cannot apply.
+        if (group.displayMode or "icons") == "icons"
+            and not CooldownCompanion:IsAuraShellEntry(buttonData) then
+            local keepSwipeRow = AddCheckboxRow(auraRight, {
+                label = "Keep Spell Cooldown Swipe",
+                value = buttonData.auraKeepSpellCooldownSwipe == true,
+                onChange = function(value)
+                    buttonData.auraKeepSpellCooldownSwipe = value and true or nil
+                    RefreshAuraConfig()
+                end,
+            })
+            AnchorRowBadge(keepSwipeRow, CreateInfoButton(keepSwipeRow.frame, keepSwipeRow.frame, "LEFT", "LEFT", 0, 0,
+                KEEP_SWIPE_TOOLTIP, infoButtons))
+        end
     end
 
     if buttonData.isPassive then

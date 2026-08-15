@@ -1242,6 +1242,10 @@ local function StyleSlotKit(slot, button, buttonData, style)
     local shellEntry = CooldownCompanion:IsAuraShellEntry(buttonData)
     local barIconShown = isBar and style.showBarIcon ~= false and button.icon ~= nil
     local showAuraIcon = ShouldShowAuraIcon(buttonData)
+    -- Keep-swipe entries (icon hosts only) skip the icon takeover: the CC
+    -- icon and its own cooldown swipe stay visible under the aura overlays.
+    local keepSwipeActive = not isBar
+        and CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData)
 
     -- Inset-aware anchor host: on block hosts the statusBar proxy is the
     -- border-inset rect while slotButton is the full Blizzard-laid group
@@ -1271,6 +1275,10 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- hosts only when the icon square participates (aura icon swap enabled,
     -- or a shell entry whose hidden CC icon needs the static replica).
     local coverWanted = (not isBar) or (barIconShown and (showAuraIcon or shellEntry))
+    if keepSwipeActive then
+        -- Keep-swipe entries skip the takeover; the CC icon stays visible.
+        coverWanted = false
+    end
     local coverShown = false
 
     -- Occluding cover: the entry's icon, cropped like the CC icon underneath
@@ -1524,7 +1532,10 @@ local function StyleSlotKit(slot, button, buttonData, style)
         kit.swipe:SetAllPoints(slotButton)
         kit.swipe:SetDrawSwipe(false)
         kit.swipe:SetDrawEdge(false)
-    elseif isBar then
+    elseif isBar or not CooldownCompanion:ShouldDrawAuraDurationSwipe(buttonData) then
+        -- Bars have no aura swipe; keep-swipe entries show the spell's own
+        -- cooldown swipe instead (two swipes would stack). Draw flags only --
+        -- the swipe stays registered so Blizzard keeps driving it.
         kit.swipe:SetDrawSwipe(false)
         kit.swipe:SetDrawEdge(false)
     else
