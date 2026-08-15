@@ -90,13 +90,13 @@ local STEP_DATA = {
     },
     entry_settings_intro = {
         title = "Entry Settings",
-        text = "Your panel is previewed at the top of this column. Click a button in the preview to select it - its settings appear below: cooldown settings, per-button visibility rules, sound alerts, and more.",
+        text = "Your panel is previewed at the top of this column. Click a button in the preview to select it - its settings sections appear below: cooldown settings, sound alerts, and more.",
         anchor = "col3_area",
         placement = "right",
     },
     panel_settings_intro = {
         title = "Panel Settings",
-        text = "Click the selected button again to deselect it, and this same column shows the panel's settings - layout, text elements, and indicators, applying to every entry in the panel.\n\nImportant:\n\n|A:Crosshair_VehichleCursor_32:14:14|a: Whenever you see the |A:Crosshair_VehichleCursor_32:14:14|a next to a setting, that means you can override a panel-wide setting for a specific entry.\n\n|A:QuestLog-icon-setting:14:14|a: Whenever you see the |A:QuestLog-icon-setting:14:14|a next to a setting, that opens advanced settings for it.",
+        text = "With a button selected, the styling tabs show that button's values. Each section reads Panel setting until Customize gives the button its own copy, and Revert hands it back.\n\n|A:QuestLog-icon-setting:14:14|a next to a setting opens advanced options for it.",
         anchor = "col3_area",
         placement = "right",
     },

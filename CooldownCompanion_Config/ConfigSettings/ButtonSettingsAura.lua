@@ -1,8 +1,11 @@
 --[[
     CooldownCompanion_Config - ConfigSettings/ButtonSettingsAura.lua
-    Per-entry Aura tab (12.1 rebuild, fresh design — no CDM concepts).
-    Phase 1 scope: enable toggle, tracked-aura list + add box, derived unit
-    line. Display toggles and style sections arrive in later phases.
+    Per-entry Aura Tracking section (12.1 rebuild, fresh design — no CDM
+    concepts). It was its own entry tab until the entry cluster collapsed to
+    one Settings tab; it now renders into that pane directly below Show
+    Conditions, whose aura toggles depend on the setup made here.
+    Scope: enable toggle, tracked-aura list + add box, derived unit line,
+    display toggles and style rows.
     The tracked unit is auto-derived from spell polarity and never user-set:
     Blizzard's anti-cheat gate allows only buffs-on-player and own-debuffs-
     on-target, so illegal configurations are unrepresentable here.
@@ -18,7 +21,7 @@ local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
 
 -- Imports from RowWidgets.lua (the row grammar). The rules every row-grammar
 -- section follows are stated once, in the recipe comment at the top of
--- BuildAppearanceTab's icons path (GroupTabs.lua); this file conforms to them
+-- BuildAppearanceTab's icons path (GroupTabsAppearance.lua); this file conforms to them
 -- rather than restating them.
 local AddCheckboxRow = ST._AddCheckboxRow
 local AddSliderRow = ST._AddSliderRow
@@ -242,18 +245,18 @@ local PANDEMIC_EFFECT_TOOLTIP = {
     {"Style and color are in the panel's Pandemic settings.", 1, 1, 1, true},
 }
 
-local function BuildAuraTab(scroll, group, buttonData, infoButtons)
-    -- Function-local, not a file upvalue: the same convention every converted
-    -- surface follows (GroupTabs.lua's icons path states it).
+local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     local BeginRowGrid = ST._BeginRowGrid
 
     local isStandalone = buttonData.addedAs == "aura"
     local isTexturePanel = group and group.displayMode == "textures"
 
-    -- One collapsible row-grammar section. The tab's ScrollFrame is already a
-    -- "List" and Panel.lua re-lays it once this builder returns. No gear and
-    -- no preview-command-center route reaches this tab, so nothing has to
-    -- uncollapse it from the outside.
+    -- One collapsible row-grammar section, emitted into the entry Settings
+    -- pane's ScrollFrame (already a "List"; Panel.lua re-lays it once the
+    -- whole pane is built). No gear and no preview-command-center route
+    -- reaches this section, so nothing has to uncollapse it from the outside.
+    -- The key is unchanged from when this was its own tab, so an expand state
+    -- set before the merge survives it.
     local sectionKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_aura_tracking"
     local heading, collapsed = BuildCollapsibleSection(scroll, "Aura Tracking", sectionKey,
         nil, nil, ROW_SECTION)
@@ -612,5 +615,5 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
         PANDEMIC_EFFECT_TOOLTIP, infoButtons))
 end
 
-ST._BuildAuraTab = BuildAuraTab
+ST._BuildAuraTrackingSection = BuildAuraTrackingSection
 ST._SetTexturePanelAuraDisplayEnabled = SetTexturePanelAuraDisplayEnabled

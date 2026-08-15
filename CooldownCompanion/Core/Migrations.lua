@@ -2388,8 +2388,8 @@ end
 --
 -- Nothing has to MOVE for (2). styleOverrides is one flat table and IS the
 -- effective style (StyleOverrides.lua), so the keys already sit where they
--- render; overrideSections is bookkeeping for promote, revert and the
--- Overrides tab. What this pass fixes is ownership: a key in the flat table
+-- render; overrideSections is bookkeeping for the config's Customize, Revert
+-- and scope readouts. What this pass fixes is ownership: a key in the flat table
 -- that no listed section claims still renders, but revert cannot clear it and
 -- no panel draws it. That is the whole bug, and it is invisible in game.
 --
@@ -2541,7 +2541,7 @@ local function MigrateOnePandemicOverride(buttonData, group)
         overrides[key] = nil
     end
     -- RevertSection's cleanup, plus the guard it does not need: it always
-    -- removes a section, this pass never does, and the Overrides tab reads
+    -- removes a section, this pass never does, and the config reads
     -- buttonData.styleOverrides directly, so a live section must keep a table.
     if not next(overrides) and not hasActiveSection then
         buttonData.styleOverrides = nil

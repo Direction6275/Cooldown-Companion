@@ -453,6 +453,24 @@ StaticPopupDialogs["CDC_REFRESH_CDM_PANEL"] = {
     preferredIndex = 3,
 }
 
+-- Revert All, from the entry Settings pane's Customizations heading. The entry
+-- is named by id rather than handed over live: a popup outlives the build that
+-- opened it, and the entry it names can be gone by the time Accept comes back.
+StaticPopupDialogs["CDC_REVERT_ENTRY_CUSTOMIZATIONS"] = {
+    text = "Revert every customization on '%s' to panel settings?",
+    button1 = "Revert All",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.groupId and data.buttonIndex and ST._RevertAllEntryCustomizations then
+            ST._RevertAllEntryCustomizations(data.groupId, data.buttonIndex)
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 StaticPopupDialogs["CDC_RENAME_GROUP"] = {
     text = "Rename group '%s' to:",
     button1 = "Rename",

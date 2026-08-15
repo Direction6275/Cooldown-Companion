@@ -19,7 +19,9 @@ local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 -- with a natural two-column split writes its "what it looks like / where it
 -- lands" rows there and its "what it is drawn with" rows into `container`.
 -- Builders that ignore it simply fill the left column, which is what the
--- fill-LEFT-first rule asks for. Only the Overrides tab passes it today.
+-- fill-LEFT-first rule asks for. The styling tabs pass it wherever a section
+-- opens its own two-column grid (Text mode's Font and Colors sections, the
+-- rotation assistant's keybind block, the bar aura indicator's effects grid).
 local AddCheckboxRow = ST._AddCheckboxRow
 local AddSliderRow = ST._AddSliderRow
 local AddDropdownRow = ST._AddDropdownRow
@@ -251,61 +253,6 @@ local function AddDurationFormatDropdown(container, settings, refreshCallback, o
     })
 end
 
--- Row grammar only (RowWidgets.lua). LEFT column (the container the caller
--- hands over): the toggle and what the text is drawn WITH. RIGHT column
--- (opts.rightColumn): what it looks like and where it lands. Rows in the LEFT
--- column indent under the toggle they belong to; the RIGHT column's rows head
--- their own column, so they do not - the same convention every text builder
--- below follows. The pre-redesign full-width stock shape had no call sites left
--- after the conversion packets.
-local function BuildCooldownTextControls(container, styleTable, refreshCallback, opts)
-    opts = opts or {}
-    local fallbackStyle = opts.fallbackStyle
-    local showCooldownText = styleTable.showCooldownText
-    if showCooldownText == nil and type(fallbackStyle) == "table" then
-        showCooldownText = fallbackStyle.showCooldownText
-    end
-
-    local right = opts.rightColumn or container
-
-    AddCheckboxRow(container, {
-        label = "Show Cooldown Text",
-        value = showCooldownText or false,
-        indent = opts.indent,
-        onChange = function(val)
-            styleTable.showCooldownText = val
-            refreshCallback()
-            RefreshStructuralControls(container)
-        end,
-    })
-
-    -- A per-entry override does not carry the group's duration format.
-    if not opts.isOverride and showCooldownText then
-        AddDurationFormatDropdown(container, styleTable, refreshCallback,
-            { indent = true })
-    end
-
-    if showCooldownText then
-        AddFontControls(container, styleTable, "cooldown", {}, refreshCallback,
-            { row = true, indent = true })
-
-        -- deferCommit is deliberately absent throughout, matching the
-        -- stock color pickers these rows replaced.
-        AddColorRow(right, {
-            label = "Font Color",
-            tbl = styleTable,
-            key = "cooldownFontColor",
-            default = {1, 1, 1, 1},
-            onConfirm = refreshCallback,
-            onChange = refreshCallback,
-        })
-        AddAnchorDropdown(right, styleTable, "cooldownTextAnchor", "CENTER", refreshCallback,
-            nil, { row = true })
-        AddOffsetSliders(right, styleTable, "cooldownTextXOffset", "cooldownTextYOffset", {},
-            refreshCallback, { row = true })
-    end
-end
-
 -- Pandemic marker controls (tracker C9), shared between the group-tab
 -- advanced panel and the per-button override builder. The marker rides the
 -- aura duration text, so it lives with these options. rebuildCallback
@@ -328,12 +275,12 @@ local PANDEMIC_MARKER_TOOLTIP_LINES = {
 
 -- Row grammar only (RowWidgets.lua). Three shapes, one builder:
 --   opts.enableOnly   - just the toggle, returned so the caller can chain a
---                       gear and a promote badge off it (the Indicators tab's
---                       Pandemic section).
+--                       gear and the section's scope chrome off it (the
+--                       Indicators tab's Pandemic section).
 --   opts.childrenOnly - just what that gear opens, so the rows fill the panel
 --                       instead of indenting under a toggle that is elsewhere.
---   neither           - both, the Overrides tab's inline shape, where the
---                       three styling rows are children of the toggle.
+--   neither           - both, with the three styling rows as children of the
+--                       toggle. No caller asks for this shape today.
 -- Labels deliberately say "Marker": these rows share a section with the
 -- pandemic EFFECT's own color, and three rows reading "Pandemic Color" in one
 -- column would be unreadable.
@@ -406,130 +353,6 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
     return enableRow
 end
 
-local AURA_TEXT_SHARED_POSITION_TOOLTIP = {
-    "Shared Position",
-    {"Position is shared with Cooldown Text by default. Enable 'Separate Text Positions' below to use independent positions.", 1, 1, 1, true},
-}
-
-local SEPARATE_TEXT_POSITIONS_TOOLTIP = {
-    "Separate Text Positions",
-    {"Gives the aura duration text and the cooldown text independent positions.", 1, 1, 1, true},
-    " ",
-    {"The cooldown text also draws above the aura display, so both timers stay visible while the aura runs.", 1, 1, 1, true},
-}
-
--- Row grammar only: LEFT column is the toggle and what the text is drawn with;
--- RIGHT is where it lands (the separate-position chain). The pandemic marker
--- rides this text but no longer lives here: it moved to the Indicators tab's
--- Pandemic section so both halves of the feature share one home, and its keys
--- moved with it into the mode-spanning "pandemic" override section.
-local function BuildAuraTextControls(container, styleTable, refreshCallback, opts)
-    opts = opts or {}
-    local fallbackStyle = opts.fallbackStyle
-    local showAuraText = styleTable.showAuraText
-    if showAuraText == nil and type(fallbackStyle) == "table" then
-        showAuraText = fallbackStyle.showAuraText
-    end
-
-    local right = opts.rightColumn or container
-
-    local auraTextRow = AddCheckboxRow(container, {
-        label = "Show Aura Duration Text",
-        value = showAuraText ~= false,
-        indent = opts.indent,
-        onChange = function(val)
-            styleTable.showAuraText = val
-            refreshCallback()
-            RefreshStructuralControls(container)
-        end,
-    })
-    -- Anchor args are a placeholder - AnchorRowBadge re-points the button
-    -- onto the end of the row's label.
-    AnchorRowBadge(auraTextRow, CreateInfoButton(auraTextRow.frame, auraTextRow.frame, "LEFT", "LEFT", 0, 0,
-        AURA_TEXT_SHARED_POSITION_TOOLTIP, auraTextRow))
-
-    if showAuraText == false then
-        return
-    end
-
-    AddFontControls(container, styleTable, "auraText", {}, refreshCallback,
-        { row = true, indent = true })
-    -- deferCommit is deliberately absent, matching the stock color picker this
-    -- row replaced.
-    AddColorRow(container, {
-        label = "Font Color",
-        indent = true,
-        tbl = styleTable,
-        key = "auraTextFontColor",
-        default = {0, 0.925, 1, 1},
-        onConfirm = refreshCallback,
-        onChange = refreshCallback,
-    })
-
-    local sepPosRow = AddCheckboxRow(right, {
-        label = "Separate Text Positions",
-        value = styleTable.separateTextPositions or false,
-        onChange = function(val)
-            styleTable.separateTextPositions = val
-            refreshCallback()
-            RefreshStructuralControls(container)
-        end,
-    })
-    AnchorRowBadge(sepPosRow, CreateInfoButton(sepPosRow.frame, sepPosRow.frame, "LEFT", "LEFT", 0, 0,
-        SEPARATE_TEXT_POSITIONS_TOOLTIP, sepPosRow))
-
-    if styleTable.separateTextPositions then
-        AddAnchorDropdown(right, styleTable, "auraTextAnchor", "TOPLEFT", refreshCallback,
-            nil, { row = true, indent = true })
-        AddOffsetSliders(right, styleTable, "auraTextXOffset", "auraTextYOffset", {x = 2, y = -2},
-            refreshCallback, { row = true, indent = true })
-    end
-end
-
--- Row grammar only: same split as Cooldown Text - LEFT the toggle and the font
--- trio, RIGHT the color, anchor and offsets.
-local function BuildAuraStackTextControls(container, styleTable, refreshCallback, opts)
-    opts = opts or {}
-    local fallbackStyle = opts.fallbackStyle
-    local showAuraStackText = styleTable.showAuraStackText
-    if showAuraStackText == nil and type(fallbackStyle) == "table" then
-        showAuraStackText = fallbackStyle.showAuraStackText
-    end
-
-    local right = opts.rightColumn or container
-
-    AddCheckboxRow(container, {
-        label = "Show Aura Stack Text",
-        value = showAuraStackText ~= false,
-        indent = opts.indent,
-        onChange = function(val)
-            styleTable.showAuraStackText = val
-            refreshCallback()
-            RefreshStructuralControls(container)
-        end,
-    })
-
-    if showAuraStackText ~= false then
-        AddFontControls(container, styleTable, "auraStack", {}, refreshCallback,
-            { row = true, indent = true })
-        -- deferCommit is deliberately absent, matching the stock color picker
-        -- this row replaced.
-        AddColorRow(right, {
-            label = "Font Color",
-            tbl = styleTable,
-            key = "auraStackFontColor",
-            default = {1, 1, 1, 1},
-            hasAlpha = true,
-            onConfirm = refreshCallback,
-            onChange = refreshCallback,
-        })
-        AddAnchorDropdown(right, styleTable, "auraStackAnchor", "BOTTOMLEFT", refreshCallback,
-            nil, { row = true })
-        AddOffsetSliders(right, styleTable, "auraStackXOffset", "auraStackYOffset", {x = 2, y = 2},
-            refreshCallback, { row = true })
-    end
-end
-
 -- Row grammar only: LEFT column (the container the caller hands over) the
 -- toggle and the font trio, RIGHT column (opts.rightColumn) the color, anchor
 -- and offsets. opts.label / opts.tooltip let the rotation assistant name this
@@ -574,52 +397,6 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback, 
         AddAnchorDropdown(right, styleTable, "keybindAnchor", "TOPRIGHT", refreshCallback,
             nil, { row = true })
         AddOffsetSliders(right, styleTable, "keybindXOffset", "keybindYOffset", {x = -2, y = -2},
-            refreshCallback, { row = true })
-    end
-end
-
--- Row grammar only: LEFT the toggle and the font trio, RIGHT the three state
--- colors and the placement.
-local function BuildChargeTextControls(container, styleTable, refreshCallback, opts)
-    opts = opts or {}
-
-    local right = opts.rightColumn or container
-
-    AddCheckboxRow(container, {
-        label = "Show Count Text (Charges/Uses)",
-        value = styleTable.showChargeText ~= false,
-        indent = opts.indent,
-        onChange = function(val)
-            styleTable.showChargeText = val
-            refreshCallback()
-            RefreshStructuralControls(container)
-        end,
-    })
-
-    if styleTable.showChargeText ~= false then
-        AddFontControls(container, styleTable, "charge", {}, refreshCallback,
-            { row = true, indent = true })
-
-        -- deferCommit is deliberately absent throughout, matching the
-        -- stock color pickers these rows replaced.
-        local function ChargeColorRow(rowLabel, key)
-            AddColorRow(right, {
-                label = rowLabel,
-                tbl = styleTable,
-                key = key,
-                default = {1, 1, 1, 1},
-                hasAlpha = true,
-                onConfirm = refreshCallback,
-                onChange = refreshCallback,
-            })
-        end
-        ChargeColorRow("Font Color (Max Charges)", "chargeFontColor")
-        ChargeColorRow("Font Color (Missing Charges)", "chargeFontColorMissing")
-        ChargeColorRow("Font Color (Zero Charges)", "chargeFontColorZero")
-
-        AddAnchorDropdown(right, styleTable, "chargeAnchor", "BOTTOMRIGHT", refreshCallback,
-            nil, { row = true })
-        AddOffsetSliders(right, styleTable, "chargeXOffset", "chargeYOffset", {x = -2, y = 2},
             refreshCallback, { row = true })
     end
 end
@@ -673,24 +450,6 @@ local function BuildBorderControls(container, styleTable, refreshCallback, opts)
     })
 end
 
--- Row grammar only: one color row, which sizes itself. The pre-redesign stock
--- picker took a width setter for two-column Flow hosts; that shape is gone, but
--- the parameter stays to hold its POSITION - the Overrides tab still calls this
--- with an explicit nil there (ButtonSettingsOverrides.lua), and moving opts up
--- would silently read that nil as the options table.
-local function BuildBackgroundColorControls(container, styleTable, refreshCallback, _legacySetWidth, opts)
-    return AddColorRow(container, {
-        label = "Background Color",
-        indent = opts and opts.indent,
-        tbl = styleTable,
-        key = "backgroundColor",
-        default = {0, 0, 0, 0.5},
-        hasAlpha = true,
-        onConfirm = refreshCallback,
-        onChange = refreshCallback,
-    })
-end
-
 -- Row grammar only: one slider row. WeakAuras-style zoom: crops the icon
 -- artwork toward its center without changing the frame's size.
 -- Mirror-first when opts.previewRefresh is given: drag ticks save the value
@@ -718,6 +477,127 @@ local function BuildIconZoomControls(container, styleTable, refreshCallback, opt
             refreshCallback()
         end,
     })
+end
+
+-- Row grammar only (RowWidgets.lua). The icons and bars styling tabs draw the
+-- SAME Icon Tint block over the same keys - the tint pipeline is shared
+-- (ButtonFrame/Tracking.lua serves both display modes) - so the rows live here
+-- once and each tab keeps its own heading, info badge, gates and brackets.
+--
+-- Unlike the (container, styleTable, refreshCallback) builders above, this one
+-- takes BOTH grid columns and the tab's already-begun iconTint lens section:
+-- the block's natural split is always-on colors LEFT, conditional state tints
+-- RIGHT, and every row binds sec.tbl / takes sec.disabled / guards its commit
+-- on sec.write. Brackets stay with the caller, which owns both columns.
+--
+-- opts.mode          "icons" | "bars". Bars omits the Background Color ROW (the
+--                    bar's icon square never renders a backdrop - Bar
+--                    Background Color owns that) but the reset still writes the
+--                    key: it belongs to this section, and a value left pinned
+--                    would surface as a stale icon backdrop if the panel ever
+--                    converts to icons.
+-- opts.hasAuraEntry  the caller's ST._GroupHasAuraTrackingEntry(group) result.
+--                    The aura tint applies to the slot-kit aura layer (consumed
+--                    at bind time by AuraDisplay.StyleSlotKit), so it is only
+--                    offered where an aura display exists.
+-- opts.refresh       the tab's style-only refresh, run on every value change.
+local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
+    opts = opts or {}
+    local refresh = opts.refresh
+    -- A color row binds its picker to one table for both reading and writing,
+    -- so it gets the write table where the section has one and the lens'
+    -- detached snapshot where it does not.
+    local tintTbl = sec.tbl
+
+    AddColorRow(leftColumn, {
+        label = "Base Icon Color",
+        tbl = tintTbl, key = "iconTintColor",
+        default = {1, 1, 1, 1}, hasAlpha = true,
+        disabled = sec.disabled,
+        onConfirm = refresh, onChange = refresh,
+    })
+
+    if opts.mode == "icons" then
+        AddColorRow(leftColumn, {
+            label = "Background Color",
+            tbl = tintTbl, key = "backgroundColor",
+            default = {0, 0, 0, 0.5}, hasAlpha = true,
+            disabled = sec.disabled,
+            onConfirm = refresh, onChange = refresh,
+        })
+    end
+
+    AddCheckboxRow(leftColumn, {
+        label = "Use Separate Cooldown Tint",
+        value = sec.read.iconCooldownTintEnabled or false,
+        disabled = sec.disabled,
+        onChange = function(val)
+            if not sec.write then return end
+            sec.write.iconCooldownTintEnabled = val
+            refresh()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+
+    if sec.read.iconCooldownTintEnabled then
+        AddColorRow(leftColumn, {
+            label = "Cooldown Icon Color",
+            indent = true,
+            tbl = tintTbl, key = "iconCooldownTintColor",
+            default = {1, 0, 0.102, 1}, hasAlpha = true,
+            disabled = sec.disabled,
+            onConfirm = refresh, onChange = refresh,
+        })
+    end
+
+    if opts.hasAuraEntry then
+        AddCheckboxRow(rightColumn, {
+            label = "Use Separate Aura Tint",
+            value = sec.read.iconAuraTintEnabled or false,
+            disabled = sec.disabled,
+            onChange = function(val)
+                if not sec.write then return end
+                sec.write.iconAuraTintEnabled = val
+                refresh()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        if sec.read.iconAuraTintEnabled then
+            AddColorRow(rightColumn, {
+                label = "Aura Active Icon Color",
+                indent = true,
+                tbl = tintTbl, key = "iconAuraTintColor",
+                default = {0, 0.925, 1, 1}, hasAlpha = true,
+                disabled = sec.disabled,
+                onConfirm = refresh, onChange = refresh,
+            })
+        end
+    end
+
+    -- The right column runs 2-3 rows short of the left one, so the section
+    -- action fills its empty tail instead of hanging off the bottom of the
+    -- grid. No wrapper needed: SetAutoWidth leaves widget.width nil, so the
+    -- column's List layout neither stretches nor right-anchors it and it sits
+    -- flush left under the last row.
+    --
+    -- Not built at all while the section is inert: a section with nowhere to
+    -- write has no defaults to restore, and a greyed-out button under a
+    -- read-only section is one more thing to explain.
+    if sec.write then
+        local resetTintBtn = AceGUI:Create("Button")
+        resetTintBtn:SetText("Reset Colors to Default")
+        resetTintBtn:SetAutoWidth(true)
+        resetTintBtn:SetCallback("OnClick", function()
+            sec.write.iconTintColor = {1, 1, 1, 1}
+            sec.write.iconCooldownTintColor = {1, 0, 0.102, 1}
+            sec.write.iconAuraTintColor = {0, 0.925, 1, 1}
+            sec.write.backgroundColor = {0, 0, 0, 0.5}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        rightColumn:AddChild(resetTintBtn)
+    end
 end
 
 -- Row grammar only: one checkbox row.
@@ -849,73 +729,6 @@ local function BuildAllowPingsControls(container, styleTable, refreshCallback, o
     return cb
 end
 
--- Row grammar only (RowWidgets.lua). Each conditional color indents as the
--- child of the toggle that reveals it; the pre-redesign shape's row-break
--- spacer has no equivalent here, because the grid columns do that work.
--- deferCommit is deliberately absent throughout, matching the stock color
--- pickers these rows replaced.
---
--- Aura tint applies to the slot-kit aura layer (consumed at bind time by
--- AuraDisplay.StyleSlotKit); only offered where an aura display exists.
-local function BuildIconTintControls(container, styleTable, refreshCallback, opts)
-    opts = opts or {}
-
-    local function TintColorRow(label, key, default, indent)
-        AddColorRow(container, {
-            label = label,
-            indent = indent,
-            tbl = styleTable,
-            key = key,
-            default = default,
-            hasAlpha = true,
-            onConfirm = refreshCallback,
-            onChange = refreshCallback,
-        })
-    end
-
-    TintColorRow("Base Icon Color", "iconTintColor", {1, 1, 1, 1}, opts.indent)
-
-    if styleTable.showUnusable and ST.UnusableVisualUsesDimTint(styleTable) then
-        TintColorRow("Unusable Dim Color", "iconUnusableTintColor", {0.4, 0.4, 0.4, 1}, opts.indent)
-    end
-
-    if opts.includeBackground then
-        BuildBackgroundColorControls(container, styleTable, refreshCallback, nil, opts)
-    end
-
-    AddCheckboxRow(container, {
-        label = "Use Separate Cooldown Tint",
-        value = styleTable.iconCooldownTintEnabled or false,
-        indent = opts.indent,
-        onChange = function(val)
-            styleTable.iconCooldownTintEnabled = val
-            refreshCallback()
-            RefreshStructuralControls(container)
-        end,
-    })
-
-    if styleTable.iconCooldownTintEnabled then
-        TintColorRow("Cooldown Icon Color", "iconCooldownTintColor", {1, 0, 0.102, 1}, true)
-    end
-
-    if opts.showAuraTint then
-        AddCheckboxRow(container, {
-            label = "Use Separate Aura Tint",
-            value = styleTable.iconAuraTintEnabled or false,
-            indent = opts.indent,
-            onChange = function(val)
-                styleTable.iconAuraTintEnabled = val
-                refreshCallback()
-                RefreshStructuralControls(container)
-            end,
-        })
-
-        if styleTable.iconAuraTintEnabled then
-            TintColorRow("Aura Active Icon Color", "iconAuraTintColor", {0, 0.925, 1, 1}, true)
-        end
-    end
-end
-
 -- Row grammar only: one checkbox row.
 local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback, opts)
     return AddCheckboxRow(container, {
@@ -980,7 +793,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         RefreshStructuralControls(container)
     end
 
-    local childIndent = opts.isOverride and true or opts.indent
+    local childIndent = opts.indent
 
     local swipeRow = AddCheckboxRow(container, {
         label = "Show Cooldown Swipe",
@@ -1069,7 +882,7 @@ local AURA_BLIZZARD_SWIPE_TOOLTIP = {
 local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
     local blizzardStyleActive = styleTable.auraUseBlizzardSwipe == true
-    local childIndent = opts.isOverride and true or opts.indent
+    local childIndent = opts.indent
     local previewRefresh = opts.previewRefresh or ST._RefreshSelectedButtonsPreview
 
     local blizzardRow = AddCheckboxRow(container, {
@@ -1243,9 +1056,9 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
     opts = opts or {}
     local iconFillOrientation = styleTable.iconFillOrientation == "horizontal" and "horizontal" or "vertical"
 
-    -- On the Overrides tab these rows hang off the Icon Fill Timer toggle and
-    -- indent as its children; in the advanced panel's single rail the toggle
-    -- lives back on the tab, so the caller passes indent = false.
+    -- Inline these rows hang off the Icon Fill Timer toggle and indent as its
+    -- children; in the advanced panel's single rail the toggle lives back on
+    -- the tab, so the caller passes indent = false.
     local childIndent = opts.indent ~= false
     AddDropdownRow(container, {
         label = "Orientation",
@@ -1335,6 +1148,28 @@ local function BuildUnusableVisualModeControls(container, styleTable, refreshCal
             RefreshStructuralControls(container)
         end,
     })
+
+    -- The dim color is this section's own key (ST.OVERRIDE_SECTIONS lists
+    -- iconUnusableTintColor under unusableDimming) and it colors nothing until
+    -- the dim mode is on, so it rides here as the Dim Icon row's child rather
+    -- than in the styling tabs' Icon Tint block, where it read as a tint but
+    -- resolved a foreign section. The toggle above reruns this panel through
+    -- RefreshStructuralControls, which is what keeps the conditional build live.
+    if ST.UnusableVisualUsesDimTint(styleTable) then
+        -- Style-only refresh, matching the row's previous home: refreshCallback
+        -- here also rebuilds the whole config panel, which would tear down this
+        -- advanced panel out from under the open picker.
+        local tintRefresh = function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end
+        AddColorRow(container, {
+            label = "Unusable Dim Color",
+            indent = true,
+            tbl = styleTable, key = "iconUnusableTintColor",
+            default = {0.4, 0.4, 0.4, 1}, hasAlpha = true,
+            onConfirm = tintRefresh, onChange = tintRefresh,
+        })
+    end
 
     AddCheckboxRow(container, {
         label = "Desaturate Icon",
@@ -1621,51 +1456,6 @@ local PROC_GLOW_STYLE_ORDER = {"solid", "pixel", "glow", "autocast"}
 --         speedKey, linesKey, defaultStyle, defaultColor }
 local function BuildGlowStyleControls(container, styleTable, refreshCallback, cfg, opts)
     opts = opts or {}
-    local isOverrideMode = opts.isOverride == true
-    local isEnabled
-    if cfg.enableKey then
-        local enabledVal = rawget(styleTable, cfg.enableKey)
-        if enabledVal == nil and cfg.deriveEnableFromEffect and rawget(styleTable, cfg.effectKey) ~= nil then
-            enabledVal = (styleTable[cfg.effectKey] or "none") ~= "none"
-        end
-        if enabledVal == nil and opts.fallbackStyle then
-            enabledVal = opts.fallbackStyle[cfg.enableKey]
-            if enabledVal == nil and cfg.deriveEnableFromEffect then
-                enabledVal = (opts.fallbackStyle[cfg.effectKey] or "none") ~= "none"
-            end
-        end
-        -- Default-on sections read nil as enabled; explicit-true sections
-        -- (the pandemic family) read nil as disabled, matching every
-        -- runtime resolution surface for their key.
-        if cfg.enableExplicitTrue then
-            isEnabled = enabledVal == true
-        else
-            isEnabled = enabledVal ~= false
-        end
-    else
-        isEnabled = styleTable[cfg.styleKey] ~= "none"
-    end
-
-    -- The enable write both shapes perform, hoisted so neither can wire a
-    -- different store than the other.
-    local function ApplyEnabled(val)
-        if cfg.enableKey then
-            styleTable[cfg.enableKey] = val
-            if val and styleTable[cfg.styleKey] == "none" then
-                styleTable[cfg.styleKey] = cfg.defaultStyle
-            end
-        else
-            styleTable[cfg.styleKey] = val and cfg.defaultStyle or "none"
-            -- Re-enabling forces the default style, so per-style keys must
-            -- reset with it (a proc-scale size on the pulse border renders
-            -- a 30px wall).
-            if val and cfg.onStyleChanged then
-                cfg.onStyleChanged(styleTable, cfg.defaultStyle)
-            end
-        end
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end
     local function ApplyStyle(val)
         if cfg.enableKey then
             styleTable[cfg.enableKey] = true
@@ -1676,29 +1466,6 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
         end
         refreshCallback()
         RefreshStructuralControls(container)
-    end
-
-    -- LEFT column (the container handed over) is what the glow LOOKS like - the
-    -- enable toggle, the style, its colors and its sliders. RIGHT
-    -- (opts.rightColumn) is where afterEnableCallback's extras land, which on
-    -- the Overrides tab are the when-it-shows behaviour rows.
-    local extrasColumn = opts.rightColumn or container
-
-    if isOverrideMode and cfg.enableLabel then
-        AddCheckboxRow(container, {
-            label = cfg.enableLabel,
-            value = isEnabled,
-            indent = opts.indent,
-            onChange = ApplyEnabled,
-        })
-
-        if not isEnabled then
-            return
-        end
-    end
-
-    if opts.afterEnableCallback then
-        opts.afterEnableCallback(extrasColumn)
     end
 
     if styleTable[cfg.styleKey] == "lcgProc" then
@@ -1716,9 +1483,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
     }
     local styleOrder = cfg.styleOrder or {"solid", "pixel", "glow"}
 
-    -- Everything below the enable toggle belongs to it and disappears with it,
-    -- so it indents as its child - the same rule the bar aura effect follows.
-    local childIndent = (isOverrideMode and cfg.enableLabel) and true or opts.indent
+    local childIndent = opts.indent
 
     AddDropdownRow(container, {
         label = "Glow Style",
@@ -1776,7 +1541,6 @@ local function BuildProcGlowControls(container, styleTable, refreshCallback, opt
         styleKey = "procGlowStyle", colorKey = "procGlowColor", colorLabel = "Glow Color",
         sizeKey = "procGlowSize", thicknessKey = "procGlowThickness", speedKey = "procGlowSpeed", linesKey = "procGlowLines",
         defaultStyle = "glow", defaultColor = {1, 1, 1, 1},
-        enableLabel = "Show Proc Glow",
         styleOptions = PROC_GLOW_STYLE_OPTIONS,
         styleOrder = PROC_GLOW_STYLE_ORDER,
     }, opts)
@@ -1787,7 +1551,6 @@ local function BuildReadyGlowControls(container, styleTable, refreshCallback, op
         styleKey = "readyGlowStyle", colorKey = "readyGlowColor", colorLabel = "Glow Color",
         sizeKey = "readyGlowSize", thicknessKey = "readyGlowThickness", speedKey = "readyGlowSpeed", linesKey = "readyGlowLines",
         defaultStyle = "solid", defaultColor = {0.2, 1.0, 0.2, 1},
-        enableLabel = "Show Ready Glow",
         styleOptions = PROC_GLOW_STYLE_OPTIONS,
         styleOrder = PROC_GLOW_STYLE_ORDER,
     }, opts)
@@ -1834,7 +1597,6 @@ local function BuildAuraGlowControls(container, styleTable, refreshCallback, opt
         sizeKey = "auraGlowSize", speedKey = "auraGlowSpeed", linesKey = "auraGlowDashCount",
         thicknessKey = "auraGlowDashThickness",
         defaultStyle = "pulse", defaultColor = {1, 0.84, 0, 0.9},
-        enableLabel = "Show Aura Glow",
         styleOptions = AURA_GLOW_STYLE_OPTIONS,
         styleOrder = AURA_GLOW_STYLE_ORDER,
         solidSizeDefault = 2,
@@ -1861,9 +1623,7 @@ local function BuildPandemicGlowControls(container, styleTable, refreshCallback,
         sizeKey = "pandemicGlowSize", speedKey = "pandemicGlowSpeed", linesKey = "pandemicGlowLines",
         thicknessKey = "pandemicGlowThickness",
         defaultStyle = "solid", defaultColor = {1, 0.5, 0, 1},
-        enableLabel = "Show Pandemic Effect",
         enableKey = "pandemicEffectEnabled",
-        enableExplicitTrue = true,
         styleOptions = PANDEMIC_GLOW_STYLE_OPTIONS,
         styleOrder = PANDEMIC_GLOW_STYLE_ORDER,
         noColorStyles = { cdm = true },
@@ -1876,66 +1636,9 @@ local function BuildPandemicGlowControls(container, styleTable, refreshCallback,
         end,
     }, opts)
 
-    -- The marker shares this override section but NOT the effect's enable: it
-    -- works with the effect off. BuildGlowStyleControls returns early in that
-    -- case, so the marker is drawn after it and in the grid's right column,
-    -- where the Overrides tab's other second-thought rows land. On the panel
-    -- (the Indicators gear) the marker has its own gear, so this stays
-    -- override-only.
-    if opts.isOverride then
-        AddPandemicMarkerControls(opts.rightColumn or container, styleTable, refreshCallback, function()
-            RefreshStructuralControls(container)
-        end)
-    end
-end
-
--- Bar pandemic override section (PTR 8): the fill recolor is enable + color
--- only — the window is game-computed and the display has no further styling.
--- The color carries no alpha (owner ruling: it REPLACES the aura fill color).
--- Enable is explicit-true, matching the panel key's semantics. The section
--- also owns the pandemic marker, which is independent of the fill recolor and
--- so survives its early return.
-local function BuildBarPandemicControls(container, styleTable, refreshCallback, opts)
-    opts = opts or {}
-    local isOverrideMode = opts.isOverride == true
-    local enabledVal = rawget(styleTable, "pandemicEffectEnabled")
-    if enabledVal == nil and opts.fallbackStyle then
-        enabledVal = opts.fallbackStyle.pandemicEffectEnabled
-    end
-    local isEnabled = enabledVal == true
-    if isOverrideMode then
-        AddCheckboxRow(container, {
-            label = "Show Pandemic Color",
-            value = isEnabled,
-            indent = opts.indent,
-            onChange = function(val)
-                styleTable.pandemicEffectEnabled = val and true or false
-                refreshCallback()
-                RefreshStructuralControls(container)
-            end,
-        })
-    end
-    if isEnabled or not isOverrideMode then
-        AddColorRow(container, {
-            -- "Fill Color" inside the section, where the marker's own color
-            -- sits a few rows away; only the standalone shape can afford the
-            -- unqualified name.
-            label = isOverrideMode and "Fill Color" or "Pandemic Color",
-            indent = isOverrideMode and true or opts.indent,
-            tbl = styleTable,
-            key = "barPandemicColor",
-            default = {1, 0.5, 0, 1},
-            hasAlpha = false,
-            onConfirm = refreshCallback,
-            onChange = refreshCallback,
-        })
-    end
-
-    if isOverrideMode then
-        AddPandemicMarkerControls(opts.rightColumn or container, styleTable, refreshCallback, function()
-            RefreshStructuralControls(container)
-        end)
-    end
+    -- The marker shares this section's keys but NOT the effect's enable: it
+    -- works with the effect off, so the tabs draw it themselves (with its own
+    -- gear) rather than through this builder.
 end
 
 -- Bar aura indicator (barActiveAura): the border effect shares the aura glow
@@ -1970,9 +1673,7 @@ local BAR_AURA_EFFECT_CFG = {
     sizeKey = "barAuraEffectSize", speedKey = "barAuraEffectSpeed", linesKey = "barAuraEffectLines",
     thicknessKey = "barAuraEffectThickness",
     defaultStyle = "color", defaultColor = {1, 0.84, 0, 0.9},
-    enableLabel = "Show Active Aura Indicator",
     enableKey = "barAuraIndicatorEnabled",
-    deriveEnableFromEffect = true, effectKey = "barAuraEffect",
     styleOptions = BAR_AURA_EFFECT_STYLE_OPTIONS,
     styleOrder = BAR_AURA_EFFECT_STYLE_ORDER,
     solidSizeDefault = 2,
@@ -2005,28 +1706,6 @@ local FILL_EFFECTS_TOOLTIP = {
 local function BuildBarActiveAuraControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
 
-    -- Fill effects apply while the indicator is enabled, independent of the
-    -- border effect choice. Same enable derivation the shared glow builder
-    -- performs, so these controls collapse with the section in override mode.
-    local enabledVal = rawget(styleTable, "barAuraIndicatorEnabled")
-    if enabledVal == nil and rawget(styleTable, "barAuraEffect") ~= nil then
-        enabledVal = (styleTable.barAuraEffect or "none") ~= "none"
-    end
-    if enabledVal == nil and opts.fallbackStyle then
-        enabledVal = opts.fallbackStyle.barAuraIndicatorEnabled
-        if enabledVal == nil then
-            enabledVal = (opts.fallbackStyle.barAuraEffect or "none") ~= "none"
-        end
-    end
-    local overrideDisabled = opts.isOverride == true and enabledVal == false
-    if overrideDisabled then
-        -- The preview toggle disappears with the disabled section; make sure
-        -- a preview it owned doesn't keep rendering.
-        if CS.selectedGroup and CS.selectedButton and CooldownCompanion.SetBarAuraEffectPreview then
-            CooldownCompanion:SetBarAuraEffectPreview(CS.selectedGroup, CS.selectedButton, false)
-        end
-    end
-
     local effectsLeft, effectsRight
     if opts.singleRail then
         effectsLeft, effectsRight = container, container
@@ -2035,22 +1714,12 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
     end
 
     -- The LEFT column IS the border effect, which is exactly what the shared
-    -- glow builder draws - style, its color, its per-style sliders, and in
-    -- override mode the section's own enable toggle (nothing else gates the
-    -- section there, and it stops at that toggle when the indicator is off).
+    -- glow builder draws - style, its color, its per-style sliders.
     -- Delegating rather than re-implementing is what keeps every surface on one
     -- store.
     BuildGlowStyleControls(effectsLeft, styleTable, refreshCallback, BAR_AURA_EFFECT_CFG, {
-        rightColumn = effectsRight,
-        isOverride = opts.isOverride,
-        fallbackStyle = opts.fallbackStyle,
-        infoButtons = opts.infoButtons,
         previewRefresh = opts.previewRefresh,
     })
-
-    if overrideDisabled then
-        return effectsLeft, effectsRight
-    end
 
     local pulseRow = AddCheckboxRow(effectsRight, {
         label = "Pulse Bar Fill",
@@ -2134,100 +1803,9 @@ local function BuildKeyPressHighlightControls(container, styleTable, refreshCall
         styleKey = "keyPressHighlightStyle", colorKey = "keyPressHighlightColor", colorLabel = "Highlight Color",
         sizeKey = "keyPressHighlightSize",
         defaultStyle = "solid", defaultColor = {1, 1, 1, 0.4},
-        enableLabel = "Show Key Press Highlight",
         styleOptions = KPH_STYLE_OPTIONS,
         styleOrder = KPH_STYLE_ORDER,
     }, opts)
-end
-
--- Row grammar only: LEFT the toggle and the font trio, RIGHT the two rows that
--- decide how the name reads on the bar - which side it sits on and its color.
-local function BuildBarNameTextControls(container, styleTable, refreshCallback, opts)
-    opts = opts or {}
-    local right = opts.rightColumn or container
-
-    AddCheckboxRow(container, {
-        label = "Show Name Text",
-        value = styleTable.showBarNameText ~= false,
-        indent = opts.indent,
-        onChange = function(val)
-            styleTable.showBarNameText = val
-            refreshCallback()
-            RefreshStructuralControls(container)
-        end,
-    })
-
-    if styleTable.showBarNameText ~= false then
-        AddFontControls(container, styleTable, "barName", {size = 10, sizeMin = 6, sizeMax = 24},
-            refreshCallback, { row = true, indent = true })
-
-        AddCheckboxRow(right, {
-            label = "Flip Name Text",
-            value = styleTable.barNameTextReverse or false,
-            onChange = function(val)
-                styleTable.barNameTextReverse = val
-                refreshCallback()
-            end,
-        })
-        -- deferCommit is deliberately absent, matching the stock color picker
-        -- this row replaced.
-        AddColorRow(right, {
-            label = "Font Color",
-            tbl = styleTable,
-            key = "barNameFontColor",
-            default = {1, 1, 1, 1},
-            hasAlpha = true,
-            onConfirm = refreshCallback,
-            onChange = refreshCallback,
-        })
-    end
-end
-
--- Row grammar only: LEFT the toggle and the font trio, RIGHT the wording and
--- color of the text itself.
-local function BuildBarReadyTextControls(container, styleTable, refreshCallback, opts)
-    opts = opts or {}
-    local right = opts.rightColumn or container
-
-    AddCheckboxRow(container, {
-        label = "Show Ready Text",
-        value = styleTable.showBarReadyText or false,
-        indent = opts.indent,
-        onChange = function(val)
-            styleTable.showBarReadyText = val
-            refreshCallback()
-            RefreshStructuralControls(container)
-        end,
-    })
-
-    if styleTable.showBarReadyText then
-        AddFontControls(container, styleTable, "barReady", {sizeMin = 6, sizeMax = 24},
-            refreshCallback, { row = true, indent = true })
-
-        local readyRow = AddEditBoxRow(right, {
-            label = "Ready Text",
-            value = styleTable.barReadyText or "Ready",
-            onEnterPressed = function(val)
-                styleTable.barReadyText = val
-                refreshCallback()
-            end,
-        })
-        if readyRow.editbox and readyRow.editbox.Instructions then
-            readyRow.editbox.Instructions:Hide()
-        end
-
-        -- deferCommit is deliberately absent, matching the stock color picker
-        -- this row replaced.
-        AddColorRow(right, {
-            label = "Ready Text Color",
-            tbl = styleTable,
-            key = "barReadyTextColor",
-            default = {0.2, 1.0, 0.2, 1.0},
-            hasAlpha = true,
-            onConfirm = refreshCallback,
-            onChange = refreshCallback,
-        })
-    end
 end
 
 ------------------------------------------------------------------------
@@ -2394,42 +1972,18 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback, o
         {"The |cff44bbff{custom}|r tag paints anything with it.", 1, 1, 1, true},
     })
 
-    if opts.isOverride then
-        -- The CDC-EditBoxRow embeds a stock EditBox, so the raw frame the
-        -- Instructions text hangs on is still reachable through row.editbox.
-        local readyTextRow = AddEditBoxRow(right, {
-            label = "Ready Text",
-            indent = opts.indent,
-            value = styleTable.textReadyText or "Ready",
-            onEnterPressed = function(val)
-                styleTable.textReadyText = val
-                refreshCallback()
-            end,
-        })
-        if readyTextRow.editbox and readyTextRow.editbox.Instructions then
-            readyTextRow.editbox.Instructions:Hide()
-        end
-        AnchorRowBadge(readyTextRow, CreateInfoButton(readyTextRow.frame, readyTextRow.frame, "LEFT", "LEFT", 0, 0, {
-            "Ready Text",
-            {"The word |cff00ff00{status}|r shows when the spell is ready.", 1, 1, 1, true},
-        }, infoButtons))
-    end
 end
 
 ------------------------------------------------------------------------
 -- EXPORTS
 ------------------------------------------------------------------------
-ST._BuildCooldownTextControls = BuildCooldownTextControls
 ST._AddDurationFormatDropdown = AddDurationFormatDropdown
-ST._BuildAuraTextControls = BuildAuraTextControls
 ST._AddPandemicMarkerControls = AddPandemicMarkerControls
-ST._BuildAuraStackTextControls = BuildAuraStackTextControls
 ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
 ST._BuildAuraDurationSwipeAdvancedControls = BuildAuraDurationSwipeAdvancedControls
 ST._BuildKeybindTextControls = BuildKeybindTextControls
-ST._BuildChargeTextControls = BuildChargeTextControls
 ST._BuildBorderControls = BuildBorderControls
-ST._BuildBackgroundColorControls = BuildBackgroundColorControls
+ST._BuildIconTintControls = BuildIconTintControls
 ST._BuildDesaturationControls = BuildDesaturationControls
 ST._BuildIconZoomControls = BuildIconZoomControls
 ST._BuildShowTooltipsControls = BuildShowTooltipsControls
@@ -2441,12 +1995,10 @@ ST._BuildIconFillTimerControls = BuildIconFillTimerControls
 ST._BuildIconFillTimerAdvancedControls = BuildIconFillTimerAdvancedControls
 ST._BuildLossOfControlControls = BuildLossOfControlControls
 ST._BuildUnusableDimmingControls = BuildUnusableDimmingControls
-ST._BuildIconTintControls = BuildIconTintControls
 ST._BuildAssistedHighlightControls = BuildAssistedHighlightControls
 ST._BuildProcGlowControls = BuildProcGlowControls
 ST._BuildAuraGlowControls = BuildAuraGlowControls
 ST._BuildPandemicGlowControls = BuildPandemicGlowControls
-ST._BuildBarPandemicControls = BuildBarPandemicControls
 -- The bare per-style slider renderer, for surfaces that own their style
 -- dropdown but must draw the same sliders (resource aura border, MW
 -- max-stack border). Callers hand a keys table in GlowSliderKeys' shape.
@@ -2454,8 +2006,6 @@ ST._AddGlowSliderRows = AddGlowSliderRows
 ST._BuildBarActiveAuraControls = BuildBarActiveAuraControls
 ST._BuildReadyGlowControls = BuildReadyGlowControls
 ST._BuildKeyPressHighlightControls = BuildKeyPressHighlightControls
-ST._BuildBarNameTextControls = BuildBarNameTextControls
-ST._BuildBarReadyTextControls = BuildBarReadyTextControls
 ST._BuildTextFontControls = BuildTextFontControls
 ST._BuildTextColorsControls = BuildTextColorsControls
 ST._BuildTextBackgroundControls = BuildTextBackgroundControls

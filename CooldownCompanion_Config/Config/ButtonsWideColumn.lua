@@ -61,12 +61,6 @@ local function SetPreviewSplit(fraction)
 end
 
 local function HideEntrySurfaces(col3)
-    -- The entry Overrides tab can host a live format editor. These branches
-    -- hide the surface without re-selecting a tab, so nothing else would
-    -- settle its pending write or stop its animation driver.
-    if ST._ReleaseTextFormatOverrideEditor then
-        ST._ReleaseTextFormatOverrideEditor()
-    end
     if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
     if col3.bsPlaceholder then col3.bsPlaceholder:Hide() end
 end
@@ -1659,6 +1653,10 @@ local function EnsureInlineTextureBrowserHost(col3)
 end
 
 local function ShowMultiSelectActions(col3, refreshFn, multiCount, selectedIds)
+    -- The panel Format tab's editor is hidden away with its host here without
+    -- the host's own tab seams running, so settle any pending write first.
+    -- Release is idempotent.
+    if ST._ReleaseTextFormatTabEditor then ST._ReleaseTextFormatTabEditor() end
     HideEntrySurfaces(col3)
     HidePanelPreview(col3)
     if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
@@ -1736,6 +1734,10 @@ local function RefreshButtonsWideColumn(selectionOnly)
     if CS.inlineTextureBrowserOpen and ST._RenderInlineTextureBrowser then
         local browserGroup = CooldownCompanion.db.profile.groups[CS.selectedGroup]
         if browserGroup and CooldownCompanion:IsStandaloneTexturePanelGroup(browserGroup) then
+            -- Same as the multi-select takeover above: the settings host goes
+            -- away without its own tab seams running, so settle the format
+            -- editor first. Release is idempotent.
+            if ST._ReleaseTextFormatTabEditor then ST._ReleaseTextFormatTabEditor() end
             HideEntrySurfaces(col3)
             if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
             UpdatePanelPreview(col3, selectionOnly)
@@ -1917,7 +1919,7 @@ ST._ClearWideEditingExtras = ClearWideEditingExtras
 ST._HideWideEditingChrome = HideEditingChrome
 -- Shared teardown for view switches away from the buttons view (resources,
 -- cast frames, talent picker, config close): hides the preview surfaces AND
--- releases the preview so its conditional ticker stops and override
--- targeting disarms. Transient same-view hides must NOT use this - the
--- following rebuild pass re-shows the preview and targeting should survive.
+-- releases the preview so its conditional ticker and texture-mirror effects
+-- stop. Transient same-view hides must NOT use this - the following rebuild
+-- pass re-shows the preview, and tearing it down would be wasted work.
 ST._HideButtonsPanelPreviewSurfaces = HidePanelPreview

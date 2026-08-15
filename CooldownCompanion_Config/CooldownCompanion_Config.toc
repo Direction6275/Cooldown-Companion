@@ -62,11 +62,15 @@ ConfigSettings\ResourceBarPanels.lua
 ConfigSettings\FrameAnchoringPanels.lua
 ConfigSettings\AuraTexturePicker.lua
 ConfigSettings\ButtonSettingsMultiSelect.lua
-ConfigSettings\ButtonSettingsOverrides.lua
 ConfigSettings\ButtonSettings.lua
 ConfigSettings\ButtonSettingsAura.lua
 ConfigSettings\ButtonConditions.lua
 ConfigSettings\BarModeTabs.lua
 ConfigSettings\FormatEditor.lua
 ConfigSettings\TextModeTabs.lua
-ConfigSettings\GroupTabs.lua
+ConfigSettings\GroupTabsShared.lua
+ConfigSettings\GroupTabsSpecial.lua
+ConfigSettings\GroupTabsLayout.lua
+ConfigSettings\GroupTabsEffects.lua
+ConfigSettings\GroupTabsAppearance.lua
+ConfigSettings\GroupTabsContainer.lua

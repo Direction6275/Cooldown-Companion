@@ -24,7 +24,7 @@ local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 
 -- Imports from RowWidgets.lua (the row grammar). The rules every row-grammar
 -- section follows are stated once, in the recipe comment at the top of
--- BuildAppearanceTab's icons path (GroupTabs.lua); this file conforms to them
+-- BuildAppearanceTab's icons path (GroupTabsAppearance.lua); this file conforms to them
 -- rather than restating them.
 local AddCheckboxRow = ST._AddCheckboxRow
 local AddDropdownRow = ST._AddDropdownRow
