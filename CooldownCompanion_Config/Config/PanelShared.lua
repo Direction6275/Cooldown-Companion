@@ -595,6 +595,51 @@ local function AddEntryMoveDestinationButtons(level, sourceGroupId, sourceIndex,
     end
 end
 
+-- The copyable customizations an entry carries, in the same order and
+-- vocabulary as the Customizations index and the entry hover tooltip: Text
+-- Format first, then sections in registry order, plus "All Customizations"
+-- when there is more than one. Stranded/inactive customizations count -
+-- only the TARGET side gates whether a copy can land. The context menu's
+-- "Copy Customization To..." row and its submenu both build from this
+-- collection, so the arrow can never open an empty flyout (a stored
+-- section id the registry no longer knows is skipped in both places).
+local function CollectCopyCustomizationItems(entryData)
+    local items = {}
+    if entryData.textFormat ~= nil then
+        items[#items + 1] = { scope = "format", label = "Text Format" }
+    end
+    local sections = entryData.overrideSections or {}
+    for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER or {}) do
+        if sections[sectionId] then
+            local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
+            if sectionDef then
+                items[#items + 1] = { scope = "section", sectionId = sectionId, label = sectionDef.label }
+            end
+        end
+    end
+    if #items >= 2 then
+        items[#items + 1] = { scope = "all", label = "All Customizations" }
+    end
+    return items
+end
+
+-- Picking a row arms the click-an-entry copy mode in the panel preview.
+local function AddCopyCustomizationButtons(level, sourceGroupId, sourceIndex, entryData)
+    for _, item in ipairs(CollectCopyCustomizationItems(entryData)) do
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = item.label
+        info.notCheckable = true
+        info.func = function()
+            CloseDropDownMenus()
+            if ST._ArmCopyCustomization then
+                ST._ArmCopyCustomization(sourceGroupId, sourceIndex, entryData,
+                    item.scope, item.sectionId)
+            end
+        end
+        UIDropDownMenu_AddButton(info, level)
+    end
+end
+
 -- Shared entry context menu used by preview and workspace list surfaces.
 local function ShowEntryContextMenu(panelId, index, buttonData)
     if not CS.buttonContextMenu then
@@ -710,6 +755,21 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
             moveInfo.menuList = "MOVE_TO_GROUP"
             UIDropDownMenu_AddButton(moveInfo, level)
 
+            -- No source-side display-mode gate: even a texture panel's entry
+            -- can carry stranded customizations worth copying out, and the
+            -- copy mode's target eligibility does all the real gating.
+            if #CollectCopyCustomizationItems(entryData) > 0 then
+                local copyInfo = UIDropDownMenu_CreateInfo()
+                copyInfo.text = "Copy Customization To..."
+                copyInfo.notCheckable = true
+                copyInfo.hasArrow = true
+                copyInfo.menuList = "COPY_CUSTOMIZATION"
+                copyInfo.tooltipTitle = "|cffffd100Copy Customization|r"
+                copyInfo.tooltipText = "|cffffffffPick a customization, then click the entry it should apply to.|r"
+                copyInfo.tooltipOnButton = true
+                UIDropDownMenu_AddButton(copyInfo, level)
+            end
+
             -- Red "Delete" behind the confirmation popup, the same way every
             -- other destructive menu item in the config reads.
             local deleteInfo = UIDropDownMenu_CreateInfo()
@@ -730,6 +790,8 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                 ShowPopupAboveConfig("CDC_DELETE_BUTTON", name, { groupId = sourceGroupId, buttonIndex = sourceIndex })
             end
             UIDropDownMenu_AddButton(deleteInfo, level)
+        elseif menuList == "COPY_CUSTOMIZATION" then
+            AddCopyCustomizationButtons(level, sourceGroupId, sourceIndex, entryData)
         elseif menuList == "MOVE_TO_GROUP"
             or ParseEntryMoveContainerId(menuList)
         then

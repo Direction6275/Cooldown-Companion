@@ -98,6 +98,54 @@ function CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
     buttonData.overrideSections[sectionId] = true
 end
 
+--- Copy a customized section from one entry to another: the target ends up
+--- with exactly the source's effective section values, overwriting anything
+--- it already had for the section. Returns true only when the copy actually
+--- wrote; callers must not report success on a falsy return.
+function CooldownCompanion:CopySectionOverride(sourceButtonData, sourceGroupStyle, targetButtonData, sectionId)
+    local section = ST.OVERRIDE_SECTIONS[sectionId]
+    if not section then return false end
+    if not (sourceButtonData and sourceButtonData.styleOverrides
+        and sourceButtonData.overrideSections
+        and sourceButtonData.overrideSections[sectionId]) then
+        return false
+    end
+    if ST.CanButtonUseOverrideSection and not ST.CanButtonUseOverrideSection(targetButtonData, sectionId) then
+        return false
+    end
+
+    if not targetButtonData.styleOverrides then targetButtonData.styleOverrides = {} end
+    if not targetButtonData.overrideSections then targetButtonData.overrideSections = {} end
+
+    local sourceOverrides = sourceButtonData.styleOverrides
+    for _, key in ipairs(section.keys) do
+        -- rawget: GetEffectiveStyle aliases the source's overrides to its own
+        -- group style via __index, so a plain read of a key this section
+        -- gained after the source's promote would leak the source PANEL's
+        -- value while looking like a stored override. The explicit fallback
+        -- below copies what the source actually renders with instead.
+        local val = rawget(sourceOverrides, key)
+        if val == nil then
+            if key == "unusableVisualMode" and sourceGroupStyle then
+                val = ST.GetUnusableVisualMode(sourceGroupStyle)
+            else
+                val = sourceGroupStyle and sourceGroupStyle[key]
+                if val == nil and section.defaults then
+                    val = section.defaults[key]
+                end
+            end
+        end
+        if type(val) == "table" then
+            targetButtonData.styleOverrides[key] = CopyTable(val)
+        else
+            targetButtonData.styleOverrides[key] = val
+        end
+    end
+
+    targetButtonData.overrideSections[sectionId] = true
+    return true
+end
+
 --- Revert a section: remove section keys from styleOverrides,
 --- clear the section from overrideSections.
 function CooldownCompanion:RevertSection(buttonData, sectionId)
