@@ -688,3 +688,45 @@ function ST.IsRuntimeLayoutPreviewButtonForceVisible(button)
     if not groupId then return false end
     return ST.IsGroupRuntimeLayoutPreviewActive(groupId)
 end
+
+--------------------------------------------------------------------------------
+-- Shared rounding + allowlist identity
+--------------------------------------------------------------------------------
+
+local math_floor = math.floor
+
+-- Canonical tenths-rounding for coordinate/offset display and storage.
+local function RoundToTenths(value)
+    return math_floor((tonumber(value) or 0) * 10 + 0.5) / 10
+end
+ST.RoundToTenths = RoundToTenths
+
+-- Canonical allowlist key identity (class / spec / character), shared by the
+-- config surfaces: eligibility tabs, export codec, and import/copy popups.
+local function NormalizeAllowlistKey(kind, key)
+    if kind == "class" then
+        if type(key) ~= "string" or key == "" then return nil end
+        return string.upper(key)
+    elseif kind == "spec" then
+        return tonumber(key)
+    elseif kind == "character" then
+        if type(key) ~= "string" or key == "" then return nil end
+        return key
+    end
+    return nil
+end
+ST.NormalizeAllowlistKey = NormalizeAllowlistKey
+
+function ST.CopyAllowlistMap(map, kind)
+    if type(map) ~= "table" then return nil end
+    local copy = {}
+    for key, enabled in pairs(map) do
+        if enabled == true then
+            local normalizedKey = NormalizeAllowlistKey(kind, key)
+            if normalizedKey ~= nil then
+                copy[normalizedKey] = true
+            end
+        end
+    end
+    return next(copy) and copy or nil
+end

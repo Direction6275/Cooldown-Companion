@@ -33,6 +33,7 @@ Core\ClickThrough.lua
 Core\SpellQueries.lua
 Core\CooldownLogic.lua
 Core\Utils.lua
+Core\EditableCoordLabel.lua
 Core\Init.lua
 Core\ConfigLoader.lua
 Core\AnchorPolicy.lua

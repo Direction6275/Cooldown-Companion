@@ -7,9 +7,18 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic
 local EntryRuntime = ST.EntryRuntime
+-- Per-tick EntryRuntime calls hoisted to file-locals: UpdateButtonCooldown is
+-- the measured hot path, and these run for every button on every tick.
+local ResolveBaseNoCooldownState = EntryRuntime.ResolveBaseNoCooldownState
+local ResolveBaseResourceGateCostState = EntryRuntime.ResolveBaseResourceGateCostState
+local ResolveNoCooldownState = EntryRuntime.ResolveNoCooldownState
+local ResolveResourceGateCostState = EntryRuntime.ResolveResourceGateCostState
+local ClassifyChargeState = EntryRuntime.ClassifyChargeState
+local ResolveZeroChargesConfirmed = EntryRuntime.ResolveZeroChargesConfirmed
 -- Forcing-attribution sink (loaded before this file; dev-gated, observe-only).
--- Referenced only by NoteButtonTimeState -- UpdateButtonCooldown is at the
--- 60-upvalue ceiling and must reach telemetry via CooldownCompanion methods.
+-- Referenced only by NoteButtonTimeState -- UpdateButtonCooldown runs near
+-- Lua 5.1's 60-upvalue ceiling, so telemetry is reached via
+-- CooldownCompanion methods rather than new upvalues.
 local RefreshTelemetry = ST.RefreshTelemetry
 
 -- Localize frequently-used globals
@@ -42,10 +51,6 @@ local IsUsableItem = C_Item.IsUsableItem
 local IsItemInRange = C_Item.IsItemInRange
 local InCombatLockdown = InCombatLockdown
 local UnitCanAttack = UnitCanAttack
-
--- Imports from Utils
-local IsNoCooldownSpell = ST.IsNoCooldownSpell
-local HasPositiveResourceGateCost = ST.HasPositiveResourceGateCost
 
 -- Imports from Preview
 local GetConditionalVisualPreview = ST._GetConditionalVisualPreview
@@ -599,45 +604,39 @@ local function GetLiveOverrideSpellID(buttonData)
     return nil
 end
 
-local function ResolveChargeState(button, buttonData)
-    if not UsesChargeBehavior(buttonData) then
+-- Thin adapter: resolves the button-side inputs (readable-count gate, item
+-- max-charge substitution, stack-quantity items), then defers to the shared
+-- classifier that custom bars also use.
+local function ResolveChargeState(button, buttonData, usesChargeBehavior)
+    if not usesChargeBehavior then
         return nil
     end
 
-    local currentCharges = button._currentReadableCharges
     local maxCharges = buttonData.maxCharges
     if buttonData.type == "item"
             and button._resolvedItemId
             and tonumber(button._resolvedItemId) ~= tonumber(buttonData.id) then
         maxCharges = button._resolvedItemMaxCharges
     end
-    if button._chargeCountReadable == true and currentCharges ~= nil then
-        if currentCharges <= 0 then
-            return CHARGE_STATE_ZERO
-        end
-        if buttonData.type == "item" and button._resolvedItemQuantityKind == "stacks" then
-            return CHARGE_STATE_FULL
-        end
-        if maxCharges and maxCharges > 0 then
-            if currentCharges >= maxCharges then
-                return CHARGE_STATE_FULL
-            end
-            return CHARGE_STATE_MISSING
-        end
+    local readableCharges
+    if button._chargeCountReadable == true then
+        readableCharges = button._currentReadableCharges
+    end
+    -- Stack-quantity items report inventory count, not spent charges: any
+    -- positive readable count is a full state. Zero still classifies below.
+    if readableCharges ~= nil
+            and readableCharges > 0
+            and buttonData.type == "item"
+            and button._resolvedItemQuantityKind == "stacks" then
         return CHARGE_STATE_FULL
     end
 
-    if button._zeroChargesConfirmed == true then
-        return CHARGE_STATE_ZERO
-    end
-    if button._chargeRecharging == true then
-        return CHARGE_STATE_MISSING
-    end
-    if button._chargeRecharging == false then
-        return CHARGE_STATE_FULL
-    end
-
-    return nil
+    return ClassifyChargeState(
+        readableCharges,
+        maxCharges,
+        button._zeroChargesConfirmed,
+        button._chargeRecharging
+    )
 end
 
 local function EvaluateItemCooldown(button, buttonData, style, renderCooldown)
@@ -984,22 +983,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Keep the base classification too, so temporary no-CD overrides do not
     -- bypass cooldown visibility rules for a real cooldown entry.
     if buttonData.type == "spell" and not buttonData.isPassive and not usesChargeBehavior then
-        if button._baseNoCooldown == nil or button._baseNoCooldownSpellId ~= buttonData.id then
-            button._baseNoCooldownSpellId = buttonData.id
-            button._baseNoCooldown = IsNoCooldownSpell(buttonData.id)
-        end
-        if button._baseResourceGateCost == nil or button._baseResourceGateCostSpellId ~= buttonData.id then
-            button._baseResourceGateCostSpellId = buttonData.id
-            button._baseResourceGateCost = HasPositiveResourceGateCost(buttonData.id)
-        end
-        if button._noCooldown == nil or button._noCooldownSpellId ~= cooldownSpellId then
-            button._noCooldownSpellId = cooldownSpellId
-            button._noCooldown = IsNoCooldownSpell(cooldownSpellId)
-        end
-        if button._resourceGateCost == nil or button._resourceGateCostSpellId ~= cooldownSpellId then
-            button._resourceGateCostSpellId = cooldownSpellId
-            button._resourceGateCost = HasPositiveResourceGateCost(cooldownSpellId)
-        end
+        ResolveBaseNoCooldownState(button, buttonData.id, false)
+        ResolveBaseResourceGateCostState(button, buttonData.id, false)
+        ResolveNoCooldownState(button, cooldownSpellId, false)
+        ResolveResourceGateCostState(button, cooldownSpellId, false)
     else
         button._noCooldown = false
         button._noCooldownSpellId = nil
@@ -1239,7 +1226,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- some use-count spells. Do not guess zero-state from unrelated
             -- usability signals; leave the zero-state unknown instead.
             button._mainCDShown = false
-        elseif buttonData.type == "spell" and usesChargeBehavior and buttonData.hasCharges then
+        elseif buttonData.type == "spell" and buttonData.hasCharges then
             -- Restricted mode: charges unreadable (secret values).
             -- Action bar probe reflects the regular-cooldown DurationObject
             -- which is NOT charge-aware (isActive = isEnabled and startTime > 0
@@ -1274,28 +1261,22 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._chargesSpent = buttonData.maxCharges or 0
         end
 
-        local zeroConfirmed = (button._mainCDShown == true)
-        if zeroConfirmed
-           and buttonData.type == "spell"
-           and usesChargeBehavior
-           and buttonData.hasCharges
-           and button._chargeCountReadable ~= true then
-            -- Heuristic: suppress zero-charge when cast history says charges remain.
-            -- Applies to both the action bar probe and isActive fallback paths.
-            -- The probe reflects the regular-cooldown DurationObject which is
-            -- not charge-aware and can report true during lockouts/recharge;
-            -- _chargesSpent provides authoritative cast-history evidence.
-            local maxCharges = buttonData.maxCharges
-            local spent = button._chargesSpent
-            if maxCharges and maxCharges > 1 and spent and spent < maxCharges then
-                zeroConfirmed = false
-            end
-        end
-        button._zeroChargesConfirmed = zeroConfirmed
+        -- Cast-history suppression (shared heuristic) applies only to charge
+        -- spells whose count is unreadable; it covers both the action bar
+        -- probe and the isActive fallback paths.
+        local countUnreadable = buttonData.type == "spell"
+            and buttonData.hasCharges
+            and button._chargeCountReadable ~= true
+        button._zeroChargesConfirmed = ResolveZeroChargesConfirmed(
+            button,
+            button._mainCDShown,
+            countUnreadable,
+            buttonData.maxCharges
+        )
     else
         button._zeroChargesConfirmed = false
     end
-    button._chargeState = ResolveChargeState(button, buttonData)
+    button._chargeState = ResolveChargeState(button, buttonData, usesChargeBehavior)
 
     -- Cooldown desaturation follows the canonical cooldown state, never the GCD.
     if IsEntryItemLike(buttonData) then

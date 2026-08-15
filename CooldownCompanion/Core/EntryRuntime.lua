@@ -422,10 +422,9 @@ local function ResolveCachedSpellBooleanState(owner, spellID, hasCharges, valueK
         return false
     end
 
-    if not spellID then
-        return false
-    end
-
+    -- No early-out on a nil spellID: the resolvers tolerate nil, and caching
+    -- the answer (keyed on nil) keeps the owner fields fresh instead of
+    -- silently retaining the previous spell's classification.
     if owner and owner[valueKey] ~= nil and owner[spellKey] == spellID then
         return owner[valueKey] == true
     end
@@ -481,6 +480,10 @@ local function ResolveBaseResourceGateCostState(owner, spellID, hasCharges)
         HasPositiveResourceGateCost
     )
 end
+EntryRuntime.ResolveNoCooldownState = ResolveNoCooldownState
+EntryRuntime.ResolveBaseNoCooldownState = ResolveBaseNoCooldownState
+EntryRuntime.ResolveResourceGateCostState = ResolveResourceGateCostState
+EntryRuntime.ResolveBaseResourceGateCostState = ResolveBaseResourceGateCostState
 
 local function ClearOwnerChargeState(owner)
     if not owner then return end
@@ -503,6 +506,56 @@ function EntryRuntime.RecordChargeSpent(owner)
         owner._chargesSpent = (owner._chargesSpent or 0) + 1
     end
 end
+
+-- Single charge-state classifier shared by the button tick (via the
+-- ResolveChargeState adapter in CooldownUpdate) and the custom-bar lane.
+-- readableCharges: plain (non-secret) current charge count, or nil when the
+-- count is unreadable; nil routes to the confirmation/recharge fallback.
+-- Owner-specific input policy (e.g. stack-quantity items) stays in the
+-- adapters; this classifier only speaks charges.
+local function ClassifyChargeState(readableCharges, maxCharges, zeroConfirmed, chargeRecharging)
+    if readableCharges ~= nil then
+        if readableCharges <= 0 then
+            return CHARGE_STATE_ZERO
+        end
+        if maxCharges and maxCharges > 0 then
+            if readableCharges >= maxCharges then
+                return CHARGE_STATE_FULL
+            end
+            return CHARGE_STATE_MISSING
+        end
+        return CHARGE_STATE_FULL
+    end
+
+    if zeroConfirmed == true then
+        return CHARGE_STATE_ZERO
+    end
+    if chargeRecharging == true then
+        return CHARGE_STATE_MISSING
+    end
+    if chargeRecharging == false then
+        return CHARGE_STATE_FULL
+    end
+    return nil
+end
+EntryRuntime.ClassifyChargeState = ClassifyChargeState
+
+-- Shared zero-charge confirmation heuristic. mainCDShown is the raw "main
+-- cooldown sweep shown" signal; the regular-cooldown surface is not
+-- charge-aware and can show during per-cast lockouts and recharge, so while
+-- the charge count is unreadable (countUnreadable), cast-history evidence
+-- (owner._chargesSpent) suppresses the zero claim when it says charges remain.
+local function ResolveZeroChargesConfirmed(owner, mainCDShown, countUnreadable, maxCharges)
+    local zeroConfirmed = mainCDShown == true
+    if zeroConfirmed and countUnreadable and owner then
+        local spent = owner._chargesSpent
+        if maxCharges and maxCharges > 1 and spent and spent < maxCharges then
+            zeroConfirmed = false
+        end
+    end
+    return zeroConfirmed
+end
+EntryRuntime.ResolveZeroChargesConfirmed = ResolveZeroChargesConfirmed
 
 local function SyncCustomBarChargeMetadata(customBar, charges, maxCharges)
     if not customBar then return end
@@ -576,29 +629,8 @@ local function ApplyCustomBarChargeState(owner, result, baseSpellID, cooldownSpe
         end
     end
 
-    local zeroConfirmed = mainCDShown == true
-    if zeroConfirmed and currentCharges == nil and owner then
-        local spent = owner._chargesSpent
-        if maxCharges and maxCharges > 1 and spent and spent < maxCharges then
-            zeroConfirmed = false
-        end
-    end
-
-    if currentCharges ~= nil then
-        if currentCharges <= 0 then
-            result.chargeState = CHARGE_STATE_ZERO
-        elseif currentCharges >= maxCharges then
-            result.chargeState = CHARGE_STATE_FULL
-        else
-            result.chargeState = CHARGE_STATE_MISSING
-        end
-    elseif zeroConfirmed then
-        result.chargeState = CHARGE_STATE_ZERO
-    elseif result.chargeRecharging then
-        result.chargeState = CHARGE_STATE_MISSING
-    elseif result.chargeRecharging == false then
-        result.chargeState = CHARGE_STATE_FULL
-    end
+    local zeroConfirmed = ResolveZeroChargesConfirmed(owner, mainCDShown, currentCharges == nil, maxCharges)
+    result.chargeState = ClassifyChargeState(currentCharges, maxCharges, zeroConfirmed, result.chargeRecharging)
 
     if owner then
         owner._zeroChargesConfirmed = zeroConfirmed
