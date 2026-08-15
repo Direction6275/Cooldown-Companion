@@ -139,6 +139,10 @@ local function DecorateEntryTabs(tabs, icon)
     return tabs
 end
 
+-- The custom bar entry cluster (ResourcesWideColumn.lua) wears the same
+-- one-Settings-tab stamp, so the decoration is shared rather than replicated.
+ST._DecorateEntryTabs = DecorateEntryTabs
+
 -- Multi-select is one appended tab: a stacked marker built from the first
 -- two selected entries' icons, plus the count.
 local function BuildEntryMultiSelectTabs(group, multiCount, multiIndices)

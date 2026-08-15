@@ -319,7 +319,6 @@ ST._configState = {
     tabInfoButtons = {},
     customBarInfoButtons = {},
     appearanceTabElements = {},
-    customBarSettingsTab = "appearance",
     selectedCustomBarId = nil,
     customBarSpecExpandedId = nil,
     -- The unified Resources, Cast Bar & Unit Frames workspace
@@ -2554,17 +2553,12 @@ local function SelectConfigButtonPanel(panelId, opts)
     end
 end
 
-local function SetConfigCustomBarSettingsTab(tab)
-    CS.customBarSettingsTab = tab or "appearance"
-end
-
 local function ClearConfigCustomBarSelection(opts)
     CS.selectedCustomBarId = nil
     if opts and opts.clearExpanded then
         CS.customBarSpecExpandedId = nil
     end
     wipe(CS.selectedCustomBars)
-    SetConfigCustomBarSettingsTab("appearance")
 end
 
 -- The unified bars workspace edits one object at a time: a resource, a
@@ -2585,13 +2579,10 @@ local function SelectConfigCustomBar(customBarId, opts)
 
     ClearConfigResourceSelection()
     CS.castFramesSelectedItem = nil
-    -- Selecting a bar jumps to its own tabs, the same way selecting an
-    -- entry does, even if a module tab was the last thing shown.
+    -- Selecting a bar jumps to its one Settings tab, the same way selecting
+    -- an entry does, even if a module tab was the last thing shown.
     CS.unifiedRowScope = "detail"
     CS.selectedCustomBarId = customBarId
-    if opts and opts.resetTab then
-        SetConfigCustomBarSettingsTab("appearance")
-    end
     wipe(CS.selectedCustomBars)
     if opts and opts.clearButtonMulti then
         CS.selectedRotationAssistantEntry = nil
@@ -2650,7 +2641,6 @@ local function SelectConfigResource(powerType, opts)
     -- Selecting a resource jumps to its own tabs, the same way selecting an
     -- entry does, even if a module tab was the last thing shown.
     CS.unifiedRowScope = "detail"
-    SetConfigCustomBarSettingsTab("appearance")
     if opts and opts.clearButtonMulti then
         CS.selectedRotationAssistantEntry = nil
         wipe(CS.selectedButtons)
@@ -2675,16 +2665,13 @@ local function PruneConfigResourceSelection(resourceExists)
     return SetConfigResourceSettingsSpecID(CS.resourceSettingsSpecID)
 end
 
-local function PruneConfigCustomBarSelection(customBarExists, resetTab)
+local function PruneConfigCustomBarSelection(customBarExists)
     if type(customBarExists) ~= "function" then
         return
     end
 
     if CS.selectedCustomBarId and not customBarExists(CS.selectedCustomBarId) then
         CS.selectedCustomBarId = nil
-        if resetTab then
-            SetConfigCustomBarSettingsTab("appearance")
-        end
     end
     if CS.customBarSpecExpandedId and not customBarExists(CS.customBarSpecExpandedId) then
         CS.customBarSpecExpandedId = nil
@@ -2860,7 +2847,6 @@ local function ResetConfigSelection(full)
     CS.unifiedBarKind = nil
     CS.selectedCustomBarId = nil
     CS.customBarSpecExpandedId = nil
-    CS.customBarSettingsTab = "appearance"
     ClearConfigResourceSelection()
     wipe(CS.selectedButtons)
     wipe(CS.selectedPanels)
@@ -3210,7 +3196,6 @@ ST._ToggleConfigPanelMultiSelect = ToggleConfigPanelMultiSelect
 ST._SelectConfigButton = SelectConfigButton
 ST._SelectConfigRotationAssistantEntry = SelectConfigRotationAssistantEntry
 ST._SelectConfigButtonPanel = SelectConfigButtonPanel
-ST._SetConfigCustomBarSettingsTab = SetConfigCustomBarSettingsTab
 ST._ClearConfigCustomBarSelection = ClearConfigCustomBarSelection
 ST._ClearConfigBarsHomeSelection = ClearConfigBarsHomeSelection
 ST._SelectConfigCustomBar = SelectConfigCustomBar
