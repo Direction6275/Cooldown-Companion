@@ -9,6 +9,7 @@ local CS = ST._configState
 
 -- Imports from earlier Config/ files
 local ResolveCDMAuraSpellID = ST.ResolveCDMAuraSpellID
+local ResolveCDMAppliedAuraSpellID = ST.ResolveCDMAppliedAuraSpellID
 local IsPassiveOrProc = ST._IsPassiveOrProc
 local IsPassiveCooldownSpell = ST.IsPassiveCooldownSpell
 local IsNeverTrackableSpell = ST._IsNeverTrackableSpell
@@ -764,31 +765,11 @@ local function BuildAutocompleteCache()
     -- resolved/linked spellIDs overlap (e.g. an ability row and its applied
     -- DoT) would produce identical tracking entries, so only the first shows.
     --
-    -- trackedAuraID is the spellID the APPLIED aura carries. A row's resolved
-    -- spellID is the cast or talent spell; when the game applies the aura
-    -- under a different spellID, that identity exists only in linkedSpellIDs
-    -- (Rake 1822 applies bleed 155722; Apex Predator's Craving talent 391881
-    -- applies buff 391882). Tracked-aura list fields must store the applied
-    -- ID or Blizzard's aura matching never fires on it; standalone aura
-    -- entries keep the row identity, which their candidate build expands.
-    local function ResolveTrackedAuraSpellID(cdInfo, resolvedID)
-        local linked = cdInfo.linkedSpellIDs
-        if type(linked) ~= "table" or #linked == 0 then
-            return resolvedID
-        end
-        for _, linkedID in ipairs(linked) do
-            if linkedID == resolvedID then
-                return resolvedID
-            end
-        end
-        for _, linkedID in ipairs(linked) do
-            if type(linkedID) == "number" and linkedID > 0 and C_Spell.DoesSpellExist(linkedID) then
-                return linkedID
-            end
-        end
-        return resolvedID
-    end
-
+    -- trackedAuraID is the spellID the APPLIED aura carries (shared rule:
+    -- ST.ResolveCDMAppliedAuraSpellID, SpellQueries.lua). Tracked-aura list
+    -- fields must store the applied ID or Blizzard's aura matching never
+    -- fires on it; standalone aura entries keep the row identity, which
+    -- their candidate build expands to the same applied ID.
     local seenAuras = {}
     local auraRows = {}
     for _, cat in ipairs({ Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar }) do
@@ -815,12 +796,33 @@ local function BuildAutocompleteCache()
                                 seenAuras[linkedID] = true
                             end
                         end
+                        -- Display the applied-aura identity (what actually
+                        -- gets tracked); the stored row identity stays `id`
+                        -- for pairing and candidate expansion. When the two
+                        -- differ UNAMBIGUOUSLY (one linked aura), the visible
+                        -- label carries the applied aura's name, and the
+                        -- search key answers to the owner name, the applied
+                        -- name, and the applied ID (Nature's Grace links
+                        -- Dreamstate: both names and 450346 must find the
+                        -- row). Multi-stage rows keep the row's own label —
+                        -- naming one stage would misdescribe the row.
+                        local trackedAuraID, ambiguousAura = ResolveCDMAppliedAuraSpellID(cdInfo, id)
+                        local appliedName, searchLower
+                        if trackedAuraID ~= id and not ambiguousAura then
+                            local appliedInfo = C_Spell.GetSpellInfo(trackedAuraID)
+                            appliedName = appliedInfo and appliedInfo.name
+                            searchLower = spellInfo.name:lower()
+                                .. (appliedName and (" " .. appliedName:lower()) or "")
+                                .. " " .. trackedAuraID
+                        end
+                        local displayAuraID = (not ambiguousAura) and trackedAuraID or id
                         table.insert(cache, {
                             id = id,
-                            trackedAuraID = ResolveTrackedAuraSpellID(cdInfo, id),
+                            trackedAuraID = trackedAuraID,
                             name = spellInfo.name,
-                            displayName = ("%s |cff999999(%d)|r"):format(spellInfo.name, id),
+                            displayName = ("%s |cff999999(%d)|r"):format(appliedName or spellInfo.name, displayAuraID),
                             nameLower = spellInfo.name:lower(),
+                            searchLower = searchLower,
                             icon = spellInfo.iconID or 134400,
                             category = "Aura",
                             autocompleteKind = "aura",
@@ -994,7 +996,12 @@ local function SearchAutocomplete(query, allowTalentSearch)
     local filteredResults = {}
     for _, entry in ipairs(results) do
         local kind = entry.autocompleteKind
-        if tonumber(entry.id) == spellId and (kind == "spell" or kind == "aura") then
+        -- An aura row whose APPLIED identity matches the typed ID is an
+        -- exact aura match too — without this, typing the applied ID would
+        -- show the CDM row and a synthesized duplicate side by side.
+        local isExactID = tonumber(entry.id) == spellId
+            or (kind == "aura" and tonumber(entry.trackedAuraID) == spellId)
+        if isExactID and (kind == "spell" or kind == "aura") then
             -- Cached aura rows are Blizzard-curated evidence. Polarity gates
             -- only the synthesized row below, never a cached match.
             local keep = kind == "aura" or canOfferSpell

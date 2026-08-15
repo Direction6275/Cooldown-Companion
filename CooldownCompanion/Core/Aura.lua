@@ -22,6 +22,8 @@ local VIEWER_NAMES = ST._VIEWER_NAMES
 local COOLDOWN_VIEWER_NAMES = ST._COOLDOWN_VIEWER_NAMES
 local BUFF_VIEWER_SET = ST._BUFF_VIEWER_SET
 local IsDistinctCDMAuraIdentity = ST.IsDistinctCDMAuraIdentity
+local IsConcreteSpellID = ST.IsConcreteSpellID
+local ResolveCDMAppliedAuraSpellID = ST.ResolveCDMAppliedAuraSpellID
 local pendingViewerAuraMapToken = 0
 local FindChildInViewers
 
@@ -206,6 +208,69 @@ local function AppendCdmLinkedAuraIDs(candidateSet, orderedSet, orderedIDs, butt
     end
 end
 
+-- Pure-data applied-aura resolution: no viewer frames, so it works with the
+-- Cooldown Manager display disabled and before viewers materialize. Walks the
+-- CDM data rows for the spell (the same spell->cooldownID map SoundAlerts
+-- maintains) and returns the applied-aura identity when the spell's OWN row
+-- links one under a different spellID. The map keys every row identity
+-- (overrides, linked, base), so a row only counts when its base spellID is
+-- the queried spell and no override identity is active — the exact branch
+-- shape of the frame path in ResolveDirectBuffViewerSpellID, so the two
+-- paths cannot disagree, and a row reached through one of its OTHER linked
+-- IDs can never donate a sibling aura.
+local function ResolveCdmLinkedAppliedAuraSpellID(spellID)
+    local numericID = tonumber(spellID)
+    if not numericID or numericID == 0 then
+        return nil
+    end
+    local addon = CooldownCompanion
+    addon:EnsureSoundAlertSpellMap()
+    local cooldownIDs = addon._soundAlertSpellToCooldownIDs
+        and addon._soundAlertSpellToCooldownIDs[numericID]
+    if not cooldownIDs then
+        return nil
+    end
+    -- Deterministic walk: the map values are sets, and hash order must not
+    -- decide identity when a spell sits in several rows.
+    local orderedCooldownIDs = {}
+    for cooldownID in pairs(cooldownIDs) do
+        orderedCooldownIDs[#orderedCooldownIDs + 1] = cooldownID
+    end
+    table.sort(orderedCooldownIDs)
+    for _, cooldownID in ipairs(orderedCooldownIDs) do
+        local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID)
+        -- Overrides gate this row only when they are a DIFFERENT spell (a
+        -- real transform). Blizzard routinely stamps overrideSpellID with
+        -- the row's own spellID (Shield of the Righteous carries
+        -- overrideSpellID=53600 on live); a self-override is not a
+        -- transform and must not disqualify the row.
+        if info and tonumber(info.spellID) == numericID
+            and not (IsConcreteSpellID(info.overrideTooltipSpellID)
+                and info.overrideTooltipSpellID ~= numericID)
+            and not (IsConcreteSpellID(info.overrideSpellID)
+                and info.overrideSpellID ~= numericID) then
+            local appliedID = ResolveCDMAppliedAuraSpellID(info, numericID)
+            if appliedID and appliedID ~= numericID then
+                return appliedID
+            end
+        end
+    end
+    return nil
+end
+
+-- The one frame-free applied-identity step, shared by every resolver that
+-- consults it, so the guard set cannot drift between call sites. The
+-- distinct-identity guard is a no-op for standalone aura entries (their
+-- entry shape is not a plain spell entry), matching each chain's existing
+-- guard posture.
+local function ResolveLinkedAppliedAuraForButton(buttonData, spellID)
+    local linkedAppliedID = ResolveCdmLinkedAppliedAuraSpellID(spellID)
+    if linkedAppliedID and not IsDistinctAuraIdentityForButton(buttonData, linkedAppliedID) then
+        return linkedAppliedID
+    end
+    return nil
+end
+
 local function ResolveViewerFrameForSpellID(spellID, buffOnly)
     local numericID = tonumber(spellID)
     if not numericID or numericID == 0 then
@@ -242,17 +307,26 @@ local function ResolveDirectBuffViewerSpellID(spellID)
     end
 
     if tonumber(info.spellID) == numericID then
+        -- Overrides equal to the row's own spellID are Blizzard's routine
+        -- self-stamp, not a transform; returning them verbatim would
+        -- short-circuit the applied-aura rule below (Shield of the
+        -- Righteous carries overrideSpellID=53600 on live).
         local tooltipOverride = tonumber(info.overrideTooltipSpellID)
-        if tooltipOverride and tooltipOverride ~= 0 then
+        if tooltipOverride and tooltipOverride ~= 0 and tooltipOverride ~= numericID then
             return tooltipOverride
         end
 
         local spellOverride = tonumber(info.overrideSpellID)
-        if spellOverride and spellOverride ~= 0 then
+        if spellOverride and spellOverride ~= 0 and spellOverride ~= numericID then
             return spellOverride
         end
 
-        return numericID
+        -- The row identity is the cast spell; the applied aura may live only
+        -- in linkedSpellIDs (Fire Breath 357208 -> 357209, Shield of the
+        -- Righteous 53600 -> 132403). Override forms above stay verbatim --
+        -- they are the dynamic identity of transforming spells. Parenthesized
+        -- to drop the helper's ambiguity flag from this single-value contract.
+        return (ResolveCDMAppliedAuraSpellID(info, numericID))
     end
 
     return nil
@@ -272,6 +346,13 @@ local function BuildStandaloneOriginalAuraCandidateIDs(buttonData)
     local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
     if directAuraID then
         AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, directAuraID)
+    end
+
+    -- Frame-free twin of the direct resolution above, so the applied identity
+    -- still leads the candidate order when no buff viewer frame exists.
+    local linkedAppliedID = ResolveLinkedAppliedAuraForButton(buttonData, baseId)
+    if linkedAppliedID then
+        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, linkedAppliedID)
     end
 
     local resolvedAuraId = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
@@ -409,6 +490,13 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
         -- Roar: 106898/77764/77761) use the base ID for aura lookups — the
         -- buff is always applied as the base spell regardless of form.
         local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
+        -- Frame-free twin of the direct resolution above (works with the CDM
+        -- display disabled): a CDM data row that links the applied aura under
+        -- a different spellID owns the identity, per Blizzard's own matcher.
+        local linkedAppliedID = ResolveLinkedAppliedAuraForButton(buttonData, baseId)
+        if linkedAppliedID then
+            return linkedAppliedID
+        end
         local auraId = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
         if auraId and not IsDistinctAuraIdentityForButton(buttonData, auraId) then
             return auraId
@@ -456,6 +544,13 @@ function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
     end
 
     local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
+    -- Frame-free twin of the direct resolution above: this is the resolver
+    -- that PERSISTS into stored config, so it must agree with the live
+    -- chain when no buff viewer frame exists.
+    local linkedAppliedID = ResolveLinkedAppliedAuraForButton(buttonData, baseId)
+    if linkedAppliedID and linkedAppliedID ~= buttonData.id then
+        return tostring(linkedAppliedID)
+    end
     local resolvedAuraId = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
     if resolvedAuraId
         and resolvedAuraId ~= buttonData.id
@@ -545,6 +640,12 @@ function CooldownCompanion:ResolveStandaloneAuraDefaultSpellID(buttonData)
     local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
     if directAuraID and not IsDistinctAuraIdentityForButton(buttonData, directAuraID) then
         return directAuraID
+    end
+
+    -- Frame-free twin of the direct resolution above.
+    local linkedAppliedID = ResolveLinkedAppliedAuraForButton(buttonData, baseId)
+    if linkedAppliedID then
+        return linkedAppliedID
     end
 
     local resolvedAuraID = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
