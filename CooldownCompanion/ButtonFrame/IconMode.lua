@@ -1371,10 +1371,13 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._hideCooldownChargesActive = nil
     button._gcdSwipeDrawActive = nil
     button._nilConfirmPending = nil
-    button._procGlowActive = nil
-    button._auraGlowActive = nil
-    button._readyGlowActive = nil
-    button._keyPressHighlightActive = nil
+    -- Glow caches invalidate with false, not nil: the setters' off path
+    -- no-ops on nil (Glows.lua MakeGlowSetter), so a nil here would let the
+    -- SetXxxGlow(button, false) calls below strand a currently-shown glow.
+    button._procGlowActive = false
+    button._auraGlowActive = false
+    button._readyGlowActive = false
+    button._keyPressHighlightActive = false
     button._displaySpellId = nil
     button._liveOverrideSpellId = nil
     button._spellOutOfRange = nil
