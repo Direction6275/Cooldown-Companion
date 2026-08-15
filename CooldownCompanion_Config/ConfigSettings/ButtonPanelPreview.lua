@@ -2344,6 +2344,17 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
     local kind = state and state.kind or nil
     local now = GetTime()
 
+    -- Any aura-active stand-in mirrors the slot kit's desaturate-while-
+    -- active (StyleSlotKit) when the live composition would put an aura-
+    -- layer icon region over this slot.icon: keep-swipe entries skip the
+    -- takeover unless the aura icon swap is on.
+    if CooldownCompanion:IsAuraPreviewKindExposingShell(kind, false)
+        and CooldownCompanion:ShouldDesaturateAuraLayerWhileActive(buttonData)
+        and (not CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData)
+            or buttonData.auraShowAuraIcon == true) then
+        forceDesat = true
+    end
+
     -- The cooldown family: "cooldown" is the full state (text and rotation
     -- assistant panels still fire it); "cooldown_swipe" is that state with
     -- the countdown numbers withheld; "cooldown_text" is the countdown text
@@ -2740,14 +2751,17 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
     local kind = state and state.kind or nil
     local effectFlags = previewState.effectFlags
     local now = GetTime()
-    local auraPresentationActive = kind == "aura_duration_bar"
+    -- Union predicate on purpose: any aura preview simulates "the aura is
+    -- active", not just the duration-bar drain.
+    local auraPresentationActive = IsBarPreviewAuraActive(state, effectFlags)
     local isAuraEntry = buttonData.type == "spell"
         and (buttonData.auraTracking == true or buttonData.addedAs == "aura")
     if isAuraEntry then
         if auraPresentationActive then
-            forceDesat = buttonData.isPassive == true
-                and buttonData.invertAuraDesaturationLogic == true
-                and not buttonData.neverDesaturate
+            -- Live needs the bar icon square: the aura layer's cover is
+            -- what carries the gray (StyleSlotKit coverWanted).
+            forceDesat = style.showBarIcon ~= false
+                and CooldownCompanion:ShouldDesaturateAuraLayerWhileActive(buttonData)
         elseif buttonData.isPassive then
             forceDesat = not (buttonData.neverDesaturate
                 or buttonData.invertAuraDesaturationLogic)
@@ -2776,9 +2790,6 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         tintG = auraTint and auraTint[2] or 1
         tintB = auraTint and auraTint[3] or 1
         tintA = auraTint and auraTint[4] or 1
-        forceDesat = buttonData.isPassive == true
-            and buttonData.invertAuraDesaturationLogic == true
-            and not buttonData.neverDesaturate
         local auraColor = style.barAuraColor or DEFAULT_BAR_AURA_COLOR or { 0, 1, 0.3, 1 }
         slot.statusBar:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1)
     end
