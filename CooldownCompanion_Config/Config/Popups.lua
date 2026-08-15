@@ -27,32 +27,7 @@ local LOAD_CONDITION_ALLOWLIST_KEYS = {
     characterAllowlist = "character",
 }
 
-local function NormalizeAllowlistKey(kind, key)
-    if kind == "class" then
-        if type(key) ~= "string" or key == "" then return nil end
-        return string.upper(key)
-    elseif kind == "spec" then
-        return tonumber(key)
-    elseif kind == "character" then
-        if type(key) ~= "string" or key == "" then return nil end
-        return key
-    end
-    return nil
-end
-
-local function CopyAllowlistMap(map, kind)
-    if type(map) ~= "table" then return nil end
-    local copy = {}
-    for key, enabled in pairs(map) do
-        if enabled == true then
-            local normalizedKey = NormalizeAllowlistKey(kind, key)
-            if normalizedKey ~= nil then
-                copy[normalizedKey] = true
-            end
-        end
-    end
-    return next(copy) and copy or nil
-end
+local CopyAllowlistMap = ST.CopyAllowlistMap
 
 -- Check whether a profile name already exists (case-exact match).
 local function ProfileNameExists(name)

@@ -1640,9 +1640,7 @@ end
 -- Independent Anchor Validation Helpers
 ------------------------------------------------------------------------
 
-local function RoundToTenths(value)
-    return math_floor((tonumber(value) or 0) * 10 + 0.5) / 10
-end
+local RoundToTenths = ST.RoundToTenths
 
 local function ClampIndependentDimension(value, fallback, minVal)
     local dim = tonumber(value) or tonumber(fallback) or 120

@@ -399,36 +399,15 @@ local function AddScopedLoadConditionToggles(container, opts)
     return togglesLeft, togglesRight
 end
 
-local function NormalizeAllowlistKey(kind, key)
-    if kind == "class" then
-        if type(key) ~= "string" or key == "" then return nil end
-        return string.upper(key)
-    elseif kind == "spec" then
-        local specId = tonumber(key)
-        if not specId then return nil end
-        return specId
-    elseif kind == "character" then
-        if type(key) ~= "string" or key == "" then return nil end
-        return key
-    end
-    return nil
-end
+local NormalizeAllowlistKey = ST.NormalizeAllowlistKey
+local CopyAllowlistMap = ST.CopyAllowlistMap
 
+-- Same copy as the shared CopyAllowlistMap, plus a second return: whether the
+-- source map had any entry at all (enabled or not).
 local function CopyAllowlist(map, kind)
-    if type(map) ~= "table" then return nil, false end
-    local copy = {}
-    local sawEntry = false
-    for key, enabled in pairs(map) do
-        sawEntry = true
-        if enabled == true then
-            local normalizedKey = NormalizeAllowlistKey(kind, key)
-            if normalizedKey ~= nil then
-                copy[normalizedKey] = true
-            end
-        end
-    end
-    if next(copy) then return copy, true end
-    return nil, sawEntry
+    local copy = CopyAllowlistMap(map, kind)
+    if copy then return copy, true end
+    return nil, (type(map) == "table" and next(map) ~= nil) or false
 end
 
 local function IntersectAllowlists(left, right)
