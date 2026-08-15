@@ -769,6 +769,17 @@ function CooldownCompanion:ShouldDrawAuraDurationSwipe(buttonData, style)
         and not self:IsKeepSpellCooldownSwipeEntry(buttonData)
 end
 
+-- Desaturate-while-active policy for the aura layer, shared by the slot
+-- kit and both preview stand-ins so the sites cannot drift (same pattern
+-- as the swipe policy above). Pure flag policy: whether an aura-layer
+-- icon region is visible to carry it stays with the callers -- the kit's
+-- alpha writes live, explicit composition mirrors in the previews.
+function CooldownCompanion:ShouldDesaturateAuraLayerWhileActive(buttonData)
+    return buttonData ~= nil
+        and buttonData.invertAuraDesaturationLogic == true
+        and not buttonData.neverDesaturate
+end
+
 -- Aura config previews draw onto CC-side regions -- the exact ones a shell
 -- makes transparent -- so a shell exposes for as long as one runs. Which
 -- kinds qualify depends on the display mode, because the regions differ:

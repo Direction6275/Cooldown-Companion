@@ -578,6 +578,27 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
                 RefreshAuraConfig()
             end,
         })
+
+        -- Aura-layer counterpart: desaturates the Blizzard-shown layer, so
+        -- it reads "while active" without any aura-state read. Hidden where
+        -- no aura-layer icon region can carry it: texture panels have no
+        -- icon at all, and icon-mode keep-swipe entries skip the takeover
+        -- unless the aura icon swap is on. The stored flag stays put; the
+        -- row just hides while it cannot apply (keep-swipe row pattern).
+        local activeDesatRowShown = not isTexturePanel
+            and not ((group.displayMode or "icons") == "icons"
+                and CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData)
+                and buttonData.auraShowAuraIcon ~= true)
+        if activeDesatRowShown then
+            AddCheckboxRow(auraRight, {
+                label = "Desaturate Icon While Aura Active",
+                value = buttonData.invertAuraDesaturationLogic == true,
+                onChange = function(value)
+                    buttonData.invertAuraDesaturationLogic = value and true or nil
+                    RefreshAuraConfig()
+                end,
+            })
+        end
     end
 
     -- Pandemic marker per-entry switch. The auto default follows the tracked

@@ -1246,6 +1246,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- icon and its own cooldown swipe stay visible under the aura overlays.
     local keepSwipeActive = not isBar
         and CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData)
+    local kitDesat = CooldownCompanion:ShouldDesaturateAuraLayerWhileActive(buttonData)
 
     -- Inset-aware anchor host: on block hosts the statusBar proxy is the
     -- border-inset rect while slotButton is the full Blizzard-laid group
@@ -1273,8 +1274,11 @@ local function StyleSlotKit(slot, button, buttonData, style)
     kit.auraIcon:SetAlpha(auraIconShown and 1 or 0)
     -- The cover occludes the CC icon underneath: always on icon hosts; on bar
     -- hosts only when the icon square participates (aura icon swap enabled,
-    -- or a shell entry whose hidden CC icon needs the static replica).
-    local coverWanted = (not isBar) or (barIconShown and (showAuraIcon or shellEntry))
+    -- a shell entry whose hidden CC icon needs the static replica, or
+    -- active desaturation, which needs a visible gray region while the
+    -- aura runs -- the CC bar icon can't carry it).
+    local coverWanted = (not isBar)
+        or (barIconShown and (showAuraIcon or shellEntry or kitDesat))
     if keepSwipeActive then
         -- Keep-swipe entries skip the takeover; the CC icon stays visible.
         coverWanted = false
@@ -1327,12 +1331,12 @@ local function StyleSlotKit(slot, button, buttonData, style)
     kit.auraIcon:SetVertexColor(tr, tg, tb, auraIconShown and ta or 0)
     kit.iconCover:SetVertexColor(tr, tg, tb, coverShown and ta or 0)
 
-    -- Inverted passive desaturation ("desaturate while active") desaturates
-    -- the aura layer; the default "desaturate while missing" is a static
-    -- desaturate on the CC icon (Tracking.lua) that this layer occludes.
-    local kitDesat = buttonData.isPassive == true
-        and buttonData.invertAuraDesaturationLogic == true
-        and not buttonData.neverDesaturate
+    -- Desaturate-while-active desaturates the aura layer (any aura entry);
+    -- the complementary "desaturate while missing" is a static desaturate
+    -- on the CC icon (Tracking.lua) that this layer occludes. Inert by
+    -- construction whenever neither region is visible (keep-swipe entries
+    -- without the aura icon swap; bar hosts with the icon square off) --
+    -- the alpha writes above already carry that.
     kit.auraIcon:SetDesaturated(kitDesat)
     kit.iconCover:SetDesaturated(kitDesat)
 
