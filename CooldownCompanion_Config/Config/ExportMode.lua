@@ -46,6 +46,10 @@ local function EnterExportMode()
     if CS.importMode and ST._ExitImportMode then
         ST._ExitImportMode()
     end
+    -- A refresh already follows this entry.
+    if CS.copyCustomization and ST._CancelCopyCustomization then
+        ST._CancelCopyCustomization({ skipRefresh = true })
+    end
     CloseDropDownMenus()
 
     -- Fresh selection on every entry: each export is its own curation.

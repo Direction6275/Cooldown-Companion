@@ -465,6 +465,9 @@ local function ResetPreviewState(preview)
 end
 
 local ResetBarSlotWorkspaceState
+-- Copy-customization mode namespace: the helpers live in a do-block below
+-- (this file rides the 200-local ceiling) and publish through this table.
+local CopyMode = {}
 
 local function FinalizePreviewState(preview)
     for poolName, pool in pairs(preview.pools) do
@@ -480,6 +483,9 @@ local function FinalizePreviewState(preview)
             frame:SetScript("OnLeave", nil)
         end
     end
+    -- Every build path ends here, so the copy-customization banner follows
+    -- the preview onto whatever panel it now shows.
+    CopyMode.UpdateBanner(preview)
 end
 
 -- Group Panel Overview tiles reuse the saved-design mirror without exposing
@@ -504,6 +510,7 @@ local function DisableReadOnlySlotInteraction(slot)
     slot:SetAlpha(1)
     if slot.hoverHighlight then slot.hoverHighlight:Hide() end
     if slot.selectedHighlight then slot.selectedHighlight:Hide() end
+    if slot.copyTargetHighlight then slot.copyTargetHighlight:Hide() end
     if slot.problemBadge then slot.problemBadge:Hide() end
     if slot.problemBadgeBack then slot.problemBadgeBack:Hide() end
     if slot.overrideBadge then slot.overrideBadge:Hide() end
@@ -758,6 +765,343 @@ local function ApplySelectionVisuals(slot, index, suppress)
     ST.ApplyBorderTextures(slot.selectedHighlight.ringTextures, slot.selectedHighlight,
         PANEL_PREVIEW_RING_COLOR, 1, ST.GetEffectiveBorderRenderMode(nil, nil, 1))
     slot.selectedHighlight:Show()
+end
+
+------------------------------------------------------------------------
+-- Copy Customization: armed from the entry context menu's "Copy
+-- Customization To..." submenu. While armed, a banner rides the preview,
+-- compatible entries ring green, and left-clicking one copies the armed
+-- customization onto it. The mode survives panel switches (any compatible
+-- entry anywhere is a target) and stays armed after each apply; Esc
+-- (Panel.lua's key chain), right-click, or clicking the source cancels.
+--
+-- Wrapped in a do-block: the block's locals release their register slots
+-- at its end, keeping the main chunk under Lua's 200-local ceiling; the
+-- survivors publish through the CopyMode table declared up top.
+------------------------------------------------------------------------
+do
+
+local PANEL_PREVIEW_COPY_COLOR = { 0.30, 0.90, 0.45, 1 }
+local PANEL_PREVIEW_COPY_BANNER_HEIGHT = 20
+
+-- Helpers.lua loads before this file (config toc order), so its exports are
+-- real by the time this chunk runs and are captured as block upvalues. A
+-- missing export would be a packaging error; nothing here fails open.
+local CanUseConfigOverrideSection = ST._CanButtonUseConfigOverrideSection
+local GroupSupportsPerButtonOverrides = ST._GroupSupportsPerButtonOverrides
+
+-- Resolves the armed source from ids at call time: the mode outlives
+-- arbitrary user actions, so the index may have shifted (reorder,
+-- duplicate) or the entry may be gone entirely. sourceRef is the identity
+-- token; a repairable shift re-stamps the index, anything else is nil.
+local function ResolveCopyCustomizationSource(state)
+    local groups = CooldownCompanion.db.profile.groups
+    local group = groups and groups[state.sourceGroupId]
+    if not (group and group.buttons) then return nil end
+    local buttonData = group.buttons[state.sourceButtonIndex]
+    if buttonData == state.sourceRef then
+        return group, buttonData
+    end
+    for i, candidate in ipairs(group.buttons) do
+        if candidate == state.sourceRef then
+            state.sourceButtonIndex = i
+            return group, candidate
+        end
+    end
+    return nil
+end
+
+local function CancelCopyCustomization(options)
+    if not CS.copyCustomization then return end
+    CS.copyCustomization = nil
+    if not (options and options.skipRefresh) then
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+local function ArmCopyCustomization(groupId, buttonIndex, buttonData, scope, sectionId)
+    -- Rival modes own the same columns and selection stores.
+    if CS.exportMode and ST._ExitExportMode then
+        ST._ExitExportMode({ skipRefresh = true })
+    end
+    if CS.importMode and ST._ExitImportMode then
+        ST._ExitImportMode({ skipRefresh = true })
+    end
+    wipe(CS.selectedButtons)
+    CS.copyCustomization = {
+        sourceGroupId = groupId,
+        sourceButtonIndex = buttonIndex,
+        sourceRef = buttonData,
+        scope = scope,
+        sectionId = sectionId,
+    }
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+ST._ArmCopyCustomization = ArmCopyCustomization
+ST._CancelCopyCustomization = CancelCopyCustomization
+
+local function GetCopyCustomizationLabel(state)
+    if state.scope == "format" then return "Text Format" end
+    if state.scope == "all" then return "All Customizations" end
+    local sectionDef = ST.OVERRIDE_SECTIONS[state.sectionId]
+    return sectionDef and sectionDef.label or tostring(state.sectionId)
+end
+
+local function CanCopySectionToEntry(targetGroup, targetButtonData, sectionId)
+    local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
+    if not sectionDef then return false end
+    if sectionDef.modes[targetGroup.displayMode or "icons"] ~= true then return false end
+    -- == true drops the reason the helper returns alongside its verdict.
+    return CanUseConfigOverrideSection(targetButtonData, sectionId) == true
+end
+
+local function IsEligibleCopyTarget(state, targetGroup, targetButtonData)
+    if not (state and targetGroup and targetButtonData) then return false end
+    local sourceGroup, sourceData = ResolveCopyCustomizationSource(state)
+    if not sourceData or targetButtonData == sourceData then return false end
+    if not GroupSupportsPerButtonOverrides(targetGroup) then return false end
+    -- The mode outlives arbitrary edits, so the armed payload can be
+    -- reverted on the source while the rings are up. A vanished payload
+    -- must fail here: a nil format would WIPE the target's saved format,
+    -- and a cleared section would no-op while reporting success.
+    if state.scope == "format" then
+        return sourceData.textFormat ~= nil
+            and (targetGroup.displayMode or "icons") == "text"
+    end
+    if state.scope == "section" then
+        if not (sourceData.overrideSections
+            and sourceData.overrideSections[state.sectionId]) then
+            return false
+        end
+        return CanCopySectionToEntry(targetGroup, targetButtonData, state.sectionId)
+    end
+    -- "all": eligible when at least one of the source's customizations lands.
+    if sourceData.textFormat ~= nil and (targetGroup.displayMode or "icons") == "text" then
+        return true
+    end
+    for sectionId in pairs(sourceData.overrideSections or {}) do
+        if CanCopySectionToEntry(targetGroup, targetButtonData, sectionId) then
+            return true
+        end
+    end
+    return false
+end
+
+-- Returns true when the click was consumed by an armed copy mode.
+local function HandleCopyCustomizationClick(panelId, index, buttonData)
+    local state = CS.copyCustomization
+    if not state then return false end
+    local targetGroup = CooldownCompanion.db.profile.groups[panelId]
+    if not targetGroup then return false end
+    local sourceGroup, sourceData = ResolveCopyCustomizationSource(state)
+    if not sourceData then
+        -- The armed source no longer exists; nothing sane to copy.
+        CancelCopyCustomization()
+        return true
+    end
+    if buttonData == sourceData then
+        CancelCopyCustomization()
+        return true
+    end
+    if not IsEligibleCopyTarget(state, targetGroup, buttonData) then
+        -- Ineligible entry: stay armed; the hover tooltip explains why.
+        return true
+    end
+
+    local sourceStyle = sourceGroup.style or {}
+    local applied, skipped, formatCopied = 0, 0, false
+    if state.scope == "section" then
+        if CooldownCompanion:CopySectionOverride(sourceData, sourceStyle, buttonData, state.sectionId) then
+            applied = 1
+        end
+    elseif state.scope == "format" then
+        -- Eligibility guaranteed a non-nil source format at this click.
+        buttonData.textFormat = sourceData.textFormat
+        formatCopied = true
+        applied = 1
+    else
+        local sections = sourceData.overrideSections or {}
+        for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER or {}) do
+            if sections[sectionId] then
+                if CanCopySectionToEntry(targetGroup, buttonData, sectionId)
+                    and CooldownCompanion:CopySectionOverride(sourceData, sourceStyle, buttonData, sectionId) then
+                    applied = applied + 1
+                else
+                    skipped = skipped + 1
+                end
+            end
+        end
+        if sourceData.textFormat ~= nil then
+            if (targetGroup.displayMode or "icons") == "text" then
+                buttonData.textFormat = sourceData.textFormat
+                formatCopied = true
+                applied = applied + 1
+            else
+                skipped = skipped + 1
+            end
+        end
+    end
+
+    if applied == 0 then
+        -- Nothing landed (the payload vanished between the eligibility check
+        -- and the write). Leave the target untouched and report nothing.
+        return true
+    end
+
+    CooldownCompanion:UpdateGroupStyle(panelId)
+    -- The format is re-parsed on the way through PopulateGroupButtons, which
+    -- only the frame refresh reaches. Paid only when a format actually copied.
+    if formatCopied then
+        CooldownCompanion:RefreshGroupFrame(panelId)
+    end
+    local name = GetConfigEntryDisplayName(buttonData) or buttonData.name or "entry"
+    if skipped > 0 then
+        state.lastAppliedText = ("Applied to %s (%d of %d)"):format(name, applied, applied + skipped)
+    else
+        state.lastAppliedText = "Applied to " .. name
+    end
+    CooldownCompanion:RefreshConfigPanel()
+    return true
+end
+
+local function EnsureCopyCustomizationBanner(preview)
+    -- The unified anchor composition builds the mirror into an inner host
+    -- shrunk to the panel content, where a banner would sit on the entries
+    -- themselves; it passes the outer Live Preview host so the strip reads
+    -- at the top of the whole preview instead. Re-anchored on every ensure:
+    -- the same preview state can build under either composition.
+    local bannerHost = preview.copyBannerHost or preview.root
+    local banner = preview.copyBanner
+    if banner then
+        banner:SetParent(bannerHost)
+        banner:ClearAllPoints()
+        banner:SetPoint("TOPLEFT", bannerHost, "TOPLEFT", 0, 0)
+        banner:SetPoint("TOPRIGHT", bannerHost, "TOPRIGHT", 0, 0)
+        return banner
+    end
+
+    -- Slim full-width strip whose dark fill and green accent line fade out
+    -- toward the sides (the retired override-targeting banner's shape).
+    banner = CreateFrame("Frame", nil, bannerHost)
+    banner:SetPoint("TOPLEFT", bannerHost, "TOPLEFT", 0, 0)
+    banner:SetPoint("TOPRIGHT", bannerHost, "TOPRIGHT", 0, 0)
+    banner:SetHeight(PANEL_PREVIEW_COPY_BANNER_HEIGHT)
+
+    local clear = CreateColor(0, 0, 0, 0)
+    local fill = CreateColor(0, 0, 0, 0.7)
+    local accent = CreateColor(PANEL_PREVIEW_COPY_COLOR[1],
+        PANEL_PREVIEW_COPY_COLOR[2], PANEL_PREVIEW_COPY_COLOR[3], 0.8)
+    banner.bgLeft = banner:CreateTexture(nil, "BACKGROUND")
+    banner.bgLeft:SetPoint("TOPLEFT")
+    banner.bgLeft:SetPoint("BOTTOMRIGHT", banner, "BOTTOM", 0, 0)
+    banner.bgLeft:SetTexture("Interface/Buttons/WHITE8x8")
+    banner.bgLeft:SetGradient("HORIZONTAL", clear, fill)
+    banner.bgRight = banner:CreateTexture(nil, "BACKGROUND")
+    banner.bgRight:SetPoint("TOPLEFT", banner, "TOP", 0, 0)
+    banner.bgRight:SetPoint("BOTTOMRIGHT")
+    banner.bgRight:SetTexture("Interface/Buttons/WHITE8x8")
+    banner.bgRight:SetGradient("HORIZONTAL", fill, clear)
+
+    banner.lineLeft = banner:CreateTexture(nil, "BORDER")
+    banner.lineLeft:SetPoint("BOTTOMLEFT")
+    banner.lineLeft:SetPoint("BOTTOMRIGHT", banner, "BOTTOM", 0, 0)
+    banner.lineLeft:SetHeight(1)
+    banner.lineLeft:SetTexture("Interface/Buttons/WHITE8x8")
+    banner.lineLeft:SetGradient("HORIZONTAL", clear, accent)
+    banner.lineRight = banner:CreateTexture(nil, "BORDER")
+    banner.lineRight:SetPoint("BOTTOMLEFT", banner, "BOTTOM", 0, 0)
+    banner.lineRight:SetPoint("BOTTOMRIGHT")
+    banner.lineRight:SetHeight(1)
+    banner.lineRight:SetTexture("Interface/Buttons/WHITE8x8")
+    banner.lineRight:SetGradient("HORIZONTAL", accent, clear)
+
+    banner.text = banner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    -- Nudged right so the crosshair + text block reads centered.
+    banner.text:SetPoint("CENTER", banner, "CENTER", 9, 0)
+    banner.text:SetJustifyH("LEFT")
+    banner.text:SetWordWrap(false)
+
+    banner.crosshair = banner:CreateTexture(nil, "OVERLAY")
+    banner.crosshair:SetSize(12, 12)
+    banner.crosshair:SetPoint("RIGHT", banner.text, "LEFT", -5, 0)
+    banner.crosshair:SetAtlas("Crosshair_VehichleCursor_32")
+    banner.crosshair:SetVertexColor(PANEL_PREVIEW_COPY_COLOR[1],
+        PANEL_PREVIEW_COPY_COLOR[2], PANEL_PREVIEW_COPY_COLOR[3])
+
+    banner:Hide()
+    preview.copyBanner = banner
+    return banner
+end
+
+-- Rebuilt with every preview build: the mode deliberately survives panel
+-- switches, so whichever panel the preview shows carries the banner.
+local function UpdateCopyCustomizationBanner(preview)
+    local state = preview.readOnly ~= true and CS.copyCustomization or nil
+    if state and not ResolveCopyCustomizationSource(state) then
+        -- The armed source is gone (deleted, moved away, profile changed).
+        -- Clear silently - we're already mid-rebuild.
+        CS.copyCustomization = nil
+        state = nil
+    end
+
+    local banner = preview.copyBanner
+    if not state then
+        if banner then banner:Hide() end
+        return
+    end
+
+    banner = EnsureCopyCustomizationBanner(preview)
+    local text = "Click an entry to apply |cffffd100"
+        .. GetCopyCustomizationLabel(state) .. "|r"
+    if state.lastAppliedText then
+        text = text .. "  |cff99e6a3" .. state.lastAppliedText .. "|r"
+    end
+    banner.text:SetText(text)
+    banner:SetFrameLevel((preview.copyBannerHost or preview.root):GetFrameLevel() + 40)
+    banner:Show()
+end
+
+-- Green ring on the entries an armed copy click can land on. A dedicated
+-- frame, NOT slot.selectedHighlight: the source entry is usually still
+-- selected while the mode is armed, so the two rings coexist.
+local function ApplyCopyTargetVisuals(slot, panelId, buttonData)
+    local state = CS.copyCustomization
+    local eligible = false
+    if state and panelId and buttonData then
+        local targetGroup = CooldownCompanion.db.profile.groups[panelId]
+        eligible = IsEligibleCopyTarget(state, targetGroup, buttonData)
+    end
+    if not eligible then
+        if slot.copyTargetHighlight then slot.copyTargetHighlight:Hide() end
+        return
+    end
+
+    local highlight = slot.copyTargetHighlight
+    if not highlight then
+        highlight = CreateFrame("Frame", nil, slot)
+        highlight:SetAllPoints(slot)
+        highlight:EnableMouse(false)
+        highlight.ringTextures = {}
+        for i = 1, 4 do
+            highlight.ringTextures[i] = highlight:CreateTexture(nil, "OVERLAY")
+        end
+        slot.copyTargetHighlight = highlight
+    end
+    highlight:SetFrameLevel(slot:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
+    ST.ApplyBorderTextures(highlight.ringTextures, highlight,
+        PANEL_PREVIEW_COPY_COLOR, 1, ST.GetEffectiveBorderRenderMode(nil, nil, 1))
+    highlight:Show()
+end
+
+CopyMode.COLOR = PANEL_PREVIEW_COPY_COLOR
+CopyMode.Cancel = CancelCopyCustomization
+CopyMode.GetLabel = GetCopyCustomizationLabel
+CopyMode.IsEligibleTarget = IsEligibleCopyTarget
+CopyMode.HandleClick = HandleCopyCustomizationClick
+CopyMode.UpdateBanner = UpdateCopyCustomizationBanner
+CopyMode.ApplyTargetVisuals = ApplyCopyTargetVisuals
+
 end
 
 local function CollectEntryMetadata(buttonData, group)
@@ -1522,12 +1866,28 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
         GameTooltip:AddLine("This entry adds visibility rules.", 0.7, 0.7, 0.7)
     end
     GameTooltip:AddLine(" ")
-    if slot._cdcDraggable then
-        GameTooltip:AddLine("Drag to reorder.", 0.75, 0.82, 0.92)
+    local copyState = CS.copyCustomization
+    if copyState then
+        -- While armed the click grammar changes entirely, so the hint
+        -- lines change with it.
+        local targetGroup = panelId and CooldownCompanion.db.profile.groups[panelId]
+        local label = CopyMode.GetLabel(copyState)
+        if CopyMode.IsEligibleTarget(copyState, targetGroup, buttonData) then
+            GameTooltip:AddLine("Click to apply " .. label .. " to this entry.",
+                CopyMode.COLOR[1], CopyMode.COLOR[2], CopyMode.COLOR[3])
+        else
+            GameTooltip:AddLine("This entry can't receive " .. label .. ".", 0.6, 0.6, 0.6)
+        end
+        GameTooltip:AddLine("Right-click to cancel.", 0.75, 0.82, 0.92)
+    else
+        if slot._cdcDraggable then
+            GameTooltip:AddLine("Drag to reorder.", 0.75, 0.82, 0.92)
+        end
+        -- WireEntryInteraction opens the entry context menu on every display
+        -- mode, and that menu holds destructive actions, so every mode
+        -- advertises it.
+        GameTooltip:AddLine("Right-click for options.", 0.75, 0.82, 0.92)
     end
-    -- WireEntryInteraction opens the entry context menu on every display mode,
-    -- and that menu holds destructive actions, so every mode advertises it.
-    GameTooltip:AddLine("Right-click for options.", 0.75, 0.82, 0.92)
     GameTooltip:Show()
 end
 
@@ -1538,6 +1898,8 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
     slot._cdcEntryStatus = status
     slot:SetScript("OnMouseDown", function(self, mouseButton)
         if mouseButton ~= "LeftButton" or GetCursorInfo() then return end
+        -- Armed copy mode: the press belongs to the copy click, not a drag.
+        if CS.copyCustomization then return end
         if not (layoutDrag and StartDragTracking) then return end
         local cursorX, cursorY = GetCursorPosition()
         -- No `widget` field: the tracker's dim/restore would fight the
@@ -1567,10 +1929,16 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
                 end
                 if CancelDrag then CancelDrag() else CS.dragState = nil end
             end
+            if CopyMode.HandleClick(panelId, index, buttonData) then return end
             SelectConfigButton(panelId, index, { multi = IsControlKeyDown() })
             CooldownCompanion:RefreshConfigSelection()
         elseif mouseButton == "RightButton" or mouseButton == "MiddleButton" then
             if CS.dragState and CS.dragState.phase == "active" then return end
+            -- Armed copy mode: right/middle-click is a cancel, never a menu.
+            if CS.copyCustomization then
+                CopyMode.Cancel()
+                return
+            end
             if ShowEntryContextMenu then
                 ShowEntryContextMenu(panelId, index, buttonData)
             end
@@ -3466,6 +3834,9 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly, layo
             if slot.problemBadgeBack then slot.problemBadgeBack:Hide() end
             if slot.overrideBadge then slot.overrideBadge:Hide() end
             if slot.overrideBadgeBack then slot.overrideBadgeBack:Hide() end
+            -- The assistant pseudo-entry is never a copy target, and the
+            -- recycled slot may carry a ring from a grid render.
+            if slot.copyTargetHighlight then slot.copyTargetHighlight:Hide() end
             -- Recycled slots may carry a drag handler from a grid render
             slot:SetScript("OnMouseDown", nil)
             if CS.selectedRotationAssistantEntry == true
@@ -3514,6 +3885,7 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly, layo
             slot._cdcBaseAlpha = status.disabled and PANEL_PREVIEW_DISABLED_ALPHA or 1
             ApplySlotBadges(slot, status, scale)
             ApplySelectionVisuals(slot, entryInfo.index)
+            CopyMode.ApplyTargetVisuals(slot, panelId, buttonData)
             layoutDrag.slots[entryInfo.index] = slot
             WireEntryInteraction(slot, panelId, entryInfo.index, buttonData, status, dragModel)
         end
@@ -4368,6 +4740,8 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     local preview = EnsurePreviewState(host)
     preview.panelId = panelId
     preview.readOnly = readOnly
+    -- Copy-customization banner surface; nil means the preview's own root.
+    preview.copyBannerHost = options and options.bannerHost or nil
     if not readOnly and panelId == CS.selectedGroup then
         -- A full build reconciles the cleared stores by construction; do not
         -- make the next selection-only pass repeat that work.
@@ -4582,6 +4956,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
             ApplySelectionVisuals(slot, index,
                 (isBarMode and barVisibility.exactPreview == true)
                     or IsGlowPreviewActiveOnEntry(panelId, index))
+            CopyMode.ApplyTargetVisuals(slot, panelId, buttonData)
             WireEntryInteraction(slot, panelId, index, buttonData, status, dragModel, barVisibility)
         end
         layoutDrag.slots[index] = slot
@@ -4704,6 +5079,7 @@ function ST._RefreshButtonPanelPreviewSelection(host, panelId)
             and slot._cdcBarPreviewVisibility.exactPreview == true
         ApplySelectionVisuals(slot, index,
             exactBarPreview or IsGlowPreviewActiveOnEntry(panelId, index))
+        CopyMode.ApplyTargetVisuals(slot, panelId, buttonData)
     end
     if reconcileVisuals and anyAnimated then
         EnsureConditionalTicker(preview)
@@ -4779,6 +5155,11 @@ function ST._ReleaseButtonPanelPreview(host)
         for index = 1, (preview.used.barSlots or 0) do
             local slot = barPool[index]
             if slot then ResetBarSlotWorkspaceState(slot) end
+        end
+        -- The banner can live on an external host (unified composition), so
+        -- hiding the root does not necessarily take it along.
+        if preview.copyBanner then
+            preview.copyBanner:Hide()
         end
         preview.root:Hide()
     end

@@ -54,6 +54,10 @@ local function EnterImportMode()
         and CooldownCompanion.ExitArrangeMode then
         CooldownCompanion:ExitArrangeMode()
     end
+    -- A refresh already follows this entry.
+    if CS.copyCustomization and ST._CancelCopyCustomization then
+        ST._CancelCopyCustomization({ skipRefresh = true })
+    end
     CloseDropDownMenus()
 
     -- Fresh on every entry: no review, no pasted text, everything kept.

@@ -3079,6 +3079,7 @@ ST._ChainHeadingBadges = ChainHeadingBadges
 ST._BuildCollapsibleSection = BuildCollapsibleSection
 ST._AddAdvancedToggle = AddAdvancedToggle
 ST._CanButtonUseConfigOverrideSection = CanButtonUseConfigOverrideSection
+ST._GroupSupportsPerButtonOverrides = GroupSupportsPerButtonOverrides
 ST._ResolveStyleLens = ResolveStyleLens
 ST._ResolveLensSection = ResolveLensSection
 ST._AttachHeadingScopeChrome = AttachHeadingScopeChrome
