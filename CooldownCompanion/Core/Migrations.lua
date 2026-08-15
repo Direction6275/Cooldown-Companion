@@ -1312,15 +1312,15 @@ local function MigrateEntryAuraResidue(self, buttonData, counts)
         buttonData.hideWhileAuraActive = nil
     end
 
-    -- hide-except-during-pandemic and keep-spell-cooldown-swipe: LOST in
-    -- 12.1. Both stored true-or-nil, so presence means enabled.
+    -- hide-except-during-pandemic: LOST in 12.1. Stored true-or-nil, so
+    -- presence means enabled. (auraKeepSpellCooldownSwipe was stripped here
+    -- too until the 2.0 keep-swipe revival. Removing the strip preserves the
+    -- flag only on profiles that have not yet claimed this sentinel -- fresh
+    -- 1.x imports; a profile already migrated by an earlier 2.0 build lost
+    -- the value and re-ticks the checkbox by hand.)
     if buttonData.hideAuraActiveExceptPandemic ~= nil then
         counts.hidePandemic = counts.hidePandemic + 1
         buttonData.hideAuraActiveExceptPandemic = nil
-    end
-    if buttonData.auraKeepSpellCooldownSwipe ~= nil then
-        counts.keepSwipe = counts.keepSwipe + 1
-        buttonData.auraKeepSpellCooldownSwipe = nil
     end
 
     -- The hide-while-active baseline fallback rode on hideWhileAuraActive
@@ -1539,7 +1539,7 @@ local function MigrateAuraTrackingRebuild(self, profile)
     -- values pass through untouched).
     if type(profile) ~= "table" or not ClaimMigrationPass(profile, AURA_REBUILD_SENTINEL) then return end
     local counts = {
-        hideActive = 0, hidePandemic = 0, keepSwipe = 0, stackModes = 0,
+        hideActive = 0, hidePandemic = 0, stackModes = 0,
         threshold = 0, maxGlow = 0, soundForm = 0, mixed = 0, unit = 0,
         dormantPlacement = 0, textureAuraQualifier = 0,
     }
@@ -1614,7 +1614,6 @@ local function MigrateAuraTrackingRebuild(self, profile)
     local dropped = {}
     if counts.hideActive > 0 then dropped[#dropped + 1] = ("hide-while-aura-active (x%d)"):format(counts.hideActive) end
     if counts.hidePandemic > 0 then dropped[#dropped + 1] = ("hide-except-during-pandemic (x%d)"):format(counts.hidePandemic) end
-    if counts.keepSwipe > 0 then dropped[#dropped + 1] = ("keep-spell-cooldown-swipe (x%d)"):format(counts.keepSwipe) end
     if counts.stackModes > 0 then dropped[#dropped + 1] = ("bar stack displays remapped (x%d)"):format(counts.stackModes) end
     if counts.threshold > 0 then dropped[#dropped + 1] = ("stack threshold colors (x%d)"):format(counts.threshold) end
     if counts.maxGlow > 0 then dropped[#dropped + 1] = ("max-stacks glows (x%d)"):format(counts.maxGlow) end

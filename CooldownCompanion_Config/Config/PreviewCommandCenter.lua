@@ -304,6 +304,23 @@ local function ChargeEntryApplies(group, displayMode, buttonIndex)
     return false
 end
 
+-- Keep-swipe entries never draw the aura duration swipe (the spell's own
+-- cooldown swipe owns the icon), so the preview would render nothing for
+-- them. Same scoping rule as ChargeEntryApplies: a selected entry must
+-- itself qualify; at panel scope one qualifying entry is enough.
+local function AuraSwipeEntryApplies(group, buttonIndex)
+    local buttons = group.buttons or {}
+    if buttonIndex then
+        return not CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttons[buttonIndex])
+    end
+    for _, buttonData in ipairs(buttons) do
+        if not CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData) then
+            return true
+        end
+    end
+    return false
+end
+
 -- Style as it applies to the target: the selected entry's effective style,
 -- or the panel style at panel scope.
 local function ResolveTargetStyle(group, buttonIndex)
@@ -748,6 +765,7 @@ local CONTROLS = {
         modes = { icons = true },
         section = "auraDurationSwipe",
         styleKeyDefaultOn = "showAuraDurationSwipe",
+        excludesKeepSwipe = true,
         settings = { tab = "effects", key = "auraDurationSwipe" },
         preview = ConditionalPreview("aura_duration_swipe"),
     },
@@ -825,6 +843,9 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
         return false
     end
     if control.requiresChargeEntry and not ChargeEntryApplies(group, displayMode, buttonIndex) then
+        return false
+    end
+    if control.excludesKeepSwipe and not AuraSwipeEntryApplies(group, buttonIndex) then
         return false
     end
     return true

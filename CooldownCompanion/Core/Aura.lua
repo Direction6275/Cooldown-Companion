@@ -741,6 +741,34 @@ function CooldownCompanion:GetAuraShellRestingAlpha(buttonData)
     return self.DIM_FALLBACK_ALPHA
 end
 
+-- Keep Spell Cooldown Swipe (12.1 compositing): the entry opts out of the
+-- aura display's icon takeover, so the CC icon and its own cooldown swipe
+-- stay visible while the aura contributes its overlays (stack text,
+-- duration text, glows) per their own settings. Only meaningful where a
+-- spell cooldown exists to keep: never standalone aura entries or
+-- passives, and never a shell entry (its CC layer is statically hidden or
+-- dimmed, so with the cover off there would be nothing underneath).
+-- Icons-only is a host property and stays at call sites; the stored flag
+-- is inert, never stripped, on other hosts.
+function CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData)
+    return buttonData ~= nil
+        and buttonData.auraKeepSpellCooldownSwipe == true
+        and buttonData.auraTracking == true
+        and buttonData.addedAs ~= "aura"
+        and buttonData.isPassive ~= true
+        and not self:IsAuraShellEntry(buttonData)
+end
+
+-- Draw policy for the aura duration swipe, shared by the slot kit and both
+-- preview stand-ins so the three sites cannot drift: the style toggle must
+-- not be off, and a keep-swipe entry never draws it (the spell's own
+-- cooldown swipe owns the icon; two swipes would stack). Host rules stay
+-- with the callers -- bars have no aura swipe at all.
+function CooldownCompanion:ShouldDrawAuraDurationSwipe(buttonData, style)
+    return (not style or style.showAuraDurationSwipe ~= false)
+        and not self:IsKeepSpellCooldownSwipeEntry(buttonData)
+end
+
 -- Aura config previews draw onto CC-side regions -- the exact ones a shell
 -- makes transparent -- so a shell exposes for as long as one runs. Which
 -- kinds qualify depends on the display mode, because the regions differ:

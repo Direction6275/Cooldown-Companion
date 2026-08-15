@@ -339,7 +339,7 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
         -- touch the aura slot subtree): a looping cooldown on a preview-only
         -- widget styled by the same helper the kit uses.
         local widget = button._auraSwipePreviewCooldown
-        if style.showAuraDurationSwipe == false then
+        if not CooldownCompanion:ShouldDrawAuraDurationSwipe(buttonData, style) then
             if widget then
                 widget:SetCooldown(0, 0)
                 widget:Hide()

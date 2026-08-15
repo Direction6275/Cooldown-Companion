@@ -2490,7 +2490,7 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
             fs:Show()
         end
     elseif kind == "aura_duration_swipe" and GetConditionalPreviewTiming then
-        if style.showAuraDurationSwipe ~= false then
+        if CooldownCompanion:ShouldDrawAuraDurationSwipe(buttonData, style) then
             local startTime, duration = GetConditionalPreviewTiming(state, now)
             if startTime then
                 local widget = EnsureSlotAuraSwipe(slot)
