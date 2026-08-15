@@ -326,7 +326,16 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
 
     if kind == "aura_stack_text" then
         if button.auraStackCount then
-            button.auraStackCount:SetText(style.showAuraStackText ~= false and (preview.stackText or "3") or "")
+            if style.showAuraStackText ~= false then
+                -- Threshold-aware stand-in (2026-08-15 program): count and
+                -- color mirror the engine-side breakpoints.
+                local text, r, g, b, a = CooldownCompanion:GetAuraStackPreviewCountAndColor(
+                    buttonData, style, preview.stackText)
+                button.auraStackCount:SetText(text)
+                button.auraStackCount:SetTextColor(r, g, b, a)
+            else
+                button.auraStackCount:SetText("")
+            end
         end
         -- Shells hide the frame this preview writes to (bar text frame /
         -- icon overlayFrame hosting auraStackCount); expose while it runs.

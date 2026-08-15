@@ -602,6 +602,37 @@ local function ApplyFontStyle(region, source, prefix, defaultSize, defaultColor)
 end
 CooldownCompanion.ApplyFontStyle = ApplyFontStyle
 
+-- Stack threshold preview stand-in (2026-08-15 program): the simulated
+-- count and its color for config previews of the aura stack text. Live
+-- text is colored engine-side (NumericRuleFormatter breakpoints) because
+-- the real count is secret; this mirrors those breakpoints for a PLAIN
+-- pretend number, preferring the most interesting configured state (max
+-- when the max color is on, else the threshold) so the feature shows in
+-- previews. Shared by ButtonPanelPreview and the live-button preview twin
+-- — defined here, NOT in the preview file (200-local ceiling).
+function CooldownCompanion:GetAuraStackPreviewCountAndColor(buttonData, style, fallbackText)
+    -- Thin reader of the ONE policy resolver (review batch 2026-08-15):
+    -- the clamp/prefer rules live there, so the preview can never disagree
+    -- with the live formatter and bands about where a color starts.
+    local policy = self:ResolveAuraStackThresholdPolicy(buttonData)
+    local count = tonumber(fallbackText) or 3
+    local color
+    if policy then
+        if policy.maxOn then
+            count = policy.maxStacks
+        elseif policy.threshold then
+            count = policy.threshold
+        end
+        if policy.maxOn and count >= policy.maxStacks then
+            color = policy.maxColor
+        elseif policy.threshold and count >= policy.threshold then
+            color = policy.thresholdColor
+        end
+    end
+    color = color or (style and style.auraStackFontColor) or { 1, 1, 1, 1 }
+    return tostring(count), color[1], color[2], color[3], color[4] or 1
+end
+
 -- Cast-count text is intentionally explicit rather than auto-discovered.
 -- Blizzard's cast-count/use APIs also fire for proc/override families
 -- like Execute/Thunder Clap, which makes generic detection unreliable.
