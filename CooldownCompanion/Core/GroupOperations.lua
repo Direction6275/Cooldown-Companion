@@ -1258,6 +1258,14 @@ function CooldownCompanion:BeginCombatForcedLock()
         SuppressFrameVisibilityForCombat(frame.coordLabel)
         SuppressFrameVisibilityForCombat(frame.dragHelpButton)
         SuppressFrameVisibilityForCombat(frame.nudger)
+        -- The chrome just came down without going through
+        -- SetGroupDragControlsShown, so an Aura Panel's presentation term is
+        -- released here instead. Its placeholders are gone (hidden, or alpha 0
+        -- on the protected fallback path), so the live aura display is what the
+        -- player should see for the rest of the fight. Plain-frame write on a
+        -- CC-owned root; the container itself is untouched, and no rebind is
+        -- possible in combat anyway.
+        self:SetAuraPanelChromeSuppressed(frame, false)
         ForceCombatMouseLock(frame)
         ForceCombatMouseLock(frame.dragHandle)
         ForceCombatMouseLock(frame.dragHelpButton)
@@ -1324,6 +1332,14 @@ function CooldownCompanion:EndCombatForcedLock()
         RestoreFrameVisibilityAfterCombat(frame.coordLabel)
         RestoreFrameVisibilityAfterCombat(frame.dragHelpButton)
         RestoreFrameVisibilityAfterCombat(frame.nudger)
+        -- Re-suppress per the chrome's ACTUAL state now that the restore has
+        -- run: still hidden means the panel stayed locked and keeps its live
+        -- display, while a handle that came back (the alpha fallback restores
+        -- one that was never hidden) means the placeholders are on screen again
+        -- and the display steps aside. RefreshAllGroups below re-asserts the
+        -- same answer through SetGroupDragControlsShown for the hide path.
+        self:SetAuraPanelChromeSuppressed(
+            frame, (frame.dragHandle and frame.dragHandle:IsShown()) == true)
         for _, button in ipairs(frame.buttons or {}) do
             local host = button and button.auraTextureHost or nil
             RestoreFrameVisibilityAfterCombat(host and host.dragHandle or nil)
@@ -1398,11 +1414,15 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
         end
     end
 
-    local isRotationAssistant = self:IsRotationAssistantGroup(group)
-    if not isRotationAssistant and not (group.buttons and #group.buttons > 0) then
+    -- An Aura Panel joins the Rotation Assistant in skipping the entry checks:
+    -- both are placed and sized before they have entries (the Aura Panel keeps a
+    -- reserved one-cell footprint for exactly this), so "no saved entry" must
+    -- not mean "not on screen to arrange".
+    local skipEntryChecks = self:IsRotationAssistantGroup(group) or ST.IsAuraPanelGroup(group)
+    if not skipEntryChecks and not (group.buttons and #group.buttons > 0) then
         return false
     end
-    if not isRotationAssistant and not self:GroupHasUsableButtons(group, {
+    if not skipEntryChecks and not self:GroupHasUsableButtons(group, {
         checkLoadConditions = false,
     }) then
         return false
@@ -1412,7 +1432,13 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
     if groupFrame == nil and groupId then
         groupFrame = self.groupFrames and self.groupFrames[groupId] or nil
     end
-    if groupFrame and not isRotationAssistant and (not groupFrame.buttons or #groupFrame.buttons == 0) then
+    -- Same exemption on the runtime side. An Aura Panel renders its entries
+    -- through its own aura container and materializes no CC buttons at all, so
+    -- an empty button list is its normal state rather than the "nothing
+    -- rendered yet" signal this check reads it as everywhere else.
+    if groupFrame
+        and not skipEntryChecks
+        and (not groupFrame.buttons or #groupFrame.buttons == 0) then
         return false
     end
 
@@ -1749,6 +1775,49 @@ function CooldownCompanion:GetGroupLayoutButtonCount(groupId, group, opts)
         end
     end
     return count
+end
+
+-- Ordered identity of the entries an Aura Panel currently reserves cells for.
+--
+-- An Aura Panel materializes no CC buttons, so the entry-identity comparison
+-- every other group makes against frame.buttons has nothing to read. This string
+-- stands in for that list: PopulateGroupButtons stamps it on the frame, and
+-- GroupButtonSetNeedsRebuild diffs against it on the next availability sweep so
+-- the panel keeps a refresh trigger of its own.
+--
+-- Walked over group.buttons with the SAME predicate and the SAME options
+-- GetGroupLayoutButtonCount uses -- which is how GetAuraPanelGridMetrics counts
+-- cells -- so the signature and the cell count can never disagree about which
+-- entries are in.
+--
+-- ORDER carries the identity and the count does not: two mutually exclusive
+-- talent auras can swap with the entry count unchanged, and the panel still has
+-- to repopulate and rebind.
+--
+-- Identity per entry is _auraKey, which is the same string the aura engine keys
+-- the panel's aura groups by -- so two entries this signature calls the same are
+-- two entries the bind pass would also collapse into one. Entries with no key
+-- (pre-subtype or hand-edited data, which the bind pass parks) still occupy a
+-- cell, so they are carried under a distinct prefix by type and id rather than
+-- dropped: a keyless entry coming or going still moves the footprint.
+function CooldownCompanion:GetAuraPanelEntrySignature(group, buttonUsabilityOptions)
+    if not (group and group.buttons) then
+        return ""
+    end
+
+    local signature = ""
+    for _, buttonData in ipairs(group.buttons) do
+        if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
+            local auraKey = buttonData._auraKey
+            if auraKey then
+                signature = signature .. "\031k" .. tostring(auraKey)
+            else
+                signature = signature .. "\031?"
+                    .. tostring(buttonData.type) .. ":" .. tostring(buttonData.id)
+            end
+        end
+    end
+    return signature
 end
 
 local UNLOCK_PREVIEW_BUTTON_USABILITY_OPTIONS = {
@@ -2299,6 +2368,17 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
         return false
     end
     if self.IsIconLikeDisplayMode and not self:IsIconLikeDisplayMode(group.displayMode) then return false end
+    -- An Aura Panel is never an anchor target (owner ruling 2026-08-15). Its
+    -- height is whatever the active auras happen to need right now, so anything
+    -- stacked off its edge would chase the aura churn. Structural, not a stored
+    -- anchorEligible = false: an imported or hand-edited profile can undo a data
+    -- write, and this predicate is what every consumer asks.
+    --
+    -- The rule now also lives on CanGroupBeExternalAnchorTarget (AnchorPolicy),
+    -- which the branch above prefers and which covers MANUAL targets too. Kept
+    -- here as well because the `elseif` fallback runs when that predicate is
+    -- missing, and this list may not lose the rule with it.
+    if ST.IsAuraPanelGroup(group) then return false end
     if group.anchorEligible == false then return false end
     local container = self:GetParentContainer(group)
     if container and container.isGlobal and not container.anchorEligible then return false end
@@ -2844,6 +2924,31 @@ function CooldownCompanion:GroupButtonSetNeedsRebuild(groupId, group, opts)
         return #frame.buttons ~= 1
             or not frame.buttons[1]
             or frame.buttons[1].buttonData ~= buttonData
+    end
+    -- An Aura Panel's button list is empty by design, so the entry-count
+    -- comparison below would report "needs rebuild" forever: one such panel
+    -- would force a full refresh of EVERY group on every availability pass.
+    -- Answering a flat false instead deleted the panel's OWN refresh trigger --
+    -- nothing re-ran population when a talent or load-condition change altered
+    -- WHICH entries are usable, so the footprint, the unlock placeholders and
+    -- the aura rebind all went stale. Compare the ordered entry signature
+    -- PopulateGroupButtons stamped on the frame instead. It holds still for a
+    -- panel whose entries did not change -- so the every-sweep refresh storm the
+    -- flat false was guarding against stays prevented -- and differs the moment
+    -- they do, including a same-count swap between two mutually exclusive talent
+    -- auras, which no count comparison could see.
+    if ST.IsAuraPanelGroup(group) then
+        -- Resolved exactly the way PopulateGroupButtons resolves it, so an
+        -- unlock preview (which relaxes load conditions for the stored
+        -- signature) cannot make stored and current disagree on every sweep.
+        local buttonUsabilityOptions = opts.buttonUsabilityOptions
+            or self:GetGroupButtonUsabilityOptions(groupId, group)
+        -- A frame that has never been populated carries no signature. Reading
+        -- that as the empty signature mirrors the non-aura path below exactly:
+        -- an empty button list needs a rebuild when there are usable entries,
+        -- and does not when there are none.
+        return (frame._auraPanelEntrySig or "")
+            ~= self:GetAuraPanelEntrySignature(group, buttonUsabilityOptions)
     end
     if not group.buttons then
         return #frame.buttons > 0

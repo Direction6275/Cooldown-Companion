@@ -1307,6 +1307,12 @@ local function BuildCustomKeybindSection(scroll, buttonData)
 
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group or group.displayMode ~= "icons" then return end
+    -- An Aura Panel offers no Keybind Text at all (owner ruling 2026-08-15,
+    -- carried by ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS), so the custom
+    -- replacement for a bind has nothing to replace. The panel toggle this
+    -- section hangs off is gone from the Appearance tab; a value left over from
+    -- before a conversion must not put the section back.
+    if not ST.CanGroupUseOverrideSection(group, "keybindText") then return end
 
     local effectiveStyle = CooldownCompanion:GetEffectiveStyle(group.style or {}, buttonData)
     if not (effectiveStyle and effectiveStyle.showKeybindText) then

@@ -61,9 +61,47 @@ local function TargetPanelAcceptsAuraEntries(groupId)
     return displayMode == "icons" or displayMode == "bars" or displayMode == "textures"
 end
 
+-- An Aura Panel takes aura entries only, and only for the one unit it derived
+-- from its first entry. Both answers come from Core so this surface cannot
+-- drift from the rule the move paths and AddButtonToGroup enforce.
+local function TargetPanelIsAuraOnly(groupId)
+    return CooldownCompanion:IsAuraPanel(GetTargetGroup(groupId)) == true
+end
+
+local function GetTargetAuraPanelUnit(groupId)
+    return CooldownCompanion:GetAuraPanelUnit(GetTargetGroup(groupId))
+end
+
+-- Nothing an Aura Panel can hold, in the shape the central predicate reads.
+-- Shared rather than rebuilt per call: the predicate only ever reads it.
+local AURA_PANEL_ITEM_PROBE = { type = "item" }
+
+-- Prints the one central reject line and answers "stop here" when a non-aura
+-- add is pointed at an Aura Panel. Answering at the surface keeps the message
+-- to a single line: the core add paths print their own notices, and an item
+-- add would otherwise announce an async load before refusing.
+local function RejectNonAuraPanelAdd(groupId, probe)
+    local group = GetTargetGroup(groupId)
+    if not CooldownCompanion:IsAuraPanel(group) then
+        return false
+    end
+    local rejectMessage = CooldownCompanion:GetPanelManualEntryRejectMessage(group, probe)
+    if not rejectMessage then
+        return false
+    end
+    CooldownCompanion:Print(rejectMessage)
+    return true
+end
+
 -- File-local state
 local autocompleteDropdown
 local canPlayerEverCastSpellMemoByCache = setmetatable({}, { __mode = "k" })
+-- Same shape, same reason: keyed on the autocomplete cache table so a rebuilt
+-- cache (SPELLS_CHANGED - spec and talent changes) starts from a clean memo, and
+-- the discarded one is collectable. Aura polarity is resolved through the CDM
+-- and buff-viewer frames, which are spec-dependent, so it is NOT static for the
+-- session and must not outlive the cache it was resolved against.
+local auraUnitMemoByCache = setmetatable({}, { __mode = "k" })
 
 local function CanPlayerEverCastSpellCached(spellId)
     local cache = CS.autocompleteCache
@@ -110,6 +148,14 @@ local ADD_BOX_TRACKABILITY_TOOLTIP = {
     {"Debuffs that enemies put on you can't be tracked; the game hides those from addons.", 1, 1, 1, true},
 }
 
+-- Prepended to the tooltip above while the add box points at an Aura Panel, so
+-- the panel's one rule leads what the box says it will take. Read at hover time
+-- rather than baked in: one info button serves whichever panel is selected.
+local ADD_BOX_AURA_PANEL_TOOLTIP = {
+    {"This panel takes aura entries only, for one unit.", 1, 0.82, 0.2, true},
+    {" ", 1, 1, 1, true},
+}
+
 local AUTOCOMPLETE_TYPE_DISPLAY = {
     spell = { label = "Spell", atlas = "ui_adv_atk" },
     aura = { label = "Aura", atlas = "ui_adv_health" },
@@ -143,7 +189,17 @@ local function CreateAddBoxInfoButton(parentFrame, anchorFrame, cleanup)
         btn:SetScript("OnEnter", function(self)
             GameTooltip:SetMinimumWidth(0)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            for _, line in ipairs(ADD_BOX_TRACKABILITY_TOOLTIP) do
+            GameTooltip:AddLine(ADD_BOX_TRACKABILITY_TOOLTIP[1])
+            -- The workspace add box always targets the SELECTED panel (its
+            -- submit path clears any stale inline-add target), so the panel
+            -- rule is asked of that panel and no other.
+            local auraLines = TargetPanelIsAuraOnly(CS.selectedGroup)
+                and ADD_BOX_AURA_PANEL_TOOLTIP or nil
+            for _, line in ipairs(auraLines or {}) do
+                GameTooltip:AddLine(line[1], line[2], line[3], line[4], line[5])
+            end
+            for index = 2, #ADD_BOX_TRACKABILITY_TOOLTIP do
+                local line = ADD_BOX_TRACKABILITY_TOOLTIP[index]
                 if type(line) == "table" then
                     GameTooltip:AddLine(line[1], line[2], line[3], line[4], line[5])
                 else
@@ -275,6 +331,14 @@ local function TryAddSpell(input, isPetSpell, forceAura)
             PrintBlockedSpellMessage(spellName)
             return false
         end
+        -- An Aura Panel holds aura entries only, so a spell arriving here is
+        -- aura intent by destination: route it rather than refuse it for the
+        -- shape it was typed in. This also takes the castability branch below
+        -- out of play, which would otherwise announce the routing twice.
+        local isAuraOnlyTarget = TargetPanelIsAuraOnly(CS.selectedGroup)
+        if isAuraOnlyTarget then
+            forceAura = true
+        end
         -- 12.1: passives/procs add directly as aura-tracking entries — the new
         -- AuraContainer backend needs no Cooldown Manager setup. forceAura=true
         -- comes from "Aura" autocomplete suggestions (tracked buff/bar rows).
@@ -294,6 +358,22 @@ local function TryAddSpell(input, isPetSpell, forceAura)
         if addAsAura then
             if not TargetPanelAcceptsAuraEntries(CS.selectedGroup) then
                 PrintAuraPanelUnsupported()
+                return false
+            end
+        end
+        -- An Aura Panel also judges WHICH aura, against its derived unit. Asked
+        -- here, before the add, so the refusal is the only thing printed:
+        -- AddButtonToGroup can emit a transform notice on its way to the same
+        -- verdict, which would put a stray line ahead of the reject.
+        if isAuraOnlyTarget then
+            local probe = {
+                type = "spell",
+                id = spellId,
+                name = spellName,
+                addedAs = "aura",
+            }
+            probe.auraUnit = CooldownCompanion:ResolveStandaloneAuraDefaultUnit(probe)
+            if RejectNonAuraPanelAdd(CS.selectedGroup, probe) then
                 return false
             end
         end
@@ -337,6 +417,7 @@ end
 
 local function TryAddItem(input)
     if input == "" or not CS.selectedGroup then return false end
+    if RejectNonAuraPanelAdd(CS.selectedGroup, AURA_PANEL_ITEM_PROBE) then return false end
 
     local itemId = tonumber(input)
     local itemName
@@ -407,6 +488,7 @@ local function TryAddEquipmentSlot(itemSlot)
         and not CooldownCompanion.IsEquipmentSlotEntry(slotData) then
         return false
     end
+    if RejectNonAuraPanelAdd(CS.selectedGroup, slotData) then return false end
 
     local slotName = CooldownCompanion.GetEquipmentSlotDisplayName
         and CooldownCompanion.GetEquipmentSlotDisplayName(slotData) or "Trinket Slot"
@@ -458,6 +540,11 @@ local function TryAdd(input)
         return TryAddEquipmentSlot(equipmentSlot)
     end
 
+    -- An Aura Panel takes aura entries only, so this resolver narrows to the
+    -- spell door: every spell hand-off goes through TryAddSpell, which owns the
+    -- aura routing and the reject, and the item doors refuse before they start.
+    local isAuraOnlyTarget = TargetPanelIsAuraOnly(CS.selectedGroup)
+
     local id = tonumber(input)
 
     if id then
@@ -477,7 +564,7 @@ local function TryAdd(input)
 
         -- Non-passive spell → add it
         if spellFound and not passiveOrProc then
-            if not CanPlayerEverCastSpellCached(id) then
+            if isAuraOnlyTarget or not CanPlayerEverCastSpellCached(id) then
                 return TryAddSpell(tostring(id))
             end
             local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", id, spellInfo.name)
@@ -492,6 +579,7 @@ local function TryAdd(input)
         end
 
         -- Try as item
+        if RejectNonAuraPanelAdd(CS.selectedGroup, AURA_PANEL_ITEM_PROBE) then return false end
         local itemName = C_Item.GetItemNameByID(id)
         local itemId = C_Item.GetItemIDForItemInfo(id)
         if itemId then
@@ -553,7 +641,7 @@ local function TryAdd(input)
             if passiveOrProc then
                 return TryAddSpell(tostring(spellId))
             else
-                if not CanPlayerEverCastSpellCached(spellId) then
+                if isAuraOnlyTarget or not CanPlayerEverCastSpellCached(spellId) then
                     return TryAddSpell(tostring(spellId))
                 end
                 local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName)
@@ -569,6 +657,7 @@ local function TryAdd(input)
         end
 
         -- Try as item
+        if RejectNonAuraPanelAdd(CS.selectedGroup, AURA_PANEL_ITEM_PROBE) then return false end
         local itemId = C_Item.GetItemIDForItemInfo(input)
         if itemId and C_Item.IsItemDataCachedByID(itemId) then
             return FinalizeAddItem(itemId, CS.selectedGroup)
@@ -937,6 +1026,56 @@ local function CreateSynthesizedAuraRow(spellId, spellName, icon)
     }
 end
 
+-- The polarity the row will resolve to once it is an entry, answered by the SAME
+-- resolver the add door asks: OnAutocompleteSelect adds `entry.id`, and TryAddSpell
+-- probes it as { type = "spell", id = entry.id, addedAs = "aura" } through
+-- ResolveStandaloneAuraDefaultUnit. That resolver walks GetBaseSpell, the CDM row
+-- and its linkedSpellIDs to the APPLIED aura before asking polarity, which a raw
+-- IsSpellHarmful on the row id does not: CDM rows carry CAST ids while the aura
+-- they apply lives in linkedSpellIDs, and the two can disagree. Asking the raw id
+-- here let the filter offer a row the panel then refused (and hide one it would
+-- have taken).
+--
+-- Memoized because that walk is far more than one API call and this runs for
+-- every cached row on every keystroke. Cost stays flat after the first pass.
+local function ResolveAutocompleteAuraUnit(entry)
+    local spellId = tonumber(entry.id) or tonumber(entry.trackedAuraID)
+    if not spellId then return nil end
+
+    local cache = CS.autocompleteCache
+    local memo = cache and auraUnitMemoByCache[cache]
+    if cache and not memo then
+        memo = {}
+        auraUnitMemoByCache[cache] = memo
+    end
+
+    -- `false` stands in for "unresolvable", so a nil answer is still a cache hit.
+    local unit = memo and memo[spellId]
+    if unit == nil then
+        unit = CooldownCompanion:ResolveAuraEntryUnit({
+            type = "spell",
+            id = spellId,
+            addedAs = "aura",
+        }) or false
+        if memo then
+            memo[spellId] = unit
+        end
+    end
+    return unit or nil
+end
+
+-- Would this row survive the panel's unit rule? Unknown polarity stays
+-- PERMISSIVE, exactly as GetPanelManualEntryRejectMessage treats it: the
+-- resolver answers nil when neither source can decide, and the add door lets
+-- such an entry through rather than guessing, so the filter must not hide a row
+-- the door would take. An Aura Panel with no unit yet (auraPanelUnit nil) takes
+-- either polarity.
+local function AutocompleteRowFitsAuraPanel(entry, auraPanelUnit)
+    if not auraPanelUnit then return true end
+    local rowUnit = ResolveAutocompleteAuraUnit(entry)
+    return rowUnit == nil or rowUnit == auraPanelUnit
+end
+
 local function AddUniqueSpellAuraTwin(results, targetAcceptsAuraEntries)
     local uniqueSpell
     for _, entry in ipairs(results) do
@@ -971,12 +1110,26 @@ local function SearchAutocomplete(query, allowTalentSearch)
     local groupId = CS.addingToPanelId or CS.selectedGroup
     local isTriggerTarget = IsTriggerPanelTarget(groupId)
     local targetAcceptsAuraEntries = TargetPanelAcceptsAuraEntries(groupId)
-    if isTriggerTarget or not targetAcceptsAuraEntries then
+    local isAuraOnlyTarget = TargetPanelIsAuraOnly(groupId)
+    -- nil while the panel is empty, which is when it accepts either polarity.
+    local auraPanelUnit = isAuraOnlyTarget and GetTargetAuraPanelUnit(groupId) or nil
+    if isTriggerTarget or not targetAcceptsAuraEntries or isAuraOnlyTarget then
         local filtered = {}
         for _, entry in ipairs(cache) do
-            local keepEquipment = not isTriggerTarget or not entry.isEquipmentSlot
-            local keepAura = targetAcceptsAuraEntries or entry.autocompleteKind ~= "aura"
-            if keepEquipment and keepAura then
+            local keep
+            if isAuraOnlyTarget then
+                -- Only rows the panel could actually accept: aura rows, and
+                -- once a unit is derived, only that unit's polarity.
+                -- Sole polarity gate on this path: stripping every "spell" row
+                -- here also leaves AddUniqueSpellAuraTwin with no unique spell
+                -- to synthesize a twin from.
+                keep = entry.autocompleteKind == "aura"
+                    and AutocompleteRowFitsAuraPanel(entry, auraPanelUnit)
+            else
+                keep = (not isTriggerTarget or not entry.isEquipmentSlot)
+                    and (targetAcceptsAuraEntries or entry.autocompleteKind ~= "aura")
+            end
+            if keep then
                 filtered[#filtered + 1] = entry
             end
         end
@@ -992,6 +1145,12 @@ local function SearchAutocomplete(query, allowTalentSearch)
 
     local canOfferSpell, canOfferAura = GetSpellOfferability(query, spellId)
     local canSynthesizeAura = targetAcceptsAuraEntries and canOfferAura
+    -- An Aura Panel offers no plain-spell row at all, and once it has a unit it
+    -- offers no aura of the other polarity either.
+    local canSynthesizeSpell = canOfferSpell and not isAuraOnlyTarget
+    if canSynthesizeAura and isAuraOnlyTarget then
+        canSynthesizeAura = AutocompleteRowFitsAuraPanel({ id = spellId }, auraPanelUnit)
+    end
     local seenExactKinds = {}
     local filteredResults = {}
     for _, entry in ipairs(results) do
@@ -1017,7 +1176,7 @@ local function SearchAutocomplete(query, allowTalentSearch)
 
     local synthesized = {}
     local icon = spellInfo and spellInfo.iconID or 134400
-    if canOfferSpell and not seenExactKinds.spell then
+    if canSynthesizeSpell and not seenExactKinds.spell then
         synthesized[#synthesized + 1] = {
             id = spellId,
             name = spellName,

@@ -662,12 +662,127 @@ function CooldownCompanion:IsIconLikeDisplayMode(displayMode)
     return ST.IsIconLikeDisplayMode(displayMode)
 end
 
+-- Aura Panels are a SUBTYPE of the icon and bar display modes, not a mode of
+-- their own: the flag rides alongside a normal displayMode so every styling
+-- path keeps working, while the panel renders its entries through Blizzard's
+-- aura container flow layout instead of CC's own layout.
+function ST.IsAuraPanelGroup(group)
+    return group and group.auraPanel == true or false
+end
+
+function CooldownCompanion:IsAuraPanel(group)
+    return ST.IsAuraPanelGroup(group)
+end
+
+-- Every entry sitting in an Aura Panel needs a key that is unique WITHIN that
+-- panel: Blizzard identifies aura groups per container, and the display engine
+-- skips an entry that carries none (BindAuraPanel, AuraDisplay.lua), so a
+-- missing stamp is an entry that silently never renders.
+--
+-- ENGINE INVARIANT, so it lives in Core and every inserting path calls it:
+-- AddButtonToGroup for the adds it owns, and the config paths that push an entry
+-- table in directly (entry duplicate, multi-select duplicate, the move menus, a
+-- cross-panel drag), where the table would otherwise arrive with no key at all
+-- or still wearing the key of the panel it came from.
+--
+-- Keys are unique per PANEL only. Duplicating a whole panel copies them along
+-- with it, which is fine: nothing reads them across panels.
+--
+-- No-ops off an Aura Panel, so callers never have to ask first.
+function CooldownCompanion:StampAuraPanelEntryKey(group, buttonData)
+    if not (buttonData and ST.IsAuraPanelGroup(group)) then
+        return
+    end
+    group.nextAuraKey = tonumber(group.nextAuraKey) or 1
+    buttonData._auraKey = tostring(group.nextAuraKey)
+    group.nextAuraKey = group.nextAuraKey + 1
+end
+
+-- The subtype's two hard data invariants, in one place. An Aura Panel renders
+-- its entries through Blizzard's aura container and materializes no CC buttons
+-- at all, so:
+--   * compactLayout has nothing to reflow. Left on, CC's compact pass reads the
+--     empty frame.buttons, writes visibleButtonCount 0, and ResizeGroupFrame
+--     drops the panel to its one-cell fallback — the footprint collapses.
+--   * masqueEnabled has nothing to skin, and the Aura Panel config hides the
+--     Masque row entirely, so a stranded true disables the icon shape, zoom and
+--     border rows with no visible toggle left to clear it.
+-- Neither is reachable through the panel's own options; both arrive from paths
+-- that judge eligibility on the base displayMode alone (Copy Style From Panel,
+-- setting presets) or from raw imported payloads. Idempotent and pure data.
+--
+-- Deliberately NOT covered here: displayMode (the copy and preset paths are
+-- mode-matched, and the import normalizer clamps it where it can actually be
+-- wrong), compactGrowthDirection (a real Aura Panel setting — it picks the
+-- packed block's anchor), maxVisibleButtons (inert: its only reader counts
+-- frame.buttons, which an Aura Panel never has) and anchorEligible (the aura
+-- predicate is structural, so a copied value changes nothing).
+function CooldownCompanion:EnforceAuraPanelInvariants(group)
+    if not ST.IsAuraPanelGroup(group) then return end
+    group.compactLayout = false
+    group.masqueEnabled = false
+end
+
+-- Polarity is derived from the spell the same way the aura display derives it;
+-- the stored auraUnit is the fallback for a spell the client cannot resolve.
+-- Returns nil when neither source can answer, which reads as "unknown" rather
+-- than a unit, so callers stay permissive instead of guessing.
+function CooldownCompanion:ResolveAuraEntryUnit(buttonData)
+    if not buttonData then return nil end
+    local spellID = tonumber(buttonData.id)
+    if spellID and C_Spell.DoesSpellExist(spellID) then
+        return self:ResolveStandaloneAuraDefaultUnit(buttonData)
+    end
+    if buttonData.auraUnit == "player" or buttonData.auraUnit == "target" then
+        return buttonData.auraUnit
+    end
+    return nil
+end
+
+-- One unit per Aura Panel, DERIVED and never stored: the panel tracks whatever
+-- its first aura entry resolves to. An empty panel has no unit yet and accepts
+-- either polarity. Entries whose polarity cannot be resolved right now are
+-- skipped rather than treated as an answer.
+function CooldownCompanion:GetAuraPanelUnit(group)
+    if not ST.IsAuraPanelGroup(group) then return nil end
+    for _, buttonData in ipairs(group.buttons or {}) do
+        if buttonData and buttonData.addedAs == "aura" then
+            local unit = self:ResolveAuraEntryUnit(buttonData)
+            if unit then
+                return unit
+            end
+        end
+    end
+    return nil
+end
+
 function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData)
     if self:IsRotationAssistantGroup(group) then
         return "Assistant Panels are populated automatically."
     end
     if group and group.displayMode == "textures" and group.buttons and #group.buttons >= 1 then
         return "Texture Panels can only hold one entry. Remove the current entry first if you want to replace it."
+    end
+    -- Aura Panels hold ONLY aura entries, and only for a single unit: the
+    -- panel's unit is derived from its first aura entry, so an entry of the
+    -- other polarity has nowhere to render. With no entryData (the add box
+    -- arming itself) there is nothing to judge yet, so the panel stays armed.
+    if entryData and ST.IsAuraPanelGroup(group) then
+        local panelUnit = self:GetAuraPanelUnit(group)
+        local entries = entryData[1] and entryData or { entryData }
+        for _, bd in ipairs(entries) do
+            if not (bd and bd.type == "spell" and bd.addedAs == "aura") then
+                return "Aura Panels hold only Aura entries."
+            end
+            local entryUnit = self:ResolveAuraEntryUnit(bd)
+            if panelUnit and entryUnit and entryUnit ~= panelUnit then
+                if panelUnit == "player" then
+                    return "This panel tracks your buffs. Target debuff auras need their own Aura Panel."
+                end
+                return "This panel tracks target debuffs. Your own buff auras need their own Aura Panel."
+            end
+            panelUnit = panelUnit or entryUnit
+        end
     end
     -- Primary aura entries (addedAs == "aura") only display through the aura
     -- system, which binds to icon, bar, and Texture panels; refuse moving them
@@ -1150,6 +1265,51 @@ ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS = {
     readyGlow = true,
     keyPressHighlight = true,
 }
+
+-- The panel-scope twin of the list above. EVERY entry an Aura Panel can hold is
+-- a pure aura entry (the add path refuses anything else), so a section no aura
+-- entry can use is a section the whole panel can never use - the panel tabs read
+-- this to leave those rows out instead of offering settings with nothing behind
+-- them (owner ruling 2026-08-15).
+--
+-- CONFIG-SIDE ONLY, never a prune input: auraPanel is a flag a panel can in
+-- principle be converted out of, and GetEffectiveStyle's prune pass deletes what
+-- it is told is impossible. Add intent on an ENTRY is immutable, which is why
+-- that list may prune and this one may not.
+--
+-- Two deliberate divergences from the entry list:
+--   keybindText - the entry list keeps it (custom keybind text does render on an
+--     aura entry), but an Aura Panel offers no keybinds at all (owner ruling).
+--   cooldownText - stays OFF both lists. Its position keys place the aura
+--     duration text whenever Separate Text Positions is off, and its Duration
+--     Format row formats aura durations. On an Aura Panel the dead "Show
+--     Cooldown Text" toggle is gone and those live rows are re-homed under the
+--     aura duration text settings, so the section is still in use there - the
+--     tabs hide the ROW, and each cooldownText home carries its own `available`
+--     predicate so the Customizations index cannot link to a row that is gone.
+--
+-- The bar-fill colors are here rather than on the entry list for the same reason
+-- the entry list is conservative: an aura-tracking entry on an ORDINARY bar
+-- panel still has a base fill, a spell cooldown and a recharge to paint. On an
+-- Aura Panel none exists: the panel materializes no CC buttons at all, and the
+-- only fill is the aura kit's, which reads barAuraColor and nothing else
+-- (StyleActiveBarFill, AuraDisplay.lua).
+ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS = {
+    keybindText = true,
+    barColor = true,
+    barCooldownColor = true,
+    barChargeColor = true,
+    -- "Ready" is the off-cooldown state a bar falls back to. Without a cooldown
+    -- there is no such state to word.
+    barReadyText = true,
+}
+
+function ST.CanGroupUseOverrideSection(group, sectionId)
+    if not ST.IsAuraPanelGroup(group) then return true end
+    if ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS[sectionId] then return false end
+    if ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS[sectionId] then return false end
+    return true
+end
 
 function ST.CanButtonUseOverrideSection(buttonData, sectionId)
     if buttonData and buttonData.type == "equipmentSlot" then

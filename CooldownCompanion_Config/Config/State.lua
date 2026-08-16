@@ -1144,6 +1144,26 @@ local function GetConfigPanelTypeBadgeAtlas(displayMode)
     return "UI-QuestPoi-QuestNumber-SuperTracked"
 end
 
+-- An Aura Panel's type badge also carries its polarity, so the Navigator says
+-- which unit the panel tracks without opening it. The unit is DERIVED from the
+-- panel's entries (GetAuraPanelUnit), so an empty panel, or one whose entries
+-- cannot be resolved right now, has no answer yet and keeps the plain badge.
+--
+-- Returned as a vertex color because the badge is an atlas: the caller pairs it
+-- with desaturation, the same recipe the trigger badge uses, so the tint lands
+-- on grey instead of multiplying against the atlas's own gold.
+local CONFIG_AURA_PANEL_BADGE_TINTS = {
+    player = { 0.3, 1, 0.3, 1 },
+    target = { 1, 0.3, 0.3, 1 },
+}
+
+local function GetConfigAuraPanelBadgeTint(panel)
+    if not ST.IsAuraPanelGroup(panel) then
+        return nil
+    end
+    return CONFIG_AURA_PANEL_BADGE_TINTS[CooldownCompanion:GetAuraPanelUnit(panel)]
+end
+
 local function GetConfigPanelEntryCount(panel)
     if panel and panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
         return 1
@@ -3169,6 +3189,7 @@ ST._InvalidateConfigFinderResults = InvalidateConfigFinderResults
 ST._SelectConfigFinderResult = SelectConfigFinderResult
 ST._GetContainerIcon = GetContainerIcon
 ST._GetConfigPanelTypeBadgeAtlas = GetConfigPanelTypeBadgeAtlas
+ST._GetConfigAuraPanelBadgeTint = GetConfigAuraPanelBadgeTint
 ST._GetConfigPanelEntryCount = GetConfigPanelEntryCount
 ST._IsConfigPanelEntryUsable = IsConfigPanelEntryUsable
 ST._ConfigPanelHasWarning = ConfigPanelHasWarning

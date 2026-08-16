@@ -486,6 +486,32 @@ local function FinalizePreviewState(preview)
     -- Every build path ends here, so the copy-customization banner follows
     -- the preview onto whatever panel it now shows.
     CopyMode.UpdateBanner(preview)
+
+    -- Aura Panel caption. The replica is the EXPANDED grid - every entry, in
+    -- order - because that is the footprint the panel holds; in the world
+    -- Blizzard packs only the auras that are up. No static mirror can show
+    -- that, so the preview says it instead of letting the grid imply gaps.
+    --
+    -- Written inline rather than as a helper: this file rides the 200-local
+    -- ceiling (see the CopyMode do-block above), and every build path already
+    -- passes through here, which is also what makes the hide reliable when the
+    -- preview moves onto an ordinary panel.
+    local auraCaptionGroup = preview.readOnly ~= true and preview.panelId
+        and CooldownCompanion.db.profile.groups[preview.panelId] or nil
+    if auraCaptionGroup and ST.IsAuraPanelGroup(auraCaptionGroup) then
+        local caption = preview.auraCaption
+        if not caption then
+            caption = preview.root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            caption:SetJustifyH("CENTER")
+            caption:SetWordWrap(false)
+            caption:SetPoint("BOTTOM", preview.root, "BOTTOM", 0, 2)
+            caption:SetText("Inactive auras take no space in game.")
+            preview.auraCaption = caption
+        end
+        caption:Show()
+    elseif preview.auraCaption then
+        preview.auraCaption:Hide()
+    end
 end
 
 -- Group Panel Overview tiles reuse the saved-design mirror without exposing
@@ -1138,9 +1164,14 @@ end
 -- entry that hides with its aura therefore keeps its layout slot even though
 -- Blizzard can hide the AuraButton drawn inside it. Surface that limitation
 -- directly on the live preview instead of making Compact Mode look broken.
+--
+-- Never on an Aura Panel: Blizzard's own container lays those cells out and
+-- packs only the active auras, so nothing is reserved and the badge would be
+-- claiming the opposite of what the panel does.
 local function DoesHiddenAuraReserveLayoutSpace(buttonData, group)
     local displayMode = group and (group.displayMode or "icons") or "icons"
     return (displayMode == "icons" or displayMode == "bars")
+        and not ST.IsAuraPanelGroup(group)
         and buttonData.type == "spell"
         and (buttonData.auraTracking or buttonData.addedAs == "aura")
         and buttonData.hideWhileAuraNotActive == true
@@ -2024,6 +2055,22 @@ local function GetPanelGeometry(group, isBarMode, isTextMode)
     else
         w = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
         h = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
+    end
+    -- An Aura BAR Panel is ONE vertical column in the world whatever the stored
+    -- orientation and wrap count say: the engine hard-codes it (PanelFlowSpec's
+    -- bars branch, GetAuraPanelCellSlot's column 0), and neither row is offered
+    -- for one any more. Values left over from before the panel became one must
+    -- not wrap the replica into a shape the panel will never take. A wrap count
+    -- of "every entry" is what one column means on the vertical axis, where the
+    -- count is entries per COLUMN.
+    if isBarMode and ST.IsAuraPanelGroup(group) then
+        return {
+            entryWidth = w,
+            entryHeight = h,
+            spacing = style.buttonSpacing or ST.BUTTON_SPACING,
+            orientation = "vertical",
+            buttonsPerRow = math_max(1, #(group.buttons or {})),
+        }
     end
     return {
         entryWidth = w,

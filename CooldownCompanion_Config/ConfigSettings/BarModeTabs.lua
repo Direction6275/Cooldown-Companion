@@ -7,6 +7,11 @@ local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
+-- Core/Defaults.lua. "Can this PANEL ever use this override section?" - false
+-- only on an Aura Panel, for the sections that read spell cooldown, castability,
+-- proc, charge, cast or GCD state its pure-aura entries do not have.
+local CanGroupUseOverrideSection = ST.CanGroupUseOverrideSection
+
 -- Imports from Helpers.lua
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
@@ -127,8 +132,32 @@ local function BarsIconShown(_, style)
     return style.showBarIcon ~= false
 end
 
+-- Show Tooltips is the one row in the icon-gated States block that is NOT
+-- icon-bound on an Aura Panel. An ordinary bar hangs its tooltip off the icon
+-- square alone (BarMode.lua: `iconTooltips = showTooltips and showIcon`, hover
+-- surface `_iconBounds`), so hiding the icon really does take the setting's
+-- effect with it. An Aura Panel cell has no CC button under it at all: the aura
+-- host frame is the whole cell and the only surface a tooltip can hang off, so
+-- BindPanelGroup (AuraDisplay.lua) enables its mouse motion straight from
+-- style.showTooltips with the bar icon nowhere in the expression. Left behind
+-- the icon gate, hiding the icon there hid a control that was still live.
+local function BarsTooltipRowShown(group, style)
+    return ST.IsAuraPanelGroup(group) or BarsIconShown(group, style)
+end
+
 local function BarsGroupTracksAura(group)
     return GroupHasAuraTrackingEntry(group)
+end
+
+-- The Cooldown Text ROW is left out on an Aura Panel (BuildBarAppearanceTab's
+-- `if not isAuraPanel`): nothing there has a cooldown, so the toggle is dead and
+-- the live rows that hung off it - Duration Format, Flip Time Text and the two
+-- time-text offsets - move under the aura duration text they actually place. The
+-- section itself stays usable, so this is an `available` predicate rather than a
+-- denial in ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS. Without it the
+-- Customizations index would offer a name link onto a row that is not drawn.
+local function GroupDrawsCooldownTextRow(group)
+    return not ST.IsAuraPanelGroup(group)
 end
 
 -- Where each bars override section is EDITED, now that the panel tabs are the
@@ -197,6 +226,7 @@ ST._SECTION_HOME.bars = {
     },
     cooldownText = {
         tab = "appearance", collapseKey = "barappearance_textIcon",
+        available = GroupDrawsCooldownTextRow,
         gearEnabled = function(_, style) return (style.showCooldownText) ~= false end,
     },
     chargeText = {
@@ -255,9 +285,12 @@ ST._SECTION_HOME.bars = {
         tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
         available = BarsIconShown,
     },
+    -- Not BarsIconShown: on an Aura Panel this row is drawn outside the icon
+    -- gate, so its Customizations link and gear stay reachable with the bar icon
+    -- hidden (BuildBarEffectsTab's `barIconShown or isAuraPanel`).
     showTooltips = {
         tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
-        available = BarsIconShown,
+        available = BarsTooltipRowShown,
         gearEnabled = function(_, style) return (style.showTooltips == true) ~= false end,
     },
 }
@@ -367,6 +400,13 @@ local function BuildBarAppearanceTab(container, group, style)
     -- final), because it is the one control that stays live in an inert
     -- section - the way back out of it.
     local lens = ResolveStyleLens(group)
+
+    -- An Aura Panel bar draws no cooldown text (nothing on it has a cooldown),
+    -- so the Text & Icon section drops that toggle and re-homes the rows under
+    -- it that DO still work - Duration Format, Flip Time Text and the two
+    -- time-text offsets - under the aura duration text they actually place
+    -- (owner ruling 2026-08-15).
+    local isAuraPanel = ST.IsAuraPanelGroup(group)
 
     -- Under a multi selection this tab edits the PANEL, and only this line says
     -- so - the per-section scope chrome speaks under an entry lens alone. No-op
@@ -508,10 +548,21 @@ local function BuildBarAppearanceTab(container, group, style)
         return row
     end
 
-    AddBarColorRow(colorLeft, "barColor", "Bar Color", "barColor", {0.2, 0.6, 1.0, 1.0})
+    -- The bar at rest. An Aura Panel bar has no resting state: the panel
+    -- materializes no CC buttons, so barColor never paints anything - the only
+    -- fill is the aura kit's, and that reads barAuraColor alone
+    -- (StyleActiveBarFill, AuraDisplay.lua). The backdrop still shows, so
+    -- Bar Background Color stays.
+    if CanGroupUseOverrideSection(group, "barColor") then
+        AddBarColorRow(colorLeft, "barColor", "Bar Color", "barColor", {0.2, 0.6, 1.0, 1.0})
+    end
     AddBarColorRow(colorLeft, "barBgColor", "Bar Background Color", "barBgColor", {0.1, 0.1, 0.1, 0.8})
-    AddBarColorRow(colorRight, "barCooldownColor", "Bar Cooldown Color", "barCooldownColor", {0.6, 0.6, 0.6, 1.0})
-    AddBarColorRow(colorRight, "barChargeColor", "Bar Recharging Color", "barChargeColor", {1.0, 0.82, 0.0, 1.0})
+    -- The two colors a spell TIMER paints. An Aura Panel bar has no cooldown and
+    -- no recharge to paint, so the right column starts at the aura timer color.
+    if CanGroupUseOverrideSection(group, "barCooldownColor") then
+        AddBarColorRow(colorRight, "barCooldownColor", "Bar Cooldown Color", "barCooldownColor", {0.6, 0.6, 0.6, 1.0})
+        AddBarColorRow(colorRight, "barChargeColor", "Bar Recharging Color", "barChargeColor", {1.0, 0.82, 0.0, 1.0})
+    end
 
     -- The color the aura timer drains in. Same gate as the aura block down in
     -- Text & Icon, so it appears only while the group tracks an aura.
@@ -606,6 +657,7 @@ local function BuildBarAppearanceTab(container, group, style)
         BuildIconTintControls(tintLeft, tintRight, tintSec, {
             mode = "bars",
             hasAuraEntry = GroupHasAuraTrackingEntry(group),
+            hasCooldownState = CanGroupUseOverrideSection(group, "desaturation"),
             refresh = refreshStyle,
         })
 
@@ -806,7 +858,11 @@ local function BuildBarAppearanceTab(container, group, style)
 
     nameSec:Finish()
 
-    -- Show Cooldown Text toggle
+    -- Show Cooldown Text toggle. An Aura Panel bar has no cooldown to count
+    -- down, so the toggle itself is dead there and is left out; everything live
+    -- that hung off it (Duration Format, Flip Time Text, the two time-text
+    -- offsets) moves into the aura duration text section on the right.
+    if not isAuraPanel then
     local cdTextSec = BeginLensSection(lens, group, "cooldownText", { column = textLeft })
 
     local showTimeRow = AddCheckboxRow(textLeft, {
@@ -854,8 +910,12 @@ local function BuildBarAppearanceTab(container, group, style)
     if durationFormatRow then
         cdTextSec:PanelRowChrome(durationFormatRow)
     end
+    end -- not isAuraPanel
 
-    -- Show Charge Text toggle
+    -- Show Charge Text toggle. Charges and uses are spell mechanics, so an Aura
+    -- Panel never counts anything here; the aura's own stack count is the Show
+    -- Aura Stack Text row.
+    if CanGroupUseOverrideSection(group, "chargeText") then
     local chargeSec = BeginLensSection(lens, group, "chargeText", { column = textLeft })
 
     local chargeTextRow = AddCheckboxRow(textLeft, {
@@ -911,8 +971,11 @@ local function BuildBarAppearanceTab(container, group, style)
     chargeSec:Chrome(chargeTextRow)
 
     chargeSec:Finish()
+    end -- CanGroupUseOverrideSection chargeText
 
-    -- Show Ready Text toggle
+    -- Show Ready Text toggle. "Ready" is the off-cooldown state, so an Aura
+    -- Panel bar never reaches it.
+    if CanGroupUseOverrideSection(group, "barReadyText") then
     local readySec = BeginLensSection(lens, group, "barReadyText", { column = textLeft })
 
     local showReadyRow = AddCheckboxRow(textLeft, {
@@ -966,6 +1029,7 @@ local function BuildBarAppearanceTab(container, group, style)
     readySec:Chrome(showReadyRow)
 
     readySec:Finish()
+    end -- CanGroupUseOverrideSection barReadyText
 
     -- Bar aura block: the aura text toggles. Shown only while the GROUP has an
     -- aura-tracking entry (same gate as the icon-side aura sections, and as the
@@ -1006,6 +1070,33 @@ local function BuildBarAppearanceTab(container, group, style)
                 onConfirm = refreshStyle,
                 onChange = refreshStyle,
             })
+
+            -- The re-homed position rows. Same STORAGE KEYS as before - the aura
+            -- display places this text from barTimeTextReverse and
+            -- barCdTextOffsetX/Y (AuraDisplay.lua's bar branch) - so nothing is
+            -- migrated; only where they are edited moves.
+            --
+            -- They write group.style rather than this section's store, exactly as
+            -- they did under the Cooldown Text gear: the keys are bar-wide and
+            -- belong to no override section, so a copy inside the auraText store
+            -- would be keys RevertSection cannot clear. Openly PANEL-OWNED, with
+            -- the grey "Panel setting" label, the way the bar name offsets and
+            -- Duration Format already answer this.
+            if isAuraPanel then
+                local panelStyle = group.style
+                local flipRow = AddCheckboxRow(panel, {
+                    label = "Flip Time Text",
+                    value = panelStyle.barTimeTextReverse or false,
+                    onChange = function(val)
+                        panelStyle.barTimeTextReverse = val or nil
+                        refreshStyle()
+                    end,
+                })
+                local offsetXRow, offsetYRow = AddOffsetSliders(panel, panelStyle, "barCdTextOffsetX", "barCdTextOffsetY", {range = 50}, refreshStyle, { row = true })
+                auraTextSec:PanelRowChrome(flipRow)
+                auraTextSec:PanelRowChrome(offsetXRow)
+                auraTextSec:PanelRowChrome(offsetYRow)
+            end
         end
 
         if auraTextSec.write then
@@ -1017,13 +1108,32 @@ local function BuildBarAppearanceTab(container, group, style)
         -- Second badge in the chain: gear, then this, then the scope chrome the
         -- lens attaches last. The anchor args below are a placeholder -
         -- AnchorRowBadge re-points the button onto the end of the chain.
-        AnchorRowBadge(auraTextRow, CreateInfoButton(auraTextRow.frame, auraTextRow.frame, "LEFT", "LEFT", 0, 0, {
+        --
+        -- On an Aura Panel the flip and offset rows live in this section's own
+        -- gear, so the pointer to the Cooldown Text section would send the user
+        -- to a row that is not drawn.
+        AnchorRowBadge(auraTextRow, CreateInfoButton(auraTextRow.frame, auraTextRow.frame, "LEFT", "LEFT", 0, 0, isAuraPanel and {
+            "Aura Duration Text",
+            {"Shows the remaining aura time at the bar's time text position while the aura is active.", 1, 1, 1, true},
+        } or {
             "Aura Duration Text",
             {"Shows the remaining aura time at the bar's time text position while the aura is active. Position follows the flip and offset settings in the Cooldown Text section.", 1, 1, 1, true},
         }, auraTextRow))
         auraTextSec:Chrome(auraTextRow)
 
         auraTextSec:Finish()
+
+        -- Duration Format, re-homed. On an Aura Panel this is the text the
+        -- format applies to (there is no cooldown text and no ready text), so
+        -- the row sits with THIS toggle instead. Drawn after Finish for the same
+        -- reason the cooldown-side copy is: the inert sweep covers the rows above
+        -- and leaves this panel-owned one live.
+        if isAuraPanel then
+            local auraFormatRow = AddDurationFormatDropdown(textRight, group.style, refreshStyle, { row = true })
+            if auraFormatRow then
+                auraTextSec:PanelRowChrome(auraFormatRow)
+            end
+        end
 
         -- Aura stack text: Blizzard writes the live stack count; anchored to
         -- the icon square (or the bar with the icon hidden).
@@ -1342,6 +1452,15 @@ local function BuildBarEffectsTab(container, group, style)
     -- for what the scopes mean and why the write table is the only gate.
     local lens = ResolveStyleLens(group)
 
+    -- COLUMN ROUTING on an Aura Panel (owner ruling 2026-08-15). The States
+    -- section below loses its whole LEFT column to the panel predicate and keeps
+    -- one row on the right; the standing fill rule (stated in full in the recipe
+    -- comment at the top of BuildAppearanceTab's icons path in
+    -- GroupTabsAppearance.lua, rule 3) says a filtered row set fills the left
+    -- column first, so that survivor moves across. Gated on this predicate
+    -- alone, so an ordinary bar panel's columns are byte-identical to before.
+    local isAuraPanel = ST.IsAuraPanelGroup(group)
+
     -- Under a multi selection this tab edits the PANEL, and only this line says
     -- so. No-op in every other lens mode.
     AddLensPanelScopeNote(container, lens)
@@ -1393,10 +1512,20 @@ local function BuildBarEffectsTab(container, group, style)
     -- has nothing here to configure (the Show Icon row on Appearance is the
     -- way back).
     local effIconSec = BeginLensSection(lens, group, "barIcon")
-    if effIconSec.read.showBarIcon ~= false then
+    local barIconShown = effIconSec.read.showBarIcon ~= false
+    -- Show Tooltips is the exception, and only on an Aura Panel: its cell has no
+    -- CC button, so the aura host frame carries the tooltip whether or not the
+    -- icon draws (see BarsTooltipRowShown above). The block therefore opens for
+    -- an Aura Panel with the icon hidden, and the icon-bound rows inside keep
+    -- their own gate so nothing else comes through with it. On an ordinary bar
+    -- panel the condition is barIconShown and nothing changes.
+    if barIconShown or isAuraPanel then
         -- ================================================================
         -- Timers
         -- ================================================================
+        -- The GCD swipe is the section's only row, so on an Aura Panel the
+        -- heading goes with it rather than standing over nothing.
+        if barIconShown and CanGroupUseOverrideSection(group, "showGCDSwipe") then
         local _, timersCollapsed = BuildCollapsibleSection(container, "Timers", EFFECTS_TIMERS_SECTION, nil, nil, ROW_SECTION)
 
         if not timersCollapsed then
@@ -1418,6 +1547,7 @@ local function BuildBarEffectsTab(container, group, style)
         })
         gcdSec:Chrome(gcdRow)
         end -- not timersCollapsed
+        end -- CanGroupUseOverrideSection showGCDSwipe
 
         -- ================================================================
         -- States
@@ -1429,6 +1559,10 @@ local function BuildBarEffectsTab(container, group, style)
         -- RIGHT column: the situational state and the hover behavior.
         local stateLeft, stateRight = BeginRowGrid(container)
 
+        -- On an Aura Panel the left column empties out and Loss of Control
+        -- leaves the right one: desaturate-on-cooldown, the unusable visual and
+        -- the control lockout all read spell state these entries do not have.
+        if barIconShown and CanGroupUseOverrideSection(group, "desaturation") then
         local desatSec = BeginLensSection(lens, group, "desaturation")
         local desatRow = AddCheckboxRow(stateLeft, {
             label = "Show Desaturate On Cooldown",
@@ -1441,11 +1575,13 @@ local function BuildBarEffectsTab(container, group, style)
             end,
         })
         desatSec:Chrome(desatRow)
+        end -- CanGroupUseOverrideSection desaturation
 
         -- The two shared builders below own their gears, so an inert scope
         -- cannot skip building one the way the hand-written sections do: the
         -- inert pass gates the gear it finds on the row (_cdcAdvancedBtn), and
         -- the sweep at the foot of this builder closes a panel it rebound.
+        if barIconShown and CanGroupUseOverrideSection(group, "unusableDimming") then
         local unusableSec = BeginLensSection(lens, group, "unusableDimming", { column = stateLeft })
         local unusableRow = BuildUnusableDimmingControls(stateLeft, unusableSec.tbl, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -1456,16 +1592,23 @@ local function BuildBarEffectsTab(container, group, style)
         })
         unusableSec:Chrome(unusableRow)
         unusableSec:Finish()
+        end -- CanGroupUseOverrideSection unusableDimming
 
+        if barIconShown and CanGroupUseOverrideSection(group, "lossOfControl") then
         local locSec = BeginLensSection(lens, group, "lossOfControl")
         local locRow = BuildLossOfControlControls(stateRight, locSec.tbl, refreshStyle, {
             row = true,
         })
         locRow:SetDisabled(locSec.disabled)
         locSec:Chrome(locRow)
+        end -- CanGroupUseOverrideSection lossOfControl
 
-        local tooltipSec = BeginLensSection(lens, group, "showTooltips", { column = stateRight })
-        local tooltipRow = BuildShowTooltipsControls(stateRight, tooltipSec.tbl, function()
+        -- On an Aura Panel this is the section's ONLY row (everything above is
+        -- denied, and Allow Pings below is not offered), so it takes the left
+        -- column instead of stranding itself beside an empty one.
+        local tooltipHost = isAuraPanel and stateLeft or stateRight
+        local tooltipSec = BeginLensSection(lens, group, "showTooltips", { column = tooltipHost })
+        local tooltipRow = BuildShowTooltipsControls(tooltipHost, tooltipSec.tbl, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end, {
@@ -1482,11 +1625,16 @@ local function BuildBarEffectsTab(container, group, style)
         -- the rest of the panel-only content instead of letting a panel-wide
         -- edit be made from an entry's page. Its "?" badge stays readable: the
         -- inert walk only reaches AceGUI children and the gear.
+        --
+        -- Not offered on an Aura Panel: the row's own tooltip already says
+        -- entries added as auras cannot be pinged, and every entry here is one.
+        if not CooldownCompanion:IsAuraPanel(group) then
         local pingsSec = BeginLensSection(lens, group, nil, { column = stateRight })
         BuildAllowPingsControls(stateRight, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end, { row = true })
         pingsSec:Finish()
+        end
         end -- not statesCollapsed
     end
 

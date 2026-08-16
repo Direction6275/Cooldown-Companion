@@ -36,6 +36,7 @@ local ToggleConfigContainerMultiSelect = ST._ToggleConfigContainerMultiSelect
 local SelectConfigPanel = ST._SelectConfigPanel
 local ToggleConfigPanelMultiSelect = ST._ToggleConfigPanelMultiSelect
 local GetConfigPanelTypeBadgeAtlas = ST._GetConfigPanelTypeBadgeAtlas
+local GetConfigAuraPanelBadgeTint = ST._GetConfigAuraPanelBadgeTint
 local GetConfigPanelEntryCount = ST._GetConfigPanelEntryCount
 local ConfigPanelHasWarning = ST._ConfigPanelHasWarning
 local ClearOtherClassBrowseState = ST._ResetOtherClassLibraryState
@@ -560,7 +561,10 @@ local function ShowPanelContextMenu(panelId, containerId)
                 UIDropDownMenu_AddButton(info, level)
             end
 
-            if CooldownCompanion:IsIconLikeDisplayMode(panel.displayMode) then
+            -- Aura Panels are structurally excluded from auto-anchoring
+            -- (IsGroupAvailableForAnchoring), so there is nothing to toggle.
+            if CooldownCompanion:IsIconLikeDisplayMode(panel.displayMode)
+                and not CooldownCompanion:IsAuraPanel(panel) then
                 info = UIDropDownMenu_CreateInfo()
                 info.text = panel.anchorEligible ~= false and "Exclude from Auto-Anchoring" or "Include in Auto-Anchoring"
                 info.notCheckable = true
@@ -797,8 +801,13 @@ end
 -- path as the Group context menu.
 ST._CreatePanelInContainer = CreatePanelInContainer
 
--- The two everyday panel types lead each create menu; specialists start here.
-local FIRST_SPECIALIST_PANEL_TYPE = 3
+-- The everyday panel types and their subtypes lead each create menu; the
+-- specialists start at this index. PanelShared owns the descriptor, so it owns
+-- the split too, and it loads after this file: the lookup stays at call time.
+local FALLBACK_FIRST_SPECIALIST_PANEL_TYPE = 3
+local function FirstSpecialistPanelTypeIndex()
+    return ST._FIRST_SPECIALIST_PANEL_TYPE or FALLBACK_FIRST_SPECIALIST_PANEL_TYPE
+end
 
 local function ShowContainerContextMenu(db, containerId, container)
     if not CS.groupContextMenu then
@@ -953,13 +962,17 @@ local function ShowContainerContextMenu(db, containerId, container)
             end
             UIDropDownMenu_AddButton(info, level)
         elseif menuList == "ADD_PANEL" then
+            local firstSpecialist = FirstSpecialistPanelTypeIndex()
             for index, panelType in ipairs(ST._PANEL_TYPES or {}) do
-                if index == FIRST_SPECIALIST_PANEL_TYPE then
+                if index == firstSpecialist then
                     UIDropDownMenu_AddSeparator(level)
                 end
                 local info = UIDropDownMenu_CreateInfo()
                 info.text = panelType.label
                 info.notCheckable = true
+                if ST._ApplyPanelTypeMenuIndent then
+                    ST._ApplyPanelTypeMenuIndent(info, panelType)
+                end
                 local targetMode = panelType.mode
                 info.func = function()
                     CloseDropDownMenus()
@@ -1019,6 +1032,9 @@ local function AddPanelTypeCreateItems(level, containerId, firstIndex, lastIndex
             if ST._AddPanelTypeMenuTooltip then
                 ST._AddPanelTypeMenuTooltip(info, displayMode)
             end
+            if ST._ApplyPanelTypeMenuIndent then
+                ST._ApplyPanelTypeMenuIndent(info, panelType)
+            end
             info.func = function()
                 CloseDropDownMenus()
                 if not IsCreateTargetContainer(containerId) then return end
@@ -1059,11 +1075,10 @@ local function ShowPanelTypeMenuForContainer(containerId)
     UIDropDownMenu_Initialize(menu, function(_, level)
         level = level or 1
         if level == 1 then
-            AddPanelTypeCreateItems(level, containerId, 1,
-                FIRST_SPECIALIST_PANEL_TYPE - 1)
+            local firstSpecialist = FirstSpecialistPanelTypeIndex()
+            AddPanelTypeCreateItems(level, containerId, 1, firstSpecialist - 1)
             UIDropDownMenu_AddSeparator(level)
-            AddPanelTypeCreateItems(level, containerId,
-                FIRST_SPECIALIST_PANEL_TYPE)
+            AddPanelTypeCreateItems(level, containerId, firstSpecialist)
             UIDropDownMenu_AddSeparator(level)
             AddCDMStarterCreateItem(level, containerId)
         end
@@ -1430,8 +1445,12 @@ local function RenderExportModeGroups(db, selection, mode)
                     iconTexCoord = { 0.08, 0.92, 0.08, 0.92 }
                 else
                     iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
+                    local auraTint = GetConfigAuraPanelBadgeTint(panel)
                     if panel.displayMode == "trigger" then
                         iconVertexColor = { 1.0, 0.18, 0.78, 1 }
+                        iconDesaturated = true
+                    elseif auraTint then
+                        iconVertexColor = auraTint
                         iconDesaturated = true
                     end
                 end
@@ -2120,8 +2139,15 @@ local function RefreshColumn1(preserveDrag)
                     texCoord = { 0.08, 0.92, 0.08, 0.92 }
                 else
                     iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
+                    local auraTint = GetConfigAuraPanelBadgeTint(panel)
                     if panel.displayMode == "trigger" then
                         vertexColor = { 1.0, 0.18, 0.78, 1 }
+                        desaturated = true
+                    elseif auraTint then
+                        -- Aura Panel polarity: green tracks the player's buffs,
+                        -- red tracks target debuffs. Desaturated so the tint is
+                        -- the badge's whole color, not a wash over its gold.
+                        vertexColor = auraTint
                         desaturated = true
                     end
                 end

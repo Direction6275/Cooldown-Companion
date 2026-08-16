@@ -2118,13 +2118,25 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         return false
     end
 
+    -- Every entry an Aura Panel holds is a pure aura entry, so nothing here has
+    -- a spell cooldown or a castability state to answer. It gates three row
+    -- families below as well as the whole section.
+    local isAuraPanel = CooldownCompanion:IsAuraPanel(group)
+
     -- A primary Aura entry in a Texture panel has exactly one visibility rule:
     -- Blizzard shows its texture while the aura is active. That rule is always
     -- on, so this entry has no configurable Show Conditions section.
-    local hideShowConditions = not isBatch
-        and isTexturePanel
-        and buttonData.type == "spell"
-        and buttonData.addedAs == "aura"
+    --
+    -- An Aura Panel entry ends up in the same place by a different route: the
+    -- show-while-active pair is inherent to the panel, and every remaining
+    -- family here is keyed to a cooldown, a castability state, charges, item
+    -- stacks or equipped state that a pure aura entry never has. The section
+    -- would build its header and then pour no rows, so it does not build at all.
+    local hideShowConditions = isAuraPanel
+        or (not isBatch
+            and isTexturePanel
+            and buttonData.type == "spell"
+            and buttonData.addedAs == "aura")
 
     if not hideShowConditions then
     local visKey = isBatch
@@ -2216,8 +2228,16 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     else anyAuraEntry = FilterAuraEntry(buttonData) end
     -- Icon and bar groups (both compose a full shell); text mode has no aura
     -- display at all.
+    --
+    -- An Aura Panel is already this pair, panel-wide and unconditionally: every
+    -- cell shows only while its aura is up, and Blizzard's container gives the
+    -- inactive ones no space at all. Neither row has anything left to say there,
+    -- so both leave rather than sit as toggles that change nothing.
     local displayMode = group.displayMode or "icons"
-    if anyAuraEntry and (displayMode == "icons" or displayMode == "bars") then
+    -- isAuraPanel is resolved once at the top of this builder; it gates this
+    -- pair as well as the row families below.
+    if anyAuraEntry and (displayMode == "icons" or displayMode == "bars")
+        and not isAuraPanel then
         -- Two mutually exclusive inactive-state presentations, stored as
         -- independent single keys. The dim key is auraShellDim, new in 12.1
         -- and deliberately not main's useBaselineAlphaFallback: that key's
@@ -2272,7 +2292,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     if isBatch then allNeverUnusable = AllSelectedNeverUnusable(group)
     else allNeverUnusable = IsNeverUnusableButton(buttonData) end
 
-    if not allPassive and not allNoCooldown then
+    -- The whole cooldown family (both directions plus their Dim children) needs
+    -- a spell cooldown to react to; an Aura Panel entry has none, and the panel
+    -- draws no CC button for the rule to hide in the first place.
+    if not allPassive and not allNoCooldown and not isAuraPanel then
     -- Dim Instead Of Hide (nested under hideWhileOnCooldown)
     local showFallbackOnCooldown
     if isBatch then showFallbackOnCooldown = AnySelectedHas(group, "hideWhileOnCooldown")
@@ -2371,7 +2394,9 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     end -- not allPassive and not allNoCooldown
 
     if not allPassive then
-    if not allNeverUnusable then
+    -- Same reason as the cooldown family: usability is a spell state an Aura
+    -- Panel entry never carries.
+    if not allNeverUnusable and not isAuraPanel then
     -- Hide While Unusable
     local showFallbackUnusable
     if isBatch then showFallbackUnusable = AnySelectedHas(group, "hideWhileUnusable")

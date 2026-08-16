@@ -9,6 +9,8 @@ local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local CreateInfoButton = ST._CreateInfoButton
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddOffsetSliders = ST._AddOffsetSliders
+local GetCompactGrowthDirectionLabels = ST._GetCompactGrowthDirectionLabels
+local NormalizeCompactGrowthDirection = ST._NormalizeCompactGrowthDirection
 
 -- Imports from RowWidgets.lua (the row grammar)
 local AddCheckboxRow = ST._AddCheckboxRow
@@ -806,6 +808,13 @@ local function BuildLayoutTab(container)
     local arrangeLeft, arrangeRight = BeginRowGrid(container)
     local arrangeHost = isBarMode and arrangeRight or arrangeLeft
 
+    -- An Aura BAR Panel is ONE vertical column by construction: the aura
+    -- container's bars branch hard-codes the axis and takes no line ceiling, so
+    -- neither the orientation question nor the wrap count has an answer to give
+    -- here. Aura ICON Panels keep both - their grid follows the same style keys
+    -- an ordinary icon panel's does.
+    local auraBarPanel = isBarMode and CooldownCompanion:IsAuraPanel(group)
+
     -- Orientation is remembered per display mode (bar and text panels own
     -- their keys, unset = vertical), so a mode swap keeps every mode's
     -- layout. Same helper GetCompactGrowthDirectionLabels uses, because the
@@ -838,7 +847,7 @@ local function BuildLayoutTab(container)
         -- row?"), so it is a checkbox rather than the horizontal/vertical
         -- dropdown the other modes show. With a single bar there is nothing
         -- to lay out.
-        if #group.buttons > 1 then
+        if #group.buttons > 1 and not auraBarPanel then
             AddCheckboxRow(arrangeHost, {
                 label = "Horizontal Bar Layout",
                 value = orientation == "horizontal",
@@ -872,7 +881,11 @@ local function BuildLayoutTab(container)
 
     if #group.buttons > 1 then
         local labels
-        if orientation == "vertical" then
+        -- Same override the Collapse Direction row below applies: an Aura BAR
+        -- Panel is one vertical column by construction, so its labels must not
+        -- follow the barOrientation key (hidden for this subtype, still
+        -- copyable, and never read by the engine here).
+        if auraBarPanel or orientation == "vertical" then
             labels = { TOPLEFT = "Down, Right", TOPRIGHT = "Down, Left", BOTTOMLEFT = "Up, Right", BOTTOMRIGHT = "Up, Left" }
         else
             labels = { TOPLEFT = "Right, Down", TOPRIGHT = "Left, Down", BOTTOMLEFT = "Right, Up", BOTTOMRIGHT = "Left, Up" }
@@ -891,9 +904,47 @@ local function BuildLayoutTab(container)
         })
     end
 
+    -- An Aura Panel packs only its ACTIVE auras (Blizzard's aura container does
+    -- the collapsing, so it is inherent and always on), which leaves one
+    -- question Growth Direction cannot answer: which end of the panel the packed
+    -- block holds as auras come and go. Same start/center/end key every other
+    -- panel's compact mode writes, so it reads and writes through the compact
+    -- helpers - but here it is simply how the panel arranges itself, so it sits
+    -- under Growth Direction rather than behind a compact toggle this panel
+    -- subtype does not have (owner ruling 2026-08-15).
+    if CooldownCompanion:IsAuraPanel(group) then
+        -- PanelFlowSpec hard-codes the Vertical axis for an Aura BAR Panel, so
+        -- the labels follow that rather than the (gated-away, possibly stale)
+        -- barOrientation key the row above still reads.
+        local collapseOrientation = isBarMode and "vertical" or nil
+        local collapseRow = AddDropdownRow(arrangeHost, {
+            label = "Collapse Direction",
+            list = GetCompactGrowthDirectionLabels(group, collapseOrientation),
+            order = { "start", "center", "end" },
+            value = NormalizeCompactGrowthDirection(group.compactGrowthDirection),
+            onChange = function(val)
+                group.compactGrowthDirection = NormalizeCompactGrowthDirection(val)
+                -- The mount point is read at BIND time, so the display only
+                -- moves on the next aura pass. RefreshGroupFrame ends in
+                -- RequestAuraRebind("aura-panel", groupId) for exactly this
+                -- panel subtype, which is the request that re-runs it.
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            end,
+        })
+
+        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+        -- onto the end of the row's label.
+        AnchorRowBadge(collapseRow, CreateInfoButton(collapseRow.frame, collapseRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Collapse Direction",
+            {"Active auras pack from the start of the panel, from its center, or from its end.", 1, 1, 1, true},
+            {" ", 1, 1, 1},
+            {"Inactive auras take no space here, so the block moves as auras come and go.", 1, 1, 1, true},
+        }, tabInfoButtons))
+    end
+
     -- Text mode calls its entries entries, and offers the wrap count only
     -- once there is something to wrap.
-    if not isTextMode or #group.buttons > 1 then
+    if not auraBarPanel and (not isTextMode or #group.buttons > 1) then
         local numButtons = math.max(1, #group.buttons)
         local wrapRow = AddSliderRow(arrangeRight, {
             label = isTextMode and "Entries per Row/Column" or "Buttons Per Row/Column",
@@ -907,8 +958,11 @@ local function BuildLayoutTab(container)
         end, nil, style, "buttonsPerRow")
     end
 
-    -- Auto-Anchoring eligibility (icon-like modes only - others are never eligible)
-    if CooldownCompanion:IsIconLikeDisplayMode(group.displayMode) then
+    -- Auto-Anchoring eligibility (icon-like modes only - others are never
+    -- eligible). An Aura Panel is structurally excluded in
+    -- IsGroupAvailableForAnchoring, so the checkbox has nothing to opt into.
+    if CooldownCompanion:IsIconLikeDisplayMode(group.displayMode)
+        and not CooldownCompanion:IsAuraPanel(group) then
         local anchorEligibleRow = AddCheckboxRow(arrangeRight, {
             label = "Include in Auto-Anchoring",
             value = group.anchorEligible ~= false,
@@ -943,7 +997,14 @@ local function BuildLayoutTab(container)
     if not strataCollapsed then
     -- Per-icon layer ordering exists on icon panels only; the other modes
     -- have no stack of icon layers to reorder.
-    local customStrataEnabled = isIconsMode and type(style.strataOrder) == "table"
+    --
+    -- Nor does an Aura Panel: it materializes no CC buttons at all (GroupFrame's
+    -- aura-panel branch), so seven of the eight layers this orders - the fill
+    -- timer, cooldown swipe, ready glow, key press highlight, text overlay,
+    -- assisted highlight and proc glow - do not exist here, and the eighth (Aura
+    -- Display) IS the panel. There is no stack left to reorder.
+    local showCustomStrata = isIconsMode and not CooldownCompanion:IsAuraPanel(group)
+    local customStrataEnabled = showCustomStrata and type(style.strataOrder) == "table"
 
     -- LEFT column: the per-icon layer switch. RIGHT column: the whole
     -- panel's draw layer. One row each - the layer dropdowns below
@@ -951,9 +1012,9 @@ local function BuildLayoutTab(container)
     -- Frame Strata. Without the layer switch the section is a single row, so
     -- Frame Strata moves left rather than leaving the left column empty.
     local strataLeft, strataRight = BeginRowGrid(container)
-    local frameStrataHost = isIconsMode and strataRight or strataLeft
+    local frameStrataHost = showCustomStrata and strataRight or strataLeft
 
-    if isIconsMode then
+    if showCustomStrata then
     local strataToggleRow = AddCheckboxRow(strataLeft, {
         label = "Custom Icon Strata",
         value = customStrataEnabled,
@@ -989,7 +1050,7 @@ local function BuildLayoutTab(container)
         " ",
         {"Loss of Control and keybind text always draw on top.", 1, 1, 1, true},
     }, tabInfoButtons))
-    end -- isIconsMode (custom strata toggle)
+    end -- showCustomStrata (custom strata toggle)
 
     local frameStrataRow = AddDropdownRow(frameStrataHost, {
         label = "Frame Strata",

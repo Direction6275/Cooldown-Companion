@@ -8,10 +8,10 @@
     grid's last row, wearing the content tiles' own border so it reads as part
     of the surface. An empty Group instead gets the create surface itself: a
     centered block that says why the Group is empty, then a picker of clickable
-    panel-type cards -- the two everyday types large, the specialists quiet
-    below -- and a Cooldown Manager starter card. A Group that cannot take a new
-    Panel (Browse Other Classes, invalid class scope) keeps the plain label and
-    nothing clickable.
+    panel-type cards -- the two everyday types large, each with its subtypes
+    tucked in beneath it, the specialists quiet below -- and a Cooldown Manager
+    starter card. A Group that cannot take a new Panel (Browse Other Classes,
+    invalid class scope) keeps the plain label and nothing clickable.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -75,6 +75,15 @@ local CARD_GAP = 8
 -- the four specialists reads as a change in rank and not as another row.
 local CARD_TIER_GAP = 12
 local CARD_TITLE_BODY_GAP = 4
+-- A subtype card renders UNDER the everyday type it belongs to: same column,
+-- one step in from that card's left edge, wearing the quiet tier's smaller
+-- face, and held closer to its parent than the gap that separates unrelated
+-- cards. Three signals for one relationship, which is what makes it read as
+-- nesting rather than as another row. The indent matches the create menus'
+-- own subtype indent (PanelShared's PANEL_TYPE_SUBTYPE_INDENT), so the picker
+-- and the menus subordinate the same types by the same amount.
+local CARD_SUBTYPE_INDENT = 10
+local CARD_SUBTYPE_GAP = 4
 local CARD_BODY_COLOR = { 0.72, 0.82, 0.92 }
 local CARD_BODY_FONT = "GameFontHighlight"
 
@@ -573,6 +582,29 @@ local CARD_STARTER_ACCENT = {
     hoverFill = nil,
 }
 
+-- Positions and finishes one already-measured card. Width and height are passed
+-- in rather than read off a tier, because the everyday band places two card
+-- sizes in a single pass. The text offset is recomputed here, once the card's
+-- final height is known, so a pooled card cannot retain another tier's offset.
+local function PlacePickerCard(block, card, entry, style, containerId, accent,
+    x, y, width, height)
+    card._cdcOverviewCreate = {
+        containerId = containerId,
+        mode = entry.mode,
+        cdmStarter = entry.cdmStarter,
+    }
+    card:SetAlpha(IsCardTutorialLocked(card._cdcOverviewCreate) and 0.35 or 1)
+    ApplyPickerCardAccent(card, accent)
+    card:ClearAllPoints()
+    card:SetPoint("TOPLEFT", block, "TOP", x, -y)
+    card:SetSize(math_max(1, width), math_max(1, height))
+    local bodyHeight = card.body:GetStringHeight() or 0
+    local contentHeight = style.titleHeight + CARD_TITLE_BODY_GAP + bodyHeight
+    AnchorPickerCardText(card, style,
+        math_max(style.padding, (height - contentHeight) / 2))
+    card:Show()
+end
+
 -- Widest count the band can hold wins, so a narrow host collapses 2 -> 1 and
 -- 4 -> 2 -> 1 instead of squeezing unreadable cards.
 local function ResolveTierColumns(style, bandWidth)
@@ -641,30 +673,86 @@ local function PlacePickerTier(overview, block, firstIndex, entries, metrics,
         for offset = 1, rowCount do
             local entry = entries[placed + offset]
             local card = overview.cards[firstIndex + placed + offset - 1]
-            card._cdcOverviewCreate = {
-                containerId = containerId,
-                mode = entry.mode,
-                cdmStarter = entry.cdmStarter,
-            }
-            card:SetAlpha(IsCardTutorialLocked(card._cdcOverviewCreate) and 0.35 or 1)
-            ApplyPickerCardAccent(card, accent)
-            card:ClearAllPoints()
-            card:SetPoint("TOPLEFT", block, "TOP", x, -y)
-            card:SetSize(math_max(1, metrics.cardWidth),
-                math_max(1, metrics.height))
-            local bodyHeight = card.body:GetStringHeight() or 0
-            local contentHeight = style.titleHeight + CARD_TITLE_BODY_GAP
-                + bodyHeight
-            local textOffset = math_max(style.padding,
-                (metrics.height - contentHeight) / 2)
-            -- Recomputed after every configure, once this tier's final height
-            -- is known, so pooled cards cannot retain another tier's offset.
-            AnchorPickerCardText(card, style, textOffset)
-            card:Show()
+            PlacePickerCard(block, card, entry, style, containerId, accent,
+                x, y, metrics.cardWidth, metrics.height)
             x = x + metrics.cardWidth + CARD_GAP
         end
         placed = placed + rowCount
         y = y + metrics.height + CARD_GAP
+    end
+
+    return (y - top) - CARD_GAP
+end
+
+-- Measures the everyday band: the parent row's geometry, plus the subtype cards
+-- that hang off it. Subtypes are one indent narrower than their parent, so they
+-- take their own measure pass at exactly that width -- forceColumns 1 makes
+-- MeasurePickerTier hand back the width it is given. Both metric tables come
+-- back so the caller can settle the parent height against them before placing.
+local function MeasureFamilyBand(overview, block, parentFirst, subtypeFirst,
+    families, subtypeEntries, bandWidth)
+    local parentEntries = {}
+    for _, family in ipairs(families) do
+        parentEntries[#parentEntries + 1] = family.parent
+    end
+    local parentMetrics = MeasurePickerTier(overview, block, parentFirst,
+        parentEntries, PRIMARY_CARD_STYLE, bandWidth)
+    local subtypeMetrics = MeasurePickerTier(overview, block, subtypeFirst,
+        subtypeEntries, SECONDARY_CARD_STYLE,
+        math_max(1, parentMetrics.cardWidth - CARD_SUBTYPE_INDENT), 1)
+    return parentMetrics, subtypeMetrics
+end
+
+-- Places the everyday band: parents on their own grid, and each family's
+-- subtypes stacked directly beneath their parent, indented and narrower. Rows
+-- carry a uniform height -- the parent card plus room for the deepest family in
+-- the band -- so a family with fewer subtypes leaves that space empty instead
+-- of letting the next row ride up under its neighbour. Subtype cards are pooled
+-- in family order, which is the order this walk consumes them in.
+local function PlaceFamilyBand(overview, block, parentFirst, subtypeFirst,
+    families, parentMetrics, subtypeMetrics, containerId, accent, top)
+    local count = #families
+    if count == 0 then
+        return 0
+    end
+
+    local maxSubtypes = 0
+    for _, family in ipairs(families) do
+        maxSubtypes = math_max(maxSubtypes, #family.subtypes)
+    end
+    local subtypeStep = subtypeMetrics.height + CARD_SUBTYPE_GAP
+    local rowHeight = parentMetrics.height + (maxSubtypes * subtypeStep)
+    local subtypeWidth = math_max(1,
+        parentMetrics.cardWidth - CARD_SUBTYPE_INDENT)
+
+    local placed = 0
+    local subtypesPlaced = 0
+    local y = top
+    while placed < count do
+        local rowCount = math_min(parentMetrics.columns, count - placed)
+        local rowSpan = (rowCount * parentMetrics.cardWidth)
+            + ((rowCount - 1) * CARD_GAP)
+        local x = -(rowSpan / 2)
+        for offset = 1, rowCount do
+            local family = families[placed + offset]
+            PlacePickerCard(block,
+                overview.cards[parentFirst + placed + offset - 1],
+                family.parent, PRIMARY_CARD_STYLE, containerId, accent,
+                x, y, parentMetrics.cardWidth, parentMetrics.height)
+            local subtypeY = y + parentMetrics.height + CARD_SUBTYPE_GAP
+            for _, subtype in ipairs(family.subtypes) do
+                subtypesPlaced = subtypesPlaced + 1
+                PlacePickerCard(block,
+                    overview.cards[subtypeFirst + subtypesPlaced - 1],
+                    subtype, SECONDARY_CARD_STYLE, containerId, accent,
+                    x + CARD_SUBTYPE_INDENT, subtypeY, subtypeWidth,
+                    subtypeMetrics.height)
+                subtypeY = subtypeY + subtypeStep
+            end
+            x = x + parentMetrics.cardWidth + CARD_GAP
+        end
+        placed = placed + rowCount
+        y = y + rowHeight + CARD_GAP
     end
 
     return (y - top) - CARD_GAP
@@ -710,16 +798,40 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth)
     block.divider:Show()
     y = y + EMPTY_STATE_DIVIDER_HEIGHT + EMPTY_STATE_DIVIDER_GAP
 
-    -- Tiers come from the descriptor's own `primary` flag and nothing else, so
-    -- promoting a panel type is a one-word edit in PanelShared.
-    local primaryEntries, secondaryEntries = {}, {}
+    -- Tiers come from the descriptor's own flags and nothing else, so promoting
+    -- a panel type stays a one-word edit in PanelShared. `primary` opens a
+    -- family; a `parentMode` type joins the family it names and renders as a
+    -- subtype card beneath that parent, the same subordination the two create
+    -- menus give it. A subtype whose parent is not a family (nothing declares
+    -- one today) falls back to a plain quiet card rather than vanishing.
+    local families, secondaryEntries = {}, {}
+    local familyByMode = {}
     for _, panelType in ipairs(ST._PANEL_TYPES or {}) do
-        local tier = panelType.primary and primaryEntries or secondaryEntries
-        tier[#tier + 1] = {
+        local entry = {
             title = panelType.label,
             body = panelType.description,
             mode = panelType.mode,
         }
+        local family = panelType.parentMode
+            and familyByMode[panelType.parentMode]
+        if family then
+            family.subtypes[#family.subtypes + 1] = entry
+        elseif panelType.primary then
+            family = { parent = entry, subtypes = {} }
+            familyByMode[panelType.mode] = family
+            families[#families + 1] = family
+        else
+            secondaryEntries[#secondaryEntries + 1] = entry
+        end
+    end
+    -- Flattened from the families rather than collected above, so the pooled
+    -- card order the measure pass writes is exactly the order the placement
+    -- walk reads back.
+    local subtypeEntries = {}
+    for _, family in ipairs(families) do
+        for _, subtype in ipairs(family.subtypes) do
+            subtypeEntries[#subtypeEntries + 1] = subtype
+        end
     end
     local starterEntries = {
         {
@@ -731,22 +843,30 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth)
 
     local cardBandWidth = math_max(1,
         math_min(visibleWidth, EMPTY_STATE_MAX_CARD_WIDTH))
-    local primaryFirst = 1
-    local secondaryFirst = primaryFirst + #primaryEntries
+    local parentFirst = 1
+    local subtypeFirst = parentFirst + #families
+    local secondaryFirst = subtypeFirst + #subtypeEntries
     local starterFirst = secondaryFirst + #secondaryEntries
 
     local secondaryMetrics = MeasurePickerTier(overview, block, secondaryFirst,
         secondaryEntries, SECONDARY_CARD_STYLE, cardBandWidth)
-    local primaryMetrics = MeasurePickerTier(overview, block, primaryFirst,
-        primaryEntries, PRIMARY_CARD_STYLE, cardBandWidth)
-    primaryMetrics.height = math_max(primaryMetrics.height,
-        secondaryMetrics.height + PRIMARY_CARD_HEIGHT_LEAD)
+    local parentMetrics, subtypeMetrics = MeasureFamilyBand(overview, block,
+        parentFirst, subtypeFirst, families, subtypeEntries, cardBandWidth)
+    -- PRIMARY_CARD_HEIGHT_LEAD's promise, extended to the subtype cards: their
+    -- blurbs are as long as any specialist's. An empty subtype list has no
+    -- height to answer for, so it joins the comparison only when there is one.
+    local quietHeight = secondaryMetrics.height
+    if #subtypeEntries > 0 then
+        quietHeight = math_max(quietHeight, subtypeMetrics.height)
+    end
+    parentMetrics.height = math_max(parentMetrics.height,
+        quietHeight + PRIMARY_CARD_HEIGHT_LEAD)
     -- The starter is one full-width offer, so it never shares a row.
     local starterMetrics = MeasurePickerTier(overview, block, starterFirst,
         starterEntries, SECONDARY_CARD_STYLE, cardBandWidth, 1)
 
-    y = y + PlacePickerTier(overview, block, primaryFirst, primaryEntries,
-        primaryMetrics, PRIMARY_CARD_STYLE, containerId, CREATE_ACCENT, y)
+    y = y + PlaceFamilyBand(overview, block, parentFirst, subtypeFirst,
+        families, parentMetrics, subtypeMetrics, containerId, CREATE_ACCENT, y)
     y = y + CARD_TIER_GAP
     y = y + PlacePickerTier(overview, block, secondaryFirst, secondaryEntries,
         secondaryMetrics, SECONDARY_CARD_STYLE, containerId, CREATE_ACCENT, y)

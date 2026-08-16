@@ -1039,15 +1039,27 @@ local function AnchorButtonsContentFrame(col3, frame)
     end
 end
 
+-- Core owns every "can this panel take a manual add" rule, so the add box, the
+-- drop overlay, and the move menus cannot answer differently. Kept as a wrapper
+-- because callers pass a group table, not an id, and nil has to answer false.
 local function CanManuallyAddToPanel(group)
     if not group then return false end
-    if group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then return false end
-    if group.displayMode == "textures" and #(group.buttons or {}) >= 1 then return false end
-    return true
+    return CooldownCompanion:CanPanelAcceptManualEntry(group)
 end
 
-local function IsCursorDropPayload(cursorType)
-    return cursorType == "spell" or cursorType == "item" or cursorType == "petaction"
+-- CanManuallyAddToPanel is entry-blind (it answers before there is an entry to
+-- judge), so the payload question is asked here. An Aura Panel holds aura
+-- entries only: a spell cursor is aura intent by destination and TryAddSpell
+-- routes it, but an item or pet action has no aura to route to and the add door
+-- refuses it -- so the overlay must not offer a drop the panel will reject.
+local function IsCursorDropPayload(cursorType, group)
+    if cursorType ~= "spell" and cursorType ~= "item" and cursorType ~= "petaction" then
+        return false
+    end
+    if group and CooldownCompanion:IsAuraPanel(group) then
+        return cursorType == "spell"
+    end
+    return true
 end
 
 -- Drop-to-add overlay over the preview: shown while a spell/item is on the
@@ -1094,8 +1106,10 @@ local function UpdatePreviewDropOverlay()
     local host = col3 and col3.buttonsPreviewHost
     if not host then return end
     local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    -- Parenthesized: GetCursorInfo returns several values and only the type is
+    -- this call's first argument.
     local show = host:IsShown()
-        and IsCursorDropPayload(GetCursorInfo())
+        and IsCursorDropPayload((GetCursorInfo()), group)
         and CanManuallyAddToPanel(group)
         and ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()
     if show then

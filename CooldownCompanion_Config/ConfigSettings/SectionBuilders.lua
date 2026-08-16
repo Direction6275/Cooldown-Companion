@@ -500,6 +500,9 @@ end
 --                    The aura tint applies to the slot-kit aura layer (consumed
 --                    at bind time by AuraDisplay.StyleSlotKit), so it is only
 --                    offered where an aura display exists.
+-- opts.hasCooldownState  false on an Aura Panel, whose entries have no spell
+--                    cooldown to tint. Anything but an explicit false keeps the
+--                    cooldown tint pair, so existing callers are unchanged.
 -- opts.refresh       the tab's style-only refresh, run on every value change.
 local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
     opts = opts or {}
@@ -527,27 +530,31 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
         })
     end
 
-    AddCheckboxRow(leftColumn, {
-        label = "Use Separate Cooldown Tint",
-        value = sec.read.iconCooldownTintEnabled or false,
-        disabled = sec.disabled,
-        onChange = function(val)
-            if not sec.write then return end
-            sec.write.iconCooldownTintEnabled = val
-            refresh()
-            CooldownCompanion:RefreshConfigPanel()
-        end,
-    })
-
-    if sec.read.iconCooldownTintEnabled then
-        AddColorRow(leftColumn, {
-            label = "Cooldown Icon Color",
-            indent = true,
-            tbl = tintTbl, key = "iconCooldownTintColor",
-            default = {1, 0, 0.102, 1}, hasAlpha = true,
+    -- opts.hasCooldownState is false on an Aura Panel, where nothing has a spell
+    -- cooldown to tint and AuraDisplay never reads either key.
+    if opts.hasCooldownState ~= false then
+        AddCheckboxRow(leftColumn, {
+            label = "Use Separate Cooldown Tint",
+            value = sec.read.iconCooldownTintEnabled or false,
             disabled = sec.disabled,
-            onConfirm = refresh, onChange = refresh,
+            onChange = function(val)
+                if not sec.write then return end
+                sec.write.iconCooldownTintEnabled = val
+                refresh()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
         })
+
+        if sec.read.iconCooldownTintEnabled then
+            AddColorRow(leftColumn, {
+                label = "Cooldown Icon Color",
+                indent = true,
+                tbl = tintTbl, key = "iconCooldownTintColor",
+                default = {1, 0, 0.102, 1}, hasAlpha = true,
+                disabled = sec.disabled,
+                onConfirm = refresh, onChange = refresh,
+            })
+        end
     end
 
     if opts.hasAuraEntry then

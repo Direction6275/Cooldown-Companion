@@ -1922,7 +1922,16 @@ local function BeginPanelResizeGesture(grip)
     if group.parentContainerId and not group.compactLayout and frame.layoutButtonCount then
         numButtons = math_max(numButtons, frame.layoutButtonCount)
     end
-    if orientation == "horizontal" then
+    if ST.IsAuraPanelGroup(group) then
+        -- The drag scales per cell, so it has to read the same expanded grid
+        -- ResizeGroupFrame lays out -- notably the single bar column, which the
+        -- buttonsPerRow math below would wrap.
+        grip._resizeCols, grip._resizeRows = CooldownCompanion:GetAuraPanelGridMetrics(
+            groupId,
+            group,
+            GetGroupButtonSizingOptions(CooldownCompanion, groupId, group, nil)
+        )
+    elseif orientation == "horizontal" then
         grip._resizeCols = math_max(1, math_min(numButtons, buttonsPerRow))
         grip._resizeRows = math_max(1, math_ceil(numButtons / buttonsPerRow))
     else
@@ -2205,6 +2214,20 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
         frame.resizeGrip:SetShown(resizeShown)
     end
     CooldownCompanion:ApplyMoverChromeFadeToFrames(frame.dragHandle, frame.coordLabel, frame.nudger, frame.resizeGrip)
+
+    -- An Aura Panel hides its aura display while the drag chrome shows: the
+    -- placeholder tiles mark every cell, including the ones whose auras are
+    -- down, and a live container underneath would double-draw the active ones.
+    -- Presentation only — the container stays BOUND, because the bind pass is
+    -- out-of-combat and the chrome is not.
+    --
+    -- Read back from the handle rather than trusting `shown`: a frame with no
+    -- drag handle has no placeholders either, so it must not be suppressed. The
+    -- call is change-gated on its own side, and most writers of this chrome end
+    -- in RefreshGroupFrame anyway, but the container-preview selection pass
+    -- (RefreshContainerWrapper) does not, which is why the write lives here.
+    CooldownCompanion:SetAuraPanelChromeSuppressed(
+        frame, (frame.dragHandle and frame.dragHandle:IsShown()) == true)
 end
 
 local function GetCursorPositionInUIParentSpace(self)
@@ -3054,7 +3077,12 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     UpdateCoordLabel(frame)
 
     local isCursorAnchored = IsCursorAnchor(group.anchor)
-    local hasDragEntry = self:IsRotationAssistantGroup(group) or #group.buttons > 0
+    -- An Aura Panel is exempt alongside the Rotation Assistant: it holds a
+    -- reserved one-cell footprint while empty precisely so it can be placed
+    -- before its first aura is added.
+    local hasDragEntry = self:IsRotationAssistantGroup(group)
+        or ST.IsAuraPanelGroup(group)
+        or #group.buttons > 0
     self:SetGroupDragControlsShown(frame, (not isLocked) and hasDragEntry and not isTextureMode and not isCursorAnchored)
 
     -- Drag scripts (check lock state at drag time)
@@ -3197,7 +3225,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     self.groupFrames[groupId] = frame
 
     -- Create Masque group if enabled
-    if group.masqueEnabled and self.Masque then
+    if group.masqueEnabled and self.Masque and not ST.IsAuraPanelGroup(group) then
         self:CreateMasqueGroup(groupId)
     end
 
@@ -3547,6 +3575,142 @@ local function GetButtonDimensions(group, buttonUsabilityOptions, groupId)
     return w, h, isBarMode
 end
 
+-- Zero-based row, col of a 1-based Aura Panel cell.
+-- Bars stack in a single column: their entries render through the aura
+-- container as a flowed bar list, so buttonsPerRow has no meaning there.
+function CooldownCompanion:GetAuraPanelCellSlot(group, slotIndex)
+    local style = group.style or {}
+    if group.displayMode == "bars" then
+        return slotIndex - 1, 0
+    end
+    local buttonsPerRow = math_max(1, style.buttonsPerRow or 12)
+    if ST.GetPanelLayoutOrientation(group.displayMode, style) == "horizontal" then
+        return math_floor((slotIndex - 1) / buttonsPerRow), (slotIndex - 1) % buttonsPerRow
+    end
+    return (slotIndex - 1) % buttonsPerRow, math_floor((slotIndex - 1) / buttonsPerRow)
+end
+
+-- The grid an Aura Panel's footprint and its unlock placeholders share.
+-- The panel sizes to the FULL expanded grid -- one cell per entry whether that
+-- entry's aura is up or not -- because Blizzard's container packs only ACTIVE
+-- auras, and a footprint that followed activity would move under the player
+-- every time an aura came or went. The extent is walked off GetAuraPanelCellSlot
+-- instead of recomputed, so cell placement and cell count can never disagree.
+-- An empty panel still owns one cell, which keeps it grabbable while unlocked.
+-- Returns cols, rows, cellCount, cellWidth, cellHeight, spacing.
+function CooldownCompanion:GetAuraPanelGridMetrics(groupId, group, buttonSizingOptions)
+    local cellWidth, cellHeight = GetButtonDimensions(group, buttonSizingOptions, groupId)
+    local style = group.style or {}
+    local cellCount = self.GetGroupLayoutButtonCount
+        and self:GetGroupLayoutButtonCount(groupId, group, {
+            buttonUsabilityOptions = buttonSizingOptions,
+        })
+        or 0
+    local cols, rows = 1, 1
+    for slotIndex = 1, cellCount do
+        local row, col = self:GetAuraPanelCellSlot(group, slotIndex)
+        if row + 1 > rows then rows = row + 1 end
+        if col + 1 > cols then cols = col + 1 end
+    end
+    return cols, rows, cellCount, cellWidth, cellHeight, style.buttonSpacing or ST.BUTTON_SPACING
+end
+
+-- Unlock affordance only. An Aura Panel materializes no CC buttons, so while it
+-- is unlocked it would otherwise be an empty box with nothing to aim at. One dim
+-- tile per entry marks the cells the aura container fills once those auras go
+-- up. The tiles hang off the drag handle -- the same trick the coordinate label
+-- and the container panel labels use -- so they inherit every show and hide the
+-- drag chrome already gets, the combat forced lock included, and can never
+-- appear during normal play.
+function CooldownCompanion:UpdateAuraPanelPlaceholders(groupId)
+    local frame = self.groupFrames[groupId]
+    local group = self.db.profile.groups[groupId]
+    if not (frame and frame.dragHandle) then return end
+
+    local tiles = frame._auraPanelPlaceholders
+    if not ST.IsAuraPanelGroup(group) then
+        for _, tile in ipairs(tiles or {}) do
+            tile:Hide()
+        end
+        return
+    end
+
+    if not tiles then
+        tiles = {}
+        frame._auraPanelPlaceholders = tiles
+    end
+
+    local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
+        and self:GetGroupButtonUsabilityOptions(groupId, group)
+        or nil
+    local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
+    local cellWidth, cellHeight, spacing = select(4, self:GetAuraPanelGridMetrics(groupId, group, buttonSizingOptions))
+    local style = group.style or {}
+    local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
+    local isBarMode = group.displayMode == "bars"
+    local iconSide = math_max(1, math_min(cellWidth, cellHeight) - 2)
+
+    local slotIndex = 0
+    for _, buttonData in ipairs(group.buttons or {}) do
+        if IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
+            slotIndex = slotIndex + 1
+            local tile = tiles[slotIndex]
+            if not tile then
+                tile = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
+                tile:EnableMouse(false)
+                tile:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+                tile:SetBackdropColor(0.08, 0.08, 0.08, 1)
+                tile:SetAlpha(0.6)
+                CreatePixelBorders(tile, 0.5, 0.5, 0.5, 1)
+                tile.icon = tile:CreateTexture(nil, "ARTWORK")
+                tile.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                tiles[slotIndex] = tile
+            end
+
+            local row, col = self:GetAuraPanelCellSlot(group, slotIndex)
+            tile:SetSize(cellWidth, cellHeight)
+            tile:ClearAllPoints()
+            tile:SetPoint(
+                growthAnchor,
+                frame,
+                growthAnchor,
+                xMul * col * (cellWidth + spacing),
+                yMul * row * (cellHeight + spacing)
+            )
+
+            -- A bar cell is far longer than it is thick, so the entry icon sits
+            -- at the bar's leading edge the way a real bar icon does. An icon
+            -- cell takes the whole tile.
+            tile.icon:ClearAllPoints()
+            if isBarMode then
+                tile.icon:SetSize(iconSide, iconSide)
+                if cellHeight > cellWidth then
+                    tile.icon:SetPoint("TOP", tile, "TOP", 0, -1)
+                else
+                    tile.icon:SetPoint("LEFT", tile, "LEFT", 1, 0)
+                end
+            else
+                tile.icon:SetPoint("TOPLEFT", tile, "TOPLEFT", 1, -1)
+                tile.icon:SetPoint("BOTTOMRIGHT", tile, "BOTTOMRIGHT", -1, 1)
+            end
+
+            local icon = buttonData.type == "spell" and C_Spell.GetSpellTexture(buttonData.id) or nil
+            if icon and not issecretvalue(icon) then
+                tile.icon:SetTexture(icon)
+                tile.icon:Show()
+            else
+                tile.icon:Hide()
+            end
+
+            tile:Show()
+        end
+    end
+
+    for extraIndex = slotIndex + 1, #tiles do
+        tiles[extraIndex]:Hide()
+    end
+end
+
 local function ApplyTextGroupHeader(self, frame, group, style, isTextMode)
     local showHeader = isTextMode and style.showTextGroupHeader == true
     local headerHeight = 0
@@ -3761,45 +3925,72 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     local isTextMode = group.displayMode == "text"
     local headerHeight = ApplyTextGroupHeader(self, frame, group, style, isTextMode)
 
-    -- Create new buttons (skip untalented spells)
-    for i, buttonData in ipairs(sourceButtons) do
-        if IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
-            local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
-            local poolKey = GetButtonPoolKey(group, buttonData, effectiveStyle)
-            local button = AcquireButtonFromPool(frame, poolKey, buttonData)
-            local reusedButton = button ~= nil
-            if not button then
-                if group.displayMode == "text" then
-                    button = self:CreateTextFrame(frame, i, buttonData, effectiveStyle)
-                elseif isBarMode then
-                    button = self:CreateBarFrame(frame, i, buttonData, effectiveStyle)
-                else
-                    button = self:CreateButtonFrame(frame, i, buttonData, effectiveStyle)
-                    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
-                        button:SetAlpha(0)
-                        button._lastVisAlpha = 0
+    if ST.IsAuraPanelGroup(group) then
+        -- An Aura Panel renders every entry through ONE Blizzard aura container
+        -- mounted on this frame, so CC creates no buttons for it at all. Drain
+        -- the pools instead of leaving the released buttons parked in them:
+        -- nothing on this frame will ever acquire from a pool again, so pooled
+        -- frames would sit there for the session. Normally there are none --
+        -- the subtype is fixed at creation -- so this is defensive.
+        self:ReleaseGroupButtonPools(frame)
+        -- The counts carry the FULL expanded grid rather than aura activity, so
+        -- the footprint holds still while auras come and go.
+        local cellCount = select(3, self:GetAuraPanelGridMetrics(groupId, group, buttonSizingOptions))
+        frame.visibleButtonCount = cellCount
+        -- There is no frame.buttons list here for the availability sweep's
+        -- identity comparison to read, so stamp the equivalent: the ordered
+        -- identity of the very entries those cells were just counted from,
+        -- under the same usability options the count used.
+        -- GroupButtonSetNeedsRebuild diffs against this to decide whether the
+        -- panel needs repopulating -- it is the panel's only refresh trigger.
+        frame._auraPanelEntrySig = self:GetAuraPanelEntrySignature(group, buttonSizingOptions)
+        -- layoutButtonCount reserves container space for entries that did not
+        -- materialize; the grid already counts every entry, so it has no work.
+        frame.layoutButtonCount = nil
+        frame._layoutDirty = false
+        frame._lastVisibleCount = cellCount
+    else
+        -- Create new buttons (skip untalented spells)
+        for i, buttonData in ipairs(sourceButtons) do
+            if IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
+                local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
+                local poolKey = GetButtonPoolKey(group, buttonData, effectiveStyle)
+                local button = AcquireButtonFromPool(frame, poolKey, buttonData)
+                local reusedButton = button ~= nil
+                if not button then
+                    if group.displayMode == "text" then
+                        button = self:CreateTextFrame(frame, i, buttonData, effectiveStyle)
+                    elseif isBarMode then
+                        button = self:CreateBarFrame(frame, i, buttonData, effectiveStyle)
+                    else
+                        button = self:CreateButtonFrame(frame, i, buttonData, effectiveStyle)
+                        if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
+                            button:SetAlpha(0)
+                            button._lastVisAlpha = 0
+                        end
                     end
                 end
-            end
 
-            button._buttonPoolKey = poolKey
-            table_insert(frame.buttons, button)
-            if reusedButton then
-                PreparePooledButtonForUse(self, frame, group, button, i, buttonData, effectiveStyle)
-            elseif buttonData._rotationAssistantVirtual == true and self.RefreshRotationAssistantButton then
-                self:RefreshRotationAssistantButton(button)
-            end
+                button._buttonPoolKey = poolKey
+                table_insert(frame.buttons, button)
+                if reusedButton then
+                    PreparePooledButtonForUse(self, frame, group, button, i, buttonData, effectiveStyle)
+                elseif buttonData._rotationAssistantVirtual == true and self.RefreshRotationAssistantButton then
+                    self:RefreshRotationAssistantButton(button)
+                end
 
-            button:Show()
+                button:Show()
 
-            -- Add to Masque if enabled (after button is shown and in the list, icons only)
-            if group.displayMode == "icons" and group.masqueEnabled then
-                self:AddButtonToMasque(groupId, button)
+                -- Add to Masque if enabled (after button is shown and in the list, icons only)
+                if group.displayMode == "icons" and group.masqueEnabled then
+                    self:AddButtonToMasque(groupId, button)
+                end
             end
         end
+
+        ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
     end
 
-    ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
     FinishGroupButtonRefresh(self, groupId, frame, group)
     -- D3: button population changed — refresh the identity index (coalesced).
     self:RequestSpellButtonIndexRebuild("populate")
@@ -3845,7 +4036,11 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
         targetWidth, targetHeight = buttonWidth, buttonHeight
     else
         local rows, cols
-        if orientation == "horizontal" then
+        if ST.IsAuraPanelGroup(group) then
+            -- Aura Panels claim the full expanded grid regardless of which of
+            -- their auras happen to be up right now.
+            cols, rows = self:GetAuraPanelGridMetrics(groupId, group, buttonSizingOptions)
+        elseif orientation == "horizontal" then
             cols = math_min(numButtons, buttonsPerRow)
             rows = math_ceil(numButtons / buttonsPerRow)
         else
@@ -3901,6 +4096,12 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
 
     frame._hasBeenSized = true
     frame._sizeDirty = nil
+    -- Sizing is the one choke point every Aura Panel geometry change passes
+    -- through (population, restyle, resize grip, deferred ticker resize), so the
+    -- unlock placeholders re-fit here and nowhere else.
+    if ST.IsAuraPanelGroup(group) then
+        self:UpdateAuraPanelPlaceholders(groupId)
+    end
     return true
 end
 
@@ -4041,7 +4242,11 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         -- Keep runtime Masque state aligned with saved group settings. This
         -- also resolves style-copy changes that were deferred during combat.
         if self.Masque then
-            if (group.displayMode == nil or group.displayMode == "icons") and group.masqueEnabled then
+            -- Aura Panels never reach the skinning call: they materialize no
+            -- buttons, so a Masque group for one could only ever sit empty.
+            if (group.displayMode == nil or group.displayMode == "icons")
+                and group.masqueEnabled
+                and not ST.IsAuraPanelGroup(group) then
                 if not self.MasqueGroups[groupId] then
                     self:CreateMasqueGroup(groupId)
                 end
@@ -4063,8 +4268,12 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     -- Resolve locked/alpha from container
     local isLocked, baseAlpha = GetContainerState(groupId)
 
-    -- Update drag handle text and lock state
-    local hasButtons = self:IsRotationAssistantGroup(group) or #group.buttons > 0
+    -- Update drag handle text and lock state. An empty Aura Panel is exempt for
+    -- the same reason the Rotation Assistant is: its one reserved cell is what
+    -- the owner arranges before adding auras.
+    local hasButtons = self:IsRotationAssistantGroup(group)
+        or ST.IsAuraPanelGroup(group)
+        or #group.buttons > 0
     local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
     local isCursorAnchored = IsCursorAnchor(group.anchor)
     local isCursorLayoutPreviewSelected = isCursorAnchored
@@ -4131,6 +4340,15 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         and frame.buttons
         and frame.buttons[1] then
         self:UpdateAuraTextureVisual(frame.buttons[1])
+    end
+
+    -- An Aura Panel's entries live in the panel's own aura container, which the
+    -- aura pass owns end to end. The frame's size, anchor and visibility have
+    -- all settled by here, so ask for the (coalesced, OOC-deferred) rebind last.
+    -- It runs on the deactivating path too, so the container can let go of a
+    -- panel that just unloaded.
+    if ST.IsAuraPanelGroup(group) then
+        self:RequestAuraRebind("aura-panel", groupId)
     end
 
     if group.parentContainerId and self.RefreshContainerWrapper then
@@ -4457,7 +4675,11 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
         or false
     local containerPreviewActive = group.parentContainerId and self:IsContainerUnlockPreviewActive(group.parentContainerId)
     local isSelectedInContainer = containerPreviewActive and self:IsContainerPanelSelected(group.parentContainerId, groupId)
-    local hasResizeEntry = self:IsRotationAssistantGroup(group) or #group.buttons > 0
+    -- Exempt with the Rotation Assistant: an empty Aura Panel still lays out one
+    -- reserved cell, so the wheel has a real cell to scale.
+    local hasResizeEntry = self:IsRotationAssistantGroup(group)
+        or ST.IsAuraPanelGroup(group)
+        or #group.buttons > 0
     local resizeWheelEnabled = hasResizeEntry
         and (not containerPreviewActive or isSelectedInContainer)
         and CanUsePanelResizeInteractions(groupId, group)
