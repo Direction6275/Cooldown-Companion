@@ -2915,7 +2915,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
                 local tt = EnsureBarSlotTimeText(slot)
                 CooldownCompanion.ApplyFontStyle(tt, style, "cooldown")
                 AnchorBarSlotTimeText(slot, style)
-                tt:SetText(CooldownCompanion.FormatTime(remaining, style))
+                tt:SetText(CooldownCompanion.FormatCooldownTime(remaining, style))
                 tt:Show()
             end
         end
@@ -2928,7 +2928,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
             local tt = EnsureBarSlotTimeText(slot)
             CooldownCompanion.ApplyFontStyle(tt, style, "cooldown")
             AnchorBarSlotTimeText(slot, style)
-            tt:SetText(CooldownCompanion.FormatTime(remaining, style))
+            tt:SetText(CooldownCompanion.FormatCooldownTime(remaining, style))
             tt:Show()
             slot._cdcCondAnim = state
         end
@@ -2998,7 +2998,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
                     local tt = EnsureBarSlotTimeText(slot)
                     CooldownCompanion.ApplyFontStyle(tt, style, "cooldown")
                     AnchorBarSlotTimeText(slot, style)
-                    tt:SetText(CooldownCompanion.FormatTime(rechargeRemaining, style))
+                    tt:SetText(CooldownCompanion.FormatCooldownTime(rechargeRemaining, style))
                     tt:Show()
                 end
             end
@@ -3270,8 +3270,13 @@ local function EnsureConditionalTicker(preview)
                             or ((state.kind == "cooldown" or state.kind == "cooldown_text")
                                 and style.showCooldownText)
                         if showText and CooldownCompanion.FormatTime then
+                            -- Cooldown kinds preview the low-time look; aura
+                            -- kinds never do (cooldown-only feature).
+                            local formatFn = (state.kind == "cooldown" or state.kind == "cooldown_text")
+                                and CooldownCompanion.FormatCooldownTime
+                                or CooldownCompanion.FormatTime
                             slot.timeText:SetText(DecorateAuraDurationPreviewText(
-                                CooldownCompanion.FormatTime(remaining, style),
+                                formatFn(remaining, style),
                                 state.kind, style, slot.buttonData))
                         end
                     end

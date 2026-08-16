@@ -397,6 +397,172 @@ local function AddDurationFormatDropdown(container, settings, refreshCallback, o
     })
 end
 
+-- Low Time Threshold rows (2026-08-15 program): cooldown-side companions of
+-- the Duration Format dropdown, panel-owned like it. COOLDOWN text call
+-- sites only — icon-mode Cooldown Text, bar-mode Cooldown Text, custom
+-- bars. Never attach these to an aura duration format row: aura urgency is
+-- the Pandemic Marker, by owner ruling.
+-- Decimals/color keys survive a disable so re-enabling restores the old
+-- look; only the threshold key is the on/off switch (nil = off, the shape
+-- GetDurationLowTime reads). Dependent rows exist ONLY while the toggle is
+-- on (owner ruling: hide, don't disable), so structural toggles go through
+-- opts.rebuild. Returns the rows it added so panel-owned call sites can
+-- chrome each one.
+-- opts:
+--   indent       master-row indent
+--   infoButtons  "?" badge registry (falls back to the row itself)
+--   rebuild      structural re-render for toggles that add/remove rows;
+--                falls back to refreshCallback
+local LOW_TIME_DEFAULT_COLOR = { 1, 0.2, 0.2, 1 }
+local LOW_TIME_DEFAULT_COLOR2 = { 1, 0.55, 0.1, 1 }
+local LOW_TIME_TOOLTIP = {
+    "Low Time Threshold",
+    {"Changes cooldown text below the chosen seconds.", 1, 1, 1, true},
+}
+local LOW_TIME_SECOND_TOOLTIP = {
+    "Second Threshold",
+    {"An even more urgent window with its own color.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"0 turns it off.", 1, 1, 1, true},
+}
+
+local function AddDurationLowTimeRows(container, settings, refreshCallback, opts)
+    if not (container and settings) then return nil end
+    opts = opts or {}
+
+    local function refresh()
+        if refreshCallback then refreshCallback() end
+    end
+    local rebuild = opts.rebuild or refresh
+
+    local threshold = tonumber(settings.durationLowTimeThreshold)
+    local active = threshold ~= nil and threshold > 0
+
+    local rows = {}
+    local toggleRow = AddCheckboxRow(container, {
+        label = "Low Time Threshold",
+        indent = opts.indent,
+        value = active,
+        onChange = function(value)
+            if value then
+                settings.durationLowTimeThreshold = 5
+                -- The color is the point of enabling (owner ruling: no color
+                -- toggle, the picker is always live), so seed it on enable.
+                if settings.durationLowTimeColor == nil then
+                    local c = LOW_TIME_DEFAULT_COLOR
+                    settings.durationLowTimeColor = { c[1], c[2], c[3], c[4] }
+                end
+                -- A remembered second threshold must stay strictly inside
+                -- the fresh first one, same rule as the sliders (review
+                -- 2026-08-16: re-enable could show a second window the
+                -- runtime rejects).
+                local second = tonumber(settings.durationLowTimeThreshold2)
+                if second and second >= 5 then
+                    settings.durationLowTimeThreshold2 = 4
+                end
+            else
+                settings.durationLowTimeThreshold = nil
+            end
+            rebuild()
+        end,
+    })
+    -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+    -- onto the end of the row's label.
+    AnchorRowBadge(toggleRow, CreateInfoButton(toggleRow.frame, toggleRow.frame, "LEFT", "LEFT", 0, 0,
+        LOW_TIME_TOOLTIP, opts.infoButtons or toggleRow))
+    rows[#rows + 1] = toggleRow
+
+    if not active then
+        return rows
+    end
+
+    rows[#rows + 1] = AddSliderRow(container, {
+        label = "Low Time Seconds",
+        indent = true,
+        min = 1, max = 30, step = 1,
+        value = threshold,
+        onRelease = function(value)
+            settings.durationLowTimeThreshold = value
+            -- The second window must stay strictly inside the first; a
+            -- shrink drags it along (0 = off). Rebuild keeps the second
+            -- slider's shown value honest.
+            local second = tonumber(settings.durationLowTimeThreshold2)
+            if second and second >= value then
+                settings.durationLowTimeThreshold2 = (value > 1) and (value - 1) or nil
+            end
+            rebuild()
+        end,
+    })
+
+    -- No enable toggle on the colors (owner ruling): the pickers are the
+    -- setting. Stock checkbox rows stay the only toggles here.
+    rows[#rows + 1] = AddColorRow(container, {
+        label = "Low Time Color",
+        indent = true,
+        tbl = settings,
+        key = "durationLowTimeColor",
+        default = LOW_TIME_DEFAULT_COLOR,
+        onConfirm = refresh,
+    })
+
+    -- Second, more urgent window: the slider IS its switch (0 = off), so no
+    -- extra checkbox. Its color row rides only while it is on.
+    local threshold2 = tonumber(settings.durationLowTimeThreshold2) or 0
+    local secondRow = AddSliderRow(container, {
+        label = "Second Threshold",
+        indent = true,
+        min = 0, max = 29, step = 1,
+        value = threshold2,
+        onRelease = function(value)
+            local first = tonumber(settings.durationLowTimeThreshold) or 5
+            if value >= first then
+                value = first - 1
+            end
+            if value <= 0 then
+                settings.durationLowTimeThreshold2 = nil
+            else
+                settings.durationLowTimeThreshold2 = value
+                if settings.durationLowTimeColor2 == nil then
+                    local c = LOW_TIME_DEFAULT_COLOR2
+                    settings.durationLowTimeColor2 = { c[1], c[2], c[3], c[4] }
+                end
+            end
+            rebuild()
+        end,
+    })
+    AnchorRowBadge(secondRow, CreateInfoButton(secondRow.frame, secondRow.frame, "LEFT", "LEFT", 0, 0,
+        LOW_TIME_SECOND_TOOLTIP, opts.infoButtons or secondRow))
+    rows[#rows + 1] = secondRow
+
+    -- Visibility follows the runtime validity rule (strictly inside the
+    -- first window), so the UI can never show a second color the engine is
+    -- ignoring — even on hand-edited or imported data.
+    if threshold2 > 0 and threshold2 < (tonumber(settings.durationLowTimeThreshold) or 0) then
+        rows[#rows + 1] = AddColorRow(container, {
+            label = "Second Color",
+            indent = true,
+            tbl = settings,
+            key = "durationLowTimeColor2",
+            default = LOW_TIME_DEFAULT_COLOR2,
+            onConfirm = refresh,
+        })
+    end
+
+    -- Last row (owner ruling): it modifies both windows above, so it reads
+    -- as a footnote to them rather than splitting the threshold/color pairs.
+    rows[#rows + 1] = AddCheckboxRow(container, {
+        label = "Force Decimals",
+        indent = true,
+        value = settings.durationLowTimeDecimals == true,
+        onChange = function(value)
+            settings.durationLowTimeDecimals = (value == true) or nil
+            refresh()
+        end,
+    })
+
+    return rows
+end
+
 -- Pandemic marker controls (tracker C9), shared between the group-tab
 -- advanced panel and the per-button override builder. The marker rides the
 -- aura duration text, so it lives with these options. rebuildCallback
@@ -2129,6 +2295,7 @@ end
 -- EXPORTS
 ------------------------------------------------------------------------
 ST._AddDurationFormatDropdown = AddDurationFormatDropdown
+ST._AddDurationLowTimeRows = AddDurationLowTimeRows
 ST._AddPandemicMarkerControls = AddPandemicMarkerControls
 ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
 ST._BuildAuraDurationSwipeAdvancedControls = BuildAuraDurationSwipeAdvancedControls
