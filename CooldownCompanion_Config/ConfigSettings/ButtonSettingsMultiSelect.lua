@@ -166,6 +166,9 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
         local previousCount = #sourceGroup.buttons
         for _, idx in ipairs(sorted) do
             local copy = CopyTable(sourceGroup.buttons[idx])
+            -- Each copy inherits its original's aura key, which would put two
+            -- entries in the same Aura Panel on one aura group.
+            CooldownCompanion:StampAuraPanelEntryKey(sourceGroup, copy)
             table.insert(sourceGroup.buttons, idx + 1, copy)
         end
         CooldownCompanion:KeepPanelSingleLineOnGrowth(sourceGroup, previousCount)
@@ -211,7 +214,11 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
                     end
                     local previousCount = #targetGroup.buttons
                     for _, idx in ipairs(indices) do
-                        table.insert(targetGroup.buttons, db.groups[sourceGroupId].buttons[idx])
+                        local moved = db.groups[sourceGroupId].buttons[idx]
+                        -- An entry arriving in an Aura Panel needs that panel's
+                        -- own key, not the one it wore where it came from.
+                        CooldownCompanion:StampAuraPanelEntryKey(targetGroup, moved)
+                        table.insert(targetGroup.buttons, moved)
                     end
                     table.sort(indices, function(a, b) return a > b end)
                     for _, idx in ipairs(indices) do

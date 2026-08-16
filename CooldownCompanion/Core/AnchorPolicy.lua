@@ -626,6 +626,18 @@ function CooldownCompanion:GetGroupAnchorValidationOptions(groupId)
     }
 end
 
+-- An Aura Panel is never an anchor target, manual or automatic (owner ruling
+-- 2026-08-15). Its height is whatever the active auras happen to need right
+-- now, so anything hung off its edge would chase the aura churn. Stated on the
+-- two shared predicates because every picker and every validation path already
+-- asks them: IsGroupAvailableForAnchoring and
+-- IsGroupAvailableForPanelAnchorTarget delegate here (GroupOperations.lua), the
+-- "Anchor to Panel" dropdown is populated from the latter, and every typed or
+-- picked frame name reaches ValidateAddonFrameAnchorTarget below.
+local function IsAuraPanelAnchorTarget(group)
+    return ST.IsAuraPanelGroup and ST.IsAuraPanelGroup(group) or false
+end
+
 function CooldownCompanion:CanGroupBePanelAnchorTarget(targetGroupId, sourceGroupId)
     local profile = GetProfile(self)
     local group = GetGroup(self, targetGroupId)
@@ -636,6 +648,9 @@ function CooldownCompanion:CanGroupBePanelAnchorTarget(targetGroupId, sourceGrou
     end
     if group.displayMode == "textures" or group.displayMode == "trigger" then
         return false, "unsupported-display-mode"
+    end
+    if IsAuraPanelAnchorTarget(group) then
+        return false, "aura-panel-target"
     end
     if sourceGroupId and self.WouldCreateCircularAnchor and self:WouldCreateCircularAnchor(sourceGroupId, targetGroupId) then
         return false, "circular"
@@ -649,6 +664,9 @@ function CooldownCompanion:CanGroupBeExternalAnchorTarget(targetGroupId)
     if not group then return false, "missing" end
     if AnchorTargetsCursorRoot(profile, "CooldownCompanionGroup" .. tostring(targetGroupId)) then
         return false, "cursor-root-target"
+    end
+    if IsAuraPanelAnchorTarget(group) then
+        return false, "aura-panel-target"
     end
     return true
 end
@@ -753,6 +771,9 @@ function CooldownCompanion:GetInvalidAnchorTargetReason(relativeTo, options)
     end
     if reason == "unsupported-display-mode" then
         return "That panel type cannot be used as this anchor target."
+    end
+    if reason == "aura-panel-target" then
+        return "An Aura Panel cannot be an anchor target. Its size follows the auras that are active."
     end
     return "That frame cannot be used as this anchor target."
 end

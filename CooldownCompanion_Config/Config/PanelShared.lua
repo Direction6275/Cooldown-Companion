@@ -50,11 +50,13 @@ local CREATE_ACCENT = {
 -- Single source of truth for the creatable panel types: menu order, menu
 -- label, tooltip copy, and the per-type defaults a create menu applies.
 -- Every create surface reads this so the two menus cannot drift apart.
--- Descriptor order is the menu split: the two everyday types lead, and the
--- create menus draw their separator before the third.
--- `primary` marks those same two everyday types. The empty-Group picker sizes
--- its tiers by this flag alone, and the menus' separator split matches it, so
--- one edit here moves a type on every create surface at once.
+-- Descriptor order is the menu order, and a `parentMode` type is a SUBTYPE of
+-- the type it names: it sits directly under its parent and the menus indent it.
+-- Its `mode` is a pseudo-mode CreatePanel resolves into a real displayMode plus
+-- the subtype flag, so it never reaches group.displayMode.
+-- `primary` marks the everyday types. The empty-Group picker sizes its tiers by
+-- this flag alone, and the menus' separator split covers the primaries plus
+-- their subtypes, so one edit here moves a type on every create surface at once.
 local PANEL_TYPES = {
     {
         mode = "icons",
@@ -65,10 +67,22 @@ local PANEL_TYPES = {
         notifyTutorial = true,
     },
     {
+        mode = "auraIcons",
+        parentMode = "icons",
+        label = "Aura Icon Panel",
+        description = "Holds only aura entries, and shows each icon while its aura is up. Inactive auras take no space. The first entry you add sets whether the panel tracks your buffs or your target's debuffs.",
+    },
+    {
         mode = "bars",
         label = "Bar Panel",
         description = "Shows spells or items as timer bars with names and durations.",
         primary = true,
+    },
+    {
+        mode = "auraBars",
+        parentMode = "bars",
+        label = "Aura Bar Panel",
+        description = "Holds only aura entries, and shows each bar while its aura is up. Inactive auras take no space. The first entry you add sets whether the panel tracks your buffs or your target's debuffs.",
     },
     {
         mode = "text",
@@ -97,8 +111,30 @@ for _, panelType in ipairs(PANEL_TYPES) do
     PANEL_TYPE_BY_MODE[panelType.mode] = panelType
 end
 
+-- A subtype leads the menu with its parent, so the everyday block covers the
+-- primaries AND anything hanging off one. Derived from the descriptor rather
+-- than hand-counted, so inserting or promoting a type cannot leave a stale
+-- index behind on the create surfaces.
+local FIRST_SPECIALIST_PANEL_TYPE = #PANEL_TYPES + 1
+for index, panelType in ipairs(PANEL_TYPES) do
+    local parent = panelType.parentMode and PANEL_TYPE_BY_MODE[panelType.parentMode]
+    if not (panelType.primary or (parent and parent.primary)) then
+        FIRST_SPECIALIST_PANEL_TYPE = index
+        break
+    end
+end
+
 local function GetPanelTypeInfo(displayMode)
     return PANEL_TYPE_BY_MODE[displayMode] or PANEL_TYPE_BY_MODE.icons
+end
+
+-- Menu indent for a subtype row, in the same pixels the entry-move menu already
+-- indents its nested rows by, so the two menus read alike.
+local PANEL_TYPE_SUBTYPE_INDENT = 10
+
+local function ApplyPanelTypeMenuIndent(info, panelType)
+    info.leftPadding = panelType and panelType.parentMode
+        and PANEL_TYPE_SUBTYPE_INDENT or nil
 end
 local function AddPanelTypeMenuTooltip(info, displayMode)
     local panelType = GetPanelTypeInfo(displayMode)
@@ -453,6 +489,9 @@ local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGrou
         CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(targetGroup, entryData)
     end
     local previousCount = #targetGroup.buttons
+    -- An entry arriving in an Aura Panel needs that panel's own key, not the one
+    -- it wore where it came from (or none at all, which the engine skips).
+    CooldownCompanion:StampAuraPanelEntryKey(targetGroup, entryData)
     table.insert(targetGroup.buttons, entryData)
     table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
     CooldownCompanion:KeepPanelSingleLineOnGrowth(targetGroup, previousCount)
@@ -466,7 +505,21 @@ local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGrou
     return true
 end
 
-local function BuildEntryMoveDestinationSections(db, sourceGroupId)
+-- An Aura Panel judges the ENTRY, not just the panel: it takes aura entries
+-- only, and only for the one unit it derived from its first entry.
+-- CanPanelAcceptManualEntry is entry-blind, so without this every Aura Panel
+-- listed as a destination for every entry and only refused after the click.
+-- Scoped to Aura Panel destinations alone - the other panel types' menu
+-- membership is unchanged, refusals included.
+local function IsAuraPanelMoveDestination(group, entryData)
+    if not CooldownCompanion:IsAuraPanel(group) then
+        return true
+    end
+    return entryData ~= nil
+        and CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData) == nil
+end
+
+local function BuildEntryMoveDestinationSections(db, sourceGroupId, entryData)
     local containers = db and db.groupContainers or {}
     local groupedByContainer = {}
 
@@ -474,6 +527,7 @@ local function BuildEntryMoveDestinationSections(db, sourceGroupId)
         if groupId ~= sourceGroupId
             and CanMoveEntryToGroup(sourceGroupId, groupId)
             and CooldownCompanion:CanPanelAcceptManualEntry(group)
+            and IsAuraPanelMoveDestination(group, entryData)
         then
             local containerId = group.parentContainerId
             local container = containerId and containers[containerId]
@@ -551,7 +605,7 @@ end
 
 local function AddEntryMoveDestinationButtons(level, sourceGroupId, sourceIndex, entryData, menuList)
     local db = CooldownCompanion.db.profile
-    local sections = BuildEntryMoveDestinationSections(db, sourceGroupId)
+    local sections = BuildEntryMoveDestinationSections(db, sourceGroupId, entryData)
 
     local targetContainerId = ParseEntryMoveContainerId(menuList)
     if targetContainerId then
@@ -706,8 +760,12 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                 dupInfo.text = "Duplicate"
                 dupInfo.notCheckable = true
                 dupInfo.func = function()
+                    local liveGroup = CooldownCompanion.db.profile.groups[sourceGroupId]
                     local copy = CopyTable(entryData)
-                    table.insert(CooldownCompanion.db.profile.groups[sourceGroupId].buttons, sourceIndex + 1, copy)
+                    -- The copy inherits the original's aura key, which would
+                    -- put two entries in the same panel on one aura group.
+                    CooldownCompanion:StampAuraPanelEntryKey(liveGroup, copy)
+                    table.insert(liveGroup.buttons, sourceIndex + 1, copy)
                     -- Structural-mutation contract: entries after the insert
                     -- point shifted, so remap the single selection and clear
                     -- the index-keyed multi-selection and preview stores.
@@ -814,9 +872,13 @@ end
 ------------------------------------------------------------------------
 ST._ShowEntryContextMenu = ShowEntryContextMenu
 ST._AddPanelTypeMenuTooltip = AddPanelTypeMenuTooltip
+ST._ApplyPanelTypeMenuIndent = ApplyPanelTypeMenuIndent
 ST._AddCDMStarterMenuTooltip = AddCDMStarterMenuTooltip
 -- Ordered creatable panel types, shared by every panel-create surface.
 ST._PANEL_TYPES = PANEL_TYPES
+-- Where the specialist block starts, so every create menu draws its separator
+-- in the same place without re-deriving the split.
+ST._FIRST_SPECIALIST_PANEL_TYPE = FIRST_SPECIALIST_PANEL_TYPE
 -- Shared create accent, so no surface hand-writes its own cyan.
 ST._CREATE_ACCENT = CREATE_ACCENT
 ST._BuildPanelCreateOptions = BuildPanelCreateOptions

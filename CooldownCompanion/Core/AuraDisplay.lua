@@ -243,10 +243,14 @@ end
 -- Container-level refresh for records whose token may now resolve to a different
 -- person. Combat-safe (V13, re-validated V18). Shared by both watchers so a
 -- change to the refresh shape can never apply to only one token family.
--- Assigned in the AURA BLOCKS section, where blockRecords is in scope; the
--- watcher must cover BOTH container families or a target-scoped block keeps
--- the previous target's aura across a same-token swap.
+-- Assigned in the AURA BLOCKS and AURA PANELS sections, where each record list
+-- is in scope; the watcher must cover EVERY container family or a target-scoped
+-- block or panel keeps the previous target's aura across a same-token swap.
 local RefreshBlockRecordsForToken
+local RefreshPanelRecordsForToken
+-- The relationship-only half of the same coverage rule (see
+-- RefreshIdentityVisibilityForToken); assigned in the AURA PANELS section.
+local RefreshPanelIdentityVisibilityForToken
 
 local function RefreshRecordsForToken(isMatch)
     local identityChanged
@@ -260,6 +264,9 @@ local function RefreshRecordsForToken(isMatch)
     end
     if RefreshBlockRecordsForToken then
         RefreshBlockRecordsForToken(isMatch)
+    end
+    if RefreshPanelRecordsForToken then
+        RefreshPanelRecordsForToken(isMatch)
     end
     return identityChanged
 end
@@ -1325,10 +1332,20 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- overlay shape over the live resource bar — no icon, no text, no
     -- occlusion, no shell, no glow; the bar itself is the absent state.
     local isResourceHost = button._ccAuraHostKind == "resourceBar"
+    -- Aura Panel hosts (the panel's own aura container): a Blizzard-laid group
+    -- frame with NOTHING of CC's underneath it — the panel materializes no CC
+    -- buttons at all. Every other host composes the kit over a CC layer that
+    -- renders the aura-down state; here the kit IS the entire button, so it
+    -- always runs the full shell composition below regardless of what the
+    -- entry's own hide/dim keys say. This is the ONLY panel-specific branch in
+    -- the styler: the rest of the icon and bar vocabulary applies unchanged,
+    -- because an Aura Panel entry is an ordinary panel entry that happens to be
+    -- drawn by Blizzard.
+    local isAuraPanelHost = button._ccAuraHostKind == "auraPanel"
     local resShapes = isResourceHost and (style.resourceShapes or {}) or nil
     -- Hidden and dimmed shells alike: the kit composes the full active
     -- visual either way (the dim key stands alone on 12.1).
-    local shellEntry = CooldownCompanion:IsAuraShellEntry(buttonData)
+    local shellEntry = isAuraPanelHost or CooldownCompanion:IsAuraShellEntry(buttonData)
     local barIconShown = isBar and style.showBarIcon ~= false and button.icon ~= nil
     local showAuraIcon = ShouldShowAuraIcon(buttonData)
     -- Keep-swipe entries (icon hosts only) skip the icon takeover: the CC
@@ -1953,8 +1970,12 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- Keybind edits are config-time and every restyle re-requests a rebind,
     -- so bind-time reads stay current. Bars keep their CC-side conventions
     -- (bar hosts never showed keybind text).
+    -- An Aura Panel offers no Keybind Text (owner ruling 2026-08-15): the
+    -- toggle is gone from its Appearance tab, so a style value surviving a
+    -- conversion or a copied customization is the only way showKeybindText can
+    -- still read true here, and it must not put the replica back.
     local keybindText
-    if shellEntry and not isBar and style.showKeybindText then
+    if shellEntry and not isBar and not isAuraPanelHost and style.showKeybindText then
         keybindText = CooldownCompanion.GetDisplayedKeybindText
             and CooldownCompanion:GetDisplayedKeybindText(buttonData, button._resolvedItemId, button)
     end
@@ -2572,6 +2593,9 @@ function RefreshIdentityVisibilityForToken(isMatch)
             changed = RefreshBlockIdentityVisibility(record) or changed
         end
     end
+    if RefreshPanelIdentityVisibilityForToken then
+        changed = RefreshPanelIdentityVisibilityForToken(isMatch) or changed
+    end
     return changed
 end
 
@@ -2978,6 +3002,816 @@ local function RebindCustomBarAuraBlocks(self)
     end
 end
 
+------------------------------------------------------------------------
+-- AURA PANELS — whole panels (icon or bar) whose every entry is an aura.
+--
+-- The block section above hangs aura groups off ONE side of the resource
+-- stack. This one does the same thing to a PANEL: an Aura Panel materializes
+-- no CC buttons at all (GroupFrame's PopulateGroupButtons short-circuits),
+-- and instead mounts ONE AuraContainer under its group frame with ONE aura
+-- group per entry. Blizzard's flow layout packs only the ACTIVE ones, so an
+-- inactive entry takes no space and the survivors close up — which is the
+-- whole point of the panel subtype and the one thing CC's own layout can
+-- never do, because aura presence is secret.
+--
+-- Everything the blocks section establishes applies here unchanged:
+--   * Containers and groups are APPEND-ONLY. There is no removal API, so a
+--     retired entry's group is PARKED (maxFrameCount 0 + the polarity-crossed
+--     sentinel), never deleted, and a record whose panel frame was replaced is
+--     ABANDONED rather than reparented (see EnsurePanelContainer).
+--   * maxFrameCount 1 per group is structural: a group that could outgrow its
+--     pre-created frame batch would run initializeFrame from tainted code, in
+--     combat, on a forbidden subtree.
+--   * All of it runs OOC inside RunAuraRebind. The only combat-time calls are
+--     the container-level UpdateAllAuras the token watchers make, and Show/Hide
+--     on the panel's own plain visibilityRoot (see ApplyPanelRootVisibility) —
+--     no container or aura-group API is ever touched in combat.
+--   * Every container carries DisableUntrustedLayoutScriptsTemplate alongside
+--     CustomAuraContainerTemplate, matching the blocks — the panel never
+--     anchors one container to another today, but the aspect has to be stamped
+--     at creation (there is no way back to it later).
+--
+-- What is new here is the GRID. The panel frame is sized to the FULL expanded
+-- grid (GetAuraPanelGridMetrics) so its footprint holds still while auras come
+-- and go, and the container is mounted at the growth-origin corner of that
+-- frame with a flow layout configured to fill the same cells in the same order
+-- CC's own GetAuraPanelCellSlot walks. Get that mapping wrong and the unlock
+-- placeholders sit somewhere the real auras never appear.
+--
+-- One container per (PANEL, unit). The unit is derived from the panel's first
+-- resolvable aura entry (GetAuraPanelUnit) and the creation surfaces refuse
+-- entries of the other polarity, so in practice a panel has exactly one — but
+-- imported config can still carry a stray, and those entries are counted and
+-- skipped rather than bound onto the wrong unit's container.
+------------------------------------------------------------------------
+
+-- growthOrigin -> the flow layout's anchor corner and its two growth signs.
+-- The anchor decides the FILL ORDER inside the block (and which edge a partial
+-- line hugs) — the same convention GetGrowthMultipliers encodes for the
+-- CC-side grid (TOPLEFT = +x/-y, TOPRIGHT = -x/-y, and so on). Where the packed
+-- block SITS on the panel's fixed footprint is a separate, user-picked
+-- question: ApplyPanelMount folds the panel's growth direction into the one
+-- point the container hangs from, so the block can hug the growth corner
+-- ("start", which resolves to exactly this anchor), stay centered ("center",
+-- the ruled default) or hug the far end ("end"). growthOrigin is nil on older
+-- panels; GetGrowthMultipliers treats nil as TOPLEFT, so this table's fallback
+-- must agree.
+local PANEL_FLOW = {
+    TOPLEFT = { anchor = "TOPLEFT", h = "Right", v = "Down" },
+    TOPRIGHT = { anchor = "TOPRIGHT", h = "Left", v = "Down" },
+    BOTTOMLEFT = { anchor = "BOTTOMLEFT", h = "Right", v = "Up" },
+    BOTTOMRIGHT = { anchor = "BOTTOMRIGHT", h = "Left", v = "Up" },
+}
+
+local panelContainers = {} -- groupId .. "\031" .. unit -> panel record
+local panelRecords = {}    -- flat, append-only list of every panel record
+
+-- Per-pass skip tallies, rewritten by every bind pass and surfaced in
+-- GetAuraDisplayStatus. These are the only way to see an entry that silently
+-- did not render: a nonzero count is stored config the display cannot serve,
+-- not a runtime fault.
+local panelSkippedNoKey = 0
+local panelUnitMismatches = 0
+local panelNoCandidates = 0
+-- Two entries in ONE panel carrying the same _auraKey. The engine keys its aura
+-- groups by that string, so the second entry binds onto the FIRST one's group
+-- instead of getting its own: the later contract wins and the earlier entry
+-- stops rendering, with nothing else on screen to say so. Every creation path
+-- stamps a fresh key (and the config normalizer backfills missing ones), so
+-- only a hand-crafted payload can produce this -- which is exactly why it needs
+-- a number rather than staying invisible.
+local panelDuplicateKeys = 0
+
+-- TOPOLOGY vs PRESENTATION.
+--
+-- A panel's groups bind regardless of its lock state, and they have to: the
+-- bind pass is OOC-only (RunAuraRebind), while the drag chrome comes down at
+-- the combat pull. Keying the BIND on the chrome meant a panel unlocked at the
+-- pull stayed parked for the whole fight — nothing could re-bind it until
+-- combat ended and it re-locked.
+--
+-- What the chrome legitimately changes is PRESENTATION: while WP3's unlock
+-- placeholders are on screen they ARE the panel's visual, and a live container
+-- underneath would double-draw the entries whose auras are up.
+--
+-- Both suppression reasons land on the same frame — the visibilityRoot is the
+-- only handle CC owns over this subtree — so they are combined here instead of
+-- overwriting each other. Identity stays FAIL-CLOSED: an incompatible unit
+-- relationship hides the root in every chrome state. The root is a plain CC
+-- frame, so the chrome term is a legal combat-time write, which is exactly what
+-- lets the forced lock hand the panel back to its live display at the pull with
+-- no rebind at all.
+local function ApplyPanelRootVisibility(record)
+    record.visibilityRoot:SetShown(
+        record.identityVisible == true and record.chromeSuppressed ~= true)
+end
+
+-- The panel-local twin of SetIdentityVisibility: same bookkeeping, same
+-- "changed" contract, one extra term. Blocks and slots keep the shared helper
+-- untouched — they have no second suppression reason.
+local function SetPanelIdentityVisibility(record, shown)
+    shown = shown == true
+    local changed = record.identityVisible ~= shown
+    record.identityVisible = shown
+    ApplyPanelRootVisibility(record)
+    return changed
+end
+
+-- The chrome writers' one entry point, called at the moment a writer changes a
+-- panel's drag chrome and never polled. Three writers exist:
+-- SetGroupDragControlsShown (the ordinary lock/unlock path) and the combat
+-- forced-lock pair, which suppresses and restores the chrome directly without
+-- going through it.
+--
+-- The state lives on the FRAME because that is what the chrome belongs to: a
+-- record created later reads the current answer at birth (EnsurePanelContainer)
+-- instead of starting unsuppressed, and every bind pass re-reads it
+-- (BindAuraPanel), so a park-all/bind cycle that straddled a lock change
+-- converges rather than carrying a stale term.
+function CooldownCompanion:SetAuraPanelChromeSuppressed(frame, suppressed)
+    if not frame then return end
+    suppressed = suppressed == true
+    if (frame._auraPanelChromeSuppressed == true) == suppressed then return end
+    frame._auraPanelChromeSuppressed = suppressed or nil
+    for _, record in ipairs(panelRecords) do
+        if record.hostFrame == frame then
+            record.chromeSuppressed = suppressed
+            ApplyPanelRootVisibility(record)
+        end
+    end
+end
+
+local function RefreshPanelIdentityVisibility(record)
+    local applicable = CanApplySpellIdentityFilter(record.unit)
+    local changed = record.identityApplicable ~= applicable
+    record.identityApplicable = applicable
+    return SetPanelIdentityVisibility(record, record.shown == true and applicable) or changed
+end
+
+-- The two watcher-side halves (both forward-declared above the watchers).
+-- Identical in shape to the block versions on purpose: a panel tracking the
+-- target has exactly the same same-token staleness problem a target-scoped
+-- block does, and the same fail-closed relationship gate.
+function RefreshPanelIdentityVisibilityForToken(isMatch)
+    local changed = false
+    for _, record in ipairs(panelRecords) do
+        if isMatch(record.unit) then
+            changed = RefreshPanelIdentityVisibility(record) or changed
+        end
+    end
+    return changed
+end
+
+function RefreshPanelRecordsForToken(isMatch)
+    for _, record in ipairs(panelRecords) do
+        if isMatch(record.unit) then
+            record.container:UpdateAllAuras()
+        end
+    end
+end
+
+-- The flow contract for one panel: mount corner + growth signs, the layout
+-- axis, and the line ceiling that makes the container wrap where CC's grid
+-- wraps. Returns flow, axis, maximumLineSize (nil = no ceiling).
+--
+-- The axis has to agree with GetAuraPanelCellSlot's fill order, which is the
+-- order the unlock placeholders are laid out in:
+--   * icons, horizontal orientation: col advances first, wrapping to the next
+--     row -> the primary axis is X (Horizontal).
+--   * icons, vertical orientation: ROW advances first, wrapping to the next
+--     column -> the primary axis is Y (Vertical), and buttonsPerRow counts
+--     cells per COLUMN.
+--   * bars: a single column, always (buttonsPerRow has no meaning for a bar
+--     list) -> Vertical with no ceiling at all.
+--
+-- maximumLineSize is measured along the PRIMARY axis, so the cell's primary
+-- dimension is its width on the horizontal axis and its height on the vertical
+-- one. The ceiling has to land in the half-open window
+-- [N*W + (N-1)*S, N*W + N*S): the flow layout wraps when the accumulated line
+-- size PLUS the next group's groupSpacing exceeds it, so anything at or above
+-- the low end fits N cells and anything below the high end refuses N+1. Half a
+-- spacing above the low end is the middle of that window, and the max(S, 1)
+-- floor keeps it a real gap when the panel's spacing is 0 (where the wrap
+-- happens at the element step instead, W being far larger than 0.5).
+local function PanelFlowSpec(group, cellWidth, cellHeight, spacing)
+    local style = group.style or {}
+    local flow = PANEL_FLOW[style.growthOrigin] or PANEL_FLOW.TOPLEFT
+    if group.displayMode == "bars" then
+        return flow, "Vertical", nil
+    end
+    local horizontal = ST.GetPanelLayoutOrientation(group.displayMode, style) == "horizontal"
+    local perLine = math.max(1, style.buttonsPerRow or 12)
+    local primary = horizontal and cellWidth or cellHeight
+    return flow,
+        horizontal and "Horizontal" or "Vertical",
+        perLine * primary + (perLine - 1) * spacing + math.max(spacing, 1) * 0.5
+end
+
+-- An Aura Panel stores its collapse direction in the panel's own
+-- compactGrowthDirection key — the same key, the same three values and the same
+-- vocabulary the 12.0 compact-mode option used, because it is the same question
+-- ("which end does the packed block hold?") answered by a different engine.
+-- CC's compact layout never runs on an Aura Panel (compactLayout is forced
+-- false at birth), so the key is this display's alone in practice. GroupFrame's
+-- NormalizeCompactGrowthDirection is file-local, so this repeats the fold
+-- rather than reaching across for it; both must stay the same three-way.
+local function NormalizePanelGrowthDirection(growthDirection)
+    if growthDirection == "start" or growthDirection == "left" or growthDirection == "top" then
+        return "start"
+    end
+    if growthDirection == "end" or growthDirection == "right" or growthDirection == "bottom" then
+        return "end"
+    end
+    return "center"
+end
+
+-- ONE point (owner ruling 2026-08-15): the container's extent becomes secret
+-- with its first group (Blizzard resizes it from its own layout pass), so a
+-- second point would ask the engine to reconcile a secret size against a
+-- CC-side one. Anchor resolution is engine-side too, which is what makes a
+-- single point enough: whichever point CC hangs the container from, the engine
+-- re-resolves the packed block against the panel's fixed footprint every time
+-- its secret size changes. So that ONE point is the whole collapse behaviour,
+-- and the owner picks it.
+--
+-- The direction runs along the PRIMARY (flow) axis. The CROSS axis always stays
+-- pinned at the growth-origin edge, so a multi-row icon grid keeps its first
+-- row where the unlock placeholders promised it instead of drifting as rows
+-- appear. "start" resolves to flow.anchor exactly — the old corner-pinned
+-- behaviour — "center" is the ruled default, and "end" pins the far side so the
+-- block fills backwards toward the origin. When every aura is up the content
+-- rect equals the frame rect, so all three land on exactly the cells the
+-- placeholders promise.
+local function ApplyPanelMount(record, flow, axis, direction)
+    local point
+    if axis == "Horizontal" then
+        -- Cross axis is Y: the edge the rows stack away from.
+        local cross = flow.v == "Down" and "TOP" or "BOTTOM"
+        if direction == "center" then
+            point = cross
+        elseif direction == "end" then
+            point = cross .. (flow.h == "Right" and "RIGHT" or "LEFT")
+        else
+            point = cross .. (flow.h == "Right" and "LEFT" or "RIGHT")
+        end
+    else
+        -- Cross axis is X: the edge the columns stack away from (a bar list has
+        -- exactly one column, so this is simply the side it hangs on).
+        local cross = flow.h == "Right" and "LEFT" or "RIGHT"
+        if direction == "center" then
+            point = cross
+        elseif direction == "end" then
+            point = (flow.v == "Down" and "BOTTOM" or "TOP") .. cross
+        else
+            point = (flow.v == "Down" and "TOP" or "BOTTOM") .. cross
+        end
+    end
+    record.container:ClearAllPoints()
+    record.container:SetPoint(point, record.visibilityRoot, point, 0, 0)
+end
+
+local function EnsurePanelContainer(groupId, unit, hostFrame)
+    local key = groupId .. "\031" .. unit
+    local record = panelContainers[key]
+    if record then
+        if record.hostFrame == hostFrame then return record end
+        -- The panel's group frame was discarded and rebuilt under the same id.
+        -- A container can never follow it: SetParent on the AuraButtons beneath
+        -- it errors even out of combat (the permanent ChangeParent aspect), and
+        -- there is no way to take the groups back. So the old record is
+        -- ABANDONED — it stays in panelRecords, where the pass keeps it parked
+        -- and hidden forever, and a fresh record takes the key. Bounded leak,
+        -- the same doctrine the block records use, and unreachable in normal
+        -- play (CC pools group frames rather than destroying them).
+        panelContainers[key] = nil
+    end
+    -- Parented through a plain CC visibility root beneath the panel's group
+    -- frame, so panel alpha, fades, load-condition hides and strata all reach
+    -- the display through ordinary parentage. The root is the fail-closed
+    -- identity switch and nothing else.
+    --
+    -- _ccNoTouch on both: PropagateFrameStrata and the click-through sweep both
+    -- recurse into a group frame's children, and neither may reach an aura
+    -- subtree. Flagging the root stops the walk; flagging the container too
+    -- means any future walk that starts lower still stops.
+    local visibilityRoot = CreateFrame("Frame", nil, hostFrame)
+    visibilityRoot._ccNoTouch = true
+    visibilityRoot:SetAllPoints(hostFrame)
+    visibilityRoot:Hide()
+    local container = CreateFrame("AuraContainer", nil,
+        visibilityRoot,
+        "CustomAuraContainerTemplate, DisableUntrustedLayoutScriptsTemplate")
+    container._ccNoTouch = true
+    -- Seed only; Blizzard resizes from its own layout pass once a group
+    -- exists, and that size is never CC's to read.
+    container:SetSize(1, 1)
+    container:SetUnit(unit)
+    container:Hide()
+    record = {
+        key = key,
+        groupId = groupId,
+        unit = unit,
+        container = container,
+        visibilityRoot = visibilityRoot,
+        -- Identity of the frame this container is welded to. Compared, never
+        -- followed; see the abandon path above.
+        hostFrame = hostFrame,
+        -- Seeded from the frame, never assumed false: a panel created (or
+        -- rebuilt) while its drag chrome is up must not flash its live display
+        -- over the placeholders before the next chrome write.
+        chromeSuppressed = hostFrame._auraPanelChromeSuppressed == true,
+        groups = {},
+        groupList = {},
+    }
+    panelContainers[key] = record
+    panelRecords[#panelRecords + 1] = record
+    EnsureIdentityWatcher()
+    if unit == "target" then
+        EnsureTargetWatcher()
+    end
+    return record
+end
+
+-- The bar cell's icon square, in BarMode's own vocabulary (CreateBarFrame):
+-- the square is as thick as the bar unless the size override is on, it sits at
+-- the LEADING edge (left on a horizontal bar, top on a vertical one; the far
+-- end when barIconReverse is set), and barIconOffset is the gap between the
+-- square and the fill. Returns shown, size, offset, reverse.
+--
+-- Cell dimensions are the PANEL's and uniform across it by construction, so an
+-- entry override of the icon keys only changes what happens INSIDE that
+-- entry's cell — never the cell's footprint. Size and gap are both clamped to
+-- leave at least a 1px bar area: BarMode lets an oversized icon overflow its
+-- own bar, but a degenerate fill rect here would be a layout error on a frame
+-- Blizzard lays out.
+local function PanelBarIconGeometry(style, isBar, isVertical, cellWidth, cellHeight)
+    if not (isBar and style.showBarIcon ~= false) then return false end
+    local thickness = isVertical and cellWidth or cellHeight
+    local length = isVertical and cellHeight or cellWidth
+    local size = (style.barIconSizeOverride and style.barIconSize) or thickness
+    size = math.max(1, math.min(size, length - 1))
+    local offset = math.max(0, math.min(style.barIconOffset or 0, length - size - 1))
+    return true, size, offset, style.barIconReverse == true
+end
+
+-- The geometry every host of a group carries. Explicit numbers throughout: the
+-- frame's own size is what the flow layout reserves space for (GetElementSize
+-- prefers the group's elementWidth/Height but never resizes the frame), so the
+-- two are written from the same source every bind.
+--
+-- No border inset, unlike the block hosts: a block sits inside a CC bar's own
+-- border ring, while a panel cell has nothing underneath at all — the kit's
+-- shell replicas draw the ring themselves, over the full cell. The icon square
+-- follows the same rule (inset 0 on the square and its bounds alike), so a bar
+-- cell's two chrome sets sit exactly where the icon cell's single one does.
+--
+-- The bar-host descriptor is re-stamped here rather than at creation because an
+-- Aura Panel can be switched between its icon and bar forms, and the pooled
+-- group frames (and their proxies) outlive that switch. The BAR AREA and the
+-- icon square move with it: the kit's registered regions are anchored to the
+-- bar area once, in the creation window, and everything that has to move per
+-- bind moves by moving these two plain CC frames instead.
+local function ApplyPanelHostGeometry(pgroup, host)
+    host.frame:SetSize(pgroup.frameWidth, pgroup.frameHeight)
+    local proxy = host.proxy
+    proxy:ClearAllPoints()
+    proxy:SetPoint("TOPLEFT", host.frame, "TOPLEFT", 0, 0)
+    proxy:SetSize(pgroup.frameWidth, pgroup.frameHeight)
+    local barArea, iconBounds = proxy._ccBarArea, proxy._iconBounds
+    local barW, barH = pgroup.frameWidth, pgroup.frameHeight
+    barArea:ClearAllPoints()
+    iconBounds:ClearAllPoints()
+    if pgroup.isBar and pgroup.iconShown then
+        local reverse = pgroup.iconReverse
+        local step = pgroup.iconSize + pgroup.iconOffset
+        -- Square centered on the cross axis at the leading edge, bar area
+        -- taking the remainder — SetIconAreaPoints / SetBarAreaPoints with
+        -- inset 0, written as explicit numbers because this rect is CC's.
+        iconBounds:SetSize(pgroup.iconSize, pgroup.iconSize)
+        if pgroup.isVertical then
+            local iconEdge, barEdge = "TOP", "BOTTOM"
+            if reverse then iconEdge, barEdge = "BOTTOM", "TOP" end
+            iconBounds:SetPoint(iconEdge, proxy, iconEdge, 0, 0)
+            barH = math.max(pgroup.frameHeight - step, 1)
+            barArea:SetPoint(barEdge, proxy, barEdge, 0, 0)
+        else
+            local iconEdge, barEdge = "LEFT", "RIGHT"
+            if reverse then iconEdge, barEdge = "RIGHT", "LEFT" end
+            iconBounds:SetPoint(iconEdge, proxy, iconEdge, 0, 0)
+            barW = math.max(pgroup.frameWidth - step, 1)
+            barArea:SetPoint(barEdge, proxy, barEdge, 0, 0)
+        end
+    else
+        -- Icon cells, and bars with the square switched off: the bar area IS
+        -- the cell, and the square is parked (nothing anchors to it, and it
+        -- draws nothing of its own — only the kit's replicas ever ring it).
+        iconBounds:SetSize(1, 1)
+        iconBounds:SetPoint("TOPLEFT", proxy, "TOPLEFT", 0, 0)
+        barArea:SetPoint("TOPLEFT", proxy, "TOPLEFT", 0, 0)
+    end
+    barArea:SetSize(barW, barH)
+    if pgroup.isBar then
+        proxy._isBar = true
+        proxy.statusBar = barArea
+        proxy._barBounds = barArea
+    else
+        proxy._isBar = nil
+        proxy.statusBar = nil
+        proxy._barBounds = nil
+    end
+    proxy._isVertical = pgroup.isVertical
+    -- Explicit rect dims: a Blizzard-laid group frame must never be measured,
+    -- and the kit's crop/dash/segment math asks for these first. They describe
+    -- the BAR AREA, which is what that math is about (fill length, stack
+    -- boundaries, capacity blocks) — the icon square is never part of it.
+    proxy._ccKitRectW = barW
+    proxy._ccKitRectH = barH
+end
+
+-- The icon square's artwork. On the slot path the CC button underneath owns
+-- button.icon, and StyleSlotKit reads its texture and crop for the occluding
+-- cover while Blizzard writes the live aura texture into the registered
+-- kit.auraIcon anchored over it. An Aura Panel has no CC button, so the host's
+-- own square carries the entry's spell texture with BarMode's square crop and
+-- the styler consumes it unchanged.
+--
+-- Cleared on every other flavor: with no texture on it the styler takes its
+-- textureless path instead, which crops from the host rect dims and is exactly
+-- what icon cells (and squareless bars) have always run.
+local function ApplyPanelHostIcon(pgroup, host, buttonData, style)
+    local icon = host.proxy.icon
+    if pgroup.isBar and pgroup.iconShown
+        and buttonData.type == "spell" and buttonData.id then
+        icon:SetTexture(C_Spell.GetSpellTexture(buttonData.id))
+        local ApplyIconTexCoord = ST._ApplyIconTexCoord
+        if ApplyIconTexCoord then
+            ApplyIconTexCoord(icon, pgroup.iconSize, pgroup.iconSize, style.iconZoom)
+        end
+    else
+        icon:SetTexture(nil)
+    end
+end
+
+-- One host per pooled group frame. Blizzard pre-creates a batch of frames at
+-- AddAuraGroup and runs this for each, so every frame the group can ever assign
+-- leaves here with a finished kit — nothing is built later, in combat, or on a
+-- frame CC has not seen. maxFrameCount 1 keeps the group inside that batch
+-- forever (see EnsurePanelGroup).
+--
+-- The proxy is the host descriptor the kit vocabulary needs, living UNDER the
+-- group frame because the frame's position is Blizzard-owned and secret: a
+-- descriptor anchored anywhere else would drag every host-anchored kit region
+-- off the cell. It is CC-created and never registered, so it carries no secrets
+-- of its own. `auraPanel` is what tells StyleSlotKit the kit is the ENTIRE
+-- button here rather than an overlay on a CC one.
+local function BuildPanelGroupHost(pgroup, frame)
+    local proxy = CreateFrame("Frame", nil, frame)
+    proxy:EnableMouse(false)
+    proxy._ccAuraHostKind = "auraPanel"
+    proxy._cdcClickThroughMotion = true
+    -- The BAR AREA: the rect the kit's bar vocabulary owns — the cell MINUS
+    -- the icon square on a bar cell that shows one, the whole cell everywhere
+    -- else. One anchor target serves both flavors, which is what makes the
+    -- square possible at all: registered kit regions may only be anchored in
+    -- this creation window, so anything that has to move at bind time has to
+    -- move by re-positioning a plain CC frame they are anchored TO. Pooled
+    -- frames survive an icon <-> bar conversion, so that frame must exist on
+    -- both flavors from the start.
+    local barArea = CreateFrame("Frame", nil, proxy)
+    barArea:EnableMouse(false)
+    proxy._ccBarArea = barArea
+    -- The icon square, mirroring BarMode's trio: _iconBounds is the square's
+    -- rect (the kit's shell replicas ring it and back it), and `icon` is the
+    -- field StyleSlotKit reads to decide the square participates at all — it
+    -- re-anchors the aura icon and the occluding cover onto it every bind and
+    -- takes its texture and crop for the cover. The square itself stays
+    -- invisible: an Aura Panel has no CC layer, so everything that shows is
+    -- drawn by the kit.
+    local iconBounds = CreateFrame("Frame", nil, proxy)
+    iconBounds:EnableMouse(false)
+    proxy._iconBounds = iconBounds
+    proxy.icon = proxy:CreateTexture(nil, "BACKGROUND")
+    proxy.icon:SetAllPoints(iconBounds)
+    proxy.icon:SetAlpha(0)
+    local host = { frame = frame, proxy = proxy, kit = BuildSlotKit(frame) }
+    -- Before the kit is anchored to it, so the bar area already carries the
+    -- rect those anchors resolve against.
+    ApplyPanelHostGeometry(pgroup, host)
+    -- On the slot path the whole kit anchors to the BUTTON. Panel cells are
+    -- Blizzard-positioned, so everything button-anchored moves to the bar area
+    -- instead. Creation window only — never re-anchored after registration;
+    -- the bar area moves in their place.
+    local kit = host.kit
+    local inner = {
+        kit.iconCover, kit.auraIcon, kit.swipe, kit.barBackdrop,
+        kit.barFill, kit.stackFill, kit.textOverlay,
+    }
+    for i = 1, #inner do
+        local region = inner[i]
+        if region then
+            region:ClearAllPoints()
+            region:SetAllPoints(barArea)
+        end
+    end
+    pgroup.hosts[#pgroup.hosts + 1] = host
+end
+
+-- SetAuraGroupLayout REPLACES the whole options table, so every field the group
+-- needs is written every time. elementSpacing must stay 0 for the same reason
+-- the blocks keep it there: the flow layout advances the cursor by
+-- elementSpacing after an element AND adds groupSpacing before the next group,
+-- so a nonzero pair doubles every gap between consecutive single-frame groups.
+-- groupSpacing carries the panel's own spacing along the line; lineSpacing
+-- carries it across lines (groupLineSpacing defaults to lineSpacing, which
+-- covers the wrap that groupSpacing itself triggers).
+local function PanelGroupLayout(entry, layoutIndex)
+    return {
+        layoutIndex = layoutIndex,
+        elementWidth = entry.width,
+        elementHeight = entry.height,
+        elementSpacing = 0,
+        groupSpacing = entry.spacing,
+        lineSpacing = entry.spacing,
+    }
+end
+
+local function EnsurePanelGroup(record, entry, layoutIndex)
+    local pgroup = record.groups[entry.id]
+    if pgroup then
+        pgroup.frameWidth = entry.width
+        pgroup.frameHeight = entry.height
+        pgroup.isVertical = entry.vertical
+        pgroup.isBar = entry.isBar
+        pgroup.iconShown = entry.iconShown
+        pgroup.iconSize = entry.iconSize
+        pgroup.iconOffset = entry.iconOffset
+        pgroup.iconReverse = entry.iconReverse
+        record.container:SetAuraGroupLayout(entry.id, PanelGroupLayout(entry, layoutIndex))
+        return pgroup
+    end
+    pgroup = {
+        key = entry.id,
+        record = record,
+        unit = record.unit,
+        hosts = {},
+        parked = true,
+        frameWidth = entry.width,
+        frameHeight = entry.height,
+        isVertical = entry.vertical,
+        isBar = entry.isBar,
+        -- Set BEFORE AddAuraGroup below: initializeFrame runs inside it, and
+        -- the host geometry it stamps reads these.
+        iconShown = entry.iconShown,
+        iconSize = entry.iconSize,
+        iconOffset = entry.iconOffset,
+        iconReverse = entry.iconReverse,
+    }
+    -- maxFrameCount 1 is structural, not a display choice: one entry is one
+    -- aura, and a group that could outgrow its pre-created batch would run
+    -- AcquireFrame -> CreateFrameBatch -> initializeFrame IN COMBAT, from
+    -- tainted code, on a forbidden subtree. Born parked like a slot; the bind
+    -- below writes the real contract.
+    record.container:AddAuraGroup(entry.id, SlotContract(record.unit).filter, {
+        candidateFilters = BuildParkFilters(record.unit),
+        maxFrameCount = 1,
+        layout = PanelGroupLayout(entry, layoutIndex),
+        initializeFrame = function(frame)
+            BuildPanelGroupHost(pgroup, frame)
+        end,
+    })
+    record.groups[entry.id] = pgroup
+    record.groupList[#record.groupList + 1] = pgroup
+    return pgroup
+end
+
+-- Park = zero frames PLUS the polarity-crossed sentinel. A parked group
+-- contributes no elements to the flow layout, so it also stops consuming
+-- spacing: the entries around it close up exactly as if it were gone. That is
+-- what makes "retire an entry" and "the aura is not up" render identically,
+-- which they must, because CC can never tell the two apart.
+local function ParkPanelGroup(pgroup)
+    if pgroup.parked then return end
+    pgroup.parked = true
+    pgroup.boundEntry = nil
+    pgroup.boundStackMax = nil
+    ReleaseSlotAuraSounds(pgroup)
+    local container = pgroup.record.container
+    container:SetAuraGroupMaxFrameCount(pgroup.key, 0)
+    container:SetAuraGroupCandidateFilters(pgroup.key, BuildParkFilters(pgroup.unit))
+end
+
+local function BindPanelGroup(pgroup, entry)
+    local container = pgroup.record.container
+    container:SetAuraGroupMaxFrameCount(pgroup.key, 1)
+    -- Converge the whole contract every bind, exactly like the slot and block
+    -- paths: the filter string, the candidate set and the park sentinel all
+    -- come from one source, so they can never drift apart.
+    container:SetAuraGroupFilterString(pgroup.key, SlotContract(pgroup.unit).filter)
+    container:SetAuraGroupCandidateFilters(pgroup.key,
+        BuildCandidateFilters(pgroup.unit, entry.spellSet))
+    pgroup.boundStackMax = entry.stackBarMax
+    -- Re-style every owned frame, not just the assigned one: initializeFrame
+    -- ran once per pooled frame at group creation, and which frame the group
+    -- hands out next is Blizzard's business.
+    for _, host in ipairs(pgroup.hosts) do
+        ApplyPanelHostGeometry(pgroup, host)
+        -- Before StyleSlotKit: the styler reads the square's texture and crop
+        -- for the occluding cover and the aura icon's own texcoords.
+        ApplyPanelHostIcon(pgroup, host, entry.buttonData, entry.style)
+        ConvergeApplicationBar(host.frame, host.kit, entry.buttonData, entry.stackBarMax)
+        ConvergeApplicationCount(host.frame, host.kit, entry.buttonData)
+        StyleSlotKit({
+            kit = host.kit,
+            slotButton = host.frame,
+            unit = pgroup.unit,
+            boundStackMax = entry.stackBarMax,
+        }, host.proxy, entry.buttonData, entry.style)
+        -- Tooltips: an Aura Panel cell has no CC button under it, so this frame
+        -- is the ONLY surface a tooltip could hang off — panels therefore honor
+        -- the panel's own Show Tooltips setting rather than forcing motion off
+        -- the way the click-through resource holders do. Pooled frames are
+        -- reused across entries, so all three are converged every bind.
+        host.frame:SetMouseMotionEnabled(entry.style.showTooltips == true)
+        host.frame:SetTooltipAnchorPoint(
+            AURA_TOOLTIP_ANCHORS[entry.style.tooltipAnchor] or "ANCHOR_NONE", 0, 0)
+        -- Same expression the slot path uses for a non-texture host: the panel
+        -- owns a real Show Tooltips setting, so the combat-hide setting beside
+        -- it has to be the one that answers here too.
+        host.frame:SetHideTooltipInCombat(entry.style.tooltipHideInCombat == true)
+    end
+    RegisterSlotAuraSounds(pgroup, entry.buttonData, entry.spellSet)
+    pgroup.parked = nil
+    pgroup.boundEntry = entry.buttonData
+end
+
+-- Bind one panel's container. Returns nothing; every refusal leaves the
+-- container parked from the pass's park-all phase, which is the safe state.
+local function BindAuraPanel(self, groupId, group, frame)
+    -- One unit for the whole panel, derived from its first resolvable aura
+    -- entry. No entry, or no resolvable polarity, means there is nothing to
+    -- mount a container for yet.
+    local unit = self:GetAuraPanelUnit(group)
+    if not unit then return end
+
+    local record = EnsurePanelContainer(groupId, unit, frame)
+    -- Binding is chrome-INDEPENDENT (see ApplyPanelRootVisibility): the lock
+    -- state only decides whether the bound display is PRESENTED, and the chrome
+    -- writers flip that term themselves, in combat if they have to. Re-read here
+    -- so a pass that was deferred across a lock change converges on the frame's
+    -- current answer instead of whatever the record last heard.
+    record.chromeSuppressed = frame._auraPanelChromeSuppressed == true
+    -- Mounting an incompatible unit would let Blizzard ignore includeSpellIDs
+    -- for every non-exempt aura candidate. Leave the whole panel parked; the
+    -- reaction watcher requests another pass if it becomes safe.
+    record.identityApplicable = CanApplySpellIdentityFilter(unit)
+    if not record.identityApplicable then return end
+
+    -- The SAME metrics the frame was sized from and the placeholders were laid
+    -- out from, so the container's cells land exactly on the CC-side grid.
+    local usability = self:GetGroupButtonUsabilityOptions(groupId, group)
+    local _, _, _, cellWidth, cellHeight, spacing =
+        self:GetAuraPanelGridMetrics(groupId, group, usability)
+    local isBar = group.displayMode == "bars"
+    -- Fill direction comes from the PANEL's style, not each entry's effective
+    -- one: the cell dimensions above were derived from the panel style too
+    -- (GetButtonDimensions swaps them for a vertical bar), and a per-entry
+    -- override would draw a vertical fill inside a horizontal cell. Cells are
+    -- uniform across an Aura Panel by construction.
+    local isVertical = isBar and (group.style or {}).barFillVertical == true
+
+    -- Mount and flow config BEFORE the groups bind, the same order the block
+    -- buckets use: an unanchored container would be laid out by Blizzard's
+    -- deferred pass from whatever point it last had. Every one of these setters
+    -- diff-checks internally (FlowLayoutMixin returns false when unchanged and
+    -- only then does the container mark itself dirty), so re-applying the whole
+    -- contract each pass costs nothing and removes the fragile invariant that a
+    -- style edit remembered to touch the right one.
+    local flow, axis, maximumLineSize = PanelFlowSpec(group, cellWidth, cellHeight, spacing)
+    ApplyPanelMount(record, flow, axis, NormalizePanelGrowthDirection(group.compactGrowthDirection))
+    record.container:SetFlowLayoutAxis(AnchorUtil.FlowLayoutAxis[axis])
+    record.container:SetFlowLayoutAnchorPoint(flow.anchor)
+    record.container:SetFlowLayoutGrowthDirection(
+        AnchorUtil.FlowDirection[flow.h], AnchorUtil.FlowDirection[flow.v])
+    record.container:SetFlowLayoutPadding(0, 0, 0, 0)
+    -- nil restores the default ceiling (math.huge) for the single-column bar
+    -- list, which must never wrap.
+    record.container:SetFlowLayoutMaximumLineSize(maximumLineSize)
+
+    local layoutIndex = 0
+    -- Keyed exactly the way EnsurePanelGroup keys record.groups, so "seen
+    -- before" here and "reuses an existing group" there are the same question.
+    local seenKeys
+    for _, buttonData in ipairs(group.buttons or {}) do
+        if self:IsButtonUsable(buttonData, group, usability) then
+            local auraKey = buttonData._auraKey
+            local entryUnit = self:ResolveAuraEntryUnit(buttonData)
+            if not auraKey then
+                -- Pre-subtype or hand-edited data: without a stable key there
+                -- is no aura group to own this entry, and inventing one per
+                -- pass would leak a permanent group every rebind. The config
+                -- normalizer owns the repair.
+                panelSkippedNoKey = panelSkippedNoKey + 1
+            elseif entryUnit and entryUnit ~= unit then
+                -- Imported config can carry an entry of the other polarity.
+                -- Binding it onto this container's unit would hand Blizzard a
+                -- filter its identity gate refuses to apply.
+                panelUnitMismatches = panelUnitMismatches + 1
+            else
+                local spellSet = self:GetAuraCandidateSpellIDSet(buttonData, true)
+                if not spellSet then
+                    -- Empty includeSpellIDs wedges a group permanently, so an
+                    -- entry with no resolvable candidates stays parked.
+                    panelNoCandidates = panelNoCandidates + 1
+                else
+                    local style = self:GetEffectiveStyle(group.style, buttonData)
+                    -- The icon square rides the entry's effective style, so
+                    -- Show Bar Icon (and the size/offset/side keys beside it)
+                    -- work on an Aura Panel exactly as on a bar panel. Cell
+                    -- dimensions stay panel-wide either way.
+                    local iconShown, iconSize, iconOffset, iconReverse =
+                        PanelBarIconGeometry(style, isBar, isVertical, cellWidth, cellHeight)
+                    -- Stack fill (tracker C2): bar panels only, max is
+                    -- automatic. nil means "not a stacking aura" and the bind
+                    -- falls back to the duration fill.
+                    local stackBarMax
+                    if isBar and self:IsBarPanelAuraStackDisplay(buttonData) then
+                        stackBarMax = self:GetAuraStackBarMax(buttonData, true)
+                    end
+                    -- Counted at the moment the reuse actually happens: an
+                    -- entry refused above never reaches EnsurePanelGroup, so a
+                    -- key it shares with a later entry collides with nothing.
+                    -- Counting only -- the second bind winning is left alone.
+                    seenKeys = seenKeys or {}
+                    if seenKeys[auraKey] then
+                        panelDuplicateKeys = panelDuplicateKeys + 1
+                    else
+                        seenKeys[auraKey] = true
+                    end
+                    -- Dense over BOUND entries only: layoutIndex is a relative
+                    -- ordering, not a grid coordinate (Blizzard packs the
+                    -- active survivors), so a skipped entry leaves no hole.
+                    layoutIndex = layoutIndex + 1
+                    local entry = {
+                        id = auraKey,
+                        buttonData = buttonData,
+                        spellSet = spellSet,
+                        style = style,
+                        width = cellWidth,
+                        height = cellHeight,
+                        spacing = spacing,
+                        isBar = isBar,
+                        vertical = isVertical,
+                        stackBarMax = stackBarMax,
+                        iconShown = iconShown,
+                        iconSize = iconSize,
+                        iconOffset = iconOffset,
+                        iconReverse = iconReverse,
+                    }
+                    BindPanelGroup(EnsurePanelGroup(record, entry, layoutIndex), entry)
+                end
+            end
+        end
+    end
+
+    -- Nothing bound: a shown container would register for aura events and
+    -- render nothing, so leave it parked and hidden like an empty block side.
+    if layoutIndex == 0 then return end
+
+    record.container:Show()
+    record.shown = true
+    SetPanelIdentityVisibility(record, true)
+end
+
+-- Park everything, then bind — the same discipline (and the same coalescing
+-- argument) as the slot and block passes. OOC by RunAuraRebind's guarantee.
+local function RebindAuraPanels(self)
+    for _, record in ipairs(panelRecords) do
+        for _, pgroup in ipairs(record.groupList) do
+            ParkPanelGroup(pgroup)
+        end
+        record.container:Hide()
+        record.shown = false
+        SetPanelIdentityVisibility(record, false)
+    end
+    panelSkippedNoKey = 0
+    panelUnitMismatches = 0
+    panelNoCandidates = 0
+    panelDuplicateKeys = 0
+
+    -- Walked from the LIVE FRAMES, like the slot pass above, not from stored
+    -- config: the container mounts on the frame, so a panel without one has
+    -- nothing to bind to. A frame that merely happens to be HIDDEN (load
+    -- conditions, character visibility) is still bound — visibility rides
+    -- parentage, a hidden container is inert, and it re-registers and refreshes
+    -- itself on show.
+    for groupId, frame in pairs(self.groupFrames) do
+        local group = self.db.profile.groups[groupId]
+        if frame and ST.IsAuraPanelGroup(group) then
+            BindAuraPanel(self, groupId, group, frame)
+        end
+    end
+end
+
 -- One combat-defer note per deferral window: config edits made in combat keep
 -- applying to CC-side visuals immediately, but the aura display (slot kit)
 -- only restyles at the deferred rebind, so the player is told once why the
@@ -3131,6 +3965,12 @@ function RunAuraRebind()
     -- records above — no host button, no pool lock — so ordering is free.
     RebindCustomBarAuraBlocks(self)
 
+    -- Aura Panels (whole panels drawn by their own aura container): likewise a
+    -- self-contained park-then-bind pass. Disjoint from both passes above — an
+    -- Aura Panel materializes no CC buttons, so the `wanted` walk never saw one
+    -- and no record here shares a host with anything.
+    RebindAuraPanels(self)
+
     -- Reconcile the shared pool lock once, after binding: a host is only
     -- slot-free when NONE of its records holds a binding. ParkDisplay must not
     -- do this per record — several records share one button, and clearing the
@@ -3253,6 +4093,55 @@ function CooldownCompanion:GetAuraDisplayStatus()
         end
     end
     status.blocks = blocks
+    -- Aura Panels: containers created (permanent once created), groups by bind
+    -- state, pooled hosts built, and the four reasons the last pass refused (or
+    -- silently doubled up) an entry. The skip counters are the only visible
+    -- trace of stored config the display cannot serve, so a nonzero one is a
+    -- config question, not a fault.
+    local panels = {
+        containers = #panelRecords,
+        shown = 0,
+        boundGroups = 0,
+        parkedGroups = 0,
+        hosts = 0,
+        skippedNoKey = panelSkippedNoKey,
+        unitMismatches = panelUnitMismatches,
+        noCandidates = panelNoCandidates,
+        duplicateKeys = panelDuplicateKeys,
+        -- Per-container detail. The totals above cannot say WHICH panel is
+        -- dark, and an abandoned record (see EnsurePanelContainer) is
+        -- indistinguishable from a live one in an aggregate -- it shows up here
+        -- as a second record on the same groupId with nothing bound.
+        records = {},
+    }
+    for _, record in ipairs(panelRecords) do
+        -- CC-side tags, not container reads: these are the only diagnostics
+        -- that can be asked for in combat.
+        if record.shown then panels.shown = panels.shown + 1 end
+        local groups, bound = 0, 0
+        for _, pgroup in ipairs(record.groupList) do
+            groups = groups + 1
+            if pgroup.boundEntry then
+                panels.boundGroups = panels.boundGroups + 1
+                bound = bound + 1
+            else
+                panels.parkedGroups = panels.parkedGroups + 1
+            end
+            panels.hosts = panels.hosts + #pgroup.hosts
+        end
+        panels.records[#panels.records + 1] = {
+            groupId = record.groupId,
+            unit = record.unit,
+            shown = record.shown == true,
+            -- A BOUND panel can still be dark on purpose: its unlock
+            -- placeholders are standing in for it. Without this the two dark
+            -- reasons are indistinguishable in a snapshot.
+            chromeSuppressed = record.chromeSuppressed == true,
+            groups = groups,
+            bound = bound,
+        }
+    end
+    status.panels = panels
     -- Idle health: requests/passes since login, and how long ago the last
     -- pass ran. On an idle session these must hold still — climbing numbers
     -- mean something is re-requesting the pass without a real change.

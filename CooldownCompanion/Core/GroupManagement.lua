@@ -668,6 +668,11 @@ function CooldownCompanion:ApplyGroupSettingPreset(mode, presetName, groupId)
 
     local oldMasqueEnabled = group.masqueEnabled and true or false
     ApplyGroupSettingPresetData(self.db.profile, group, mode, presetData)
+    -- Eligibility above compares the base displayMode only, so a preset saved
+    -- from an ordinary icon panel applies to an Aura Panel. Re-establish the
+    -- subtype's invariants BEFORE the Masque comparison below reads the flag,
+    -- or the lifecycle engages on a panel with no buttons to skin.
+    self:EnforceAuraPanelInvariants(group)
     local newMasqueEnabled = group.masqueEnabled and true or false
 
     -- Presets can be imported from clients with Masque enabled.
@@ -766,6 +771,13 @@ function CooldownCompanion:CopyDirectStyleFromPanel(mode, sourceGroupId, targetG
     local presetData = CaptureGroupSettingPresetData(db, mode, sourceGroup)
     ApplyGroupSettingPresetData(db, targetGroup, mode, presetData)
     CopyCompactLayoutSettings(sourceGroup, targetGroup)
+    -- Copy eligibility compares the base displayMode only, so an ordinary icon
+    -- or bar panel is a legal source for an Aura Panel. Both writers above can
+    -- strand a flag the subtype cannot carry (compactLayout collapses the
+    -- footprint, masqueEnabled disables config rows with no toggle left to
+    -- clear it), so the invariants are re-established here — before the Masque
+    -- comparison below, and before the combat-deferred return.
+    self:EnforceAuraPanelInvariants(targetGroup)
     local newMasqueEnabled = targetGroup.masqueEnabled and true or false
 
     if mode == "icons" and not self.Masque and newMasqueEnabled then
@@ -1137,11 +1149,29 @@ local function ShouldDefaultPanelCompactLayout(displayMode)
     return displayMode == "icons" or displayMode == "bars"
 end
 
+-- Aura Panels are a subtype, not a display mode, so creation surfaces name them
+-- with a pseudo-mode that resolves here into a real displayMode plus the
+-- subtype flag. The pseudo-mode string must never reach group.displayMode.
+local AURA_PANEL_PSEUDO_MODES = {
+    auraIcons = "icons",
+    auraBars = "bars",
+}
+
+local function ResolvePanelCreationMode(displayMode)
+    local baseMode = AURA_PANEL_PSEUDO_MODES[displayMode]
+    if baseMode then
+        return baseMode, true
+    end
+    return displayMode, false
+end
+
 function CooldownCompanion:CreatePanel(containerId, displayMode)
     local db = self.db.profile
     local container = db.groupContainers[containerId]
     if not container then return nil end
     displayMode = displayMode or "icons"
+    local isAuraPanel
+    displayMode, isAuraPanel = ResolvePanelCreationMode(displayMode)
     local isRotationAssistant = ST.IsRotationAssistantDisplayMode
         and ST.IsRotationAssistantDisplayMode(displayMode)
 
@@ -1176,6 +1206,16 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
         fadeInDuration = 0.2,
         fadeOutDuration = 0.2,
     }
+
+    -- Every Aura Panel entry renders through the aura container's own flow
+    -- layout, so CC's compact reflow and Masque skinning have nothing to drive.
+    -- nextAuraKey is the monotonic source of the per-panel entry keys Blizzard's
+    -- aura groups are identified by.
+    if isAuraPanel then
+        db.groups[groupId].auraPanel = true
+        db.groups[groupId].nextAuraKey = 1
+        self:EnforceAuraPanelInvariants(db.groups[groupId])
+    end
 
     -- Style defaults (nil-guard respects user-customized globalStyle)
     local style = db.groups[groupId].style
@@ -1366,11 +1406,26 @@ local DISPLAY_MODE_CHANGE_REFUSALS = {
     trigger = "Trigger Panels cannot be converted. Create a new Trigger Panel instead.",
     ["texture-entry-limit"] = "Texture Panels can only hold one entry. Remove extra entries first, or create a new Texture Panel.",
     ["aura-entries"] = "This panel contains aura entries, which can only be tracked in icon, bar, or Texture panels. Remove them first, or convert to one of those modes.",
+    ["aura-panel-modes"] = "Aura Panels can only switch between icons and bars.",
+    ["aura-panel-create-only"] = "Aura Panels cannot be converted from an existing panel. Create a new Aura Panel instead.",
 }
 
 function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
+
+    -- The Aura Panel subtype is fixed at creation: an Aura Panel may only swap
+    -- between its icon and bar forms (the flag survives), and no ordinary panel
+    -- may gain or lose the flag by converting.
+    local requestedAuraPanel
+    newMode, requestedAuraPanel = ResolvePanelCreationMode(newMode)
+    if ST.IsAuraPanelGroup(group) then
+        if newMode ~= "icons" and newMode ~= "bars" then
+            return false, "aura-panel-modes"
+        end
+    elseif requestedAuraPanel then
+        return false, "aura-panel-create-only"
+    end
 
     local oldMode = group.displayMode
     if oldMode ~= newMode
@@ -1415,6 +1470,11 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
         end
         return false
     end
+
+    -- Only now that the request has been judged: an Aura Panel pseudo-mode
+    -- carries the same base displayMode as its plain twin, so translating any
+    -- earlier would let a non-aura panel be converted straight into one.
+    newMode = ResolvePanelCreationMode(newMode)
 
     local oldMode = group.displayMode
     if (oldMode == "textures" or oldMode == "trigger") and newMode ~= oldMode then
@@ -1648,6 +1708,28 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         forceAura = false
     end
 
+    -- Aura Panels hold aura entries only, and only for one unit. Judge the add
+    -- here, where id and the aura-intent arguments have reached their final
+    -- form, against the same central predicate the move paths use, so nothing
+    -- is inserted that the panel cannot render.
+    if ST.IsAuraPanelGroup(group) then
+        local probe = {
+            type = buttonType,
+            id = id,
+            name = name,
+            addedAs = "spell",
+        }
+        if buttonType == "spell" and (forceAura == true or (isPassive and forceAura ~= false)) then
+            probe.addedAs = "aura"
+            probe.auraUnit = self:ResolveStandaloneAuraDefaultUnit(probe)
+        end
+        local auraRejectMessage = self:GetPanelManualEntryRejectMessage(group, probe)
+        if auraRejectMessage then
+            self:Print(auraRejectMessage)
+            return nil
+        end
+    end
+
     local buttonIndex = #group.buttons + 1
     group.buttons[buttonIndex] = {
         type = buttonType,
@@ -1658,6 +1740,11 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         isPassiveCooldown = isPassiveCooldown or nil,
         cdmChildSlot = cdmChildSlot or nil,
     }
+
+    -- Blizzard identifies aura groups per container, so every Aura Panel entry
+    -- carries a stable key that is unique within its own panel (Defaults.lua
+    -- owns the stamp; the config insert paths call the same one).
+    self:StampAuraPanelEntryKey(group, group.buttons[buttonIndex])
 
     -- Auto-detect charges for castable and passive-cooldown spells.
     -- Treat as charge-based only when max charges is greater than 1.
@@ -1813,6 +1900,17 @@ function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKi
         itemSlot = itemSlot,
         itemSlotKind = itemSlotKind or self.EQUIPMENT_SLOT_KIND_TRINKET or "trinket",
     }
+
+    -- An equipment slot is never an aura entry; the central predicate owns the
+    -- wording so this path cannot drift from the add and move paths.
+    if ST.IsAuraPanelGroup(group) then
+        local auraRejectMessage = self:GetPanelManualEntryRejectMessage(group, newButton)
+        if auraRejectMessage then
+            self:Print(auraRejectMessage)
+            return nil
+        end
+    end
+
     if not (self.IsEquipmentSlotEntry and self.IsEquipmentSlotEntry(newButton)) then
         return nil
     end

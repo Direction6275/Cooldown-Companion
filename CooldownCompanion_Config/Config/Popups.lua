@@ -1133,6 +1133,12 @@ local function CreateImportedPanel(db, containerId, panelIndex, srcPanel, import
     if ST._NormalizePanelOrientationKeys then
         ST._NormalizePanelOrientationKeys(panel)
     end
+    -- An imported Aura Panel is raw payload data installed wholesale, with none
+    -- of the create/add gates in front of it, so the subtype's invariants are
+    -- re-established here before the panel reaches the profile.
+    if ST._NormalizeAuraPanelEntries then
+        ST._NormalizeAuraPanelEntries(panel)
+    end
     if not panel.anchor then
         panel.anchor = BuildImportedRootAnchor("CooldownCompanionContainer" .. containerId)
     end

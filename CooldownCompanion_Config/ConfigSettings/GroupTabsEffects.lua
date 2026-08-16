@@ -2,6 +2,11 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CS = ST._configState
 
+-- Core/Defaults.lua. "Can this PANEL ever use this override section?" - false
+-- only on an Aura Panel, for the sections that read spell cooldown, castability,
+-- proc, charge, cast or GCD state its pure-aura entries do not have.
+local CanGroupUseOverrideSection = ST.CanGroupUseOverrideSection
+
 -- Imports from Helpers.lua
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
@@ -798,25 +803,54 @@ local function BuildEffectsTab(container)
     -- ================================================================
     -- Glows
     -- ================================================================
+    -- On an Aura Panel the aura glow is the only row this section can hold, and
+    -- that one is gated on the group tracking an aura - so an Aura Panel with no
+    -- entries yet would draw the heading over nothing. The two gates that empty
+    -- it are named once here and once at Timers below.
+    local groupHasAuraEntry = GroupHasAuraTrackingEntry(group)
+    -- COLUMN ROUTING on an Aura Panel (owner ruling 2026-08-15). Three sections
+    -- below lose their whole LEFT column to the panel predicate and keep a row
+    -- on the right; the standing fill rule (stated in full in the recipe comment
+    -- at the top of BuildAppearanceTab's icons path, rule 3) says a filtered row
+    -- set fills the left column first, so those survivors move across. Each host
+    -- below is picked from this predicate alone, so an ordinary panel's columns
+    -- are byte-identical to before.
+    local isAuraPanel = ST.IsAuraPanelGroup(group)
+    if CanGroupUseOverrideSection(group, "procGlow") or groupHasAuraEntry then
     local _, glowsCollapsed = BuildCollapsibleSection(container, "Glows", EFFECTS_GLOWS_SECTION, nil, nil, ROW_SECTION)
 
     if not glowsCollapsed then
     -- LEFT column: the glows every icon panel can show.
     -- RIGHT column: the conditional one (aura) and the Blizzard-driven extra.
+    --
+    -- On an Aura Panel the left column empties out: proc, ready and key-press
+    -- glows all read spell state this panel's entries do not have, so the aura
+    -- glow is the whole section (ST.CanGroupUseOverrideSection).
     local glowLeft, glowRight = BeginRowGrid(container)
 
-    BuildProcGlowSection(glowLeft, group, style, lens)
-    BuildReadyGlowSection(glowLeft, group, style, lens)
-    BuildKeyPressHighlightSection(glowLeft, group, style, lens)
+    if CanGroupUseOverrideSection(group, "procGlow") then
+        BuildProcGlowSection(glowLeft, group, style, lens)
+    end
+    if CanGroupUseOverrideSection(group, "readyGlow") then
+        BuildReadyGlowSection(glowLeft, group, style, lens)
+    end
+    if CanGroupUseOverrideSection(group, "keyPressHighlight") then
+        BuildKeyPressHighlightSection(glowLeft, group, style, lens)
+    end
 
     -- Gated on the group tracking an aura, so this column can run a row short;
     -- the grid top-aligns its columns, so a short side just ends early.
-    BuildAuraGlowSection(glowRight, group, style, lens)
+    --
+    -- On an Aura Panel it is the section's ONLY row (the three above are denied
+    -- and Assisted Highlight below is too), so it takes the left column instead
+    -- of stranding itself beside an empty one.
+    BuildAuraGlowSection(isAuraPanel and glowLeft or glowRight, group, style, lens)
 
     -- Assisted Highlight is an override section like the four glows above, and
     -- gets its FIRST per-entry affordance here: it never carried a promote
     -- badge, so under the lens the scope chrome is the whole of it (the
     -- appearance tab's Icon Zoom row set the precedent).
+    if CanGroupUseOverrideSection(group, "assistedHighlight") then
     local assistedSec = BeginLensSection(lens, group, "assistedHighlight", { column = glowRight })
 
     local assistedCb = AddCheckboxRow(glowRight, {
@@ -859,7 +893,9 @@ local function BuildEffectsTab(container)
     assistedSec:Chrome(assistedCb)
 
     assistedSec:Finish()
+    end -- CanGroupUseOverrideSection assistedHighlight
     end -- not glowsCollapsed
+    end -- Glows section has at least one row
 
     -- ================================================================
     -- Pandemic
@@ -893,6 +929,9 @@ local function BuildEffectsTab(container)
     -- ================================================================
     -- Timers
     -- ================================================================
+    -- Same shape as Glows above: on an Aura Panel the aura duration swipe is the
+    -- only timer left, and it needs an aura-tracking entry to exist.
+    if CanGroupUseOverrideSection(group, "cooldownSwipe") or groupHasAuraEntry then
     local _, timersCollapsed = BuildCollapsibleSection(container, "Timers", EFFECTS_TIMERS_SECTION, nil, nil, ROW_SECTION)
 
     if not timersCollapsed then
@@ -914,13 +953,24 @@ local function BuildEffectsTab(container)
     -- scope is applied by bracketing its rows instead - the same shape the bars
     -- States section uses for its two shared builders. The gear below is
     -- caller-built, so it is gated the ordinary way.
-    local fillSec = BeginLensSection(lens, group, "iconFillTimer", { column = timerLeft })
+    --
+    -- On an Aura Panel the left column empties out and the GCD swipe leaves the
+    -- right one: the fill timer, the cooldown swipe and the GCD swipe all time a
+    -- spell cooldown these entries do not have, so the aura duration swipe is
+    -- the whole section (ST.CanGroupUseOverrideSection).
+    local showCooldownTimers = CanGroupUseOverrideSection(group, "cooldownSwipe")
 
     -- The interlock derives from the RESOLVED READ table, not the panel style:
     -- an entry whose effective fill timer differs from the panel's has to see
     -- its own swipe row greyed (or not). Masque is GROUP data with no override
-    -- section, so that half of the gate stays group-level.
-    local iconFillTimerActive = fillSec.read.iconFillEnabled == true and group.masqueEnabled ~= true
+    -- section, so that half of the gate stays group-level. Nothing to interlock
+    -- once the cooldown timers are gone.
+    local iconFillTimerActive = false
+
+    if showCooldownTimers then
+    local fillSec = BeginLensSection(lens, group, "iconFillTimer", { column = timerLeft })
+
+    iconFillTimerActive = fillSec.read.iconFillEnabled == true and group.masqueEnabled ~= true
     local iconFillCb = BuildIconFillTimerControls(timerLeft, fillSec.tbl, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end, {
@@ -996,15 +1046,21 @@ local function BuildEffectsTab(container)
             })
     end
     swipeSec:Chrome(swipeCb)
+    end -- showCooldownTimers
 
     -- Aura duration swipe (shown only while the group has an aura-tracking
     -- entry). The gate stays on the GROUP: an entry that tracks no aura still
     -- sees the row, and the lens resolves it "not available" for that entry
     -- rather than hiding it.
+    --
+    -- On an Aura Panel it is the section's ONLY row (the fill timer, the
+    -- cooldown swipe and the GCD swipe are all denied), so it takes the left
+    -- column instead of stranding itself beside an empty one.
     if GroupHasAuraTrackingEntry(group) then
-        local auraSwipeSec = BeginLensSection(lens, group, "auraDurationSwipe", { column = timerRight })
+        local auraSwipeHost = isAuraPanel and timerLeft or timerRight
+        local auraSwipeSec = BeginLensSection(lens, group, "auraDurationSwipe", { column = auraSwipeHost })
 
-        local auraDurationCb = BuildAuraDurationSwipeControls(timerRight, auraSwipeSec.tbl, function()
+        local auraDurationCb = BuildAuraDurationSwipeControls(auraSwipeHost, auraSwipeSec.tbl, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end, {
             row = true,
@@ -1033,6 +1089,7 @@ local function BuildEffectsTab(container)
     -- One row, no gear: `disabled` is the whole gate, so no inert bracket is
     -- needed - the chrome that undoes it is attached after. Same shape the bars
     -- Timers section uses for this setting.
+    if CanGroupUseOverrideSection(group, "showGCDSwipe") then
     local gcdSec = BeginLensSection(lens, group, "showGCDSwipe")
     local gcdCb = AddCheckboxRow(timerRight, {
         label = "Show GCD Swipe",
@@ -1045,7 +1102,9 @@ local function BuildEffectsTab(container)
         end,
     })
     gcdSec:Chrome(gcdCb)
+    end -- CanGroupUseOverrideSection showGCDSwipe
     end -- not timersCollapsed
+    end -- Timers section has at least one row
 
     -- ================================================================
     -- States
@@ -1058,8 +1117,15 @@ local function BuildEffectsTab(container)
     -- RIGHT column: the situational state and the hover behavior.
     local stateLeft, stateRight = BeginRowGrid(container)
 
+    -- On an Aura Panel the left column empties out and Loss of Control leaves
+    -- the right one: desaturate-on-cooldown, the unusable visual, out-of-range
+    -- and loss-of-control all read spell cooldown or castability state these
+    -- entries do not have, and pings refuse aura entries by their own rule. What
+    -- is left is Show Tooltips, which is about the frame rather than the spell.
+    --
     -- Same per-section resolve the Timers section above states: the write table
     -- is the whole gate, and the scope chrome goes on LAST.
+    if CanGroupUseOverrideSection(group, "desaturation") then
     local desatSec = BeginLensSection(lens, group, "desaturation")
     local desatCb = AddCheckboxRow(stateLeft, {
         label = "Show Desaturate On Cooldown",
@@ -1072,11 +1138,13 @@ local function BuildEffectsTab(container)
         end,
     })
     desatSec:Chrome(desatCb)
+    end -- CanGroupUseOverrideSection desaturation
 
     -- Unusable Visual. This shared builder owns its OWN gear, so an inert scope
     -- cannot skip building one the way the hand-written sections do: the inert
     -- pass gates the gear it finds on the row (_cdcAdvancedBtn), and the sweep
     -- at the foot of this builder closes a panel it rebound.
+    if CanGroupUseOverrideSection(group, "unusableDimming") then
     local unusableSec = BeginLensSection(lens, group, "unusableDimming", { column = stateLeft })
     local unusableCb = BuildUnusableDimmingControls(stateLeft, unusableSec.tbl, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -1087,11 +1155,13 @@ local function BuildEffectsTab(container)
     })
     unusableSec:Chrome(unusableCb)
     unusableSec:Finish()
+    end -- CanGroupUseOverrideSection unusableDimming
 
     -- Inlined rather than given an opts.row mode: BuildShowOutOfRangeControls
     -- is one checkbox with no file-private state, the same call the Duration
     -- Format dropdown made on the Appearance tab. The shared builder is
     -- untouched for the override editor and the other display modes.
+    if CanGroupUseOverrideSection(group, "showOutOfRange") then
     local oorSec = BeginLensSection(lens, group, "showOutOfRange")
     local oorCb = AddCheckboxRow(stateLeft, {
         label = "Show Out of Range",
@@ -1105,8 +1175,10 @@ local function BuildEffectsTab(container)
         end,
     })
     oorSec:Chrome(oorCb)
+    end -- CanGroupUseOverrideSection showOutOfRange
 
     -- Loss of Control - inlined for the same reason as Out of Range.
+    if CanGroupUseOverrideSection(group, "lossOfControl") then
     local locSec = BeginLensSection(lens, group, "lossOfControl")
     local locCb = AddCheckboxRow(stateRight, {
         label = "Show Loss of Control",
@@ -1119,12 +1191,18 @@ local function BuildEffectsTab(container)
         end,
     })
     locSec:Chrome(locCb)
+    end -- CanGroupUseOverrideSection lossOfControl
 
     -- Show Tooltips (panel refresh: the advanced gear only shows while the
     -- toggle is on). Its gear is the builder's own, so it is bracketed rather
     -- than skipped - see the Unusable Visual note above.
-    local tooltipSec = BeginLensSection(lens, group, "showTooltips", { column = stateRight })
-    local tooltipCb = BuildShowTooltipsControls(stateRight, tooltipSec.tbl, function()
+    --
+    -- On an Aura Panel it is the section's ONLY row (everything above is denied,
+    -- and Allow Pings below is not offered), so it takes the left column instead
+    -- of stranding itself beside an empty one.
+    local tooltipHost = isAuraPanel and stateLeft or stateRight
+    local tooltipSec = BeginLensSection(lens, group, "showTooltips", { column = tooltipHost })
+    local tooltipCb = BuildShowTooltipsControls(tooltipHost, tooltipSec.tbl, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end, {
@@ -1145,11 +1223,18 @@ local function BuildEffectsTab(container)
     -- builder takes no `disabled` option, so the bracket is what greys it. Its
     -- "?" badge stays readable: the inert walk only reaches AceGUI children and
     -- the gear.
+    --
+    -- Not offered on an Aura Panel: the row's own tooltip already says entries
+    -- added as auras cannot be pinged, and every entry here is one. It has no
+    -- override section of its own, so the gate is the panel predicate directly
+    -- rather than CanGroupUseOverrideSection.
+    if not CooldownCompanion:IsAuraPanel(group) then
     local pingsSec = BeginLensSection(lens, group, nil, { column = stateRight })
     BuildAllowPingsControls(stateRight, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end, { row = true })
     pingsSec:Finish()
+    end
     end -- not statesCollapsed
 
     -- Inert-section sweep, over BOTH icons gear maps. A section the lens

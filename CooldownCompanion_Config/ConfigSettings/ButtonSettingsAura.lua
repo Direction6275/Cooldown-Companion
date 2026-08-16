@@ -275,6 +275,10 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
 
     local isStandalone = buttonData.addedAs == "aura"
     local isTexturePanel = group and group.displayMode == "textures"
+    -- An Aura Panel cell is structurally SINGLE-UNIT: BindPanelGroup never
+    -- passes groupScoped, so the group-scope rows below have nothing to act on
+    -- there (owner ruling 2026-08-15).
+    local isAuraPanel = ST.IsAuraPanelGroup(group)
 
     -- One collapsible row-grammar section, emitted into the entry Settings
     -- pane's ScrollFrame (already a "List"; Panel.lua re-lays it once the
@@ -338,14 +342,19 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- the user tick a box on what turns out to be a debuff, where the runtime
     -- resolves to the target unconditionally and the setting does nothing.
     local polarityKnown = classifiedUnit ~= nil
-    local canTrackGroup = not isTexturePanel and isBuff and polarityKnown
+    local canTrackGroup = not isTexturePanel and not isAuraPanel and isBuff and polarityKnown
         and EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
-    AddLabelRow(auraLeft, {
-        label = "Tracked on",
-        indent = not isStandalone,
-        controlText = (not isBuff) and "Target"
-            or ((not isTexturePanel and buttonData.auraTrackGroup) and "You and your group" or "You"),
-    })
+    -- The read-only line exists to state the SCOPE the checkbox below sets. An
+    -- Aura Panel cell has one unit and no checkbox, so the line has nothing left
+    -- to report and goes with it.
+    if not isAuraPanel then
+        AddLabelRow(auraLeft, {
+            label = "Tracked on",
+            indent = not isStandalone,
+            controlText = (not isBuff) and "Target"
+                or ((not isTexturePanel and buttonData.auraTrackGroup) and "You and your group" or "You"),
+        })
+    end
 
     -- Castable buffs only. Blizzard permits spell-ID matching for helpful auras
     -- across the group, but group scope applies its own-cast filter on every
@@ -680,14 +689,22 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
             end,
         })
     else
-        AddCheckboxRow(auraRight, {
-            label = "Desaturate Icon While Aura Missing",
-            value = buttonData.desaturateWhileAuraNotActive == true,
-            onChange = function(value)
-                buttonData.desaturateWhileAuraNotActive = value and true or nil
-                RefreshAuraConfig()
-            end,
-        })
+        -- Desaturate-while-MISSING is a static desaturate on the CC icon
+        -- (Tracking.lua). An Aura Panel materializes no CC buttons and draws a
+        -- cell only while the aura is up, so there is no missing state to paint.
+        -- The stored flag stays put; the row just hides while it cannot apply
+        -- (keep-swipe row pattern). Its while-ACTIVE counterpart below lives on
+        -- the aura layer and still works here.
+        if not isAuraPanel then
+            AddCheckboxRow(auraRight, {
+                label = "Desaturate Icon While Aura Missing",
+                value = buttonData.desaturateWhileAuraNotActive == true,
+                onChange = function(value)
+                    buttonData.desaturateWhileAuraNotActive = value and true or nil
+                    RefreshAuraConfig()
+                end,
+            })
+        end
 
         -- Aura-layer counterpart: desaturates the Blizzard-shown layer, so
         -- it reads "while active" without any aura-state read. Hidden where

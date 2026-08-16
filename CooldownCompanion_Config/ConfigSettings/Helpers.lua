@@ -1837,9 +1837,14 @@ local function NormalizeCompactGrowthDirection(growthDirection)
     return "center"
 end
 
-local function GetCompactGrowthDirectionLabels(group)
+-- orientationOverride exists for the Aura Panel row: an Aura BAR Panel is one
+-- vertical column no matter what style.barOrientation still says (the aura
+-- container's bars branch hard-codes the axis), and a stale horizontal key from
+-- before the conversion would otherwise label the row Left/Center/Right for a
+-- block that moves up and down.
+local function GetCompactGrowthDirectionLabels(group, orientationOverride)
     local style = group.style or {}
-    local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
+    local orientation = orientationOverride or ST.GetPanelLayoutOrientation(group.displayMode, style)
     local growthOrigin = style.growthOrigin or "TOPLEFT"
     if orientation == "vertical" then
         local startIsTop = (growthOrigin == "TOPLEFT" or growthOrigin == "TOPRIGHT")
@@ -1932,7 +1937,15 @@ end
 -- while the group tracks an aura. A name link into a section that is not there
 -- lands on a tab where nothing answers the click, so the list asks the home
 -- first. A section whose home registers no predicate is always drawn.
-local function IsSectionHomeAvailable(home, group, style)
+-- The panel-wide answer comes FIRST and needs no per-section registration: an
+-- Aura Panel's tabs leave the sections its pure-aura entries can never use out
+-- entirely rather than drawing them denied, so there is no row left for a name
+-- link to land on. Every one of those gates cites ST.CanGroupUseOverrideSection,
+-- so asking it here covers them all at once and cannot drift from them.
+local function IsSectionHomeAvailable(home, group, style, sectionId)
+    if sectionId and not ST.CanGroupUseOverrideSection(group, sectionId) then
+        return false
+    end
     local available = home and home.available
     if not available then
         return true
@@ -2265,7 +2278,7 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
         -- row keeps everything else it had: its revert, and its inactive clause
         -- when it has one. Only the link goes.
         local navigable = item.tab ~= nil
-            and IsSectionHomeAvailable(item.home, group, predicateStyle)
+            and IsSectionHomeAvailable(item.home, group, predicateStyle, item.sectionId)
 
         -- ADVANCED GEAR (owner ruling 2026-08-14): a row whose section has an
         -- advanced panel carries the gear too, so the list is one click from the
@@ -2375,7 +2388,18 @@ end
 -- Row grammar only (RowWidgets.lua) - the pre-redesign full-width/half-width
 -- checkbox shape had no call sites left once the bar and text tabs converted.
 -- opts.indent makes it a child row.
+--
+-- An Aura Panel builds NOTHING here. Blizzard's aura container packs only the
+-- active auras, so collapsing is inherent and always on (compactLayout is
+-- forced false at birth) and Max Visible Buttons would be a limit CC never
+-- applies. The one question that survives - WHICH END the packed block holds -
+-- is not a compact-mode sub-setting for such a panel, it is simply how the
+-- panel arranges itself, so it lives on the Layout tab's Arrangement section as
+-- "Collapse Direction" (owner ruling 2026-08-15) rather than behind a toggle
+-- that does not exist here.
 local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
+    if CooldownCompanion:IsAuraPanel(group) then return end
+
     local stableAnchorLocked = false
     if CooldownCompanion.NormalizeStableExternalAnchorCompactLayout and CS.selectedGroup then
         stableAnchorLocked = CooldownCompanion:NormalizeStableExternalAnchorCompactLayout(CS.selectedGroup, group) == true
@@ -3097,6 +3121,12 @@ ST._BuildCustomizationsSection = BuildCustomizationsSection
 -- Reached from the confirm popup (Config/Popups.lua), not from a builder.
 ST._RevertAllEntryCustomizations = RevertAllEntryCustomizations
 ST._BuildCompactModeControls = BuildCompactModeControls
+-- The compact vocabulary outlives the compact section: an Aura Panel's
+-- Collapse Direction row (GroupTabsLayout.lua, Arrangement) asks the same
+-- start/center/end question against the same compactGrowthDirection key, so it
+-- reads and writes through these two rather than restating the mapping.
+ST._GetCompactGrowthDirectionLabels = GetCompactGrowthDirectionLabels
+ST._NormalizeCompactGrowthDirection = NormalizeCompactGrowthDirection
 ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls
 ST._CreateCharacterCopyButton = CreateCharacterCopyButton
 ST._AddAnchorDropdown = AddAnchorDropdown

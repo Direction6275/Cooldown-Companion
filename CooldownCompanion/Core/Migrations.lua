@@ -1483,6 +1483,7 @@ local MIGRATION_SENTINELS = {
     { current = "_cdcAuraGroupScopeMigrated" },
     { current = "_cdcLcgGlowMigrated" },
     { current = "_cdcPerModeOrientationMigrated" },
+    { current = "_cdcAuraPanelIntegrityMigrated" },
 }
 
 -- False when the profile is already stamped; otherwise clears the retired
@@ -1524,6 +1525,83 @@ function ST._NormalizePanelOrientationKeys(group)
     end
 end
 
+-- Aura Panel repair for the panel-piece import door (2026-08-15). Every other
+-- way an Aura Panel gains an entry runs through CreatePanel and AddButtonToGroup,
+-- which enforce the subtype's invariants; an imported panel is raw payload data
+-- installed wholesale, so it is the one door with no gate. Re-establishes the
+-- invariants the display engine relies on:
+--   * the subtype only has icon and bar forms;
+--   * its entries render through the aura container's own flow layout, so CC's
+--     compact reflow and Masque skinning have nothing to drive;
+--   * only aura entries, which is a static property of the stored entry;
+--   * every entry carries a per-panel key that no other entry in the panel
+--     shares, without which the engine cannot bind it (or binds two entries
+--     onto one aura group and renders only the last), and nextAuraKey sits
+--     above every numeric key already in use.
+--
+-- POLARITY IS NEVER REPAIRED HERE, and never deletes an entry. An entry's unit
+-- comes from ResolveAuraEntryUnit, which resolves the APPLIED aura through
+-- spec-dependent Cooldown Manager / buff-viewer data, so the same stored entry
+-- can answer "player" on one spec and "target" on another. A pass that dropped
+-- entries on that answer would silently delete a working panel's entries the
+-- next time the owner imported anything on the wrong spec -- and this pass
+-- re-runs over the WHOLE profile on every import, not just over incoming
+-- panels. The add doors still enforce polarity for NEW entries, where the
+-- answer is being made rather than second-guessed, and the bind pass skips a
+-- mismatched entry non-destructively and counts it (GetAuraDisplayStatus's
+-- unitMismatches) -- that counter is the surface for this condition.
+--
+-- Existing unique keys stay exactly as they are: the engine has already bound
+-- them, and renumbering would move live entries between aura groups. Pure data,
+-- no frames, and idempotent, so a second pass over a repaired panel changes
+-- nothing. Panels without the flag are left alone, residue included: a stray
+-- key harms nothing, and stripping it would break a panel re-imported as an
+-- Aura Panel later.
+function ST._NormalizeAuraPanelEntries(group)
+    if type(group) ~= "table" or group.auraPanel ~= true then return end
+
+    if group.displayMode ~= "icons" and group.displayMode ~= "bars" then
+        group.displayMode = "icons"
+    end
+    CooldownCompanion:EnforceAuraPanelInvariants(group)
+
+    local kept = {}
+    for _, buttonData in ipairs(type(group.buttons) == "table" and group.buttons or {}) do
+        if type(buttonData) == "table"
+            and buttonData.type == "spell"
+            and buttonData.addedAs == "aura" then
+            kept[#kept + 1] = buttonData
+        end
+    end
+    group.buttons = kept
+
+    -- Every key already in the panel is measured first, so the values stamped
+    -- below start above all of them and cannot collide with a key that stayed.
+    local maxKey = 0
+    for _, buttonData in ipairs(kept) do
+        local numeric = tonumber(buttonData._auraKey)
+        if numeric and numeric > maxKey then
+            maxKey = numeric
+        end
+    end
+
+    -- First occurrence of a key owns it; a later entry repeating it has no aura
+    -- group of its own (EnsurePanelGroup would hand it the first entry's) and is
+    -- renumbered, exactly like a keyless one.
+    local nextKey = math.max(maxKey + 1, tonumber(group.nextAuraKey) or 1)
+    local used = {}
+    for _, buttonData in ipairs(kept) do
+        local key = buttonData._auraKey
+        if key == nil or used[key] then
+            key = tostring(nextKey)
+            nextKey = nextKey + 1
+            buttonData._auraKey = key
+        end
+        used[key] = true
+    end
+    group.nextAuraKey = nextKey
+end
+
 local function MigratePerModeOrientation(self, profile)
     if type(profile) ~= "table" or profile._cdcPerModeOrientationMigrated then return end
     if type(profile.groups) == "table" then
@@ -1532,6 +1610,30 @@ local function MigratePerModeOrientation(self, profile)
         end
     end
     profile._cdcPerModeOrientationMigrated = true
+end
+
+-- The same repair, for the FULL PROFILE import door. The panel-piece door calls
+-- the normalizer itself as it installs each panel, but a whole-profile import
+-- replaces profile.groups wholesale, so nothing walks the incoming panels: an
+-- Aura Panel that arrives keyless (or with two entries sharing one key) would
+-- reach the display engine, which can only count and skip it. Registered in
+-- MIGRATION_SENTINELS so the import hook strips the stamp and forces this
+-- re-run over the imported profile.
+--
+-- Silent by design. The normalizer reports nothing, and no shipped profile can
+-- carry a malformed Aura Panel: the subtype is new in this release and every
+-- in-client path to an entry goes through CreatePanel/AddButtonToGroup, which
+-- enforce the invariants. Only a hand-crafted payload reaches this pass with
+-- work to do, and a print for that is noise rather than news. The diagnostics
+-- counters in GetAuraDisplayStatus are where an unrepaired panel shows up.
+local function MigrateAuraPanelIntegrity(self, profile)
+    if type(profile) ~= "table" or profile._cdcAuraPanelIntegrityMigrated then return end
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            ST._NormalizeAuraPanelEntries(group)
+        end
+    end
+    profile._cdcAuraPanelIntegrityMigrated = true
 end
 
 local function MigrateAuraTrackingRebuild(self, profile)
@@ -2625,6 +2727,12 @@ function CooldownCompanion:RunAllMigrations()
     end
     MigratePerModeOrientation(self, self.db and self.db.profile)
     MigrateAuraTrackingRebuild(self, self.db and self.db.profile)
+    -- After the aura vocabulary rebuild so the repair walks entries whose
+    -- addedAs labels are final, and ahead of the style/override passes below
+    -- so they only walk entries that survived the non-aura drop. Polarity
+    -- plays no part in this pass anymore -- it never deletes (see the
+    -- normalizer's header).
+    MigrateAuraPanelIntegrity(self, self.db and self.db.profile)
     MigrateAuraGroupScopeIdentity(self, self.db and self.db.profile)
     MigrateAuraGlowRebuild(self, self.db and self.db.profile)
     MigrateLcgGlowStyles(self, self.db and self.db.profile)
