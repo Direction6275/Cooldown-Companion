@@ -512,33 +512,20 @@ function RB.CreateResourceBarAuraHostModule(deps)
         local lit = opts and tonumber(opts.litStacks) or nil
         if lit and lit > 0 then
             local auraColor = style.barAuraColor or { 0.2, 1.0, 0.2, 1.0 }
-            -- Threshold recolor (preview fidelity): the stand-in count is
-            -- CC-invented, never secret, so coloring per lit block in Lua
-            -- here mirrors what the kit's masked bands render on a live bar.
-            local policy = CooldownCompanion:ResolveAuraStackThresholdPolicy(
-                BuildEntryAdapter(barInfo.cabConfig, settings))
-            local threshold = policy and policy.threshold
-            if threshold and threshold > max then threshold = max end
             -- Reverse fill starts the lit run at the opposite physical end,
-            -- so each block maps to its LOGICAL stack before lighting or
-            -- coloring (review 2026-08-15: the run and its colors landed on
-            -- the wrong end of reversed bars).
+            -- so each block maps to its LOGICAL stack before lighting
+            -- (review 2026-08-15: the run landed on the wrong end of
+            -- reversed bars).
             local reverse = frame.GetReverseFill and frame:GetReverseFill() == true
             lit = math_min(lit, max)
             for i = 1, max do
                 local logical = reverse and (max - i + 1) or i
                 local tex = logical <= lit and blocks[i] or nil
                 if tex then
-                    local color = auraColor
-                    if policy and policy.maxOn and logical == max then
-                        color = policy.maxColor
-                    elseif threshold and logical >= threshold then
-                        color = policy.thresholdColor
-                    end
                     tex:SetColorTexture(
-                        color[1] or 0.2,
-                        color[2] or 1.0,
-                        color[3] or 0.2,
+                        auraColor[1] or 0.2,
+                        auraColor[2] or 1.0,
+                        auraColor[3] or 0.2,
                         auraColor[4] ~= nil and auraColor[4] or 1
                     )
                 end
@@ -977,7 +964,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
                             if CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) then
                                 -- Constrained (panel parity): boundStackMax must
                                 -- equal the threshold policy's maxStacks or the
-                                -- max band and the max text breakpoint disagree.
+                                -- bound fill and the max text breakpoint disagree.
                                 stackBarMax = CooldownCompanion:GetAuraStackBarMax(buttonData, true)
                             end
                             SetCustomBarCachedStackMax(entry.customBarId, stackBarMax)

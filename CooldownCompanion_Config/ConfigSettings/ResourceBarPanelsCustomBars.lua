@@ -647,6 +647,18 @@ local function BuildCustomBarAuraProbe(cab)
     }
 end
 
+-- Whether this bar renders aura stack text, mirroring the runtime style
+-- adapter's rule (ResourceBarAuraHost BuildStyleAdapter) including the
+-- legacy compat leg: stacks-mode aura bars with no explicit showStackText
+-- fall back to the old showText flag.
+local function CustomBarShowsStackText(cab)
+    local showStack = cab.showStackText
+    if not IsSpellCustomBarConfig(cab) and showStack == nil then
+        return cab.trackingMode ~= "active" and cab.showText == true
+    end
+    return showStack == true
+end
+
 local function GetCustomBarAuraUnit(cab)
     local resolved = CooldownCompanion:ResolveAuraSpellID(BuildCustomBarAuraProbe(cab))
     return ClassifyAuraSpellUnit(resolved) or cab.auraUnit or "player"
@@ -788,78 +800,87 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         AddAuraStackMaxStatusLabel(auraRight, maxStacks, { row = true })
     end
 
-    -- Stack threshold colors, the same rows the panel entry section shows
-    -- (SectionBuilders.lua): count text recolors at a chosen stack count and
-    -- again at max; stack-filled bars add matching band recolors. Outside
-    -- the Bar Shows Stacks gate because the text half runs on duration bars
-    -- too. The keys live in cab.auraBar under the panel names, which is what
-    -- lets the runtime adapter and the engine policy read them unchanged.
-    -- Resolved with constrained fallbacks, the one max every custom-bar
-    -- surface shares since the review alignment.
-    ST._BuildStackThresholdColorRows(auraRight, cab,
-        CooldownCompanion:GetAuraStackBarMax(BuildCustomBarAuraProbe(cab), true), {
-            infoButtons = infoButtons,
-            refresh = RefreshCustomBarAuraConfig,
-            commit = function()
-                CooldownCompanion:ApplyResourceBars()
-                RefreshLayoutOrderPreview()
-            end,
-            previewRefresh = RefreshLayoutOrderPreviewForDrag,
-        })
-
-    -- Pandemic marker per-entry switch. The auto default follows the tracked
-    -- unit (on for target debuffs, off for player buffs); only an explicit
-    -- override is stored.
-    local pandemicDefault = unit == "target"
-    local pandemicValue = cab.pandemicMarker
-    if pandemicValue == nil then pandemicValue = pandemicDefault end
-    local pandemicRow = AddCheckboxRow(auraRight, {
-        label = "Pandemic Marker",
-        value = pandemicValue == true,
-        onChange = function(value)
-            if value == pandemicDefault then
-                cab.pandemicMarker = nil
-            else
-                cab.pandemicMarker = value and true or false
-            end
-            -- Turning it off drops the command-center control, so disarm its
-            -- preview here or the stand-in strands with no toggle left to stop
-            -- it (the Show Pandemic Color twin below clears its own the same
-            -- way). Asked through the shared gate the control is offered on.
-            if not CooldownCompanion:IsPandemicMarkerPreviewWanted(cab, cab) then
-                CooldownCompanion:SetCustomAuraBarMarkerPreview(cab, false)
-            end
-            RefreshCustomBarAuraConfig()
-        end,
-    })
-    -- The marker's look had no control on this surface at all: the style
-    -- adapter has always read these four keys off the entry, but nothing ever
-    -- wrote them, so every custom aura bar drew a hardcoded orange "!!".
-    -- Only the three styling rows are added here — the on/off above IS this
-    -- entry's switch, and the panel-wide pandemicMarkerEnabled kill switch has
-    -- no meaning on a surface where the bar is the entry.
-    local function BuildCustomBarPandemicMarkerAdvanced(panel)
-        AddPandemicMarkerControls(panel, cab, function()
-            CooldownCompanion:ApplyResourceBars()
-        end, function()
-            if CS.RefreshAdvancedSettingsPanel then
-                CS.RefreshAdvancedSettingsPanel()
-            end
-        end, { childrenOnly = true })
+    -- Stack text threshold colors, the same rows the panel entry section
+    -- shows (SectionBuilders.lua): count text recolors at a chosen stack
+    -- count and again at max. Outside the Bar Shows Stacks gate because
+    -- the count text runs on duration bars too, but gated on the stack
+    -- text actually showing (owner ruling 2026-08-16: settings for a
+    -- hidden text hide with it). The keys live in cab.auraBar under the
+    -- panel names, which is what lets the runtime adapter and the engine
+    -- policy read them unchanged. Resolved with constrained fallbacks,
+    -- the one max every custom-bar surface shares since the review
+    -- alignment.
+    if CustomBarShowsStackText(cab) then
+        ST._BuildStackThresholdColorRows(auraRight, cab,
+            CooldownCompanion:GetAuraStackBarMax(BuildCustomBarAuraProbe(cab), true), {
+                infoButtons = infoButtons,
+                refresh = RefreshCustomBarAuraConfig,
+                commit = function()
+                    CooldownCompanion:ApplyResourceBars()
+                    RefreshLayoutOrderPreview()
+                end,
+                previewRefresh = RefreshLayoutOrderPreviewForDrag,
+            })
     end
-    AddAdvancedToggle(pandemicRow, "rbCabPandemicMarker_" .. tostring(sectionKey), infoButtons,
-        pandemicValue == true, {
-            title = "Pandemic Marker Advanced",
-            build = BuildCustomBarPandemicMarkerAdvanced,
+
+    -- The marker row hides with the duration text it rides (owner ruling
+    -- 2026-08-16); the stored keys are untouched, so re-enabling the text
+    -- brings the row back as it was. The fill recolor below stays
+    -- unconditional — it colors the bar, not the text.
+    if cab.showDurationText == true then
+        -- Pandemic marker per-entry switch. The auto default follows the
+        -- tracked unit (on for target debuffs, off for player buffs); only
+        -- an explicit override is stored.
+        local pandemicDefault = unit == "target"
+        local pandemicValue = cab.pandemicMarker
+        if pandemicValue == nil then pandemicValue = pandemicDefault end
+        local pandemicRow = AddCheckboxRow(auraRight, {
+            label = "Pandemic Marker",
+            value = pandemicValue == true,
+            onChange = function(value)
+                if value == pandemicDefault then
+                    cab.pandemicMarker = nil
+                else
+                    cab.pandemicMarker = value and true or false
+                end
+                -- Turning it off drops the command-center control, so disarm
+                -- its preview here or the stand-in strands with no toggle
+                -- left to stop it (the Show Pandemic Color twin below clears
+                -- its own the same way). Asked through the shared gate the
+                -- control is offered on.
+                if not CooldownCompanion:IsPandemicMarkerPreviewWanted(cab, cab) then
+                    CooldownCompanion:SetCustomAuraBarMarkerPreview(cab, false)
+                end
+                RefreshCustomBarAuraConfig()
+            end,
         })
-    AnchorRowBadge(pandemicRow, CreateInfoButton(pandemicRow.frame, pandemicRow.frame, "LEFT", "LEFT", 0, 0, {
-        "Pandemic Marker",
-        {"Marks the duration text for the last 30% of the aura, where recasting adds to the remaining time instead of wasting it.", 1, 1, 1, true},
-        {" ", 1, 1, 1, true},
-        {"It rides that text. With Show Duration Text off, nothing shows.", 1, 1, 1, true},
-        {" ", 1, 1, 1, true},
-        {"On by default for debuffs on your target.", 1, 1, 1, true},
-    }, infoButtons))
+        -- The marker's look had no control on this surface at all: the style
+        -- adapter has always read these four keys off the entry, but nothing
+        -- ever wrote them, so every custom aura bar drew a hardcoded orange
+        -- "!!". Only the three styling rows are added here — the on/off above
+        -- IS this entry's switch, and the panel-wide pandemicMarkerEnabled
+        -- kill switch has no meaning on a surface where the bar is the entry.
+        local function BuildCustomBarPandemicMarkerAdvanced(panel)
+            AddPandemicMarkerControls(panel, cab, function()
+                CooldownCompanion:ApplyResourceBars()
+            end, function()
+                if CS.RefreshAdvancedSettingsPanel then
+                    CS.RefreshAdvancedSettingsPanel()
+                end
+            end, { childrenOnly = true })
+        end
+        AddAdvancedToggle(pandemicRow, "rbCabPandemicMarker_" .. tostring(sectionKey), infoButtons,
+            pandemicValue == true, {
+                title = "Pandemic Marker Advanced",
+                build = BuildCustomBarPandemicMarkerAdvanced,
+            })
+        AnchorRowBadge(pandemicRow, CreateInfoButton(pandemicRow.frame, pandemicRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Pandemic Marker",
+            {"Marks the duration text for the last 30% of the aura, where recasting adds to the remaining time instead of wasting it.", 1, 1, 1, true},
+            {" ", 1, 1, 1, true},
+            {"On by default for debuffs on your target.", 1, 1, 1, true},
+        }, infoButtons))
+    end
 
     -- Pandemic fill recolor (PTR 8 Phase 2). Fresh entry keys: the retired
     -- showPandemicGlow/barPandemicColor names are wiped on every import and
@@ -1386,6 +1407,16 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                             value = cab.showDurationText == true,
                             onChange = function(val)
                                 customBars[cabIdx].showDurationText = val or nil
+                                -- Turning the text off hides the Pandemic
+                                -- Marker row and its command-center control
+                                -- (the marker rides this text), so disarm an
+                                -- active marker preview or it strands with no
+                                -- toggle left and silently resumes when the
+                                -- text returns. The marker settings themselves
+                                -- stay stored.
+                                if not val then
+                                    CooldownCompanion:SetCustomAuraBarMarkerPreview(customBars[cabIdx], false)
+                                end
                                 CooldownCompanion:ApplyResourceBars()
                                 CooldownCompanion:RefreshConfigPanel()
                             end,

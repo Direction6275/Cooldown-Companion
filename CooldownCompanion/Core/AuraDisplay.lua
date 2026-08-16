@@ -470,32 +470,6 @@ local function BuildSlotKit(slotButton)
         kit.stackFillCsAG:SetLooping("BOUNCE")
         kit.stackFillCsAnim = kit.stackFillCsAG:CreateAnimation("VertexColor")
 
-        -- Stack threshold bands (2026-08-15 program): recolor textures over
-        -- the stack fill, created here (write-once subtree) and dressed at
-        -- bind time by StyleStackThresholdBands. ARTWORK 1/2: above the
-        -- fill texture, below the OVERLAY separator stripes — so painted
-        -- gaps stay visible over a band. The max band spans only the FINAL
-        -- segment ((max-1)/max onward); where it overlaps the threshold
-        -- band on that stretch, the higher sublayer wins by draw order,
-        -- never by comparison.
-        kit.stackThresholdBand = kit.stackFill:CreateTexture(nil, "ARTWORK", nil, 1)
-        kit.stackThresholdBand:SetAlpha(0)
-        kit.stackMaxBand = kit.stackFill:CreateTexture(nil, "ARTWORK", nil, 2)
-        kit.stackMaxBand:SetAlpha(0)
-        -- Widget-bind band mask: the bands are solid textures, so on a
-        -- block-atlas fill their span would paint over the atlas's baked
-        -- transparent gaps. Both bands share this mask; widget binds dress
-        -- it with the SAME block atlas across the full bar (the bands then
-        -- render only over block artwork), every other bind dresses it
-        -- all-pass white. Created here (write-once subtree), dressed at
-        -- bind time by StyleStackThresholdBands.
-        kit.stackBandMask = kit.stackFill:CreateMaskTexture()
-        kit.stackBandMask:SetTexture("Interface\\Buttons\\WHITE8X8",
-            "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-        kit.stackBandMask:SetAllPoints(kit.stackFill)
-        kit.stackThresholdBand:AddMaskTexture(kit.stackBandMask)
-        kit.stackMaxBand:AddMaskTexture(kit.stackBandMask)
-
         kit.stackSegments = {}
         for i = 1, ST.STACK_SEGMENT_ATLAS_MAX - 1 do
             local tex = kit.stackFill:CreateTexture(nil, "OVERLAY")
@@ -947,99 +921,6 @@ local function StyleStackSegments(kit, button, buttonData, style, boundMax, show
         else
             tex:SetAlpha(0)
         end
-    end
-end
-
--- Stack threshold bands (2026-08-15 program): recolor the portion of the
--- stack fill beyond a stack boundary. Geometry is engine-driven: the fixed
--- edge sits at the boundary (a static offset from CC-owned geometry at bind
--- time), the moving edge anchors to the creation-captured fill texture
--- region, which the ENGINE resizes with the SECRET count (the
--- pandemicFillClone precedent). Below the boundary the rect has crossed
--- anchors and renders nothing; the count is never read in Lua. On
--- widget/block binds the shared kit.stackBandMask wears the block atlas,
--- so the solid bands render per block and the baked gaps stay genuinely
--- empty; the OVERLAY separator stripes and block rings draw above the
--- bands.
-local function DressStackThresholdBand(band, kit, button, style, boundMax, atStack, color, length)
-    local off = length * (atStack - 1) / boundMax
-    local vertical = button._isVertical
-    local reverse = style.barReverseFill or false
-    band:ClearAllPoints()
-    if vertical then
-        if reverse then
-            band:SetPoint("TOPLEFT", kit.stackFill, "TOPLEFT", 0, -off)
-            band:SetPoint("BOTTOMRIGHT", kit.stackFillTexture, "BOTTOMRIGHT", 0, 0)
-        else
-            band:SetPoint("BOTTOMLEFT", kit.stackFill, "BOTTOMLEFT", 0, off)
-            band:SetPoint("TOPRIGHT", kit.stackFillTexture, "TOPRIGHT", 0, 0)
-        end
-    else
-        if reverse then
-            band:SetPoint("TOPRIGHT", kit.stackFill, "TOPRIGHT", -off, 0)
-            band:SetPoint("BOTTOMLEFT", kit.stackFillTexture, "BOTTOMLEFT", 0, 0)
-        else
-            band:SetPoint("TOPLEFT", kit.stackFill, "TOPLEFT", off, 0)
-            band:SetPoint("BOTTOMRIGHT", kit.stackFillTexture, "BOTTOMRIGHT", 0, 0)
-        end
-    end
-    band:SetTexture(CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
-    -- 4-arg SetVertexColor LAST (pandemic clone rule): it replaces region
-    -- alpha through the non-SetAlpha C slot, so this write is also what
-    -- makes the band visible. Forced opaque — the band REPLACES the fill
-    -- color (same ruling as the pandemic recolor).
-    band:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, 1)
-end
-
-local function StyleStackThresholdBands(kit, button, buttonData, style, boundMax, shown, widgetStack)
-    local tBand, mBand = kit.stackThresholdBand, kit.stackMaxBand
-    if not (tBand and mBand) then return end
-    -- All clamp/prefer rules live in ResolveAuraStackThresholdPolicy; the
-    -- only band-local rule is the defensive cap at boundMax (the bound
-    -- geometry), which normally equals the policy's maxStacks.
-    local policy = shown and boundMax and boundMax > 1
-        and CooldownCompanion:ResolveAuraStackThresholdPolicy(buttonData) or nil
-    local threshold = policy and policy.threshold
-    if threshold and threshold > boundMax then threshold = boundMax end
-    local rectW, rectH = HostRectSize(button)
-    local length = (button._isVertical and rectH or rectW) or 0
-    -- Mask convergence: slots are reused across entries, so any bind that
-    -- can show a band re-dresses the shared mask — atlas for widget binds,
-    -- all-pass white otherwise.
-    local mask = kit.stackBandMask
-    if mask and policy and length > 0 then
-        if widgetStack then
-            mask:SetTexture(ST.GetStackSegmentsTexture(boundMax,
-                    CooldownCompanion:GetAuraStackBlockGapTexels(buttonData, boundMax)),
-                "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-            if button._isVertical then
-                -- The fill atlas is rotated onto vertical bars
-                -- (SetRotatesTexture); rotate the mask the same way via the
-                -- 8-arg corner mapping (Blizzard's digit masks are the
-                -- SetTexCoord-on-MaskTexture precedent). The uniform
-                -- block/gap pattern is symmetric end to end, so boundary
-                -- alignment holds for either 90-degree direction.
-                mask:SetTexCoord(1, 0, 0, 0, 1, 1, 0, 1)
-            else
-                mask:SetTexCoord(0, 1, 0, 1)
-            end
-        else
-            mask:SetTexture("Interface\\Buttons\\WHITE8X8",
-                "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-            mask:SetTexCoord(0, 1, 0, 1)
-        end
-    end
-    if threshold and length > 0 then
-        DressStackThresholdBand(tBand, kit, button, style, boundMax, threshold,
-            policy.thresholdColor, length)
-    else
-        tBand:SetAlpha(0)
-    end
-    if policy and policy.maxOn and length > 0 then
-        DressStackThresholdBand(mBand, kit, button, style, boundMax, boundMax,
-            policy.maxColor, length)
-    else
-        mBand:SetAlpha(0)
     end
 end
 
@@ -1756,8 +1637,6 @@ local function StyleSlotKit(slot, button, buttonData, style)
             end
         end
         StyleStackSegments(kit, button, buttonData, style, nil, false)
-        -- Resource-lane bands deferred (v1 ruling): always off here.
-        StyleStackThresholdBands(kit, button, buttonData, style, nil, false)
     elseif isBar then
         -- Fill mode (tracker C2): a stack-mode bind carries boundStackMax
         -- (resolved by the rebind pass, re-called onto the registered stack
@@ -1876,8 +1755,6 @@ local function StyleSlotKit(slot, button, buttonData, style)
         end
         StyleStackSegments(kit, button, buttonData, style, slot.boundStackMax,
             segmentedStyle and not widgetStack)
-        StyleStackThresholdBands(kit, button, buttonData, style, slot.boundStackMax,
-            useStackFill, widgetStack)
     else
         kit.barBackdrop:SetAlpha(0)
         ST.HideStackBlocks(kit.stackBgBlocks)
@@ -1889,7 +1766,6 @@ local function StyleSlotKit(slot, button, buttonData, style)
             RestBarFill(kit.stackFill, kit.stackFillTexture, kit.stackFillPulseAG, kit.stackFillCsAG)
         end
         StyleStackSegments(kit, button, buttonData, style, nil, false)
-        StyleStackThresholdBands(kit, button, buttonData, style, nil, false)
     end
 
     -- Aura active glow: icon hosts style from the auraGlow* keys, bar hosts
