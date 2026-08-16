@@ -613,7 +613,7 @@ CooldownCompanion.ApplyFontStyle = ApplyFontStyle
 function CooldownCompanion:GetAuraStackPreviewCountAndColor(buttonData, style, fallbackText)
     -- Thin reader of the ONE policy resolver (review batch 2026-08-15):
     -- the clamp/prefer rules live there, so the preview can never disagree
-    -- with the live formatter and bands about where a color starts.
+    -- with the live formatter about where a color starts.
     local policy = self:ResolveAuraStackThresholdPolicy(buttonData)
     local count = tonumber(fallbackText) or 3
     local color

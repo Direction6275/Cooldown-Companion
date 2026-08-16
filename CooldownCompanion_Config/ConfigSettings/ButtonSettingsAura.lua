@@ -544,25 +544,38 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         end
     end
 
-    -- Stack threshold colors (2026-08-15 program): the count text recolors
-    -- at a chosen stack count and again at max stacks; stack-filled bars
-    -- add matching band recolors. Mode-agnostic (the text half runs on
-    -- icons too), so this sits outside the bars gate — but both rows need
-    -- a REAL resolved stack maximum (owner rule), so the shared builder
-    -- emits nothing for auras the game reports as non-stacking. The
-    -- comparison against the live count is engine-side (formatter
-    -- breakpoints and band geometry); nothing here ever reads the secret
-    -- count. Rows shared with the custom-bar Aura section
-    -- (SectionBuilders.lua).
-    ST._BuildStackThresholdColorRows(auraRight, buttonData,
-        CooldownCompanion:GetAuraStackBarMax(buttonData, true), {
-            infoButtons = infoButtons,
-            refresh = RefreshAuraConfig,
-            commit = function()
-                ST._RefreshSelectedButtonsPreview()
-                CooldownCompanion:RequestAuraRebind("config")
-            end,
-        })
+    -- Effective style for the text-visibility gates below and the
+    -- pandemic-effect default: the same resolution the display renders
+    -- with — the panel style, or this entry's customized section when one
+    -- is promoted (owner ruling 2026-08-16: settings for a hidden text
+    -- hide with it, following whichever scope currently applies).
+    local effectiveStyle = group and group.style or {}
+    if CooldownCompanion.GetEffectiveStyle then
+        effectiveStyle = CooldownCompanion:GetEffectiveStyle(effectiveStyle, buttonData) or effectiveStyle
+    end
+
+    -- Stack text threshold colors (2026-08-15 program, text-only since the
+    -- 2026-08-16 redesign): the count text recolors at a chosen stack
+    -- count and again at max stacks. Mode-agnostic (icons and bars both
+    -- show the count text), so this sits outside the bars gate — but both
+    -- rows need a REAL resolved stack maximum (owner rule), so the shared
+    -- builder emits nothing for auras the game reports as non-stacking.
+    -- The comparison against the live count is engine-side (formatter
+    -- breakpoints); nothing here ever reads the secret count. Rows shared
+    -- with the custom-bar Aura section (SectionBuilders.lua). Gated on the
+    -- stack text actually showing, the same ~= false read the display
+    -- gates the fontstring with.
+    if effectiveStyle.showAuraStackText ~= false then
+        ST._BuildStackThresholdColorRows(auraRight, buttonData,
+            CooldownCompanion:GetAuraStackBarMax(buttonData, true), {
+                infoButtons = infoButtons,
+                refresh = RefreshAuraConfig,
+                commit = function()
+                    ST._RefreshSelectedButtonsPreview()
+                    CooldownCompanion:RequestAuraRebind("config")
+                end,
+            })
+    end
 
     -- Display toggles. Standalone and passive entries always show the live
     -- aura icon (it exists to display the aura), so the opt-in only appears
@@ -658,45 +671,47 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- Pandemic marker per-entry switch. The auto default follows the tracked
     -- unit (on for target debuffs, off for player buffs); only an explicit
     -- override is stored, so unchanged entries keep tracking the default.
-    local pandemicDefault = unit == "target"
-    local pandemicValue = buttonData.pandemicMarker
-    if pandemicValue == nil then pandemicValue = pandemicDefault end
-    local pandemicRow = AddCheckboxRow(auraRight, {
-        label = "Pandemic Marker",
-        value = pandemicValue == true,
-        onChange = function(value)
-            if value == pandemicDefault then
-                buttonData.pandemicMarker = nil
-            else
-                buttonData.pandemicMarker = value and true or false
-            end
-            -- Turning it off drops this entry's command-center control, so
-            -- disarm its preview or the stand-in strands with no toggle left.
-            -- Entry-scoped check on purpose: a panel-wide marker preview is
-            -- still legitimately offered, and clearing through the entry API
-            -- would cancel it too.
-            if not value
-                and CooldownCompanion:IsButtonConditionalVisualPreviewActive(
-                    CS.selectedGroup, CS.selectedButton, "pandemic_marker") then
-                CooldownCompanion:SetConditionalVisualPreviewActive(
-                    CS.selectedGroup, CS.selectedButton, "pandemic_marker", false)
-            end
-            RefreshAuraConfig()
-        end,
-    })
-    AnchorRowBadge(pandemicRow, CreateInfoButton(pandemicRow.frame, pandemicRow.frame, "LEFT", "LEFT", 0, 0,
-        PANDEMIC_MARKER_TOOLTIP, infoButtons))
+    -- The row hides with the aura duration text the marker rides (owner
+    -- ruling 2026-08-16), on the same effective read the display gates the
+    -- marker with; the stored key is untouched.
+    if effectiveStyle.showAuraText ~= false then
+        local pandemicDefault = unit == "target"
+        local pandemicValue = buttonData.pandemicMarker
+        if pandemicValue == nil then pandemicValue = pandemicDefault end
+        local pandemicRow = AddCheckboxRow(auraRight, {
+            label = "Pandemic Marker",
+            value = pandemicValue == true,
+            onChange = function(value)
+                if value == pandemicDefault then
+                    buttonData.pandemicMarker = nil
+                else
+                    buttonData.pandemicMarker = value and true or false
+                end
+                -- Turning it off drops this entry's command-center control,
+                -- so disarm its preview or the stand-in strands with no
+                -- toggle left. Entry-scoped check on purpose: a panel-wide
+                -- marker preview is still legitimately offered, and clearing
+                -- through the entry API would cancel it too.
+                if not value
+                    and CooldownCompanion:IsButtonConditionalVisualPreviewActive(
+                        CS.selectedGroup, CS.selectedButton, "pandemic_marker") then
+                    CooldownCompanion:SetConditionalVisualPreviewActive(
+                        CS.selectedGroup, CS.selectedButton, "pandemic_marker", false)
+                end
+                RefreshAuraConfig()
+            end,
+        })
+        AnchorRowBadge(pandemicRow, CreateInfoButton(pandemicRow.frame, pandemicRow.frame, "LEFT", "LEFT", 0, 0,
+            PANDEMIC_MARKER_TOOLTIP, infoButtons))
+    end
 
     -- Pandemic effect per-entry switch (PTR 8 visuals). The default follows
     -- the EFFECTIVE explicit-true enable — a promoted pandemicGlow override
     -- can carry its own pandemicEffectEnabled — so the checkbox reflects
     -- what this entry actually resolves; only an explicit override is
-    -- stored, so unchanged entries keep tracking that resolution.
-    local effectStyle = group and group.style or {}
-    if CooldownCompanion.GetEffectiveStyle then
-        effectStyle = CooldownCompanion:GetEffectiveStyle(effectStyle, buttonData) or effectStyle
-    end
-    local effectDefault = effectStyle.pandemicEffectEnabled == true
+    -- stored, so unchanged entries keep tracking that resolution. Never
+    -- gated on any text: the effect is a visual on the entry, not on text.
+    local effectDefault = effectiveStyle.pandemicEffectEnabled == true
     local effectValue = buttonData.pandemicEffect
     if effectValue == nil then effectValue = effectDefault end
     local effectRow = AddCheckboxRow(auraRight, {

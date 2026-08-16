@@ -1133,8 +1133,14 @@ local function CollectObjectControls(objects)
                         -- Same honesty rule, resolved through the shared marker
                         -- gate: the panel kill switch, then this bar's own switch,
                         -- then the tracked-unit default. The canvas union must
-                        -- agree with this or the stand-in strands armed.
-                        if CooldownCompanion:IsPandemicMarkerPreviewWanted(cab, cab) then
+                        -- agree with this or the stand-in strands armed. Plus
+                        -- the duration text the marker rides (2026-08-16, with
+                        -- the settings-row gate): hidden text renders no
+                        -- marker, so the command would arm a blank preview and
+                        -- its settings route would open a section with no
+                        -- marker row.
+                        if cab.showDurationText == true
+                            and CooldownCompanion:IsPandemicMarkerPreviewWanted(cab, cab) then
                             applicable[#applicable + 1] = {
                                 id = "customBarPandemicMarker_" .. tostring(cab.customBarId),
                                 label = "Preview Pandemic Marker",

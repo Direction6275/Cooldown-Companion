@@ -128,12 +128,17 @@ function RB.GetCustomBarStandInLitStacks(barInfo, settings, maxStacks)
     local lit = math_min(PREVIEW_STACKS, max)
     -- Threshold preview parity (the panel-preview convention): raise the
     -- lit run to the most interesting configured state so the threshold
-    -- and max colors actually show on the sample.
-    local policy = RB.ResolveCustomBarStackThresholdPolicy
-        and RB.ResolveCustomBarStackThresholdPolicy(cabConfig, settings)
-    if policy then
-        local want = policy.maxOn and max or math_min(policy.threshold or 0, max)
-        if want > lit then lit = want end
+    -- and max colors actually show on the sample — but only while the
+    -- stack text is drawn (the canvas's own IsShown truth). The feature
+    -- is text-only, so a threshold on a bar with hidden text must not
+    -- change how full the sample looks (review 2026-08-16).
+    if frame.stackText and frame.stackText:IsShown() then
+        local policy = RB.ResolveCustomBarStackThresholdPolicy
+            and RB.ResolveCustomBarStackThresholdPolicy(cabConfig, settings)
+        if policy then
+            local want = policy.maxOn and max or math_min(policy.threshold or 0, max)
+            if want > lit then lit = want end
+        end
     end
     return lit, max
 end
@@ -204,75 +209,6 @@ function RB.CreateResourceBarPreviewModule(deps)
     -- display (owner ruling 2026-07-26).
     ------------------------------------------------------------------------
 
-    -- Continuous stacks-mode threshold bands, mirrored in plain CC
-    -- geometry: on a live bar the kit's bands anchor to the secret-driven
-    -- fill edge, but the stand-in's count is CC-invented, so both edges
-    -- are known here. Two textures per bar frame, built on demand and
-    -- recycled with it; every leg that renders without bands hides them
-    -- through this same helper (policy = nil).
-    local function ApplyStandInStackBands(bar, policy, stacks, maxStacks)
-        local tBand, mBand = bar._ccStackBandPreviewT, bar._ccStackBandPreviewM
-        if not (policy and stacks and maxStacks and maxStacks > 1) then
-            if tBand then tBand:Hide() end
-            if mBand then mBand:Hide() end
-            return
-        end
-        if not tBand then
-            tBand = bar:CreateTexture(nil, "ARTWORK", nil, 1)
-            bar._ccStackBandPreviewT = tBand
-            mBand = bar:CreateTexture(nil, "ARTWORK", nil, 2)
-            bar._ccStackBandPreviewM = mBand
-        end
-        local vertical = bar._isVertical == true
-        local reverse = bar:GetReverseFill() == true
-        local length = (vertical and bar:GetHeight() or bar:GetWidth()) or 0
-        local fillTexture = bar:GetStatusBarTexture()
-        local file = fillTexture and fillTexture:GetTexture() or nil
-        local function dress(band, atStack, color)
-            local startOff = length * (atStack - 1) / maxStacks
-            local endOff = length * stacks / maxStacks
-            if length <= 0 or endOff <= startOff then
-                band:Hide()
-                return
-            end
-            band:ClearAllPoints()
-            if vertical then
-                if reverse then
-                    band:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, -startOff)
-                    band:SetPoint("BOTTOMRIGHT", bar, "TOPRIGHT", 0, -endOff)
-                else
-                    band:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, startOff)
-                    band:SetPoint("TOPRIGHT", bar, "BOTTOMRIGHT", 0, endOff)
-                end
-            else
-                if reverse then
-                    band:SetPoint("TOPLEFT", bar, "TOPRIGHT", -endOff, 0)
-                    band:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -startOff, 0)
-                else
-                    band:SetPoint("TOPLEFT", bar, "TOPLEFT", startOff, 0)
-                    band:SetPoint("BOTTOMRIGHT", bar, "BOTTOMLEFT", endOff, 0)
-                end
-            end
-            band:SetTexture(file or "Interface\\Buttons\\WHITE8x8")
-            -- Forced opaque, live-band parity: the band REPLACES the fill
-            -- color.
-            band:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, 1)
-            band:Show()
-        end
-        local threshold = policy.threshold
-        if threshold and threshold > maxStacks then threshold = maxStacks end
-        if threshold then
-            dress(tBand, threshold, policy.thresholdColor)
-        else
-            tBand:Hide()
-        end
-        if policy.maxOn then
-            dress(mBand, maxStacks, policy.maxColor)
-        else
-            mBand:Hide()
-        end
-    end
-
     local function ApplyCustomBarAuraStandIn(barInfo, settings)
         local bar = barInfo.frame
         local cabConfig = barInfo.cabConfig
@@ -314,23 +250,24 @@ function RB.CreateResourceBarPreviewModule(deps)
             stacks = blockStacks
             SetStatusBarSmoothRange(bar, 0, 1)
             SetStatusBarImmediateValue(bar, 0)
-            ApplyStandInStackBands(bar, nil)
         elseif stacksMode then
             maxStacks = standInMax
             stacks = math_min(PREVIEW_STACKS, maxStacks)
-            -- Same raise-to-interesting rule as the lit block run.
-            if policy then
+            -- Same raise-to-interesting rule as the lit block run: the
+            -- sample count reaches the configured threshold/max so the
+            -- stack TEXT color actually shows on the stand-in — and the
+            -- same visible-text gate, because on a stacks-mode bar the
+            -- count IS the fill (review 2026-08-16).
+            if policy and bar.stackText and bar.stackText:IsShown() then
                 local want = policy.maxOn and maxStacks
                     or math_min(policy.threshold or 0, maxStacks)
                 if want > stacks then stacks = want end
             end
             SetStatusBarSmoothRange(bar, 0, maxStacks)
             SetStatusBarImmediateValue(bar, stacks)
-            ApplyStandInStackBands(bar, policy, stacks, maxStacks)
         else
             SetStatusBarSmoothRange(bar, 0, 1)
             SetStatusBarImmediateValue(bar, PREVIEW_FILL)
-            ApplyStandInStackBands(bar, nil)
         end
 
         if bar.text and bar.text:IsShown() then
@@ -413,7 +350,6 @@ function RB.CreateResourceBarPreviewModule(deps)
         -- stand-in owns the fill colour below, so any aura-preview tint or
         -- pulse left on a recycled frame has to go first.
         ClearCustomAuraBarIndicatorState(barInfo, false)
-        ApplyStandInStackBands(bar, nil)
 
         local fillColor
         if kind == "recharge" then
@@ -758,7 +694,6 @@ function RB.CreateResourceBarPreviewModule(deps)
             if ApplyCustomBarCooldownStandIn(barInfo) then
                 return
             end
-            ApplyStandInStackBands(barInfo.frame, nil)
             SetStatusBarSmoothRange(barInfo.frame, 0, 1)
             SetStatusBarImmediateValue(barInfo.frame, 1)
             if barInfo.frame.text and barInfo.frame.text:IsShown() then
@@ -783,7 +718,6 @@ function RB.CreateResourceBarPreviewModule(deps)
                 return
             end
             ClearCustomAuraBarIndicatorState(barInfo, false)
-            ApplyStandInStackBands(barInfo.frame, nil)
             SetStatusBarSmoothRange(barInfo.frame, 0, 1)
             SetStatusBarImmediateValue(barInfo.frame, 0)
             if barInfo.frame.text and barInfo.frame.text:IsShown() then

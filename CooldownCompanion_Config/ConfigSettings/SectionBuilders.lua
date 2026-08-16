@@ -238,12 +238,8 @@ local function AddStackBlockGapRow(container, buttonData, opts)
 end
 
 local STACK_THRESHOLD_TOOLTIP = {
-    "Stack Threshold Color",
+    "Stack Text Threshold Color",
     {"Recolors the stack count text when it reaches the chosen number of stacks.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Stack-filled bars also recolor the fill past the threshold.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"The game applies the color itself, so it keeps working in combat while the exact count is hidden from addons.", 1, 1, 1, true},
 }
 
 -- Stack threshold/max color rows (2026-08-15 program), shared between the
@@ -269,7 +265,7 @@ local function BuildStackThresholdColorRows(container, buttonData, maxStacks, op
 
     local threshold = CooldownCompanion:GetAuraStackThresholdValue(buttonData)
     local thresholdRow = AddCheckboxRow(container, {
-        label = "Stack Threshold Color",
+        label = "Stack Text Threshold Color",
         value = threshold ~= nil,
         onChange = function(value)
             CooldownCompanion:SetAuraStackThresholdValue(buttonData,
@@ -326,7 +322,7 @@ local function BuildStackThresholdColorRows(container, buttonData, maxStacks, op
     -- only the threshold half rides the combat leg above.
     if maxStacks then
         AddCheckboxRow(container, {
-            label = "Max Stacks Color",
+            label = "Max Stacks Text Color",
             value = CooldownCompanion:IsAuraStackMaxColorEnabled(buttonData),
             onChange = function(value)
                 CooldownCompanion:SetAuraStackMaxColorEnabled(buttonData, value)

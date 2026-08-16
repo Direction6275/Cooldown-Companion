@@ -1074,12 +1074,14 @@ function CooldownCompanion:SetAuraStackBlockGapTexels(buttonData, value)
     buttonData.auraBar.blockGap = value
 end
 
--- Stack threshold colors (2026-08-15 program): one mid threshold + one
--- at-max color per entry. The live count is SECRET in combat, so nothing
--- here is ever compared against it at runtime — these settings only shape
--- engine-side renderers (NumericRuleFormatter breakpoints for the stack
--- text, statically-anchored band textures for the stack fill). Stored in
--- auraBar beside the other per-entry stack settings; nil keys mean off.
+-- Stack text threshold colors (2026-08-15 program; text-only since the
+-- 2026-08-16 redesign — the fill bands were removed, and a whole-fill
+-- recolor is impossible: the count is SECRET in combat and the engine's
+-- application-bar options carry no color hook). Nothing here is ever
+-- compared against the live count at runtime — these settings only shape
+-- the engine-side NumericRuleFormatter breakpoints that color the stack
+-- count text. Stored in auraBar beside the other per-entry stack
+-- settings; nil keys mean off.
 ST.AURA_STACK_THRESHOLD_COLOR_DEFAULT = { 1, 0.82, 0, 1 }
 ST.AURA_STACK_MAX_COLOR_DEFAULT = { 1, 0.25, 0.1, 1 }
 
@@ -1128,9 +1130,9 @@ function CooldownCompanion:GetAuraStackMaxColor(buttonData)
 end
 
 -- The ONE resolver for the whole feature (review batch 2026-08-15): every
--- consumer — formatter breakpoints, fill bands, config previews — reads
--- this same clamped view, so the clamp/prefer rules cannot drift between
--- them. Returns nil when the feature is off for this entry.
+-- consumer — formatter breakpoints, config previews — reads this same
+-- clamped view, so the clamp/prefer rules cannot drift between them.
+-- Returns nil when the feature is off for this entry.
 --   threshold      integer >= 2, capped at maxStacks when one resolved
 --   maxOn          true only when enabled AND maxStacks resolved
 --   maxStacks      automatic max (nil when the game reports none)
