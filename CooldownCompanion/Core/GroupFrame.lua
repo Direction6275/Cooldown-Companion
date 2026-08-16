@@ -1014,6 +1014,25 @@ local function GetGrowthMultipliers(growthOrigin)
     return 1, -1, "TOPLEFT"
 end
 
+-- Centered growth stores the PINNED EDGE as the growthOrigin ("TOP" =
+-- Centered, Down). The edge is only meaningful when its axis matches the
+-- panel orientation; a mismatch (import, mode swap) falls back to the
+-- corner path, where GetGrowthMultipliers folds it to TOPLEFT. Shared on
+-- ST so the config preview lays out with the exact same rule, and kept in
+-- a do-block because this chunk rides the 200-local ceiling.
+do
+    local edges = {
+        TOP = "horizontal", BOTTOM = "horizontal",
+        LEFT = "vertical", RIGHT = "vertical",
+    }
+    function ST.GetCenteredGrowthEdge(growthOrigin, orientation)
+        return edges[growthOrigin] == orientation and growthOrigin or nil
+    end
+    function ST.IsCenteredGrowthOrigin(growthOrigin)
+        return edges[growthOrigin] ~= nil
+    end
+end
+
 local FLIP_HORIZONTAL = {
     TOPLEFT = "TOPRIGHT", TOPRIGHT = "TOPLEFT",
     BOTTOMLEFT = "BOTTOMRIGHT", BOTTOMRIGHT = "BOTTOMLEFT",
@@ -1024,7 +1043,12 @@ local FLIP_VERTICAL = {
 }
 
 local function GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, growthOrigin)
-    growthOrigin = growthOrigin or "TOPLEFT"
+    if not growthOrigin or ST.IsCenteredGrowthOrigin(growthOrigin) then
+        -- An ACTIVE centered edge is handled before this is consulted; a
+        -- centered value reaching here is axis-mismatched and folds to
+        -- TOPLEFT like the multiplier path does.
+        growthOrigin = "TOPLEFT"
+    end
     if compactGrowthDirection == "start" then
         return growthOrigin
     end
@@ -1940,9 +1964,13 @@ local function BeginPanelResizeGesture(grip)
     end
 
     local compactGrowthDirection = NormalizeCompactGrowthDirection(group.compactGrowthDirection)
-    local factorPoint = group.compactLayout
-        and GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, style.growthOrigin)
-        or nil
+    local factorPoint
+    if not ST.IsAuraPanelGroup(group) then
+        factorPoint = ST.GetCenteredGrowthEdge(style.growthOrigin, orientation)
+    end
+    if not factorPoint and group.compactLayout then
+        factorPoint = GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, style.growthOrigin)
+    end
     factorPoint = factorPoint or ((group.anchor and group.anchor.point) or "CENTER")
     if factorPoint:find("LEFT", 1, true) then
         grip._resizeKX = 1
@@ -3732,7 +3760,12 @@ local function ApplyTextGroupHeader(self, frame, group, style, isTextMode)
         frame.textHeader:SetText(group.name or "")
         frame.textHeader:ClearAllPoints()
         local growthOrigin = style.growthOrigin or "TOPLEFT"
-        local vEdge = (growthOrigin == "BOTTOMLEFT" or growthOrigin == "BOTTOMRIGHT") and "BOTTOM" or "TOP"
+        -- Raw "BOTTOM" counts only while it is the ACTIVE centered edge; an
+        -- axis-mismatched value folds to TOPLEFT in layout, and the header
+        -- must land on the same edge the entries grow from.
+        local vEdge = (growthOrigin == "BOTTOMLEFT" or growthOrigin == "BOTTOMRIGHT"
+            or ST.GetCenteredGrowthEdge(growthOrigin, ST.GetPanelLayoutOrientation(group.displayMode, style)) == "BOTTOM")
+            and "BOTTOM" or "TOP"
         local anchor = align == "RIGHT" and (vEdge .. "RIGHT") or align == "CENTER" and vEdge or (vEdge .. "LEFT")
         local parentAnchor = anchor
         local xOff = (align == "CENTER") and 0 or (align == "RIGHT") and -2 or 2
@@ -3758,6 +3791,10 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
     local buttonsPerRow = style.buttonsPerRow or 12
     local isTriggerMode = group.displayMode == "trigger"
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
+    local centeredEdge = not ST.IsAuraPanelGroup(group)
+        and ST.GetCenteredGrowthEdge(style.growthOrigin, orientation) or nil
+    local total = #frame.buttons
+    local lineCount = math_ceil(total / buttonsPerRow)
     local visibleIndex = 0
 
     for _, button in ipairs(frame.buttons) do
@@ -3766,6 +3803,24 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
         button:ClearAllPoints()
         if isTriggerMode then
             button:SetPoint("CENTER", frame, "CENTER", 0, 0)
+        elseif centeredEdge then
+            -- Each button pins its edge midpoint to the frame's, so full lines
+            -- land where corner growth puts them and the trailing partial line
+            -- centers itself against them.
+            local line = math_floor((visibleIndex - 1) / buttonsPerRow)
+            local indexInLine = (visibleIndex - 1) % buttonsPerRow
+            local itemsInLine = (line == lineCount - 1) and (total - line * buttonsPerRow) or buttonsPerRow
+            if orientation == "horizontal" then
+                local edgeYMul = centeredEdge == "TOP" and -1 or 1
+                button:SetPoint(centeredEdge, frame, centeredEdge,
+                    (indexInLine - (itemsInLine - 1) / 2) * (buttonWidth + spacing),
+                    edgeYMul * (line * (buttonHeight + spacing) + headerHeight))
+            else
+                local edgeXMul = centeredEdge == "LEFT" and 1 or -1
+                button:SetPoint(centeredEdge, frame, centeredEdge,
+                    edgeXMul * line * (buttonWidth + spacing),
+                    ((itemsInLine - 1) / 2 - indexInLine) * (buttonHeight + spacing) - headerHeight / 2)
+            end
         else
             local row, col
             if orientation == "horizontal" then
@@ -3796,8 +3851,18 @@ local function FinishGroupButtonRefresh(self, groupId, frame, group)
     self:ResizeGroupFrame(groupId)
 
     -- Reset the sized flag so the next ResizeGroupFrame call skips compact
-    -- anchor compensation and treats the current size as a baseline.
-    frame._hasBeenSized = false
+    -- anchor compensation and treats the current size as a baseline. A
+    -- non-compact panel with an ACTIVE centered edge keeps its baseline
+    -- instead: it has no follow-up reflow resize to rebuild one, and the
+    -- edge must hold across config-driven size changes. Explicit re-anchors
+    -- (AnchorGroupFrame) still reset, so a freshly placed frame baselines.
+    local style = group.style or {}
+    local holdCenteredBaseline = not group.compactLayout
+        and not ST.IsAuraPanelGroup(group)
+        and ST.GetCenteredGrowthEdge(style.growthOrigin, ST.GetPanelLayoutOrientation(group.displayMode, style)) ~= nil
+    if not holdCenteredBaseline then
+        frame._hasBeenSized = false
+    end
 
     -- Update clickthrough state
     self:UpdateGroupClickthrough(groupId)
@@ -4078,7 +4143,17 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     end
 
     local compactGrowthDirection = NormalizeCompactGrowthDirection(group.compactGrowthDirection)
-    local fixedPoint = group.compactLayout and GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, style.growthOrigin) or nil
+    local fixedPoint
+    if not ST.IsAuraPanelGroup(group) then
+        -- Centered growth pins the edge midpoint so the panel's primary-axis
+        -- center holds still as the frame resizes, the same compensation
+        -- compact mode runs for its fixed corner. It wins over the compact
+        -- start/center/end alignment, which it supersedes.
+        fixedPoint = ST.GetCenteredGrowthEdge(style.growthOrigin, orientation)
+    end
+    if not fixedPoint and group.compactLayout then
+        fixedPoint = GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, style.growthOrigin)
+    end
     local canCompensateAnchor = frame._hasBeenSized and oldWidth > 0 and oldHeight > 0
     if fixedPoint and canCompensateAnchor then
         local anchorPoint = (group.anchor and group.anchor.point) or "CENTER"
@@ -4158,22 +4233,44 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
     local visibleCount = #visibleButtons
     local headerH = frame._textHeaderHeight or 0
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
+    -- A centered growth edge fully specifies the arrangement, so it wins over
+    -- the compact start/center/end alignment (owner ruling 2026-08-16): each
+    -- packed line centers itself against the frame's edge midpoint.
+    local centeredEdge = ST.GetCenteredGrowthEdge(style.growthOrigin, orientation)
+    local lineCount = centeredEdge and math_ceil(visibleCount / buttonsPerRow) or 0
     for visibleIndex, button in ipairs(visibleButtons) do
-        local row, col = GetCompactSlotForIndex(
-            visibleIndex,
-            visibleCount,
-            buttonsPerRow,
-            orientation,
-            compactGrowthDirection
-        )
-        local x = xMul * col * (buttonWidth + spacing)
-        local y = yMul * (row * (buttonHeight + spacing) + headerH)
-        if button._compactSlotAnchor ~= growthAnchor
+        local x, y
+        if centeredEdge then
+            local line = math_floor((visibleIndex - 1) / buttonsPerRow)
+            local indexInLine = (visibleIndex - 1) % buttonsPerRow
+            local itemsInLine = (line == lineCount - 1) and (visibleCount - line * buttonsPerRow) or buttonsPerRow
+            if orientation == "horizontal" then
+                local edgeYMul = centeredEdge == "TOP" and -1 or 1
+                x = (indexInLine - (itemsInLine - 1) / 2) * (buttonWidth + spacing)
+                y = edgeYMul * (line * (buttonHeight + spacing) + headerH)
+            else
+                local edgeXMul = centeredEdge == "LEFT" and 1 or -1
+                x = edgeXMul * line * (buttonWidth + spacing)
+                y = ((itemsInLine - 1) / 2 - indexInLine) * (buttonHeight + spacing) - headerH / 2
+            end
+        else
+            local row, col = GetCompactSlotForIndex(
+                visibleIndex,
+                visibleCount,
+                buttonsPerRow,
+                orientation,
+                compactGrowthDirection
+            )
+            x = xMul * col * (buttonWidth + spacing)
+            y = yMul * (row * (buttonHeight + spacing) + headerH)
+        end
+        local anchor = centeredEdge or growthAnchor
+        if button._compactSlotAnchor ~= anchor
             or button._compactSlotX ~= x
             or button._compactSlotY ~= y then
             button:ClearAllPoints()
-            button:SetPoint(growthAnchor, frame, growthAnchor, x, y)
-            button._compactSlotAnchor = growthAnchor
+            button:SetPoint(anchor, frame, anchor, x, y)
+            button._compactSlotAnchor = anchor
             button._compactSlotX = x
             button._compactSlotY = y
         end

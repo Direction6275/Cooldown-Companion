@@ -821,6 +821,16 @@ local function BuildLayoutTab(container)
     -- Growth Direction labels below have to agree with it.
     local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
 
+    -- A centered growth edge lives on one axis, so every orientation control
+    -- swaps it across with the orientation instead of silently stranding it
+    -- on the old axis (where runtime folds it to a corner).
+    local function SwapCenteredGrowthAxis()
+        local swap = { TOP = "LEFT", LEFT = "TOP", BOTTOM = "RIGHT", RIGHT = "BOTTOM" }
+        if swap[style.growthOrigin or ""] then
+            style.growthOrigin = swap[style.growthOrigin]
+        end
+    end
+
     if isBarMode then
         -- Which way a bar's own fill runs is independent of how the bars are
         -- arranged, so these lead the section rather than hanging off it.
@@ -853,6 +863,7 @@ local function BuildLayoutTab(container)
                 value = orientation == "horizontal",
                 onChange = function(val)
                     style.barOrientation = val and "horizontal" or "vertical"
+                    SwapCenteredGrowthAxis()
                     CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
                     CooldownCompanion:RefreshConfigPanel()
                 end,
@@ -873,6 +884,7 @@ local function BuildLayoutTab(container)
                 else
                     style.orientation = val
                 end
+                SwapCenteredGrowthAxis()
                 CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
                 CooldownCompanion:RefreshConfigPanel()
             end,
@@ -880,22 +892,41 @@ local function BuildLayoutTab(container)
     end
 
     if #group.buttons > 1 then
-        local labels
+        local labels, order
+        -- Aura panels delegate intra-line placement to Blizzard's flow
+        -- container, so they fold centered values to TOPLEFT at runtime and
+        -- this dropdown displays the same fold.
+        local allowCentered = not CooldownCompanion:IsAuraPanel(group)
         -- Same override the Collapse Direction row below applies: an Aura BAR
         -- Panel is one vertical column by construction, so its labels must not
         -- follow the barOrientation key (hidden for this subtype, still
         -- copyable, and never read by the engine here).
         if auraBarPanel or orientation == "vertical" then
             labels = { TOPLEFT = "Down, Right", TOPRIGHT = "Down, Left", BOTTOMLEFT = "Up, Right", BOTTOMRIGHT = "Up, Left" }
+            order = { "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT" }
+            if allowCentered then
+                labels.LEFT, labels.RIGHT = "Centered, Right", "Centered, Left"
+                order[5], order[6] = "LEFT", "RIGHT"
+            end
         else
             labels = { TOPLEFT = "Right, Down", TOPRIGHT = "Left, Down", BOTTOMLEFT = "Right, Up", BOTTOMRIGHT = "Left, Up" }
+            order = { "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT" }
+            if allowCentered then
+                labels.TOP, labels.BOTTOM = "Centered, Down", "Centered, Up"
+                order[5], order[6] = "TOP", "BOTTOM"
+            end
+        end
+
+        local shownValue = style.growthOrigin or "TOPLEFT"
+        if not labels[shownValue] then
+            shownValue = "TOPLEFT"
         end
 
         AddDropdownRow(arrangeHost, {
             label = "Growth Direction",
             list = labels,
-            order = { "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT" },
-            value = style.growthOrigin or "TOPLEFT",
+            order = order,
+            value = shownValue,
             onChange = function(val)
                 style.growthOrigin = val
                 CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
