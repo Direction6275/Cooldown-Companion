@@ -13,6 +13,7 @@ local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 
 local math_min = math.min
 local math_max = math.max
+local math_floor = math.floor
 local issecretvalue = issecretvalue
 
 -- Import from ResourceBarConstants & ResourceBarHelpers
@@ -414,6 +415,54 @@ local function CreateSegmentedBar(parent, numSegments)
     return holder
 end
 
+-- Re-segment an existing segmented holder in place. WoW never destroys a
+-- frame, so a shape whose segment count MOVES at runtime — the aura-stack
+-- family, whose maximum follows talents and the Devourer meta swap — cannot
+-- rebuild its holder on every change without accumulating orphans for the
+-- session. The holder instead grows to its high-water mark and parks the
+-- rest: LayoutSegments already lays out `_activeSegments` and hides every
+-- segment past it, so only the growth and the bookkeeping live here.
+-- Shapes whose count is effectively fixed (Maelstrom Weapon, the plain
+-- segmented resources) never call this and keep their rebuild.
+local function EnsureSegmentCount(holder, n)
+    if not holder or not holder.segments then return end
+    n = math_floor(tonumber(n) or 0)
+    if n < 1 then n = 1 end
+
+    local existing = #holder.segments
+    if n > existing then
+        local textFont = CooldownCompanion:FetchFont("Friz Quadrata TT")
+        local textOutline = ST.GetEffectiveFontOutline("OUTLINE")
+        for i = existing + 1, n do
+            local seg = CreateFrame("StatusBar", nil, holder)
+            seg:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Solid"))
+            seg:SetMinMaxValues(0, 1)
+            SetStatusBarImmediateValue(seg, 0)
+
+            seg.bg = seg:CreateTexture(nil, "BACKGROUND")
+            seg.bg:SetAllPoints()
+            seg.bg:SetColorTexture(0, 0, 0, 0.5)
+
+            seg.borders = CreatePixelBorders(seg)
+
+            holder.segments[i] = seg
+
+            if holder.rechargeTexts and holder.textLayer then
+                local text = holder.textLayer:CreateFontString(nil, "OVERLAY")
+                text:SetFont(textFont, 10, textOutline)
+                ST.ApplyFontShadowForOutline(text, textOutline)
+                text:SetPoint("CENTER", seg, "CENTER", 0, 0)
+                text:SetTextColor(1, 1, 1, 1)
+                text:Hide()
+                holder.rechargeTexts[i] = text
+            end
+        end
+    end
+
+    holder._activeSegments = n
+    holder._numSegments = n
+end
+
 ------------------------------------------------------------------------
 -- Layout: position segments within a segmented bar
 ------------------------------------------------------------------------
@@ -670,6 +719,7 @@ RB.ApplyPixelBorders = ApplyPixelBorders
 RB.HidePixelBorders = HidePixelBorders
 RB.CreateContinuousBar = CreateContinuousBar
 RB.CreateSegmentedBar = CreateSegmentedBar
+RB.EnsureSegmentCount = EnsureSegmentCount
 RB.LayoutSegments = LayoutSegments
 RB.CreateOverlayBar = CreateOverlayBar
 RB.LayoutOverlaySegments = LayoutOverlaySegments

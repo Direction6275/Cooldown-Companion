@@ -563,6 +563,8 @@ function RB.CreateResourceBarAuraHostModule(deps)
         mw_segmented = true,
         mw_segments = true,
         mw_continuous = true,
+        stackaura_segments = true,
+        stackaura_continuous = true,
         stagger_continuous = true,
     }
 
@@ -577,6 +579,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
         segmented = true,
         mw_segmented = true,
         mw_segments = true,
+        stackaura_segments = true,
     }
 
     local function EnsureResourceHolder(powerType)
@@ -1244,6 +1247,20 @@ function RB.CreateResourceBarAuraHostModule(deps)
         -- Layout-derived, like the collector: cluster frames carry no
         -- _isVertical field for AnchorHolderToBar to read.
         holder._isVertical = IsVerticalResourceLayout(settings) == true
+    end
+
+    -- Park one resource's overlay holder. Holders are reconciled by the
+    -- rebind pass, which is OOC-only, so a mutually exclusive pair swapping
+    -- IN COMBAT would otherwise leave the outgoing half's holder lit over
+    -- the incoming half's bar until combat ended (the frame is recycled in
+    -- place, only barInfo.powerType changes). Hiding a plain CC frame is
+    -- legal in combat; BINDING the incoming holder is not, and deliberately
+    -- stays with the deferred rebind.
+    function RB.HideResourceAuraHolder(powerType)
+        local holder = powerType ~= nil and resourceHolders[powerType]
+        if holder then
+            holder:Hide()
+        end
     end
 
     -- Addon methods rather than module-locals on purpose: ApplyResourceBars

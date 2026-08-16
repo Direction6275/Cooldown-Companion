@@ -1586,6 +1586,128 @@ local function GetMWDisplayStyle(settings, specID)
     return MW_DISPLAY_STYLES[style] and style or "overlay"
 end
 
+-- Stack display shape for an aura-stack family member. Two shapes only: the
+-- overlay layer exists for Maelstrom Weapon alone, whose stacks can run past
+-- its segment count. Resolved through the same spec-override path as
+-- mwDisplayStyle, under the family's own generic key. The untouched default
+-- is the member's own: one segment per stack suits the small fixed caps
+-- (Icicles, Tip of the Spear), but a member whose maximum is large enough
+-- to read as noise segment-by-segment ships Continuous instead.
+-- A mutually exclusive pair is one slot, so the shape is one setting on one
+-- bucket: resolve to the canonical half first, so both halves answer the same
+-- and the slot cannot change shape mid-fight when the swap happens. Reached
+-- through RB because the resolver is defined below this chunk; every other
+-- resource resolves to itself.
+local function GetAuraStackDisplayStyle(settings, powerType, specID)
+    powerType = RB.GetCanonicalPowerType(powerType)
+    local info = RB.AURA_STACK_RESOURCES[powerType]
+    local default = (info and info.defaultStyle) or "segments"
+    if type(settings) ~= "table" or type(settings.resources) ~= "table" then
+        return default
+    end
+    local resource = settings.resources[powerType]
+    if type(resource) ~= "table" then
+        return default
+    end
+    local style = ResolveSpecOverrideKey(resource, specID or GetCurrentSpecID(), "stackDisplayStyle")
+    if style == "continuous" or style == "segments" then
+        return style
+    end
+    return default
+end
+
+-- Resolved stack maximum for an aura-stack family member. Most members state
+-- a constant; the Devourer pair asks the same calls Blizzard's own Devourer
+-- bar asks, because those caps move with talents and with what Collapsing
+-- Star currently costs. Either call can come back with nothing before the
+-- client has a value, and GetSpellMaxCumulativeAuraApplications is flagged
+-- SecretWhenUnitAuraRestricted, so a secret is a legal answer too — in every
+-- one of those cases the member's fallbackMax stands in rather than a zero
+-- maximum reaching the range and percent maths downstream. Called on every
+-- tick per materialized bar, so it stays two table reads and one C call.
+local function GetAuraStackResourceMax(powerType)
+    local info = RB.AURA_STACK_RESOURCES[powerType]
+    if not info then return 0 end
+    if info.maxStacks then return info.maxStacks end
+
+    local resolved
+    if info.dynamicMax == "cumulativeAura"
+        and type(C_Spell.GetSpellMaxCumulativeAuraApplications) == "function" then
+        resolved = C_Spell.GetSpellMaxCumulativeAuraApplications(info.auraSpellID)
+    elseif info.dynamicMax == "collapsingStarCost"
+        and type(GetCollapsingStarCost) == "function" then
+        resolved = GetCollapsingStarCost()
+    end
+    -- The secret test is the FIRST thing that touches the answer: even the
+    -- nil test below is a comparison, and comparing a secret is a hard error
+    -- rather than a wrong number.
+    if issecretvalue and issecretvalue(resolved) then
+        resolved = nil
+    end
+    if resolved == nil or resolved == 0 then
+        resolved = info.fallbackMax
+    end
+    resolved = tonumber(resolved) or 1
+    return resolved >= 1 and resolved or 1
+end
+
+-- Whether an aura-stack family member is currently the hidden half of a
+-- mutually exclusive pair. Only members that declare metaVisibility can be:
+-- every other member (and every other spec's bars) returns false without
+-- reading an aura at all, so nobody pays for the Devourer swap. The aura
+-- read itself is presence-only, the same plain never-secret call Blizzard's
+-- Devourer bar makes.
+local function IsAuraStackResourceSuppressed(powerType)
+    local info = RB.AURA_STACK_RESOURCES[powerType]
+    local visibility = info and info.metaVisibility
+    if not visibility then return false end
+    local inMeta = C_UnitAuras.GetPlayerAuraBySpellID(RB.VOID_METAMORPHOSIS_SPELL_ID) ~= nil
+    if visibility == "inMeta" then
+        return not inMeta
+    end
+    return inMeta
+end
+
+-- The pair's shared state, for the runtime watcher that spots the flip.
+local function IsInVoidMetamorphosis()
+    return C_UnitAuras.GetPlayerAuraBySpellID(RB.VOID_METAMORPHOSIS_SPELL_ID) ~= nil
+end
+
+-- Which member's entries hold a resource's SLOT-SHAPED settings — its
+-- placement in layout.resources (side, order, per-bar thickness) and, in
+-- settings.resources, the stack display shape and the max-stack border. A
+-- mutually exclusive pair is one bar in the world occupying one slot, so the
+-- half that declares canonicalHalf stores none of those of its own and every
+-- such read resolves to the canonical half. Without this the pair had two
+-- independent placements and the world order depended on which half happened
+-- to be up, so the layout canvas could never match the game; the same is
+-- true of the shape and the border, which describe that one slot. Per-HALF
+-- styling is deliberately NOT routed here: colors and stack thresholds stay
+-- in each half's own bucket. Every other resource answers with itself, so no
+-- other spec pays for the Devourer swap.
+local function GetCanonicalPowerType(powerType)
+    local info = RB.AURA_STACK_RESOURCES[powerType]
+    local canonical = info and info.canonicalHalf
+    return canonical or powerType
+end
+
+-- Which half of a proxied pair a config surface should DRAW in that one
+-- slot: whichever half is live in the world right now, so the canvas shows
+-- the bar the player is actually looking at. Placement identity is
+-- untouched — the slot still reads and writes the canonical half's entry.
+-- Resources that are nobody's proxy target answer with themselves.
+local function GetPlacementRenderPowerType(powerType)
+    if not IsAuraStackResourceSuppressed(powerType) then
+        return powerType
+    end
+    for pt, info in pairs(RB.AURA_STACK_RESOURCES) do
+        if info.canonicalHalf == powerType and not IsAuraStackResourceSuppressed(pt) then
+            return pt
+        end
+    end
+    return powerType
+end
+
 local function GetResourceDisplayConfig(settings, powerType)
     local resource = settings and settings.resources and settings.resources[powerType]
     if type(resource) ~= "table" then return nil end
@@ -1966,7 +2088,11 @@ local function ResolveSpecEntryList(resource, specID, entriesKey, clearedKey)
 end
 
 local function GetSegmentedThresholdEntriesConfig(powerType, settings)
-    if powerType ~= RESOURCE_MAELSTROM_WEAPON and SEGMENTED_TYPES[powerType] ~= true then
+    -- Stack-counted resources get threshold colours alongside the real
+    -- segmented power types: Maelstrom Weapon and every aura-stack family
+    -- member (reached through RB, which adds no local to this chunk).
+    if powerType ~= RESOURCE_MAELSTROM_WEAPON and SEGMENTED_TYPES[powerType] ~= true
+        and RB.AURA_STACK_RESOURCES[powerType] == nil then
         return false, {}
     end
     if not settings or not settings.resources then
@@ -2016,7 +2142,8 @@ local function GetSegmentedThresholdColorForValue(powerType, settings, currentVa
 end
 
 local function GetContinuousTickEntriesConfig(powerType, settings)
-    if SEGMENTED_TYPES[powerType] or powerType == RESOURCE_MAELSTROM_WEAPON then
+    if SEGMENTED_TYPES[powerType] or powerType == RESOURCE_MAELSTROM_WEAPON
+        or RB.AURA_STACK_RESOURCES[powerType] then
         return false, nil, {}, nil, nil
     end
     if not settings or not settings.resources then
@@ -2055,6 +2182,7 @@ end
 
 local function SupportsResourceAuraStackMode(powerType)
     return powerType == RESOURCE_MAELSTROM_WEAPON or SEGMENTED_TYPES[powerType] == true
+        or RB.AURA_STACK_RESOURCES[powerType] ~= nil
 end
 
 ------------------------------------------------------------------------
@@ -2089,6 +2217,7 @@ end
 
 local function IsSegmentedTextResource(powerType)
     return powerType == RESOURCE_MAELSTROM_WEAPON or SEGMENTED_TYPES[powerType] == true
+        or RB.AURA_STACK_RESOURCES[powerType] ~= nil
 end
 
 local function FormatSegmentedTextNumber(value)
@@ -2192,6 +2321,12 @@ RB.GetSpecResourceDisplayProfile = GetSpecResourceDisplayProfile
 RB.GetResourceDisplayValue = GetResourceDisplayValue
 RB.GetResourceSegmentedSmoothing = GetResourceSegmentedSmoothing
 RB.GetMWDisplayStyle = GetMWDisplayStyle
+RB.GetAuraStackDisplayStyle = GetAuraStackDisplayStyle
+RB.GetAuraStackResourceMax = GetAuraStackResourceMax
+RB.IsAuraStackResourceSuppressed = IsAuraStackResourceSuppressed
+RB.IsInVoidMetamorphosis = IsInVoidMetamorphosis
+RB.GetCanonicalPowerType = GetCanonicalPowerType
+RB.GetPlacementRenderPowerType = GetPlacementRenderPowerType
 RB.GetResourceDisplayConfig = GetResourceDisplayConfig
 RB.GetResourceSpecOverrideTable = GetResourceSpecOverrideTable
 RB.RESOURCE_TEXT_DISPLAY_KEYS = RESOURCE_TEXT_DISPLAY_KEYS

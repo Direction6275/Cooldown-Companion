@@ -69,13 +69,9 @@ local AURA_BORDER_SLIDER_KEYS = {
     lines = "auraBorderLines",
     solidSizeDefault = 2,
 }
-local MW_BORDER_SLIDER_KEYS = {
-    size = "mwMaxStackBorderSize",
-    thickness = "mwMaxStackBorderThickness",
-    speed = "mwMaxStackBorderSpeed",
-    lines = "mwMaxStackBorderLines",
-    solidSizeDefault = 2,
-}
+-- The max-stack border's own slider keys are not restated here: they ride
+-- with the rest of that border's key names in RB.MAX_STACK_BORDER_KEYS, so
+-- every stack-counted resource writes one agreed set.
 
 -- LibSharedMedia names run well past the 140px control column, and a dropdown
 -- sizes its menu from the control. Without this the texture picker would open
@@ -397,6 +393,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
     local capturedPt = powerType
     local isHealthResource = capturedPt == HealthResource.ID
     local isSegmentedResource = (SEGMENTED_TYPES[capturedPt] == true) or (capturedPt == 100)
+        or RB.AURA_STACK_RESOURCES[capturedPt] ~= nil
     if isHealthResource then
         HealthResource.EnsureSettings(settings)
     else
@@ -1534,11 +1531,23 @@ local function BuildBarHeightControls(container, settings, layout)
             layout.resources = {}
         end
 
-        local resources = GetConfigActiveResources()
+        -- A mutually exclusive pair is one bar in one slot, so it gets one
+        -- thickness row: the half that proxies its placement is dropped
+        -- here, because the value its row would store is never read. The row
+        -- that survives is named for whichever half is live right now and
+        -- writes the canonical half's entry, matching the single slot the
+        -- layout canvas draws.
+        local resources = {}
+        for _, pt in ipairs(GetConfigActiveResources()) do
+            if RB.GetCanonicalPowerType(pt) == pt then
+                resources[#resources + 1] = pt
+            end
+        end
         for _, pt in ipairs(resources) do
             local capturedPt = pt
-            local name = POWER_NAMES[pt] or ("Power " .. pt)
-            local enabled = IsResourceEnabled(settings, pt)
+            local renderPt = RB.GetPlacementRenderPowerType(pt)
+            local name = POWER_NAMES[renderPt] or ("Power " .. renderPt)
+            local enabled = IsResourceEnabled(settings, renderPt)
             local resLayout = type(layout.resources[capturedPt]) == "table" and layout.resources[capturedPt] or {}
 
             local resThickness
@@ -1653,6 +1662,18 @@ local function GetResourceColorDescriptors(powerType, effectiveBarTextureName)
         AddResourceColorDescriptor(descriptors, "mwBaseColor", "MW (Base)", DEFAULT_MW_BASE_COLOR, false)
         AddResourceColorDescriptor(descriptors, "mwOverlayColor", "MW (Overlay)", DEFAULT_MW_OVERLAY_COLOR, false)
         AddResourceColorDescriptor(descriptors, "mwMaxColor", "MW (Max)", DEFAULT_MW_MAX_COLOR, false)
+    elseif RB.AURA_STACK_RESOURCES[powerType] then
+        -- Base plus at-max, the Holy Power shape. Both key names and both
+        -- defaults come from the family table, so a new member declares its
+        -- colours in exactly one place.
+        AddResourceColorDescriptor(descriptors,
+            RB.AURA_STACK_RESOURCES[powerType].colorKeys[1],
+            RB.AURA_STACK_RESOURCES[powerType].colorLabels[1],
+            RB.AURA_STACK_RESOURCES[powerType].colorDefaults[1], false)
+        AddResourceColorDescriptor(descriptors,
+            RB.AURA_STACK_RESOURCES[powerType].colorKeys[2],
+            RB.AURA_STACK_RESOURCES[powerType].colorLabels[2],
+            RB.AURA_STACK_RESOURCES[powerType].colorDefaults[2], false)
     elseif powerType == 101 then
         AddResourceColorDescriptor(descriptors, "staggerGreenColor", "Stagger (Low)", { 0.52, 0.90, 0.52 }, false)
         AddResourceColorDescriptor(descriptors, "staggerYellowColor", "Stagger (Medium)", { 1.0, 0.85, 0.36 }, false)
@@ -2407,6 +2428,74 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
         AURA_BORDER_SLIDER_KEYS, applyBars, 1, true, previewOnly)
 end
 
+-- The max-stack border rows, shared by every stack-counted resource: the
+-- toggle plus, while it is on, style, colour and the standard glow sliders.
+-- Only the key names differ per resource (RB.MAX_STACK_BORDER_KEYS —
+-- Maelstrom Weapon keeps its shipped mw* set), so one builder serves them
+-- all and no resource can drift from the others.
+local function BuildMaxStackBorderRows(column, settings, powerType, resourceName, applyRows, previewOnly)
+    -- The store is the canonical half's, matching the runtime read: a
+    -- mutually exclusive pair is one bar in one slot, so both halves' panels
+    -- show and edit ONE border. The label still names the resource whose
+    -- panel this is — only the store is shared. Every other resource is its
+    -- own canonical half, so nothing else moves.
+    powerType = RB.GetCanonicalPowerType(powerType)
+    local keys = RB.MAX_STACK_BORDER_KEYS[powerType] or RB.MAX_STACK_BORDER_KEYS.default
+    local resource = settings.resources and settings.resources[powerType]
+    local borderOn = type(resource) == "table" and resource[keys.enabled] == true
+
+    local borderToggleRow = AddCheckboxRow(column, {
+        label = "Max Stack Border",
+        value = borderOn,
+        onChange = function(value)
+            if type(settings.resources[powerType]) ~= "table" then
+                settings.resources[powerType] = {}
+            end
+            settings.resources[powerType][keys.enabled] = value == true or nil
+            applyRows()
+            C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
+        end,
+    })
+    AnchorRowBadge(borderToggleRow, CreateInfoButton(borderToggleRow.frame, borderToggleRow.frame, "LEFT", "LEFT", 0, 0, {
+        "Max Stack Border",
+        {"Shows a border while " .. resourceName .. " is at full stacks.", 1, 1, 1, true},
+    }, borderToggleRow))
+
+    if not borderOn then return end
+
+    local borderStyle = resource[keys.style] == "pixel" and "pixel" or "solid"
+    AddDropdownRow(column, {
+        label = "Border Style",
+        indent = true,
+        list = { solid = "Solid Border", pixel = "Pixel Glow" },
+        order = { "solid", "pixel" },
+        value = borderStyle,
+        onChange = function(value)
+            if value ~= "solid" and value ~= "pixel" then return end
+            resource[keys.style] = value
+            -- Per-style key resets, like every glow dropdown.
+            resource[keys.size] = value == "pixel" and 12 or 2
+            resource[keys.speed] = value == "pixel" and 2 or 0.5
+            resource[keys.lines] = value == "pixel" and 5 or 2
+            resource[keys.thickness] = value == "pixel" and 3 or 4
+            applyRows()
+            C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
+        end,
+    })
+    AddColorRow(column, {
+        label = "Border Color",
+        indent = true,
+        tbl = resource,
+        key = keys.color,
+        default = RB.DEFAULT_MW_MAX_STACK_BORDER_COLOR,
+        onConfirm = applyRows,
+        onChange = previewOnly,
+    })
+    AddGlowSliderRows(column, resource,
+        borderStyle == "pixel" and "dashes" or "solid",
+        keys, applyRows, 1, true, previewOnly)
+end
+
 local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     if BuildResourceBarConflictGate(container, "Resource Bars", true) then
         return
@@ -2453,6 +2542,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         -- get neither. The section shows if either half applies.
         local isSegmented = SEGMENTED_TYPES[resourceSettingsPowerType] == true
             or resourceSettingsPowerType == 100
+            or RB.AURA_STACK_RESOURCES[resourceSettingsPowerType] ~= nil
         showThresholdsTicks = isSegmented
             or (resourceSettingsPowerType ~= 101 and resourceSettingsPowerType ~= healthResourceID)
     end
@@ -2499,7 +2589,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                 pulloutWidth = MEDIA_PULLOUT_WIDTH,
                 list = {
                     overlay = "Overlay",
-                    segments = "One Segment Per Stack",
+                    segments = "Segmented",
                     continuous = "Continuous",
                 },
                 order = { "overlay", "segments", "continuous" },
@@ -2511,59 +2601,68 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                 end,
             })
 
-            local mwResource = settings.resources and settings.resources[100]
-            local mwBorderOn = type(mwResource) == "table"
-                and mwResource.mwMaxStackBorderEnabled == true
-            local borderToggleRow = AddCheckboxRow(mwRight, {
-                label = "Max Stack Border",
-                value = mwBorderOn,
-                onChange = function(value)
-                    if type(settings.resources[100]) ~= "table" then
-                        settings.resources[100] = {}
-                    end
-                    settings.resources[100].mwMaxStackBorderEnabled = value == true or nil
-                    applyMWBars()
-                    C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
+            BuildMaxStackBorderRows(mwRight, settings, 100, "Maelstrom Weapon", applyMWBars, previewOnly)
+        end
+    end
+
+    -- The aura-stack resource family's stack shape. Two shapes, not three:
+    -- the overlay layer exists for Maelstrom Weapon alone, whose stacks can
+    -- run past its segment count.
+    if showResourceSettings and RB.AURA_STACK_RESOURCES[resourceSettingsPowerType] then
+        local stackResourceName = POWER_NAMES[resourceSettingsPowerType]
+            or ("Power " .. resourceSettingsPowerType)
+        local _, stackCollapsed = BuildCollapsibleSection(container, "Stack Display", "rb_stack_display", resourceBarCollapsedSections, nil, ROW_SECTION)
+
+        if not stackCollapsed then
+            -- LEFT column: the shape. RIGHT column: the max-stack border,
+            -- the same CC-driven border Maelstrom Weapon offers — these
+            -- resources read their stacks the same way, so it works in
+            -- combat too.
+            local stackLeft, stackRight = BeginRowGrid(container)
+
+            -- Everything in this section renders on the workspace Live
+            -- Preview, which does not rebuild with the settings column.
+            local applyStackBars = function()
+                applyBars()
+                RefreshLayoutOrderPreview()
+            end
+
+            -- Which shape counts as "untouched" is the member's own, not a
+            -- fixed one: members with a large maximum ship Continuous.
+            -- Both ends of this row honour it — the value shown before the
+            -- first touch, and the write, which clears the stored key when
+            -- the pick lands back on the member's default.
+            --
+            -- Read AND written on the CANONICAL half throughout (inline
+            -- rather than via a local: this function is near Lua 5.1's
+            -- 200-local ceiling). A mutually exclusive pair is one bar in one
+            -- slot, so its shape is one setting: both halves' panels stay
+            -- reachable and show identical state, and an edit from either
+            -- lands in the one store the runtime reads. Every other member is
+            -- its own canonical half, so this is identity for them.
+            local stackDefaultStyle = RB.AURA_STACK_RESOURCES[
+                RB.GetCanonicalPowerType(resourceSettingsPowerType)].defaultStyle or "segments"
+
+            AddDropdownRow(stackLeft, {
+                label = "Stack Display",
+                pulloutWidth = MEDIA_PULLOUT_WIDTH,
+                list = {
+                    segments = "Segmented",
+                    continuous = "Continuous",
+                },
+                order = { "segments", "continuous" },
+                value = ReadSpecOverrideKey(settings, RB.GetCanonicalPowerType(resourceSettingsPowerType),
+                    _colorSpecID, "stackDisplayStyle", stackDefaultStyle),
+                onChange = function(val)
+                    WriteSpecOverrideKey(settings, RB.GetCanonicalPowerType(resourceSettingsPowerType),
+                        _colorSpecID, "stackDisplayStyle",
+                        val ~= stackDefaultStyle and val or nil)
+                    applyStackBars()
                 end,
             })
-            AnchorRowBadge(borderToggleRow, CreateInfoButton(borderToggleRow.frame, borderToggleRow.frame, "LEFT", "LEFT", 0, 0, {
-                "Max Stack Border",
-                {"Shows a border while Maelstrom Weapon is at full stacks.", 1, 1, 1, true},
-            }, borderToggleRow))
 
-            if mwBorderOn then
-                local mwBorderStyle = mwResource.mwMaxStackBorderStyle == "pixel" and "pixel" or "solid"
-                AddDropdownRow(mwRight, {
-                    label = "Border Style",
-                    indent = true,
-                    list = { solid = "Solid Border", pixel = "Pixel Glow" },
-                    order = { "solid", "pixel" },
-                    value = mwBorderStyle,
-                    onChange = function(value)
-                        if value ~= "solid" and value ~= "pixel" then return end
-                        mwResource.mwMaxStackBorderStyle = value
-                        -- Per-style key resets, like every glow dropdown.
-                        mwResource.mwMaxStackBorderSize = value == "pixel" and 12 or 2
-                        mwResource.mwMaxStackBorderSpeed = value == "pixel" and 2 or 0.5
-                        mwResource.mwMaxStackBorderLines = value == "pixel" and 5 or 2
-                        mwResource.mwMaxStackBorderThickness = value == "pixel" and 3 or 4
-                        applyMWBars()
-                        C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
-                    end,
-                })
-                AddColorRow(mwRight, {
-                    label = "Border Color",
-                    indent = true,
-                    tbl = mwResource,
-                    key = "mwMaxStackBorderColor",
-                    default = RB.DEFAULT_MW_MAX_STACK_BORDER_COLOR,
-                    onConfirm = applyMWBars,
-                    onChange = previewOnly,
-                })
-                AddGlowSliderRows(mwRight, mwResource,
-                    mwBorderStyle == "pixel" and "dashes" or "solid",
-                    MW_BORDER_SLIDER_KEYS, applyMWBars, 1, true, previewOnly)
-            end
+            BuildMaxStackBorderRows(stackRight, settings, resourceSettingsPowerType,
+                stackResourceName, applyStackBars, previewOnly)
         end
     end
 
@@ -2757,6 +2856,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                 local resourceName = POWER_NAMES[pt] or ("Power " .. pt)
                 local capturedPt = pt
                 local isSegmented = SEGMENTED_TYPES[capturedPt] == true or capturedPt == 100
+                    or RB.AURA_STACK_RESOURCES[capturedPt] ~= nil
 
                 if isSegmented then
                     local thresholdAdvKey = "rbSegThreshold_" .. capturedPt .. "_" .. tostring(_colorSpecID)
