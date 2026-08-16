@@ -1846,6 +1846,13 @@ local function GetCompactGrowthDirectionLabels(group, orientationOverride)
     local style = group.style or {}
     local orientation = orientationOverride or ST.GetPanelLayoutOrientation(group.displayMode, style)
     local growthOrigin = style.growthOrigin or "TOPLEFT"
+    if ST.IsCenteredGrowthOrigin(growthOrigin) then
+        -- An ACTIVE centered edge hides the compact alignment row entirely
+        -- (it supersedes start/center/end), so a centered value here is
+        -- axis-mismatched and the runtime folds it to TOPLEFT; these labels
+        -- must agree with that fold.
+        growthOrigin = "TOPLEFT"
+    end
     if orientation == "vertical" then
         local startIsTop = (growthOrigin == "TOPLEFT" or growthOrigin == "TOPRIGHT")
         return {
@@ -2430,28 +2437,38 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
     -- the end of each row's label. The row builders are read at CALL time, for
     -- the load-order reason stated at AddFontControls' row branch below.
     local function BuildCompactAdvanced(panel)
-        local growthRow = ST._AddDropdownRow(panel, {
-            label = "Growth Direction",
-            list = GetCompactGrowthDirectionLabels(group),
-            order = {"start", "center", "end"},
-            value = NormalizeCompactGrowthDirection(group.compactGrowthDirection),
-            onChange = function(val)
-                group.compactGrowthDirection = NormalizeCompactGrowthDirection(val)
-                local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-                if frame then
-                    frame._layoutDirty = true
-                    if frame:IsShown() then
-                        CooldownCompanion:UpdateGroupLayout(CS.selectedGroup)
+        -- A centered Growth Direction on the Layout tab already answers the
+        -- alignment question per line (owner ruling 2026-08-16), so the
+        -- start/center/end row would contradict it and stays hidden.
+        local style = group.style or {}
+        local centeredActive = ST.GetCenteredGrowthEdge(
+            style.growthOrigin,
+            ST.GetPanelLayoutOrientation(group.displayMode, style)
+        ) ~= nil
+        if not centeredActive then
+            local growthRow = ST._AddDropdownRow(panel, {
+                label = "Growth Direction",
+                list = GetCompactGrowthDirectionLabels(group),
+                order = {"start", "center", "end"},
+                value = NormalizeCompactGrowthDirection(group.compactGrowthDirection),
+                onChange = function(val)
+                    group.compactGrowthDirection = NormalizeCompactGrowthDirection(val)
+                    local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+                    if frame then
+                        frame._layoutDirty = true
+                        if frame:IsShown() then
+                            CooldownCompanion:UpdateGroupLayout(CS.selectedGroup)
+                        end
                     end
-                end
-            end,
-        })
-        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
-        -- onto the end of the row's label.
-        ST._AnchorRowBadge(growthRow, CreateInfoButton(growthRow.frame, growthRow.frame, "LEFT", "LEFT", 0, 0, {
-            "Growth Direction",
-            {"Choose which edge acts as the compact anchor icon/bar as visibility changes. Horizontal uses Left/Center/Right, vertical uses Top/Center/Bottom.", 1, 1, 1, true},
-        }, tabInfoButtons))
+                end,
+            })
+            -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+            -- onto the end of the row's label.
+            ST._AnchorRowBadge(growthRow, CreateInfoButton(growthRow.frame, growthRow.frame, "LEFT", "LEFT", 0, 0, {
+                "Growth Direction",
+                {"Choose which edge acts as the compact anchor icon/bar as visibility changes. Horizontal uses Left/Center/Right, vertical uses Top/Center/Bottom.", 1, 1, 1, true},
+            }, tabInfoButtons))
+        end
 
         local totalButtons = #group.buttons
         local function SetMaxVisibleButtons(val)

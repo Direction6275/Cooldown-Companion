@@ -1632,6 +1632,14 @@ local function CreatePreviewLayoutDrag(preview, panelId)
                 tlX, tlY = localW + x - slotW / 2, y - slotH / 2
             elseif anchor == "BOTTOMLEFT" then
                 tlX, tlY = x + slotW / 2, -localH + y + slotH / 2
+            elseif anchor == "TOP" then
+                tlX, tlY = localW / 2 + x, y - slotH / 2
+            elseif anchor == "BOTTOM" then
+                tlX, tlY = localW / 2 + x, -localH + y + slotH / 2
+            elseif anchor == "LEFT" then
+                tlX, tlY = x + slotW / 2, -localH / 2 + y
+            elseif anchor == "RIGHT" then
+                tlX, tlY = localW + x - slotW / 2, -localH / 2 + y
             else -- BOTTOMRIGHT
                 tlX, tlY = localW + x - slotW / 2, -localH + y + slotH / 2
             end
@@ -3641,7 +3649,11 @@ local function UpdateTextGroupHeader(preview, group, style, headerHeight)
     header:SetText(group.name or "")
     header:ClearAllPoints()
     local growthOrigin = style.growthOrigin or "TOPLEFT"
-    local vEdge = (growthOrigin == "BOTTOMLEFT" or growthOrigin == "BOTTOMRIGHT") and "BOTTOM" or "TOP"
+    -- Raw "BOTTOM" counts only while it is the ACTIVE centered edge, matching
+    -- the live header path: an axis-mismatched value folds to TOPLEFT.
+    local vEdge = (growthOrigin == "BOTTOMLEFT" or growthOrigin == "BOTTOMRIGHT"
+        or ST.GetCenteredGrowthEdge(growthOrigin, ST.GetPanelLayoutOrientation(group.displayMode, style)) == "BOTTOM")
+        and "BOTTOM" or "TOP"
     local anchor = align == "RIGHT" and (vEdge .. "RIGHT") or align == "CENTER" and vEdge or (vEdge .. "LEFT")
     local xOff = (align == "CENTER") and 0 or (align == "RIGHT") and -2 or 2
     local yOff = vEdge == "BOTTOM" and 1 or -1
@@ -4892,6 +4904,13 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     local perRow = math_max(1, geo.buttonsPerRow)
     local style = group.style or {}
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
+    -- Same gate the live layout applies: aura panels (Blizzard's flow
+    -- container) fold centered growth to TOPLEFT.
+    local centeredEdge = not CooldownCompanion:IsAuraPanel(group)
+        and ST.GetCenteredGrowthEdge(style.growthOrigin, geo.orientation) or nil
+    if centeredEdge then
+        growthAnchor = centeredEdge
+    end
 
     -- Text-mode group header claims a row of space above (or below, for
     -- bottom growth) the entries, exactly like the live layout.
@@ -4929,16 +4948,37 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     layoutDrag.slotW, layoutDrag.slotH = w, h
     layoutDrag.scale = scale
     layoutDrag.anchor = growthAnchor
-    layoutDrag.cellXY = function(d)
-        local row, col
-        if geo.orientation == "horizontal" then
-            row = math_floor((d - 1) / perRow)
-            col = (d - 1) % perRow
-        else
-            col = math_floor((d - 1) / perRow)
-            row = (d - 1) % perRow
+    if centeredEdge then
+        -- Mirror of the live centered branch in ApplyActiveButtonLayout:
+        -- offsets hang off the frame's edge midpoint, so the trailing
+        -- partial line centers itself. cellXY doubles as the drag-reorder
+        -- hit model, so centering must live here, not after.
+        local lineCount = math_ceil(count / perRow)
+        layoutDrag.cellXY = function(d)
+            local line = math_floor((d - 1) / perRow)
+            local indexInLine = (d - 1) % perRow
+            local itemsInLine = (line == lineCount - 1) and (count - line * perRow) or perRow
+            if geo.orientation == "horizontal" then
+                local edgeYMul = centeredEdge == "TOP" and -1 or 1
+                return (indexInLine - (itemsInLine - 1) / 2) * (w + spacing),
+                    edgeYMul * (line * (h + spacing) + headerHeight)
+            end
+            local edgeXMul = centeredEdge == "LEFT" and 1 or -1
+            return edgeXMul * line * (w + spacing),
+                ((itemsInLine - 1) / 2 - indexInLine) * (h + spacing) - headerHeight / 2
         end
-        return xMul * col * (w + spacing), yMul * (row * (h + spacing) + headerHeight)
+    else
+        layoutDrag.cellXY = function(d)
+            local row, col
+            if geo.orientation == "horizontal" then
+                row = math_floor((d - 1) / perRow)
+                col = (d - 1) % perRow
+            else
+                col = math_floor((d - 1) / perRow)
+                row = (d - 1) % perRow
+            end
+            return xMul * col * (w + spacing), yMul * (row * (h + spacing) + headerHeight)
+        end
     end
     preview.layoutDrag = layoutDrag
     local dragModel = (not readOnly and count >= 2) and layoutDrag or nil
