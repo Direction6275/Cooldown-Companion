@@ -231,6 +231,10 @@ function RB.CreateResourceBarAuraHostModule(deps)
         local isSpellBar = IsSpellCustomBarConfig(cabConfig)
         local layout = GetSpecLayoutOrder(settings)
         local stackDisplayMode = cabConfig.displayMode == "continuous" and "continuous" or nil
+        -- Threshold/max stack colors live in cab.auraBar under the panel key
+        -- names (the shared config rows write them there), so the policy
+        -- resolver and the kit renderers read the adapter unchanged.
+        local cabAuraBar = type(cabConfig.auraBar) == "table" and cabConfig.auraBar or nil
         return {
             type = "spell",
             id = tonumber(cabConfig.spellID),
@@ -252,6 +256,11 @@ function RB.CreateResourceBarAuraHostModule(deps)
                 stackDisplayMode = stackDisplayMode,
                 segmentGap = (layout and layout.segmentGap) or settings.segmentGap or 4,
                 segmentedSmoothing = GetResourceSegmentedSmoothing(settings),
+                thresholdValue = cabAuraBar and cabAuraBar.thresholdValue or nil,
+                thresholdColor = cabAuraBar and cabAuraBar.thresholdColor or nil,
+                maxColorEnabled = cabAuraBar and cabAuraBar.maxColorEnabled or nil,
+                maxColor = cabAuraBar and cabAuraBar.maxColor or nil,
+                blockGap = cabAuraBar and cabAuraBar.blockGap or nil,
             },
         }
     end
@@ -494,7 +503,8 @@ function RB.CreateResourceBarAuraHostModule(deps)
         -- The rect is the bar's full rect, so a caller-supplied bar length
         -- is the block run's length unchanged.
         local rectLength = opts and opts.barLength or nil
-        ST.LayoutStackBlocks(blocks, rect, max, frame._isVertical, bgColor, bgColor[4] or 1, rectLength)
+        ST.LayoutStackBlocks(blocks, rect, max, frame._isVertical, bgColor, bgColor[4] or 1, rectLength,
+            CooldownCompanion:GetAuraStackBlockGapTexels(barInfo.cabConfig, max) / 512)
         -- litStacks (config preview only): the Active Aura stand-in. On a
         -- live bar the kit paints its atlas fill over these same blocks; with
         -- no kit on the canvas, CC lights them itself, in the same colour the
@@ -502,13 +512,33 @@ function RB.CreateResourceBarAuraHostModule(deps)
         local lit = opts and tonumber(opts.litStacks) or nil
         if lit and lit > 0 then
             local auraColor = style.barAuraColor or { 0.2, 1.0, 0.2, 1.0 }
-            for i = 1, math_min(lit, max) do
-                local tex = blocks[i]
+            -- Threshold recolor (preview fidelity): the stand-in count is
+            -- CC-invented, never secret, so coloring per lit block in Lua
+            -- here mirrors what the kit's masked bands render on a live bar.
+            local policy = CooldownCompanion:ResolveAuraStackThresholdPolicy(
+                BuildEntryAdapter(barInfo.cabConfig, settings))
+            local threshold = policy and policy.threshold
+            if threshold and threshold > max then threshold = max end
+            -- Reverse fill starts the lit run at the opposite physical end,
+            -- so each block maps to its LOGICAL stack before lighting or
+            -- coloring (review 2026-08-15: the run and its colors landed on
+            -- the wrong end of reversed bars).
+            local reverse = frame.GetReverseFill and frame:GetReverseFill() == true
+            lit = math_min(lit, max)
+            for i = 1, max do
+                local logical = reverse and (max - i + 1) or i
+                local tex = logical <= lit and blocks[i] or nil
                 if tex then
+                    local color = auraColor
+                    if policy and policy.maxOn and logical == max then
+                        color = policy.maxColor
+                    elseif threshold and logical >= threshold then
+                        color = policy.thresholdColor
+                    end
                     tex:SetColorTexture(
-                        auraColor[1] or 0.2,
-                        auraColor[2] or 1.0,
-                        auraColor[3] or 0.2,
+                        color[1] or 0.2,
+                        color[2] or 1.0,
+                        color[3] or 0.2,
                         auraColor[4] ~= nil and auraColor[4] or 1
                     )
                 end
@@ -745,7 +775,11 @@ function RB.CreateResourceBarAuraHostModule(deps)
         if not settings then return nil end
         local buttonData = BuildResourceOverlayEntryAdapter(
             entry, settings, ResolveResourceOverlayShapes(entry, powerType))
-        return CooldownCompanion:GetAuraStackBarMax(buttonData)
+        -- Constrained set, like every other max resolve on this file: the
+        -- threshold policy resolves with the constrain flag, so any other
+        -- choice lets the fill's max and the text's max disagree on spell
+        -- entries with implicit fallbacks (review 2026-08-15).
+        return CooldownCompanion:GetAuraStackBarMax(buttonData, true)
     end
 
     ------------------------------------------------------------------------
@@ -941,7 +975,10 @@ function RB.CreateResourceBarAuraHostModule(deps)
                             -- canvas can read it back.
                             local stackBarMax
                             if CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) then
-                                stackBarMax = CooldownCompanion:GetAuraStackBarMax(buttonData)
+                                -- Constrained (panel parity): boundStackMax must
+                                -- equal the threshold policy's maxStacks or the
+                                -- max band and the max text breakpoint disagree.
+                                stackBarMax = CooldownCompanion:GetAuraStackBarMax(buttonData, true)
                             end
                             SetCustomBarCachedStackMax(entry.customBarId, stackBarMax)
                             local style = BuildStyleAdapter(cabConfig, settings)
@@ -1021,7 +1058,8 @@ function RB.CreateResourceBarAuraHostModule(deps)
                         -- cached max.
                         local stackBarMax
                         if CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) then
-                            stackBarMax = CooldownCompanion:GetAuraStackBarMax(buttonData)
+                            -- Constrained (panel parity; see the block collector).
+                            stackBarMax = CooldownCompanion:GetAuraStackBarMax(buttonData, true)
                         end
                         -- Keyed by the BAR, so it survives the slot churn a
                         -- form change causes (see the helper's note).
@@ -1076,7 +1114,8 @@ function RB.CreateResourceBarAuraHostModule(deps)
                             -- assume a want draws at least one shape.
                             local stackBarMax
                             if shapes.stackLane then
-                                stackBarMax = CooldownCompanion:GetAuraStackBarMax(buttonData)
+                                -- Constrained (panel parity; see the block collector).
+                                stackBarMax = CooldownCompanion:GetAuraStackBarMax(buttonData, true)
                                 if not stackBarMax then
                                     shapes.stackLane = false
                                     buttonData.auraBar.mode = "duration"
@@ -1149,7 +1188,20 @@ function RB.CreateResourceBarAuraHostModule(deps)
         if not settings then return nil end
         local buttonData = BuildEntryAdapter(cabConfig, settings)
         if not CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) then return nil end
-        return CooldownCompanion:GetAuraStackBarMax(buttonData)
+        -- Constrained (panel parity; see the block collector).
+        return CooldownCompanion:GetAuraStackBarMax(buttonData, true)
+    end
+
+    -- The stack threshold/max color policy for a cabConfig, resolved through
+    -- the same adapter the rebind collector uses. Config-canvas consumer
+    -- only: the stand-in paints CC-invented counts, so it may compare in
+    -- Lua what the live kit renders engine-side.
+    function RB.ResolveCustomBarStackThresholdPolicy(cabConfig, settings)
+        if not IsAuraTrackedCustomBar(cabConfig) then return nil end
+        settings = settings or GetResourceBarSettings()
+        if not settings then return nil end
+        return CooldownCompanion:ResolveAuraStackThresholdPolicy(
+            BuildEntryAdapter(cabConfig, settings))
     end
 
     ------------------------------------------------------------------------

@@ -482,6 +482,19 @@ local function BuildSlotKit(slotButton)
         kit.stackThresholdBand:SetAlpha(0)
         kit.stackMaxBand = kit.stackFill:CreateTexture(nil, "ARTWORK", nil, 2)
         kit.stackMaxBand:SetAlpha(0)
+        -- Widget-bind band mask: the bands are solid textures, so on a
+        -- block-atlas fill their span would paint over the atlas's baked
+        -- transparent gaps. Both bands share this mask; widget binds dress
+        -- it with the SAME block atlas across the full bar (the bands then
+        -- render only over block artwork), every other bind dresses it
+        -- all-pass white. Created here (write-once subtree), dressed at
+        -- bind time by StyleStackThresholdBands.
+        kit.stackBandMask = kit.stackFill:CreateMaskTexture()
+        kit.stackBandMask:SetTexture("Interface\\Buttons\\WHITE8X8",
+            "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        kit.stackBandMask:SetAllPoints(kit.stackFill)
+        kit.stackThresholdBand:AddMaskTexture(kit.stackBandMask)
+        kit.stackMaxBand:AddMaskTexture(kit.stackBandMask)
 
         kit.stackSegments = {}
         for i = 1, ST.STACK_SEGMENT_ATLAS_MAX - 1 do
@@ -732,10 +745,15 @@ end
 -- aura-down state.
 ------------------------------------------------------------------------
 
-ST.STACK_SEGMENT_GAP_RATIO = 10 / 512 -- baked into the atlas artwork
-ST.STACK_SEGMENT_ATLAS_MAX = 20
+ST.STACK_SEGMENT_GAP_RATIO = 10 / 512 -- the default artwork's baked gap
+ST.STACK_SEGMENT_ATLAS_MAX = 30
 
-function ST.GetStackSegmentsTexture(max)
+-- Gap presets ship as separate atlas sets (stack-segments-g<gap>-<max>);
+-- the original gap-10 files keep their unsuffixed names.
+function ST.GetStackSegmentsTexture(max, gapTexels)
+    if gapTexels and gapTexels ~= ST.STACK_BLOCK_GAP_DEFAULT then
+        return "Interface\\AddOns\\CooldownCompanion\\Media\\stack-segments-g" .. gapTexels .. "-" .. max .. ".tga"
+    end
     return "Interface\\AddOns\\CooldownCompanion\\Media\\stack-segments-" .. max .. ".tga"
 end
 
@@ -750,13 +768,13 @@ end
 -- `length` overrides the measured host extent, for callers that know the
 -- size but whose host has not been through a layout pass yet (the config
 -- canvas builds its bars and lays out its lanes in the same frame).
-function ST.LayoutStackBlocks(blocks, host, max, vertical, color, alpha, length)
+function ST.LayoutStackBlocks(blocks, host, max, vertical, color, alpha, length, gapRatio)
     length = length or (vertical and host:GetHeight() or host:GetWidth())
     if length <= 0 then
         ST.HideStackBlocks(blocks)
         return
     end
-    local gap = length * ST.STACK_SEGMENT_GAP_RATIO
+    local gap = length * (gapRatio or ST.STACK_SEGMENT_GAP_RATIO)
     local blockLen = (length - (max - 1) * gap) / max
     for i, tex in ipairs(blocks) do
         if i <= max then
@@ -938,9 +956,11 @@ end
 -- time), the moving edge anchors to the creation-captured fill texture
 -- region, which the ENGINE resizes with the SECRET count (the
 -- pandemicFillClone precedent). Below the boundary the rect has crossed
--- anchors and renders nothing; the count is never read in Lua. Widget/block
--- binds are excluded (their atlas fill has transparent gaps a solid band
--- would paint over); the OVERLAY separator stripes draw above the bands.
+-- anchors and renders nothing; the count is never read in Lua. On
+-- widget/block binds the shared kit.stackBandMask wears the block atlas,
+-- so the solid bands render per block and the baked gaps stay genuinely
+-- empty; the OVERLAY separator stripes and block rings draw above the
+-- bands.
 local function DressStackThresholdBand(band, kit, button, style, boundMax, atStack, color, length)
     local off = length * (atStack - 1) / boundMax
     local vertical = button._isVertical
@@ -971,7 +991,7 @@ local function DressStackThresholdBand(band, kit, button, style, boundMax, atSta
     band:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, 1)
 end
 
-local function StyleStackThresholdBands(kit, button, buttonData, style, boundMax, shown)
+local function StyleStackThresholdBands(kit, button, buttonData, style, boundMax, shown, widgetStack)
     local tBand, mBand = kit.stackThresholdBand, kit.stackMaxBand
     if not (tBand and mBand) then return end
     -- All clamp/prefer rules live in ResolveAuraStackThresholdPolicy; the
@@ -983,6 +1003,32 @@ local function StyleStackThresholdBands(kit, button, buttonData, style, boundMax
     if threshold and threshold > boundMax then threshold = boundMax end
     local rectW, rectH = HostRectSize(button)
     local length = (button._isVertical and rectH or rectW) or 0
+    -- Mask convergence: slots are reused across entries, so any bind that
+    -- can show a band re-dresses the shared mask — atlas for widget binds,
+    -- all-pass white otherwise.
+    local mask = kit.stackBandMask
+    if mask and policy and length > 0 then
+        if widgetStack then
+            mask:SetTexture(ST.GetStackSegmentsTexture(boundMax,
+                    CooldownCompanion:GetAuraStackBlockGapTexels(buttonData, boundMax)),
+                "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+            if button._isVertical then
+                -- The fill atlas is rotated onto vertical bars
+                -- (SetRotatesTexture); rotate the mask the same way via the
+                -- 8-arg corner mapping (Blizzard's digit masks are the
+                -- SetTexCoord-on-MaskTexture precedent). The uniform
+                -- block/gap pattern is symmetric end to end, so boundary
+                -- alignment holds for either 90-degree direction.
+                mask:SetTexCoord(1, 0, 0, 0, 1, 1, 0, 1)
+            else
+                mask:SetTexCoord(0, 1, 0, 1)
+            end
+        else
+            mask:SetTexture("Interface\\Buttons\\WHITE8X8",
+                "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+            mask:SetTexCoord(0, 1, 0, 1)
+        end
+    end
     if threshold and length > 0 then
         DressStackThresholdBand(tBand, kit, button, style, boundMax, threshold,
             policy.thresholdColor, length)
@@ -1765,7 +1811,8 @@ local function StyleSlotKit(slot, button, buttonData, style)
             local rectW, rectH = HostRectSize(button)
             ST.LayoutStackBlocks(kit.stackBgBlocks, button.statusBar or slotButton,
                 slot.boundStackMax, button._isVertical, blockBg, blockAlpha,
-                button._isVertical and rectH or rectW)
+                button._isVertical and rectH or rectW,
+                CooldownCompanion:GetAuraStackBlockGapTexels(buttonData, slot.boundStackMax) / 512)
             -- The per-block rings always come from the KIT, even when its
             -- blocks are invisible (they are laid out purely to anchor
             -- these). The kit's rings live inside the fill frame and draw
@@ -1817,7 +1864,8 @@ local function StyleSlotKit(slot, button, buttonData, style)
         end
         if kit.stackFill then
             if useStackFill then
-                local atlas = widgetStack and ST.GetStackSegmentsTexture(slot.boundStackMax) or nil
+                local atlas = widgetStack and ST.GetStackSegmentsTexture(slot.boundStackMax,
+                    CooldownCompanion:GetAuraStackBlockGapTexels(buttonData, slot.boundStackMax)) or nil
                 StyleActiveBarFill(kit.stackFill, kit.stackFillTexture,
                     kit.stackFillPulseAG, kit.stackFillPulseAnim,
                     kit.stackFillCsAG, kit.stackFillCsAnim, button, style,
@@ -1829,7 +1877,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
         StyleStackSegments(kit, button, buttonData, style, slot.boundStackMax,
             segmentedStyle and not widgetStack)
         StyleStackThresholdBands(kit, button, buttonData, style, slot.boundStackMax,
-            useStackFill and not widgetStack)
+            useStackFill, widgetStack)
     else
         kit.barBackdrop:SetAlpha(0)
         ST.HideStackBlocks(kit.stackBgBlocks)

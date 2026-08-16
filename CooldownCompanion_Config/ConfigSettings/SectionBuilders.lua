@@ -199,6 +199,154 @@ local function AddAuraStackMaxStatusLabel(container, maxStacks, opts)
     })
 end
 
+-- Block-style bars only: the gap is baked into the bundled fill atlas
+-- (the Blizzard-driven fill reveals whole blocks by cropping that
+-- artwork), so the choice is a preset picking which atlas set the bind
+-- uses — never the free pixel slider painted-divider bars get. Shared by
+-- the panel entry section and the custom-bar Aura section; the store is
+-- whatever the Core/Aura.lua accessors read (entry buttonData or
+-- cabConfig).
+local STACK_BLOCK_GAP_LABELS = {
+    [0] = "None", [5] = "Thin", [10] = "Default", [15] = "Wide", [20] = "Widest",
+}
+local STACK_BLOCK_GAP_ORDER = { 0, 5, 10, 15, 20 }
+
+local function AddStackBlockGapRow(container, buttonData, opts)
+    -- Wide presets stop existing at high block counts (the artwork rule
+    -- lives in IsStackBlockGapPresetAvailable), so the list only offers
+    -- what this bar's max can render and the shown value is the same
+    -- stepped-down one the bind uses.
+    local list, order = {}, {}
+    for _, preset in ipairs(STACK_BLOCK_GAP_ORDER) do
+        if CooldownCompanion:IsStackBlockGapPresetAvailable(preset, opts.maxStacks) then
+            local key = tostring(preset)
+            list[key] = STACK_BLOCK_GAP_LABELS[preset]
+            order[#order + 1] = key
+        end
+    end
+    return AddDropdownRow(container, {
+        label = "Segment Gap",
+        indent = true,
+        list = list,
+        order = order,
+        value = tostring(CooldownCompanion:GetAuraStackBlockGapTexels(buttonData, opts.maxStacks)),
+        onChange = function(value)
+            CooldownCompanion:SetAuraStackBlockGapTexels(buttonData, tonumber(value))
+            opts.commit()
+        end,
+    })
+end
+
+local STACK_THRESHOLD_TOOLTIP = {
+    "Stack Threshold Color",
+    {"Recolors the stack count text when it reaches the chosen number of stacks.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Stack-filled bars also recolor the fill past the threshold.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"The game applies the color itself, so it keeps working in combat while the exact count is hidden from addons.", 1, 1, 1, true},
+}
+
+-- Stack threshold/max color rows (2026-08-15 program), shared between the
+-- panel entry Aura Tracking section and the custom-bar Aura Tracking
+-- section. Both options require a REAL resolved stack maximum (owner rule:
+-- the threshold row may only exist where the max row can) — but only OUT
+-- of combat is a nil max proof the aura doesn't stack. In combat the max
+-- is secret, so the rows stay up with fallback caps rather than stranding
+-- an enabled setting with no control to switch it off (review 2026-08-15);
+-- the max rows still need the resolved value, matching their shipped
+-- behavior.
+-- The store is anything the Core/Aura.lua accessors read: a panel entry's
+-- buttonData or a custom bar's cabConfig; both keep the keys in an auraBar
+-- subtable, which is what lets the runtime adapters share the engine.
+-- opts:
+--   infoButtons     badge registry for the "?" button
+--   refresh         structural refresh (rebuilds the settings column)
+--   commit          visual commit after a slider release / picker confirm
+--   previewRefresh  drag-preview repaint (defaults to the Buttons preview)
+local function BuildStackThresholdColorRows(container, buttonData, maxStacks, opts)
+    if not maxStacks and not InCombatLockdown() then return end
+    local previewRefresh = opts.previewRefresh or ST._RefreshSelectedButtonsPreview
+
+    local threshold = CooldownCompanion:GetAuraStackThresholdValue(buttonData)
+    local thresholdRow = AddCheckboxRow(container, {
+        label = "Stack Threshold Color",
+        value = threshold ~= nil,
+        onChange = function(value)
+            CooldownCompanion:SetAuraStackThresholdValue(buttonData,
+                value and (maxStacks and math.max(2, maxStacks - 1) or 2) or nil)
+            opts.refresh()
+        end,
+    })
+    -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+    -- onto the end of the row's label.
+    AnchorRowBadge(thresholdRow, CreateInfoButton(thresholdRow.frame, thresholdRow.frame, "LEFT", "LEFT", 0, 0,
+        STACK_THRESHOLD_TOOLTIP, opts.infoButtons))
+    if threshold then
+        -- Displayed value is the EFFECTIVE threshold (capped by the
+        -- resolved max, matching the live clamp); the stored value is
+        -- preserved so a talent swap that restores a higher max
+        -- restores the user's setting. (review batch 2026-08-15)
+        AddSliderRow(container, {
+            label = "Threshold Stacks",
+            indent = true,
+            min = 2, max = maxStacks or 20, step = 1,
+            value = math.min(threshold, maxStacks or 20),
+            onChange = function(value)
+                -- Live-preview shape (segment-gap slider convention):
+                -- write, refresh the preview, restore — the drag never
+                -- rests in the store.
+                local previousAuraBar = buttonData.auraBar
+                local hadAuraBar = type(previousAuraBar) == "table"
+                local previous = hadAuraBar and previousAuraBar.thresholdValue or nil
+                CooldownCompanion:SetAuraStackThresholdValue(buttonData, value)
+                previewRefresh()
+                if hadAuraBar then
+                    buttonData.auraBar.thresholdValue = previous
+                else
+                    buttonData.auraBar = previousAuraBar
+                end
+            end,
+            onRelease = function(value)
+                CooldownCompanion:SetAuraStackThresholdValue(buttonData, value)
+                opts.commit()
+            end,
+        })
+        AddColorRow(container, {
+            label = "Threshold Color",
+            indent = true,
+            tbl = buttonData.auraBar,
+            key = "thresholdColor",
+            default = ST.AURA_STACK_THRESHOLD_COLOR_DEFAULT,
+            hasAlpha = false,
+            onConfirm = opts.commit,
+        })
+    end
+
+    -- Max color keeps needing the resolved max (shipped PR #542 behavior);
+    -- only the threshold half rides the combat leg above.
+    if maxStacks then
+        AddCheckboxRow(container, {
+            label = "Max Stacks Color",
+            value = CooldownCompanion:IsAuraStackMaxColorEnabled(buttonData),
+            onChange = function(value)
+                CooldownCompanion:SetAuraStackMaxColorEnabled(buttonData, value)
+                opts.refresh()
+            end,
+        })
+        if CooldownCompanion:IsAuraStackMaxColorEnabled(buttonData) then
+            AddColorRow(container, {
+                label = "Max Color",
+                indent = true,
+                tbl = buttonData.auraBar,
+                key = "maxColor",
+                default = ST.AURA_STACK_MAX_COLOR_DEFAULT,
+                hasAlpha = false,
+                onConfirm = opts.commit,
+            })
+        end
+    end
+end
+
 ------------------------------------------------------------------------
 -- REUSABLE SECTION BUILDER FUNCTIONS
 ------------------------------------------------------------------------
@@ -2025,3 +2173,5 @@ ST._TryAddAuraCandidate = TryAddAuraCandidate
 ST._RemoveAuraCandidate = RemoveAuraCandidate
 ST._AddAuraCandidateRow = AddAuraCandidateRow
 ST._AddAuraStackMaxStatusLabel = AddAuraStackMaxStatusLabel
+ST._AddStackBlockGapRow = AddStackBlockGapRow
+ST._BuildStackThresholdColorRows = BuildStackThresholdColorRows

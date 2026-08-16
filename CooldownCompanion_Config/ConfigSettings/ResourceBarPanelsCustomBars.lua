@@ -745,13 +745,15 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         "Bar Shows Stacks",
         {"The bar fills by stack count instead of draining with time. Blizzard drives the fill, and the maximum comes from the game's spell data.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
-        {"Stack Style picks the look. Segmented shows one bordered piece per stack; Continuous is one plain bar that fills as stacks build. Segment gap and smoothing follow the Resource Bars settings.", 1, 1, 1, true},
+        {"Stack Style picks the look. Segmented shows one bordered piece per stack; Continuous is one plain bar that fills as stacks build. Segment Gap picks from preset widths. Smoothing follows the Resource Bars settings.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
         {"If the aura doesn't stack, the bar keeps the normal duration fill.", 1, 1, 1, true},
     }, infoButtons))
 
     if mode == "stacks" then
-        local maxStacks = CooldownCompanion:GetAuraStackBarMax(BuildCustomBarAuraProbe(cab))
+        -- Constrained, matching every runtime resolve since the review
+        -- alignment (2026-08-15): one max across config, bind, and policy.
+        local maxStacks = CooldownCompanion:GetAuraStackBarMax(BuildCustomBarAuraProbe(cab), true)
         if maxStacks then
             AddDropdownRow(auraRight, {
                 label = "Stack Style",
@@ -764,12 +766,46 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
                     RefreshCustomBarAuraConfig()
                 end,
             })
+
+            -- Widget block bars only (pure aura bars): a preset picking
+            -- which gap-variant atlas set the bind uses. Spell bars with
+            -- stacks paint their dividers from the Resource Bars segment
+            -- gap instead.
+            if not isSpellBar and cab.displayMode ~= "continuous"
+                and maxStacks <= ST.STACK_SEGMENT_ATLAS_MAX then
+                ST._AddStackBlockGapRow(auraRight, cab, {
+                    maxStacks = maxStacks,
+                    commit = function()
+                        CooldownCompanion:ApplyResourceBars()
+                        RefreshLayoutOrderPreview()
+                    end,
+                })
+            end
         end
 
         -- What the game resolved (or that combat is hiding it), reported as a
         -- child of the toggle it explains. The shared helper owns the shape.
         AddAuraStackMaxStatusLabel(auraRight, maxStacks, { row = true })
     end
+
+    -- Stack threshold colors, the same rows the panel entry section shows
+    -- (SectionBuilders.lua): count text recolors at a chosen stack count and
+    -- again at max; stack-filled bars add matching band recolors. Outside
+    -- the Bar Shows Stacks gate because the text half runs on duration bars
+    -- too. The keys live in cab.auraBar under the panel names, which is what
+    -- lets the runtime adapter and the engine policy read them unchanged.
+    -- Resolved with constrained fallbacks, the one max every custom-bar
+    -- surface shares since the review alignment.
+    ST._BuildStackThresholdColorRows(auraRight, cab,
+        CooldownCompanion:GetAuraStackBarMax(BuildCustomBarAuraProbe(cab), true), {
+            infoButtons = infoButtons,
+            refresh = RefreshCustomBarAuraConfig,
+            commit = function()
+                CooldownCompanion:ApplyResourceBars()
+                RefreshLayoutOrderPreview()
+            end,
+            previewRefresh = RefreshLayoutOrderPreviewForDrag,
+        })
 
     -- Pandemic marker per-entry switch. The auto default follows the tracked
     -- unit (on for target debuffs, off for player buffs); only an explicit

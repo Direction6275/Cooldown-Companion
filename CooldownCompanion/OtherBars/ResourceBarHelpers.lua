@@ -284,6 +284,9 @@ local customBarContentFields = {
     "auraUnit",
     "hasCharges",
     "maxCharges",
+    -- Stack threshold/max colors: the shared config rows keep these in an
+    -- auraBar subtable (panel key names), not flat on the entry.
+    "auraBar",
 }
 
 local function HasCustomBarContent(cab)
@@ -294,7 +297,11 @@ local function HasCustomBarContent(cab)
         return true
     end
     for _, field in ipairs(customBarContentFields) do
-        if cab[field] ~= nil then
+        local value = cab[field]
+        -- Table fields (auraBar) count only while they hold something: the
+        -- setters leave an empty {} behind when the last key clears, and an
+        -- empty shell must not make a stripped bar count as configured.
+        if value ~= nil and (type(value) ~= "table" or next(value) ~= nil) then
             return true
         end
     end
