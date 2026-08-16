@@ -1021,6 +1021,59 @@ function CooldownCompanion:SetBarPanelAuraSegmentedSmoothing(buttonData, value)
     buttonData.auraBar.segmentedSmoothing = value ~= ST.SEGMENTED_SMOOTHING_ON and value or nil
 end
 
+-- Widget block gap presets (2026-08-15): the gap between block-style
+-- stacks is baked into the bundled fill atlas (the Blizzard-driven fill
+-- reveals whole blocks by cropping that artwork), so the choice is a
+-- PRESET picking which atlas set the bind uses, never a free pixel
+-- value. Values are atlas texels of 512; 10 is the original artwork and
+-- the stored-nil default.
+ST.STACK_BLOCK_GAP_DEFAULT = 10
+local STACK_BLOCK_GAP_PRESETS = { [0] = true, [5] = true, [10] = true, [15] = true, [20] = true }
+local STACK_BLOCK_GAP_STEPS = { 20, 15, 10, 5, 0 }
+
+-- Artwork exists only where every block keeps >= 6 of the atlas's 512
+-- texels (the bound the original gap-20 set was drawn to); wide gaps at
+-- high block counts would otherwise eat the blocks entirely. The atlas
+-- generator, this predicate, and the config dropdown all share the rule.
+function CooldownCompanion:IsStackBlockGapPresetAvailable(gapTexels, maxStacks)
+    if not STACK_BLOCK_GAP_PRESETS[gapTexels] then return false end
+    if not maxStacks then return true end
+    return (512 - (maxStacks - 1) * gapTexels) / maxStacks >= 6
+end
+
+-- With maxStacks, the stored preset steps DOWN to the nearest one whose
+-- artwork exists for that count (a talent can raise the max after the
+-- choice was made); the stored value is preserved so a lower max
+-- restores it.
+function CooldownCompanion:GetAuraStackBlockGapTexels(buttonData, maxStacks)
+    local auraBar = buttonData and buttonData.auraBar
+    local value = type(auraBar) == "table" and tonumber(auraBar.blockGap) or nil
+    if not (value and STACK_BLOCK_GAP_PRESETS[value]) then
+        value = ST.STACK_BLOCK_GAP_DEFAULT
+    end
+    if maxStacks then
+        for _, preset in ipairs(STACK_BLOCK_GAP_STEPS) do
+            if preset <= value and self:IsStackBlockGapPresetAvailable(preset, maxStacks) then
+                return preset
+            end
+        end
+        return 0
+    end
+    return value
+end
+
+function CooldownCompanion:SetAuraStackBlockGapTexels(buttonData, value)
+    value = tonumber(value)
+    if not (value and STACK_BLOCK_GAP_PRESETS[value]) or value == ST.STACK_BLOCK_GAP_DEFAULT then
+        value = nil
+    end
+    if type(buttonData.auraBar) ~= "table" then
+        if value == nil then return end
+        buttonData.auraBar = {}
+    end
+    buttonData.auraBar.blockGap = value
+end
+
 -- Stack threshold colors (2026-08-15 program): one mid threshold + one
 -- at-max color per entry. The live count is SECRET in combat, so nothing
 -- here is ever compared against it at runtime — these settings only shape

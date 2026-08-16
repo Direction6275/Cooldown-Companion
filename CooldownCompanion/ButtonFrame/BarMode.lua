@@ -496,7 +496,8 @@ local function UpdateBarStackBlocks(button, style)
             borders[i] = set
         end
         ST.LayoutStackBlocks(blocks, button.statusBar or button, max,
-            button._isVertical, style.barBgColor or { 0.1, 0.1, 0.1, 0.8 })
+            button._isVertical, style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }, nil, nil,
+            CooldownCompanion:GetAuraStackBlockGapTexels(buttonData, max) / 512)
         ST.LayoutStackBlockBorders(borders, blocks, max, style)
         -- Both layout helpers stamp alpha on every piece (1 shown, 0 hidden
         -- — the border helper hides all of them when the style has no
