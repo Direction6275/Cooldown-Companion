@@ -910,6 +910,24 @@ local function BuildBarAppearanceTab(container, group, style)
     if durationFormatRow then
         cdTextSec:PanelRowChrome(durationFormatRow)
     end
+    -- Low Time Threshold: cooldown-side companions of Duration Format with the
+    -- same panel-owned chrome. The aura duration format row below must never
+    -- gain these (aura urgency is the Pandemic Marker).
+    if ST._AddDurationLowTimeRows then
+        local lowTimeRows = ST._AddDurationLowTimeRows(textLeft, group.style, refreshStyle, {
+            indent = true,
+            infoButtons = tabInfoButtons,
+            rebuild = function()
+                refreshStyle()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+        if lowTimeRows then
+            for _, lowTimeRow in ipairs(lowTimeRows) do
+                cdTextSec:PanelRowChrome(lowTimeRow)
+            end
+        end
+    end
     end -- not isAuraPanel
 
     -- Show Charge Text toggle. Charges and uses are spell mechanics, so an Aura

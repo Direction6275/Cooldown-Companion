@@ -61,6 +61,7 @@ local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
 local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
 
 local FormatTime = CooldownCompanion.FormatTime
+local FormatCooldownTime = CooldownCompanion.FormatCooldownTime or CooldownCompanion.FormatTime
 local UnbindDurationText = CooldownCompanion.UnbindDurationText or function() end
 local SetAuraStackCountText = EntryRuntime.SetAuraStackCountText
 local IsSpellCustomBarConfig = RB.IsSpellCustomBarConfig
@@ -367,7 +368,10 @@ function RB.CreateResourceBarPreviewModule(deps)
 
         if bar.text and bar.text:IsShown() then
             UnbindDurationText(bar.text)
-            bar.text:SetText(FormatTime(PREVIEW_DURATION, cabConfig))
+            -- Cooldown/recharge stand-in mirrors the live bind's low-time
+            -- look (review 2026-08-16); the aura stand-in above stays on
+            -- FormatTime — the feature is cooldown-only.
+            bar.text:SetText(FormatCooldownTime(PREVIEW_DURATION, cabConfig))
         elseif bar.text then
             UnbindDurationText(bar.text)
         end

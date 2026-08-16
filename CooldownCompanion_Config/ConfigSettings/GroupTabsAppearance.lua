@@ -697,11 +697,33 @@ local function BuildAppearanceTab(container)
     -- column from the mark at call time).
     cdTextSec:Finish()
 
-    -- Duration Format, an indented child of Show Cooldown Text.
-    if cdTextSec.read.showCooldownText then
+    -- Duration Format, an indented child of Show Cooldown Text. Gated on the
+    -- PANEL's own value, not the lens read: these rows are panel-owned, and
+    -- a selected entry that overrides cooldown text off must not strand them
+    -- (review 2026-08-16; the same stranding this row's history note warns
+    -- about).
+    if group.style.showCooldownText then
         local dfRow = AddDurationFormatRow(textLeft)
         if dfRow then
             cdTextSec:PanelRowChrome(dfRow)
+        end
+        -- Low Time Threshold: cooldown-side companions of Duration Format,
+        -- same panel-owned chrome. The Aura Panel's duration format row must
+        -- never gain these (aura urgency is the Pandemic Marker).
+        if ST._AddDurationLowTimeRows then
+            local lowTimeRows = ST._AddDurationLowTimeRows(textLeft, group.style, refreshStyle, {
+                indent = true,
+                infoButtons = tabInfoButtons,
+                rebuild = function()
+                    refreshStyle()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+            if lowTimeRows then
+                for _, lowTimeRow in ipairs(lowTimeRows) do
+                    cdTextSec:PanelRowChrome(lowTimeRow)
+                end
+            end
         end
     end
     end -- not isAuraPanel

@@ -71,6 +71,7 @@ local IsEntryPingEligible = CooldownCompanion.IsEntryPingEligible
 local SetEntryPingReceiver = ST.SetEntryPingReceiver
 local ResolveEffectiveItem = CooldownCompanion.ResolveEffectiveItem
 local FormatTime = CooldownCompanion.FormatTime
+local FormatCooldownTime = CooldownCompanion.FormatCooldownTime or CooldownCompanion.FormatTime
 local BindDurationText = CooldownCompanion.BindDurationText or function() return false end
 local UnbindDurationText = CooldownCompanion.UnbindDurationText or function() end
 local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
@@ -167,7 +168,7 @@ local function UpdateBarFill(button)
             local remaining = (button._conditionalPreviewStartTime or 0)
                 + (button._conditionalPreviewDuration or 0) - GetTime()
             if remaining < 0 then remaining = 0 end
-            SetBarTimeText(button, FormatTime(remaining, button.style))
+            SetBarTimeText(button, FormatCooldownTime(remaining, button.style))
         else
             SetBarTimeText(button, "")
         end
@@ -232,10 +233,11 @@ local function UpdateBarFill(button)
             local durationStyle = button.style
             if button._durationObj then
                 button._lastBarTimeText = nil
-                BindDurationText(button.timeText, button._durationObj, durationStyle)
+                -- allowLowTime: this branch is structurally cooldown text.
+                BindDurationText(button.timeText, button._durationObj, durationStyle, true)
             else
                 if itemRemaining > 0 then
-                    SetBarTimeText(button, FormatTime(itemRemaining, durationStyle))
+                    SetBarTimeText(button, FormatCooldownTime(itemRemaining, durationStyle))
                 else
                     SetBarTimeText(button, "")
                 end
