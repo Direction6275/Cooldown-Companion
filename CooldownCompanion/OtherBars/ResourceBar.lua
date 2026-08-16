@@ -180,6 +180,19 @@ local SetBarAuraEffect = ST._SetBarAuraEffect
 
 local mwMaxStacks = 5
 
+-- Runtime state for the aura-stack members whose shape can change while the
+-- bars are already up: the Devourer pair, which swaps in place on the Void
+-- Metamorphosis transition, and its dynamic maximums, which move with
+-- talents and with what Collapsing Star costs. Held in one table rather than
+-- three file locals — this chunk sits at Lua 5.1's 200-local ceiling and
+-- ApplyResourceBars at its 60-upvalue ceiling.
+--   watch    a suppressible member is enabled in this spec's list, so the
+--            tick is worth the one aura read (armed by ApplyResourceBars,
+--            from the unfiltered list, so the hidden half still arms it)
+--   inMeta   the state the current materialization was built for
+--   reapply  a rebuild was asked for from inside the tick loop
+local stackSwapState = { watch = false, inMeta = false, reapply = false }
+
 local isApplied = false
 local onUpdateFrame = nil
 local containerFrameAbove = nil
@@ -454,10 +467,12 @@ local function ClearStaleRecycledBarRuntimeState(frame)
     end
     frame._cdcIndependentAlphaTarget = nil
     frame._cdcIndependentLastAlpha = nil
-    -- MW max-stack border: cleared so a recycled frame that stops being an
-    -- MW shape never keeps a lit border (no MW tick runs on it to clear
-    -- it). A frame still MW re-lights on its next update — the key
-    -- mismatch makes that one restyle.
+    -- Max-stack border: cleared so a recycled frame that stops being a
+    -- stack-counted shape never keeps a lit border (no stack tick runs on it
+    -- to clear it). A frame that is still one re-lights on its next update —
+    -- the key mismatch makes that one restyle. One pool field for Maelstrom
+    -- Weapon and the aura-stack family alike: a frame is only ever one of
+    -- them at a time, so they share the cleanup.
     local mwBorder = frame._ccMWMaxBorder
     if mwBorder and mwBorder.key ~= "off" then
         mwBorder.key = "off"
@@ -1438,39 +1453,46 @@ local function UpdateSegmentedBar(holder, powerType, settings)
 end
 
 ------------------------------------------------------------------------
--- Maelstrom Weapon max-stack border (owner ruling 2026-08-02): a CC-drawn
--- border that lights while MW sits at its stack maximum. Legal in combat
--- because MW's aura is server-flagged never-secret — the same plain read
--- the bar itself runs on — and everything here is plain CC frames.
--- Renders through the same pure builders as the resource aura border:
--- per segment on the segmented shapes, whole-bar on continuous.
+-- Max-stack border (owner ruling 2026-08-02): a CC-drawn border that lights
+-- while a stack-counted resource sits at its stack maximum. Legal in combat
+-- because these resources' auras are server-flagged never-secret — the same
+-- plain read the bars themselves run on — and everything here is plain CC
+-- frames. Renders through the same pure builders as the resource aura
+-- border: per segment on the segmented shapes, whole-bar on continuous.
+-- Shared by Maelstrom Weapon and the aura-stack family; only the key names
+-- differ (RB.MAX_STACK_BORDER_KEYS).
 ------------------------------------------------------------------------
 
 -- The border's config, or nil when disabled. Plain resource-level keys on
--- settings.resources[100] (no spec overrides: MW is one spec's resource).
--- Returns the resource table too, for the slider keys.
-local function GetMWMaxStackBorderConfig(settings)
-    local resource = settings and settings.resources
-        and settings.resources[RESOURCE_MAELSTROM_WEAPON]
-    if type(resource) ~= "table" or resource.mwMaxStackBorderEnabled ~= true then
+-- the resource's own bucket (no spec overrides: each of these resources
+-- belongs to a single spec). Returns the resource table and its key names
+-- too, for the slider keys. The bucket is the CANONICAL half's: a mutually
+-- exclusive pair is one bar in one slot, so its border is one setting that
+-- lights on whichever half is up. Every other resource is its own canonical
+-- half, Maelstrom Weapon included, so its keys are unchanged.
+local function GetMaxStackBorderConfig(settings, powerType)
+    powerType = RB.GetCanonicalPowerType(powerType)
+    local resource = settings and settings.resources and settings.resources[powerType]
+    local keys = RB.MAX_STACK_BORDER_KEYS[powerType] or RB.MAX_STACK_BORDER_KEYS.default
+    if type(resource) ~= "table" or resource[keys.enabled] ~= true then
         return nil
     end
-    local style = resource.mwMaxStackBorderStyle == "pixel" and "pixel" or "solid"
-    local color = resource.mwMaxStackBorderColor
+    local style = resource[keys.style] == "pixel" and "pixel" or "solid"
+    local color = resource[keys.color]
     if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
         color = RB.DEFAULT_MW_MAX_STACK_BORDER_COLOR
     end
-    return style, color, resource
+    return style, color, resource, keys
 end
 
--- Runs on every MW update tick, so restyling is keyed: only a real change
+-- Runs on every stack update tick, so restyling is keyed: only a real change
 -- (lit flips, style or colour edited, bar shape swapped) touches regions.
 -- The pool hangs off the bar frame and is reset by
 -- ClearStaleRecycledBarRuntimeState when the frame is recycled.
-local function UpdateMWMaxStackBorder(holder, settings, barType, isMax)
-    local style, color, resource
+local function UpdateMaxStackBorder(holder, settings, barType, isMax, powerType)
+    local style, color, resource, keys
     if isMax then
-        style, color, resource = GetMWMaxStackBorderConfig(settings)
+        style, color, resource, keys = GetMaxStackBorderConfig(settings, powerType or RESOURCE_MAELSTROM_WEAPON)
     end
     local pool = holder._ccMWMaxBorder
     if not style then
@@ -1499,13 +1521,29 @@ local function UpdateMWMaxStackBorder(holder, settings, barType, isMax)
         holder._ccMWMaxBorder = pool
     end
 
-    local size = tonumber(resource.mwMaxStackBorderSize)
-    local thickness = tonumber(resource.mwMaxStackBorderThickness)
-    local speed = tonumber(resource.mwMaxStackBorderSpeed)
-    local lines = tonumber(resource.mwMaxStackBorderLines)
+    local size = tonumber(resource[keys.size])
+    local thickness = tonumber(resource[keys.thickness])
+    local speed = tonumber(resource[keys.speed])
+    local lines = tonumber(resource[keys.lines])
 
-    local isContinuous = barType == "mw_continuous" or not holder.segments
+    -- The active count, not the array length: a family holder is
+    -- re-segmented in place and parks its extra widgets (EnsureSegmentCount),
+    -- so the array is the high-water mark. MW and the plain segmented shapes
+    -- set no _activeSegments and read the length exactly as before.
+    local segments = holder.segments
+    local segCount = segments and (holder._activeSegments or #segments) or 0
+    -- Above the border pool's cap the per-segment path would ring only the
+    -- first ten of a fifty-segment cluster. Growing the pool is refused on
+    -- performance grounds (no fifty animated border pools), so the whole
+    -- cluster takes the continuous path instead — the same one-rect shape
+    -- the resource AURA border already uses on every segment cluster.
+    local isContinuous = barType == "mw_continuous"
+        or barType == "stackaura_continuous" or not segments
+        or segCount > ST.RESOURCE_SEGMENT_BORDER_MAX
+    -- The count is part of the key: an in-place re-segment keeps the pool, so
+    -- without it a cluster that changed length would keep its old rings.
     local key = (isContinuous and "bar:" or "seg:") .. style .. ":"
+        .. tostring(segCount) .. ":"
         .. tostring(color[1]) .. ":" .. tostring(color[2]) .. ":"
         .. tostring(color[3]) .. ":" .. tostring(color[4]) .. ":"
         .. tostring(size) .. ":" .. tostring(thickness) .. ":"
@@ -1539,8 +1577,7 @@ local function UpdateMWMaxStackBorder(holder, settings, barType, isMax)
         if not pool.segBorders then
             pool.segBorders = ST._BuildKitSegmentBorderPool(pool.host, ST.RESOURCE_SEGMENT_BORDER_MAX)
         end
-        local segments = holder.segments
-        local n = math_min(#segments, ST.RESOURCE_SEGMENT_BORDER_MAX)
+        local n = math_min(segCount, ST.RESOURCE_SEGMENT_BORDER_MAX)
         for i = 1, n do
             segments[i]._ccW, segments[i]._ccH = segments[i]:GetSize()
         end
@@ -1550,8 +1587,8 @@ local function UpdateMWMaxStackBorder(holder, settings, barType, isMax)
         end
     end
 end
--- For the config canvas (ResourceBarPreview), which renders MW at max.
-RB.UpdateMWMaxStackBorder = UpdateMWMaxStackBorder
+-- For the config canvas (ResourceBarPreview), which renders these bars at max.
+RB.UpdateMaxStackBorder = UpdateMaxStackBorder
 
 ------------------------------------------------------------------------
 -- Update logic: Maelstrom Weapon (overlay bar, plain applications)
@@ -1587,7 +1624,7 @@ local function UpdateMaelstromWeaponBar(holder, settings, barType)
     end
     if issecretvalue and issecretvalue(stacks) then
         -- Unreadable stacks read as not-at-max: the border clears.
-        UpdateMWMaxStackBorder(holder, settings, barType, false)
+        UpdateMaxStackBorder(holder, settings, barType, false, RESOURCE_MAELSTROM_WEAPON)
         if isContinuous then
             SetStatusBarImmediateValue(holder, 0)
             if holder.text then holder.text:SetText("") end
@@ -1610,7 +1647,7 @@ local function UpdateMaelstromWeaponBar(holder, settings, barType)
     -- Colour precedence is identical in all three shapes: at max wins, then
     -- a configured threshold, then the resource's own colour.
     local activeColor = isMax and maxColor or (thresholdActive and thresholdColor or baseColor)
-    UpdateMWMaxStackBorder(holder, settings, barType, isMax)
+    UpdateMaxStackBorder(holder, settings, barType, isMax, RESOURCE_MAELSTROM_WEAPON)
 
     if isContinuous then
         -- One bar, empty to full, the stack maximum as its range.
@@ -1674,6 +1711,121 @@ local function UpdateMaelstromWeaponBar(holder, settings, barType)
     end
 
     SetSegmentedText(holder, stacks, mwMaxStacks)
+end
+
+------------------------------------------------------------------------
+-- Update logic: the aura-stack resource family (Icicles, Tip of the Spear,
+-- the Devourer pair)
+--
+-- The same model Maelstrom Weapon runs on — a never-secret aura's plain
+-- `applications` read every tick — minus the overlay shape (stacks never
+-- run past the segment count here), so only the segmented and continuous
+-- widgets exist. Colour precedence matches MW exactly: at max wins, then a
+-- configured threshold, then the resource's own colour. The maximum comes
+-- from the family resolver, which is a constant for most members and a live
+-- read for the ones whose cap moves.
+------------------------------------------------------------------------
+
+local function UpdateAuraStackResourceBar(holder, settings, barType, powerType)
+    if not holder then return end
+    local info = RB.AURA_STACK_RESOURCES[powerType]
+    if not info then return end
+    -- The continuous style has no segments; the segmented style does.
+    local isContinuous = barType == "stackaura_continuous"
+    if not (isContinuous or holder.segments) then return end
+    if not settings then
+        settings = GetResourceBarSettings()
+    end
+    local segmentedSmoothing = GetResourceSegmentedSmoothing(settings)
+    local maxStacks = RB.GetAuraStackResourceMax(powerType)
+    -- The ACTIVE segment count. The holder is re-segmented in place, so its
+    -- segments array is the high-water mark and everything past
+    -- _activeSegments is parked and hidden (EnsureSegmentCount/LayoutSegments).
+    local segCount = holder.segments and (holder._activeSegments or #holder.segments) or 0
+
+    -- A dynamic maximum can move after the segments were built for it: a
+    -- talent changes the cap, or the API had no answer yet and what got
+    -- built is the fallback. Re-segmenting the widget is ApplyResourceBars'
+    -- job and it must not run from inside the tick's loop over the very
+    -- list it recycles, so ask for one and let the end of the tick do it.
+    -- The rendering below clamps to the segments that exist until it lands.
+    if not isContinuous and segCount ~= maxStacks then
+        stackSwapState.reapply = true
+    end
+
+    -- GetPlayerAuraBySpellID is the RequiresNonSecretAura read path: it
+    -- returns NOTHING for a secret aura rather than erroring, so this is
+    -- safe in every restricted context. The secret guard below covers the
+    -- never-secret flag being changed by a future build (retest-each-build
+    -- discipline) — a secret reaching the comparisons underneath would be a
+    -- hard error.
+    local stacks = 0
+    local aura = C_UnitAuras.GetPlayerAuraBySpellID(info.auraSpellID)
+    if aura then
+        stacks = aura.applications or 0
+    end
+    if issecretvalue and issecretvalue(stacks) then
+        -- Unreadable stacks read as not-at-max: the border clears.
+        UpdateMaxStackBorder(holder, settings, barType, false, powerType)
+        if isContinuous then
+            SetStatusBarImmediateValue(holder, 0)
+            if holder.text then holder.text:SetText("") end
+            return
+        end
+        for i = 1, segCount do
+            SetStatusBarImmediateValue(holder.segments[i], 0)
+        end
+        ClearSegmentedText(holder)
+        return
+    end
+
+    local baseColor, maxColor = GetResourceColors(powerType, settings)
+    local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, stacks)
+    -- >= rather than ==: a member's maximum can be a stale constant or a
+    -- stand-in fallback the API has not replaced yet, so stacks past it
+    -- should still read as "at max" instead of silently losing the max
+    -- colour and the border.
+    local isMax = stacks > 0 and stacks >= maxStacks
+    local activeColor = isMax and maxColor or (thresholdActive and thresholdColor or baseColor)
+    UpdateMaxStackBorder(holder, settings, barType, isMax, powerType)
+
+    if isContinuous then
+        -- One bar, empty to full, the stack maximum as its range.
+        SetStatusBarSmoothRange(holder, 0, maxStacks)
+        SetStatusBarSegmentedValue(holder, stacks, segmentedSmoothing)
+        holder:SetStatusBarColor(activeColor[1], activeColor[2], activeColor[3], 1)
+        if holder.brightnessOverlay then
+            holder.brightnessOverlay:Hide()
+        end
+        if holder.text and holder.text:IsShown() then
+            -- Hide at 0, the same rule SetSegmentedText applies on the
+            -- segmented shape: an empty stack-counted resource reads as an
+            -- empty bar, not as a "0".
+            if holder._hideTextAtZero and stacks == 0 then
+                holder.text:SetText("")
+            else
+                local textFormat = holder._textFormat
+                if textFormat == "current" then
+                    holder.text:SetFormattedText("%d", stacks)
+                elseif textFormat == "percent" then
+                    holder.text:SetFormattedText("%d", (stacks / maxStacks) * 100)
+                else
+                    holder.text:SetFormattedText("%d / %d", stacks, maxStacks)
+                end
+            end
+        end
+        return
+    end
+
+    -- One segment per stack: each fills whole, like every other discrete
+    -- resource. Parked segments past the active count are hidden and are not
+    -- touched here.
+    for i = 1, segCount do
+        local seg = holder.segments[i]
+        SetStatusBarSegmentedValue(seg, i <= stacks and 1 or 0, segmentedSmoothing)
+        seg:SetStatusBarColor(activeColor[1], activeColor[2], activeColor[3], 1)
+    end
+    SetSegmentedText(holder, stacks, maxStacks)
 end
 
 ------------------------------------------------------------------------
@@ -1850,6 +2002,20 @@ local function OnUpdate(self, elapsed)
 
     local settings = GetResourceBarSettings()
 
+    -- The Devourer pair swaps on the Void Metamorphosis transition, which
+    -- no event this module listens to announces — the module is a poller,
+    -- so the flip is polled too. One presence-only aura read per tick, and
+    -- only while a suppressible member is actually enabled in this spec's
+    -- list, so no other spec pays anything for it.
+    if stackSwapState.watch then
+        local inMeta = RB.IsInVoidMetamorphosis()
+        if inMeta ~= stackSwapState.inMeta then
+            stackSwapState.inMeta = inMeta
+            stackSwapState.reapply = true
+            stackSwapState.refreshCanvas = true
+        end
+    end
+
     for _, barInfo in ipairs(resourceBarFrames) do
         if barInfo.frame and barInfo.frame:IsShown() then
             if barInfo.barType == "continuous" then
@@ -1862,6 +2028,9 @@ local function OnUpdate(self, elapsed)
                 or barInfo.barType == "mw_segments"
                 or barInfo.barType == "mw_continuous" then
                 UpdateMaelstromWeaponBar(barInfo.frame, settings, barInfo.barType)
+            elseif barInfo.barType == "stackaura_segments"
+                or barInfo.barType == "stackaura_continuous" then
+                UpdateAuraStackResourceBar(barInfo.frame, settings, barInfo.barType, barInfo.powerType)
             elseif barInfo.barType == "stagger_continuous" then
                 UpdateStaggerBar(barInfo.frame, settings)
             elseif barInfo.barType == "custom_cooldown" then
@@ -1878,6 +2047,76 @@ local function OnUpdate(self, elapsed)
         end
     end
 
+    -- Re-materialization runs after the loop, never inside it:
+    -- ApplyResourceBars recycles and reorders the very list this tick just
+    -- walked. Both requesters land on the same flag — the meta flip above
+    -- and a drifted dynamic maximum spotted during the loop — so a tick
+    -- where both happen at once still costs exactly one rebuild, and that
+    -- rebuild resolves both from current state. Called direct rather than
+    -- deferred, matching the talent-driven MW rebuild, which also runs
+    -- ApplyResourceBars straight through from its handler; the whole path
+    -- is plain CC frames and never-secret reads, so it is legal in combat.
+    if stackSwapState.reapply then
+        stackSwapState.reapply = false
+        CooldownCompanion:ApplyResourceBars()
+        stackSwapState.RefreshCanvasAfterFlip()
+    end
+end
+
+-- An open Resources config canvas draws whichever half of the pair is live,
+-- so the flip has to reach it too: without this it keeps drawing the half
+-- that just left until some unrelated edit happens to rebuild it. Routed
+-- through the config's own exported seam, guarded so the core addon never
+-- force-loads config code and never errors when the config addon is not
+-- loaded at all. RefreshConfigPanel is deliberately NOT used: no live-commit
+-- or runtime path may call it (standing rule). The seam self-gates on
+-- whether a canvas is actually on screen, and this fires once per real
+-- transition, never per tick.
+function stackSwapState.RefreshCanvasAfterFlip()
+    if not stackSwapState.refreshCanvas then return end
+    stackSwapState.refreshCanvas = false
+    if ST._RefreshResourcesLayoutPreview then
+        ST._RefreshResourcesLayoutPreview()
+    end
+end
+
+-- The flip watcher of last resort. The poll above lives in the bar module's
+-- OnUpdate, which RevertResourceBars stops — and the list is EMPTY, so
+-- revert is exactly what runs, when the only enabled resource in the spec is
+-- the currently suppressed half. Nothing would then be watching for the meta
+-- transition that brings it back. This is the minimum that keeps that one
+-- edge alive: one presence-only aura read on the module's own cadence, no
+-- bar lifecycle at all. Torn down by RevertResourceBars (which the disable
+-- path also runs) and by every apply that materializes real bars, so it only
+-- exists while it is the only thing left to poll.
+local function StackSwapWatchOnUpdate(self, elapsed)
+    self._acc = (self._acc or 0) + elapsed
+    if self._acc < UPDATE_INTERVAL then return end
+    self._acc = 0
+    local inMeta = RB.IsInVoidMetamorphosis()
+    if inMeta ~= stackSwapState.inMeta then
+        stackSwapState.inMeta = inMeta
+        stackSwapState.refreshCanvas = true
+        CooldownCompanion:ApplyResourceBars()
+        stackSwapState.RefreshCanvasAfterFlip()
+    end
+end
+
+-- Hung off stackSwapState rather than kept as file-level locals: this is
+-- reached from ApplyResourceBars, which sits at Lua 5.1's 60-upvalue ceiling
+-- and already holds stackSwapState.
+function stackSwapState.SetWatcher(enabled)
+    if not enabled then
+        if stackSwapState.frame then
+            stackSwapState.frame:SetScript("OnUpdate", nil)
+        end
+        return
+    end
+    if not stackSwapState.frame then
+        stackSwapState.frame = CreateFrame("Frame")
+    end
+    stackSwapState.frame._acc = 0
+    stackSwapState.frame:SetScript("OnUpdate", StackSwapWatchOnUpdate)
 end
 
 ------------------------------------------------------------------------
@@ -1966,21 +2205,38 @@ local function StyleContinuousBar(bar, powerType, settings)
         resourceConfig and resourceConfig.textYOffset or 0
     )
 
-    -- Continuous bars show text by default
+    -- Continuous bars show text by default. The aura-stack family is the one
+    -- exception: its members are stack-text resources everywhere else text is
+    -- resolved — the config offers them the segmented contract (off unless
+    -- explicitly enabled, plus Hide at 0) — and choosing the continuous SHAPE
+    -- must not quietly change what the readout is. So they resolve exactly as
+    -- StyleSegmentedText resolves them. Every other continuous bar, Maelstrom
+    -- Weapon and Stagger included, keeps the default-on contract it shipped
+    -- with. _hideTextAtZero is written on both paths so a recycled frame
+    -- never carries the previous resource's flag.
     local showText = true
-    if resourceConfig and resourceConfig.showText == false then
+    bar._hideTextAtZero = false
+    if RB.AURA_STACK_RESOURCES[powerType] then
+        showText = resourceConfig and resourceConfig.showText == true
+        bar._hideTextAtZero = resourceConfig and resourceConfig.hideTextAtZero or false
+        if not showText then
+            bar.text:SetText("")
+        end
+    elseif resourceConfig and resourceConfig.showText == false then
         showText = false
     end
     bar.text:SetShown(showText)
     bar._textFormat = textFormat
 
-    -- Tick markers need a real power type to measure against. Both of CC's
-    -- invented ids are excluded: Stagger (101) is sized by UnitHealthMax,
-    -- and Maelstrom Weapon (100) is sized by its aura's stack cap — passing
-    -- either to UnitPowerMax is a hard error. Neither is offered tick
-    -- markers anyway (GetContinuousTickEntriesConfig groups Maelstrom with
-    -- the segmented resources, whose threshold colours serve the same role).
-    if powerType ~= 101 and powerType ~= RESOURCE_MAELSTROM_WEAPON then
+    -- Tick markers need a real power type to measure against. Every one of
+    -- CC's invented ids is excluded: Stagger (101) is sized by
+    -- UnitHealthMax, and Maelstrom Weapon (100) and the aura-stack family
+    -- (102, 103) are sized by their auras' stack caps — passing any of them
+    -- to UnitPowerMax is a hard error. None is offered tick markers anyway
+    -- (GetContinuousTickEntriesConfig groups the stack-counted resources
+    -- with the segmented ones, whose threshold colours serve the same role).
+    if powerType ~= 101 and powerType ~= RESOURCE_MAELSTROM_WEAPON
+        and not RB.AURA_STACK_RESOURCES[powerType] then
         local maxPower = UnitPowerMax("player", powerType)
         local maxPowerIsSecret = IsUnitPowerMaxSecret("player", powerType)
         if issecretvalue and issecretvalue(maxPower) then
@@ -2158,11 +2414,28 @@ function CooldownCompanion:ApplyResourceBars(opts)
     -- Determine which resources to show
     local resources = DetermineActiveResources()
     local filtered = {}
+    -- A mutually exclusive pair (the Devourer resources) is filtered here
+    -- rather than in the spec list itself: DetermineActiveResources also
+    -- feeds the config's layout preview, which must keep listing both
+    -- halves whatever the player is currently in. Dropping the hidden half
+    -- from this one list leaves ordering, stacking and the trailing-frame
+    -- cleanup entirely to the machinery below, exactly as a disabled
+    -- resource does — so the surviving half lands in the slot the pair
+    -- occupies, ahead of everything after it.
+    stackSwapState.watch = false
     for _, pt in ipairs(resources) do
         if IsResourceEnabled(pt, settings) then
-            table.insert(filtered, pt)
+            if RB.AURA_STACK_RESOURCES[pt] and RB.AURA_STACK_RESOURCES[pt].metaVisibility then
+                stackSwapState.watch = true
+            end
+            if not RB.IsAuraStackResourceSuppressed(pt) then
+                table.insert(filtered, pt)
+            end
         end
     end
+    -- The state this materialization is being built for, so the tick only
+    -- reacts to a real change from here.
+    stackSwapState.inMeta = stackSwapState.watch and RB.IsInVoidMetamorphosis() or false
 
     -- Append enabled Custom Bars
     local customBars = GetSpecCustomAuraBars(settings)
@@ -2179,6 +2452,12 @@ function CooldownCompanion:ApplyResourceBars(opts)
 
     if #filtered == 0 then
         self:RevertResourceBars()
+        -- Revert stops the module's OnUpdate, so with the spec's only
+        -- enabled resource currently suppressed nothing would be left
+        -- watching for the meta flip that brings it back. Start the minimal
+        -- watcher instead (see stackSwapState.SetWatcher); the next apply
+        -- with real bars, and every revert, tears it down again.
+        stackSwapState.SetWatcher(stackSwapState.watch)
         return
     end
 
@@ -2229,7 +2508,13 @@ function CooldownCompanion:ApplyResourceBars(opts)
                 order = (slotCfg and slotCfg.order) or (fallbackOrder + idx)
             end
         else
-            local res = layout and layout.resources and layout.resources[powerType]
+            -- Placement identity, not the power type: a mutually exclusive
+            -- pair shares one slot, so the half that is up reads the
+            -- canonical half's side and order and lands where the pair
+            -- lives. Reached through RB rather than a new file-level local:
+            -- ApplyResourceBars sits at Lua 5.1's 60-upvalue ceiling.
+            local res = layout and layout.resources
+                and layout.resources[RB.GetCanonicalPowerType(powerType)]
             if isVerticalLayout then
                 local storedHorizontalSide = (res and res.position) or "below"
                 side = (res and res.verticalPosition) or GetVerticalSideFallback(storedHorizontalSide)
@@ -2356,7 +2641,10 @@ function CooldownCompanion:ApplyResourceBars(opts)
                     effectiveThickness = (slotLayout and (slotLayout.barHeight or slotLayout.barWidth)) or globalBarThickness
                 end
             else
-                local res = layout.resources and layout.resources[powerType]
+                -- Same placement identity as the side/order pass above: a
+                -- pair's thickness override belongs to the shared slot.
+                local res = layout.resources
+                    and layout.resources[RB.GetCanonicalPowerType(powerType)]
                 if thicknessKey == "barWidth" then
                     effectiveThickness = (res and (res.barWidth or res.barHeight)) or globalBarThickness
                 else
@@ -2481,6 +2769,84 @@ function CooldownCompanion:ApplyResourceBars(opts)
                     barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
                     barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
                     barInfo.frame.overlaySegments[i]:Show()
+                end
+                StyleSegmentedText(barInfo.frame, powerType, settings)
+            end
+
+        elseif RB.AURA_STACK_RESOURCES[powerType] then
+            -- The aura-stack resource family (Icicles, Tip of the Spear,
+            -- the Devourer pair). Same shape-per-style materialization as
+            -- Maelstrom Weapon above, with two shapes instead of three;
+            -- UpdateAuraStackResourceBar renders to whichever is built.
+            -- Read through RB rather than new file-level locals:
+            -- ApplyResourceBars sits at Lua 5.1's 60-upvalue ceiling.
+            -- The resolver, not the raw field: a member whose maximum is
+            -- read live must build the segment count it will render to,
+            -- or the tick would ask for a rebuild forever.
+            local stackMax = RB.GetAuraStackResourceMax(powerType)
+
+            -- A mutually exclusive pair swapping halves reuses this slot's
+            -- frame and only changes barInfo.powerType — but the aura
+            -- OVERLAY holders are keyed by power type and reconciled by the
+            -- rebind pass, which is out-of-combat only. So the outgoing
+            -- half's holder would sit lit over the incoming half's bar for
+            -- the rest of the fight. Park it here; hiding a plain CC frame
+            -- is legal in combat. Narrow on purpose: only a family member
+            -- that is NOW the suppressed half is parked, so a holder whose
+            -- bar merely moved slots is never darkened. Binding the incoming
+            -- holder stays with the deferred rebind (combat-only rebind gate).
+            if barInfo and barInfo.powerType ~= powerType
+                and RB.AURA_STACK_RESOURCES[barInfo.powerType]
+                and RB.IsAuraStackResourceSuppressed(barInfo.powerType) then
+                RB.HideResourceAuraHolder(barInfo.powerType)
+            end
+
+            if RB.GetAuraStackDisplayStyle(settings, powerType) == "continuous" then
+                if not barInfo or barInfo.barType ~= "stackaura_continuous" then
+                    if barInfo and barInfo.frame then
+                        ClearStaleRecycledBarRuntimeState(barInfo.frame)
+                        barInfo.frame:Hide()
+                    end
+                    local bar = CreateContinuousBar(targetContainer)
+                    barInfo = { frame = bar, barType = "stackaura_continuous", powerType = powerType }
+                    resourceBarFrames[idx] = barInfo
+                else
+                    barInfo.powerType = powerType
+                end
+
+                barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
+                -- Shares the continuous styling path, so texture, borders,
+                -- background, and the bar text all follow the same resource
+                -- settings every other continuous bar uses.
+                StyleContinuousBar(barInfo.frame, powerType, settings)
+
+            else
+                -- One segment per stack (the default shape). The count moves
+                -- with a dynamic maximum and with the meta swap, so the
+                -- holder is RE-SEGMENTED in place rather than rebuilt: a
+                -- rebuild abandons the old holder every time and WoW never
+                -- destroys a frame, so a session of talent changes and meta
+                -- swaps accumulated orphans. Only a real barType change
+                -- builds a new one now.
+                if not barInfo or barInfo.barType ~= "stackaura_segments" then
+                    if barInfo and barInfo.frame then
+                        ClearStaleRecycledBarRuntimeState(barInfo.frame)
+                        barInfo.frame:Hide()
+                    end
+                    local holder = CreateSegmentedBar(targetContainer, stackMax)
+                    barInfo = { frame = holder, barType = "stackaura_segments", powerType = powerType }
+                    resourceBarFrames[idx] = barInfo
+                else
+                    barInfo.powerType = powerType
+                end
+
+                RB.EnsureSegmentCount(barInfo.frame, stackMax)
+                barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
+                LayoutSegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings)
+
+                local baseColor = GetResourceColors(powerType, settings)
+                for i = 1, stackMax do
+                    barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
                 end
                 StyleSegmentedText(barInfo.frame, powerType, settings)
             end
@@ -2630,6 +2996,9 @@ function CooldownCompanion:ApplyResourceBars(opts)
         onUpdateFrame = CreateFrame("Frame")
     end
     onUpdateFrame:SetScript("OnUpdate", OnUpdate)
+    -- Real bars are up, so the module's own tick polls the flip again: the
+    -- empty-list stand-in has no reason to exist.
+    stackSwapState.SetWatcher(false)
 
     -- Enable events
     EnableEventFrame()
@@ -2719,6 +3088,10 @@ end
 ------------------------------------------------------------------------
 
 function CooldownCompanion:RevertResourceBars()
+    -- Before the isApplied gate on purpose: the empty-list apply path starts
+    -- the meta-flip watcher while the module is NOT applied, so gating this
+    -- would leave it running after the feature is switched off.
+    stackSwapState.SetWatcher(false)
     if not isApplied then return end
     isApplied = false
     lastAppliedPrimaryLength = nil

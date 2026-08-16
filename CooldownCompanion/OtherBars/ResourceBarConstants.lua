@@ -115,6 +115,12 @@ local POWER_NAMES = {
     [17] = "Fury",
     [100] = "Maelstrom Weapon",
     [101] = "Stagger",
+    [102] = "Icicles",
+    [103] = "Tip of the Spear",
+    -- The Devourer pair is named for the outcome spell the player knows,
+    -- not for the stack aura the plumbing reads underneath.
+    [104] = "Void Metamorphosis",
+    [105] = "Collapsing Star",
     [18] = "Pain",
     [19] = "Essence",
 }
@@ -180,6 +186,8 @@ local POWER_ATLAS_INFO = {
 local HIDE_AT_ZERO_ELIGIBLE = {
     [4]  = true, [7]  = true, [9]  = true,
     [12] = true, [16] = true, [100] = true,
+    [102] = true, [103] = true,
+    [104] = true, [105] = true,
 }
 
 ------------------------------------------------------------------------
@@ -213,6 +221,13 @@ local SPEC_RESOURCES = {
     [269] = { 12, 3 },      -- Windwalker Monk: Chi, Energy
     [268] = { 101, 3 },        -- Brewmaster Monk: Stagger, Energy
     [581] = { 17 },         -- Vengeance DH: Fury
+    [64]  = { 102, 0 },     -- Frost Mage: Icicles, Mana
+    [255] = { 103, 2 },     -- Survival Hunter: Tip of the Spear, Focus
+    -- Devourer DH: both halves of the Void Metamorphosis pair ahead of
+    -- Fury. Only one of the two is ever materialized — the runtime filter
+    -- in ApplyResourceBars drops the suppressed half — but both stay in
+    -- this list so the swap happens in place, without reordering Fury.
+    [1480] = { 104, 105, 17 },
 }
 
 -- Druid form mapping (verified in-game: Bear=5, Cat=1, Moonkin=31)
@@ -248,6 +263,11 @@ local SPEC_RESOURCES_CONFIG = {
     [269] = { 12, 3 },
     [268] = { 101, 3 },  -- Brewmaster: Stagger, Energy
     [581] = { 17 },
+    [64]  = { 102, 0 },  -- Frost Mage: Icicles, Mana
+    [255] = { 103, 2 },  -- Survival: Tip of the Spear, Focus
+    -- Devourer: the config always lists both halves of the pair, whichever
+    -- one the player happens to be showing right now.
+    [1480] = { 104, 105, 17 },
 }
 
 ------------------------------------------------------------------------
@@ -304,6 +324,124 @@ ST._RB = {
     MW_AURA_SPELL_ID = 344179,
     RESOURCE_HEALTH = RESOURCE_HEALTH,
     RESOURCE_MAELSTROM_WEAPON = RESOURCE_MAELSTROM_WEAPON,
+
+    -- The aura-stack resource family: pseudo resources whose value is an
+    -- aura's stack count rather than a power type, read with the same plain
+    -- GetPlayerAuraBySpellID call Maelstrom Weapon runs on. Membership in
+    -- this table is what makes a power type one of them — engine, config and
+    -- previews all ask it rather than testing ids. Maelstrom Weapon is
+    -- deliberately NOT a member: its shipped mw* keys, its third (overlay)
+    -- shape and its talent-driven maximum are its own, and generalizing them
+    -- would change what already ships. Written inline rather than as locals:
+    -- this chunk is at Lua 5.1's 200-local ceiling.
+    --   102 Icicles (Frost Mage), 103 Tip of the Spear (Survival Hunter),
+    --   104 Void Metamorphosis / 105 Collapsing Star (Devourer DH)
+    --
+    -- Three optional fields describe what a member cannot state as a
+    -- constant, all resolved by the engine so no function lives here:
+    --   dynamicMax     the maximum comes from an API, not from maxStacks;
+    --                  fallbackMax stands in until that API answers, and is
+    --                  the aura's own base cap out of game data so the
+    --                  stand-in is the untalented truth rather than a guess
+    --   defaultStyle   the shape this member ships with, when its own
+    --                  maximum makes one segment per stack the wrong read
+    --   metaVisibility this member is half of a mutually exclusive pair,
+    --                  shown only in ("inMeta") or only out of
+    --                  ("outOfMeta") Void Metamorphosis
+    --   canonicalHalf  this member owns none of its SLOT-SHAPED settings:
+    --                  they are read from and written to the named member's
+    --                  entries instead. A mutually exclusive pair is ONE bar
+    --                  in the world, so it is ONE slot in the stack, ONE
+    --                  slot on the layout canvas, and one store for every
+    --                  setting that describes that one slot: placement
+    --                  (side, order, per-bar thickness) in layout.resources,
+    --                  plus stack display shape and the max-stack border in
+    --                  settings.resources. What is per-HALF rather than
+    --                  per-slot — colors and stack thresholds — stays in
+    --                  each half's own settings.resources bucket. One field,
+    --                  because the two must never disagree about which half
+    --                  is canonical.
+    -- Members without them behave exactly as they did before: fixed
+    -- maximum, segmented by default, always visible, placed on their own.
+    AURA_STACK_RESOURCES = {
+        [102] = {
+            auraSpellID = 205473,
+            maxStacks = 5,
+            colorKeys = { "iciclesColor", "iciclesMaxColor" },
+            colorDefaults = { { 0.45, 0.75, 1.0 }, { 0.8, 0.95, 1.0 } },
+            colorLabels = { "Icicles", "Icicles (Max)" },
+        },
+        [103] = {
+            auraSpellID = 260286,
+            maxStacks = 3,
+            colorKeys = { "tipOfSpearColor", "tipOfSpearMaxColor" },
+            colorDefaults = { { 0.65, 0.75, 0.4 }, { 0.9, 0.95, 0.6 } },
+            colorLabels = { "Tip of the Spear", "Tip of the Spear (Max)" },
+        },
+        -- Devourer, out of meta: Dark Heart stacks, capped by the aura's own
+        -- cumulative maximum. Continuous by default — that cap is large
+        -- enough that one segment per stack reads as noise.
+        [104] = {
+            auraSpellID = 1225789,
+            dynamicMax = "cumulativeAura",
+            -- Dark Heart's own CumulativeAura (SpellAuraOptions, live 12.1).
+            fallbackMax = 50,
+            defaultStyle = "continuous",
+            metaVisibility = "outOfMeta",
+            colorKeys = { "vmColor", "vmMaxColor" },
+            colorDefaults = { { 0.79, 0.26, 0.99 }, { 0.92, 0.6, 1.0 } },
+            colorLabels = { "Void Metamorphosis", "Void Metamorphosis (Max)" },
+        },
+        -- Devourer, in meta: Silence the Whispers stacks, capped by what
+        -- Collapsing Star currently costs.
+        [105] = {
+            auraSpellID = 1227702,
+            dynamicMax = "collapsingStarCost",
+            -- Silence the Whispers' own CumulativeAura (SpellAuraOptions,
+            -- live 12.1), which bounds what the star can cost.
+            fallbackMax = 40,
+            defaultStyle = "continuous",
+            metaVisibility = "inMeta",
+            canonicalHalf = 104,
+            colorKeys = { "starColor", "starMaxColor" },
+            colorDefaults = { { 0.45, 0.15, 0.75 }, { 0.75, 0.4, 1.0 } },
+            colorLabels = { "Collapsing Star", "Collapsing Star (Max)" },
+        },
+    },
+
+    -- The aura whose presence decides which half of the Devourer pair is
+    -- shown. Read exactly the way Blizzard's own Devourer bar reads it:
+    -- presence only, through the plain never-secret aura call.
+    VOID_METAMORPHOSIS_SPELL_ID = 1217607,
+
+    -- Key names for the max-stack border, per resource. Maelstrom Weapon
+    -- keeps the mw* keys it shipped with (never renamed, no migration); the
+    -- aura-stack family uses the generic set in its own resource bucket.
+    -- Shared so the runtime and the config write the same names; the config
+    -- hands these straight to the shared glow-slider rows, which is why
+    -- solidSizeDefault rides along.
+    MAX_STACK_BORDER_KEYS = {
+        [RESOURCE_MAELSTROM_WEAPON] = {
+            enabled = "mwMaxStackBorderEnabled",
+            style = "mwMaxStackBorderStyle",
+            color = "mwMaxStackBorderColor",
+            size = "mwMaxStackBorderSize",
+            thickness = "mwMaxStackBorderThickness",
+            speed = "mwMaxStackBorderSpeed",
+            lines = "mwMaxStackBorderLines",
+            solidSizeDefault = 2,
+        },
+        default = {
+            enabled = "maxStackBorderEnabled",
+            style = "maxStackBorderStyle",
+            color = "maxStackBorderColor",
+            size = "maxStackBorderSize",
+            thickness = "maxStackBorderThickness",
+            speed = "maxStackBorderSpeed",
+            lines = "maxStackBorderLines",
+            solidSizeDefault = 2,
+        },
+    },
 
     -- Default colors
     DEFAULT_MW_BASE_COLOR = DEFAULT_MW_BASE_COLOR,
@@ -406,6 +544,29 @@ ST._RB = {
     DEFAULT_RESOURCE_TEXT_ANCHOR = DEFAULT_RESOURCE_TEXT_ANCHOR,
     DEFAULT_RESOURCE_TEXT_X_OFFSET = DEFAULT_RESOURCE_TEXT_X_OFFSET,
     DEFAULT_RESOURCE_TEXT_Y_OFFSET = DEFAULT_RESOURCE_TEXT_Y_OFFSET,
+}
+
+-- Every aura-stack family member carries the same two-key colour shape as
+-- Holy Power (base, at-max), so its colour def is derived from the family
+-- entry instead of restated here: adding a member stays one table entry.
+-- Written as explicit statements rather than a loop to add no locals to this
+-- chunk (200-local ceiling). RESOURCE_COLOR_DEFS is exported by reference,
+-- so mutating it after the export is what every consumer sees.
+RESOURCE_COLOR_DEFS[102] = {
+    keys = ST._RB.AURA_STACK_RESOURCES[102].colorKeys,
+    defaults = ST._RB.AURA_STACK_RESOURCES[102].colorDefaults,
+}
+RESOURCE_COLOR_DEFS[103] = {
+    keys = ST._RB.AURA_STACK_RESOURCES[103].colorKeys,
+    defaults = ST._RB.AURA_STACK_RESOURCES[103].colorDefaults,
+}
+RESOURCE_COLOR_DEFS[104] = {
+    keys = ST._RB.AURA_STACK_RESOURCES[104].colorKeys,
+    defaults = ST._RB.AURA_STACK_RESOURCES[104].colorDefaults,
+}
+RESOURCE_COLOR_DEFS[105] = {
+    keys = ST._RB.AURA_STACK_RESOURCES[105].colorKeys,
+    defaults = ST._RB.AURA_STACK_RESOURCES[105].colorDefaults,
 }
 
 -- Direct ST exports for files that import individual constants rather than the _RB table

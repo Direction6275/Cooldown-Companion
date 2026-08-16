@@ -899,12 +899,30 @@ local function GetShortLabel(label)
     return first
 end
 
+-- Both resource lists keep listing BOTH halves of a mutually exclusive pair
+-- (the runtime filter that drops the hidden half lives in ApplyResourceBars),
+-- but the pair is one bar in the world and therefore one slot here. Drop the
+-- half that proxies its placement onto the other; the surviving slot draws as
+-- whichever half is currently live. Two slots is what let the pair be ordered
+-- against Fury twice, so the canvas and the stack disagreed the moment the
+-- player entered or left meta. Shared so the slot builder and the lane
+-- enumeration below can never collapse differently.
+local function CollapseToPlacementPowerTypes(powerTypes)
+    local placementResources = {}
+    for _, pt in ipairs(powerTypes) do
+        if RB.GetCanonicalPowerType(pt) == pt then
+            placementResources[#placementResources + 1] = pt
+        end
+    end
+    return placementResources
+end
+
 local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLayout, includeResourceSlots,
     requireRuntimeEligibleSlots)
     includeResourceSlots = includeResourceSlots == true
-    local activeResources = includeResourceSlots
+    local activeResources = CollapseToPlacementPowerTypes(includeResourceSlots
         and (requireRuntimeEligibleSlots and RB.DetermineActiveResources() or GetConfigActiveResources())
-        or {}
+        or {})
     local customBars = includeResourceSlots and CooldownCompanion:GetSpecCustomAuraBars() or {}
     local primarySlots = {}
     local castSlots = {}
@@ -960,17 +978,26 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
     end
 
     for _, powerType in ipairs(activeResources) do
-        if powerType == RESOURCE_HEALTH and type(rbSettings.resources[powerType]) ~= "table" then
-            rbSettings.resources[powerType] = { enabled = false }
+        -- `powerType` is the slot's PLACEMENT identity throughout (the entry
+        -- every drag reads and writes); `renderType` is the half the slot
+        -- currently DRAWS as. They differ only for a mutually exclusive pair
+        -- while its non-canonical half is the one up in the world, so the
+        -- canvas shows Collapsing Star in meta and Void Metamorphosis out of
+        -- it, both times in the pair's single slot. Everything the eye reads
+        -- — enabled state, name, color, icon, shape — follows renderType,
+        -- because those live per half in settings.resources.
+        local renderType = RB.GetPlacementRenderPowerType(powerType)
+        if renderType == RESOURCE_HEALTH and type(rbSettings.resources[renderType]) ~= "table" then
+            rbSettings.resources[renderType] = { enabled = false }
         else
-            rbSettings.resources[powerType] = rbSettings.resources[powerType] or {}
+            rbSettings.resources[renderType] = rbSettings.resources[renderType] or {}
         end
-        local resourceConfig = rbSettings.resources[powerType]
+        local resourceConfig = rbSettings.resources[renderType]
         local showResource = resourceBarsEnabled and (
-            powerType == RESOURCE_HEALTH and resourceConfig.enabled == true
+            renderType == RESOURCE_HEALTH and resourceConfig.enabled == true
             or resourceConfig.enabled ~= false
         )
-        if showResource and powerType == 0 and rbSettings.hideManaForNonHealer then
+        if showResource and renderType == 0 and rbSettings.hideManaForNonHealer then
             local specIndex = C_SpecializationInfo.GetSpecialization()
             if specIndex then
                 local specID, _, _, _, role = C_SpecializationInfo.GetSpecializationInfo(specIndex)
@@ -987,14 +1014,20 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
             end
 
             table_insert(primarySlots, {
-                id = "resource:" .. tostring(powerType),
+                -- Keyed by what the slot DRAWS, not by where it stores: the
+                -- id is a per-build handle (drag identity, frame map, and
+                -- the "Not currently shown:" strip's rendered set), never
+                -- saved. Keying it to the placement half would have left the
+                -- hidden half's chip missing and the visible half's chip
+                -- offered while it was on screen.
+                id = "resource:" .. tostring(renderType),
                 slotCategory = "primary",
                 kind = "resource",
-                powerType = powerType,
-                label = POWER_NAMES[powerType] or ("Power " .. powerType),
-                shortLabel = POWER_SHORT_NAMES[powerType] or GetShortLabel(POWER_NAMES[powerType] or ("Power " .. powerType)),
+                powerType = renderType,
+                label = POWER_NAMES[renderType] or ("Power " .. renderType),
+                shortLabel = POWER_SHORT_NAMES[renderType] or GetShortLabel(POWER_NAMES[renderType] or ("Power " .. renderType)),
                 thickness = ResolveSlotThickness(layout.resources[powerType]),
-                color = GetSlotColor(powerType),
+                color = GetSlotColor(renderType),
                 icon = resourceConfig.previewIcon or LAYOUT_PREVIEW_ICON_FALLBACK,
                 getPos = function()
                     local slot = layout.resources[powerType]
@@ -1837,6 +1870,59 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
                 barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
                 barInfo.frame.overlaySegments[i]:Show()
+            end
+            RB.StyleSegmentedText(barInfo.frame, slot.powerType, rbSettings)
+        end
+    elseif RB.AURA_STACK_RESOURCES[slot.powerType] then
+        -- Mirrors the two real aura-stack shapes (ResourceBar.lua's apply
+        -- branch); the canvas must show the shape the bar will actually be.
+        -- Reached through RB rather than new file-level aliases: this chunk
+        -- is at Lua 5.1's 200-local ceiling.
+        -- The resolver, not the raw field: a member whose maximum is read
+        -- live shows its real cap here too. Previewing another class's
+        -- resources answers with that member's fallback, which is the
+        -- point — a preview is a shape, not a live reading.
+        local stackMax = RB.GetAuraStackResourceMax(slot.powerType)
+        if RB.GetAuraStackDisplayStyle(rbSettings, slot.powerType) == "continuous" then
+            if not barInfo or barInfo.barType ~= "stackaura_continuous" then
+                if barInfo and barInfo.frame then
+                    barInfo.frame:Hide()
+                end
+                barInfo = {
+                    frame = CreateContinuousBar(frame.previewCanvas),
+                    barType = "stackaura_continuous",
+                    powerType = slot.powerType,
+                }
+            else
+                -- Pooled slot frames keep their barInfo when the shape
+                -- matches, so a reused one still carried the PREVIOUS half's
+                -- power type — and max, colors, border keys and the Active
+                -- Aura preview state all resolve from it. The runtime branch
+                -- restamps identity on reuse for exactly this reason.
+                barInfo.powerType = slot.powerType
+            end
+            barInfo.frame:SetSize(width, height)
+            StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings)
+        else
+            if not barInfo or barInfo.barType ~= "stackaura_segments"
+                or #barInfo.frame.segments ~= stackMax then
+                if barInfo and barInfo.frame then
+                    barInfo.frame:Hide()
+                end
+                barInfo = {
+                    frame = CreateSegmentedBar(frame.previewCanvas, stackMax),
+                    barType = "stackaura_segments",
+                    powerType = slot.powerType,
+                }
+            else
+                -- Same pooled-identity restamp as the continuous shape above.
+                barInfo.powerType = slot.powerType
+            end
+            barInfo.frame:SetSize(width, height)
+            LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings)
+            local baseColor = GetResourceColors(slot.powerType, rbSettings)
+            for i = 1, stackMax do
+                barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
             end
             RB.StyleSegmentedText(barInfo.frame, slot.powerType, rbSettings)
         end
@@ -4221,6 +4307,11 @@ end
 --
 -- Offer test only, like the cast-slot sibling above: a nil layout is the
 -- transient spec-change state, not a reason to stop a running preview.
+--
+-- A mutually exclusive pair is collapsed exactly as the slot builder
+-- collapses it, then mapped to the half actually DRAWN: one lane exists for
+-- the pair, and offering the hidden half a resource-aura toggle pointed at a
+-- lane that is not on screen.
 function ST._ResourcesPreviewResourceLanePowerTypes()
     local rbSettings = CooldownCompanion:GetResourceBarSettings()
     if not (rbSettings and rbSettings.enabled == true) then
@@ -4231,15 +4322,22 @@ function ST._ResourcesPreviewResourceLanePowerTypes()
         -- "Specialization data loading..." - the canvas is a message.
         return {}
     end
+    local powerTypes
     if IsTruthyConfigFlag(layout.independentAnchorEnabled) then
         -- An independent stack is drawn on the bars workspace alone, and
         -- from the runtime-eligible list; anywhere else it has no lanes.
         if not IsBarsWorkspaceActive() then
             return {}
         end
-        return RB.DetermineActiveResources and RB.DetermineActiveResources() or {}
+        powerTypes = RB.DetermineActiveResources and RB.DetermineActiveResources() or {}
+    else
+        powerTypes = GetConfigActiveResources()
     end
-    return GetConfigActiveResources()
+    local lanes = CollapseToPlacementPowerTypes(powerTypes)
+    for i = 1, #lanes do
+        lanes[i] = RB.GetPlacementRenderPowerType(lanes[i])
+    end
+    return lanes
 end
 
 -- The selection keys the canvas drew on its most recent build for `host`.
