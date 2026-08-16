@@ -919,6 +919,10 @@ local function ShowResourceSettingsPanel(col3)
             scroll:DoLayout()
         end)
         ST._UnifiedRowInstallStrip(tabGroup, "detail")
+        -- The spec tabs run straight on from the primary tabs across the
+        -- fixed seam, the same grammar as the panel entry cluster, instead
+        -- of being pinned to the right edge.
+        ST._UnifiedRowSetSeamFlow(tabGroup)
         col3._resourceSettingsTabGroup = tabGroup
     end
 
