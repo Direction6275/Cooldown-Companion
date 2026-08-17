@@ -1926,6 +1926,11 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
         -- mode, and that menu holds destructive actions, so every mode
         -- advertises it.
         GameTooltip:AddLine("Right-click for options.", 0.75, 0.82, 0.92)
+        if slot._cdcReorderPausedByFilter then
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Reordering is paused while unavailable entries are hidden.",
+                0.7, 0.7, 0.7, true)
+        end
     end
     GameTooltip:Show()
 end
@@ -2026,7 +2031,7 @@ end
 
 -- Entry footprint and grid settings mirrored from GroupFrame.lua
 -- (GetButtonDimensions + ApplyActiveButtonLayout).
-local function GetPanelGeometry(group, isBarMode, isTextMode)
+local function GetPanelGeometry(group, isBarMode, isTextMode, visibleIndices)
     local style = group.style or {}
     local w, h
     if isTextMode then
@@ -2039,9 +2044,13 @@ local function GetPanelGeometry(group, isBarMode, isTextMode)
         -- currently USABLE entries only, while the mirror measures every saved
         -- entry, so the mirror shows the pitch the panel takes with everything
         -- showing rather than the pitch of this character's current subset.
+        -- The session unavailable filter narrows the scan to the entries it
+        -- kept (visibleIndices), so a hidden wide entry stops setting pitch.
         if GetTextEntryMetrics then
             w, h = GetTextEntryMetrics(style, nil, style.textFormat)
-            for _, buttonData in ipairs(group.buttons or {}) do
+            local buttons = group.buttons or {}
+            for ordinal = 1, (visibleIndices and #visibleIndices or #buttons) do
+                local buttonData = buttons[visibleIndices and visibleIndices[ordinal] or ordinal]
                 local effectiveStyle = CooldownCompanion.GetEffectiveStyle
                     and CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
                 local fmt = buttonData.textFormat or effectiveStyle.textFormat
@@ -4897,7 +4906,39 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         return
     end
 
-    local geo = GetPanelGeometry(group, isBarMode, isTextMode)
+    -- Session view filter (the preview host's quick toggle): drop entries the
+    -- warn badge would mark unavailable and reflow the rest. Dense ordinals
+    -- place the cells; every per-entry surface keeps its group.buttons index.
+    -- Never on Bar panels: their mirror is a saved-design projection that
+    -- deliberately keeps live usability out (CollectBarEntryStatus), so there
+    -- is no warn signal there for the toggle to hide. Read-only mirrors stay
+    -- unfiltered except the unified cast duplicate, which opts in so both
+    -- copies of the anchor panel show the same filtered set.
+    local visibleIndices
+    if (not readOnly or (options and options.applySessionFilter == true))
+        and not isBarMode
+        and CS.panelPreviewUnavailableHidden
+        and not CS.otherClassLibraryActive then
+        local kept = {}
+        for index, buttonData in ipairs(buttons) do
+            if buttonData.enabled == false
+                or CooldownCompanion:IsButtonUsable(buttonData, group) then
+                kept[#kept + 1] = index
+            end
+        end
+        if #kept < count then
+            visibleIndices = kept
+            count = #kept
+        end
+    end
+    if count == 0 then
+        SetPreviewMessage(preview,
+            "Every entry here is unavailable and hidden by the preview toggle.")
+        FinalizePreviewState(preview)
+        return
+    end
+
+    local geo = GetPanelGeometry(group, isBarMode, isTextMode, visibleIndices)
     local w, h = geo.entryWidth, geo.entryHeight
     local spacing = geo.spacing
     local perRow = math_max(1, geo.buttonsPerRow)
@@ -4980,9 +5021,14 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         end
     end
     preview.layoutDrag = layoutDrag
-    local dragModel = (not readOnly and count >= 2) and layoutDrag or nil
+    -- Reorder maps dense cells to group.buttons indices, so it stays off
+    -- while the unavailable filter has punched holes in that mapping.
+    local dragModel = (not readOnly and count >= 2 and not visibleIndices)
+        and layoutDrag or nil
 
-    for index, buttonData in ipairs(buttons) do
+    for ordinal = 1, count do
+        local index = visibleIndices and visibleIndices[ordinal] or ordinal
+        local buttonData = buttons[index]
         local slot = AcquireSlot(preview, content, poolName)
         if isTextMode then
             -- Cell placement stays on the uniform pitch below; only the slot's
@@ -4992,7 +5038,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
             slot:SetSize(w, h)
         end
 
-        local cx, cy = layoutDrag.cellXY(index)
+        local cx, cy = layoutDrag.cellXY(ordinal)
         ApplyPreviewSlotGeometry(preview, slot, growthAnchor, cx, cy)
 
         local effectiveStyle
@@ -5069,16 +5115,19 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
                 (isBarMode and barVisibility.exactPreview == true)
                     or IsGlowPreviewActiveOnEntry(panelId, index))
             CopyMode.ApplyTargetVisuals(slot, panelId, buttonData)
+            -- Pooled slots: written every build so a slot leaving a filtered
+            -- build does not keep advertising the pause.
+            slot._cdcReorderPausedByFilter = visibleIndices and true or nil
             WireEntryInteraction(slot, panelId, index, buttonData, status, dragModel, barVisibility)
         end
         layoutDrag.slots[index] = slot
     end
 
     -- Tick only while at least one slot is animating a conditional preview
+    -- (pairs, not 1..count: the unavailable filter keys slots sparsely).
     local anyAnimated = false
-    for i = 1, count do
-        local s = layoutDrag.slots[i]
-        if s and s._cdcCondAnim then
+    for _, s in pairs(layoutDrag.slots) do
+        if s._cdcCondAnim then
             anyAnimated = true
             break
         end
@@ -5257,6 +5306,26 @@ end
 
 ST._CollectEntryStatus = CollectEntryStatus
 ST._EntryStatusBadges = ENTRY_STATUS_BADGES
+
+-- Quick-toggle support for the buttons-view preview host: nil when this
+-- panel type renders no entry grid the filter touches; otherwise whether any
+-- entry currently wears the "Spell/item unavailable" warn signal the
+-- unavailable filter hides (same computation as CollectEntryStatus's warn).
+-- Bar panels are nil on purpose: their mirror is a saved-design projection
+-- the filter never applies to, so the badge must not offer it there.
+function ST._PanelPreviewUnavailableEntryState(group)
+    if not group then return nil end
+    if group.displayMode ~= "text" and not IsIconModePanel(group) then
+        return nil
+    end
+    for _, buttonData in ipairs(group.buttons or {}) do
+        if buttonData.enabled ~= false
+            and not CooldownCompanion:IsButtonUsable(buttonData, group) then
+            return true
+        end
+    end
+    return false
+end
 
 function ST._ReleaseButtonPanelPreview(host)
     local preview = host and host._cdcPanelPreview
