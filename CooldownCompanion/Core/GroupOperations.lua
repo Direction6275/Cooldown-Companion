@@ -3385,9 +3385,6 @@ function CooldownCompanion:UnloadGroup(groupId)
                 button._savedOnUpdate = onUpdate
                 button:SetScript("OnUpdate", nil)
             end
-            -- Dormant buttons stop being evaluated; release their scratches so
-            -- they don't pin aura data or secret names while parked.
-            ST.EntryRuntime.ReleaseTrackedAuraScratch(button)
         end
     end
 

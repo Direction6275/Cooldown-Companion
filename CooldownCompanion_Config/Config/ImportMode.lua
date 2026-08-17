@@ -36,10 +36,6 @@ local RenderImportModeReview
 -- backup is the recovery path out of one.
 ------------------------------------------------------------------------
 
-local function IsImportModeActive()
-    return CS.importMode ~= nil
-end
-
 local pendingConfirm = nil
 
 local function EnterImportMode()
@@ -859,8 +855,6 @@ end
 ------------------------------------------------------------------------
 -- ST._ exports
 ------------------------------------------------------------------------
-ST._IsImportModeActive = IsImportModeActive
-ST._EnterImportMode = EnterImportMode
 ST._ExitImportMode = ExitImportMode
 ST._ToggleImportMode = ToggleImportMode
 ST._ConfirmImportMode = ConfirmImportMode

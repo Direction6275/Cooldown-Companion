@@ -805,8 +805,8 @@ CooldownCompanion.ApplyFontStyle = ApplyFontStyle
 -- the real count is secret; this mirrors those breakpoints for a PLAIN
 -- pretend number, preferring the most interesting configured state (max
 -- when the max color is on, else the threshold) so the feature shows in
--- previews. Shared by ButtonPanelPreview and the live-button preview twin
--- — defined here, NOT in the preview file (200-local ceiling).
+-- previews. Defined here, rather than in the preview file, to stay below its
+-- Lua 5.1 local-variable ceiling.
 function CooldownCompanion:GetAuraStackPreviewCountAndColor(buttonData, style, fallbackText)
     -- Thin reader of the ONE policy resolver (review batch 2026-08-15):
     -- the clamp/prefer rules live there, so the preview can never disagree
@@ -1420,25 +1420,6 @@ local function ApplyStrataOrder(button, order)
                     frame:SetFrameLevel(level)
                 end
             end
-        end
-    end
-
-    -- Preview stand-ins ride INSIDE the aura display's band, at the offsets
-    -- their live counterparts occupy, so a config preview draws where the real
-    -- thing will. button.auraGlow is preview-only on 12.1: the live aura and
-    -- pandemic glows are the kit's, inside the aura display.
-    local auraLevel = levels.auraDisplay
-    if auraLevel then
-        if button.auraGlow then
-            if button.auraGlow.solidFrame then
-                button.auraGlow.solidFrame:SetFrameLevel(auraLevel + 3)
-            end
-            if button.auraGlow.procFrame then
-                button.auraGlow.procFrame:SetFrameLevel(auraLevel + 3)
-            end
-        end
-        if button._auraSwipePreviewCooldown then
-            button._auraSwipePreviewCooldown:SetFrameLevel(auraLevel + 2)
         end
     end
 

@@ -136,9 +136,8 @@ local BAR_PREVIEW_REASON_DEFS = {
         fallback = "useBaselineAlphaFallbackUnusable" },
 }
 
--- Snapshot the config-owned preview state for a mirror entry. Both sources are
--- stored by Preview.lua before its live-frame routing decision, so this path
--- never consults live button fields.
+-- Snapshot the config-owned preview state for a mirror entry. Preview.lua owns
+-- both stores, so this path never consults live button fields.
 local function GetStoredBarPreviewState(panelId, index)
     local conditional = GetStoredConditionalPreviewState
         and GetStoredConditionalPreviewState(panelId, index) or nil
@@ -638,7 +637,6 @@ end
 local function ApplyBarSlotVisualAlpha(slot, alpha)
     if not slot.statusBar then return end
     alpha = tonumber(alpha) or 1
-    slot._cdcBarVisualAlpha = alpha
 
     local function SetAlpha(region)
         if region then region:SetAlpha(alpha) end
@@ -2187,14 +2185,10 @@ local function StyleIconEntry(slot, buttonData, group)
 end
 
 ------------------------------------------------------------------------
--- Conditional visual previews on the mirror (icon panels): while a
--- conditional preview toggle (cooldown, charges, unusable, out of
--- range, aura duration/stacks, loss of control) is active for an entry
--- or its whole panel, render the same CC-side stand-in the live world
--- buttons show - from the same stored preview state (Preview.lua) and
--- the same timing math (CooldownUpdate.lua), so the mirror stays
--- time-synced with the live preview. Times are literal numbers from
--- the stored state (config-only; never live cooldown reads).
+-- Conditional visual previews on the mirror (icon panels): while a preview
+-- toggle is active for an entry or its whole panel, render a config-only
+-- stand-in from Preview.lua's stored state and timing contract. Times are
+-- literal numbers from that state; this never reads live cooldowns.
 ------------------------------------------------------------------------
 local ICON_FILL_TEXTURE = "Interface\\Buttons\\WHITE8x8"
 -- VisualState.lua DEFAULT_ICON_FILL_COOLDOWN_COLOR
@@ -2385,10 +2379,8 @@ end
 -- Renders the entry's active conditional preview (if any) onto its
 -- mirror slot, and always restores the baseline tint/desaturation a
 -- recycled slot may carry. Runs after the entry-status desaturation:
--- previews may force desaturation on, never off. Each branch mirrors
--- the live interpreter (CooldownUpdate.lua ApplyConditionalVisualPreview)
--- plus that state's render outcome (Tracking.lua tint/desaturation,
--- IconMode.lua swipe/fill), gated on the same style keys.
+-- previews may force desaturation on, never off. Each branch follows the
+-- corresponding runtime presentation rules and shared style helpers.
 local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, index)
     ResetSlotConditionalVisuals(slot)
     -- Read by ApplyIconCountTextStyle and StyleSlotCooldownText
@@ -2584,7 +2576,7 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
             end
         end
     elseif kind == "loss_of_control" and GetConditionalPreviewTiming then
-        -- Live gate (CooldownUpdate.lua): spells only, never passives.
+        -- Runtime gate (Visibility.lua): spells only, never passives.
         if style.showLossOfControl and buttonData.type == "spell" and not buttonData.isPassive then
             local startTime, duration = GetConditionalPreviewTiming(state, now)
             if startTime then
@@ -2710,15 +2702,15 @@ local function StopBarSlotFillEffects(slot)
     if slot._cdcFillShiftAG then slot._cdcFillShiftAG:Stop() end
     local fillTex = slot.statusBar and slot.statusBar:GetStatusBarTexture()
     if fillTex then
-        -- Clears residual shift tint; 4-arg SetVertexColor is the last
-        -- alpha write on this region (live UpdateBarDisplay parity).
+        -- Clears residual shift tint; 4-arg SetVertexColor is the last alpha
+        -- write on this mirror region.
         fillTex:SetVertexColor(1, 1, 1, 1)
     end
 end
 
--- Active Aura Indicator fill effects on the mirror bar, per BarMode.lua
--- UpdateBarDisplay. Returns true when the color-shift animation owns the
--- fill color (the bar then goes white underneath, kit trick).
+-- Active Aura Indicator fill effects on the mirror bar. Returns true when the
+-- color-shift animation owns the fill color (the bar then goes white underneath,
+-- matching the kit's layering trick).
 -- suppressShift: the pandemic recolor occludes the live fill's color shift
 -- (the kit clone draws over the shifting fill), so the mirror must not let
 -- the shift animation own the color while the pandemic preview runs — the
@@ -2872,7 +2864,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         local startTime = GetConditionalPreviewTiming(state, now)
         if startTime then
             -- The Active Aura Indicator preview's fill effects ride the
-            -- aura drain (live UpdateBarDisplay, keyed off the flag).
+            -- mirror's aura drain.
             -- Pandemic recolor (PTR 8): live parity is the kit's clone
             -- occluding the fill — including its color shift — while still
             -- inheriting the fill pulse. So with the pandemic preview on,
@@ -2936,8 +2928,8 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
             end
         end
     elseif kind == "cooldown_text" and GetConditionalPreviewTiming then
-        -- Countdown text alone on a resting bar (live parity: UpdateBarFill's
-        -- preview seam): no drain, no cooldown color, no desaturation/tint.
+        -- Countdown text alone on a resting bar: no drain, no cooldown color,
+        -- no desaturation or tint.
         -- The conditional ticker keeps the text counting via _cdcCondAnim.
         local startTime, _, remaining = GetConditionalPreviewTiming(state, now)
         if startTime and not buttonData.isPassive and style.showCooldownText then
@@ -3095,12 +3087,10 @@ end
 
 ------------------------------------------------------------------------
 -- Effect previews on the mirror: while a preview toggle is active for an
--- entry (or its whole panel), render the same glow the live buttons
--- show, through the very same Glows.lua setters. Mirror slots carry
--- their own glow containers and a `style` field - all the setters read.
--- Parity rule: live glow previews only render where the live frames have
--- containers (icons: proc/aura/ready/key-press; bars: bar aura effect;
--- text: none).
+-- entry (or its whole panel), render the configured glow through the shared
+-- Glows.lua setters. Mirror slots carry their own containers and `style` field.
+-- Icons support proc/aura/ready/key-press, bars support bar aura effects, and
+-- text slots support none.
 ------------------------------------------------------------------------
 local EFFECT_PREVIEWS = {
     { flag = "_procGlowPreview", containerKey = "procGlow", setter = ST._SetProcGlow },

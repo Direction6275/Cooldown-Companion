@@ -537,7 +537,6 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
     -- tenant of a recycled frame must never inherit the previous one's gate.
     btn:Enable()
     SetAdvancedToggleInert(btn, false)
-    btn._isAdvancedToggle = true
     btn._advancedSettingKey = settingKey
 
     -- Clean up on widget release (prevent leaking into recycled widgets).
@@ -3129,8 +3128,6 @@ ST._CanButtonUseConfigOverrideSection = CanButtonUseConfigOverrideSection
 ST._GroupSupportsPerButtonOverrides = GroupSupportsPerButtonOverrides
 ST._ResolveStyleLens = ResolveStyleLens
 ST._ResolveLensSection = ResolveLensSection
-ST._AttachHeadingScopeChrome = AttachHeadingScopeChrome
-ST._AttachRowScopeChrome = AttachRowScopeChrome
 ST._BeginLensSection = BeginLensSection
 ST._ResolveLensCollapseKey = ResolveLensCollapseKey
 ST._AddLensPanelScopeNote = AddLensPanelScopeNote

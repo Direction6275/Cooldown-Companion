@@ -234,7 +234,5 @@ end
 ST._WireMirrorFirstSlider = WireMirrorFirstSlider
 ST._RefreshActiveAdvancedSettingsPanel = RefreshActiveAdvancedSettingsPanel
 ST._UpdateSelectedGroupStyle = UpdateSelectedGroupStyle
-ST._RefreshSelectedGroupStyle = RefreshSelectedGroupStyle
-ST._ResolveSelectedGroupStyle = ResolveSelectedGroupStyle
 ST._MakeCooldownTextAdvancedDescriptor = MakeCooldownTextAdvancedDescriptor
 ST._MakeCooldownSwipeAdvancedDescriptor = MakeCooldownSwipeAdvancedDescriptor

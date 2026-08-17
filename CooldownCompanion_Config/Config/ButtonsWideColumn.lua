@@ -1308,7 +1308,7 @@ local function EnsureAddBox(col3)
     instructions:SetText("Add spell, item, trinket slot, or ID")
     addBox._cdcInstructions = instructions
     editFrame:SetPoint("BOTTOMRIGHT", addBox.frame, "BOTTOMRIGHT", -18, 0)
-    addBox._cdcInfoButton = CreateAddBoxInfoButton(addBox.frame, addBox.frame)
+    CreateAddBoxInfoButton(addBox.frame, addBox.frame)
 
     addBox:SetCallback("OnEnterPressed", function(widget, event, text)
         if CS.ConsumeAutocompleteEnter() then return end
@@ -1862,10 +1862,8 @@ local function RefreshButtonsWideColumn(selectionOnly)
     ST._UnifiedRowApply()
 end
 
--- The mirror owns a panel's config previews only while the wide buttons
--- view is showing that panel's pinned preview. That now includes Other
--- Class browsing, which shares the full workspace; only the bars
--- workspace and the talent picker route around the mirror.
+-- The mirror owns a panel's config previews only while the wide buttons view
+-- is showing that panel's pinned preview.
 local function IsPanelMirrorPreviewActive(groupId)
     if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then return false end
     return groupId ~= nil and groupId == CS.selectedGroup

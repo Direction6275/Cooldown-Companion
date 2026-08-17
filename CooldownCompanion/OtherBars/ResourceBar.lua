@@ -22,7 +22,7 @@ local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
 local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
 local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
-local UnbindDurationText = CooldownCompanion.UnbindDurationText or function() end
+local UnbindDurationText = CooldownCompanion.UnbindDurationText
 
 local math_floor = math.floor
 local math_min = math.min
@@ -38,9 +38,6 @@ local function UnbindFrameDurationText(frame)
         UnbindDurationText(frame.text)
     end
 end
-
--- Immutable — shared across calls; never write to this table.
-local CLEAR_CUSTOM_AURA_STACKS_OPTS = { clearCustomAuraStacks = true }
 
 ------------------------------------------------------------------------
 -- Imports from ResourceBarConstants / ResourceBarHelpers / ResourceBarVisuals
@@ -265,7 +262,6 @@ local lifecycleModule = nil
 local function ResetCustomAuraBarIndicatorVisuals(bar, cabConfig)
     if not bar then return end
 
-    bar._barAuraColor = nil
     bar._barPulseActive = nil
     bar._barPulseSpeed = nil
     bar._barColorShiftActive = nil
@@ -319,7 +315,7 @@ local function ClearCustomAuraBarIndicatorState(barInfo, clearPreviewFlags)
     local bar = barInfo and barInfo.frame
     if not bar then return end
 
-    EntryRuntime.ClearTrackedAuraOwnerState(bar, nil, CLEAR_CUSTOM_AURA_STACKS_OPTS)
+    EntryRuntime.ClearTrackedAuraOwnerState(bar, nil)
 
     ClearCustomAuraBarIndicatorVisualState(barInfo, clearPreviewFlags)
 end
@@ -389,7 +385,6 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig)
     local pandemicPreview = bar._barPandemicPreview == true
         and cabConfig.pandemicEffect == true
 
-    bar._barAuraColor = wantAuraColor
     if not bar._barColorShiftActive then
         bar:SetStatusBarColor(wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4] or 1)
     end
@@ -441,8 +436,6 @@ local function ClearStaleRecycledBarRuntimeState(frame)
         CooldownCompanion:UnregisterModuleAlpha(frame._cdcCustomAuraAlphaModuleId)
         frame._cdcCustomAuraAlphaModuleId = nil
     end
-    frame._cdcCustomAuraAlphaMode = nil
-    frame._cdcIndependentBarInfo = nil
     frame:SetMovable(false)
     frame:EnableMouse(false)
     frame:RegisterForDrag()
@@ -465,8 +458,6 @@ local function ClearStaleRecycledBarRuntimeState(frame)
     if frame._cdcIndependentAlphaSync then
         frame._cdcIndependentAlphaSync:SetScript("OnUpdate", nil)
     end
-    frame._cdcIndependentAlphaTarget = nil
-    frame._cdcIndependentLastAlpha = nil
     -- Max-stack border: cleared so a recycled frame that stops being a
     -- stack-counted shape never keeps a lit border (no stack tick runs on it
     -- to clear it). A frame that is still one re-lights on its next update —
@@ -498,26 +489,12 @@ local function ClearStaleRecycledBarRuntimeState(frame)
             frame.bg:SetAlpha(1)
         end
     end
-    EntryRuntime.ClearTrackedAuraOwnerState(frame, nil, CLEAR_CUSTOM_AURA_STACKS_OPTS)
-    EntryRuntime.ReleaseTrackedAuraScratch(frame)
-    frame._parsedAuraIDs = nil
-    frame._parsedAuraIDsRaw = nil
-    frame._parsedAuraIDsButtonID = nil
-    frame._parsedAuraIDsIncludeButtonID = nil
-    frame._customCooldownBaseSpellID = nil
-    frame._customCooldownSpellID = nil
-    frame._customCooldownHasCharges = nil
+    EntryRuntime.ClearTrackedAuraOwnerState(frame, nil)
     frame._cooldownSecrecy = nil
     frame._cooldownSecrecySpellID = nil
     frame._noCooldown = nil
     frame._noCooldownSpellId = nil
-    frame._currentReadableCharges = nil
-    frame._chargeCountReadable = nil
-    frame._zeroChargesConfirmed = nil
-    frame._chargeDurationObj = nil
     frame._chargeRecharging = nil
-    frame._mainCDShown = nil
-    frame._chargeState = nil
     frame._chargesSpent = nil
     frame:SetAlpha(1)
 end

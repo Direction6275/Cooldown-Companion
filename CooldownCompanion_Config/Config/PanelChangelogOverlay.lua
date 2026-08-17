@@ -269,8 +269,6 @@ function ST._SetupChangelogOverlay(frame, colParent, onHighlightChanged)
         local versionBottomSpacer = math.max(6, versionBandHeight - estimatedVersionHeight - versionTopSpacer)
 
         frame._changelogCurrentVersion = activeVersion
-        frame._changelogPreviousVersion = nil
-        frame._changelogNextVersion = nil
 
         changelogScroll:PauseLayout()
         changelogScroll:ReleaseChildren()

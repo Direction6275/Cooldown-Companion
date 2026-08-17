@@ -200,25 +200,6 @@ local function GetResolverTime(options)
     return 0
 end
 
-local function ResolveAuraIndicatorEnabled(buttonData, style)
-    local auraIndicatorEnabled = buttonData and buttonData.auraIndicatorEnabled and true or false
-    if buttonData
-       and buttonData.overrideSections
-       and buttonData.overrideSections.auraIndicator
-       and style.auraGlowStyle == "none" then
-        auraIndicatorEnabled = false
-    end
-    return auraIndicatorEnabled
-end
-
--- Effective pandemic enable (PTR 8 visuals): the explicit-true style key, which
--- is the EFFECTIVE style here, so an entry that customized the Pandemic
--- section answers with its own stored value — the same resolution the live bind
--- gate (AuraDisplay.lua StyleSlotKit) and the config mirror perform.
-local function IsPandemicEffectWanted(buttonData, style)
-    return style and style.pandemicEffectEnabled == true
-end
-
 local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActive, target, options)
     target = target or {}
     style = style or {}
@@ -266,37 +247,9 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
         SetGlowIntent(proc, true, false, "inactive")
     end
 
-    -- 12.1: the live aura glow renders on the aura slot kit (AuraDisplay.lua);
-    -- Blizzard's show/hide of the slot button IS the signal, so no live
-    -- intent can exist here (the config's aura-glow preview renders on the
-    -- mirror, not through this resolver). The pandemic branch is
-    -- PREVIEW-ONLY by design: the live pandemic display is the kit rig with
-    -- its secret Blizzard-driven Shown state (AuraDisplay.lua), which CC can
-    -- never read, so _pandemicPreview (Preview.lua setters) is the one and
-    -- only writer that can ever reach this branch.
-    local auraIndicatorEnabled = ResolveAuraIndicatorEnabled(buttonData, style)
-
-    -- "no-container" is the RESTING state, not a fault: because the container
-    -- is preview-only it is built on demand (IconMode EnsureAuraGlowContainer,
-    -- driven by the preview-flag setters), so a button that has never previewed
-    -- an aura or pandemic glow simply has none. Reading this in a diagnostic
-    -- snapshot means "nothing to draw here", not "a widget went missing".
-    if not button.auraGlow then
-        SetGlowIntent(aura, false, false, "no-container")
-        aura.auraIndicatorEnabled = auraIndicatorEnabled
-    elseif button._pandemicPreview == true
-        and IsPandemicEffectWanted(buttonData, style) then
-        -- Gated by the same per-entry/panel resolution the live bind and
-        -- the config mirror use, so an opted-out entry never previews a
-        -- glow the game will not render.
-        SetGlowIntent(aura, true, true, "pandemic-preview")
-        aura.preview = true
-        aura.pandemic = true
-        aura.auraIndicatorEnabled = auraIndicatorEnabled
-    else
-        SetGlowIntent(aura, true, false, "inactive")
-        aura.auraIndicatorEnabled = auraIndicatorEnabled
-    end
+    -- Live aura and pandemic glows are owned by the aura slot kit. The config
+    -- mirror renders its own replicas, so live buttons have no CC aura intent.
+    SetGlowIntent(aura, false, false, "no-container")
 
     local procSuppressesReady = procOverlayShown and style.procGlowStyle ~= "none"
     local auraSuppressesReady = button._auraTrackingReady == true and button._auraActive == true
@@ -387,12 +340,8 @@ local function ResolveIconFillIntent(button, buttonData, style, target)
         end
     end
 
-    local cooldownPreview = button._conditionalPreviewDomain == "cooldown"
-
     local cooldownReason
-    if cooldownPreview then
-        cooldownReason = "cooldown-preview"
-    elseif button._cooldownState == STATE_COOLDOWN then
+    if button._cooldownState == STATE_COOLDOWN then
         cooldownReason = "cooldown"
     elseif UsesIconFillChargeBehavior(buttonData)
         and button._chargeRecharging == true

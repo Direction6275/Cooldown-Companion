@@ -1628,7 +1628,6 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         and self:IsContainerPanelHovered(containerId, driverButton._groupId)
         or false
     host._hasSavedDisplay = hasSavedDisplay
-    host._groupedPreviewContainerId = containerId
     host._dragEnabled = visibilityState.isUnlocked
         and hasSavedDisplay
         and (not visibilityState.isGroupedPreview or isGroupedPreviewSelected)

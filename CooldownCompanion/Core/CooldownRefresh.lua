@@ -51,8 +51,8 @@
         1. Mode-aware classifier (NoteButtonTimeState): an active cooldown or
            GCD swipe on an icon or bar button no longer forces a walk because
            its swipe, numbers, and iconFill self-animate. Text mode, charge
-           recharge, ready-glow windows, conditional previews, hide-unusable
-           fail-open state still force walks.
+           recharge, ready-glow windows, and hide-unusable fail-open state
+           still force walks.
         2. Power-mark demotion: UNIT_POWER_FREQUENT does not mark dirty; the
            castability tint rides walk cadence (safety walk ~1s worst case).
            Coupled to the hide-unusable floorFailOpen term in
@@ -94,8 +94,8 @@ local CooldownCompanion = ST.Addon
 local TICKER_MAX_CONSECUTIVE_SKIPS = 9
 
 -- F2: authoritative "config UI is open" check (read-only, nil-safe via the
--- GetConfigFrame accessor). Conditional previews are the only time-animated
--- config surface, so an open config forces walking.
+-- GetConfigFrame accessor). Keep the runtime scheduler conservative while
+-- config-only layout and unlock interactions are active.
 local function IsConfigWindowOpen()
     local configFrame = CooldownCompanion:GetConfigFrame()
     return configFrame and configFrame.frame
@@ -189,8 +189,8 @@ function CooldownCompanion:CanSkipTickerCooldownRefresh()
 end
 
 -- F2 live-skip predicate. It latches on _tickerIdleEligible, which a completed
--- walk sets true only when it saw no time-animated button, plus the config-open
--- interlock. Fail open on every term (any false forces a walk).
+-- walk sets true only when it saw no time-animated button, plus the conservative
+-- config-open interlock. Fail open on every term (any false forces a walk).
 function CooldownCompanion:CanSkipIdleTickerRefresh()
     return not self._cooldownsDirty
         and not self._queuedCooldownRefreshSource

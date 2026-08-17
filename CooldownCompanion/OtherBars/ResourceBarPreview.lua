@@ -62,7 +62,7 @@ local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
 
 local FormatTime = CooldownCompanion.FormatTime
 local FormatCooldownTime = CooldownCompanion.FormatCooldownTime or CooldownCompanion.FormatTime
-local UnbindDurationText = CooldownCompanion.UnbindDurationText or function() end
+local UnbindDurationText = CooldownCompanion.UnbindDurationText
 local SetAuraStackCountText = EntryRuntime.SetAuraStackCountText
 local IsSpellCustomBarConfig = RB.IsSpellCustomBarConfig
 local IsSpellCustomBarAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay

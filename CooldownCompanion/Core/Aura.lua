@@ -742,8 +742,8 @@ function CooldownCompanion:IsAuraShellEntry(buttonData)
         or buttonData.auraShellDim == true
 end
 
--- Resting alpha for a shell entry, before any preview exposure. Hide wins
--- when both keys are somehow set, matching the shell predicate's intent.
+-- Resting alpha for a shell entry. Hide wins when both keys are somehow set,
+-- matching the shell predicate's intent.
 -- Callers gate on IsAuraShellEntry first, so a non-shell entry never
 -- reaches this.
 function CooldownCompanion:GetAuraShellRestingAlpha(buttonData)
@@ -837,9 +837,9 @@ function CooldownCompanion:IsAuraPreviewKindExposingShell(kind, isBar)
     return kinds[kind] == true
 end
 
--- The one shell-alpha decision, for both display modes: 1 = no shell (the
--- entry renders normally, including while an unlock or aura preview exposes
--- it), 0 = full shell (the aura display is the entire visible button),
+-- The one live shell-alpha decision, for both display modes: 1 = no shell (the
+-- entry renders normally, including while an unlock preview exposes it),
+-- 0 = full shell (the aura display is the entire visible button),
 -- fractional = the dim shell under the full-strength aura display. Static
 -- by design -- resolved at style time, never from aura state. Icon and bar
 -- mode each kept a private copy of this chain and the copies drifted (the
@@ -854,11 +854,6 @@ function CooldownCompanion:GetAuraShellAlpha(button, buttonData)
         and frame
         and (frame._containerUnlockPreviewActive == true
             or frame._panelUnlockPreviewActive == true) then
-        return 1
-    end
-    local preview = button and button._conditionalVisualPreview
-    if self:IsAuraPreviewKindExposingShell(preview and preview.kind,
-            button and button._isBar == true) then
         return 1
     end
     return self:GetAuraShellRestingAlpha(buttonData)

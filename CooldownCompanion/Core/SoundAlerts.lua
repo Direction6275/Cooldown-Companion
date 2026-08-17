@@ -1041,8 +1041,10 @@ function CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, auraActive, coold
     -- AddAuraSound registrations made at bind time), and the addon never
     -- evaluates aura state for them — auraActive is structurally false. So
     -- the whole scan below is dead work, and this runs per bar at 30Hz.
-    if customBar and (customBar.entryType or "aura") ~= "spell" then
-        barInfo._sndInitialized = nil
+    if not customBar or customBar.entryType ~= "spell" then
+        if barInfo then
+            barInfo._sndInitialized = nil
+        end
         return
     end
     local enabledEvents = self:GetEnabledSoundAlertEventsForCustomBar(customBar)
@@ -1053,31 +1055,12 @@ function CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, auraActive, coold
         return
     end
 
-    if customBar and customBar.entryType == "spell" then
-        local chargeRecharging = cooldownResult and cooldownResult.chargeRecharging == true
-        local currentCharges = cooldownResult and cooldownResult.currentCharges
-        local chargeCooldownStartTime
-        local charges = cooldownResult and cooldownResult.charges
-        if charges and charges.cooldownStartTime ~= nil and not issecretvalue(charges.cooldownStartTime) then
-            chargeCooldownStartTime = charges.cooldownStartTime
-        end
-
-        local opts = barInfo._sndTransitionOptions
-        if not opts then
-            opts = {}
-            barInfo._sndTransitionOptions = opts
-        end
-        opts.cooldownActive = cooldownActive
-        opts.auraActive = auraActive
-        opts.currentCharges = currentCharges
-        opts.chargeRecharging = chargeRecharging
-        opts.chargeCooldownStartTime = chargeCooldownStartTime
-        opts.includeAuraEvents = customBar.auraTracking == true
-        opts.usesChargeBehavior = cooldownResult and cooldownResult.hasCharges == true
-        opts.play = PlayCustomBarTransitionSound
-        opts.playContext = customBar
-        UpdateCooldownSoundAlertTransitions(barInfo, enabledEvents, opts)
-        return
+    local chargeRecharging = cooldownResult and cooldownResult.chargeRecharging == true
+    local currentCharges = cooldownResult and cooldownResult.currentCharges
+    local chargeCooldownStartTime
+    local charges = cooldownResult and cooldownResult.charges
+    if charges and charges.cooldownStartTime ~= nil and not issecretvalue(charges.cooldownStartTime) then
+        chargeCooldownStartTime = charges.cooldownStartTime
     end
 
     local opts = barInfo._sndTransitionOptions
@@ -1085,13 +1068,13 @@ function CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, auraActive, coold
         opts = {}
         barInfo._sndTransitionOptions = opts
     end
-    opts.cooldownActive = nil
+    opts.cooldownActive = cooldownActive
     opts.auraActive = auraActive
-    opts.currentCharges = nil
-    opts.chargeRecharging = nil
-    opts.chargeCooldownStartTime = nil
-    opts.includeAuraEvents = true
-    opts.usesChargeBehavior = nil
+    opts.currentCharges = currentCharges
+    opts.chargeRecharging = chargeRecharging
+    opts.chargeCooldownStartTime = chargeCooldownStartTime
+    opts.includeAuraEvents = customBar.auraTracking == true
+    opts.usesChargeBehavior = cooldownResult and cooldownResult.hasCharges == true
     opts.play = PlayCustomBarTransitionSound
     opts.playContext = customBar
     UpdateCooldownSoundAlertTransitions(barInfo, enabledEvents, opts)

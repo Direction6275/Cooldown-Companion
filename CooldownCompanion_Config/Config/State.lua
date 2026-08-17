@@ -3191,7 +3191,6 @@ ST._GetContainerIcon = GetContainerIcon
 ST._GetConfigPanelTypeBadgeAtlas = GetConfigPanelTypeBadgeAtlas
 ST._GetConfigAuraPanelBadgeTint = GetConfigAuraPanelBadgeTint
 ST._GetConfigPanelEntryCount = GetConfigPanelEntryCount
-ST._IsConfigPanelEntryUsable = IsConfigPanelEntryUsable
 ST._ConfigPanelHasWarning = ConfigPanelHasWarning
 ST._OpenButtonIconPicker = OpenButtonIconPicker
 ST._OpenTriggerPanelIconPicker = OpenTriggerPanelIconPicker

@@ -1411,7 +1411,6 @@ local function PlaceNodesInPanel(scrollChild, nodeSet, panelOffsetX, yOffset,
         btn._entries = node.entries
         btn._talentName = displayName
         btn._spellID = displaySpellID
-        btn._rankText = nil
         btn._disabledReason = node.disabledReason
 
         local borderColor, borderSize = GetNodeBorderStyle(node.nodeID, nil)
