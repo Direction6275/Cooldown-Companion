@@ -346,15 +346,7 @@ local function GetConditionState(nodeID, entryID)
     return GetPendingStateForNode(nodeID)
 end
 
-local function IsHeroSpecProxyCondition(cond)
-    return type(cond) == "table"
-        and cond.nodeID ~= nil
-        and cond.heroSubTreeID ~= nil
-        and cond.entryID == nil
-        and type(cond.name) == "string"
-        and type(cond.heroName) == "string"
-        and cond.name == cond.heroName
-end
+local IsHeroSpecProxyCondition = ST._IsHeroSpecProxyCondition
 
 local function IsHeroSpecProxyNodeDisabled(nodeID)
     local pending = GetPendingStateForNode(nodeID)

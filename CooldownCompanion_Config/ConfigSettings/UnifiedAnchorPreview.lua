@@ -75,29 +75,75 @@ end
 -- The quick toggle: hide the attached bar lanes from this preview
 ------------------------------------------------------------------------
 
--- The full-colour look: the shown state at rest, and every hovered state.
-local function ApplyBadgeHover(badge)
+-- Shared badge chrome. Each toggle supplies its own state, text, refresh
+-- behavior and positioning; this owns only the identical frame interaction.
+local function ApplyPreviewBadgeHover(badge)
     badge.icon:SetDesaturated(false)
     badge.icon:SetVertexColor(1, 1, 1, 1)
 end
 
-local function ApplyBadgeTint(badge)
-    if CS.unifiedAnchorBarsHidden then
+local function ApplyPreviewBadgeTint(badge)
+    if badge._cdcIsHidden() then
         badge.icon:SetDesaturated(true)
         badge.icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
     else
-        ApplyBadgeHover(badge)
+        ApplyPreviewBadgeHover(badge)
     end
 end
 
-local function ShowBadgeTooltip(badge)
+local function ShowPreviewBadgeTooltip(badge)
     GameTooltip:SetOwner(badge, "ANCHOR_LEFT")
-    if CS.unifiedAnchorBarsHidden then
-        GameTooltip:SetText("Show attached bars")
+    if badge._cdcIsHidden() then
+        GameTooltip:SetText(badge._cdcShowText)
     else
-        GameTooltip:SetText("Hide attached bars")
+        GameTooltip:SetText(badge._cdcHideText)
     end
     GameTooltip:Show()
+end
+
+local function CreatePreviewToggleBadge(host, atlas, isHidden, showText, hideText, onClick)
+    local badge = CreateFrame("Button", nil, host)
+    badge:SetSize(BADGE_SIZE, BADGE_SIZE)
+    badge.icon = badge:CreateTexture(nil, "ARTWORK")
+    badge.icon:SetAllPoints()
+    badge.icon:SetAtlas(atlas, false)
+    badge._cdcIsHidden = isHidden
+    badge._cdcShowText = showText
+    badge._cdcHideText = hideText
+    badge._cdcOnClick = onClick
+    badge:SetScript("OnEnter", function(self)
+        ApplyPreviewBadgeHover(self)
+        ShowPreviewBadgeTooltip(self)
+    end)
+    badge:SetScript("OnLeave", function(self)
+        ApplyPreviewBadgeTint(self)
+        GameTooltip:Hide()
+    end)
+    badge:SetScript("OnClick", function(self)
+        self._cdcOnClick()
+        -- A refresh may retint the badge under the cursor; keep the hover
+        -- look and current tooltip until the mouse leaves.
+        if GameTooltip:GetOwner() == self then
+            ApplyPreviewBadgeHover(self)
+            ShowPreviewBadgeTooltip(self)
+        end
+    end)
+    return badge
+end
+
+local function AreAttachedBarsHidden()
+    return CS.unifiedAnchorBarsHidden
+end
+
+local function ToggleAttachedBars()
+    CS.unifiedAnchorBarsHidden = not CS.unifiedAnchorBarsHidden or nil
+    -- Hiding the lanes takes a lane-selected bar's settings with them; only
+    -- the full refresh revalidates that selection.
+    if CS.unifiedBarKind then
+        CooldownCompanion:RefreshConfigPanel()
+    elseif ST._RefreshButtonsPreviewMirror then
+        ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
+    end
 end
 
 -- Session state, view only: the flag lives in CS and the live bars never
@@ -110,42 +156,21 @@ local function UpdateAttachedBarsBadge(host, eligible)
         return
     end
     if not badge then
-        badge = CreateFrame("Button", nil, host)
-        badge:SetSize(BADGE_SIZE, BADGE_SIZE)
+        badge = CreatePreviewToggleBadge(
+            host,
+            BADGE_ATLAS,
+            AreAttachedBarsHidden,
+            "Show attached bars",
+            "Hide attached bars",
+            ToggleAttachedBars
+        )
         badge:SetPoint("TOPRIGHT", host, "TOPRIGHT", -BADGE_INSET, -BADGE_INSET)
-        badge.icon = badge:CreateTexture(nil, "ARTWORK")
-        badge.icon:SetAllPoints()
-        badge.icon:SetAtlas(BADGE_ATLAS, false)
-        badge:SetScript("OnEnter", function(self)
-            ApplyBadgeHover(self)
-            ShowBadgeTooltip(self)
-        end)
-        badge:SetScript("OnLeave", function(self)
-            ApplyBadgeTint(self)
-            GameTooltip:Hide()
-        end)
-        badge:SetScript("OnClick", function(self)
-            CS.unifiedAnchorBarsHidden = not CS.unifiedAnchorBarsHidden or nil
-            -- Hiding the lanes takes a lane-selected bar's settings with
-            -- them; only the full refresh revalidates that selection.
-            if CS.unifiedBarKind then
-                CooldownCompanion:RefreshConfigPanel()
-            elseif ST._RefreshButtonsPreviewMirror then
-                ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
-            end
-            -- The rebuild retinted the badge under the cursor; keep the
-            -- hover look and the tooltip current until the mouse leaves.
-            if GameTooltip:GetOwner() == self then
-                ApplyBadgeHover(self)
-                ShowBadgeTooltip(self)
-            end
-        end)
         host._cdcAttachedBarsBadge = badge
     end
     -- Above the mirror's slots for the same reason the command center
     -- band is: overhanging slot art must not draw over a hit target.
     badge:SetFrameLevel(host:GetFrameLevel() + 20)
-    ApplyBadgeTint(badge)
+    ApplyPreviewBadgeTint(badge)
     badge:Show()
 end
 
@@ -160,28 +185,15 @@ end
 local UNAVAILABLE_BADGE_ATLAS = "Ping_Marker_Icon_Warning"
 local BADGE_GAP = 2
 
-local function ApplyUnavailableBadgeHover(badge)
-    badge.icon:SetDesaturated(false)
-    badge.icon:SetVertexColor(1, 1, 1, 1)
+local function AreUnavailableEntriesHidden()
+    return CS.panelPreviewUnavailableHidden
 end
 
-local function ApplyUnavailableBadgeTint(badge)
-    if CS.panelPreviewUnavailableHidden then
-        badge.icon:SetDesaturated(true)
-        badge.icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
-    else
-        ApplyUnavailableBadgeHover(badge)
+local function ToggleUnavailableEntries()
+    CS.panelPreviewUnavailableHidden = not CS.panelPreviewUnavailableHidden or nil
+    if ST._RefreshButtonsPreviewMirror then
+        ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
     end
-end
-
-local function ShowUnavailableBadgeTooltip(badge)
-    GameTooltip:SetOwner(badge, "ANCHOR_LEFT")
-    if CS.panelPreviewUnavailableHidden then
-        GameTooltip:SetText("Show unavailable entries")
-    else
-        GameTooltip:SetText("Hide unavailable entries")
-    end
-    GameTooltip:Show()
 end
 
 -- Session state, view only, exactly like the pin: the flag lives in CS and
@@ -205,31 +217,14 @@ local function UpdateUnavailableEntriesBadge(host, groupId, pinShown)
         return
     end
     if not badge then
-        badge = CreateFrame("Button", nil, host)
-        badge:SetSize(BADGE_SIZE, BADGE_SIZE)
-        badge.icon = badge:CreateTexture(nil, "ARTWORK")
-        badge.icon:SetAllPoints()
-        badge.icon:SetAtlas(UNAVAILABLE_BADGE_ATLAS, false)
-        badge:SetScript("OnEnter", function(self)
-            ApplyUnavailableBadgeHover(self)
-            ShowUnavailableBadgeTooltip(self)
-        end)
-        badge:SetScript("OnLeave", function(self)
-            ApplyUnavailableBadgeTint(self)
-            GameTooltip:Hide()
-        end)
-        badge:SetScript("OnClick", function(self)
-            CS.panelPreviewUnavailableHidden = not CS.panelPreviewUnavailableHidden or nil
-            if ST._RefreshButtonsPreviewMirror then
-                ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
-            end
-            -- The rebuild retinted the badge under the cursor; keep the
-            -- hover look and the tooltip current until the mouse leaves.
-            if GameTooltip:GetOwner() == self then
-                ApplyUnavailableBadgeHover(self)
-                ShowUnavailableBadgeTooltip(self)
-            end
-        end)
+        badge = CreatePreviewToggleBadge(
+            host,
+            UNAVAILABLE_BADGE_ATLAS,
+            AreUnavailableEntriesHidden,
+            "Show unavailable entries",
+            "Hide unavailable entries",
+            ToggleUnavailableEntries
+        )
         host._cdcUnavailableEntriesBadge = badge
     end
     -- Re-anchored every build: whether the pin is up can change hands
@@ -239,7 +234,7 @@ local function UpdateUnavailableEntriesBadge(host, groupId, pinShown)
     local insetX = BADGE_INSET + (pinShown and (BADGE_SIZE + BADGE_GAP) or 0)
     badge:SetPoint("TOPRIGHT", host, "TOPRIGHT", -insetX, -BADGE_INSET)
     badge:SetFrameLevel(host:GetFrameLevel() + 20)
-    ApplyUnavailableBadgeTint(badge)
+    ApplyPreviewBadgeTint(badge)
     badge:Show()
 end
 

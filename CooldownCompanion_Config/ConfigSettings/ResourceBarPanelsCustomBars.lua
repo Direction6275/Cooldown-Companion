@@ -79,15 +79,7 @@ local GetCustomBarLayout = RB.GetCustomBarLayout
 local resourceSpecCopyButton
 local resourceSpecCopyMenu
 
-local function IsHeroSpecProxyCondition(cond)
-    return type(cond) == "table"
-        and cond.nodeID ~= nil
-        and cond.heroSubTreeID ~= nil
-        and cond.entryID == nil
-        and type(cond.name) == "string"
-        and type(cond.heroName) == "string"
-        and cond.name == cond.heroName
-end
+local IsHeroSpecProxyCondition = ST._IsHeroSpecProxyCondition
 local function IsSpellCustomBarConfig(cab)
     if RB.IsSpellCustomBarConfig then
         return RB.IsSpellCustomBarConfig(cab)
@@ -102,11 +94,9 @@ local BuildResourceBarConflictGate = RBP.BuildResourceBarConflictGate
 local GetCurrentConfigSpecID = RBP.GetCurrentConfigSpecID
 local ResolveAuraColorSpellIDFromText = RBP.ResolveAuraColorSpellIDFromText
 local GetAuraBarAutocompleteDisplayName = RBP.GetAuraBarAutocompleteDisplayName
-local GetAuraBarAutocompleteDisplayIcon = RBP.GetAuraBarAutocompleteDisplayIcon
 local GetAuraBarAutocompleteEntryName = RBP.GetAuraBarAutocompleteEntryName
 local ResolveAuraBarAutocompleteEntry = RBP.ResolveAuraBarAutocompleteEntry
 local ShowAuraBarAutocompleteResults = RBP.ShowAuraBarAutocompleteResults
-local BuildAuraBarAutocompleteCache = RBP.BuildAuraBarAutocompleteCache
 local GetResourceThicknessFieldConfig = RBP.GetResourceThicknessFieldConfig
 local CopyTableValue = RBP.CopyTableValue
 

@@ -82,8 +82,6 @@ local LOAD_CONDITION_ALLOWLIST_KEYS = {
     characterAllowlist = true,
 }
 
-local CLASS_SCAN_LIMIT = 30
-
 local function GetFrameName(frame)
     if not frame then
         return nil
@@ -1560,6 +1558,18 @@ local function IsLegacyChoiceRowCondition(cond)
         and cond.name:sub(1, 12) == "Choice row: "
 end
 
+local function IsHeroSpecProxyCondition(cond)
+    return type(cond) == "table"
+        and cond.nodeID ~= nil
+        and cond.heroSubTreeID ~= nil
+        and cond.entryID == nil
+        and type(cond.name) == "string"
+        and type(cond.heroName) == "string"
+        and cond.name == cond.heroName
+end
+
+ST._IsHeroSpecProxyCondition = IsHeroSpecProxyCondition
+
 function CooldownCompanion:NormalizeTalentConditions(conditions)
     if type(conditions) ~= "table" then return nil, false end
 
@@ -1925,36 +1935,8 @@ local function ClearEmptyCoreLoadConditions(entity)
     end
 end
 
-local function GetClassInfoByID(classID)
-    classID = tonumber(classID)
-    if not classID then return nil, nil, nil end
-    if C_CreatureInfo and C_CreatureInfo.GetClassInfo then
-        local classInfo = C_CreatureInfo.GetClassInfo(classID)
-        if type(classInfo) == "table" then
-            return classInfo.className, classInfo.classFile, classInfo.classID
-        end
-    end
-    if GetClassInfo then
-        return GetClassInfo(classID)
-    end
-    return nil, nil, nil
-end
-
-local function GetClassKeyFromClassID(classID)
-    local _, classFilename = GetClassInfoByID(classID)
-    return NormalizeClassKey(classFilename)
-end
-
-local function GetClassIDFromClassKey(classKey)
-    classKey = NormalizeClassKey(classKey)
-    if not classKey then return nil end
-    for classID = 1, CLASS_SCAN_LIMIT do
-        if GetClassKeyFromClassID(classID) == classKey then
-            return classID
-        end
-    end
-    return nil
-end
+local GetClassKeyFromClassID = ST._GetResourceBarClassKeyFromClassID
+local GetClassIDFromClassKey = ST._GetClassIDFromResourceBarClassKey
 
 local function GetCurrentScopeClassKey(addon)
     local classFilename = addon and addon._playerClassFilename
@@ -3928,16 +3910,6 @@ function CooldownCompanion:IsTalentConditionMet(buttonData)
     if not cache then
         self:RebuildTalentNodeCache()
         cache = self._talentNodeCache
-    end
-
-    local function IsHeroSpecProxyCondition(cond)
-        return type(cond) == "table"
-            and cond.nodeID ~= nil
-            and cond.heroSubTreeID ~= nil
-            and cond.entryID == nil
-            and type(cond.name) == "string"
-            and type(cond.heroName) == "string"
-            and cond.name == cond.heroName
     end
 
     for _, cond in ipairs(conditions) do

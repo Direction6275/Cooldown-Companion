@@ -421,21 +421,7 @@ local function SortChoices(choices)
 end
 
 local MAX_CLASS_SCAN_ID = 20
-
-local function GetClassInfoByID(classID)
-    classID = tonumber(classID)
-    if not classID then return nil, nil, nil end
-    if C_CreatureInfo and C_CreatureInfo.GetClassInfo then
-        local classInfo = C_CreatureInfo.GetClassInfo(classID)
-        if type(classInfo) == "table" then
-            return classInfo.className, classInfo.classFile, classInfo.classID
-        end
-    end
-    if GetClassInfo then
-        return GetClassInfo(classID)
-    end
-    return nil, nil, nil
-end
+local GetClassInfoByID = ST._GetClassInfoByID
 
 local function GetClassChoiceByID(classID)
     classID = tonumber(classID)
@@ -1800,15 +1786,7 @@ local function ResolveConditionHeroName(cond)
     return nil
 end
 
-local function IsHeroSpecProxyCondition(cond)
-    return type(cond) == "table"
-        and cond.nodeID ~= nil
-        and cond.heroSubTreeID ~= nil
-        and cond.entryID == nil
-        and type(cond.name) == "string"
-        and type(cond.heroName) == "string"
-        and cond.name == cond.heroName
-end
+local IsHeroSpecProxyCondition = ST._IsHeroSpecProxyCondition
 
 local function GetConditionContextSuffix(cond)
     local parts = {}
