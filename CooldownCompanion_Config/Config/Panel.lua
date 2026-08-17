@@ -2094,7 +2094,6 @@ local function CreateConfigPanel()
 
                 if group.displayMode == "trigger" then
                     ST._BuildTriggerConditionSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
-                    -- Trigger panels have no Talent Conditions section.
                     ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
                 else
                     if buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
@@ -2102,24 +2101,21 @@ local function CreateConfigPanel()
                     elseif buttonData.type == "item" and CooldownCompanion.IsItemEquippable(buttonData) then
                         ST._BuildEquipItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
                     end
-                    -- Talent Conditions is always the last section (owner ruling),
-                    -- so everything below Show Conditions is emitted through the
-                    -- visibility builder's mid-point hook rather than after it.
-                    ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons, nil, function()
-                        -- Aura Tracking leads the hook, so it lands directly
-                        -- under Show Conditions (owner ruling): the aura
-                        -- toggles up there configure behavior that depends on
-                        -- the setup made here. Gated exactly as the retired
-                        -- Aura tab was, so entries that never offered it still
-                        -- get nothing.
-                        if ST._EntryOffersAuraTab(group, buttonData) then
-                            ST._BuildAuraTrackingSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
-                        end
-                        ST._BuildCustomKeybindSection(scroll, buttonData)
-                        ST._BuildCustomNameSection(scroll, buttonData)
-                        ST._BuildItemFallbacksSection(scroll, buttonData, CS.buttonSettingsInfoButtons)
-                        ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
-                    end)
+                    -- Show & Hide Rules and Talent Conditions both live on the
+                    -- Visibility tab now (owner ruling): everything deciding
+                    -- WHEN an entry shows is edited there. What stays here is
+                    -- what the entry IS - its aura setup, its names and keys,
+                    -- and the alerts it plays.
+                    --
+                    -- Aura Tracking is gated exactly as the retired Aura tab
+                    -- was, so entries that never offered it still get nothing.
+                    if ST._EntryOffersAuraTab(group, buttonData) then
+                        ST._BuildAuraTrackingSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
+                    end
+                    ST._BuildCustomKeybindSection(scroll, buttonData)
+                    ST._BuildCustomNameSection(scroll, buttonData)
+                    ST._BuildItemFallbacksSection(scroll, buttonData, CS.buttonSettingsInfoButtons)
+                    ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
                 end
             end
         end

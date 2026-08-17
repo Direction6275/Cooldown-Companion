@@ -1446,7 +1446,8 @@ local function ApplyStrataOrder(button, order)
     -- than hardcoded. Loss of Control is a "you cannot act" alert and must
     -- never be buried, not even by an aura display. The pinned text host rides
     -- above even that: it carries keybind text (owner ruling: never underneath
-    -- anything) and the countdown text when Separate Text Positions lifts it.
+    -- anything) and the countdown text when the While Aura Active keep-text
+    -- state lifts it.
     if button.locCooldown then
         button.locCooldown:SetFrameLevel(top + 1)
     end

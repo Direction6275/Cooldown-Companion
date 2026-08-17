@@ -278,11 +278,10 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
         target = container,
         defaults = CooldownCompanion:GetDefaultLoadConditions(),
         inheritedSources = inheritedSources,
-        skipInheritedSummary = true,
         headingText = "Where To Hide It",
         localCollapsedKey = "container_loadconditions_local",
         row = true,
-        infoTooltipLines = BuildWhereToHideTooltip("group", true),
+        infoTooltipLines = BuildWhereToHideTooltip("group", true, true),
         infoButtons = tabInfoButtons,
         onChanged = RefreshContainerLoadConditions,
     })

@@ -580,30 +580,95 @@ local PANDEMIC_MARKER_TOOLTIP_LINES = {
     {" ", 1, 1, 1, true},
     {"It rides that text. With Aura Duration Text off, nothing shows.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"On by default for debuffs on your target.", 1, 1, 1, true},
+    {"Auto marks debuffs you place on your target and leaves your own buffs plain.", 1, 1, 1, true},
 }
 
+-- Three states, not two (owner ruling 2026-08-16): the per-entry checkbox this
+-- setting absorbed defaulted per tracked UNIT, so "Auto" is what carries that
+-- default now, and "On" is what forces the marker onto a player buff.
+local PANDEMIC_MARKER_MODES = {
+    auto = "Auto (Debuffs Only)",
+    on = "On",
+    off = "Off",
+}
+local PANDEMIC_MARKER_MODE_ORDER = { "auto", "on", "off" }
+
+-- The reconciliation the retired per-entry Pandemic Marker checkbox used to do:
+-- a marker that just resolved OFF loses its command-center control, and a
+-- running stand-in would strand with no toggle left to stop it.
+--
+-- Two scopes, because the command center has two preview scopes and clearing
+-- the wrong one would cancel a preview the change did not orphan:
+--
+--   entry - the mode is asked of the same gate the bind will answer with, so
+--           "auto" on a player buff disarms exactly like an explicit "off".
+--           Cleared through the ENTRY api: passing a buttonIndex also drops a
+--           panel-wide preview, which one entry opting out must not do.
+--   panel - only an explicit "off" disarms. Panel scope has no single entry to
+--           read a unit from, so the command center keeps offering the control
+--           for "auto" (PreviewCommandCenter's PandemicMarkerEnabled) and
+--           nothing is stranded. Only the GROUP-scoped state is inspected: a
+--           per-entry preview belongs to an entry whose own mode decides it.
+--           Clearing the group state cannot take entry previews with it - the
+--           setters keep the two mutually exclusive per group, so a live group
+--           preview means there are no entry ones.
+local function ReconcilePandemicMarkerPreview(lens, mode)
+    local groupId = CS.selectedGroup
+    if not groupId then return end
+
+    if not (lens and lens.mode == "entry") then
+        if mode ~= "off" then return end
+        local groupState = ST._GetStoredConditionalPreviewState
+            and ST._GetStoredConditionalPreviewState(groupId, nil) or nil
+        if groupState and groupState.kind == "pandemic_marker" then
+            CooldownCompanion:SetConditionalVisualPreviewActive(groupId, nil, "pandemic_marker", false)
+        end
+        return
+    end
+
+    local buttonIndex = lens.buttonIndex
+    if not buttonIndex then return end
+    if CooldownCompanion:IsPandemicMarkerPreviewWanted(lens.buttonData, { pandemicMarkerMode = mode }) then
+        return
+    end
+    if CooldownCompanion:IsButtonConditionalVisualPreviewActive(groupId, buttonIndex, "pandemic_marker") then
+        CooldownCompanion:SetConditionalVisualPreviewActive(groupId, buttonIndex, "pandemic_marker", false)
+    end
+end
+
 -- Row grammar only (RowWidgets.lua). Three shapes, one builder:
---   opts.enableOnly   - just the toggle, returned so the caller can chain a
+--   opts.enableOnly   - just the mode row, returned so the caller can chain a
 --                       gear and the section's scope chrome off it (the
 --                       Indicators tab's Pandemic section).
 --   opts.childrenOnly - just what that gear opens, so the rows fill the panel
---                       instead of indenting under a toggle that is elsewhere.
+--                       instead of indenting under a control that is elsewhere.
 --   neither           - both, with the three styling rows as children of the
---                       toggle. No caller asks for this shape today.
+--                       mode row. No caller asks for this shape today.
+-- opts.onModeChanged fires with the new mode BEFORE the refresh, for callers
+-- that must reconcile a preview the change just orphaned.
 -- Labels deliberately say "Marker": these rows share a section with the
 -- pandemic EFFECT's own color, and three rows reading "Pandemic Color" in one
 -- column would be unreadable.
+--
+-- Custom aura bars call the childrenOnly shape with their own cab table, which
+-- speaks the flat cab keys and never carries a mode: their on/off switch is the
+-- entry's own row, and the mode read below simply falls through to "auto".
 local function AddPandemicMarkerControls(container, styleTable, refreshCallback, rebuildCallback, opts)
     opts = opts or {}
     local enableRow
+    local mode = styleTable.pandemicMarkerMode or "auto"
     if not opts.childrenOnly then
-        enableRow = AddCheckboxRow(container, {
+        enableRow = AddDropdownRow(container, {
             label = "Pandemic Marker",
-            value = styleTable.pandemicMarkerEnabled ~= false,
             indent = opts.indent,
+            list = PANDEMIC_MARKER_MODES,
+            order = PANDEMIC_MARKER_MODE_ORDER,
+            value = mode,
             onChange = function(val)
-                styleTable.pandemicMarkerEnabled = val
+                styleTable.pandemicMarkerMode = val
+                if opts.onModeChanged then
+                    opts.onModeChanged(val)
+                end
                 refreshCallback()
                 rebuildCallback()
             end,
@@ -614,7 +679,7 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
             PANDEMIC_MARKER_TOOLTIP_LINES, enableRow))
     end
 
-    if opts.enableOnly or styleTable.pandemicMarkerEnabled == false then
+    if opts.enableOnly or mode == "off" then
         return enableRow
     end
 
@@ -920,7 +985,7 @@ end
 -- Row grammar only: one checkbox row.
 local function BuildDesaturationControls(container, styleTable, refreshCallback, opts)
     return AddCheckboxRow(container, {
-        label = "Show Desaturate On Cooldown",
+        label = "Desaturate On Cooldown",
         value = styleTable.desaturateOnCooldown or false,
         indent = opts and opts.indent,
         onChange = function(val)
@@ -2297,6 +2362,7 @@ end
 ST._AddDurationFormatDropdown = AddDurationFormatDropdown
 ST._AddDurationLowTimeRows = AddDurationLowTimeRows
 ST._AddPandemicMarkerControls = AddPandemicMarkerControls
+ST._ReconcilePandemicMarkerPreview = ReconcilePandemicMarkerPreview
 ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
 ST._BuildAuraDurationSwipeAdvancedControls = BuildAuraDurationSwipeAdvancedControls
 ST._BuildKeybindTextControls = BuildKeybindTextControls

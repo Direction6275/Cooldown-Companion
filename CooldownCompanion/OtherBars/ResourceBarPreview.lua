@@ -275,12 +275,12 @@ function RB.CreateResourceBarPreviewModule(deps)
             UnbindDurationText(bar.text)
             local durationText = FormatTime(PREVIEW_DURATION, cabConfig)
             -- Pandemic marker stand-in: the sample is a still, so the marker
-            -- shows only while its own preview is armed. The cab config IS the
-            -- style table for these keys (the aura host's adapter reads them
-            -- straight through), and the per-bar switch decides the same way
-            -- the live bind does.
+            -- shows only while its own preview is armed. The cab config carries
+            -- these keys itself (the aura host's adapter reads them straight
+            -- through), and the shared cab gate decides the same way the live
+            -- bind does.
             if bar._barMarkerPreview
-                and CooldownCompanion:IsPandemicMarkerPreviewWanted(cabConfig, cabConfig) then
+                and CooldownCompanion:IsCustomBarPandemicMarkerPreviewWanted(cabConfig) then
                 durationText = CooldownCompanion:DecoratePandemicPreviewText(durationText, cabConfig)
             end
             bar.text:SetText(durationText)

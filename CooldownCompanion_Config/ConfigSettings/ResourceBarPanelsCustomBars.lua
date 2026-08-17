@@ -541,7 +541,6 @@ local function BuildCustomBarLoadConditionsTab(container, cab, infoButtons)
         defaults = CooldownCompanion:GetLocalLoadConditionDefaults(),
         inheritedSources = {},
         headingText = "Where To Hide It",
-        inheritedCollapsedKey = "loadconditions_custombar_inherited",
         localCollapsedKey = "loadconditions_custombar_local",
         preserveMissing = true,
         row = true,
@@ -848,7 +847,9 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
                 -- left to stop it (the Show Pandemic Color twin below clears
                 -- its own the same way). Asked through the shared gate the
                 -- control is offered on.
-                if not CooldownCompanion:IsPandemicMarkerPreviewWanted(cab, cab) then
+                -- The gate is style-only now, so the cab's own keys go through
+                -- the same translation the bind-time style adapter applies.
+                if not CooldownCompanion:IsCustomBarPandemicMarkerPreviewWanted(cab) then
                     CooldownCompanion:SetCustomAuraBarMarkerPreview(cab, false)
                 end
                 RefreshCustomBarAuraConfig()
@@ -858,8 +859,8 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         -- adapter has always read these four keys off the entry, but nothing
         -- ever wrote them, so every custom aura bar drew a hardcoded orange
         -- "!!". Only the three styling rows are added here — the on/off above
-        -- IS this entry's switch, and the panel-wide pandemicMarkerEnabled
-        -- kill switch has no meaning on a surface where the bar is the entry.
+        -- IS this entry's switch, and the panels' three-state marker mode has
+        -- no meaning on a surface where the bar is the entry.
         local function BuildCustomBarPandemicMarkerAdvanced(panel)
             AddPandemicMarkerControls(panel, cab, function()
                 CooldownCompanion:ApplyResourceBars()

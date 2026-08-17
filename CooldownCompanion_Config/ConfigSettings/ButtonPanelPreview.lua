@@ -2404,9 +2404,9 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
     -- layer icon region over this slot.icon: keep-swipe entries skip the
     -- takeover unless the aura icon swap is on.
     if CooldownCompanion:IsAuraPreviewKindExposingShell(kind, false)
-        and CooldownCompanion:ShouldDesaturateAuraLayerWhileActive(buttonData)
-        and (not CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData)
-            or buttonData.auraShowAuraIcon == true) then
+        and CooldownCompanion:ShouldDesaturateAuraLayerWhileActive(buttonData, style)
+        and (not CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData, style)
+            or style.auraShowAuraIcon == true) then
         forceDesat = true
     end
 
@@ -2536,7 +2536,7 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
                 local fs = EnsureSlotAuraText(slot)
                 CooldownCompanion.ApplyFontStyle(fs, style, "auraText", nil,
                     CooldownCompanion.DEFAULT_AURA_TEXT_COLOR)
-                local anchor, xOff, yOff = CooldownCompanion:GetAuraDurationTextPlacement(style)
+                local anchor, xOff, yOff = CooldownCompanion:GetAuraDurationTextPlacement(style, buttonData)
                 fs:ClearAllPoints()
                 fs:SetPoint(anchor, slot, anchor, xOff, yOff)
                 fs:SetText(DecorateAuraDurationPreviewText(
@@ -2687,13 +2687,12 @@ local function BarSlotFillOnUpdate(self)
     self:SetValue(frac)
 end
 
--- Effective pandemic enable for a mirror entry: the per-entry override wins,
--- else the panel style's explicit-true key — the same resolution the live
--- bind gate performs (AuraDisplay.lua StyleSlotKit).
+-- Effective pandemic enable for a mirror entry: the explicit-true style key.
+-- The style handed in is always the entry's EFFECTIVE style (slot.style), so an
+-- entry that customized the Pandemic section answers with its own stored value
+-- — the same resolution the live bind gate performs (AuraDisplay.lua
+-- StyleSlotKit).
 local function IsPandemicPreviewEnabled(style, buttonData)
-    if buttonData and buttonData.pandemicEffect ~= nil then
-        return buttonData.pandemicEffect == true
-    end
     return style and style.pandemicEffectEnabled == true
 end
 
@@ -2821,12 +2820,12 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
             -- Live needs the bar icon square: the aura layer's cover is
             -- what carries the gray (StyleSlotKit coverWanted).
             forceDesat = style.showBarIcon ~= false
-                and CooldownCompanion:ShouldDesaturateAuraLayerWhileActive(buttonData)
+                and CooldownCompanion:ShouldDesaturateAuraLayerWhileActive(buttonData, style)
         elseif buttonData.isPassive then
             forceDesat = not (buttonData.neverDesaturate
-                or buttonData.invertAuraDesaturationLogic)
+                or style.invertAuraDesaturationLogic)
         else
-            forceDesat = buttonData.desaturateWhileAuraNotActive == true
+            forceDesat = style.desaturateWhileAuraNotActive == true
         end
     end
 

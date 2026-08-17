@@ -13,11 +13,12 @@ local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
+local ApplyLeftAlignedHeading = ST._ApplyLeftAlignedHeading
 local CreateInfoButton = ST._CreateInfoButton
 local BuildAlphaControls = ST._BuildAlphaControls
 
 -- Imports from RowWidgets.lua (the row grammar). The Visibility tabs and the
--- per-entry Show Conditions / Talent Conditions builder are converted; every
+-- per-entry Visibility / Talent Conditions builder are converted; every
 -- other builder in this file still draws stock widgets.
 local AddCheckboxRow = ST._AddCheckboxRow
 local AddDropdownRow = ST._AddDropdownRow
@@ -249,52 +250,6 @@ local function GetActiveInheritedLabel(sources, key, optionDefault)
     return nil
 end
 
--- The section header takes the row-grammar shape (caret far left, label, rule
--- fading right). The summary body stays a full-width wrapped prose label - it
--- is not a setting, so it is not a row, and it sits above the grids rather
--- than inside one.
-local function AddInheritedLoadSummary(container, sources, collapsedKey)
-    local labelsBySource = {}
-    local hasAny = false
-
-    local function AddLabel(sourceLabel, conditionLabel)
-        if not labelsBySource[sourceLabel] then
-            labelsBySource[sourceLabel] = {}
-        end
-        labelsBySource[sourceLabel][#labelsBySource[sourceLabel] + 1] = conditionLabel
-        hasAny = true
-    end
-
-    for _, cond in ipairs(LOAD_CONDITION_OPTIONS) do
-        local inheritedLabel = GetActiveInheritedLabel(sources, cond.key, cond.default)
-        if inheritedLabel then
-            AddLabel(inheritedLabel, cond.label)
-        end
-    end
-
-    if not hasAny then return end
-
-    if collapsedKey then
-        local _, collapsed = BuildCollapsibleSection(container, "Inherited Visibility Rules",
-            collapsedKey, nil, nil, ROW_SECTION)
-        if collapsed then return end
-    end
-
-    local inherited = {}
-    for _, source in ipairs(sources or {}) do
-        local labels = labelsBySource[source.label]
-        if labels then
-            inherited[#inherited + 1] = "|cff888888From " .. source.label .. ":|r " .. table.concat(labels, ", ")
-        end
-    end
-
-    local label = AceGUI:Create("Label")
-    ST._ConfigureWrappedHelperLabel(label)
-    label:SetText(table.concat(inherited, "\n"))
-    label:SetFullWidth(true)
-    container:AddChild(label)
-end
-
 -- Row grammar (RowWidgets.lua): a left-aligned collapsible header and the
 -- environment toggles as CDC-CheckBoxRows in a two-column grid. Returns that
 -- grid's two columns so the caller can park a section action in the shorter
@@ -310,21 +265,7 @@ local function AddScopedLoadConditionToggles(container, opts)
     local inheritedSources = opts.inheritedSources or {}
     local onChanged = opts.onChanged
 
-    local inheritedAny = false
-    for _, cond in ipairs(LOAD_CONDITION_OPTIONS) do
-        if GetActiveInheritedLabel(inheritedSources, cond.key, cond.default) then
-            inheritedAny = true
-            break
-        end
-    end
-
-    -- opts.skipInheritedSummary: the caller already emitted the summary above
-    -- its own sections (the panel/entry tabs lead with it).
-    if not opts.skipInheritedSummary then
-        AddInheritedLoadSummary(container, inheritedSources, opts.inheritedCollapsedKey)
-    end
-
-    local headingText = (inheritedAny and opts.headingTextWhenInherited) or opts.headingText or "Hide When In"
+    local headingText = opts.headingText or "Hide When In"
     local heading, localCollapsed = BuildCollapsibleSection(container, headingText,
         opts.localCollapsedKey, nil, nil, ROW_SECTION)
 
@@ -345,14 +286,6 @@ local function AddScopedLoadConditionToggles(container, opts)
         AnchorLeftAlignedHeadingRule(heading, infoBtn)
     end
     if localCollapsed then return end
-
-    if inheritedAny then
-        local inheritedLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(inheritedLabel)
-        inheritedLabel:SetText("|cff888888Inherited rules are locked here. You can only add more places to hide this.|r")
-        inheritedLabel:SetFullWidth(true)
-        container:AddChild(inheritedLabel)
-    end
 
     -- The one write every toggle performs, shared so both shapes wire the
     -- identical behaviour onto the identical store.
@@ -703,7 +636,11 @@ end
 
 -- includePreCheckedNote: panel and group scopes ship with Pet Battle and
 -- Vehicle / Override UI already ticked; entry scopes start fully unchecked.
-local function BuildWhereToHideTooltip(subjectLabel, includePreCheckedNote)
+--
+-- includeInheritedNote: scopes that can inherit rules from a wider scope. The
+-- locked rows say who locked them, so all that is left to say is what a lock
+-- costs you. Custom bars inherit from nothing and leave it out.
+local function BuildWhereToHideTooltip(subjectLabel, includePreCheckedNote, includeInheritedNote)
     local lines = {
         "Where To Hide It",
         {"Checked places hide this " .. subjectLabel .. " there. Leave everything unchecked to show it everywhere.", 1, 1, 1, true},
@@ -715,6 +652,10 @@ local function BuildWhereToHideTooltip(subjectLabel, includePreCheckedNote)
     if includePreCheckedNote then
         lines[#lines + 1] = " "
         lines[#lines + 1] = {"Pet Battle and Vehicle / Override UI start checked because most players want cooldowns hidden there.", 1, 1, 1, true}
+    end
+    if includeInheritedNote then
+        lines[#lines + 1] = " "
+        lines[#lines + 1] = {"Locked places cannot be unchecked here. You can only add more.", 1, 1, 1, true}
     end
     return lines
 end
@@ -1932,22 +1873,37 @@ end
 ------------------------------------------------------------------------
 -- PER-BUTTON VISIBILITY SETTINGS
 ------------------------------------------------------------------------
--- Seven of the Show Conditions toggles gate the same dim child, so its
+-- Seven of the Visibility toggles gate the same dim child, so its
 -- tooltip is stated once here rather than seven times inside the builder.
 local DIM_INSTEAD_OF_HIDE_TOOLTIP = {
     "Dim Instead Of Hide",
     {"Instead of fully hiding, shows the button dimmed. It keeps its layout position.", 1, 1, 1, true},
 }
 
--- insertBeforeTalents: optional callback run between the Show Conditions and
--- Talent Conditions sections. Talent Conditions is the last section of the
--- entry Settings tab by owner ruling, so everything the caller wants above it
--- goes through here rather than after the call.
---
--- Both call sites (the entry Settings tab and the batch surface) draw the row
--- grammar, so this builder was converted outright rather than growing an
--- opts.row mode.
-local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchContext, insertBeforeTalents)
+-- Apply a value to all selected buttons if multi-select, else just this one.
+-- File scope because both sections below write entry fields this way; each one
+-- wraps it in its own ApplyToSelected closure so its call sites stay short.
+local function ApplyFieldToSelection(group, buttonData, field, value)
+    if CS.selectedButtons then
+        local count = 0
+        for _ in pairs(CS.selectedButtons) do count = count + 1 end
+        if count >= 2 then
+            for idx in pairs(CS.selectedButtons) do
+                local bd = group.buttons[idx]
+                if bd then bd[field] = value end
+            end
+            return
+        end
+    end
+    buttonData[field] = value
+end
+
+-- The entry's live show/hide rules: hide while on cooldown, show only while an
+-- aura is active, dim instead of hide, and the item/charge refinements those
+-- families carry. Built on the Visibility tab for a single entry and on the
+-- batch surface for a selection; both draw the row grammar, so this builder
+-- was converted outright rather than growing an opts.row mode.
+local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchContext)
     -- Function-local, not upvalues: see the note by the row-grammar imports.
     local AddCheckboxRow = ST._AddCheckboxRow
     local AnchorRowBadge = ST._AnchorRowBadge
@@ -1964,20 +1920,8 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         isItem = buttonData.type == "item"
     end
 
-    -- Helper: apply a value to all selected buttons if multi-select, else just this one
     local function ApplyToSelected(field, value)
-        if CS.selectedButtons then
-            local count = 0
-            for _ in pairs(CS.selectedButtons) do count = count + 1 end
-            if count >= 2 then
-                for idx in pairs(CS.selectedButtons) do
-                    local bd = group.buttons[idx]
-                    if bd then bd[field] = value end
-                end
-                return
-            end
-        end
-        buttonData[field] = value
+        ApplyFieldToSelection(group, buttonData, field, value)
     end
 
     -- Filtered apply: only write to non-equippable items (stack toggles).
@@ -2125,7 +2069,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
 
     -- A primary Aura entry in a Texture panel has exactly one visibility rule:
     -- Blizzard shows its texture while the aura is active. That rule is always
-    -- on, so this entry has no configurable Show Conditions section.
+    -- on, so this entry has no configurable Show & Hide Rules section.
     --
     -- An Aura Panel entry ends up in the same place by a different route: the
     -- show-while-active pair is inherent to the panel, and every remaining
@@ -2142,7 +2086,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     local visKey = isBatch
         and (CS.selectedGroup .. "_batch_visibility")
         or  (CS.selectedGroup .. "_" .. CS.selectedButton .. "_visibility")
-    local _, visCollapsed = BuildCollapsibleSection(scroll, "Show Conditions", visKey, nil, nil, ROW_SECTION)
+    local _, visCollapsed = BuildCollapsibleSection(scroll, "Show & Hide Rules", visKey, nil, nil, ROW_SECTION)
 
     if not visCollapsed then
     -- One row shape for the whole section: a CDC-CheckBoxRow reading and
@@ -2660,14 +2604,23 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
 
     end -- not visCollapsed
     end -- not hideShowConditions
+end
 
-    if insertBeforeTalents then
-        insertBeforeTalents()
+------------------------------------------------------------------------
+-- TALENT CONDITIONS (its own section, independent of the show/hide rules)
+------------------------------------------------------------------------
+local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons, batchContext)
+    -- Function-local, not upvalues: see the note by the row-grammar imports.
+    local AddLabelRow = ST._AddLabelRow
+    local BeginRowGrid = ST._BeginRowGrid
+    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    if not group then return end
+
+    local isBatch = batchContext ~= nil
+
+    local function ApplyToSelected(field, value)
+        ApplyFieldToSelection(group, buttonData, field, value)
     end
-
-    ------------------------------------------------------------------------
-    -- TALENT CONDITIONS (independent section, not nested under Show Conditions)
-    ------------------------------------------------------------------------
 
     local talentKey = isBatch
         and (CS.selectedGroup .. "_batch_talentcondition")
@@ -2903,6 +2856,14 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
 
 end
 
+-- Both sections in their ruled order, for the surfaces that draw the pair:
+-- the entry lens on the Visibility tab composes them itself, but the batch
+-- pane wants exactly this.
+local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchContext)
+    BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchContext)
+    BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons, batchContext)
+end
+
 ------------------------------------------------------------------------
 -- VISIBILITY TAB (internal tab key stays "loadconditions")
 ------------------------------------------------------------------------
@@ -2923,6 +2884,29 @@ local function ReleaseVisibilityTabScratch()
         elem:SetParent(nil)
     end
     wipe(appearanceTabElements)
+end
+
+-- A plain scoping line naming the family of sections beneath it. It is not a
+-- setting and not a section: no caret, no collapse state, no "?" badge. It
+-- takes the entry identity heading's anatomy (Helpers.lua), gold label
+-- included, so it reads as a label for what follows rather than as one more
+-- collapsible section in the stack.
+local FAMILY_HEADING_COLOR = { 1, 0.82, 0 }
+
+local function AddFamilyHeading(container, text)
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(text)
+    -- Restores the stock label/left/right anatomy a recycled Heading can
+    -- arrive with stale; the class tint it also applies is overwritten below.
+    ColorHeading(heading)
+    heading.label:SetTextColor(FAMILY_HEADING_COLOR[1], FAMILY_HEADING_COLOR[2],
+        FAMILY_HEADING_COLOR[3])
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+    -- Flush: with no caret and no icon the reserved caret column reads as a
+    -- hole, so the label starts where the carets under it do.
+    ApplyLeftAlignedHeading(heading, nil, true)
+    return heading
 end
 
 local function BuildLoadConditionsTab(container)
@@ -2958,25 +2942,17 @@ local function BuildLoadConditionsTab(container)
         CooldownCompanion:RefreshConfigPanel()
     end
 
-    -- The tab reads as two halves under an optional inherited summary: who the
-    -- panel is for, then where it stays hidden. Row grammar (RowWidgets.lua)
+    -- The tab reads as two halves under one family heading: who the panel is
+    -- for, then where it stays hidden. Row grammar (RowWidgets.lua)
     -- throughout - see the recipe comment at the top of BuildAppearanceTab's
     -- icons path in GroupTabsAppearance.lua. Nothing on this tab carries a gear, so
     -- there is no advanced-panel queue to keep uncollapsed.
-    AddInheritedLoadSummary(container, inheritedSources, "loadconditions_panel_inherited")
+    AddFamilyHeading(container, "Load Conditions")
 
     local _, whoCollapsed = BuildCollapsibleSection(container, "Who Can Use This",
         "loadconditions_panel_who", nil, nil, ROW_SECTION)
 
     if not whoCollapsed then
-        if inheritedSpecFilter or inheritedHeroFilter then
-            local inheritedLabel = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(inheritedLabel)
-            inheritedLabel:SetText("|cff888888Some rules are inherited from group settings.|r")
-            inheritedLabel:SetFullWidth(true)
-            container:AddChild(inheritedLabel)
-        end
-
         local eligibilityOpts = {
             target = group,
             inheritedSources = inheritedSources,
@@ -3010,11 +2986,10 @@ local function BuildLoadConditionsTab(container)
         target = group,
         defaults = CooldownCompanion:GetDefaultLoadConditions(),
         inheritedSources = inheritedSources,
-        skipInheritedSummary = true,
         headingText = "Where To Hide It",
         localCollapsedKey = "loadconditions_panel_local",
         row = true,
-        infoTooltipLines = BuildWhereToHideTooltip("panel", true),
+        infoTooltipLines = BuildWhereToHideTooltip("panel", true, true),
         infoButtons = tabInfoButtons,
         onChanged = RefreshPanelLoadConditions,
     })
@@ -3094,11 +3069,10 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
         defaults = CooldownCompanion:GetLocalLoadConditionDefaults(),
         inheritedSources = CooldownCompanion:GetLoadConditionSourcesForGroup(group),
         headingText = "Where To Hide It",
-        inheritedCollapsedKey = "loadconditions_entry_inherited",
         localCollapsedKey = "loadconditions_entry_local",
         preserveMissing = true,
         row = true,
-        infoTooltipLines = BuildWhereToHideTooltip("entry", false),
+        infoTooltipLines = BuildWhereToHideTooltip("entry", false, true),
         infoButtons = infoButtons,
         onChanged = function()
             if buttonData.loadConditions and not next(buttonData.loadConditions) then
@@ -3115,7 +3089,7 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
         -- falls back to the tab surface - still reachable, still compact.
         local clearHost = togglesRight or container
         local clearBtn = AceGUI:Create("Button")
-        clearBtn:SetText("Clear Entry Visibility Rules")
+        clearBtn:SetText("Clear Added Places")
         clearBtn:SetAutoWidth(true)
         clearBtn:SetCallback("OnClick", function()
             buttonData.loadConditions = nil
@@ -3152,6 +3126,10 @@ local function BuildVisibilityTab(container)
                     -- not the builder: the builder is the panel's own content
                     -- in every other caller.
                     ST._BuildEntryIdentityHeading(container, buttonData)
+                    -- The rotation assistant's virtual entry has neither a
+                    -- show/hide rule store nor talent conditions, so its lens
+                    -- is the load-condition half alone.
+                    AddFamilyHeading(container, "Load Conditions")
                     BuildEntryLoadConditionsTab(container, buttonData, tabInfoButtons)
                     return
                 end
@@ -3160,7 +3138,18 @@ local function BuildVisibilityTab(container)
                 if buttonData then
                     ReleaseVisibilityTabScratch()
                     ST._BuildEntryIdentityHeading(container, buttonData)
+                    -- Live rules first, then the static ones that decide
+                    -- whether the entry loads at all. Trigger entries have
+                    -- neither store, exactly as before.
+                    local isTriggerPanel = group.displayMode == "trigger"
+                    if not isTriggerPanel then
+                        BuildShowHideRulesSection(container, buttonData, tabInfoButtons)
+                    end
+                    AddFamilyHeading(container, "Load Conditions")
                     BuildEntryLoadConditionsTab(container, buttonData, tabInfoButtons)
+                    if not isTriggerPanel then
+                        BuildEntryTalentConditionsSection(container, buttonData, tabInfoButtons)
+                    end
                     return
                 end
             end
@@ -3174,6 +3163,8 @@ end
 -- EXPORTS
 ------------------------------------------------------------------------
 ST._BuildVisibilitySettings = BuildVisibilitySettings
+ST._BuildShowHideRulesSection = BuildShowHideRulesSection
+ST._BuildEntryTalentConditionsSection = BuildEntryTalentConditionsSection
 ST._BuildLoadConditionsTab = BuildLoadConditionsTab
 ST._BuildEntryLoadConditionsTab = BuildEntryLoadConditionsTab
 ST._BuildVisibilityTab = BuildVisibilityTab

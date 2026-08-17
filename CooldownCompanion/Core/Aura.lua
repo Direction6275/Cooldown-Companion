@@ -741,18 +741,26 @@ function CooldownCompanion:GetAuraShellRestingAlpha(buttonData)
     return self.DIM_FALLBACK_ALPHA
 end
 
--- Keep Spell Cooldown Swipe (12.1 compositing): the entry opts out of the
+-- Keep Cooldown Swipe (12.1 compositing): the entry opts out of the
 -- aura display's icon takeover, so the CC icon and its own cooldown swipe
 -- stay visible while the aura contributes its overlays (stack text,
 -- duration text, glows) per their own settings. Only meaningful where a
 -- spell cooldown exists to keep: never standalone aura entries or
 -- passives, and never a shell entry (its CC layer is statically hidden or
 -- dimmed, so with the cover off there would be nothing underneath).
--- Icons-only is a host property and stays at call sites; the stored flag
+-- Icons-only is a host property and stays at call sites; the stored key
 -- is inert, never stripped, on other hosts.
-function CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData)
+--
+-- The flag is a STYLE key (the whileAuraActive override section), so every
+-- caller must hand in the style the host actually renders with -- the
+-- panel style, or the entry's effective style where a section is promoted.
+-- A nil style reads as off rather than falling back to the panel: there is
+-- no correct panel to guess at here, and the entry-shape terms below stay
+-- authoritative either way.
+function CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData, style)
     return buttonData ~= nil
-        and buttonData.auraKeepSpellCooldownSwipe == true
+        and style ~= nil
+        and style.auraKeepSpellCooldownSwipe == true
         and buttonData.auraTracking == true
         and buttonData.addedAs ~= "aura"
         and buttonData.isPassive ~= true
@@ -766,7 +774,7 @@ end
 -- with the callers -- bars have no aura swipe at all.
 function CooldownCompanion:ShouldDrawAuraDurationSwipe(buttonData, style)
     return (not style or style.showAuraDurationSwipe ~= false)
-        and not self:IsKeepSpellCooldownSwipeEntry(buttonData)
+        and not self:IsKeepSpellCooldownSwipeEntry(buttonData, style)
 end
 
 -- Desaturate-while-active policy for the aura layer, shared by the slot
@@ -774,9 +782,13 @@ end
 -- as the swipe policy above). Pure flag policy: whether an aura-layer
 -- icon region is visible to carry it stays with the callers -- the kit's
 -- alpha writes live, explicit composition mirrors in the previews.
-function CooldownCompanion:ShouldDesaturateAuraLayerWhileActive(buttonData)
+--
+-- The invert flag is a style key (whileAuraActive section); neverDesaturate
+-- stays entry data, so the two are read from different stores on purpose.
+function CooldownCompanion:ShouldDesaturateAuraLayerWhileActive(buttonData, style)
     return buttonData ~= nil
-        and buttonData.invertAuraDesaturationLogic == true
+        and style ~= nil
+        and style.invertAuraDesaturationLogic == true
         and not buttonData.neverDesaturate
 end
 

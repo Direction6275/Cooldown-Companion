@@ -73,6 +73,58 @@ local KEYBIND_CUSTOM_TOOLTIP = {
     {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
 }
 
+-- The While Aura Active Cooldown control. Its two style keys used to live elsewhere
+-- (an entry-data checkbox on the entry's Aura Tracking section; a "Separate
+-- Text Positions" checkbox inside the Aura Duration Text advanced panel) and
+-- then were two checkboxes here - but "keep the swipe" contains "keep the
+-- text" (owner ruling), so two toggles modeled four states where only three
+-- exist. One dropdown states the ladder directly; both storage keys stay
+-- (whileAuraActive section, Defaults.lua), written as normalized combinations
+-- so the redundant state is unrepresentable from the UI. The tooltip also
+-- covers the section's other two rows (Show Aura Icon, Desaturate Icon), which
+-- share the one info button rather than growing a badge each.
+local WHILE_AURA_ACTIVE_TOOLTIP = {
+    "Cooldown While Aura Active",
+    {"Hidden by Aura: the aura duration swipe and text take over the icon.", 1, 1, 1, true},
+    " ",
+    {"Show Text: the cooldown countdown draws above the aura display. The aura duration text moves to its own position.", 1, 1, 1, true},
+    " ",
+    {"Show Swipe and Text: the icon and cooldown swipe stay, replacing the aura duration swipe. Both texts show.", 1, 1, 1, true},
+    " ",
+    {"Stack text and glows always follow their own settings.", 1, 1, 1, true},
+    " ",
+    {"With Show Aura Icon on, the aura icon covers the swipe unless Layer Order raises Cooldown Swipe above it. The icon keeps its own tint.", 1, 1, 1, true},
+    " ",
+    {"Show Aura Icon swaps the live aura's own icon in while it runs. Standalone and passive entries always do this.", 1, 1, 1, true},
+    " ",
+    {"Desaturate Icon grays the aura display. Passives gray while the aura is missing by default, so this inverts them.", 1, 1, 1, true},
+    " ",
+    {"Cooldown applies to icon panels only.", 1, 1, 1, true},
+}
+
+local WHILE_AURA_ACTIVE_LIST = {
+    hidden = "Hidden by Aura",
+    text = "Show Text",
+    swipeText = "Show Swipe and Text",
+}
+local WHILE_AURA_ACTIVE_ORDER = { "hidden", "text", "swipeText" }
+
+-- The section's read rule, stated once because two places need it: the Text
+-- section reads it to gate the aura duration text's position rows, and the
+-- While Aura Active section below reads it for its own rows.
+--
+-- .write first, .read only as the read-only fallback. .write is the LIVE store
+-- (the panel style, or this entry's override table wearing the runtime __index
+-- onto the panel), so the aura text advanced panel reads the current flag
+-- immediately after RefreshActiveAdvancedSettingsPanel rebuilds just that
+-- panel. lens.effective behind .read is a DETACHED snapshot and would go stale
+-- on that partial rebuild, so it serves only the inherited/denied case where
+-- there is nothing to write anyway.
+local function WhileAuraFlagOn(sec, key)
+    local src = sec.write or sec.read
+    return (src and src[key]) == true
+end
+
 -- Owner ruling (aura rebuild plan): group-level aura style sections are shown
 -- only while the group actually has an aura-tracking entry. Shared helper
 -- (Helpers.lua) so BarModeTabs can gate its aura section too.
@@ -166,6 +218,15 @@ ST._SECTION_HOME.icons = {
         available = IconsGroupTracksAura,
         gearEnabled = function(_, style) return (style.showAuraText ~= false) ~= false end,
     },
+    -- While Aura Active is its own collapsible, right after Text: it names a
+    -- STATE, not a kind of text (owner ruling 2026-08-16). One gate, mirrored
+    -- from the builder: the group must track an aura. Aura Panels keep the
+    -- section (the Desaturate row applies there); the builder hides the dead
+    -- rows itself. No gearEnabled: the section owns no advanced panel.
+    whileAuraActive = {
+        tab = "appearance", collapseKey = "appearance_whileAuraActive",
+        available = IconsGroupTracksAura,
+    },
     auraStackText = {
         tab = "appearance", collapseKey = "appearance_text",
         available = IconsGroupTracksAura,
@@ -238,6 +299,12 @@ ST._SECTION_HOME.icons = {
     },
     showGCDSwipe = { tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION },
     desaturation = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
+    -- Its own section (owner ruling 2026-08-16); drawn only while the group
+    -- tracks an aura, same gate as the row.
+    auraMissingDesaturation = {
+        tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
+        available = IconsGroupTracksAura,
+    },
     unusableDimming = {
         tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
         gearEnabled = function(_, style) return (style.showUnusable == true) ~= false end,
@@ -661,7 +728,7 @@ local function BuildAppearanceTab(container)
     -- Show Cooldown Text toggle. An Aura Panel has no cooldown to count down, so
     -- the toggle itself is dead there and is left out; the two live things that
     -- hung off it (Duration Format, and the cooldownText* position keys that
-    -- place the aura duration text while Separate Text Positions is off) move
+    -- place the aura duration text while the aura hides the cooldown) move
     -- into the aura duration text section on the right.
     if not isAuraPanel then
     local cdTextSec = BeginLensSection(lens, group, "cooldownText", { column = textLeft })
@@ -798,6 +865,18 @@ local function BuildAppearanceTab(container)
     if groupHasAuraEntry then
         -- Show Aura Duration Text toggle
         local auraTextSec = BeginLensSection(lens, group, "auraText", { column = auraTextHost })
+        -- While Aura Active: its own override section (Defaults.lua), drawn in
+        -- its own collapsible after this one. It is resolved HERE too, ahead of
+        -- the aura text rows, because the aura text advanced panel reads one of
+        -- its flags to decide which position rows to draw and that panel is
+        -- built from inside this section. READ-ONLY here - no rows, no chrome,
+        -- no bracket; the collapsible below resolves the section again for
+        -- those. Under an entry lens the two sections can disagree about scope,
+        -- which is why this one is asked rather than auraTextSec.
+        local whileAuraSec = BeginLensSection(lens, group, "whileAuraActive")
+        local function SeparatePositionsOn()
+            return WhileAuraFlagOn(whileAuraSec, "separateTextPositions")
+        end
 
         local auraTextRow = AddCheckboxRow(auraTextHost, {
             label = "Show Aura Duration Text",
@@ -812,8 +891,7 @@ local function BuildAppearanceTab(container)
         })
 
         -- Single rail (AdvancedSettingsPanel.lua): every builder runs with
-        -- { row = true } and no rightColumn, and the position rows the separate
-        -- -positions toggle owns indent as its children.
+        -- { row = true } and no rightColumn.
         local function BuildAuraDurationTextAdvanced(panel)
             AddFontControls(panel, auraTextSec.write, "auraText", { size = 12 }, refreshStyle, { row = true })
 
@@ -828,40 +906,25 @@ local function BuildAppearanceTab(container)
                 onChange = refreshStyle,
             })
 
-            -- Separate Text Positions splits this text away from the COOLDOWN
-            -- text's position. An Aura Panel has no cooldown text to separate
-            -- from, so the toggle is left out there and the panel simply draws
-            -- whichever key set is live - the same answer
-            -- GetAuraDurationTextPlacement gives at runtime. A style that
-            -- arrived with the flag already true (a copied or imported panel
-            -- style) therefore still edits the keys that are actually placing
-            -- the text.
-            if not isAuraPanel then
-                local sepPosRow = AddCheckboxRow(panel, {
-                    label = "Separate Text Positions",
-                    value = auraTextSec.write.separateTextPositions or false,
-                    onChange = function(val)
-                        auraTextSec.write.separateTextPositions = val
-                        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                        -- Rebuilds THIS panel, not the whole config, which is what
-                        -- makes the two position rows appear in place.
-                        RefreshActiveAdvancedSettingsPanel()
-                    end,
-                })
-                -- Anchor args are a placeholder - AnchorRowBadge re-points the
-                -- button onto the end of the row's label.
-                AnchorRowBadge(sepPosRow, CreateInfoButton(sepPosRow.frame, sepPosRow.frame, "LEFT", "LEFT", 0, 0, {
-                    "Separate Text Positions",
-                    {"Gives the aura duration text and the cooldown text independent positions.", 1, 1, 1, true},
-                    " ",
-                    {"The cooldown text also draws above the aura display, so both timers stay visible while the aura runs.", 1, 1, 1, true},
-                }, sepPosRow))
-            end
-
-            if auraTextSec.write.separateTextPositions then
-                local indented = not isAuraPanel
-                AddAnchorDropdown(panel, auraTextSec.write, "auraTextAnchor", "TOPLEFT", refreshStyle, nil, { row = true, indent = indented })
-                AddOffsetSliders(panel, auraTextSec.write, "auraTextXOffset", "auraTextYOffset", { x = 2, y = -2 }, refreshStyle, { row = true, indent = indented })
+            -- WHICH position keys this text uses is decided by Keep Cooldown
+            -- Text, a row in the While Aura Active section. This panel
+            -- only draws the keys that are actually live, which is the same
+            -- answer GetAuraDurationTextPlacement gives at runtime: the aura
+            -- keys once the flag is on, the shared cooldown-text keys while it
+            -- is off. That also means a style which arrived with the flag
+            -- already true (a copied or imported panel style) still edits the
+            -- keys placing the text, and an Aura Panel - which has no cooldown
+            -- text to share with and never draws the flag's row - needs no
+            -- special case beyond the branch below.
+            --
+            -- The keep-swipe state (Show Swipe and Text) also switches the text to the aura keys
+            -- (GetAuraDurationTextPlacement: the uncovered cooldown text keeps
+            -- the shared spot), so the aura-key rows draw for that flag too -
+            -- otherwise a keep-swipe entry's live position keys would have no
+            -- rows to edit them.
+            if SeparatePositionsOn() or WhileAuraFlagOn(whileAuraSec, "auraKeepSpellCooldownSwipe") then
+                AddAnchorDropdown(panel, auraTextSec.write, "auraTextAnchor", "TOPLEFT", refreshStyle, nil, { row = true })
+                AddOffsetSliders(panel, auraTextSec.write, "auraTextXOffset", "auraTextYOffset", { x = 2, y = -2 }, refreshStyle, { row = true })
             elseif isAuraPanel then
                 -- The re-homed shared-position rows. Same STORAGE KEYS as before
                 -- (the engine reads cooldownTextAnchor/XOffset/YOffset for this
@@ -899,7 +962,7 @@ local function BuildAppearanceTab(container)
         if not isAuraPanel then
             local auraPosInfo = AnchorRowBadge(auraTextRow, CreateInfoButton(auraTextRow.frame, auraTextRow.frame, "LEFT", "LEFT", 0, 0, {
                 "Shared Position",
-                {"Position is shared with Cooldown Text by default. Enable 'Separate Text Positions' in advanced settings to use independent positions.", 1, 1, 1, true},
+                {"Position is shared with Cooldown Text by default. Set Cooldown under While Aura Active to Show Text for an independent position, set in advanced settings.", 1, 1, 1, true},
             }, auraTextRow))
             if auraTextSec.read.showAuraText == false then
                 auraPosInfo:Hide()
@@ -1035,6 +1098,166 @@ local function BuildAppearanceTab(container)
     end -- CanGroupUseOverrideSection keybindText
     end -- not textCollapsed
     end -- Text section drawn (aura panels need an aura entry)
+
+    -- ================================================================
+    -- While Aura Active
+    -- ================================================================
+    -- What the entry keeps showing on its OWN icon while the tracked aura runs.
+    -- Its own section rather than a block inside Text (owner ruling 2026-08-16):
+    -- keeping the cooldown swipe is not text at all, and the control names a STATE the
+    -- icon is in.
+    --
+    -- One gate: the group must track an aura, or no heading is drawn. An Aura
+    -- Panel keeps the section but only the Desaturate row inside it - there is
+    -- no cooldown there to keep a swipe or a countdown for, and its entries
+    -- are all standalone auras whose live icon the engine forces on
+    -- (ShouldShowAuraIcon), so those two controls would be dead.
+    if groupHasAuraEntry then
+    -- The whole collapsible IS the whileAuraActive section, so its collapse key
+    -- follows that section's scope through ST._ResolveLensCollapseKey, exactly
+    -- as Border and Icon Tint do below.
+    local whileAuraHeading, whileAuraCollapsed = BuildCollapsibleSection(container, "While Aura Active",
+        ResolveLensCollapseKey(lens, group, "whileAuraActive", "appearance_whileAuraActive"), nil, nil, ROW_SECTION)
+    -- Resolved again here. The Text section above resolves the same section
+    -- READ-ONLY for its position-row gate, and that one is out of scope by now
+    -- (it lives inside the Text collapsible, which may not have been built at
+    -- all). Both resolutions read the same store, so they cannot disagree.
+    local whileAuraSec = BeginLensSection(lens, group, "whileAuraActive")
+    -- Section-owning collapsible, so the scope chrome hangs off the HEADING
+    -- like Border's and Icon Tint's. It has to: under an entry lens that only
+    -- inherits this section the collapsible opens folded, and chrome buried on
+    -- a row inside would leave no Customize button in reach.
+    whileAuraSec:HeadingChrome(whileAuraHeading)
+
+    if not whileAuraCollapsed then
+    -- Single column; the right one is deliberately empty, as Border's is.
+    local whileAuraLeft = BeginRowGrid(container)
+
+    -- The column only exists here, so the section's bracket is taken now rather
+    -- than at Begin.
+    whileAuraSec:Mark(whileAuraLeft)
+
+    -- The selected entry, or nil at panel/multi scope. Every gate below that
+    -- reads it is ENTRY SCOPE ONLY: a panel default must stay offered even
+    -- where today's entries cannot use it (mixed panels, entries added later).
+    local lensEntry = (lens and lens.mode == "entry") and lens.buttonData or nil
+    -- The same store WhileAuraFlagOn reads, so a gate below can never disagree
+    -- with the row it is gating (see that helper's note on write-before-read).
+    local whileAuraStyle = whileAuraSec.write or whileAuraSec.read or {}
+
+    if not isAuraPanel then
+    -- ENTRY SCOPE ONLY: which of the three states this selection can actually
+    -- reach. Keep-swipe carries entry-shape terms the panel cannot see
+    -- (IsKeepSpellCooldownSwipeEntry: aura-tracking, not standalone, not
+    -- passive, not a shell), so on those entries the swipe state is a choice
+    -- the engine would refuse. The other two states stay: separateTextPositions
+    -- is live for EVERY aura entry, standalone and passive included, because
+    -- GetAuraDurationTextPlacement reads it to decide which anchor keys place
+    -- the aura duration text. Panel scope offers all three unchanged - a panel
+    -- default outlives the entries currently under it.
+    local keepSwipeReachable = lensEntry == nil
+        or CooldownCompanion:IsKeepSpellCooldownSwipeEntry(lensEntry,
+            { auraKeepSpellCooldownSwipe = true })
+    -- The three-state ladder, stated as one dropdown (see the tooltip
+    -- constant's note). Derivation mirrors the engine: keep-swipe contains
+    -- keep-text, so a store holding keep without sep (a migrated profile)
+    -- still reads as the full-keep state. Where the engine refuses the swipe
+    -- the keep flag is simply inert, so separateTextPositions alone decides
+    -- what the row says - reading a stored value down is not writing it down,
+    -- and the store is left exactly as it is.
+    local whileAuraState = (keepSwipeReachable
+            and WhileAuraFlagOn(whileAuraSec, "auraKeepSpellCooldownSwipe") and "swipeText")
+        or (WhileAuraFlagOn(whileAuraSec, "separateTextPositions") and "text")
+        or "hidden"
+    local cooldownStateList, cooldownStateOrder = WHILE_AURA_ACTIVE_LIST, WHILE_AURA_ACTIVE_ORDER
+    if not keepSwipeReachable then
+        cooldownStateList = { hidden = WHILE_AURA_ACTIVE_LIST.hidden, text = WHILE_AURA_ACTIVE_LIST.text }
+        cooldownStateOrder = { "hidden", "text" }
+    end
+    local cooldownStateRow = AddDropdownRow(whileAuraLeft, {
+        label = "Cooldown",
+        list = cooldownStateList,
+        order = cooldownStateOrder,
+        value = whileAuraState,
+        disabled = whileAuraSec.disabled,
+        onChange = function(val)
+            if not whileAuraSec.write then return end
+            -- Both keys written as a normalized combination; explicit false
+            -- under "customized" (LensSection:BoolValue), or a deleted key
+            -- would fall back to the panel value through the entry's runtime
+            -- __index. swipeText also sets separateTextPositions true: the
+            -- engine already treats keep-swipe as containing keep-text, this
+            -- just makes the stored state say so.
+            whileAuraSec.write.auraKeepSpellCooldownSwipe = whileAuraSec:BoolValue(val == "swipeText")
+            whileAuraSec.write.separateTextPositions = whileAuraSec:BoolValue(val ~= "hidden")
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            -- Full rebuild: the entry-tab desaturate row and the aura text
+            -- advanced panel's position rows both gate on these keys. The
+            -- control lives outside that advanced panel now, so closing an
+            -- open one is acceptable where it wasn't for the old in-panel
+            -- checkbox.
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+    -- Anchor args are a placeholder - AnchorRowBadge re-points the button onto
+    -- the end of the row's label.
+    AnchorRowBadge(cooldownStateRow, CreateInfoButton(cooldownStateRow.frame, cooldownStateRow.frame, "LEFT", "LEFT", 0, 0,
+        WHILE_AURA_ACTIVE_TOOLTIP, tabInfoButtons))
+
+    -- The other two things the aura display does to this icon, both former
+    -- entry-data checkboxes on the entry's Aura Tracking section. Unindented:
+    -- they are siblings of the dropdown, not details of it. Explicit false
+    -- under "customized" (LensSection:BoolValue), or a deleted key would fall
+    -- back to the panel value through the entry's runtime __index.
+    --
+    -- Standalone and passive entries always show the live aura icon whatever
+    -- this says (ShouldShowAuraIcon), so at ENTRY SCOPE the row is left out for
+    -- them: the toggle could only ever agree with the engine. It still draws at
+    -- panel scope, where it is a default for whatever the panel holds next.
+    if not (lensEntry and CooldownCompanion:IsAuraIconForcedEntry(lensEntry)) then
+    AddCheckboxRow(whileAuraLeft, {
+        label = "Show Aura Icon",
+        value = WhileAuraFlagOn(whileAuraSec, "auraShowAuraIcon"),
+        disabled = whileAuraSec.disabled,
+        onChange = function(val)
+            if not whileAuraSec.write then return end
+            whileAuraSec.write.auraShowAuraIcon = whileAuraSec:BoolValue(val)
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            -- Full rebuild: the Cooldown tooltip's icon-cover interaction and
+            -- the keep-swipe composition both turn on this flag.
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+    end -- aura icon not forced for this entry
+    end -- not isAuraPanel (Cooldown dropdown + Show Aura Icon)
+
+    -- Desaturate Icon grays the AURA LAYER's icon regions, and a keep-swipe
+    -- entry with the icon swap off hides both of them: StyleSlotKit drops the
+    -- occluding cover for keep-swipe and leaves the aura icon at zero alpha
+    -- without the swap, so nothing is left to gray. ENTRY SCOPE only - the
+    -- combination is an entry's effective style, not a panel fact.
+    local desatHasTarget = not (lensEntry
+        and CooldownCompanion:IsKeepSpellCooldownSwipeEntry(lensEntry, whileAuraStyle)
+        and whileAuraStyle.auraShowAuraIcon ~= true)
+    if desatHasTarget then
+    AddCheckboxRow(whileAuraLeft, {
+        label = "Desaturate Icon",
+        value = WhileAuraFlagOn(whileAuraSec, "invertAuraDesaturationLogic"),
+        disabled = whileAuraSec.disabled,
+        onChange = function(val)
+            if not whileAuraSec.write then return end
+            whileAuraSec.write.invertAuraDesaturationLogic = whileAuraSec:BoolValue(val)
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            -- Full rebuild: passives read the same key for their missing-state
+            -- default on the entry tab.
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+    end -- desaturate has a visible aura-layer icon to gray
+
+    whileAuraSec:Finish()
+    end -- not whileAuraCollapsed
+    end -- While Aura Active section drawn
 
     -- ================================================================
     -- Border

@@ -242,7 +242,9 @@ function RB.CreateResourceBarAuraHostModule(deps)
             auraTracking = true,
             auraSpellID = cabConfig.auraSpellID,
             auraUnit = GetResolvedCustomAuraBarAuraUnit(cabConfig, tonumber(cabConfig.spellID)),
-            pandemicMarker = cabConfig.pandemicMarker,
+            -- No pandemicMarker field: the marker gate reads the STYLE side
+            -- only now, where BuildStyleAdapter turns this bar's own key into
+            -- a mode. A field no reader consumes would only look live.
             hideWhileAuraNotActive = cabConfig.hideWhenInactive == true,
             -- Shared BY REFERENCE: GetButtonSoundAlertConfig and
             -- GetCustomBarSoundAlertConfig read the identical .soundAlerts
@@ -274,6 +276,34 @@ function RB.CreateResourceBarAuraHostModule(deps)
             tonumber(cabConfig[prefix .. "FontSize"]) or DEFAULT_RESOURCE_TEXT_SIZE,
             cabConfig[prefix .. "FontOutline"] or DEFAULT_RESOURCE_TEXT_OUTLINE,
             color
+    end
+
+    -- The custom bar's two flat marker keys as the one style mode the engine
+    -- reads. The panel-shaped kill switch is asked FIRST and only ever says
+    -- "off": it outranked the entry checkbox before the enum existed, which is
+    -- the precedence the panel resolver and the migration's own
+    -- PandemicMarkerKilledFor both keep. Below it the entry key is this bar's
+    -- own switch (the bar IS the entry), so an explicit true/false becomes an
+    -- explicit mode; everything else is the unit default. Shared with the
+    -- config panel so its preview gate asks the same question the bind gate
+    -- will answer.
+    function RB.GetCustomBarPandemicMarkerMode(cabConfig)
+        if type(cabConfig) ~= "table" then return "auto" end
+        if cabConfig.pandemicMarkerEnabled == false then return "off" end
+        if cabConfig.pandemicMarker ~= nil then
+            return cabConfig.pandemicMarker == true and "on" or "off"
+        end
+        return "auto"
+    end
+
+    -- The marker preview gate for a custom bar. A cab has no style table, so
+    -- every preview surface used to hand the cab in as its own style; the gate
+    -- is style-only now, so the translation happens here instead and there is
+    -- still ONE definition of "is the marker on".
+    function CooldownCompanion:IsCustomBarPandemicMarkerPreviewWanted(cabConfig)
+        if type(cabConfig) ~= "table" then return false end
+        return self:IsPandemicMarkerPreviewWanted(cabConfig,
+            { pandemicMarkerMode = RB.GetCustomBarPandemicMarkerMode(cabConfig) })
     end
 
     -- cabConfig + resource settings -> the StyleSlotKit vocabulary. Every
@@ -356,10 +386,11 @@ function RB.CreateResourceBarAuraHostModule(deps)
         style.showBarNameText = false
         style.showKeybindText = false
 
-        -- Pandemic marker (panel defaults): per-entry override rides
-        -- buttonData.pandemicMarker in the entry adapter; the style keys
-        -- follow the cabConfig pandemicMarker* family when set.
-        style.pandemicMarkerEnabled = cabConfig.pandemicMarkerEnabled
+        -- Pandemic marker: the engine gate is style-only now (owner ruling
+        -- 2026-08-16), so this is where the custom bar's two flat keys become
+        -- the panel vocabulary's one mode. The styling keys follow the
+        -- cabConfig pandemicMarker* family when set.
+        style.pandemicMarkerMode = RB.GetCustomBarPandemicMarkerMode(cabConfig)
         style.pandemicMarkerText = cabConfig.pandemicMarkerText
         style.pandemicMarkerColor = cabConfig.pandemicMarkerColor
         style.pandemicMarkerColorMode = cabConfig.pandemicMarkerColorMode
@@ -728,7 +759,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
         style.showBarIcon = false
         style.showBarNameText = false
         style.showKeybindText = false
-        style.pandemicMarkerEnabled = false
+        style.pandemicMarkerMode = "off"
 
         style.resourceShapes = shapes
         return style

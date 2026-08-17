@@ -211,13 +211,11 @@ local function ResolveAuraIndicatorEnabled(buttonData, style)
     return auraIndicatorEnabled
 end
 
--- Effective pandemic enable (PTR 8 visuals): the per-entry override wins,
--- else the panel's explicit-true key — the same resolution the live bind
+-- Effective pandemic enable (PTR 8 visuals): the explicit-true style key, which
+-- is the EFFECTIVE style here, so an entry that customized the Pandemic
+-- section answers with its own stored value — the same resolution the live bind
 -- gate (AuraDisplay.lua StyleSlotKit) and the config mirror perform.
 local function IsPandemicEffectWanted(buttonData, style)
-    if buttonData and buttonData.pandemicEffect ~= nil then
-        return buttonData.pandemicEffect == true
-    end
     return style and style.pandemicEffectEnabled == true
 end
 

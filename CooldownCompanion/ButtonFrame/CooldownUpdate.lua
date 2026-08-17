@@ -307,7 +307,7 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
             CooldownCompanion.ApplyFontStyle(fs, style, "auraText", nil,
                 CooldownCompanion.DEFAULT_AURA_TEXT_COLOR)
         end
-        local anchor, xOff, yOff = CooldownCompanion:GetAuraDurationTextPlacement(style)
+        local anchor, xOff, yOff = CooldownCompanion:GetAuraDurationTextPlacement(style, buttonData)
         fs:ClearAllPoints()
         fs:SetPoint(anchor, button, anchor, xOff, yOff)
         -- Same Duration Format the live slot's SetDurationText bind resolves
