@@ -1,17 +1,13 @@
 --[[
     CooldownCompanion - Core/ChangelogData.lua
     Repo-authored release notes bundled with the addon. Paste these same notes into the GitHub release body when publishing.
-
-    Trim policy: entries are kept back to the profile-import support floor
-    (IMPORT_CHECKPOINT_VERSION, Core/Migrations.lua). When that floor moves,
-    trim entries for versions older than it. Full history lives in the GitHub
-    releases.
 ]]
 
 local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.1",
         "2.0.1",
         "2.0",
         "1.22.1",
@@ -31,6 +27,41 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.1"] = {
+            markdown = [[
+## New Features
+
+- **Config redesign: one set of tabs for everything.** The separate Overrides tab is gone. Selecting an entry now turns the panel's own styling tabs into a view of that entry, so panel-wide settings and per-entry customizations live in the same place.
+  - Settings that follow the panel appear grayed with a gold "Customize for this entry" button. Customized sections edit live and offer "Revert". Hovering a grayed control explains why it is locked.
+  - A Customizations list at the top of each entry's Settings tab shows everything the entry customizes, with per-section Revert, Revert All, and links that jump straight to where each setting is edited.
+  - **Copy Customization To...:** right-click an entry to copy one or all of its customizations to other entries. Compatible targets get a green ring in the Live Preview; click to apply, and keep clicking to spread the look across several entries, even on other panels.
+  - The Visibility tab is now the home for everything that decides when an entry shows: Show & Hide Rules and Talent Conditions moved there under a Load Conditions heading. The entry Settings tab is leaner as a result.
+  - Custom bars now use a single Settings tab with the same sections and order as panel entries, replacing their old four-tab cluster.
+- **Aura Panels:** New Aura Icon and Aura Bar panel types show only the auras that are currently active, packed tightly in your configured order. Inactive auras take no space, so no more permanent gaps. A Collapse Direction setting controls whether the block packs from the start, the center, or the end, and it all works in combat.
+- **New resource bars:** Icicles for Frost Mages, Tip of the Spear for Survival Hunters, and a Devourer Demon Hunter bar that tracks progress toward Void Metamorphosis, then becomes the Collapsing Star bar while transformed. All support the full resource kit, including segmented display and a max-stack border glow.
+- **Stack threshold colors:** Aura-tracked entries can recolor their stack count at a chosen stack threshold, with an optional second color at max stacks. Works in combat on icons, bars, and custom bars.
+- **Low Time Threshold:** Cooldown text can change to an alert color and/or show tenths (like `4.8`) below a chosen number of seconds, with an optional second, more urgent window (for example orange under 10, red under 3).
+- **Centered growth:** Panels can now grow from the center. A partial last row sits centered under the full rows, and the panel's midpoint stays put as entries come and go, including Compact Mode repacking.
+- **While Aura Active section:** One place on the Appearance tab now controls what the aura display does to a button, with a clear Cooldown dropdown: Hidden by Aura, Show Text, or Show Swipe and Text. Keeping the spell's cooldown swipe visible during the aura is back for the first time since 1.22, and old imports that used it recover the setting automatically.
+- **Desaturate while aura active:** Aura-tracked entries can gray out their icon while the tracked aura is running, alongside the existing option for while it is missing.
+- **Per-entry Pandemic:** The pandemic marker is now an Auto (Debuffs Only) / On / Off dropdown, and both the marker and the effect can be customized per entry.
+- **Block bar upgrades:** Segmented stack bars gain a Segment Gap setting with five preset widths, and auras with up to 30 max stacks now render as blocks (the old cap was 20).
+
+## Polish | QoL
+
+- **Tracked Aura ID:** The Aura Tracking section now shows the spell ID of the aura an entry actually tracks (Moonfire shows the debuff's ID, not the cast spell's), so there is no guessing what an entry resolved to.
+- **Hide unavailable entries from the preview:** A corner toggle on the panel preview hides unlearned or talent-gated entries and reflows the layout to what your current character actually sees. View-only and session-only; nothing saved changes.
+- **Settings hide with their text:** Options that only affect a hidden text no longer clutter the config. Turn the text back on and they return exactly as configured.
+- **Orientation switches keep your growth choice:** Changing a panel's orientation converts a centered growth direction to the new axis instead of dropping it.
+
+## Bug Fixes
+
+- **Cast bar survives talent changes:** The addon's cast bar no longer stays hidden after applying talents or switching specializations.
+- **Aura tracking watches the right aura:** Track an Aura now follows the aura a spell actually applies, on the right unit. Fire Breath tracks its debuff on your target instead of the cast spell on you, and Shield of the Righteous tracks its buff on you. Aura suggestions in the add box now offer the applied aura directly.
+- **Glows turn off when disabled:** Turning off Show Ready Glow removes the glow immediately instead of leaving it stuck until a reload. The same fix protects the proc glow, aura glow, and key press highlight.
+- **Per-entry "off" now sticks:** Disabling a checkbox on a customized entry when the panel has it enabled (for example Flip Icon Side) now persists instead of silently reverting to the panel's setting.
+]],
+        },
         ["2.0.1"] = {
             markdown = [[
 ## Bug Fixes
