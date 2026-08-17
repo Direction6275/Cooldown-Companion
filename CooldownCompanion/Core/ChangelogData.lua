@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.1.1",
         "2.1",
         "2.0.1",
         "2.0",
@@ -27,6 +28,13 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.1.1"] = {
+            markdown = [[
+## Performance
+
+- **Reduced UI overhead:** Cooldown displays now do less unnecessary work during updates, and the configuration window creates fewer unused controls.
+]],
+        },
         ["2.1"] = {
             markdown = [[
 ## New Features
