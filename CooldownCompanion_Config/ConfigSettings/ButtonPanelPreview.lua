@@ -1921,14 +1921,16 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
     else
         if slot._cdcDraggable then
             GameTooltip:AddLine("Drag to reorder.", 0.75, 0.82, 0.92)
-        elseif slot._cdcReorderPausedByFilter then
-            GameTooltip:AddLine("Reordering is paused while unavailable entries are hidden.",
-                0.6, 0.6, 0.6)
         end
         -- WireEntryInteraction opens the entry context menu on every display
         -- mode, and that menu holds destructive actions, so every mode
         -- advertises it.
         GameTooltip:AddLine("Right-click for options.", 0.75, 0.82, 0.92)
+        if slot._cdcReorderPausedByFilter then
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Reordering is paused while unavailable entries are hidden.",
+                0.7, 0.7, 0.7, true)
+        end
     end
     GameTooltip:Show()
 end
