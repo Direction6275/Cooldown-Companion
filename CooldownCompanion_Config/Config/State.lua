@@ -2854,12 +2854,6 @@ local function IsButtonsWideViewActive()
         or CS.talentPickerMode)
 end
 
--- Every cutover view uses the merged workspace except the talent picker,
--- which temporarily replaces it with its own two-column layout.
-local function IsWideCol3LayoutActive()
-    return not CS.talentPickerMode
-end
-
 local function ResetConfigSelection(full)
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedButton = nil

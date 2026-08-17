@@ -1124,8 +1124,8 @@ previewCursorWatcher:RegisterEvent("CURSOR_CHANGED")
 previewCursorWatcher:SetScript("OnEvent", UpdatePreviewDropOverlay)
 
 -- Close the inline texture browser from ButtonsWideColumn's side: hide its
--- grid host and, if it was open, drop the flag and clear both staged previews
--- (the mirror stage and the live-world staged texture). Clearing the staging
+-- grid host and, if it was open, drop the flag and clear the staged mirror
+-- texture. Clearing the staging
 -- matters when the browser is left without a thumbnail OnLeave firing first --
 -- e.g. Escape-to-close or a jump to Resources with the cursor still on a tile.
 local function CloseInlineTextureBrowser(col3)
@@ -1135,7 +1135,6 @@ local function CloseInlineTextureBrowser(col3)
     if CS.inlineTextureBrowserOpen then
         CS.inlineTextureBrowserOpen = nil
         CS.textureMirrorStage = nil
-        CooldownCompanion:ClearAllAuraTexturePickerPreviews()
     end
 end
 

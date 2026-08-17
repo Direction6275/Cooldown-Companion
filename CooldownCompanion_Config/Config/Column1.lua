@@ -2553,20 +2553,7 @@ local function RefreshColumn1(preserveDrag)
         RenderItems(unloadedItems, "unloaded")
     end
 
-    local function GetClassInfoByID(classID)
-        classID = tonumber(classID)
-        if not classID then return nil, nil, nil end
-        if C_CreatureInfo and C_CreatureInfo.GetClassInfo then
-            local classInfo = C_CreatureInfo.GetClassInfo(classID)
-            if type(classInfo) == "table" then
-                return classInfo.className, classInfo.classFile, classInfo.classID
-            end
-        end
-        if GetClassInfo then
-            return GetClassInfo(classID)
-        end
-        return nil, nil, nil
-    end
+    local GetClassInfoByID = ST._GetClassInfoByID
 
     local function GetClassDisplayName(classKey)
         if type(classKey) ~= "string" then return "Class" end

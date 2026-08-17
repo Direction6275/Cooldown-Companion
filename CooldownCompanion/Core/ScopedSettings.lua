@@ -2024,6 +2024,7 @@ function CooldownCompanion:ReplaceResourceBarClassSettings(classKey, settings)
 end
 
 ST._NormalizeResourceBarClassKey = NormalizeClassKey
+ST._GetClassInfoByID = GetClassInfoByID
 ST._GetResourceBarClassKeyFromClassID = GetClassKeyFromClassID
 ST._GetClassIDFromResourceBarClassKey = GetClassIDFromClassKey
 ST._GetResourceBarClassSpecInfo = GetClassSpecInfo

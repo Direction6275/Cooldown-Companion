@@ -2098,8 +2098,6 @@ local function CreateConfigPanel()
                 else
                     if buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
                         ST._BuildItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
-                    elseif buttonData.type == "item" and CooldownCompanion.IsItemEquippable(buttonData) then
-                        ST._BuildEquipItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
                     end
                     -- Show & Hide Rules and Talent Conditions both live on the
                     -- Visibility tab now (owner ruling): everything deciding

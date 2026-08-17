@@ -1384,19 +1384,6 @@ function CooldownCompanion:RemoveTriggerConditionClause(buttonData, clauseIndex)
     return true
 end
 
-function CooldownCompanion:GetCompactTriggerConditionSummary(buttonData, maxVisibleClauses)
-    if type(buttonData) ~= "table" then
-        return nil
-    end
-
-    local count = #self:GetTriggerConditionClauses(buttonData)
-    if count <= 0 then
-        return nil
-    end
-
-    return "Conditions: " .. count
-end
-
 function CooldownCompanion:GetTexturePanelIndicatorSettings(groupOrId, createIfMissing)
     local group = ResolveGroup(groupOrId)
     if type(group) ~= "table" then
@@ -1416,9 +1403,4 @@ function CooldownCompanion:GetTexturePanelIndicatorSettings(groupOrId, createIfM
 
     return NormalizeTextureIndicatorStore(group.style)
 end
-
-function CooldownCompanion:GetTextureIndicatorSectionOrder()
-    return TEXTURE_INDICATOR_SECTION_ORDER
-end
-
 

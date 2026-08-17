@@ -555,20 +555,6 @@ function CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
     end
 end
 
---------------------------------------------------------------------------------
--- Aura Texture Picker Preview
---------------------------------------------------------------------------------
-
-function CooldownCompanion:SetAuraTexturePickerPreview(groupId, buttonIndex, selection)
-    -- Retained as a compatibility seam for config callers from older modules.
-    -- Picker staging now lives in CS.textureMirrorStage and never reaches a
-    -- runtime button.
-end
-
-function CooldownCompanion:ClearAllAuraTexturePickerPreviews()
-    -- Runtime buttons do not own picker previews.
-end
-
 function CooldownCompanion:ClearAllConfigPreviews()
     -- The editable mirror only needs to walk and reconcile every slot when
     -- this clear actually removed a panel visual. Preserve an already-issued
@@ -618,9 +604,6 @@ function CooldownCompanion:ClearAllConfigPreviews()
     end
     if self.ClearAllHealthEffectPreviews then
         self:ClearAllHealthEffectPreviews()
-    end
-    if self.ClearAllAuraTexturePickerPreviews then
-        self:ClearAllAuraTexturePickerPreviews()
     end
     if self.ClearCursorAnchorLayoutPreview then
         self:ClearCursorAnchorLayoutPreview()

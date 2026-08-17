@@ -124,14 +124,6 @@ local function GetAuraBarAutocompleteDisplayName(spellID)
     return spellID and C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(spellID) or nil
 end
 
-local function GetAuraBarAutocompleteDisplayIcon(spellID)
-    local entry = FindAuraBarAutocompleteEntryByID(spellID)
-    if entry and entry.icon then
-        return entry.icon
-    end
-    return spellID and C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spellID) or nil
-end
-
 local function GetAuraBarAutocompleteEntryName(entry)
     if type(entry) ~= "table" then
         return nil
@@ -524,13 +516,6 @@ end
 -- Identical to GetSafeRGBConfig; alias kept for call-site clarity (RGB vs RGBA intent)
 local GetSafeRGBAConfig = GetSafeRGBConfig
 
-local function CopyRGBConfig(color)
-    if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
-        return nil
-    end
-    return { color[1], color[2], color[3] }
-end
-
 local function GetSegmentedThresholdValueConfig(resource)
     local value = tonumber(resource and resource.segThresholdValue)
     if not value then
@@ -749,7 +734,6 @@ ST._RBP = {
     IsResourceEditableInColumn4 = IsResourceEditableInColumn4,
     GetDefaultResourceSettingsSpecID = GetDefaultResourceSettingsSpecID,
     GetCurrentConfigSpecID = GetCurrentConfigSpecID,
-    GetSpecOverrideTable = GetSpecOverrideTable,
     ReadSpecOverrideKey = ReadSpecOverrideKey,
     WriteSpecOverrideKey = WriteSpecOverrideKey,
     GetPlayerSpecOptionsConfig = GetPlayerSpecOptionsConfig,
@@ -757,13 +741,11 @@ ST._RBP = {
     ResolveTrackedAuraSpellIDFromText = ResolveTrackedAuraSpellIDFromText,
     GetSafeRGBConfig = GetSafeRGBConfig,
     GetSafeRGBAConfig = GetSafeRGBAConfig,
-    CopyRGBConfig = CopyRGBConfig,
     GetSegmentedThresholdValueConfig = GetSegmentedThresholdValueConfig,
     GetContinuousTickModeConfig = GetContinuousTickModeConfig,
     GetContinuousTickPercentConfig = GetContinuousTickPercentConfig,
     GetContinuousTickAbsoluteConfig = GetContinuousTickAbsoluteConfig,
     GetAuraBarAutocompleteDisplayName = GetAuraBarAutocompleteDisplayName,
-    GetAuraBarAutocompleteDisplayIcon = GetAuraBarAutocompleteDisplayIcon,
     GetAuraBarAutocompleteEntryName = GetAuraBarAutocompleteEntryName,
     ResolveAuraBarAutocompleteEntry = ResolveAuraBarAutocompleteEntry,
     ShowAuraBarAutocompleteResults = ShowAuraBarAutocompleteResults,

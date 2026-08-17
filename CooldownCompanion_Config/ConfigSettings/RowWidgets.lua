@@ -429,33 +429,6 @@ local function BuildRowBase(widgetType)
     return widget, frame, controlColumn
 end
 
--- Build the stock check art (UI-CheckBox-Up / -Check / -Highlight) on a button
--- of our own. CDC-CheckBoxRow embeds a real stock CheckBox instead, so a skin
--- can find it; this is left for CDC-ColorRow's optional enable toggle, which
--- has no callers today.
-local function BuildCheckButton(parent)
-    local button = CreateFrame("Button", nil, parent)
-    button:SetSize(CHECK_SIZE, CHECK_SIZE)
-
-    local checkbg = button:CreateTexture(nil, "ARTWORK")
-    checkbg:SetAllPoints()
-    checkbg:SetTexture(130755) -- Interface\Buttons\UI-CheckBox-Up
-
-    local checkMark = button:CreateTexture(nil, "OVERLAY")
-    checkMark:SetAllPoints(checkbg)
-    checkMark:SetTexture(130751) -- Interface\Buttons\UI-CheckBox-Check
-
-    local highlight = button:CreateTexture(nil, "HIGHLIGHT")
-    highlight:SetTexture(130753) -- Interface\Buttons\UI-CheckBox-Highlight
-    highlight:SetBlendMode("ADD")
-    highlight:SetAllPoints(checkbg)
-
-    button.checkbg = checkbg
-    button.checkMark = checkMark
-    button.highlight = highlight
-    return button
-end
-
 ------------------------------------------------------------------------
 -- CDC-CheckBoxRow
 --
@@ -1072,14 +1045,6 @@ do
             self.dropdown:SetItemDisabled(item, disabled)
         end,
 
-        ["SetMultiselect"] = function(self, multi)
-            self.dropdown:SetMultiselect(multi)
-        end,
-
-        ["GetMultiselect"] = function(self)
-            return self.dropdown:GetMultiselect()
-        end,
-
         ["SetPulloutWidth"] = function(self, width)
             self.dropdown:SetPulloutWidth(width)
         end,
@@ -1198,10 +1163,6 @@ do
             return self.editBoxWidget:GetText()
         end,
 
-        ["SetMaxLetters"] = function(self, num)
-            self.editBoxWidget:SetMaxLetters(num)
-        end,
-
         ["DisableButton"] = function(self, disabled)
             self.editBoxWidget:DisableButton(disabled)
         end,
@@ -1244,8 +1205,7 @@ end
 -- The swatch is a stock AceGUI ColorPicker child so the commit-on-close
 -- bridge in Helpers.lua (SetupColorCallbacks) keeps working unchanged: point
 -- it at row.colorPicker and the callback contract is identical to the stock
--- color pickers these rows replaced. An optional toggle check sits to the swatch's left
--- for enable+color composites.
+-- color pickers these rows replaced.
 ------------------------------------------------------------------------
 do
     local function ForwardPickerEnter(child)
@@ -1256,33 +1216,6 @@ do
     local function ForwardPickerLeave(child)
         local row = child:GetUserData("cdcRow")
         if row then Row_OnLeave(row.frame) end
-    end
-
-    local function ApplyToggleState(self)
-        local checkMark = self.toggle.checkMark
-        if self.toggleValue then
-            checkMark:Show()
-        else
-            checkMark:Hide()
-        end
-        checkMark:SetDesaturated(self.disabled and true or false)
-    end
-
-    local function Toggle_OnClick(button)
-        local self = button.obj
-        if self.disabled then return end
-        self.toggleValue = not self.toggleValue
-        ApplyToggleState(self)
-        PlaySound(self.toggleValue and 856 or 857)
-        self:Fire("OnToggleChanged", self.toggleValue)
-    end
-
-    local function Toggle_OnEnter(button)
-        Row_OnEnter(button.obj.frame)
-    end
-
-    local function Toggle_OnLeave(button)
-        Row_OnLeave(button.obj.frame)
     end
 
     local methods = {
@@ -1303,21 +1236,18 @@ do
             child.frame:SetPoint("RIGHT", self.controlColumn, "RIGHT", 0, 0)
             child.frame:Show()
 
-            self.toggleValue = false
-            self:SetHasToggle(false)
+            self.controlHoverAnchor = child.frame
             self:SetDisabled(false)
         end,
 
         ["OnRelease"] = function(self)
             local child = self.colorPicker
             -- Before the swatch goes back to the shared pool: parks the scope
-            -- overlay, which is anchored to the swatch (or to the toggle).
+            -- overlay, which is anchored to the swatch.
             self:SetScopeTooltip(nil)
             self.controlHoverAnchor = nil
             self.colorPicker = nil
-            self.toggleValue = nil
             self.tooltipLines = nil
-            self.toggle:Hide()
             if child then
                 AceGUI:Release(child)
             end
@@ -1336,58 +1266,15 @@ do
             self.colorPicker:SetHasAlpha(hasAlpha)
         end,
 
-        ["SetHasToggle"] = function(self, hasToggle)
-            self.hasToggle = hasToggle and true or false
-            if self.hasToggle then
-                self.toggle:Show()
-                ApplyToggleState(self)
-            else
-                self.toggle:Hide()
-            end
-            -- The scope overlay's region starts at the LEFTMOST control, which
-            -- the toggle becomes when it is shown. OnAcquire always runs this,
-            -- so it is also where the borrowed swatch is published; re-raise a
-            -- standing overlay in case a call site flips the toggle after the
-            -- scope chrome attached.
-            self.controlHoverAnchor = (self.hasToggle and self.toggle)
-                or (self.colorPicker and self.colorPicker.frame)
-                or nil
-            UpdateScopeHover(self)
-        end,
-
-        ["SetToggleValue"] = function(self, value)
-            self.toggleValue = value and true or false
-            ApplyToggleState(self)
-        end,
-
-        ["GetToggleValue"] = function(self)
-            return self.toggleValue
-        end,
-
         ["SetDisabled"] = function(self, disabled)
             self.disabled = disabled and true or false
             self.colorPicker:SetDisabled(self.disabled)
-            if self.disabled then
-                self.toggle:Disable()
-            else
-                self.toggle:Enable()
-            end
-            ApplyToggleState(self)
             ApplyLabelColor(self)
         end,
     }
 
     local function Constructor()
-        local widget, _, controlColumn = BuildRowBase(COLOR_ROW_TYPE)
-
-        local toggle = BuildCheckButton(controlColumn)
-        toggle:SetPoint("RIGHT", controlColumn, "RIGHT", -(COLOR_SWATCH_SIZE + CONTROL_GAP), 0)
-        toggle:SetScript("OnClick", Toggle_OnClick)
-        toggle:SetScript("OnEnter", Toggle_OnEnter)
-        toggle:SetScript("OnLeave", Toggle_OnLeave)
-        toggle:Hide()
-        toggle.obj = widget
-        widget.toggle = toggle
+        local widget = BuildRowBase(COLOR_ROW_TYPE)
 
         for method, func in pairs(methods) do
             widget[method] = func
@@ -1538,7 +1425,6 @@ end
 local function AddDropdownRow(container, opts, itemTypeOverride)
     local row = AceGUI:Create(DROPDOWN_ROW_TYPE)
     ApplyCommonRowOptions(row, opts)
-    if opts.multiselect then row:SetMultiselect(true) end
     if opts.pulloutWidth then row:SetPulloutWidth(opts.pulloutWidth) end
     row:SetList(opts.list, opts.order, itemTypeOverride or opts.itemType)
     if opts.value ~= nil then row:SetValue(opts.value) end
@@ -1590,7 +1476,6 @@ end
 local function AddEditBoxRow(container, opts)
     local row = AceGUI:Create(EDITBOX_ROW_TYPE)
     ApplyCommonRowOptions(row, opts)
-    if opts.maxLetters then row:SetMaxLetters(opts.maxLetters) end
     row:SetText(opts.value)
     row:SetDisabled(opts.disabled == true)
     if opts.onEnterPressed then
@@ -1615,16 +1500,6 @@ local function AddColorRow(container, opts)
     end
     color = color or opts.default or { 1, 1, 1, 1 }
     row:SetColor(color[1], color[2], color[3], color[4])
-
-    if opts.withToggle then
-        row:SetHasToggle(true)
-        row:SetToggleValue(opts.toggleValue)
-        if opts.onToggleChanged then
-            row:SetCallback("OnToggleChanged", function(widget, event, value)
-                opts.onToggleChanged(value, widget)
-            end)
-        end
-    end
 
     row:SetDisabled(opts.disabled == true)
 

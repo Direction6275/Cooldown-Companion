@@ -573,7 +573,6 @@ local function AddTriggerDisplayTypeDropdown(container, group)
         local triggerSettings = group.triggerSettings or {}
         group.triggerSettings = triggerSettings
         triggerSettings.displayType = value or "texture"
-        CooldownCompanion:ClearAllAuraTexturePickerPreviews()
         RefreshStandaloneTriggerDisplay(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)

@@ -184,10 +184,6 @@ function ST.SetStatusBarElapsedDuration(statusBar, durationObj)
     return ST.SetStatusBarTimerDuration(statusBar, durationObj, ST.STATUS_BAR_TIMER_DIRECTION_ELAPSED)
 end
 
-function ST.SetStatusBarRemainingDuration(statusBar, durationObj)
-    return ST.SetStatusBarTimerDuration(statusBar, durationObj, ST.STATUS_BAR_TIMER_DIRECTION_REMAINING)
-end
-
 --------------------------------------------------------------------------------
 -- Unusable Visual Helpers
 --------------------------------------------------------------------------------

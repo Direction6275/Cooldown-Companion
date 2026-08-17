@@ -655,10 +655,6 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     })
 end
 
-local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
-    -- Currently no equip-item-specific settings
-end
-
 local function RefreshFallbackEntry(groupId)
     if CS.HideAutocomplete then
         CS.HideAutocomplete()
@@ -1343,7 +1339,6 @@ end
 
 -- Expose for Config.lua
 ST._BuildItemSettings = BuildItemSettings
-ST._BuildEquipItemSettings = BuildEquipItemSettings
 ST._BuildItemFallbacksSection = BuildItemFallbacksSection
 ST._RefreshButtonSettingsColumn = RefreshButtonSettingsColumn
 ST._RefreshButtonSettingsMultiSelect = RefreshButtonSettingsMultiSelect
