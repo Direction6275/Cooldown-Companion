@@ -21,8 +21,8 @@ local ApplyPixelBorders = RB.ApplyPixelBorders
 local HidePixelBorders = RB.HidePixelBorders
 local CreateContinuousBar = RB.CreateContinuousBar
 
-local BindDurationText = CooldownCompanion.BindDurationText or function() return false end
-local UnbindDurationText = CooldownCompanion.UnbindDurationText or function() end
+local BindDurationText = CooldownCompanion.BindDurationText
+local UnbindDurationText = CooldownCompanion.UnbindDurationText
 local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
 local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
@@ -433,9 +433,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             if barInfo and barInfo.frame then
                 UnbindFrameDurationText(barInfo.frame)
                 ClearCustomAuraBarIndicatorState(barInfo, true)
-                -- The old frame is abandoned (frames are never destroyed);
-                -- release its evaluation scratch so it stops pinning aura refs.
-                EntryRuntime.ReleaseTrackedAuraScratch(barInfo.frame)
                 barInfo.frame:Hide()
             end
             local bar = CreateContinuousBar(targetContainer)

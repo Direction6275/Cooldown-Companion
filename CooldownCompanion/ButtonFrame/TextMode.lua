@@ -1693,7 +1693,6 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button._auraUnit = buttonData.auraUnit or "player"
     button._auraActive = false
     button._auraTrackingReady = nil
-    button._showingAuraIcon = false
     button._textSecretNameActive = nil
 
     if IsEntryItemLike(buttonData) then

@@ -17,13 +17,7 @@ local UnitCanAttack = UnitCanAttack
 local IsItemInRange = C_Item.IsItemInRange
 local IsUsableItem = C_Item.IsUsableItem
 local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
-local IsEntryItemLike = CooldownCompanion.IsEntryItemLike or function(buttonData)
-    return buttonData
-        and (buttonData.type == "item"
-            or (buttonData.type == "equipmentSlot"
-                and buttonData.itemSlotKind == "trinket"
-                and (buttonData.itemSlot == 13 or buttonData.itemSlot == 14)))
-end
+local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
 
 -- Update charge count state for a spell with hasCharges enabled.
 -- chargeSpellID should be the effective runtime spell ID (override-aware).
@@ -191,9 +185,6 @@ local function IsUnusableVisualActive(button, buttonData)
     if buttonData.isPassive or buttonData.isPassiveCooldown or buttonData.addedAs == "aura" then
         return false
     end
-    if button._conditionalUnusablePreview then
-        return true, "unusable-preview"
-    end
     if buttonData.type == "spell" then
         local spellID = button._displaySpellId or buttonData.id
         if not C_Spell_IsSpellUsable(spellID) then
@@ -235,11 +226,7 @@ local function ResolveIconTintIntent(button, buttonData, style, target)
     local unusableActive = false
 
     if style.showOutOfRange then
-        if button._conditionalOutOfRangePreview then
-            r, g, b = 1, 0.2, 0.2
-            reason = "out-of-range-preview"
-            stateOverride = true
-        elseif buttonData.type == "spell" then
+        if buttonData.type == "spell" then
             if button._spellOutOfRange then
                 r, g, b = 1, 0.2, 0.2
                 reason = "out-of-range"

@@ -27,7 +27,7 @@ local wipe = wipe
 local SetFrameClickThrough = ST.SetFrameClickThrough
 local HideGlowStyles = ST._HideGlowStyles
 local EntryRuntime = ST.EntryRuntime
-local UnbindDurationText = CooldownCompanion.UnbindDurationText or function() end
+local UnbindDurationText = CooldownCompanion.UnbindDurationText
 
 local function UnregisterKeyPressHighlightButton(button)
     local unregister = ST._UnregisterKeyPressHighlightButton
@@ -1098,9 +1098,6 @@ local function ResetButtonGlowTransitionState(button)
         if button.procGlow then
             HideGlowStyles(button.procGlow)
         end
-        if button.auraGlow then
-            HideGlowStyles(button.auraGlow)
-        end
         if button.readyGlow then
             HideGlowStyles(button.readyGlow)
         end
@@ -1219,21 +1216,6 @@ local function ClearButtonPreviewState(button)
     button._textureAuraPreview = nil
     button._textureReadyPreview = nil
     button._textureUnusablePreview = nil
-    button._textureIndicatorPreviewDirty = false
-    button._conditionalPreviewKind = nil
-    button._conditionalPreviewStartTime = nil
-    button._conditionalPreviewDuration = nil
-    button._conditionalPreviewRemaining = nil
-    button._conditionalPreviewLoop = nil
-    button._conditionalPreviewLoopStartTime = nil
-    button._conditionalPreviewLoopDuration = nil
-    button._conditionalPreviewDomain = nil
-    button._conditionalAuraPreview = nil
-    button._conditionalUnusablePreview = nil
-    button._conditionalOutOfRangePreview = nil
-    button._conditionalReadyPreview = nil
-    button._conditionalLocPreview = nil
-    button._conditionalVisualPreview = nil
     button._forceVisibleByConfig = nil
     button._prevForceVisibleByConfig = nil
 end
@@ -1283,10 +1265,8 @@ local function ClearReusableButtonRuntime(button)
     button._auraUnit = nil
     button._auraActive = false
     button._auraTrackingReady = nil
-    button._showingAuraIcon = false
     button._auraHasTimer = nil
     button._textSecretNameActive = nil
-    EntryRuntime.ReleaseTrackedAuraScratch(button)
     button._bindingKeyInfos = nil
     button._keyPressHighlightActive = nil
     button._visibilityHidden = false
@@ -1312,7 +1292,6 @@ local function ClearReusableButtonRuntime(button)
     button._unusableTintActive = nil
     button._iconFillActive = nil
     button._iconFillMode = nil
-    button._iconFillAuraActive = nil
     button._iconFillColorR = nil
     button._iconFillColorG = nil
     button._iconFillColorB = nil
@@ -1328,7 +1307,6 @@ local function ClearReusableButtonRuntime(button)
     button._barAuraEffectActive = nil
     button._barGCDSuppressed = nil
     button._barCdColor = nil
-    button._barAuraColor = nil
     button._barReadyTextColor = nil
     button._barTextMode = nil
     button._barTextColorDirty = true
@@ -1341,7 +1319,6 @@ local function ClearReusableButtonRuntime(button)
     ClearButtonPreviewState(button)
     ClearButtonVisualState(button)
     if button.count then button.count:SetText("") end
-    if button.auraStackCount then button.auraStackCount:SetText("") end
     if button.textString then
         button.textString:SetText("")
         button.textString:SetAlpha(1)
@@ -1407,13 +1384,11 @@ local function DeactivatePooledButton(self, groupId, button)
     ClearCooldownWidget(button.iconGCDCooldown)
     HideButtonGlowContainer(button.assistedHighlight)
     HideButtonGlowContainer(button.procGlow)
-    HideButtonGlowContainer(button.auraGlow)
     HideButtonGlowContainer(button.readyGlow)
     HideButtonGlowContainer(button.keyPressHighlight)
     HideButtonGlowContainer(button.barAuraEffect)
     ClearReusableButtonRuntime(button)
     button._buttonPoolKey = GetExistingButtonPoolKey(button)
-    button._pooled = true
     button:Hide()
     button:ClearAllPoints()
 end
@@ -1484,7 +1459,6 @@ local function AcquireButtonFromPool(frame, poolKey, buttonData)
         pick = pick or free or #pool
     end
     local button = table.remove(pool, pick)
-    button._pooled = nil
     button:SetParent(frame)
     return button
 end
@@ -3843,7 +3817,6 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
         frame.layoutButtonCount = nil
     end
     frame._layoutDirty = false
-    frame._lastVisibleCount = visibleIndex
 end
 
 local function FinishGroupButtonRefresh(self, groupId, frame, group)
@@ -4013,7 +3986,6 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
         -- materialize; the grid already counts every entry, so it has no work.
         frame.layoutButtonCount = nil
         frame._layoutDirty = false
-        frame._lastVisibleCount = cellCount
     else
         -- Create new buttons (skip untalented spells)
         for i, buttonData in ipairs(sourceButtons) do

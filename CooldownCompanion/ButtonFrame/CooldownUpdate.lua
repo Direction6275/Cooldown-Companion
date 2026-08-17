@@ -24,11 +24,8 @@ local RefreshTelemetry = ST.RefreshTelemetry
 -- Localize frequently-used globals
 local GetTime = GetTime
 local tonumber = tonumber
-local tostring = tostring
-local ipairs = ipairs
 local type = type
 local issecretvalue = issecretvalue
-local math_max = math.max
 
 -- Imports from Visibility
 local EvaluateButtonVisibility = ST._EvaluateButtonVisibility
@@ -51,9 +48,6 @@ local IsUsableItem = C_Item.IsUsableItem
 local IsItemInRange = C_Item.IsItemInRange
 local InCombatLockdown = InCombatLockdown
 local UnitCanAttack = UnitCanAttack
-
--- Imports from Preview
-local GetConditionalVisualPreview = ST._GetConditionalVisualPreview
 
 -- Imports from Tracking
 local UpdateChargeTracking = ST._UpdateChargeTracking
@@ -111,21 +105,6 @@ function CooldownCompanion:RefreshButtonVisualStateSnapshot(button, context, pha
     return nil
 end
 
-local function ClearConditionalVisualPreviewFields(button)
-    button._conditionalPreviewKind = nil
-    button._conditionalPreviewStartTime = nil
-    button._conditionalPreviewDuration = nil
-    button._conditionalPreviewRemaining = nil
-    button._conditionalPreviewLoop = nil
-    button._conditionalPreviewLoopStartTime = nil
-    button._conditionalPreviewLoopDuration = nil
-    button._conditionalPreviewDomain = nil
-    button._conditionalUnusablePreview = nil
-    button._conditionalOutOfRangePreview = nil
-    button._conditionalReadyPreview = nil
-    button._conditionalLocPreview = nil
-end
-
 local function HideIconFillForHiddenButton(button)
     if type(ClearIconFillVisualState) == "function" then
         ClearIconFillVisualState(button, button and button.style, nil, true)
@@ -137,7 +116,6 @@ local function HideIconFillForHiddenButton(button)
     button._iconFillOnUpdateInstalled = nil
     button._iconFillActive = nil
     button._iconFillMode = nil
-    button._iconFillAuraActive = nil
     button._iconFillIntent = nil
 end
 
@@ -161,296 +139,6 @@ local function ApplyChargeTextColor(button, buttonData, style, usesChargeBehavio
 
     if cc then
         button.count:SetTextColor(cc[1], cc[2], cc[3], cc[4])
-    end
-end
-
-local function GetConditionalPreviewTiming(preview, now)
-    local duration = tonumber(preview and preview.duration)
-    local startTime = tonumber(preview and preview.startTime)
-    if not duration or duration <= 0 then
-        return nil, nil, nil
-    end
-    if not startTime then
-        startTime = now
-    end
-
-    local loopDuration = tonumber(preview and preview.loopDuration)
-    local loopStartTime = tonumber(preview and preview.loopStartTime)
-    if preview and preview.loop == true and loopDuration and loopDuration > 0 then
-        if loopDuration > duration then
-            loopDuration = duration
-        end
-        if not loopStartTime then
-            loopStartTime = startTime + (duration - loopDuration)
-        end
-        local elapsed = now - loopStartTime
-        if elapsed < 0 then
-            elapsed = 0
-        end
-        local cycleElapsed = elapsed % loopDuration
-        local remaining = loopDuration - cycleElapsed
-        if remaining > duration then
-            remaining = duration
-        end
-        startTime = now - (duration - remaining)
-        return startTime, duration, remaining, loopStartTime, loopDuration
-    end
-
-    local remaining = duration - (now - startTime)
-    if remaining < 0 then
-        remaining = 0
-    end
-    return startTime, duration, remaining
-end
-
--- Shared with the config mirror, which renders CC-side stand-ins from the
--- same stored preview state (and stays time-synced with the live preview
--- through the state's start/loop times).
-ST._GetConditionalPreviewTiming = GetConditionalPreviewTiming
-
-local function SetConditionalPreviewTimingFields(button, startTime, duration, remaining, loopStartTime, loopDuration)
-    button._conditionalPreviewStartTime = startTime
-    button._conditionalPreviewDuration = duration
-    button._conditionalPreviewRemaining = remaining
-    button._conditionalPreviewLoop = (loopStartTime and loopDuration) and true or nil
-    button._conditionalPreviewLoopStartTime = loopStartTime
-    button._conditionalPreviewLoopDuration = loopDuration
-end
-
-local function ApplyConditionalVisualPreview(button, buttonData, style, preview, now, usesChargeBehavior)
-    if not preview then
-        return
-    end
-
-    local kind = preview.kind
-    button._conditionalPreviewKind = kind
-
-    -- cooldown_swipe is the state look with the countdown numbers suppressed
-    -- (UpdateIconModeVisuals reads the kind in its text section): same state,
-    -- same desaturation/tint/fill, one readout withheld.
-    if kind == "cooldown" or kind == "cooldown_swipe" then
-        local startTime, duration, remaining, loopStartTime, loopDuration = GetConditionalPreviewTiming(preview, now)
-        if not startTime then return end
-        button._cooldownState = COOLDOWN_STATE_COOLDOWN
-        button._desatCooldownActive = true
-        button._cooldownDeferred = nil
-        button._conditionalPreviewDomain = "cooldown"
-        SetConditionalPreviewTimingFields(button, startTime, duration, remaining, loopStartTime, loopDuration)
-        if button.cooldown then
-            button.cooldown:SetCooldown(startTime, duration)
-        end
-        return
-    end
-
-    if kind == "cooldown_text" then
-        -- Countdown text alone, on a button that otherwise stays at rest: the
-        -- domain is deliberately NOT "cooldown", so the icon fill preview path
-        -- and the state look (desaturation, tint, bar drain and recolor) never
-        -- engage. Icons run the real widget so its own countdown region counts,
-        -- with the swipe suppressed by UpdateIconModeVisuals; bars render the
-        -- time text from the timing fields in UpdateBarFill.
-        local startTime, duration, remaining, loopStartTime, loopDuration = GetConditionalPreviewTiming(preview, now)
-        if not startTime then return end
-        button._conditionalPreviewDomain = "cooldown_text"
-        SetConditionalPreviewTimingFields(button, startTime, duration, remaining, loopStartTime, loopDuration)
-        if not button._isBar and button.cooldown then
-            button.cooldown:SetCooldown(startTime, duration)
-        end
-        return
-    end
-
-    if kind == "aura_duration_bar" then
-        -- Bar aura timer preview: the CC bar drains in barAuraColor (bar
-        -- hosts only). Rendering happens in UpdateBarFill/UpdateBarDisplay
-        -- off the "aura" preview domain; the live aura bar is the
-        -- Blizzard-driven slot kit and previews never touch it.
-        if not button._isBar then return end
-        local startTime, duration, remaining, loopStartTime, loopDuration = GetConditionalPreviewTiming(preview, now)
-        if not startTime then return end
-        button._conditionalPreviewDomain = "aura"
-        SetConditionalPreviewTimingFields(button, startTime, duration, remaining, loopStartTime, loopDuration)
-        -- Shell entries hide the CC bar this preview draws on; expose while
-        -- the preview runs (the preview clear path restores).
-        if ST._ApplyBarAuraShellVisuals then
-            ST._ApplyBarAuraShellVisuals(button, buttonData)
-        end
-        return
-    end
-
-    if kind == "aura_duration_text" or kind == "pandemic_marker" then
-        -- CC-owned stand-in for the slot kit's duration text (previews never
-        -- touch the aura slot subtree): same font keys, same shared/separate
-        -- position contract. Deliberately does NOT set the shared preview
-        -- timing fields — those would leak into the icon fill's preview path.
-        --
-        -- The pandemic marker rides this text, so it is the same stand-in
-        -- with the marker dressing added; its own descriptor keeps the sweep
-        -- inside the window.
-        local fs = button._auraTextPreviewFS
-        if style.showAuraText == false then
-            if fs then fs:Hide() end
-            return
-        end
-        local host = button.overlayFrame
-        if not host then return end
-        local startTime, duration, remaining = GetConditionalPreviewTiming(preview, now)
-        if not startTime then return end
-        -- Shells hide the overlayFrame this preview draws on; expose while
-        -- the preview runs (the preview clear path restores). Bars host this
-        -- preview too.
-        ST._ApplyShellVisualsForButton(button, buttonData)
-        if not fs then
-            fs = host:CreateFontString(nil, "OVERLAY")
-            button._auraTextPreviewFS = fs
-        end
-        if CooldownCompanion.ApplyFontStyle then
-            CooldownCompanion.ApplyFontStyle(fs, style, "auraText", nil,
-                CooldownCompanion.DEFAULT_AURA_TEXT_COLOR)
-        end
-        local anchor, xOff, yOff = CooldownCompanion:GetAuraDurationTextPlacement(style, buttonData)
-        fs:ClearAllPoints()
-        fs:SetPoint(anchor, button, anchor, xOff, yOff)
-        -- Same Duration Format the live slot's SetDurationText bind resolves
-        -- from this style, so the preview countdown matches the live shape.
-        local text = CooldownCompanion.FormatTime(remaining, style)
-        -- Honest about the entry's own switch: an entry with the marker off
-        -- previews the bare countdown rather than a marker it will never draw.
-        if kind == "pandemic_marker"
-            and CooldownCompanion:IsPandemicMarkerPreviewWanted(buttonData, style) then
-            text = CooldownCompanion:DecoratePandemicPreviewText(text, style)
-        end
-        fs:SetText(text)
-        fs:Show()
-        return
-    end
-
-    if kind == "aura_stack_text" then
-        if button.auraStackCount then
-            if style.showAuraStackText ~= false then
-                -- Threshold-aware stand-in (2026-08-15 program): count and
-                -- color mirror the engine-side breakpoints.
-                local text, r, g, b, a = CooldownCompanion:GetAuraStackPreviewCountAndColor(
-                    buttonData, style, preview.stackText)
-                button.auraStackCount:SetText(text)
-                button.auraStackCount:SetTextColor(r, g, b, a)
-            else
-                button.auraStackCount:SetText("")
-            end
-        end
-        -- Shells hide the frame this preview writes to (bar text frame /
-        -- icon overlayFrame hosting auraStackCount); expose while it runs.
-        ST._ApplyShellVisualsForButton(button, buttonData)
-        return
-    end
-
-    if kind == "aura_duration_swipe" then
-        -- CC-owned stand-in for the slot kit's duration swipe (previews never
-        -- touch the aura slot subtree): a looping cooldown on a preview-only
-        -- widget styled by the same helper the kit uses.
-        local widget = button._auraSwipePreviewCooldown
-        if not CooldownCompanion:ShouldDrawAuraDurationSwipe(buttonData, style) then
-            if widget then
-                widget:SetCooldown(0, 0)
-                widget:Hide()
-            end
-            return
-        end
-        local startTime, duration = GetConditionalPreviewTiming(preview, now)
-        if not startTime then return end
-        -- Icon shells hide the button chrome around this preview widget;
-        -- expose while the preview runs (the preview clear path restores).
-        if not button._isBar and ST._ApplyAuraShellVisuals then
-            ST._ApplyAuraShellVisuals(button, buttonData)
-        end
-        if not widget then
-            if not button.icon then return end
-            widget = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
-            widget:SetAllPoints(button.icon)
-            widget:SetHideCountdownNumbers(true)
-            widget:SetDrawBling(false)
-            widget:EnableMouse(false)
-            -- Stands in for the kit's duration swipe, which lives at the aura
-            -- display band + 2 — NOT alongside the spell's cooldown swipe.
-            -- Levelled here for the create case; ApplyStrataOrder re-pins it
-            -- on every restyle, so a reordered panel keeps the preview honest.
-            if not button._isBar and ST._ResolveStrataLevels then
-                local levels = ST._ResolveStrataLevels(button, style and style.strataOrder)
-                if levels.auraDisplay then
-                    widget:SetFrameLevel(levels.auraDisplay + 2)
-                end
-            elseif button.cooldown then
-                widget:SetFrameLevel(button.cooldown:GetFrameLevel())
-            end
-            button._auraSwipePreviewCooldown = widget
-        end
-        if CooldownCompanion.ApplyAuraDurationSwipeStyle then
-            CooldownCompanion:ApplyAuraDurationSwipeStyle(widget, style)
-        end
-        widget:Show()
-        widget:SetCooldown(startTime, duration)
-        return
-    end
-
-    if kind == "loss_of_control" then
-        -- Same gate as the live path (spells only); the preview flag makes
-        -- UpdateLossOfControl skip the widget so the no-LoC clear later this
-        -- tick cannot wipe the preview.
-        if not style.showLossOfControl or not button.locCooldown then
-            return
-        end
-        if buttonData.type ~= "spell" or buttonData.isPassive then
-            return
-        end
-        local startTime, duration = GetConditionalPreviewTiming(preview, now)
-        if not startTime then return end
-        button._conditionalLocPreview = true
-        button.locCooldown:SetCooldown(startTime, duration)
-        return
-    end
-
-    if kind == "charge_full" or kind == "charge_missing" or kind == "charge_zero" then
-        if not usesChargeBehavior then
-            return
-        end
-        local maxCharges = buttonData.maxCharges or 2
-        if maxCharges < 2 then
-            maxCharges = 2
-        end
-
-        local currentCharges = maxCharges
-        if kind == "charge_missing" then
-            currentCharges = math_max(1, maxCharges - 1)
-            button._chargeState = CHARGE_STATE_MISSING
-            button._zeroChargesConfirmed = false
-        elseif kind == "charge_zero" then
-            currentCharges = 0
-            button._chargeState = CHARGE_STATE_ZERO
-            button._zeroChargesConfirmed = true
-            button._desatCooldownActive = true
-        else
-            button._chargeState = CHARGE_STATE_FULL
-            button._zeroChargesConfirmed = false
-            button._desatCooldownActive = false
-        end
-
-        button._chargeCountReadable = true
-        button._currentReadableCharges = currentCharges
-        button._chargeText = currentCharges
-        if button.count and style.showChargeText ~= false then
-            button.count:SetText(currentCharges)
-        end
-        return
-    end
-
-    if kind == "unusable" then
-        button._isUnusable = true
-        button._conditionalUnusablePreview = true
-        return
-    end
-
-    if kind == "out_of_range" then
-        button._isOutOfRange = true
-        button._conditionalOutOfRangePreview = true
     end
 end
 
@@ -553,9 +241,6 @@ local function ClearRotationAssistantMissingState(button, buttonData, style)
     if button.count then
         button.count:SetText("")
     end
-    if button.auraStackCount then
-        button.auraStackCount:SetText("")
-    end
     if button.keybindText then
         button.keybindText:SetText("")
         button.keybindText:SetShown(false)
@@ -650,7 +335,6 @@ end
 
 local function EvaluateItemCooldown(button, buttonData, style, renderCooldown)
     button._isEquippableNotEquipped = false
-    button._itemGCDOnly = false
     local isEquipmentSlot = IsEquipmentSlotEntry(buttonData)
     local isEquippable = (not isEquipmentSlot) and IsItemEquippable(buttonData)
     local itemID = button._resolvedItemId or buttonData.id
@@ -688,7 +372,6 @@ local function EvaluateItemCooldown(button, buttonData, style, renderCooldown)
     end
 
     local itemGCDOnly = CooldownLogic.IsItemGCDOnly(cdStart, cdDuration, CooldownCompanion._gcdInfo)
-    button._itemGCDOnly = itemGCDOnly == true
     if cdDuration and cdDuration > 0 then
         if itemGCDOnly then
             button._itemCdStart = 0
@@ -793,7 +476,7 @@ end
 -- in icon/bar mode (Blizzard CooldownFrameTemplate / BarModeOnUpdate) -- they
 -- do NOT need a walk to keep drawing. Those states stop forcing walks EXCEPT
 -- in text mode (redrawn from GetTime() each walk). Everything else
--- (charge-color heuristic, preview, ready-glow window) stays walk-forcing in
+-- (charge-color heuristic, ready-glow window) stays walk-forcing in
 -- every mode.
 -- Discrete edges (cooldown start/end) stay event-covered; the skip only
 -- suppresses the redundant continuous middle.
@@ -808,18 +491,17 @@ local function PinTickerForce(term)
     end
 end
 
-local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, floorFailOpen)
+local function NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen)
     local telemetryOn = RefreshTelemetry and RefreshTelemetry.enabled
     local charge = button._chargeRecharging and true or false   -- charge recharge (charge-color heuristic, walk-driven)
-    local preview = conditionalPreview ~= nil                   -- conditional visual preview active
     local readyGlow, forced
     if telemetryOn then
         -- Attribution needs every term evaluated so the counters can name
         -- each one that pinned the walk.
         readyGlow = HasPendingReadyGlowWindow(button, now)      -- finite ready-glow window still running
-        forced = charge or preview or readyGlow
+        forced = charge or readyGlow
     else
-        forced = charge or preview or HasPendingReadyGlowWindow(button, now)
+        forced = charge or HasPendingReadyGlowWindow(button, now)
     end
 
     local text = false
@@ -849,7 +531,6 @@ local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, f
         -- pinned this walk. Inert without the CC_DevBridge dev addon.
         if telemetryOn then
             if charge then RefreshTelemetry:CountForce("charge") end
-            if preview then RefreshTelemetry:CountForce("preview") end
             if readyGlow then RefreshTelemetry:CountForce("ready-glow") end
             if text then RefreshTelemetry:CountForce("text") end
             if floorForce then RefreshTelemetry:CountForce(floorFailOpen) end
@@ -869,7 +550,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local now = GetTime()
     local isGCDOnly = false
     local desatWasActive = button._desatCooldownActive == true
-    local conditionalPreview = GetConditionalVisualPreview and GetConditionalVisualPreview(button)
     local buttonGroup = button._groupId and CooldownCompanion.db and CooldownCompanion.db.profile
         and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
     local buttonDisplayMode = buttonGroup and (buttonGroup.displayMode or "icons") or "icons"
@@ -888,8 +568,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             and not buttonData.isPassive and not buttonData.isPassiveCooldown
             and "hide-unusable")
         or nil
-    ClearConditionalVisualPreviewFields(button)
-
     if buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
         ClearRotationAssistantMissingState(button, buttonData, style)
         return
@@ -1178,7 +856,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    button._isOnGCD = isOnGCD or false
     -- Bar mode: suppress GCD-only display in bars (checked by UpdateBarFill OnUpdate).
     -- Skip for charge spells: their _durationObj is the recharge cycle, never the GCD.
     if button._isBar then
@@ -1466,17 +1143,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Explicit positioning previews stay visible on the real display. Ordinary
     -- config selection is rendered only by the pinned config mirror.
     local forceVisibleByLayoutPreview = IsRuntimeLayoutPreviewButtonForceVisible(button)
-    local forceVisibleByPreview = conditionalPreview ~= nil and not isTriggerPanel
-    if forceVisibleByUnlockPreview or forceVisibleByPreview then
+    if forceVisibleByUnlockPreview then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = 1
-        visibilityOverrideSource = forceVisibleByUnlockPreview and "unlock-preview" or "conditional-preview"
+        visibilityOverrideSource = "unlock-preview"
     elseif forceVisibleByLayoutPreview and not isTriggerPanel then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = 1
         visibilityOverrideSource = "layout-preview"
     end
-    button._forceVisibleByConfig = ((forceVisibleByLayoutPreview or forceVisibleByUnlockPreview or forceVisibleByPreview) and not isTriggerPanel) or nil
+    button._forceVisibleByConfig = ((forceVisibleByLayoutPreview or forceVisibleByUnlockPreview) and not isTriggerPanel) or nil
     if button._visibilityHidden == true then
         button._visibilityFinalMode = "hidden"
     elseif button._visibilityAlphaOverride ~= nil and button._visibilityAlphaOverride ~= 1 then
@@ -1486,8 +1162,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
     button._visibilityOverrideSource = visibilityOverrideSource
     button._visibilityTriggerSuppressed = visibilityOverrideSource == "trigger" or nil
-    button._visibilityCompactLayout = group and group.compactLayout == true or nil
-
     local visualStateContext
     local shouldCaptureVisualState = CooldownCompanion:ShouldRefreshButtonVisualStateSnapshot()
     if shouldCaptureVisualState then
@@ -1620,14 +1294,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._isOutOfRange = false
     end
 
-    ApplyConditionalVisualPreview(
-        button,
-        buttonData,
-        style,
-        conditionalPreview,
-        now,
-        usesChargeBehavior
-    )
     ApplyChargeTextColor(button, buttonData, style, usesChargeBehavior)
 
     -- Mode-specific visual dispatch
@@ -1644,5 +1310,5 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if shouldCaptureVisualState then
         CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "post-dispatch")
     end
-    NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, floorFailOpen)
+    NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen)
 end

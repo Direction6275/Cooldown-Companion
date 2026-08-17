@@ -27,7 +27,6 @@ local AddSoundPreviewDropdownRow = ST._AddSoundPreviewDropdownRow
 local AddEditBoxRow = ST._AddEditBoxRow
 local AddColorRow = ST._AddColorRow
 local AddLabelRow = ST._AddLabelRow
-local AnchorRowBadge = ST._AnchorRowBadge
 
 -- Row-grammar section headers: caret far left, label, then a class-colored
 -- rule fading right.

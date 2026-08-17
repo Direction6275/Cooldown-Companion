@@ -204,6 +204,47 @@ local function BuildConditionalVisualPreviewState(previewKind, sampleState)
     return state
 end
 
+-- Shared timing contract for the config mirror's animated stand-ins. Exported
+-- directly to avoid consuming another Lua 5.1 file-local in this large module.
+function ST._GetConditionalPreviewTiming(preview, now)
+    local duration = tonumber(preview and preview.duration)
+    local startTime = tonumber(preview and preview.startTime)
+    if not duration or duration <= 0 then
+        return nil, nil, nil
+    end
+    if not startTime then
+        startTime = now
+    end
+
+    local loopDuration = tonumber(preview and preview.loopDuration)
+    local loopStartTime = tonumber(preview and preview.loopStartTime)
+    if preview and preview.loop == true and loopDuration and loopDuration > 0 then
+        if loopDuration > duration then
+            loopDuration = duration
+        end
+        if not loopStartTime then
+            loopStartTime = startTime + (duration - loopDuration)
+        end
+        local elapsed = now - loopStartTime
+        if elapsed < 0 then
+            elapsed = 0
+        end
+        local cycleElapsed = elapsed % loopDuration
+        local remaining = loopDuration - cycleElapsed
+        if remaining > duration then
+            remaining = duration
+        end
+        startTime = now - (duration - remaining)
+        return startTime, duration, remaining, loopStartTime, loopDuration
+    end
+
+    local remaining = duration - (now - startTime)
+    if remaining < 0 then
+        remaining = 0
+    end
+    return startTime, duration, remaining
+end
+
 -- Stored conditional-preview state for (group, button): the per-button
 -- entry wins, else the group-wide entry (the setters keep the two
 -- mutually exclusive per group). Read by the config mirror, which renders
@@ -326,13 +367,9 @@ end
 
 --------------------------------------------------------------------------------
 -- Pandemic Preview (PTR 8 visuals)
--- Icons render through the CC-side glow container: VisualState's
--- pandemic-preview branch routes SetAuraGlow's pandemic override, which
--- reads the same pandemicGlow* keys the live kit rig consumes — preview
--- parity without touching the aura slot subtree. Bars render nothing on
--- live buttons: the fill recolor exists only on the kit fill, so bar
--- previews live on the wide-buttons mirror alone (the same convention as
--- the bar fill pulse/color-shift effects).
+-- The config mirror renders icon and bar replicas from the same pandemic
+-- style keys the live kit consumes, without touching live buttons or the
+-- aura slot subtree.
 --------------------------------------------------------------------------------
 
 function CooldownCompanion:SetPandemicPreview(groupId, buttonIndex, show)

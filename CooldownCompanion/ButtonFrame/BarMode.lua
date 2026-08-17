@@ -72,8 +72,8 @@ local SetEntryPingReceiver = ST.SetEntryPingReceiver
 local ResolveEffectiveItem = CooldownCompanion.ResolveEffectiveItem
 local FormatTime = CooldownCompanion.FormatTime
 local FormatCooldownTime = CooldownCompanion.FormatCooldownTime or CooldownCompanion.FormatTime
-local BindDurationText = CooldownCompanion.BindDurationText or function() return false end
-local UnbindDurationText = CooldownCompanion.UnbindDurationText or function() end
+local BindDurationText = CooldownCompanion.BindDurationText
+local UnbindDurationText = CooldownCompanion.UnbindDurationText
 local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
 
 -- Bar mode tooltip behavior: tooltip should come from hovering the icon area only.
@@ -142,39 +142,6 @@ local function SetBarTimeText(button, text)
 end
 
 local function UpdateBarFill(button)
-    -- Cooldown Text preview (preview command center): the countdown text
-    -- alone on a resting bar — the drain and the bar colors stay in their
-    -- ready state, and UpdateBarDisplay keeps the ready text color off the
-    -- countdown while the kind is set. Timing fields are recomputed by
-    -- ApplyConditionalVisualPreview each cooldown pass (loop wraps included),
-    -- so reading them here only has to count the current cycle down.
-    if button._conditionalPreviewKind == "cooldown_text" then
-        SetStatusBarImmediateValue(button.statusBar, button.buttonData.isPassive and 0 or 1)
-        if button.style.showCooldownText and not button.buttonData.isPassive then
-            if button._barTextMode ~= "cd" then
-                button._barTextMode = "cd"
-                button._barTextColorDirty = true
-                local f = CooldownCompanion:FetchFont(button.style.cooldownFont or "Friz Quadrata TT")
-                local s = button.style.cooldownFontSize or 12
-                local o = ST.GetEffectiveFontOutline(button.style.cooldownFontOutline or "OUTLINE")
-                button.timeText:SetFont(f, s, o)
-                ST.ApplyFontShadowForOutline(button.timeText, o)
-            end
-            if button._barTextColorDirty then
-                button._barTextColorDirty = nil
-                local cc = button.style.cooldownFontColor or DEFAULT_WHITE
-                button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
-            end
-            local remaining = (button._conditionalPreviewStartTime or 0)
-                + (button._conditionalPreviewDuration or 0) - GetTime()
-            if remaining < 0 then remaining = 0 end
-            SetBarTimeText(button, FormatCooldownTime(remaining, button.style))
-        else
-            SetBarTimeText(button, "")
-        end
-        return
-    end
-
     -- Single-bar path
     -- DurationObjects are handed to StatusBar:SetTimerDuration so drain/fill motion
     -- is engine-driven instead of re-sampled as Lua percentages.
@@ -327,11 +294,8 @@ local function UpdateBarDisplay(button)
         onCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
     end
 
-    -- Time text color: switch between cooldown and ready colors. The
-    -- Cooldown Text preview writes a countdown while the bar rests, so the
-    -- ready color must not claim it.
+    -- Time text color: switch between cooldown and ready colors.
     local wantReadyTextColor = not onCooldown and style.showBarReadyText
-        and button._conditionalPreviewKind ~= "cooldown_text"
     if button._barReadyTextColor ~= wantReadyTextColor then
         button._barReadyTextColor = wantReadyTextColor
         if wantReadyTextColor then
@@ -450,13 +414,10 @@ local function UpdateBarStackBlocks(button, style)
     if InCombatLockdown() then return end
     local buttonData = button.buttonData
     -- Two alphas, deliberately. The per-stack widgets follow the entry's
-    -- RESTING alpha and ignore preview exposure entirely: no aura preview
-    -- draws on them, and this function is their only teardown but cannot
-    -- run in combat. Deciding from the live alpha let a preview-exposed
-    -- hidden shell build blocks that then survived into combat fully
-    -- opaque on a bar meant to render nothing. bg and the whole-bar ring
-    -- are ordinary shell-owned regions, so their restore below follows the
-    -- live alpha that ApplyBarAuraShellVisuals also writes.
+    -- RESTING alpha; this function is their only teardown but cannot run in
+    -- combat. bg and the whole-bar ring are ordinary shell-owned regions, so
+    -- their restore below follows the live alpha that ApplyBarAuraShellVisuals
+    -- also writes.
     local liveAlpha = CooldownCompanion:GetAuraShellAlpha(button, buttonData)
     local shellAlpha = CooldownCompanion:IsAuraShellEntry(buttonData)
         and CooldownCompanion:GetAuraShellRestingAlpha(buttonData)
@@ -752,21 +713,6 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     -- Apply count text font/anchor settings
     ApplyBarCountTextStyle(button, style)
 
-    -- Aura stack count preview stand-in: live stacks render on the slot kit
-    -- (Blizzard-driven SetApplicationCount); this CC-side twin exists only
-    -- for the aura stack text config preview.
-    button.auraStackCount = (button.barTextFrame or button.overlayFrame):CreateFontString(nil, "OVERLAY", "NumberFontNormal")
-    button.auraStackCount:SetText("")
-    ApplyFontStyle(button.auraStackCount, style, "auraStack")
-    local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
-    local asXOff = style.auraStackXOffset or 2
-    local asYOff = style.auraStackYOffset or 2
-    if showIcon then
-        button.auraStackCount:SetPoint(asAnchor, button.icon, asAnchor, asXOff, asYOff)
-    else
-        button.auraStackCount:SetPoint(asAnchor, button, asAnchor, asXOff, asYOff)
-    end
-
     -- Store button data
     button.index = index
     button.style = style
@@ -929,7 +875,6 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._displaySpellId = nil
     button._liveOverrideSpellId = nil
     button._itemCount = nil
-    if button.auraStackCount then button.auraStackCount:SetText("") end
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
     button._visibilityAlphaOverride = nil
@@ -1103,20 +1048,6 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
 
     -- Update charge/item count font and anchor to icon or bar center
     ApplyBarCountTextStyle(button, newStyle)
-
-    -- Update aura stack count font/anchor settings
-    if button.auraStackCount then
-        button.auraStackCount:ClearAllPoints()
-        ApplyFontStyle(button.auraStackCount, newStyle, "auraStack")
-        local asAnchor = newStyle.auraStackAnchor or "BOTTOMLEFT"
-        local asXOff = newStyle.auraStackXOffset or 2
-        local asYOff = newStyle.auraStackYOffset or 2
-        if showIcon then
-            button.auraStackCount:SetPoint(asAnchor, button.icon, asAnchor, asXOff, asYOff)
-        else
-            button.auraStackCount:SetPoint(asAnchor, button, asAnchor, asXOff, asYOff)
-        end
-    end
 
     -- Update spell name text
     self:UpdateButtonIcon(button)

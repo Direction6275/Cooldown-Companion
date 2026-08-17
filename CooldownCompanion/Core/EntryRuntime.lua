@@ -88,35 +88,12 @@ local function SetAuraStackCountText(fontString, value)
 end
 EntryRuntime.SetAuraStackCountText = SetAuraStackCountText
 
--- Kept as a real field-clearer: recycled buttons/custom bars still carry
--- preview-set aura fields that teardown must wipe.
-function EntryRuntime.ClearTrackedAuraOwnerState(owner, configUnit, options)
+-- Reset the live aura fields on recycled custom-bar owners.
+function EntryRuntime.ClearTrackedAuraOwnerState(owner, configUnit)
     if not owner then return end
-    options = options or {}
-    local inactiveValue = options.useFalseState and false or nil
-
-    owner._auraActive = inactiveValue
-    owner._auraHasTimer = inactiveValue
-    owner._auraInstanceID = nil
+    owner._auraActive = nil
+    owner._auraHasTimer = nil
     owner._auraUnit = configUnit
-    owner._auraEventRemoved = nil
-    owner._auraGraceStart = nil
-    if not options.preserveTargetSwitch then
-        owner._targetSwitchAt = nil
-        owner._targetSwitchDataReceived = nil
-    end
-    if options.clearCustomAuraStacks then
-        owner._customAuraStackValue = nil
-        owner._customAuraApplicationsValue = nil
-    end
-end
-
--- Releases legacy per-owner evaluation scratches left over from recycled
--- frames. Call only from teardown/dormancy paths.
-function EntryRuntime.ReleaseTrackedAuraScratch(owner)
-    if not owner then return end
-    owner._trackedAuraStateScratch = nil
-    owner._auraDisplayNameStateScratch = nil
 end
 
 local function IsSpellCooldownDeferred(info)
@@ -487,14 +464,7 @@ EntryRuntime.ResolveBaseResourceGateCostState = ResolveBaseResourceGateCostState
 
 local function ClearOwnerChargeState(owner)
     if not owner then return end
-    owner._customCooldownHasCharges = nil
-    owner._currentReadableCharges = nil
-    owner._chargeCountReadable = nil
-    owner._zeroChargesConfirmed = nil
-    owner._chargeDurationObj = nil
     owner._chargeRecharging = nil
-    owner._mainCDShown = nil
-    owner._chargeState = nil
     owner._chargesSpent = nil
 end
 
@@ -599,14 +569,9 @@ local function ApplyCustomBarChargeState(owner, result, baseSpellID, cooldownSpe
 
     local chargeDurationObj = C_Spell.GetSpellChargeDuration(cooldownSpellID)
     local chargeRecharging = DurationObjectShowsCooldown(chargeDurationObj)
-    result.chargeDurationObj = chargeDurationObj
     result.chargeRecharging = chargeRecharging or false
 
     if owner then
-        owner._customCooldownHasCharges = true
-        owner._currentReadableCharges = currentCharges
-        owner._chargeCountReadable = currentCharges ~= nil
-        owner._chargeDurationObj = chargeDurationObj
         owner._chargeRecharging = result.chargeRecharging
     end
 
@@ -622,20 +587,12 @@ local function ApplyCustomBarChargeState(owner, result, baseSpellID, cooldownSpe
         end
     end
 
-    if owner then
-        owner._mainCDShown = mainCDShown
-        if result.chargeRecharging and not owner._chargesSpent then
-            owner._chargesSpent = maxCharges or 0
-        end
+    if owner and result.chargeRecharging and not owner._chargesSpent then
+        owner._chargesSpent = maxCharges or 0
     end
 
     local zeroConfirmed = ResolveZeroChargesConfirmed(owner, mainCDShown, currentCharges == nil, maxCharges)
     result.chargeState = ClassifyChargeState(currentCharges, maxCharges, zeroConfirmed, result.chargeRecharging)
-
-    if owner then
-        owner._zeroChargesConfirmed = zeroConfirmed
-        owner._chargeState = result.chargeState
-    end
 
     if result.chargeRecharging then
         result.state = COOLDOWN_STATE_COOLDOWN
@@ -656,11 +613,6 @@ function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
     local cooldownSpellID = C_Spell.GetOverrideSpell(spellID)
     if not cooldownSpellID or cooldownSpellID == 0 then
         cooldownSpellID = spellID
-    end
-
-    if owner then
-        owner._customCooldownBaseSpellID = spellID
-        owner._customCooldownSpellID = cooldownSpellID
     end
 
     local charges = C_Spell.GetSpellCharges(cooldownSpellID)
@@ -693,9 +645,6 @@ function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
     customBarSpellCooldownLaneOpts.allowActionSlotReadyFallback = allowActionSlotReadyFallback
     customBarSpellCooldownLaneOpts.suppressCooldownSurface = resourceGatedNoCooldown == true
     local result = EvaluateSpellCooldownLane(cooldownSpellID, secrecy, spellID, customBarSpellCooldownLaneOpts)
-    result.baseSpellID = spellID
-    result.cooldownSpellID = cooldownSpellID
-    result.noCooldown = noCooldown or nil
 
     if hasCharges then
         ApplyCustomBarChargeState(owner, result, spellID, cooldownSpellID, charges, maxCharges)

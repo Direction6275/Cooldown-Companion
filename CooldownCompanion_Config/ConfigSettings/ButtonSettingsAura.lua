@@ -27,7 +27,6 @@ local AddCheckboxRow = ST._AddCheckboxRow
 local AddSliderRow = ST._AddSliderRow
 local AddDropdownRow = ST._AddDropdownRow
 local AddEditBoxRow = ST._AddEditBoxRow
-local AddColorRow = ST._AddColorRow
 local AddLabelRow = ST._AddLabelRow
 local AnchorRowBadge = ST._AnchorRowBadge
 

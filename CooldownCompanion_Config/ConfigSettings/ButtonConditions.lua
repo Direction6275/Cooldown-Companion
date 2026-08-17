@@ -3163,10 +3163,6 @@ end
 -- EXPORTS
 ------------------------------------------------------------------------
 ST._BuildVisibilitySettings = BuildVisibilitySettings
-ST._BuildShowHideRulesSection = BuildShowHideRulesSection
-ST._BuildEntryTalentConditionsSection = BuildEntryTalentConditionsSection
-ST._BuildLoadConditionsTab = BuildLoadConditionsTab
-ST._BuildEntryLoadConditionsTab = BuildEntryLoadConditionsTab
 ST._BuildVisibilityTab = BuildVisibilityTab
 ST._AddScopedLoadConditionToggles = AddScopedLoadConditionToggles
 ST._BuildWhereToHideTooltip = BuildWhereToHideTooltip

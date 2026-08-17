@@ -25,10 +25,6 @@ local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 
 local HideAllExportPreviewTiles
 
-local function IsExportModeActive()
-    return CS.exportMode ~= nil
-end
-
 local function EnterExportMode()
     if CS.exportMode then return end
     if CooldownCompanion._unsupportedLegacyProfile then
@@ -659,8 +655,6 @@ end
 ------------------------------------------------------------------------
 -- ST._ exports
 ------------------------------------------------------------------------
-ST._IsExportModeActive = IsExportModeActive
-ST._EnterExportMode = EnterExportMode
 ST._ExitExportMode = ExitExportMode
 ST._ToggleExportMode = ToggleExportMode
 ST._ConfirmExportMode = ConfirmExportMode

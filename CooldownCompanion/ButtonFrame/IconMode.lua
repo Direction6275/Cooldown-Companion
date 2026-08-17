@@ -43,7 +43,6 @@ local CreateAssistedHighlight = ST._CreateAssistedHighlight
 local SetupTooltipScripts = ST._SetupTooltipScripts
 local SetAssistedHighlight = ST._SetAssistedHighlight
 local SetProcGlow = ST._SetProcGlow
-local SetAuraGlow = ST._SetAuraGlow
 local SetReadyGlow = ST._SetReadyGlow
 local SetKeyPressHighlight = ST._SetKeyPressHighlight
 local IsBindingKeyPressed = ST._IsBindingKeyPressed
@@ -306,11 +305,6 @@ local function ApplyDefaultCooldownSwipeStyle(button, style)
         return
     end
 
-    -- Any restore drops the Cooldown Text preview's suppression latch, so
-    -- the preview pass in UpdateIconModeVisuals re-suppresses on its next
-    -- look instead of trusting a latch another path just overwrote.
-    button._cooldownTextPreviewSwipeOff = nil
-
     local swipeEnabled = style.showCooldownSwipe ~= false
     local fillEnabled = style.showCooldownSwipeFill ~= false
     local edgeEnabled = style.cooldownSwipeEdgeEnabled == true
@@ -323,34 +317,6 @@ local function ApplyDefaultCooldownSwipeStyle(button, style)
     button.cooldown:SetReverse(swipeEnabled and reverse)
     button.cooldown:SetSwipeColor(0, 0, 0, alpha)
     button.cooldown:SetEdgeColor(edgeColor[1], edgeColor[2], edgeColor[3], edgeColor[4])
-end
-
-local function ResolveIconFillPreviewRemaining(button)
-    local duration = button and button._conditionalPreviewDuration
-    local startTime = button and button._conditionalPreviewStartTime
-    if not (duration and startTime and duration > 0) then
-        return nil, nil
-    end
-
-    -- F2 canary: past the guard, an icon-fill conditional-preview remaining is
-    -- computed this walk (covered by the conditionalPreview classifier term).
-    RefreshTelemetry:NoteTimeRender()
-    local remaining
-    if button._conditionalPreviewLoop
-        and button._conditionalPreviewLoopStartTime
-        and button._conditionalPreviewLoopDuration
-        and button._conditionalPreviewLoopDuration > 0 then
-        local elapsed = GetTime() - button._conditionalPreviewLoopStartTime
-        if elapsed < 0 then elapsed = 0 end
-        local cycleElapsed = elapsed % button._conditionalPreviewLoopDuration
-        remaining = button._conditionalPreviewLoopDuration - cycleElapsed
-        if remaining > duration then remaining = duration end
-    else
-        remaining = duration - (GetTime() - startTime)
-        if remaining < 0 then remaining = 0 end
-    end
-
-    return remaining, duration
 end
 
 local function SetIconFillFromCooldownWidget(button)
@@ -387,12 +353,6 @@ end
 
 local function SetIconFillValue(button)
     if not (button and button.iconFill and button._iconFillMode) then
-        return
-    end
-
-    local remaining, duration = ResolveIconFillPreviewRemaining(button)
-    if remaining and duration and duration > 0 then
-        button.iconFill:SetValue(ResolveIconFillTimerValue(button, 1 - (remaining / duration)))
         return
     end
 
@@ -547,7 +507,7 @@ end
 -- DIM_FALLBACK_ALPHA (auraShellDim, Dim While Aura Inactive — a standalone
 -- key on 12.1; the toggles are mutually exclusive). Static by design — no
 -- aura state exists to read at runtime. The predicate, the alpha decision,
--- and the preview/unlock exposure rules all live in Core/Aura.lua.
+    -- and the unlock exposure rule all live in Core/Aura.lua.
 local function SetGlowContainerShellAlpha(container, alpha)
     if not container then return end
     -- Stamp the shell alpha so glow state changes can't resurrect the
@@ -584,37 +544,9 @@ local function ApplyAuraShellVisuals(button, buttonData)
     -- one that renders while the display owns the button.
     if button.pinnedTextFrame then button.pinnedTextFrame:SetAlpha(alpha) end
     SetGlowContainerShellAlpha(button.procGlow, alpha)
-    SetGlowContainerShellAlpha(button.auraGlow, alpha)
     SetGlowContainerShellAlpha(button.readyGlow, alpha)
     SetGlowContainerShellAlpha(button.keyPressHighlight, alpha)
     SetGlowContainerShellAlpha(button.assistedHighlight, alpha)
-end
-
--- Build CC's aura glow container on demand. It renders the aura-glow and
--- pandemic config previews and nothing else: the live glows belong to the slot
--- kit inside the aura display, and ResolveIconGlowIntent (ButtonFrame/
--- VisualState.lua) can only mark the aura intent active for a preview.
---
--- Must run BEFORE any tick reads the button, because every downstream consumer
--- guards on the container existing — the intent resolver, UpdateIconModeGlows,
--- ApplyStrataOrder and the shell alpha pass all skip a button without one. The
--- preview-flag entry points in ButtonFrame/Preview.lua are that moment.
-local function EnsureAuraGlowContainer(button)
-    if not button or button._isBar then return nil end
-    if button.auraGlow then return button.auraGlow end
-
-    local style = button.style or {}
-    button.auraGlow = CreateGlowContainer(button, 32)
-    -- Same geometry and click-through UpdateButtonStyle applies to it, so a
-    -- container born mid-session matches one that had been there all along.
-    button.auraGlow.solidFrame:SetAllPoints()
-    ApplyEdgePositions(button.auraGlow.solidTextures, button, style.auraGlowSize or 2)
-    FitHighlightFrame(button.auraGlow.procFrame, button, style.auraGlowSize or 32)
-    SetFrameClickThroughRecursive(button.auraGlow.solidFrame, true, true)
-    SetFrameClickThroughRecursive(button.auraGlow.procFrame, true, true)
-    -- Re-level: the new frames need their slot in the aura display's band.
-    ApplyStrataOrder(button, style.strataOrder)
-    return button.auraGlow
 end
 
 -- Countdown text hosting. The region lives on the TEXT OVERLAY layer, never in
@@ -740,10 +672,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Proc glow elements (solid border + animated glow + lazy dash/spark pools)
     button.procGlow = CreateGlowContainer(button, style.procGlowSize or 32)
 
-    -- No aura glow container here: on 12.1 the live aura and pandemic glows are
-    -- the slot kit's, inside the aura display. CC's container serves the config
-    -- preview alone, so it is built on demand by EnsureAuraGlowContainer. The
-    -- config mirror already builds its replica containers the same way.
+    -- On 12.1 the live aura and pandemic glows belong to the slot kit inside
+    -- the aura display. The config mirror owns its separate replica container.
 
     -- Ready glow elements (glow while off cooldown)
     button.readyGlow = CreateGlowContainer(button, 32)
@@ -751,7 +681,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Key press highlight elements (glow while keybind is held)
     button.keyPressHighlight = CreateGlowContainer(button, 32, true)
 
-    -- Aura/ready glow frame levels are now managed by ApplyStrataOrder (called below)
+    -- Ready glow frame levels are managed by ApplyStrataOrder (called below).
 
     -- Apply custom cooldown text font settings
     local region = button.cooldown:GetRegions()
@@ -795,15 +725,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     end
 
     ApplyCountTextStyle(button, style)
-
-    -- Aura stack count text: separate FontString for aura stacks and config previews.
-    button.auraStackCount = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
-    button.auraStackCount:SetText("")
-    ApplyFontStyle(button.auraStackCount, style, "auraStack")
-    local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
-    local asXOff = style.auraStackXOffset or 2
-    local asYOff = style.auraStackYOffset or 2
-    button.auraStackCount:SetPoint(asAnchor, asXOff, asYOff)
 
     -- Keybind text: on the pinned host, never the Text Overlay layer. It tells
     -- you what to press, so it stays readable whatever is drawn over the icon
@@ -898,14 +819,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         end
         if button.assistedHighlight.procFrame then
             SetFrameClickThroughRecursive(button.assistedHighlight.procFrame, true, true)
-        end
-    end
-    if button.auraGlow then
-        if button.auraGlow.solidFrame then
-            SetFrameClickThroughRecursive(button.auraGlow.solidFrame, true, true)
-        end
-        if button.auraGlow.procFrame then
-            SetFrameClickThroughRecursive(button.auraGlow.procFrame, true, true)
         end
     end
     if button.readyGlow then
@@ -1114,8 +1027,6 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         local realCooldownSwipeActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
             and button._cooldownDeferred ~= true
         local cooldownVisualActive = realCooldownSwipeActive
-            or button._conditionalPreviewDomain == "cooldown"
-            or button._conditionalPreviewDomain == "cooldown_text"
             or button._chargeCooldownVisualActive == true
             or (isGCDOnly and style.showGCDSwipe == true)
 
@@ -1157,8 +1068,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     -- cooldownSwipeEdgeEnabled). Latched to avoid per-tick writes; the falling
     -- edge restores default styling and runs unconditionally, so a fetchOk
     -- false tick can't strand the latch. Defers to real cooldown (isGCDOnly
-    -- excludes it), icon-fill owner, charge-visual, hideCooldownWithCharges,
-    -- and previews.
+    -- excludes it), icon-fill owner, charge-visual, and hideCooldownWithCharges.
     local gcdOnlyRadialActive = fetchOk
         and not buttonData.isPassive
         and isGCDOnly
@@ -1167,8 +1077,6 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         and button._iconFillActive ~= true
         and button._chargeCooldownVisualActive ~= true
         and button._hideCooldownChargesActive ~= true
-        and button._conditionalPreviewDomain ~= "cooldown"
-        and button._conditionalPreviewDomain ~= "cooldown_text"
 
     if gcdOnlyRadialActive then
         if button._gcdSwipeDrawActive ~= true then
@@ -1179,22 +1087,6 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         end
     elseif button._gcdSwipeDrawActive == true then
         button._gcdSwipeDrawActive = nil
-        ApplyDefaultCooldownSwipeStyle(button, style)
-    end
-
-    -- Cooldown Text preview: the countdown rides button.cooldown's own
-    -- region, so the widget runs while the swipe it would normally draw
-    -- stays hidden. Latched; ApplyDefaultCooldownSwipeStyle drops the latch
-    -- on every restore, so any path that re-enables the swipe mid-preview
-    -- gets re-suppressed here on the next pass.
-    if button._conditionalPreviewKind == "cooldown_text" then
-        if button._cooldownTextPreviewSwipeOff ~= true then
-            button._cooldownTextPreviewSwipeOff = true
-            button.cooldown:SetDrawSwipe(false)
-            button.cooldown:SetDrawEdge(false)
-        end
-    elseif button._cooldownTextPreviewSwipeOff then
-        button._cooldownTextPreviewSwipeOff = nil
         ApplyDefaultCooldownSwipeStyle(button, style)
     end
 
@@ -1214,17 +1106,9 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             local timerActive = (button._cooldownState == COOLDOWN_STATE_COOLDOWN
                     and button._cooldownDeferred ~= true)
                 or button._chargeCooldownVisualActive == true
-                or button._conditionalPreviewDomain == "cooldown"
-                or button._conditionalPreviewDomain == "cooldown_text"
                 or (isGCDOnly and style.showGCDSwipe == true)
             showText = style.showCooldownText and timerActive
             if showText and button._hideCooldownChargesActive then
-                showText = false
-            end
-            -- The Cooldown Swipe preview is the state look minus this
-            -- readout; the _cdTextHidden latch below restores the numbers
-            -- when the preview ends.
-            if showText and button._conditionalPreviewKind == "cooldown_swipe" then
                 showText = false
             end
             fontColor = style.cooldownFontColor or DEFAULT_WHITE
@@ -1262,7 +1146,6 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
     if buttonData._rotationAssistantVirtual == true then
         SetAssistedHighlight(button, false)
         SetProcGlow(button, false)
-        SetAuraGlow(button, false, false)
         SetReadyGlow(button, false)
         SetKeyPressHighlight(button, false)
         return
@@ -1301,14 +1184,6 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
     if button.procGlow then
         local showProc = glowIntent and glowIntent.proc and glowIntent.proc.active == true
         SetProcGlow(button, showProc)
-    end
-
-    -- Aura active glow indicator
-    if button.auraGlow then
-        local auraIntent = glowIntent and glowIntent.aura
-        local showAuraGlow = auraIntent and auraIntent.active == true
-        local pandemicOverride = auraIntent and auraIntent.pandemic == true or false
-        SetAuraGlow(button, showAuraGlow, pandemicOverride)
     end
 
     -- Ready glow (glow while off cooldown)
@@ -1383,7 +1258,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- no-ops on nil (Glows.lua MakeGlowSetter), so a nil here would let the
     -- SetXxxGlow(button, false) calls below strand a currently-shown glow.
     button._procGlowActive = false
-    button._auraGlowActive = false
     button._readyGlowActive = false
     button._keyPressHighlightActive = false
     button._displaySpellId = nil
@@ -1399,12 +1273,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._iconFillColorG = nil
     button._iconFillColorB = nil
     button._iconFillColorA = nil
-    if button.auraStackCount then button.auraStackCount:SetText("") end
-    if button._auraTextPreviewFS then button._auraTextPreviewFS:Hide() end
-    if button._auraSwipePreviewCooldown then
-        button._auraSwipePreviewCooldown:SetCooldown(0, 0)
-        button._auraSwipePreviewCooldown:Hide()
-    end
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
     button._visibilityAlphaOverride = nil
@@ -1445,11 +1313,10 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- The countdown FontString is reparented outside the Cooldown frame, so
     -- SetCooldown(0, 0) can leave its last rendered value behind. A restyle
     -- re-enables and recolors the region below; clear it while the button has
-    -- no live/preview timer rather than resurrecting that stale ready text.
+    -- no live timer rather than resurrecting that stale ready text.
     if button._cdTextRegion
         and button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
         and button._chargeCooldownVisualActive ~= true
-        and button._conditionalVisualPreview == nil
     then
         button._cdTextRegion:SetText("")
     end
@@ -1473,16 +1340,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Update count text font/anchor settings from effective style
     ApplyCountTextStyle(button, style)
-
-    -- Update aura stack count font/anchor settings
-    if button.auraStackCount then
-        button.auraStackCount:ClearAllPoints()
-        ApplyFontStyle(button.auraStackCount, style, "auraStack")
-        local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
-        local asXOff = style.auraStackXOffset or 2
-        local asYOff = style.auraStackYOffset or 2
-        button.auraStackCount:SetPoint(asAnchor, asXOff, asYOff)
-    end
 
     -- Update keybind text overlay
     if button.keybindText then
@@ -1523,14 +1380,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         ApplyEdgePositions(button.procGlow.solidTextures, button, style.procGlowSize or 2)
         FitHighlightFrame(button.procGlow.procFrame, button, style.procGlowSize or 32)
         SetProcGlow(button, false)
-    end
-
-    -- Update aura glow frames
-    if button.auraGlow then
-        button.auraGlow.solidFrame:SetAllPoints()
-        ApplyEdgePositions(button.auraGlow.solidTextures, button, button.style.auraGlowSize or 2)
-        FitHighlightFrame(button.auraGlow.procFrame, button, button.style.auraGlowSize or 32)
-        SetAuraGlow(button, false)
     end
 
     -- Update ready glow frames
@@ -1595,14 +1444,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
             SetFrameClickThroughRecursive(button.assistedHighlight.procFrame, true, true)
         end
     end
-    if button.auraGlow then
-        if button.auraGlow.solidFrame then
-            SetFrameClickThroughRecursive(button.auraGlow.solidFrame, true, true)
-        end
-        if button.auraGlow.procFrame then
-            SetFrameClickThroughRecursive(button.auraGlow.procFrame, true, true)
-        end
-    end
     if button.readyGlow then
         if button.readyGlow.solidFrame then
             SetFrameClickThroughRecursive(button.readyGlow.solidFrame, true, true)
@@ -1620,8 +1461,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         end
     end
 
-    -- (Ready glow, key press highlight and the aura glow container used to be
-    -- re-pinned to cooldown+1 here, silently overwriting the levels
+    -- (Ready glow and key press highlight used to be re-pinned to cooldown+1
+    -- here, silently overwriting the levels
     -- ApplyStrataOrder had just assigned. ApplyStrataOrder owns them now.)
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
@@ -1654,7 +1495,6 @@ ST._UpdateIconModeVisuals = UpdateIconModeVisuals
 ST._UpdateIconModeGlows = UpdateIconModeGlows
 ST._ApplyIconCountTextStyle = ApplyCountTextStyle
 ST._ApplyAuraShellVisuals = ApplyAuraShellVisuals
-ST._EnsureAuraGlowContainer = EnsureAuraGlowContainer
 ST._ClearIconFillVisualState = ClearIconFillVisualState
 -- Icon-fill plumbing shared with the config mirror's cooldown preview
 -- (frame-agnostic: they read only .icon/.iconFill/.cooldown/.style).
