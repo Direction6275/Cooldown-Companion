@@ -471,6 +471,31 @@ function CooldownCompanion:OnTargetChanged()
 end
 
 
+local function ResolveImplicitSpellEntryAuraSpellID(buttonData)
+    if buttonData.type ~= "spell" then return nil end
+    local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
+    if directAuraID and not IsDistinctAuraIdentityForButton(buttonData, directAuraID) then
+        return directAuraID
+    end
+    -- Resolve through base spell so form-variant spells (e.g. Stampeding
+    -- Roar: 106898/77764/77761) use the base ID for aura lookups — the
+    -- buff is always applied as the base spell regardless of form.
+    local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
+    -- Frame-free twin of the direct resolution above (works with the CDM
+    -- display disabled): a CDM data row that links the applied aura under
+    -- a different spellID owns the identity, per Blizzard's own matcher.
+    local linkedAppliedID = ResolveLinkedAppliedAuraForButton(buttonData, baseId)
+    if linkedAppliedID then
+        return linkedAppliedID
+    end
+    local auraId = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
+    if auraId and not IsDistinctAuraIdentityForButton(buttonData, auraId) then
+        return auraId
+    end
+    -- Many spells share the same ID for cast and buff; fall back to the base spell ID
+    return baseId
+end
+
 function CooldownCompanion:ResolveAuraSpellID(buttonData)
     if not buttonData.auraTracking then return nil end
     if buttonData.addedAs ~= "aura" and buttonData.auraSpellID then
@@ -481,30 +506,17 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
         local orderedCandidateIDs = BuildOrderedAuraCandidateIDs(buttonData)
         return orderedCandidateIDs[1]
     end
-    if buttonData.type == "spell" then
-        local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
-        if directAuraID and not IsDistinctAuraIdentityForButton(buttonData, directAuraID) then
-            return directAuraID
-        end
-        -- Resolve through base spell so form-variant spells (e.g. Stampeding
-        -- Roar: 106898/77764/77761) use the base ID for aura lookups — the
-        -- buff is always applied as the base spell regardless of form.
-        local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
-        -- Frame-free twin of the direct resolution above (works with the CDM
-        -- display disabled): a CDM data row that links the applied aura under
-        -- a different spellID owns the identity, per Blizzard's own matcher.
-        local linkedAppliedID = ResolveLinkedAppliedAuraForButton(buttonData, baseId)
-        if linkedAppliedID then
-            return linkedAppliedID
-        end
-        local auraId = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
-        if auraId and not IsDistinctAuraIdentityForButton(buttonData, auraId) then
-            return auraId
-        end
-        -- Many spells share the same ID for cast and buff; fall back to the base spell ID
-        return baseId
+    return ResolveImplicitSpellEntryAuraSpellID(buttonData)
+end
+
+-- Config display only: the spell entry's own applied-aura identity,
+-- independent of any explicit tracked list (ResolveAuraSpellID
+-- short-circuits on that list). Not a bind input.
+function CooldownCompanion:ResolveImplicitAuraSpellID(buttonData)
+    if not (type(buttonData) == "table" and buttonData.addedAs ~= "aura") then
+        return nil
     end
-    return nil
+    return ResolveImplicitSpellEntryAuraSpellID(buttonData)
 end
 
 -- Ordered candidate list (primary first), for callers that need priority
