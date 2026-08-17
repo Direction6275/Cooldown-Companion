@@ -304,25 +304,10 @@ local function ChargeEntryApplies(group, displayMode, buttonIndex)
     return false
 end
 
--- Keep-swipe entries never draw the aura duration swipe (the spell's own
--- cooldown swipe owns the icon), so the preview would render nothing for
--- them. Same scoping rule as ChargeEntryApplies: a selected entry must
--- itself qualify; at panel scope one qualifying entry is enough.
-local function AuraSwipeEntryApplies(group, buttonIndex)
-    local buttons = group.buttons or {}
-    if buttonIndex then
-        return not CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttons[buttonIndex])
-    end
-    for _, buttonData in ipairs(buttons) do
-        if not CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData) then
-            return true
-        end
-    end
-    return false
-end
-
 -- Style as it applies to the target: the selected entry's effective style,
--- or the panel style at panel scope.
+-- or the panel style at panel scope. Declared ahead of AuraSwipeEntryApplies
+-- below, which needs it: keep-swipe became a style key, so the per-entry
+-- scan has to resolve each entry's own style rather than read the panel's.
 local function ResolveTargetStyle(group, buttonIndex)
     local style = group.style or {}
     local buttonData = buttonIndex and (group.buttons or {})[buttonIndex] or nil
@@ -330,6 +315,25 @@ local function ResolveTargetStyle(group, buttonIndex)
         style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
     end
     return style
+end
+
+-- Keep-swipe entries never draw the aura duration swipe (the spell's own
+-- cooldown swipe owns the icon), so the preview would render nothing for
+-- them. Same scoping rule as ChargeEntryApplies: a selected entry must
+-- itself qualify; at panel scope one qualifying entry is enough.
+local function AuraSwipeEntryApplies(group, buttonIndex)
+    local buttons = group.buttons or {}
+    if buttonIndex then
+        return not CooldownCompanion:IsKeepSpellCooldownSwipeEntry(
+            buttons[buttonIndex], ResolveTargetStyle(group, buttonIndex))
+    end
+    for index, buttonData in ipairs(buttons) do
+        if not CooldownCompanion:IsKeepSpellCooldownSwipeEntry(
+            buttonData, ResolveTargetStyle(group, index)) then
+            return true
+        end
+    end
+    return false
 end
 
 -- Conditional state previews render nothing while the visual they stand
@@ -361,33 +365,30 @@ local function BarAuraIndicatorEnabled(group, buttonIndex)
     return ST.IsBarAuraIndicatorEnabled(ResolveTargetStyle(group, buttonIndex)) == true
 end
 
--- Effective pandemic enable (PTR 8 visuals): the per-entry override wins,
--- else the effective style's explicit-true key — the same resolution the
--- live bind gate and the config mirror perform, so the control is never
--- offered where the preview renders nothing nor hidden at entry scope
--- where the live rig actually renders.
+-- Effective pandemic enable (PTR 8 visuals): the effective style's
+-- explicit-true key, which at entry scope is that entry's own value whenever it
+-- customized the Pandemic section — the same resolution the live bind gate and
+-- the config mirror perform, so the control is never offered where the preview
+-- renders nothing nor hidden at entry scope where the live rig actually renders.
 local function PandemicEffectEnabled(group, buttonIndex)
-    local buttonData = buttonIndex and (group.buttons or {})[buttonIndex] or nil
-    if buttonData and buttonData.pandemicEffect ~= nil then
-        return buttonData.pandemicEffect == true
-    end
     return StyleFlagEnabled(group, buttonIndex, "pandemicEffectEnabled")
 end
 
--- Effective marker enable, the same three-step resolution the live bind gate
--- performs (AuraDisplay's IsPandemicMarkerWanted): the panel kill switch, then
--- the per-entry override, then the tracked-unit default. Deliberately separate
--- from PandemicEffectEnabled above — the marker and the effect are independent
--- settings, and the effect is off by default, so sharing that gate would hide
--- the marker preview on almost every panel.
+-- Effective marker enable, the same resolution the live bind gate performs
+-- (AuraDisplay's IsPandemicMarkerWanted): the style's mode, and for "auto" the
+-- tracked-unit default. Deliberately separate from PandemicEffectEnabled above
+-- — the marker and the effect are independent settings, and the effect is off
+-- by default, so sharing that gate would hide the marker preview on almost
+-- every panel.
 local function PandemicMarkerEnabled(group, buttonIndex)
-    if ResolveTargetStyle(group, buttonIndex).pandemicMarkerEnabled == false then
+    local mode = ResolveTargetStyle(group, buttonIndex).pandemicMarkerMode
+    if mode == "off" then
         return false
     end
-    local buttonData = buttonIndex and (group.buttons or {})[buttonIndex] or nil
-    if buttonData and buttonData.pandemicMarker ~= nil then
-        return buttonData.pandemicMarker == true
+    if mode == "on" then
+        return true
     end
+    local buttonData = buttonIndex and (group.buttons or {})[buttonIndex] or nil
     -- Panel scope has no single entry to read a unit from, so the control
     -- stays offered and the stand-in decides per entry.
     if not buttonData then
@@ -1140,7 +1141,7 @@ local function CollectObjectControls(objects)
                         -- its settings route would open a section with no
                         -- marker row.
                         if cab.showDurationText == true
-                            and CooldownCompanion:IsPandemicMarkerPreviewWanted(cab, cab) then
+                            and CooldownCompanion:IsCustomBarPandemicMarkerPreviewWanted(cab) then
                             applicable[#applicable + 1] = {
                                 id = "customBarPandemicMarker_" .. tostring(cab.customBarId),
                                 label = "Preview Pandemic Marker",

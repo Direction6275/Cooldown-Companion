@@ -116,7 +116,7 @@ local function SyncDerivedAuraUnit(buttonData)
     end
 end
 
--- Shared with the Settings tab's Show Conditions row for ordinary spell
+-- Shared with the Visibility tab's Show & Hide Rules row for ordinary spell
 -- entries. Primary Aura entries are always enabled in Texture panels; layered
 -- spell entries retain the explicit opt-in so legacy nil placements stay
 -- dormant.
@@ -228,37 +228,6 @@ local SEGMENTED_SMOOTHING_TOOLTIP = {
     {"Continuous stack bars always animate smoothly.", 1, 1, 1, true},
     " ",
     {"Gaining or losing the aura entirely always snaps; the game only animates stack changes.", 1, 1, 1, true},
-}
-
-local PANDEMIC_MARKER_TOOLTIP = {
-    "Pandemic Marker",
-    {"Marks this entry's duration text while recasting would add to the remaining time instead of wasting it.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"On by default for debuffs on your target.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Text and color are in the panel's Pandemic settings.", 1, 1, 1, true},
-}
-
-local PANDEMIC_EFFECT_TOOLTIP = {
-    "Pandemic Effect",
-    {"Shows the panel's pandemic visual on this entry during its refresh window.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Style and color are in the panel's Pandemic settings.", 1, 1, 1, true},
-}
-
-local KEEP_SWIPE_TOOLTIP = {
-    "Keep Spell Cooldown Swipe",
-    {"Keeps this entry's own icon and cooldown swipe while the tracked aura is active.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Aura stack text, duration text, and glows still follow their own settings.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"The aura's duration swipe is hidden so two swipes never overlap.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"With Show Aura Icon While Active on, the aura icon covers the swipe unless Layer Order raises Cooldown Swipe above the aura display.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"The aura icon tint does not apply. The icon keeps its own tint.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Icon panels only.", 1, 1, 1, true},
 }
 
 local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
@@ -577,49 +546,16 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
             })
     end
 
-    -- Display toggles. Standalone and passive entries always show the live
-    -- aura icon (it exists to display the aura), so the opt-in only appears
-    -- on ordinary spell entries.
-    if not (isStandalone or buttonData.isPassive) then
-        AddCheckboxRow(auraRight, {
-            label = "Show Aura Icon While Active",
-            value = buttonData.auraShowAuraIcon == true,
-            onChange = function(value)
-                buttonData.auraShowAuraIcon = value and true or nil
-                RefreshAuraConfig()
-            end,
-        })
-
-        -- Icon panels only: bars have no cover to skip (their aura model is
-        -- the drain/stack fill), and a shell entry's CC layer is hidden so
-        -- there is no swipe to keep. The stored flag stays put either way;
-        -- the row just hides while it cannot apply.
-        if (group.displayMode or "icons") == "icons"
-            and not CooldownCompanion:IsAuraShellEntry(buttonData) then
-            local keepSwipeRow = AddCheckboxRow(auraRight, {
-                label = "Keep Spell Cooldown Swipe",
-                value = buttonData.auraKeepSpellCooldownSwipe == true,
-                onChange = function(value)
-                    buttonData.auraKeepSpellCooldownSwipe = value and true or nil
-                    RefreshAuraConfig()
-                end,
-            })
-            AnchorRowBadge(keepSwipeRow, CreateInfoButton(keepSwipeRow.frame, keepSwipeRow.frame, "LEFT", "LEFT", 0, 0,
-                KEEP_SWIPE_TOOLTIP, infoButtons))
-        end
-    end
+    -- How the aura display itself LOOKS is not configured here any more:
+    -- keeping this entry's own cooldown swipe while its aura runs, swapping in
+    -- the live aura icon, and desaturating the aura layer are all style keys in
+    -- the panel's While Aura Active section (Appearance tab), reachable per
+    -- entry by customizing that section through the style lens. Only what the
+    -- CC icon does in the aura's ABSENCE stays below.
 
     if buttonData.isPassive then
-        -- Passives desaturate while the aura is missing by default.
-        AddCheckboxRow(auraRight, {
-            label = "Desaturate While Active Instead",
-            value = buttonData.invertAuraDesaturationLogic == true,
-            onChange = function(value)
-                buttonData.invertAuraDesaturationLogic = value and true or nil
-                RefreshAuraConfig()
-            end,
-        })
-
+        -- Passives desaturate while the aura is missing by default; the invert
+        -- switch is the While Aura Active section's Desaturate Icon row.
         AddCheckboxRow(auraRight, {
             label = "Never Desaturate",
             value = buttonData.neverDesaturate == true,
@@ -628,114 +564,19 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
                 RefreshAuraConfig()
             end,
         })
-    else
-        -- Desaturate-while-MISSING is a static desaturate on the CC icon
-        -- (Tracking.lua). An Aura Panel materializes no CC buttons and draws a
-        -- cell only while the aura is up, so there is no missing state to paint.
-        -- The stored flag stays put; the row just hides while it cannot apply
-        -- (keep-swipe row pattern). Its while-ACTIVE counterpart below lives on
-        -- the aura layer and still works here.
-        if not isAuraPanel then
-            AddCheckboxRow(auraRight, {
-                label = "Desaturate Icon While Aura Missing",
-                value = buttonData.desaturateWhileAuraNotActive == true,
-                onChange = function(value)
-                    buttonData.desaturateWhileAuraNotActive = value and true or nil
-                    RefreshAuraConfig()
-                end,
-            })
-        end
-
-        -- Aura-layer counterpart: desaturates the Blizzard-shown layer, so
-        -- it reads "while active" without any aura-state read. Hidden where
-        -- no aura-layer icon region can carry it: texture panels have no
-        -- icon at all, and icon-mode keep-swipe entries skip the takeover
-        -- unless the aura icon swap is on. The stored flag stays put; the
-        -- row just hides while it cannot apply (keep-swipe row pattern).
-        local activeDesatRowShown = not isTexturePanel
-            and not ((group.displayMode or "icons") == "icons"
-                and CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData)
-                and buttonData.auraShowAuraIcon ~= true)
-        if activeDesatRowShown then
-            AddCheckboxRow(auraRight, {
-                label = "Desaturate Icon While Aura Active",
-                value = buttonData.invertAuraDesaturationLogic == true,
-                onChange = function(value)
-                    buttonData.invertAuraDesaturationLogic = value and true or nil
-                    RefreshAuraConfig()
-                end,
-            })
-        end
     end
+    -- Desaturate-while-MISSING is NOT a row here any more: it is a style key
+    -- in the panel's Desaturation section (Indicators tab, States), beside
+    -- Desaturate On Cooldown, reachable per entry through the style lens.
+    -- Only passives keep an entry-side desat switch (Never Desaturate above):
+    -- their default-on missing desat is entry-shaped, and the Desaturation
+    -- section is aura-entry-denied so it could not carry their key.
 
-    -- Pandemic marker per-entry switch. The auto default follows the tracked
-    -- unit (on for target debuffs, off for player buffs); only an explicit
-    -- override is stored, so unchanged entries keep tracking the default.
-    -- The row hides with the aura duration text the marker rides (owner
-    -- ruling 2026-08-16), on the same effective read the display gates the
-    -- marker with; the stored key is untouched.
-    if effectiveStyle.showAuraText ~= false then
-        local pandemicDefault = unit == "target"
-        local pandemicValue = buttonData.pandemicMarker
-        if pandemicValue == nil then pandemicValue = pandemicDefault end
-        local pandemicRow = AddCheckboxRow(auraRight, {
-            label = "Pandemic Marker",
-            value = pandemicValue == true,
-            onChange = function(value)
-                if value == pandemicDefault then
-                    buttonData.pandemicMarker = nil
-                else
-                    buttonData.pandemicMarker = value and true or false
-                end
-                -- Turning it off drops this entry's command-center control,
-                -- so disarm its preview or the stand-in strands with no
-                -- toggle left. Entry-scoped check on purpose: a panel-wide
-                -- marker preview is still legitimately offered, and clearing
-                -- through the entry API would cancel it too.
-                if not value
-                    and CooldownCompanion:IsButtonConditionalVisualPreviewActive(
-                        CS.selectedGroup, CS.selectedButton, "pandemic_marker") then
-                    CooldownCompanion:SetConditionalVisualPreviewActive(
-                        CS.selectedGroup, CS.selectedButton, "pandemic_marker", false)
-                end
-                RefreshAuraConfig()
-            end,
-        })
-        AnchorRowBadge(pandemicRow, CreateInfoButton(pandemicRow.frame, pandemicRow.frame, "LEFT", "LEFT", 0, 0,
-            PANDEMIC_MARKER_TOOLTIP, infoButtons))
-    end
-
-    -- Pandemic effect per-entry switch (PTR 8 visuals). The default follows
-    -- the EFFECTIVE explicit-true enable — a promoted pandemicGlow override
-    -- can carry its own pandemicEffectEnabled — so the checkbox reflects
-    -- what this entry actually resolves; only an explicit override is
-    -- stored, so unchanged entries keep tracking that resolution. Never
-    -- gated on any text: the effect is a visual on the entry, not on text.
-    local effectDefault = effectiveStyle.pandemicEffectEnabled == true
-    local effectValue = buttonData.pandemicEffect
-    if effectValue == nil then effectValue = effectDefault end
-    local effectRow = AddCheckboxRow(auraRight, {
-        label = "Pandemic Effect",
-        value = effectValue == true,
-        onChange = function(value)
-            if value == effectDefault then
-                buttonData.pandemicEffect = nil
-            else
-                buttonData.pandemicEffect = value and true or false
-            end
-            -- Same stranded-preview rule as the marker above and as the
-            -- custom-bar twin. Unconditional here because this is a per-button
-            -- FLAG, not the shared conditional store: clearing it turns the
-            -- fake glow off on this entry alone, which is exactly what an
-            -- entry that just opted out should show under either scope.
-            if not value and CooldownCompanion.SetPandemicPreview then
-                CooldownCompanion:SetPandemicPreview(CS.selectedGroup, CS.selectedButton, false)
-            end
-            RefreshAuraConfig()
-        end,
-    })
-    AnchorRowBadge(effectRow, CreateInfoButton(effectRow.frame, effectRow.frame, "LEFT", "LEFT", 0, 0,
-        PANDEMIC_EFFECT_TOOLTIP, infoButtons))
+    -- The refresh window is NOT configured here any more (owner ruling
+    -- 2026-08-16): the marker and the pandemic effect are style keys in the
+    -- panel's Pandemic section (Indicators tab), reachable per entry by
+    -- customizing that section through the style lens. The marker's old
+    -- unit-dependent default survives as that section's "Auto" mode.
 end
 
 ST._BuildAuraTrackingSection = BuildAuraTrackingSection

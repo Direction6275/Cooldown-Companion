@@ -262,10 +262,11 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
     if uniformType and group and not isTriggerPanel then
         local repData = group.buttons[multiIndices[1]]
         if repData then
-            -- The same row-grammar Show Conditions / Talent Conditions sections
-            -- the entry Settings tab draws, in batch mode: the representative
-            -- entry seeds the tri-state reads and the builder's ApplyTo*
-            -- helpers fan every write out across the selection. Its ROW_SECTION
+            -- The same row-grammar Show & Hide Rules / Talent Conditions
+            -- sections the Visibility tab draws for one entry, in batch mode:
+            -- both stay here so a selection is edited in one place. The
+            -- representative entry seeds the tri-state reads and the builders'
+            -- ApplyTo* helpers fan every write out across the selection. Its ROW_SECTION
             -- header owns the air above it, so nothing spaces it here.
             ST._BuildVisibilitySettings(scroll, repData, CS.buttonSettingsInfoButtons, {
                 group = group,

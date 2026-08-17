@@ -160,7 +160,10 @@ local HEADING_LINE_Y = -HEADING_TOP_PAD / 2
 -- section has a caret, so collapsible and plain section titles line up.
 local HEADING_LABEL_INSET = HEADING_CARET_INSET + HEADING_CARET_SIZE + HEADING_CARET_GAP
 
-local function ApplyLeftAlignedHeading(heading, btn)
+-- flush: park the label at the caret column's left edge instead of the shared
+-- label inset. For headings that never carry a caret or icon (the family
+-- scoping lines), where the reserved column would read as a hole.
+local function ApplyLeftAlignedHeading(heading, btn, flush)
     local frame = heading.frame
     local rule = frame._cdcHeadingRule
 
@@ -183,7 +186,8 @@ local function ApplyLeftAlignedHeading(heading, btn)
     heading.label:SetJustifyH("LEFT")
     heading.label:SetPoint("TOP", frame, "TOP", 0, -HEADING_TOP_PAD)
     heading.label:SetPoint("BOTTOM")
-    heading.label:SetPoint("LEFT", frame, "LEFT", HEADING_LABEL_INSET, HEADING_LINE_Y)
+    heading.label:SetPoint("LEFT", frame, "LEFT",
+        flush and HEADING_CARET_INSET or HEADING_LABEL_INSET, HEADING_LINE_Y)
     -- Caret hangs off the LABEL, not the frame, so it rides the shifted line
     -- and the label's inset stays the same with or without one.
     if btn then
@@ -698,6 +702,8 @@ local AURA_TRACKING_CONFIG_ONLY_SECTIONS = {
     auraIndicator = true,
     barActiveAura = true,
     pandemic = true,
+    whileAuraActive = true,
+    auraMissingDesaturation = true,
 }
 
 local function CanButtonUseConfigOverrideSection(buttonData, sectionId)

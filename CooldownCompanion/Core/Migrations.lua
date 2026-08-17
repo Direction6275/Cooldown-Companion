@@ -1317,7 +1317,9 @@ local function MigrateEntryAuraResidue(self, buttonData, counts)
     -- too until the 2.0 keep-swipe revival. Removing the strip preserves the
     -- flag only on profiles that have not yet claimed this sentinel -- fresh
     -- 1.x imports; a profile already migrated by an earlier 2.0 build lost
-    -- the value and re-ticks the checkbox by hand.)
+    -- the value and re-ticks the checkbox by hand. The flag is no longer entry
+    -- data at all: MigrateWhileAuraActiveOwnership, which runs after this pass,
+    -- moves whatever survives here onto the whileAuraActive style section.)
     if buttonData.hideAuraActiveExceptPandemic ~= nil then
         counts.hidePandemic = counts.hidePandemic + 1
         buttonData.hideAuraActiveExceptPandemic = nil
@@ -1472,11 +1474,69 @@ local AURA_GLOW_SENTINEL = {
 local PANDEMIC_OVERRIDE_SENTINEL = {
     current = "_cdcPandemicOverrideMigrated",
 }
+-- While Aura Active ownership: auraKeepSpellCooldownSwipe leaving buttonData
+-- for the new whileAuraActive override section, and separateTextPositions
+-- leaving the auraText section for the same place. Claimed through the shared
+-- helper so a future generation bump is still one edit.
+--
+-- gen 2: the v1 shape stored only the keys it found TRUE, and under
+-- GetEffectiveStyle's presence-based merge a missing sibling key FOLLOWS the
+-- panel rather than meaning its legacy value - so a later panel edit could
+-- move a migrated entry. Both waves now seed the section's full four-key
+-- snapshot and repair any v1-migrated store that is short of it.
+local WHILE_AURA_ACTIVE_SENTINEL = {
+    current = "_cdcWhileAuraActive2Migrated",
+    retired = { "_cdcWhileAuraActiveMigrated" },
+}
+-- Second While Aura Active wave: auraShowAuraIcon and invertAuraDesaturationLogic
+-- leaving buttonData for the same section. Its own sentinel because the one
+-- above is already stamped on every profile the first wave reached. gen 2 for
+-- the same completeness fix as the wave above.
+local WHILE_AURA_ACTIVE_ICON_SENTINEL = {
+    current = "_cdcWhileAuraActiveIcon2Migrated",
+    retired = { "_cdcWhileAuraActiveIconMigrated" },
+}
+-- Third emigration wave, different destination: desaturateWhileAuraNotActive
+-- leaving buttonData for its own auraMissingDesaturation section (owner ruling
+-- 2026-08-16; a same-day v1 briefly targeted the desaturation section, hence
+-- the "2" - the worker still repairs any store the v1 shape touched).
+-- neverDesaturate deliberately stays entry data: it serves passives, which are
+-- the only standalone auras the section is denied to.
+--
+-- gen 3: v2 ran while the denial was a flat deny for EVERY standalone aura, so
+-- it cleared the flat field without transfer on the non-passive ones that do
+-- read it. The denial is a passive-only predicate now (Defaults.lua) and this
+-- pass re-runs so those entries migrate. A profile that already ran v2 lost
+-- that field with no store to recover it from.
+local DESAT_MISSING_SENTINEL = {
+    current = "_cdcDesatMissingMigrated3",
+    retired = { "_cdcDesatMissingMigrated", "_cdcDesatMissingMigrated2" },
+}
+-- Fourth emigration wave, into the pandemic section: the entry's own
+-- pandemicMarker/pandemicEffect checkboxes dissolving into the panel's
+-- Pandemic override section (owner ruling 2026-08-16). Also the key swap that
+-- made the marker expressible as a style key at all -- the tri-state
+-- pandemicMarkerEnabled boolean becoming the pandemicMarkerMode enum -- across
+-- every style table, which is why this one walks style scopes as well as
+-- entries.
+--
+-- gen 2: v1 seeded nothing at all under a killed panel, which threw away an
+-- explicit marker-OFF - intent the panel's own kill switch was agreeing with,
+-- not replacing, so setting that panel back to Auto re-lit a marker the user
+-- had turned off. A profile that already ran v1 lost that false.
+local PANDEMIC_SWITCH_SENTINEL = {
+    current = "_cdcPandemicSwitch2Migrated",
+    retired = { "_cdcPandemicSwitchMigrated" },
+}
 local MIGRATION_SENTINELS = {
     AURA_REBUILD_SENTINEL,
     BAR_AURA_EFFECT_SENTINEL,
     AURA_GLOW_SENTINEL,
     PANDEMIC_OVERRIDE_SENTINEL,
+    WHILE_AURA_ACTIVE_SENTINEL,
+    WHILE_AURA_ACTIVE_ICON_SENTINEL,
+    DESAT_MISSING_SENTINEL,
+    PANDEMIC_SWITCH_SENTINEL,
     -- Single-generation passes keep their own inline guard and stamp (the
     -- group-scope pass stamps conditionally on talent data being ready);
     -- registered so ClearMigrationSentinels iterates them.
@@ -2517,8 +2577,13 @@ end
 -- Silent: a rename and a re-homing lose nothing, and this file's convention is
 -- that only user-visible losses and semantic remaps earn a notice.
 ------------------------------------------------------------------------
+-- Both marker enable names are listed: this pass runs BEFORE the switch pass
+-- below renames them, so a pre-rename profile still carries the boolean, while
+-- a re-import of already-renamed data must find the enum here or the ownership
+-- test would skip the one key the entry most likely customized.
 local PANDEMIC_MARKER_OVERRIDE_KEYS = {
     "pandemicMarkerEnabled",
+    "pandemicMarkerMode",
     "pandemicMarkerText",
     "pandemicMarkerColorMode",
     "pandemicMarkerColor",
@@ -2529,6 +2594,7 @@ local PANDEMIC_MARKER_OVERRIDE_KEYS = {
 -- plain copy of globalStyle at creation), so the comparison needs a floor.
 local PANDEMIC_MARKER_BASELINE = {
     pandemicMarkerEnabled = true,
+    pandemicMarkerMode = "auto",
     pandemicMarkerText = "!!",
     pandemicMarkerColorMode = "marker",
     pandemicMarkerColor = { 1, 0.5, 0, 1 },
@@ -2669,6 +2735,455 @@ local function MigratePandemicOverrideOwnership(self, profile)
     profile[PANDEMIC_OVERRIDE_SENTINEL.current] = true
 end
 
+local WHILE_AURA_ACTIVE_SECTION = "whileAuraActive"
+
+-- Every key the section owns. A store that gains the section must hold ALL of
+-- them: GetEffectiveStyle's merge is presence-based, so a key the entry does
+-- not store follows the PANEL from then on - which would let a later panel edit
+-- move an entry these passes were supposed to leave rendering identically.
+-- Normal promotion snapshots the whole section for exactly this reason.
+local WHILE_AURA_ACTIVE_KEYS = {
+    "auraKeepSpellCooldownSwipe",
+    "separateTextPositions",
+    "auraShowAuraIcon",
+    "invertAuraDesaturationLogic",
+}
+
+-- separateTextPositions as it resolved BEFORE these passes: it was already a
+-- STYLE key (the auraText section's), so its legacy value is the entry's stored
+-- copy where the entry had any active section, and the panel's otherwise - the
+-- way GetEffectiveStyle reads it. Same shape as PandemicMarkerKilledFor below.
+local function PriorSeparateTextPositions(buttonData, group)
+    local sections = rawget(buttonData, "overrideSections")
+    local overrides = rawget(buttonData, "styleOverrides")
+    if type(sections) == "table" and next(sections) ~= nil and type(overrides) == "table" then
+        local stored = rawget(overrides, "separateTextPositions")
+        if stored ~= nil then return stored == true end
+    end
+    local groupStyle = type(group) == "table" and rawget(group, "style") or nil
+    if type(groupStyle) ~= "table" then return false end
+    return rawget(groupStyle, "separateTextPositions") == true
+end
+
+-- The four keys' legacy values, read BEFORE the worker rewrites anything under
+-- itself. The three former ENTRY FIELDS were stored true-or-nil, so an absent
+-- one means false; a re-run after an import finds them already cleared and
+-- reads false, which is the same answer the first run gave.
+local function ReadWhileAuraActiveLegacyValues(buttonData, group)
+    return {
+        auraKeepSpellCooldownSwipe = rawget(buttonData, "auraKeepSpellCooldownSwipe") == true,
+        auraShowAuraIcon = rawget(buttonData, "auraShowAuraIcon") == true,
+        invertAuraDesaturationLogic = rawget(buttonData, "invertAuraDesaturationLogic") == true,
+        separateTextPositions = PriorSeparateTextPositions(buttonData, group),
+    }
+end
+
+-- Fill in whatever the section is short of, for a store that already carries
+-- it. Never creates the section and never overwrites a stored key, so it is
+-- both the completeness step for a section these passes just created and the
+-- repair step for a v1-migrated store - and a no-op on a store promoted the
+-- normal way, which already holds all four.
+local function SeedWhileAuraActiveSnapshot(buttonData, legacy)
+    local sections = rawget(buttonData, "overrideSections")
+    if type(sections) ~= "table" or not sections[WHILE_AURA_ACTIVE_SECTION] then return end
+    local overrides = rawget(buttonData, "styleOverrides")
+    if type(overrides) ~= "table" then
+        overrides = {}
+        buttonData.styleOverrides = overrides
+    end
+    for _, key in ipairs(WHILE_AURA_ACTIVE_KEYS) do
+        if rawget(overrides, key) == nil then
+            overrides[key] = legacy[key]
+        end
+    end
+end
+
+-- Job 2 of the worker below, split out so its guards can bail without skipping
+-- the snapshot step that follows them.
+local function ClaimWhileAuraActiveForSeparateTextPositions(buttonData, allowed)
+    local overrides = rawget(buttonData, "styleOverrides")
+    if type(overrides) ~= "table" then return end
+    if rawget(overrides, "separateTextPositions") == nil then return end
+    if not allowed then return end
+
+    local sections = rawget(buttonData, "overrideSections")
+    -- No active section at all means orphaned leftovers a prune already
+    -- disowned; claiming them would resurrect keys nothing is meant to revert.
+    if type(sections) ~= "table" or next(sections) == nil then return end
+
+    -- Re-run safe (every import clears the sentinels): the auraText flag and
+    -- every other key stay exactly as they were, so a second pass re-asserts
+    -- a true that is already true and decides nothing new.
+    sections[WHILE_AURA_ACTIVE_SECTION] = true
+end
+
+-- Two jobs, both about the same section gaining its keys.
+--
+-- rawget throughout, for the reason the pandemic worker gives: GetEffectiveStyle
+-- leaves __index = groupStyle on styleOverrides and never removes it, so a plain
+-- read reports the GROUP's value for keys the entry never stored.
+local function MigrateOneWhileAuraActiveOverride(buttonData, group)
+    if type(buttonData) ~= "table" then return end
+
+    local allowed = not ST.CanButtonUseOverrideSection
+        or ST.CanButtonUseOverrideSection(buttonData, WHILE_AURA_ACTIVE_SECTION)
+    local legacy = ReadWhileAuraActiveLegacyValues(buttonData, group)
+
+    -- 1. Keep Spell Cooldown Swipe was a flat entry field, stored true-or-nil,
+    -- and becomes a stored style key. Always clear the old field: no reader is
+    -- left, so leaving it behind would only be data that looks live.
+    local keepSwipe = rawget(buttonData, "auraKeepSpellCooldownSwipe")
+    if keepSwipe ~= nil then
+        buttonData.auraKeepSpellCooldownSwipe = nil
+        -- Where the section cannot live the flag was already inert by design
+        -- (the row hides and no host reads it), so dropping it IS the whole
+        -- migration -- and writing a section PruneDisallowedOverrideSections
+        -- would tear down on the next GetEffectiveStyle is worse than nothing.
+        if keepSwipe == true and allowed then
+            local overrides = rawget(buttonData, "styleOverrides")
+            if type(overrides) ~= "table" then
+                overrides = {}
+                buttonData.styleOverrides = overrides
+            end
+            local sections = rawget(buttonData, "overrideSections")
+            if type(sections) ~= "table" then
+                sections = {}
+                buttonData.overrideSections = sections
+            end
+            overrides.auraKeepSpellCooldownSwipe = true
+            sections[WHILE_AURA_ACTIVE_SECTION] = true
+        end
+    end
+
+    -- 2. separateTextPositions was seeded into the store by an auraText
+    -- promote and now belongs to this section. Claim the section rather than
+    -- test the value against the panel the way the pandemic worker did: this
+    -- key decides which anchor keys place the text, so deleting a stored copy
+    -- could move a text, and this packet must render identically to before.
+    ClaimWhileAuraActiveForSeparateTextPositions(buttonData, allowed)
+
+    -- Whichever job above created or claimed the section - or the v1 shape of
+    -- this pass, on a profile that already ran it - it must end up holding the
+    -- section's whole snapshot rather than only the keys that were true.
+    if allowed then
+        SeedWhileAuraActiveSnapshot(buttonData, legacy)
+    end
+end
+
+local function MigrateWhileAuraActiveOwnership(self, profile)
+    if type(profile) ~= "table" or not ClaimMigrationPass(profile, WHILE_AURA_ACTIVE_SENTINEL) then return end
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            if type(group) == "table" and type(group.buttons) == "table" then
+                for _, buttonData in ipairs(group.buttons) do
+                    MigrateOneWhileAuraActiveOverride(buttonData, group)
+                end
+            end
+        end
+    end
+
+    -- Custom aura bars are a different store with no override sections, and
+    -- neither key ever reached it: that kit has no icon cover to skip and no
+    -- cooldown text to lift. Nothing to do there.
+    profile[WHILE_AURA_ACTIVE_SENTINEL.current] = true
+end
+
+-- Second wave into the same section: the two aura-appearance flags that stayed
+-- on buttonData when the section was born. Both were stored true-or-nil, both
+-- become stored style keys, and the old field is ALWAYS cleared -- no reader is
+-- left, so leaving it behind would only be data that looks live.
+--
+-- rawget throughout, same reason as the worker above.
+local WHILE_AURA_ACTIVE_ICON_FIELDS = {
+    "auraShowAuraIcon",
+    "invertAuraDesaturationLogic",
+}
+
+local function MigrateOneWhileAuraActiveIconOverride(buttonData, group)
+    if type(buttonData) ~= "table" then return end
+
+    local allowed = not ST.CanButtonUseOverrideSection
+        or ST.CanButtonUseOverrideSection(buttonData, WHILE_AURA_ACTIVE_SECTION)
+    local legacy = ReadWhileAuraActiveLegacyValues(buttonData, group)
+
+    for _, field in ipairs(WHILE_AURA_ACTIVE_ICON_FIELDS) do
+        local stored = rawget(buttonData, field)
+        if stored ~= nil then
+            buttonData[field] = nil
+            -- Where the section cannot live the flag was already inert by
+            -- design, so dropping it IS the whole migration -- and writing a
+            -- section PruneDisallowedOverrideSections would tear down on the
+            -- next GetEffectiveStyle is worse than nothing.
+            if stored == true and allowed then
+                local overrides = rawget(buttonData, "styleOverrides")
+                if type(overrides) ~= "table" then
+                    overrides = {}
+                    buttonData.styleOverrides = overrides
+                end
+                local sections = rawget(buttonData, "overrideSections")
+                if type(sections) ~= "table" then
+                    sections = {}
+                    buttonData.overrideSections = sections
+                end
+                overrides[field] = true
+                sections[WHILE_AURA_ACTIVE_SECTION] = true
+            end
+        end
+    end
+
+    -- Same completeness step the first wave takes: this wave can create the
+    -- section on its own, and it also runs over stores the v1 shapes left
+    -- short of the full snapshot.
+    if allowed then
+        SeedWhileAuraActiveSnapshot(buttonData, legacy)
+    end
+end
+
+-- Re-run safe (every import clears the sentinels): a second pass finds the
+-- entry fields already gone and does nothing.
+local function MigrateWhileAuraActiveIconOwnership(self, profile)
+    if type(profile) ~= "table" or not ClaimMigrationPass(profile, WHILE_AURA_ACTIVE_ICON_SENTINEL) then return end
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            if type(group) == "table" and type(group.buttons) == "table" then
+                for _, buttonData in ipairs(group.buttons) do
+                    MigrateOneWhileAuraActiveIconOverride(buttonData, group)
+                end
+            end
+        end
+    end
+
+    -- Custom aura bars are a different store with no override sections, and
+    -- neither field ever reached it.
+    profile[WHILE_AURA_ACTIVE_ICON_SENTINEL.current] = true
+end
+
+-- Third emigration wave (see DESAT_MISSING_SENTINEL): one field, destination
+-- desaturation section. Same discipline as the workers above -- rawget, always
+-- clear the entry field, seed only where the section can live. On entries the
+-- section is denied to (standalone auras, passives) the field was inert:
+-- Tracking.lua's passive branch never read it.
+local function MigrateOneDesatMissingOverride(buttonData)
+    if type(buttonData) ~= "table" then return end
+
+    local allowed = not ST.CanButtonUseOverrideSection
+        or ST.CanButtonUseOverrideSection(buttonData, "auraMissingDesaturation")
+
+    local stored = rawget(buttonData, "desaturateWhileAuraNotActive")
+    if stored ~= nil then
+        buttonData.desaturateWhileAuraNotActive = nil
+        if stored == true and allowed then
+            local overrides = rawget(buttonData, "styleOverrides")
+            if type(overrides) ~= "table" then
+                overrides = {}
+                buttonData.styleOverrides = overrides
+            end
+            local sections = rawget(buttonData, "overrideSections")
+            if type(sections) ~= "table" then
+                sections = {}
+                buttonData.overrideSections = sections
+            end
+            overrides.desaturateWhileAuraNotActive = true
+            sections.auraMissingDesaturation = true
+        end
+    end
+
+    -- v1 repair: the short-lived first shape of this wave seeded the key into
+    -- the store under the DESATURATION section's flag. Re-claim any stored key
+    -- for the section that owns it now, so revert bookkeeping can reach it.
+    -- The stray desaturation flag is left alone: nothing distinguishes it from
+    -- a legitimate pre-existing customization.
+    local overrides = rawget(buttonData, "styleOverrides")
+    if type(overrides) == "table"
+        and rawget(overrides, "desaturateWhileAuraNotActive") ~= nil
+        and allowed then
+        local sections = rawget(buttonData, "overrideSections")
+        if type(sections) == "table" and next(sections) ~= nil then
+            sections.auraMissingDesaturation = true
+        end
+    end
+end
+
+-- Re-run safe (every import clears the sentinels): a second pass finds the
+-- entry field already gone and does nothing.
+local function MigrateDesatMissingOwnership(self, profile)
+    if type(profile) ~= "table" or not ClaimMigrationPass(profile, DESAT_MISSING_SENTINEL) then return end
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            if type(group) == "table" and type(group.buttons) == "table" then
+                for _, buttonData in ipairs(group.buttons) do
+                    MigrateOneDesatMissingOverride(buttonData)
+                end
+            end
+        end
+    end
+
+    profile[DESAT_MISSING_SENTINEL.current] = true
+end
+
+------------------------------------------------------------------------
+-- PANDEMIC SWITCH UNIFICATION
+--
+-- Fourth emigration wave (see PANDEMIC_SWITCH_SENTINEL), and the only one that
+-- also renames a style key, because the two are one change:
+--
+-- 1. THE MARKER KEY. The entry checkbox it replaces was TRI-STATE with a
+--    unit-dependent auto default (explicit entry value, else on for target
+--    debuffs and off for player buffs), and the panel carried a separate
+--    boolean kill switch. A boolean cannot say "auto", so pandemicMarkerEnabled
+--    becomes the pandemicMarkerMode enum in every style table: false -> "off"
+--    (the old kill switch), anything else -> "auto" (the old unit default).
+--
+-- 2. THE ENTRY FIELDS. buttonData.pandemicMarker and buttonData.pandemicEffect
+--    become stored keys of the pandemic override section, the way the three
+--    waves above moved their fields. Both fields are ALWAYS cleared -- no
+--    reader is left, so leaving them behind would only be data that looks live.
+--
+-- Marker seeding preserves what the entry renders TODAY, which means asking the
+-- old precedence: the kill switch outranked the entry checkbox, so an entry
+-- whose checkbox said ON under a killed panel seeds nothing and simply follows
+-- the "off" the style rewrite just produced. An explicit OFF under a killed
+-- panel IS seeded (gen 2): it renders the same either way, and dropping it lost
+-- a stated intent the moment the panel went back to Auto. The effect had no
+-- such interplay -- the entry field outranked the panel outright -- so its
+-- stored value transfers as-is.
+--
+-- Silent: nothing renders differently, so no notice is earned.
+------------------------------------------------------------------------
+local PANDEMIC_SWITCH_SECTION = "pandemic"
+
+-- rawget throughout: entry override stores wear a permanent __index pointing at
+-- the group style, so a plain read reports the GROUP's value for keys the entry
+-- never stored.
+local function MigratePandemicMarkerModeStyle(styleTable)
+    if type(styleTable) ~= "table" then return end
+    local enabled = rawget(styleTable, "pandemicMarkerEnabled")
+    if enabled == nil then return end
+    styleTable.pandemicMarkerEnabled = nil
+    -- A mode already present wins: it is either this pass re-running on
+    -- imported data or a store that carries both, and the enum is the live key.
+    if rawget(styleTable, "pandemicMarkerMode") == nil then
+        styleTable.pandemicMarkerMode = (enabled == false) and "off" or "auto"
+    end
+end
+
+-- The marker gate as it resolved BEFORE this pass: the panel-or-override kill
+-- switch, read the way GetEffectiveStyle reads it (an entry with no active
+-- section has its store ignored entirely). Tolerates either key name, so the
+-- answer is the same whichever order the tables were rewritten in.
+local function PandemicMarkerKilledFor(buttonData, group)
+    local sections = rawget(buttonData, "overrideSections")
+    local overrides = rawget(buttonData, "styleOverrides")
+    if type(sections) == "table" and next(sections) ~= nil and type(overrides) == "table" then
+        local stored = rawget(overrides, "pandemicMarkerEnabled")
+        if stored ~= nil then return stored == false end
+        local storedMode = rawget(overrides, "pandemicMarkerMode")
+        if storedMode ~= nil then return storedMode == "off" end
+    end
+
+    local groupStyle = type(group) == "table" and rawget(group, "style") or nil
+    if type(groupStyle) ~= "table" then return false end
+    local panelStored = rawget(groupStyle, "pandemicMarkerEnabled")
+    if panelStored ~= nil then return panelStored == false end
+    return rawget(groupStyle, "pandemicMarkerMode") == "off"
+end
+
+local function SeedPandemicOverride(buttonData, key, value)
+    local overrides = rawget(buttonData, "styleOverrides")
+    if type(overrides) ~= "table" then
+        overrides = {}
+        buttonData.styleOverrides = overrides
+    end
+    local sections = rawget(buttonData, "overrideSections")
+    if type(sections) ~= "table" then
+        sections = {}
+        buttonData.overrideSections = sections
+    end
+    overrides[key] = value
+    sections[PANDEMIC_SWITCH_SECTION] = true
+end
+
+local function MigrateOnePandemicSwitch(buttonData, group)
+    if type(buttonData) ~= "table" then return end
+
+    local allowed = not ST.CanButtonUseOverrideSection
+        or ST.CanButtonUseOverrideSection(buttonData, PANDEMIC_SWITCH_SECTION)
+    -- Read the old precedence before the store is rewritten under it.
+    local killed = PandemicMarkerKilledFor(buttonData, group)
+    MigratePandemicMarkerModeStyle(rawget(buttonData, "styleOverrides"))
+
+    local marker = rawget(buttonData, "pandemicMarker")
+    if marker ~= nil then
+        buttonData.pandemicMarker = nil
+        -- Where the section cannot live the field was already inert by design,
+        -- so dropping it IS the whole migration -- and writing a section
+        -- PruneDisallowedOverrideSections would tear down on the next
+        -- GetEffectiveStyle is worse than nothing.
+        --
+        -- Under a killed panel the kill switch outranked the checkbox, so only
+        -- an explicit ON is dropped: seeding it would light a marker the panel
+        -- currently suppresses, which is a rendering change. An explicit OFF
+        -- was AGREEING with the kill switch, and is seeded - nothing renders
+        -- differently today, and the intent survives the panel being set back
+        -- to Auto later (owner ruling 2026-08-16).
+        if allowed and not (killed and marker == true) then
+            SeedPandemicOverride(buttonData, "pandemicMarkerMode", marker == true and "on" or "off")
+        end
+    end
+
+    local effect = rawget(buttonData, "pandemicEffect")
+    if effect ~= nil then
+        buttonData.pandemicEffect = nil
+        -- Explicit false is STORED, not dropped: it outranked the panel before
+        -- and the override store's __index would otherwise hand the entry the
+        -- panel's enable straight back.
+        if allowed then
+            SeedPandemicOverride(buttonData, "pandemicEffectEnabled", effect == true)
+        end
+    end
+end
+
+-- Re-run safe (every import clears the sentinels): a second pass finds the
+-- entry fields already gone and every style table already speaking the enum.
+local function MigratePandemicSwitchOwnership(self, profile)
+    if type(profile) ~= "table" or not ClaimMigrationPass(profile, PANDEMIC_SWITCH_SENTINEL) then return end
+
+    MigratePandemicMarkerModeStyle(profile.globalStyle)
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            if type(group) == "table" then
+                MigratePandemicMarkerModeStyle(group.style)
+                if type(group.buttons) == "table" then
+                    for _, buttonData in ipairs(group.buttons) do
+                        MigrateOnePandemicSwitch(buttonData, group)
+                    end
+                end
+            end
+        end
+    end
+
+    if type(profile.groupSettingPresets) == "table" then
+        for _, presetStore in pairs(profile.groupSettingPresets) do
+            if type(presetStore) == "table" then
+                for _, presetData in pairs(presetStore) do
+                    if type(presetData) == "table" then
+                        MigratePandemicMarkerModeStyle(presetData.style)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Custom aura bars are a different store with no override sections and no
+    -- style tables: they keep their own flat pandemicMarker/pandemicEffect keys,
+    -- which the style adapter translates into this vocabulary at bind time.
+    profile[PANDEMIC_SWITCH_SENTINEL.current] = true
+end
+
 -- Consolidated entry point: enforces the 1.15 data cutoff and stamps profiles
 -- that are allowed to continue. Add new post-1.15 migrations here in order.
 function CooldownCompanion:RunAllMigrations()
@@ -2740,6 +3255,17 @@ function CooldownCompanion:RunAllMigrations()
     -- After the style-table passes above: they strip dead keys from entry
     -- override tables too, so this one compares cleaned data.
     MigratePandemicOverrideOwnership(self, self.db and self.db.profile)
+    -- Same reason as the pandemic pass above, and after it: both re-home keys
+    -- inside entry override stores the style passes have already cleaned.
+    MigrateWhileAuraActiveOwnership(self, self.db and self.db.profile)
+    -- Right after the pass above: same section, same stores, second wave of keys.
+    MigrateWhileAuraActiveIconOwnership(self, self.db and self.db.profile)
+    -- Third wave, different destination section (desaturation); same stores.
+    MigrateDesatMissingOwnership(self, self.db and self.db.profile)
+    -- Fourth wave, back into the pandemic section, and the marker key swap that
+    -- goes with it. After MigratePandemicOverrideOwnership above: that pass
+    -- decides marker-key ownership by the OLD names, and this one renames them.
+    MigratePandemicSwitchOwnership(self, self.db and self.db.profile)
     if self.RunResourceBarClassScopeMigration then
         self:RunResourceBarClassScopeMigration()
     end

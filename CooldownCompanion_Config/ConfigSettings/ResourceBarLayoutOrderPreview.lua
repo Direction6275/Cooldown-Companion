@@ -1766,7 +1766,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         -- the stand-in strands armed with no toggle left to stop it.
         local markerPreview = cabConfig
             and CooldownCompanion:IsCustomAuraBarMarkerPreviewActive(cabConfig)
-            and CooldownCompanion:IsPandemicMarkerPreviewWanted(cabConfig, cabConfig)
+            and CooldownCompanion:IsCustomBarPandemicMarkerPreviewWanted(cabConfig)
         barInfo.frame._barAuraActivePreview = (cabConfig
             and (CooldownCompanion:IsCustomAuraBarActivePreviewActive(cabConfig)
                 or pandemicPreview or markerPreview))

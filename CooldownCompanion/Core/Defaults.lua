@@ -92,6 +92,9 @@ local defaults = {
                         cooldownTextXOffset = 0,
                         cooldownTextYOffset = 0,
                         separateTextPositions = false,
+                        auraKeepSpellCooldownSwipe = false,
+                        auraShowAuraIcon = false,
+                        invertAuraDesaturationLogic = false,
                         auraTextAnchor = "TOPLEFT",
                         auraTextXOffset = 2,
                         auraTextYOffset = -2,
@@ -100,7 +103,7 @@ local defaults = {
                         auraTextFontSize = 12,
                         auraTextFontOutline = "OUTLINE",
                         auraTextFontColor = {0, 0.925, 1, 1},
-                        pandemicMarkerEnabled = true, -- group-wide kill switch for the marker feature
+                        pandemicMarkerMode = "auto", -- "auto" (target debuffs only) / "on" / "off"
                         pandemicMarkerText = "!!",
                         pandemicMarkerColorMode = "marker", -- "off" / "marker" / "whole"
                         pandemicMarkerColor = {1, 0.5, 0, 1},
@@ -112,6 +115,7 @@ local defaults = {
                         tooltipHideInCombat = false,
                         allowPings = false, -- Entries answer the ping keybind like Cooldown Manager items
                         desaturateOnCooldown = true, -- Desaturate icon while on cooldown
+                        desaturateWhileAuraNotActive = false, -- Desaturate icon while the tracked aura is missing
                         showCooldownSwipe = true,
                         showAuraDurationSwipe = true,
                         showCooldownSwipeFill = true,
@@ -272,10 +276,13 @@ local defaults = {
             cooldownTextXOffset = 0,
             cooldownTextYOffset = 0,
             separateTextPositions = false,
+            auraKeepSpellCooldownSwipe = false,
+            auraShowAuraIcon = false,
+            invertAuraDesaturationLogic = false,
             auraTextAnchor = "TOPLEFT",
             auraTextXOffset = 2,
             auraTextYOffset = -2,
-            pandemicMarkerEnabled = true,
+            pandemicMarkerMode = "auto",
             pandemicMarkerText = "!!",
             pandemicMarkerColorMode = "marker",
             pandemicMarkerColor = {1, 0.5, 0, 1},
@@ -286,6 +293,7 @@ local defaults = {
             tooltipHideInCombat = false,
             allowPings = false,
             desaturateOnCooldown = true,
+            desaturateWhileAuraNotActive = false,
             showCooldownSwipe = true,
             showAuraDurationSwipe = true,
             showCooldownSwipeFill = true,
@@ -986,9 +994,40 @@ ST.OVERRIDE_SECTIONS = {
     -- refresh-window feature. MigratePandemicOverrideOwnership re-homes the
     -- overrides that were promoted under the old list; the two edits ship as
     -- one unit, or RevertSection stops clearing keys it no longer owns.
+    -- separateTextPositions used to ride this list too, because the flag
+    -- chooses which anchor keys place this text. It moved to the
+    -- whileAuraActive section below when that section grew, so one override
+    -- covers everything the entry keeps showing while its aura runs.
+    -- MigrateWhileAuraActiveOwnership claims the section on entries that were
+    -- promoted under the old list; the two edits ship as one unit, or
+    -- RevertSection stops clearing a key it no longer owns.
     auraText = {
         label = "Aura Duration Text",
-        keys = {"showAuraText", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor", "separateTextPositions", "auraTextAnchor", "auraTextXOffset", "auraTextYOffset"},
+        keys = {"showAuraText", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor", "auraTextAnchor", "auraTextXOffset", "auraTextYOffset"},
+        modes = {icons = true, bars = true},
+    },
+    -- How the entry looks while its tracked aura is up. Four keys, all four
+    -- former per-entry flags:
+    --   auraKeepSpellCooldownSwipe -- keeps the cooldown swipe under the aura
+    --     overlays (skips the aura display's icon takeover),
+    --   separateTextPositions -- lifts the cooldown countdown above them and
+    --     splits the two texts' positions,
+    --   auraShowAuraIcon -- swaps the live aura's icon in while it runs,
+    --   invertAuraDesaturationLogic -- desaturates the aura layer instead of
+    --     the missing state.
+    -- All but separateTextPositions were flat buttonData fields until this
+    -- section existed; separateTextPositions was seeded by an auraText promote.
+    -- MigrateWhileAuraActiveOwnership re-homes the first pair,
+    -- MigrateWhileAuraActiveIconOwnership the last two.
+    --
+    -- The first two keys are icons-only in EFFECT (a bar has no cover to skip
+    -- and no pinned text host), but the section stays mode-spanning like
+    -- auraText: nothing clears an override when a panel changes display mode,
+    -- so a bars-denied section would strand stored keys no revert could reach.
+    -- Icons-only is a host property and stays at the call sites and the UI.
+    whileAuraActive = {
+        label = "While Aura Active",
+        keys = {"auraKeepSpellCooldownSwipe", "separateTextPositions", "auraShowAuraIcon", "invertAuraDesaturationLogic"},
         modes = {icons = true, bars = true},
     },
     auraStackText = {
@@ -1011,6 +1050,22 @@ ST.OVERRIDE_SECTIONS = {
         label = "Desaturation",
         keys = {"desaturateOnCooldown"},
         modes = {icons = true, bars = true, rotationAssistant = true},
+    },
+    -- desaturateWhileAuraNotActive was a flat buttonData field until the
+    -- entry-appearance emigration; MigrateDesatMissingOwnership re-homes it.
+    -- Its OWN section (owner ruling 2026-08-16): riding the desaturation
+    -- section made it customizable only through the cooldown toggle's chrome,
+    -- which read as a cooldown setting. PASSIVES are untouched by the key:
+    -- they desaturate while missing by default, with entry-data
+    -- neverDesaturate as their off switch - which is why the aura-entry
+    -- denial below is a passive-only PREDICATE rather than a flat deny. A
+    -- non-passive standalone aura entry does read the key (the non-passive
+    -- branch of ButtonFrame/Tracking.lua's ResolveDesaturationIntent), so
+    -- the section has to reach it.
+    auraMissingDesaturation = {
+        label = "Desaturate While Aura Missing",
+        keys = {"desaturateWhileAuraNotActive"},
+        modes = {icons = true, bars = true},
     },
     cooldownSwipe = {
         label = "Cooldown Swipe",
@@ -1088,12 +1143,20 @@ ST.OVERRIDE_SECTIONS = {
     -- section still listed. The marker keys made that overlap span
     -- user-authored text and colour, which is not recoverable; merging removes
     -- the collision instead of policing it.
+    --
+    -- Both halves are per-entry editable through this one section (owner ruling
+    -- 2026-08-16), which retired the entry tab's own Pandemic Marker and
+    -- Pandemic Effect checkboxes. The marker key is an ENUM rather than the old
+    -- boolean kill switch: the entry checkbox defaulted per tracked UNIT (on for
+    -- target debuffs, off for player buffs), and only "auto" can carry that
+    -- meaning into a style key. "off" is the old kill switch, "on" forces the
+    -- marker even on player buffs.
     pandemic = {
         label = "Pandemic",
         keys = {"pandemicEffectEnabled",
             "pandemicGlowStyle", "pandemicGlowColor", "pandemicGlowColor2", "pandemicGlowSize", "pandemicGlowThickness", "pandemicGlowSpeed", "pandemicGlowLines",
             "barPandemicColor",
-            "pandemicMarkerEnabled", "pandemicMarkerText", "pandemicMarkerColorMode", "pandemicMarkerColor"},
+            "pandemicMarkerMode", "pandemicMarkerText", "pandemicMarkerColorMode", "pandemicMarkerColor"},
         modes = {icons = true, bars = true},
     },
     auraIndicator = {
@@ -1196,8 +1259,8 @@ ST.OVERRIDE_SECTIONS = {
 -- listed (the entry-slot hover tooltip and the config's Customizations list
 -- both walk this).
 ST.OVERRIDE_SECTION_ORDER = {
-    "borderSettings", "cooldownText", "auraText", "auraStackText",
-    "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "showOutOfRange", "showTooltips",
+    "borderSettings", "cooldownText", "auraText", "whileAuraActive", "auraStackText",
+    "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "auraMissingDesaturation", "showOutOfRange", "showTooltips",
     -- "pandemic" spans both display modes (like auraText above), so it sits in
     -- the icons run rather than being listed twice.
     "lossOfControl", "unusableDimming", "iconTint", "iconZoom", "assistedHighlight", "procGlow", "auraIndicator", "pandemic", "readyGlow", "keyPressHighlight",
@@ -1251,10 +1314,24 @@ ST.NO_COOLDOWN_DENIED_OVERRIDE_SECTIONS = {
 -- would delete saved overrides the moment the toggle turns off. NOT denied:
 -- keybindText (custom keybind text renders on aura entries) and cooldownText
 -- (its position keys place the aura duration text in shared-position mode).
+--
+-- A value may be a PREDICATE `function(buttonData) -> denied` instead of
+-- `true`, for a section only SOME standalone aura shapes are dead for. The
+-- shape it asks about must be as immutable as add intent is, because the
+-- prune pass deletes on a false answer just the same. CanGroupUseOverrideSection
+-- treats any predicate as a plain denial: an Aura Panel is judged by what its
+-- whole population can share, and a section only some of its entries can use
+-- is not a panel-wide default worth offering.
 ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS = {
     cooldownSwipe = true,
     showGCDSwipe = true,
     desaturation = true,
+    -- Passive standalone auras never store the missing-desat key: their
+    -- default-on behavior is entry-shaped (neverDesaturate opts out).
+    -- Non-passive ones DO read it, so they keep the section.
+    auraMissingDesaturation = function(buttonData)
+        return buttonData.isPassive == true
+    end,
     showOutOfRange = true,
     iconFillTimer = true,
     chargeText = true,
@@ -1281,7 +1358,7 @@ ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS = {
 --   keybindText - the entry list keeps it (custom keybind text does render on an
 --     aura entry), but an Aura Panel offers no keybinds at all (owner ruling).
 --   cooldownText - stays OFF both lists. Its position keys place the aura
---     duration text whenever Separate Text Positions is off, and its Duration
+--     duration text whenever the aura hides the cooldown, and its Duration
 --     Format row formats aura durations. On an Aura Panel the dead "Show
 --     Cooldown Text" toggle is gone and those live rows are re-homed under the
 --     aura duration text settings, so the section is still in use there - the
@@ -1306,6 +1383,8 @@ ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS = {
 
 function ST.CanGroupUseOverrideSection(group, sectionId)
     if not ST.IsAuraPanelGroup(group) then return true end
+    -- Truthy test on purpose: a predicate entry denies here too (see the
+    -- table's note on why panel scope does not ask it per entry).
     if ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS[sectionId] then return false end
     if ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS[sectionId] then return false end
     return true
@@ -1318,9 +1397,13 @@ function ST.CanButtonUseOverrideSection(buttonData, sectionId)
         end
         return true
     end
-    if buttonData and buttonData.addedAs == "aura"
-        and ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS[sectionId] then
-        return false, "entryType"
+    if buttonData and buttonData.addedAs == "aura" then
+        -- A predicate value asks about this entry's shape; `true` denies every
+        -- standalone aura outright (see the table's note).
+        local denial = ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS[sectionId]
+        if denial and (type(denial) ~= "function" or denial(buttonData)) then
+            return false, "entryType"
+        end
     end
     return true
 end

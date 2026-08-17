@@ -626,12 +626,20 @@ end
 -- whole aura display band, so the spell cooldown and the aura duration (drawn
 -- by the slot kit) show simultaneously. Without that opt-in the aura display
 -- takes the button over, which is the default.
+--
+-- Keep-swipe is the same lift by another name: the dropdown states it as
+-- "Show Swipe and Text", GetAuraDurationTextPlacement already moves the aura
+-- duration onto its own keys for it, and the CC cooldown text left under the
+-- aura band would be occluded by the very display the entry opted out of.
+-- IsKeepSpellCooldownSwipeEntry carries the entry-shape terms (aura-tracking,
+-- not standalone, not passive, not a shell), so they are asked once there.
 local function ApplyCooldownTextHost(button, buttonData, style)
     local region = button._cdTextRegion
     if not region then return end
-    local wantPinned = style.separateTextPositions == true
-        and (buttonData.auraTracking or buttonData.addedAs == "aura")
-        and not buttonData.isPassive
+    local wantPinned = (style.separateTextPositions == true
+            and (buttonData.auraTracking or buttonData.addedAs == "aura")
+            and not buttonData.isPassive)
+        or CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData, style)
     local host = (wantPinned and button.pinnedTextFrame) or button.overlayFrame
     if host and region:GetParent() ~= host then
         region:SetParent(host)

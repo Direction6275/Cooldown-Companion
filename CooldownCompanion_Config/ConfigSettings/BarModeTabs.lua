@@ -46,6 +46,7 @@ local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
 local BuildAllowPingsControls = ST._BuildAllowPingsControls
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local AddPandemicMarkerControls = ST._AddPandemicMarkerControls
+local ReconcilePandemicMarkerPreview = ST._ReconcilePandemicMarkerPreview
 
 -- Imports from RowWidgets.lua (the row grammar)
 local AddCheckboxRow = ST._AddCheckboxRow
@@ -251,6 +252,16 @@ ST._SECTION_HOME.bars = {
     -- Icon Zoom is edited inside the Show Icon gear's advanced panel in bar
     -- mode, so its home is that gear's section.
     iconZoom = { tab = "appearance", collapseKey = "barappearance_textIcon" },
+    -- The bar-host slice of While Aura Active (aura icon swap + active-state
+    -- desaturate; the keep-swipe/keep-text keys are icons-only in effect).
+    -- Both rows render on the icon square, so the section is drawn only while
+    -- that icon renders for the current selection, same as Icon Tint.
+    whileAuraActive = {
+        tab = "appearance", collapseKey = "barappearance_whileAuraActive",
+        available = function(group, style)
+            return BarsGroupTracksAura(group) and BarsIconShown(group, style)
+        end,
+    },
     barActiveAura = {
         tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION,
         available = BarsGroupTracksAura,
@@ -262,7 +273,7 @@ ST._SECTION_HOME.bars = {
         -- One gear on this section in bar mode (barPandemicMarker), so the
         -- list can resolve it - unlike icons, where the glow and the marker
         -- are two and the row carries none.
-        gearEnabled = function(_, style) return (style.pandemicMarkerEnabled ~= false) ~= false end,
+        gearEnabled = function(_, style) return style.pandemicMarkerMode ~= "off" end,
     },
     -- The Timers and States sections are drawn only while the bar icon renders
     -- for the current selection (BuildBarEffectsTab's
@@ -275,6 +286,14 @@ ST._SECTION_HOME.bars = {
     desaturation = {
         tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
         available = BarsIconShown,
+    },
+    -- Its own section (owner ruling 2026-08-16); the row draws only while the
+    -- bar icon renders AND the group tracks an aura.
+    auraMissingDesaturation = {
+        tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
+        available = function(group, style)
+            return BarsIconShown(group, style) and BarsGroupTracksAura(group)
+        end,
     },
     unusableDimming = {
         tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
@@ -1214,6 +1233,79 @@ local function BuildBarAppearanceTab(container, group, style)
     compactSec:Finish()
     end -- not textIconCollapsed
 
+    -- ================================================================
+    -- While Aura Active
+    -- ================================================================
+    -- The bar-host slice of the whileAuraActive section (the full section,
+    -- with the Cooldown dropdown, is the icons tab's): the aura icon swap and
+    -- the active-state desaturate both render on the bar's icon square. The
+    -- keep-swipe/keep-text keys are icons-only in effect, so no dropdown here.
+    -- Aura Panel bars keep only the Desaturate row: their entries are all
+    -- standalone auras whose live icon the engine forces on.
+    --
+    -- Both rows render on the icon square, so the section carries the same
+    -- lens-resolved icon gate the Icon Tint section above and the Effects tab's
+    -- Timers/States sections use: with the icon hidden StyleSlotKit shows
+    -- neither the aura icon nor its cover on a bar host, so both controls would
+    -- be dead. Read through the lens because showBarIcon is itself a per-entry
+    -- key - a panel that hides icons can still hold an entry that shows its own.
+    -- Aura Panels are NOT excused here (unlike Show Tooltips): their cells are
+    -- bar hosts too, and the kit answers barIconShown for them the same way.
+    local whileAuraIconSec = BeginLensSection(lens, group, "barIcon")
+    if GroupHasAuraTrackingEntry(group) and whileAuraIconSec.read.showBarIcon ~= false then
+    local whileAuraHeading, whileAuraCollapsed = BuildCollapsibleSection(container, "While Aura Active",
+        ResolveLensCollapseKey(lens, group, "whileAuraActive", "barappearance_whileAuraActive"), nil, nil, ROW_SECTION)
+    local whileAuraSec = BeginLensSection(lens, group, "whileAuraActive")
+    -- Section-owning collapsible: scope chrome on the heading, like Border's.
+    whileAuraSec:HeadingChrome(whileAuraHeading)
+
+    if not whileAuraCollapsed then
+    local whileAuraLeft = BeginRowGrid(container)
+    whileAuraSec:Mark(whileAuraLeft)
+
+    -- .write first, .read as the read-only fallback - the same live-store
+    -- rule the icons tab's WhileAuraFlagOn states in full.
+    local function WhileAuraOn(key)
+        local src = whileAuraSec.write or whileAuraSec.read
+        return (src and src[key]) == true
+    end
+
+    -- Standalone and passive entries always show the live aura icon whatever
+    -- this says (IsAuraIconForcedEntry), so at ENTRY SCOPE the row is left out
+    -- for them - the icons twin's rule. It still draws at panel scope, where
+    -- it is a default for whatever the panel holds next.
+    local whileAuraLensEntry = (lens and lens.mode == "entry") and lens.buttonData or nil
+    if not ST.IsAuraPanelGroup(group)
+        and not (whileAuraLensEntry and CooldownCompanion:IsAuraIconForcedEntry(whileAuraLensEntry)) then
+        AddCheckboxRow(whileAuraLeft, {
+            label = "Show Aura Icon",
+            value = WhileAuraOn("auraShowAuraIcon"),
+            disabled = whileAuraSec.disabled,
+            onChange = function(val)
+                if not whileAuraSec.write then return end
+                whileAuraSec.write.auraShowAuraIcon = whileAuraSec:BoolValue(val)
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+    end
+
+    AddCheckboxRow(whileAuraLeft, {
+        label = "Desaturate Icon",
+        value = WhileAuraOn("invertAuraDesaturationLogic"),
+        disabled = whileAuraSec.disabled,
+        onChange = function(val)
+            if not whileAuraSec.write then return end
+            whileAuraSec.write.invertAuraDesaturationLogic = whileAuraSec:BoolValue(val)
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+
+    whileAuraSec:Finish()
+    end -- not whileAuraCollapsed
+    end -- While Aura Active section drawn
+
     BuildGroupSettingPresetControls(container, group, "bars", tabInfoButtons)
 
     -- Inert-section sweep. A section the lens resolved read-only builds no
@@ -1434,7 +1526,12 @@ local function BuildBarPandemicMarkerSection(container, group, style, lens)
     local applyStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
     local markerRow = AddPandemicMarkerControls(container, markerSec.tbl, applyStyle, function()
         CooldownCompanion:RefreshConfigPanel()
-    end, { enableOnly = true })
+    end, {
+        enableOnly = true,
+        onModeChanged = function(mode)
+            ReconcilePandemicMarkerPreview(lens, mode)
+        end,
+    })
 
     -- Single rail (AdvancedSettingsPanel.lua): the styling rows fill the panel,
     -- so childrenOnly drops the indent they carry when inline. The panel
@@ -1453,7 +1550,7 @@ local function BuildBarPandemicMarkerSection(container, group, style, lens)
     -- builder. The gear-to-section maps name both.
     if markerSec.write then
         AddAdvancedToggle(markerRow, "barPandemicMarker", tabInfoButtons,
-            markerSec.read.pandemicMarkerEnabled ~= false, {
+            markerSec.read.pandemicMarkerMode ~= "off", {
                 title = "Pandemic Marker Advanced",
                 build = BuildBarPandemicMarkerAdvanced,
             })
@@ -1583,7 +1680,7 @@ local function BuildBarEffectsTab(container, group, style)
         if barIconShown and CanGroupUseOverrideSection(group, "desaturation") then
         local desatSec = BeginLensSection(lens, group, "desaturation")
         local desatRow = AddCheckboxRow(stateLeft, {
-            label = "Show Desaturate On Cooldown",
+            label = "Desaturate On Cooldown",
             value = desatSec.read.desaturateOnCooldown or false,
             disabled = desatSec.disabled,
             onChange = function(val)
@@ -1594,6 +1691,37 @@ local function BuildBarEffectsTab(container, group, style)
         })
         desatSec:Chrome(desatRow)
         end -- CanGroupUseOverrideSection desaturation
+
+        -- The missing-aura sibling, as its OWN section (owner ruling
+        -- 2026-08-16); static desat on the bar's icon square. Same notes as
+        -- the icons tab - passives gray by default with entry-side Never
+        -- Desaturate as the off switch, and the section is aura-entry-denied
+        -- plus aura-tracking-config-only.
+        if barIconShown and GroupHasAuraTrackingEntry(group)
+            and CanGroupUseOverrideSection(group, "auraMissingDesaturation") then
+        local missingSec = BeginLensSection(lens, group, "auraMissingDesaturation")
+        local missingRow = AddCheckboxRow(stateLeft, {
+            label = "Desaturate While Aura Missing",
+            value = missingSec.read.desaturateWhileAuraNotActive == true,
+            disabled = missingSec.disabled,
+            onChange = function(val)
+                if not missingSec.write then return end
+                missingSec.write.desaturateWhileAuraNotActive = missingSec:BoolValue(val)
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end,
+        })
+        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+        -- onto the end of the row's label. Same split the icons States row
+        -- states: passive-sourced auras desaturate by default and never read
+        -- this key.
+        AnchorRowBadge(missingRow, CreateInfoButton(missingRow.frame, missingRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Desaturate While Aura Missing",
+            {"Grays the bar icon while the tracked aura is not active.", 1, 1, 1, true},
+            {" ", 1, 1, 1, true},
+            {"Passive auras already do this by default and ignore this setting. Use Never Desaturate on the entry to turn theirs off.", 1, 1, 1, true},
+        }, tabInfoButtons))
+        missingSec:Chrome(missingRow)
+        end -- CanGroupUseOverrideSection auraMissingDesaturation
 
         -- The two shared builders below own their gears, so an inert scope
         -- cannot skip building one the way the hand-written sections do: the

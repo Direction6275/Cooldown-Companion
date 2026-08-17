@@ -12,6 +12,7 @@ local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local AddPandemicMarkerControls = ST._AddPandemicMarkerControls
+local ReconcilePandemicMarkerPreview = ST._ReconcilePandemicMarkerPreview
 local ResolveLensSection = ST._ResolveLensSection
 local BeginLensSection = ST._BeginLensSection
 local ResolveLensCollapseKey = ST._ResolveLensCollapseKey
@@ -389,7 +390,12 @@ local function BuildPandemicMarkerSection(container, group, style, lens)
     local applyStyle = function() UpdateSelectedGroupStyle(false) end
     local markerRow = AddPandemicMarkerControls(container, markerSec.tbl, applyStyle, function()
         CooldownCompanion:RefreshConfigPanel()
-    end, { enableOnly = true })
+    end, {
+        enableOnly = true,
+        onModeChanged = function(mode)
+            ReconcilePandemicMarkerPreview(lens, mode)
+        end,
+    })
 
     -- Single rail (AdvancedSettingsPanel.lua): the three styling rows fill the
     -- panel, so they carry no indent - childrenOnly drops it. The panel
@@ -401,7 +407,7 @@ local function BuildPandemicMarkerSection(container, group, style, lens)
 
     if markerSec.write then
         AddAdvancedToggle(markerRow, "pandemicMarker", tabInfoButtons,
-            markerSec.read.pandemicMarkerEnabled ~= false, {
+            markerSec.read.pandemicMarkerMode ~= "off", {
                 title = "Pandemic Marker Advanced",
                 build = BuildPandemicMarkerAdvanced,
             })
@@ -1128,7 +1134,7 @@ local function BuildEffectsTab(container)
     if CanGroupUseOverrideSection(group, "desaturation") then
     local desatSec = BeginLensSection(lens, group, "desaturation")
     local desatCb = AddCheckboxRow(stateLeft, {
-        label = "Show Desaturate On Cooldown",
+        label = "Desaturate On Cooldown",
         value = desatSec.read.desaturateOnCooldown or false,
         disabled = desatSec.disabled,
         onChange = function(val)
@@ -1139,6 +1145,39 @@ local function BuildEffectsTab(container)
     })
     desatSec:Chrome(desatCb)
     end -- CanGroupUseOverrideSection desaturation
+
+    -- The missing-aura sibling of the row above, as its OWN section (owner
+    -- ruling 2026-08-16: riding the desaturation section made it customizable
+    -- only through the cooldown toggle's chrome). Static desat on the CC icon,
+    -- meaningful only while the group tracks an aura; passives are not served
+    -- here - they gray while missing by default, with the entry tab's Never
+    -- Desaturate as their off switch - and the section is aura-entry-denied
+    -- plus aura-tracking-config-only, so a lens on the wrong kind of entry
+    -- reads it denied rather than misleadingly live.
+    if groupHasAuraEntry and CanGroupUseOverrideSection(group, "auraMissingDesaturation") then
+    local missingSec = BeginLensSection(lens, group, "auraMissingDesaturation")
+    local missingCb = AddCheckboxRow(stateLeft, {
+        label = "Desaturate While Aura Missing",
+        value = missingSec.read.desaturateWhileAuraNotActive == true,
+        disabled = missingSec.disabled,
+        onChange = function(val)
+            if not missingSec.write then return end
+            missingSec.write.desaturateWhileAuraNotActive = missingSec:BoolValue(val)
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end,
+    })
+    -- Anchor args are a placeholder - AnchorRowBadge re-points the button onto
+    -- the end of the row's label. Passive-sourced auras never read this key
+    -- (Tracking.lua's passive branch desaturates by default), which the owner
+    -- found surprising in game; the badge states the split once.
+    AnchorRowBadge(missingCb, CreateInfoButton(missingCb.frame, missingCb.frame, "LEFT", "LEFT", 0, 0, {
+        "Desaturate While Aura Missing",
+        {"Grays the icon while the tracked aura is not active.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Passive auras already do this by default and ignore this setting. Use Never Desaturate on the entry to turn theirs off.", 1, 1, 1, true},
+    }, tabInfoButtons))
+    missingSec:Chrome(missingCb)
+    end -- CanGroupUseOverrideSection auraMissingDesaturation
 
     -- Unusable Visual. This shared builder owns its OWN gear, so an inert scope
     -- cannot skip building one the way the hand-written sections do: the inert

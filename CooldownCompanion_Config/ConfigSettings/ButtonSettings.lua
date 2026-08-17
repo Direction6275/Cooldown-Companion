@@ -59,7 +59,7 @@ end
 -- condition system.
 --
 -- This used to gate a second entry TAB; it now gates the Aura Tracking SECTION
--- of the one entry Settings pane (owner ruling: Show Conditions' aura toggles
+-- of the one entry Settings pane (owner ruling: Visibility' aura toggles
 -- configure behavior that depends on the aura setup, so they belong on one
 -- pane). Panel.lua reads it through the export at the foot of this block.
 local function EntryOffersAuraTab(group, buttonData)

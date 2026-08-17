@@ -644,9 +644,15 @@ end
 -- position unless separateTextPositions switches it to the aura keys. Shared
 -- with the config preview, which renders a CC-side stand-in FontString from
 -- the same keys (the preview never touches the aura slot subtree).
-function CooldownCompanion:GetAuraDurationTextPlacement(style)
+--
+-- A keep-swipe entry always uses the aura keys (owner ruling 2026-08-16):
+-- skipping the cover leaves the CC cooldown text visible at ITS position, so
+-- the shared spot would draw two texts on top of each other. Bind-time style
+-- decision, no aura-state read.
+function CooldownCompanion:GetAuraDurationTextPlacement(style, buttonData)
     style = style or {}
-    if style.separateTextPositions == true then
+    if style.separateTextPositions == true
+        or self:IsKeepSpellCooldownSwipeEntry(buttonData, style) then
         return style.auraTextAnchor or "TOPLEFT", style.auraTextXOffset or 2, style.auraTextYOffset or -2
     end
     return style.cooldownTextAnchor or "CENTER", style.cooldownTextXOffset or 0, style.cooldownTextYOffset or 0
@@ -698,14 +704,21 @@ function CooldownCompanion:ApplyAuraDurationSwipeStyle(swipe, style)
         edgeColor and edgeColor[3] or 1, edgeColor and edgeColor[4] or 1)
 end
 
+-- The entry shapes whose live aura icon is FORCED on whatever the style key
+-- says. Exported because the config's Show Aura Icon row has to know: a toggle
+-- the engine can only agree with is a control with nothing behind it.
+function CooldownCompanion:IsAuraIconForcedEntry(buttonData)
+    return buttonData ~= nil
+        and (buttonData.addedAs == "aura" or buttonData.isPassive == true)
+end
+
 -- Parity predicate (pre-12.1 ShouldUseActiveAuraIcon): standalone and passive
 -- entries always show the live aura icon (Blizzard writes the aura instance's
 -- icon, so snapshot-empowered DoT icons flip in combat); ordinary entries opt
--- in via auraShowAuraIcon.
-local function ShouldShowAuraIcon(buttonData)
-    return buttonData.auraShowAuraIcon == true
-        or buttonData.addedAs == "aura"
-        or buttonData.isPassive == true
+-- in via the auraShowAuraIcon style key (whileAuraActive section).
+local function ShouldShowAuraIcon(buttonData, style)
+    return (style ~= nil and style.auraShowAuraIcon == true)
+        or CooldownCompanion:IsAuraIconForcedEntry(buttonData)
 end
 
 ------------------------------------------------------------------------
@@ -973,21 +986,24 @@ end
 -- against the secret remaining time; CC only bakes static per-spell data.
 -- Threshold: fixed 30% of base duration via the V22 static lookup.
 -- Fragile surface — froze displays on PTR 5; retest each build (tracker
--- B1/B2), kill switch = style.pandemicMarkerEnabled.
+-- B1/B2), kill switch = style.pandemicMarkerMode "off".
 ------------------------------------------------------------------------
 
 local PANDEMIC_FRACTION = 0.3
 local PANDEMIC_MARKER_MAX_LEN = 8
 
--- Effective per-entry enable: the explicit per-button setting wins; the
--- auto default is on for target debuffs (where pandemic refresh lives)
--- and off for player buffs. style.pandemicMarkerEnabled is the group-wide
--- kill switch.
+-- Effective enable, style-only since the entry's own checkbox dissolved into
+-- the panel's Pandemic override section (owner ruling 2026-08-16): the same
+-- key answers for a panel and for an entry that customized that section,
+-- because styleOverrides IS the effective style. "auto" keeps the old
+-- entry-side default -- on for target debuffs (where pandemic refresh lives),
+-- off for player buffs -- which is why the key is an enum and not the boolean
+-- kill switch it replaced. buttonData stays in the signature: nothing here
+-- reads it today, but every caller has one and the unit it passes comes off it.
 local function IsPandemicMarkerWanted(buttonData, style, unit)
-    if style.pandemicMarkerEnabled == false then return false end
-    if buttonData.pandemicMarker ~= nil then
-        return buttonData.pandemicMarker == true
-    end
+    local mode = style.pandemicMarkerMode
+    if mode == "off" then return false end
+    if mode == "on" then return true end
     return unit == "target"
 end
 
@@ -1146,9 +1162,9 @@ end
 
 -- The live resolver reads the unit off a live aura bind. A preview has none,
 -- so it reads the entry's synced auraUnit (SyncDerivedAuraUnit refreshes it
--- whenever tracking config changes) — the same fallback the entry's own
--- Pandemic Marker checkbox resolves its default from. They can only disagree
--- before a spell's data is cached, which the next config write corrects.
+-- whenever tracking config changes) — the same fallback the "auto" marker mode
+-- resolves against. They can only disagree before a spell's data is cached,
+-- which the next config write corrects.
 function CooldownCompanion:IsPandemicMarkerPreviewWanted(buttonData, style)
     if type(buttonData) ~= "table" or type(style) ~= "table" then
         return false
@@ -1274,12 +1290,12 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- visual either way (the dim key stands alone on 12.1).
     local shellEntry = isAuraPanelHost or CooldownCompanion:IsAuraShellEntry(buttonData)
     local barIconShown = isBar and style.showBarIcon ~= false and button.icon ~= nil
-    local showAuraIcon = ShouldShowAuraIcon(buttonData)
+    local showAuraIcon = ShouldShowAuraIcon(buttonData, style)
     -- Keep-swipe entries (icon hosts only) skip the icon takeover: the CC
     -- icon and its own cooldown swipe stay visible under the aura overlays.
     local keepSwipeActive = not isBar
-        and CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData)
-    local kitDesat = CooldownCompanion:ShouldDesaturateAuraLayerWhileActive(buttonData)
+        and CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData, style)
+    local kitDesat = CooldownCompanion:ShouldDesaturateAuraLayerWhileActive(buttonData, style)
 
     -- Inset-aware anchor host: on block hosts the statusBar proxy is the
     -- border-inset rect while slotButton is the full Blizzard-laid group
@@ -1459,7 +1475,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
             style.auraStackXOffset or 2, style.auraStackYOffset or 2)
         kit.stackText:SetAlpha(style.showAuraStackText ~= false and 1 or 0)
     else
-        local durAnchor, durX, durY = CooldownCompanion:GetAuraDurationTextPlacement(style)
+        local durAnchor, durX, durY = CooldownCompanion:GetAuraDurationTextPlacement(style, buttonData)
         kit.durationText:SetPoint(durAnchor, button, durAnchor, durX, durY)
         kit.durationText:SetJustifyH("CENTER")
         kit.durationText:SetAlpha(style.showAuraText ~= false and 1 or 0)
@@ -1569,32 +1585,31 @@ local function StyleSlotKit(slot, button, buttonData, style)
         kit.swipe:SetAllPoints(slotButton)
         kit.swipe:SetDrawSwipe(false)
         kit.swipe:SetDrawEdge(false)
-    elseif isBar or not CooldownCompanion:ShouldDrawAuraDurationSwipe(buttonData) then
+    elseif isBar or not CooldownCompanion:ShouldDrawAuraDurationSwipe(buttonData, style) then
         -- Bars have no aura swipe; keep-swipe entries show the spell's own
         -- cooldown swipe instead (two swipes would stack). Draw flags only --
-        -- the swipe stays registered so Blizzard keeps driving it.
+        -- the swipe stays registered so Blizzard keeps driving it. The style
+        -- must be handed in: keep-swipe is a style key now, and a style-less
+        -- call reads every entry as not-keep-swipe (the regression the owner
+        -- caught in game 2026-08-16).
         kit.swipe:SetDrawSwipe(false)
         kit.swipe:SetDrawEdge(false)
     else
         CooldownCompanion:ApplyAuraDurationSwipeStyle(kit.swipe, style)
     end
 
-    -- Pandemic display enable (PTR 8): per-entry override wins, else the
-    -- panel style's explicit-true enable. Custom-bar hosts read the same
-    -- style key, synthesized by BuildStyleAdapter from the entry's own
-    -- fresh pandemicEffect key (the entry has no panel level to follow).
-    -- Resource overlays carry no pandemic story at all. Blizzard flips the
-    -- rig's secret Shown state regardless; this gate only decides whether
-    -- the rig has anything visible to show.
+    -- Pandemic display enable (PTR 8): the style's explicit-true enable, which
+    -- an entry that customized the Pandemic section carries in its own
+    -- styleOverrides since the entry checkbox dissolved into that section
+    -- (owner ruling 2026-08-16). Custom-bar hosts read the same style key,
+    -- synthesized by BuildStyleAdapter from the entry's own fresh
+    -- pandemicEffect key (the entry has no panel level to follow). Resource
+    -- overlays carry no pandemic story at all. Blizzard flips the rig's secret
+    -- Shown state regardless; this gate only decides whether the rig has
+    -- anything visible to show.
     local pandemicOn = false
-    if isCustomBarHost then
+    if isCustomBarHost or not isResourceHost then
         pandemicOn = style.pandemicEffectEnabled == true
-    elseif not isResourceHost then
-        if buttonData.pandemicEffect ~= nil then
-            pandemicOn = buttonData.pandemicEffect == true
-        else
-            pandemicOn = style.pandemicEffectEnabled == true
-        end
     end
 
     -- Bar composition: opaque backdrop occludes the CC bar underneath
