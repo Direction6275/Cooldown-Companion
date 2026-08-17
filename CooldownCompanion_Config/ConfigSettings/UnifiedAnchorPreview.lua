@@ -149,6 +149,100 @@ local function UpdateAttachedBarsBadge(host, eligible)
     badge:Show()
 end
 
+------------------------------------------------------------------------
+-- The second quick toggle: hide currently-unavailable entries from the
+-- focused mirror
+------------------------------------------------------------------------
+
+-- Wears the mirror's own "Spell/item unavailable" warn mark, so the badge
+-- names exactly what it hides. Sits one badge width inside the attached-bars
+-- pin when the pin is up, and takes the pin's corner spot when it is not.
+local UNAVAILABLE_BADGE_ATLAS = "Ping_Marker_Icon_Warning"
+local BADGE_GAP = 2
+
+local function ApplyUnavailableBadgeHover(badge)
+    badge.icon:SetDesaturated(false)
+    badge.icon:SetVertexColor(1, 1, 1, 1)
+end
+
+local function ApplyUnavailableBadgeTint(badge)
+    if CS.panelPreviewUnavailableHidden then
+        badge.icon:SetDesaturated(true)
+        badge.icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
+    else
+        ApplyUnavailableBadgeHover(badge)
+    end
+end
+
+local function ShowUnavailableBadgeTooltip(badge)
+    GameTooltip:SetOwner(badge, "ANCHOR_LEFT")
+    if CS.panelPreviewUnavailableHidden then
+        GameTooltip:SetText("Show unavailable entries")
+    else
+        GameTooltip:SetText("Hide unavailable entries")
+    end
+    GameTooltip:Show()
+end
+
+-- Session state, view only, exactly like the pin: the flag lives in CS and
+-- saved config never moves. Shown while the panel has an entry to hide, and
+-- always while the filter is on, so the way back stays on screen.
+local function UpdateUnavailableEntriesBadge(host, groupId, pinShown)
+    local state
+    if not CS.otherClassLibraryActive and ST._PanelPreviewUnavailableEntryState then
+        local group = groupId
+            and CooldownCompanion.db
+            and CooldownCompanion.db.profile
+            and CooldownCompanion.db.profile.groups
+            and CooldownCompanion.db.profile.groups[groupId]
+        state = ST._PanelPreviewUnavailableEntryState(group)
+    end
+    local shown = state == true
+        or (state ~= nil and CS.panelPreviewUnavailableHidden == true)
+    local badge = host._cdcUnavailableEntriesBadge
+    if not shown then
+        if badge then badge:Hide() end
+        return
+    end
+    if not badge then
+        badge = CreateFrame("Button", nil, host)
+        badge:SetSize(BADGE_SIZE, BADGE_SIZE)
+        badge.icon = badge:CreateTexture(nil, "ARTWORK")
+        badge.icon:SetAllPoints()
+        badge.icon:SetAtlas(UNAVAILABLE_BADGE_ATLAS, false)
+        badge:SetScript("OnEnter", function(self)
+            ApplyUnavailableBadgeHover(self)
+            ShowUnavailableBadgeTooltip(self)
+        end)
+        badge:SetScript("OnLeave", function(self)
+            ApplyUnavailableBadgeTint(self)
+            GameTooltip:Hide()
+        end)
+        badge:SetScript("OnClick", function(self)
+            CS.panelPreviewUnavailableHidden = not CS.panelPreviewUnavailableHidden or nil
+            if ST._RefreshButtonsPreviewMirror then
+                ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
+            end
+            -- The rebuild retinted the badge under the cursor; keep the
+            -- hover look and the tooltip current until the mouse leaves.
+            if GameTooltip:GetOwner() == self then
+                ApplyUnavailableBadgeHover(self)
+                ShowUnavailableBadgeTooltip(self)
+            end
+        end)
+        host._cdcUnavailableEntriesBadge = badge
+    end
+    -- Re-anchored every build: whether the pin is up can change hands
+    -- between builds, and this badge always claims the slot beside it or
+    -- the pin's own corner spot.
+    badge:ClearAllPoints()
+    local insetX = BADGE_INSET + (pinShown and (BADGE_SIZE + BADGE_GAP) or 0)
+    badge:SetPoint("TOPRIGHT", host, "TOPRIGHT", -insetX, -BADGE_INSET)
+    badge:SetFrameLevel(host:GetFrameLevel() + 20)
+    ApplyUnavailableBadgeTint(badge)
+    badge:Show()
+end
+
 -- The mirror content carries the natural (unscaled) panel size; shrink the
 -- measuring host to it so the lanes wrap the mirror exactly. Message states
 -- (empty panel) keep a readable minimum instead.
@@ -185,7 +279,11 @@ local function BuildUnifiedCastMirror(host, groupId)
     end
     inner:SetSize(UNIFIED_MEASURE_SIZE, UNIFIED_MEASURE_SIZE)
     inner:Show()
-    ST._BuildReadOnlyPanelPreview(inner, groupId)
+    -- applySessionFilter: this duplicate is a visible copy of the filtered
+    -- interactive mirror above, not a saved-design tile, so the unavailable
+    -- filter must reflow both copies identically.
+    ST._BuildButtonPanelPreview(inner, groupId,
+        { readOnly = true, applySessionFilter = true })
     ShrinkMirrorHostToContent(inner)
     return inner
 end
@@ -251,6 +349,7 @@ local function BuildAnchorAwarePanelPreview(host, groupId)
     -- so the badge and the render branch share one answer per build.
     local eligible = IsUnifiedAnchorPreviewEligible(groupId)
     UpdateAttachedBarsBadge(host, eligible)
+    UpdateUnavailableEntriesBadge(host, groupId, eligible)
     if eligible and not CS.unifiedAnchorBarsHidden then
         local plain = host._cdcPanelPreview
         if plain and plain.root and plain.root:IsShown() then
@@ -280,6 +379,9 @@ end
 local function ReleaseAnchorAwarePanelPreview(host)
     if host._cdcAttachedBarsBadge then
         host._cdcAttachedBarsBadge:Hide()
+    end
+    if host._cdcUnavailableEntriesBadge then
+        host._cdcUnavailableEntriesBadge:Hide()
     end
     if ST._ReleaseButtonPanelPreview then
         ST._ReleaseButtonPanelPreview(host)
