@@ -193,6 +193,14 @@ local function UpdateBarFill(button)
         end
     end
 
+    local gateCurve = onCooldown and button._totemActive ~= true
+        and ST.GetCooldownTextGateCurve(button, button.style) or nil
+    if gateCurve then
+        button.timeText:SetAlpha(button._durationObj:EvaluateRemainingDuration(gateCurve))
+    else
+        button.timeText:SetAlpha(1)
+    end
+
     if onCooldown then
         -- The totem active phase is aura-side by owner ruling: its timer text
         -- follows the AURA visibility toggle and the aura font/size/outline/
@@ -203,7 +211,8 @@ local function UpdateBarFill(button)
         if totemPhase then
             showTimeText = button.style.showAuraText ~= false
         else
-            showTimeText = button.style.showCooldownText and true or false
+            showTimeText = button.style.showCooldownText
+                and ST.ShouldShowCooldownTextForStyle(button, button.style) or false
         end
         if showTimeText then
             -- Switch font/color when mode changes

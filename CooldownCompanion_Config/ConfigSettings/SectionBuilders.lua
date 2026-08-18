@@ -426,6 +426,66 @@ local LOW_TIME_SECOND_TOOLTIP = {
     {"0 turns it off.", 1, 1, 1, true},
 }
 
+local COOLDOWN_TEXT_SHOW_MODES = {
+    always = "Always",
+    below = "Under Threshold",
+    above = "Over Threshold",
+}
+local COOLDOWN_TEXT_SHOW_MODE_ORDER = { "always", "below", "above" }
+
+local COOLDOWN_TEXT_SHOW_TOOLTIP_LINES = {
+    "Show Text",
+    {"Shows the countdown only for part of the cooldown, in seconds remaining.", 1, 1, 1, true},
+}
+
+-- Shared by the icon and bar panels.
+local function AddCooldownTextThresholdRows(container, styleTable, refreshCallback, opts)
+    local fallbackStyle = opts and opts.fallbackStyle
+    local mode = styleTable.cooldownTextShowMode
+    if mode == nil and type(fallbackStyle) == "table" then
+        mode = fallbackStyle.cooldownTextShowMode
+    end
+    if mode ~= "below" and mode ~= "above" then
+        mode = "always"
+    end
+
+    local modeRow = AddDropdownRow(container, {
+        label = "Show Text",
+        list = COOLDOWN_TEXT_SHOW_MODES,
+        order = COOLDOWN_TEXT_SHOW_MODE_ORDER,
+        value = mode,
+        indent = opts and opts.indent,
+        onChange = function(val)
+            styleTable.cooldownTextShowMode = (val == "below" or val == "above") and val or "always"
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end,
+    })
+    AnchorRowBadge(modeRow, CreateInfoButton(modeRow.frame, modeRow.frame, "LEFT", "LEFT", 0, 0,
+        COOLDOWN_TEXT_SHOW_TOOLTIP_LINES, modeRow))
+
+    if mode == "always" then return end
+
+    local threshold = tonumber(styleTable.cooldownTextThreshold)
+    if threshold == nil and type(fallbackStyle) == "table" then
+        threshold = tonumber(fallbackStyle.cooldownTextThreshold)
+    end
+    AddSliderRow(container, {
+        label = "Show Text Seconds",
+        min = 1, max = 60, step = 1,
+        value = threshold or 5,
+        indent = true,
+        onChange = function(val)
+            ST._PreviewScalarSetting(styleTable, "cooldownTextThreshold", val, refreshCallback)
+        end,
+        onRelease = function(val)
+            styleTable.cooldownTextThreshold = val
+            refreshCallback()
+        end,
+    })
+end
+ST._AddCooldownTextThresholdRows = AddCooldownTextThresholdRows
+
 local function AddDurationLowTimeRows(container, settings, refreshCallback, opts)
     if not (container and settings) then return nil end
     opts = opts or {}

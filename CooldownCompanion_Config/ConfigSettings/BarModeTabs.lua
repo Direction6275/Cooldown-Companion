@@ -355,6 +355,8 @@ local function MakeBarCooldownTextAdvancedDescriptor(styleTable)
                 return
             end
 
+            ST._AddCooldownTextThresholdRows(panel, style, refreshStyle)
+
             -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow
             -- column, so every row goes straight onto the panel scroll and each
             -- shared builder runs with { row = true } and no rightColumn.

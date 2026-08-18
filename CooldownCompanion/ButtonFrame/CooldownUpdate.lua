@@ -518,6 +518,12 @@ local function NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen)
         if timeActive and button._isText then
             text = true                                      -- text mode is walk-driven (FormatTime + SetText)
             forced = true
+        elseif timeActive and button._totemActive ~= true and button.style
+            and button.style.showCooldownText
+            and (button.style.cooldownTextShowMode == "below"
+                or button.style.cooldownTextShowMode == "above") then
+            -- thresholded icon text is walk-driven, not self-animating
+            forced = true
         end
         -- else: icon/bar self-animating cooldown/GCD -- skippable; discrete
         -- edges stay event-covered.

@@ -1515,6 +1515,51 @@ function ST.OnButtonCooldownDone(cooldown)
     CooldownCompanion:MarkCooldownsDirty("cd-done")
 end
 
+-- Items only: a spell cooldown is secret in combat, so its threshold runs as a
+-- curve instead (below).
+function ST.ShouldShowCooldownTextForStyle(button, style)
+    local mode = style and style.cooldownTextShowMode
+    if mode ~= "below" and mode ~= "above" then return true end
+    if button and button._durationObj then return true end
+
+    local start = button and button._itemCdStart
+    local duration = button and button._itemCdDuration
+    if not (start and duration and duration > 0) then return true end
+
+    local remaining = duration - (GetTime() - start)
+    local threshold = tonumber(style.cooldownTextThreshold) or 5
+    if mode == "below" then
+        return remaining < threshold
+    end
+    return remaining >= threshold
+end
+
+-- Step, so the readout is simply on or off either side of the threshold.
+function ST.GetCooldownTextGateCurve(button, style)
+    local mode = style and style.cooldownTextShowMode
+    if mode ~= "below" and mode ~= "above" then return nil end
+    if not style.showCooldownText then return nil end
+    if not (button and button._durationObj) then return nil end
+
+    local threshold = tonumber(style.cooldownTextThreshold) or 5
+    if threshold < 0.1 then threshold = 0.1 end
+    if button._cdTextGateMode ~= mode or button._cdTextGateThreshold ~= threshold then
+        local curve = C_CurveUtil.CreateCurve()
+        curve:SetType(Enum.LuaCurveType.Step)
+        if mode == "below" then
+            curve:AddPoint(0, 1)
+            curve:AddPoint(threshold, 0)
+        else
+            curve:AddPoint(0, 0)
+            curve:AddPoint(threshold, 1)
+        end
+        button._cdTextGateCurve = curve
+        button._cdTextGateMode = mode
+        button._cdTextGateThreshold = threshold
+    end
+    return button._cdTextGateCurve
+end
+
 -- Exports
 ST._DEFAULT_BAR_AURA_COLOR = DEFAULT_BAR_AURA_COLOR
 ST._DEFAULT_BAR_CHARGE_COLOR = DEFAULT_BAR_CHARGE_COLOR

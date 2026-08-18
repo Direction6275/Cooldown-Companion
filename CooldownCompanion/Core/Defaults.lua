@@ -988,7 +988,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     cooldownText = {
         label = "Cooldown Text",
-        keys = {"showCooldownText", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor", "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset"},
+        keys = {"showCooldownText", "cooldownTextShowMode", "cooldownTextThreshold", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor", "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset"},
         modes = {icons = true, bars = true},
     },
     -- The four pandemicMarker* keys used to ride this list, because the marker

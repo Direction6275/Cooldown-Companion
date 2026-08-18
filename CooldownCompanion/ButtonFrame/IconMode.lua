@@ -1255,6 +1255,9 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
                 if showText and button._hideCooldownChargesActive then
                     showText = false
                 end
+                if showText and not ST.ShouldShowCooldownTextForStyle(button, style) then
+                    showText = false
+                end
                 fontColor = style.cooldownFontColor or DEFAULT_WHITE
             end
         end
@@ -1263,6 +1266,13 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             button._cdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
         else
             button._cdTextRegion:SetTextColor(0, 0, 0, 0)
+        end
+        local gateCurve = button._totemActive ~= true
+            and ST.GetCooldownTextGateCurve(button, style) or nil
+        if gateCurve then
+            button._cdTextRegion:SetAlpha(button._durationObj:EvaluateRemainingDuration(gateCurve))
+        else
+            button._cdTextRegion:SetAlpha(1)
         end
         -- Properly hide/show countdown numbers via API (alpha=0 alone is unreliable
         -- because WoW's CooldownFrame animation resets text color each tick)

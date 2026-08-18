@@ -127,6 +127,8 @@ local function MakeCooldownTextAdvancedDescriptor(styleTable)
             -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow
             -- column, so every builder is called with { row = true } and no
             -- rightColumn, and each falls back to `container` for its extras.
+            ST._AddCooldownTextThresholdRows(panel, style, RefreshSelectedGroupStyle)
+
             AddFontControls(panel, style, "cooldown", { size = 12 }, RefreshSelectedGroupStyle, { row = true })
 
             -- deferCommit is deliberately absent, matching the stock color picker
