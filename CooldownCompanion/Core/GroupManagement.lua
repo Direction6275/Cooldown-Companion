@@ -1235,6 +1235,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     if style.desaturateOnCooldown == nil then style.desaturateOnCooldown = true end
     if style.showOutOfRange == nil then style.showOutOfRange = true end
     if style.showGCDSwipe == nil then style.showGCDSwipe = false end
+    if style.alwaysShowGCDSwipe == nil then style.alwaysShowGCDSwipe = false end
     if style.showLossOfControl == nil then style.showLossOfControl = true end
     if style.showTooltips == nil then style.showTooltips = false end
     if style.showUnusable == nil then style.showUnusable = true end

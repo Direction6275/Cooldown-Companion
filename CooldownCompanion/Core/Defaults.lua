@@ -133,6 +133,7 @@ local defaults = {
                         auraDurationSwipeEdgeColor = {1, 1, 1, 1},
                         auraUseBlizzardSwipe = false,
                         showGCDSwipe = false, -- Show GCD swipe animation on icons
+                        alwaysShowGCDSwipe = false, -- draw the GCD sweep even while the spell's own cooldown runs
                         showOutOfRange = true, -- Red-tint icons when target is out of range
                         showAssistedHighlight = false, -- Highlight the assisted combat recommended spell
                         assistedHighlightHostileTargetOnly = true, -- Show only for hostile (attackable) targets
@@ -311,6 +312,7 @@ local defaults = {
             auraDurationSwipeEdgeColor = {1, 1, 1, 1},
             auraUseBlizzardSwipe = false,
             showGCDSwipe = false,
+            alwaysShowGCDSwipe = false,
             showOutOfRange = true,
             showAssistedHighlight = false,
             assistedHighlightHostileTargetOnly = true,
@@ -1077,7 +1079,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     showGCDSwipe = {
         label = "Show GCD Swipe",
-        keys = {"showGCDSwipe"},
+        keys = {"showGCDSwipe", "alwaysShowGCDSwipe"},
         modes = {icons = true, bars = true, rotationAssistant = true},
     },
     showOutOfRange = {

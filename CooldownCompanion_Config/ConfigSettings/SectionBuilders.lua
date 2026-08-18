@@ -1113,16 +1113,46 @@ end
 
 -- Row grammar only: one checkbox row.
 local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback, opts)
-    return AddCheckboxRow(container, {
+    local row = AddCheckboxRow(container, {
         label = "Show GCD Swipe",
         value = styleTable.showGCDSwipe == true,
         indent = opts and opts.indent,
         onChange = function(val)
             styleTable.showGCDSwipe = val
             refreshCallback()
+            RefreshStructuralControls(container)
         end,
     })
+    -- the runtime path is icon-only, so the row would be inert on a bar
+    if styleTable.showGCDSwipe == true and not (opts and opts.displayMode == "bars") then
+        -- an override promoted before this key existed inherits the group value
+        local always = styleTable.alwaysShowGCDSwipe
+        if always == nil and opts and opts.fallbackStyle then
+            always = opts.fallbackStyle.alwaysShowGCDSwipe
+        end
+        local alwaysRow = AddCheckboxRow(container, {
+            label = "Always Show",
+            value = always == true,
+            -- always a child of the row above, whatever the section's own indent is
+            indent = true,
+            onChange = function(val)
+                styleTable.alwaysShowGCDSwipe = val
+                refreshCallback()
+            end,
+        })
+        AnchorRowBadge(alwaysRow, CreateInfoButton(alwaysRow.frame, alwaysRow.frame, "LEFT", "LEFT", 0, 0,
+            ST._ALWAYS_GCD_TOOLTIP_LINES, alwaysRow))
+    end
+    return row
 end
+
+-- Shared with the group panel's own copy of this option.
+ST._ALWAYS_GCD_TOOLTIP_LINES = {
+    "Always Show",
+    {"Keeps the GCD swipe running while this spell's own cooldown is turning.", 1, 1, 1, true},
+    " ",
+    {"For an icon you want to read as a pure GCD indicator.", 1, 1, 1, true},
+}
 
 local function IsIconFillTimerEnabled(styleTable, opts)
     if opts and opts.masqueEnabled == true then

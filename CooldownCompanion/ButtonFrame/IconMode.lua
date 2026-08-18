@@ -352,6 +352,16 @@ local function ApplyDefaultCooldownSwipeStyle(button, style)
     button.cooldown:SetReverse(swipeEnabled and reverse)
     button.cooldown:SetSwipeColor(0, 0, 0, alpha)
     button.cooldown:SetEdgeColor(edgeColor[1], edgeColor[2], edgeColor[3], edgeColor[4])
+    -- match the main swipe, or the GCD reads as a different depth of black
+    if button.iconGCDCooldown then
+        button.iconGCDCooldown:SetSwipeColor(0, 0, 0, alpha)
+        button.iconGCDCooldown:SetEdgeColor(edgeColor[1], edgeColor[2], edgeColor[3], edgeColor[4])
+        button.iconGCDCooldown:SetDrawEdge(edgeEnabled)
+        button.iconGCDCooldown:SetReverse(reverse)
+        if style.alwaysShowGCDSwipe ~= true then
+            button.iconGCDCooldown:Hide()
+        end
+    end
 end
 
 -- Totem phase falling edge: the aura keys can have swapped the swipe to the
@@ -617,6 +627,7 @@ local function ApplyAuraShellVisuals(button, buttonData)
     end
     button.cooldown:SetAlpha(alpha)
     if button.locCooldown then button.locCooldown:SetAlpha(alpha) end
+    if button.iconGCDCooldown then button.iconGCDCooldown:SetAlpha(alpha) end
     if button.iconFill then button.iconFill:SetAlpha(alpha) end
     if button.overlayFrame then button.overlayFrame:SetAlpha(alpha) end
     -- The pinned host hides with the rest of CC's chrome. A shell shows
@@ -745,6 +756,17 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.locCooldown:SetSwipeColor(0.17, 0, 0, 0.8)
     button.locCooldown:SetHideCountdownNumbers(true)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
+
+    -- Own GCD frame: button.cooldown draws one sweep, so the GCD needs its own.
+    button.iconGCDCooldown = CreateFrame("Cooldown", button:GetName() .. "IconGCDCooldown", button, "CooldownFrameTemplate")
+    button.iconGCDCooldown:SetAllPoints(button.icon)
+    button.iconGCDCooldown:SetDrawEdge(style.cooldownSwipeEdgeEnabled == true)
+    button.iconGCDCooldown:SetDrawSwipe(true)
+    button.iconGCDCooldown:SetReverse(style.cooldownSwipeReverse or false)
+    button.iconGCDCooldown:SetHideCountdownNumbers(true)
+    button.iconGCDCooldown:SetDrawBling(false)
+    button.iconGCDCooldown:Hide()
+    SetFrameClickThroughRecursive(button.iconGCDCooldown, true, true)
 
     -- Suppress bling (cooldown-end flash) on all icon buttons
     button.cooldown:SetDrawBling(false)
@@ -877,6 +899,9 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Re-apply full click-through on overlay frames (the recursive call above
     -- re-enables motion on them when tooltips are on, causing them to steal hover events)
     SetFrameClickThroughRecursive(button.cooldown, true, true)
+    if button.iconGCDCooldown then
+        SetFrameClickThroughRecursive(button.iconGCDCooldown, true, true)
+    end
     if button.iconFill then
         SetFrameClickThroughRecursive(button.iconFill, true, true)
     end
@@ -1579,6 +1604,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Re-apply full click-through on overlay frames (the recursive call above
     -- re-enables motion on them when tooltips are on, causing them to steal hover events)
     SetFrameClickThroughRecursive(button.cooldown, true, true)
+    if button.iconGCDCooldown then
+        SetFrameClickThroughRecursive(button.iconGCDCooldown, true, true)
+    end
     if button.iconFill then
         SetFrameClickThroughRecursive(button.iconFill, true, true)
     end

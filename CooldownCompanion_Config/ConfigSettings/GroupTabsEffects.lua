@@ -1105,9 +1105,26 @@ local function BuildEffectsTab(container)
             if not gcdSec.write then return end
             gcdSec.write.showGCDSwipe = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
         end,
     })
     gcdSec:Chrome(gcdCb)
+
+    if gcdSec.read.showGCDSwipe == true then
+        local alwaysGcdRow = AddCheckboxRow(timerRight, {
+            label = "Always Show",
+            value = gcdSec.read.alwaysShowGCDSwipe == true,
+            indent = true,
+            disabled = gcdSec.disabled,
+            onChange = function(val)
+                if not gcdSec.write then return end
+                gcdSec.write.alwaysShowGCDSwipe = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end,
+        })
+        AnchorRowBadge(alwaysGcdRow, CreateInfoButton(alwaysGcdRow.frame, alwaysGcdRow.frame, "LEFT", "LEFT", 0, 0,
+            ST._ALWAYS_GCD_TOOLTIP_LINES, tabInfoButtons))
+    end
     end -- CanGroupUseOverrideSection showGCDSwipe
     end -- not timersCollapsed
     end -- Timers section has at least one row

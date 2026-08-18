@@ -1429,11 +1429,14 @@ local function ApplyStrataOrder(button, order)
     -- above even that: it carries keybind text (owner ruling: never underneath
     -- anything) and the countdown text when the While Aura Active keep-text
     -- state lifts it.
+    if button.iconGCDCooldown then
+        button.iconGCDCooldown:SetFrameLevel(top + 1)
+    end
     if button.locCooldown then
-        button.locCooldown:SetFrameLevel(top + 1)
+        button.locCooldown:SetFrameLevel(top + 2)
     end
     if button.pinnedTextFrame then
-        button.pinnedTextFrame:SetFrameLevel(top + 2)
+        button.pinnedTextFrame:SetFrameLevel(top + 3)
     end
 end
 

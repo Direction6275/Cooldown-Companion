@@ -762,7 +762,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     button.cooldown:SetCooldown(0, 0)
                 end
             elseif cooldownPresentationState == COOLDOWN_STATE_GCD then
-                if style.showGCDSwipe == true and renderDurationObj then
+                -- the dedicated frame owns the GCD there, and two sweeps read twice as dark
+                if style.showGCDSwipe == true and renderDurationObj
+                    and not (button.iconGCDCooldown and not button._isBar and style.alwaysShowGCDSwipe == true) then
                     button.cooldown:SetCooldownFromDurationObject(renderDurationObj)
                 else
                     button.cooldown:SetCooldown(0, 0)
@@ -879,12 +881,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             and not usesChargeBehavior and not buttonData.isPassive
     end
 
-    -- Bar mode icon-only GCD swipe.
-    if button._isBar and button.iconGCDCooldown then
-        local showBarGCDSwipe = (style.showBarIcon ~= false)
+    -- Icon-only GCD swipe, on the frame created for it.
+    if button.iconGCDCooldown then
+        -- isOnGCD reads false while the spell serves its own cooldown, so the
+        -- always-on path reads the player's GCD instead.
+        local alwaysGCD = not button._isBar and style.alwaysShowGCDSwipe == true
+        local showBarGCDSwipe = (button._isBar and style.showBarIcon ~= false or alwaysGCD)
             and style.showGCDSwipe == true
             and buttonData.type == "spell"
-            and isOnGCD == true
+            and (alwaysGCD and CooldownCompanion._gcdActive == true or isOnGCD == true)
         if showBarGCDSwipe then
             local gcdDurationObj = CooldownCompanion._gcdDurationObj
             if not gcdDurationObj and spellCooldownDuration then
