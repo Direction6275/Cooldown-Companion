@@ -3005,6 +3005,11 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
+    -- a parked panel still owns the global name anchors resolve through
+    if self._dormantFrames and self._dormantFrames[groupId] then
+        return self:RecoverDormantFrame(groupId)
+    end
+
     -- Create main container frame
     local frameName = "CooldownCompanionGroup" .. groupId
     local frame = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
