@@ -22,6 +22,9 @@ CooldownCompanion.DIM_FALLBACK_ALPHA = 0.4
 local defaults = {
     global = {
         characterInfo = {},  -- [charKey] = { classFilename, classID }
+        -- [charKey] = { [castSpellID] = totemSpellID, [totemSpellID] = castSpellID }
+        -- Learned out of combat, where the totem API still names its slots.
+        totemSpellLinks = {},
         changelog = {
             lastSeenVersion = nil,
             fontSize = 13,

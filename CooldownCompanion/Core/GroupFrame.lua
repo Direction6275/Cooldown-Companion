@@ -1242,6 +1242,11 @@ local function ClearReusableButtonRuntime(button)
     button._cooldownDeferred = nil
     button._durationObj = nil
     button._chargeDurationObj = nil
+    -- _totemSwipeStyleActive is deliberately NOT cleared here: it is the latch
+    -- that owes the swipe-style restore, and the next pass sees the phase gone
+    -- and runs the falling edge. (_totemGlowStyleActive is different: its kit
+    -- is hidden outright by the caller, so its latch is cleared there.)
+    button._totemActive = nil
     button._chargeRecharging = nil
     button._chargeState = nil
     button._currentReadableCharges = nil
@@ -1289,6 +1294,7 @@ local function ClearReusableButtonRuntime(button)
     button._barVisualIntent = nil
     button._barVisualApplied = nil
     button._desatCooldownActive = nil
+    button._rawDesatCooldownActive = nil
     button._unusableTintActive = nil
     button._iconFillActive = nil
     button._iconFillMode = nil
@@ -1301,6 +1307,7 @@ local function ClearReusableButtonRuntime(button)
     button._auraGlowPandemic = nil
     button._readyGlowActive = nil
     button._readyGlowStartTime = nil
+    button._readyGlowTotemDeferred = nil
     button._readyGlowMaxChargesStartTime = nil
     button._readyGlowMaxChargesActive = nil
     button._readyGlowMaxChargesSpellID = nil
@@ -1309,6 +1316,7 @@ local function ClearReusableButtonRuntime(button)
     button._barCdColor = nil
     button._barReadyTextColor = nil
     button._barTextMode = nil
+    button._cdTextFontMode = nil
     button._barTextColorDirty = true
     button._lastBarTimeText = nil
     button._textVisualIntent = nil
@@ -1387,6 +1395,20 @@ local function DeactivatePooledButton(self, groupId, button)
     HideButtonGlowContainer(button.readyGlow)
     HideButtonGlowContainer(button.keyPressHighlight)
     HideButtonGlowContainer(button.barAuraEffect)
+    -- Totem active phase aura indicator: CC-owned kit regions on the button
+    -- itself, so the glow-container hides above do not reach them. Hidden here
+    -- (rather than left to the next pass's falling edge) because a released
+    -- button may be reused by a different entry before it ticks again, and it
+    -- must never inherit a lit indicator. enabled=false ignores the style
+    -- table, so nil is the honest argument on both resolvers.
+    if button._totemGlowKit then
+        button._totemGlowStyleActive = nil
+        if button._isBar then
+            ST._StyleKitBarGlowRegions(button._totemGlowKit, nil, button, false)
+        else
+            ST._StyleKitGlowRegions(button._totemGlowKit, nil, button, false)
+        end
+    end
     ClearReusableButtonRuntime(button)
     button._buttonPoolKey = GetExistingButtonPoolKey(button)
     button:Hide()

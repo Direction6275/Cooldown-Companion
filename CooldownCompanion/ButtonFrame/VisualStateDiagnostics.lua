@@ -243,7 +243,10 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     end
     CompareValue(row, "glows.readyActive", glows.readyActive, IsTrue(button._readyGlowActive))
     CompareValue(row, "glows.procActive", glows.procActive, IsTrue(button._procGlowActive))
-    CompareValue(row, "glows.auraActive", glows.auraActive, IsTrue(button._auraGlowActive))
+    -- Two writers: the legacy SetAuraGlow container cache, and the totem
+    -- phase's CC-owned kit latch (VisualState mirrors the same pair).
+    CompareValue(row, "glows.auraActive", glows.auraActive,
+        IsTrue(button._auraGlowActive) or IsTrue(button._totemGlowStyleActive))
     if compareVisibleIconIntent and glows.intentAvailable == true then
         CompareValue(row, "glows.proc.intent", glows.procIntentActive, glows.procActive)
         CompareValue(row, "glows.aura.intent", glows.auraIntentActive, glows.auraActive)

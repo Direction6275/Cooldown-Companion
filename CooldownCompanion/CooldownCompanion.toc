@@ -55,6 +55,7 @@ Core\RefreshTelemetry.lua
 Core\SpellButtonIndex.lua
 Core\CooldownRouting.lua
 Core\CooldownRefresh.lua
+Core\TotemTracking.lua
 Core\Lifecycle.lua
 Core\Aura.lua
 Core\AuraDisplay.lua

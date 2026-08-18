@@ -205,6 +205,9 @@ local function ClearRotationAssistantMissingState(button, buttonData, style)
     button._chargeCooldownVisualActive = nil
     button._currentReadableCharges = nil
     button._desatCooldownActive = false
+    -- Raw (pre-presentation-override) twin of the flag above; see the ready-glow
+    -- edge block in UpdateButtonCooldown.
+    button._rawDesatCooldownActive = false
     button._spellOutOfRange = nil
     button._isUnusable = false
     button._isOutOfRange = false
@@ -494,14 +497,18 @@ end
 local function NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen)
     local telemetryOn = RefreshTelemetry and RefreshTelemetry.enabled
     local charge = button._chargeRecharging and true or false   -- charge recharge (charge-color heuristic, walk-driven)
+    -- Totem active phase: the swipe/fill self-animate, but the phase EXIT
+    -- (totem gone -> spell cooldown resumes) is resolved by this walk, and a
+    -- summon running out carries no event of its own.
+    local totem = button._totemActive == true
     local readyGlow, forced
     if telemetryOn then
         -- Attribution needs every term evaluated so the counters can name
         -- each one that pinned the walk.
         readyGlow = HasPendingReadyGlowWindow(button, now)      -- finite ready-glow window still running
-        forced = charge or readyGlow
+        forced = charge or totem or readyGlow
     else
-        forced = charge or HasPendingReadyGlowWindow(button, now)
+        forced = charge or totem or HasPendingReadyGlowWindow(button, now)
     end
 
     local text = false
@@ -531,6 +538,7 @@ local function NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen)
         -- pinned this walk. Inert without the CC_DevBridge dev addon.
         if telemetryOn then
             if charge then RefreshTelemetry:CountForce("charge") end
+            if totem then RefreshTelemetry:CountForce("totem") end
             if readyGlow then RefreshTelemetry:CountForce("ready-glow") end
             if text then RefreshTelemetry:CountForce("text") end
             if floorForce then RefreshTelemetry:CountForce(floorFailOpen) end
@@ -549,7 +557,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local useChargeTextLane = UsesChargeTextLane(buttonData)
     local now = GetTime()
     local isGCDOnly = false
-    local desatWasActive = button._desatCooldownActive == true
+    -- Ready-glow edge inputs, captured before this pass overwrites them.
+    -- _rawDesatCooldownActive is the UNDERLYING cooldown truth: the totem active
+    -- phase overrides _desatCooldownActive (presentation) but never the raw
+    -- flag, so a cooldown that ends mid-phase still produces its edge here.
+    -- _totemActive is cleared further down, so the previous tick's phase state
+    -- has to be read now.
+    local rawDesatWasActive = button._rawDesatCooldownActive == true
+    local totemWasActive = button._totemActive == true
     local buttonGroup = button._groupId and CooldownCompanion.db and CooldownCompanion.db.profile
         and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
     local buttonDisplayMode = buttonGroup and (buttonGroup.displayMode or "icons") or "icons"
@@ -705,6 +720,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     button._cooldownState = COOLDOWN_STATE_READY
     button._chargeState = nil
     button._chargeCooldownVisualActive = nil
+    button._totemActive = nil
     -- Fetch cooldown data and update the cooldown widget.
     -- isOnGCD is NeverSecret (always readable even during restricted combat).
     local fetchOk, isOnGCD
@@ -965,20 +981,32 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     button._chargeState = ResolveChargeState(button, buttonData, usesChargeBehavior)
 
     -- Cooldown desaturation follows the canonical cooldown state, never the GCD.
+    local rawDesatActive
     if IsEntryItemLike(buttonData) then
-        button._desatCooldownActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
+        rawDesatActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
     elseif usesChargeBehavior then
-        button._desatCooldownActive = button._chargeState == CHARGE_STATE_ZERO
+        rawDesatActive = button._chargeState == CHARGE_STATE_ZERO
     else
-        button._desatCooldownActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
+        rawDesatActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
     end
+    -- Two flags, one computation: _desatCooldownActive is the PRESENTATION value
+    -- every consumer reads (the totem phase below forces it false), while
+    -- _rawDesatCooldownActive stays the underlying cooldown truth and is never
+    -- overridden. Only the raw pair drives the ready-glow edge.
+    button._rawDesatCooldownActive = rawDesatActive
+    button._desatCooldownActive = rawDesatActive
     -- Track on-CD → off-CD transition for ready glow duration timer.
-    -- desatWasActive is true only when the previous tick had an active cooldown,
-    -- so nil → false (initial load) does NOT set a start time.
-    if desatWasActive and button._desatCooldownActive == false then
+    -- rawDesatWasActive is true only when the previous tick had an active
+    -- cooldown, so nil → false (initial load) does NOT set a start time.
+    if rawDesatWasActive and rawDesatActive == false then
         button._readyGlowStartTime = now
-    elseif button._desatCooldownActive == true then
+        -- A window opened BEHIND a running totem phase is display-suppressed
+        -- (ResolveIconGlowIntent) and would silently expire unseen, so remember
+        -- it and re-stamp at the phase's falling edge below.
+        button._readyGlowTotemDeferred = totemWasActive or nil
+    elseif rawDesatActive == true then
         button._readyGlowStartTime = nil
+        button._readyGlowTotemDeferred = nil
     end
 
     if usesChargeBehavior then
@@ -1022,6 +1050,68 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
 
       end
+    end
+
+    -- Totem active phase. While a summon this entry cast is live, its remaining
+    -- time owns the readout and outranks BOTH the spell cooldown and the charge
+    -- recharge (Blizzard's CDM ranks totem data above everything). Written last
+    -- in the _durationObj ladder so that precedence is structural rather than
+    -- conditional. Text panels are excluded by owner scope ruling: composed
+    -- format strings cannot read a secret duration. The object is opaque here --
+    -- stored, handed to widgets, and probed only through the plain-bool
+    -- DurationObjectShowsCooldown.
+    --
+    -- OPT-IN CONTRACT (owner ruling): a totem's standing duration IS the entry's
+    -- aura duration, so the phase is gated by the entry's own "Track an Aura"
+    -- toggle. auraTracking off -> the entry shows its spell cooldown only and
+    -- the phase never activates; auraTracking on -> the phase displays, and the
+    -- aura config sections it draws with open through the ordinary aura gate.
+    if buttonData.type == "spell"
+            and buttonData.auraTracking == true
+            and not buttonData.isPassive
+            and not button._isText then
+        local totemObj = self:GetTotemDurationObjectForSpell(buttonData.id)
+        if not totemObj and cooldownSpellId and cooldownSpellId ~= buttonData.id then
+            totemObj = self:GetTotemDurationObjectForSpell(cooldownSpellId)
+        end
+        if totemObj and EntryRuntime.DurationObjectShowsCooldown(totemObj) then
+            button._totemActive = true
+            button._durationObj = totemObj
+            -- The phase reads as AURA-active, not on-cooldown (owner ruling):
+            -- the underlying spell cooldown keeps running, but desaturate-on-
+            -- cooldown and the cooldown tint must not fire while the summon
+            -- stands. Computed above from _cooldownState, overridden here.
+            -- Only this presentation flag is overridden: the ready-glow edge
+            -- runs off _rawDesatCooldownActive, so a cooldown that ends
+            -- mid-phase still opens its window, the glow is DISPLAY-suppressed
+            -- while the phase runs (ResolveIconGlowIntent), and the falling
+            -- edge below re-stamps the window so it is seen in full.
+            button._desatCooldownActive = false
+            if button._isBar then
+                -- The phase outranks GCD suppression too: a GCD-only cast must
+                -- not leave the bar blank while its summon is standing.
+                button._barGCDSuppressed = false
+            else
+                button.cooldown:SetCooldownFromDurationObject(totemObj)
+            end
+        end
+    end
+
+    -- Totem falling edge: a finite ready-glow window that opened while the phase
+    -- ran was never displayed, so re-stamp it here and let the player see one
+    -- full window now that the summon is gone. Re-stamping (rather than letting
+    -- the original stamp stand) is what keeps a window shorter than the phase
+    -- from having expired unseen; a still-running one simply restarts, which is
+    -- the same single window either way. Continuous glow (readyGlowDuration ==
+    -- 0) needs nothing: it resumes on its own once the suppression term drops.
+    if totemWasActive and button._totemActive ~= true and button._readyGlowTotemDeferred then
+        button._readyGlowTotemDeferred = nil
+        -- Both guards required: the button must be genuinely ready, and a window
+        -- must still exist to move (an external reset that clears the phase
+        -- without running this edge must never manufacture one).
+        if rawDesatActive == false and button._readyGlowStartTime then
+            button._readyGlowStartTime = now
+        end
     end
 
     if IsReadyGlowMaxChargeEligible(buttonData) then

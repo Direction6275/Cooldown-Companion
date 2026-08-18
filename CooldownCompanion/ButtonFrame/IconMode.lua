@@ -47,6 +47,10 @@ local SetReadyGlow = ST._SetReadyGlow
 local SetKeyPressHighlight = ST._SetKeyPressHighlight
 local IsBindingKeyPressed = ST._IsBindingKeyPressed
 local CacheButtonBindingKeys = ST._CacheButtonBindingKeys
+-- Pure kit builders/stylers (no CC-button coupling); the totem active phase is
+-- the only CC-side caller, see SetTotemPhaseGlow below.
+local BuildKitGlowRegions = ST._BuildKitGlowRegions
+local StyleKitGlowRegions = ST._StyleKitGlowRegions
 
 -- Imports from Visibility
 local UpdateLossOfControl = ST._UpdateLossOfControl
@@ -300,8 +304,39 @@ local function ResolveIconFillDurationObjectValue(button, durationObj)
     return durationObj:GetRemainingPercent()
 end
 
+-- Falling-edge restore for the totem active phase: CooldownFrameTemplate's
+-- default swipe is a file-less solid color that SetSwipeTexture cannot return
+-- to, so a white fill under the black swipe color renders identically (same
+-- constants as Core/AuraDisplay.lua's aura-swipe restore).
+local DEFAULT_SWIPE_TEXTURE = "Interface\\Buttons\\WHITE8X8"
+local DEFAULT_SWIPE_TEX_LOW = { x = 0, y = 0 }
+local DEFAULT_SWIPE_TEX_HIGH = { x = 1, y = 1 }
+
+-- Totem active phase swipe styling. Owner ruling: a summon's remaining time is
+-- presented like an aura duration, so the aura swipe keys own every decision
+-- and Core/AuraDisplay.lua stays the single place that reads them. One
+-- deviation: aura display time NEVER applies here -- there is no aura instance,
+-- CC feeds the duration object itself.
+local function ApplyTotemPhaseSwipeStyle(button, style)
+    if not (button and button.cooldown and style) then
+        return
+    end
+
+    CooldownCompanion:ApplyAuraDurationSwipeStyle(button.cooldown, style)
+    button.cooldown:SetUseAuraDisplayTime(false)
+end
+
 local function ApplyDefaultCooldownSwipeStyle(button, style)
     if not (button and button.cooldown and style) then
+        return
+    end
+
+    -- Every other swipe restore in this file is some latch's falling edge and
+    -- they all run BEFORE the totem latch in the pass, so routing them here
+    -- keeps an active phase from being stomped mid-pass instead of relying on
+    -- ordering alone.
+    if button._totemActive == true then
+        ApplyTotemPhaseSwipeStyle(button, style)
         return
     end
 
@@ -317,6 +352,52 @@ local function ApplyDefaultCooldownSwipeStyle(button, style)
     button.cooldown:SetReverse(swipeEnabled and reverse)
     button.cooldown:SetSwipeColor(0, 0, 0, alpha)
     button.cooldown:SetEdgeColor(edgeColor[1], edgeColor[2], edgeColor[3], edgeColor[4])
+end
+
+-- Totem phase falling edge: the aura keys can have swapped the swipe to the
+-- Blizzard preset texture, which no cooldown-side styler restores, so undo the
+-- texture before handing the widget back to the cooldown styling.
+local function RestoreCooldownSwipeAfterTotemPhase(button, style)
+    if not (button and button.cooldown) then
+        return
+    end
+
+    button.cooldown:SetSwipeTexture(DEFAULT_SWIPE_TEXTURE, 1, 1, 1, 1)
+    button.cooldown:SetTexCoordRange(DEFAULT_SWIPE_TEX_LOW, DEFAULT_SWIPE_TEX_HIGH)
+    ApplyDefaultCooldownSwipeStyle(button, style)
+end
+
+-- Totem active phase aura indicator (owner ruling: the phase renders aura-side,
+-- and that includes the indicator). For a real aura these glows are kit regions
+-- parented under the Blizzard aura slot button and shown by Blizzard with the
+-- aura; a totem has no aura instance and no slot, so the SAME pure kit builder
+-- and styler run on the CC button instead, from the same auraGlow* keys.
+--
+-- Contract: the kit is built lazily on the first rising edge and kept for the
+-- button's life, so a button that never summons pays nothing beyond the latch's
+-- nil check. Style writes happen on the phase edges only -- never per tick.
+local function TotemIconGlowWanted(style)
+    -- Mirrors Glows.lua NormalizeKitGlowStyle: "none" is its only silent value.
+    return (style.auraGlowStyle or "pulse") ~= "none"
+end
+
+local function SetTotemPhaseGlow(button, style, enabled)
+    local kit = button._totemGlowKit
+    if enabled then
+        if not kit then
+            kit = BuildKitGlowRegions(button)
+            button._totemGlowKit = kit
+        end
+        -- Kit parity: the aura slot mounts its glow one level above the swipe.
+        -- Re-set on every rising edge because ApplyStrataOrder owns
+        -- button.cooldown's level and moves it on restyles.
+        kit.host:SetFrameLevel(button.cooldown:GetFrameLevel() + 1)
+        StyleKitGlowRegions(kit, style, button, true)
+    elseif kit then
+        -- enabled=false resolves to kit style "none" (full reset + host alpha
+        -- 0), so the style table is not read and nil is the honest argument.
+        StyleKitGlowRegions(kit, nil, button, false)
+    end
 end
 
 local function SetIconFillFromCooldownWidget(button)
@@ -1023,11 +1104,13 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             and isGCDOnly
             and button._chargeCooldownVisualActive ~= true
             and button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
+            and button._totemActive ~= true
 
         local realCooldownSwipeActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
             and button._cooldownDeferred ~= true
         local cooldownVisualActive = realCooldownSwipeActive
             or button._chargeCooldownVisualActive == true
+            or button._totemActive == true
             or (isGCDOnly and style.showGCDSwipe == true)
 
         if suppressGCD or not cooldownVisualActive then
@@ -1044,7 +1127,10 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         local hasChargesRemaining = (button._chargeState ~= CHARGE_STATE_ZERO)
         if hasChargesRemaining ~= button._hideCooldownChargesActive then
             button._hideCooldownChargesActive = hasChargesRemaining
-            if hasChargesRemaining then
+            -- The totem active phase outranks charges, so its swipe must not be
+            -- blanked here; the styler re-routes to the phase while it runs and
+            -- honours _hideCooldownChargesActive again once it ends.
+            if hasChargesRemaining and button._totemActive ~= true then
                 button.cooldown:SetDrawSwipe(false)
             else
                 ApplyDefaultCooldownSwipeStyle(button, style)
@@ -1090,10 +1176,61 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         ApplyDefaultCooldownSwipeStyle(button, style)
     end
 
+    -- Totem active phase styling. Placed last for the same reason the GCD
+    -- radial runs after UpdateIconFill: the final writer of button.cooldown's
+    -- flags in the pass is the honest owner. Rising edge only (the writes are
+    -- latched); any earlier restore in the pass re-routes through
+    -- ApplyDefaultCooldownSwipeStyle, which defers to the phase. Yields to the
+    -- icon-fill owner exactly as the GCD radial does: an active fill suppresses
+    -- the shared swipe every pass, so styling it would fight that.
+    if button._totemActive == true and button._iconFillActive ~= true then
+        if button._totemSwipeStyleActive ~= true then
+            button._totemSwipeStyleActive = true
+            ApplyTotemPhaseSwipeStyle(button, style)
+        end
+    elseif button._totemSwipeStyleActive == true then
+        button._totemSwipeStyleActive = nil
+        RestoreCooldownSwipeAfterTotemPhase(button, style)
+    end
+
+    -- Totem active phase aura indicator, latched exactly like the swipe style
+    -- above. Independent of the icon-fill owner: the fill competes for the
+    -- cooldown widget, the glow is its own kit and neither touches the other.
+    if button._totemActive == true and TotemIconGlowWanted(style) then
+        if button._totemGlowStyleActive ~= true then
+            button._totemGlowStyleActive = true
+            SetTotemPhaseGlow(button, style, true)
+        end
+    elseif button._totemGlowStyleActive == true then
+        button._totemGlowStyleActive = nil
+        SetTotemPhaseGlow(button, style, false)
+    end
+
     -- Cooldown text: visibility + color. (Aura duration text is drawn by the
     -- aura display layer — see Core/AuraDisplay.lua.)
     -- Color is reapplied each tick because WoW's CooldownFrame may reset it.
     if button._cdTextRegion then
+        -- Font mode latch. The totem phase styles its timer like an aura
+        -- duration (owner ruling), which is the FONT, SIZE and OUTLINE as well
+        -- as the color below, so the region switches font families on the phase
+        -- edges. Latched: SetFont per tick is forbidden, and the same latch is
+        -- what restores the cooldown font when the summon goes. Cleared by
+        -- UpdateButtonStyle (which reapplies the cooldown font itself) so a
+        -- restyle mid-phase re-resolves on the next tick.
+        local wantFontMode = "cd"
+        if button._totemActive == true then
+            wantFontMode = "auraText"
+        end
+        if button._cdTextFontMode ~= wantFontMode then
+            button._cdTextFontMode = wantFontMode
+            if wantFontMode == "auraText" then
+                ApplyFontStyle(button._cdTextRegion, style, "auraText", nil,
+                    CooldownCompanion.DEFAULT_AURA_TEXT_COLOR)
+            else
+                ApplyFontStyle(button._cdTextRegion, style, "cooldown")
+            end
+        end
+
         local showText, fontColor
         if buttonData.isPassive then
             -- Passive aura entry: no cooldown text (cooldown frame hidden)
@@ -1103,15 +1240,23 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             -- so hiding/clearing the widget does not hide an old value that
             -- its animation wrote. Only expose the region while a timer owns
             -- it; ready icons must keep it hidden even after a config restyle.
-            local timerActive = (button._cooldownState == COOLDOWN_STATE_COOLDOWN
-                    and button._cooldownDeferred ~= true)
-                or button._chargeCooldownVisualActive == true
-                or (isGCDOnly and style.showGCDSwipe == true)
-            showText = style.showCooldownText and timerActive
-            if showText and button._hideCooldownChargesActive then
-                showText = false
+            if button._totemActive == true then
+                -- Totem active phase rides the AURA text keys (owner ruling):
+                -- its own visibility toggle and its own color. It outranks the
+                -- charge suppression rule exactly as it outranks charges.
+                showText = style.showAuraText ~= false
+                fontColor = style.auraTextFontColor or CooldownCompanion.DEFAULT_AURA_TEXT_COLOR
+            else
+                local timerActive = (button._cooldownState == COOLDOWN_STATE_COOLDOWN
+                        and button._cooldownDeferred ~= true)
+                    or button._chargeCooldownVisualActive == true
+                    or (isGCDOnly and style.showGCDSwipe == true)
+                showText = style.showCooldownText and timerActive
+                if showText and button._hideCooldownChargesActive then
+                    showText = false
+                end
+                fontColor = style.cooldownFontColor or DEFAULT_WHITE
             end
-            fontColor = style.cooldownFontColor or DEFAULT_WHITE
         end
         if showText then
             local cc = fontColor
@@ -1232,7 +1377,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._iconFillIntent = nil
     button._iconGlowIntent = nil
     button._desatCooldownActive = nil
+    button._rawDesatCooldownActive = nil
     button._readyGlowStartTime = nil
+    button._readyGlowTotemDeferred = nil
     button._readyGlowMaxChargesStartTime = nil
     button._readyGlowMaxChargesActive = nil
     button._readyGlowMaxChargesSpellID = nil
@@ -1337,6 +1484,19 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     end
     ApplyCooldownTextHost(button, button.buttonData, style)
     button._cdTextHidden = nil
+    -- The cooldown font was just (re)applied above, so the per-tick font latch
+    -- has to re-resolve: a restyle during a totem phase must put the aura font
+    -- back on the next pass.
+    button._cdTextFontMode = nil
+
+    -- Totem aura-indicator latch. Every input moved (style, color, size, speed,
+    -- and the cooldown level the host rides), so drop the latch and hide the
+    -- kit: a phase still running re-applies from the new style on the next
+    -- pass, and a button restyled out of a phase cannot strand a lit glow.
+    if button._totemGlowKit then
+        button._totemGlowStyleActive = nil
+        StyleKitGlowRegions(button._totemGlowKit, nil, button, false)
+    end
 
     -- Update count text font/anchor settings from effective style
     ApplyCountTextStyle(button, style)
