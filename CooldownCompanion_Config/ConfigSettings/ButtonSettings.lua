@@ -21,6 +21,7 @@ local UpdateItemChargeMetadata = CooldownCompanion.UpdateItemChargeMetadata
 -- converted; the fallback item rows still draw stock widgets.
 -- ST._BeginRowGrid stays a function-local at each builder, the convention
 -- every converted surface follows.
+local AddCheckboxRow = ST._AddCheckboxRow
 local AddSliderRow = ST._AddSliderRow
 local AddDropdownRow = ST._AddDropdownRow
 local AddSoundPreviewDropdownRow = ST._AddSoundPreviewDropdownRow
@@ -558,6 +559,23 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     if itemCollapsed then return end
 
     local refreshGroup = function() CooldownCompanion:RefreshGroupFrame(CS.selectedGroup) end
+
+    -- The rows below only style this number, so they are drawn only while it is on.
+    local showItemCount = buttonData.showItemCountText ~= false
+    AddCheckboxRow(scroll, {
+        label = "Show Item Stack Text",
+        value = showItemCount,
+        onChange = function(val)
+            if val then
+                buttonData.showItemCountText = nil
+            else
+                buttonData.showItemCountText = false
+            end
+            refreshGroup()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+    if not showItemCount then return end
 
     -- LEFT column: what the stack count is drawn WITH - size, face, outline.
     -- RIGHT column: what it looks like and where it lands - color, anchor, and

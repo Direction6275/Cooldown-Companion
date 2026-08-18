@@ -1139,13 +1139,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if buttonData.type == "item" and not buttonData.hasCharges and not IsItemEquippable(buttonData) then
         local count = button._resolvedItemAvailableQuantity
             or C_Item.GetItemCount(button._resolvedItemId or buttonData.id)
-        if button._itemCount ~= count then
-            button._itemCount = count
-            if count and count >= 1 then
-                button.count:SetText(count)
-            else
-                button.count:SetText("")
-            end
+        -- the count itself still feeds the zero-stack hide and desaturate rules,
+        -- so only the readout is switched off
+        button._itemCount = count
+        local text = ""
+        if buttonData.showItemCountText ~= false and count and count >= 1 then
+            text = count
+        end
+        if button._itemCountText ~= text then
+            button._itemCountText = text
+            button.count:SetText(text)
         end
     end
 
