@@ -1853,6 +1853,13 @@ end
 ------------------------------------------------------------------------
 -- Seven of the Visibility toggles gate the same dim child, so its
 -- tooltip is stated once here rather than seven times inside the builder.
+local UNHIDE_BEFORE_READY_TOOLTIP = {
+    "Unhide Before Ready",
+    {"Shows the icon again once the cooldown drops under the seconds set below.", 1, 1, 1, true},
+    " ",
+    {"It keeps its layout position.", 1, 1, 1, true},
+}
+
 local DIM_INSTEAD_OF_HIDE_TOOLTIP = {
     "Dim Instead Of Hide",
     {"Instead of fully hiding, shows the button dimmed. It keeps its layout position.", 1, 1, 1, true},
@@ -1884,6 +1891,7 @@ end
 local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchContext)
     -- Function-local, not upvalues: see the note by the row-grammar imports.
     local AddCheckboxRow = ST._AddCheckboxRow
+    local AddSliderRow = ST._AddSliderRow
     local AnchorRowBadge = ST._AnchorRowBadge
     local BeginRowGrid = ST._BeginRowGrid
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
@@ -2224,7 +2232,9 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     else showFallbackOnCooldown = buttonData.hideWhileOnCooldown end
     showFallbackOnCooldown = showFallbackOnCooldown and not isTexturePanel
 
-    AddFamily(showFallbackOnCooldown and 2 or 1, function(column)
+    local unhideAtRows = tonumber(buttonData.hideWhileOnCooldownRevealAt) or 0
+    local unhideRows = unhideAtRows > 0 and 1 or 0
+    AddFamily(showFallbackOnCooldown and (3 + unhideRows) or 1, function(column)
         AddVisibilityRow(column, "Hide While On Cooldown", "hideWhileOnCooldown", {
             onChanged = function(widget, event, val)
                 ApplyToSelected("hideWhileOnCooldown", val or nil)
@@ -2234,17 +2244,48 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
                     ApplyToChargeSpell("showOnlyAtZeroCharges", nil)
                 else
                     ApplyToSelected("useBaselineAlphaFallbackOnCooldown", nil)
+                    ApplyToSelected("hideWhileOnCooldownRevealAt", nil)
                 end
                 CooldownCompanion:RefreshConfigPanel()
             end,
         })
 
         if showFallbackOnCooldown then
+            -- Dim Instead Of Hide keeps the icon on screen the whole time, so the
+            -- threshold has nothing left to unhide.
+            local dimOwnsState = buttonData.useBaselineAlphaFallbackOnCooldown == true
+            local unhideAt = tonumber(buttonData.hideWhileOnCooldownRevealAt)
+            local unhideRow = AddCheckboxRow(column, {
+                label = "Unhide Before Ready",
+                indent = true,
+                disabled = dimOwnsState,
+                value = unhideAt ~= nil and unhideAt > 0,
+                onChange = function(val)
+                    ApplyToSelected("hideWhileOnCooldownRevealAt", val and 10 or nil)
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+            AnchorRowBadge(unhideRow, CreateInfoButton(unhideRow.frame, unhideRow.frame,
+                "LEFT", "LEFT", 0, 0, UNHIDE_BEFORE_READY_TOOLTIP, infoButtons))
+
+            if unhideAt and unhideAt > 0 then
+                AddSliderRow(column, {
+                    label = "Unhide Seconds",
+                    min = 1, max = 60, step = 1,
+                    indent = true,
+                    disabled = dimOwnsState,
+                    value = unhideAt,
+                    onRelease = function(val)
+                        ApplyToSelected("hideWhileOnCooldownRevealAt", val)
+                    end,
+                })
+            end
             AddVisibilityRow(column, "Dim Instead Of Hide", "useBaselineAlphaFallbackOnCooldown", {
                 indent = true,
                 tooltip = DIM_INSTEAD_OF_HIDE_TOOLTIP,
                 onChanged = function(widget, event, val)
                     ApplyToSelected("useBaselineAlphaFallbackOnCooldown", val or nil)
+                    CooldownCompanion:RefreshConfigPanel()
                 end,
             })
         end

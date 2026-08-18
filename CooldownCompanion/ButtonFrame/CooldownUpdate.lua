@@ -1342,6 +1342,32 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
+    -- after the visibility legs, which write alpha themselves
+    if button._visibilityRevealCurve and not button._forceVisibleByConfig then
+        if button._durationObj then
+            button:SetAlpha(button._durationObj:EvaluateRemainingDuration(button._visibilityRevealCurve))
+        elseif button._itemCdStart and button._itemCdDuration and button._itemCdDuration > 0 then
+            -- an item cooldown is readable, so it needs no curve
+            local remaining = button._itemCdDuration - (GetTime() - button._itemCdStart)
+            local revealAt = tonumber(buttonData.hideWhileOnCooldownRevealAt) or 0
+            button:SetAlpha(remaining <= revealAt and 1 or 0)
+        end
+        button._lastVisAlpha = nil
+        -- the threshold is re-read in Lua, so this button is not self-animating
+        PinTickerForce("reveal")
+        -- an alpha-0 frame still hit-tests, and which side of the threshold it is
+        -- on cannot be read back, so the receiver stays off while the rule owns it
+        if button._ccPingSurface then
+            SetEntryPingReceiver(button._ccPingSurface, false, button)
+            button._revealPingDisarmed = true
+        end
+    elseif button._revealPingDisarmed then
+        button._revealPingDisarmed = nil
+        if button._ccPingSurface then
+            SetEntryPingReceiver(button._ccPingSurface, true, button)
+        end
+    end
+
     -- Unusable/out-of-range state for text mode {unusable}/{oor} conditionals
     if button._isText then
         if buttonData.isPassive or buttonData.isPassiveCooldown then

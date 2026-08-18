@@ -64,6 +64,21 @@ local BASELINE_FALLBACKS = {
     { bit = HIDE_UNUSABLE,        key = "useBaselineAlphaFallbackUnusable" },
 }
 
+-- The remaining time is secret in combat, so the threshold drives alpha through a
+-- curve instead of deciding hidden or shown in Lua.
+local function GetRevealCurve(button, revealAt, hiddenAlpha)
+    if button._revealAt ~= revealAt or button._revealHiddenAlpha ~= hiddenAlpha then
+        local curve = C_CurveUtil.CreateCurve()
+        curve:SetType(Enum.LuaCurveType.Step)
+        curve:AddPoint(0, 1)
+        curve:AddPoint(revealAt, hiddenAlpha)
+        button._revealCurve = curve
+        button._revealAt = revealAt
+        button._revealHiddenAlpha = hiddenAlpha
+    end
+    return button._revealCurve
+end
+
 local function ClearArray(tbl)
     if type(tbl) == "table" then
         for i = #tbl, 1, -1 do
@@ -102,6 +117,8 @@ end
 -- Called inside UpdateButtonCooldown after cooldown fetch and aura tracking are complete.
 -- Fast path: if no toggles are enabled, zero overhead.
 local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
+    -- cleared on every path, including the fast returns below
+    button._visibilityRevealCurve = nil
     if buttonData and buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = nil
@@ -227,6 +244,27 @@ local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
                 hideReasons = bit_bor(hideReasons, HIDE_UNUSABLE)
             end
         end
+    end
+
+    -- Phase 2a: a cooldown hide that unhides itself near the end. Only when the
+    -- cooldown is the sole reason -- another rule saying hide still hides.
+    local revealAt = tonumber(buttonData.hideWhileOnCooldownRevealAt)
+    local group = button._groupId and CooldownCompanion.db.profile.groups[button._groupId]
+    -- texture and trigger panels read their driver's alpha back, and a secret
+    -- value cannot answer that
+    local ownsOwnAlpha = group ~= nil
+        and (group.displayMode == "textures" or group.displayMode == "trigger")
+    local hasTimer = button._durationObj ~= nil
+        or (button._itemCdDuration ~= nil and button._itemCdDuration > 0)
+    if hideReasons == HIDE_ON_COOLDOWN and revealAt and revealAt > 0 and hasTimer
+        and button._totemActive ~= true
+        and not buttonData.useBaselineAlphaFallbackOnCooldown and not ownsOwnAlpha then
+        button._visibilityHidden = false
+        button._visibilityAlphaOverride = nil
+        button._visibilityRevealCurve = GetRevealCurve(button, revealAt, 0)
+        button._visibilityReasonBits = hideReasons
+        button._visibilityReasonMode = "revealing"
+        return
     end
 
     -- Phase 2: Dim instead of hide.
