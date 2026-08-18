@@ -1039,6 +1039,30 @@ local function StripRetiredTextSizeKeys(profile)
     return hadCustomSize
 end
 
+-- Totem-phase learned-flag retirement: an early build of the totem duration
+-- phase stamped buttonData._totemEntry so the config lane could widen its aura
+-- gates. The phase is now opt-in through the entry's own auraTracking toggle
+-- (ButtonFrame/CooldownUpdate.lua), so nothing reads or writes the flag any
+-- more. Strip every stored copy so profiles and exports stop carrying a dead
+-- key. Deleting keeps this pass a no-op on migrated data.
+local function StripRetiredTotemEntryFlag(profile)
+    if type(profile) ~= "table" then
+        return
+    end
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            if type(group) == "table" and type(group.buttons) == "table" then
+                for _, buttonData in ipairs(group.buttons) do
+                    if type(buttonData) == "table" and rawget(buttonData, "_totemEntry") ~= nil then
+                        buttonData._totemEntry = nil
+                    end
+                end
+            end
+        end
+    end
+end
+
 local RETIRED_PROFILE_FLAGS = { "autoAddPrefs", "cdmHidden" }
 
 local function ClearRetiredProfileFlags(profile)
@@ -3237,6 +3261,7 @@ function CooldownCompanion:RunAllMigrations()
     StripRetiredSwipeEdgeKeys(self.db and self.db.profile)
     StripRetiredIconFillAuraColor(self.db and self.db.profile)
     StripRetiredCastBarStylingKey(self.db and self.db.profile)
+    StripRetiredTotemEntryFlag(self.db and self.db.profile)
     if StripRetiredTextSizeKeys(self.db and self.db.profile) then
         self:Print("Updated for 12.1: text panels now size themselves from their format and font. Use Padding for breathing room.")
     end

@@ -210,6 +210,13 @@ function CooldownCompanion:OnEnable()
     -- Pet summon/dismiss — show/hide pet spell buttons dynamically
     self:RegisterEvent("UNIT_PET", "OnPetChanged")
 
+    -- Totem/guardian slots — the only source of remaining time for summons.
+    -- The slot index arrives plain even in combat (TotemTracking.lua).
+    self:RegisterEvent("PLAYER_TOTEM_UPDATE", "OnTotemUpdate")
+    if self.ResyncTotemSlots then
+        self:ResyncTotemSlots()
+    end
+
     -- Specialization change events — show/hide groups based on spec filter
     self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED", "OnSpecChanged")
     self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED", "OnPlayerSpecializationChanged")
@@ -373,6 +380,9 @@ function CooldownCompanion:OnDisable()
     end
     self:ResetCooldownRefreshState()
     self:ResetRoutedCooldownBatch()
+    if self.ResetTotemTracking then
+        self:ResetTotemTracking()
+    end
 
     -- Disable all range check registrations
     for spellId in pairs(self._rangeCheckSpells) do
@@ -457,6 +467,9 @@ function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
         if self.RecordCustomBarSpellCast then
             self:RecordCustomBarSpellCast(spellID)
         end
+        if self.NoteTotemLaneSpellCast then
+            self:NoteTotemLaneSpellCast(spellID)
+        end
         self:QueueCooldownRefresh("cast-event")
     end
 end
@@ -493,6 +506,11 @@ function CooldownCompanion:OnCombatEnd()
     -- during combat can have settled on the regular-mounted branch. Re-dirty
     -- so the first out-of-combat tick reclassifies.
     self:InvalidateMountAlphaCache()
+    -- Totem slots are sealed in combat; the first OOC read is the truth pass
+    -- that fixes any identity the cast heuristic missed.
+    if self.ResyncTotemSlots then
+        self:ResyncTotemSlots()
+    end
     if self._pendingUnsupportedLegacyHide or self._unsupportedLegacyProfile then
         self._pendingUnsupportedLegacyHide = nil
         self._pendingFullRefresh = nil
