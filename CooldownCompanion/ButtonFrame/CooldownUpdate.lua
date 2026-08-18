@@ -494,6 +494,22 @@ local function PinTickerForce(term)
     end
 end
 
+-- A child cannot draw more opaque than its parent, so the timer layers opt out
+-- of the dim rather than being capped by it.
+local function SetDimExemptTimerLayers(button, exempt)
+    -- opting out skips the panel fade too, so only while the panel is unfaded
+    if exempt then
+        local parent = button:GetParent()
+        exempt = (parent and parent:GetEffectiveAlpha() or 1) >= 1
+    end
+    if button._dimExemptTimers == exempt then return end
+    button._dimExemptTimers = exempt
+    if button.cooldown then button.cooldown:SetIgnoreParentAlpha(exempt) end
+    if button.iconGCDCooldown then button.iconGCDCooldown:SetIgnoreParentAlpha(exempt) end
+    if button.locCooldown then button.locCooldown:SetIgnoreParentAlpha(exempt) end
+    if button.iconFill then button.iconFill:SetIgnoreParentAlpha(exempt) end
+end
+
 local function NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen)
     local telemetryOn = RefreshTelemetry and RefreshTelemetry.enabled
     local charge = button._chargeRecharging and true or false   -- charge recharge (charge-color heuristic, walk-driven)
@@ -1276,6 +1292,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         local groupFrame = button:GetParent()
         if groupFrame then groupFrame._layoutDirty = true end
     end
+
+    -- above the split, so the hidden legs clear it before they return
+    SetDimExemptTimerLayers(button,
+        not button._visibilityHidden and button._visibilityReasonMode == "dimmed")
 
     -- Apply visibility alpha or early-return for hidden buttons
     if not group or not group.compactLayout then
