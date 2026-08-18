@@ -4681,12 +4681,14 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
         return true
     end
 
+    local prevAnchor = group.anchor
+    local sameTarget = prevAnchor ~= nil and prevAnchor.relativeTo == targetFrameName
     group.anchor = {
-        point = "TOPLEFT",
+        point = sameTarget and prevAnchor.point or "TOPLEFT",
         relativeTo = targetFrameName,
-        relativePoint = "BOTTOMLEFT",
-        x = 0,
-        y = -5,
+        relativePoint = sameTarget and prevAnchor.relativePoint or "BOTTOMLEFT",
+        x = sameTarget and prevAnchor.x or 0,
+        y = sameTarget and prevAnchor.y or -5,
     }
 
     FinishGroupAnchorChange(self, groupId, frame, group, wasCursorAnchored)

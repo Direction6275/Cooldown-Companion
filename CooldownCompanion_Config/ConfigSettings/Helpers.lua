@@ -1785,11 +1785,13 @@ local function BuildIndependentAnchorTargetRow(container, anchor, applyFn, opts)
                     CooldownCompanion:RefreshConfigPanel()
                     return
                 end
-                anchor.point = "TOPLEFT"
-                anchor.relativeTo = name
-                anchor.relativePoint = "BOTTOMLEFT"
-                anchor.x = 0
-                anchor.y = -5
+                if anchor.relativeTo ~= name then
+                    anchor.point = "TOPLEFT"
+                    anchor.relativeTo = name
+                    anchor.relativePoint = "BOTTOMLEFT"
+                    anchor.x = 0
+                    anchor.y = -5
+                end
                 applyFn()
             end
             CooldownCompanion:RefreshConfigPanel()
