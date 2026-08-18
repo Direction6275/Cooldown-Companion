@@ -434,6 +434,8 @@ local function CreateSlotFrame(parent)
     frame.shortText:SetWordWrap(false)
 
     frame.previewCanvas = CreateFrame("Frame", nil, frame)
+    -- bars drawn here must stay pickable, whatever the dynamic alpha rule says
+    frame.previewCanvas._cdcPreviewCanvas = true
     frame.previewCanvas:SetClipsChildren(false)
 
     frame.grip = frame:CreateTexture(nil, "OVERLAY")

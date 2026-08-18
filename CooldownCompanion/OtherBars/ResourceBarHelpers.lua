@@ -60,6 +60,11 @@ local RESOURCE_TEXT_DISPLAY_KEYS = {
     "textXOffset",
     "textYOffset",
     "hideTextAtZero",
+    "textHideMode",
+    "textHideThreshold",
+    "dynAlphaMode",
+    "dynAlphaThreshold",
+    "dynAlpha",
     "showRechargeText",
     "rechargeTextMode",
     "rechargeTextFont",
@@ -2227,6 +2232,33 @@ local function FormatSegmentedTextNumber(value)
     return (formatted:gsub("%.0$", ""))
 end
 
+-- A curve: the resource value is secret in instances and a Lua compare throws.
+-- Stagger and Maelstrom Weapon have no percent of their own.
+local function BuildTextHideCurve(resourceConfig, textColor, powerType)
+    if powerType == 101 or powerType == RESOURCE_MAELSTROM_WEAPON then return nil end
+    if RB.AURA_STACK_RESOURCES[powerType] then return nil end
+    local mode = resourceConfig and resourceConfig.textHideMode
+    if mode ~= "below" and mode ~= "above" then return nil end
+    if type(textColor) ~= "table" or textColor[1] == nil then return nil end
+
+    local threshold = tonumber(resourceConfig.textHideThreshold) or 35
+    if threshold < 1 then threshold = 1 elseif threshold > 99 then threshold = 99 end
+    threshold = threshold / 100
+
+    local alpha = textColor[4] ~= nil and textColor[4] or 1
+    local shown = CreateColor(textColor[1], textColor[2], textColor[3], alpha)
+    local hidden = CreateColor(textColor[1], textColor[2], textColor[3], 0)
+    local low = (mode == "below") and hidden or shown
+    local high = (mode == "below") and shown or hidden
+
+    local curve = C_CurveUtil.CreateColorCurve()
+    curve:AddPoint(0.0, low)
+    curve:AddPoint(threshold, low)
+    curve:AddPoint(threshold + 0.001, high)
+    curve:AddPoint(1.0, high)
+    return curve
+end
+
 local function ClearSegmentedText(holder)
     if holder and holder.text then
         holder.text:SetText("")
@@ -2354,5 +2386,6 @@ RB.GetContinuousTickEntriesConfig = GetContinuousTickEntriesConfig
 RB.SupportsResourceAuraStackMode = SupportsResourceAuraStackMode
 RB.IsResourceEnabled = IsResourceEnabled
 RB.IsSegmentedTextResource = IsSegmentedTextResource
+RB.BuildTextHideCurve = BuildTextHideCurve
 RB.ClearSegmentedText = ClearSegmentedText
 RB.SetSegmentedText = SetSegmentedText

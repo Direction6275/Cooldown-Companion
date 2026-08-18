@@ -659,11 +659,8 @@ function HealthBar.ApplyFillColor(bar, config, previewPercent)
 
     if type(color) == "table" and color.GetRGBA then
         local r, g, b, a = color:GetRGBA()
-        bar:SetStatusBarColor(r, g, b, 1)
-        local fillTexture = bar:GetStatusBarTexture()
-        if fillTexture and fillTexture.SetAlpha then
-            fillTexture:SetAlpha(a)
-        end
+        -- opacity rides the vertex colour, leaving the region alpha free
+        bar:SetStatusBarColor(r, g, b, a)
         return
     end
 
@@ -676,11 +673,8 @@ function HealthBar.ApplyFillColor(bar, config, previewPercent)
     end
 
     if r and g and b then
-        bar:SetStatusBarColor(r, g, b, 1)
-        local fillTexture = bar:GetStatusBarTexture()
-        if fillTexture and fillTexture.SetAlpha then
-            fillTexture:SetAlpha(a ~= nil and a or HealthBar.GetAlpha(config, "healthBarOpacity", RB.DEFAULT_HEALTH_BAR_OPACITY))
-        end
+        bar:SetStatusBarColor(r, g, b,
+            a ~= nil and a or HealthBar.GetAlpha(config, "healthBarOpacity", RB.DEFAULT_HEALTH_BAR_OPACITY))
     end
 end
 
@@ -766,6 +760,16 @@ function HealthBar.Update(bar, settings)
         else
             bar.text:SetFormattedText("%.0f%%", UnitHealthPercent("player", true, PERCENT_SCALE_CURVE))
         end
+        if bar._textHideCurve then
+            local color = UnitHealthPercent("player", true, bar._textHideCurve)
+            if type(color) == "table" and color.GetRGBA then
+                bar.text:SetTextColor(color:GetRGBA())
+            end
+        end
+    end
+
+    if bar._dynAlphaCurve then
+        RB.ApplyDynamicBarAlpha(bar, UnitHealthPercent("player", true, bar._dynAlphaCurve))
     end
 
 end
@@ -837,6 +841,25 @@ function HealthBar.Style(bar, settings)
     )
     bar.text:SetShown(resourceConfig and resourceConfig.showText == true)
     bar._textFormat = textFormat
+    bar._textHideCurve = RB.BuildTextHideCurve(resourceConfig, textColor)
+    if RB.IsPreviewCanvasBar and RB.IsPreviewCanvasBar(bar) then
+        bar._textHideCurve = nil
+    end
+    if bar._textHideCurve then
+        local hideColor = UnitHealthPercent("player", true, bar._textHideCurve)
+        if type(hideColor) == "table" and hideColor.GetRGBA then
+            bar.text:SetTextColor(hideColor:GetRGBA())
+        end
+    end
+
+    local dynAlphaCurve = RB.BuildDynamicAlphaCurve(resourceConfig, nil, bar)
+    if not dynAlphaCurve and bar._dynAlphaCurve then
+        RB.ApplyDynamicBarAlpha(bar, 1)
+    end
+    bar._dynAlphaCurve = dynAlphaCurve
+    if dynAlphaCurve then
+        RB.ApplyDynamicBarAlpha(bar, UnitHealthPercent("player", true, dynAlphaCurve))
+    end
 end
 
 RB.HealthBar = HealthBar

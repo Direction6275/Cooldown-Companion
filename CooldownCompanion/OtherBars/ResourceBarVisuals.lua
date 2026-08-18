@@ -19,6 +19,7 @@ local issecretvalue = issecretvalue
 -- Import from ResourceBarConstants & ResourceBarHelpers
 local RB = ST._RB
 local POWER_ATLAS_INFO = RB.POWER_ATLAS_INFO
+local RESOURCE_MAELSTROM_WEAPON = RB.RESOURCE_MAELSTROM_WEAPON
 local DEFAULT_CONTINUOUS_TICK_COLOR = RB.DEFAULT_CONTINUOUS_TICK_COLOR
 local IsVerticalResourceLayout = RB.IsVerticalResourceLayout
 local IsVerticalFillReversed = RB.IsVerticalFillReversed
@@ -281,7 +282,8 @@ local function ApplyContinuousFillColor(bar, powerType, settings)
         local brightness = style and style.classBarBrightness or 1.3
         bar:SetStatusBarColor(1, 1, 1, 1)
         if brightness > 1.0 then
-            bar.brightnessOverlay:SetAlpha(brightness - 1.0)
+            -- vertex, not region alpha: dynamic alpha owns the region channel
+            bar.brightnessOverlay:SetVertexColor(1, 1, 1, brightness - 1.0)
             bar.brightnessOverlay:Show()
         elseif brightness < 1.0 then
             bar:SetStatusBarColor(brightness, brightness, brightness, 1)
@@ -709,6 +711,65 @@ end
 -- Add all visual functions to ST._RB
 ------------------------------------------------------------------------
 
+local function IsPreviewCanvasBar(bar)
+    local parent = bar and bar.GetParent and bar:GetParent()
+    return parent and parent._cdcPreviewCanvas == true
+end
+
+-- A curve: the resource value is secret in instances and a Lua compare throws.
+-- Stagger and Maelstrom Weapon have no percent of their own.
+local function BuildDynamicAlphaCurve(resourceConfig, powerType, bar)
+    if powerType == 101 or powerType == RESOURCE_MAELSTROM_WEAPON then return nil end
+    if RB.AURA_STACK_RESOURCES[powerType] then return nil end
+    if IsPreviewCanvasBar(bar) then return nil end
+    if RB.IsUnlockAssistActive and RB.IsUnlockAssistActive() then return nil end
+    local mode = resourceConfig and resourceConfig.dynAlphaMode
+    if mode ~= "below" and mode ~= "above" then return nil end
+
+    local threshold = tonumber(resourceConfig.dynAlphaThreshold) or 50
+    if threshold < 1 then threshold = 1 elseif threshold > 99 then threshold = 99 end
+    threshold = threshold / 100
+
+    local alpha = tonumber(resourceConfig.dynAlpha) or 0
+    if alpha < 0 then alpha = 0 elseif alpha > 1 then alpha = 1 end
+    local low = (mode == "below") and alpha or 1
+    local high = (mode == "below") and 1 or alpha
+
+    local curve = C_CurveUtil.CreateCurve()
+    curve:SetType(Enum.LuaCurveType.Linear)
+    curve:AddPoint(0.0, low)
+    curve:AddPoint(threshold, low)
+    curve:AddPoint(threshold + 0.001, high)
+    curve:AddPoint(1.0, high)
+    return curve
+end
+
+-- Every region the bar draws, never the bar frame.
+-- The value text hangs off the frame and keeps its own alpha.
+local function ApplyDynamicBarAlpha(bar, alpha)
+    -- == nil on a secret throws; type() does not
+    if not bar or type(alpha) ~= "number" then return end
+    local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    if fill then fill:SetAlpha(alpha) end
+    if bar.bg then bar.bg:SetAlpha(alpha) end
+    if bar.brightnessOverlay then bar.brightnessOverlay:SetAlpha(alpha) end
+    if bar.healthEffectClip then bar.healthEffectClip:SetAlpha(alpha) end
+    if bar.tickMarkers then
+        for i = 1, #bar.tickMarkers do
+            bar.tickMarkers[i]:SetAlpha(alpha)
+        end
+    end
+    if bar.borders then
+        for i = 1, 4 do
+            local tex = bar.borders[i]
+            if tex then tex:SetAlpha(alpha) end
+        end
+    end
+end
+
+RB.IsPreviewCanvasBar = IsPreviewCanvasBar
+RB.BuildDynamicAlphaCurve = BuildDynamicAlphaCurve
+RB.ApplyDynamicBarAlpha = ApplyDynamicBarAlpha
 RB.GetActiveResourceAuraEntry = GetActiveResourceAuraEntry
 RB.GetResourceAuraTrackingMode = GetResourceAuraTrackingMode
 RB.IsResourceAuraOverlayEnabled = IsResourceAuraOverlayEnabled

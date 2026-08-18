@@ -380,6 +380,76 @@ local function IsHealthTextFormat(textFormat)
         or textFormat == "current_percent_no_sign"
 end
 
+local DYNAMIC_ALPHA_MODES = {
+    off = "Off",
+    below = "Under Threshold",
+    above = "Over Threshold",
+}
+local DYNAMIC_ALPHA_MODE_ORDER = { "off", "below", "above" }
+
+local DYNAMIC_ALPHA_TOOLTIP_LINES = {
+    "Fade Bar",
+    {"Fades the bar once the resource passes the percentage set below.", 1, 1, 1, true},
+    " ",
+    {"Only the bar fades; its value text has its own rule.", 1, 1, 1, true},
+}
+
+-- Only resources with a percent: no segmented ones, no Maelstrom Weapon or Stagger.
+local function BuildResourceDynamicAlphaControls(container, settings, powerType, displaySpecID, applyBars)
+    if not powerType or SEGMENTED_TYPES[powerType] == true or powerType == 100
+        or powerType == 101 or RB.AURA_STACK_RESOURCES[powerType] then
+        return
+    end
+
+    local baseSettings = settings.resources and settings.resources[powerType]
+    local resSettings = SeedSpecResourceDisplaySettings(settings, powerType, displaySpecID, CS._ResourceTextDisplayKeys)
+        or baseSettings
+    if not resSettings then return end
+
+    local mode = ReadDisplaySetting(baseSettings, resSettings, "dynAlphaMode", "off")
+    if mode ~= "below" and mode ~= "above" then
+        mode = "off"
+    end
+
+    local left = BeginRowGrid(container)
+    local modeRow = AddDropdownRow(left, {
+        label = "Fade Bar",
+        list = DYNAMIC_ALPHA_MODES,
+        order = DYNAMIC_ALPHA_MODE_ORDER,
+        value = mode,
+        onChange = function(val)
+            resSettings.dynAlphaMode = (val == "below" or val == "above") and val or "off"
+            applyBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+    AnchorRowBadge(modeRow, CreateInfoButton(modeRow.frame, modeRow.frame, "LEFT", "LEFT", 0, 0,
+        DYNAMIC_ALPHA_TOOLTIP_LINES, modeRow))
+
+    if mode == "off" then return end
+
+    AddMirrorFirstSliderRow(left, {
+        label = "Fade Percent",
+        min = 1, max = 99, step = 1,
+        indent = true,
+        value = ReadDisplaySetting(baseSettings, resSettings, "dynAlphaThreshold", 50),
+        set = function(val) resSettings.dynAlphaThreshold = val end,
+        apply = applyBars,
+        stateOwner = resSettings,
+        stateKeys = "dynAlphaThreshold",
+    })
+    AddMirrorFirstSliderRow(left, {
+        label = "Fade Alpha",
+        min = 0, max = 1, step = 0.05,
+        indent = true,
+        value = ReadDisplaySetting(baseSettings, resSettings, "dynAlpha", 0),
+        set = function(val) resSettings.dynAlpha = val end,
+        apply = applyBars,
+        stateOwner = resSettings,
+        stateKeys = "dynAlpha",
+    })
+end
+
 local function BuildResourceTextControls(container, settings, powerType, displaySpecID, applyBars, collapsedKey)
     local rbTextAdvBtns = {}
 
@@ -602,6 +672,39 @@ local function BuildResourceTextControls(container, settings, powerType, display
             stateOwner = resSettings,
             stateKeys = "textYOffset",
         })
+
+        -- Segmented resources have no percent to threshold against; they get
+        -- Hide at 0 instead.
+        if not isSegmentedResource and capturedPt ~= 101 then
+            local hideMode = ReadDisplaySetting(baseSettings, resSettings, "textHideMode", "off")
+            if hideMode ~= "below" and hideMode ~= "above" then
+                hideMode = "off"
+            end
+            AddDropdownRow(panel, {
+                label = "Hide Text",
+                list = { off = "Never", below = "Below Threshold", above = "Above Threshold" },
+                order = { "off", "below", "above" },
+                value = hideMode,
+                onChange = function(val)
+                    resSettings.textHideMode = (val == "below" or val == "above") and val or "off"
+                    applyBars()
+                    if CS.RefreshAdvancedSettingsPanel then
+                        CS.RefreshAdvancedSettingsPanel()
+                    end
+                end,
+            })
+            if hideMode ~= "off" then
+                AddMirrorFirstSliderRow(panel, {
+                    label = "Hide Percent",
+                    min = 1, max = 99, step = 1,
+                    value = ReadDisplaySetting(baseSettings, resSettings, "textHideThreshold", 35),
+                    set = function(val) resSettings.textHideThreshold = val end,
+                    apply = applyBars,
+                    stateOwner = resSettings,
+                    stateKeys = "textHideThreshold",
+                })
+            end
+        end
 
         if HIDE_AT_ZERO_ELIGIBLE[capturedPt] then
             AddCheckboxRow(panel, {
@@ -850,6 +953,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         HealthResource.AddOpacitySlider(missingRight, health, "healthBackgroundOpacity", "Missing Health Opacity", DEFAULT_HEALTH_BACKGROUND_OPACITY, applyBars)
     end
 
+    BuildResourceDynamicAlphaControls(container, settings, HealthResource.ID, specID, applyBars)
     BuildResourceTextControls(container, settings, HealthResource.ID, specID, applyBars, "rb_health_text")
 
     local healthEffectsKey = "rb_health_effects"
@@ -2810,6 +2914,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     end
     end -- not borderCollapsed
     end
+
+    BuildResourceDynamicAlphaControls(container, settings, resourceSettingsPowerType, displaySpecID, applyBars)
 
     if showResourceText then
         BuildResourceTextControls(container, settings, resourceSettingsPowerType, displaySpecID, applyBars, "rb_text")

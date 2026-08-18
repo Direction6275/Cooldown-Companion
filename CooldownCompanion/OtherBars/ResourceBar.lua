@@ -153,6 +153,9 @@ local IsResourceEnabled = RB.IsResourceEnabled
 local IsSegmentedTextResource = RB.IsSegmentedTextResource
 local ClearSegmentedText = RB.ClearSegmentedText
 local SetSegmentedText = RB.SetSegmentedText
+local BuildTextHideCurve = RB.BuildTextHideCurve
+local BuildDynamicAlphaCurve = RB.BuildDynamicAlphaCurve
+local ApplyDynamicBarAlpha = RB.ApplyDynamicBarAlpha
 
 -- Visuals
 local UpdateContinuousTickMarker = RB.UpdateContinuousTickMarker
@@ -204,6 +207,8 @@ local activeResources = {}     -- array of power type ints currently displayed
 -- so an independent stack can be dragged. Their data stays real (owner
 -- ruling 2026-07-26 — previews live in the config canvas and nowhere else).
 local isUnlockAssistActive = false
+-- Arrange mode needs every bar visible to drag, so it suspends the rule.
+RB.IsUnlockAssistActive = function() return isUnlockAssistActive end
 local savedContainerAlpha = nil
 local alphaSyncFrame = nil
 local lastAppliedBarSpacing = nil
@@ -1005,6 +1010,16 @@ local function UpdateContinuousBar(bar, powerType, settings)
         else
             bar.text:SetFormattedText("%d / %d", currentPower, maxPower)
         end
+        if bar._textHideCurve then
+            local color = UnitPowerPercent("player", powerType, false, bar._textHideCurve)
+            if type(color) == "table" and color.GetRGBA then
+                bar.text:SetTextColor(color:GetRGBA())
+            end
+        end
+    end
+
+    if bar._dynAlphaCurve then
+        ApplyDynamicBarAlpha(bar, UnitPowerPercent("player", powerType, false, bar._dynAlphaCurve))
     end
 
 end
@@ -2204,6 +2219,22 @@ local function StyleContinuousBar(bar, powerType, settings)
     end
     bar.text:SetShown(showText)
     bar._textFormat = textFormat
+    bar._textHideCurve = BuildTextHideCurve(resourceConfig, textColor, powerType)
+    if RB.IsPreviewCanvasBar and RB.IsPreviewCanvasBar(bar) then
+        bar._textHideCurve = nil
+    end
+    if bar._textHideCurve then
+        local hideColor = UnitPowerPercent("player", powerType, false, bar._textHideCurve)
+        if type(hideColor) == "table" and hideColor.GetRGBA then
+            bar.text:SetTextColor(hideColor:GetRGBA())
+        end
+    end
+
+    local dynAlphaCurve = BuildDynamicAlphaCurve(resourceConfig, powerType, bar)
+    if not dynAlphaCurve and bar._dynAlphaCurve then
+        ApplyDynamicBarAlpha(bar, 1)
+    end
+    bar._dynAlphaCurve = dynAlphaCurve
 
     -- Tick markers need a real power type to measure against. Every one of
     -- CC's invented ids is excluded: Stagger (101) is sized by
@@ -2220,6 +2251,12 @@ local function StyleContinuousBar(bar, powerType, settings)
             maxPowerIsSecret = true
         end
         UpdateContinuousTickMarker(bar, powerType, settings, maxPower, maxPowerIsSecret)
+    end
+
+    -- last: a tick marker created above would otherwise stay opaque until the
+    -- next update
+    if dynAlphaCurve then
+        ApplyDynamicBarAlpha(bar, UnitPowerPercent("player", powerType, false, dynAlphaCurve))
     end
 end
 
