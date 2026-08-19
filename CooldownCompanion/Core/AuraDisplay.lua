@@ -3050,7 +3050,7 @@ local panelDuplicateKeys = 0
 -- pull stayed parked for the whole fight — nothing could re-bind it until
 -- combat ended and it re-locked.
 --
--- What the chrome legitimately changes is PRESENTATION: while WP3's unlock
+-- What unlock mode legitimately changes is PRESENTATION: while its full-cell
 -- placeholders are on screen they ARE the panel's visual, and a live container
 -- underneath would double-draw the entries whose auras are up.
 --
@@ -3077,17 +3077,15 @@ local function SetPanelIdentityVisibility(record, shown)
     return changed
 end
 
--- The chrome writers' one entry point, called at the moment a writer changes a
--- panel's drag chrome and never polled. Three writers exist:
--- SetGroupDragControlsShown (the ordinary lock/unlock path) and the combat
--- forced-lock pair, which suppresses and restores the chrome directly without
--- going through it.
+-- The placeholder preview's one AuraDisplay entry point. GroupFrame owns when
+-- that preview appears (including unselected panels in a container preview),
+-- while the combat forced-lock path removes and restores it explicitly.
 --
--- The state lives on the FRAME because that is what the chrome belongs to: a
--- record created later reads the current answer at birth (EnsurePanelContainer)
--- instead of starting unsuppressed, and every bind pass re-reads it
--- (BindAuraPanel), so a park-all/bind cycle that straddled a lock change
--- converges rather than carrying a stale term.
+-- The state lives on the FRAME because that is what the placeholder preview
+-- belongs to: a record created later reads the current answer at birth
+-- (EnsurePanelContainer) instead of starting unsuppressed, and every bind pass
+-- re-reads it (BindAuraPanel), so a park-all/bind cycle that straddled a lock
+-- change converges rather than carrying a stale term.
 function CooldownCompanion:SetAuraPanelChromeSuppressed(frame, suppressed)
     if not frame then return end
     suppressed = suppressed == true
@@ -3313,6 +3311,7 @@ local function PanelBarIconGeometry(style, isBar, isVertical, cellWidth, cellHei
     local offset = math.max(0, math.min(style.barIconOffset or 0, length - size - 1))
     return true, size, offset, style.barIconReverse == true
 end
+ST._GetAuraPanelBarIconGeometry = PanelBarIconGeometry
 
 -- The geometry every host of a group carries. Explicit numbers throughout: the
 -- frame's own size is what the flow layout reserves space for (GetElementSize

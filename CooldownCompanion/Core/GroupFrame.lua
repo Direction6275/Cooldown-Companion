@@ -2168,6 +2168,21 @@ local function CreatePanelDragHelpButton(frame, groupId)
     )
 end
 
+function ST._SyncAuraPanelPlaceholderLevels(frame, raiseAboveWrapper)
+    local root = frame and frame._auraPanelPlaceholderRoot
+    if not root then
+        return
+    end
+
+    if raiseAboveWrapper then
+        root:SetFrameStrata("FULLSCREEN_DIALOG")
+        root:SetFrameLevel(89)
+    else
+        root:SetFrameStrata(frame:GetFrameStrata())
+        root:SetFrameLevel((frame:GetFrameLevel() or 1) + 1)
+    end
+end
+
 local function SyncGroupControlLevels(frame, raiseAboveWrapper)
     if not frame then
         return
@@ -2200,6 +2215,7 @@ local function SyncGroupControlLevels(frame, raiseAboveWrapper)
             btn:SetFrameLevel(baseLevel + 6 + buttonIndex)
         end
     end
+    ST._SyncAuraPanelPlaceholderLevels(frame, raiseAboveWrapper)
 end
 
 function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
@@ -2239,19 +2255,16 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
     end
     CooldownCompanion:ApplyMoverChromeFadeToFrames(frame.dragHandle, frame.coordLabel, frame.nudger, frame.resizeGrip)
 
-    -- An Aura Panel hides its aura display while the drag chrome shows: the
-    -- placeholder tiles mark every cell, including the ones whose auras are
-    -- down, and a live container underneath would double-draw the active ones.
-    -- Presentation only — the container stays BOUND, because the bind pass is
-    -- out-of-combat and the chrome is not.
-    --
-    -- Read back from the handle rather than trusting `shown`: a frame with no
-    -- drag handle has no placeholders either, so it must not be suppressed. The
-    -- call is change-gated on its own side, and most writers of this chrome end
-    -- in RefreshGroupFrame anyway, but the container-preview selection pass
-    -- (RefreshContainerWrapper) does not, which is why the write lives here.
-    CooldownCompanion:SetAuraPanelChromeSuppressed(
-        frame, (frame.dragHandle and frame.dragHandle:IsShown()) == true)
+    -- Aura Panels replace their live container with a full-cell preview while
+    -- they can be arranged. A container preview needs that preview on EVERY
+    -- member, not only the selected member whose drag controls are showing.
+    -- Presentation only -- the aura container stays bound so combat can restore
+    -- it without an out-of-combat rebind.
+    local auraPreviewShown = ST.IsAuraPanelGroup(group)
+        and not CooldownCompanion._combatForcedLock
+        and (shown == true or containerPreviewActive)
+        or false
+    CooldownCompanion:SetAuraPanelPlaceholderPreviewShown(frame, auraPreviewShown)
 end
 
 local function GetCursorPositionInUIParentSpace(self)
@@ -3642,22 +3655,55 @@ end
 -- Unlock affordance only. An Aura Panel materializes no CC buttons, so while it
 -- is unlocked it would otherwise be an empty box with nothing to aim at. One dim
 -- tile per entry marks the cells the aura container fills once those auras go
--- up. The tiles hang off the drag handle -- the same trick the coordinate label
--- and the container panel labels use -- so they inherit every show and hide the
--- drag chrome already gets, the combat forced lock included, and can never
--- appear during normal play.
+-- up. The preview root belongs to the PANEL rather than its drag handle: it must
+-- remain visible while drag/nudge chrome fades, and while an unlocked container
+-- is showing all of its member panels before one is selected.
+function CooldownCompanion:SetAuraPanelPlaceholderPreviewShown(frame, shown)
+    if not frame then return end
+
+    shown = shown == true
+    frame._auraPanelPlaceholderPreviewShown = shown or nil
+    local root = frame._auraPanelPlaceholderRoot
+    if root then
+        if shown then
+            local _, selectedInContainer = GetContainerPreviewSelectionState(frame.groupId)
+            ST._SyncAuraPanelPlaceholderLevels(frame, selectedInContainer)
+        end
+        root:SetIgnoreParentAlpha(shown and frame._unlockGhost == true)
+        root:SetShown(shown)
+    end
+
+    -- The placeholders are the complete unlock presentation. Keep the live
+    -- aura container bound but hidden so active auras are not double-drawn.
+    self:SetAuraPanelChromeSuppressed(frame, shown)
+end
+
 function CooldownCompanion:UpdateAuraPanelPlaceholders(groupId)
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
-    if not (frame and frame.dragHandle) then return end
+    if not (frame and group) then return end
 
     local tiles = frame._auraPanelPlaceholders
     if not ST.IsAuraPanelGroup(group) then
         for _, tile in ipairs(tiles or {}) do
             tile:Hide()
         end
+        self:SetAuraPanelPlaceholderPreviewShown(frame, false)
         return
     end
+
+    local root = frame._auraPanelPlaceholderRoot
+    if not root then
+        root = CreateFrame("Frame", nil, frame)
+        root:SetAllPoints(frame)
+        root:EnableMouse(false)
+        frame._auraPanelPlaceholderRoot = root
+    end
+    local previewShown = frame._auraPanelPlaceholderPreviewShown == true
+    local _, selectedInContainer = GetContainerPreviewSelectionState(groupId)
+    ST._SyncAuraPanelPlaceholderLevels(frame, selectedInContainer)
+    root:SetIgnoreParentAlpha(previewShown and frame._unlockGhost == true)
+    root:SetShown(previewShown)
 
     if not tiles then
         tiles = {}
@@ -3672,7 +3718,6 @@ function CooldownCompanion:UpdateAuraPanelPlaceholders(groupId)
     local style = group.style or {}
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
     local isBarMode = group.displayMode == "bars"
-    local iconSide = math_max(1, math_min(cellWidth, cellHeight) - 2)
 
     local slotIndex = 0
     for _, buttonData in ipairs(group.buttons or {}) do
@@ -3680,14 +3725,18 @@ function CooldownCompanion:UpdateAuraPanelPlaceholders(groupId)
             slotIndex = slotIndex + 1
             local tile = tiles[slotIndex]
             if not tile then
-                tile = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
+                tile = CreateFrame("Frame", nil, root, "BackdropTemplate")
                 tile:EnableMouse(false)
                 tile:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-                tile:SetBackdropColor(0.08, 0.08, 0.08, 1)
-                tile:SetAlpha(0.6)
-                CreatePixelBorders(tile, 0.5, 0.5, 0.5, 1)
+                tile:SetBackdropColor(0.08, 0.08, 0.08, 0.6)
                 tile.icon = tile:CreateTexture(nil, "ARTWORK")
-                tile.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                tile.icon:SetAlpha(0.6)
+                tile.borderTextures = ST.CreateBorderTextureSet(tile, "OVERLAY")
+                tile.iconBorderTextures = ST.CreateBorderTextureSet(tile, "OVERLAY")
+                tile.barBounds = CreateFrame("Frame", nil, tile)
+                tile.barBounds:EnableMouse(false)
+                tile.iconBounds = CreateFrame("Frame", nil, tile)
+                tile.iconBounds:EnableMouse(false)
                 tiles[slotIndex] = tile
             end
 
@@ -3702,24 +3751,97 @@ function CooldownCompanion:UpdateAuraPanelPlaceholders(groupId)
                 yMul * row * (cellHeight + spacing)
             )
 
-            -- A bar cell is far longer than it is thick, so the entry icon sits
-            -- at the bar's leading edge the way a real bar icon does. An icon
-            -- cell takes the whole tile.
+            local effectiveStyle = self:GetEffectiveStyle(style, buttonData) or style
+            local borderSize = effectiveStyle.borderSize or ST.DEFAULT_BORDER_SIZE
+            local borderRenderMode = ST.GetBorderRenderMode(effectiveStyle)
+            local effectiveBorderRenderMode = ST.GetEffectiveBorderRenderMode(
+                borderRenderMode, nil, borderSize)
+            local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(
+                tile, borderSize, borderRenderMode)
+            local borderColor = effectiveStyle.borderColor or { 0, 0, 0, 1 }
+
+            -- Bar placeholders mirror the live Aura Panel's two chrome regions:
+            -- the remaining bar area and, when enabled, its separate icon square.
+            -- Icon placeholders keep one border around the whole cell.
             tile.icon:ClearAllPoints()
+            tile.barBounds:ClearAllPoints()
+            tile.iconBounds:ClearAllPoints()
+            local placeholderIconShown = true
+            local iconWidth, iconHeight
             if isBarMode then
-                tile.icon:SetSize(iconSide, iconSide)
-                if cellHeight > cellWidth then
-                    tile.icon:SetPoint("TOP", tile, "TOP", 0, -1)
+                local isVertical = style.barFillVertical == true
+                local iconSize, iconOffset, iconReverse
+                placeholderIconShown, iconSize, iconOffset, iconReverse =
+                    ST._GetAuraPanelBarIconGeometry(
+                        effectiveStyle, true, isVertical, cellWidth, cellHeight)
+
+                local barWidth, barHeight = cellWidth, cellHeight
+                if placeholderIconShown then
+                    local step = iconSize + iconOffset
+                    tile.iconBounds:SetSize(iconSize, iconSize)
+                    if isVertical then
+                        local iconEdge, barEdge = "TOP", "BOTTOM"
+                        if iconReverse then iconEdge, barEdge = "BOTTOM", "TOP" end
+                        tile.iconBounds:SetPoint(iconEdge, tile, iconEdge, 0, 0)
+                        barHeight = math_max(cellHeight - step, 1)
+                        tile.barBounds:SetPoint(barEdge, tile, barEdge, 0, 0)
+                    else
+                        local iconEdge, barEdge = "LEFT", "RIGHT"
+                        if iconReverse then iconEdge, barEdge = "RIGHT", "LEFT" end
+                        tile.iconBounds:SetPoint(iconEdge, tile, iconEdge, 0, 0)
+                        barWidth = math_max(cellWidth - step, 1)
+                        tile.barBounds:SetPoint(barEdge, tile, barEdge, 0, 0)
+                    end
+
+                    local iconSide = math_max(1, iconSize - (2 * borderLayoutSize))
+                    tile.icon:SetSize(iconSide, iconSide)
+                    tile.icon:SetPoint("CENTER", tile.iconBounds, "CENTER", 0, 0)
+                    iconWidth, iconHeight = iconSide, iconSide
                 else
-                    tile.icon:SetPoint("LEFT", tile, "LEFT", 1, 0)
+                    tile.iconBounds:SetSize(1, 1)
+                    tile.iconBounds:SetPoint("TOPLEFT", tile, "TOPLEFT", 0, 0)
+                    tile.barBounds:SetPoint("TOPLEFT", tile, "TOPLEFT", 0, 0)
+                end
+                tile.barBounds:SetSize(barWidth, barHeight)
+
+                ST.ApplyBorderTextures(
+                    tile.borderTextures, tile.barBounds, borderColor,
+                    borderSize, effectiveBorderRenderMode)
+                if placeholderIconShown then
+                    ST.ApplyBorderTextures(
+                        tile.iconBorderTextures, tile.iconBounds, borderColor,
+                        borderSize, effectiveBorderRenderMode)
+                else
+                    ST.HideBorderTextures(tile.iconBorderTextures)
                 end
             else
-                tile.icon:SetPoint("TOPLEFT", tile, "TOPLEFT", 1, -1)
-                tile.icon:SetPoint("BOTTOMRIGHT", tile, "BOTTOMRIGHT", -1, 1)
+                tile.barBounds:SetSize(1, 1)
+                tile.barBounds:SetPoint("TOPLEFT", tile, "TOPLEFT", 0, 0)
+                tile.iconBounds:SetSize(1, 1)
+                tile.iconBounds:SetPoint("TOPLEFT", tile, "TOPLEFT", 0, 0)
+                ST.ApplyBorderTextures(
+                    tile.borderTextures, tile, borderColor,
+                    borderSize, effectiveBorderRenderMode)
+                ST.HideBorderTextures(tile.iconBorderTextures)
+
+                tile.icon:SetPoint(
+                    "TOPLEFT", tile, "TOPLEFT", borderLayoutSize, -borderLayoutSize)
+                tile.icon:SetPoint(
+                    "BOTTOMRIGHT", tile, "BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
+                iconWidth = math_max(1, cellWidth - (2 * borderLayoutSize))
+                iconHeight = math_max(1, cellHeight - (2 * borderLayoutSize))
+            end
+
+            if placeholderIconShown then
+                if ST._ApplyIconTexCoord then
+                    ST._ApplyIconTexCoord(tile.icon, iconWidth, iconHeight, effectiveStyle.iconZoom)
+                else
+                    tile.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                end
             end
 
             local icon = buttonData.type == "spell" and C_Spell.GetSpellTexture(buttonData.id) or nil
-            if icon and not issecretvalue(icon) then
+            if placeholderIconShown and icon and not issecretvalue(icon) then
                 tile.icon:SetTexture(icon)
                 tile.icon:Show()
             else
