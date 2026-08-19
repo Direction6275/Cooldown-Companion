@@ -1257,13 +1257,10 @@ function CooldownCompanion:BeginCombatForcedLock()
         SuppressFrameVisibilityForCombat(frame.dragHelpButton)
         SuppressFrameVisibilityForCombat(frame.nudger)
         -- The chrome just came down without going through
-        -- SetGroupDragControlsShown, so an Aura Panel's presentation term is
-        -- released here instead. Its placeholders are gone (hidden, or alpha 0
-        -- on the protected fallback path), so the live aura display is what the
-        -- player should see for the rest of the fight. Plain-frame write on a
-        -- CC-owned root; the container itself is untouched, and no rebind is
-        -- possible in combat anyway.
-        self:SetAuraPanelChromeSuppressed(frame, false)
+        -- SetGroupDragControlsShown, so explicitly remove the Aura Panel's
+        -- frame-owned placeholder preview too. The live aura display stays
+        -- bound and resumes for the fight; no rebind is possible in combat.
+        self:SetAuraPanelPlaceholderPreviewShown(frame, false)
         ForceCombatMouseLock(frame)
         ForceCombatMouseLock(frame.dragHandle)
         ForceCombatMouseLock(frame.dragHelpButton)
@@ -1330,14 +1327,15 @@ function CooldownCompanion:EndCombatForcedLock()
         RestoreFrameVisibilityAfterCombat(frame.coordLabel)
         RestoreFrameVisibilityAfterCombat(frame.dragHelpButton)
         RestoreFrameVisibilityAfterCombat(frame.nudger)
-        -- Re-suppress per the chrome's ACTUAL state now that the restore has
-        -- run: still hidden means the panel stayed locked and keeps its live
-        -- display, while a handle that came back (the alpha fallback restores
-        -- one that was never hidden) means the placeholders are on screen again
-        -- and the display steps aside. RefreshAllGroups below re-asserts the
-        -- same answer through SetGroupDragControlsShown for the hide path.
-        self:SetAuraPanelChromeSuppressed(
-            frame, (frame.dragHandle and frame.dragHandle:IsShown()) == true)
+        -- Restore the placeholder preview immediately. Container Arrange Mode
+        -- previews every member even though only the selected member has drag
+        -- controls; RefreshAllGroups below re-asserts the same state.
+        local group = frame.groupId and self.db.profile.groups[frame.groupId]
+        local containerPreviewActive = group and group.parentContainerId
+            and self:IsContainerUnlockPreviewActive(group.parentContainerId)
+            or false
+        local handleShown = (frame.dragHandle and frame.dragHandle:IsShown()) == true
+        self:SetAuraPanelPlaceholderPreviewShown(frame, handleShown or containerPreviewActive)
         for _, button in ipairs(frame.buttons or {}) do
             local host = button and button.auraTextureHost or nil
             RestoreFrameVisibilityAfterCombat(host and host.dragHandle or nil)
