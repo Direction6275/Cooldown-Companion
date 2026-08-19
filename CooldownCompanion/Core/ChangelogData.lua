@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.1.2",
         "2.1.1",
         "2.1",
         "2.0.1",
@@ -28,6 +29,20 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.1.2"] = {
+            markdown = [[
+## New Features
+
+- **Totem and summon durations:** Entries for spells that summon totems or guardians can now show the summon’s remaining duration like a tracked aura, including aura-style swipes, bar fills, duration text, and glows. Turn on Track an Aura for the entry to use it.
+- **One-stack aura counts:** Aura-tracked panel entries and Custom Bars can optionally show a count of 1 on the first stack. The existing behavior remains the default, and the option only appears for auras that can stack.
+
+## Bug Fixes
+
+- **Aura Panels stay visible while arranging:** Aura Icon and Aura Bar panels now remain visible while unlocked, dragged, nudged, or while another panel is selected. Their previews also preserve configured icon proportions, borders, icon placement, and bar layout.
+- **Aura and resource bars stay in order:** Resource bars that disappear during form changes no longer leave aura glows behind, and hide-when-inactive Custom Bars no longer overlap resource bars as resources come and go.
+- **Charge counts remain visible during active auras:** Icon entries using Show Text or Show Swipe and Text now keep their charge count visible and updating alongside the cooldown countdown.
+]],
+        },
         ["2.1.1"] = {
             markdown = [[
 ## Performance
