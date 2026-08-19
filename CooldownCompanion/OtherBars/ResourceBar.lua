@@ -2770,8 +2770,9 @@ function CooldownCompanion:ApplyResourceBars(opts)
             -- the rest of the fight. Park it here; hiding a plain CC frame
             -- is legal in combat. Narrow on purpose: only a family member
             -- that is NOW the suppressed half is parked, so a holder whose
-            -- bar merely moved slots is never darkened. Binding the incoming
-            -- holder stays with the deferred rebind (combat-only rebind gate).
+            -- bar merely moved slots is never darkened. An already-bound
+            -- incoming holder can be shown by the finalizer below; creating
+            -- a new binding stays with the deferred rebind.
             if barInfo and barInfo.powerType ~= powerType
                 and RB.AURA_STACK_RESOURCES[barInfo.powerType]
                 and RB.IsAuraStackResourceSuppressed(barInfo.powerType) then
@@ -2901,6 +2902,13 @@ function CooldownCompanion:ApplyResourceBars(opts)
         barInfo._effectiveThickness = effectiveThickness
 
         FinalizeAppliedBarVisibility(barInfo)
+    end
+
+    -- Aura overlays live under a separate stable root, not under the recycled
+    -- bar frames. Reconcile after all slots have their final identities so a
+    -- form-hidden resource cannot leave its holder glowing at the old slot.
+    if RB.ReconcileResourceAuraHolders then
+        RB.ReconcileResourceAuraHolders()
     end
 
     activeResources = filtered
