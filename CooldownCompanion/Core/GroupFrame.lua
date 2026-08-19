@@ -2223,6 +2223,7 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
         return
     end
 
+    shown = not not shown
     local group = frame.groupId and CooldownCompanion.db.profile.groups[frame.groupId]
     local containerPreviewActive = frame.groupId and GetContainerPreviewSelectionState(frame.groupId) or false
     if frame.dragHandle then
