@@ -289,7 +289,7 @@ local customBarContentFields = {
     "auraUnit",
     "hasCharges",
     "maxCharges",
-    -- Stack threshold/max colors: the shared config rows keep these in an
+    -- Stack text formatter options: the shared config rows keep these in an
     -- auraBar subtable (panel key names), not flat on the entry.
     "auraBar",
 }

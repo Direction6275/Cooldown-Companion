@@ -2270,28 +2270,28 @@ local function ConvergeApplicationBar(slotButton, kit, buttonData, stackBarMax)
     end
 end
 
--- Stack text threshold colors (2026-08-15 program): converge the stack
--- text registration to this bind's threshold policy. Same per-bind re-call
+-- Stack text formatter options: converge the stack text registration to
+-- this bind's one-stack and threshold-color policy. Same per-bind re-call
 -- family as ConvergeApplicationBar above and the C9 SetDurationText call —
 -- structurally OOC in the rebind pass, skipped when unchanged via a
 -- CC-side fingerprint (registered regions are write-only; never a
--- read-back). Threshold entries re-register WITH the per-slot formatter
--- (breakpoints rebuilt first); entries without threshold config converge
--- back to the bare stock registration. All clamp/prefer rules live in
--- ResolveAuraStackThresholdPolicy — never re-derive them here.
+-- read-back). Customized entries re-register WITH the per-slot formatter
+-- (breakpoints rebuilt first); entries with neither option converge back
+-- to the bare stock registration. All threshold clamp/prefer rules live
+-- in ResolveAuraStackThresholdPolicy — never re-derive them here.
 --
 -- Breakpoint contract: the engine picks the highest breakpoint whose
--- threshold is <= the (secret) count. {0, ""} reproduces stock
--- hidden-below-2 behavior (a formatter otherwise formats EVERY count);
--- {2, "%d"} renders plain counts in the fontstring's styled color; the
--- threshold/max entries wrap the number in their color escape. Max wins a
--- collision with the threshold by overwriting its slot in the map.
+-- threshold is <= the (secret) count. Stock behavior stays hidden below 2;
+-- the opt-in lowers that first visible breakpoint to 1. Threshold/max
+-- entries wrap the number in their color escape. Max wins a collision with
+-- the threshold by overwriting its slot in the map.
 local function ConvergeApplicationCount(slotButton, kit, buttonData)
     if not (kit and kit.stackText and kit.stackFormatter) then return end
+    local showCountAtOne = CooldownCompanion:IsAuraStackCountAtOneEnabled(buttonData)
     local policy = CooldownCompanion:ResolveAuraStackThresholdPolicy(buttonData)
-    local wantKey = "off"
+    local wantKey = showCountAtOne and "one" or "off"
     if policy then
-        local parts = {}
+        local parts = { showCountAtOne and "one" or "two" }
         if policy.threshold then
             parts[#parts + 1] = "t" .. policy.threshold .. PandemicColorEscape(policy.thresholdColor)
         end
@@ -2301,16 +2301,17 @@ local function ConvergeApplicationCount(slotButton, kit, buttonData)
         wantKey = table.concat(parts, "/")
     end
     if kit.stackCountFormatterKey == wantKey then return end
-    if not policy then
+    if not (showCountAtOne or policy) then
         slotButton:SetApplicationCount(kit.stackText)
     else
         -- threshold -> format map; later writes win collisions (max last).
-        local formats = { [0] = "", [2] = "%d" }
-        if policy.threshold then
+        local firstVisible = showCountAtOne and 1 or 2
+        local formats = { [0] = "", [firstVisible] = "%d" }
+        if policy and policy.threshold then
             formats[policy.threshold] = PandemicColorEscape(policy.thresholdColor) .. "%d|r"
         end
-        if policy.maxOn then
-            formats[policy.maxStacks < 2 and 2 or policy.maxStacks] =
+        if policy and policy.maxOn then
+            formats[policy.maxStacks < firstVisible and firstVisible or policy.maxStacks] =
                 PandemicColorEscape(policy.maxColor) .. "%d|r"
         end
         local thresholds = {}

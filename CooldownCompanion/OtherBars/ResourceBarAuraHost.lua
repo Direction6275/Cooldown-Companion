@@ -231,9 +231,9 @@ function RB.CreateResourceBarAuraHostModule(deps)
         local isSpellBar = IsSpellCustomBarConfig(cabConfig)
         local layout = GetSpecLayoutOrder(settings)
         local stackDisplayMode = cabConfig.displayMode == "continuous" and "continuous" or nil
-        -- Threshold/max stack colors live in cab.auraBar under the panel key
-        -- names (the shared config rows write them there), so the policy
-        -- resolver and the kit renderers read the adapter unchanged.
+        -- Stack text formatter options live in cab.auraBar under the panel
+        -- key names (the shared config rows write them there), so the policy
+        -- resolver and kit renderers read the adapter unchanged.
         local cabAuraBar = type(cabConfig.auraBar) == "table" and cabConfig.auraBar or nil
         return {
             type = "spell",
@@ -258,6 +258,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
                 stackDisplayMode = stackDisplayMode,
                 segmentGap = (layout and layout.segmentGap) or settings.segmentGap or 4,
                 segmentedSmoothing = GetResourceSegmentedSmoothing(settings),
+                showCountAtOne = cabAuraBar and cabAuraBar.showCountAtOne or nil,
                 thresholdValue = cabAuraBar and cabAuraBar.thresholdValue or nil,
                 thresholdColor = cabAuraBar and cabAuraBar.thresholdColor or nil,
                 maxColorEnabled = cabAuraBar and cabAuraBar.maxColorEnabled or nil,

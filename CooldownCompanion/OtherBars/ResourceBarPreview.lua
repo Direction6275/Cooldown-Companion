@@ -127,13 +127,14 @@ function RB.GetCustomBarStandInLitStacks(barInfo, settings, maxStacks)
     })
     if not max then return nil end
     local lit = math_min(PREVIEW_STACKS, max)
-    -- Threshold preview parity (the panel-preview convention): raise the
-    -- lit run to the most interesting configured state so the threshold
-    -- and max colors actually show on the sample — but only while the
-    -- stack text is drawn (the canvas's own IsShown truth). The feature
-    -- is text-only, so a threshold on a bar with hidden text must not
-    -- change how full the sample looks (review 2026-08-16).
+    -- Stack-text preview parity: select one stack for the one-count option,
+    -- then raise the lit run to the most interesting configured threshold or
+    -- max state. Only do either while the text is drawn; formatter settings
+    -- on hidden text must not change how full the sample looks.
     if frame.stackText and frame.stackText:IsShown() then
+        if CooldownCompanion:IsAuraStackCountAtOneEnabled(cabConfig) then
+            lit = math_min(1, max)
+        end
         local policy = RB.ResolveCustomBarStackThresholdPolicy
             and RB.ResolveCustomBarStackThresholdPolicy(cabConfig, settings)
         if policy then
@@ -236,6 +237,8 @@ function RB.CreateResourceBarPreviewModule(deps)
         -- stand-in compares in Lua because its counts are invented.
         local policy = RB.ResolveCustomBarStackThresholdPolicy
             and RB.ResolveCustomBarStackThresholdPolicy(cabConfig, settings)
+        local showCountAtOne = bar.stackText and bar.stackText:IsShown()
+            and CooldownCompanion:IsAuraStackCountAtOneEnabled(cabConfig)
 
         local standInMax = RB.GetCustomBarStandInStackMax(barInfo, settings)
         local blockStacks, blockMax = RB.GetCustomBarStandInLitStacks(barInfo, settings, standInMax)
@@ -253,7 +256,8 @@ function RB.CreateResourceBarPreviewModule(deps)
             SetStatusBarImmediateValue(bar, 0)
         elseif stacksMode then
             maxStacks = standInMax
-            stacks = math_min(PREVIEW_STACKS, maxStacks)
+            stacks = showCountAtOne and math_min(1, maxStacks)
+                or math_min(PREVIEW_STACKS, maxStacks)
             -- Same raise-to-interesting rule as the lit block run: the
             -- sample count reaches the configured threshold/max so the
             -- stack TEXT color actually shows on the stand-in — and the
@@ -291,7 +295,8 @@ function RB.CreateResourceBarPreviewModule(deps)
         if bar.stackText and bar.stackText:IsShown() then
             -- Duration-mode bars still carry the live count text, so the
             -- raise-to-interesting rule applies to them too.
-            local textStacks = stacksMode and stacks or PREVIEW_STACKS
+            local textStacks = stacksMode and stacks
+                or (showCountAtOne and 1 or PREVIEW_STACKS)
             local color
             if policy then
                 local cap = stacksMode and maxStacks

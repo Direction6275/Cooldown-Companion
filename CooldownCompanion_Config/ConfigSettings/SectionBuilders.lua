@@ -242,9 +242,14 @@ local STACK_THRESHOLD_TOOLTIP = {
     {"Recolors the stack count text when it reaches the chosen number of stacks.", 1, 1, 1, true},
 }
 
--- Stack threshold/max color rows (2026-08-15 program), shared between the
--- panel entry Aura Tracking section and the custom-bar Aura Tracking
--- section. Both options require a REAL resolved stack maximum (owner rule:
+local SHOW_COUNT_AT_ONE_TOOLTIP = {
+    "Show Count at 1 Stack",
+    {"Shows a count of 1 on the first aura application. When disabled, the count starts at 2.", 1, 1, 1, true},
+}
+
+-- Stack text formatter rows, shared between the panel entry Aura Tracking
+-- section and the custom-bar Aura Tracking section. The options require a
+-- REAL resolved stack maximum (owner rule:
 -- the threshold row may only exist where the max row can) — but only OUT
 -- of combat is a nil max proof the aura doesn't stack. In combat the max
 -- is secret, so the rows stay up with fallback caps rather than stranding
@@ -260,8 +265,26 @@ local STACK_THRESHOLD_TOOLTIP = {
 --   commit          visual commit after a slider release / picker confirm
 --   previewRefresh  drag-preview repaint (defaults to the Buttons preview)
 local function BuildStackThresholdColorRows(container, buttonData, maxStacks, opts)
-    if not maxStacks and not InCombatLockdown() then return end
+    local inCombat = InCombatLockdown()
+    local showCountAtOne = CooldownCompanion:IsAuraStackCountAtOneEnabled(buttonData)
+    if not (maxStacks or inCombat or showCountAtOne) then return end
     local previewRefresh = opts.previewRefresh or ST._RefreshSelectedButtonsPreview
+
+    local showOneRow = AddCheckboxRow(container, {
+        label = "Show Count at 1 Stack",
+        value = showCountAtOne,
+        onChange = function(value)
+            CooldownCompanion:SetAuraStackCountAtOneEnabled(buttonData, value)
+            opts.refresh()
+        end,
+    })
+    AnchorRowBadge(showOneRow, CreateInfoButton(showOneRow.frame, showOneRow.frame, "LEFT", "LEFT", 0, 0,
+        SHOW_COUNT_AT_ONE_TOOLTIP, opts.infoButtons))
+
+    -- A saved one-stack option remains reachable if a talent change makes
+    -- the aura non-stacking. The threshold/max rows keep their established
+    -- gate and disappear when an out-of-combat max can no longer resolve.
+    if not maxStacks and not inCombat then return end
 
     local threshold = CooldownCompanion:GetAuraStackThresholdValue(buttonData)
     local thresholdRow = AddCheckboxRow(container, {
