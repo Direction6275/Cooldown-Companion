@@ -647,14 +647,21 @@ end
 -- IsKeepSpellCooldownSwipeEntry carries the entry-shape terms (aura-tracking,
 -- not standalone, not passive, not a shell), so they are asked once there.
 local function ApplyCooldownTextHost(button, buttonData, style)
-    local region = button._cdTextRegion
-    if not region then return end
     local wantPinned = (style.separateTextPositions == true
             and (buttonData.auraTracking or buttonData.addedAs == "aura")
             and not buttonData.isPassive)
         or CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData, style)
     local host = (wantPinned and button.pinnedTextFrame) or button.overlayFrame
-    if host and region:GetParent() ~= host then
+    if not host then return end
+    -- The charge/item count is cooldown information too (owner ruling), so it
+    -- rides the same lift. Parent only: ApplyCountTextStyle re-anchors it
+    -- after every host apply, and both hosts share the button rect.
+    if button.count and button.count:GetParent() ~= host then
+        button.count:SetParent(host)
+    end
+    local region = button._cdTextRegion
+    if not region then return end
+    if region:GetParent() ~= host then
         region:SetParent(host)
     end
     region:ClearAllPoints()
@@ -790,11 +797,13 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.pinnedTextFrame:SetAllPoints()
     button.pinnedTextFrame:EnableMouse(false)
 
-    ApplyCooldownTextHost(button, buttonData, style)
-
+    -- Created before ApplyCooldownTextHost so the count is lifted along with
+    -- the countdown at creation, not first at restyle.
     button.count = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     button.count:SetText("")
     button.buttonData = buttonData
+
+    ApplyCooldownTextHost(button, buttonData, style)
 
     if IsEntryItemLike(buttonData) then
         local effectiveItem = ResolveEffectiveItem(buttonData, true)
