@@ -1474,7 +1474,9 @@ local function BeginCast(kind)
     cast.fadeMode = nil
     cast.fadeElapsed = 0
 
-    frame.nameText:SetText(text or name or "")
+    if frame.nameText:IsShown() then
+        frame.nameText:SetText(text or name or "")
+    end
     frame.icon:SetTexture(texture)
     frame:SetAlpha(1)
     frame:Show()
@@ -1859,7 +1861,9 @@ ApplyCastBarUnlockPreview = function()
     frame:SetAlpha(1)
     frame:Show()
     SetCastFill(0.65, true)
-    frame.nameText:SetText("Preview Cast")
+    if frame.nameText:IsShown() then
+        frame.nameText:SetText("Preview Cast")
+    end
     -- Through the shared setter so its last-text dedupe cache stays coherent.
     SetCastTimeText(1.5)
 end
