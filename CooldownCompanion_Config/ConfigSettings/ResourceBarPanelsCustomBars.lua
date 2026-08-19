@@ -789,14 +789,14 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         AddAuraStackMaxStatusLabel(auraRight, maxStacks, { row = true })
     end
 
-    -- Stack text threshold colors, the same rows the panel entry section
-    -- shows (SectionBuilders.lua): count text recolors at a chosen stack
-    -- count and again at max. Outside the Bar Shows Stacks gate because
-    -- the count text runs on duration bars too, but gated on the stack
-    -- text actually showing (owner ruling 2026-08-16: settings for a
-    -- hidden text hide with it). The keys live in cab.auraBar under the
-    -- panel names, which is what lets the runtime adapter and the engine
-    -- policy read them unchanged. Resolved with constrained fallbacks,
+    -- Stack text formatter options, the same rows the panel entry section
+    -- shows (SectionBuilders.lua): count text can begin at one and recolor
+    -- at threshold/max stacks. Outside the Bar Shows Stacks gate because the
+    -- count text runs on duration bars too, but gated on the stack text
+    -- actually showing (owner ruling 2026-08-16: settings for a hidden text
+    -- hide with it). The keys live in cab.auraBar under the panel names,
+    -- which lets the runtime adapter and engine policy read them unchanged.
+    -- Resolved with constrained fallbacks,
     -- the one max every custom-bar surface shares since the review
     -- alignment.
     if CustomBarShowsStackText(cab) then

@@ -799,20 +799,18 @@ local function ApplyFontStyle(region, source, prefix, defaultSize, defaultColor)
 end
 CooldownCompanion.ApplyFontStyle = ApplyFontStyle
 
--- Stack threshold preview stand-in (2026-08-15 program): the simulated
--- count and its color for config previews of the aura stack text. Live
--- text is colored engine-side (NumericRuleFormatter breakpoints) because
--- the real count is secret; this mirrors those breakpoints for a PLAIN
--- pretend number, preferring the most interesting configured state (max
--- when the max color is on, else the threshold) so the feature shows in
--- previews. Defined here, rather than in the preview file, to stay below its
--- Lua 5.1 local-variable ceiling.
+-- Stack text preview stand-in: the simulated count and its color for config
+-- previews. The one-stack option selects 1 as the base sample; threshold/max
+-- colors still prefer their most interesting configured state. Live text is
+-- formatted engine-side because the real count is secret. Defined here,
+-- rather than in the preview file, to stay below its Lua 5.1 local ceiling.
 function CooldownCompanion:GetAuraStackPreviewCountAndColor(buttonData, style, fallbackText)
     -- Thin reader of the ONE policy resolver (review batch 2026-08-15):
     -- the clamp/prefer rules live there, so the preview can never disagree
     -- with the live formatter about where a color starts.
     local policy = self:ResolveAuraStackThresholdPolicy(buttonData)
-    local count = tonumber(fallbackText) or 3
+    local count = self:IsAuraStackCountAtOneEnabled(buttonData)
+        and 1 or tonumber(fallbackText) or 3
     local color
     if policy then
         if policy.maxOn then

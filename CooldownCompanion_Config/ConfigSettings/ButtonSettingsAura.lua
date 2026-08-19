@@ -574,12 +574,11 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         effectiveStyle = CooldownCompanion:GetEffectiveStyle(effectiveStyle, buttonData) or effectiveStyle
     end
 
-    -- Stack text threshold colors (2026-08-15 program, text-only since the
-    -- 2026-08-16 redesign): the count text recolors at a chosen stack
-    -- count and again at max stacks. Mode-agnostic (icons and bars both
-    -- show the count text), so this sits outside the bars gate — but both
-    -- rows need a REAL resolved stack maximum (owner rule), so the shared
-    -- builder emits nothing for auras the game reports as non-stacking.
+    -- Stack text formatter options: the count can begin at one, recolor at a
+    -- chosen stack count, and recolor again at max stacks. Mode-agnostic
+    -- (icons and bars both show the count text), so this sits outside the
+    -- bars gate. The shared builder emits nothing for auras the game reports
+    -- as non-stacking unless a saved one-stack option needs to remain editable.
     -- The comparison against the live count is engine-side (formatter
     -- breakpoints); nothing here ever reads the secret count. Rows shared
     -- with the custom-bar Aura section (SectionBuilders.lua). Gated on the

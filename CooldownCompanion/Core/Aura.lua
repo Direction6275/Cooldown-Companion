@@ -1093,16 +1093,25 @@ function CooldownCompanion:SetAuraStackBlockGapTexels(buttonData, value)
     buttonData.auraBar.blockGap = value
 end
 
--- Stack text threshold colors (2026-08-15 program; text-only since the
--- 2026-08-16 redesign — the fill bands were removed, and a whole-fill
--- recolor is impossible: the count is SECRET in combat and the engine's
--- application-bar options carry no color hook). Nothing here is ever
--- compared against the live count at runtime — these settings only shape
--- the engine-side NumericRuleFormatter breakpoints that color the stack
--- count text. Stored in auraBar beside the other per-entry stack
--- settings; nil keys mean off.
+-- Stack text formatter options. The count is SECRET in combat, so these
+-- settings only shape the engine-side NumericRuleFormatter breakpoints;
+-- nothing here reads or compares the live count. Stored in auraBar beside
+-- the other per-entry stack settings; nil keys mean off.
 ST.AURA_STACK_THRESHOLD_COLOR_DEFAULT = { 1, 0.82, 0, 1 }
 ST.AURA_STACK_MAX_COLOR_DEFAULT = { 1, 0.25, 0.1, 1 }
+
+function CooldownCompanion:IsAuraStackCountAtOneEnabled(buttonData)
+    local auraBar = buttonData and buttonData.auraBar
+    return type(auraBar) == "table" and auraBar.showCountAtOne == true
+end
+
+function CooldownCompanion:SetAuraStackCountAtOneEnabled(buttonData, enabled)
+    if type(buttonData.auraBar) ~= "table" then
+        if not enabled then return end
+        buttonData.auraBar = {}
+    end
+    buttonData.auraBar.showCountAtOne = enabled and true or nil
+end
 
 function CooldownCompanion:GetAuraStackThresholdValue(buttonData)
     local auraBar = buttonData and buttonData.auraBar
