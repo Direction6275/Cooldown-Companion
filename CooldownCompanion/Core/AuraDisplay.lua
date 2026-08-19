@@ -171,18 +171,21 @@ local rebindPassCount = 0
 local lastRebindPassAt = nil
 
 -- A blocked rebind keeps its current bindings intact and retries after player
--- combat. The gates below are player-global combat lockdown and aura secrecy;
--- target and ally combat flags are not part of that contract, so UNIT_FLAGS
--- has no role in this retry path.
+-- combat or after a broader addon-restriction window deactivates. The gates
+-- below are player-global combat lockdown and aura secrecy; target and ally
+-- combat flags are not part of that contract, so UNIT_FLAGS has no role in
+-- this retry path.
 local rebindDeferFrame = CreateFrame("Frame")
 
 local function ArmRebindRetry()
     pendingRebind = true
     rebindDeferFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    rebindDeferFrame:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
 end
 
 local function DisarmRebindRetry()
     rebindDeferFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    rebindDeferFrame:UnregisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
 end
 
 ------------------------------------------------------------------------
@@ -2558,16 +2561,29 @@ function RefreshBlockRecordsForToken(isMatch)
     end
 end
 
-local function ApplyBlockMount(record)
+-- Move only the plain CC parent. The AuraContainer is anchored to this root
+-- during its OOC bind, so stack-offset changes can move the whole restricted
+-- subtree in combat without calling a method on the container itself.
+local function ApplyBlockRootMount(record)
     local getMount = ST._GetCustomBarAuraBlockMount
     if not getMount then return false end
     local parent, point, x, y, level = getMount(record.side)
     if not parent then return false end
+    record.visibilityRoot:ClearAllPoints()
+    record.visibilityRoot:SetPoint(point, parent, point, x, y)
+    record.visibilityRoot:SetFrameLevel(level)
+    return point, level
+end
+
+local function ApplyBlockMount(record)
+    local point, level = ApplyBlockRootMount(record)
+    if not point then return false end
     -- ONE point: the container's extent is secret from its first group, so a
     -- second point would ask the engine to reconcile a secret size against a
-    -- CC-side one. Position only — the size is Blizzard's.
+    -- CC-side one. The zero-offset root supplies position only; the size stays
+    -- Blizzard's.
     record.container:ClearAllPoints()
-    record.container:SetPoint(point, parent, point, x, y)
+    record.container:SetPoint(point, record.visibilityRoot, point, 0, 0)
     record.container:SetFrameLevel(level)
     return true
 end
@@ -2588,17 +2604,21 @@ local function ApplyBlockChainMount(record, anchorRecord)
     return true
 end
 
--- Re-anchor every existing container from the current contract. Container
--- geometry is OOC-only (the validated combat surface is container METHODS),
--- so every call site gates on InCombatLockdown; in combat a moved stack just
--- leaves the block stale until the deferred rebind. A chained record
--- re-anchors to its anchor container, never to the stack mount.
+-- Re-anchor from the current contract. The head container rides a plain CC
+-- root, which may move even while the restricted subtree is inaccessible.
+-- Direct AuraContainer geometry (including the second chained bucket) remains
+-- behind the full rebind gate.
 function ST._SyncCustomBarAuraBlockMounts()
+    local canTouchContainers = CanRunRebindNow()
     for _, record in ipairs(blockRecords) do
         if record.chainAnchor then
-            ApplyBlockChainMount(record, record.chainAnchor)
-        else
+            if canTouchContainers then
+                ApplyBlockChainMount(record, record.chainAnchor)
+            end
+        elseif canTouchContainers then
             ApplyBlockMount(record)
+        else
+            ApplyBlockRootMount(record)
         end
     end
 end
@@ -2633,6 +2653,7 @@ local function EnsureBlockContainer(side, unit)
     -- known at creation time.
     local hostRoot = CooldownCompanion:GetCustomBarAuraHostRoot()
     local visibilityRoot = CreateFrame("Frame", nil, hostRoot)
+    visibilityRoot:SetSize(1, 1)
     visibilityRoot:Hide()
     local container = CreateFrame("AuraContainer", nil,
         visibilityRoot,
@@ -3941,7 +3962,14 @@ function RunAuraRebind()
     end
 end
 
-rebindDeferFrame:SetScript("OnEvent", function()
+rebindDeferFrame:SetScript("OnEvent", function(_, event, restrictionType, restrictionState)
+    -- The restriction event also announces Activating/Active. It is sequenced
+    -- before activation and after deactivation, so only Inactive is a wakeup;
+    -- running on Activating could mutate the aura topology just as it seals.
+    if event == "ADDON_RESTRICTION_STATE_CHANGED"
+        and restrictionState ~= Enum.AddOnRestrictionState.Inactive then
+        return
+    end
     -- Unregister BEFORE running so an error can't leave the events stuck
     -- (FrameAnchoring's combat-defer pattern).
     DisarmRebindRetry()

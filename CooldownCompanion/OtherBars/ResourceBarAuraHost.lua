@@ -643,6 +643,20 @@ function RB.CreateResourceBarAuraHostModule(deps)
         return borderInset
     end
 
+    local function IsLiveResourceAuraHolderBar(barInfo, settings)
+        local frame = barInfo and barInfo.frame
+        local powerType = barInfo and barInfo.powerType
+        if not (frame and frame:IsShown() and powerType ~= nil
+            and RESOURCE_OVERLAY_BAR_TYPES[barInfo.barType]) then
+            return false
+        end
+        local resource = settings and settings.resources and settings.resources[powerType]
+        local entry = resource and IsResourceAuraOverlayEnabled(resource)
+            and GetActiveResourceAuraEntry(resource) or nil
+        local auraSpellID = entry and tonumber(entry.auraColorSpellID) or nil
+        return auraSpellID ~= nil and auraSpellID > 0
+    end
+
     -- Whether the entry draws the aura border. On unless explicitly
     -- switched off (nil = on), so pre-toggle configs keep their border with
     -- no migration. Shared with the config panel and the preview stand-in.
@@ -814,10 +828,10 @@ function RB.CreateResourceBarAuraHostModule(deps)
     -- Blizzard packs the ACTIVE auras itself.
     --
     -- This module owns only the CC-side half of that contract: where the
-    -- container mounts (geometry on an aspected frame, so it applies OOC
-    -- only — a changed mount stays stale in combat until the deferred
-    -- rebind) and what each entry wants (the same adapters and candidate
-    -- set the slot path builds, resolved by the OOC rebind pass).
+    -- container's plain mount root sits and what each entry wants (the same
+    -- adapters and candidate set the slot path builds, resolved by the OOC
+    -- rebind pass). Moving the root is combat-safe; AuraContainer topology
+    -- and direct geometry remain restricted to the rebind pass.
     ------------------------------------------------------------------------
 
     local BLOCK_SIDES = { "above", "below", "left", "right" }
@@ -901,13 +915,12 @@ function RB.CreateResourceBarAuraHostModule(deps)
                 changed = true
             end
         end
-        -- Geometry writes on the aspected containers are OOC-only: the hazard
-        -- map's validated combat surface is container METHODS, not anchoring.
-        -- In combat a changed mount stays stale until the deferred rebind
-        -- re-anchors it (cosmetic drift, never a forbidden write), and an
-        -- unchanged signature needs no re-anchor at all.
+        -- The AuraDisplay side moves a plain CC mount root immediately. It
+        -- touches direct AuraContainer geometry only when the rebind gate is
+        -- open, so form-driven stack offsets stay current in combat without
+        -- crossing the restricted subtree boundary.
         if changed then
-            if not InCombatLockdown() and ST._SyncCustomBarAuraBlockMounts then
+            if ST._SyncCustomBarAuraBlockMounts then
                 ST._SyncCustomBarAuraBlockMounts()
             end
             CooldownCompanion:RequestAuraRebind("custom-bar-blocks")
@@ -1269,24 +1282,54 @@ function RB.CreateResourceBarAuraHostModule(deps)
         local holder = resourceHolders[powerType]
         -- Never bound (or parked and hidden): the rebind owns those.
         if not (holder and holder._ccAnchoredFrame) then return end
-        if holder._ccAnchoredFrame == frame then return end
         local settings = GetResourceBarSettings()
         if not settings then return end
-        AnchorHolderToBar(holder, frame,
-            GetResourceHolderInset(barInfo, GetCustomBarBorderInset(settings)),
-            HOLDER_LEVEL_RESOURCE)
-        -- Layout-derived, like the collector: cluster frames carry no
-        -- _isVertical field for AnchorHolderToBar to read.
-        holder._isVertical = IsVerticalResourceLayout(settings) == true
+        if not IsLiveResourceAuraHolderBar(barInfo, settings) then
+            holder:Hide()
+            return
+        end
+        if holder._ccAnchoredFrame ~= frame then
+            AnchorHolderToBar(holder, frame,
+                GetResourceHolderInset(barInfo, GetCustomBarBorderInset(settings)),
+                HOLDER_LEVEL_RESOURCE)
+            -- Layout-derived, like the collector: cluster frames carry no
+            -- _isVertical field for AnchorHolderToBar to read.
+            holder._isVertical = IsVerticalResourceLayout(settings) == true
+        end
+        -- A form can bring back a holder that this same restriction window
+        -- hid. Its existing binding remains underneath; showing the plain CC
+        -- holder is safe, while a never-bound holder still returns above.
+        holder:Show()
     end
 
-    -- Park one resource's overlay holder. Holders are reconciled by the
-    -- rebind pass, which is OOC-only, so a mutually exclusive pair swapping
-    -- IN COMBAT would otherwise leave the outgoing half's holder lit over
-    -- the incoming half's bar until combat ended (the frame is recycled in
-    -- place, only barInfo.powerType changes). Hiding a plain CC frame is
-    -- legal in combat; BINDING the incoming holder is not, and deliberately
-    -- stays with the deferred rebind.
+    -- Reconcile by stable resource identity after every apply. Slot-local
+    -- cleanup cannot do this safely: a resource that moved to another slot is
+    -- still live and must keep its holder, while a form-hidden resource has no
+    -- FinalizeAppliedBarVisibility call that could turn its separate holder
+    -- off. Plain holder visibility is safe during combat.
+    function RB.ReconcileResourceAuraHolders()
+        local settings = GetResourceBarSettings()
+        local live = {}
+        if settings and settings.enabled then
+            for _, barInfo in ipairs(resourceBarFrames) do
+                if IsLiveResourceAuraHolderBar(barInfo, settings) then
+                    live[barInfo.powerType] = true
+                end
+            end
+        end
+        for powerType, holder in pairs(resourceHolders) do
+            if not live[powerType] then
+                holder:Hide()
+            end
+        end
+    end
+
+    -- Park one resource's overlay holder as soon as a recycled slot changes
+    -- identity. The apply-wide reconciliation above covers resources that
+    -- disappear without an incoming occupant; this fast path covers a
+    -- mutually exclusive pair swapping in place. Hiding a plain CC frame is
+    -- legal in combat; BINDING a never-seen incoming holder is not, and
+    -- deliberately stays with the deferred rebind.
     function RB.HideResourceAuraHolder(powerType)
         local holder = powerType ~= nil and resourceHolders[powerType]
         if holder then
