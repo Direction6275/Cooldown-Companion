@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.1.3",
         "2.1.2",
         "2.1.1",
         "2.1",
@@ -29,6 +30,25 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.1.3"] = {
+            markdown = [[
+## New Features
+
+- **Channel tick marks:** Channeled spells can optionally show configurable tick marks on the cast bar when damage or healing occurs. The second-to-last tick can have its own highlight color, and chained Disintegrate or Arcane Missiles casts carry the final tick into the next cast.
+
+## Polish | QoL
+
+- **Tidier cast effect settings:** Cast bar spark controls now live together under Appearance, and the spark trail option only appears while the spark is enabled.
+
+## Bug Fixes
+
+- **Cast bar works with name text hidden:** Hiding the cast name no longer causes an error every time a cast begins.
+- **Cast bar spark stays inside the bar:** The spark trail no longer bleeds past the cast bar's edges.
+- **Cursor-anchored panels work reliably:** Enabling, configuring, or closing a preview for a cursor-anchored panel no longer causes an error that interrupts cursor positioning.
+- **Aura glows use the correct dash count:** Pixel Dashes aura glows now use the configured five-dash default in live displays instead of falling back to two.
+- **Unit frames stay attached after reloads:** Player and target frames anchored through Cooldown Companion remain attached to the intended panel after reloads and delayed layout updates from unit-frame addons.
+]],
+        },
         ["2.1.2"] = {
             markdown = [[
 ## New Features
