@@ -172,55 +172,6 @@ local function BuildCastBarAnchoringPanel(container)
         end
     end
 
-    if not settings.enabled then return end
-
-    -- ================================================================
-    -- Cast Effects
-    -- ================================================================
-    local _, effectsCollapsed = BuildCollapsibleSection(container, "Cast Effects",
-        "castbar_effects", nil, nil, ROW_SECTION)
-
-    if not effectsCollapsed then
-        -- LEFT column: what the bar does while the cast runs and when it
-        -- lands. RIGHT column: the interrupt pair, which reads as one choice.
-        local effectsLeft, effectsRight = BeginRowGrid(container)
-
-        AddCheckboxRow(effectsLeft, {
-            label = "Show Spark Trail",
-            value = settings.showSparkTrail ~= false,
-            onChange = function(val)
-                settings.showSparkTrail = val
-                CooldownCompanion:ApplyCastBarSettings()
-            end,
-        })
-
-        AddCheckboxRow(effectsLeft, {
-            label = "Show Cast Finish FX",
-            value = settings.showCastFinishFX ~= false,
-            onChange = function(val)
-                settings.showCastFinishFX = val
-                CooldownCompanion:ApplyCastBarSettings()
-            end,
-        })
-
-        AddCheckboxRow(effectsRight, {
-            label = "Show Interrupt Shake",
-            value = settings.showInterruptShake ~= false,
-            onChange = function(val)
-                settings.showInterruptShake = val
-                CooldownCompanion:ApplyCastBarSettings()
-            end,
-        })
-
-        AddCheckboxRow(effectsRight, {
-            label = "Show Interrupt Glow",
-            value = settings.showInterruptGlow ~= false,
-            onChange = function(val)
-                settings.showInterruptGlow = val
-                CooldownCompanion:ApplyCastBarSettings()
-            end,
-        })
-    end
 end
 
 local function BuildCastBarPositioningPanel(container)
@@ -506,6 +457,67 @@ local function BuildCastBarStylingPanel(container)
     end
 
     -- ================================================================
+    -- Cast Effects
+    -- ================================================================
+    local _, effectsCollapsed = BuildCollapsibleSection(container, "Cast Effects",
+        "castbar_effects", nil, nil, ROW_SECTION)
+
+    if not effectsCollapsed then
+        -- LEFT column: the spark pair and finish effect. RIGHT column: the
+        -- interrupt pair, which reads as one choice.
+        local effectsLeft, effectsRight = BeginRowGrid(container)
+
+        AddCheckboxRow(effectsLeft, {
+            label = "Show Spark",
+            value = settings.showSpark ~= false,
+            onChange = function(val)
+                settings.showSpark = val
+                applyCastBar()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        if settings.showSpark ~= false then
+            AddCheckboxRow(effectsLeft, {
+                label = "Show Spark Trail",
+                indent = true,
+                value = settings.showSparkTrail ~= false,
+                onChange = function(val)
+                    settings.showSparkTrail = val
+                    applyCastBar()
+                end,
+            })
+        end
+
+        AddCheckboxRow(effectsLeft, {
+            label = "Show Cast Finish FX",
+            value = settings.showCastFinishFX ~= false,
+            onChange = function(val)
+                settings.showCastFinishFX = val
+                applyCastBar()
+            end,
+        })
+
+        AddCheckboxRow(effectsRight, {
+            label = "Show Interrupt Shake",
+            value = settings.showInterruptShake ~= false,
+            onChange = function(val)
+                settings.showInterruptShake = val
+                applyCastBar()
+            end,
+        })
+
+        AddCheckboxRow(effectsRight, {
+            label = "Show Interrupt Glow",
+            value = settings.showInterruptGlow ~= false,
+            onChange = function(val)
+                settings.showInterruptGlow = val
+                applyCastBar()
+            end,
+        })
+    end
+
+    -- ================================================================
     -- Contents (what the bar draws on top of the fill)
     -- ================================================================
     local _, contentsCollapsed = BuildCollapsibleSection(container, "Contents",
@@ -630,15 +642,6 @@ local function BuildCastBarStylingPanel(container)
     AddAdvancedToggle(iconRow, "castbarIcon", cbAdvBtns, settings.showIcon ~= false, {
         title = "Spell Icon Advanced",
         build = BuildIconAdvanced,
-    })
-
-    AddCheckboxRow(contentsLeft, {
-        label = "Show Spark",
-        value = settings.showSpark ~= false,
-        onChange = function(val)
-            settings.showSpark = val
-            applyCastBar()
-        end,
     })
 
     local channelTickRow = AddCheckboxRow(contentsLeft, {

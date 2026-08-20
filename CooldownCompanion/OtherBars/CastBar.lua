@@ -828,6 +828,12 @@ local function EnsureCastBarFrame()
     frame.sparkTrail._ccBaseW = 37
     frame.sparkTrail._ccBaseH = 12
     frame.sparkTrail:SetBlendMode("ADD")
+    -- Blizzard masks this glow so its additive edge cannot escape the bar.
+    frame.sparkTrailMask = fill:CreateMaskTexture()
+    frame.sparkTrailMask:SetTexture("Interface\\Buttons\\WHITE8X8",
+        "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    frame.sparkTrailMask:SetAllPoints(fill)
+    frame.sparkTrail:AddMaskTexture(frame.sparkTrailMask)
     frame.sparkTrail:SetPoint("RIGHT", frame.spark, "LEFT", 2, 0)
     frame.sparkTrail:Hide()
 
