@@ -2415,7 +2415,18 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup()
             order = self:GetOrderForSpec(container, specId, cid),
         }
     end
-    table.sort(orderedContainers, function(a, b) return a.order < b.order end)
+    table.sort(orderedContainers, function(a, b)
+        if a.order ~= b.order then
+            return a.order < b.order
+        end
+
+        local aId = tonumber(a.id)
+        local bId = tonumber(b.id)
+        if aId and bId and aId ~= bId then
+            return aId < bId
+        end
+        return tostring(a.id) < tostring(b.id)
+    end)
 
     for _, containerInfo in ipairs(orderedContainers) do
         for _, panelInfo in ipairs(self:GetPanels(containerInfo.id)) do

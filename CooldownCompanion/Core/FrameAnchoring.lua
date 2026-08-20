@@ -33,6 +33,14 @@ local pendingReevaluate = false
 local rapidAlphaSyncUntil = 0
 local alphaHookGuards = setmetatable({}, { __mode = "k" })
 local alphaSetHooksInstalled = setmetatable({}, { __mode = "k" })
+local anchorWriteGuards = setmetatable({}, { __mode = "k" })
+local anchorWriteHooksInstalled = setmetatable({}, { __mode = "k" })
+local externalAnchorRepairQueued = false
+local externalAnchorRepairCount = 0
+local lastResolvedProvider = nil
+local lastAnchorGroupId = nil
+local lastPlayerFrameName = nil
+local lastTargetFrameName = nil
 local InstallHooks
 
 -- Combat deferral: any positioning attempt during combat is coalesced into a
@@ -308,7 +316,7 @@ local function GetUnitFrames(settings)
         end
     end
 
-    return playerFrame, targetFrame
+    return playerFrame, targetFrame, addon
 end
 
 ------------------------------------------------------------------------
@@ -329,10 +337,68 @@ end
 
 local function RestoreFrameAnchors(frame, anchors)
     if not frame or not anchors or #anchors == 0 then return end
+    anchorWriteGuards[frame] = true
     frame:ClearAllPoints()
     for _, a in ipairs(anchors) do
         frame:SetPoint(a.point, a.relativeTo, a.relativePoint, a.x, a.y)
     end
+    anchorWriteGuards[frame] = nil
+end
+
+local function SetManagedFrameAnchor(frame, point, relativeTo, relativePoint, x, y)
+    if not frame then return end
+    anchorWriteGuards[frame] = true
+    frame:ClearAllPoints()
+    frame:SetPoint(point, relativeTo, relativePoint, x, y)
+    anchorWriteGuards[frame] = nil
+end
+
+local function GetFrameDebugName(frame, fallback)
+    if not frame then return nil end
+    local name = frame.GetName and frame:GetName()
+    if issecretvalue(name) then return fallback end
+    if name and name ~= "" then
+        return name
+    end
+    return fallback
+end
+
+local function QueueExternalAnchorRepair(frame)
+    if anchorWriteGuards[frame] then return end
+    if not isApplied or (frame ~= playerFrameRef and frame ~= targetFrameRef) then return end
+    if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
+
+    local settings = GetFrameAnchoringSettings()
+    if not (settings and settings.enabled) then return end
+    if pendingReevaluate or externalAnchorRepairQueued then return end
+
+    externalAnchorRepairQueued = true
+    externalAnchorRepairCount = externalAnchorRepairCount + 1
+    C_Timer.After(0, function()
+        externalAnchorRepairQueued = false
+        if not isApplied then return end
+        if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
+
+        local latest = GetFrameAnchoringSettings()
+        if not (latest and latest.enabled) then return end
+        CooldownCompanion:EvaluateFrameAnchoring({ reason = "unit-frame-anchor-overwritten" })
+    end)
+end
+
+local function InstallAnchorWriteHooks(frame)
+    if not frame or anchorWriteHooksInstalled[frame] then return end
+
+    -- Unit-frame providers can run delayed layout passes after login and take
+    -- their points back. Observe those writes instead of polling GetPoint
+    -- (which can expose secret anchor data), then reclaim ownership next frame.
+    -- The guard makes CC's own apply/restore writes invisible to this repair.
+    hooksecurefunc(frame, "ClearAllPoints", function(self)
+        QueueExternalAnchorRepair(self)
+    end)
+    hooksecurefunc(frame, "SetPoint", function(self)
+        QueueExternalAnchorRepair(self)
+    end)
+    anchorWriteHooksInstalled[frame] = true
 end
 
 local function WouldFrameDependOn(sourceFrame, dependencyFrame, visited, depth)
@@ -411,7 +477,7 @@ function CooldownCompanion:ApplyFrameAnchoring(opts)
         return
     end
 
-    local playerFrame, targetFrame = GetUnitFrames(settings)
+    local playerFrame, targetFrame, provider = GetUnitFrames(settings)
     if not playerFrame and not targetFrame then
         self:RevertFrameAnchoring()
         return
@@ -440,13 +506,18 @@ function CooldownCompanion:ApplyFrameAnchoring(opts)
     targetFrameRef = targetFrame
     InstallInheritedAlphaSetHook(playerFrameRef)
     InstallInheritedAlphaSetHook(targetFrameRef)
+    InstallAnchorWriteHooks(playerFrameRef)
+    InstallAnchorWriteHooks(targetFrameRef)
+    lastResolvedProvider = provider
+    lastAnchorGroupId = groupId
+    lastPlayerFrameName = GetFrameDebugName(playerFrame, settings.customPlayerFrame)
+    lastTargetFrameName = GetFrameDebugName(targetFrame, settings.customTargetFrame)
 
     -- Apply player frame anchoring
     local ps = settings.player
     if playerFrame and ps then
-        playerFrame:ClearAllPoints()
-        playerFrame:SetPoint(ps.anchorPoint, groupFrame, ps.relativePoint,
-                             ps.xOffset or 0, ps.yOffset or 0)
+        SetManagedFrameAnchor(playerFrame, ps.anchorPoint, groupFrame, ps.relativePoint,
+                              ps.xOffset or 0, ps.yOffset or 0)
     end
 
     -- Apply target frame anchoring
@@ -455,16 +526,14 @@ function CooldownCompanion:ApplyFrameAnchoring(opts)
             -- Mirror from player settings
             local mAnchor = MIRROR_POINTS[ps.anchorPoint] or ps.anchorPoint
             local mRelative = MIRROR_POINTS[ps.relativePoint] or ps.relativePoint
-            targetFrame:ClearAllPoints()
-            targetFrame:SetPoint(mAnchor, groupFrame, mRelative,
-                                 -(ps.xOffset or 0), ps.yOffset or 0)
+            SetManagedFrameAnchor(targetFrame, mAnchor, groupFrame, mRelative,
+                                  -(ps.xOffset or 0), ps.yOffset or 0)
         else
             -- Independent target settings
             local ts = settings.target
             if ts then
-                targetFrame:ClearAllPoints()
-                targetFrame:SetPoint(ts.anchorPoint, groupFrame, ts.relativePoint,
-                                     ts.xOffset or 0, ts.yOffset or 0)
+                SetManagedFrameAnchor(targetFrame, ts.anchorPoint, groupFrame, ts.relativePoint,
+                                      ts.xOffset or 0, ts.yOffset or 0)
             end
         end
     end
@@ -608,6 +677,12 @@ function CooldownCompanion:GetFrameAnchoringRuntimeDebugInfo()
         hooksInstalled = hooksInstalled == true,
         alphaSyncActive = alphaSyncFrame and alphaSyncFrame:GetScript("OnUpdate") ~= nil or false,
         pendingCombatReevaluate = pendingReevaluate == true,
+        pendingExternalAnchorRepair = externalAnchorRepairQueued == true,
+        externalAnchorRepairCount = externalAnchorRepairCount,
+        resolvedProvider = lastResolvedProvider,
+        anchorGroupId = lastAnchorGroupId,
+        playerFrameName = lastPlayerFrameName,
+        targetFrameName = lastTargetFrameName,
     }
 end
 

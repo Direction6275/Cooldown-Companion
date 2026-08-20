@@ -657,11 +657,19 @@ local function AddBarsAndFramesRuntimeLines(add, barsAndFramesRuntime)
         FormatBool(cb.hooksInstalled)
     ))
     local fa = baf.frameAnchoring or {}
-    add(("  Frame Anchoring: applied=%s alphaSync=%s pendingCombat=%s hooks=%s"):format(
+    add(("  Frame Anchoring: applied=%s alphaSync=%s pendingCombat=%s pendingRepair=%s repairs=%s hooks=%s"):format(
         FormatBool(fa.applied),
         FormatBool(fa.alphaSyncActive),
         FormatBool(fa.pendingCombatReevaluate),
+        FormatBool(fa.pendingExternalAnchorRepair),
+        tostring(fa.externalAnchorRepairCount or 0),
         FormatBool(fa.hooksInstalled)
+    ))
+    add(("    provider=%s panel=%s player=%s target=%s"):format(
+        tostring(fa.resolvedProvider or "none"),
+        tostring(fa.anchorGroupId or "none"),
+        tostring(fa.playerFrameName or "none"),
+        tostring(fa.targetFrameName or "none")
     ))
 end
 
