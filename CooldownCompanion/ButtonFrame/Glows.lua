@@ -1624,7 +1624,7 @@ local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, s
     end
 
     if kitStyle == "dashes" then
-        count = math_min(math_max(count or 2, 1), MAX_AURA_GLOW_DASHES)
+        count = math_min(math_max(count or 5, 1), MAX_AURA_GLOW_DASHES)
         -- _ccKitRectW/H: rect dims stamped by the aura-host anchor pass for
         -- holder-anchored kits (fresh anchors report stale sizes); nil on CC
         -- buttons, which fall back to their own explicit size.
