@@ -822,7 +822,18 @@ function CooldownCompanion:GetPanels(containerId)
         end
     end
     table_sort(panels, function(a, b)
-        return (a.group.order or 0) < (b.group.order or 0)
+        local aOrder = a.group.order or 0
+        local bOrder = b.group.order or 0
+        if aOrder ~= bOrder then
+            return aOrder < bOrder
+        end
+
+        local aId = tonumber(a.groupId)
+        local bId = tonumber(b.groupId)
+        if aId and bId and aId ~= bId then
+            return aId < bId
+        end
+        return tostring(a.groupId) < tostring(b.groupId)
     end)
     return panels
 end
