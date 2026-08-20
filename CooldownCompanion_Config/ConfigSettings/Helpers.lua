@@ -321,6 +321,17 @@ local function BuildCollapsibleSection(container, title, key, store, refreshFn, 
         end
     end)
 
+    -- The navigated-to section (gear / Customizations link): remember its
+    -- heading so the deferred fire can scroll to it and pulse it. First match
+    -- wins - a route can force several nested keys open, and the first one
+    -- built is the outermost destination.
+    local pendingHighlight = CS.pendingSettingHighlight
+    if pendingHighlight and pendingHighlight.collapseKeys
+        and pendingHighlight.collapseKeys[key]
+        and not pendingHighlight.headingWidget then
+        pendingHighlight.headingWidget = heading
+    end
+
     if opts and opts.leftAligned then
         ApplyLeftAlignedHeading(heading, btn)
     end
@@ -582,6 +593,15 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
         end
     end)
 
+    -- The navigated-to setting's own row: the most specific thing a route can
+    -- name, so it wins over the section-anchor and heading matches. Recorded
+    -- ahead of the disabled gate below - the ROW is drawn and worth pointing
+    -- at even while its gear is hidden or inert.
+    local pendingHighlight = CS.pendingSettingHighlight
+    if pendingHighlight and pendingHighlight.rowKey == settingKey then
+        pendingHighlight.rowWidget = parentWidget
+    end
+
     -- Hide when parent setting is disabled
     if isEnabled == false then
         if useSidePanel and isActive and CS.CloseAdvancedSettingsPanel then
@@ -643,6 +663,228 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
 end
 
 CS.SetActiveAdvancedSettingsToggleButton = SetActiveAdvancedSettingsToggleButton
+
+------------------------------------------------------------------------
+-- Navigated-setting highlight
+--
+-- A gear or name link that routes the user to a setting (the preview command
+-- center's gear, the Customizations list's name link and gear, the Resources
+-- object routes) stashes a one-shot request in CS.pendingSettingHighlight
+-- before it refreshes:
+--   collapseKeys - the section collapse keys the route force-opens (both the
+--                  raw key and its lens-resolved variant)
+--   sectionId    - the override section the route is about, when it is one
+--   rowKey       - the setting row's advanced key, when the route names one
+-- The rebuild the navigation triggers consumes it, most specific match first:
+-- AddAdvancedToggle records the row wearing the matching gear (rowKey),
+-- LensSection:Chrome records the section's anchor row (sectionId - attached
+-- in every lens mode, so an entry-lens destination still lands on its row),
+-- and BuildCollapsibleSection records the first heading whose collapse key
+-- matches as the fallback. One frame later, with layout settled (the same
+-- deferred seam AceGUI's own FixScroll rides), the scheduled fire scrolls
+-- the target into view and pulses a gold wash over it.
+--
+-- One-shot by construction: the fire consumes the request, and any OTHER
+-- rebuild starting first discards it (BeginNavSettingHighlightRefresh below)
+-- because that rebuild releases the recorded widgets back to the pool.
+------------------------------------------------------------------------
+
+-- Peak intensity lives in the textures' baked alpha; the animation only takes
+-- the frame from 0 to 1 and back, so the two knobs stay independent.
+local NAV_FLASH_ALPHA = 0.30
+-- The wash hugs the row: a slight vertical inset so it sits on the text line
+-- rather than bridging into its neighbours, and ends that fade out over this
+-- many pixels instead of cutting off (SetGradient, live-verified signature -
+-- Blizzard_NamePlates does the same underline fade).
+local NAV_FLASH_INSET_V = 1
+local NAV_FLASH_EDGE_FADE = 28
+-- Padding above a target that has to be scrolled to, so it lands just under
+-- the tab's top edge rather than flush against it.
+local NAV_SCROLL_PAD = 24
+
+local navFlashFrame
+
+local function EnsureNavFlashFrame()
+    if navFlashFrame then
+        return navFlashFrame
+    end
+    local f = CreateFrame("Frame")
+    f:EnableMouse(false)
+    f:Hide()
+    local gold = CreateColor(1, 0.82, 0, NAV_FLASH_ALPHA)
+    local goldFaded = CreateColor(1, 0.82, 0, 0)
+    local left = f:CreateTexture(nil, "OVERLAY")
+    left:SetPoint("TOPLEFT")
+    left:SetPoint("BOTTOMLEFT")
+    left:SetWidth(NAV_FLASH_EDGE_FADE)
+    left:SetColorTexture(1, 1, 1, 1)
+    left:SetGradient("HORIZONTAL", goldFaded, gold)
+    local right = f:CreateTexture(nil, "OVERLAY")
+    right:SetPoint("TOPRIGHT")
+    right:SetPoint("BOTTOMRIGHT")
+    right:SetWidth(NAV_FLASH_EDGE_FADE)
+    right:SetColorTexture(1, 1, 1, 1)
+    right:SetGradient("HORIZONTAL", gold, goldFaded)
+    local mid = f:CreateTexture(nil, "OVERLAY")
+    mid:SetPoint("TOPLEFT", left, "TOPRIGHT")
+    mid:SetPoint("BOTTOMRIGHT", right, "BOTTOMLEFT")
+    mid:SetColorTexture(1, 0.82, 0, NAV_FLASH_ALPHA)
+    local ag = f:CreateAnimationGroup()
+    local function AddPulse(order, from, to, duration)
+        local anim = ag:CreateAnimation("Alpha")
+        anim:SetOrder(order)
+        anim:SetFromAlpha(from)
+        anim:SetToAlpha(to)
+        anim:SetDuration(duration)
+    end
+    -- Two pulses, then gone (~1.5s total).
+    AddPulse(1, 0, 1, 0.15)
+    AddPulse(2, 1, 0.25, 0.3)
+    AddPulse(3, 0.25, 1, 0.3)
+    AddPulse(4, 1, 0, 0.7)
+    ag:SetScript("OnFinished", function()
+        f:Hide()
+    end)
+    f._animation = ag
+    navFlashFrame = f
+    return f
+end
+
+local function StopNavSettingFlash()
+    if navFlashFrame then
+        navFlashFrame._animation:Stop()
+        navFlashFrame:Hide()
+        navFlashFrame:ClearAllPoints()
+        navFlashFrame:SetParent(nil)
+    end
+end
+
+-- The AceGUI scroll container the target widget lives in, found by walking
+-- the widget parent chain AceGUI maintains - generic on purpose, so the same
+-- fire path serves the buttons workspace and the resource-bar panes.
+local function FindOwningScrollWidget(widget)
+    local cur = widget
+    for _ = 1, 12 do
+        cur = cur.parent
+        if not cur then
+            return nil
+        end
+        if cur.type == "ScrollFrame" then
+            return cur
+        end
+    end
+    return nil
+end
+
+local function ScrollNavTargetIntoView(widget)
+    local scroll = FindOwningScrollWidget(widget)
+    if not (scroll and scroll.content and scroll.scrollframe) then
+        return
+    end
+    local frame = widget.frame
+    local contentTop = scroll.content:GetTop()
+    local targetTop = frame:GetTop()
+    local targetHeight = frame:GetHeight()
+    local viewHeight = scroll.scrollframe:GetHeight()
+    local maxOffset = (scroll.content:GetHeight() or 0) - (viewHeight or 0)
+    if not (contentTop and targetTop and targetHeight and viewHeight) or maxOffset <= 0 then
+        return
+    end
+
+    -- Where the target sits inside the content, in pixels from the content
+    -- top. Rect-based but offset-independent: the content and the target move
+    -- together, so however far the pane is scrolled right now cancels out.
+    local targetOffset = contentTop - targetTop
+
+    -- Visibility is judged against the scroll's PENDING offset, not the
+    -- screen: a restored offset can still be waiting on AceGUI's deferred
+    -- FixScroll, which runs this same frame in no defined order with this
+    -- fire, and the rects only show whichever applied first.
+    local status = scroll.status or scroll.localstatus
+    local pendingOffset = (status and status.offset) or 0
+    if targetOffset >= pendingOffset
+        and (targetOffset + targetHeight) <= (pendingOffset + viewHeight) then
+        -- Ends up fully in view: the flash alone is the pointer.
+        return
+    end
+
+    local desired = targetOffset - NAV_SCROLL_PAD
+    if desired < 0 then desired = 0 end
+    if desired > maxOffset then desired = maxOffset end
+    local value = desired / maxOffset * 1000
+    -- SetScroll writes the anchor AND the status, so a FixScroll landing
+    -- after this rederives the same place; the scrollbar is synced so the
+    -- knob tracks the jump (its OnValueChanged re-runs SetScroll, same value).
+    scroll:SetScroll(value)
+    if scroll.scrollBarShown and scroll.scrollbar then
+        scroll.scrollbar:SetValue(value)
+    end
+end
+
+local function FireNavSettingHighlight()
+    local pending = CS.pendingSettingHighlight
+    CS.pendingSettingHighlight = nil
+    if not pending then
+        return
+    end
+    local widget = pending.rowWidget or pending.sectionRowWidget or pending.headingWidget
+    local frame = widget and widget.frame
+    if not (frame and frame:IsVisible()) then
+        return
+    end
+    ScrollNavTargetIntoView(widget)
+
+    local flash = EnsureNavFlashFrame()
+    flash._animation:Stop()
+    flash:SetParent(frame)
+    flash:SetFrameLevel(frame:GetFrameLevel() + 5)
+    flash:ClearAllPoints()
+    flash:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -NAV_FLASH_INSET_V)
+    flash:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, NAV_FLASH_INSET_V)
+    flash:Show()
+    flash._animation:Play()
+
+    -- The row can be released out from under a playing flash by any rebuild
+    -- (a tab click does not pass through the config refresh entry points), and
+    -- its frame goes straight back into the pool for the next tenant. Chain,
+    -- don't replace - and this registration is one-shot by nature: release
+    -- wipes the widget's callbacks along with it.
+    local prevOnRelease = widget.events and widget.events["OnRelease"]
+    widget:SetCallback("OnRelease", function(w, event, ...)
+        if prevOnRelease then
+            prevOnRelease(w, event, ...)
+        end
+        if navFlashFrame and navFlashFrame:GetParent() == frame then
+            StopNavSettingFlash()
+        end
+    end)
+end
+
+-- Called by the navigation writers AFTER their RefreshConfigPanel: the build
+-- has recorded the target widgets, and one frame from now layout has settled.
+local function ScheduleNavSettingHighlight()
+    if CS.pendingSettingHighlight then
+        C_Timer.After(0, FireNavSettingHighlight)
+    end
+end
+
+-- Called at the top of every config rebuild. The rebuild the navigation
+-- itself triggered is the request's first, and consumes it; any LATER rebuild
+-- releases the recorded widgets back to the pool, so the request dies there
+-- instead of flashing a recycled frame's next tenant.
+local function BeginNavSettingHighlightRefresh()
+    StopNavSettingFlash()
+    local pending = CS.pendingSettingHighlight
+    if pending then
+        pending.refreshCount = (pending.refreshCount or 0) + 1
+        if pending.refreshCount > 1 then
+            CS.pendingSettingHighlight = nil
+        end
+    end
+end
+
+ST._ScheduleNavSettingHighlight = ScheduleNavSettingHighlight
+ST._BeginNavSettingHighlightRefresh = BeginNavSettingHighlightRefresh
 
 local function GroupSupportsPerButtonOverrides(group)
     return group and (group.displayMode or "icons") ~= "textures"
@@ -1477,6 +1719,17 @@ function LensSection:BoolValue(val)
 end
 
 function LensSection:Chrome(row)
+    -- The navigated-to section's anchor row (deferred highlight, see
+    -- FireNavSettingHighlight): preciser than the collapsible's heading -
+    -- several override sections can share one collapsible - and, unlike the
+    -- advanced gear's rowKey match, present in every lens mode, including a
+    -- section the entry only inherits.
+    local pendingHighlight = CS.pendingSettingHighlight
+    if pendingHighlight and pendingHighlight.sectionId
+        and pendingHighlight.sectionId == self.sectionId
+        and not pendingHighlight.sectionRowWidget then
+        pendingHighlight.sectionRowWidget = row
+    end
     return AttachRowScopeChrome(row, self.lens, self.group, self.sectionId)
 end
 
