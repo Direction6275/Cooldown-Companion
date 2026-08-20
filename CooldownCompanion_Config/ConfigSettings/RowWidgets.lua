@@ -165,8 +165,8 @@ end
 -- narrow row (half-width grid column) must still leave the label room.
 local function UpdateControlColumnWidth(self, width)
     width = width or self.frame:GetWidth() or 0
-    local colWidth = CONTROL_COLUMN_WIDTH
-    if width > 0 then
+    local colWidth = self.controlColumnWidthOverride or CONTROL_COLUMN_WIDTH
+    if not self.controlColumnWidthOverride and width > 0 then
         local available = width - LABEL_INSET - LABEL_CONTROL_GAP - MIN_LABEL_WIDTH
         if available < colWidth then
             colWidth = max(MIN_CONTROL_COLUMN, available)
@@ -367,6 +367,11 @@ local sharedMethods = {
     ["OnWidthSet"] = function(self, width)
         UpdateControlColumnWidth(self, width)
     end,
+
+    ["SetControlColumnWidth"] = function(self, width)
+        self.controlColumnWidthOverride = tonumber(width)
+        UpdateControlColumnWidth(self)
+    end,
 }
 
 -- Reset the shared half of a row. Every type's OnAcquire calls this first,
@@ -381,7 +386,10 @@ local function ResetRowBase(self)
     self:SetScopeTooltip(nil)
     self.rangeTooltip = nil
     self._cdcLastBadge = nil
+    self.controlColumnWidthOverride = nil
     self.frame:SetHeight(ROW_HEIGHT)
+    self.rowLabel:SetWordWrap(false)
+    if self.rowLabel.SetMaxLines then self.rowLabel:SetMaxLines(1) end
     self:SetWidth(CONTROL_COLUMN_WIDTH + MIN_LABEL_WIDTH)
     self:SetLabel("")
     self:SetIndent(false)
@@ -1384,6 +1392,14 @@ local function ApplyCommonRowOptions(row, opts)
         row:SetRelativeWidth(opts.relativeWidth)
     else
         row:SetFullWidth(true)
+    end
+    if opts.controlColumnWidth then
+        row:SetControlColumnWidth(opts.controlColumnWidth)
+    end
+    if opts.labelLines and row.rowLabel then
+        row.rowLabel:SetWordWrap(true)
+        if row.rowLabel.SetMaxLines then row.rowLabel:SetMaxLines(opts.labelLines) end
+        row:SetHeight(opts.height or ROW_HEIGHT)
     end
 end
 

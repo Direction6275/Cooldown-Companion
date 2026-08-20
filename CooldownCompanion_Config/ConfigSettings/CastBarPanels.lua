@@ -641,6 +641,72 @@ local function BuildCastBarStylingPanel(container)
         end,
     })
 
+    local channelTickRow = AddCheckboxRow(contentsLeft, {
+        label = "Show Channel Tick Marks",
+        value = settings.showChannelTickMarks == true,
+        onChange = function(val)
+            settings.showChannelTickMarks = val
+            applyCastBar()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+
+    local function BuildChannelTickAdvanced(panel)
+        AddMirrorFirstSliderRow(panel, {
+            label = "Tick Mark Width",
+            min = 1, max = 5, step = 0.1,
+            value = settings.channelTickWidth or 1,
+            set = function(val) settings.channelTickWidth = val end,
+            apply = applyCastBar,
+            stateOwner = settings,
+            stateKeys = "channelTickWidth",
+        })
+
+        AddColorRow(panel, {
+            label = "Tick Mark Color",
+            tbl = settings,
+            key = "channelTickColor",
+            default = {1, 1, 1, 0.8},
+            hasAlpha = true,
+            onConfirm = applyCastBar,
+            onChange = castPreviewOnly,
+        })
+
+        AddCheckboxRow(panel, {
+            label = "Highlight\nSecond-to-Last Tick",
+            labelLines = 2,
+            height = 42,
+            controlColumnWidth = 32,
+            value = settings.highlightPenultimateChannelTick == true,
+            onChange = function(val)
+                settings.highlightPenultimateChannelTick = val
+                applyCastBar()
+                if CS.RefreshAdvancedSettingsPanel then
+                    CS.RefreshAdvancedSettingsPanel()
+                end
+            end,
+        })
+
+        if settings.highlightPenultimateChannelTick == true then
+            AddColorRow(panel, {
+                label = "Highlight Color",
+                indent = true,
+                tbl = settings,
+                key = "penultimateChannelTickColor",
+                default = {1, 0.82, 0, 1},
+                hasAlpha = true,
+                onConfirm = applyCastBar,
+                onChange = castPreviewOnly,
+            })
+        end
+    end
+
+    AddAdvancedToggle(channelTickRow, "castbarChannelTicks", cbAdvBtns,
+        settings.showChannelTickMarks == true, {
+            title = "Channel Tick Marks Advanced",
+            build = BuildChannelTickAdvanced,
+        })
+
     local nameRow = AddCheckboxRow(contentsRight, {
         label = "Show Spell Name",
         value = settings.showNameText ~= false,

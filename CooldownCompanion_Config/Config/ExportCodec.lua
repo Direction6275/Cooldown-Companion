@@ -421,6 +421,16 @@ local function BuildCurrentCompactProfileDefaults()
         compactDefaults.globalStyle.auraGlowLines = 8
         compactDefaults.globalStyle.auraGlowThickness = 4
     end
+    if compactDefaults.castBar then
+        -- Channel marks postdate compact5. Keep them outside its baseline so
+        -- any explicitly materialized choices serialize instead of silently
+        -- changing the meaning of an existing compact-format export.
+        compactDefaults.castBar.showChannelTickMarks = nil
+        compactDefaults.castBar.channelTickWidth = nil
+        compactDefaults.castBar.channelTickColor = nil
+        compactDefaults.castBar.highlightPenultimateChannelTick = nil
+        compactDefaults.castBar.penultimateChannelTickColor = nil
+    end
     return compactDefaults
 end
 

@@ -2109,9 +2109,41 @@ local function EnsureCastPreview(frame)
         border = bar:CreateTexture(nil, "ARTWORK", nil, 6),
         pixelBorders = CreatePixelBorders(bar),
         iconBorders = CreatePixelBorders(iconFrame),
+        channelTickMarks = {},
     }
     frame.castPreview = castPreview
     return castPreview
+end
+
+local function ConfigureCastPreviewChannelMarks(castPreview, settings)
+    for _, mark in ipairs(castPreview.channelTickMarks) do
+        mark:Hide()
+    end
+    if settings.showChannelTickMarks ~= true then return end
+
+    -- Five evenly-spaced end ticks make the feature and its penultimate
+    -- highlight legible without pretending the preview is a particular spell.
+    local markCount = 4
+    local normalColor = settings.channelTickColor or { 1, 1, 1, 0.8 }
+    local highlightColor = settings.penultimateChannelTickColor or { 1, 0.82, 0, 1 }
+    local highlightPenultimate = settings.highlightPenultimateChannelTick == true
+    local barLength = castPreview.barLength or 0
+    local markWidth = math_min(math_max(tonumber(settings.channelTickWidth) or 1, 1), 5)
+
+    for index = 1, markCount do
+        local mark = castPreview.channelTickMarks[index]
+        if not mark then
+            mark = castPreview.bar:CreateTexture(nil, "OVERLAY", nil, 1)
+            castPreview.channelTickMarks[index] = mark
+        end
+        local color = highlightPenultimate and index == markCount and highlightColor or normalColor
+        mark:SetColorTexture(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
+        mark:ClearAllPoints()
+        mark:SetPoint("TOP", castPreview.bar, "TOPRIGHT", -(barLength * index / 5), 0)
+        mark:SetPoint("BOTTOM", castPreview.bar, "BOTTOMRIGHT", -(barLength * index / 5), 0)
+        mark:SetWidth(markWidth)
+        mark:Show()
+    end
 end
 
 local function HideCastPixelBorders(castPreview)
@@ -2129,17 +2161,18 @@ end
 -- visible and draggable.
 local function SetCastPreviewProgress(castPreview, progress)
     local bar = castPreview.bar
+    local shownProgress = castPreview.isChannelPreview and (1 - progress) or progress
     SetStatusBarSmoothRange(bar, 0, 100)
     -- Immediate, not smoothed: the sweep advances every tick, and smoothing
     -- toward a moving target would drag visibly backwards at the wrap.
-    SetStatusBarImmediateValue(bar, progress * 100)
+    SetStatusBarImmediateValue(bar, shownProgress * 100)
     if bar.spark:IsShown() then
         -- The measured length is the fallback, not the source: the slot is
         -- built and laid out in the same frame, so the anchor chain may not
         -- have resolved yet on the first pass.
         local barLength = castPreview.barLength or bar:GetWidth() or 0
         bar.spark:ClearAllPoints()
-        bar.spark:SetPoint("CENTER", bar, "LEFT", barLength * progress, 0)
+        bar.spark:SetPoint("CENTER", bar, "LEFT", barLength * shownProgress, 0)
     end
     if bar.timeText:IsShown() then
         bar.timeText:SetFormattedText("%.1f s", CAST_PREVIEW_DURATION * (1 - progress))
@@ -2207,6 +2240,7 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
     bar:SetPoint("TOPLEFT", root, "TOPLEFT", barLeft, 0)
     bar:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", barRight, 0)
     castPreview.barLength = math_max(0, width + barRight - barLeft)
+    castPreview.isChannelPreview = settings.showChannelTickMarks == true
     bar:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(
         (styled and settings.barTexture) or "Solid"))
     -- The configured colour, not the live cast bar's current one: this is the
@@ -2280,6 +2314,8 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
         bar.spark:SetHeight(math_max(8, height * 1.66))
         bar.spark:Show()
     end
+
+    ConfigureCastPreviewChannelMarks(castPreview, settings)
 
     -- The cast bar's preview state: a cast in progress, looping. Nothing on
     -- the resting bar can stand in for one, which is what makes it worth a
