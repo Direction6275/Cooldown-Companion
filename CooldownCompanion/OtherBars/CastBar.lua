@@ -612,6 +612,81 @@ local SHAKE_OFFSETS = {
     { -1, 1 }, { 1, -2 }, { 1, 2 }, { -1, -1 },
 }
 
+-- WoW exposes the player's channel window, but not the moments when a
+-- channel actually deals damage or healing. Keep that missing cadence as a
+-- small, audited registry and project it onto the real UnitChannelInfo window
+-- so haste and pushback still move the marks with the cast.
+--
+-- END_TICKS: every event is one interval apart and the last event is at the
+-- channel end. START_END: the first event is immediate and the last is at the
+-- channel end (missile-style channels). Only interior events need marks.
+local CHANNEL_END_TICKS = 1
+local CHANNEL_START_END_TICKS = 2
+local CHANNEL_TICK_DATA = {
+    -- Evoker
+    [356995] = { mode = CHANNEL_START_END_TICKS, count = 4, chainMode = "interval", modifiers = { { 1219723, 1 } } }, -- Disintegrate; Azure Celerity
+    [370960] = { mode = CHANNEL_END_TICKS, count = 5 }, -- Emerald Communion
+
+    -- Priest
+    [15407] = { mode = CHANNEL_END_TICKS, count = 6 }, -- Mind Flay
+    [391403] = { mode = CHANNEL_END_TICKS, count = 4 }, -- Mind Flay: Insanity
+    [64843] = { mode = CHANNEL_END_TICKS, count = 4 }, -- Divine Hymn
+    [64901] = { mode = CHANNEL_END_TICKS, count = 4 }, -- Symbol of Hope
+    [263165] = { mode = CHANNEL_END_TICKS, count = 3 }, -- Void Torrent
+    [47540] = { mode = CHANNEL_START_END_TICKS, count = 3, modifiers = { { 193134, 1 } } }, -- Penance; Castigation
+    [47757] = { mode = CHANNEL_START_END_TICKS, count = 3, modifiers = { { 193134, 1 } } }, -- Penance (heal)
+    [47758] = { mode = CHANNEL_START_END_TICKS, count = 3, modifiers = { { 193134, 1 } } }, -- Penance (damage)
+    [400169] = { mode = CHANNEL_START_END_TICKS, count = 3, modifiers = { { 193134, 1 } } }, -- Dark Reprimand
+    [373129] = { mode = CHANNEL_START_END_TICKS, count = 3, modifiers = { { 193134, 1 } } }, -- Dark Reprimand (heal)
+    [400171] = { mode = CHANNEL_START_END_TICKS, count = 3, modifiers = { { 193134, 1 } } }, -- Dark Reprimand (damage)
+
+    -- Mage
+    [5143] = { mode = CHANNEL_START_END_TICKS, count = 5, chainMode = "missiles", modifiers = { { 236628, 2 }, { 1296581, 1 } } }, -- Arcane Missiles; Amplification / current set bonus
+    [12051] = { mode = CHANNEL_END_TICKS, count = 6 }, -- Evocation
+    [198100] = { mode = CHANNEL_END_TICKS, count = 8 }, -- Kleptomania
+    [382440] = { mode = CHANNEL_END_TICKS, count = 4 }, -- Shifting Power
+
+    -- Hunter
+    [257044] = { mode = CHANNEL_START_END_TICKS, count = 7, modifiers = { { 459794, 3 } } }, -- Rapid Fire; Quick Draw
+
+    -- Demon Hunter
+    [198013] = { mode = CHANNEL_END_TICKS, count = 10 }, -- Eye Beam
+    [473728] = { mode = CHANNEL_END_TICKS, count = 20 }, -- Void Ray
+    [212084] = { mode = CHANNEL_END_TICKS, count = 10 }, -- Fel Devastation
+    [452486] = { mode = CHANNEL_END_TICKS, count = 10 }, -- Fel Desolation
+
+    -- Warlock
+    [198590] = { mode = CHANNEL_END_TICKS, count = 5 }, -- Drain Soul
+    [755] = { mode = CHANNEL_END_TICKS, count = 5 }, -- Health Funnel
+    [217979] = { mode = CHANNEL_END_TICKS, count = 5 }, -- Health Funnel replacement
+    [234153] = { mode = CHANNEL_END_TICKS, count = 5 }, -- Drain Life
+    [196447] = { mode = CHANNEL_END_TICKS, count = 15 }, -- Channel Demonfire
+    [417537] = { mode = CHANNEL_END_TICKS, count = 3 }, -- Oblivion
+
+    -- Other classes / racials
+    [740] = { mode = CHANNEL_END_TICKS, count = 6 }, -- Tranquility
+    [206931] = { mode = CHANNEL_END_TICKS, count = 3 }, -- Blooddrinker
+    [115175] = { mode = CHANNEL_END_TICKS, count = 8 }, -- Soothing Mist
+    [117952] = { mode = CHANNEL_END_TICKS, count = 4 }, -- Crackling Jade Lightning
+    [443028] = { mode = CHANNEL_END_TICKS, count = 4 }, -- Celestial Conduit
+    [291944] = { mode = CHANNEL_END_TICKS, count = 6 }, -- Regeneratin'
+}
+
+local function ResolveChannelTickData(spellID)
+    local data = CHANNEL_TICK_DATA[spellID]
+    if not data then return nil end
+
+    local count = data.count
+    if data.modifiers and C_SpellBook and C_SpellBook.IsSpellKnown then
+        for _, modifier in ipairs(data.modifiers) do
+            if C_SpellBook.IsSpellKnown(modifier[1], Enum.SpellBookSpellBank.Player) then
+                count = count + modifier[2]
+            end
+        end
+    end
+    return data.mode, count, data.chainMode
+end
+
 local castBarFrame = nil
 local appliedWidth, appliedHeight = 200, 15
 local appliedFillWidth = 200
@@ -625,6 +700,9 @@ local cast = {
     startTime = 0,
     endTime = 0,
     castID = nil,
+    spellID = nil,
+    channelCarry = 0, -- inherited time-to-next-event on a chained channel
+    channelTickInterval = nil,
     empowerHold = false, -- endTime carries GetUnitEmpowerHoldAtMaxTime
     numStages = 0,      -- kept so pips can rebuild on pushback or resize
     fadeMode = nil,     -- "finish" | "interrupt"
@@ -639,6 +717,9 @@ local function ResetCastState()
     cast.startTime = 0
     cast.endTime = 0
     cast.castID = nil
+    cast.spellID = nil
+    cast.channelCarry = 0
+    cast.channelTickInterval = nil
     cast.empowerHold = false
     cast.numStages = 0
     cast.fadeMode = nil
@@ -646,6 +727,59 @@ local function ResetCastState()
     cast.flashElapsed = nil
     cast.glowElapsed = nil
     cast.shakeElapsed = nil
+end
+
+--- Disintegrate and Arcane Missiles can be recast before their outgoing
+--- channel ends. The replacement fires immediately, then inherits the old
+--- event grid; this returns the time to that inherited event plus the new
+--- interval. Other channels always return a fresh cadence.
+local function ResolveChannelCadenceForStart(spellID, startTime, endTime, castID)
+    local mode, eventCount, chainMode = ResolveChannelTickData(spellID)
+    if mode ~= CHANNEL_START_END_TICKS or eventCount <= 1 then
+        return 0, nil
+    end
+
+    local duration = endTime - startTime
+    if duration <= 0 then return 0, nil end
+
+    local sameSpellWasRunning = cast.state == "channel" and cast.spellID == spellID
+    local sameCast = false
+    if sameSpellWasRunning then
+        if castID and cast.castID then
+            sameCast = castID == cast.castID
+        else
+            sameCast = (startTime - cast.startTime) < 0.5
+        end
+    end
+
+    local carry = sameCast and (cast.channelCarry or 0) or 0
+    if not sameCast and chainMode and sameSpellWasRunning
+        and cast.channelTickInterval and cast.channelTickInterval > 0
+        and startTime < cast.endTime - 0.01 then
+        carry = math.fmod(cast.endTime - startTime, cast.channelTickInterval)
+        if carry < 0.01 then
+            carry = 0
+        elseif chainMode == "missiles" and carry > cast.channelTickInterval - 0.05 then
+            -- Arcane Missiles cast immediately after an outgoing missile has
+            -- been observed to lose the bonus missile and uses a fresh grid.
+            carry = 0
+        end
+    end
+
+    if carry >= duration then carry = 0 end
+
+    return carry, (duration - carry) / (eventCount - 1)
+end
+
+local function RefreshChannelCadenceInterval()
+    local mode, eventCount = ResolveChannelTickData(cast.spellID)
+    local duration = cast.endTime - cast.startTime
+    if cast.state == "channel" and mode == CHANNEL_START_END_TICKS
+        and eventCount > 1 and duration > cast.channelCarry then
+        cast.channelTickInterval = (duration - cast.channelCarry) / (eventCount - 1)
+    else
+        cast.channelTickInterval = nil
+    end
 end
 
 --- Cache an atlas's design size once so later layout passes can scale from it.
@@ -729,6 +863,9 @@ local function EnsureCastBarFrame()
 
     -- Empower stage separators, built on demand per cast.
     frame.stagePips = {}
+    -- Channel event marks use a separate pool because they have independent
+    -- lifecycle, placement and colors from empower stage boundaries.
+    frame.channelTickMarks = {}
 
     -- Borders sit on their own frame above the fill: a texture on `content`
     -- would be occluded by the StatusBar child, which outranks it by frame
@@ -1205,6 +1342,84 @@ local function BuildStagePips(numStages)
     end
 end
 
+local function HideChannelTickMarks()
+    local frame = castBarFrame
+    if not frame then return end
+    for _, mark in ipairs(frame.channelTickMarks) do
+        mark:Hide()
+    end
+end
+
+local function BuildChannelTickMarks()
+    HideChannelTickMarks()
+    local frame = castBarFrame
+    local settings = GetCastBarSettings()
+    if not frame or cast.state ~= "channel" or not settings
+        or settings.showChannelTickMarks ~= true then
+        return
+    end
+
+    local mode, eventCount = ResolveChannelTickData(cast.spellID)
+    if not mode or type(eventCount) ~= "number" then return end
+
+    -- The registry is static data, but cap its output defensively so a bad
+    -- future entry cannot manufacture an unbounded region pool.
+    eventCount = math.min(math.floor(eventCount), 64)
+    local divisor
+    local markCount
+    local chainedInterval
+    if mode == CHANNEL_END_TICKS then
+        divisor = eventCount
+        markCount = eventCount - 1
+    elseif mode == CHANNEL_START_END_TICKS then
+        divisor = eventCount - 1
+        markCount = eventCount - 2
+    end
+    if not divisor or divisor <= 0 or not markCount or markCount <= 0 then return end
+
+    local total = cast.endTime - cast.startTime
+    if total <= 0 then return end
+
+    -- A chained Disintegrate or Arcane Missiles has one immediate event plus
+    -- the inherited outgoing event before settling into the new channel's
+    -- remaining grid. That creates exactly one additional interior mark.
+    if mode == CHANNEL_START_END_TICKS and cast.channelCarry > 0
+        and cast.channelCarry < total then
+        chainedInterval = (total - cast.channelCarry) / divisor
+        markCount = eventCount - 1
+    end
+
+    local normalColor = settings.channelTickColor or { 1, 1, 1, 0.8 }
+    local highlightColor = settings.penultimateChannelTickColor or { 1, 0.82, 0, 1 }
+    local highlightPenultimate = settings.highlightPenultimateChannelTick == true
+    local markWidth = math.min(math.max(tonumber(settings.channelTickWidth) or 1, 1), 5)
+
+    for index = 1, markCount do
+        local mark = frame.channelTickMarks[index]
+        if not mark then
+            mark = frame.fill:CreateTexture(nil, "OVERLAY", nil, 1)
+            frame.channelTickMarks[index] = mark
+        end
+
+        local color = highlightPenultimate and index == markCount and highlightColor or normalColor
+        mark:SetColorTexture(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
+        mark:ClearAllPoints()
+        -- Channels deplete from right to left, so elapsed event fractions are
+        -- measured inward from the right-hand/start edge.
+        local elapsedPortion
+        if chainedInterval then
+            elapsedPortion = (cast.channelCarry + (index - 1) * chainedInterval) / total
+        else
+            elapsedPortion = index / divisor
+        end
+        local offset = appliedFillWidth * elapsedPortion
+        mark:SetPoint("TOP", frame.fill, "TOPRIGHT", -offset, 0)
+        mark:SetPoint("BOTTOM", frame.fill, "BOTTOMRIGHT", -offset, 0)
+        mark:SetWidth(markWidth)
+        mark:Show()
+    end
+end
+
 local function SetCastFill(pct, showSpark)
     local frame = castBarFrame
     if not frame then return end
@@ -1259,6 +1474,7 @@ local StopCastBarDriverUpdates
 local function HideCastBar()
     ResetCastState()
     HideStagePips()
+    HideChannelTickMarks()
     local frame = castBarFrame
     if frame then
         ClearCastBarEffects()
@@ -1281,6 +1497,7 @@ local function FinishCast()
     SetCastTimeText(0)
     cast.state = nil
     HideStagePips()
+    HideChannelTickMarks()
 
     if s and s.showCastFinishFX ~= false then
         cast.flashElapsed = 0
@@ -1299,6 +1516,7 @@ local function InterruptCast(text)
     SetCastTimeText(0)
     cast.state = nil
     HideStagePips()
+    HideChannelTickMarks()
     if text and s and s.showNameText ~= false then
         frame.nameText:SetText(text)
     end
@@ -1422,12 +1640,13 @@ end
 
 local function ReadCastInfo(kind)
     if kind == "cast" then
-        local name, text, texture, startTime, endTime, isTradeSkill, castID = UnitCastingInfo("player")
-        return name, text, texture, startTime, endTime, isTradeSkill, castID, 0
+        local name, text, texture, startTime, endTime, isTradeSkill, castID, _notInterruptible, spellID =
+            UnitCastingInfo("player")
+        return name, text, texture, startTime, endTime, isTradeSkill, castID, 0, spellID
     end
-    local name, text, texture, startTime, endTime, isTradeSkill, _notInterruptible, _spellID, _isEmpowered, numStages =
+    local name, text, texture, startTime, endTime, isTradeSkill, _notInterruptible, spellID, _isEmpowered, numStages, castBarID =
         UnitChannelInfo("player")
-    return name, text, texture, startTime, endTime, isTradeSkill, nil, tonumber(numStages) or 0
+    return name, text, texture, startTime, endTime, isTradeSkill, castBarID, tonumber(numStages) or 0, spellID
 end
 
 local function BeginCast(kind)
@@ -1453,7 +1672,7 @@ local function BeginCast(kind)
         return
     end
 
-    local name, text, texture, startTime, endTime, _isTradeSkill, castID, numStages = ReadCastInfo(kind)
+    local name, text, texture, startTime, endTime, _isTradeSkill, castID, numStages, spellID = ReadCastInfo(kind)
     if not name or not startTime or not endTime then
         HideCastBar()
         return
@@ -1464,11 +1683,22 @@ local function BeginCast(kind)
         endTime = endTime + GetUnitEmpowerHoldAtMaxTime("player")
     end
 
+    local startTimeSeconds = startTime / 1000
+    local endTimeSeconds = endTime / 1000
+    local channelCarry, channelTickInterval = 0, nil
+    if kind == "channel" then
+        channelCarry, channelTickInterval = ResolveChannelCadenceForStart(
+            spellID, startTimeSeconds, endTimeSeconds, castID)
+    end
+
     ClearCastBarEffects()
     cast.state = kind
-    cast.startTime = startTime / 1000
-    cast.endTime = endTime / 1000
+    cast.startTime = startTimeSeconds
+    cast.endTime = endTimeSeconds
     cast.castID = castID
+    cast.spellID = spellID
+    cast.channelCarry = channelCarry
+    cast.channelTickInterval = channelTickInterval
     cast.empowerHold = isEmpower
     cast.numStages = isEmpower and numStages or 0
     cast.fadeMode = nil
@@ -1482,6 +1712,7 @@ local function BeginCast(kind)
     frame:Show()
 
     BuildStagePips(cast.numStages)
+    BuildChannelTickMarks()
     CastBarOnUpdate(castEventFrame, 0)
     StartCastBarDriverUpdates()
 end
@@ -1490,7 +1721,7 @@ end
 --- haste changes move the window, so re-read it and keep the same state.
 local function UpdateCastTiming(kind)
     if not cast.state then return end
-    local name, _text, _texture, startTime, endTime = ReadCastInfo(kind)
+    local name, _text, _texture, startTime, endTime, _isTradeSkill, castID, _numStages, spellID = ReadCastInfo(kind)
     if not name or not startTime or not endTime then
         HideCastBar()
         return
@@ -1502,9 +1733,14 @@ local function UpdateCastTiming(kind)
     end
     cast.startTime = startTime / 1000
     cast.endTime = endTime / 1000
+    if castID ~= nil then cast.castID = castID end
+    cast.spellID = spellID
+    RefreshChannelCadenceInterval()
     -- Pushback moved the window the pip offsets were computed from.
     if cast.state == "empower" and cast.numStages > 0 then
         BuildStagePips(cast.numStages)
+    elseif cast.state == "channel" then
+        BuildChannelTickMarks()
     end
 end
 
@@ -1552,6 +1788,10 @@ local function HandleCastEvent(self, event, unit, arg2, _arg3, arg4, arg5)
         end
     elseif event == "UNIT_SPELLCAST_CHANNEL_STOP" then
         if cast.state == "channel" then
+            -- A rapidly restarted channel can receive the outgoing channel's
+            -- STOP after the replacement START. Preserve the replacement bar
+            -- while the live API still reports a player channel.
+            if UnitChannelInfo("player") then return end
             if arg4 == nil then
                 FinishCast()
             else
@@ -1758,6 +1998,8 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
     -- The pip offsets are absolute against the fill width that just changed.
     if cast.state == "empower" and cast.numStages > 0 then
         BuildStagePips(cast.numStages)
+    elseif cast.state == "channel" then
+        BuildChannelTickMarks()
     end
 
     SuppressBlizzardCastBar()
@@ -1792,6 +2034,8 @@ function CooldownCompanion:RepositionCastBar()
     -- The pip offsets are absolute against the fill width that just changed.
     if cast.state == "empower" and cast.numStages > 0 then
         BuildStagePips(cast.numStages)
+    elseif cast.state == "channel" then
+        BuildChannelTickMarks()
     end
 end
 
@@ -1855,6 +2099,7 @@ ApplyCastBarUnlockPreview = function()
 
     ResetCastState()
     HideStagePips()
+    HideChannelTickMarks()
     ClearCastBarEffects()
     StopCastBarDriverUpdates()
 
