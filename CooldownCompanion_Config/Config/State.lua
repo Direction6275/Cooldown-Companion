@@ -282,6 +282,12 @@ ST._configState = {
     pendingStrataOrder = nil,
     pendingStrataGroup = nil,
 
+    -- One-shot navigated-setting highlight request: written by the gear /
+    -- Customizations navigation writers (PreviewCommandCenter), matched by
+    -- the section and advanced-gear builders during the rebuild, consumed by
+    -- the deferred scroll-and-pulse fire (ConfigSettings/Helpers.lua).
+    pendingSettingHighlight = nil,
+
     -- Collapsed sections state
     collapsedSections = {},
     collapsedPanels = {},

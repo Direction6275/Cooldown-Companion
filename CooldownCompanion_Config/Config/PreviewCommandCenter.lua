@@ -1299,6 +1299,17 @@ local function SetRowScope(scope)
     end
 end
 
+-- Record a section collapse key on the pending navigated-setting highlight
+-- request (Helpers.lua consumes it): the rebuild flags the heading built
+-- under this key as the thing the deferred fire scrolls to and pulses.
+local function RecordHighlightSectionKey(key)
+    local pending = CS.pendingSettingHighlight
+    if pending and key then
+        pending.collapseKeys = pending.collapseKeys or {}
+        pending.collapseKeys[key] = true
+    end
+end
+
 -- Objects live on the two homes rather than in the buttons workspace, so
 -- their routes select a destination first. Returns the surface whose canvas
 -- shows the destination, which is the one to repaint afterwards.
@@ -1335,6 +1346,7 @@ local function ApplyObjectRoute(route)
         SetRowScope("primary")
         if RBP then
             RBP.collapsedSections["rb_health_effects"] = nil
+            RecordHighlightSectionKey("rb_health_effects")
         end
     elseif route.object == "customBarAura" then
         if ST._SelectConfigCustomBar then
@@ -1362,8 +1374,10 @@ local function ApplyObjectRoute(route)
             -- ShowCustomBarDetail).
             if route.auraTab then
                 CS.pendingCustomBarScrollSection = "cab_aura_" .. barKey
+                RecordHighlightSectionKey(CS.pendingCustomBarScrollSection)
             elseif route.appearanceSection then
                 CS.pendingCustomBarScrollSection = "cab_" .. route.appearanceSection .. "_" .. barKey
+                RecordHighlightSectionKey(CS.pendingCustomBarScrollSection)
             end
         end
     elseif route.object == "resourceAura" then
@@ -1382,6 +1396,7 @@ local function ApplyObjectRoute(route)
         SetRowScope("detail")
         if RBP then
             RBP.collapsedSections["rb_aura_overlay_" .. tostring(route.powerType)] = nil
+            RecordHighlightSectionKey("rb_aura_overlay_" .. tostring(route.powerType))
         end
     end
 
@@ -1424,10 +1439,14 @@ local function ForceSectionOpen(collapseKey, lens, group)
         return
     end
     CS.collapsedSections[collapseKey] = nil
+    -- Both key forms ride the highlight request: which one the section
+    -- actually builds under is the tab builder's fact, not this route's.
+    RecordHighlightSectionKey(collapseKey)
     local resolve = ST._ResolveLensCollapseKey
     local lensKey = resolve and resolve(lens, group, nil, collapseKey)
     if lensKey and lensKey ~= collapseKey then
         CS.collapsedSections[lensKey] = false
+        RecordHighlightSectionKey(lensKey)
     end
 end
 
@@ -1481,6 +1500,20 @@ local function NavigateToSectionHome(sectionId, opts)
         CS.CancelPickAuraTexture()
     end
 
+    -- One-shot navigated-setting highlight request (consumed by Helpers.lua):
+    -- ForceSectionOpen below records the section keys on it, the rebuild
+    -- records the destination widgets, and the scheduled fire after the
+    -- refresh scrolls to and pulses the most specific one - the row wearing
+    -- the advanced key, else the section's own anchor row, else the section
+    -- heading. The format row names a whole tab rather than a setting, so it
+    -- makes no request.
+    if sectionId or home or (opts and opts.advancedKey) then
+        CS.pendingSettingHighlight = {
+            sectionId = sectionId,
+            rowKey = opts and opts.advancedKey or nil,
+        }
+    end
+
     SetRowScope("primary")
     CS.selectedTab = tab
     CS.panelSettingsTab = tab
@@ -1505,6 +1538,9 @@ local function NavigateToSectionHome(sectionId, opts)
     end
 
     CooldownCompanion:RefreshConfigPanel()
+    if ST._ScheduleNavSettingHighlight then
+        ST._ScheduleNavSettingHighlight()
+    end
     return true
 end
 
@@ -1656,6 +1692,19 @@ local function NavigateToPreviewSettings(bar)
         CS.CancelPickAuraTexture()
     end
 
+    -- One-shot navigated-setting highlight request (consumed by Helpers.lua):
+    -- ApplyGearRoute's section opens record their keys on it, the rebuild
+    -- records the destination widgets, and the scheduled fire after the
+    -- refresh scrolls to and pulses the most specific one - the row wearing
+    -- the advanced key, else the section's own anchor row, else the section
+    -- heading. rowKey deliberately ignores suppressQueue: the queue gate is
+    -- about not OPENING a panel on an inert section, but the row is still the
+    -- destination and pointing at it is the whole feature (owner 2026-08-20).
+    CS.pendingSettingHighlight = {
+        sectionId = sectionId,
+        rowKey = queueKey,
+    }
+
     local destination = ApplyGearRoute(route, queueKey, sectionId)
 
     -- Queued last, with every navigation write already made, so the context
@@ -1671,6 +1720,9 @@ local function NavigateToPreviewSettings(bar)
     end
 
     CooldownCompanion:RefreshConfigPanel()
+    if ST._ScheduleNavSettingHighlight then
+        ST._ScheduleNavSettingHighlight()
+    end
 
     -- Put the preview back if a seam took it. Guarded on live state so a
     -- route that crossed nothing does not flicker through a clear/set cycle.

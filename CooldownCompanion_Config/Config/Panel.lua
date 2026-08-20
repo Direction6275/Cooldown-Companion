@@ -2416,6 +2416,9 @@ function CooldownCompanion:RefreshConfigSelection()
     if CS.configRefreshInProgress or CS.advancedSettingsPanelRefreshing then return end
 
     CS.configRefreshInProgress = true
+    if ST._BeginNavSettingHighlightRefresh then
+        ST._BeginNavSettingHighlightRefresh()
+    end
     local savedButtonSettings = SaveScrollState(buttonSettingsScroll)
     if ClearConfigShiftTooltipHover then
         ClearConfigShiftTooltipHover()
@@ -2448,6 +2451,9 @@ function CooldownCompanion:_configRefreshPanelImpl()
     if CS.talentPickerMode then return end
     if CS.configRefreshInProgress or CS.advancedSettingsPanelRefreshing then return end
     CS.configRefreshInProgress = true
+    if ST._BeginNavSettingHighlightRefresh then
+        ST._BeginNavSettingHighlightRefresh()
+    end
 
     -- Texture panels only ever hold one entry, so the config never asks the
     -- user to select it: as long as the entry exists it stays selected, and
