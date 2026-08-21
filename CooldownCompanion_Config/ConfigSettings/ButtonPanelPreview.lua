@@ -4897,8 +4897,9 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     end
 
     -- Session view filter (the preview host's quick toggle): drop entries the
-    -- warn badge would mark unavailable and reflow the rest. Dense ordinals
-    -- place the cells; every per-entry surface keeps its group.buttons index.
+    -- warn badge would mark unavailable and reflow the rest, except for any
+    -- selected entries the player is still editing. Dense ordinals place the
+    -- cells; every per-entry surface keeps its group.buttons index.
     -- Never on Bar panels: their mirror is a saved-design projection that
     -- deliberately keeps live usability out (CollectBarEntryStatus), so there
     -- is no warn signal there for the toggle to hide. Read-only mirrors stay
@@ -4912,7 +4913,8 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         local kept = {}
         for index, buttonData in ipairs(buttons) do
             if buttonData.enabled == false
-                or CooldownCompanion:IsButtonUsable(buttonData, group) then
+                or CooldownCompanion:IsButtonUsable(buttonData, group)
+                or IsEntrySelected(index) then
                 kept[#kept + 1] = index
             end
         end
@@ -5135,9 +5137,11 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     FinalizePreviewState(preview)
 end
 
--- Entry selection does not change the saved panel geometry or any mirrored
--- visuals. Update the existing selection rings (and bar ghost exposure) in
--- place so the high-frequency click path does not rebuild every preview slot.
+-- Entry selection normally does not change saved panel geometry or mirrored
+-- visuals. The unavailable filter is the exception: selection determines
+-- whether an unavailable entry remains in the visible subset, so that path
+-- falls back to a full mirror rebuild. Otherwise update the existing selection
+-- rings (and bar ghost exposure) in place.
 function ST._RefreshButtonPanelPreviewSelection(host, panelId)
     local preview = host and host._cdcPanelPreview
     if not (preview and preview.panelId == panelId and preview.readOnly ~= true) then
@@ -5149,6 +5153,13 @@ function ST._RefreshButtonPanelPreviewSelection(host, panelId)
 
     local group = panelId and CooldownCompanion.db.profile.groups[panelId]
     if not group then
+        return false
+    end
+
+    if CS.panelPreviewUnavailableHidden
+        and not CS.otherClassLibraryActive
+        and ST._PanelPreviewUnavailableEntryState
+        and ST._PanelPreviewUnavailableEntryState(group) == true then
         return false
     end
 
