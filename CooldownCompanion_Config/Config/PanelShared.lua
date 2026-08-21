@@ -766,14 +766,9 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                     -- put two entries in the same panel on one aura group.
                     CooldownCompanion:StampAuraPanelEntryKey(liveGroup, copy)
                     table.insert(liveGroup.buttons, sourceIndex + 1, copy)
-                    -- Structural-mutation contract: entries after the insert
-                    -- point shifted, so remap the single selection and clear
-                    -- the index-keyed multi-selection and preview stores.
-                    if CS.selectedButton and CS.selectedButton > sourceIndex then
-                        CS.selectedButton = CS.selectedButton + 1
-                    end
-                    wipe(CS.selectedButtons)
-                    CooldownCompanion:ClearAllConfigPreviews()
+                    -- Follow the copy without changing the active panel/entry
+                    -- scope; the shared path also clears stale index state.
+                    SelectConfigButton(sourceGroupId, sourceIndex + 1, { force = true })
                     CooldownCompanion:RefreshGroupFrame(sourceGroupId)
                     CooldownCompanion:RefreshConfigPanel()
                     CloseDropDownMenus()
