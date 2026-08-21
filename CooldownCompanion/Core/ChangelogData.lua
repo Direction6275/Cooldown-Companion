@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.1.4",
         "2.1.3",
         "2.1.2",
         "2.1.1",
@@ -30,6 +31,19 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.1.4"] = {
+            markdown = [[
+## New Features
+
+- **Track buffs on your pet:** Buff entries can now track auras on your summoned pet, including their icon, timer, and aura sounds. The option appears only for characters that can command a pet and is separate from group-member tracking. If a pet buff does not match automatically, correct the tracked aura in the entry's aura list.
+
+## Polish | QoL
+
+- **Navigation points to the exact setting:** Clicking a gear or Customizations link now scrolls the destination setting into view and briefly highlights it, so you no longer have to hunt through the opened tab.
+- **Duplicate and edit immediately:** Duplicating a single panel entry now selects the new copy automatically, keeping the preview and editing controls focused on the result.
+- **Selected entries stay visible while filtering:** With Hide unavailable entries enabled, unavailable entries currently selected for editing remain visible in the panel preview until you deselect them.
+]],
+        },
         ["2.1.3"] = {
             markdown = [[
 ## New Features
