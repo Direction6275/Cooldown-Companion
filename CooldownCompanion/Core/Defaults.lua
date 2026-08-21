@@ -119,6 +119,21 @@ local defaults = {
                         allowPings = false, -- Entries answer the ping keybind like Cooldown Manager items
                         desaturateOnCooldown = true, -- Desaturate icon while on cooldown
                         desaturateWhileAuraNotActive = false, -- Desaturate icon while the tracked aura is missing
+                        -- Missing-aura presentation (aura entries): both are
+                        -- statically applied absent-state visuals the active
+                        -- aura display occludes — the tint via Tracking.lua's
+                        -- aura-missing branch, the glow via
+                        -- ButtonFrame/MissingAura.lua.
+                        iconMissingTintEnabled = false, -- apply separate tint while the tracked aura is missing
+                        iconMissingTintColor = {1, 0.3, 0.3, 1},
+                        missingAuraGlowStyle = "none", -- within-footprint styles only: solid/pulse/colorShift/dashes/overlay
+                        missingAuraGlowColor = {1, 0.35, 0.35, 0.9},
+                        missingAuraGlowColor2 = {0.1, 0.3, 1, 0.9}, -- colorShift second color
+                        missingAuraGlowSize = 2,        -- border/dash px
+                        missingAuraGlowThickness = 3,   -- dash thickness px
+                        missingAuraGlowSpeed = 0.5,     -- seconds: pulse/shift cycle, or dashes lap
+                        missingAuraGlowLines = 5,       -- dash count
+                        missingAuraGlowCombatOnly = false,
                         showCooldownSwipe = true,
                         showAuraDurationSwipe = true,
                         showCooldownSwipeFill = true,
@@ -328,6 +343,20 @@ local defaults = {
             iconCooldownTintColor = {1, 0, 0.102, 1},
             iconAuraTintEnabled = false,
             iconAuraTintColor = {0, 0.925, 1, 1},
+            -- Missing-aura presentation (aura entries): both are statically
+            -- applied absent-state visuals the active aura display occludes —
+            -- the tint via Tracking.lua's aura-missing branch, the glow via
+            -- ButtonFrame/MissingAura.lua.
+            iconMissingTintEnabled = false,
+            iconMissingTintColor = {1, 0.3, 0.3, 1},
+            missingAuraGlowStyle = "none", -- within-footprint styles only: solid/pulse/colorShift/dashes/overlay
+            missingAuraGlowColor = {1, 0.35, 0.35, 0.9},
+            missingAuraGlowColor2 = {0.1, 0.3, 1, 0.9}, -- colorShift second color
+            missingAuraGlowSize = 2,        -- border/dash px
+            missingAuraGlowThickness = 3,   -- dash thickness px
+            missingAuraGlowSpeed = 0.5,     -- seconds: pulse/shift cycle, or dashes lap
+            missingAuraGlowLines = 5,       -- dash count
+            missingAuraGlowCombatOnly = false,
             iconFillEnabled = false,
             iconFillOrientation = "vertical",
             iconFillReverse = false,
@@ -1075,6 +1104,18 @@ ST.OVERRIDE_SECTIONS = {
         keys = {"desaturateWhileAuraNotActive"},
         modes = {icons = true, bars = true},
     },
+    -- The Missing Aura Glow (ButtonFrame/MissingAura.lua): a CC glow shown
+    -- while the tracked aura is missing, occluded by the active aura display.
+    -- Icons-only like the other glow sections. The missing TINT is not here:
+    -- its two keys ride the iconTint section with the other conditional
+    -- tints, so one section owns every icon recolor.
+    missingAuraGlow = {
+        label = "Missing Aura Glow",
+        keys = {"missingAuraGlowStyle", "missingAuraGlowColor", "missingAuraGlowColor2",
+            "missingAuraGlowSize", "missingAuraGlowThickness", "missingAuraGlowSpeed",
+            "missingAuraGlowLines", "missingAuraGlowCombatOnly"},
+        modes = {icons = true},
+    },
     cooldownSwipe = {
         label = "Cooldown Swipe",
         keys = {"showCooldownSwipe", "showCooldownSwipeFill", "cooldownSwipeReverse", "cooldownSwipeEdgeEnabled", "cooldownSwipeAlpha", "cooldownSwipeEdgeColor"},
@@ -1107,7 +1148,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     iconTint = {
         label = "Icon Tint",
-        keys = {"iconTintColor", "iconCooldownTintEnabled", "iconCooldownTintColor", "iconAuraTintEnabled", "iconAuraTintColor", "backgroundColor"},
+        keys = {"iconTintColor", "iconCooldownTintEnabled", "iconCooldownTintColor", "iconAuraTintEnabled", "iconAuraTintColor", "iconMissingTintEnabled", "iconMissingTintColor", "backgroundColor"},
         modes = {icons = true, bars = true},
     },
     iconZoom = {
@@ -1271,7 +1312,7 @@ ST.OVERRIDE_SECTION_ORDER = {
     "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "auraMissingDesaturation", "showOutOfRange", "showTooltips",
     -- "pandemic" spans both display modes (like auraText above), so it sits in
     -- the icons run rather than being listed twice.
-    "lossOfControl", "unusableDimming", "iconTint", "iconZoom", "assistedHighlight", "procGlow", "auraIndicator", "pandemic", "readyGlow", "keyPressHighlight",
+    "lossOfControl", "unusableDimming", "iconTint", "iconZoom", "assistedHighlight", "procGlow", "auraIndicator", "missingAuraGlow", "pandemic", "readyGlow", "keyPressHighlight",
     "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText",
     "textFont", "textColors", "textBackground",
 }
@@ -1307,6 +1348,7 @@ ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS = {
     auraIndicator = true,
     pandemic = true,
     barActiveAura = true,
+    missingAuraGlow = true,
 }
 
 ST.NO_COOLDOWN_DENIED_OVERRIDE_SECTIONS = {
@@ -1381,6 +1423,11 @@ ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS = {
 -- (StyleActiveBarFill, AuraDisplay.lua).
 ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS = {
     keybindText = true,
+    -- The Missing Aura Glow is structurally impossible on an Aura Panel:
+    -- Blizzard's flow layout packs only ACTIVE auras into secret positions,
+    -- so no CC glow can sit beneath a given entry's cell. The panel exists
+    -- to collapse missing auras; the section never applies.
+    missingAuraGlow = true,
     barColor = true,
     barCooldownColor = true,
     barChargeColor = true,

@@ -227,6 +227,19 @@ ST._SECTION_HOME.icons = {
         tab = "appearance", collapseKey = "appearance_whileAuraActive",
         available = IconsGroupTracksAura,
     },
+    -- Missing Aura Glow sits in the Glows section beside Show Aura Glow.
+    -- Gate mirrored from the builder: the group must track an aura and never
+    -- be an Aura Panel (the section is also panel-denied in Defaults.lua).
+    missingAuraGlow = {
+        tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION,
+        available = function(group)
+            return IconsGroupTracksAura(group)
+                and not (ST.IsAuraPanelGroup and ST.IsAuraPanelGroup(group))
+        end,
+        gearEnabled = function(_, style)
+            return ((style.missingAuraGlowStyle or "none") ~= "none") ~= false
+        end,
+    },
     auraStackText = {
         tab = "appearance", collapseKey = "appearance_text",
         available = IconsGroupTracksAura,
@@ -1348,6 +1361,13 @@ local function BuildAppearanceTab(container)
         table.insert(iconTintTooltip, " ")
         table.insert(iconTintTooltip, {"Aura Tint:", 1, 0.82, 0})
         table.insert(iconTintTooltip, {"A separate color used only while a tracked aura is active.", 1, 1, 1, true})
+        -- Not on Aura Panels: no CC buttons, so no missing-state icon exists
+        -- for the tint to color (the rows below skip themselves the same way).
+        if not isAuraPanel then
+            table.insert(iconTintTooltip, " ")
+            table.insert(iconTintTooltip, {"Missing Tint:", 1, 0.82, 0})
+            table.insert(iconTintTooltip, {"A separate color used only while a tracked aura is missing. The active aura covers it, so the addon never reads aura state.", 1, 1, 1, true})
+        end
     end
     -- The (?) badge chains off the heading label, and the lens' scope chrome
     -- lands after it: label -> (?) -> scope. Chaining also keeps the fading
@@ -1376,6 +1396,10 @@ local function BuildAppearanceTab(container)
             mode = "icons",
             hasAuraEntry = groupHasAuraEntry,
             hasCooldownState = CanGroupUseOverrideSection(group, "desaturation"),
+            -- An Aura Panel materializes no CC buttons, so there is no
+            -- missing-state icon for the tint to color (the glow section is
+            -- panel-denied for the same reason).
+            hasMissingState = not isAuraPanel,
             refresh = tintRefresh,
         })
 

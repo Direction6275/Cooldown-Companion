@@ -1328,9 +1328,13 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- hosts only when the icon square participates (aura icon swap enabled,
     -- a shell entry whose hidden CC icon needs the static replica, or
     -- active desaturation, which needs a visible gray region while the
-    -- aura runs -- the CC bar icon can't carry it).
+    -- aura runs -- the CC bar icon can't carry it). The missing tint is the
+    -- tint twin of that desat term: it statically recolors the CC bar icon
+    -- while the aura is down, so the cover must hide it while the aura runs.
+    local missingTintActive = style.iconMissingTintEnabled == true
+        and style.iconMissingTintColor ~= nil
     local coverWanted = (not isBar)
-        or (barIconShown and (showAuraIcon or shellEntry or kitDesat))
+        or (barIconShown and (showAuraIcon or shellEntry or kitDesat or missingTintActive))
     if keepSwipeActive then
         -- Keep-swipe entries skip the takeover; the CC icon stays visible.
         coverWanted = false

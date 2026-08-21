@@ -628,6 +628,13 @@ local function ApplyAuraShellVisuals(button, buttonData)
     SetGlowContainerShellAlpha(button.readyGlow, alpha)
     SetGlowContainerShellAlpha(button.keyPressHighlight, alpha)
     SetGlowContainerShellAlpha(button.assistedHighlight, alpha)
+    -- The missing glow host follows the same shell alpha its style-time
+    -- applier seeds (both read GetAuraShellAlpha): the combat force-lock
+    -- path reapplies shell visuals WITHOUT a restyle, and the host must not
+    -- carry its Arrange-Mode exposure alpha into combat.
+    if button.missingAuraGlowHost then
+        button.missingAuraGlowHost:SetAlpha(alpha)
+    end
 end
 
 -- Countdown text hosting. The region lives on the TEXT OVERLAY layer, never in
@@ -944,6 +951,13 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     SetEntryPingReceiver(button, allowPings and button._visibilityHidden ~= true)
 
     ApplyAuraShellVisuals(button, buttonData)
+
+    -- Missing Aura Glow, same tail UpdateButtonStyle runs: a freshly created
+    -- button never goes through a restyle, and the per-tick updater returns
+    -- before a host exists, so a saved enabled glow must build its host here.
+    if ST._ApplyMissingAuraGlowStyle then
+        ST._ApplyMissingAuraGlowStyle(button, buttonData, style)
+    end
 
     return button
 end
@@ -1353,6 +1367,12 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
         end
         SetReadyGlow(button, showReady)
     end
+
+    -- Missing Aura Glow combat gate + latch. One nil test on buttons without
+    -- the feature.
+    if ST._UpdateMissingAuraGlowRuntime then
+        ST._UpdateMissingAuraGlowRuntime(button, buttonData, style, inCombat)
+    end
 end
 
 function CooldownCompanion:UpdateButtonStyle(button, style)
@@ -1655,6 +1675,14 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     end
 
     ApplyAuraShellVisuals(button, button.buttonData)
+
+    -- Missing Aura Glow (ButtonFrame/MissingAura.lua): the CC-owned glow the
+    -- active aura display occludes. After the shell pass (it reads the shell
+    -- alpha decision) and after the click-through sweep (the applier
+    -- re-hardens its frames).
+    if ST._ApplyMissingAuraGlowStyle then
+        ST._ApplyMissingAuraGlowStyle(button, button.buttonData, style)
+    end
 end
 
 -- Exports
