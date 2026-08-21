@@ -112,7 +112,41 @@ local function SyncDerivedAuraUnit(buttonData)
         if unit == "target" or not EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID) then
             buttonData.auraTrackGroup = nil
         end
+        -- Pet scope normalizes through the CORE ownership rule, not the
+        -- wrapper above: the wrapper's opposite-polarity veto is group-only,
+        -- and clearing pet scope through it would strip the harmful-base/
+        -- helpful-pet-aura shape pet tracking exists for (Barbed Shot ->
+        -- Frenzy).
+        if unit == "target"
+            or CooldownCompanion:EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID) ~= true then
+            buttonData.auraTrackPet = nil
+        end
     end
+end
+
+-- Pet-command capability, LEARNED per character: HasPetSpells reflects the
+-- CURRENT pet spellbook, which empties while the pet is dismissed
+-- (owner-observed 2026-08-21: a DK with no ghoul out gets nothing back), so
+-- gating on the live value alone hides the pet-scope row exactly when a pet
+-- class is between summons. Once the character has ever shown pet spells the
+-- answer sticks (db.global keyed by AceDB char key, the totem-links
+-- convention); a fresh character self-heals the first time this row is built
+-- while a pet is out.
+local function CharacterCanCommandPets()
+    local db = CooldownCompanion.db
+    local charKey = db and db.keys and db.keys.char
+    if not charKey then
+        return C_SpellBook.HasPetSpells() ~= nil
+    end
+    local store = db.global.petCapableChars
+    if store[charKey] then
+        return true
+    end
+    if C_SpellBook.HasPetSpells() ~= nil then
+        store[charKey] = true
+        return true
+    end
+    return false
 end
 
 -- Shared with the Visibility tab's Show & Hide Rules row for ordinary spell
@@ -180,7 +214,7 @@ local AURA_TRACKING_TOOLTIP = {
     "Aura Tracking",
     {"Blizzard tracks the aura and drives the display; the addon never reads aura state in combat.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Buffs are tracked on you. Buffs tied to a helpful spell you can cast may also be tracked on your group; a buff overriding a harmful spell stays on you. Your own debuffs are tracked on your target.", 1, 1, 1, true},
+    {"Buffs are tracked on you. A buff tied to a helpful spell you can cast can also follow your group, or be tracked only on your pet; a buff overriding a harmful spell stays on you. Your own debuffs are tracked on your target.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"Whether an entry is a buff or a debuff is detected automatically.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
@@ -209,6 +243,13 @@ local GROUP_SCOPE_TOOLTIP = {
     {"Aura sounds only work while you're ungrouped. In a group they fire per person, so moving the buff would sound like it dropped.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"Group size is read out of combat, so someone joining mid-fight is picked up at the next quiet moment.", 1, 1, 1, true},
+}
+
+local PET_SCOPE_TOOLTIP = {
+    "Track on Your Pet",
+    {"Tracks the buff on your summoned pet instead of on you, like Dark Transformation on a ghoul.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Covers buffs you cast on the pet and buffs the pet gains on its own.", 1, 1, 1, true},
 }
 
 local BAR_SHOWS_STACKS_TOOLTIP = {
@@ -307,11 +348,22 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- Aura Panel cell has one unit and no checkbox, so the line has nothing left
     -- to report and goes with it.
     if not isAuraPanel then
+        local scopeText
+        if not isBuff then
+            scopeText = "Target"
+        elseif isTexturePanel then
+            scopeText = "You"
+        elseif buttonData.auraTrackPet then
+            scopeText = "Your pet"
+        elseif buttonData.auraTrackGroup then
+            scopeText = "You and your group"
+        else
+            scopeText = "You"
+        end
         AddLabelRow(auraLeft, {
             label = "Tracked on",
             indent = not isStandalone,
-            controlText = (not isBuff) and "Target"
-                or ((not isTexturePanel and buttonData.auraTrackGroup) and "You and your group" or "You"),
+            controlText = scopeText,
         })
     end
 
@@ -379,6 +431,36 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
             tooltip = GROUP_SCOPE_TOOLTIP,
             onChange = function(value)
                 buttonData.auraTrackGroup = value and true or nil
+                -- Scopes are exclusive: pet tracking watches ONLY the pet.
+                if value then buttonData.auraTrackPet = nil end
+                RefreshAuraConfig()
+            end,
+        })
+    end
+
+    -- Pet eligibility is deliberately NOT canTrackGroup: the local wrapper's
+    -- opposite-polarity veto above is a group-only rule, but a harmful base
+    -- spell applying a helpful pet aura is exactly the shape pet tracking
+    -- exists for (Barbed Shot -> Frenzy), so pet uses the CORE ownership
+    -- rule alone — the base spell is player-castable, which is what lets
+    -- the own-or-pet caster filter match pet self-buffs. The extra gate is
+    -- character capability (learned sticky, see CharacterCanCommandPets):
+    -- per-spell "lands on the pet" knowledge does not exist in any API, so
+    -- character level is the finest honest cut. A stored flag shows the row
+    -- regardless of every gate, so retained or imported pet state always
+    -- has a clearing path.
+    local canTrackPet = not isTexturePanel and not isAuraPanel and isBuff and polarityKnown
+        and CharacterCanCommandPets()
+        and CooldownCompanion:EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID) == true
+    if canTrackPet or buttonData.auraTrackPet == true then
+        AddCheckboxRow(auraLeft, {
+            label = "Track on your pet",
+            indent = not isStandalone,
+            value = buttonData.auraTrackPet == true,
+            tooltip = PET_SCOPE_TOOLTIP,
+            onChange = function(value)
+                buttonData.auraTrackPet = value and true or nil
+                if value then buttonData.auraTrackGroup = nil end
                 RefreshAuraConfig()
             end,
         })

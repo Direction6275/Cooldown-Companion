@@ -25,6 +25,10 @@ local defaults = {
         -- [charKey] = { [castSpellID] = totemSpellID, [totemSpellID] = castSpellID }
         -- Learned out of combat, where the totem API still names its slots.
         totemSpellLinks = {},
+        -- [charKey] = true once HasPetSpells has ever returned pet spells:
+        -- the live value empties while the pet is dismissed, so capability
+        -- sticks after the first observation.
+        petCapableChars = {},
         changelog = {
             lastSeenVersion = nil,
             fontSize = 13,

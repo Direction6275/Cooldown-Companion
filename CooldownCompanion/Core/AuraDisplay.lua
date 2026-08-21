@@ -194,6 +194,7 @@ end
 
 local targetWatcher
 local groupWatcher
+local petWatcher
 local identityWatcher
 local RunAuraRebind
 local RefreshIdentityVisibilityForToken
@@ -275,6 +276,7 @@ local function RefreshRecordsForToken(isMatch)
 end
 
 local function IsTargetToken(unit) return unit == "target" end
+local function IsPetToken(unit) return unit == "pet" end
 local function IsAllyToken(unit) return unit ~= "player" and unit ~= "target" end
 
 local function EnsureIdentityWatcher()
@@ -307,6 +309,26 @@ local function EnsureTargetWatcher()
         -- catches up the moment its host shows again.
         if RefreshRecordsForToken(IsTargetToken) then
             CooldownCompanion:RequestAuraRebind("target-reaction")
+        end
+    end)
+end
+
+-- The pet token has the target token's same-token problem ("pet" can start
+-- meaning a different creature without the token changing) plus a lifecycle
+-- one: a dismissed pet fires no UNIT_AURA, so without this the last-applied
+-- visual would keep rendering with a frozen timer (probe-observed 2026-08-21).
+-- The identity refresh inside RefreshRecordsForToken is what clears it:
+-- UnitCanAssist fails with no pet, so the fail-closed visibility switch hides
+-- the record until a pet exists again. Armed from the entry opt-in, like the
+-- group watcher.
+local function EnsurePetWatcher()
+    if petWatcher then return end
+    petWatcher = CreateFrame("Frame")
+    -- UNIT_PET carries the OWNER's token; only the player's pet matters.
+    petWatcher:RegisterUnitEvent("UNIT_PET", "player")
+    petWatcher:SetScript("OnEvent", function()
+        if RefreshRecordsForToken(IsPetToken) then
+            CooldownCompanion:RequestAuraRebind("pet-swap")
         end
     end)
 end
@@ -2454,6 +2476,18 @@ local function ResolveEntryAuraUnits(self, buttonData, allowGroupScope)
         harmful = buttonData.auraUnit == "target"
     end
     if harmful then return { "target" } end
+    -- Pet scope is EXCLUSIVE (owner ruling 2026-08-21): a pet-tracked buff
+    -- lives only on the pet, so binding a player record beside it would waste
+    -- a container and forfeit aura sounds (the single-unit rule below). The
+    -- config keeps the two opt-ins mutually exclusive; precedence here is the
+    -- runtime backstop for drifted stored data. Resolved to { "pet" } pet or
+    -- no pet: the set is computed at rebind time, and a pet summoned later
+    -- arrives via UNIT_PET — whose watcher can only wake a record that
+    -- already exists. A petless record stays hidden by the identity gate,
+    -- not by omission.
+    if allowGroupScope ~= false and buttonData.auraTrackPet then
+        return { "pet" }
+    end
     if allowGroupScope ~= false and buttonData.auraTrackGroup then return GroupAuraTokens() end
     return { "player" }
 end
@@ -3894,6 +3928,11 @@ function RunAuraRebind()
         -- { "player" } and there would be no ally record to trigger it.
         if want.groupScoped then
             EnsureGroupWatcher()
+        end
+        if want.hostKind ~= "texturePanel"
+            and want.buttonData.auraTrackPet == true
+            and want.units[1] ~= "target" then
+            EnsurePetWatcher()
         end
     end
 
