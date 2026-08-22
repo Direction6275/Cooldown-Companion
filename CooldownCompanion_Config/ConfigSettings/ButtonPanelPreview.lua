@@ -761,6 +761,7 @@ end
 local SELECTION_YIELDING_PREVIEW_FLAGS = {
     "_procGlowPreview",
     "_auraGlowPreview",
+    "_missingAuraPreview",
     "_pandemicPreview",
     "_readyGlowPreview",
     "_barAuraEffectPreview",
@@ -2414,6 +2415,30 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
         forceDesat = true
     end
 
+    -- Missing tint: EYE-GATED like every missing-aura effect (owner ruling
+    -- 2026-08-20) — the mirror rests untinted and wears the tint only while
+    -- the "Preview Missing Aura Effects" toggle runs. An aura-active preview
+    -- simulates "the aura is up", which live occludes the tinted icon under,
+    -- so the block above wins there. Keep-swipe entries skip the tint live
+    -- (no cover to hide it while the aura runs), mirrored here.
+    local missingTintApplied = false
+    if (buttonData.auraTracking or buttonData.addedAs == "aura")
+        and style.iconMissingTintEnabled == true
+        and style.iconMissingTintColor
+        and CooldownCompanion:IsPreviewFlagActive(panelId, index, "_missingAuraPreview")
+        and not CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData, style)
+        and not CooldownCompanion:IsAuraPreviewKindExposingShell(kind, false) then
+        local missingTint = style.iconMissingTintColor
+        tintR, tintG, tintB = missingTint[1], missingTint[2], missingTint[3]
+        tintA = missingTint[4] or 1
+        -- Live precedence (Tracking.lua): the missing tint outranks the
+        -- cooldown tint, so the cooldown/zero-charge stand-ins below must
+        -- not replace it. Unusable and out-of-range stay above both (state
+        -- overrides), matching the runtime resolver.
+        missingTintApplied = true
+    end
+
+
     -- The cooldown family: "cooldown" is the full state (text and rotation
     -- assistant panels still fire it); "cooldown_swipe" is that state with
     -- the countdown numbers withheld; "cooldown_text" is the countdown text
@@ -2464,7 +2489,8 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
                 if style.desaturateOnCooldown then
                     forceDesat = true
                 end
-                if style.iconCooldownTintEnabled and style.iconCooldownTintColor then
+                if not missingTintApplied
+                    and style.iconCooldownTintEnabled and style.iconCooldownTintColor then
                     local c = style.iconCooldownTintColor
                     tintR, tintG, tintB, tintA = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                 end
@@ -2507,7 +2533,8 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
                             and CooldownCompanion.HasItemFallbacks(buttonData))) then
                     forceDesat = true
                 end
-                if style.iconCooldownTintEnabled and style.iconCooldownTintColor then
+                if not missingTintApplied
+                    and style.iconCooldownTintEnabled and style.iconCooldownTintColor then
                     local c = style.iconCooldownTintColor
                     tintR, tintG, tintB, tintA = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                 end
@@ -2808,6 +2835,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
     local tintB = baseTint and baseTint[3] or 1
     local tintA = baseTint and baseTint[4] or 1
     local forceDesat = false
+    local missingTintApplied = false
 
     previewState = previewState or GetStoredBarPreviewState(panelId, index)
     local state = previewState.conditional
@@ -2830,6 +2858,23 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
                 or style.invertAuraDesaturationLogic)
         else
             forceDesat = style.desaturateWhileAuraNotActive == true
+        end
+        -- Missing tint, eye-gated like the icon slots (owner ruling: the
+        -- mirror rests untinted; missing-aura effects render only under the
+        -- "Preview Missing Aura Effects" toggle). The toggle is icons-mode
+        -- today, so a bar mirror simply never wears it; live bars still tint
+        -- their icon square while the aura is down.
+        if not auraPresentationActive
+            and style.iconMissingTintEnabled == true
+            and style.iconMissingTintColor
+            and CooldownCompanion:IsPreviewFlagActive(panelId, index, "_missingAuraPreview") then
+            local missingTint = style.iconMissingTintColor
+            tintR, tintG, tintB = missingTint[1], missingTint[2], missingTint[3]
+            tintA = missingTint[4] or 1
+            -- Live precedence (Tracking.lua): the missing tint outranks the
+            -- cooldown tint, so the cooldown/zero-charge stand-ins below
+            -- must not replace it.
+            missingTintApplied = true
         end
     end
 
@@ -2910,7 +2955,8 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
                 if style.desaturateOnCooldown then
                     forceDesat = true
                 end
-                if style.iconCooldownTintEnabled and style.iconCooldownTintColor then
+                if not missingTintApplied
+                    and style.iconCooldownTintEnabled and style.iconCooldownTintColor then
                     local iconTint = style.iconCooldownTintColor
                     tintR = iconTint[1] or 1
                     tintG = iconTint[2] or 1
@@ -3021,7 +3067,8 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
                             and CooldownCompanion.HasItemFallbacks(buttonData))) then
                     forceDesat = true
                 end
-                if style.iconCooldownTintEnabled and style.iconCooldownTintColor then
+                if not missingTintApplied
+                    and style.iconCooldownTintEnabled and style.iconCooldownTintColor then
                     local c = style.iconCooldownTintColor
                     tintR, tintG, tintB, tintA = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                 end
@@ -3168,6 +3215,46 @@ local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, 
                 end
             end
         end
+
+        -- Missing Aura Glow: eye-gated from the preview command center like
+        -- its siblings ("_missingAuraPreview", shared with the missing tint —
+        -- one toggle shows the whole missing-aura presentation), rendered by
+        -- the CC-side host renderer rather than the EFFECT_PREVIEWS loop —
+        -- its setter is not MakeGlowSetter-shaped and its host is not a glow
+        -- container. Same live-parity gates as the runtime: aura entries
+        -- only, never keep-swipe (nothing would occlude it while the aura
+        -- runs).
+        if ST._SetMissingAuraGlowOnHost then
+            local wantMissing = canQuery
+                and CooldownCompanion:IsPreviewFlagActive(panelId, index, "_missingAuraPreview")
+                and buttonData ~= nil
+                and (buttonData.auraTracking or buttonData.addedAs == "aura")
+                and (style.missingAuraGlowStyle or "none") ~= "none"
+                and not CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData, style)
+                or false
+            local host = slot.missingAuraGlowHost
+            if wantMissing and not host then
+                host = CreateFrame("Frame", nil, slot)
+                slot.missingAuraGlowHost = host
+            end
+            if host and wantMissing then
+                -- The ICON rect, matching live, with an EXPLICIT size (same
+                -- rule as the live applier): the dashes renderer measures the
+                -- host the same tick it is styled, and a freshly
+                -- point-anchored frame can report a stale rect. The renderer
+                -- keys the host's dimensions into its cache signature, so a
+                -- resize here re-renders.
+                local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
+                local inset = ST.GetEffectiveBorderLayoutSize(slot, borderSize, ST.GetBorderRenderMode(style))
+                local slotW, slotH = slot:GetSize()
+                host:ClearAllPoints()
+                host:SetPoint("CENTER", slot, "CENTER", 0, 0)
+                host:SetSize(math_max((slotW or 0) - 2 * inset, 1), math_max((slotH or 0) - 2 * inset, 1))
+            end
+            if host then
+                ST._SetMissingAuraGlowOnHost(host, style, wantMissing)
+            end
+        end
         return
     end
 
@@ -3196,6 +3283,9 @@ local function ClearSlotEffectPreviews(slot)
         if slot[def.containerKey] and def.setter then
             def.setter(slot, false)
         end
+    end
+    if slot.missingAuraGlowHost and ST._SetMissingAuraGlowOnHost then
+        ST._SetMissingAuraGlowOnHost(slot.missingAuraGlowHost, nil, false)
     end
     if slot.barAuraEffect and SetBarAuraEffect then
         SetBarAuraEffect(slot, false)

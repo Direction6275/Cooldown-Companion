@@ -34,6 +34,7 @@ local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildAssistedHighlightControls = ST._BuildAssistedHighlightControls
 local BuildProcGlowControls = ST._BuildProcGlowControls
 local BuildAuraGlowControls = ST._BuildAuraGlowControls
+local BuildMissingAuraGlowControls = ST._BuildMissingAuraGlowControls
 local BuildPandemicGlowControls = ST._BuildPandemicGlowControls
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
@@ -152,6 +153,7 @@ local function BuildBarModeEffects(container, group, style, previewContextChange
         CooldownCompanion:SetGroupBarAuraEffectPreview(CS.selectedGroup, false)
         -- The bar variant also owns the staged aura drain conditional.
         CooldownCompanion:SetGroupBarPandemicPreview(CS.selectedGroup, false)
+        CooldownCompanion:SetGroupMissingAuraPreview(CS.selectedGroup, false)
     end
     BuildBarEffectsTab(container, group, style)
 end
@@ -286,6 +288,87 @@ local function BuildAuraGlowSection(container, group, style, lens)
 
     if not auraGlowEnabled then
         CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
+    end
+end
+
+-- Missing Aura Glow: the absent-state twin of the aura glow above. CC renders
+-- it under the aura display band, so it shows exactly while the tracked aura
+-- is NOT active and the active display occludes it (ButtonFrame/
+-- MissingAura.lua — no aura state is ever read). Border/overlay styles only:
+-- an overhanging style would leak around the active display's edges, and no
+-- aura state exists to turn it off. Never called on an Aura Panel (the
+-- section is panel-denied; its cells have no CC layer to glow).
+local function BuildMissingAuraGlowSection(container, group, style, lens)
+    if not GroupHasAuraTrackingEntry(group) then
+        -- The section owning an active preview just disappeared (last aura
+        -- entry removed); don't leave the preview orphaned.
+        CooldownCompanion:SetGroupMissingAuraPreview(CS.selectedGroup, false)
+        return
+    end
+
+    local missingSec = BeginLensSection(lens, group, "missingAuraGlow", { column = container })
+
+    local missingGlowEnabled = (missingSec.read.missingAuraGlowStyle or "none") ~= "none"
+    local missingEnableCb = AddCheckboxRow(container, {
+        label = "Show Missing Aura Glow",
+        value = missingGlowEnabled,
+        disabled = missingSec.disabled,
+        onChange = function(val)
+            if not missingSec.write then return end
+            missingSec.write.missingAuraGlowStyle = val and "solid" or "none"
+            if val then
+                -- Re-enabling forces the solid style; reset its per-style
+                -- keys so a leftover dash-scale size can't render as a fat
+                -- border.
+                missingSec.write.missingAuraGlowSize = 2
+                missingSec.write.missingAuraGlowSpeed = 0.5
+            end
+            UpdateSelectedGroupStyle(true)
+        end,
+    })
+
+    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn. The
+    -- panel captures the section's WRITE table and is only built while there
+    -- is one - an inert section has no gear to open it from.
+    local function BuildMissingGlowAdvanced(panel)
+        AddCheckboxRow(panel, {
+            label = "Show Only In Combat",
+            value = missingSec.write.missingAuraGlowCombatOnly or false,
+            onChange = function(val)
+                missingSec.write.missingAuraGlowCombatOnly = val
+                UpdateSelectedGroupStyle()
+            end,
+        })
+
+        BuildMissingAuraGlowControls(panel, missingSec.write, UpdateSelectedGroupStyle, { row = true })
+    end
+
+    if missingSec.write then
+        AddAdvancedToggle(missingEnableCb, "missingAuraGlow", tabInfoButtons, missingGlowEnabled, {
+            title = "Missing Aura Glow Advanced",
+            build = BuildMissingGlowAdvanced,
+        })
+    end
+    -- Second badge in the chain: gear, then this, then the scope chrome the
+    -- lens attaches last. The anchor args are a placeholder - AnchorRowBadge
+    -- re-points the button onto the chain's end.
+    AnchorRowBadge(missingEnableCb, CreateInfoButton(missingEnableCb.frame, missingEnableCb.frame, "LEFT", "LEFT", 0, 0, {
+        "Missing Aura Glow",
+        {"Adds a glow to a button while its tracked aura is not active.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"The live aura covers it exactly, so the addon never reads aura state.", 1, 1, 1, true},
+    }, tabInfoButtons))
+    missingSec:Chrome(missingEnableCb)
+
+    missingSec:Finish()
+
+    -- Preview reconciliation follows the same READ the preview performs, so a
+    -- group preview is cleared whenever it would render nothing. The preview
+    -- covers the whole missing-aura presentation (tint AND glow), so the
+    -- glow going off must not kill a tint-only preview. Clearing is the safe
+    -- direction; nothing here ever starts a preview.
+    if not missingGlowEnabled and missingSec.read.iconMissingTintEnabled ~= true then
+        CooldownCompanion:SetGroupMissingAuraPreview(CS.selectedGroup, false)
     end
 end
 
@@ -618,6 +701,7 @@ ST._INDICATORS_SECTION_BY_ADVANCED_KEY = {
     readyGlow = EFFECTS_GLOWS_SECTION,
     keyPressHighlight = EFFECTS_GLOWS_SECTION,
     auraGlow = EFFECTS_GLOWS_SECTION,
+    missingAuraGlow = EFFECTS_GLOWS_SECTION,
     assistedHighlight = EFFECTS_GLOWS_SECTION,
     barActiveAura = EFFECTS_GLOWS_SECTION,
 
@@ -668,6 +752,7 @@ ST._INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY = {
     readyGlow = "readyGlow",
     keyPressHighlight = "keyPressHighlight",
     auraGlow = "auraIndicator",
+    missingAuraGlow = "missingAuraGlow",
     assistedHighlight = "assistedHighlight",
 
     -- One section for the whole refresh window, so both gears name it.
@@ -851,6 +936,12 @@ local function BuildEffectsTab(container)
     -- and Assisted Highlight below is too), so it takes the left column instead
     -- of stranding itself beside an empty one.
     BuildAuraGlowSection(isAuraPanel and glowLeft or glowRight, group, style, lens)
+
+    -- The absent-state twin, directly under the aura glow. Not on an Aura
+    -- Panel: the section is panel-denied (no CC layer under a packed cell).
+    if not isAuraPanel then
+        BuildMissingAuraGlowSection(glowRight, group, style, lens)
+    end
 
     -- Assisted Highlight is an override section like the four glows above, and
     -- gets its FIRST per-entry affordance here: it never carried a promote

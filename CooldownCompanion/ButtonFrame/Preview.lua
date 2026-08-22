@@ -366,6 +366,27 @@ function CooldownCompanion:ClearAllAuraGlowPreviews()
 end
 
 --------------------------------------------------------------------------------
+-- Missing Aura Preview
+-- The absent-state presentation as one preview (owner ruling 2026-08-20):
+-- ONE flag shows every configured missing-aura effect together — the missing
+-- tint and the missing glow — and the mirror shows none of them at rest.
+-- Rendered CC-side from the same style keys the live paths consume, without
+-- touching live buttons.
+--------------------------------------------------------------------------------
+
+function CooldownCompanion:SetMissingAuraPreview(groupId, buttonIndex, show)
+    SetButtonPreview(self, groupId, buttonIndex, show, "_missingAuraPreview")
+end
+
+function CooldownCompanion:SetGroupMissingAuraPreview(groupId, show)
+    SetGroupPreview(self, groupId, show, "_missingAuraPreview")
+end
+
+function CooldownCompanion:ClearAllMissingAuraPreviews()
+    ClearAllPreviews(self, "_missingAuraPreview")
+end
+
+--------------------------------------------------------------------------------
 -- Pandemic Preview (PTR 8 visuals)
 -- The config mirror renders icon and bar replicas from the same pandemic
 -- style keys the live kit consumes, without touching live buttons or the
@@ -574,6 +595,9 @@ function CooldownCompanion:ClearAllConfigPreviews()
     end
     if self.ClearAllAuraGlowPreviews then
         self:ClearAllAuraGlowPreviews()
+    end
+    if self.ClearAllMissingAuraPreviews then
+        self:ClearAllMissingAuraPreviews()
     end
     if self.ClearAllPandemicPreviews then
         self:ClearAllPandemicPreviews()

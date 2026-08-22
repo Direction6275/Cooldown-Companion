@@ -676,6 +676,9 @@ local function BuildBarAppearanceTab(container, group, style)
             mode = "bars",
             hasAuraEntry = GroupHasAuraTrackingEntry(group),
             hasCooldownState = CanGroupUseOverrideSection(group, "desaturation"),
+            -- Aura-bar panels materialize no CC buttons, so there is no
+            -- missing-state icon square for the tint to color.
+            hasMissingState = not ST.IsAuraPanelGroup(group),
             refresh = refreshStyle,
         })
 

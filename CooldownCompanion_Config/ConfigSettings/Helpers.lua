@@ -945,6 +945,7 @@ local AURA_TRACKING_CONFIG_ONLY_SECTIONS = {
     pandemic = true,
     whileAuraActive = true,
     auraMissingDesaturation = true,
+    missingAuraGlow = true,
 }
 
 local function CanButtonUseConfigOverrideSection(buttonData, sectionId)

@@ -214,6 +214,15 @@ local function ResolveIconTintIntent(button, buttonData, style, target)
     end
 
     if buttonData.isPassive then
+        -- Static missing tint (12.1 compositing): tints the base icon while
+        -- the tracked aura is missing — the aura display occludes the icon
+        -- entirely while the aura runs, so no runtime aura state is needed
+        -- (or readable). Same static pattern as desaturateWhileAuraNotActive.
+        if style.iconMissingTintEnabled == true and style.iconMissingTintColor then
+            local mc = style.iconMissingTintColor
+            return SetTintIntent(target, true, "aura-missing", false,
+                mc[1] or 1, mc[2] or 1, mc[3] or 1, mc[4] or 1)
+        end
         local c = style.iconTintColor
         local r, g, b, a = c and c[1] or 1, c and c[2] or 1, c and c[3] or 1, c and c[4] or 1
         return SetTintIntent(target, false, "base", false, r, g, b, a)
@@ -262,7 +271,23 @@ local function ResolveIconTintIntent(button, buttonData, style, target)
 
     -- Apply user-configured icon tint when no state override is active.
     if not stateOverride then
-        if style.iconCooldownTintEnabled and button._desatCooldownActive then
+        -- Static missing tint (12.1 compositing): the aura display occludes
+        -- the base icon while the aura runs, so this needs no aura state.
+        -- Wins over the cooldown tint, matching the missing-desat precedence.
+        -- Keep-swipe entries opt out of the icon takeover — with no cover the
+        -- tint would misreport "missing" while the aura runs, so they skip
+        -- it. ICON HOSTS ONLY: keep-swipe is icons-only in effect (the
+        -- predicate leaves host gating to callers), and a bar converted from
+        -- icons still has its icon-square cover to hide the tint.
+        if (buttonData.auraTracking or buttonData.addedAs == "aura")
+            and style.iconMissingTintEnabled == true
+            and style.iconMissingTintColor
+            and (button._isBar
+                or not CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData, style)) then
+            local mc = style.iconMissingTintColor
+            r, g, b, a = mc[1] or 1, mc[2] or 1, mc[3] or 1, mc[4] or 1
+            reason = "aura-missing"
+        elseif style.iconCooldownTintEnabled and button._desatCooldownActive then
             local c = style.iconCooldownTintColor
             if c then
                 r, g, b, a = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1

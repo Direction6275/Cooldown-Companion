@@ -978,6 +978,37 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
                 onConfirm = refresh, onChange = refresh,
             })
         end
+
+        -- The missing-state twin of the pair above: a static tint on the base
+        -- icon while the tracked aura is down, occluded by the active aura
+        -- display (Tracking.lua's aura-missing branch — no aura state read).
+        -- opts.hasMissingState gates it separately from hasAuraEntry: an Aura
+        -- Panel has aura entries but materializes no CC buttons, so there is
+        -- no missing-state icon for the tint to color.
+        if opts.hasMissingState ~= false then
+        AddCheckboxRow(rightColumn, {
+            label = "Use Separate Missing Tint",
+            value = sec.read.iconMissingTintEnabled or false,
+            disabled = sec.disabled,
+            onChange = function(val)
+                if not sec.write then return end
+                sec.write.iconMissingTintEnabled = val
+                refresh()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        if sec.read.iconMissingTintEnabled then
+            AddColorRow(rightColumn, {
+                label = "Aura Missing Icon Color",
+                indent = true,
+                tbl = tintTbl, key = "iconMissingTintColor",
+                default = {1, 0.3, 0.3, 1}, hasAlpha = true,
+                disabled = sec.disabled,
+                onConfirm = refresh, onChange = refresh,
+            })
+        end
+        end -- opts.hasMissingState
     end
 
     -- The right column runs 2-3 rows short of the left one, so the section
@@ -997,6 +1028,7 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
             sec.write.iconTintColor = {1, 1, 1, 1}
             sec.write.iconCooldownTintColor = {1, 0, 0.102, 1}
             sec.write.iconAuraTintColor = {0, 0.925, 1, 1}
+            sec.write.iconMissingTintColor = {1, 0.3, 0.3, 1}
             sec.write.backgroundColor = {0, 0, 0, 0.5}
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
@@ -2014,6 +2046,40 @@ local function BuildAuraGlowControls(container, styleTable, refreshCallback, opt
     }, opts)
 end
 
+-- Missing Aura Icon glow: CC-rendered on the missing frame
+-- (ButtonFrame/MissingAura.lua), which the active aura display occludes.
+-- WITHIN-FOOTPRINT styles only: an overhanging style (proc flipbook, ants,
+-- autocast) would leak around the active aura's edges, and no aura state
+-- exists to turn it off. "pulse" is the aura-menu spelling; the runtime maps
+-- it to the pulsingBorder renderer.
+local MISSING_AURA_GLOW_STYLE_OPTIONS = {
+    ["solid"] = "Solid Border",
+    ["pulse"] = "Pulsing Border",
+    ["colorShift"] = "Color Shift",
+    ["dashes"] = "Pixel Dashes",
+    ["overlay"] = "Overlay",
+}
+local MISSING_AURA_GLOW_STYLE_ORDER = {"solid", "pulse", "colorShift", "dashes", "overlay"}
+
+local function BuildMissingAuraGlowControls(container, styleTable, refreshCallback, opts)
+    BuildGlowStyleControls(container, styleTable, refreshCallback, {
+        styleKey = "missingAuraGlowStyle", colorKey = "missingAuraGlowColor", colorLabel = "Glow Color",
+        color2Key = "missingAuraGlowColor2", color2Label = "Second Color", defaultColor2 = {0.1, 0.3, 1, 0.9},
+        sizeKey = "missingAuraGlowSize", speedKey = "missingAuraGlowSpeed", linesKey = "missingAuraGlowLines",
+        thicknessKey = "missingAuraGlowThickness",
+        defaultStyle = "solid", defaultColor = {1, 0.35, 0.35, 0.9},
+        styleOptions = MISSING_AURA_GLOW_STYLE_OPTIONS,
+        styleOrder = MISSING_AURA_GLOW_STYLE_ORDER,
+        solidSizeDefault = 2,
+        onStyleChanged = function(targetStyle, val)
+            targetStyle.missingAuraGlowSize = AURA_GLOW_SIZE_RESETS[val] or 2
+            targetStyle.missingAuraGlowSpeed = AURA_GLOW_SPEED_RESETS[val] or 0.5
+            targetStyle.missingAuraGlowLines = 5
+            targetStyle.missingAuraGlowThickness = 3
+        end,
+    }, opts)
+end
+
 -- Pandemic glow (PTR 8): the icon-mode pandemic display, a second aura-kit
 -- glow Blizzard reveals only while the tracked aura sits inside its refresh
 -- window. Same style vocabulary as the aura glow, its own key family
@@ -2405,6 +2471,7 @@ ST._BuildUnusableDimmingControls = BuildUnusableDimmingControls
 ST._BuildAssistedHighlightControls = BuildAssistedHighlightControls
 ST._BuildProcGlowControls = BuildProcGlowControls
 ST._BuildAuraGlowControls = BuildAuraGlowControls
+ST._BuildMissingAuraGlowControls = BuildMissingAuraGlowControls
 ST._BuildPandemicGlowControls = BuildPandemicGlowControls
 -- The bare per-style slider renderer, for surfaces that own their style
 -- dropdown but must draw the same sliders (resource aura border, MW

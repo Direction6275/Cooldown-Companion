@@ -70,6 +70,7 @@ ButtonFrame\Helpers.lua
 ButtonFrame\Glows.lua
 ButtonFrame\Visibility.lua
 ButtonFrame\Tracking.lua
+ButtonFrame\MissingAura.lua
 ButtonFrame\VisualState.lua
 ButtonFrame\VisualStateDiagnostics.lua
 ButtonFrame\IconMode.lua

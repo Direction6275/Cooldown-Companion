@@ -374,6 +374,18 @@ local function PandemicEffectEnabled(group, buttonIndex)
     return StyleFlagEnabled(group, buttonIndex, "pandemicEffectEnabled")
 end
 
+-- Effective missing-aura presentation enable: the control previews the tint
+-- and the glow together (owner ruling 2026-08-20), so it stays offered while
+-- EITHER is configured.
+local function MissingAuraEffectEnabled(group, buttonIndex)
+    local style = ResolveTargetStyle(group, buttonIndex)
+    if style.iconMissingTintEnabled == true then
+        return true
+    end
+    local glowStyle = style.missingAuraGlowStyle
+    return glowStyle ~= nil and glowStyle ~= "none"
+end
+
 -- Effective marker enable, the same resolution the live bind gate performs
 -- (AuraDisplay's IsPandemicMarkerWanted): the style's mode, and for "auto" the
 -- tracked-unit default. Deliberately separate from PandemicEffectEnabled above
@@ -525,6 +537,29 @@ local CONTROLS = {
         preview = FlagPreview("_auraGlowPreview", "SetAuraGlowPreview", "SetGroupAuraGlowPreview"),
     },
     {
+        id = "missingAura",
+        label = "Preview Missing Aura Effects",
+        group = GROUP_EFFECTS,
+        modes = { icons = true },
+        section = "missingAuraGlow",
+        -- One preview for the whole missing-aura presentation (owner ruling):
+        -- the tint and the glow render together, so the control stays offered
+        -- while EITHER is configured — a glowStyleKey gate would hide it from
+        -- tint-only panels.
+        requiresMissingAuraEffect = true,
+        -- The gear follows whichever effect is enabled: the glow wins when
+        -- both are (it owns the richer advanced controls); a tint-only panel
+        -- lands on Icon Tint rather than a glow row it never enabled.
+        settings = function(group)
+            local style = group and ResolveTargetStyle(group, nil) or {}
+            if (style.missingAuraGlowStyle or "none") ~= "none" then
+                return { tab = "effects", key = "missingAuraGlow" }
+            end
+            return { tab = "appearance", uncollapse = "appearance_iconTint" }
+        end,
+        preview = FlagPreview("_missingAuraPreview", "SetMissingAuraPreview", "SetGroupMissingAuraPreview"),
+    },
+    {
         id = "pandemicGlow",
         label = "Preview Pandemic Effect",
         group = GROUP_EFFECTS,
@@ -563,6 +598,20 @@ local CONTROLS = {
         requiresBarAuraIndicator = true,
         settings = { tab = "effects", key = "barActiveAura" },
         preview = FlagPreview("_barAuraEffectPreview", "SetBarAuraEffectPreview", "SetGroupBarAuraEffectPreview"),
+    },
+    -- The bars face of the missing-aura preview: bar panels render only the
+    -- missing TINT (the glow is icons-only), so this control is tint-gated
+    -- and shares the icons control's flag — one preview state, two faces,
+    -- the same shape as the pandemic pair.
+    {
+        id = "missingAuraBar",
+        label = "Preview Missing Aura Tint",
+        group = GROUP_EFFECTS,
+        modes = { bars = true },
+        section = "iconTint",
+        styleKey = "iconMissingTintEnabled",
+        settings = { tab = "appearance", uncollapse = "barappearance_iconTint" },
+        preview = FlagPreview("_missingAuraPreview", "SetMissingAuraPreview", "SetGroupMissingAuraPreview"),
     },
     {
         id = "barPandemic",
@@ -828,6 +877,9 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
     if control.requiresPandemicEffect and not PandemicEffectEnabled(group, buttonIndex) then
         return false
     end
+    if control.requiresMissingAuraEffect and not MissingAuraEffectEnabled(group, buttonIndex) then
+        return false
+    end
     if control.requiresPandemicMarker and not PandemicMarkerEnabled(group, buttonIndex) then
         return false
     end
@@ -867,8 +919,13 @@ end
 -- whether that entry customizes it, inherits it, or nothing is selected at
 -- all. What changes with the selection is only whether the section can be
 -- edited there, and the section's own scope chrome says that.
-local function ResolveGearRoute(control, displayMode)
+local function ResolveGearRoute(control, displayMode, group)
     local settings = control.settings
+    -- A control whose destination depends on live style state may provide a
+    -- function; it returns a route table (or nil) for the current selection.
+    if type(settings) == "function" then
+        settings = settings(group, displayMode)
+    end
     if type(settings) ~= "table" then
         return nil
     end
@@ -2284,7 +2341,7 @@ local function UpdateBar(host, surface, applicable, group, displayMode)
     local bar = EnsureBar(host, surface)
     bar._applicable = applicable
     ApplyBarState(bar, selected, running,
-        ResolveGearRoute(selected, displayMode), group)
+        ResolveGearRoute(selected, displayMode, group), group)
 
     host._cdcPreviewReserveBottom = BAR_RESERVE
     bar:Show()
