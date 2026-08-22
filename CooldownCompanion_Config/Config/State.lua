@@ -2029,7 +2029,8 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcCollapseBtn then entry.frame._cdcCollapseBtn:Hide() end
     if entry.frame._cdcAddBtn then entry.frame._cdcAddBtn:Hide() end
     if entry.frame._cdcGenericRenameBadge then entry.frame._cdcGenericRenameBadge:Hide() end
-    if entry.frame._cdcCopyPanelHighlight then entry.frame._cdcCopyPanelHighlight:Hide() end
+    if entry.frame._cdcCopyPanelWash then entry.frame._cdcCopyPanelWash:Hide() end
+    if entry.frame._cdcCopyPanelWashLine then entry.frame._cdcCopyPanelWashLine:Hide() end
     if entry.frame._cdcTreeExpandButton then
         entry.frame._cdcTreeExpandButton:Hide()
         entry.frame._cdcTreeExpandButton:ClearAllPoints()

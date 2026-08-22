@@ -1745,6 +1745,11 @@ local function RefreshColumn1(preserveDrag)
 
     if not preserveDrag then CancelDrag() end
     CS.col1Scroll:ReleaseChildren()
+    -- Copy Panel Settings row washes ride recycled row frames, so every
+    -- rebuild starts from none shown and re-applies to what is eligible now.
+    if ST._ResetCopyPanelRowVisuals then
+        ST._ResetCopyPanelRowVisuals()
+    end
     CS._panelDropTargets = {}
     if CS._UpdatePanelDropScan then
         CS._UpdatePanelDropScan()

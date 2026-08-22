@@ -2339,8 +2339,13 @@ local function CreateConfigPanel()
         if CS.col1Scroll and CS.col1Scroll.frame then
             local bottomInset = destinationBottomInset
                 + (showDestinations and GetNavigatorDestinationsHeight() or 0)
+            -- The Copy Panel Settings banner sits above the tree while the
+            -- mode is armed, so the scroll starts below it instead of being
+            -- overlaid (the mode file re-runs this layout on arm/cancel).
+            local topInset = (CS.copyPanelSettings and ST._COPY_PANEL_BANNER_HEIGHT)
+                and ST._COPY_PANEL_BANNER_HEIGHT or 0
             CS.col1Scroll.frame:ClearAllPoints()
-            CS.col1Scroll.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
+            CS.col1Scroll.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, -topInset)
             CS.col1Scroll.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, bottomInset)
         end
 

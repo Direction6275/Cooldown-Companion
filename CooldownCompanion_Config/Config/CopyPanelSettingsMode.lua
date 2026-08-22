@@ -193,6 +193,19 @@ local function EnsureCopyPanelSettingsBanner()
     return banner
 end
 
+-- The banner does not float over the tree: while it is shown, the Navigator
+-- scroll starts below it (Panel.lua's LayoutColumns reads the armed state and
+-- ST._COPY_PANEL_BANNER_HEIGHT). Re-run the column layout exactly when the
+-- shown state flips, so arming reserves the strip and cancelling returns it.
+local lastBannerShown = false
+local function SyncNavigatorBannerInset(shown)
+    if shown == lastBannerShown then return end
+    lastBannerShown = shown
+    if CS.configFrame and CS.configFrame.LayoutColumns then
+        CS.configFrame.LayoutColumns()
+    end
+end
+
 -- Called from RefreshColumn1 on every Navigator rebuild: the mode survives
 -- navigation, so whatever the column shows carries the banner.
 local function UpdateCopyPanelSettingsBanner()
@@ -208,6 +221,7 @@ local function UpdateCopyPanelSettingsBanner()
         if CS.copyPanelSettingsBanner then
             CS.copyPanelSettingsBanner:Hide()
         end
+        SyncNavigatorBannerInset(false)
         return
     end
 
@@ -221,50 +235,81 @@ local function UpdateCopyPanelSettingsBanner()
     banner.text:SetText(text)
     banner:SetFrameLevel(banner:GetParent():GetFrameLevel() + 40)
     banner:Show()
+    SyncNavigatorBannerInset(true)
 end
 
 ------------------------------------------------------------------------
--- Row visuals: green ring + label tint on the panel rows an armed click
--- can land on. A dedicated overlay, never the row's own selection color:
--- the source panel usually stays selected while the mode is armed.
+-- Row visuals: a soft green wash under the row plus a green label on the
+-- panel rows an armed click can land on - the Navigator's own selection
+-- idiom (a tinted label over a flat wash), never a bordered overlay.
+--
+-- The wash textures live on the row FRAME, which AceGUI recycles across
+-- every surface that acquires an InteractiveLabel - so every decorated
+-- frame is remembered in a weak-keyed set and ResetCopyPanelRowVisuals
+-- (called at the top of every RefreshColumn1) hides them all before the
+-- rebuild re-applies to whatever is eligible now. That is what keeps a
+-- pooled row from resurfacing elsewhere still wearing the wash after a
+-- Group is collapsed, expanded, or re-rendered.
 ------------------------------------------------------------------------
+
+local decoratedRowFrames = setmetatable({}, { __mode = "k" })
+
+local function HideCopyPanelRowWash(frame)
+    if frame._cdcCopyPanelWash then
+        frame._cdcCopyPanelWash:Hide()
+    end
+    if frame._cdcCopyPanelWashLine then
+        frame._cdcCopyPanelWashLine:Hide()
+    end
+end
+
+local function ResetCopyPanelRowVisuals()
+    for frame in pairs(decoratedRowFrames) do
+        HideCopyPanelRowWash(frame)
+    end
+end
 
 local function ApplyCopyPanelRowVisuals(panelEntry, panelId)
     local frame = panelEntry and panelEntry.frame
     if not frame then return end
 
-    local eligible = CS.copyPanelSettings ~= nil and IsEligibleCopyPanelTarget(panelId)
-    local overlay = frame._cdcCopyPanelHighlight
-    if not eligible then
-        if overlay then overlay:Hide() end
+    if not (CS.copyPanelSettings ~= nil and IsEligibleCopyPanelTarget(panelId)) then
+        -- The reset sweep already hid every wash this rebuild; nothing to do.
         return
     end
 
-    if not overlay then
-        overlay = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-        overlay:SetAllPoints(frame)
-        overlay:EnableMouse(false)
-        overlay:SetBackdrop({
-            bgFile = "Interface\\BUTTONS\\WHITE8X8",
-            edgeFile = "Interface\\BUTTONS\\WHITE8X8",
-            edgeSize = 1,
-        })
-        frame._cdcCopyPanelHighlight = overlay
+    local wash = frame._cdcCopyPanelWash
+    if not wash then
+        wash = frame:CreateTexture(nil, "BACKGROUND", nil, 2)
+        wash:SetAllPoints(frame)
+        wash:SetTexture("Interface/Buttons/WHITE8x8")
+        frame._cdcCopyPanelWash = wash
+
+        local line = frame:CreateTexture(nil, "BACKGROUND", nil, 3)
+        line:SetHeight(1)
+        line:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+        line:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+        line:SetTexture("Interface/Buttons/WHITE8x8")
+        frame._cdcCopyPanelWashLine = line
     end
-    overlay:SetBackdropColor(COPY_PANEL_COLOR[1], COPY_PANEL_COLOR[2], COPY_PANEL_COLOR[3], 0.10)
-    overlay:SetBackdropBorderColor(COPY_PANEL_COLOR[1], COPY_PANEL_COLOR[2], COPY_PANEL_COLOR[3], 0.65)
-    overlay:SetFrameLevel(frame:GetFrameLevel() + 30)
-    overlay:Show()
+    wash:SetVertexColor(COPY_PANEL_COLOR[1], COPY_PANEL_COLOR[2], COPY_PANEL_COLOR[3], 0.10)
+    wash:Show()
+    frame._cdcCopyPanelWashLine:SetVertexColor(
+        COPY_PANEL_COLOR[1], COPY_PANEL_COLOR[2], COPY_PANEL_COLOR[3], 0.45)
+    frame._cdcCopyPanelWashLine:Show()
+    decoratedRowFrames[frame] = true
     panelEntry:SetColor(COPY_PANEL_COLOR[1], COPY_PANEL_COLOR[2], COPY_PANEL_COLOR[3])
 end
 
 ------------------------------------------------------------------------
 -- ST._ exports (Column1.lua, Panel.lua, the rival modes)
 ------------------------------------------------------------------------
+ST._COPY_PANEL_BANNER_HEIGHT = COPY_PANEL_BANNER_HEIGHT
 ST._ArmCopyPanelSettings = ArmCopyPanelSettings
 ST._CancelCopyPanelSettings = CancelCopyPanelSettings
 ST._GetCopyPanelSettingsLabel = GetCopyPanelSettingsLabel
 ST._IsEligibleCopyPanelTarget = IsEligibleCopyPanelTarget
 ST._HandleCopyPanelSettingsClick = HandleCopyPanelSettingsClick
 ST._UpdateCopyPanelSettingsBanner = UpdateCopyPanelSettingsBanner
+ST._ResetCopyPanelRowVisuals = ResetCopyPanelRowVisuals
 ST._ApplyCopyPanelRowVisuals = ApplyCopyPanelRowVisuals
