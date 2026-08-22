@@ -250,15 +250,19 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     local isTextMode = group and group.displayMode == "text"
     local tabsMode = isTextMode and "text" or "standard"
     if container._cdcPanelSettingsTabsMode ~= tabsMode then
+        -- Layout precedes the styling tabs: it is the one tab the entry lens
+        -- never touches, so it sits at the panel end of the row, farthest from
+        -- the entry cluster, and the lens-capable tabs group toward the seam.
+        -- Format still leads a text panel (the format is what the panel IS).
         local tabs = {}
         if isTextMode then
             tabs[#tabs + 1] = { value = "format", text = "Format" }
         end
+        tabs[#tabs + 1] = { value = "layout", text = "Layout" }
         tabs[#tabs + 1] = { value = "appearance", text = "Appearance" }
         if not isTextMode then
             tabs[#tabs + 1] = { value = "effects", text = "Indicators" }
         end
-        tabs[#tabs + 1] = { value = "layout",          text = "Layout" }
         tabs[#tabs + 1] = { value = "loadconditions",  text = "Visibility" }
         container.tabGroup:SetTabs(tabs)
         container._cdcPanelSettingsTabsMode = tabsMode
