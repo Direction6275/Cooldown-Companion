@@ -642,19 +642,15 @@ local function ShowPanelContextMenu(panelId, containerId)
             end
             UIDropDownMenu_AddButton(info, level)
 
-            local copyStyleMode = panel.displayMode == "bars" and "bars"
-                or ((panel.displayMode == nil or panel.displayMode == "icons") and "icons" or nil)
-            if copyStyleMode then
-                local _, copyPanelOrder = CooldownCompanion:GetDirectStyleCopyPanelList(copyStyleMode, panelId)
+            if CooldownCompanion.GetPanelCopyMode and CooldownCompanion:GetPanelCopyMode(panel) then
                 info = UIDropDownMenu_CreateInfo()
-                info.text = "Copy Style From"
+                info.text = "Copy Panel Settings To..."
                 info.notCheckable = true
-                if #copyPanelOrder > 0 then
-                    info.hasArrow = true
-                    info.menuList = "COPY_STYLE_FROM_PANEL"
-                else
-                    info.disabled = true
-                end
+                info.hasArrow = true
+                info.menuList = "COPY_PANEL_SETTINGS"
+                info.tooltipTitle = "Copy Panel Settings To..."
+                info.tooltipText = "Pick what to copy, then click the panels it should apply to."
+                info.tooltipOnButton = 1
                 UIDropDownMenu_AddButton(info, level)
             end
 
@@ -679,23 +675,29 @@ local function ShowPanelContextMenu(panelId, containerId)
                 })
             end
             UIDropDownMenu_AddButton(info, level)
-        elseif menuList == "COPY_STYLE_FROM_PANEL" then
-            local copyStyleMode = panel.displayMode == "bars" and "bars" or "icons"
-            local copyPanelList, copyPanelOrder = CooldownCompanion:GetDirectStyleCopyPanelList(copyStyleMode, panelId)
-            for _, sourcePanelId in ipairs(copyPanelOrder) do
-                local sourceName = copyPanelList[sourcePanelId] or ("Panel " .. tostring(sourcePanelId))
+        elseif menuList == "COPY_PANEL_SETTINGS" then
+            local copyMode = CooldownCompanion.GetPanelCopyMode
+                and CooldownCompanion:GetPanelCopyMode(panel) or nil
+            local scopes = copyMode
+                and CooldownCompanion:GetPanelCopyScopeList(copyMode) or {}
+            local scopeLabels = { appearance = "Appearance", indicators = "Indicators" }
+            local function AddScopeItem(scopeName, label)
                 local info = UIDropDownMenu_CreateInfo()
-                info.text = sourceName
+                info.text = label
                 info.notCheckable = true
                 info.func = function()
                     CloseDropDownMenus()
-                    ShowPopupAboveConfig("CDC_CONFIRM_PANEL_STYLE_COPY", sourceName, {
-                        mode = copyStyleMode,
-                        sourceGroupId = sourcePanelId,
-                        targetGroupId = panelId,
-                    })
+                    if ST._ArmCopyPanelSettings then
+                        ST._ArmCopyPanelSettings(panelId, scopeName)
+                    end
                 end
                 UIDropDownMenu_AddButton(info, level)
+            end
+            for _, scopeName in ipairs(scopes) do
+                AddScopeItem(scopeName, scopeLabels[scopeName] or scopeName)
+            end
+            if #scopes > 1 then
+                AddScopeItem("all", "All Panel Settings")
             end
         elseif menuList == "MOVE_TO_GROUP" then
             for _, target in ipairs(BuildFlatContainerOrder(db, containerId, panelId)) do
@@ -1732,6 +1734,13 @@ local function RefreshColumn1(preserveDrag)
 
     CS.col1Scroll.frame:Show()
 
+    -- Copy Panel Settings banner: kept in step on every rebuild, whichever
+    -- render path the column takes below (it hides itself when unarmed and
+    -- cancels a mode whose source panel is gone).
+    if ST._UpdateCopyPanelSettingsBanner then
+        ST._UpdateCopyPanelSettingsBanner()
+    end
+
     if CS.col1ButtonBar then CS.col1ButtonBar:Show() end
 
     if not preserveDrag then CancelDrag() end
@@ -2037,6 +2046,16 @@ local function RefreshColumn1(preserveDrag)
 
         entry.frame:SetScript("OnMouseUp", function(_, button)
             if CS.dragState and CS.dragState.phase == "active" then return end
+            -- Copy Panel Settings mode: right-click anywhere in the tree
+            -- cancels, matching the entry copy mode's grammar. Left-clicks on
+            -- Group rows keep working - expanding a Group is part of reaching
+            -- its panels.
+            if CS.copyPanelSettings and button == "RightButton" then
+                if ST._CancelCopyPanelSettings then
+                    ST._CancelCopyPanelSettings()
+                end
+                return
+            end
             if button == "LeftButton" then
                 if searchResults then
                     if SelectConfigFinderResult then
@@ -2064,7 +2083,8 @@ local function RefreshColumn1(preserveDrag)
                 if mouseButton ~= "LeftButton"
                     or IsShiftKeyDown()
                     or IsControlKeyDown()
-                    or GetCursorInfo() then
+                    or GetCursorInfo()
+                    or CS.copyPanelSettings then
                     return
                 end
 
@@ -2183,12 +2203,21 @@ local function RefreshColumn1(preserveDrag)
                 firstPanelEntry = firstPanelEntry or panelEntry
                 lastPanelEntry = panelEntry
 
+                -- Copy Panel Settings mode: green ring + tint on eligible
+                -- target rows; hides its own overlay when the mode is off.
+                -- After AddChild, so the overlay's frame level reads the row's
+                -- settled one.
+                if ST._ApplyCopyPanelRowVisuals then
+                    ST._ApplyCopyPanelRowVisuals(panelEntry, panelId)
+                end
+
                 if not disableDrag then
                     panelEntry:SetCallback("OnClick", function(_, _, mouseButton)
                         if mouseButton ~= "LeftButton"
                             or IsShiftKeyDown()
                             or IsControlKeyDown()
-                            or GetCursorInfo() then
+                            or GetCursorInfo()
+                            or CS.copyPanelSettings then
                             return
                         end
 
@@ -2266,6 +2295,23 @@ local function RefreshColumn1(preserveDrag)
 
                 panelEntry.frame:SetScript("OnMouseUp", function(_, button)
                     if CS.dragState and CS.dragState.phase == "active" then return end
+                    -- Copy Panel Settings mode: an armed left-click applies to
+                    -- this row instead of selecting it (the SOURCE row falls
+                    -- through and navigates normally), and right-click cancels
+                    -- the mode instead of opening the context menu.
+                    if CS.copyPanelSettings then
+                        if button == "RightButton" then
+                            if ST._CancelCopyPanelSettings then
+                                ST._CancelCopyPanelSettings()
+                            end
+                            return
+                        end
+                        if button == "LeftButton"
+                            and ST._HandleCopyPanelSettingsClick
+                            and ST._HandleCopyPanelSettingsClick(panelId) then
+                            return
+                        end
+                    end
                     if button == "LeftButton" then
                         if not searchResults and GetCursorInfo() then
                             local previousPanelId = CS.selectedGroup

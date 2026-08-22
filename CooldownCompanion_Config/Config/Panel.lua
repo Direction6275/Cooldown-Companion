@@ -798,9 +798,12 @@ local function ResetConfigForProfileChange()
     if CS.importMode and ST._ExitImportMode then
         ST._ExitImportMode({ skipRefresh = true })
     end
-    -- The armed copy source names an entry in the OUTGOING profile.
+    -- The armed copy sources name entities in the OUTGOING profile.
     if CS.copyCustomization and ST._CancelCopyCustomization then
         ST._CancelCopyCustomization({ skipRefresh = true })
+    end
+    if CS.copyPanelSettings and ST._CancelCopyPanelSettings then
+        ST._CancelCopyPanelSettings({ skipRefresh = true })
     end
     ResetConfigSelection(true)
     wipe(CS.collapsedPanels)
@@ -1175,6 +1178,16 @@ local function CreateConfigPanel()
                     self:SetPropagateKeyboardInput(false)
                 end
                 CooldownCompanion:CloseTalentPicker()
+                return
+            end
+            -- Copy Panel Settings mode: Escape disarms it instead of the panel
+            if CS.copyPanelSettings then
+                if not InCombatLockdown() then
+                    self:SetPropagateKeyboardInput(false)
+                end
+                if ST._CancelCopyPanelSettings then
+                    ST._CancelCopyPanelSettings()
+                end
                 return
             end
             -- Copy-customization mode: Escape disarms it instead of the panel

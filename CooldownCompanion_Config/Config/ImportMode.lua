@@ -54,6 +54,9 @@ local function EnterImportMode()
     if CS.copyCustomization and ST._CancelCopyCustomization then
         ST._CancelCopyCustomization({ skipRefresh = true })
     end
+    if CS.copyPanelSettings and ST._CancelCopyPanelSettings then
+        ST._CancelCopyPanelSettings({ skipRefresh = true })
+    end
     CloseDropDownMenus()
 
     -- Fresh on every entry: no review, no pasted text, everything kept.

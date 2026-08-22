@@ -17,7 +17,6 @@ local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
-local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
@@ -324,8 +323,8 @@ ST._SECTION_HOME.bars = {
 --
 -- The style table is resolved inside `build`, never captured: a panel the
 -- command center opened has no gear on screen to rebind its descriptor, so a
--- wholesale style replacement that keeps the same context (Copy Style From
--- Panel assigns a fresh group.style outright) would leave a captured table
+-- wholesale style replacement that keeps the same context (an imported panel
+-- can assign a fresh group.style outright) would leave a captured table
 -- orphaned and every control writing into nothing.
 --
 -- A caller whose values do NOT live in the group style passes its own table
@@ -1305,8 +1304,6 @@ local function BuildBarAppearanceTab(container, group, style)
     whileAuraSec:Finish()
     end -- not whileAuraCollapsed
     end -- While Aura Active section drawn
-
-    BuildGroupSettingPresetControls(container, group, "bars", tabInfoButtons)
 
     -- Inert-section sweep. A section the lens resolved read-only builds no
     -- gear, so nothing rebound or closed an advanced panel that was already

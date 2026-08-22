@@ -12,7 +12,6 @@ local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
-local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
@@ -493,8 +492,8 @@ local function BuildAppearanceTab(container)
     -- BEFORE their section, so sections never butt together and nothing here
     -- adds spacers of its own.
     --
-    -- Section-level action buttons ("Reset Colors to Default", the preset
-    -- Apply/Save/Delete trio) are compact and flush left: SetAutoWidth(true),
+    -- Section-level action buttons ("Reset Colors to Default") are compact
+    -- and flush left: SetAutoWidth(true),
     -- never SetFullWidth. A page-wide button is louder than every setting it
     -- sits under, and both List and Flow anchor their children from the left,
     -- so no alignment wrapper is needed. They go INSIDE the grid, filling the
@@ -1429,8 +1428,6 @@ local function BuildAppearanceTab(container)
         masqueSec:Finish()
         end -- not masqueCollapsed
     end
-
-    BuildGroupSettingPresetControls(container, group, "icons", tabInfoButtons)
 
     -- Inert-section sweep, over BOTH icons gear maps. A section the lens
     -- resolved read-only builds no gear, so nothing rebound or closed an

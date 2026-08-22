@@ -338,10 +338,11 @@ ST._configState = {
     -- The matching id lives in selectedResourcePowerType/selectedCustomBarId.
     unifiedBarKind = nil,
     resourcesSettingsTab = "general",
-    groupPresetSelection = {
-        icons = nil,
-        bars = nil,
-    },
+    -- Copy Panel Settings mode (CopyPanelSettingsMode.lua):
+    -- { sourceGroupId, scope, lastAppliedText } while armed, nil otherwise.
+    copyPanelSettings = nil,
+    -- The mode's Navigator banner frame, created on first arm.
+    copyPanelSettingsBanner = nil,
 
     -- Static lookup tables
     fontOptions = GetFontOptions,
@@ -2028,6 +2029,7 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcCollapseBtn then entry.frame._cdcCollapseBtn:Hide() end
     if entry.frame._cdcAddBtn then entry.frame._cdcAddBtn:Hide() end
     if entry.frame._cdcGenericRenameBadge then entry.frame._cdcGenericRenameBadge:Hide() end
+    if entry.frame._cdcCopyPanelHighlight then entry.frame._cdcCopyPanelHighlight:Hide() end
     if entry.frame._cdcTreeExpandButton then
         entry.frame._cdcTreeExpandButton:Hide()
         entry.frame._cdcTreeExpandButton:ClearAllPoints()

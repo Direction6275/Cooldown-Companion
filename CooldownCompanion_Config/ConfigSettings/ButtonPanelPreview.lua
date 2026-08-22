@@ -851,6 +851,9 @@ local function ArmCopyCustomization(groupId, buttonIndex, buttonData, scope, sec
     if CS.importMode and ST._ExitImportMode then
         ST._ExitImportMode({ skipRefresh = true })
     end
+    if CS.copyPanelSettings and ST._CancelCopyPanelSettings then
+        ST._CancelCopyPanelSettings({ skipRefresh = true })
+    end
     wipe(CS.selectedButtons)
     CS.copyCustomization = {
         sourceGroupId = groupId,
