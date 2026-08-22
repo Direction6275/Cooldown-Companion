@@ -2486,7 +2486,10 @@ function CooldownCompanion:ApplyResourceBars(opts)
         EnsureIndependentStackConfig(settings, layout)
         totalPrimaryLength = layout.independentWidth
     else
-        totalPrimaryLength = GetResourcePrimaryLength(groupFrame, settings)
+        -- Measured off the panel's ANCHORING BODY: on a sectioned panel the
+        -- frame spans the union of the base cluster and its sections, and the
+        -- stack matches the BASE ROW it hangs off.
+        totalPrimaryLength = GetResourcePrimaryLength(ST.GetPanelAnchorBodyFrame(groupFrame), settings)
     end
 
     -- Determine side/order for each bar (per-spec layout)
@@ -3018,16 +3021,22 @@ function CooldownCompanion:ApplyResourceBars(opts)
     elseif groupFrame then
         -- Group-relative mode (original behavior)
         HideIndependentWrapperFrame()
+        -- The stack hangs off the panel's BASE ROW. A sectioned panel's frame
+        -- spans the union of the base cluster and every section, so anchoring
+        -- to the frame would shove the bars away the moment a section appeared
+        -- on that side. Identity and the alpha inheritance further down stay on
+        -- the panel frame itself.
+        local anchorBody = ST.GetPanelAnchorBodyFrame(groupFrame)
         if isVerticalLayout then
             containerFrameAbove:SetHeight(totalPrimaryLength)
             containerFrameBelow:SetHeight(totalPrimaryLength)
-            containerFrameAbove:SetPoint("TOPRIGHT", groupFrame, "TOPLEFT", -gap, 0)
-            containerFrameBelow:SetPoint("TOPLEFT", groupFrame, "TOPRIGHT", gap, 0)
+            containerFrameAbove:SetPoint("TOPRIGHT", anchorBody, "TOPLEFT", -gap, 0)
+            containerFrameBelow:SetPoint("TOPLEFT", anchorBody, "TOPRIGHT", gap, 0)
         else
             containerFrameAbove:SetWidth(totalPrimaryLength)
             containerFrameBelow:SetWidth(totalPrimaryLength)
-            containerFrameAbove:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", 0, gap)
-            containerFrameBelow:SetPoint("TOPLEFT", groupFrame, "BOTTOMLEFT", 0, -gap)
+            containerFrameAbove:SetPoint("BOTTOMLEFT", anchorBody, "TOPLEFT", 0, gap)
+            containerFrameBelow:SetPoint("TOPLEFT", anchorBody, "BOTTOMLEFT", 0, -gap)
         end
     end
 

@@ -587,6 +587,10 @@ local function GetAnchorOffset(point, width, height)
     return 0, 0
 end
 
+-- Shared with Core/PanelSections.lua so a sectioned panel's anchor-drift
+-- compensation measures its hold point with the exact same arithmetic.
+ST._GetPanelAnchorOffset = GetAnchorOffset
+
 local function GetFrameSizeInUIParentSpace(frame)
     if not (frame and frame.GetSize) then
         return nil, nil
@@ -1941,6 +1945,12 @@ local function BeginPanelResizeGesture(grip)
         or #group.buttons
     if group.parentContainerId and not group.compactLayout and frame.layoutButtonCount then
         numButtons = math_max(numButtons, frame.layoutButtonCount)
+    end
+    -- On a sectioned panel the counts above include the section members, but the
+    -- panel-wide size keys this drag scales drive the BASE CLUSTER only (each
+    -- section owns its own icon size), so the grid to measure is the base one.
+    if frame._sectionLayout then
+        numButtons = math_max(1, frame._sectionLayout.baseCount)
     end
     if ST.IsAuraPanelGroup(group) then
         -- The drag scales per cell, so it has to read the same expanded grid
@@ -3343,7 +3353,13 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
     if relativeTo and relativeTo ~= "UIParent" then
         local relativeFrame, anchorState = ResolveSafeAnchorTarget(self, frame.groupId, "group", relativeTo)
         if relativeFrame then
-            frame:SetPoint(anchor.point, relativeFrame, anchor.relativePoint, anchor.x, anchor.y)
+            -- Position against the target's ANCHORING BODY: a sectioned panel's
+            -- frame spans the union of its base cluster and its sections, and
+            -- the base row is what a dependent is glued to. Identity stays the
+            -- real frame -- alpha inheritance, validation, and the circular
+            -- guard all key on the panel, not on its interior stand-in.
+            frame:SetPoint(anchor.point, ST.GetPanelAnchorBodyFrame(relativeFrame),
+                anchor.relativePoint, anchor.x, anchor.y)
             UpdateCoordLabel(frame, anchor.x, anchor.y)
             -- Store reference for alpha inheritance
             frame.anchoredToParent = relativeFrame
@@ -3507,6 +3523,12 @@ ComputeGroupFrameCoordinates = function(
             relativeTo = "UIParent"
         end
     end
+
+    -- Measure -- and hand back for the re-anchor SaveGroupPosition does with it
+    -- -- the target's anchoring body, so a stored offset means the same thing
+    -- the SetPoint in AnchorGroupFrame will read it as. `relativeTo` keeps
+    -- naming the real panel: that name is what gets saved and resolved.
+    relFrame = ST.GetPanelAnchorBodyFrame(relFrame)
 
     local rw, rh = relFrame:GetSize()
     local rcx, rcy = relFrame:GetCenter()
@@ -3912,16 +3934,24 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
     local centeredEdge = not ST.IsAuraPanelGroup(group)
         and ST.GetCenteredGrowthEdge(style.growthOrigin, orientation) or nil
-    local total = #frame.buttons
+    -- Panel Sections place their own members and park the base cluster on an
+    -- interior anchor frame; the loop below then runs its existing arithmetic
+    -- against that frame instead of the panel. A panel with no sections gets
+    -- nil here and lays out through the exact code it always did.
+    local sectionLayout, sectionLists, baseAnchor = ST.PrepareSectionedPanelLayout(
+        frame, group, frame.buttons, buttonWidth, buttonHeight, spacing, headerHeight)
+    local layoutRef = baseAnchor or frame
+    local layoutButtons = sectionLists and sectionLists.base or frame.buttons
+    local total = #layoutButtons
     local lineCount = math_ceil(total / buttonsPerRow)
     local visibleIndex = 0
 
-    for _, button in ipairs(frame.buttons) do
+    for _, button in ipairs(layoutButtons) do
         visibleIndex = visibleIndex + 1
         ClearButtonCompactSlotCache(button)
         button:ClearAllPoints()
         if isTriggerMode then
-            button:SetPoint("CENTER", frame, "CENTER", 0, 0)
+            button:SetPoint("CENTER", layoutRef, "CENTER", 0, 0)
         elseif centeredEdge then
             -- Each button pins its edge midpoint to the frame's, so full lines
             -- land where corner growth puts them and the trailing partial line
@@ -3931,12 +3961,12 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
             local itemsInLine = (line == lineCount - 1) and (total - line * buttonsPerRow) or buttonsPerRow
             if orientation == "horizontal" then
                 local edgeYMul = centeredEdge == "TOP" and -1 or 1
-                button:SetPoint(centeredEdge, frame, centeredEdge,
+                button:SetPoint(centeredEdge, layoutRef, centeredEdge,
                     (indexInLine - (itemsInLine - 1) / 2) * (buttonWidth + spacing),
                     edgeYMul * (line * (buttonHeight + spacing) + headerHeight))
             else
                 local edgeXMul = centeredEdge == "LEFT" and 1 or -1
-                button:SetPoint(centeredEdge, frame, centeredEdge,
+                button:SetPoint(centeredEdge, layoutRef, centeredEdge,
                     edgeXMul * line * (buttonWidth + spacing),
                     ((itemsInLine - 1) / 2 - indexInLine) * (buttonHeight + spacing) - headerHeight / 2)
             end
@@ -3949,10 +3979,15 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
                 col = math_floor((visibleIndex - 1) / buttonsPerRow)
                 row = (visibleIndex - 1) % buttonsPerRow
             end
-            button:SetPoint(growthAnchor, frame, growthAnchor, xMul * col * (buttonWidth + spacing), yMul * (row * (buttonHeight + spacing) + headerHeight))
+            button:SetPoint(growthAnchor, layoutRef, growthAnchor, xMul * col * (buttonWidth + spacing), yMul * (row * (buttonHeight + spacing) + headerHeight))
         end
     end
 
+    if sectionLayout then
+        -- The count stays the panel's materialized total: section members were
+        -- placed by PrepareSectionedPanelLayout, not by the base loop above.
+        visibleIndex = #frame.buttons
+    end
     frame.visibleButtonCount = isTriggerMode and (visibleIndex > 0 and 1 or 0) or visibleIndex
     if group.parentContainerId and not group.compactLayout and self.GetGroupLayoutButtonCount then
         frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group, {
@@ -4204,6 +4239,10 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
     local buttonsPerRow = style.buttonsPerRow or 12
+    -- Stamped by whichever layout pass ran last (ApplyActiveButtonLayout, or
+    -- UpdateGroupLayout under compact mode), so the footprint and the placement
+    -- are measured from one set of numbers and can never disagree.
+    local sectionLayout = frame._sectionLayout
     local numButtons = frame.visibleButtonCount
         or (self:IsRotationAssistantGroup(group) and 1)
         or #group.buttons
@@ -4216,6 +4255,15 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
 
     if numButtons == 0 then
         targetWidth, targetHeight = buttonWidth, buttonHeight
+    elseif sectionLayout then
+        -- A sectioned panel spans the union of its base cluster and every
+        -- section that has something visible in it. An all-hidden section
+        -- contributes nothing, so the footprint never reserves empty space.
+        -- footprintWidth/Height is the union, or -- with nothing visible at all
+        -- -- the same one-button rectangle the numButtons == 0 branch above
+        -- hands an empty panel, so the two branches cannot disagree.
+        targetWidth = math_max(sectionLayout.footprintWidth, 1)
+        targetHeight = math_max(sectionLayout.footprintHeight, 1)
     else
         local rows, cols
         if ST.IsAuraPanelGroup(group) then
@@ -4272,7 +4320,31 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
         fixedPoint = GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, style.growthOrigin)
     end
     local canCompensateAnchor = frame._hasBeenSized and oldWidth > 0 and oldHeight > 0
-    if fixedPoint and canCompensateAnchor then
+    if sectionLayout or frame._sectionBaseOffsetX then
+        -- A sectioned frame is bigger than its base cluster, so the same
+        -- compensation has to hold a point on the CLUSTER still instead of a
+        -- point on the frame -- otherwise a section appearing on one side shoves
+        -- the base grid across the screen. The trailing condition catches the
+        -- pass where the last section went away and the frame collapses back.
+        --
+        -- It runs off its OWN baseline, not _hasBeenSized. _hasBeenSized is
+        -- cleared by every AnchorGroupFrame and by every non-compact
+        -- FinishGroupButtonRefresh, and each of those runs immediately before
+        -- the resize that a membership or geometry commit ends in -- so gating
+        -- on it meant this compensation effectively never fired on an ordinary
+        -- corner-growth panel. _sectionSizeBaseline says only "this frame has
+        -- been through a real resize, so its rect and its section stamps
+        -- describe a genuine previous state", and a re-anchor no longer
+        -- invalidates that because the compensation writes its delta into the
+        -- saved anchor as well as into the live points.
+        local sectionAnchorX, sectionAnchorY = ST.CompensatePanelSectionAnchorDrift(
+            frame, group, sectionLayout, fixedPoint,
+            frame._sectionSizeBaseline and oldWidth > 0 and oldHeight > 0,
+            oldWidth, oldHeight, targetWidth, targetHeight)
+        if sectionAnchorX then
+            UpdateCoordLabel(frame, sectionAnchorX, sectionAnchorY)
+        end
+    elseif fixedPoint and canCompensateAnchor then
         local anchorPoint = (group.anchor and group.anchor.point) or "CENTER"
         local oldFixedX, oldFixedY = GetAnchorOffset(fixedPoint, oldWidth, oldHeight)
         local oldAnchorX, oldAnchorY = GetAnchorOffset(anchorPoint, oldWidth, oldHeight)
@@ -4287,7 +4359,27 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     end
 
     frame._hasBeenSized = true
+    -- A second, STICKY baseline flag, read only by the sectioned compensation
+    -- above. _hasBeenSized answers "may the plain fixed-point compensation
+    -- treat the previous size as a baseline", and is reset on purpose whenever
+    -- the points are rebuilt from the saved anchor. This one answers the
+    -- narrower "has this frame ever been sized for real", which a re-anchor
+    -- does not change -- the saved anchor and the live points agree after every
+    -- sectioned pass. It is per-frame, so a fresh frame after a /reload starts
+    -- without one and its first sectioned resize establishes the baseline
+    -- instead of compensating against CreateGroupFrame's placeholder size.
+    frame._sectionSizeBaseline = true
     frame._sizeDirty = nil
+    -- The one moment a dependent's SetPoint target has to change hands: the
+    -- panel frame and its anchoring body are the same frame while there are no
+    -- sections and different frames once there are. Between flips the base
+    -- anchor child just moves inside the frame and dependents follow for free,
+    -- so nothing pays for this on an ordinary resize.
+    local anchorBodyActive = ST.IsPanelSectionAnchorBodyActive(frame)
+    if anchorBodyActive ~= (frame._sectionAnchorBodyActive == true) then
+        frame._sectionAnchorBodyActive = anchorBodyActive or nil
+        self:ReanchorPanelSectionDependents(groupId)
+    end
     -- Sizing is the one choke point every Aura Panel geometry change passes
     -- through (population, restyle, resize grip, deferred ticker resize), so the
     -- unlock placeholders re-fit here and nowhere else.
@@ -4349,18 +4441,27 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
 
     local visibleCount = #visibleButtons
     local headerH = frame._textHeaderHeight or 0
+    -- Sections split the pass: the base grid packs only its own visible members,
+    -- and each section independently collapses its own line toward its anchor.
+    -- Hidden members drop out of a section's line exactly the way they drop out
+    -- of a base row here.
+    local sectionLayout, sectionLists, baseAnchor = ST.PrepareSectionedPanelLayout(
+        frame, group, visibleButtons, buttonWidth, buttonHeight, spacing, headerH)
+    local layoutRef = baseAnchor or frame
+    local layoutButtons = sectionLists and sectionLists.base or visibleButtons
+    local layoutCount = #layoutButtons
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
     -- A centered growth edge fully specifies the arrangement, so it wins over
     -- the compact start/center/end alignment (owner ruling 2026-08-16): each
     -- packed line centers itself against the frame's edge midpoint.
     local centeredEdge = ST.GetCenteredGrowthEdge(style.growthOrigin, orientation)
-    local lineCount = centeredEdge and math_ceil(visibleCount / buttonsPerRow) or 0
-    for visibleIndex, button in ipairs(visibleButtons) do
+    local lineCount = centeredEdge and math_ceil(layoutCount / buttonsPerRow) or 0
+    for visibleIndex, button in ipairs(layoutButtons) do
         local x, y
         if centeredEdge then
             local line = math_floor((visibleIndex - 1) / buttonsPerRow)
             local indexInLine = (visibleIndex - 1) % buttonsPerRow
-            local itemsInLine = (line == lineCount - 1) and (visibleCount - line * buttonsPerRow) or buttonsPerRow
+            local itemsInLine = (line == lineCount - 1) and (layoutCount - line * buttonsPerRow) or buttonsPerRow
             if orientation == "horizontal" then
                 local edgeYMul = centeredEdge == "TOP" and -1 or 1
                 x = (indexInLine - (itemsInLine - 1) / 2) * (buttonWidth + spacing)
@@ -4373,7 +4474,7 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
         else
             local row, col = GetCompactSlotForIndex(
                 visibleIndex,
-                visibleCount,
+                layoutCount,
                 buttonsPerRow,
                 orientation,
                 compactGrowthDirection
@@ -4386,14 +4487,31 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
             or button._compactSlotX ~= x
             or button._compactSlotY ~= y then
             button:ClearAllPoints()
-            button:SetPoint(anchor, frame, anchor, x, y)
+            button:SetPoint(anchor, layoutRef, anchor, x, y)
             button._compactSlotAnchor = anchor
             button._compactSlotX = x
             button._compactSlotY = y
         end
     end
 
-    if frame.visibleButtonCount ~= visibleCount then
+    -- With sections in play the footprint can change while the total visible
+    -- count does not (a section member hides as a base member appears), so the
+    -- union is compared against the frame's real size too.
+    -- Compared with a half-pixel tolerance: GetSize hands back float32 of what
+    -- was set, while the union is computed in doubles (centered lines halve an
+    -- odd pitch), so an exact test would report a change on a footprint that
+    -- did not move and re-resize the frame every pass.
+    local footprintChanged = false
+    if sectionLayout then
+        local currentWidth, currentHeight = frame:GetSize()
+        -- Compared against the same footprintWidth/Height ResizeGroupFrame sizes
+        -- from, empty panel included, or an all-hidden sectioned panel would
+        -- measure 1x1 here against a one-button frame and ask for a resize on
+        -- every single pass.
+        footprintChanged = math_abs(currentWidth - math_max(sectionLayout.footprintWidth, 1)) > 0.5
+            or math_abs(currentHeight - math_max(sectionLayout.footprintHeight, 1)) > 0.5
+    end
+    if frame.visibleButtonCount ~= visibleCount or footprintChanged then
         frame.visibleButtonCount = visibleCount
         self:ResizeGroupFrame(groupId)
     end
@@ -4620,6 +4738,52 @@ function CooldownCompanion:WouldCreateCircularAnchor(sourceId, targetId, targetK
         end
     end
     return false
+end
+
+--- Re-point everything anchored to this panel after its sectioned state flipped.
+--- The anchoring body changed frames, and an anchor to the outgoing one would
+--- keep resolving positionally -- a hidden base anchor still reports its last
+--- rectangle -- so a dependent left pointing at it would sit at a stale spot
+--- rather than visibly break. Both directions run the same pass; AnchorGroupFrame
+--- and AnchorContainerFrame each re-resolve the body and each carry their own
+--- combat deferral, so a protected dependent simply comes back dirty.
+--- Unit frames are not touched here: FrameAnchoring owns their protected-frame
+--- discipline and re-applies off its own RefreshGroupFrame hook.
+function CooldownCompanion:ReanchorPanelSectionDependents(groupId)
+    local profile = self.db and self.db.profile
+    if not profile then return end
+
+    local targetFrameName = "CooldownCompanionGroup" .. tostring(groupId)
+    for dependentId, dependentGroup in pairs(profile.groups or {}) do
+        if dependentId ~= groupId
+            and dependentGroup
+            and dependentGroup.anchor
+            and dependentGroup.anchor.relativeTo == targetFrameName then
+            local dependentFrame = self.groupFrames and self.groupFrames[dependentId]
+            if dependentFrame then
+                self:AnchorGroupFrame(dependentFrame, dependentGroup.anchor)
+            end
+        end
+    end
+
+    for containerId, container in pairs(profile.groupContainers or {}) do
+        if container
+            and container.anchor
+            and container.anchor.relativeTo == targetFrameName then
+            local containerFrame = self.containerFrames and self.containerFrames[containerId]
+            if containerFrame then
+                self:AnchorContainerFrame(containerFrame, container.anchor)
+            end
+        end
+    end
+
+    -- Texture and Trigger panels place a HOST frame, not the panel frame, and
+    -- keep their anchor in their own display settings rather than group.anchor,
+    -- so neither pass above sees them. Their one re-anchor path is the display
+    -- refresh.
+    if self.ReanchorStandaloneDisplayDependents then
+        self:ReanchorStandaloneDisplayDependents(targetFrameName)
+    end
 end
 
 function CooldownCompanion:GetDirectAnchorDependents(groupId, panelOnly)
@@ -6131,7 +6295,10 @@ function CooldownCompanion:AnchorContainerFrame(frame, anchor)
             local relativeFrame = relativeTo and _G[relativeTo]
             if relativeFrame then
                 frame:ClearAllPoints()
-                frame:SetPoint(anchor.point or "CENTER", relativeFrame, anchor.relativePoint or "CENTER", rawX, rawY)
+                -- Same rule as a panel dependent: a sectioned panel's base row
+                -- is the body a container anchored to it hangs off.
+                frame:SetPoint(anchor.point or "CENTER", ST.GetPanelAnchorBodyFrame(relativeFrame),
+                    anchor.relativePoint or "CENTER", rawX, rawY)
                 UpdateCoordLabel(frame, rawX, rawY)
                 return
             end

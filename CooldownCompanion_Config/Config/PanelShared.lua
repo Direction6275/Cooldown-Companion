@@ -492,6 +492,11 @@ local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGrou
     -- An entry arriving in an Aura Panel needs that panel's own key, not the one
     -- it wore where it came from (or none at all, which the engine skips).
     CooldownCompanion:StampAuraPanelEntryKey(targetGroup, entryData)
+    -- A section placement belongs to the panel it was made on: an entry landing
+    -- here starts in the base row rather than joining whatever section this
+    -- panel keeps at the anchor it used to name, and the cluster it left goes
+    -- with it when it was the last member there.
+    ST.DetachEntryFromPanelSection(db.groups[sourceGroupId], entryData)
     table.insert(targetGroup.buttons, entryData)
     table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
     CooldownCompanion:KeepPanelSingleLineOnGrowth(targetGroup, previousCount)

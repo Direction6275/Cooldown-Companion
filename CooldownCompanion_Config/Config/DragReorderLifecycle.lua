@@ -363,6 +363,11 @@ local function PerformCrossPanelMove(sourcePanelId, sourceIndex, targetPanelId, 
         CooldownCompanion:Print(rejectMessage)
         return nil
     end
+    -- A section placement belongs to the panel it was made on. An entry leaving
+    -- takes no membership with it, or it would silently join whatever section
+    -- the destination happens to keep at that anchor -- and the anchor it just
+    -- vacated goes with it if it was the last member there.
+    ST.DetachEntryFromPanelSection(sourceGroup, buttonData)
     table.remove(sourceGroup.buttons, sourceIndex)
     -- Resolve "append" targets (nil targetIndex = after last button)
     if not targetIndex then
@@ -438,7 +443,136 @@ local function RestoreDragDimming(state)
     state.dimmedTargets = nil
 end
 
-local function CancelDrag(opts)
+------------------------------------------------------------------------
+-- Escape cancels an in-flight drag
+------------------------------------------------------------------------
+-- Declared ahead of the catcher so its key handler reaches the real cancel
+-- as an upvalue; the definition below assigns into this local.
+local CancelDrag
+
+-- The catcher is shown only while a drag is ACTIVE and hidden again by
+-- CancelDrag -- the single choke point every drag end passes through (drop,
+-- release-outside, and the preview-rebuild cancels). With no drag in hand the
+-- frame is hidden, so it is not in the keyboard chain at all and Escape keeps
+-- doing exactly what it does today (close the config window, or whatever the
+-- profile's escClosesConfig option leaves it doing).
+--
+-- TOOLTIP strata puts it above the config window's own Escape handler, so the
+-- press is consumed here instead of closing the window mid-drag. Propagation
+-- follows the arrange-mode pill's discipline: armed on show and on every other
+-- key so the frame behaves as if it were not there, flipped off only for the
+-- Escape it actually consumes, and re-armed as soon as it can be.
+--
+-- SetPropagateKeyboardInput is combat-restricted, and that turns "re-arm on the
+-- next show" into a trap: consuming an Escape out of combat leaves propagation
+-- OFF, and a drag started in combat cannot turn it back on -- so a keyboard-
+-- enabled frame would sit over the game swallowing every key, movement
+-- included, for as long as the drag lasted. Hence the tracked state below: the
+-- catcher re-arms on the tick after the press it consumed, and a drag that
+-- still finds it disarmed IN combat goes without Escape support rather than
+-- eating the keyboard.
+local dragEscapeCatcher
+-- True only while propagation is KNOWN to be on. Starts false: a keyboard frame
+-- propagates nothing until told to, and the telling is restricted.
+local dragEscapePropagating = false
+
+--- Turn propagation back on if that is currently allowed.
+--- Returns true when the catcher is safe to have in the keyboard chain.
+local function ArmDragEscapeCatcher(catcher)
+    -- Out of combat it always writes, exactly as the handlers here always did;
+    -- in combat it can only report what the last legal write left behind.
+    if InCombatLockdown() then return dragEscapePropagating end
+    catcher:SetPropagateKeyboardInput(true)
+    dragEscapePropagating = true
+    return true
+end
+
+--- Re-arm AFTER the key event that disarmed it, never inside it.
+--- The propagate flag is read when the handler returns, so an arm call in the
+--- same call stack (OnKeyDown -> CancelDrag -> hide) would hand the Escape this
+--- catcher just consumed straight on to the config window behind it. One tick
+--- later the press is spent and the flag is free to go back to true.
+--- Combat can still refuse the write; the next drag's show tries again.
+local function RestoreDragEscapePropagation()
+    if dragEscapePropagating or not dragEscapeCatcher then return end
+    C_Timer.After(0, function()
+        if dragEscapeCatcher then
+            ArmDragEscapeCatcher(dragEscapeCatcher)
+        end
+    end)
+end
+
+local function EnsureDragEscapeCatcher()
+    if dragEscapeCatcher then
+        return dragEscapeCatcher
+    end
+
+    local catcher = CreateFrame("Frame", nil, UIParent)
+    catcher:SetFrameStrata("TOOLTIP")
+    -- Keyboard-only: no mouse, no textures, and a degenerate footprint so it
+    -- can never sit between the cursor and the surface being dragged.
+    catcher:SetSize(1, 1)
+    catcher:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+    catcher:EnableMouse(false)
+    catcher:EnableKeyboard(true)
+    catcher:Hide()
+    catcher:SetScript("OnShow", function(self)
+        ArmDragEscapeCatcher(self)
+    end)
+    catcher:SetScript("OnKeyDown", function(self, key)
+        -- The phase test is the authority, not the frame's shown state: a
+        -- stranded catcher must still pass Escape through untouched.
+        if key == "ESCAPE" and CS.dragState and CS.dragState.phase == "active" then
+            if not InCombatLockdown() then
+                self:SetPropagateKeyboardInput(false)
+                dragEscapePropagating = false
+            end
+            -- The mouse button is still down. Mark the release that is still in
+            -- the user's hand as spent, so the drag source's mouse-up swallows
+            -- it instead of falling through to its click behaviour.
+            CS.dragEscapeCancelledMouseUp = true
+            -- Re-arms on the way out: CancelDrag hides the catcher, and the
+            -- hide schedules propagation's return for the following tick.
+            CancelDrag()
+        else
+            ArmDragEscapeCatcher(self)
+        end
+    end)
+
+    dragEscapeCatcher = catcher
+    return catcher
+end
+
+local function ShowDragEscapeCatcher()
+    local catcher = EnsureDragEscapeCatcher()
+    -- Disarmed and in combat: it cannot be made to pass keys through, so it
+    -- does not go in the chain at all. This drag loses Escape; it does not cost
+    -- the player their keyboard.
+    if not ArmDragEscapeCatcher(catcher) then return end
+    catcher:Show()
+end
+
+local function HideDragEscapeCatcher()
+    if not dragEscapeCatcher then return end
+    dragEscapeCatcher:Hide()
+    -- Paying back a consumed Escape here rather than on the next OnShow is what
+    -- keeps a drag started IN combat from inheriting a disarmed catcher.
+    RestoreDragEscapePropagation()
+end
+
+--- One-shot: true for exactly one mouse release, the one still in flight when
+--- Escape cancelled an active drag. Drag sources ask this at the top of their
+--- left-button mouse-up and swallow that release; every ask clears the mark, so
+--- the very next click behaves normally again. Written straight onto ST rather
+--- than through a file-scope local: this file is already dense with upvalues.
+function ST._ConsumeDragEscapeMouseUp()
+    if not CS.dragEscapeCancelledMouseUp then return false end
+    CS.dragEscapeCancelledMouseUp = nil
+    return true
+end
+
+function CancelDrag(opts)
+    HideDragEscapeCatcher()
     local hadSpringOpen = CS.springOpenContainer ~= nil
     CS.springOpenContainer = nil
     if CS.dragState then
@@ -762,6 +896,10 @@ local function FinishDrag()
 end
 
 local function StartDragTracking()
+    -- Every drag source reaches here from its own mouse-DOWN, so a new press can
+    -- never inherit an Escape-cancel mark left behind by an earlier drag whose
+    -- release went to a frame that had no chance to claim it.
+    CS.dragEscapeCancelledMouseUp = nil
     if not CS.dragTracker then
         CS.dragTracker = CreateFrame("Frame", nil, UIParent)
     end
@@ -791,6 +929,9 @@ local function StartDragTracking()
             local deltaX = math.abs(cursorX - (CS.dragState.startX or cursorX))
             if deltaY > DRAG_THRESHOLD or deltaX > DRAG_THRESHOLD then
                 CS.dragState.phase = "active"
+                -- A drag is now in hand, so Escape belongs to it. Every exit
+                -- from here runs through CancelDrag, which hides this again.
+                ShowDragEscapeCatcher()
                 if CS.dragState.kind == "layout-slot"
                     and CS.dragState.layoutDrag
                     and CS.dragState.layoutDrag.onActivate then

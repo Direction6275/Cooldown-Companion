@@ -146,6 +146,11 @@ function CooldownCompanion:NormalizeContainerAnchor(anchor, resolveAddonFrames)
             return normalized, changed, true
         end
 
+        -- Measure the target's ANCHORING BODY. AnchorContainerFrame positions
+        -- against it, so converting this offset against the panel's outer union
+        -- instead would move the container the moment a section appeared.
+        relativeFrame = ST.GetPanelAnchorBodyFrame(relativeFrame)
+
         local rcx, rcy = relativeFrame:GetCenter()
         local rw, rh = GetFrameSizeInUIParentSpace(relativeFrame)
         local ucx, ucy = UIParent:GetCenter()
@@ -316,6 +321,11 @@ local function SyncGroupAnchorFromTexturePanelSettings(self, groupId, group)
     if not relFrame then
         relFrame = UIParent
     end
+
+    -- Same rule as everywhere else a panel is measured for a dependent: the
+    -- anchoring body, because that is what AnchorGroupFrame will SetPoint the
+    -- panel against once these offsets are saved.
+    relFrame = ST.GetPanelAnchorBodyFrame(relFrame)
 
     local rw, rh = relFrame:GetSize()
     local rcx, rcy = relFrame:GetCenter()
@@ -1745,6 +1755,12 @@ function CooldownCompanion:RemoveButtonFromGroup(groupId, buttonIndex)
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
+    -- A section IS its members: take the leaving entry out of its cluster before
+    -- it goes, so the last one out dissolves it. An orphaned section table would
+    -- otherwise sit in the profile as a Layout-tab block for a cluster nothing
+    -- is in, and as a drop target promising offset (0,0) while quietly holding
+    -- the old one's offsets.
+    ST.DetachEntryFromPanelSection(group, group.buttons and group.buttons[buttonIndex])
     table_remove(group.buttons, buttonIndex)
     self:RefreshGroupFrame(groupId)
 end

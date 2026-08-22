@@ -1517,27 +1517,1056 @@ local function EnsureGapFrame(preview)
         gap.bg:SetAllPoints()
         gap.bg:SetColorTexture(PANEL_PREVIEW_RING_COLOR[1], PANEL_PREVIEW_RING_COLOR[2],
             PANEL_PREVIEW_RING_COLOR[3], 0.18)
+        -- Only a lane target ever lights this edge (SectionDrag.SetGapAccent);
+        -- the base grid's own insertion gap stays a bare tile.
+        gap.border = ST.CreateBorderTextureSet(gap, "OVERLAY")
         preview.gapFrame = gap
     end
     return gap
 end
 
+------------------------------------------------------------------------
+-- PANEL SECTION DRAG
+--
+-- The drag model's second and third target families. Inside the base grid's
+-- reorder margin a drag means exactly what it always did; past it the base grid
+-- un-shuffles and every anchor answers for itself:
+--   an UNOCCUPIED anchor shows a PAD  -> dropping there creates a section
+--   an OCCUPIED anchor is a LANE      -> dropping there joins at a position
+-- One spot, one meaning: a pad and a lane never share an anchor.
+--
+-- Not one number here is section geometry this file worked out. Pads come from
+-- ST.BuildPanelSectionLayout run over a SYNTHETIC input (the real sections plus
+-- a one-phantom-member section at each free anchor), and lanes come from the
+-- real layout table the live panel is placed from. The preview may only ever
+-- READ the engine's arithmetic -- re-deriving it is how a mirror starts lying.
+--
+-- Lives in a do-block: this file rides the 200-local ceiling.
+local SectionDrag = {}
+do
+    -- Read-only stand-ins handed to the engine for the synthetic pass.
+    local ZERO_SECTION = { offsetX = 0, offsetY = 0 }
+    local PHANTOM_MEMBERS = { { buttonData = {} } }
+
+    -- ONE ACCENT LANGUAGE. Every target in this gesture wears exactly two
+    -- looks: ring blue = a target that exists, gold = the target the drop is
+    -- committed to. Nothing stacks the two, so the eye never has to work out
+    -- which of two lit things wins.
+    --
+    -- Gold is this addon's "aligned" signal already (Core/GroupFrame.lua's
+    -- arrange-mode snap guides, SNAP_GUIDE_COLOR), and a resolved drop IS a
+    -- snap, so the claimed pad, its pips and the lane's gap tile all speak it.
+    -- Screen pixels of clearance past the base cluster's real rect before a
+    -- drag counts as leaving it. Small on purpose (see InBaseMargin).
+    local BASE_EXIT_MARGIN = 6
+
+    local PAD_IDLE_COLOR = PANEL_PREVIEW_RING_COLOR
+    local PAD_IDLE_FILL_ALPHA = 0.08
+    local PAD_IDLE_BORDER_ALPHA = 0.50
+    local SNAP_COLOR = { 1, 0.82, 0 }
+    local PAD_SNAP_FILL_ALPHA = 0.16
+    local SNAP_EDGE_ALPHA = 0.95
+    local SNAP_GAP_ALPHA = 0.28
+    local PIP_ALPHA = 0.95
+    local GAP_ALPHA = 0.18
+
+    -- EVERY hairline in this gesture is drawn by Core/Utils.lua's border
+    -- texture set in CRISP mode, which is the house's own 1px chrome
+    -- technique (the selection ring and the copy-target ring use it). Crisp
+    -- means ONE PHYSICAL PIXEL measured through the region's effective scale,
+    -- and preview.content carries the fit scale, so the same call reads
+    -- identically at every preview size. A content-space thickness could not:
+    -- the fit scale is <= 1, so a literal 1 always came out sub-pixel and
+    -- washed out on anything but a full-size preview.
+    --
+    -- The mode is passed literally rather than through
+    -- ST.GetEffectiveBorderRenderMode: this is config chrome, not a mirror of
+    -- the panel's own border styling, so the profile's border settings have no
+    -- say in it.
+    local CRISP = ST.BORDER_RENDER_MODE_CRISP
+
+    local function ApplyChromeBorder(textures, frame, color, alpha)
+        ST.ApplyBorderTextures(textures, frame,
+            { color[1], color[2], color[3], alpha }, 1, CRISP)
+    end
+
+    -- Growth direction is not worked out here either. The engine already
+    -- handed back the line's own step vector, and the SIGN of that vector is
+    -- the arrow to draw. The one thing a step vector cannot say is whether the
+    -- line spreads from its middle, and that is a property of the anchor's
+    -- NAME alone: the four edge midpoints read `from = "center"` in BOTH
+    -- orientations of Core/PanelSections.lua's SECTION_PLACEMENT, and the four
+    -- corners never do.
+    local CENTERED_ANCHORS = {
+        TOP = true, BOTTOM = true, LEFT = true, RIGHT = true,
+    }
+    -- One atlas, four directions. The config's flat chevron (the same glyph
+    -- the preview command center's collapse control uses) takes a vertex
+    -- colour cleanly, which a coloured arrow art asset would not, and
+    -- Texture:SetRotation turns counterclockwise from the glyph's own DOWN.
+    local PIP_ATLAS = "uitools-icon-chevron-down"
+    local PIP_ROTATION = {
+        down = 0,
+        right = math.pi / 2,
+        up = math.pi,
+        left = -math.pi / 2,
+    }
+
+    -- The whole-section grab chip, in SCREEN pixels: it is chrome, so every
+    -- one of these is divided by the preview's fit scale at use.
+    local HANDLE_SCREEN_SIZE = 17
+    local HANDLE_SCREEN_MARGIN = 6
+    local HANDLE_DRAG_MEMBER_ALPHA = 0.25
+    local HANDLE_BORDER_ALPHA = 0.75
+    -- How long the cursor has to be off the section AND off the chip before
+    -- the chip goes, and how much slack the corridor between them gets.
+    local HANDLE_HIDE_DELAY = 0.25
+    local HANDLE_CORRIDOR = 10
+    -- Breathing room between the cluster and the "this grabs all of it" ring.
+    local OUTLINE_SCREEN_INSET = 3
+    local OUTLINE_ALPHA = 0.75
+
+    -- The chip's glyph. There is no grip or move art in the uitools family
+    -- (checked against UiTextureAtlasMember: chevrons, checkbox, close,
+    -- refresh, search, plus/minus, window furniture -- nothing directional
+    -- but the chevrons), so the four-way move motif is built from the SAME
+    -- chevron the direction pips use, one per compass point, pointing out.
+    -- That keeps one glyph vocabulary across the whole gesture.
+    local HANDLE_ARROWS = {
+        { rotation = math.pi, dx = 0, dy = 1 },
+        { rotation = math.pi / 2, dx = 1, dy = 0 },
+        { rotation = 0, dx = 0, dy = -1 },
+        { rotation = -math.pi / 2, dx = -1, dy = 0 },
+    }
+
+    -- Content-TOPLEFT space -> the scaled screen coordinates raw cursor values
+    -- live in. Same transform the base cell centers use.
+    local function ToScreen(view, x, y)
+        return view.left + x * view.factor, view.bottom + view.height + y * view.factor
+    end
+
+    --- A base cell's CENTER in content-TOPLEFT space, given the anchored offset
+    --- cellXY hands back for it. One writer for that conversion: the insertion
+    --- anchors below measure their candidate cells with it, and the empty-base
+    --- floor builds its stand-in rect from the same numbers, so a hit region can
+    --- never sit anywhere but where the cell is actually drawn.
+    function SectionDrag.CellCenter(anchor, x, y, slotW, slotH, localW, localH)
+        if anchor == "TOPLEFT" then
+            return x + slotW / 2, y - slotH / 2
+        elseif anchor == "TOPRIGHT" then
+            return localW + x - slotW / 2, y - slotH / 2
+        elseif anchor == "BOTTOMLEFT" then
+            return x + slotW / 2, -localH + y + slotH / 2
+        elseif anchor == "TOP" then
+            return localW / 2 + x, y - slotH / 2
+        elseif anchor == "BOTTOM" then
+            return localW / 2 + x, -localH + y + slotH / 2
+        elseif anchor == "LEFT" then
+            return x + slotW / 2, -localH / 2 + y
+        elseif anchor == "RIGHT" then
+            return localW + x - slotW / 2, -localH / 2 + y
+        end
+        -- BOTTOMRIGHT
+        return localW + x - slotW / 2, -localH + y + slotH / 2
+    end
+
+    -- Squared distance from the cursor to a content-space rect, 0 inside it,
+    -- plus the squared distance to its center for a stable tie-break between
+    -- rects that overlap (a narrow base grid can stack TOPLEFT/TOP/TOPRIGHT).
+    local function RectDistances(view, rect, cursorX, cursorY)
+        local left, top = ToScreen(view, rect.x, rect.y)
+        local right = left + rect.width * view.factor
+        local bottom = top - rect.height * view.factor
+        local dx = 0
+        if cursorX < left then dx = left - cursorX
+        elseif cursorX > right then dx = cursorX - right end
+        local dy = 0
+        if cursorY > top then dy = cursorY - top
+        elseif cursorY < bottom then dy = bottom - cursorY end
+        local cx = (left + right) / 2 - cursorX
+        local cy = (top + bottom) / 2 - cursorY
+        return dx * dx + dy * dy, cx * cx + cy * cy,
+            math_max(right - left, top - bottom, 24) + 60
+    end
+
+    local function LanePosition(lane, position)
+        return lane.originX + (position - 1) * lane.stepX,
+            lane.originY + (position - 1) * lane.stepY
+    end
+
+    -- Where in a lane's line the cursor sits, 1 .. #members + 1, counted over
+    -- the members' resting positions (never their in-flight frames). Projecting
+    -- onto the lane's own step vector covers both axes and both growth
+    -- directions with one expression.
+    local function LaneInsertPosition(lane, view, cursorX, cursorY)
+        local ux, uy = lane.stepX * view.factor, lane.stepY * view.factor
+        local length = math.sqrt(ux * ux + uy * uy)
+        if length <= 0 then return 1 end
+        ux, uy = ux / length, uy / length
+        local baseX, baseY = ToScreen(view, LanePosition(lane, 1))
+        local halfW = lane.width * view.factor / 2
+        local halfH = lane.height * view.factor / 2
+        local cursorScalar = (cursorX - baseX - halfW) * ux
+            + (cursorY - baseY + halfH) * uy
+        local position = 1
+        for k = 1, #lane.members do
+            if ((k - 1) * length) < cursorScalar then position = k + 1 end
+        end
+        return position
+    end
+
+    --- Cache the pad rects, the lane geometry, and the base cluster's own rect
+    --- for one drag activation. None of the three can change while a drag is
+    --- held (a rebuild cancels the drag), so this runs once per build, never
+    --- per OnUpdate.
+    function SectionDrag.Build(group, sections, lists, sectionLayout,
+                               entryWidth, entryHeight, spacing, headerHeight,
+                               contentWidth, contentHeight)
+        local model = { pads = {}, lanes = {} }
+
+        -- The base cluster inside the content frame. Without sections the
+        -- content frame IS the base cluster, which is what the zeros say.
+        model.baseRect = {
+            x = sectionLayout and sectionLayout.baseOffsetX or 0,
+            y = sectionLayout and -sectionLayout.baseOffsetY or 0,
+            width = sectionLayout and sectionLayout.baseWidth or contentWidth,
+            height = sectionLayout and sectionLayout.baseHeight or contentHeight,
+        }
+
+        for anchor, info in pairs(sectionLayout and sectionLayout.sections or {}) do
+            local members = lists.members[anchor]
+            if members and #members > 0 then
+                local ids = {}
+                for k, entry in ipairs(members) do ids[k] = entry.index end
+                -- The line's own rect, from its first and last member's
+                -- placements; a lane grows in either direction on its axis, so
+                -- the ends are compared rather than assumed.
+                local lastX = info.originX + (#ids - 1) * info.stepX
+                local lastY = info.originY + (#ids - 1) * info.stepY
+                local x0 = math_min(info.originX, lastX)
+                local y0 = math_max(info.originY, lastY)
+                model.lanes[anchor] = {
+                    members = ids,
+                    originX = info.originX, originY = info.originY,
+                    stepX = info.stepX, stepY = info.stepY,
+                    width = info.width, height = info.height,
+                    rect = {
+                        x = x0,
+                        y = y0,
+                        width = math_max(info.originX, lastX) + info.width - x0,
+                        height = y0 - (math_min(info.originY, lastY) - info.height),
+                    },
+                }
+            end
+        end
+
+        -- The synthetic pass. Every free anchor is handed a section (its own
+        -- saved one when a placement outlived its members, so the pad never
+        -- promises an offset the drop will not honor) and one phantom member,
+        -- and the rect the engine hands back for it IS that anchor's pad.
+        local synthSections, synthMembers, free = {}, {}, nil
+        for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
+            if model.lanes[anchor] then
+                synthSections[anchor] = sections[anchor]
+                synthMembers[anchor] = lists.members[anchor]
+            else
+                synthSections[anchor] = (sections and sections[anchor]) or ZERO_SECTION
+                synthMembers[anchor] = PHANTOM_MEMBERS
+                free = true
+            end
+        end
+        if free then
+            local synth = ST.BuildPanelSectionLayout(group, synthSections,
+                { base = lists.base, members = synthMembers },
+                entryWidth, entryHeight, spacing, headerHeight)
+            -- Both layouts place from the same base-cluster origin underneath;
+            -- undoing the synthetic union's shift and applying the real one is
+            -- the whole conversion.
+            local realX = sectionLayout and sectionLayout.baseOffsetX or 0
+            local realY = sectionLayout and sectionLayout.baseOffsetY or 0
+            for anchor, info in pairs(synth.sections) do
+                if not model.lanes[anchor] then
+                    model.pads[anchor] = {
+                        x = info.originX - synth.baseOffsetX + realX,
+                        y = info.originY + synth.baseOffsetY - realY,
+                        width = info.width,
+                        height = info.height,
+                        -- Carried, not computed: this is the step the second
+                        -- member of that section would take, which is exactly
+                        -- the line the direction pips promise.
+                        stepX = info.stepX,
+                        stepY = info.stepY,
+                    }
+                end
+            end
+        end
+
+        return model
+    end
+
+    --- Give an ALL-SECTIONED panel a base row worth aiming at.
+    --- With no base members left, BuildPanelSectionLayout measures the base
+    --- cluster as 0x0 (nothing to measure), so the rect above is a bare point
+    --- and "drag it back to the base row" means hitting a few pixels that every
+    --- pad and lane out-competes. The floor is the cell the base grid would
+    --- actually draw -- the same rect the insertion gap tile lands in, taken
+    --- from cell 1 of this build's own grid -- so coming home is as big a target
+    --- as leaving was, and the region the cursor claims is the region the tile
+    --- appears in.
+    ---
+    --- Kept as its own field: model.baseRect stays the cluster's TRUE rect, and
+    --- the whole-section handle goes on picking its side against that.
+    function SectionDrag.FloorEmptyBase(model, layoutDrag, localW, localH)
+        local rect = model.baseRect
+        if rect.width > 0 and rect.height > 0 then return end
+        local slotW, slotH = layoutDrag.slotW, layoutDrag.slotH
+        local x, y = layoutDrag.cellXY(1)
+        local cx, cy = SectionDrag.CellCenter(layoutDrag.anchor, x, y,
+            slotW, slotH, localW, localH)
+        model.baseHitRect = {
+            x = cx - slotW / 2,
+            y = cy + slotH / 2,
+            width = slotW,
+            height = slotH,
+        }
+    end
+
+    --- The cursor's screen frame of reference for one resolve pass.
+    function SectionDrag.View(content)
+        local left, bottom, width, height = content:GetScaledRect()
+        if not (left and bottom and width and height) then return nil end
+        local localW = content:GetWidth() or 1
+        return {
+            left = left, bottom = bottom, height = height,
+            factor = (localW > 0) and (width / localW) or 1,
+        }
+    end
+
+    --- True while the cursor is still in reorder country: the base grid's own
+    --- footprint, not a wide skirt around it. Section land begins the moment
+    --- the cursor clears the cluster, which is what makes the pads feel like
+    --- they were waiting rather than earned.
+    ---
+    --- The two boundaries are deliberately DIFFERENT rects. Leaving takes a few
+    --- pixels of clearance; coming back takes the real edge. A cursor parked on
+    --- the boundary therefore sits in whichever country it last entered instead
+    --- of flipping the pads on and off frame after frame.
+    ---
+    --- Which country that is has to survive between OnUpdate frames, and the
+    --- drag model is the only thing here that lives exactly as long as one
+    --- gesture (a rebuild replaces it and cancels the drag), so it holds the
+    --- flag. No reset is needed on a fresh drag: whichever side of the two
+    --- rects the cursor is actually on decides the first frame outright, and
+    --- only a cursor in the narrow band between them inherits the old answer.
+    function SectionDrag.InBaseMargin(model, view, cursorX, cursorY)
+        -- The floored stand-in when there is one (see FloorEmptyBase); a panel
+        -- with base members never has one and tests its real cluster.
+        local rect = model.baseHitRect or model.baseRect
+        local left, top = ToScreen(view, rect.x, rect.y)
+        local right = left + rect.width * view.factor
+        local bottom = top - rect.height * view.factor
+        local margin = model.inSectionLand and 0 or BASE_EXIT_MARGIN
+        local inside = cursorX >= left - margin and cursorX <= right + margin
+            and cursorY <= top + margin and cursorY >= bottom - margin
+        model.inSectionLand = not inside
+        return inside
+    end
+
+    --- The pad or lane the cursor claims, or nil when it claims neither.
+    --- Containment wins outright; otherwise the nearest candidate within a sane
+    --- radius, so a release out in open space is still a snap-back.
+    function SectionDrag.Resolve(model, view, cursorX, cursorY)
+        local bestAnchor, bestLane, bestDist, bestCenter, bestReach
+        for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
+            local lane = model.lanes[anchor]
+            local rect = lane and lane.rect or model.pads[anchor]
+            if rect then
+                local dist, center, reach = RectDistances(view, rect, cursorX, cursorY)
+                if not bestDist or dist < bestDist
+                    or (dist == bestDist and center < bestCenter) then
+                    bestAnchor, bestLane = anchor, lane
+                    bestDist, bestCenter, bestReach = dist, center, reach
+                end
+            end
+        end
+        if not bestAnchor or bestDist > (bestReach * bestReach) then return nil end
+        if bestLane then
+            return {
+                section = bestAnchor,
+                memberPos = LaneInsertPosition(bestLane, view, cursorX, cursorY),
+            }
+        end
+        return { pad = bestAnchor }
+    end
+
+    ------------------------------------------------------------------
+    -- Pads
+
+    local function EnsurePad(preview, anchor)
+        local pads = preview.sectionPads
+        if not pads then pads = {}; preview.sectionPads = pads end
+        local pad = pads[anchor]
+        if not pad then
+            pad = CreateFrame("Frame", nil, preview.content)
+            pad:EnableMouse(false)
+            pad.bg = pad:CreateTexture(nil, "BACKGROUND")
+            pad.bg:SetAllPoints()
+            -- A pad is a tile with a real edge, not a bare colour rect: the
+            -- border is what makes an empty anchor read as a place to put
+            -- something rather than a smudge on the preview.
+            pad.border = ST.CreateBorderTextureSet(pad, "OVERLAY")
+            pad:Hide()
+            pads[anchor] = pad
+        end
+        return pad
+    end
+
+    -- The direction pips are only ever wanted on the ONE pad the cursor has
+    -- claimed, so they are built the first time a pad is lit and then reused
+    -- for the life of the pooled frame. They are born gold because the only
+    -- state that shows them is the committed one.
+    local function EnsurePadDecor(pad)
+        if pad.pips then return end
+        local pips = {}
+        for k = 1, 3 do
+            local tex = pad:CreateTexture(nil, "ARTWORK")
+            tex:SetVertexColor(SNAP_COLOR[1], SNAP_COLOR[2], SNAP_COLOR[3],
+                PIP_ALPHA)
+            tex:Hide()
+            pips[k] = tex
+        end
+        pad.pips = pips
+    end
+
+    --- Direction pips: two or three cosmetic markers INSIDE the pad tile,
+    --- stepping along the line the section would grow on. Which way they point
+    --- is read straight off the engine's step vector for that anchor; whether
+    --- they point both ways is read off the anchor's name.
+    local function LayoutPadPips(pad, anchor, rect)
+        local pips = pad.pips
+        local stepX, stepY = rect.stepX or 0, rect.stepY or 0
+        local horizontal = math.abs(stepX) >= math.abs(stepY)
+        local ux, uy = 0, 0
+        local forward, backward
+        if horizontal then
+            ux = (stepX < 0) and -1 or 1
+            forward = (ux < 0) and PIP_ROTATION.left or PIP_ROTATION.right
+            backward = (ux < 0) and PIP_ROTATION.right or PIP_ROTATION.left
+        else
+            uy = (stepY < 0) and -1 or 1
+            forward = (uy < 0) and PIP_ROTATION.down or PIP_ROTATION.up
+            backward = (uy < 0) and PIP_ROTATION.up or PIP_ROTATION.down
+        end
+        local size = math_max(6, math_min(14,
+            math_min(rect.width or 0, rect.height or 0) * 0.34))
+        local gap = size * 0.8
+        local centered = CENTERED_ANCHORS[anchor] == true
+        local shown = centered and 2 or 3
+        for k = 1, 3 do
+            local tex = pips[k]
+            if k > shown then
+                tex:Hide()
+            else
+                local rotation, step
+                if centered then
+                    -- Entry 1 lands centred on that edge and the line spreads
+                    -- from there, so each end of the tile carries an outward
+                    -- chevron instead of a run in one direction.
+                    rotation = (k == 1) and backward or forward
+                    step = (k == 1) and -1 or 1
+                else
+                    rotation = forward
+                    step = k - 2
+                end
+                tex:SetAtlas(PIP_ATLAS, false)
+                tex:SetRotation(rotation)
+                tex:SetSize(size, size)
+                tex:ClearAllPoints()
+                tex:SetPoint("CENTER", pad, "CENTER",
+                    step * gap * ux, step * gap * uy)
+                tex:Show()
+            end
+        end
+    end
+
+    --- The pad's ONLY state change. Idle and claimed differ in colour and in
+    --- nothing else: same tile, same edge, same weight, ring blue or gold.
+    local function SetPadHighlight(pad, on, anchor, rect)
+        local color = on and SNAP_COLOR or PAD_IDLE_COLOR
+        pad.bg:SetColorTexture(color[1], color[2], color[3],
+            on and PAD_SNAP_FILL_ALPHA or PAD_IDLE_FILL_ALPHA)
+        ApplyChromeBorder(pad.border, pad, color,
+            on and SNAP_EDGE_ALPHA or PAD_IDLE_BORDER_ALPHA)
+        if on and rect then
+            EnsurePadDecor(pad)
+            LayoutPadPips(pad, anchor, rect)
+        elseif pad.pips then
+            for _, tex in ipairs(pad.pips) do tex:Hide() end
+        end
+    end
+
+    --- The lane gap borrows the base grid's own gap tile, so its colour has to
+    --- be written by whichever target family is holding it this frame.
+    function SectionDrag.SetGapAccent(preview, snapped)
+        local gap = preview.gapFrame
+        if not gap or preview.gapAccentSnapped == snapped then return end
+        preview.gapAccentSnapped = snapped
+        if snapped then
+            gap.bg:SetColorTexture(SNAP_COLOR[1], SNAP_COLOR[2], SNAP_COLOR[3],
+                SNAP_GAP_ALPHA)
+            -- Same gold, same one-physical-pixel edge the claimed pad wears:
+            -- a lane target and a pad target are the same commitment.
+            ApplyChromeBorder(gap.border, gap, SNAP_COLOR, SNAP_EDGE_ALPHA)
+        else
+            gap.bg:SetColorTexture(PANEL_PREVIEW_RING_COLOR[1],
+                PANEL_PREVIEW_RING_COLOR[2], PANEL_PREVIEW_RING_COLOR[3],
+                GAP_ALPHA)
+            ST.HideBorderTextures(gap.border)
+        end
+    end
+
+    --- The unified anchor preview wraps this mirror in the attached bars'
+    --- Layout & Order lanes, and those lanes occupy the exact strip the anchor
+    --- pads claim. Two affordances in one place read as a bug, so the lanes go
+    --- quiet for the duration of a section gesture -- the same move arrange mode
+    --- makes when it fades its mover chrome during a drag.
+    ---
+    --- Deliberately NOT paired with HidePads: the pads come and go every time
+    --- the cursor crosses the base grid's footprint, and restoring the bars on
+    --- each crossing would strobe them. They come back when the GESTURE ends.
+    --- Idempotent, and a no-op for a mirror with no lanes around it.
+    --- Both directions early-out on the state they would write: ShowPads asks
+    --- for the faded state on EVERY frame the pads are up, and rewriting every
+    --- pooled frame's alpha for an answer that has not changed is pure churn.
+    local function SetLaneChromeFaded(preview, faded)
+        if not (preview.laneChromeHost and ST._SetLayoutOrderLaneChromeFaded) then
+            return
+        end
+        faded = faded and true or false
+        if faded == (preview.laneChromeFaded == true) then return end
+        preview.laneChromeFaded = faded or nil
+        ST._SetLayoutOrderLaneChromeFaded(preview.laneChromeHost, faded)
+    end
+
+    SectionDrag.SetLaneChromeFaded = SetLaneChromeFaded
+
+    --- Called on every frame the cursor spends inside the base grid, so it
+    --- early-outs on the state it would write: pads down is pads down, and
+    --- re-hiding them would redraw every border texture set once per frame.
+    --- sectionPadsShown is the whole record of that state -- ShowPads is the
+    --- only writer that sets it, and this is the only one that clears it.
+    function SectionDrag.HidePads(preview)
+        if not preview.sectionPadsShown then return end
+        preview.sectionPadsShown = nil
+        preview.sectionPadHighlight = nil
+        for _, pad in pairs(preview.sectionPads or {}) do
+            SetPadHighlight(pad, false)
+            pad:Hide()
+        end
+    end
+
+    function SectionDrag.ShowPads(preview, model, highlight)
+        SetLaneChromeFaded(preview, true)
+        if preview.sectionPadsShown ~= model then
+            SectionDrag.HidePads(preview)
+            for anchor, rect in pairs(model.pads) do
+                local pad = EnsurePad(preview, anchor)
+                pad:SetSize(math_max(1, rect.width), math_max(1, rect.height))
+                pad:ClearAllPoints()
+                pad:SetPoint("TOPLEFT", preview.content, "TOPLEFT", rect.x, rect.y)
+                pad:Show()
+            end
+            preview.sectionPadsShown = model
+            -- Not nil: a fresh set with no claimed pad still has to have its
+            -- idle look written, and nil is a legal value of `highlight`.
+            preview.sectionPadHighlight = false
+        end
+        if preview.sectionPadHighlight ~= highlight then
+            preview.sectionPadHighlight = highlight
+            for anchor, pad in pairs(preview.sectionPads or {}) do
+                SetPadHighlight(pad, anchor == highlight, anchor, model.pads[anchor])
+            end
+        end
+    end
+
+    ------------------------------------------------------------------
+    -- Lanes
+
+    local function MemberPosition(lane, index)
+        for k, member in ipairs(lane.members) do
+            if member == index then return k end
+        end
+        return nil
+    end
+
+    SectionDrag.MemberPosition = MemberPosition
+
+    --- Every lane, every frame of a drag: the lifted member goes invisible and
+    --- the lane the cursor claims opens a gap at the insertion position while
+    --- its neighbours shift along their own line. Same vocabulary as the base
+    --- grid's reorder, sized to the section's own icons.
+    function SectionDrag.UpdateLanes(preview, layoutDrag, sourceIndex, dropTarget)
+        local model = layoutDrag.sectionDrag
+        local targetAnchor = dropTarget and dropTarget.section
+        local gapLane, gapPos
+        for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
+            local lane = model.lanes[anchor]
+            if lane then
+                local sourcePos = sourceIndex and MemberPosition(lane, sourceIndex)
+                local position
+                if anchor == targetAnchor then
+                    -- The resolve counts positions over the lane as it stands,
+                    -- so a member moving inside its own lane collapses the same
+                    -- way the base grid's source cell does.
+                    position = dropTarget.memberPos or 1
+                    if sourcePos and position > sourcePos then position = position - 1 end
+                    local maxPos = #lane.members + (sourcePos and 0 or 1)
+                    if position > maxPos then position = maxPos end
+                    if position < 1 then position = 1 end
+                    gapLane, gapPos = lane, position
+                end
+                local renderIndex = 1
+                for _, index in ipairs(lane.members) do
+                    local slot = layoutDrag.slots[index]
+                    if slot then
+                        if index == sourceIndex then
+                            slot:SetAlpha(0)
+                        else
+                            local displayIndex = renderIndex
+                            if position and displayIndex >= position then
+                                displayIndex = displayIndex + 1
+                            end
+                            QueuePreviewSlotTween(preview, slot, "TOPLEFT",
+                                LanePosition(lane, displayIndex))
+                            renderIndex = renderIndex + 1
+                        end
+                    end
+                end
+            end
+        end
+        if gapLane then
+            local gap = EnsureGapFrame(preview)
+            -- A lane target is a resolved drop, so the tile wears the snap
+            -- colour; the base grid's own gap resets it on the way past.
+            SectionDrag.SetGapAccent(preview, true)
+            gap:SetSize(gapLane.width, gapLane.height)
+            QueuePreviewSlotTween(preview, gap, "TOPLEFT", LanePosition(gapLane, gapPos))
+            gap:Show()
+        end
+    end
+
+    function SectionDrag.ResetLanes(preview, layoutDrag)
+        for _, lane in pairs(layoutDrag.sectionDrag.lanes) do
+            for k, index in ipairs(lane.members) do
+                local slot = layoutDrag.slots[index]
+                if slot then
+                    QueuePreviewSlotTween(preview, slot, "TOPLEFT", LanePosition(lane, k))
+                    slot:SetAlpha(slot._cdcBaseAlpha or 1)
+                end
+            end
+        end
+    end
+
+    ------------------------------------------------------------------
+    -- Whole-section handle
+    --
+    -- Moving one entry is a drag on that entry. Moving the WHOLE section is a
+    -- drag on the section, and the only thing a section has to grab is the
+    -- handle that appears beside its cluster on hover. It answers to pads and
+    -- nothing else: model.pads holds exactly the FREE anchors (an occupied one
+    -- is a lane, and the section's own anchor is the lane it came from), so
+    -- "the handle refuses occupied pads" needs no test of its own.
+
+    --- Pad-only resolve. Same containment-then-nearest rule as the entry
+    --- drag's resolver, with the lane family left out.
+    function SectionDrag.ResolvePad(model, view, cursorX, cursorY)
+        local bestAnchor, bestDist, bestCenter, bestReach
+        for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
+            local rect = model.pads[anchor]
+            if rect then
+                local dist, center, reach = RectDistances(view, rect, cursorX, cursorY)
+                if not bestDist or dist < bestDist
+                    or (dist == bestDist and center < bestCenter) then
+                    bestAnchor = anchor
+                    bestDist, bestCenter, bestReach = dist, center, reach
+                end
+            end
+        end
+        if not bestAnchor or bestDist > (bestReach * bestReach) then return nil end
+        return { pad = bestAnchor }
+    end
+
+    ------------------------------------------------------------------
+    -- "This grabs all of it"
+    --
+    -- The chip is small and sits beside the cluster, so on its own it says
+    -- nothing about how much it moves. Ringing the WHOLE cluster the moment
+    -- the cursor reaches the chip is the answer, and it stays up for the
+    -- length of the drag so the thing being moved is never in doubt. The UI
+    -- teaches it; there is no tooltip.
+
+    local function EnsureSectionOutline(preview)
+        local outline = preview.sectionOutline
+        if not outline then
+            outline = CreateFrame("Frame", nil, preview.content)
+            outline:EnableMouse(false)
+            outline:SetFrameLevel((preview.content:GetFrameLevel() or 1)
+                + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET + 4)
+            outline.border = ST.CreateBorderTextureSet(outline, "OVERLAY")
+            outline:Hide()
+            preview.sectionOutline = outline
+        end
+        return outline
+    end
+
+    function SectionDrag.HideSectionOutline(preview)
+        local outline = preview and preview.sectionOutline
+        if not (outline and outline:IsShown()) then return end
+        ST.HideBorderTextures(outline.border)
+        outline:Hide()
+    end
+
+    --- Ring the cluster at `anchor`. Ring blue, not gold: this is not a drop
+    --- target, it is the answer to "what am I about to pick up".
+    function SectionDrag.ShowSectionOutline(preview, layoutDrag, anchor)
+        local model = layoutDrag and layoutDrag.sectionDrag
+        local lane = anchor and model and model.lanes[anchor]
+        if not lane then
+            SectionDrag.HideSectionOutline(preview)
+            return
+        end
+        local scale = layoutDrag.scale
+        if not scale or scale <= 0 then scale = 1 end
+        local inset = OUTLINE_SCREEN_INSET / scale
+        local rect = lane.rect
+        local outline = EnsureSectionOutline(preview)
+        outline:SetSize(math_max(1, rect.width + inset * 2),
+            math_max(1, rect.height + inset * 2))
+        outline:ClearAllPoints()
+        outline:SetPoint("TOPLEFT", preview.content, "TOPLEFT",
+            rect.x - inset, rect.y + inset)
+        ApplyChromeBorder(outline.border, outline, PANEL_PREVIEW_RING_COLOR,
+            OUTLINE_ALPHA)
+        outline:Show()
+    end
+
+    function SectionDrag.HideHandle(preview)
+        local handle = preview and preview.sectionHandle
+        if not handle then return end
+        -- The watcher exists only while the chip does. Nothing in this file
+        -- runs an always-on OnUpdate.
+        handle:SetScript("OnUpdate", nil)
+        handle._outside = nil
+        handle.anchor = nil
+        handle:Hide()
+        SectionDrag.HideSectionOutline(preview)
+    end
+
+    ------------------------------------------------------------------
+    -- Keeping the chip alive
+    --
+    -- OnEnter/OnLeave cannot describe this shape. The chip sits a few pixels
+    -- of empty preview away from the icons that offered it, so moving icon ->
+    -- chip leaves BOTH regions for a frame or two and any leave-then-grace
+    -- scheme is a race against the exact path the cursor took. Containment
+    -- has no path dependence: the chip lives while the cursor is anywhere in
+    -- the section's own rect, the chip's own rect, or the corridor around
+    -- either, and it goes when the cursor has been out of all of that for a
+    -- beat. The watcher is the chip's own OnUpdate and dies with it.
+
+    local function ScreenRect(view, rect)
+        local left, top = ToScreen(view, rect.x, rect.y)
+        return left, top - rect.height * view.factor,
+            left + rect.width * view.factor, top
+    end
+
+    local function CursorNear(left, bottom, right, top, slack, cursorX, cursorY)
+        return cursorX >= left - slack and cursorX <= right + slack
+            and cursorY >= bottom - slack and cursorY <= top + slack
+    end
+
+    local function HandleHoldsCursor(handle, cursorX, cursorY)
+        local left, bottom, width, height = handle:GetScaledRect()
+        if left and CursorNear(left, bottom, left + width, bottom + height,
+            HANDLE_CORRIDOR, cursorX, cursorY) then
+            return true
+        end
+        local layoutDrag = handle.layoutDrag
+        local model = layoutDrag and layoutDrag.sectionDrag
+        local lane = handle.anchor and model and model.lanes[handle.anchor]
+        if not lane then return false end
+        local preview = handle.preview
+        local view = preview and SectionDrag.View(preview.content)
+        -- Unmeasurable this frame (a collapsed or hidden host): hold rather
+        -- than yank the chip out from under a cursor that may be right on it.
+        if not view then return true end
+        local l, b, r, t = ScreenRect(view, lane.rect)
+        return CursorNear(l, b, r, t, HANDLE_CORRIDOR, cursorX, cursorY)
+    end
+
+    local function HandleWatch(handle, elapsed)
+        -- A live drag owns every one of these frames, and the drag paths draw
+        -- the outline themselves.
+        if CS.dragState then return end
+        local cursorX, cursorY = GetCursorPosition()
+        if HandleHoldsCursor(handle, cursorX, cursorY) then
+            handle._outside = 0
+            if handle:IsMouseOver() then
+                SectionDrag.ShowSectionOutline(handle.preview, handle.layoutDrag,
+                    handle.anchor)
+            else
+                SectionDrag.HideSectionOutline(handle.preview)
+            end
+            return
+        end
+        handle._outside = (handle._outside or 0) + (elapsed or 0)
+        if handle._outside >= HANDLE_HIDE_DELAY then
+            SectionDrag.HideHandle(handle.preview)
+        end
+    end
+
+    local function EnsureHandle(preview)
+        local handle = preview.sectionHandle
+        if handle then return handle end
+        handle = CreateFrame("Frame", nil, preview.content)
+        handle:EnableMouse(true)
+        handle:SetFrameLevel((preview.content:GetFrameLevel() or 1)
+            + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET + 5)
+        -- A chip, not a sticker: the same dark plate the drag ghost uses,
+        -- a one-physical-pixel ring so it reads as a control at any preview
+        -- scale, and the four-way move glyph inside it.
+        handle.bg = handle:CreateTexture(nil, "BACKGROUND")
+        handle.bg:SetAllPoints()
+        handle.bg:SetColorTexture(0.05, 0.10, 0.18, 0.92)
+        handle.border = ST.CreateBorderTextureSet(handle, "OVERLAY")
+        handle.arrows = {}
+        for k = 1, #HANDLE_ARROWS do
+            local tex = handle:CreateTexture(nil, "ARTWORK")
+            tex:SetAtlas(PIP_ATLAS, false)
+            tex:SetVertexColor(PANEL_PREVIEW_RING_COLOR[1],
+                PANEL_PREVIEW_RING_COLOR[2], PANEL_PREVIEW_RING_COLOR[3], 0.95)
+            handle.arrows[k] = tex
+        end
+        handle:SetScript("OnMouseDown", function(self, mouseButton)
+            if mouseButton ~= "LeftButton" or GetCursorInfo() then return end
+            if CS.copyCustomization then return end
+            local layoutDrag, anchor = self.layoutDrag, self.anchor
+            local model = layoutDrag and layoutDrag.sectionDrag
+            local lane = anchor and model and model.lanes[anchor]
+            if not (lane and lane.members[1] and StartDragTracking) then return end
+            local group = layoutDrag.panelId
+                and CooldownCompanion.db.profile.groups[layoutDrag.panelId]
+            local buttonData = group and group.buttons and group.buttons[lane.members[1]]
+            local cursorX, cursorY = GetCursorPosition()
+            GameTooltip:Hide()
+            -- Started through the shared tracker exactly like an entry drag,
+            -- with one marker on the state saying which gesture this is. Escape
+            -- and the mouse-up both land in CancelDrag/FinishDrag for free.
+            CS.dragState = {
+                kind = "layout-slot",
+                phase = "pending",
+                previewSlot = self,
+                scrollWidget = UIParent,
+                startX = cursorX,
+                startY = cursorY,
+                layoutDrag = layoutDrag,
+                sectionHandle = anchor,
+                slotData = { index = lane.members[1], buttonData = buttonData },
+            }
+            StartDragTracking()
+        end)
+        handle:SetScript("OnMouseUp", function(self, mouseButton)
+            if mouseButton ~= "LeftButton" then return end
+            -- No click behaviour of its own, but it still claims the mark so an
+            -- Escape-cancelled section drag cannot leave one behind.
+            if ST._ConsumeDragEscapeMouseUp() then return end
+            local state = CS.dragState
+            if state and state.kind == "layout-slot" and state.phase == "pending"
+                and state.previewSlot == self then
+                if CancelDrag then CancelDrag() else CS.dragState = nil end
+            end
+        end)
+        handle:Hide()
+        preview.sectionHandle = handle
+        return handle
+    end
+
+    --- The grab handle for a whole section, shown while the cursor is over its
+    --- cluster and no drag is in hand. It sits just OUTSIDE the lane's rect on
+    --- the face pointing away from the base cluster, so it never covers an
+    --- icon; which face that is comes from comparing the two rects the engine
+    --- produced, not from re-deciding what the anchor meant.
+    function SectionDrag.ShowHandle(preview, layoutDrag, anchor)
+        if CS.dragState or CS.copyCustomization then return end
+        local model = layoutDrag and layoutDrag.sectionDrag
+        local lane = model and model.lanes[anchor]
+        if not lane then return end
+        -- With every other anchor taken there is nowhere to move to, and a
+        -- handle that can only ever snap back is noise.
+        if not next(model.pads) then return end
+
+        local handle = EnsureHandle(preview)
+        local scale = layoutDrag.scale
+        if not scale or scale <= 0 then scale = 1 end
+        -- Content-space sizes shrink with the preview's fit scale; the handle
+        -- is chrome, so it counter-scales to a constant on-screen size.
+        local size = HANDLE_SCREEN_SIZE / scale
+        local margin = HANDLE_SCREEN_MARGIN / scale
+        handle:SetSize(size, size)
+
+        local rect, base = lane.rect, model.baseRect
+        local hx, hy
+        if math.abs(lane.stepX) >= math.abs(lane.stepY) then
+            hx = rect.x + rect.width / 2
+            if rect.y > base.y then
+                hy = rect.y + margin + size / 2
+            else
+                hy = rect.y - rect.height - margin - size / 2
+            end
+        else
+            hy = rect.y - rect.height / 2
+            if rect.x < base.x then
+                hx = rect.x - margin - size / 2
+            else
+                hx = rect.x + rect.width + margin + size / 2
+            end
+        end
+        handle:ClearAllPoints()
+        handle:SetPoint("CENTER", preview.content, "TOPLEFT", hx, hy)
+
+        ApplyChromeBorder(handle.border, handle, PANEL_PREVIEW_RING_COLOR,
+            HANDLE_BORDER_ALPHA)
+
+        -- Four chevrons facing out from the centre: a move control, and one
+        -- that says "every direction", which is the whole point of grabbing a
+        -- section rather than an icon.
+        local glyph = math_max(2, size * 0.36)
+        local reach = size * 0.25
+        for k, spec in ipairs(HANDLE_ARROWS) do
+            local tex = handle.arrows[k]
+            tex:SetSize(glyph, glyph)
+            tex:SetRotation(spec.rotation)
+            tex:ClearAllPoints()
+            tex:SetPoint("CENTER", handle, "CENTER",
+                spec.dx * reach, spec.dy * reach)
+        end
+
+        handle._outside = 0
+        handle.anchor = anchor
+        handle.layoutDrag = layoutDrag
+        handle.preview = preview
+        handle:Show()
+        handle:SetScript("OnUpdate", HandleWatch)
+    end
+
+    --- The handle's drag, every frame: every free anchor is a live target, the
+    --- claimed one wears the pips and the snap edge, and the section's real
+    --- slots dim in place while the cursor ghost stands in for the cluster.
+    function SectionDrag.UpdateHandleDrag(preview, layoutDrag, anchor, dropTarget)
+        local model = layoutDrag.sectionDrag
+        if not model then return end
+        SectionDrag.ShowPads(preview, model, dropTarget and dropTarget.pad)
+        if preview.gapFrame then
+            preview.gapFrame:Hide()
+        end
+        local lane = model.lanes[anchor]
+        if not lane then return end
+        -- The chip itself is hidden for the drag, so the ring around the
+        -- cluster is what keeps saying which section is in hand.
+        SectionDrag.ShowSectionOutline(preview, layoutDrag, anchor)
+        for _, index in ipairs(lane.members) do
+            local slot = layoutDrag.slots[index]
+            if slot then
+                slot:SetAlpha(HANDLE_DRAG_MEMBER_ALPHA)
+            end
+        end
+    end
+
+    --- Re-anchor a whole section. Membership moves member by member IN MASTER
+    --- ORDER through the one membership writer, and master order is exactly
+    --- where the section reads its own order back from, so the line arrives
+    --- unchanged.
+    ---
+    --- The old section table DISSOLVES the instant its last member leaves, so
+    --- its settings are captured FIRST and written onto the new anchor's table
+    --- afterwards: re-anchoring MOVES a section, it does not reset it. The new
+    --- table is mutated rather than replaced because the Layout tab's sliders
+    --- hold a section table by upvalue.
+    function SectionDrag.ApplyHandleDrop(panelId, layoutDrag, anchor, newAnchor)
+        if not (anchor and newAnchor and newAnchor ~= anchor) then return end
+        local model = layoutDrag.sectionDrag
+        local lane = model and model.lanes[anchor]
+        local group = panelId and CooldownCompanion.db.profile.groups[panelId]
+        if not (lane and group) then return end
+
+        local old = group.sections and group.sections[anchor]
+        local offsetX, offsetY, iconWidth, iconHeight, spacing
+        if type(old) == "table" then
+            offsetX, offsetY = old.offsetX, old.offsetY
+            iconWidth, iconHeight, spacing = old.iconWidth, old.iconHeight, old.spacing
+        end
+
+        local changed = false
+        local buttons = group.buttons or {}
+        for _, index in ipairs(lane.members) do
+            local buttonData = buttons[index]
+            if buttonData and ST.SetPanelSectionForEntry(group, buttonData, newAnchor) then
+                changed = true
+            end
+        end
+        if not changed then return end
+
+        local fresh = group.sections and group.sections[newAnchor]
+        if type(old) == "table" and type(fresh) == "table" then
+            fresh.offsetX = offsetX
+            fresh.offsetY = offsetY
+            fresh.iconWidth = iconWidth
+            fresh.iconHeight = iconHeight
+            fresh.spacing = spacing
+        end
+        -- Safe here and nowhere earlier: the drag is over, so the rebuild this
+        -- pair triggers has no in-flight gesture to pull the frames out from.
+        CooldownCompanion:RefreshGroupFrame(panelId)
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+-- CELL space vs entry index. The drag model numbers the cells of the grid it
+-- hit-tests, and layoutDrag.slots stays keyed by group.buttons index (the
+-- selection refresh reads it that way). On an ordinary panel the two numbers
+-- are the same and both maps are nil. On a SECTIONED panel the grid holds only
+-- the base members, so cellIndex (cell -> entry index) and cellOfIndex (entry
+-- index -> cell, nil for a section member) translate between them.
+local function LayoutDragCellIndex(layoutDrag, cell)
+    local map = layoutDrag.cellIndex
+    return map and map[cell] or cell
+end
+
+local function LayoutDragIndexCell(layoutDrag, index)
+    local map = layoutDrag.cellOfIndex
+    if map then return map[index] end
+    return index
+end
+
 -- Slide the remaining slots into the arrangement they'd have after the
 -- drop: the lifted entry's slot goes invisible, the others compact in
 -- order with a gap held open at the insertion cell.
-local function UpdateGridDragPreview(preview, layoutDrag, sourceIndex, dropTarget)
+local function UpdateGridDragPreview(preview, layoutDrag, sourceCell, dropTarget, sourceIndex)
     local insertIndex = dropTarget and dropTarget.insertIndex
     local gapPos
     if insertIndex then
         gapPos = insertIndex
-        if gapPos > sourceIndex then gapPos = gapPos - 1 end
-        if gapPos > layoutDrag.count then gapPos = layoutDrag.count end
+        -- A section member is not one of the base grid's cells, so nothing
+        -- collapses behind it and the gap may sit one past the last cell.
+        if sourceCell and gapPos > sourceCell then gapPos = gapPos - 1 end
+        local maxGap = layoutDrag.count + (sourceCell and 0 or 1)
+        if gapPos > maxGap then gapPos = maxGap end
     end
     local renderIndex = 1
     for i = 1, layoutDrag.count do
-        local slot = layoutDrag.slots[i]
+        local slot = layoutDrag.slots[LayoutDragCellIndex(layoutDrag, i)]
         if slot then
-            if i == sourceIndex then
+            if i == sourceCell then
                 slot:SetAlpha(0)
             else
                 local displayIndex = renderIndex
@@ -1552,6 +2581,9 @@ local function UpdateGridDragPreview(preview, layoutDrag, sourceIndex, dropTarge
     end
     if gapPos then
         local gap = EnsureGapFrame(preview)
+        -- The base grid's insertion gap is a reorder cue, not a snap: back to
+        -- the ring blue whatever colour a lane target last left on the tile.
+        SectionDrag.SetGapAccent(preview, false)
         gap:SetSize(layoutDrag.slotW, layoutDrag.slotH)
         local x, y = layoutDrag.cellXY(gapPos)
         QueuePreviewSlotTween(preview, gap, layoutDrag.anchor, x, y)
@@ -1559,11 +2591,22 @@ local function UpdateGridDragPreview(preview, layoutDrag, sourceIndex, dropTarge
     elseif preview.gapFrame then
         preview.gapFrame:Hide()
     end
+    -- Past the base grid's margin the grid is already un-shuffled above (no
+    -- insertion index, no gap); the anchors take the cursor from here.
+    if layoutDrag.sectionDrag then
+        if insertIndex then
+            SectionDrag.HidePads(preview)
+        else
+            SectionDrag.ShowPads(preview, layoutDrag.sectionDrag,
+                dropTarget and dropTarget.pad)
+        end
+        SectionDrag.UpdateLanes(preview, layoutDrag, sourceIndex, dropTarget)
+    end
 end
 
 local function ResetGridDragPreview(preview, layoutDrag)
     for i = 1, layoutDrag.count do
-        local slot = layoutDrag.slots[i]
+        local slot = layoutDrag.slots[LayoutDragCellIndex(layoutDrag, i)]
         if slot then
             local x, y = layoutDrag.cellXY(i)
             QueuePreviewSlotTween(preview, slot, layoutDrag.anchor, x, y)
@@ -1573,6 +2616,10 @@ local function ResetGridDragPreview(preview, layoutDrag)
     if preview.gapFrame then
         preview.gapFrame:Hide()
     end
+    if layoutDrag.sectionDrag then
+        SectionDrag.HidePads(preview)
+        SectionDrag.ResetLanes(preview, layoutDrag)
+    end
 end
 
 local function CreatePreviewLayoutDrag(preview, panelId)
@@ -1580,6 +2627,11 @@ local function CreatePreviewLayoutDrag(preview, panelId)
     -- cell index -> anchored x,y offset) after creating the model.
     local layoutDrag = {
         panelPreview = true,
+        -- The whole-section handle is offered from a slot's OnEnter, and that
+        -- handler only ever gets the drag model; these two carry the rest of
+        -- the context it needs without another parameter on the wiring.
+        preview = preview,
+        panelId = panelId,
         slots = {},
         count = 0,
         slotW = 1,
@@ -1595,17 +2647,45 @@ local function CreatePreviewLayoutDrag(preview, panelId)
     -- would sit diagonally between the runs in empty space and misassign
     -- drops near row/column edges. Pure geometry: covers both orientations
     -- and every growth origin.
-    layoutDrag.resolveDropTarget = function(cursorX, cursorY)
+    layoutDrag.resolveDropTarget = function(cursorX, cursorY, state)
         local count = layoutDrag.count
-        if count < 2 then return nil end
+        local sectionDrag = layoutDrag.sectionDrag
+        if count < 2 and not sectionDrag then return nil end
         local root = preview.root
         if not (root and root:IsVisible() and root.GetScaledRect) then return nil end
+        -- The whole-section handle answers to pads and nothing else: not the
+        -- base grid, not another section's lane. Pads can sit outside the
+        -- host's own rect on a tightly fitted preview, so it also skips the
+        -- host-bounds test the entry drag runs below.
+        if state and state.sectionHandle then
+            if not sectionDrag then return nil end
+            local handleView = SectionDrag.View(preview.content)
+            if not handleView then return nil end
+            return SectionDrag.ResolvePad(sectionDrag, handleView, cursorX, cursorY)
+        end
         local left, bottom, width, height = root:GetScaledRect()
         if not left then return nil end
         local margin = 40
         if cursorX < left - margin or cursorX > left + width + margin
             or cursorY < bottom - margin or cursorY > bottom + height + margin then
-            return nil
+            -- A pad can sit outside the host's own rect on a tightly fitted
+            -- preview, so a section drag keeps looking; without sections this
+            -- is still the end of the road.
+            if not sectionDrag then return nil end
+        end
+
+        -- Past the base grid's margin the anchors own the cursor, and inside it
+        -- nothing about the base insertion changed. Deciding that first is what
+        -- keeps a pad and a lane from ever meaning the same spot as a reorder.
+        if sectionDrag then
+            local view = SectionDrag.View(preview.content)
+            if not view then return nil end
+            if not SectionDrag.InBaseMargin(sectionDrag, view, cursorX, cursorY) then
+                return SectionDrag.Resolve(sectionDrag, view, cursorX, cursorY)
+            end
+            -- An all-sectioned panel has no cells to measure an insertion
+            -- against; the base grid can still be rejoined at its one position.
+            if count < 1 then return { insertIndex = 1 } end
         end
 
         -- Base cell centers, NOT live slot rects: the slots animate while
@@ -1626,24 +2706,8 @@ local function CreatePreviewLayoutDrag(preview, panelId)
             local x, y = layoutDrag.cellXY(i)
             -- Convert the anchored offset to top-left space, then to the
             -- scaled screen coordinates raw cursor values live in.
-            local tlX, tlY
-            if anchor == "TOPLEFT" then
-                tlX, tlY = x + slotW / 2, y - slotH / 2
-            elseif anchor == "TOPRIGHT" then
-                tlX, tlY = localW + x - slotW / 2, y - slotH / 2
-            elseif anchor == "BOTTOMLEFT" then
-                tlX, tlY = x + slotW / 2, -localH + y + slotH / 2
-            elseif anchor == "TOP" then
-                tlX, tlY = localW / 2 + x, y - slotH / 2
-            elseif anchor == "BOTTOM" then
-                tlX, tlY = localW / 2 + x, -localH + y + slotH / 2
-            elseif anchor == "LEFT" then
-                tlX, tlY = x + slotW / 2, -localH / 2 + y
-            elseif anchor == "RIGHT" then
-                tlX, tlY = localW + x - slotW / 2, -localH / 2 + y
-            else -- BOTTOMRIGHT
-                tlX, tlY = localW + x - slotW / 2, -localH + y + slotH / 2
-            end
+            local tlX, tlY = SectionDrag.CellCenter(anchor, x, y,
+                slotW, slotH, localW, localH)
             centers[i] = {
                 x = cLeft + tlX * factor,
                 y = cBottom + cHeight + tlY * factor,
@@ -1662,7 +2726,12 @@ local function CreatePreviewLayoutDrag(preview, panelId)
         -- Intra-run step at slot i; single-slot runs (e.g. a short last
         -- row) borrow the first measurable step so their boundary anchors
         -- still sit beside the slot instead of on top of it.
-        local globalStepX, globalStepY = 0, 0
+        -- A one-cell base grid has no measurable step, and a section member
+        -- dropping back into it still has to land before or after that cell.
+        -- The builder's own in-line pitch answers that; with two cells or more
+        -- the loop below always measures a real step and overwrites it.
+        local globalStepX = (layoutDrag.cellStepX or 0) * factor
+        local globalStepY = (layoutDrag.cellStepY or 0) * factor
         for i = 1, count - 1 do
             if sameRun(i, i + 1) then
                 globalStepX = centers[i + 1].x - centers[i].x
@@ -1711,22 +2780,57 @@ local function CreatePreviewLayoutDrag(preview, panelId)
         return { insertIndex = bestIndex }
     end
 
+    -- A section member has no base cell (LayoutDragIndexCell returns nil for
+    -- it), which is exactly the state the grid preview reads as "the lifted
+    -- entry is not one of mine". Only a drag with neither a cell NOR a section
+    -- model behind it has nothing to say.
+    local function ResolveDragSource(state)
+        local sourceIndex = state.slotData and state.slotData.index
+        if not sourceIndex then return nil end
+        local sourceCell = LayoutDragIndexCell(layoutDrag, sourceIndex)
+        if not (sourceCell or layoutDrag.sectionDrag) then return nil end
+        return sourceIndex, sourceCell
+    end
+
+    -- The handle drag reuses this whole model; the marker on the state is the
+    -- only thing that separates the two gestures, and it is read first
+    -- everywhere so a section move never falls into the entry paths.
+    local function RunHandleDragFrame(state)
+        SectionDrag.HideHandle(preview)
+        if not preview.ghostActive then
+            ConfigurePreviewGhost(preview, layoutDrag,
+                state.slotData and state.slotData.buttonData)
+        end
+        SectionDrag.UpdateHandleDrag(preview, layoutDrag, state.sectionHandle,
+            state.dropTarget)
+        StartPreviewTicker(preview)
+    end
+
     layoutDrag.onActivate = function(state)
         GameTooltip:Hide()
-        local sourceIndex = state.slotData and state.slotData.index
-        local slot = sourceIndex and layoutDrag.slots[sourceIndex]
+        if state.sectionHandle then
+            RunHandleDragFrame(state)
+            return
+        end
+        local sourceIndex, sourceCell = ResolveDragSource(state)
+        if not sourceIndex then return end
+        local slot = layoutDrag.slots[sourceIndex]
         if slot and slot.hoverHighlight then
             slot.hoverHighlight:Hide()
         end
         ConfigurePreviewGhost(preview, layoutDrag, state.slotData and state.slotData.buttonData)
-        UpdateGridDragPreview(preview, layoutDrag, sourceIndex, state.dropTarget)
+        UpdateGridDragPreview(preview, layoutDrag, sourceCell, state.dropTarget, sourceIndex)
         StartPreviewTicker(preview)
     end
 
     layoutDrag.onUpdate = function(state, cursorX, cursorY, dropTarget)
-        local sourceIndex = state.slotData and state.slotData.index
+        if state.sectionHandle then
+            RunHandleDragFrame(state)
+            return
+        end
+        local sourceIndex, sourceCell = ResolveDragSource(state)
         if not sourceIndex then return end
-        UpdateGridDragPreview(preview, layoutDrag, sourceIndex, dropTarget)
+        UpdateGridDragPreview(preview, layoutDrag, sourceCell, dropTarget, sourceIndex)
         if not preview.ghostActive then
             ConfigurePreviewGhost(preview, layoutDrag, state.slotData.buttonData)
         end
@@ -1734,19 +2838,90 @@ local function CreatePreviewLayoutDrag(preview, panelId)
     end
 
     layoutDrag.onCancel = function()
+        -- One exit for both gestures, which is what makes Escape work on the
+        -- handle for free: the pads go, the lanes go back to rest at full
+        -- alpha, the ghost goes, and nothing was ever written.
+        SectionDrag.HideHandle(preview)
         ResetGridDragPreview(preview, layoutDrag)
+        -- The gesture is over however it ended -- drop, Escape, release into
+        -- nothing -- so the attached bar lanes come back here and only here.
+        SectionDrag.SetLaneChromeFaded(preview, false)
         ClearPreviewGhost(preview)
         -- Keep ticking so the return-to-rest tween plays out
         StartPreviewTicker(preview)
     end
 
+    -- The one writer. Membership moves first and never touches the master
+    -- list's order, so every index below is still the index the drop resolved
+    -- against; PerformButtonReorder then reads them as "put the entry where
+    -- this index sits today", which is the same insertion-anchor grammar the
+    -- base grid has always used.
     layoutDrag.applyDrop = function(state)
         local dropTarget = state and state.dropTarget
+        if state and state.sectionHandle then
+            -- Its own writer: a section move is per-member membership plus the
+            -- section's settings, and never a reorder.
+            SectionDrag.ApplyHandleDrop(panelId, layoutDrag, state.sectionHandle,
+                dropTarget and dropTarget.pad)
+            return
+        end
         local sourceIndex = state and state.slotData and state.slotData.index
-        local insertIndex = dropTarget and dropTarget.insertIndex
-        if not (PerformButtonReorder and sourceIndex and insertIndex) then return end
-        if insertIndex == sourceIndex or insertIndex == sourceIndex + 1 then return end
-        PerformButtonReorder(panelId, sourceIndex, insertIndex)
+        if not (PerformButtonReorder and sourceIndex and dropTarget) then return end
+        local group = panelId and CooldownCompanion.db.profile.groups[panelId]
+        local buttonData = state.slotData.buttonData
+        local model = layoutDrag.sectionDrag
+        local sourceCell = LayoutDragIndexCell(layoutDrag, sourceIndex)
+        local changed, insertIndex = false, nil
+
+        if model and dropTarget.pad then
+            -- Pads only ever sit at anchors no section holds, so a pad drop is
+            -- always a real move; a fresh section's order is the entry alone.
+            changed = ST.SetPanelSectionForEntry(group, buttonData, dropTarget.pad)
+        elseif model and dropTarget.section then
+            local lane = model.lanes[dropTarget.section]
+            if not lane then return end
+            local position = dropTarget.memberPos or 1
+            local sourcePos = SectionDrag.MemberPosition(lane, sourceIndex)
+            -- Same no-move test the base grid runs, in the lane's own numbering.
+            if sourcePos and (position == sourcePos or position == sourcePos + 1) then
+                return
+            end
+            -- Landing before the member that holds the target position, or just
+            -- after the last one for a drop off the end of the line.
+            insertIndex = lane.members[position]
+                or (lane.members[#lane.members] + 1)
+            changed = ST.SetPanelSectionForEntry(group, buttonData, dropTarget.section)
+        else
+            local insertCell = dropTarget.insertIndex
+            if not insertCell then return end
+            -- The drop resolved in cell space, so the no-move test belongs there
+            -- too; only then are both ends translated to master-list indices.
+            if sourceCell then
+                if insertCell == sourceCell or insertCell == sourceCell + 1 then return end
+            elseif not model then
+                return
+            end
+            insertIndex = insertCell
+            local cellIndex = layoutDrag.cellIndex
+            if cellIndex then
+                -- Landing before the entry that holds the target cell keeps the base
+                -- order right whatever section members sit between them; a drop past
+                -- the last cell lands just after the last base member.
+                insertIndex = cellIndex[insertCell]
+                    or ((cellIndex[layoutDrag.count] or 0) + 1)
+            end
+            if model then
+                -- Leaving a section is the same rejoin the base grid always did,
+                -- with the membership dropped first.
+                changed = ST.SetPanelSectionForEntry(group, buttonData, nil)
+            end
+        end
+
+        if insertIndex and insertIndex ~= sourceIndex then
+            PerformButtonReorder(panelId, sourceIndex, insertIndex)
+            changed = true
+        end
+        if not changed then return end
         CooldownCompanion:RefreshGroupFrame(panelId)
         CooldownCompanion:RefreshConfigPanel()
     end
@@ -1922,6 +3097,10 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
     else
         if slot._cdcDraggable then
             GameTooltip:AddLine("Drag to reorder.", 0.75, 0.82, 0.92)
+            if slot._cdcSectionDraggable then
+                GameTooltip:AddLine("Drag past the row to place it in a section.",
+                    0.75, 0.82, 0.92)
+            end
         end
         -- WireEntryInteraction opens the entry context menu on every display
         -- mode, and that menu holds destructive actions, so every mode
@@ -1939,6 +3118,10 @@ end
 local function WireEntryInteraction(slot, panelId, index, buttonData, status, layoutDrag, visibility)
     slot:EnableMouse(true)
     slot._cdcDraggable = layoutDrag ~= nil
+    -- Written here rather than at the call sites: icon slots are pooled across
+    -- every preview shape, and a slot recycled onto a panel with no anchors
+    -- must not keep advertising them.
+    slot._cdcSectionDraggable = (layoutDrag and layoutDrag.sectionDrag) and true or nil
     slot._cdcEntryIndex = index
     slot._cdcEntryStatus = status
     slot:SetScript("OnMouseDown", function(self, mouseButton)
@@ -1965,6 +3148,9 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
     slot:SetScript("OnMouseUp", function(self, mouseButton)
         if GetCursorInfo() then return end
         if mouseButton == "LeftButton" then
+            -- Escape already cancelled this drag; the release the user is still
+            -- holding belongs to that cancel, never to a selection click.
+            if ST._ConsumeDragEscapeMouseUp() then return end
             local state = CS.dragState
             if state then
                 -- Only fall through to selection for our own still-pending
@@ -1991,6 +3177,16 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
     end)
     slot:SetScript("OnEnter", function(self)
         if CS.dragState and CS.dragState.phase == "active" then return end
+        -- Hovering a section's own icons OFFERS the grab chip. Taking it back
+        -- is not this handler's job and never was: the chip watches the cursor
+        -- against its own section for as long as it is up (HandleWatch), which
+        -- is the only model that survives the cursor crossing the empty pixels
+        -- between an icon and the chip.
+        if layoutDrag and layoutDrag.preview and self._cdcSectionAnchor
+            and layoutDrag.sectionDrag then
+            SectionDrag.ShowHandle(layoutDrag.preview, layoutDrag,
+                self._cdcSectionAnchor)
+        end
         if self._cdcBarPreviewVisibility then
             self._cdcBarPreviewHovered = true
             RefreshBarSlotWorkspacePresentation(self)
@@ -4828,6 +6024,9 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     preview.readOnly = readOnly
     -- Copy-customization banner surface; nil means the preview's own root.
     preview.copyBannerHost = options and options.bannerHost or nil
+    -- The Live Preview host whose attached bar lanes wrap this mirror; nil for
+    -- every mirror that is not inside the unified anchor composition.
+    preview.laneChromeHost = options and options.laneHost or nil
     if not readOnly and panelId == CS.selectedGroup then
         -- A full build reconciles the cleared stores by construction; do not
         -- make the next selection-only pass repeat that work.
@@ -4844,6 +6043,16 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     if preview.gapFrame then
         preview.gapFrame:Hide()
     end
+    -- Anchor pads belong to the drag that revealed them; a rebuild without one
+    -- in flight (a refresh from anywhere else) must not leave them lit.
+    SectionDrag.HidePads(preview)
+    -- Same reasoning for the section handle: it points at a lane in the model
+    -- this build is about to replace.
+    SectionDrag.HideHandle(preview)
+    -- Belt and braces on the bar lanes: the CancelDrag above already restored
+    -- them through onCancel, and a rebuild with no drag in flight never faded
+    -- them, but a mirror must never hand its host back a faded set of lanes.
+    SectionDrag.SetLaneChromeFaded(preview, false)
     if preview.textHeader then
         preview.textHeader:Hide()
     end
@@ -4954,16 +6163,100 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         headerHeight = (style.textHeaderFontSize or style.textFontSize or 12) + 4
     end
 
-    local cols, rows
-    if geo.orientation == "horizontal" then
-        cols = math_min(count, perRow)
-        rows = math_ceil(count / perRow)
-    else
-        rows = math_min(count, perRow)
-        cols = math_ceil(count / perRow)
+    -- Panel Sections. Every number a section contributes below -- footprint,
+    -- position, icon size -- is read straight off the engine's own layout
+    -- table, the same one Core/GroupFrame.lua lays the live panel out from.
+    -- The mirror must never re-derive a section's geometry: that is the one
+    -- way this preview and the world can disagree.
+    local sections = ST.GetSectionsForLayout(group)
+    -- The drag grammar needs the same partition even before a panel has its
+    -- first section: the pads a drag reveals are how one gets created.
+    --
+    -- CREATING the first section takes two entries -- a panel whose only entry
+    -- is already the whole base row has nothing to gain by placing it. But once
+    -- a section EXISTS the count stops mattering: a lone entry sitting in one
+    -- has to be able to come back, and with the temporary menu gone the drag is
+    -- the only way out. So an existing section is its own licence to drag.
+    local wantSectionDrag = not readOnly and not visibleIndices
+        and (count >= 2 or sections ~= nil)
+        and ST.PanelSupportsSections(group)
+    local sectionLayout, sectionPlacement, cellIndex, cellOfIndex
+    local sectionLists
+    local cellCount = count
+    if sections or wantSectionDrag then
+        -- The engine partitions objects carrying .buttonData, which the slots
+        -- do not exist yet to be; a throwaway list of the entries this build is
+        -- actually rendering (the session filter may have narrowed it) carries
+        -- the master index along for the reorder mapping.
+        local entries = {}
+        for ordinal = 1, count do
+            local index = visibleIndices and visibleIndices[ordinal] or ordinal
+            entries[ordinal] = { buttonData = buttons[index], index = index }
+        end
+        sectionLists = ST.PartitionPanelSectionMembers(group, entries)
     end
-    local contentWidth = (cols - 1) * (w + spacing) + w
-    local contentHeight = (rows - 1) * (h + spacing) + h + headerHeight
+    if sections then
+        local lists = sectionLists
+        sectionLayout = ST.BuildPanelSectionLayout(group, sections, lists,
+            w, h, spacing, headerHeight)
+
+        cellCount = #lists.base
+        cellIndex, cellOfIndex = {}, {}
+        for cell, entry in ipairs(lists.base) do
+            cellIndex[cell] = entry.index
+            cellOfIndex[entry.index] = cell
+        end
+
+        sectionPlacement = {}
+        for anchor, info in pairs(sectionLayout.sections) do
+            for k, entry in ipairs(lists.members[anchor]) do
+                -- Same expression Core/PanelSections.lua places a live button
+                -- with; the fields are the whole of the arithmetic.
+                sectionPlacement[entry.index] = {
+                    x = info.originX + (k - 1) * info.stepX,
+                    y = info.originY + (k - 1) * info.stepY,
+                    width = info.width,
+                    height = info.height,
+                }
+            end
+        end
+    end
+
+    local contentWidth, contentHeight
+    if sectionLayout then
+        -- The union footprint, matching ResizeGroupFrame's own clamp, so the
+        -- preview scales a sectioned panel by the rect the panel really spans.
+        contentWidth = math_max(sectionLayout.totalWidth, 1)
+        contentHeight = math_max(sectionLayout.totalHeight, 1)
+    else
+        local cols, rows
+        if geo.orientation == "horizontal" then
+            cols = math_min(count, perRow)
+            rows = math_ceil(count / perRow)
+        else
+            rows = math_min(count, perRow)
+            cols = math_ceil(count / perRow)
+        end
+        contentWidth = (cols - 1) * (w + spacing) + w
+        contentHeight = (rows - 1) * (h + spacing) + h + headerHeight
+    end
+
+    -- The base grid's cells are laid out against the BASE CLUSTER's rect, not
+    -- the union -- the live panel does this with an interior anchor frame
+    -- (PanelSections' _sectionBaseAnchor). The mirror hands the same result to
+    -- one shared content frame by offsetting every cell by the distance between
+    -- the two rects' growth-anchor points. Without sections the rects are the
+    -- same rect and this is exactly zero, so the grid keeps its old numbers.
+    local baseDX, baseDY = 0, 0
+    if sectionLayout then
+        local unionX, unionY = ST._GetPanelAnchorOffset(growthAnchor, contentWidth, contentHeight)
+        local clusterX, clusterY = ST._GetPanelAnchorOffset(growthAnchor,
+            sectionLayout.baseWidth, sectionLayout.baseHeight)
+        baseDX = sectionLayout.baseOffsetX + sectionLayout.baseWidth / 2 + clusterX
+            - contentWidth / 2 - unionX
+        baseDY = -sectionLayout.baseOffsetY - sectionLayout.baseHeight / 2 + clusterY
+            + contentHeight / 2 - unionY
+    end
 
     -- Scale is needed while styling (badges counter-scale against it), so
     -- compute it up front from the grid extents.
@@ -4979,7 +6272,11 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
 
     local layoutDrag = readOnly and { slots = {} } or CreatePreviewLayoutDrag(preview, panelId)
     layoutDrag.iconResolver = isBarMode and GetConfigOnlyBarPreviewIcon or GetLayoutPreviewIcon
-    layoutDrag.count = count
+    -- The grid holds the BASE members only once sections are in play; the
+    -- section members are placed from the layout table instead.
+    layoutDrag.count = cellCount
+    layoutDrag.cellIndex = cellIndex
+    layoutDrag.cellOfIndex = cellOfIndex
     layoutDrag.slotW, layoutDrag.slotH = w, h
     layoutDrag.scale = scale
     layoutDrag.anchor = growthAnchor
@@ -4988,19 +6285,19 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         -- offsets hang off the frame's edge midpoint, so the trailing
         -- partial line centers itself. cellXY doubles as the drag-reorder
         -- hit model, so centering must live here, not after.
-        local lineCount = math_ceil(count / perRow)
+        local lineCount = math_ceil(cellCount / perRow)
         layoutDrag.cellXY = function(d)
             local line = math_floor((d - 1) / perRow)
             local indexInLine = (d - 1) % perRow
-            local itemsInLine = (line == lineCount - 1) and (count - line * perRow) or perRow
+            local itemsInLine = (line == lineCount - 1) and (cellCount - line * perRow) or perRow
             if geo.orientation == "horizontal" then
                 local edgeYMul = centeredEdge == "TOP" and -1 or 1
-                return (indexInLine - (itemsInLine - 1) / 2) * (w + spacing),
-                    edgeYMul * (line * (h + spacing) + headerHeight)
+                return baseDX + (indexInLine - (itemsInLine - 1) / 2) * (w + spacing),
+                    baseDY + edgeYMul * (line * (h + spacing) + headerHeight)
             end
             local edgeXMul = centeredEdge == "LEFT" and 1 or -1
-            return edgeXMul * line * (w + spacing),
-                ((itemsInLine - 1) / 2 - indexInLine) * (h + spacing) - headerHeight / 2
+            return baseDX + edgeXMul * line * (w + spacing),
+                baseDY + ((itemsInLine - 1) / 2 - indexInLine) * (h + spacing) - headerHeight / 2
         end
     else
         layoutDrag.cellXY = function(d)
@@ -5012,29 +6309,61 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
                 col = math_floor((d - 1) / perRow)
                 row = (d - 1) % perRow
             end
-            return xMul * col * (w + spacing), yMul * (row * (h + spacing) + headerHeight)
+            return baseDX + xMul * col * (w + spacing),
+                baseDY + yMul * (row * (h + spacing) + headerHeight)
         end
+    end
+    -- The pitch between two cells on the same line, which cellXY can only be
+    -- asked for once there ARE two cells. The insertion-anchor model borrows it
+    -- when a base grid is down to a single cell.
+    if geo.orientation == "horizontal" then
+        layoutDrag.cellStepX = (centeredEdge and 1 or xMul) * (w + spacing)
+        layoutDrag.cellStepY = 0
+    else
+        layoutDrag.cellStepX = 0
+        layoutDrag.cellStepY = (centeredEdge and -1 or yMul) * (h + spacing)
     end
     preview.layoutDrag = layoutDrag
     -- Reorder maps dense cells to group.buttons indices, so it stays off
-    -- while the unavailable filter has punched holes in that mapping.
-    local dragModel = (not readOnly and count >= 2 and not visibleIndices)
-        and layoutDrag or nil
+    -- while the unavailable filter has punched holes in that mapping. A
+    -- sectioned panel counts ENTRIES, not base cells: an entry sitting in a
+    -- section still has the base row and the other anchors to be dragged to.
+    -- A one-entry panel has nowhere to go and stays off -- UNLESS that one entry
+    -- is in a section, where the drag is the only way back to the base row.
+    local dragModel = (not readOnly and not visibleIndices
+        and (count >= 2 or wantSectionDrag)) and layoutDrag or nil
+    if dragModel and wantSectionDrag then
+        layoutDrag.sectionDrag = SectionDrag.Build(group, sections, sectionLists,
+            sectionLayout, w, h, spacing, headerHeight, contentWidth, contentHeight)
+        SectionDrag.FloorEmptyBase(layoutDrag.sectionDrag, layoutDrag,
+            contentWidth, contentHeight)
+    end
 
     for ordinal = 1, count do
         local index = visibleIndices and visibleIndices[ordinal] or ordinal
         local buttonData = buttons[index]
+        -- A section member's own icon size, and its position, come from the
+        -- engine's layout table; nil means the entry is a base-grid cell.
+        local placement = sectionPlacement and sectionPlacement[index]
         local slot = AcquireSlot(preview, content, poolName)
         if isTextMode then
             -- Cell placement stays on the uniform pitch below; only the slot's
             -- own footprint is per-entry, like the live text button.
             slot:SetSize(GetTextSlotSize(group, buttonData, w, h))
+        elseif placement then
+            -- Sized before styleFn: the mirrored icon crops its texture from
+            -- the slot's current size (ST._ApplyIconTexCoord).
+            slot:SetSize(placement.width, placement.height)
         else
             slot:SetSize(w, h)
         end
 
-        local cx, cy = layoutDrag.cellXY(ordinal)
-        ApplyPreviewSlotGeometry(preview, slot, growthAnchor, cx, cy)
+        if placement then
+            ApplyPreviewSlotGeometry(preview, slot, "TOPLEFT", placement.x, placement.y)
+        else
+            local cx, cy = layoutDrag.cellXY(cellOfIndex and cellOfIndex[index] or ordinal)
+            ApplyPreviewSlotGeometry(preview, slot, growthAnchor, cx, cy)
+        end
 
         local effectiveStyle
         local barPreviewState
@@ -5113,7 +6442,16 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
             -- Pooled slots: written every build so a slot leaving a filtered
             -- build does not keep advertising the pause.
             slot._cdcReorderPausedByFilter = visibleIndices and true or nil
-            WireEntryInteraction(slot, panelId, index, buttonData, status, dragModel, barVisibility)
+            -- Which section's cluster this icon belongs to, for the hover
+            -- handle. Pooled like every flag above: a slot recycled onto a base
+            -- cell, a read-only mirror, or a filtered build must not keep
+            -- offering another panel's handle.
+            slot._cdcSectionAnchor = (dragModel and layoutDrag.sectionDrag and sections)
+                and ST.GetPanelSectionForEntry(group, buttonData) or nil
+            -- Section members drag like every other entry now: one model, and
+            -- the drop target decides what the gesture meant.
+            WireEntryInteraction(slot, panelId, index, buttonData, status,
+                dragModel, barVisibility)
         end
         layoutDrag.slots[index] = slot
     end

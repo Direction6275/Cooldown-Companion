@@ -493,6 +493,32 @@ local function BuildFlatContainerOrder(db, excludedContainerId, panelId)
     return flattened
 end
 
+-- The one tail every "Switch to <mode>" path runs, so the menu row and the
+-- flatten confirmation below it cannot land the panel in different states.
+--
+-- flattenSections belongs INSIDE the success test, not before the call:
+-- ChangePanelDisplayMode judges the request itself (CanChangePanelDisplayMode)
+-- and can still refuse it at Accept time, and a flatten that ran first would
+-- have destroyed every placement for a switch that never happened. Flattening
+-- after is safe -- sections are inert in every non-icon mode -- and it lands
+-- before the config refresh below, so one pass shows the finished state.
+local function ApplyPanelDisplayModeChange(panelId, containerId, targetMode, flattenSections)
+    if CooldownCompanion:ChangePanelDisplayMode(panelId, targetMode) then
+        if flattenSections then
+            local panel = CooldownCompanion.db.profile.groups[panelId]
+            if panel then
+                ST.FlattenPanelSections(panel)
+            end
+        end
+        if targetMode == "textures" then
+            CS.pendingTexturePickerOpen = panelId
+            SelectConfigPanel(panelId, { containerId = containerId })
+        end
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+ST._ApplyPanelDisplayModeChange = ApplyPanelDisplayModeChange
+
 local function ShowPanelContextMenu(panelId, containerId)
     local db = CooldownCompanion.db.profile
     local panel = db.groups and db.groups[panelId]
@@ -616,13 +642,19 @@ local function ShowPanelContextMenu(panelId, containerId)
                         local targetMode = modeInfo.mode
                         info.func = function()
                             CloseDropDownMenus()
-                            if CooldownCompanion:ChangePanelDisplayMode(panelId, targetMode) then
-                                if targetMode == "textures" then
-                                    CS.pendingTexturePickerOpen = panelId
-                                    SelectConfigPanel(panelId, { containerId = containerId })
-                                end
-                                CooldownCompanion:RefreshConfigPanel()
+                            -- Sections exist only in icon mode, and leaving it
+                            -- flattens them for good (placements are not
+                            -- remembered), so a panel that actually has some
+                            -- says so before the switch instead of after.
+                            if targetMode ~= "icons" and ST.GetSectionsForLayout(panel) then
+                                ShowPopupAboveConfig("CDC_FLATTEN_PANEL_SECTIONS", panel.name or "Panel", {
+                                    panelId = panelId,
+                                    containerId = containerId,
+                                    targetMode = targetMode,
+                                })
+                                return
                             end
+                            ApplyPanelDisplayModeChange(panelId, containerId, targetMode)
                         end
                         UIDropDownMenu_AddButton(info, level)
                     end
@@ -2051,6 +2083,9 @@ local function RefreshColumn1(preserveDrag)
 
         entry.frame:SetScript("OnMouseUp", function(_, button)
             if CS.dragState and CS.dragState.phase == "active" then return end
+            -- Escape already cancelled this drag; the release the user is still
+            -- holding belongs to that cancel, never to a click on the row.
+            if button == "LeftButton" and ST._ConsumeDragEscapeMouseUp() then return end
             -- Copy Panel Settings mode: right-click anywhere in the tree
             -- cancels, matching the entry copy mode's grammar. Left-clicks on
             -- Group rows keep working - expanding a Group is part of reaching
@@ -2300,6 +2335,9 @@ local function RefreshColumn1(preserveDrag)
 
                 panelEntry.frame:SetScript("OnMouseUp", function(_, button)
                     if CS.dragState and CS.dragState.phase == "active" then return end
+                    -- Escape already cancelled this drag; the release the user is
+                    -- still holding belongs to that cancel, never to a click.
+                    if button == "LeftButton" and ST._ConsumeDragEscapeMouseUp() then return end
                     -- Copy Panel Settings mode: an armed left-click applies to
                     -- this row instead of selecting it (the SOURCE row falls
                     -- through and navigates normally), and right-click cancels

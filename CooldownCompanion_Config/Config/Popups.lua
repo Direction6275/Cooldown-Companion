@@ -428,6 +428,31 @@ StaticPopupDialogs["CDC_REFRESH_CDM_PANEL"] = {
     preferredIndex = 3,
 }
 
+-- Leaving icon mode with Panel Sections placed. The panel is named by id rather
+-- than handed over live, and the flatten runs at Accept time so a Cancel leaves
+-- both the placements and the display mode exactly as they were.
+--
+-- The flatten is handed to the mode change rather than run here first: the
+-- switch is judged again inside ChangePanelDisplayMode and can still be
+-- refused, and a refusal must leave the placements untouched.
+StaticPopupDialogs["CDC_FLATTEN_PANEL_SECTIONS"] = {
+    text = "'%s' has sections. Switching display mode flattens them back into the base row.",
+    button1 = "Switch",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if not (data and data.panelId and data.targetMode) then return end
+        if not CooldownCompanion.db.profile.groups[data.panelId] then return end
+        if ST._ApplyPanelDisplayModeChange then
+            ST._ApplyPanelDisplayModeChange(data.panelId, data.containerId,
+                data.targetMode, true)
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 -- Revert All, from the entry Settings pane's Customizations heading. The entry
 -- is named by id rather than handed over live: a popup outlives the build that
 -- opened it, and the entry it names can be gone by the time Accept comes back.
@@ -520,6 +545,11 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_BUTTONS"] = {
                 for _, idx in ipairs(data.indices) do
                     table.remove(group.buttons, idx)
                 end
+                -- A batch delete can empty several sections at once, so sweep
+                -- the panel once here instead of per entry. Without it every
+                -- emptied anchor stays in the profile as a Layout-tab block for
+                -- a cluster with nothing in it.
+                ST.SweepEmptyPanelSections(group)
                 CooldownCompanion:RefreshGroupFrame(data.groupId)
             end
             ResetConfigSelection(false)
