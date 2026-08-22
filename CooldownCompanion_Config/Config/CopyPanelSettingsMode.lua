@@ -283,12 +283,18 @@ local function ApplyCopyPanelRowVisuals(panelEntry, panelId)
     local wash = frame._cdcCopyPanelWash
     if not wash then
         wash = frame:CreateTexture(nil, "BACKGROUND", nil, 2)
-        wash:SetAllPoints(frame)
         wash:SetTexture("Interface/Buttons/WHITE8x8")
         frame._cdcCopyPanelWash = wash
     end
-    -- Gradient state is per-texture and recycled rows can arrive carrying
-    -- another use of the frame, so it is restated on every apply.
+    -- The wash starts INSIDE the Group's class-color accent bar (the 3px
+    -- vertical line the nested-panel treatment draws at the shell's left
+    -- edge), never behind or past it - the glow reads as coming from the
+    -- accent rather than butting against it (owner ruling 2026-08-22).
+    -- Anchors restated per apply alongside the gradient: recycled rows can
+    -- arrive carrying another use of the frame.
+    wash:ClearAllPoints()
+    wash:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, 0)
+    wash:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
     wash:SetGradient("HORIZONTAL",
         CreateColor(COPY_PANEL_COLOR[1], COPY_PANEL_COLOR[2], COPY_PANEL_COLOR[3], 0.20),
         CreateColor(COPY_PANEL_COLOR[1], COPY_PANEL_COLOR[2], COPY_PANEL_COLOR[3], 0))
