@@ -428,7 +428,7 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig)
         bar:SetStatusBarColor((pc and pc[1]) or 1, (pc and pc[2]) or 0.5, (pc and pc[3]) or 0, 1)
     end
 end
-local function ClearStaleRecycledBarRuntimeState(frame)
+local function ClearStaleRecycledBarRuntimeState(frame, keepBorderVisuals)
     if not frame then return end
     UnbindFrameDurationText(frame)
     ClearStatusBarMotion(frame)
@@ -458,20 +458,35 @@ local function ClearStaleRecycledBarRuntimeState(frame)
     if frame._cdcIndependentAlphaSync then
         frame._cdcIndependentAlphaSync:SetScript("OnUpdate", nil)
     end
-    -- Max-stack border: cleared so a recycled frame that stops being a
+    -- Max-stack border: invalidated so a recycled frame that stops being a
     -- stack-counted shape never keeps a lit border (no stack tick runs on it
-    -- to clear it). A frame that is still one re-lights on its next update —
-    -- the key mismatch makes that one restyle. One pool field for Maelstrom
-    -- Weapon and the aura-stack family alike: a frame is only ever one of
-    -- them at a time, so they share the cleanup.
+    -- to clear it). A frame that is still one re-lights on its next poll
+    -- tick — the key mismatch makes that one restyle, and the dash engine's
+    -- clock-locked phases make the restyle seamless (Glows.lua,
+    -- StyleDashPerimeter). keepBorderVisuals is passed only by the apply
+    -- loop's in-place reuse, and only for a visible same-resource reflow:
+    -- an eager visual clear there rendered one dark frame before the poll
+    -- tick re-lit the border (a visible blink at max stacks), so the
+    -- visuals keep running under the stale key until that restyle lands.
+    -- An identity change (the Devourer pair swap) or a hidden holder
+    -- being reactivated clears eagerly, so the incoming resource never
+    -- wears the outgoing one's border for a tick. Every other caller
+    -- hides the frame right after this, so those keep the eager clear
+    -- and a reused frame always comes up dark. One pool field
+    -- for Maelstrom Weapon and the aura-stack family alike: a frame is
+    -- only ever one of them at a time, so they share the cleanup.
     local mwBorder = frame._ccMWMaxBorder
     if mwBorder and mwBorder.key ~= "off" then
-        mwBorder.key = "off"
-        if mwBorder.glow then
-            ST._StyleKitBarGlowRegions(mwBorder.glow, nil, mwBorder.host, false)
-        end
-        if mwBorder.segBorders then
-            ST._StyleKitSegmentBorders(mwBorder.segBorders, nil, nil, 0, false)
+        if keepBorderVisuals then
+            mwBorder.key = "border-stale"
+        else
+            mwBorder.key = "off"
+            if mwBorder.glow then
+                ST._StyleKitBarGlowRegions(mwBorder.glow, nil, mwBorder.host, false)
+            end
+            if mwBorder.segBorders then
+                ST._StyleKitSegmentBorders(mwBorder.segBorders, nil, nil, 0, false)
+            end
         end
     end
     -- Aura-pass absent-state blocks: hidden for the apply pass;
@@ -2109,7 +2124,14 @@ local DisableEventFrame
 -- Apply: Create/show/position resource bars
 ------------------------------------------------------------------------
 
-local function StyleContinuousBar(bar, powerType, settings)
+-- skipLiveFillColor: the stack-counted continuous shapes (Maelstrom Weapon,
+-- the aura-stack family) repaint their fill with the live precedence colour
+-- (max, then threshold, then base) every poll tick, so a reused visible
+-- same-resource holder skips the static fill paint here — painting it
+-- flashed an at-max bar the wrong colour for a frame on every in-place
+-- re-apply. Classic continuous bars pass nothing: their tick runs
+-- ApplyContinuousFillColor itself, so the apply-time write matches it.
+local function StyleContinuousBar(bar, powerType, settings, skipLiveFillColor)
     local texName = ST.GetEffectiveBarTextureName(GetResourceDisplayValue(settings, "barTexture", "Solid"))
     local isVertical = IsVerticalResourceLayout(settings)
     local reverseFill = IsVerticalFillReversed(settings)
@@ -2134,7 +2156,9 @@ local function StyleContinuousBar(bar, powerType, settings)
     bar._isVertical = isVertical
     bar._reverseFill = reverseFill
 
-    ApplyContinuousFillColor(bar, powerType, settings)
+    if not skipLiveFillColor then
+        ApplyContinuousFillColor(bar, powerType, settings)
+    end
 
     local bgc = GetResourceDisplayValue(settings, "backgroundColor", { 0, 0, 0, 0.5 })
     bar.bg:ClearAllPoints()
@@ -2603,6 +2627,15 @@ function CooldownCompanion:ApplyResourceBars(opts)
         local powerType = isCustomEntry and nil or entry
         local isSegmented = SEGMENTED_TYPES[powerType]
         local barInfo = resourceBarFrames[idx]
+        -- Captured before the per-type branches overwrite barInfo.powerType:
+        -- visuals survive an in-place re-apply only for a visible
+        -- same-resource reflow. An identity change (the Devourer pair swap
+        -- reuses this slot's frame) or a hidden holder being reactivated
+        -- must come up rendered for the incoming resource, not wearing the
+        -- outgoing one's colors or border for a poll tick.
+        local prevPowerType = barInfo and barInfo.powerType
+        local wasShown = barInfo and barInfo.frame and barInfo.frame:IsShown() or false
+        local samePowerReflow = wasShown and prevPowerType ~= nil and prevPowerType == powerType
         local firstSide = isVerticalLayout and "left" or "above"
         local targetContainer = sideList[idx] == firstSide and containerFrameAbove or containerFrameBelow
 
@@ -2676,6 +2709,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
             local mwStyle = RB.GetMWDisplayStyle(settings)
 
             if mwStyle == "continuous" then
+                local createdBar = false
                 if not barInfo or barInfo.barType ~= "mw_continuous" then
                     if barInfo and barInfo.frame then
                         ClearStaleRecycledBarRuntimeState(barInfo.frame)
@@ -2684,6 +2718,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
                     local bar = CreateContinuousBar(targetContainer)
                     barInfo = { frame = bar, barType = "mw_continuous", powerType = powerType }
                     resourceBarFrames[idx] = barInfo
+                    createdBar = true
                 else
                     barInfo.powerType = powerType
                 end
@@ -2692,11 +2727,13 @@ function CooldownCompanion:ApplyResourceBars(opts)
                 -- Shares the continuous styling path, so texture, borders,
                 -- background, and the bar text all follow the same resource
                 -- settings every other continuous bar uses.
-                StyleContinuousBar(barInfo.frame, powerType, settings)
+                StyleContinuousBar(barInfo.frame, powerType, settings,
+                    not createdBar and samePowerReflow)
 
             elseif mwStyle == "segments" then
                 -- One segment per stack, no overlay layer: the plain
                 -- segmented widget every other discrete resource uses.
+                local createdHolder = false
                 if not barInfo or barInfo.barType ~= "mw_segments"
                     or #barInfo.frame.segments ~= mwMaxStacks then
                     if barInfo and barInfo.frame then
@@ -2706,6 +2743,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
                     local holder = CreateSegmentedBar(targetContainer, mwMaxStacks)
                     barInfo = { frame = holder, barType = "mw_segments", powerType = powerType }
                     resourceBarFrames[idx] = barInfo
+                    createdHolder = true
                 else
                     barInfo.powerType = powerType
                 end
@@ -2713,9 +2751,16 @@ function CooldownCompanion:ApplyResourceBars(opts)
                 barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
                 LayoutSegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings)
 
-                local baseColor = GetResourceColors(100, settings)
-                for i = 1, mwMaxStacks do
-                    barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+                -- Initial paint for a freshly built or non-reflow holder
+                -- only, mirroring the aura-stack branch: a visible reused
+                -- holder is repainted every poll tick with the live
+                -- precedence colour, and painting base here flashed an
+                -- at-max bar the wrong colour for a frame per re-apply.
+                if createdHolder or not samePowerReflow then
+                    local baseColor = GetResourceColors(100, settings)
+                    for i = 1, mwMaxStacks do
+                        barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+                    end
                 end
                 StyleSegmentedText(barInfo.frame, powerType, settings)
 
@@ -2724,6 +2769,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
                 -- stacks past five (the default shape).
                 local halfSegments = mwMaxStacks <= 5 and mwMaxStacks or (mwMaxStacks / 2)
 
+                local createdHolder = false
                 if not barInfo or barInfo.barType ~= "mw_segmented"
                     or #barInfo.frame.segments ~= halfSegments then
                     if barInfo and barInfo.frame then
@@ -2733,6 +2779,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
                     local holder = CreateOverlayBar(targetContainer, halfSegments)
                     barInfo = { frame = holder, barType = "mw_segmented", powerType = powerType }
                     resourceBarFrames[idx] = barInfo
+                    createdHolder = true
                 else
                     barInfo.powerType = powerType
                 end
@@ -2740,12 +2787,18 @@ function CooldownCompanion:ApplyResourceBars(opts)
                 barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
                 LayoutOverlaySegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings, halfSegments)
 
-                -- Apply initial colors
-                local baseColor, overlayColor = GetResourceColors(100, settings)
-                for i = 1, halfSegments do
-                    barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
-                    barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
-                    barInfo.frame.overlaySegments[i]:Show()
+                -- Initial colors for a freshly built or non-reflow holder
+                -- only, mirroring the aura-stack branch: a visible reused
+                -- holder's base/overlay colours and overlay alpha are all
+                -- rewritten every poll tick, and painting base here flashed
+                -- an at-max bar the wrong colour for a frame per re-apply.
+                if createdHolder or not samePowerReflow then
+                    local baseColor, overlayColor = GetResourceColors(100, settings)
+                    for i = 1, halfSegments do
+                        barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+                        barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
+                        barInfo.frame.overlaySegments[i]:Show()
+                    end
                 end
                 StyleSegmentedText(barInfo.frame, powerType, settings)
             end
@@ -2780,6 +2833,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
             end
 
             if RB.GetAuraStackDisplayStyle(settings, powerType) == "continuous" then
+                local createdBar = false
                 if not barInfo or barInfo.barType ~= "stackaura_continuous" then
                     if barInfo and barInfo.frame then
                         ClearStaleRecycledBarRuntimeState(barInfo.frame)
@@ -2788,6 +2842,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
                     local bar = CreateContinuousBar(targetContainer)
                     barInfo = { frame = bar, barType = "stackaura_continuous", powerType = powerType }
                     resourceBarFrames[idx] = barInfo
+                    createdBar = true
                 else
                     barInfo.powerType = powerType
                 end
@@ -2796,7 +2851,8 @@ function CooldownCompanion:ApplyResourceBars(opts)
                 -- Shares the continuous styling path, so texture, borders,
                 -- background, and the bar text all follow the same resource
                 -- settings every other continuous bar uses.
-                StyleContinuousBar(barInfo.frame, powerType, settings)
+                StyleContinuousBar(barInfo.frame, powerType, settings,
+                    not createdBar and samePowerReflow)
 
             else
                 -- One segment per stack (the default shape). The count moves
@@ -2806,6 +2862,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
                 -- destroys a frame, so a session of talent changes and meta
                 -- swaps accumulated orphans. Only a real barType change
                 -- builds a new one now.
+                local createdHolder = false
                 if not barInfo or barInfo.barType ~= "stackaura_segments" then
                     if barInfo and barInfo.frame then
                         ClearStaleRecycledBarRuntimeState(barInfo.frame)
@@ -2814,6 +2871,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
                     local holder = CreateSegmentedBar(targetContainer, stackMax)
                     barInfo = { frame = holder, barType = "stackaura_segments", powerType = powerType }
                     resourceBarFrames[idx] = barInfo
+                    createdHolder = true
                 else
                     barInfo.powerType = powerType
                 end
@@ -2822,9 +2880,21 @@ function CooldownCompanion:ApplyResourceBars(opts)
                 barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
                 LayoutSegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings)
 
-                local baseColor = GetResourceColors(powerType, settings)
-                for i = 1, stackMax do
-                    barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+                -- Initial paint for a freshly built holder, an identity
+                -- change, or a hidden holder coming back — every reuse that
+                -- must not wear the previous occupant's colors. A visible
+                -- same-resource reflow skips it: that holder is repainted
+                -- every poll tick with the live precedence colour (max,
+                -- then threshold, then base), and painting the base colour
+                -- here flashed an at-max bar base-coloured for a frame on
+                -- every in-place re-apply — a visible blink, since the
+                -- group reflow at max stacks re-applies exactly when the
+                -- max colour is showing.
+                if createdHolder or not samePowerReflow then
+                    local baseColor = GetResourceColors(powerType, settings)
+                    for i = 1, stackMax do
+                        barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+                    end
                 end
                 StyleSegmentedText(barInfo.frame, powerType, settings)
             end
@@ -2884,7 +2954,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
             StyleContinuousBar(barInfo.frame, powerType, settings)
         end
 
-        ClearStaleRecycledBarRuntimeState(barInfo.frame)
+        ClearStaleRecycledBarRuntimeState(barInfo.frame, samePowerReflow)
         if barInfo.frame:GetParent() ~= targetContainer then
             barInfo.frame:SetParent(targetContainer)
         end

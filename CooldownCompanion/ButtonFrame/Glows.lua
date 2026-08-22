@@ -280,9 +280,16 @@ local function StyleDashPerimeter(dashList, masks, anchorFrame, length, thicknes
         arc = arc + edges[j].len
     end
 
+    -- Clock-locked phases: each dash's start position derives from GetTime,
+    -- not from the Play moment. Restyling a running pattern (with the same
+    -- lap and geometry) then lands every dash exactly where the previous
+    -- run's dashes already are, so restyle churn — recycle/re-light cycles,
+    -- cache-death restarts — never visibly rewinds the pattern to a fixed
+    -- origin.
+    local clockPhase = (GetTime() % lap) / lap * P
     for i, dash in ipairs(dashList) do
         if i <= count then
-            local s0 = (i - 1) * P / count
+            local s0 = ((i - 1) * P / count + clockPhase) % P
             for j = 1, 4 do
                 local e = edges[j]
                 local piece = dash.pieces[j]
