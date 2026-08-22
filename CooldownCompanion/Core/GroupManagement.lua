@@ -499,12 +499,16 @@ function CooldownCompanion:CopyPanelSettings(sourceGroupId, targetGroupId, scope
         targetGroup.style = targetStyle
     end
 
+    local copiedDurationFormat = false
     local function CopyStyleKey(key)
         local value = sourceStyle[key]
         if value == nil then
             value = baseline[key]
         end
         targetStyle[key] = CopyPresetValue(value)
+        if key == "durationFormat" then
+            copiedDurationFormat = true
+        end
     end
 
     local oldMasqueEnabled = targetGroup.masqueEnabled and true or false
@@ -528,10 +532,29 @@ function CooldownCompanion:CopyPanelSettings(sourceGroupId, targetGroupId, scope
                 targetGroup.masqueEnabled = sourceGroup.masqueEnabled and true or false
                 copiedMasque = true
             end
-            if scopeData.copiesCompact then
+            -- Compact settings never cross an Aura Panel boundary in either
+            -- direction: on an Aura Panel compactGrowthDirection is the
+            -- Layout-owned Collapse Direction (a placement setting outside
+            -- this feature's line), and compactLayout is invariant-forced
+            -- false there - so an Aura endpoint has nothing Appearance-shaped
+            -- to give or take here.
+            if scopeData.copiesCompact
+                and not ST.IsAuraPanelGroup(sourceGroup)
+                and not ST.IsAuraPanelGroup(targetGroup) then
                 CopyCompactLayoutSettings(sourceGroup, targetGroup)
             end
         end
+    end
+
+    -- durationFormat: legacy profiles can still carry only decimalTimers=true
+    -- with no explicit durationFormat (no migration normalizes the pair; the
+    -- read path resolves it, ButtonFrame/Helpers.lua). Copying the raw keys
+    -- would hand such a source's target the baseline "clock" while the source
+    -- renders decimals - so the copy writes the source's EFFECTIVE format in
+    -- canonical form and clears the target's retired legacy key.
+    if copiedDurationFormat and self.GetDurationFormat then
+        targetStyle.durationFormat = self.GetDurationFormat(sourceStyle)
+        targetStyle.decimalTimers = nil
     end
 
     -- Copy eligibility compares the base displayMode only, so an ordinary icon
@@ -541,6 +564,16 @@ function CooldownCompanion:CopyPanelSettings(sourceGroupId, targetGroupId, scope
     -- clear it), so the invariants are re-established here — before the Masque
     -- comparison below, and before the combat-deferred return.
     self:EnforceAuraPanelInvariants(targetGroup)
+
+    -- A target serving as the stable anchor for Resources, the Cast Bar, or
+    -- Unit Frames must never come out of a copy compacted: the attached
+    -- displays need its full footprint. The same normalizer the compact
+    -- toggle's own build path runs (GroupOperations.lua); without it the
+    -- invariant would only self-heal on the next full refresh pass.
+    if self.NormalizeStableExternalAnchorCompactLayout then
+        self:NormalizeStableExternalAnchorCompactLayout(targetGroupId, targetGroup)
+    end
+
     local newMasqueEnabled = targetGroup.masqueEnabled and true or false
 
     -- The source can carry a Masque flag from a client that had it installed.

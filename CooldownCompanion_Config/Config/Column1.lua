@@ -2398,6 +2398,14 @@ local function RefreshColumn1(preserveDrag)
                     lastPanelEntry = buttonEntry
 
                     buttonEntry.frame:SetScript("OnMouseUp", function(_, button)
+                        -- Copy Panel Settings mode: right-click cancels on
+                        -- every interactive Navigator row, this one included.
+                        if CS.copyPanelSettings and button == "RightButton" then
+                            if ST._CancelCopyPanelSettings then
+                                ST._CancelCopyPanelSettings()
+                            end
+                            return
+                        end
                         if button == "LeftButton" and SelectConfigFinderResult then
                             SelectConfigFinderResult(containerId, panelId, buttonIndex)
                         end
@@ -2494,6 +2502,14 @@ local function RefreshColumn1(preserveDrag)
             if header.frame then
                 header.frame:SetScript("OnMouseUp", function(_, button)
                     if CS.dragState and CS.dragState.phase == "active" then return end
+                    -- Copy Panel Settings mode: right-click cancels on every
+                    -- interactive Navigator row, this one included.
+                    if CS.copyPanelSettings and button == "RightButton" then
+                        if ST._CancelCopyPanelSettings then
+                            ST._CancelCopyPanelSettings()
+                        end
+                        return
+                    end
                     if button == "LeftButton" and not searchResults then
                         ToggleClassSection()
                     end
@@ -2692,6 +2708,14 @@ local function RefreshColumn1(preserveDrag)
         if row.frame then
             row.frame:SetScript("OnMouseUp", function(_, button)
                 if CS.dragState and CS.dragState.phase == "active" then return end
+                -- Copy Panel Settings mode: right-click cancels on every
+                -- interactive Navigator row, this one included.
+                if CS.copyPanelSettings and button == "RightButton" then
+                    if ST._CancelCopyPanelSettings then
+                        ST._CancelCopyPanelSettings()
+                    end
+                    return
+                end
                 if button == "LeftButton" and options and options.onClick then
                     options.onClick()
                 end
