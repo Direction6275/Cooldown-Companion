@@ -798,9 +798,12 @@ local function ResetConfigForProfileChange()
     if CS.importMode and ST._ExitImportMode then
         ST._ExitImportMode({ skipRefresh = true })
     end
-    -- The armed copy source names an entry in the OUTGOING profile.
+    -- The armed copy sources name entities in the OUTGOING profile.
     if CS.copyCustomization and ST._CancelCopyCustomization then
         ST._CancelCopyCustomization({ skipRefresh = true })
+    end
+    if CS.copyPanelSettings and ST._CancelCopyPanelSettings then
+        ST._CancelCopyPanelSettings({ skipRefresh = true })
     end
     ResetConfigSelection(true)
     wipe(CS.collapsedPanels)
@@ -1175,6 +1178,16 @@ local function CreateConfigPanel()
                     self:SetPropagateKeyboardInput(false)
                 end
                 CooldownCompanion:CloseTalentPicker()
+                return
+            end
+            -- Copy Panel Settings mode: Escape disarms it instead of the panel
+            if CS.copyPanelSettings then
+                if not InCombatLockdown() then
+                    self:SetPropagateKeyboardInput(false)
+                end
+                if ST._CancelCopyPanelSettings then
+                    ST._CancelCopyPanelSettings()
+                end
                 return
             end
             -- Copy-customization mode: Escape disarms it instead of the panel
@@ -2326,8 +2339,13 @@ local function CreateConfigPanel()
         if CS.col1Scroll and CS.col1Scroll.frame then
             local bottomInset = destinationBottomInset
                 + (showDestinations and GetNavigatorDestinationsHeight() or 0)
+            -- The Copy Panel Settings banner sits above the tree while the
+            -- mode is armed, so the scroll starts below it instead of being
+            -- overlaid (the mode file re-runs this layout on arm/cancel).
+            local topInset = (CS.copyPanelSettings and ST._COPY_PANEL_BANNER_HEIGHT)
+                and ST._COPY_PANEL_BANNER_HEIGHT or 0
             CS.col1Scroll.frame:ClearAllPoints()
-            CS.col1Scroll.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
+            CS.col1Scroll.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, -topInset)
             CS.col1Scroll.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, bottomInset)
         end
 

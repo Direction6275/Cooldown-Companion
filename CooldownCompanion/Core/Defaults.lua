@@ -1402,6 +1402,110 @@ function ST.CanGroupUseOverrideSection(group, sectionId)
     return true
 end
 
+------------------------------------------------------------------------
+-- PANEL COPY SCOPES REGISTRY
+-- Which panel settings "Copy Panel Settings To..." carries, per display
+-- mode, per scope tab. A scope is everything the named tab edits: the
+-- override sections drawn there (their keys come from ST.OVERRIDE_SECTIONS,
+-- never restated here) plus the panel-only style keys that live on that tab
+-- without an override section of their own.
+--
+-- The tab homes mirror ST._SECTION_HOME (config addon), which the tab
+-- builders own; this registry is the Core-side statement of the same
+-- membership so the copy primitive can run without the config's predicates.
+-- A new style key added to an Appearance or Indicators tab must be added
+-- here (or to a section's key list) the same day, or it silently never
+-- copies. Layout-tab keys (orientation, growth, buttonsPerRow, strata,
+-- alpha) are deliberately absent: the look copies, the placement does not.
+--
+-- copiesMasque / copiesCompact flag the group-level (non-style) settings the
+-- scope carries; CopyPanelSettings owns their special handling (Masque
+-- lifecycle sync, maxVisibleButtons clamp).
+ST.PANEL_COPY_SCOPES = {
+    icons = {
+        appearance = {
+            sections = {
+                "cooldownText", "chargeText", "auraText", "auraStackText",
+                "keybindText", "whileAuraActive", "borderSettings", "iconTint",
+                "iconZoom",
+            },
+            styleKeys = {
+                -- Icon Settings (shape, size, spacing)
+                "maintainAspectRatio", "buttonSize", "iconWidth", "iconHeight",
+                "buttonSpacing",
+                -- Duration Format + Low Time Threshold (panel-owned rows in
+                -- the Text section)
+                "durationFormat", "durationLowTimeThreshold",
+                "durationLowTimeDecimals", "durationLowTimeColor",
+                "durationLowTimeThreshold2", "durationLowTimeColor2",
+            },
+            copiesMasque = true,
+            copiesCompact = true,
+        },
+        indicators = {
+            sections = {
+                "procGlow", "auraIndicator", "readyGlow", "keyPressHighlight",
+                "assistedHighlight", "pandemic", "iconFillTimer",
+                "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe",
+                "desaturation", "auraMissingDesaturation", "unusableDimming",
+                "showOutOfRange", "lossOfControl", "showTooltips",
+            },
+            styleKeys = {
+                -- Panel-owned rows in the States section: Allow Pings, and the
+                -- tooltip behavior keys the Show Tooltips gear edits.
+                "allowPings", "tooltipAnchor", "tooltipHideInCombat",
+            },
+        },
+    },
+    bars = {
+        appearance = {
+            sections = {
+                "barColor", "barBgColor", "barCooldownColor", "barChargeColor",
+                "borderSettings", "iconTint", "barIcon", "barNameText",
+                "cooldownText", "chargeText", "barReadyText", "auraText",
+                "auraStackText", "iconZoom", "whileAuraActive",
+            },
+            styleKeys = {
+                -- Bar Settings (shape, texture)
+                "barLength", "barHeight", "buttonSpacing", "barTexture",
+                -- Bar-wide text placement (panel-owned rows in the text gears)
+                "barTimeTextReverse", "barCdTextOffsetX", "barCdTextOffsetY",
+                "barNameTextOffsetX", "barNameTextOffsetY",
+                -- Duration Format + Low Time Threshold
+                "durationFormat", "durationLowTimeThreshold",
+                "durationLowTimeDecimals", "durationLowTimeColor",
+                "durationLowTimeThreshold2", "durationLowTimeColor2",
+            },
+            copiesCompact = true,
+        },
+        indicators = {
+            -- barActiveAura's home is the Indicators tab (Active Aura
+            -- Indicator row); its barAuraColor row on Appearance rides along
+            -- as part of the one section.
+            sections = {
+                "barActiveAura", "pandemic", "showGCDSwipe", "desaturation",
+                "auraMissingDesaturation", "unusableDimming", "lossOfControl",
+                "showTooltips",
+            },
+            styleKeys = {
+                "allowPings", "tooltipAnchor", "tooltipHideInCombat",
+            },
+        },
+    },
+    -- Text panels have no Indicators tab; the Format tab is content, not
+    -- look, so it stays out of scope.
+    text = {
+        appearance = {
+            sections = { "textFont", "textColors", "textBackground" },
+            styleKeys = {
+                "textPadding", "buttonSpacing", "showTextGroupHeader",
+                "textHeaderFontSize", "textHeaderFontColor",
+            },
+            copiesCompact = true,
+        },
+    },
+}
+
 function ST.CanButtonUseOverrideSection(buttonData, sectionId)
     if buttonData and buttonData.type == "equipmentSlot" then
         if ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS[sectionId] then

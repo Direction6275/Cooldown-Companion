@@ -46,6 +46,9 @@ local function EnterExportMode()
     if CS.copyCustomization and ST._CancelCopyCustomization then
         ST._CancelCopyCustomization({ skipRefresh = true })
     end
+    if CS.copyPanelSettings and ST._CancelCopyPanelSettings then
+        ST._CancelCopyPanelSettings({ skipRefresh = true })
+    end
     CloseDropDownMenus()
 
     -- Fresh selection on every entry: each export is its own curation.

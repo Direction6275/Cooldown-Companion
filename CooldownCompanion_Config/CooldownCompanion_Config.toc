@@ -42,6 +42,7 @@ Config\ButtonsWideColumn.lua
 Config\ResourcesWideColumn.lua
 Config\ExportMode.lua
 Config\ImportMode.lua
+Config\CopyPanelSettingsMode.lua
 Config\ProfileBar.lua
 Config\PanelChangelogOverlay.lua
 Config\Panel.lua

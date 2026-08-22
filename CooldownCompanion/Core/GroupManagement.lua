@@ -14,24 +14,6 @@ local math_floor = math.floor
 local table_sort = table.sort
 local table_remove = table.remove
 local IsDistinctAuraViewerFrameForSpell = ST.IsDistinctAuraViewerFrameForSpell
-local GROUP_SETTING_PRESET_MODES = {
-    icons = true,
-    bars = true,
-    text = true,
-}
-
-local DIRECT_STYLE_COPY_MODES = {
-    icons = true,
-    bars = true,
-}
-
-local function IsValidGroupSettingPresetMode(mode)
-    return GROUP_SETTING_PRESET_MODES[mode] == true
-end
-
-local function IsValidDirectStyleCopyMode(mode)
-    return DIRECT_STYLE_COPY_MODES[mode] == true
-end
 
 local function ShouldClearCDMPanelSourceForDisplayMode(group, displayMode)
     if not (group and group.cdmPanelSource) then
@@ -370,13 +352,6 @@ local function CopyPresetValue(v)
     return v
 end
 
-local function GetGroupDisplayMode(group)
-    if group and group.displayMode == "bars" then
-        return "bars"
-    end
-    return "icons"
-end
-
 -- Panel arrangement orientation is remembered PER MODE so a display-mode
 -- swap can never destroy another mode's layout: bars and text panels read
 -- their own keys (unset = vertical), everything else keeps style.orientation
@@ -389,62 +364,6 @@ function ST.GetPanelLayoutOrientation(displayMode, style)
         return style.textOrientation or "vertical"
     end
     return style.orientation or "horizontal"
-end
-
-local function GroupMatchesDirectStyleCopyMode(group, mode)
-    if not group or not IsValidDirectStyleCopyMode(mode) then
-        return false
-    end
-    if mode == "bars" then
-        return group.displayMode == "bars"
-    end
-    return group.displayMode == nil or group.displayMode == "icons"
-end
-
-function CooldownCompanion:CanCopyDirectStyleFromPanel(mode, sourceGroupId, targetGroupId)
-    sourceGroupId = tonumber(sourceGroupId)
-    targetGroupId = tonumber(targetGroupId)
-    if not IsValidDirectStyleCopyMode(mode) then
-        return false, "invalid_mode"
-    end
-
-    local db = self.db and self.db.profile
-    local sourceGroup = db and db.groups and db.groups[sourceGroupId]
-    local targetGroup = db and db.groups and db.groups[targetGroupId]
-    if not sourceGroup or not targetGroup then
-        return false, "missing_group"
-    end
-    if sourceGroupId == targetGroupId then
-        return false, "same_group"
-    end
-    if not GroupMatchesDirectStyleCopyMode(sourceGroup, mode)
-        or not GroupMatchesDirectStyleCopyMode(targetGroup, mode) then
-        return false, "mode_mismatch"
-    end
-
-    if self.ResolveContainerClassScope
-        and sourceGroup.parentContainerId
-        and targetGroup.parentContainerId then
-        local sourceScope = self:ResolveContainerClassScope(sourceGroup.parentContainerId)
-        local targetScope = self:ResolveContainerClassScope(targetGroup.parentContainerId)
-        if not sourceScope or not targetScope or sourceScope.isInvalid or targetScope.isInvalid then
-            return false, "invalid_class_scope"
-        end
-        if sourceScope.runtimeVisible == true then
-            return true
-        end
-        if sourceScope.isOtherClass
-            and targetScope.isOtherClass
-            and sourceScope.ownerClassKey == targetScope.ownerClassKey then
-            return true
-        end
-        return false, "source_unavailable"
-    end
-
-    if self:IsGroupVisibleToCurrentChar(sourceGroupId) then
-        return true
-    end
-    return false, "source_unavailable"
 end
 
 local function CopyCompactLayoutSettings(sourceGroup, targetGroup)
@@ -463,324 +382,204 @@ local function CopyCompactLayoutSettings(sourceGroup, targetGroup)
     end
 end
 
-local function BuildGroupSettingPresetBaseline(profile, mode)
-    local style = CopyTable(profile.globalStyle or {})
-    style.orientation = "horizontal"
-    if mode == "bars" then
-        style.barOrientation = "vertical"
-    elseif mode == "text" then
-        style.textOrientation = "vertical"
+------------------------------------------------------------------------
+-- Copy Panel Settings ("Copy Panel Settings To...")
+--
+-- The one panel-to-panel style transfer: armed from the Navigator's panel
+-- context menu, it pushes the source panel's Appearance and/or Indicators
+-- tab settings onto a clicked target panel. Replaces the retired
+-- panel-setting presets and the pull-style Copy Style From Panel, whose
+-- machinery this reuses in scoped form. What copies is declared by
+-- ST.PANEL_COPY_SCOPES (Defaults.lua) plus the override sections' own key
+-- lists; anchors, Layout-tab keys, visibility, name, and entries never move.
+------------------------------------------------------------------------
+
+-- Which copy family a panel belongs to. nil for the specialist modes
+-- (textures, trigger, rotation assistant), which the feature does not serve.
+-- Aura Panels ride their base display mode, exactly as the retired preset
+-- paths judged them; the subtype's invariants are re-established after apply.
+function CooldownCompanion:GetPanelCopyMode(group)
+    if not group then return nil end
+    local displayMode = group.displayMode
+    if displayMode == nil or displayMode == "icons" then
+        return "icons"
     end
-    style.buttonsPerRow = 12
-    style.showCooldownText = true
-
-    local groupData = {}
-
-    if mode == "icons" then
-        groupData.masqueEnabled = false
+    if displayMode == "bars" or displayMode == "text" then
+        return displayMode
     end
-
-    return {
-        style = style,
-        group = groupData,
-    }
+    return nil
 end
 
-local function CaptureGroupSettingPresetData(profile, mode, group)
-    local baseline = BuildGroupSettingPresetBaseline(profile, mode)
-    local data = {
-        version = 1,
-        style = CopyTable(group.style or baseline.style),
-        group = CopyTable(baseline.group),
-    }
-
-    if mode == "icons" then
-        data.group.masqueEnabled = group.masqueEnabled and true or false
-    end
-
-    return data
-end
-
-local function ApplyGroupSettingPresetData(profile, group, mode, presetData)
-    local baseline = BuildGroupSettingPresetBaseline(profile, mode)
-    local groupData = presetData and presetData.group
-    local styleData = presetData and presetData.style
-
-    if mode == "icons" then
-        group.masqueEnabled = nil
-    end
-
-    group.style = CopyTable(baseline.style)
-    for key, value in pairs(baseline.group) do
-        group[key] = CopyPresetValue(value)
-    end
-
-    if type(groupData) == "table" then
-        if mode == "icons" and groupData.masqueEnabled ~= nil then
-            group.masqueEnabled = groupData.masqueEnabled and true or false
-        end
-    end
-
-    if type(styleData) == "table" then
-        for key, value in pairs(styleData) do
-            group.style[key] = CopyPresetValue(value)
-        end
-        -- Presets captured before the per-mode orientation split carry the
-        -- bar/text layout only in the legacy shared key. A preset can be
-        -- imported after login (same reasoning as strataOrder below), so map
-        -- it here rather than relying on the load-time pass alone.
-        if mode == "bars" and styleData.barOrientation == nil and styleData.orientation ~= nil then
-            group.style.barOrientation = styleData.orientation
-        elseif mode == "text" and styleData.textOrientation == nil and styleData.orientation ~= nil then
-            group.style.textOrientation = styleData.orientation
-        end
-    end
-
-    -- Drop a strataOrder from an older layer set rather than trying to grow it.
-    -- This replaces the 4->6 expander from a1871266, which inserted the since
-    -- retired "auraGlow" key and would now produce an order that is both the
-    -- wrong length and unrecognized: rendering would fall back to the default
-    -- while the Custom Icon Strata checkbox still read ON.
-    --
-    -- A preset can also be imported after login, so this cannot rely on the
-    -- load-time pass in Core/Migrations.lua alone. Nil is the honest value: the
-    -- panel drops to the default order and the checkbox reflects that.
-    local so = group.style.strataOrder
-    if type(so) == "table" and #so > 0 and not ST._IsUsableStrataOrder(so) then
-        group.style.strataOrder = nil
-    end
-end
-
--- Group Management Functions
-function CooldownCompanion:NormalizeGroupSettingPresetsStore()
-    local profile = self.db and self.db.profile
-    if not profile then return nil end
-
-    if type(profile.groupSettingPresets) ~= "table" then
-        profile.groupSettingPresets = {}
-    end
-
-    local store = profile.groupSettingPresets
-    if type(store.icons) ~= "table" then
-        store.icons = {}
-    end
-    if type(store.bars) ~= "table" then
-        store.bars = {}
-    end
-
-    return store
-end
-
-function CooldownCompanion:GetGroupSettingPresetList(mode)
-    if not IsValidGroupSettingPresetMode(mode) then
-        return {}, {}
-    end
-
-    local store = self:NormalizeGroupSettingPresetsStore()
-    if not store then
-        return {}, {}
-    end
-
+-- The scopes a mode offers, in menu order. "all" is every listed scope and
+-- is always valid for a copyable mode.
+function CooldownCompanion:GetPanelCopyScopeList(mode)
+    local modeScopes = ST.PANEL_COPY_SCOPES[mode]
+    if not modeScopes then return {} end
     local list = {}
-    local order = {}
-    for presetName, presetData in pairs(store[mode]) do
-        if type(presetName) == "string" and presetName ~= "" and type(presetData) == "table" then
-            list[presetName] = presetName
-            order[#order + 1] = presetName
-        end
-    end
-    table_sort(order)
-
-    return list, order
+    if modeScopes.appearance then list[#list + 1] = "appearance" end
+    if modeScopes.indicators then list[#list + 1] = "indicators" end
+    return list
 end
 
-function CooldownCompanion:SaveGroupSettingPreset(mode, presetName, groupId, opts)
-    opts = opts or {}
-    if not IsValidGroupSettingPresetMode(mode) then
-        return false, "invalid_mode"
-    end
-    if type(presetName) ~= "string" or presetName == "" then
-        return false, "invalid_name"
-    end
-
-    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
-    if not group then
-        return false, "missing_group"
-    end
-    if GetGroupDisplayMode(group) ~= mode then
-        return false, "mode_mismatch"
-    end
-
-    local store = self:NormalizeGroupSettingPresetsStore()
-    if not store then
-        return false, "missing_store"
-    end
-
-    if not opts.allowOverwrite and store[mode][presetName] ~= nil then
-        return false, "already_exists"
-    end
-
-    store[mode][presetName] = CaptureGroupSettingPresetData(self.db.profile, mode, group)
-    return true
-end
-
-function CooldownCompanion:DeleteGroupSettingPreset(mode, presetName)
-    if not IsValidGroupSettingPresetMode(mode) then
-        return false, "invalid_mode"
-    end
-    if type(presetName) ~= "string" or presetName == "" then
-        return false, "invalid_name"
-    end
-
-    local store = self:NormalizeGroupSettingPresetsStore()
-    if not store then
-        return false, "missing_store"
-    end
-    if store[mode][presetName] == nil then
-        return false, "missing_preset"
-    end
-
-    store[mode][presetName] = nil
-    return true
-end
-
-function CooldownCompanion:ApplyGroupSettingPreset(mode, presetName, groupId)
-    if not IsValidGroupSettingPresetMode(mode) then
-        return false, "invalid_mode"
-    end
-    if type(presetName) ~= "string" or presetName == "" then
-        return false, "invalid_name"
-    end
-
-    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
-    if not group then
-        return false, "missing_group"
-    end
-    if GetGroupDisplayMode(group) ~= mode then
-        return false, "mode_mismatch"
-    end
-
-    local store = self:NormalizeGroupSettingPresetsStore()
-    local presetData = store and store[mode] and store[mode][presetName]
-    if type(presetData) ~= "table" then
-        return false, "missing_preset"
-    end
-
-    local oldMasqueEnabled = group.masqueEnabled and true or false
-    ApplyGroupSettingPresetData(self.db.profile, group, mode, presetData)
-    -- Eligibility above compares the base displayMode only, so a preset saved
-    -- from an ordinary icon panel applies to an Aura Panel. Re-establish the
-    -- subtype's invariants BEFORE the Masque comparison below reads the flag,
-    -- or the lifecycle engages on a panel with no buttons to skin.
-    self:EnforceAuraPanelInvariants(group)
-    local newMasqueEnabled = group.masqueEnabled and true or false
-
-    -- Presets can be imported from clients with Masque enabled.
-    -- If Masque is unavailable on this client, do not leave groups flagged
-    -- as Masque-enabled because that disables icon controls in config.
-    if mode == "icons" and not self.Masque and newMasqueEnabled then
-        group.masqueEnabled = false
-        newMasqueEnabled = false
-    end
-
-    -- Keep Masque's internal group/button lifecycle in sync when preset apply
-    -- flips skinning state for icon groups.
-    if mode == "icons" and self.Masque and oldMasqueEnabled ~= newMasqueEnabled then
-        self:ToggleGroupMasque(groupId, newMasqueEnabled)
-    end
-
-    self:RefreshGroupFrame(groupId)
-    return true
-end
-
-function CooldownCompanion:GetDirectStyleCopyPanelList(mode, targetGroupId)
-    targetGroupId = tonumber(targetGroupId)
-    if not IsValidDirectStyleCopyMode(mode) then
-        return {}, {}
-    end
-
-    local db = self.db and self.db.profile
-    if not db then
-        return {}, {}
-    end
-
-    local targetGroup = db.groups and db.groups[targetGroupId]
-    if not GroupMatchesDirectStyleCopyMode(targetGroup, mode) then
-        return {}, {}
-    end
-
-    local list = {}
-    local order = {}
-    local sortData = {}
-    for groupId, group in pairs(db.groups or {}) do
-        if groupId ~= targetGroupId
-            and GroupMatchesDirectStyleCopyMode(group, mode)
-            and self:CanCopyDirectStyleFromPanel(mode, groupId, targetGroupId) then
-            local parentContainer = self:GetParentContainer(group)
-            local containerName = parentContainer and parentContainer.name
-                or group.name
-                or ("Panel " .. tostring(groupId))
-            local panelName = group.name or ("Panel " .. tostring(groupId))
-            local label = containerName
-            if parentContainer and panelName ~= containerName then
-                label = containerName .. " - " .. panelName
-            end
-            local orderValue = parentContainer
-                and self:GetOrderForSpec(parentContainer, self._currentSpecId, group.parentContainerId)
-                or (group.order or groupId)
-
-            list[groupId] = label
-            order[#order + 1] = groupId
-            sortData[groupId] = {
-                order = orderValue or groupId,
-                panelOrder = group.order or groupId,
-                label = label,
-            }
-        end
-    end
-
-    table_sort(order, function(a, b)
-        local left = sortData[a]
-        local right = sortData[b]
-        if left.order ~= right.order then
-            return left.order < right.order
-        end
-        if left.panelOrder ~= right.panelOrder then
-            return left.panelOrder < right.panelOrder
-        end
-        return left.label < right.label
-    end)
-
-    return list, order
-end
-
-function CooldownCompanion:CopyDirectStyleFromPanel(mode, sourceGroupId, targetGroupId)
+function CooldownCompanion:CanCopyPanelSettings(sourceGroupId, targetGroupId, scope)
     sourceGroupId = tonumber(sourceGroupId)
     targetGroupId = tonumber(targetGroupId)
-
-    local canCopy, reason = self:CanCopyDirectStyleFromPanel(mode, sourceGroupId, targetGroupId)
-    if not canCopy then
-        return false, reason
-    end
 
     local db = self.db and self.db.profile
     local sourceGroup = db and db.groups and db.groups[sourceGroupId]
     local targetGroup = db and db.groups and db.groups[targetGroupId]
+    if not sourceGroup or not targetGroup then
+        return false, "missing_group"
+    end
+    if sourceGroupId == targetGroupId then
+        return false, "same_group"
+    end
+
+    local mode = self:GetPanelCopyMode(sourceGroup)
+    if not mode or mode ~= self:GetPanelCopyMode(targetGroup) then
+        return false, "mode_mismatch"
+    end
+
+    local modeScopes = ST.PANEL_COPY_SCOPES[mode]
+    if not modeScopes or (scope ~= "all" and not modeScopes[scope]) then
+        return false, "invalid_scope"
+    end
+
+    -- Any panel in the profile is a legal source or target as long as both
+    -- resolve to a valid class scope. This is a deliberate widening from the
+    -- retired pull copy's visibility gate: the armed mode's promise is that
+    -- every real panel on every class is a live source, and styles carry no
+    -- class-specific content.
+    if self.ResolveContainerClassScope then
+        local sourceScope = sourceGroup.parentContainerId
+            and self:ResolveContainerClassScope(sourceGroup.parentContainerId)
+        local targetScope = targetGroup.parentContainerId
+            and self:ResolveContainerClassScope(targetGroup.parentContainerId)
+        if (sourceScope and sourceScope.isInvalid)
+            or (targetScope and targetScope.isInvalid) then
+            return false, "invalid_class_scope"
+        end
+    end
+
+    return true
+end
+
+function CooldownCompanion:CopyPanelSettings(sourceGroupId, targetGroupId, scope)
+    sourceGroupId = tonumber(sourceGroupId)
+    targetGroupId = tonumber(targetGroupId)
+
+    local canCopy, reason = self:CanCopyPanelSettings(sourceGroupId, targetGroupId, scope)
+    if not canCopy then
+        return false, reason
+    end
+
+    local db = self.db.profile
+    local sourceGroup = db.groups[sourceGroupId]
+    local targetGroup = db.groups[targetGroupId]
+    local mode = self:GetPanelCopyMode(targetGroup)
+    local modeScopes = ST.PANEL_COPY_SCOPES[mode]
+
+    local scopes
+    if scope == "all" then
+        scopes = self:GetPanelCopyScopeList(mode)
+    else
+        scopes = { scope }
+    end
+
+    -- Per key: the source's value, or the shipped default where the source
+    -- carries none - so the target's scope comes out exactly matching the
+    -- source's, including keys the source left at default. globalStyle is the
+    -- baseline the panel style itself was seeded from; a key absent there too
+    -- is nil-defaulted at its read sites, and nil is the faithful copy.
+    local baseline = db.globalStyle or {}
+    local sourceStyle = sourceGroup.style or {}
+    local targetStyle = targetGroup.style
+    if type(targetStyle) ~= "table" then
+        targetStyle = {}
+        targetGroup.style = targetStyle
+    end
+
+    local copiedDurationFormat = false
+    local function CopyStyleKey(key)
+        local value = sourceStyle[key]
+        if value == nil then
+            value = baseline[key]
+        end
+        targetStyle[key] = CopyPresetValue(value)
+        if key == "durationFormat" then
+            copiedDurationFormat = true
+        end
+    end
 
     local oldMasqueEnabled = targetGroup.masqueEnabled and true or false
-    local presetData = CaptureGroupSettingPresetData(db, mode, sourceGroup)
-    ApplyGroupSettingPresetData(db, targetGroup, mode, presetData)
-    CopyCompactLayoutSettings(sourceGroup, targetGroup)
+    local copiedMasque = false
+
+    for _, scopeName in ipairs(scopes) do
+        local scopeData = modeScopes[scopeName]
+        if scopeData then
+            for _, sectionId in ipairs(scopeData.sections or {}) do
+                local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
+                if sectionDef then
+                    for _, key in ipairs(sectionDef.keys or {}) do
+                        CopyStyleKey(key)
+                    end
+                end
+            end
+            for _, key in ipairs(scopeData.styleKeys or {}) do
+                CopyStyleKey(key)
+            end
+            if scopeData.copiesMasque then
+                targetGroup.masqueEnabled = sourceGroup.masqueEnabled and true or false
+                copiedMasque = true
+            end
+            -- Compact settings never cross an Aura Panel boundary in either
+            -- direction: on an Aura Panel compactGrowthDirection is the
+            -- Layout-owned Collapse Direction (a placement setting outside
+            -- this feature's line), and compactLayout is invariant-forced
+            -- false there - so an Aura endpoint has nothing Appearance-shaped
+            -- to give or take here.
+            if scopeData.copiesCompact
+                and not ST.IsAuraPanelGroup(sourceGroup)
+                and not ST.IsAuraPanelGroup(targetGroup) then
+                CopyCompactLayoutSettings(sourceGroup, targetGroup)
+            end
+        end
+    end
+
+    -- durationFormat: legacy profiles can still carry only decimalTimers=true
+    -- with no explicit durationFormat (no migration normalizes the pair; the
+    -- read path resolves it, ButtonFrame/Helpers.lua). Copying the raw keys
+    -- would hand such a source's target the baseline "clock" while the source
+    -- renders decimals - so the copy writes the source's EFFECTIVE format in
+    -- canonical form and clears the target's retired legacy key.
+    if copiedDurationFormat and self.GetDurationFormat then
+        targetStyle.durationFormat = self.GetDurationFormat(sourceStyle)
+        targetStyle.decimalTimers = nil
+    end
+
     -- Copy eligibility compares the base displayMode only, so an ordinary icon
-    -- or bar panel is a legal source for an Aura Panel. Both writers above can
+    -- or bar panel is a legal source for an Aura Panel. The writers above can
     -- strand a flag the subtype cannot carry (compactLayout collapses the
     -- footprint, masqueEnabled disables config rows with no toggle left to
     -- clear it), so the invariants are re-established here — before the Masque
     -- comparison below, and before the combat-deferred return.
     self:EnforceAuraPanelInvariants(targetGroup)
+
+    -- A target serving as the stable anchor for Resources, the Cast Bar, or
+    -- Unit Frames must never come out of a copy compacted: the attached
+    -- displays need its full footprint. The same normalizer the compact
+    -- toggle's own build path runs (GroupOperations.lua); without it the
+    -- invariant would only self-heal on the next full refresh pass.
+    if self.NormalizeStableExternalAnchorCompactLayout then
+        self:NormalizeStableExternalAnchorCompactLayout(targetGroupId, targetGroup)
+    end
+
     local newMasqueEnabled = targetGroup.masqueEnabled and true or false
 
-    if mode == "icons" and not self.Masque and newMasqueEnabled then
+    -- The source can carry a Masque flag from a client that had it installed.
+    -- If Masque is unavailable here, do not leave the target flagged: that
+    -- disables icon controls in config with no visible switch to clear it.
+    if copiedMasque and not self.Masque and newMasqueEnabled then
         targetGroup.masqueEnabled = false
         newMasqueEnabled = false
     end
@@ -794,7 +593,9 @@ function CooldownCompanion:CopyDirectStyleFromPanel(mode, sourceGroupId, targetG
         return true
     end
 
-    if mode == "icons" and self.Masque and oldMasqueEnabled ~= newMasqueEnabled then
+    -- Keep Masque's internal group/button lifecycle in sync when the copy
+    -- flips skinning state.
+    if copiedMasque and self.Masque and oldMasqueEnabled ~= newMasqueEnabled then
         self:ToggleGroupMasque(targetGroupId, newMasqueEnabled)
     end
 
