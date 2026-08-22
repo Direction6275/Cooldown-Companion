@@ -239,9 +239,11 @@ local function UpdateCopyPanelSettingsBanner()
 end
 
 ------------------------------------------------------------------------
--- Row visuals: a soft green wash under the row plus a green label on the
--- panel rows an armed click can land on - the Navigator's own selection
--- idiom (a tinted label over a flat wash), never a bordered overlay.
+-- Row visuals: a soft green wash that fades out toward the right, plus a
+-- green label, on the panel rows an armed click can land on. The fade is
+-- the config's own idiom (section-heading rules and the mode banner both
+-- fade horizontally), and it is what keeps the treatment edgeless: rows of
+-- different indents and widths end in transparency instead of a border.
 --
 -- The wash textures live on the row FRAME, which AceGUI recycles across
 -- every surface that acquires an InteractiveLabel - so every decorated
@@ -284,19 +286,13 @@ local function ApplyCopyPanelRowVisuals(panelEntry, panelId)
         wash:SetAllPoints(frame)
         wash:SetTexture("Interface/Buttons/WHITE8x8")
         frame._cdcCopyPanelWash = wash
-
-        local line = frame:CreateTexture(nil, "BACKGROUND", nil, 3)
-        line:SetHeight(1)
-        line:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
-        line:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-        line:SetTexture("Interface/Buttons/WHITE8x8")
-        frame._cdcCopyPanelWashLine = line
     end
-    wash:SetVertexColor(COPY_PANEL_COLOR[1], COPY_PANEL_COLOR[2], COPY_PANEL_COLOR[3], 0.10)
+    -- Gradient state is per-texture and recycled rows can arrive carrying
+    -- another use of the frame, so it is restated on every apply.
+    wash:SetGradient("HORIZONTAL",
+        CreateColor(COPY_PANEL_COLOR[1], COPY_PANEL_COLOR[2], COPY_PANEL_COLOR[3], 0.20),
+        CreateColor(COPY_PANEL_COLOR[1], COPY_PANEL_COLOR[2], COPY_PANEL_COLOR[3], 0))
     wash:Show()
-    frame._cdcCopyPanelWashLine:SetVertexColor(
-        COPY_PANEL_COLOR[1], COPY_PANEL_COLOR[2], COPY_PANEL_COLOR[3], 0.45)
-    frame._cdcCopyPanelWashLine:Show()
     decoratedRowFrames[frame] = true
     panelEntry:SetColor(COPY_PANEL_COLOR[1], COPY_PANEL_COLOR[2], COPY_PANEL_COLOR[3])
 end
