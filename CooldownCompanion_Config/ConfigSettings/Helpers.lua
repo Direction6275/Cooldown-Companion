@@ -1854,11 +1854,18 @@ end
 -- surface says so: the per-section scope chrome only speaks under an entry
 -- lens. Any other lens mode draws nothing.
 --
+-- includeEntryLens widens the note to a single-entry lens as well. The Layout
+-- tab is the one caller: it has no per-entry sections, so it never grows the
+-- scope chrome that tells the other tabs' story, and this line is the only
+-- thing saying its edits land on the panel while an entry sits selected.
+--
 -- A plain AceGUI Label, the shape every other single-line note in the config
 -- uses. Its stock font is already the small one the scope chrome wears, so
 -- only the colour is set.
-local function AddLensPanelScopeNote(container, lens)
-    if not (container and lens and lens.mode == "multi") then
+local function AddLensPanelScopeNote(container, lens, includeEntryLens)
+    local mode = lens and lens.mode
+    local speaks = mode == "multi" or (includeEntryLens and mode == "entry")
+    if not (container and speaks) then
         return nil
     end
 

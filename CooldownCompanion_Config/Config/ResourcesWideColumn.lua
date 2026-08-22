@@ -1045,10 +1045,11 @@ local function ShowResourcesTabPage(col3, stripOnly)
         and settings.resources[RESOURCE_HEALTH]
     local healthEnabled = health and health.enabled == true
 
+    -- Layout before Appearance, matching the panel strip's order.
     local tabs = {
         { value = "general", text = "General" },
-        { value = "appearance", text = "Appearance" },
         { value = "layout", text = "Layout" },
+        { value = "appearance", text = "Appearance" },
     }
     if healthEnabled then
         tabs[#tabs + 1] = { value = "health", text = "Health" }
@@ -1149,8 +1150,8 @@ local function ShowCastBarSettings(col3)
     -- surface.
     ShowStrip(col3, col3._castBarHomeTabGroup, AddTabAccent({
         { value = "general", text = "General" },
-        { value = "appearance", text = "Appearance" },
         { value = "layout", text = "Layout" },
+        { value = "appearance", text = "Appearance" },
     }), tab, "castbar:" .. tab, ST._UnifiedRowPrimaryOwnsSurface())
 end
 

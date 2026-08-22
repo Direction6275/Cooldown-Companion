@@ -23,6 +23,11 @@ local AddEditBoxRow = ST._AddEditBoxRow
 -- Imports from GroupTabsShared.lua
 local WireMirrorFirstSlider = ST._WireMirrorFirstSlider
 
+-- Style lens (Helpers.lua): only read here to know whether an entry selection
+-- is active, so the panel-scope note can speak. Nothing in this tab lenses.
+local ResolveStyleLens = ST._ResolveStyleLens
+local AddLensPanelScopeNote = ST._AddLensPanelScopeNote
+
 -- Imports from GroupTabsSpecial.lua
 local GetStandaloneTextureSettings = ST._GetStandaloneTextureSettings
 local OpenOrRebindStandaloneTexturePicker = ST._OpenOrRebindStandaloneTexturePicker
@@ -469,6 +474,14 @@ local function BuildLayoutTab(container)
         RefreshTextureVisual()
         return
     end
+
+    -- Layout is the one panel tab the entry lens never touches: every edit
+    -- here lands on the whole panel while any selected entry stays selected
+    -- above, and this line is the only thing on the surface that says so.
+    -- Below the texture/trigger return on purpose: those panels' sibling
+    -- tabs never lens either, so there the strip is uniform and the note
+    -- would be the odd one out instead of Layout.
+    AddLensPanelScopeNote(container, ResolveStyleLens(group), true)
 
     local isPanel = group.parentContainerId ~= nil
     local panelContainerFrame = isPanel and ("CooldownCompanionContainer" .. group.parentContainerId) or nil
