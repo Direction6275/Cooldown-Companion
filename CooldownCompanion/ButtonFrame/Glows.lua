@@ -1543,7 +1543,13 @@ end
 -- it must come after any SetAlpha and carry the color's own alpha (Phase 2
 -- gotcha).
 local function StyleKitFlipbook(tex, anchorFrame, pct, r, g, b, a)
-    local w, h = anchorFrame:GetSize()
+    -- Panel hosts stamp _ccKitRectW/H because their cell geometry is
+    -- Blizzard-owned and secret; measuring them throws. CC buttons carry
+    -- neither and measure their own rect (same rule as the dashes leg).
+    local w, h = anchorFrame._ccKitRectW, anchorFrame._ccKitRectH
+    if not (w and h) then
+        w, h = anchorFrame:GetSize()
+    end
     tex:ClearAllPoints()
     tex:SetPoint("CENTER", anchorFrame, "CENTER", 0, 0)
     tex:SetSize(w + w * pct * 2, h + h * pct * 2)
