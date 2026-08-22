@@ -218,6 +218,11 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
                         -- An entry arriving in an Aura Panel needs that panel's
                         -- own key, not the one it wore where it came from.
                         CooldownCompanion:StampAuraPanelEntryKey(targetGroup, moved)
+                        -- A section placement belongs to the panel it was made
+                        -- on; an entry landing here starts in the base row, and
+                        -- the source's cluster dissolves behind the last member
+                        -- to leave it.
+                        ST.DetachEntryFromPanelSection(db.groups[sourceGroupId], moved)
                         table.insert(targetGroup.buttons, moved)
                     end
                     table.sort(indices, function(a, b) return a > b end)

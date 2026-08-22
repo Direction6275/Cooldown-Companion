@@ -1034,6 +1034,53 @@ local function BuildLayoutTab(container)
     end -- not arrangementCollapsed
 
     -- ============================================================
+    -- Panel Sections (one quiet block per placed cluster)
+    -- ============================================================
+    -- Nothing here exists on an ordinary panel: a panel with no sections shows
+    -- no heading, no rows, no gap. A section whose members are all hidden still
+    -- gets its block - the section lives in the profile either way, and the
+    -- owner has to be able to nudge it before it comes back.
+    --
+    -- Placement only: a section's icon size and spacing live with the panel's
+    -- own copies of those in the Appearance tab (owner ruling 2026-08-22 --
+    -- size and spacing are Appearance's vocabulary, placement is Layout's).
+    local panelSections = ST.PanelSupportsSections(group) and group.sections or nil
+    if type(panelSections) == "table" and next(panelSections) then
+        -- Reading order, so the blocks sit in the order the anchors read on the
+        -- panel rather than whatever order the profile happens to store them in.
+        for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
+            local section = panelSections[anchor]
+            if type(section) == "table" then
+                local _, sectionCollapsed = BuildCollapsibleSection(container,
+                    ST.PANEL_SECTION_ANCHOR_LABELS[anchor] .. " Section",
+                    "layout_section_" .. anchor, nil, nil, ROW_SECTION)
+
+                if not sectionCollapsed then
+                local sectionLeft, sectionRight = BeginRowGrid(container)
+
+                local sectionXRow = AddSliderRow(sectionLeft, {
+                    label = "X Offset",
+                    min = -100, max = 100, step = 0.1,
+                    value = section.offsetX or 0,
+                })
+                WireMirrorFirstSlider(sectionXRow, function(val)
+                    section.offsetX = val
+                end, nil, nil, section, "offsetX")
+
+                local sectionYRow = AddSliderRow(sectionRight, {
+                    label = "Y Offset",
+                    min = -100, max = 100, step = 0.1,
+                    value = section.offsetY or 0,
+                })
+                WireMirrorFirstSlider(sectionYRow, function(val)
+                    section.offsetY = val
+                end, nil, nil, section, "offsetY")
+                end -- not sectionCollapsed
+            end
+        end
+    end
+
+    -- ============================================================
     -- Strata
     -- ============================================================
     local _, strataCollapsed = BuildCollapsibleSection(container, "Strata", "layout_strata", nil, nil, ROW_SECTION)

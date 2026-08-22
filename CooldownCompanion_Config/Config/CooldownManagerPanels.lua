@@ -274,6 +274,11 @@ local function PopulateCDMPanelFromSource(panelId, sourceData)
         return 0
     end
 
+    -- The entry list is about to be thrown away wholesale. Flatten first: the
+    -- placements belong to entries that will not exist a line from now, and a
+    -- surviving group.sections would leave the rebuilt panel with sections
+    -- nothing is a member of.
+    ST.FlattenPanelSections(group)
     group.buttons = {}
 
     local isAuraSource = IsCDMAuraPanelSource(sourceData and sourceData.key)

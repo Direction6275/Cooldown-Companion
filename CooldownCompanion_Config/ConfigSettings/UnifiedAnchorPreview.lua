@@ -311,7 +311,10 @@ local function BuildUnifiedAnchorPreview(host, groupId)
     -- shrinks to its content; `host` keeps the Live Preview's own chrome.
     -- The copy-customization banner pins to the outer host so it reads at
     -- the top of the whole Live Preview instead of over the entries.
-    ST._BuildButtonPanelPreview(inner, groupId, { bannerHost = host })
+    -- laneHost: the section drag lays its anchor pads over the strip the bar
+    -- lanes occupy, so the mirror needs a way to quiet this composition's lanes
+    -- for the length of a gesture.
+    ST._BuildButtonPanelPreview(inner, groupId, { bannerHost = host, laneHost = host })
     ShrinkMirrorHostToContent(inner)
 
     -- Instance 1 is this interactive mirror. Instance 2 is built only when

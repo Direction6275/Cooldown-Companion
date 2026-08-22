@@ -39,6 +39,7 @@ Core\ConfigLoader.lua
 Core\AnchorPolicy.lua
 Core\EntryRuntime.lua
 Core\Defaults.lua
+Core\PanelSections.lua
 Core\SpellActivationOverlayData.lua
 Core\AuraTextures.lua
 Core\AuraTexturesBuiltins.lua

@@ -252,12 +252,22 @@ local function GetStandaloneFrameAnchorFrame(group, settings, groupId)
     return GetStandaloneAnchorTargetFrame(group, settings, groupId, "external")
 end
 
+--- The frame a standalone display's host is POSITIONED against.
+--- Both callers -- the SetPoint that places the host and the drag save that
+--- decides whether the host still sits on its target -- have to agree, and both
+--- want the target's ANCHORING BODY: a sectioned panel's frame spans the union
+--- of its base cluster and its sections, and the base row is what a dependent
+--- is glued to. The alpha-inheritance lookup deliberately does NOT come through
+--- here; identity stays on the real panel frame.
 local function GetStandaloneResolvedAnchorFrame(group, settings, groupId)
     local frame, name = GetStandalonePanelAnchorFrame(group, settings, groupId)
-    if frame then
-        return frame, name
+    if not frame then
+        frame, name = GetStandaloneFrameAnchorFrame(group, settings, groupId)
     end
-    return GetStandaloneFrameAnchorFrame(group, settings, groupId)
+    if not frame then
+        return nil, name
+    end
+    return ST.GetPanelAnchorBodyFrame(frame), name
 end
 
 local function GetStandalonePanelAlphaTargetFrame(group, settings, groupId)
@@ -1915,5 +1925,30 @@ function CooldownCompanion:RefreshAllAuraTextureVisuals()
     end
     if self.RefreshAllContainerWrappers then
         self:RefreshAllContainerWrappers()
+    end
+end
+
+--- Re-place every standalone display anchored to one panel.
+--- Called when that panel's sectioned state flips: the frame a host is pointed
+--- at changes hands between the panel frame and its base-cluster body, and a
+--- host left on the outgoing one would keep resolving positionally -- a hidden
+--- base anchor still reports its last rectangle -- so it would sit at a stale
+--- spot rather than visibly break. A standalone display's anchor lives in its
+--- own display settings, not in group.anchor, which is why the panel and
+--- container passes in ReanchorPanelSectionDependents cannot find these.
+function CooldownCompanion:ReanchorStandaloneDisplayDependents(targetFrameName)
+    if type(targetFrameName) ~= "string" then return end
+
+    for groupId, frame in pairs(self.groupFrames or {}) do
+        local group = ResolveGroup(groupId)
+        if self:IsStandaloneTexturePanelGroup(group) then
+            local settings = GetStandaloneTextureSettings(group)
+            if settings and settings.relativeTo == targetFrameName then
+                local driverButton = frame.buttons and frame.buttons[1]
+                if driverButton then
+                    self:UpdateAuraTextureVisual(driverButton)
+                end
+            end
+        end
     end
 end

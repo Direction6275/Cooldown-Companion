@@ -78,7 +78,35 @@ local defaults = {
                             itemSlot = 13 or 14, -- equipmentSlot entries only
                             itemSlotKind = "trinket", -- equipmentSlot entries only
                             name = "Spell/Item/Slot Name",
+                            section = "TOP", -- optional Panel Section membership;
+                                             -- nil means the base grid
                         }
+                    },
+                    -- Panel Sections: up to eight small placed clusters of icons,
+                    -- one per anchor point of the panel's base grid. Membership is
+                    -- EXPLICIT per entry (buttonData.section above), so nothing
+                    -- ever migrates on its own and the base grid's buttonsPerRow /
+                    -- wrap behavior is untouched. An entry naming an anchor with no
+                    -- table here is treated as a base member (defensive: a section
+                    -- can dissolve, and an import can carry a stale name).
+                    --
+                    -- Sections apply ONLY while displayMode is "icons" and the
+                    -- panel is not an Aura Panel; anywhere else they are inert, not
+                    -- an error (Core/PanelSections.lua, ST.GetSectionsForLayout).
+                    -- A section owns its icon size, spacing, and offset and nothing
+                    -- else: text, border, glow and every other styling key stay
+                    -- panel-wide. Deliberately NOT in ST.PANEL_COPY_SCOPES or
+                    -- ST.OVERRIDE_SECTIONS -- a placement is not a look, and it is
+                    -- meaningless on another panel's entries.
+                    sections = {
+                        -- ["TOPLEFT"/"TOP"/"TOPRIGHT"/"LEFT"/"RIGHT"/
+                        --  "BOTTOMLEFT"/"BOTTOM"/"BOTTOMRIGHT"] = {
+                        --     offsetX = 0, -- px, positive right
+                        --     offsetY = 0, -- px, positive up
+                        --     iconWidth = nil,  -- nil falls back to the panel's own
+                        --     iconHeight = nil, -- resolved icon size
+                        --     spacing = nil,    -- nil falls back to buttonSpacing
+                        -- },
                     },
                     style = {
                         buttonSize = 36,

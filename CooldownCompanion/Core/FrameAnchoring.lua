@@ -513,10 +513,18 @@ function CooldownCompanion:ApplyFrameAnchoring(opts)
     lastPlayerFrameName = GetFrameDebugName(playerFrame, settings.customPlayerFrame)
     lastTargetFrameName = GetFrameDebugName(targetFrame, settings.customTargetFrame)
 
+    -- Unit frames glue to the panel's BASE ROW, not to its outer rectangle: a
+    -- sectioned panel's frame spans the union of the base cluster and every
+    -- section, so anchoring to the frame would drag the unit frames up the
+    -- moment a Top section appeared. Placement away from the base row is what
+    -- the offsets below are for. Identity, alpha inheritance, and the
+    -- dependency check all stay on `groupFrame` itself.
+    local anchorBody = ST.GetPanelAnchorBodyFrame(groupFrame)
+
     -- Apply player frame anchoring
     local ps = settings.player
     if playerFrame and ps then
-        SetManagedFrameAnchor(playerFrame, ps.anchorPoint, groupFrame, ps.relativePoint,
+        SetManagedFrameAnchor(playerFrame, ps.anchorPoint, anchorBody, ps.relativePoint,
                               ps.xOffset or 0, ps.yOffset or 0)
     end
 
@@ -526,13 +534,13 @@ function CooldownCompanion:ApplyFrameAnchoring(opts)
             -- Mirror from player settings
             local mAnchor = MIRROR_POINTS[ps.anchorPoint] or ps.anchorPoint
             local mRelative = MIRROR_POINTS[ps.relativePoint] or ps.relativePoint
-            SetManagedFrameAnchor(targetFrame, mAnchor, groupFrame, mRelative,
+            SetManagedFrameAnchor(targetFrame, mAnchor, anchorBody, mRelative,
                                   -(ps.xOffset or 0), ps.yOffset or 0)
         else
             -- Independent target settings
             local ts = settings.target
             if ts then
-                SetManagedFrameAnchor(targetFrame, ts.anchorPoint, groupFrame, ts.relativePoint,
+                SetManagedFrameAnchor(targetFrame, ts.anchorPoint, anchorBody, ts.relativePoint,
                                       ts.xOffset or 0, ts.yOffset or 0)
             end
         end

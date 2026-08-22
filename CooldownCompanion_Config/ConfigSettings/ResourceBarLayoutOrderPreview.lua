@@ -2987,6 +2987,10 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
                 return
             end
 
+            -- Escape already cancelled this drag; the release the user is still
+            -- holding belongs to that cancel, never to a selection click.
+            if button == "LeftButton" and ST._ConsumeDragEscapeMouseUp() then return end
+
             local state = CS.dragState
             if button ~= "LeftButton"
                 or not state
@@ -4383,6 +4387,36 @@ end
 function ST._GetLayoutPreviewRenderedSelectionKeys(host)
     local preview = host and host._cdcLayoutPreview
     return preview and preview.renderedSelectionKeys or nil
+end
+
+-- The pools that hold this canvas's own lane chrome. A constant, not a literal
+-- rebuilt inside the fade below: that runs on a drag's frame budget.
+local LANE_CHROME_POOLS = { "slots", "gaps", "pills", "swaps" }
+
+--- Fade this canvas's bar lanes out of the way (or bring them back).
+--- The panel-section drag lays its anchor pads exactly where the wrapped bars
+--- sit -- above, below, and beside the icon grid -- and two things claiming the
+--- same pixels reads as a bug. Same philosophy as arrange mode fading its mover
+--- chrome for the duration of a drag, done config-side.
+---
+--- Only the lane CHROME fades: the panel mirror the canvas wraps is a frame
+--- lent to it by its owner, parented into a lane container, so fading the root
+--- or the containers would take the icon grid with it.
+--- Alpha, not Hide: the lanes keep their measured size, so nothing reflows and
+--- the composition the drag is happening inside cannot move under the cursor.
+function ST._SetLayoutOrderLaneChromeFaded(host, faded)
+    local preview = host and host._cdcLayoutPreview
+    local pools = preview and preview.pools
+    if not pools then return false end
+    -- Written over the whole pool, not just this pass's used range: a pooled
+    -- frame that goes idle mid-gesture must not come back at the faded alpha.
+    local alpha = faded and 0 or 1
+    for _, poolName in ipairs(LANE_CHROME_POOLS) do
+        for _, frame in ipairs(pools[poolName] or {}) do
+            frame:SetAlpha(alpha)
+        end
+    end
+    return true
 end
 
 -- Shared with ButtonPanelPreview.lua: config-safe icon resolution and the

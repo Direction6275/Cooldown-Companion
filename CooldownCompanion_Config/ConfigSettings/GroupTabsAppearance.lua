@@ -667,6 +667,101 @@ local function BuildAppearanceTab(container)
     end -- not iconSettingsCollapsed
 
     -- ================================================================
+    -- Panel Sections (per-cluster icon size and spacing)
+    -- ================================================================
+    -- One quiet block per placed cluster, right under the panel's own icon
+    -- sizing because that is where size and spacing live everywhere else in
+    -- this addon; a section's placement (its X/Y offsets) stays in the Layout
+    -- tab. Nothing here exists on a panel with no sections. Every displayed
+    -- number is the RESOLVED one, so an untouched key reads as the panel's own
+    -- value rather than a lie about zero; writing the slider is what sets the
+    -- key, and inheritance ends there. Panel-only under an entry lens, same as
+    -- Icon Settings above.
+    local panelSections = ST.PanelSupportsSections(group) and group.sections or nil
+    if type(panelSections) == "table" and next(panelSections) then
+        local panelSpacing = style.buttonSpacing or ST.BUTTON_SPACING
+        local sectionPanelW, sectionPanelH
+        if style.maintainAspectRatio then
+            sectionPanelW = style.buttonSize or ST.BUTTON_SIZE
+            sectionPanelH = sectionPanelW
+        else
+            sectionPanelW = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
+            sectionPanelH = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
+        end
+
+        -- Reading order, so the blocks sit in the order the anchors read on the
+        -- panel rather than whatever order the profile happens to store them in.
+        for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
+            local section = panelSections[anchor]
+            if type(section) == "table" then
+                local sectionHeading, sectionCollapsed = BuildCollapsibleSection(container,
+                    ST.PANEL_SECTION_ANCHOR_LABELS[anchor] .. " Section",
+                    ResolveLensCollapseKey(lens, group, nil, "appearance_section_" .. anchor),
+                    nil, nil, ROW_SECTION)
+                local sectionSec = BeginLensSection(lens, group, nil)
+                sectionSec:HeadingChrome(sectionHeading)
+
+                if not sectionCollapsed then
+                local sectionLeft, sectionRight = BeginRowGrid(container)
+                sectionSec:Mark(sectionLeft)
+
+                local sectionW, sectionH, sectionSpacing =
+                    ST.ResolvePanelSectionGeometry(style, section, sectionPanelW, sectionPanelH, panelSpacing)
+
+                if style.maintainAspectRatio then
+                    -- Square panel, square section: the engine derives both
+                    -- dimensions from the one stored value, so there is one
+                    -- slider and it writes that value.
+                    local sectionSizeRow = AddSliderRow(sectionLeft, {
+                        label = "Icon Size",
+                        min = 10, max = 150, step = 0.1,
+                        value = sectionW,
+                        disabled = sectionSec.disabled,
+                    })
+                    WireMirrorFirstSlider(sectionSizeRow, function(val)
+                        section.iconWidth = val
+                    end, nil, nil, section, "iconWidth")
+                else
+                    local sectionWidthRow = AddSliderRow(sectionLeft, {
+                        label = "Icon Width",
+                        min = 10, max = 150, step = 0.1,
+                        value = sectionW,
+                        disabled = sectionSec.disabled,
+                    })
+                    WireMirrorFirstSlider(sectionWidthRow, function(val)
+                        section.iconWidth = val
+                    end, nil, nil, section, "iconWidth")
+
+                    local sectionHeightRow = AddSliderRow(sectionLeft, {
+                        label = "Icon Height",
+                        min = 10, max = 150, step = 0.1,
+                        value = sectionH,
+                        disabled = sectionSec.disabled,
+                    })
+                    WireMirrorFirstSlider(sectionHeightRow, function(val)
+                        section.iconHeight = val
+                    end, nil, nil, section, "iconHeight")
+                end
+
+                sectionSec:Finish()
+
+                local sectionRightBracket = sectionSec:Bracket(sectionRight)
+                local sectionSpacingRow = AddSliderRow(sectionRight, {
+                    label = "Spacing",
+                    min = 0, max = 30, step = 0.1,
+                    value = sectionSpacing,
+                    disabled = sectionSec.disabled,
+                })
+                WireMirrorFirstSlider(sectionSpacingRow, function(val)
+                    section.spacing = val
+                end, nil, nil, section, "spacing")
+                sectionSec:FinishBracket(sectionRightBracket)
+                end -- not sectionCollapsed
+            end
+        end
+    end
+
+    -- ================================================================
     -- Text (the optional text drawn on top of the icons)
     -- ================================================================
     -- On an Aura Panel every possible Text row is aura-gated (Cooldown Text is

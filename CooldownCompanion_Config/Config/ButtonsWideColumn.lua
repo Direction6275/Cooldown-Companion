@@ -547,6 +547,11 @@ local function UpdateEditingHeader(col3)
         if context.kindText then
             contextName = contextName .. " |cff7d7566(" .. context.kindText .. ")|r"
         end
+        -- Section placement rides the same muted tail as the tracking kind, one
+        -- middot further out: it says where the entry sits, not what it is.
+        if context.sectionText then
+            contextName = contextName .. " |cff7d7566\194\183 " .. context.sectionText .. "|r"
+        end
         currentText = contextName
     elseif CS.barsEntrySelected and parent == BARS_HOME_LABEL then
         segments[1] = { label = parent,
@@ -1523,7 +1528,7 @@ end
 -- of consuming a separate identity row below the add box.
 local function UpdateEditingContext(col3)
     local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    local icon, name, badgeStatus, kindText
+    local icon, name, badgeStatus, kindText, sectionText
     if group then
         local multiCount = 0
         for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
@@ -1565,6 +1570,13 @@ local function UpdateEditingContext(col3)
                 kindText = addedAs == "aura" and "Aura" or "Spell"
             end
             badgeStatus = ST._CollectEntryStatus and ST._CollectEntryStatus(buttonData, group)
+            -- Panel Sections: an entry placed in one names it here. The engine
+            -- resolves membership, so a base entry and an entry still naming a
+            -- dissolved anchor both come back nil and show nothing. The wording
+            -- is the shared label table's, never a second copy of it.
+            local sectionAnchor = ST.GetPanelSectionForEntry
+                and ST.GetPanelSectionForEntry(group, buttonData)
+            sectionText = sectionAnchor and ST.PANEL_SECTION_ANCHOR_LABELS[sectionAnchor]
         end
     end
 
@@ -1574,6 +1586,7 @@ local function UpdateEditingContext(col3)
             name = name,
             badgeStatus = badgeStatus,
             kindText = kindText,
+            sectionText = sectionText,
         }
     else
         col3._cdcEditingContext = nil

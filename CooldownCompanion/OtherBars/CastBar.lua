@@ -1054,7 +1054,9 @@ local function ResolveCastBarWidth(s)
     end
     local groupFrame = GetAnchorGroupFrame(s)
     if not groupFrame then return nil end
-    local width = groupFrame:GetWidth()
+    -- The bar matches the panel's BASE ROW, not the union a sectioned panel's
+    -- frame spans.
+    local width = ST.GetPanelAnchorBodyFrame(groupFrame):GetWidth()
     if not width or width <= 0 then return nil end
     return width
 end
@@ -1139,7 +1141,10 @@ local function ApplyCastBarPosition(s, width, height)
         end
     end
 
-    AnchorBySide(frame, side, groupFrame, gap + panelYOffset)
+    -- Straight onto the panel: its BASE ROW, for the same reason the resource
+    -- stack uses it -- a sectioned panel's frame is the union of the base
+    -- cluster and its sections, and the bar belongs to the row.
+    AnchorBySide(frame, side, ST.GetPanelAnchorBodyFrame(groupFrame), gap + panelYOffset)
     return true
 end
 
