@@ -73,11 +73,111 @@ local function AlphaStateNeedsCleanup(self, stateKey)
     return state and state.currentAlpha and state.currentAlpha ~= 1 or false
 end
 
-local function ConfigNeedsAlphaUpdate(self, config, stateKey)
-    if ST.HasActiveAlphaSettings and ST.HasActiveAlphaSettings(config) then
+-- Disarm contract (EnsureAlphaDriverArmed / EvaluateAlphaDriverNeedsWork): the
+-- 30 Hz driver may stop only while every live alpha config has SETTLED
+-- (currentAlpha == desiredAlpha, no fade running, no hover grace left) AND every
+-- condition it reads arrives as an event that re-arms the driver. These three
+-- force conditions are polled, not evented, so one live config using any of them
+-- keeps the driver running for the session:
+--   forceAlphaMouseover        geometric IsMouseOver, deliberately frame-polled
+--                              so it still works on click-through panels
+--   forceAlphaFocusExists      PLAYER_FOCUS_CHANGED is registered nowhere here
+--   forceAlphaTargetEnemyOnly  a hostility flip on a RETAINED target fires no
+--                              event this addon listens to
+-- Every other condition input owes a re-arm hook: combat edges (OnCombatStart /
+-- OnCombatEnd), mount and Soar (InvalidateMountAlphaCache), target existence
+-- (OnTargetChanged), druid travel form (UPDATE_SHAPESHIFT_FORM), the
+-- cursor-anchor layout preview, and the config / lock / panel-lifecycle paths
+-- that already call RefreshAlphaUpdateDriver. A NEW force condition must either
+-- bring its event hook or be listed above.
+local function AlphaConfigNeedsDriverPolling(config)
+    return config.forceAlphaMouseover == true
+        or config.forceAlphaFocusExists == true
+        or (config.forceAlphaTargetExists == true and config.forceAlphaTargetEnemyOnly == true)
+end
+
+-- Exact, no epsilon: UpdateFadedAlpha snaps currentAlpha onto desiredAlpha and
+-- zeroes fadeDuration the moment a fade completes, and zero-duration targets snap
+-- on the spot, so equality IS the end-of-fade test. A missing state has never
+-- been written and still owes its first pass.
+local function AlphaStateIsSettled(self, stateKey, now)
+    local state = self.alphaState and self.alphaState[stateKey]
+    if not state then
+        return false
+    end
+    if state.currentAlpha == nil or state.currentAlpha ~= state.desiredAlpha then
+        return false
+    end
+    if (state.fadeDuration or 0) ~= 0 then
+        return false
+    end
+    if state.hoverExpire and now < state.hoverExpire then
+        return false
+    end
+    return true
+end
+
+-- The config shape UpdateGroupAlpha's early-out serves: alpha is pinned at 1 for
+-- every condition, so that path holds the frame at 1 and can return WITHOUT ever
+-- writing runtime state. Keep in step with the hasForceHide test there.
+local function AlphaConfigPinsFullAlpha(config)
+    return (config.baselineAlpha or 1) == 1
+        and not (config.forceHideInCombat or config.forceHideOutOfCombat
+            or config.forceHideRegularMounted or config.forceHideDragonriding)
+end
+
+-- Probe-only branch of ConfigNeedsAlphaUpdate: a LIVE alpha config with nothing
+-- left to do. probeFrame, where the caller owns exactly one, refuses to disarm
+-- while the frame wears an alpha this state did not put there.
+local function LiveAlphaConfigNeedsDriver(self, config, stateKey, now, probeFrame)
+    if AlphaConfigNeedsDriverPolling(config) then
         return true
     end
+
+    local state = self.alphaState and self.alphaState[stateKey]
+    -- Blank state under a pinned-full config is settled, not unstarted: the
+    -- frame alpha is the only thing that path promises, so read that instead.
+    if probeFrame and (state == nil or state.currentAlpha == nil)
+        and AlphaConfigPinsFullAlpha(config) then
+        return FrameAlphaDiffers(probeFrame, 1)
+    end
+
+    if not AlphaStateIsSettled(self, stateKey, now) then
+        return true
+    end
+    if probeFrame and FrameAlphaDiffers(probeFrame, state.currentAlpha) then
+        return true
+    end
+    return false
+end
+
+-- probeNow (a GetTime() stamp) switches this from "is this config alpha-driven"
+-- to "does this config still need the driver RUNNING". Only the arming
+-- evaluation passes it; the 30 Hz pass itself keeps processing every live config
+-- exactly as before.
+local function ConfigNeedsAlphaUpdate(self, config, stateKey, probeNow, probeFrame)
+    if ST.HasActiveAlphaSettings and ST.HasActiveAlphaSettings(config) then
+        if not probeNow then
+            return true
+        end
+        return LiveAlphaConfigNeedsDriver(self, config, stateKey, probeNow, probeFrame)
+    end
     return AlphaStateNeedsCleanup(self, stateKey)
+end
+
+-- Cheap per-item trigger the 30 Hz pass uses to decide whether a full
+-- RefreshAlphaUpdateDriver evaluation is worth paying for this tick. Wrong
+-- either way it only skips or adds one evaluation: RefreshAlphaUpdateDriver
+-- stays the sole authority on arming.
+local function AlphaWorkMaySettle(self, config, stateKey, now)
+    if type(config) ~= "table" or AlphaConfigNeedsDriverPolling(config) then
+        return false
+    end
+    local state = self.alphaState and self.alphaState[stateKey]
+    if (state == nil or state.currentAlpha == nil) and AlphaConfigPinsFullAlpha(config) then
+        return true
+    end
+    return AlphaStateIsSettled(self, stateKey, now)
 end
 
 -- Composed once per container id and kept for the session: the ids are the small
@@ -121,7 +221,7 @@ local function NeedsContainerAlphaPass(self, containers)
     return HasTableEntries(self._containerAlphaControlledGroups)
 end
 
-local function GroupNeedsAlphaUpdate(self, group, groupId, frame)
+local function GroupNeedsAlphaUpdate(self, group, groupId, frame, probeNow)
     if self.GetPanelContainerAlphaSource and self:GetPanelContainerAlphaSource(groupId) then
         return false
     end
@@ -135,7 +235,7 @@ local function GroupNeedsAlphaUpdate(self, group, groupId, frame)
         and ST.IsGroupRuntimeLayoutPreviewActive(groupId) then
         return true
     end
-    return ConfigNeedsAlphaUpdate(self, group, groupId)
+    return ConfigNeedsAlphaUpdate(self, group, groupId, probeNow, frame)
 end
 
 local function FrameIsAlphaWorkTarget(frame, isDependencyTarget)
@@ -365,10 +465,20 @@ local function ContainerAlphaEntryIsUnlocked(self, container, entry)
     return false
 end
 
-local function ContainerAlphaNeedsUpdate(self, containerId, container, entries)
+local function ContainerAlphaNeedsUpdate(self, containerId, container, entries, probeNow)
     local stateKey = GetContainerAlphaStateKey(containerId)
-    if ConfigNeedsAlphaUpdate(self, container, stateKey) then
+    if ConfigNeedsAlphaUpdate(self, container, stateKey, probeNow) then
         return true
+    end
+
+    -- Reaching here with a LIVE container config only happens on the disarm
+    -- probe, and then the settled container alpha is what its locked entries
+    -- should be wearing. The restore-to-1 comparison below belongs to the
+    -- cleanup path (config switched off, entries owed their alpha back).
+    local entryAlpha = 1
+    if probeNow and ST.HasActiveAlphaSettings and ST.HasActiveAlphaSettings(container) then
+        local state = self.alphaState and self.alphaState[stateKey]
+        entryAlpha = state and state.currentAlpha or 1
     end
 
     for i = 1, #entries do
@@ -383,7 +493,7 @@ local function ContainerAlphaNeedsUpdate(self, containerId, container, entries)
                     or FrameAlphaDiffers(entry.frame, GetUnlockedPanelAlpha(entry.frame))) then
                 return true
             end
-        elseif FrameAlphaDiffers(entry.frame, GetFrameAlphaWithContainerMultiplier(entry.frame, 1)) then
+        elseif FrameAlphaDiffers(entry.frame, GetFrameAlphaWithContainerMultiplier(entry.frame, entryAlpha)) then
             return true
         end
         if AlphaStateNeedsCleanup(self, entry.groupId) then
@@ -583,6 +693,27 @@ end
 
 function CooldownCompanion:InvalidateMountAlphaCache()
     self._mountAlphaDirty = true
+    -- Mount display change, new mount, world entry, Soar reclassification and
+    -- combat exit all land here, and every one of them can change a mounted
+    -- force condition, so this is also the driver's mount re-arm hook.
+    self:EnsureAlphaDriverArmed()
+end
+
+-- Re-arm hook for the condition inputs the driver polls each pass. Callers are
+-- the events listed in the disarm contract above; several are hot, so an already
+-- running driver costs one flag write and one script read. The flag matters on
+-- its own: a settled state is settled on the conditions of the LAST pass, so
+-- until a pass re-reads them, RefreshAlphaUpdateDriver must not disarm.
+function CooldownCompanion:EnsureAlphaDriverArmed()
+    self._alphaDriverConditionDirty = true
+
+    local alphaFrame = self._alphaFrame
+    if alphaFrame and alphaFrame:GetScript("OnUpdate") then
+        return
+    end
+    if self.RefreshAlphaUpdateDriver then
+        self:RefreshAlphaUpdateDriver()
+    end
 end
 
 -- Shared force-condition evaluation: returns forceFull (bool), forceHidden (bool), baselineAlpha (number).
@@ -905,12 +1036,24 @@ function CooldownCompanion:UnregisterModuleAlpha(moduleId, preserveState)
     end
 end
 
+-- Answers "must the 30 Hz driver be RUNNING", not "is alpha configured": see the
+-- disarm contract above AlphaConfigNeedsDriverPolling. Every existing reason to
+-- stay armed still returns true here; the one case this narrows is a profile
+-- whose alpha configs are all settled and all event-driven, which now disarms
+-- until a re-arm hook fires. When in doubt, return true.
 function CooldownCompanion:EvaluateAlphaDriverNeedsWork()
     local profile = self.db and self.db.profile
     if type(profile) ~= "table" then
         return false
     end
 
+    -- A condition input flipped since the last pass, so the settled state below
+    -- is settled on STALE conditions. One tick has to re-read them.
+    if self._alphaDriverConditionDirty then
+        return true
+    end
+
+    local probeNow = GetTime()
     local groups = profile.groups or {}
     local containers = profile.groupContainers or {}
     local groupFrames = self.groupFrames or {}
@@ -931,14 +1074,22 @@ function CooldownCompanion:EvaluateAlphaDriverNeedsWork()
         end
         for containerId, container in pairs(containers) do
             local entries = entriesByContainer[containerId]
-            if container and container.groupAlphaEnabled == true
+            local containerDrivesEntries = container
+                and container.groupAlphaEnabled == true
                 and entries
                 and #entries > 0
-                and ContainerAlphaNeedsUpdate(self, containerId, container, entries) then
+                or false
+            if containerDrivesEntries
+                and ContainerAlphaNeedsUpdate(self, containerId, container, entries, probeNow) then
                 return true
             end
 
-            if AlphaStateNeedsCleanup(self, GetContainerAlphaStateKey(containerId)) then
+            -- A live container driving entries owns its state: a non-1 alpha
+            -- there is the applied value, not leftover work owed a cleanup pass.
+            if not (containerDrivesEntries
+                    and ST.HasActiveAlphaSettings
+                    and ST.HasActiveAlphaSettings(container))
+                and AlphaStateNeedsCleanup(self, GetContainerAlphaStateKey(containerId)) then
                 return true
             end
         end
@@ -948,7 +1099,7 @@ function CooldownCompanion:EvaluateAlphaDriverNeedsWork()
         local frame = groupFrames[groupId] or (dormantFrames and dormantFrames[groupId])
         if not containerAlphaControlledGroups[groupId]
             and FrameIsAlphaWorkTarget(frame, panelAlphaAnchorTargets and panelAlphaAnchorTargets[groupId]) then
-            if GroupNeedsAlphaUpdate(self, group, groupId, frame) then
+            if GroupNeedsAlphaUpdate(self, group, groupId, frame, probeNow) then
                 return true
             end
         end
@@ -957,7 +1108,7 @@ function CooldownCompanion:EvaluateAlphaDriverNeedsWork()
     if self._moduleAlphaTargets then
         for moduleId, entry in pairs(self._moduleAlphaTargets) do
             if entry and HasLiveAlphaFrames(entry.frames)
-                and ConfigNeedsAlphaUpdate(self, entry.config, moduleId) then
+                and ConfigNeedsAlphaUpdate(self, entry.config, moduleId, probeNow) then
                 return true
             end
         end
@@ -971,6 +1122,10 @@ function CooldownCompanion:AlphaUpdateOnUpdate(dt)
     self._alphaUpdateAccumulator = (self._alphaUpdateAccumulator or 0) + (dt or 0)
     if self._alphaUpdateAccumulator < updateInterval then return end
     self._alphaUpdateAccumulator = 0
+
+    -- Cleared before the snapshot below, so an input that flips after this line
+    -- re-dirties for a further pass instead of being swallowed by this one.
+    self._alphaDriverConditionDirty = nil
 
     local now = GetTime()
     local inCombat = InCombatLockdown()
@@ -996,6 +1151,10 @@ function CooldownCompanion:AlphaUpdateOnUpdate(dt)
     local panelAlphaAnchorTargets = self:GetPanelAlphaDependencyTargets(groups)
     local needsPostPassRefresh = false
     local processedAlphaWork = false
+    -- Stays true only while every item this pass touched ended settled on an
+    -- event-driven config: that is the one tick worth paying a full
+    -- RefreshAlphaUpdateDriver evaluation for, so a settled profile can disarm.
+    local passMaySettle = true
     local entriesByContainer, containerAlphaControlledGroups = EMPTY_TABLE, EMPTY_TABLE
     if NeedsContainerAlphaPass(self, containers) then
         local previousContainerAlphaGroups = self._containerAlphaControlledGroups
@@ -1022,6 +1181,10 @@ function CooldownCompanion:AlphaUpdateOnUpdate(dt)
                         needsPostPassRefresh = true
                     end
                     self:UpdateContainerAlpha(containerId, container, entries, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
+                    if passMaySettle
+                        and not AlphaWorkMaySettle(self, container, GetContainerAlphaStateKey(containerId), now) then
+                        passMaySettle = false
+                    end
                 end
             else
                 local stateKey = GetContainerAlphaStateKey(containerId)
@@ -1057,6 +1220,9 @@ function CooldownCompanion:AlphaUpdateOnUpdate(dt)
                     locked = group.locked
                 end
                 self:UpdateGroupAlpha(groupId, group, locked, frame, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
+                if passMaySettle and not AlphaWorkMaySettle(self, group, groupId, now) then
+                    passMaySettle = false
+                end
             end
         end
     end
@@ -1072,15 +1238,26 @@ function CooldownCompanion:AlphaUpdateOnUpdate(dt)
                     needsPostPassRefresh = true
                 end
                 self:UpdateModuleAlpha(moduleId, entry.config, entry.frames, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
+                if passMaySettle and not AlphaWorkMaySettle(self, entry.config, moduleId, now) then
+                    passMaySettle = false
+                end
             end
         end
     end
-    if needsPostPassRefresh or not processedAlphaWork then
-        self:RefreshAlphaUpdateDriver()
+    if needsPostPassRefresh or not processedAlphaWork or passMaySettle then
+        self:RefreshAlphaUpdateDriver(true)
     end
 end
 
-function CooldownCompanion:RefreshAlphaUpdateDriver()
+-- fromAlphaPass marks the alpha pass's own tail, the ONLY place allowed to stop
+-- the driver: it decides from conditions the same pass just re-read. Every other
+-- caller is announcing that something the pass reads has changed — lock state,
+-- panel or container lifecycle, anchor dependencies, config edits — and most of
+-- those inputs are invisible to the settled test in EvaluateAlphaDriverNeedsWork
+-- (a settled state is only settled on the LAST pass's conditions). So an
+-- external refresh always arms and lets the pass re-decide, which is also
+-- cheaper than the evaluation walk it used to run.
+function CooldownCompanion:RefreshAlphaUpdateDriver(fromAlphaPass)
     if not self._alphaFrame then
         if self._initializingAlphaUpdateFrame then
             return false
@@ -1095,10 +1272,22 @@ function CooldownCompanion:RefreshAlphaUpdateDriver()
         return false
     end
 
-    local needsWork = self:EvaluateAlphaDriverNeedsWork()
+    local needsWork
+    if fromAlphaPass then
+        needsWork = self:EvaluateAlphaDriverNeedsWork()
+    else
+        self._alphaDriverConditionDirty = true
+        needsWork = true
+    end
+
     local handler = self._alphaUpdateHandler
     if needsWork then
         if not alphaFrame:GetScript("OnUpdate") then
+            -- Arming from stopped: hand the next frame a full interval so the
+            -- pass runs immediately instead of spending one re-accumulating.
+            -- A re-armed condition flip must never land later than the
+            -- always-running driver would have applied it.
+            self._alphaUpdateAccumulator = self._alphaUpdateInterval or (1 / 30)
             alphaFrame:SetScript("OnUpdate", handler)
         end
     else

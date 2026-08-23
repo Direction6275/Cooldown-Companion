@@ -683,6 +683,9 @@ end
 -- target-dependent kept visuals (range tint, {oor} text) repainting promptly.
 function CooldownCompanion:OnTargetChanged()
     self:MarkCooldownsDirty("target-changed")
+    -- Target-existence and target-hostility force conditions are read fresh by
+    -- the alpha pass, so a swap has to find the driver running.
+    self:EnsureAlphaDriverArmed()
 end
 
 

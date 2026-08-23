@@ -526,8 +526,14 @@ function CooldownCompanion:OnActionBarSlotChanged(_, slot)
     end)
 end
 
-function CooldownCompanion:OnActionBarLayoutChanged()
+function CooldownCompanion:OnActionBarLayoutChanged(event)
     self:RefreshKeybindState()
+    -- UPDATE_SHAPESHIFT_FORM also routes here, and druid travel form is an alpha
+    -- force-condition input the alpha pass reads fresh. That pass resolves the
+    -- form only for druids, so no other class can need the re-arm.
+    if event == "UPDATE_SHAPESHIFT_FORM" and self._playerClassID == 11 then
+        self:EnsureAlphaDriverArmed()
+    end
     -- UPDATE_OVERRIDE_ACTIONBAR / UPDATE_VEHICLE_ACTIONBAR also route here for
     -- keybind rebuilds; piggyback vehicle UI state check to avoid duplicate
     -- AceEvent registrations (AceEvent allows only one handler per event).
