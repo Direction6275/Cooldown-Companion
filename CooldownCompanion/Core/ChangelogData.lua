@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.2",
         "2.1.4",
         "2.1.3",
         "2.1.2",
@@ -31,6 +32,29 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.2"] = {
+            markdown = [[
+## New Features
+
+- **Panel Sections:** Icon panels can now grow sections: small clusters of icons pinned to any of eight anchor spots around the panel's main row, each with its own icon size, spacing, and offsets. Build them entirely by drag and drop in the config preview: drag an icon past the row to create one, drag into a section to join it, and grab a section's handle to move the whole cluster to another spot. Sections ride the main row as it grows and shrinks, and anything anchored to the panel stays put.
+  - **Aura Only Sections:** any section can be flipped to show only its auras that are actually active. They appear when applied, pack together, and take no space when they fade, just like an Aura Panel, while the rest of the panel keeps its normal fixed buttons.
+- **Copy panel settings with a click:** Right-clicking a panel in the Navigator now offers Copy Panel Settings To... with a choice of Appearance, Indicators, or All Panel Settings. Eligible panels glow green, and clicking one applies the settings instantly. The mode stays armed, so setting up a new class to match your main is a few clicks through Browse Other Classes. The copy carries the panel's look but never touches its position, layout, visibility rules, name, or entries. This replaces the old presets and Copy Style From menu.
+
+## Polish | QoL
+
+- **Live buff names on bars:** Bars tracking a buff now show the name of the buff that is actually active, so a Roll the Bones bar reads the roll you got instead of always saying "Roll the Bones".
+- **Multi-outcome buffs match every outcome:** A spell entry with aura tracking now lights up for every buff its cast can apply, with the matching icon and aura sounds, no hand-typed Aura IDs needed.
+- **Escape cancels config drags:** Pressing Escape during any drag in the config preview, reordering included, now snaps everything back without closing the config window.
+- **Layout tab moved first:** The Layout tab now leads a panel's settings tabs, and the Resources and cast bar pages follow the same order. Since Layout always edits the whole panel, it now shows a small note saying so while an entry is selected.
+
+## Bug Fixes
+
+- **Smooth max-stack borders and colors:** Resource bars no longer stutter, blink, or flash the wrong color for a moment when a resource hits max stacks. Pixel-style glows across the addon also no longer visibly restart their animation during internal refreshes.
+- **Buffs with enemy-facing effects track correctly:** Buffs like Galactic Guardian, whose spell data looks enemy-facing to the game, are now tracked on you instead of your target, so their icons light up when the buff procs. Existing profiles heal themselves on next login.
+- **Proc and Ants glows work on Aura Panel entries:** Choosing the Proc or Ants aura glow style on an Aura Panel entry no longer throws an error, and the glow renders at the expected size.
+- **Segmented stack bars stay inside their borders:** On bars showing an aura's stacks as segmented blocks, the fill color no longer bleeds a hairline outside the segment borders into the gaps.
+]],
+        },
         ["2.1.4"] = {
             markdown = [[
 ## New Features
