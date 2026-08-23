@@ -106,6 +106,9 @@ local defaults = {
                         --     iconWidth = nil,  -- nil falls back to the panel's own
                         --     iconHeight = nil, -- resolved icon size
                         --     spacing = nil,    -- nil falls back to buttonSpacing
+                        --     auraOnly = nil,   -- true renders this cluster's
+                        --                       -- members through Blizzard's aura
+                        --                       -- container instead of CC buttons
                         -- },
                     },
                     style = {
@@ -737,13 +740,70 @@ end
 -- with it, which is fine: nothing reads them across panels.
 --
 -- No-ops off an Aura Panel, so callers never have to ask first.
+--
+-- The counter is per GROUP, not per aura surface: an Aura Panel and an aura
+-- section on a mixed panel draw from the same group.nextAuraKey and write the
+-- same _auraKey field, so the two can never hand out the same string inside one
+-- panel and every existing reader (the bind pass, the duplicate-key repair in
+-- Migrations) keeps working unchanged.
+local function TakeAuraEntryKey(group, buttonData)
+    group.nextAuraKey = tonumber(group.nextAuraKey) or 1
+    buttonData._auraKey = tostring(group.nextAuraKey)
+    group.nextAuraKey = group.nextAuraKey + 1
+end
+
 function CooldownCompanion:StampAuraPanelEntryKey(group, buttonData)
     if not (buttonData and ST.IsAuraPanelGroup(group)) then
         return
     end
-    group.nextAuraKey = tonumber(group.nextAuraKey) or 1
-    buttonData._auraKey = tostring(group.nextAuraKey)
-    group.nextAuraKey = group.nextAuraKey + 1
+    TakeAuraEntryKey(group, buttonData)
+end
+
+-- The same stamp for an entry that is a member of an AURA SECTION on an
+-- otherwise ordinary mixed panel. The panel carries no auraPanel flag, so the
+-- entry point above cannot serve it: the section is the aura surface here, and
+-- membership is what decides.
+--
+-- Unlike the panel form this one REFUSES to overwrite: an entry already holding
+-- a key has, or had, an aura group bound to that string, and a mixed panel's
+-- members can be stamped repeatedly (every membership write runs this) where an
+-- Aura Panel's are stamped exactly once on the way in.
+--
+-- No-ops for an entry that is not currently in an aura-only section, so callers
+-- never have to ask first.
+function CooldownCompanion:StampAuraSectionEntryKey(group, buttonData)
+    if type(group) ~= "table" or type(buttonData) ~= "table" then return end
+    if buttonData._auraKey ~= nil then return end
+    local anchor = ST.GetPanelSectionForEntry(group, buttonData)
+    if not (anchor and ST.IsAuraOnlyPanelSection(group, anchor)) then return end
+    TakeAuraEntryKey(group, buttonData)
+end
+
+-- The key rule for an entry that has just ARRIVED in a panel -- carried across
+-- from another one, or copied in beside itself. An _auraKey is PER PANEL: the
+-- one an entry wore where it came from means nothing here, and a copy that
+-- inherits its original's key puts two entries of one panel on a single aura
+-- group, where only the last of them ever renders.
+--
+-- An Aura Panel destination mints outright, which is the behavior every one of
+-- these sites already had. Anywhere else the stale key is STRIPPED rather than
+-- kept: a mixed panel's base row has no use for one, and keeping it is what
+-- collides later -- the section stamp above refuses to overwrite, so an entry
+-- that joined an aura section still wearing another panel's key would carry that
+-- key in with it. The section stamp runs after the strip for the copy case,
+-- where the membership came along with the copy and the copy owes a key of its
+-- own immediately.
+--
+-- NOT for export/import round-trips: those are the same panel's own entries
+-- coming home, and their keys are exactly what has to survive.
+function CooldownCompanion:AdoptAuraEntryKey(group, buttonData)
+    if type(group) ~= "table" or type(buttonData) ~= "table" then return end
+    if ST.IsAuraPanelGroup(group) then
+        TakeAuraEntryKey(group, buttonData)
+        return
+    end
+    buttonData._auraKey = nil
+    self:StampAuraSectionEntryKey(group, buttonData)
 end
 
 -- The subtype's two hard data invariants, in one place. An Aura Panel renders
@@ -800,6 +860,62 @@ function CooldownCompanion:GetAuraPanelUnit(group)
                 return unit
             end
         end
+    end
+    return nil
+end
+
+-- The same one-unit rule, one section at a time. An aura section is its own
+-- aura surface inside a mixed panel, so it adopts a unit exactly the way a whole
+-- Aura Panel does: from its first member that resolves to one, DERIVED and never
+-- stored, so an emptied section forgets it and accepts either polarity again.
+--
+-- Deliberately NOT gated on the section being aura-only. The toggle's own
+-- refusal check has to ask this question BEFORE the flag flips -- that is the
+-- moment a section holding two polarities has to be caught -- and answering for
+-- a plain section costs nothing, since nothing but the aura paths asks.
+function CooldownCompanion:GetAuraSectionUnit(group, anchor)
+    if type(group) ~= "table" then return nil end
+    if not (anchor and ST.PANEL_SECTION_ANCHOR_SET[anchor]) then return nil end
+    local sections = group.sections
+    if type(sections) ~= "table" or type(sections[anchor]) ~= "table" then return nil end
+    for _, buttonData in ipairs(group.buttons or {}) do
+        if buttonData and buttonData.addedAs == "aura"
+            and ST.GetPanelSectionForEntry(group, buttonData) == anchor then
+            local unit = self:ResolveAuraEntryUnit(buttonData)
+            if unit then
+                return unit
+            end
+        end
+    end
+    return nil
+end
+
+-- Whether one entry may live in one aura section: nil to admit it, a short
+-- player-facing sentence to refuse. The section's own membership writer and its
+-- aura-only toggle are the two callers, so a refusal is always something the
+-- owner just tried to do and can be told about.
+--
+-- Admission is PRIMARY aura entries only (addedAs == "aura"). An ordinary spell
+-- entry that merely has aura tracking switched on still has a cooldown display
+-- to draw and would have nothing to render through the aura container, so it
+-- stays out -- the same line the Aura Panel add door draws.
+--
+-- An unresolvable unit does not refuse. ResolveAuraEntryUnit answers from
+-- spec-dependent Cooldown Manager data, so "unknown" is a state the same entry
+-- moves in and out of, and refusing on it would make the section reject on one
+-- spec what it accepted on another.
+function CooldownCompanion:GetAuraSectionEntryRejectMessage(group, anchor, entryData)
+    if type(entryData) ~= "table" or entryData.type ~= "spell" or entryData.addedAs ~= "aura" then
+        return "Aura Sections hold only Aura entries."
+    end
+    local sectionUnit = self:GetAuraSectionUnit(group, anchor)
+    if not sectionUnit then return nil end
+    local entryUnit = self:ResolveAuraEntryUnit(entryData)
+    if entryUnit and entryUnit ~= sectionUnit then
+        if sectionUnit == "player" then
+            return "This section tracks your buffs. Target debuff auras need a section of their own."
+        end
+        return "This section tracks target debuffs. Your own buff auras need a section of their own."
     end
     return nil
 end

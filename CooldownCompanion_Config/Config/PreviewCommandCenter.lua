@@ -263,10 +263,10 @@ local function SectionApplies(group, sectionId, buttonIndex)
     local buttons = group.buttons or {}
     if buttonIndex then
         local buttonData = buttons[buttonIndex]
-        return buttonData ~= nil and canUse(buttonData, sectionId) == true
+        return buttonData ~= nil and canUse(buttonData, sectionId, group) == true
     end
     for _, buttonData in ipairs(buttons) do
-        if canUse(buttonData, sectionId) == true then
+        if canUse(buttonData, sectionId, group) == true then
             return true
         end
     end

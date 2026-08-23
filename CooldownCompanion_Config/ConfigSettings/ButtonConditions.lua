@@ -2061,12 +2061,14 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
             and buttonData.addedAs == "aura")
 
     if not hideShowConditions then
-    local visKey = isBatch
-        and (CS.selectedGroup .. "_batch_visibility")
-        or  (CS.selectedGroup .. "_" .. CS.selectedButton .. "_visibility")
-    local _, visCollapsed = BuildCollapsibleSection(scroll, "Show & Hide Rules", visKey, nil, nil, ROW_SECTION)
-
-    if not visCollapsed then
+    -- The families are collected BEFORE the heading is drawn. Which of them
+    -- survive is an entry-type answer that can come out empty (a member of an
+    -- Aura Only Section: its aura pair leaves with the section, and every other
+    -- family here wants a cooldown, a usability state, charges or an item), and
+    -- a heading with a collapse arrow over nothing is chrome with no section
+    -- under it. Collection creates no widgets - every family defers its rows to
+    -- a build closure - so nothing reaches `scroll` until the count is known.
+    --
     -- One row shape for the whole section: a CDC-CheckBoxRow reading and
     -- writing through the same batch-aware helpers the stock checkboxes used,
     -- so the store side of this section is untouched. opts.filter scopes the
@@ -2128,8 +2130,15 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- Show Only While Aura Active (aura entries). 12.1: applied statically —
     -- the aura display composes the whole button over an invisible CC shell,
     -- so this needs a restyle + rebind, not the per-tick visibility bits.
+    --
+    -- Members of an Aura Only Section are excluded for the same reason the
+    -- whole Aura Panel is: they render through Blizzard's packed container,
+    -- which gives inactive auras no space and ignores the hide/dim keys.
+    -- Clearing writes still reach them (see ApplyToAuraEntries) so an entry
+    -- that later leaves the section is never stuck with a stale key.
     local function FilterAuraEntry(bd)
         return bd.type == "spell" and (bd.auraTracking or bd.addedAs == "aura")
+            and not ST.IsAuraSectionEntry(group, bd)
     end
     local function ApplyToAuraEntries(field, value)
         if isBatch then
@@ -2569,18 +2578,24 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     end
 
     -- An entry type can filter every family away (a passive with no cooldown
-    -- in a texture panel), and an empty grid is still a widget - so only open
-    -- one when there is something to pour into it.
+    -- in a texture panel, a member of an Aura Only Section), and both the
+    -- heading and an empty grid are still widgets - so the section only builds
+    -- when there is something to pour into it.
     if totalRows > 0 then
-        local visLeft, visRight = BeginRowGrid(scroll)
-        local placed, half = 0, math.ceil(totalRows / 2)
-        for _, family in ipairs(families) do
-            family.build(placed < half and visLeft or visRight)
-            placed = placed + family.rows
+        local visKey = isBatch
+            and (CS.selectedGroup .. "_batch_visibility")
+            or  (CS.selectedGroup .. "_" .. CS.selectedButton .. "_visibility")
+        local _, visCollapsed = BuildCollapsibleSection(scroll, "Show & Hide Rules", visKey, nil, nil, ROW_SECTION)
+        if not visCollapsed then
+            local visLeft, visRight = BeginRowGrid(scroll)
+            local placed, half = 0, math.ceil(totalRows / 2)
+            for _, family in ipairs(families) do
+                family.build(placed < half and visLeft or visRight)
+                placed = placed + family.rows
+            end
         end
     end
 
-    end -- not visCollapsed
     end -- not hideShowConditions
 end
 

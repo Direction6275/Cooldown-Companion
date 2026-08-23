@@ -72,6 +72,17 @@ local KEYBIND_CUSTOM_TOOLTIP = {
     {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
 }
 
+-- The per-section aura toggle's tooltip. What the section becomes, and what
+-- that changes about the way it takes up room; the rest the surface teaches.
+local AURA_SECTION_TOOLTIP = {
+    "Aura Only Section",
+    {"Only Aura entries can live here.", 1, 1, 1, true},
+    " ",
+    {"Active auras appear and pack together. Inactive auras take no space.", 1, 1, 1, true},
+    " ",
+    {"Buffs on you and debuffs on your target can't share one section.", 1, 1, 1, true},
+}
+
 -- The While Aura Active Cooldown control. Its two style keys used to live elsewhere
 -- (an entry-data checkbox on the entry's Aura Tracking section; a "Separate
 -- Text Positions" checkbox inside the Aura Duration Text advanced panel) and
@@ -702,6 +713,59 @@ local function BuildAppearanceTab(container)
                 sectionSec:HeadingChrome(sectionHeading)
 
                 if not sectionCollapsed then
+                -- WHAT this cluster is comes before how big it is, so the aura
+                -- toggle heads the block on its own full-width line above the
+                -- size/spacing grid. Its own bracket carries the panel-only
+                -- dimming, exactly like the grid columns below.
+                --
+                -- A section holding anything the aura container cannot draw is
+                -- told so on a DISABLED checkbox rather than being allowed to
+                -- click and fail: the engine's refusal is asked for here, before
+                -- the write, and the blocking entry's own sentence is what the
+                -- row explains itself with. The blocker only ever gates turning
+                -- the flag ON. A section already flagged can still develop one
+                -- (polarity is spec-dependent, so a member admitted on one spec
+                -- can mismatch on another), and the setter deliberately lets OFF
+                -- through unconditionally - so the checkbox must stay clickable
+                -- there, or the section is trapped aura-only.
+                local sectionAuraOnly = ST.IsAuraOnlyPanelSection(group, anchor)
+                local sectionBlocker = not sectionAuraOnly
+                    and ST.GetAuraSectionToggleBlocker(group, anchor) or nil
+                local sectionToggleTooltip = AURA_SECTION_TOOLTIP
+                if sectionBlocker then
+                    sectionToggleTooltip = {
+                        AURA_SECTION_TOOLTIP[1],
+                        {sectionBlocker, 1, 0.4, 0.4, true},
+                        " ",
+                    }
+                    for line = 2, #AURA_SECTION_TOOLTIP do
+                        sectionToggleTooltip[#sectionToggleTooltip + 1] = AURA_SECTION_TOOLTIP[line]
+                    end
+                end
+
+                local sectionTopBracket = sectionSec:Bracket(container)
+                AddCheckboxRow(container, {
+                    label = "Aura Only Section",
+                    relativeWidth = 0.5,
+                    value = sectionAuraOnly,
+                    tooltip = sectionToggleTooltip,
+                    disabled = sectionSec.disabled or sectionBlocker ~= nil,
+                    onChange = function(value, widget)
+                        -- A structural commit, not a styling one: the flag
+                        -- changes which entries materialize a button at all, so
+                        -- it takes the same pair a section drop takes rather
+                        -- than the sliders' UpdateGroupStyle. Safe here for the
+                        -- same reason it is safe there - a click is over.
+                        if not ST.SetPanelSectionAuraOnly(group, anchor, value) then
+                            widget:SetValue(ST.IsAuraOnlyPanelSection(group, anchor))
+                            return
+                        end
+                        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                        CooldownCompanion:RefreshConfigPanel()
+                    end,
+                })
+                sectionSec:FinishBracket(sectionTopBracket)
+
                 local sectionLeft, sectionRight = BeginRowGrid(container)
                 sectionSec:Mark(sectionLeft)
 

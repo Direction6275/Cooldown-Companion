@@ -1432,8 +1432,14 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
     -- through its own aura container and materializes no CC buttons at all, so
     -- an empty button list is its normal state rather than the "nothing
     -- rendered yet" signal this check reads it as everywhere else.
+    -- The same emptiness, one cluster at a time. A MIXED panel whose entries all
+    -- sit in aura sections materializes no CC button either, so its frame reads
+    -- empty while those sections still own a rectangle to arrange. Only the
+    -- FRAME check is exempted: the data checks above stay in force, because
+    -- those entries are saved entries and answer them honestly.
     if groupFrame
         and not skipEntryChecks
+        and not ST.PanelHasAuraSection(group)
         and (not groupFrame.buttons or #groupFrame.buttons == 0) then
         return false
     end
@@ -1808,6 +1814,15 @@ end
 -- (pre-subtype or hand-edited data, which the bind pass parks) still occupy a
 -- cell, so they are carried under a distinct prefix by type and id rather than
 -- dropped: a keyless entry coming or going still moves the footprint.
+local function AppendAuraEntryToken(signature, buttonData)
+    local auraKey = buttonData._auraKey
+    if auraKey then
+        return signature .. "\031k" .. tostring(auraKey)
+    end
+    return signature .. "\031?"
+        .. tostring(buttonData.type) .. ":" .. tostring(buttonData.id)
+end
+
 function CooldownCompanion:GetAuraPanelEntrySignature(group, buttonUsabilityOptions)
     if not (group and group.buttons) then
         return ""
@@ -1816,13 +1831,32 @@ function CooldownCompanion:GetAuraPanelEntrySignature(group, buttonUsabilityOpti
     local signature = ""
     for _, buttonData in ipairs(group.buttons) do
         if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
-            local auraKey = buttonData._auraKey
-            if auraKey then
-                signature = signature .. "\031k" .. tostring(auraKey)
-            else
-                signature = signature .. "\031?"
-                    .. tostring(buttonData.type) .. ":" .. tostring(buttonData.id)
-            end
+            signature = AppendAuraEntryToken(signature, buttonData)
+        end
+    end
+    return signature
+end
+
+-- The same string for a MIXED panel, scoped to the entries that render through
+-- an aura SECTION. Those entries materialize no CC button either, so the
+-- frame.buttons comparison GroupButtonSetNeedsRebuild makes for every ordinary
+-- panel cannot see them -- and it must not try, or a panel with one aura section
+-- would report "needs rebuild" on every availability sweep forever. Filtering
+-- them out of that comparison deletes their refresh trigger, exactly the way a
+-- flat false once deleted the Aura Panel's; this restores it.
+--
+-- Empty for a panel with no aura section, so an ordinary panel stores and
+-- compares nothing.
+function CooldownCompanion:GetAuraSectionEntrySignature(group, buttonUsabilityOptions)
+    if not (group and group.buttons and ST.PanelHasAuraSection(group)) then
+        return ""
+    end
+
+    local signature = ""
+    for _, buttonData in ipairs(group.buttons) do
+        if ST.IsAuraSectionEntry(group, buttonData)
+            and self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
+            signature = AppendAuraEntryToken(signature, buttonData)
         end
     end
     return signature
@@ -2948,8 +2982,23 @@ function CooldownCompanion:GroupButtonSetNeedsRebuild(groupId, group, opts)
     local usableButtons = {}
     local usableCount = 0
     local buttonUsabilityOptions = opts.buttonUsabilityOptions
+    -- Aura-section members leave both sides of the comparison below: they never
+    -- materialize a button, so counting them would report "needs rebuild" every
+    -- sweep. Their identity rides the signature instead, diffed here first so a
+    -- talent swap inside a section still triggers the rebuild the button
+    -- comparison can no longer see.
+    local auraSectionPanel = ST.PanelHasAuraSection(group)
+    if auraSectionPanel then
+        local options = buttonUsabilityOptions
+            or self:GetGroupButtonUsabilityOptions(groupId, group)
+        if (frame._auraSectionEntrySig or "")
+            ~= self:GetAuraSectionEntrySignature(group, options) then
+            return true
+        end
+    end
     for _, buttonData in ipairs(group.buttons) do
-        if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
+        if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions)
+            and not (auraSectionPanel and ST.IsAuraSectionEntry(group, buttonData)) then
             usableCount = usableCount + 1
             usableButtons[usableCount] = buttonData
         end

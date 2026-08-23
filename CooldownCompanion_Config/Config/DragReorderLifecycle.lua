@@ -379,9 +379,10 @@ local function PerformCrossPanelMove(sourcePanelId, sourceIndex, targetPanelId, 
         CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(targetGroup, buttonData)
     end
     local previousCount = #targetGroup.buttons
-    -- An entry arriving in an Aura Panel needs that panel's own key, not the one
-    -- it wore where it came from (or none at all, which the engine skips).
-    CooldownCompanion:StampAuraPanelEntryKey(targetGroup, buttonData)
+    -- An entry arriving in a panel needs that panel's own key, not the one it
+    -- wore where it came from: an Aura Panel mints it one, and anywhere else the
+    -- stale key comes off rather than waiting to collide inside an aura section.
+    CooldownCompanion:AdoptAuraEntryKey(targetGroup, buttonData)
     table.insert(targetGroup.buttons, targetIndex, buttonData)
     CooldownCompanion:KeepPanelSingleLineOnGrowth(targetGroup, previousCount)
     return buttonData

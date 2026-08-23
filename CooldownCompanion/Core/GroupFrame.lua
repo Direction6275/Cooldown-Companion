@@ -2178,18 +2178,35 @@ local function CreatePanelDragHelpButton(frame, groupId)
     )
 end
 
+-- Both placeholder roots take the same rule: an Aura Panel owns the first, a
+-- mixed panel carrying an aura section owns the second, and no panel ever owns
+-- both (a panel is one or the other). Written out twice rather than through a
+-- helper because this file rides its file-scope local ceiling.
 function ST._SyncAuraPanelPlaceholderLevels(frame, raiseAboveWrapper)
-    local root = frame and frame._auraPanelPlaceholderRoot
-    if not root then
+    if not frame then
         return
     end
 
-    if raiseAboveWrapper then
-        root:SetFrameStrata("FULLSCREEN_DIALOG")
-        root:SetFrameLevel(89)
-    else
-        root:SetFrameStrata(frame:GetFrameStrata())
-        root:SetFrameLevel((frame:GetFrameLevel() or 1) + 1)
+    local root = frame._auraPanelPlaceholderRoot
+    if root then
+        if raiseAboveWrapper then
+            root:SetFrameStrata("FULLSCREEN_DIALOG")
+            root:SetFrameLevel(89)
+        else
+            root:SetFrameStrata(frame:GetFrameStrata())
+            root:SetFrameLevel((frame:GetFrameLevel() or 1) + 1)
+        end
+    end
+
+    root = frame._auraSectionPlaceholderRoot
+    if root then
+        if raiseAboveWrapper then
+            root:SetFrameStrata("FULLSCREEN_DIALOG")
+            root:SetFrameLevel(89)
+        else
+            root:SetFrameStrata(frame:GetFrameStrata())
+            root:SetFrameLevel((frame:GetFrameLevel() or 1) + 1)
+        end
     end
 end
 
@@ -2271,7 +2288,10 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
     -- member, not only the selected member whose drag controls are showing.
     -- Presentation only -- the aura container stays bound so combat can restore
     -- it without an out-of-combat rebind.
-    local auraPreviewShown = ST.IsAuraPanelGroup(group)
+    -- A mixed panel's AURA SECTION is the same trade in miniature and reads the
+    -- same flag: its cluster is empty air without the tiles, and on a panel
+    -- whose entries all sit in sections there would be nothing to grab at all.
+    local auraPreviewShown = (ST.IsAuraPanelGroup(group) or ST.PanelHasAuraSection(group))
         and not CooldownCompanion._combatForcedLock
         and (shown == true or containerPreviewActive)
         or false
@@ -3695,9 +3715,15 @@ function CooldownCompanion:SetAuraPanelPlaceholderPreviewShown(frame, shown)
         root:SetIgnoreParentAlpha(shown and frame._unlockGhost == true)
         root:SetShown(shown)
     end
+    -- The mixed panel's aura-section tiles ride the same switch, so every path
+    -- that raises or drops this preview -- drag chrome, container preview, the
+    -- combat forced lock -- covers both without knowing which it has.
+    ST.SetAuraSectionPlaceholderRootShown(frame, shown)
 
     -- The placeholders are the complete unlock presentation. Keep the live
     -- aura container bound but hidden so active auras are not double-drawn.
+    -- The fan-out is by CHROME frame, so on a mixed panel this reaches that
+    -- panel's own section containers and nothing else.
     self:SetAuraPanelChromeSuppressed(frame, shown)
 end
 
@@ -3939,7 +3965,8 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
     -- against that frame instead of the panel. A panel with no sections gets
     -- nil here and lays out through the exact code it always did.
     local sectionLayout, sectionLists, baseAnchor = ST.PrepareSectionedPanelLayout(
-        frame, group, frame.buttons, buttonWidth, buttonHeight, spacing, headerHeight)
+        frame, group, frame.buttons, buttonWidth, buttonHeight, spacing, headerHeight,
+        buttonSizingOptions)
     local layoutRef = baseAnchor or frame
     local layoutButtons = sectionLists and sectionLists.base or frame.buttons
     local total = #layoutButtons
@@ -4081,8 +4108,14 @@ local function GetStyleUpdateEntries(self, groupId, frame, group)
 
     local previousCount = entries.count or 0
     local visibleIndex = 0
+    -- Filtered exactly the way PopulateGroupButtons filters when it BUILDS the
+    -- list: an aura-section member materializes no button, so counting one here
+    -- would make the expectation disagree with frame.buttons on every style
+    -- update and drop the fast path forever.
+    local auraSectionPanel = ST.PanelHasAuraSection(group)
     for sourceIndex, buttonData in ipairs(sourceButtons) do
-        if IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
+        if IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions)
+            and not (auraSectionPanel and ST.IsAuraSectionEntry(group, buttonData)) then
             visibleIndex = visibleIndex + 1
             local button = frame.buttons and frame.buttons[visibleIndex]
             if not button then
@@ -4167,9 +4200,16 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
         frame.layoutButtonCount = nil
         frame._layoutDirty = false
     else
+        -- An aura-only SECTION does to its own members what an Aura Panel does to
+        -- a whole panel: they render through Blizzard's container, so CC
+        -- materializes no button for them -- and with no button they are never
+        -- registered with Masque either, which is what keeps an aura section off
+        -- a skin the mixed panel around it still uses.
+        local auraSectionPanel = ST.PanelHasAuraSection(group)
         -- Create new buttons (skip untalented spells)
         for i, buttonData in ipairs(sourceButtons) do
-            if IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
+            if IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions)
+                and not (auraSectionPanel and ST.IsAuraSectionEntry(group, buttonData)) then
                 local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
                 local poolKey = GetButtonPoolKey(group, buttonData, effectiveStyle)
                 local button = AcquireButtonFromPool(frame, poolKey, buttonData)
@@ -4203,6 +4243,27 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
                     self:AddButtonToMasque(groupId, button)
                 end
             end
+        end
+
+        -- The mixed panel's own version of the Aura Panel refresh trigger. Its
+        -- aura-section members are invisible to the frame.buttons comparison
+        -- GroupButtonSetNeedsRebuild makes -- they have no button to compare --
+        -- so their ordered identity is carried here instead and diffed on the
+        -- next availability sweep. nil while the panel has no aura section, so
+        -- an ordinary panel stores nothing and compares nothing.
+        frame._auraSectionEntrySig = auraSectionPanel
+            and self:GetAuraSectionEntrySignature(group, buttonSizingOptions)
+            or nil
+
+        -- The other half of that trigger: the pass that turns the LAST aura
+        -- section off. RefreshGroupFrame asks for the rebind by reading the
+        -- panel's current state, and by then the state says "no aura sections",
+        -- so the records those sections held would stay bound until something
+        -- unrelated rebound them. This marker remembers that the panel HAD one,
+        -- and RefreshGroupFrame consumes it once and clears it -- so a panel that
+        -- never carried an aura section never sets it and never requests a thing.
+        if auraSectionPanel then
+            frame._auraSectionRebindOwed = true
         end
 
         ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
@@ -4253,7 +4314,13 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     local targetWidth, targetHeight
     local oldWidth, oldHeight = frame:GetSize()
 
-    if numButtons == 0 then
+    -- The section branch wins an empty count. A panel whose only entries live in
+    -- AURA sections materializes no buttons at all, so numButtons reads 0 while
+    -- the sections still own a real rectangle. For every other sectioned panel
+    -- the two branches agree by construction (nothing materialized means every
+    -- section line measures nothing, which is layout.isEmpty, whose footprint IS
+    -- this one-button rectangle), so nothing else changes shape.
+    if numButtons == 0 and not sectionLayout then
         targetWidth, targetHeight = buttonWidth, buttonHeight
     elseif sectionLayout then
         -- A sectioned panel spans the union of its base cluster and every
@@ -4385,6 +4452,15 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     -- unlock placeholders re-fit here and nowhere else.
     if ST.IsAuraPanelGroup(group) then
         self:UpdateAuraPanelPlaceholders(groupId)
+    elseif frame._auraSectionPlaceholders or ST.PanelHasAuraSection(group) then
+        -- The aura-section twin, at the same choke point and for the same
+        -- reason. Tiles it already has are enough to come back here on the pass
+        -- that turned the flag OFF, which is what clears them.
+        ST.UpdateAuraSectionPlaceholders(self, groupId, frame, group)
+        local _, selectedInContainer = GetContainerPreviewSelectionState(groupId)
+        ST._SyncAuraPanelPlaceholderLevels(frame, selectedInContainer)
+        ST.SetAuraSectionPlaceholderRootShown(frame,
+            frame._auraPanelPlaceholderPreviewShown == true)
     end
     return true
 end
@@ -4446,7 +4522,8 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
     -- Hidden members drop out of a section's line exactly the way they drop out
     -- of a base row here.
     local sectionLayout, sectionLists, baseAnchor = ST.PrepareSectionedPanelLayout(
-        frame, group, visibleButtons, buttonWidth, buttonHeight, spacing, headerH)
+        frame, group, visibleButtons, buttonWidth, buttonHeight, spacing, headerH,
+        buttonSizingOptions)
     local layoutRef = baseAnchor or frame
     local layoutButtons = sectionLists and sectionLists.base or visibleButtons
     local layoutCount = #layoutButtons
@@ -4679,8 +4756,20 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     -- all settled by here, so ask for the (coalesced, OOC-deferred) rebind last.
     -- It runs on the deactivating path too, so the container can let go of a
     -- panel that just unloaded.
-    if ST.IsAuraPanelGroup(group) then
+    -- A mixed panel carrying an aura SECTION owes the same request for the same
+    -- reason: that cluster's entries live in a container of their own, mounted on
+    -- a host frame whose rectangle the layout pass above has just moved.
+    -- The marker covers the refresh that took the last aura section AWAY -- the
+    -- flag switched off, the cluster flattened, its final member deleted. By the
+    -- time the question is asked here the panel no longer admits it owed
+    -- anything, and its records would sit bound (invisible, the host is hidden,
+    -- but wrong) until an unrelated rebind released them.
+    if ST.IsAuraPanelGroup(group) or ST.PanelHasAuraSection(group)
+        or frame._auraSectionRebindOwed then
         self:RequestAuraRebind("aura-panel", groupId)
+    end
+    if not ST.PanelHasAuraSection(group) then
+        frame._auraSectionRebindOwed = nil
     end
 
     if group.parentContainerId and self.RefreshContainerWrapper then

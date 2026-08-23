@@ -278,7 +278,14 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- An Aura Panel cell is structurally SINGLE-UNIT: BindPanelGroup never
     -- passes groupScoped, so the group-scope rows below have nothing to act on
     -- there (owner ruling 2026-08-15).
+    --
+    -- An entry inside an AURA SECTION of a mixed panel binds through that exact
+    -- call, so the same rows would be just as inert for it. The question is
+    -- "is this entry drawn as a panel aura cell", which on a mixed panel is a
+    -- per-ENTRY answer: an ordinary entry in the base grid beside the section
+    -- keeps every row.
     local isAuraPanel = ST.IsAuraPanelGroup(group)
+        or ST.IsAuraSectionEntry(group, buttonData)
 
     -- One collapsible row-grammar section, emitted into the entry Settings
     -- pane's ScrollFrame (already a "List"; Panel.lua re-lays it once the

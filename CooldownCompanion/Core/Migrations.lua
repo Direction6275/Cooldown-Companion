@@ -1686,6 +1686,102 @@ function ST._NormalizeAuraPanelEntries(group)
     group.nextAuraKey = nextKey
 end
 
+-- The same repair for a MIXED panel carrying an AURA SECTION. Same doors, same
+-- silence, same idempotence; only the aura surface is smaller. The flag lives on
+-- group.sections[anchor].auraOnly and the members are whoever names that anchor,
+-- so there is no whole-panel invariant to enforce -- an imported mixed panel is
+-- allowed to be anything outside its aura clusters.
+--
+-- Three repairs, in the order the engine cares about them:
+--   * a section flagged auraOnly while holding a member that could never have
+--     been admitted has its FLAG cleared, and its entries are left exactly where
+--     they are. The toggle refuses rather than restructuring, and an import that
+--     violates admission gets that same answer in data form: everything renders
+--     again as ordinary icons and nothing silently vanishes.
+--   * every surviving section member missing a key is stamped.
+--   * keys are made unique across the WHOLE panel, section members claiming
+--     theirs first. They are the ones the engine has already bound, and a
+--     base-row entry sitting on a duplicate would carry it into the section the
+--     day it joined one -- the section stamp refuses to overwrite an existing
+--     key, so the collision would arrive with it.
+--
+-- POLARITY IS NOT REPAIRED HERE, and does not clear a flag, for exactly the
+-- reason spelled out above the Aura Panel normalizer: a member's unit comes from
+-- spec-dependent Cooldown Manager data, and this pass re-runs over the WHOLE
+-- profile on every import. Turning a working section back into plain icons
+-- because the owner happened to import something on a spec where two of its
+-- members resolve differently would be a silent config change they never asked
+-- for and cannot see. The toggle still enforces polarity where the answer is
+-- being made rather than second-guessed, and the bind pass skips a mismatched
+-- member non-destructively and counts it (GetAuraDisplayStatus's unitMismatches).
+function ST._NormalizeAuraSectionEntries(group)
+    if type(group) ~= "table" or group.auraPanel == true then return end
+    if type(group.sections) ~= "table" then return end
+    if not ST.PanelSupportsSections(group) then return end
+    local buttons = type(group.buttons) == "table" and group.buttons or nil
+    if not buttons then return end
+
+    -- Flags first: a section cleared here stops being an aura surface, so the
+    -- key work below never stamps a member of a cluster that just gave up.
+    for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
+        if ST.IsAuraOnlyPanelSection(group, anchor) then
+            for _, buttonData in ipairs(buttons) do
+                if type(buttonData) == "table"
+                    and ST.GetPanelSectionForEntry(group, buttonData) == anchor
+                    and not (buttonData.type == "spell" and buttonData.addedAs == "aura") then
+                    group.sections[anchor].auraOnly = nil
+                    break
+                end
+            end
+        end
+    end
+
+    -- Nothing aura-only left: residue is left alone, exactly the way the Aura
+    -- Panel normalizer leaves a panel without the flag alone.
+    if not ST.PanelHasAuraSection(group) then return end
+
+    local maxKey = 0
+    for _, buttonData in ipairs(buttons) do
+        local numeric = type(buttonData) == "table" and tonumber(buttonData._auraKey) or nil
+        if numeric and numeric > maxKey then
+            maxKey = numeric
+        end
+    end
+    local nextKey = math.max(maxKey + 1, tonumber(group.nextAuraKey) or 1)
+    local used = {}
+
+    for _, buttonData in ipairs(buttons) do
+        if type(buttonData) == "table" and ST.IsAuraSectionEntry(group, buttonData) then
+            local key = buttonData._auraKey
+            if key == nil or used[key] then
+                key = tostring(nextKey)
+                nextKey = nextKey + 1
+                buttonData._auraKey = key
+            end
+            used[key] = true
+        end
+    end
+
+    -- Everyone else only has to stop colliding. A key no section member claimed
+    -- is left exactly as it is, residue included: it harms nothing, and it is
+    -- what a panel re-imported as an Aura Panel later would be rebuilt from.
+    for _, buttonData in ipairs(buttons) do
+        if type(buttonData) == "table" and not ST.IsAuraSectionEntry(group, buttonData) then
+            local key = buttonData._auraKey
+            if key ~= nil then
+                if used[key] then
+                    key = tostring(nextKey)
+                    nextKey = nextKey + 1
+                    buttonData._auraKey = key
+                end
+                used[key] = true
+            end
+        end
+    end
+
+    group.nextAuraKey = nextKey
+end
+
 local function MigratePerModeOrientation(self, profile)
     if type(profile) ~= "table" or profile._cdcPerModeOrientationMigrated then return end
     if type(profile.groups) == "table" then
@@ -1715,6 +1811,10 @@ local function MigrateAuraPanelIntegrity(self, profile)
     if type(profile.groups) == "table" then
         for _, group in pairs(profile.groups) do
             ST._NormalizeAuraPanelEntries(group)
+            -- The mixed panel's aura CLUSTERS get the same door. The two are
+            -- mutually exclusive by their own first lines, so every panel is
+            -- answered by exactly one of them.
+            ST._NormalizeAuraSectionEntries(group)
         end
     end
     profile._cdcAuraPanelIntegrityMigrated = true

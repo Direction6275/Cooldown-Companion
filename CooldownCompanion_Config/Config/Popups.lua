@@ -1169,6 +1169,11 @@ local function CreateImportedPanel(db, containerId, panelIndex, srcPanel, import
     if ST._NormalizeAuraPanelEntries then
         ST._NormalizeAuraPanelEntries(panel)
     end
+    -- An imported mixed panel can carry AURA SECTIONS, which are the same raw
+    -- payload with none of the toggle's admission check in front of them.
+    if ST._NormalizeAuraSectionEntries then
+        ST._NormalizeAuraSectionEntries(panel)
+    end
     if not panel.anchor then
         panel.anchor = BuildImportedRootAnchor("CooldownCompanionContainer" .. containerId)
     end
