@@ -247,8 +247,11 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnTargetChanged")
 
     -- UNIT_TARGET requires RegisterUnitEvent (plain RegisterEvent does not
-    -- receive it).  Marks dirty so the next ticker pass reads fresh CDM viewer
-    -- data; catches pet/focus target changes that don't fire PLAYER_TARGET_CHANGED.
+    -- receive it). The "player" filter means this only fires for the player's
+    -- own target changes, alongside PLAYER_TARGET_CHANGED. Marks dirty so the
+    -- next ticker pass reads fresh CDM viewer data, then refreshes immediately
+    -- so target-sensitive visuals (range tint, hide-unusable, target-aura
+    -- holds) repaint without waiting up to 0.1s for the ticker.
     if not self._unitTargetFrame then
         self._unitTargetFrame = CreateFrame("Frame")
         self._unitTargetFrame:SetScript("OnEvent", function(_, event, unitToken)
@@ -256,8 +259,7 @@ function CooldownCompanion:OnEnable()
                 ST._QueueInheritedUnitFrameAlphaResync()
             end
             self:MarkCooldownsDirty("unit-target")
-            ST.TagRefreshPass("unit-target-direct")
-            self:UpdateAllCooldowns()
+            self:RunImmediateCooldownRefresh("unit-target")
         end)
     end
     self._unitTargetFrame:RegisterUnitEvent("UNIT_TARGET", "player")
@@ -495,6 +497,9 @@ end
 function CooldownCompanion:OnCombatStart()
     self:BeginCombatForcedLock()
     self:QueueCooldownRefresh("combat-event")
+    -- Combat entry moves inCombat and _combatForcedLock, both read fresh by the
+    -- alpha pass, so the driver has to be running for the next one.
+    self:EnsureAlphaDriverArmed()
     -- Close spellbook during combat to avoid Blizzard secret value errors
     if PlayerSpellsFrame and PlayerSpellsFrame:IsShown() then
         HideUIPanel(PlayerSpellsFrame)
@@ -519,6 +524,7 @@ end
 function CooldownCompanion:OnCombatEnd()
     local combatLockSnapshot = self:EndCombatForcedLock()
     self:QueueCooldownRefresh("combat-event")
+    self:EnsureAlphaDriverArmed()
     -- Soar reads return nothing while auras are restricted, so a recompute
     -- during combat can have settled on the regular-mounted branch. Re-dirty
     -- so the first out-of-combat tick reclassifies.

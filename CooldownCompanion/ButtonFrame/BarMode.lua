@@ -16,6 +16,7 @@ local GetTime = GetTime
 local pairs = pairs
 local ipairs = ipairs
 local unpack = unpack
+local issecretvalue = issecretvalue
 
 -- Imports from Helpers
 local SetIconAreaPoints = ST._SetIconAreaPoints
@@ -470,7 +471,34 @@ end
 
 -- Shared OnUpdate for bar-mode buttons: throttled bar fill/text refresh.
 -- Reads interval from self._barTextUpdateInterval so it can be updated without re-installing.
+--
+-- Effectively-invisible buttons do no fill work. Every alpha-based hide keeps
+-- this OnUpdate running: per-button SetAlpha(0) from the hideWhile* rules on
+-- non-compact panels, panel/container alpha fades (applied at the group-frame
+-- level), and aura-shell alpha on statusBar itself. Reading statusBar's
+-- effective alpha covers all three at once because effective alpha multiplies
+-- down the parent chain. Compact mode's real Hide() stops OnUpdate on its own,
+-- so the latch deliberately does not cover it.
+--
+-- Fails open: a secret, nil, or missing alpha counts as visible and never
+-- suppresses. The rising edge refills synchronously in the same frame, so the
+-- first frame a fade-in renders is already correct.
 local function BarModeOnUpdate(self, elapsed)
+    local statusBar = self.statusBar
+    local effectiveAlpha = statusBar and statusBar:GetEffectiveAlpha()
+    if not (issecretvalue and issecretvalue(effectiveAlpha))
+        and effectiveAlpha ~= nil
+        and effectiveAlpha <= 0 then
+        self._barFillSuppressed = true
+        return
+    end
+    if self._barFillSuppressed then
+        self._barFillSuppressed = nil
+        self._barFillElapsed = 0
+        UpdateBarFill(self)
+        return
+    end
+
     self._barFillElapsed = self._barFillElapsed + elapsed
     if self._barFillElapsed >= (self._barTextUpdateInterval or BAR_TEXT_UPDATE_INTERVAL) then
         self._barFillElapsed = 0

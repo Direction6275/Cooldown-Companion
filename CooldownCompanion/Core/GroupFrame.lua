@@ -1320,6 +1320,7 @@ local function ClearReusableButtonRuntime(button)
     button._barCdColor = nil
     button._barReadyTextColor = nil
     button._barTextMode = nil
+    button._barFillSuppressed = nil
     button._cdTextFontMode = nil
     button._barTextColorDirty = true
     button._lastBarTimeText = nil
@@ -2916,6 +2917,12 @@ function CooldownCompanion:ShowCursorAnchorLayoutPreview(groupId)
     end
     frame:Show()
     ApplyCursorAnchorLayoutPreviewGroupStates(self, previousActiveGroupIds, activeGroupIds)
+    -- Preview membership is an alpha force-condition input (it forces its panels
+    -- fully visible and stores their natural alpha), so the alpha driver must be
+    -- running across the whole preview.
+    if self.EnsureAlphaDriverArmed then
+        self:EnsureAlphaDriverArmed()
+    end
     if self.RefreshCursorAnchorTicker then
         self:RefreshCursorAnchorTicker()
     end
@@ -3017,6 +3024,11 @@ function CooldownCompanion:ClearCursorAnchorLayoutPreview()
     end
 
     ApplyCursorAnchorLayoutPreviewGroupStates(self, activeGroupIds, nil)
+    -- Leaving the preview hands those panels back to their own alpha configs,
+    -- which is the same force-condition flip as entering it.
+    if self.EnsureAlphaDriverArmed then
+        self:EnsureAlphaDriverArmed()
+    end
     if self.RefreshCursorAnchorTicker then
         self:RefreshCursorAnchorTicker()
     end
