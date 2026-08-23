@@ -804,22 +804,40 @@ function ST.LayoutStackBlocks(blocks, host, max, vertical, color, alpha, length,
         ST.HideStackBlocks(blocks)
         return
     end
+    -- Block rects come from the MEASURED atlas edges when the shipped file
+    -- has them (ST.STACK_SEGMENT_BOUNDARIES): the atlases bake blocks at
+    -- uneven integer texel widths, so uniform division lands the border
+    -- rings up to ~1 texel off the painted fill edges and the fill shows
+    -- outside the border. Uniform math remains for gap-0 (contiguous fill,
+    -- nothing to misalign against) and any max past the atlas cap.
+    local gapTexels = math.floor((gapRatio or ST.STACK_SEGMENT_GAP_RATIO) * 512 + 0.5)
+    local gapFamily = ST.STACK_SEGMENT_BOUNDARIES and ST.STACK_SEGMENT_BOUNDARIES[gapTexels]
+    local edges = gapFamily and gapFamily[max] or nil
     local gap = length * (gapRatio or ST.STACK_SEGMENT_GAP_RATIO)
     local blockLen = (length - (max - 1) * gap) / max
     for i, tex in ipairs(blocks) do
         if i <= max then
-            local start = (i - 1) * (blockLen + gap)
+            local start, thisLen
+            if edges then
+                -- Vertical bars map atlas texel 0 to the bottom
+                -- (SetRotatesTexture), the same end these offsets grow from.
+                start = edges[2 * i - 1] * length / 512
+                thisLen = (edges[2 * i] - edges[2 * i - 1]) * length / 512
+            else
+                start = (i - 1) * (blockLen + gap)
+                thisLen = blockLen
+            end
             tex:SetColorTexture(color[1] or 0.1, color[2] or 0.1, color[3] or 0.1, alpha or 1)
             tex:ClearAllPoints()
             if vertical then
                 -- VERTICAL fills bottom-up; blocks stack from the bottom.
                 tex:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, start)
                 tex:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, start)
-                tex:SetHeight(blockLen)
+                tex:SetHeight(thisLen)
             else
                 tex:SetPoint("TOPLEFT", host, "TOPLEFT", start, 0)
                 tex:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", start, 0)
-                tex:SetWidth(blockLen)
+                tex:SetWidth(thisLen)
             end
             tex:SetAlpha(1)
         else

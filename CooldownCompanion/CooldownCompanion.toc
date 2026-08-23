@@ -59,6 +59,7 @@ Core\CooldownRefresh.lua
 Core\TotemTracking.lua
 Core\Lifecycle.lua
 Core\Aura.lua
+Core\StackSegmentBoundaries.lua
 Core\AuraDisplay.lua
 Core\EventHandlers.lua
 Core\Masque.lua
