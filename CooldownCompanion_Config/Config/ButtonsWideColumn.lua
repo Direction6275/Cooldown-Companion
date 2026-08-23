@@ -1577,6 +1577,13 @@ local function UpdateEditingContext(col3)
             local sectionAnchor = ST.GetPanelSectionForEntry
                 and ST.GetPanelSectionForEntry(group, buttonData)
             sectionText = sectionAnchor and ST.PANEL_SECTION_ANCHOR_LABELS[sectionAnchor]
+            -- An AURA section is a different thing to sit in than an ordinary
+            -- one: the entry draws through Blizzard's container rather than as
+            -- a CC icon. The marker rides the same tail, one middot further
+            -- out, so "where" and "how" read as one phrase.
+            if sectionText and ST.IsAuraOnlyPanelSection(group, sectionAnchor) then
+                sectionText = sectionText .. " \194\183 Aura"
+            end
         end
     end
 

@@ -25,7 +25,9 @@
 
 local ADDON_NAME, ST = ...
 
+local C_Spell = C_Spell
 local CreateFrame = CreateFrame
+local issecretvalue = issecretvalue
 local ipairs = ipairs
 local next = next
 local pairs = pairs
@@ -200,6 +202,18 @@ function ST.SetPanelSectionForEntry(group, buttonData, anchor)
     if type(group) ~= "table" or type(buttonData) ~= "table" then return false end
     if anchor ~= nil and not ANCHOR_SET[anchor] then return false end
 
+    -- An AURA-ONLY destination admits aura entries only, and only of its own
+    -- polarity. This is the single membership writer, so this one test covers
+    -- every way an entry could arrive: a drag, a move menu, an import landing.
+    -- It cannot fire for a normal section or for a brand-new anchor -- the
+    -- predicate needs an existing section table already carrying the flag -- so
+    -- no unsectioned or plainly sectioned panel reaches a new line of code here.
+    -- Leaving an aura section is never restricted; only arriving is.
+    if anchor and ST.IsAuraOnlyPanelSection(group, anchor)
+        and CooldownCompanion:GetAuraSectionEntryRejectMessage(group, anchor, buttonData) then
+        return false
+    end
+
     -- The no-op test compares EFFECTIVE membership, not the raw key. An entry
     -- can still NAME an anchor whose section table is gone (a dissolved
     -- section, an import, a profile edited by hand), and GetPanelSectionForEntry
@@ -225,6 +239,10 @@ function ST.SetPanelSectionForEntry(group, buttonData, anchor)
     if rawPrevious then
         ST.DissolveEmptyPanelSection(group, rawPrevious)
     end
+    -- Now that membership is written, an entry landing in an aura section owes
+    -- the aura engine a key. Runs after the write because the stamp reads
+    -- effective membership rather than being told about it.
+    CooldownCompanion:StampAuraSectionEntryKey(group, buttonData)
     return true
 end
 
@@ -282,6 +300,165 @@ function ST.FlattenPanelSections(group)
 end
 
 ------------------------------------------------------------------------
+-- AURA SECTIONS
+------------------------------------------------------------------------
+
+--[[
+    An AURA SECTION is one section whose members render through Blizzard's aura
+    container instead of CC's own layout -- the Aura Panel treatment, scoped to a
+    cluster rather than to a whole panel, so a mixed panel can carry a lane of
+    auras that appears and collapses with aura activity while the base grid keeps
+    its fixed slots.
+
+    The flag lives on the SECTION TABLE (group.sections[anchor].auraOnly), never
+    on the entries. That is what makes the rest of the model free: a section IS
+    its members, so dissolving the last member out of it drops the table and the
+    flag with it, and FlattenPanelSections drops group.sections wholesale. There
+    is no separate state to sweep.
+
+    Aura-ness is a TOGGLE, not a creation-time choice, and it never restructures
+    anything on its own: turning it on with a non-aura member inside refuses and
+    says why. Admission is primary aura entries only -- see the reject message in
+    Core/Defaults.lua for the whole rule.
+]]
+
+--- True while this anchor's section renders through the aura container.
+--- Needs the section table to exist: an entry naming a dissolved anchor is a
+--- base member (GetPanelSectionForEntry), and a base member is never aura-only.
+function ST.IsAuraOnlyPanelSection(group, anchor)
+    if type(group) ~= "table" then return false end
+    if not (anchor and ANCHOR_SET[anchor]) then return false end
+    local sections = group.sections
+    if type(sections) ~= "table" then return false end
+    local section = sections[anchor]
+    return type(section) == "table" and section.auraOnly == true
+end
+
+--- True while this panel carries at least one aura-only section.
+--- Every gate that has to treat a mixed panel the way it treats an Aura Panel --
+--- the rebind request, the rebuild signature, the populate skip -- reads this
+--- one predicate, so they cannot drift apart. False for every panel the section
+--- model does not cover, so a stray flag on a bar or text panel stays inert.
+function ST.PanelHasAuraSection(group)
+    if not ST.PanelSupportsSections(group) then return false end
+    if type(group.sections) ~= "table" then return false end
+    for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
+        if ST.IsAuraOnlyPanelSection(group, anchor) then return true end
+    end
+    return false
+end
+
+--- True for one entry that renders through an aura section rather than as a CC
+--- button. The three places that decide the panel's live button list -- the
+--- populate loop, the style fast path's expectation of it, and the rebuild
+--- comparison against it -- all filter on this, so "this entry has no button" is
+--- one answer rather than three.
+function ST.IsAuraSectionEntry(group, buttonData)
+    local anchor = ST.GetPanelSectionForEntry(group, buttonData)
+    return anchor ~= nil and ST.IsAuraOnlyPanelSection(group, anchor)
+end
+
+--- How many members each aura section reserves a cell for, per anchor.
+--- Counted from DATA, never from live buttons: an aura section materializes
+--- none, and its footprint has to hold still while auras come and go -- aura
+--- activity is secret, so a rectangle that followed it would move under the
+--- player every time something expired.
+--- Usability is the same question the base grid asks before it makes a button
+--- and the bind pass asks before it binds an entry, so an untalented member
+--- reserves nothing on either side.
+--- Returns the (wiped and refilled) counts table; empty for every panel without
+--- an aura section, which is the signal the layout uses to count live buttons.
+function ST.CollectAuraSectionCounts(group, usability, counts)
+    if counts then wipe(counts) else counts = {} end
+    if not ST.PanelHasAuraSection(group) then return counts end
+    for _, buttonData in ipairs(group.buttons or {}) do
+        local anchor = ST.GetPanelSectionForEntry(group, buttonData)
+        if anchor and ST.IsAuraOnlyPanelSection(group, anchor)
+            and CooldownCompanion:IsButtonUsable(buttonData, group, usability) then
+            counts[anchor] = (counts[anchor] or 0) + 1
+        end
+    end
+    return counts
+end
+
+--- Why this section cannot be switched to aura-only right now, or nil when it
+--- can. The first member that fails admission owns the message, so the owner is
+--- told about one concrete entry instead of a count.
+--- Asking is separate from doing on purpose: the config surface explains the
+--- refusal on a disabled checkbox without attempting the write.
+function ST.GetAuraSectionToggleBlocker(group, anchor)
+    if type(group) ~= "table" or not (anchor and ANCHOR_SET[anchor]) then return nil end
+    local sections = group.sections
+    if type(sections) ~= "table" or type(sections[anchor]) ~= "table" then return nil end
+    for _, buttonData in ipairs(group.buttons or {}) do
+        if ST.GetPanelSectionForEntry(group, buttonData) == anchor then
+            local message = CooldownCompanion:GetAuraSectionEntryRejectMessage(group, anchor, buttonData)
+            if message then return message end
+        end
+    end
+    return nil
+end
+
+--- Stamp every aura-section member that is still missing an aura key.
+--- The membership writer covers entries as they arrive; this covers the entries
+--- that were ALREADY sitting in a section when it became aura-only, and any
+--- path that wrote membership without going through the writer.
+--- Idempotent, and never renumbers a key that already exists.
+--- Returns true when anything was stamped.
+function ST.EnsureAuraSectionEntryKeys(group)
+    if type(group) ~= "table" then return false end
+    local stamped = false
+    for _, buttonData in ipairs(group.buttons or {}) do
+        if type(buttonData) == "table" and buttonData._auraKey == nil then
+            CooldownCompanion:StampAuraSectionEntryKey(group, buttonData)
+            if buttonData._auraKey ~= nil then
+                stamped = true
+            end
+        end
+    end
+    return stamped
+end
+
+--- Switch one section's aura-only flag.
+--- Turning it OFF always succeeds: the members go back to ordinary icons, and
+--- their aura keys stay behind harmlessly (nothing reads a key off a non-aura
+--- surface, and keeping them means switching back does not renumber a thing).
+--- Turning it ON REFUSES rather than restructuring: if any current member fails
+--- admission the flag does not move and the member's own message comes back for
+--- the caller to show.
+--- Returns:
+---   true            -- the flag changed
+---   false           -- nothing to do (already in that state, no such section)
+---   false, message  -- refused; message is player-facing
+function ST.SetPanelSectionAuraOnly(group, anchor, enabled)
+    if type(group) ~= "table" or not (anchor and ANCHOR_SET[anchor]) then return false end
+    local sections = group.sections
+    local section = type(sections) == "table" and sections[anchor] or nil
+    if type(section) ~= "table" then return false end
+
+    if not enabled then
+        if section.auraOnly == nil then return false end
+        section.auraOnly = nil
+        return true
+    end
+
+    if section.auraOnly == true then return false end
+    local blocker = ST.GetAuraSectionToggleBlocker(group, anchor)
+    if blocker then return false, blocker end
+
+    section.auraOnly = true
+    -- The full key repair, not just the missing-key sweep: an entry can arrive
+    -- at this moment carrying a key another entry in the panel already holds
+    -- (a profile hand-edit, or state minted before the adoption rule existed),
+    -- and two entries sharing a key means one of them silently never renders.
+    -- The import-door normalizer already owns exactly this repair -- preserve
+    -- unique keys, replace duplicates, advance the counter past everything --
+    -- so the toggle runs the same pass instead of a weaker private one.
+    ST._NormalizeAuraSectionEntries(group)
+    return true
+end
+
+------------------------------------------------------------------------
 -- GEOMETRY
 ------------------------------------------------------------------------
 
@@ -319,6 +496,10 @@ end
 ---                                        (originX + (k-1)*stepX,
 ---                                         originY + (k-1)*stepY)
 ---                                        from the frame's TOPLEFT.
+--- An AURA section adds spacing, axis, from and the whole line's rectangle
+--- (lineX, lineY, lineWidth, lineHeight, also from the frame's TOPLEFT) under an
+--- auraOnly flag. Blizzard's container lays the cells out inside that rectangle,
+--- so the per-member steps mean nothing there -- the rect and the direction do.
 function ST.BuildPanelSectionLayout(group, sections, lists, panelWidth, panelHeight, panelSpacing, headerHeight, layout)
     local style = group.style or {}
     local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
@@ -347,10 +528,16 @@ function ST.BuildPanelSectionLayout(group, sections, lists, panelWidth, panelHei
     end
 
     local minX, maxX, minY, maxY = 0, baseWidth, -baseHeight, 0
+    local auraCounts = lists.auraCounts
 
     for anchor, section in pairs(sections) do
         local members = lists.members[anchor]
         local count = members and #members or 0
+        -- An AURA section has no live buttons to measure. Its line is the FULL
+        -- expanded one over its data members, so the panel's footprint holds
+        -- still while Blizzard's container packs whichever few are active.
+        local auraCount = auraCounts and auraCounts[anchor]
+        if auraCount then count = auraCount end
         local placement = placements[anchor]
         -- A section with no members in THIS pass's lists reserves no footprint;
         -- the section itself still exists in the profile. Whether a HIDDEN member
@@ -382,6 +569,8 @@ function ST.BuildPanelSectionLayout(group, sections, lists, panelWidth, panelHei
                 left = left + offsetX
                 top = top + offsetY
 
+                info.lineX, info.lineY = left, top
+                info.lineWidth, info.lineHeight = lineLength, height
                 info.stepY = 0
                 info.originY = top
                 if placement.from == "high" then
@@ -414,6 +603,8 @@ function ST.BuildPanelSectionLayout(group, sections, lists, panelWidth, panelHei
                 left = left + offsetX
                 top = top + offsetY
 
+                info.lineX, info.lineY = left, top
+                info.lineWidth, info.lineHeight = width, lineLength
                 info.stepX = 0
                 info.originX = left
                 if placement.from == "high" then
@@ -429,6 +620,18 @@ function ST.BuildPanelSectionLayout(group, sections, lists, panelWidth, panelHei
                 if left + width > maxX then maxX = left + width end
                 if top > maxY then maxY = top end
                 if top - lineLength < minY then minY = top - lineLength end
+            end
+
+            if auraCount then
+                -- What the aura container needs, which is not what a live button
+                -- needs: the rectangle above plus the direction the line runs.
+                -- Taken from SECTION_PLACEMENT here rather than re-derived over
+                -- there, so one table still answers "which way does this anchor
+                -- grow" for both engines.
+                info.auraOnly = true
+                info.axis = placement.axis
+                info.from = placement.from
+                info.spacing = spacing
             end
 
             infos[anchor] = info
@@ -462,6 +665,10 @@ function ST.BuildPanelSectionLayout(group, sections, lists, panelWidth, panelHei
     for _, info in pairs(infos) do
         info.originX = info.originX + layout.baseOffsetX
         info.originY = info.originY - layout.baseOffsetY
+        if info.auraOnly then
+            info.lineX = info.lineX + layout.baseOffsetX
+            info.lineY = info.lineY - layout.baseOffsetY
+        end
     end
 
     return layout
@@ -537,6 +744,30 @@ local function AcquireBaseAnchorFrame(frame, layout)
     return anchorFrame
 end
 
+-- One parked frame per AURA section: the rectangle its aura container mounts on
+-- and the panel-side handle for the whole cluster.
+--
+-- Created ONCE per panel frame per anchor and never destroyed, only moved,
+-- resized and hidden. An aura container is welded to the frame it was created
+-- under -- reparenting an AuraButton subtree errors even out of combat, and
+-- there is no removal API -- so AuraDisplay ABANDONS a record whose host frame
+-- changed. A host that came and went with the section's aura-only flag would
+-- abandon one on every toggle.
+local function AcquireAuraSectionHost(frame, anchor)
+    local hosts = frame._auraSectionHosts
+    if not hosts then
+        hosts = {}
+        frame._auraSectionHosts = hosts
+    end
+    local host = hosts[anchor]
+    if not host then
+        host = CreateFrame("Frame", nil, frame)
+        host:EnableMouse(false)
+        hosts[anchor] = host
+    end
+    return host
+end
+
 --- The rectangle anything anchored TO this panel must measure against.
 --- A sectioned panel's frame spans the UNION of its base cluster and every
 --- section, so a unit frame or another panel anchored to the frame would be
@@ -571,19 +802,46 @@ local function PlaceSectionMembers(frame, lists, layout, panelWidth, panelHeight
     end
 
     for anchor, info in pairs(layout.sections) do
-        for index, button in ipairs(lists.members[anchor]) do
-            ST.ApplyPanelSectionButtonSize(button, info.width, info.height)
-            -- Section members never ride the compact slot cache: the cache keys
-            -- on anchor/x/y alone and cannot tell the panel frame from the base
-            -- anchor frame, so a member crossing that boundary would otherwise
-            -- keep a stale relative frame.
-            button._compactSlotAnchor = nil
-            button._compactSlotX = nil
-            button._compactSlotY = nil
-            button:ClearAllPoints()
-            button:SetPoint("TOPLEFT", frame, "TOPLEFT",
-                info.originX + (index - 1) * info.stepX,
-                info.originY + (index - 1) * info.stepY)
+        if info.auraOnly then
+            -- Nothing to place: the members render through Blizzard's container,
+            -- which lays its own cells out inside the host frame. The host IS the
+            -- section here, spanning the FULL expanded line, exactly the way an
+            -- Aura Panel's frame spans its full expanded grid.
+            local host = AcquireAuraSectionHost(frame, anchor)
+            host:SetSize(math_max(1, info.lineWidth), math_max(1, info.lineHeight))
+            host:ClearAllPoints()
+            host:SetPoint("TOPLEFT", frame, "TOPLEFT", info.lineX, info.lineY)
+            host:Show()
+        else
+            local members = lists.members[anchor]
+            for index, button in ipairs(members or {}) do
+                ST.ApplyPanelSectionButtonSize(button, info.width, info.height)
+                -- Section members never ride the compact slot cache: the cache keys
+                -- on anchor/x/y alone and cannot tell the panel frame from the base
+                -- anchor frame, so a member crossing that boundary would otherwise
+                -- keep a stale relative frame.
+                button._compactSlotAnchor = nil
+                button._compactSlotX = nil
+                button._compactSlotY = nil
+                button:ClearAllPoints()
+                button:SetPoint("TOPLEFT", frame, "TOPLEFT",
+                    info.originX + (index - 1) * info.stepX,
+                    info.originY + (index - 1) * info.stepY)
+            end
+        end
+    end
+
+    -- A section that stopped being aura-only, lost its last member, or has
+    -- nothing usable left in it leaves its host behind. Hiding it takes the
+    -- orphaned container dark with it (visibility rides parentage), which is the
+    -- whole of "park it" from the panel side -- the rebind pass parks the groups.
+    local hosts = frame._auraSectionHosts
+    if hosts then
+        for anchor, host in pairs(hosts) do
+            local info = layout.sections[anchor]
+            if not (info and info.auraOnly) then
+                host:Hide()
+            end
         end
     end
 end
@@ -599,6 +857,14 @@ function ST.ClearPanelSectionLayout(frame, group, panelWidth, panelHeight)
     frame._sectionLayout = nil
     if frame._sectionBaseAnchor then
         frame._sectionBaseAnchor:Hide()
+    end
+    -- Every section went away at once (flattened, emptied, display mode
+    -- switched), so every aura host goes dark. Hidden, never destroyed -- see
+    -- AcquireAuraSectionHost.
+    if frame._auraSectionHosts then
+        for _, host in pairs(frame._auraSectionHosts) do
+            host:Hide()
+        end
     end
     -- Put the panel's own icon size back on the members a section had resized.
     -- Only while this is still an icon panel: a display-mode switch reaches
@@ -621,7 +887,7 @@ end
 --- Otherwise it measures the footprint, sizes and places every section member,
 --- parks the base anchor frame, and hands back the base member list plus the
 --- frame the caller must lay that list out against.
-function ST.PrepareSectionedPanelLayout(frame, group, buttons, panelWidth, panelHeight, panelSpacing, headerHeight)
+function ST.PrepareSectionedPanelLayout(frame, group, buttons, panelWidth, panelHeight, panelSpacing, headerHeight, usability)
     local sections = ST.GetSectionsForLayout(group)
     if not sections then
         ST.ClearPanelSectionLayout(frame, group, panelWidth, panelHeight)
@@ -630,6 +896,11 @@ function ST.PrepareSectionedPanelLayout(frame, group, buttons, panelWidth, panel
 
     local lists = ST.PartitionPanelSectionMembers(group, buttons, frame._sectionMemberLists)
     frame._sectionMemberLists = lists
+    -- The one place aura sections are counted, so both live layout passes -- the
+    -- ordinary one over materialized buttons and compact mode's over visible ones
+    -- -- measure an aura line from the same data and cannot disagree about the
+    -- footprint. Empty (and free) for a panel with no aura section.
+    lists.auraCounts = ST.CollectAuraSectionCounts(group, usability, lists.auraCounts)
 
     local layout = ST.BuildPanelSectionLayout(
         group, sections, lists, panelWidth, panelHeight, panelSpacing, headerHeight, frame._sectionLayout)
@@ -639,6 +910,143 @@ function ST.PrepareSectionedPanelLayout(frame, group, buttons, panelWidth, panel
     PlaceSectionMembers(frame, lists, layout, panelWidth, panelHeight)
 
     return layout, lists, baseAnchor
+end
+
+------------------------------------------------------------------------
+-- UNLOCK PLACEHOLDERS
+------------------------------------------------------------------------
+
+--[[
+    An aura section's members materialize no CC button, so while the panel is
+    unlocked the cluster is empty air: nothing to read the section's extent by,
+    and on a panel whose every entry sits in one, nothing to grab the panel by
+    either. An Aura Panel answers exactly this with one dim tile per reserved
+    cell (CooldownCompanion:UpdateAuraPanelPlaceholders); a section takes the
+    same answer, scoped to its own rectangle.
+
+    Every number is READ off the layout pass that has just placed this panel --
+    the same origin and step a plain section's live buttons are placed with --
+    so a tile can never sit anywhere but where the aura container's cell goes.
+    Icons only: a sectioned panel is an icon panel by definition, so there is no
+    bar flavor of this the way there is for a whole Aura Panel.
+
+    While the tiles are up the live container is suppressed through the frame
+    flag the Aura Panel already uses (SetAuraPanelChromeSuppressed fans out to
+    every record whose chromeFrame is this panel), so an aura that is actually up
+    is never drawn twice.
+]]
+
+local function AcquireAuraSectionPlaceholderTile(root, tiles, index)
+    local tile = tiles[index]
+    if tile then return tile end
+    tile = CreateFrame("Frame", nil, root, "BackdropTemplate")
+    tile:EnableMouse(false)
+    tile:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    tile:SetBackdropColor(0.08, 0.08, 0.08, 0.6)
+    tile.icon = tile:CreateTexture(nil, "ARTWORK")
+    tile.icon:SetAlpha(0.6)
+    tile.borderTextures = ST.CreateBorderTextureSet(tile, "OVERLAY")
+    tiles[index] = tile
+    return tile
+end
+
+--- Show or hide the section placeholder root, in step with the Aura Panel's.
+--- Split out so the two callers -- the shared chrome switch and the geometry
+--- re-fit -- cannot disagree about what "shown" means for this root.
+function ST.SetAuraSectionPlaceholderRootShown(frame, shown)
+    local root = frame and frame._auraSectionPlaceholderRoot
+    if not root then return end
+    shown = shown == true
+    root:SetIgnoreParentAlpha(shown and frame._unlockGhost == true)
+    root:SetShown(shown)
+end
+
+--- Re-fit every aura section's placeholder tiles.
+--- Hides them all for a panel that no longer has an aura section, which is what
+--- makes toggling the flag off put the live icons back with nothing left over.
+function ST.UpdateAuraSectionPlaceholders(addon, groupId, frame, group)
+    local tiles = frame._auraSectionPlaceholders
+    local infos = frame._sectionLayout and frame._sectionLayout.sections or nil
+    if not (infos and ST.PanelHasAuraSection(group)) then
+        for _, tile in ipairs(tiles or {}) do
+            tile:Hide()
+        end
+        return
+    end
+
+    local root = frame._auraSectionPlaceholderRoot
+    if not root then
+        root = CreateFrame("Frame", nil, frame)
+        root:SetAllPoints(frame)
+        root:EnableMouse(false)
+        frame._auraSectionPlaceholderRoot = root
+    end
+    if not tiles then
+        tiles = {}
+        frame._auraSectionPlaceholders = tiles
+    end
+
+    local style = group.style or {}
+    local usability = addon:GetGroupButtonUsabilityOptions(groupId, group)
+    local used = 0
+    for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
+        local info = infos[anchor]
+        if info and info.auraOnly then
+            -- Master order over USABLE members, which is exactly the order and
+            -- the count CollectAuraSectionCounts measured this line from, so
+            -- the tiles fill the rectangle without a cell left over.
+            local cell = 0
+            for _, buttonData in ipairs(group.buttons or {}) do
+                if ST.GetPanelSectionForEntry(group, buttonData) == anchor
+                    and addon:IsButtonUsable(buttonData, group, usability) then
+                    cell = cell + 1
+                    used = used + 1
+                    local tile = AcquireAuraSectionPlaceholderTile(root, tiles, used)
+                    tile:SetSize(info.width, info.height)
+                    tile:ClearAllPoints()
+                    tile:SetPoint("TOPLEFT", frame, "TOPLEFT",
+                        info.originX + (cell - 1) * info.stepX,
+                        info.originY + (cell - 1) * info.stepY)
+
+                    local effectiveStyle = addon:GetEffectiveStyle(style, buttonData) or style
+                    local borderSize = effectiveStyle.borderSize or ST.DEFAULT_BORDER_SIZE
+                    local borderRenderMode = ST.GetBorderRenderMode(effectiveStyle)
+                    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(
+                        tile, borderSize, borderRenderMode)
+                    ST.ApplyBorderTextures(tile.borderTextures, tile,
+                        effectiveStyle.borderColor or { 0, 0, 0, 1 }, borderSize,
+                        ST.GetEffectiveBorderRenderMode(borderRenderMode, nil, borderSize))
+
+                    tile.icon:ClearAllPoints()
+                    tile.icon:SetPoint("TOPLEFT", tile, "TOPLEFT",
+                        borderLayoutSize, -borderLayoutSize)
+                    tile.icon:SetPoint("BOTTOMRIGHT", tile, "BOTTOMRIGHT",
+                        -borderLayoutSize, borderLayoutSize)
+                    if ST._ApplyIconTexCoord then
+                        ST._ApplyIconTexCoord(tile.icon,
+                            math_max(1, info.width - (2 * borderLayoutSize)),
+                            math_max(1, info.height - (2 * borderLayoutSize)),
+                            effectiveStyle.iconZoom)
+                    end
+
+                    local icon = buttonData.type == "spell"
+                        and C_Spell.GetSpellTexture(buttonData.id) or nil
+                    if icon and not issecretvalue(icon) then
+                        tile.icon:SetTexture(icon)
+                        tile.icon:Show()
+                    else
+                        tile.icon:Hide()
+                    end
+
+                    tile:Show()
+                end
+            end
+        end
+    end
+
+    for extra = used + 1, #tiles do
+        tiles[extra]:Hide()
+    end
 end
 
 ------------------------------------------------------------------------

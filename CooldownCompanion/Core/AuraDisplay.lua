@@ -3127,7 +3127,10 @@ function CooldownCompanion:SetAuraPanelChromeSuppressed(frame, suppressed)
     if (frame._auraPanelChromeSuppressed == true) == suppressed then return end
     frame._auraPanelChromeSuppressed = suppressed or nil
     for _, record in ipairs(panelRecords) do
-        if record.hostFrame == frame then
+        -- Compared against the CHROME frame, not the mount host: an aura section
+        -- mounts on a small host frame INSIDE the panel, and the panel is what
+        -- owns the lock state. For a whole Aura Panel the two are the same frame.
+        if record.chromeFrame == frame then
             record.chromeSuppressed = suppressed
             ApplyPanelRootVisibility(record)
         end
@@ -3263,8 +3266,18 @@ local function ApplyPanelMount(record, flow, axis, direction)
     record.container:SetPoint(point, record.visibilityRoot, point, 0, 0)
 end
 
-local function EnsurePanelContainer(groupId, unit, hostFrame)
-    local key = groupId .. "\031" .. unit
+-- surfaceKey names WHICH aura surface of the group this container belongs to:
+-- nil for the whole panel (the key string is then byte-identical to what it
+-- always was) and the section's anchor for an aura section. Without it a mixed
+-- panel with two same-polarity aura sections would hand both the same key, and
+-- the second would ABANDON the first's container as a host-frame change.
+-- chromeFrame is the panel frame the lock state belongs to; it defaults to the
+-- mount host, which is what an Aura Panel wants.
+local function EnsurePanelContainer(groupId, unit, hostFrame, surfaceKey, chromeFrame)
+    local key = surfaceKey
+        and (groupId .. "\031" .. unit .. "\031" .. surfaceKey)
+        or (groupId .. "\031" .. unit)
+    chromeFrame = chromeFrame or hostFrame
     local record = panelContainers[key]
     if record then
         if record.hostFrame == hostFrame then return record end
@@ -3304,15 +3317,19 @@ local function EnsurePanelContainer(groupId, unit, hostFrame)
         key = key,
         groupId = groupId,
         unit = unit,
+        -- nil for a whole panel; the section's anchor otherwise. Diagnostics
+        -- only -- the key above is what identity is actually decided by.
+        anchor = surfaceKey,
         container = container,
         visibilityRoot = visibilityRoot,
         -- Identity of the frame this container is welded to. Compared, never
         -- followed; see the abandon path above.
         hostFrame = hostFrame,
+        chromeFrame = chromeFrame,
         -- Seeded from the frame, never assumed false: a panel created (or
         -- rebuilt) while its drag chrome is up must not flash its live display
         -- over the placeholders before the next chrome write.
-        chromeSuppressed = hostFrame._auraPanelChromeSuppressed == true,
+        chromeSuppressed = chromeFrame._auraPanelChromeSuppressed == true,
         groups = {},
         groupList = {},
     }
@@ -3776,6 +3793,145 @@ local function BindAuraPanel(self, groupId, group, frame)
     SetPanelIdentityVisibility(record, true)
 end
 
+------------------------------------------------------------------------
+-- AURA SECTIONS — one cluster of a MIXED icon panel, drawn like a panel.
+--
+-- Everything the section above establishes applies unchanged; only the
+-- rectangle is smaller. An aura section's members materialize no CC button
+-- (GroupFrame's populate loop skips them the way it skips a whole Aura Panel),
+-- and ONE container per (PANEL, unit, ANCHOR) mounts on the section's own host
+-- frame -- a plain create-once child of the panel frame that PanelSections.lua
+-- sizes to the section's FULL expanded line and positions from the very layout
+-- the base grid was placed from. So the base grid keeps its fixed slots while
+-- the section beside it appears, packs and collapses with aura activity.
+--
+-- The ANCHOR is the whole direction story. SECTION_PLACEMENT already answers
+-- "which way does this line run, and which end does entry 1 sit at" for CC's own
+-- icons, and the layout pass hands both answers through on the section's layout
+-- info -- so the container fills exactly the cells CC's placement would have.
+-- A section is ONE line by definition, so the wrap ceiling is left at its
+-- default and the line can never break.
+------------------------------------------------------------------------
+
+-- A section's PANEL_FLOW row, derived from its axis and its start end instead of
+-- from a panel growth origin. Returns flow, axis, direction -- the same three
+-- ApplyPanelMount and the flow setters take for a whole panel.
+local function SectionFlowSpec(info)
+    local flow, axis
+    if info.axis == "h" then
+        -- "high" is the corner anchors whose line runs BACK toward the panel's
+        -- far side; BuildPanelSectionLayout encodes the same reversal as a
+        -- negative stepX for a live-button section.
+        axis = "Horizontal"
+        flow = (info.from == "high") and PANEL_FLOW.TOPRIGHT or PANEL_FLOW.TOPLEFT
+    else
+        axis = "Vertical"
+        flow = (info.from == "high") and PANEL_FLOW.BOTTOMLEFT or PANEL_FLOW.TOPLEFT
+    end
+    -- Where the PACKED block sits once some of the auras are down. A centered
+    -- section keeps its line centered on the base cluster's edge, which is where
+    -- its full line was laid out; every other anchor holds the end entry 1 sits
+    -- at, and that end is the flow's own origin corner -- "start".
+    return flow, axis, (info.from == "center") and "center" or "start"
+end
+
+-- Bind one aura section's container. Same shape and same refusals as
+-- BindAuraPanel: every one leaves the container parked from the park-all phase,
+-- which is the safe state.
+local function BindAuraSection(self, groupId, group, frame, anchor, info)
+    -- One unit per SECTION, derived from its first resolvable member. A section
+    -- with no resolvable polarity has nothing to mount a container for yet, the
+    -- same way an entry-less Aura Panel does not.
+    local unit = self:GetAuraSectionUnit(group, anchor)
+    if not unit then return end
+
+    local hosts = frame._auraSectionHosts
+    local host = hosts and hosts[anchor]
+    if not host then return end
+
+    local record = EnsurePanelContainer(groupId, unit, host, anchor, frame)
+    record.chromeSuppressed = frame._auraPanelChromeSuppressed == true
+    record.identityApplicable = CanApplySpellIdentityFilter(unit)
+    if not record.identityApplicable then return end
+
+    local flow, axis, direction = SectionFlowSpec(info)
+    ApplyPanelMount(record, flow, axis, direction)
+    record.container:SetFlowLayoutAxis(AnchorUtil.FlowLayoutAxis[axis])
+    record.container:SetFlowLayoutAnchorPoint(flow.anchor)
+    record.container:SetFlowLayoutGrowthDirection(
+        AnchorUtil.FlowDirection[flow.h], AnchorUtil.FlowDirection[flow.v])
+    record.container:SetFlowLayoutPadding(0, 0, 0, 0)
+    -- nil restores the default ceiling (math.huge). A section is a single line
+    -- and must never wrap, so there is nothing to cap it at.
+    record.container:SetFlowLayoutMaximumLineSize(nil)
+
+    -- Cells are the SECTION's, resolved once by the layout pass that just sized
+    -- the host frame, so the container's cells and the rectangle they pack into
+    -- come from one set of numbers. A mixed panel is an icon panel by
+    -- definition, so there is no bar flavor here.
+    local usability = self:GetGroupButtonUsabilityOptions(groupId, group)
+    local layoutIndex = 0
+    local seenKeys
+    for _, buttonData in ipairs(group.buttons or {}) do
+        if ST.GetPanelSectionForEntry(group, buttonData) == anchor
+            and self:IsButtonUsable(buttonData, group, usability) then
+            local auraKey = buttonData._auraKey
+            local entryUnit = self:ResolveAuraEntryUnit(buttonData)
+            if not auraKey then
+                panelSkippedNoKey = panelSkippedNoKey + 1
+            elseif entryUnit and entryUnit ~= unit then
+                panelUnitMismatches = panelUnitMismatches + 1
+            else
+                local spellSet = self:GetAuraCandidateSpellIDSet(buttonData, true)
+                if not spellSet then
+                    panelNoCandidates = panelNoCandidates + 1
+                else
+                    seenKeys = seenKeys or {}
+                    if seenKeys[auraKey] then
+                        panelDuplicateKeys = panelDuplicateKeys + 1
+                    else
+                        seenKeys[auraKey] = true
+                    end
+                    layoutIndex = layoutIndex + 1
+                    local entry = {
+                        id = auraKey,
+                        buttonData = buttonData,
+                        spellSet = spellSet,
+                        style = self:GetEffectiveStyle(group.style, buttonData),
+                        width = info.width,
+                        height = info.height,
+                        spacing = info.spacing,
+                        isBar = false,
+                        vertical = false,
+                    }
+                    BindPanelGroup(EnsurePanelGroup(record, entry, layoutIndex), entry)
+                end
+            end
+        end
+    end
+
+    if layoutIndex == 0 then return end
+
+    record.container:Show()
+    record.shown = true
+    SetPanelIdentityVisibility(record, true)
+end
+
+-- Every aura-only section this mixed panel currently lays out. Driven off the
+-- LAYOUT the panel pass just stamped, not off stored config: the host frames the
+-- containers mount on are created and positioned there, so a section with no
+-- layout info has no rectangle to bind into yet.
+local function BindAuraSections(self, groupId, group, frame)
+    local layout = frame._sectionLayout
+    local infos = layout and layout.sections
+    if not infos then return end
+    for anchor, info in pairs(infos) do
+        if info.auraOnly then
+            BindAuraSection(self, groupId, group, frame, anchor, info)
+        end
+    end
+end
+
 -- Park everything, then bind — the same discipline (and the same coalescing
 -- argument) as the slot and block passes. OOC by RunAuraRebind's guarantee.
 local function RebindAuraPanels(self)
@@ -3802,6 +3958,10 @@ local function RebindAuraPanels(self)
         local group = self.db.profile.groups[groupId]
         if frame and ST.IsAuraPanelGroup(group) then
             BindAuraPanel(self, groupId, group, frame)
+        elseif frame and ST.PanelHasAuraSection(group) then
+            -- A MIXED panel: its base grid is live CC buttons the slot pass
+            -- above already handled, and only its aura sections come here.
+            BindAuraSections(self, groupId, group, frame)
         end
     end
 end
@@ -4138,6 +4298,11 @@ function CooldownCompanion:GetAuraDisplayStatus()
         panels.records[#panels.records + 1] = {
             groupId = record.groupId,
             unit = record.unit,
+            -- Present only for an AURA SECTION's container: which of the panel's
+            -- eight anchors it draws. Absent means the record is a whole panel,
+            -- which is what tells the two apart in a snapshot -- the skip
+            -- counters above are shared between them.
+            anchor = record.anchor,
             shown = record.shown == true,
             -- A BOUND panel can still be dark on purpose: its unlock
             -- placeholders are standing in for it. Without this the two dark

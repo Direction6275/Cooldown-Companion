@@ -947,7 +947,16 @@ local AURA_TRACKING_CONFIG_ONLY_SECTIONS = {
     auraMissingDesaturation = true,
 }
 
-local function CanButtonUseConfigOverrideSection(buttonData, sectionId)
+-- Keybind and custom text never reach a packed aura cell: the renderer draws
+-- no replica for an aura host (AuraDisplay.lua), and an Aura Only Section's
+-- members are exactly that. Config-visibility only, for the same reason the
+-- list above is: membership is POSITIONAL, an entry can be dragged back out to
+-- the base grid, and the runtime gate feeds GetEffectiveStyle's prune pass,
+-- which would delete the saved keybind override on the way in.
+--
+-- `group` is optional: the runtime callers (prune, promote, migrations) never
+-- pass one and are unaffected, which is exactly the separation this gate wants.
+local function CanButtonUseConfigOverrideSection(buttonData, sectionId, group)
     if ST.CanButtonUseOverrideSection then
         local allowed, reason = ST.CanButtonUseOverrideSection(buttonData, sectionId)
         if not allowed then
@@ -962,6 +971,11 @@ local function CanButtonUseConfigOverrideSection(buttonData, sectionId)
     if AURA_TRACKING_CONFIG_ONLY_SECTIONS[sectionId]
         and not (buttonData and (buttonData.auraTracking or buttonData.addedAs == "aura")) then
         return false, "auraTracking"
+    end
+
+    if sectionId == "keybindText" and group and buttonData
+        and ST.IsAuraSectionEntry and ST.IsAuraSectionEntry(group, buttonData) then
+        return false, "auraSection"
     end
 
     if not (ST.NO_COOLDOWN_DENIED_OVERRIDE_SECTIONS
@@ -1104,7 +1118,7 @@ local function ResolveLensSection(lens, group, sectionId)
     -- The denied REASON rides along as a fourth return so scope chrome can
     -- show the centralized copy for it. Callers that only want the first three
     -- are unaffected.
-    local allowed, deniedReason = CanButtonUseConfigOverrideSection(buttonData, sectionId)
+    local allowed, deniedReason = CanButtonUseConfigOverrideSection(buttonData, sectionId, group)
     if not allowed then
         return "denied", lens.effective, nil, deniedReason
     end
@@ -1172,6 +1186,7 @@ end
 local SECTION_DENIAL_CLAUSES = {
     noCooldown = "this spell does not have a real cooldown",
     auraTracking = "this entry is not tracking an aura",
+    auraSection = "this entry sits in an Aura Only Section",
     displayMode = "the panel's current display mode does not use it",
     entryType = "this entry type cannot use it",
 }
@@ -2448,7 +2463,7 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
         for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER or {}) do
             if sections[sectionId] then
                 local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
-                local allowed, deniedReason = CanButtonUseConfigOverrideSection(buttonData, sectionId)
+                local allowed, deniedReason = CanButtonUseConfigOverrideSection(buttonData, sectionId, group)
                 local modeOk = sectionDef and sectionDef.modes and sectionDef.modes[displayMode] == true
                 local reason
                 if not allowed then
@@ -2759,10 +2774,19 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
                 CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
             end,
         })
-        ST._AnchorRowBadge(maxVisRow, CreateInfoButton(maxVisRow.frame, maxVisRow.frame, "LEFT", "LEFT", 0, 0, {
+        -- The cap counts CC's own buttons, and an Aura Only Section builds none
+        -- (GroupFrame's visible-button pass skips its members). Said only on a
+        -- panel that actually has one, so every other panel reads as before.
+        local maxVisTooltip = {
             "Max Visible Buttons",
             {"Limits how many buttons can appear at once. The first buttons (by group order) that pass visibility checks are shown; the rest are hidden.", 1, 1, 1, true},
-        }, tabInfoButtons))
+        }
+        if ST.PanelHasAuraSection and ST.PanelHasAuraSection(group) then
+            maxVisTooltip[#maxVisTooltip + 1] = {" ", 1, 1, 1, true}
+            maxVisTooltip[#maxVisTooltip + 1] = {"Aura Only Sections are not counted.", 1, 1, 1, true}
+        end
+        ST._AnchorRowBadge(maxVisRow, CreateInfoButton(maxVisRow.frame, maxVisRow.frame, "LEFT", "LEFT", 0, 0,
+            maxVisTooltip, tabInfoButtons))
     end
 
     AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout and not stableAnchorLocked, {

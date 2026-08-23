@@ -489,14 +489,17 @@ local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGrou
         CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(targetGroup, entryData)
     end
     local previousCount = #targetGroup.buttons
-    -- An entry arriving in an Aura Panel needs that panel's own key, not the one
-    -- it wore where it came from (or none at all, which the engine skips).
-    CooldownCompanion:StampAuraPanelEntryKey(targetGroup, entryData)
     -- A section placement belongs to the panel it was made on: an entry landing
     -- here starts in the base row rather than joining whatever section this
     -- panel keeps at the anchor it used to name, and the cluster it left goes
     -- with it when it was the last member there.
     ST.DetachEntryFromPanelSection(db.groups[sourceGroupId], entryData)
+    -- After the detach, so the key rule reads the membership the entry actually
+    -- lands with. An entry arriving in a panel needs that panel's own key, not
+    -- the one it wore where it came from: an Aura Panel mints it one, and
+    -- anywhere else the stale key comes off rather than waiting to collide
+    -- inside an aura section.
+    CooldownCompanion:AdoptAuraEntryKey(targetGroup, entryData)
     table.insert(targetGroup.buttons, entryData)
     table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
     CooldownCompanion:KeepPanelSingleLineOnGrowth(targetGroup, previousCount)
@@ -768,8 +771,11 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                     local liveGroup = CooldownCompanion.db.profile.groups[sourceGroupId]
                     local copy = CopyTable(entryData)
                     -- The copy inherits the original's aura key, which would
-                    -- put two entries in the same panel on one aura group.
-                    CooldownCompanion:StampAuraPanelEntryKey(liveGroup, copy)
+                    -- put two entries in the same panel on one aura group. It
+                    -- also inherits the original's SECTION, so on a mixed panel
+                    -- the copy is handed a key of its own rather than merely
+                    -- stripped.
+                    CooldownCompanion:AdoptAuraEntryKey(liveGroup, copy)
                     table.insert(liveGroup.buttons, sourceIndex + 1, copy)
                     -- Follow the copy without changing the active panel/entry
                     -- scope; the shared path also clears stale index state.

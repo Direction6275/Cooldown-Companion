@@ -491,13 +491,19 @@ local function FinalizePreviewState(preview)
     -- Blizzard packs only the auras that are up. No static mirror can show
     -- that, so the preview says it instead of letting the grid imply gaps.
     --
+    -- A mixed panel carrying an AURA SECTION owes the same sentence for the
+    -- same reason, scoped to that cluster: its members are drawn as fixed slots
+    -- here (this is the authoring surface) and packed by Blizzard in the world.
+    -- One caption covers either case - the panel that has one says it once.
+    --
     -- Written inline rather than as a helper: this file rides the 200-local
     -- ceiling (see the CopyMode do-block above), and every build path already
     -- passes through here, which is also what makes the hide reliable when the
     -- preview moves onto an ordinary panel.
     local auraCaptionGroup = preview.readOnly ~= true and preview.panelId
         and CooldownCompanion.db.profile.groups[preview.panelId] or nil
-    if auraCaptionGroup and ST.IsAuraPanelGroup(auraCaptionGroup) then
+    if auraCaptionGroup and (ST.IsAuraPanelGroup(auraCaptionGroup)
+        or ST.PanelHasAuraSection(auraCaptionGroup)) then
         local caption = preview.auraCaption
         if not caption then
             caption = preview.root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -880,7 +886,7 @@ local function CanCopySectionToEntry(targetGroup, targetButtonData, sectionId)
     if not sectionDef then return false end
     if sectionDef.modes[targetGroup.displayMode or "icons"] ~= true then return false end
     -- == true drops the reason the helper returns alongside its verdict.
-    return CanUseConfigOverrideSection(targetButtonData, sectionId) == true
+    return CanUseConfigOverrideSection(targetButtonData, sectionId, targetGroup) == true
 end
 
 local function IsEligibleCopyTarget(state, targetGroup, targetButtonData)
@@ -1168,11 +1174,15 @@ end
 --
 -- Never on an Aura Panel: Blizzard's own container lays those cells out and
 -- packs only the active auras, so nothing is reserved and the badge would be
--- claiming the opposite of what the panel does.
+-- claiming the opposite of what the panel does. An entry inside an AURA SECTION
+-- of a mixed panel renders through that same container, so the badge is just as
+-- wrong there - and it is a per-ENTRY answer on a mixed panel, since the base
+-- grid beside the section does still reserve.
 local function DoesHiddenAuraReserveLayoutSpace(buttonData, group)
     local displayMode = group and (group.displayMode or "icons") or "icons"
     return (displayMode == "icons" or displayMode == "bars")
         and not ST.IsAuraPanelGroup(group)
+        and not ST.IsAuraSectionEntry(group, buttonData)
         and buttonData.type == "spell"
         and (buttonData.auraTracking or buttonData.addedAs == "aura")
         and buttonData.hideWhileAuraNotActive == true
@@ -1747,6 +1757,11 @@ do
                 local y0 = math_max(info.originY, lastY)
                 model.lanes[anchor] = {
                     members = ids,
+                    -- Read from the PROFILE, not from the layout info: the
+                    -- mirror never populates auraCounts (it draws the full
+                    -- expanded line as its own slots), so the engine's own
+                    -- auraOnly marker is not on this pass's info.
+                    auraOnly = ST.IsAuraOnlyPanelSection(group, anchor) or nil,
                     originX = info.originX, originY = info.originY,
                     stepX = info.stepX, stepY = info.stepY,
                     width = info.width, height = info.height,
@@ -1872,14 +1887,58 @@ do
         return inside
     end
 
+    --- "Would an AURA lane at `anchor` refuse the entry this drag has in hand?"
+    --- Memoized on the drag model, which lives exactly as long as one preview
+    --- build: the resolve runs every frame of a gesture, and the answer can only
+    --- change when a commit rebuilds the whole model anyway.
+    --- Nil when there is nothing to ask - every panel with no aura section, and
+    --- every gesture with no entry behind it - which is what keeps an ordinary
+    --- sectioned panel on exactly the code it had.
+    function SectionDrag.EntryLaneBlocker(model, panelId, state)
+        local buttonData = state and state.slotData and state.slotData.buttonData
+        if not buttonData then return nil end
+        if model.blockerEntry == buttonData then return model.blockerFn end
+
+        local group = panelId and CooldownCompanion.db.profile.groups[panelId]
+        local blocker
+        if group and ST.PanelHasAuraSection(group) then
+            blocker = function(anchor)
+                return CooldownCompanion:GetAuraSectionEntryRejectMessage(
+                    group, anchor, buttonData) ~= nil
+            end
+        end
+        model.blockerEntry = buttonData
+        model.blockerFn = blocker
+        return blocker
+    end
+
     --- The pad or lane the cursor claims, or nil when it claims neither.
     --- Containment wins outright; otherwise the nearest candidate within a sane
     --- radius, so a release out in open space is still a snap-back.
-    function SectionDrag.Resolve(model, view, cursorX, cursorY)
+    ---
+    --- laneBlocked (optional) drops AURA lanes the dragged entry cannot join out
+    --- of the contest entirely. It is asked HERE rather than at the drop because
+    --- everything downstream is a promise: an excluded anchor opens no gap and
+    --- lights no gold edge, so the gesture never offers a landing
+    --- SetPanelSectionForEntry would refuse. Pads are never asked - a free
+    --- anchor becomes an ordinary section, whatever lands on it.
+    function SectionDrag.Resolve(model, view, cursorX, cursorY, laneBlocked)
         local bestAnchor, bestLane, bestDist, bestCenter, bestReach
         for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
             local lane = model.lanes[anchor]
-            local rect = lane and lane.rect or model.pads[anchor]
+            local rect
+            if lane then
+                if lane.auraOnly and laneBlocked and laneBlocked(anchor) then
+                    -- Out entirely, never fallen through to a pad: an occupied
+                    -- anchor has none, and inventing one here would promise a
+                    -- fresh section where a section already sits.
+                    lane = nil
+                else
+                    rect = lane.rect
+                end
+            else
+                rect = model.pads[anchor]
+            end
             if rect then
                 local dist, center, reach = RectDistances(view, rect, cursorX, cursorY)
                 if not bestDist or dist < bestDist
@@ -2500,10 +2559,15 @@ do
         if not (lane and group) then return end
 
         local old = group.sections and group.sections[anchor]
-        local offsetX, offsetY, iconWidth, iconHeight, spacing
+        local offsetX, offsetY, iconWidth, iconHeight, spacing, auraOnly
         if type(old) == "table" then
             offsetX, offsetY = old.offsetX, old.offsetY
             iconWidth, iconHeight, spacing = old.iconWidth, old.iconHeight, old.spacing
+            -- Aura-ness is one of the section's own settings, so it MOVES with
+            -- it like the rest. Left out, a handle drop would quietly turn an
+            -- aura section back into ordinary icons: the members arrive at a
+            -- fresh table the writer created without the flag.
+            auraOnly = old.auraOnly
         end
 
         local changed = false
@@ -2523,6 +2587,13 @@ do
             fresh.iconWidth = iconWidth
             fresh.iconHeight = iconHeight
             fresh.spacing = spacing
+            fresh.auraOnly = auraOnly
+            if auraOnly then
+                -- Cheap and idempotent: the members carry the keys they were
+                -- stamped with on the way into the old section, and this only
+                -- covers one that somehow arrived without one.
+                ST.EnsureAuraSectionEntryKeys(group)
+            end
         end
         -- Safe here and nowhere earlier: the drag is over, so the rebuild this
         -- pair triggers has no in-flight gesture to pull the frames out from.
@@ -2681,7 +2752,8 @@ local function CreatePreviewLayoutDrag(preview, panelId)
             local view = SectionDrag.View(preview.content)
             if not view then return nil end
             if not SectionDrag.InBaseMargin(sectionDrag, view, cursorX, cursorY) then
-                return SectionDrag.Resolve(sectionDrag, view, cursorX, cursorY)
+                return SectionDrag.Resolve(sectionDrag, view, cursorX, cursorY,
+                    SectionDrag.EntryLaneBlocker(sectionDrag, panelId, state))
             end
             -- An all-sectioned panel has no cells to measure an insertion
             -- against; the base grid can still be rejoined at its one position.
@@ -3006,7 +3078,7 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
                     lines[#lines + 1] = {
                         label = sectionDef.label,
                         active = sectionDef.modes[displayMode] == true
-                            and (not canUse or (canUse(buttonData, sectionId))),
+                            and (not canUse or (canUse(buttonData, sectionId, group))),
                     }
                 end
             end
@@ -3338,12 +3410,20 @@ local function StyleIconEntry(slot, buttonData, group)
     -- which honors customKeybindText (the text mirror stays on GetKeybindText
     -- by design; see Keybinds.lua). Static lookups only, never live frame
     -- state.
+    --
+    -- A member of an Aura Only Section is drawn by Blizzard's packed container
+    -- and never by a CC button, so the live styler draws it no keybind replica
+    -- (AuraDisplay's aura-panel host branch). The panel's showKeybindText still
+    -- reads true for the base grid beside it, making this a per-ENTRY answer.
+    -- Custom keybind text rides the same resolver and goes dark with it, which
+    -- is what the world shows.
     local style = group and group.style or {}
     if CooldownCompanion.GetEffectiveStyle then
         style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
     end
     local text
-    if style.showKeybindText and CooldownCompanion.GetDisplayedKeybindText then
+    if style.showKeybindText and CooldownCompanion.GetDisplayedKeybindText
+        and not ST.IsAuraSectionEntry(group, buttonData) then
         -- Item entries resolve their bind by the EQUIPPED/effective item id,
         -- and equipment-slot entries carry no id of their own, so pass the
         -- same override live passes. ResolveEffectiveItem is pure C_Item /

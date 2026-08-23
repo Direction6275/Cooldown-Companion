@@ -167,8 +167,10 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
         for _, idx in ipairs(sorted) do
             local copy = CopyTable(sourceGroup.buttons[idx])
             -- Each copy inherits its original's aura key, which would put two
-            -- entries in the same Aura Panel on one aura group.
-            CooldownCompanion:StampAuraPanelEntryKey(sourceGroup, copy)
+            -- entries in the same panel on one aura group. A copy also inherits
+            -- its original's SECTION, so on a mixed panel it is handed a key of
+            -- its own rather than merely stripped.
+            CooldownCompanion:AdoptAuraEntryKey(sourceGroup, copy)
             table.insert(sourceGroup.buttons, idx + 1, copy)
         end
         CooldownCompanion:KeepPanelSingleLineOnGrowth(sourceGroup, previousCount)
@@ -215,14 +217,17 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
                     local previousCount = #targetGroup.buttons
                     for _, idx in ipairs(indices) do
                         local moved = db.groups[sourceGroupId].buttons[idx]
-                        -- An entry arriving in an Aura Panel needs that panel's
-                        -- own key, not the one it wore where it came from.
-                        CooldownCompanion:StampAuraPanelEntryKey(targetGroup, moved)
                         -- A section placement belongs to the panel it was made
                         -- on; an entry landing here starts in the base row, and
                         -- the source's cluster dissolves behind the last member
                         -- to leave it.
                         ST.DetachEntryFromPanelSection(db.groups[sourceGroupId], moved)
+                        -- After the detach, so the key rule reads the membership
+                        -- the entry actually lands with. An Aura Panel mints the
+                        -- arrival its own key; anywhere else the key it wore
+                        -- where it came from comes off rather than waiting to
+                        -- collide inside an aura section.
+                        CooldownCompanion:AdoptAuraEntryKey(targetGroup, moved)
                         table.insert(targetGroup.buttons, moved)
                     end
                     table.sort(indices, function(a, b) return a > b end)
