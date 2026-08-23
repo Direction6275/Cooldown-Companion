@@ -133,26 +133,35 @@ local function SetIconFillIntent(target, available, active, reason, mode, color,
     return target
 end
 
-local function SetGlowIntent(section, available, active, reason)
-    section.available = available == true
+ST._buttonVisualStateSnapshotsEnabled = ST._buttonVisualStateSnapshotsEnabled == true
+
+local function SetButtonVisualStateSnapshotsEnabled(enabled)
+    ST._buttonVisualStateSnapshotsEnabled = enabled == true
+end
+
+local function AreButtonVisualStateSnapshotsEnabled()
+    return ST._buttonVisualStateSnapshotsEnabled == true
+end
+
+-- Glow bookkeeping follows the bar and text lanes: the display reads only
+-- `active` (IconMode's proc and ready sections) and `durationWindow` (the F2
+-- telemetry canary), so those stay unconditional. Everything else exists for
+-- the bug-report visual-state snapshot and is written only while snapshots are
+-- enabled, which is exactly the window the capture forces a refresh in.
+local function SetGlowIntent(section, active, reason, snapshots)
     section.active = active == true
-    section.reason = reason
-    section.preview = false
-    section.combatOnly = false
-    section.combatSuppressed = false
-    section.procOverlayActive = false
-    section.suppressedByProc = false
-    section.auraIndicatorEnabled = false
-    section.invert = false
-    section.pandemic = false
-    section.targetRequired = false
-    section.targetExists = nil
-    section.maxCharges = false
     section.durationWindow = false
-    section.duration = nil
-    section.startTime = nil
-    section.cooldownSuppressed = false
-    section.auraSuppressed = false
+    if snapshots then
+        section.reason = reason
+        section.preview = false
+        section.combatSuppressed = false
+        section.procOverlayActive = false
+        section.suppressedByProc = false
+        section.invert = false
+        section.pandemic = false
+        section.maxCharges = false
+        section.auraSuppressed = false
+    end
     return section
 end
 
@@ -208,43 +217,44 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
     local aura = EnsureGlowSection(target, "aura")
     local ready = EnsureGlowSection(target, "ready")
     local inCombat = GetResolverCombatState(options)
+    local snapshots = AreButtonVisualStateSnapshotsEnabled()
     local now
     local isSpell = buttonData and buttonData.type == "spell"
     local isPassive = buttonData and buttonData.isPassive == true
     local procOverlayShown = procOverlayActive == true
 
     if type(button) ~= "table" or type(buttonData) ~= "table" then
-        SetGlowIntent(proc, false, false, "invalid")
-        SetGlowIntent(aura, false, false, "invalid")
-        SetGlowIntent(ready, false, false, "invalid")
+        SetGlowIntent(proc, false, "invalid", snapshots)
+        SetGlowIntent(aura, false, "invalid", snapshots)
+        SetGlowIntent(ready, false, "invalid", snapshots)
         return target
     end
 
     if not button.procGlow then
-        SetGlowIntent(proc, false, false, "missing-widget")
-        proc.procOverlayActive = procOverlayShown
+        SetGlowIntent(proc, false, "missing-widget", snapshots)
     elseif style.procGlowStyle == "none" then
-        SetGlowIntent(proc, true, false, "disabled")
-        proc.procOverlayActive = procOverlayShown
+        SetGlowIntent(proc, false, "disabled", snapshots)
     elseif not isSpell then
-        SetGlowIntent(proc, true, false, "not-spell")
-        proc.procOverlayActive = procOverlayShown
+        SetGlowIntent(proc, false, "not-spell", snapshots)
     elseif isPassive then
-        SetGlowIntent(proc, true, false, "passive")
-        proc.procOverlayActive = procOverlayShown
+        SetGlowIntent(proc, false, "passive", snapshots)
     elseif button._auraTrackingReady == true then
-        SetGlowIntent(proc, true, false, "aura-tracking")
-        proc.procOverlayActive = procOverlayShown
+        SetGlowIntent(proc, false, "aura-tracking", snapshots)
     elseif style.procGlowCombatOnly and not inCombat then
-        SetGlowIntent(proc, true, false, "combat-only")
-        proc.combatOnly = true
-        proc.combatSuppressed = true
-        proc.procOverlayActive = procOverlayShown
+        SetGlowIntent(proc, false, "combat-only", snapshots)
+        if snapshots then
+            proc.combatSuppressed = true
+        end
     elseif procOverlayShown then
-        SetGlowIntent(proc, true, true, "proc")
-        proc.procOverlayActive = true
+        SetGlowIntent(proc, true, "proc", snapshots)
     else
-        SetGlowIntent(proc, true, false, "inactive")
+        SetGlowIntent(proc, false, "inactive", snapshots)
+    end
+    -- Every branch above reports the same overlay value: the "proc" branch only
+    -- runs while the overlay is shown and the "inactive" branch only while it is
+    -- not, so one write after the chain covers all of them.
+    if snapshots then
+        proc.procOverlayActive = procOverlayShown
     end
 
     -- Live aura and pandemic glows are owned by the aura slot kit. The config
@@ -255,25 +265,26 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
     -- so the row matches what is on screen; this is REPORTING only -- the
     -- display stays latch-driven, nothing here writes a style.
     if button._totemActive == true and (style.auraGlowStyle or "pulse") ~= "none" then
-        SetGlowIntent(aura, true, true, "totem-active")
+        SetGlowIntent(aura, true, "totem-active", snapshots)
     else
-        SetGlowIntent(aura, false, false, "no-container")
+        SetGlowIntent(aura, false, "no-container", snapshots)
     end
 
     local procSuppressesReady = procOverlayShown and style.procGlowStyle ~= "none"
     local auraSuppressesReady = button._auraTrackingReady == true and button._auraActive == true
     if not button.readyGlow then
-        SetGlowIntent(ready, false, false, "missing-widget")
+        SetGlowIntent(ready, false, "missing-widget", snapshots)
     elseif not style.readyGlowStyle or style.readyGlowStyle == "none" then
-        SetGlowIntent(ready, true, false, "disabled")
+        SetGlowIntent(ready, false, "disabled", snapshots)
     elseif isPassive then
-        SetGlowIntent(ready, true, false, "passive")
+        SetGlowIntent(ready, false, "passive", snapshots)
     elseif button._noCooldown then
-        SetGlowIntent(ready, true, false, "no-cooldown")
+        SetGlowIntent(ready, false, "no-cooldown", snapshots)
     elseif style.readyGlowCombatOnly and not inCombat then
-        SetGlowIntent(ready, true, false, "combat-only")
-        ready.combatOnly = true
-        ready.combatSuppressed = true
+        SetGlowIntent(ready, false, "combat-only", snapshots)
+        if snapshots then
+            ready.combatSuppressed = true
+        end
     elseif button._totemActive == true then
         -- Totem active phase reads as aura-active (owner ruling): the summon's
         -- remaining time is still on screen, so the ready glow must not light --
@@ -283,18 +294,23 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
         -- spell cooldown, so it should be the reported reason. Suppression is
         -- DISPLAY-only; the window's start stamp is owned by CooldownUpdate,
         -- which re-stamps it at the falling edge.
-        SetGlowIntent(ready, true, false, "totem-active")
-        ready.auraSuppressed = true
+        SetGlowIntent(ready, false, "totem-active", snapshots)
+        if snapshots then
+            ready.auraSuppressed = true
+        end
     elseif button._desatCooldownActive ~= false or button._cooldownState == STATE_COOLDOWN then
-        SetGlowIntent(ready, true, false, "cooldown")
-        ready.cooldownSuppressed = true
+        SetGlowIntent(ready, false, "cooldown", snapshots)
     elseif auraSuppressesReady then
-        SetGlowIntent(ready, true, false, "aura-active")
-        ready.auraSuppressed = true
+        SetGlowIntent(ready, false, "aura-active", snapshots)
+        if snapshots then
+            ready.auraSuppressed = true
+        end
     elseif procSuppressesReady then
-        SetGlowIntent(ready, true, false, "proc")
-        ready.suppressedByProc = true
-        ready.procOverlayActive = true
+        SetGlowIntent(ready, false, "proc", snapshots)
+        if snapshots then
+            ready.suppressedByProc = true
+            ready.procOverlayActive = true
+        end
     elseif style.readyGlowOnlyAtMaxCharges and IsReadyGlowMaxChargeEligible(buttonData) then
         local dur = style.readyGlowDuration or 0
         if IsReadyGlowAtMaxCharges(button, buttonData) then
@@ -302,17 +318,16 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
                 now = now or GetResolverTime(options)
                 local startTime = button._readyGlowMaxChargesStartTime
                 local inWindow = startTime ~= nil and (now - startTime) <= dur
-                SetGlowIntent(ready, true, inWindow, inWindow and "max-charges" or "duration-window")
-                ready.maxCharges = true
+                SetGlowIntent(ready, inWindow, inWindow and "max-charges" or "duration-window", snapshots)
                 ready.durationWindow = true
-                ready.duration = dur
-                ready.startTime = startTime
             else
-                SetGlowIntent(ready, true, true, "max-charges")
-                ready.maxCharges = true
+                SetGlowIntent(ready, true, "max-charges", snapshots)
             end
         else
-            SetGlowIntent(ready, true, false, "not-max-charges")
+            SetGlowIntent(ready, false, "not-max-charges", snapshots)
+        end
+        -- All three max-charge branches reported the same flag.
+        if snapshots then
             ready.maxCharges = true
         end
     else
@@ -321,12 +336,10 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
             now = now or GetResolverTime(options)
             local startTime = button._readyGlowStartTime
             local inWindow = startTime ~= nil and (now - startTime) <= dur
-            SetGlowIntent(ready, true, inWindow, inWindow and "ready" or "duration-window")
+            SetGlowIntent(ready, inWindow, inWindow and "ready" or "duration-window", snapshots)
             ready.durationWindow = true
-            ready.duration = dur
-            ready.startTime = startTime
         else
-            SetGlowIntent(ready, true, true, "ready")
+            SetGlowIntent(ready, true, "ready", snapshots)
         end
     end
 
@@ -386,16 +399,6 @@ local function ResolveIconFillIntent(button, buttonData, style, target)
     end
 
     return SetIconFillIntent(target, true, false, "inactive")
-end
-
-ST._buttonVisualStateSnapshotsEnabled = ST._buttonVisualStateSnapshotsEnabled == true
-
-local function SetButtonVisualStateSnapshotsEnabled(enabled)
-    ST._buttonVisualStateSnapshotsEnabled = enabled == true
-end
-
-local function AreButtonVisualStateSnapshotsEnabled()
-    return ST._buttonVisualStateSnapshotsEnabled == true
 end
 
 local function CopyTextVisualState(button, text, context)
