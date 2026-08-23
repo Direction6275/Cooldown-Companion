@@ -55,7 +55,13 @@ ST.EDGE_ANCHOR_SPEC = {
 
 local STATUS_BAR_MOTION_TIMER = "timer"
 local STATUS_BAR_MOTION_SMOOTH_VALUE = "smoothValue"
+local STATUS_BAR_MOTION_IMMEDIATE_VALUE = "immediateValue"
 
+-- Motion and range are separate records: the range record mirrors the widget's
+-- SetMinMaxValues state, which no motion call writes (SetValue/SetToTargetValue/
+-- SetTimerDuration take no range arguments), so clearing motion must not
+-- invalidate it. Every non-creation-time SetMinMaxValues caller goes through
+-- SetStatusBarRange below, which is what keeps the record truthful.
 function ST.ClearStatusBarMotion(statusBar)
     if not statusBar then return end
 
@@ -63,9 +69,6 @@ function ST.ClearStatusBarMotion(statusBar)
     statusBar._cdcStatusBarMotionDurationObj = nil
     statusBar._cdcStatusBarMotionDirection = nil
     statusBar._cdcStatusBarMotionValue = nil
-    statusBar._cdcStatusBarRangeMin = nil
-    statusBar._cdcStatusBarRangeMax = nil
-    statusBar._cdcStatusBarRangeInterpolation = nil
 end
 
 function ST.SetStatusBarRange(statusBar, minValue, maxValue, interpolation)
@@ -109,7 +112,25 @@ end
 function ST.SetStatusBarImmediateValue(statusBar, value)
     if not statusBar then return false end
 
-    ST.ClearStatusBarMotion(statusBar)
+    -- Same memo as the smooth/timer setters: the motion kind is what makes a
+    -- switch between motion kinds re-apply, so an unchanged repeat of the same
+    -- immediate value is the only case that early-outs.
+    local valueIsSecret = issecretvalue and issecretvalue(value)
+    if statusBar._cdcStatusBarMotionKind == STATUS_BAR_MOTION_IMMEDIATE_VALUE
+        and not valueIsSecret
+        and statusBar._cdcStatusBarMotionValue == value then
+        return true
+    end
+
+    statusBar._cdcStatusBarMotionKind = STATUS_BAR_MOTION_IMMEDIATE_VALUE
+    statusBar._cdcStatusBarMotionDurationObj = nil
+    statusBar._cdcStatusBarMotionDirection = nil
+    if valueIsSecret then
+        statusBar._cdcStatusBarMotionValue = nil
+    else
+        statusBar._cdcStatusBarMotionValue = value
+    end
+
     statusBar:SetValue(value)
     if statusBar.SetToTargetValue then
         statusBar:SetToTargetValue()

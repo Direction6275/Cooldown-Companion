@@ -892,14 +892,36 @@ end
 ------------------------------------------------------------------------
 -- COLOR WRAPPING
 ------------------------------------------------------------------------
+-- The escape prefix is a pure function of the colour's first three components,
+-- so it is memoized per colour table. Colour tables are mutated in place, so
+-- the entry is revalidated component-wise and never by table identity. Weak
+-- keys keep discarded colour tables collectable; nothing is written back onto
+-- the colour table itself (they belong to persisted style data).
+local colorPrefixCache = setmetatable({}, { __mode = "k" })
+
+local function ColorPrefix(color)
+    local r, g, b = color[1], color[2], color[3]
+    local entry = colorPrefixCache[color]
+    if entry and entry.r == r and entry.g == g and entry.b == b then
+        return entry.prefix
+    end
+
+    local prefix = string_format("|cff%02x%02x%02x",
+        math_floor(r * 255),
+        math_floor(g * 255),
+        math_floor(b * 255))
+    if not entry then
+        entry = {}
+        colorPrefixCache[color] = entry
+    end
+    entry.r, entry.g, entry.b, entry.prefix = r, g, b, prefix
+    return prefix
+end
+
 local function WrapColor(text, color)
     if not text or text == "" then return "" end
     if not color then return text end
-    return string_format("|cff%02x%02x%02x%s|r",
-        math_floor(color[1] * 255),
-        math_floor(color[2] * 255),
-        math_floor(color[3] * 255),
-        text)
+    return ColorPrefix(color) .. text .. "|r"
 end
 
 local function ResolveTextModeStackDisplay(button)
@@ -1358,6 +1380,19 @@ end
 -- UPDATE TEXT DISPLAY
 -- Called each tick from CooldownUpdate.lua after data is resolved.
 ------------------------------------------------------------------------
+-- Sentinel placeholder table for the secret-value pass. Reused across calls:
+-- the scan below reads the fields synchronously and never keeps the entry
+-- tables, so only the per-call fields (val/active/fmt) are reassigned. The
+-- %TIME%/%AURA%/%STATUS%/%STACKS% entries must keep `active` nil so they stay
+-- gated on `val` alone; only %NAME% carries an explicit active flag.
+local SECRET_PLACEHOLDERS = {
+    {text = "%TIME%",   fmt = "%s"},
+    {text = "%AURA%",   fmt = "%s"},
+    {text = "%STATUS%", fmt = "%s"},
+    {text = "%STACKS%", fmt = "%s"},
+    {text = "%NAME%",   fmt = "%s"},
+}
+
 local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverride)
     local style = button.style
     if not style or not button._textSegments then
@@ -1390,13 +1425,13 @@ local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverri
         -- Sentinel placeholders and their format specifiers / secret values
         -- Numeric secrets (cooldown/aura times) use the closest pass-through format; string secrets use %s.
         local timeFmt = GetDurationSecretFormatSpec(style)
-        local allPlaceholders = {
-            {text = "%TIME%",   val = secretValue,      fmt = timeFmt},
-            {text = "%AURA%",   val = secretValue,      fmt = timeFmt},
-            {text = "%STATUS%", val = secretValue,      fmt = timeFmt},
-            {text = "%STACKS%", val = secretStackValue,  fmt = "%s"},
-            {text = "%NAME%",   val = secretNameValue,   fmt = "%s", active = hasSecretNameValue},
-        }
+        local allPlaceholders = SECRET_PLACEHOLDERS
+        allPlaceholders[1].val, allPlaceholders[1].fmt = secretValue, timeFmt
+        allPlaceholders[2].val, allPlaceholders[2].fmt = secretValue, timeFmt
+        allPlaceholders[3].val, allPlaceholders[3].fmt = secretValue, timeFmt
+        allPlaceholders[4].val = secretStackValue
+        allPlaceholders[5].val = secretNameValue
+        allPlaceholders[5].active = hasSecretNameValue
 
         -- Single left-to-right pass: build format string and ordered args together
         local args = button._textModeSecretArgs
@@ -1445,6 +1480,11 @@ local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverri
             StoreTextVisualApplied(button, "formatted", text, secretValue, secretStackValue, hasSecretNameValue)
         end
         wipe(args)
+        -- Drop the secret references the shared placeholder table borrowed,
+        -- for the same reason the arg list is wiped above.
+        allPlaceholders[1].val, allPlaceholders[2].val, allPlaceholders[3].val = nil, nil, nil
+        allPlaceholders[4].val, allPlaceholders[5].val = nil, nil
+        allPlaceholders[5].active = nil
     else
         -- Normal path: full per-token coloring via escape sequences
         local baseColor = style.textFontColor or DEFAULT_WHITE

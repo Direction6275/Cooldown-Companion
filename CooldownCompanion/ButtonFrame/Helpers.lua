@@ -263,23 +263,75 @@ local function LowTimeHex(color)
         math_floor((color[3] or 0) * 255 + 0.5))
 end
 
+-- Resolved low-time tuples, keyed by the config table they were read from.
+-- The memo lives here and NEVER writes back: styles are SavedVariables/export
+-- data and are metatable-chained, so a runtime field on them would leak into
+-- saved data. Keys are weak so pooled/discarded styles are collectable. The
+-- recorded scalars are the whole dependency set; colors are compared
+-- component-wise because color tables are mutated in place.
+local durationLowTimeMemo = setmetatable({}, { __mode = "k" })
+
 -- Fifth/sixth returns: the optional SECOND, more urgent window — its own
 -- color below threshold2 seconds. Only honored when strictly inside the
 -- first window (threshold2 < threshold); anything else is ignored rather
 -- than guessed at.
 local function GetDurationLowTime(source)
     if type(source) ~= "table" then return nil end
-    local threshold = tonumber(source.durationLowTimeThreshold)
-    if not threshold or threshold <= 0 then return nil end
-    local decimals = source.durationLowTimeDecimals == true
-    local colorHex = LowTimeHex(source.durationLowTimeColor)
-    if not decimals and not colorHex then return nil end
 
-    local threshold2 = tonumber(source.durationLowTimeThreshold2)
-    local colorHex2 = LowTimeHex(source.durationLowTimeColor2)
-    if not (threshold2 and threshold2 > 0 and threshold2 < threshold and colorHex2) then
-        threshold2, colorHex2 = nil, nil
+    local rawThreshold = source.durationLowTimeThreshold
+    local rawDecimals = source.durationLowTimeDecimals
+    local rawThreshold2 = source.durationLowTimeThreshold2
+    local color = source.durationLowTimeColor
+    local color2 = source.durationLowTimeColor2
+    -- A present color table with nil components is not the same input as an
+    -- absent one (LowTimeHex substitutes defaults), so record presence too.
+    local hasColor = type(color) == "table"
+    local hasColor2 = type(color2) == "table"
+    local cr, cg, cb, c2r, c2g, c2b
+    if hasColor then cr, cg, cb = color[1], color[2], color[3] end
+    if hasColor2 then c2r, c2g, c2b = color2[1], color2[2], color2[3] end
+
+    local memo = durationLowTimeMemo[source]
+    if memo
+        and memo.rawThreshold == rawThreshold
+        and memo.rawDecimals == rawDecimals
+        and memo.rawThreshold2 == rawThreshold2
+        and memo.hasColor == hasColor and memo.hasColor2 == hasColor2
+        and memo.cr == cr and memo.cg == cg and memo.cb == cb
+        and memo.c2r == c2r and memo.c2g == c2g and memo.c2b == c2b then
+        return memo.threshold, memo.decimals, memo.colorHex, memo.threshold2, memo.colorHex2
     end
+
+    local threshold = tonumber(rawThreshold)
+    local decimals, colorHex, threshold2, colorHex2
+    if threshold and threshold <= 0 then
+        threshold = nil
+    end
+    if threshold then
+        decimals = rawDecimals == true
+        colorHex = LowTimeHex(color)
+        if not decimals and not colorHex then
+            threshold, decimals, colorHex = nil, nil, nil
+        else
+            threshold2 = tonumber(rawThreshold2)
+            colorHex2 = LowTimeHex(color2)
+            if not (threshold2 and threshold2 > 0 and threshold2 < threshold and colorHex2) then
+                threshold2, colorHex2 = nil, nil
+            end
+        end
+    end
+
+    if not memo then
+        memo = {}
+        durationLowTimeMemo[source] = memo
+    end
+    memo.rawThreshold, memo.rawDecimals, memo.rawThreshold2 = rawThreshold, rawDecimals, rawThreshold2
+    memo.hasColor, memo.hasColor2 = hasColor, hasColor2
+    memo.cr, memo.cg, memo.cb = cr, cg, cb
+    memo.c2r, memo.c2g, memo.c2b = c2r, c2g, c2b
+    memo.threshold, memo.decimals, memo.colorHex = threshold, decimals, colorHex
+    memo.threshold2, memo.colorHex2 = threshold2, colorHex2
+
     return threshold, decimals, colorHex, threshold2, colorHex2
 end
 CooldownCompanion.GetDurationLowTime = GetDurationLowTime
@@ -606,16 +658,48 @@ local function CreateDurationTextFormatter(formatKey, lowThreshold, lowDecimals,
     return formatter
 end
 
+-- Front cache for the key-building above the shared formatter cache, keyed by
+-- the config table, with a separate record per allowLowTime side (the same
+-- style resolves to different keys on the cooldown and aura sides). Same
+-- no-write-back rule as durationLowTimeMemo. The recorded dependencies are the
+-- two raw format fields plus the RESOLVED low-time tuple, which
+-- GetDurationLowTime revalidates against every raw low-time field and color
+-- component on each call — so a config edit can never be skipped here.
+local durationTextFormatterMemo = setmetatable({}, { __mode = "k" })
+
 -- Second return is the CACHE key (formatKey when low-time is off, composite
 -- when on) — BindDurationText uses it for change detection, so a low-time
 -- config edit re-applies the formatter even when the format key is unchanged.
 -- allowLowTime must only be passed by cooldown-side surfaces.
 local function GetDurationTextFormatter(source, allowLowTime)
+    local allowLow = (allowLowTime and true) or false
+    local sourceIsTable = type(source) == "table"
+
+    local lowThreshold, lowDecimals, lowColorHex, lowThreshold2, lowColorHex2
+    if allowLow then
+        lowThreshold, lowDecimals, lowColorHex, lowThreshold2, lowColorHex2 = GetDurationLowTime(source)
+    end
+
+    local memoRoot, memo, rawFormat, rawDecimalTimers
+    if sourceIsTable then
+        rawFormat, rawDecimalTimers = source.durationFormat, source.decimalTimers
+        memoRoot = durationTextFormatterMemo[source]
+        memo = memoRoot and memoRoot[allowLow]
+        if memo
+            and memo.rawFormat == rawFormat
+            and memo.rawDecimalTimers == rawDecimalTimers
+            and memo.lowThreshold == lowThreshold
+            and memo.lowDecimals == lowDecimals
+            and memo.lowColorHex == lowColorHex
+            and memo.lowThreshold2 == lowThreshold2
+            and memo.lowColorHex2 == lowColorHex2 then
+            return memo.formatter or nil, memo.cacheKey
+        end
+    end
+
     local formatKey = GetDurationFormat(source)
     local cacheKey = formatKey
-    local lowThreshold, lowDecimals, lowColorHex, lowThreshold2, lowColorHex2
-    if allowLowTime then
-        lowThreshold, lowDecimals, lowColorHex, lowThreshold2, lowColorHex2 = GetDurationLowTime(source)
+    if allowLow then
         if lowThreshold then
             cacheKey = formatKey .. "#low" .. lowThreshold
                 .. (lowDecimals and "d" or "") .. (lowColorHex or "")
@@ -625,17 +709,29 @@ local function GetDurationTextFormatter(source, allowLowTime)
         end
     end
 
-    local cached = durationTextFormatterCache[cacheKey]
-    if cached ~= nil then
-        if cached == false then
-            return nil, cacheKey
-        end
-        return cached, cacheKey
+    local formatter = durationTextFormatterCache[cacheKey]
+    if formatter == nil then
+        formatter = CreateDurationTextFormatter(formatKey, lowThreshold, lowDecimals, lowColorHex, lowThreshold2, lowColorHex2)
+            or false
+        durationTextFormatterCache[cacheKey] = formatter
     end
 
-    local formatter = CreateDurationTextFormatter(formatKey, lowThreshold, lowDecimals, lowColorHex, lowThreshold2, lowColorHex2)
-    durationTextFormatterCache[cacheKey] = formatter or false
-    return formatter, cacheKey
+    if sourceIsTable then
+        if not memoRoot then
+            memoRoot = {}
+            durationTextFormatterMemo[source] = memoRoot
+        end
+        if not memo then
+            memo = {}
+            memoRoot[allowLow] = memo
+        end
+        memo.rawFormat, memo.rawDecimalTimers = rawFormat, rawDecimalTimers
+        memo.lowThreshold, memo.lowDecimals, memo.lowColorHex = lowThreshold, lowDecimals, lowColorHex
+        memo.lowThreshold2, memo.lowColorHex2 = lowThreshold2, lowColorHex2
+        memo.formatter, memo.cacheKey = formatter, cacheKey
+    end
+
+    return formatter or nil, cacheKey
 end
 CooldownCompanion.GetDurationTextFormatter = GetDurationTextFormatter
 

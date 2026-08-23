@@ -42,6 +42,7 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local RB = ST._RB
 local format = string.format
+local math_floor = math.floor
 
 local isApplied = false
 local hooksInstalled = false
@@ -1459,7 +1460,14 @@ local function SetCastTimeText(remaining)
     if not castTimeText:IsShown() then return end
     if remaining < 0 then remaining = 0 end
     -- Same dedupe as BarMode's SetBarTimeText: the rendered tenth changes
-    -- ~10x/sec while this runs every frame, so skip unchanged strings.
+    -- ~10x/sec while this runs every frame, so skip unchanged strings. The
+    -- integer gate must round the way CAST_BAR_CAST_TIME does (every locale
+    -- ships a single decimal); truncating instead would hold the previous
+    -- tenth on screen for up to 0.05s.
+    local tenth = math_floor(remaining * 10 + 0.5)
+    if tenth == frame._lastCastTimeTenth then return end
+    frame._lastCastTimeTenth = tenth
+
     local text = format(CAST_BAR_CAST_TIME or "%.1f", remaining)
     if text ~= frame._lastCastTimeText then
         frame._lastCastTimeText = text

@@ -158,6 +158,15 @@ end
 -- find or create a specific (button, unit) pair.
 local displays = {}       -- host button -> { [unitToken] = record }
 local records = {}        -- flat, append-only list of every record
+-- Which unit tokens ANY record family currently carries. Valid only because
+-- the three record lists are append-only and `record.unit` is written once at
+-- creation and never reassigned (see EnsureDisplay), so this set can gain
+-- tokens but never has to lose one. Presence only — the count would have to be
+-- decremented, and nothing ever removes a record.
+local recordTokens = {}
+local function NoteRecordToken(unit)
+    recordTokens[unit] = true
+end
 local slotCounter = 0
 local pendingRebind = false
 local rebindQueued = false
@@ -226,7 +235,7 @@ end
 -- index 0 for "player" (SecureGroupHeaders.lua:290-296) — so "player" is added
 -- explicitly. "target" is deliberately absent: it aliases whichever group
 -- member happens to be targeted, and would double-draw.
-local function GroupAuraTokens()
+local function BuildGroupAuraTokens()
     local tokens = {}
     if IsInRaid() then
         for index = 1, GetNumGroupMembers() do
@@ -244,6 +253,33 @@ local function GroupAuraTokens()
     return tokens
 end
 
+-- The token set the last bind pass actually consumed. Roster events exist ONLY
+-- to re-derive that set (it is the sole roster-dependent input to the rebind
+-- pass: GroupAuraTokens is the only reader of IsInRaid/GetNumGroupMembers/
+-- GetNumSubgroupMembers in the addon, and `soundsAllowed` is a function of the
+-- set's size), so a roster change that leaves it element-wise identical has
+-- nothing for a rebind to do. Same-token remapping — raidN meaning a different
+-- person — is the container refresh's job, not this one's.
+--
+-- Stamped from the CONSUMER below rather than from the pass, so the compared
+-- value can never drift from the list the bind was built with. nil (no pass has
+-- consumed a set yet) reads as "changed", which is the current behavior.
+local lastBoundRosterSignature
+
+local function RosterTokenSignature(tokens)
+    return table.concat(tokens, "\031")
+end
+
+local function GroupAuraTokens()
+    local tokens = BuildGroupAuraTokens()
+    lastBoundRosterSignature = RosterTokenSignature(tokens)
+    return tokens
+end
+
+local function RosterTokenSetChanged()
+    return RosterTokenSignature(BuildGroupAuraTokens()) ~= lastBoundRosterSignature
+end
+
 -- Container-level refresh for records whose token may now resolve to a different
 -- person. Combat-safe (V13, re-validated V18). Shared by both watchers so a
 -- change to the refresh shape can never apply to only one token family.
@@ -256,28 +292,60 @@ local RefreshPanelRecordsForToken
 -- RefreshIdentityVisibilityForToken); assigned in the AURA PANELS section.
 local RefreshPanelIdentityVisibilityForToken
 
+-- The slot family's relationship-only half; the block and panel twins live
+-- with their own record lists. Hoisted above the watchers so the walk below can
+-- do both halves of a record's refresh in ONE traversal.
+local RefreshSlotIdentityVisibility
+
+-- Hidden containers are not just cheap to skip, they are FREE to skip:
+-- UpdateAllAuras only sets the FullAuraRebuild dirty mask, and
+-- ManagedAuraContainerPrivateMixin:OnDirtyChanged schedules the processing pass
+-- as RunWhenVisibleOnce (Blizzard_ManagedAuraContainer.lua:45-52, 90-98), so
+-- nothing is processed while the container is hidden. The re-show path then
+-- re-runs UpdateAllAuras itself from OnShow_Intrinsic
+-- (Blizzard_AuraContainer.lua:71-74), and every CC re-show goes through it:
+-- BindDisplay's `record.container:Show()` for slots, BindBlockBucket's and
+-- BindAuraPanel/BindAuraSection's for blocks and panels. A skipped record can
+-- therefore never present a stale parse.
+--
+-- The identity half stays UNCONDITIONAL. It is two C calls and a no-op
+-- SetShown on a parked record, but its `changed` return is what asks for a
+-- rebind, and suppressing that would move when a display comes back.
 local function RefreshRecordsForToken(isMatch)
-    local identityChanged
-    if RefreshIdentityVisibilityForToken then
-        identityChanged = RefreshIdentityVisibilityForToken(isMatch)
-    end
+    local changed = false
     for _, record in ipairs(records) do
         if isMatch(record.unit) then
-            record.container:UpdateAllAuras()
+            changed = RefreshSlotIdentityVisibility(record) or changed
+            if not record.parked then
+                record.container:UpdateAllAuras()
+            end
         end
     end
     if RefreshBlockRecordsForToken then
-        RefreshBlockRecordsForToken(isMatch)
+        changed = RefreshBlockRecordsForToken(isMatch) or changed
     end
     if RefreshPanelRecordsForToken then
-        RefreshPanelRecordsForToken(isMatch)
+        changed = RefreshPanelRecordsForToken(isMatch) or changed
     end
-    return identityChanged
+    return changed
 end
 
 local function IsTargetToken(unit) return unit == "target" end
 local function IsPetToken(unit) return unit == "pet" end
-local function IsAllyToken(unit) return unit ~= "player" and unit ~= "target" end
+-- Roster-scoped only. "pet" is an ally token everywhere else, but a roster
+-- change can never re-point it, and it has its own watcher (EnsurePetWatcher)
+-- covering both the same-token swap and the dismissed-pet case.
+local function IsRosterAllyToken(unit)
+    return unit ~= "player" and unit ~= "target" and unit ~= "pet"
+end
+local function MatchAnyToken() return true end
+
+-- UNIT_FACTION is unfiltered, so its handler must allocate nothing per event.
+-- Written immediately before the walk that reads it; the walk cannot re-enter
+-- this path (SetShown reaches only CC-owned visibility roots and Blizzard's own
+-- container scripts).
+local identityRefreshToken
+local function IsIdentityRefreshToken(unit) return unit == identityRefreshToken end
 
 local function EnsureIdentityWatcher()
     if identityWatcher then return end
@@ -353,9 +421,14 @@ local function EnsureGroupWatcher()
         -- the token changing, and the container would keep the old parse.
         -- Container-level call, combat-safe (V13/V18) — the rebind below is
         -- combat-deferred and cannot cover a mid-fight reshuffle.
-        RefreshRecordsForToken(IsAllyToken)
-        -- Not "config"/"style", so this never prints a combat-defer note.
-        CooldownCompanion:RequestAuraRebind("roster")
+        RefreshRecordsForToken(IsRosterAllyToken)
+        -- The rebind exists only to re-derive the token SET (GroupAuraTokens),
+        -- so a reshuffle that leaves the set element-wise identical has nothing
+        -- for it to bind differently. Not "config"/"style", so this never
+        -- prints a combat-defer note.
+        if RosterTokenSetChanged() then
+            CooldownCompanion:RequestAuraRebind("roster")
+        end
     end)
 end
 
@@ -2248,6 +2321,7 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
     end
     byUnit[recordKey] = record
     records[#records + 1] = record
+    NoteRecordToken(unit)
     EnsureIdentityWatcher()
     if unit == "target" then
         EnsureTargetWatcher()
@@ -2605,7 +2679,7 @@ local blockContainers = {} -- side .. "\031" .. unit -> block record
 local blockRecords = {}    -- flat, append-only list of every block record
 local blockChainBlocked = 0 -- entries the last bind dropped for a dead chain
 
-local function RefreshSlotIdentityVisibility(record)
+function RefreshSlotIdentityVisibility(record)
     local applicable = CanApplySpellIdentityFilter(record.unit, record.boundGroupScoped)
     local changed = record.identityApplicable ~= applicable
     record.identityApplicable = applicable
@@ -2640,24 +2714,39 @@ function RefreshIdentityVisibilityForToken(isMatch)
     return changed
 end
 
+-- Reached from an UNFILTERED UNIT_FACTION registration, so it must stay
+-- allocation-free: both matchers are file-locals, the single-token one reading
+-- an upvalue written on the line above the call. The token early-out is safe
+-- because `recordTokens` can only ever gain entries (append-only lists,
+-- immutable record.unit), so "no record carries this token" cannot go stale in
+-- the direction that would skip real work — and the walk it replaces would have
+-- matched nothing and returned false anyway.
 function CooldownCompanion:RefreshAuraIdentityVisibility(unit)
     if unit then
-        return RefreshIdentityVisibilityForToken(function(token)
-            return token == unit
-        end)
+        if not recordTokens[unit] then return false end
+        identityRefreshToken = unit
+        return RefreshIdentityVisibilityForToken(IsIdentityRefreshToken)
     end
-    return RefreshIdentityVisibilityForToken(function() return true end)
+    return RefreshIdentityVisibilityForToken(MatchAnyToken)
 end
 
 -- The watcher-side half of the token refresh (forward-declared above the
--- watchers). Same container-level call the slot loop makes: sanctioned
--- combat surface, and hidden containers self-heal on show regardless.
+-- watchers). Both halves of a block record's refresh in ONE traversal, the same
+-- fold the slot walk does. Same container-level call the slot loop makes:
+-- sanctioned combat surface, and a hidden container self-heals on show
+-- (`record.shown` is the CC-side truth for container:Show()/Hide(), and every
+-- writer of it sits next to the matching call).
 function RefreshBlockRecordsForToken(isMatch)
+    local changed = false
     for _, record in ipairs(blockRecords) do
         if isMatch(record.unit) then
-            record.container:UpdateAllAuras()
+            changed = RefreshBlockIdentityVisibility(record) or changed
+            if record.shown then
+                record.container:UpdateAllAuras()
+            end
         end
     end
+    return changed
 end
 
 -- Move only the plain CC parent. The AuraContainer is anchored to this root
@@ -2781,6 +2870,7 @@ local function EnsureBlockContainer(side, unit)
     }
     blockContainers[key] = record
     blockRecords[#blockRecords + 1] = record
+    NoteRecordToken(unit)
     EnsureIdentityWatcher()
     if unit == "target" then
         EnsureTargetWatcher()
@@ -3222,12 +3312,18 @@ function RefreshPanelIdentityVisibilityForToken(isMatch)
     return changed
 end
 
+-- Folded like the block twin above: identity then update, one traversal.
 function RefreshPanelRecordsForToken(isMatch)
+    local changed = false
     for _, record in ipairs(panelRecords) do
         if isMatch(record.unit) then
-            record.container:UpdateAllAuras()
+            changed = RefreshPanelIdentityVisibility(record) or changed
+            if record.shown then
+                record.container:UpdateAllAuras()
+            end
         end
     end
+    return changed
 end
 
 -- The flow contract for one panel: mount corner + growth signs, the layout
@@ -3399,6 +3495,7 @@ local function EnsurePanelContainer(groupId, unit, hostFrame, surfaceKey, chrome
     }
     panelContainers[key] = record
     panelRecords[#panelRecords + 1] = record
+    NoteRecordToken(unit)
     EnsureIdentityWatcher()
     if unit == "target" then
         EnsureTargetWatcher()
@@ -4083,6 +4180,13 @@ function RunAuraRebind()
     rebindPassCount = rebindPassCount + 1
     lastRebindPassAt = GetTime()
 
+    -- Opens the pass-scoped candidate memo (Core/Aura.lua) for everything this
+    -- pass resolves: the slot walk below, the custom-bar collectors it calls,
+    -- the block and panel passes, and every per-record styler under them. The
+    -- pass runs to the End call at the bottom of this function; both early
+    -- returns above resolve nothing, so they need no clear.
+    ST.BeginAuraCandidatePass()
+
     -- Collect wanted bindings from live buttons. Icon/bar behavior keeps its
     -- existing aura flags. Texture panels always bind primary Aura entries and
     -- require an explicit opt-in for ordinary spells, so retained pre-12.1
@@ -4223,6 +4327,8 @@ function RunAuraRebind()
     if self.UpdateCastBarStackAnchor then
         self:UpdateCastBarStackAnchor()
     end
+
+    ST.EndAuraCandidatePass()
 end
 
 rebindDeferFrame:SetScript("OnEvent", function(_, event, restrictionType, restrictionState)

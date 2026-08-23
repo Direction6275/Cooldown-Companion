@@ -3624,9 +3624,12 @@ function CooldownCompanion:UpdateAllCooldowns()
 end
 
 function CooldownCompanion:UpdateAllGroupLayouts()
+    -- Combat state cannot change part-way through a synchronous pass, so the
+    -- lockdown read is per pass, not per frame.
+    local inCombat = InCombatLockdown()
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame:IsShown() then
-            local protected = InCombatLockdown() and frame:IsProtected()
+            local protected = inCombat and frame:IsProtected()
             if frame._strataDirty and not protected then
                 self:RefreshGroupFrame(groupId)
             end
@@ -3648,7 +3651,7 @@ function CooldownCompanion:UpdateAllGroupLayouts()
     if self.containerFrames then
         for containerId, frame in pairs(self.containerFrames) do
             if frame and frame:IsShown() and frame._anchorDirty then
-                if not (InCombatLockdown() and frame:IsProtected()) then
+                if not (inCombat and frame:IsProtected()) then
                     local container = self.db.profile.groupContainers[containerId]
                     if container then
                         self:AnchorContainerFrame(frame, container.anchor)

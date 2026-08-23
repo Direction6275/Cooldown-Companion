@@ -259,6 +259,22 @@ local HealthBar = RB.HealthBar
 local HEALTH_EFFECTS = RB.HealthEffects
 local lifecycleModule = nil
 
+-- The absent-state custom bar rewrites its fill alpha on every poll tick, and
+-- both the reset leg and the un-pulsed animation leg write the same 1. The
+-- record is keyed by the texture OBJECT as well as the value, so a style pass
+-- that hands the bar a different fill texture always writes again. These two
+-- functions plus the pulse leg are the only writers of this texture's alpha in
+-- the addon.
+local function SetCustomBarFillAlpha(bar, fillTexture, alpha)
+    if not (fillTexture and fillTexture.SetAlpha) then return end
+    if bar._cdcFillAlphaTexture == fillTexture and bar._cdcFillAlpha == alpha then
+        return
+    end
+    bar._cdcFillAlphaTexture = fillTexture
+    bar._cdcFillAlpha = alpha
+    fillTexture:SetAlpha(alpha)
+end
+
 local function ResetCustomAuraBarIndicatorVisuals(bar, cabConfig)
     if not bar then return end
 
@@ -268,10 +284,7 @@ local function ResetCustomAuraBarIndicatorVisuals(bar, cabConfig)
     bar._barCSBaseColor = nil
     bar._barCSShiftColor = nil
     bar._barCSSpeed = nil
-    local fillTexture = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
-    if fillTexture and fillTexture.SetAlpha then
-        fillTexture:SetAlpha(1)
-    end
+    SetCustomBarFillAlpha(bar, bar.GetStatusBarTexture and bar:GetStatusBarTexture(), 1)
 
     local baseColor = (cabConfig and cabConfig.barColor) or {0.5, 0.5, 1}
     bar:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
@@ -327,11 +340,9 @@ local function AnimateCustomAuraBarIndicator(bar)
     local fillTexture = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
     if bar._barPulseActive then
         local speed = bar._barPulseSpeed or 0.5
-        if fillTexture and fillTexture.SetAlpha then
-            fillTexture:SetAlpha(0.6 + 0.4 * math_sin(now * 2 * math_pi / speed))
-        end
-    elseif fillTexture and fillTexture.SetAlpha then
-        fillTexture:SetAlpha(1)
+        SetCustomBarFillAlpha(bar, fillTexture, 0.6 + 0.4 * math_sin(now * 2 * math_pi / speed))
+    else
+        SetCustomBarFillAlpha(bar, fillTexture, 1)
     end
 
     if bar._barColorShiftActive then
@@ -1115,8 +1126,14 @@ function segmentedUpdateScratch.GetRuneData(holder)
     return holder._runeDataScratch
 end
 
+-- The flag records that every recharge text on this holder is already blank
+-- and hidden, so the poll can skip a clear it has nothing to undo. Only
+-- SetRechargeText writes text, and it clears the flag, so the flag can never
+-- claim a hidden state that is not real.
 local function HideRechargeTexts(holder)
-    if not (holder and holder.rechargeTexts) then return end
+    if not holder then return end
+    holder._rechargeTextsHidden = true
+    if not holder.rechargeTexts then return end
     for _, text in ipairs(holder.rechargeTexts) do
         text:SetText("")
         text:Hide()
@@ -1176,6 +1193,7 @@ local function SetRechargeText(holder, segmentIndex, remaining, showZero)
     if not (holder and holder._showRechargeText and holder.rechargeTexts) then return end
     local text = holder.rechargeTexts[segmentIndex]
     if not text then return end
+    holder._rechargeTextsHidden = false
     if type(remaining) ~= "number" or remaining <= 0 then
         if showZero then
             text:SetText("0")
@@ -1199,7 +1217,13 @@ local function UpdateSegmentedBar(holder, powerType, settings)
     end
 
     local segmentedSmoothing = GetResourceSegmentedSmoothing(settings)
-    HideRechargeTexts(holder)
+    -- Recharge text exists only on runes with the option on (StyleRechargeTexts
+    -- owns _showRechargeText). Everywhere else the clear has to run once after
+    -- the style pass and never again, so the poll stops rewriting six blank
+    -- FontStrings per segmented bar per tick.
+    if holder._showRechargeText or not holder._rechargeTextsHidden then
+        HideRechargeTexts(holder)
+    end
 
     if powerType == 5 then
         -- DK Runes: sorted by readiness (ready left, longest CD right)
@@ -1234,7 +1258,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
                 readyCount = readyCount + 1
             end
         end
-        local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, readyCount)
+        local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, readyCount, holder)
         local activeReadyColor = allReady and maxColor or (thresholdActive and thresholdColor or readyColor)
         local runeValueTotal = 0
         local showAllRechargeText = IsRechargeTextAllSegmentsMode(holder)
@@ -1295,7 +1319,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
                 displayCurrent = filled + partial
                 local readyColor, rechargingColor, maxColor = GetResourceColors(7, settings)
                 local isMax = (filled == max)
-                local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, filled)
+                local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, filled, holder)
                 local activeReadyColor = isMax and maxColor or (thresholdActive and thresholdColor or readyColor)
                 for i = 1, math_min(#holder.segments, max) do
                     local seg = holder.segments[i]
@@ -1345,7 +1369,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
         local displayCurrent = filled + partial
         local readyColor, rechargingColor, maxColor = GetResourceColors(19, settings)
         local isMax = (filled == max)
-        local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, filled)
+        local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, filled, holder)
         local activeReadyColor = isMax and maxColor or (thresholdActive and thresholdColor or readyColor)
         for i = 1, math_min(#holder.segments, max) do
             local seg = holder.segments[i]
@@ -1382,7 +1406,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
 
         local normalColor, maxColor, chargedColor = GetResourceColors(4, settings)
         local isMax = (current == max and max > 0)
-        local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, current)
+        local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, current, holder)
         local baseColor = isMax and maxColor or (thresholdActive and thresholdColor or normalColor)
 
         -- Charged combo points (Rogue only)
@@ -1430,7 +1454,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
         normalColor, maxColor = color, color
     end
     local isMax = (current == max and max > 0)
-    local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, current)
+    local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, current, holder)
     local activeColor = isMax and maxColor or (thresholdActive and thresholdColor or normalColor)
     for i = 1, math_min(#holder.segments, max) do
         local seg = holder.segments[i]
@@ -1534,14 +1558,28 @@ local function UpdateMaxStackBorder(holder, settings, barType, isMax, powerType)
         or segCount > ST.RESOURCE_SEGMENT_BORDER_MAX
     -- The count is part of the key: an in-place re-segment keeps the pool, so
     -- without it a cluster that changed length would keep its old rings.
-    local key = (isContinuous and "bar:" or "seg:") .. style .. ":"
-        .. tostring(segCount) .. ":"
-        .. tostring(color[1]) .. ":" .. tostring(color[2]) .. ":"
-        .. tostring(color[3]) .. ":" .. tostring(color[4]) .. ":"
-        .. tostring(size) .. ":" .. tostring(thickness) .. ":"
-        .. tostring(speed) .. ":" .. tostring(lines)
-    if pool.key == key then return end
-    pool.key = key
+    -- Compared field by field rather than through a composed string: this runs
+    -- on every tick a stack-counted resource sits at its maximum, and the
+    -- string was built before the early-out, not after it.
+    if pool.key == "on"
+        and pool.keyContinuous == isContinuous
+        and pool.keyStyle == style
+        and pool.keySegCount == segCount
+        and pool.keyR == color[1] and pool.keyG == color[2]
+        and pool.keyB == color[3] and pool.keyA == color[4]
+        and pool.keySize == size and pool.keyThickness == thickness
+        and pool.keySpeed == speed and pool.keyLines == lines then
+        return
+    end
+    pool.key = "on"
+    pool.keyContinuous = isContinuous
+    pool.keyStyle = style
+    pool.keySegCount = segCount
+    pool.keyR, pool.keyG, pool.keyB, pool.keyA = color[1], color[2], color[3], color[4]
+    pool.keySize = size
+    pool.keyThickness = thickness
+    pool.keySpeed = speed
+    pool.keyLines = lines
 
     local borderStyle = {
         barAuraIndicatorEnabled = true,
@@ -1634,7 +1672,7 @@ local function UpdateMaelstromWeaponBar(holder, settings, barType)
     end
 
     local baseColor, overlayColor, maxColor = GetResourceColors(100, settings)
-    local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(RESOURCE_MAELSTROM_WEAPON, settings, stacks)
+    local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(RESOURCE_MAELSTROM_WEAPON, settings, stacks, holder)
     local isMax = stacks > 0 and stacks == mwMaxStacks
     -- Colour precedence is identical in all three shapes: at max wins, then
     -- a configured threshold, then the resource's own colour.
@@ -1772,7 +1810,7 @@ local function UpdateAuraStackResourceBar(holder, settings, barType, powerType)
     end
 
     local baseColor, maxColor = GetResourceColors(powerType, settings)
-    local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, stacks)
+    local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, stacks, holder)
     -- >= rather than ==: a member's maximum can be a stale constant or a
     -- stand-in fallback the API has not replaced yet, so stacks past it
     -- should still read as "at max" instead of silently losing the max
@@ -2310,7 +2348,7 @@ local function ApplySegmentedPreviewColors(holder, powerType, settings, previewV
     local filled = math_min(numSegments, math_max(0, math_floor(previewValue)))
     local hasPartial = previewValue > filled and filled < numSegments
 
-    local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, filled)
+    local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, filled, holder)
 
     local color1, color2, color3 = GetResourceColors(powerType, settings)
     local filledColor = color1
@@ -2639,6 +2677,13 @@ function CooldownCompanion:ApplyResourceBars(opts)
         local prevPowerType = barInfo and barInfo.powerType
         local wasShown = barInfo and barInfo.frame and barInfo.frame:IsShown() or false
         local samePowerReflow = wasShown and prevPowerType ~= nil and prevPowerType == powerType
+        -- Derived config compiled by the PREVIOUS pass is dropped before this
+        -- one styles or initially paints anything, so a commit that changed
+        -- thresholds or tick markers can never be read back through a stale
+        -- list for a frame. The recompile at the end of this slot restores it.
+        if barInfo and barInfo.frame then
+            RB.ClearCompiledResourceBarConfig(barInfo.frame)
+        end
         local firstSide = isVerticalLayout and "left" or "above"
         local targetContainer = sideList[idx] == firstSide and containerFrameAbove or containerFrameBelow
 
@@ -2973,6 +3018,12 @@ function CooldownCompanion:ApplyResourceBars(opts)
         barInfo._side = sideList[idx]
         barInfo._order = orderList[idx]
         barInfo._effectiveThickness = effectiveThickness
+        -- Threshold and tick-marker lists for this slot's final identity,
+        -- compiled once here so the poll body reads them instead of
+        -- re-normalizing (fresh tables plus a sort comparator) every tick.
+        -- Reached through RB rather than a new file-level local:
+        -- ApplyResourceBars sits at Lua 5.1's 60-upvalue ceiling.
+        RB.CompileResourceBarConfig(barInfo.frame, powerType, settings)
 
         FinalizeAppliedBarVisibility(barInfo)
     end

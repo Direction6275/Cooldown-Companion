@@ -113,22 +113,46 @@ local function GetGroup(self, groupOrId)
     return profile and profile.groups and profile.groups[groupOrId] or nil
 end
 
+-- Pure function of the name, and the alpha-sync path asks it per panel per
+-- frame, so the two pattern captures are memoized for the session. Frame names
+-- come from anchor config, a small bounded set. NO_ANCHOR_KIND stands for a
+-- cached miss so it is distinguishable from "not cached yet".
+local NO_ANCHOR_KIND = {}
+local parsedAnchorKinds = {}
+local parsedAnchorIds = {}
+
 local function ParseAddonAnchorFrameName(frameName)
     if type(frameName) ~= "string" then return nil end
 
+    local cachedKind = parsedAnchorKinds[frameName]
+    if cachedKind ~= nil then
+        if cachedKind == NO_ANCHOR_KIND then
+            return nil
+        end
+        return cachedKind, parsedAnchorIds[frameName]
+    end
+
     local groupId = frameName:match("^CooldownCompanionGroup(%d+)$")
     if groupId then
-        return "group", tonumber(groupId)
+        parsedAnchorKinds[frameName] = "group"
+        parsedAnchorIds[frameName] = tonumber(groupId)
+        return "group", parsedAnchorIds[frameName]
     end
 
     local containerId = frameName:match("^CooldownCompanionContainer(%d+)$")
     if containerId then
-        return "container", tonumber(containerId)
+        parsedAnchorKinds[frameName] = "container"
+        parsedAnchorIds[frameName] = tonumber(containerId)
+        return "container", parsedAnchorIds[frameName]
     end
 
     if frameName == CURSOR_ANCHOR_TARGET then
+        parsedAnchorKinds[frameName] = "cursor"
         return "cursor", nil
     end
+
+    parsedAnchorKinds[frameName] = NO_ANCHOR_KIND
+    return nil
 end
 
 local function GetStandaloneTextureAnchorSettings(group)

@@ -60,7 +60,12 @@ local function DurationObjectShowsCooldown(durationObj)
     if not durationObj then return false end
     scratchCooldown:SetCooldownFromDurationObject(durationObj)
     local shown = scratchCooldown:IsShown()
+    -- Reset AFTER reading, and with Clear(): SetCooldown(0, 0) does not
+    -- auto-hide a CooldownFrame (see CooldownUpdate.lua's compact-mode hide
+    -- comment), so on its own it could leave the widget shown and let a later
+    -- probe read this call's result instead of its own.
     scratchCooldown:SetCooldown(0, 0)
+    scratchCooldown:Clear()
     return shown
 end
 EntryRuntime.DurationObjectShowsCooldown = DurationObjectShowsCooldown

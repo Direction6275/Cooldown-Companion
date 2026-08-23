@@ -1419,10 +1419,40 @@ local function DeactivatePooledButton(self, groupId, button)
     button:ClearAllPoints()
 end
 
+-- Rule-1 exact-match HINTS for AcquireButtonFromPool: one map pair per pool key
+-- (pools are per display mode), because the two acquisition contexts key on
+-- different fields -- combat on _auraSlotHostToken, out of combat on buttonData.
+-- Strictly hints: every reader re-tests the rule on the hinted frame and must
+-- still find it in the pool, so a stale or missing hint only costs the verbatim
+-- scan below and can never change which frame rule 1 picks. Weak keys so a hint
+-- left behind by a field that changed while the frame sat pooled cannot keep a
+-- deleted entry's table reachable for the session.
 local function ReleaseButtonToPool(self, frame, groupId, button)
     DeactivatePooledButton(self, groupId, button)
-    local pool = GetButtonPool(frame, button._buttonPoolKey)
+    local poolKey = button._buttonPoolKey
+    local pool = GetButtonPool(frame, poolKey)
     pool[#pool + 1] = button
+    local index = frame._buttonPoolIndex
+    if not index then
+        index = {}
+        frame._buttonPoolIndex = index
+    end
+    local indexEntry = index[poolKey]
+    if not indexEntry then
+        indexEntry = {
+            byData = setmetatable({}, { __mode = "k" }),
+            byToken = setmetatable({}, { __mode = "k" }),
+        }
+        index[poolKey] = indexEntry
+    end
+    -- Last release wins, which is the frame the descending scan would reach
+    -- first if two pooled frames ever carry the same key.
+    if button.buttonData ~= nil then
+        indexEntry.byData[button.buttonData] = button
+    end
+    if button._auraSlotHostToken ~= nil then
+        indexEntry.byToken[button._auraSlotHostToken] = button
+    end
 end
 
 local function AcquireButtonFromPool(frame, poolKey, buttonData)
@@ -1430,7 +1460,33 @@ local function AcquireButtonFromPool(frame, poolKey, buttonData)
     local pool = pools and pools[poolKey]
     if not pool or #pool == 0 then return nil end
     local pick
-    if InCombatLockdown() then
+    local inCombat = InCombatLockdown()
+    local indexEntry = frame._buttonPoolIndex and frame._buttonPoolIndex[poolKey] or nil
+    if indexEntry and buttonData ~= nil then
+        local hinted
+        if inCombat then
+            hinted = indexEntry.byToken[buttonData]
+            if hinted and hinted._auraSlotHostToken ~= buttonData then
+                hinted = nil
+            end
+        else
+            hinted = indexEntry.byData[buttonData]
+            if hinted and hinted.buttonData ~= buttonData then
+                hinted = nil
+            end
+        end
+        if hinted then
+            for i = 1, #pool do
+                if pool[i] == hinted then
+                    pick = i
+                    break
+                end
+            end
+        end
+    end
+    if pick ~= nil then
+        -- Rule-1 hint hit: the ladders below would reach the same frame first.
+    elseif inCombat then
         -- Aura-slot hosts are combat-locked to their entry: the slot subtree
         -- riding a host is forbidden (untouchable) until the OOC rebind pass,
         -- so a mismatched host would show another entry's aura on this button.
@@ -1485,6 +1541,16 @@ local function AcquireButtonFromPool(frame, poolKey, buttonData)
         pick = pick or free or #pool
     end
     local button = table.remove(pool, pick)
+    -- Whichever rule handed this frame out, it has left the pool: drop every
+    -- hint that still points at it, including a displaced fallback pick.
+    if indexEntry then
+        if button.buttonData ~= nil and indexEntry.byData[button.buttonData] == button then
+            indexEntry.byData[button.buttonData] = nil
+        end
+        if button._auraSlotHostToken ~= nil and indexEntry.byToken[button._auraSlotHostToken] == button then
+            indexEntry.byToken[button._auraSlotHostToken] = nil
+        end
+    end
     button:SetParent(frame)
     return button
 end
@@ -1549,6 +1615,7 @@ function CooldownCompanion:ReleaseGroupButtonPools(frame)
         wipe(pool)
     end
     frame._buttonFramePools = nil
+    frame._buttonPoolIndex = nil
 end
 
 -- Nudger constants
@@ -2964,10 +3031,48 @@ function CooldownCompanion:AnchorFrameToCursor(frame, anchor, cursorX, cursorY)
     return ApplyCursorAnchorPosition(self, frame, anchor or BuildDefaultCursorAnchor(), cursorX, cursorY)
 end
 
-function CooldownCompanion:UpdateCursorAnchoredFrames()
+-- The cursor-anchor candidate set is pure config (anchor kind + panel
+-- membership), so the full-framerate handler works from this list instead of
+-- walking every group in the profile. Every caller that is NOT the ticker
+-- rebuilds it first, and the handler still re-tests both predicates per
+-- candidate, so a stale list can never move a panel that no longer qualifies.
+-- One file local (this chunk sits near Lua's 200-local ceiling).
+local cursorAnchorTicker = { ids = {}, count = 0 }
+
+function cursorAnchorTicker.Rebuild(addon, groups)
+    local ids = cursorAnchorTicker.ids
+    local count = 0
+    if groups then
+        for groupId, group in pairs(groups) do
+            if IsCursorAnchor(group.anchor)
+                and addon:CanGroupUseCursorAnchor(group) then
+                count = count + 1
+                ids[count] = groupId
+            end
+        end
+    end
+    for index = count + 1, cursorAnchorTicker.count do
+        ids[index] = nil
+    end
+    cursorAnchorTicker.count = count
+    return count
+end
+
+function cursorAnchorTicker.OnUpdate()
+    CooldownCompanion:UpdateCursorAnchoredFrames(true)
+end
+
+function CooldownCompanion:UpdateCursorAnchoredFrames(useCandidateList)
     local profile = self.db and self.db.profile
     local groups = profile and profile.groups
     if not groups then
+        return
+    end
+
+    if not useCandidateList then
+        cursorAnchorTicker.Rebuild(self, groups)
+    end
+    if cursorAnchorTicker.count == 0 then
         return
     end
 
@@ -2979,8 +3084,11 @@ function CooldownCompanion:UpdateCursorAnchoredFrames()
     local preview = self._cursorAnchorLayoutPreview
     local draggedGroupId = preview and preview.draggedGroupId or nil
 
-    for groupId, group in pairs(groups) do
-        if IsCursorAnchor(group.anchor)
+    for index = 1, cursorAnchorTicker.count do
+        local groupId = cursorAnchorTicker.ids[index]
+        local group = groups[groupId]
+        if group
+            and IsCursorAnchor(group.anchor)
             and self:CanGroupUseCursorAnchor(group) then
             local frame = self.groupFrames and self.groupFrames[groupId] or nil
             if frame and frame:IsShown() and not GroupIdsEqual(draggedGroupId, groupId) then
@@ -3006,13 +3114,11 @@ function CooldownCompanion:RefreshCursorAnchorTicker()
     local active = false
     local profile = self.db and self.db.profile
     local groups = profile and profile.groups
+    local count = cursorAnchorTicker.Rebuild(self, groups)
     if groups and self.groupFrames then
-        for groupId, group in pairs(groups) do
-            local frame = self.groupFrames[groupId]
-            if IsCursorAnchor(group.anchor)
-                and self:CanGroupUseCursorAnchor(group)
-                and frame
-                and frame:IsShown() then
+        for index = 1, count do
+            local frame = self.groupFrames[cursorAnchorTicker.ids[index]]
+            if frame and frame:IsShown() then
                 active = true
                 break
             end
@@ -3020,9 +3126,7 @@ function CooldownCompanion:RefreshCursorAnchorTicker()
     end
 
     if active then
-        self._cursorAnchorTicker:SetScript("OnUpdate", function()
-            CooldownCompanion:UpdateCursorAnchoredFrames()
-        end)
+        self._cursorAnchorTicker:SetScript("OnUpdate", cursorAnchorTicker.OnUpdate)
         self._cursorAnchorTicker:Show()
     else
         self._cursorAnchorTicker:SetScript("OnUpdate", nil)
@@ -5813,7 +5917,6 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
     HideContainerPanelLabels(frame)
     UpdateContainerWrapperLevels(frame)
 
-    local allPanels = self.GetPanels and self:GetPanels(containerId) or nil
     if self._combatForcedLock
         or container.locked ~= false
         or not self:IsContainerVisibleToCurrentChar(containerId) then
@@ -5836,6 +5939,9 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         return
     end
 
+    -- Below the locked-container return above: GetPanels walks every group and
+    -- allocates, and no reader of it is reachable before that return.
+    local allPanels = self.GetPanels and self:GetPanels(containerId) or nil
     local previewPanels = self.GetContainerUnlockPreviewPanels and self:GetContainerUnlockPreviewPanels(containerId, allPanels) or {}
     allPanels = allPanels or previewPanels
     local previewRects = {}

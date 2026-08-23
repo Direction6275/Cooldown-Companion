@@ -1384,8 +1384,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._isOutOfRange = false
     end
 
-    ApplyChargeTextColor(button, buttonData, style, usesChargeBehavior)
-
     -- Mode-specific visual dispatch
     if button._isText then
         UpdateTextDisplay(button)

@@ -25,7 +25,117 @@ local IsDistinctCDMAuraIdentity = ST.IsDistinctCDMAuraIdentity
 local IsConcreteSpellID = ST.IsConcreteSpellID
 local ResolveCDMAppliedAuraSpellID = ST.ResolveCDMAppliedAuraSpellID
 local pendingViewerAuraMapToken = 0
+local pendingViewerAuraMapAllowGate = true
 local FindChildInViewers
+
+-- Pass-scoped resolution memos. ACTIVE ONLY between BeginAuraCandidatePass and
+-- EndAuraCandidatePass, which wrap exactly one aura rebind pass; with no pass
+-- open every resolver in this file must behave exactly as an unmemoized call.
+-- The stamp is the frame time the pass opened: a pass is synchronous within one
+-- frame, so an error escaping before the end call cannot carry a stale memo
+-- into a later frame.
+local candidatePassActive = false
+local candidatePassStamp = 0
+local candidateMemoPlain = {}
+local candidateMemoConstrained = {}
+local viewerFrameMissPlain = {}
+local viewerFrameMissBuff = {}
+
+local function IsAuraCandidatePassActive()
+    return candidatePassActive and candidatePassStamp == GetTime()
+end
+
+local function WipeAuraCandidatePassMemos()
+    wipe(candidateMemoPlain)
+    wipe(candidateMemoConstrained)
+    wipe(viewerFrameMissPlain)
+    wipe(viewerFrameMissBuff)
+end
+
+function ST.BeginAuraCandidatePass()
+    WipeAuraCandidatePassMemos()
+    candidatePassActive = true
+    candidatePassStamp = GetTime()
+end
+
+function ST.EndAuraCandidatePass()
+    candidatePassActive = false
+    candidatePassStamp = 0
+    WipeAuraCandidatePassMemos()
+end
+
+-- Viewer association fingerprint: the ordered per-row spell associations that
+-- BuildViewerAuraMap's TAIL consumes (sound map, aura rebind, config refresh).
+-- Frame-derived on purpose — an item frame's cooldownInfo IS the CDM data
+-- provider's cached row table, and Blizzard mutates that table in place when a
+-- spell override flips, so this is the only view that sees an Eclipse-style
+-- transform. The static C-side data behind those tables changes only through
+-- CooldownViewerSettings.OnDataChanged, spec change and login, every one of
+-- which drives an UNGATED rebuild.
+--
+-- Row order comes from layoutIndex, never GetChildren() order: RefreshLayout
+-- releases the item pool through a hash walk and re-acquires LIFO, so which
+-- frame holds which row reshuffles on every pass even when the rows are
+-- identical.
+local viewerAssociationFingerprint = {}
+local viewerAssociationFingerprintLength = 0
+local viewerAssociationFingerprintKnown = false
+local pendingViewerAssociation = {}
+local pendingViewerAssociationLength = 0
+local pendingViewerAssociationUnknown = false
+local viewerAssociationRowScratch = {}
+
+-- Fail open: a value that is secret or not numeric makes the whole fingerprint
+-- unknown, and an unknown fingerprint always compares as changed.
+local function PushViewerAssociationValue(value)
+    if pendingViewerAssociationUnknown then return end
+    if issecretvalue(value) then
+        pendingViewerAssociationUnknown = true
+        return
+    end
+    local numeric = (value == nil) and 0 or tonumber(value)
+    if type(numeric) ~= "number" then
+        pendingViewerAssociationUnknown = true
+        return
+    end
+    pendingViewerAssociationLength = pendingViewerAssociationLength + 1
+    pendingViewerAssociation[pendingViewerAssociationLength] = numeric
+end
+
+local function BeginViewerAssociationFingerprint()
+    pendingViewerAssociationLength = 0
+    pendingViewerAssociationUnknown = false
+end
+
+-- Returns true when the associations differ from the last accepted
+-- fingerprint, when they are unknown, or when none was recorded yet.
+local function CommitViewerAssociationFingerprint()
+    if pendingViewerAssociationUnknown then
+        viewerAssociationFingerprintKnown = false
+        viewerAssociationFingerprintLength = 0
+        wipe(viewerAssociationFingerprint)
+        return true
+    end
+    local changed = not viewerAssociationFingerprintKnown
+        or viewerAssociationFingerprintLength ~= pendingViewerAssociationLength
+    if not changed then
+        for i = 1, pendingViewerAssociationLength do
+            if viewerAssociationFingerprint[i] ~= pendingViewerAssociation[i] then
+                changed = true
+                break
+            end
+        end
+    end
+    if changed then
+        wipe(viewerAssociationFingerprint)
+        for i = 1, pendingViewerAssociationLength do
+            viewerAssociationFingerprint[i] = pendingViewerAssociation[i]
+        end
+        viewerAssociationFingerprintLength = pendingViewerAssociationLength
+        viewerAssociationFingerprintKnown = true
+    end
+    return changed
+end
 
 local function IsBuffViewerChild(frame)
     if not frame then return false end
@@ -58,6 +168,8 @@ end
 
 local function AddViewerAuraMapChildren(addon, viewerName, addViewerAuraChild, ...)
     local isBuffViewer = BUFF_VIEWER_SET[viewerName] == true
+    local rowCount = 0
+    wipe(viewerAssociationRowScratch)
     for i = 1, select("#", ...) do
         local child = select(i, ...)
         local info = child and child.cooldownInfo
@@ -92,6 +204,45 @@ local function AddViewerAuraMapChildren(addon, viewerName, addViewerAuraChild, .
                     addViewerAuraChild(specificSpellID, child)
                 end
             end
+            -- Fingerprint bucket. A released pool frame carries no
+            -- cooldownInfo, so every child reaching here is an active row and
+            -- holds the layoutIndex RefreshLayout stamped on it.
+            local layoutIndex = tonumber(child.layoutIndex)
+            if layoutIndex and layoutIndex >= 1 then
+                viewerAssociationRowScratch[layoutIndex] = child
+                if layoutIndex > rowCount then
+                    rowCount = layoutIndex
+                end
+            else
+                pendingViewerAssociationUnknown = true
+            end
+        end
+    end
+
+    -- Fixed per-row shape (cooldownID, spellID, both override forms, linked
+    -- count, linked IDs) so a variable-length linked list can never alias the
+    -- next row, and a row hole emits the same header with no associations.
+    PushViewerAssociationValue(rowCount)
+    for index = 1, rowCount do
+        local child = viewerAssociationRowScratch[index]
+        local info = child and child.cooldownInfo
+        if info then
+            PushViewerAssociationValue(child.cooldownID)
+            PushViewerAssociationValue(info.spellID)
+            PushViewerAssociationValue(info.overrideSpellID)
+            PushViewerAssociationValue(info.overrideTooltipSpellID)
+            local linked = info.linkedSpellIDs
+            local linkedCount = linked and #linked or 0
+            PushViewerAssociationValue(linkedCount)
+            for linkedIndex = 1, linkedCount do
+                PushViewerAssociationValue(linked[linkedIndex])
+            end
+        else
+            PushViewerAssociationValue(0)
+            PushViewerAssociationValue(0)
+            PushViewerAssociationValue(0)
+            PushViewerAssociationValue(0)
+            PushViewerAssociationValue(0)
         end
     end
 end
@@ -309,9 +460,21 @@ local function ResolveViewerFrameForSpellID(spellID, buffOnly)
         return candidate
     end
 
+    -- A miss costs a GetChildren() sweep of all four viewers, and one rebind
+    -- pass asks for the same misses over and over. The memo is PASS-SCOPED and
+    -- never persistent: outside a pass a viewer can materialize a child at any
+    -- time, and a remembered miss would then be wrong.
+    local missMemo = buffOnly and viewerFrameMissBuff or viewerFrameMissPlain
+    local passActive = IsAuraCandidatePassActive()
+    if passActive and missMemo[numericID] then
+        return nil
+    end
+
     candidate = FindChildInViewers(VIEWER_NAMES, numericID, buffOnly)
     if candidate then
         CooldownCompanion.viewerAuraFrames[numericID] = candidate
+    elseif passActive then
+        missMemo[numericID] = true
     end
     return candidate
 end
@@ -395,8 +558,9 @@ local function BuildStandaloneOriginalAuraCandidateIDs(buttonData)
     return orderedCandidateIDs, candidateIDs, orderedCandidateSet
 end
 
-local function AppendStandaloneFallbackAuraCandidateIDs(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData, rawIDs)
-    local _, originalCandidateSet = BuildStandaloneOriginalAuraCandidateIDs(buttonData)
+-- originalCandidateSet is REQUIRED: the sole caller has just built it, and
+-- re-deriving it here re-ran the whole standalone resolution a second time.
+local function AppendStandaloneFallbackAuraCandidateIDs(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData, rawIDs, originalCandidateSet)
     if not rawIDs then
         return
     end
@@ -457,11 +621,12 @@ local function BuildOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbac
     end
 
     if buttonData.addedAs == "aura" then
-        local originalAuraIDs = BuildStandaloneOriginalAuraCandidateIDs(buttonData)
+        local originalAuraIDs, originalCandidateSet = BuildStandaloneOriginalAuraCandidateIDs(buttonData)
         for _, spellID in ipairs(originalAuraIDs) do
             AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, spellID)
         end
-        AppendStandaloneFallbackAuraCandidateIDs(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData, buttonData.auraSpellID)
+        AppendStandaloneFallbackAuraCandidateIDs(candidateIDs, orderedCandidateSet, orderedCandidateIDs,
+            buttonData, buttonData.auraSpellID, originalCandidateSet)
     else
         AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.auraSpellID)
         local requiredUnit = constrainImplicitFallbacks
@@ -470,6 +635,29 @@ local function BuildOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbac
     end
 
     return orderedCandidateIDs, candidateIDs, orderedCandidateSet
+end
+
+-- The one memoized entrance to candidate resolution: every resolver below
+-- routes through it, so one rebind pass resolves each (entry, constrain flag)
+-- pair exactly once no matter how many surfaces ask. With no pass open this is
+-- a plain call through to the builder, so nothing outside a pass changes.
+--
+-- The memo keys on the entry TABLE, so it is only valid while that table's
+-- candidate-relevant fields (type, id, addedAs, auraSpellID, auraUnit) hold
+-- still — which is the pass's own contract. It never writes to the entry.
+local function ResolveOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbacks)
+    if not (type(buttonData) == "table" and IsAuraCandidatePassActive()) then
+        return BuildOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbacks)
+    end
+    local memo = constrainImplicitFallbacks and candidateMemoConstrained or candidateMemoPlain
+    local cached = memo[buttonData]
+    if not cached then
+        local orderedCandidateIDs, candidateIDs, orderedCandidateSet =
+            BuildOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbacks)
+        cached = { orderedCandidateIDs, candidateIDs, orderedCandidateSet }
+        memo[buttonData] = cached
+    end
+    return cached[1], cached[2], cached[3]
 end
 
 
@@ -530,7 +718,7 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
         return first and tonumber(first)
     end
     if buttonData.addedAs == "aura" then
-        local orderedCandidateIDs = BuildOrderedAuraCandidateIDs(buttonData)
+        local orderedCandidateIDs = ResolveOrderedAuraCandidateIDs(buttonData)
         return orderedCandidateIDs[1]
     end
     return ResolveImplicitSpellEntryAuraSpellID(buttonData)
@@ -549,8 +737,10 @@ end
 -- Ordered candidate list (primary first), for callers that need priority
 -- order rather than a lookup set — e.g. the pandemic-threshold base-duration
 -- query, which takes the first candidate that reports a real aura duration.
+-- The returned list is read-only for callers: inside a rebind pass it is the
+-- memo's own array and is handed to every asker for that entry.
 function CooldownCompanion:GetOrderedAuraCandidateSpellIDs(buttonData, constrainImplicitFallbacks)
-    return (BuildOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbacks))
+    return (ResolveOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbacks))
 end
 
 -- Full ordered candidate set as a lookup table, for AuraDisplay's
@@ -558,8 +748,11 @@ end
 -- Aura-capable panel entries pass constrainImplicitFallbacks=true so an
 -- explicit Aura list owns the slot polarity; Custom Bars omit it and retain
 -- their existing candidate behavior.
+-- The set is built fresh on every call even when the ordered list came from
+-- the pass memo: it is handed to Blizzard as an includeSpellIDs filter and
+-- retained per slot, so no two binds may share one table.
 function CooldownCompanion:GetAuraCandidateSpellIDSet(buttonData, constrainImplicitFallbacks)
-    local orderedCandidateIDs = BuildOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbacks)
+    local orderedCandidateIDs = ResolveOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbacks)
     if #orderedCandidateIDs == 0 then return nil end
     local set = {}
     for _, spellID in ipairs(orderedCandidateIDs) do
@@ -1218,10 +1411,13 @@ end
 function CooldownCompanion:GetAuraStackBarMax(buttonData, constrainImplicitFallbacks)
     local getMax = C_Spell.GetSpellMaxCumulativeAuraApplications
     if not getMax then return nil end
-    local spellSet = self:GetAuraCandidateSpellIDSet(buttonData, constrainImplicitFallbacks)
-    if not spellSet then return nil end
+    -- The ordered list holds exactly the IDs the candidate SET is keyed by,
+    -- and the highest max wins regardless of order, so this needs no set table
+    -- of its own.
+    local orderedCandidateIDs = ResolveOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbacks)
+    if #orderedCandidateIDs == 0 then return nil end
     local best = 0
-    for spellID in pairs(spellSet) do
+    for _, spellID in ipairs(orderedCandidateIDs) do
         local maxApplications = getMax(spellID)
         if not issecretvalue(maxApplications) and type(maxApplications) == "number"
             and maxApplications > best then
@@ -1254,13 +1450,25 @@ FindChildInViewers = function(viewerNames, spellID, buffOnly)
     return nil
 end
 
-function CooldownCompanion:QueueBuildViewerAuraMap()
+-- allowAssociationGate is OPT-IN, so a caller added later inherits today's
+-- unconditional behavior. It is also STICKY across the coalescing window: one
+-- ungated request in flight must not be swallowed by a gated one queued after
+-- it in the same frame.
+function CooldownCompanion:QueueBuildViewerAuraMap(allowAssociationGate)
+    if not allowAssociationGate then
+        pendingViewerAuraMapAllowGate = false
+    end
     pendingViewerAuraMapToken = pendingViewerAuraMapToken + 1
     local token = pendingViewerAuraMapToken
     C_Timer.After(0, function()
         if pendingViewerAuraMapToken ~= token then return end
-        self:BuildViewerAuraMap()
-        self:RefreshConfigPanel()
+        local gated = pendingViewerAuraMapAllowGate
+        pendingViewerAuraMapAllowGate = true
+        -- The config panel reads the same derived associations the tail feeds,
+        -- so it refreshes exactly when the tail runs.
+        if self:BuildViewerAuraMap(gated) then
+            self:RefreshConfigPanel()
+        end
     end)
 end
 
@@ -1289,7 +1497,10 @@ end
 -- treat child aura fields as runtime truth: auraSpellID/auraInstanceID become
 -- secret in combat, and instance-ID aura APIs hard-error for addon code in
 -- restricted combat.
-function CooldownCompanion:BuildViewerAuraMap()
+--
+-- Returns whether the TAIL (sound map + aura rebind) ran, so the queued caller
+-- can pair its config refresh with it.
+function CooldownCompanion:BuildViewerAuraMap(allowAssociationGate)
     wipe(self.viewerAuraFrames)
     wipe(self.viewerAuraAllChildren)
 
@@ -1309,15 +1520,29 @@ function CooldownCompanion:BuildViewerAuraMap()
         table.insert(children, child)
     end
 
+    BeginViewerAssociationFingerprint()
     for _, name in ipairs(VIEWER_NAMES) do
         local viewer = _G[name]
         if viewer then
             AddViewerAuraMapChildren(self, name, AddViewerAuraChild, viewer:GetChildren())
+        else
+            -- An absent viewer still occupies its slot in the fixed order.
+            PushViewerAssociationValue(0)
         end
     end
     -- Ensure tracked buttons can find their viewer child even if
     -- buttonData.id is a non-current override form of a transforming spell.
     self:MapButtonSpellsToViewers()
+
+    -- Everything above is UNCONDITIONAL. Blizzard fires RefreshLayout on every
+    -- full-update UNIT_AURA and recycles the item pool through a hash walk, so
+    -- every cached frame reference goes stale whether or not the rows changed.
+    -- Only the consumers of the DERIVED associations are gated, and only for
+    -- callers that opted in.
+    local associationsChanged = CommitViewerAssociationFingerprint()
+    if allowAssociationGate and not associationsChanged then
+        return false
+    end
 
     -- Rebuild spell -> cooldown alert capability mapping used by per-button sound alerts.
     self:RebuildSoundAlertSpellMap()
@@ -1328,6 +1553,7 @@ function CooldownCompanion:BuildViewerAuraMap()
     if self.RequestAuraRebind then
         self:RequestAuraRebind("viewer-map")
     end
+    return true
 end
 
 -- For each tracked button, ensure viewerAuraFrames contains an entry

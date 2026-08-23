@@ -1290,6 +1290,11 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     UpdateIconTint(button, buttonData, style)
 end
 
+-- Reusable resolver options. ResolveIconGlowIntent reads the fields
+-- synchronously and never retains the table, so one scratch serves every
+-- button; every field it can read must be reassigned before each call.
+local GLOW_INTENT_OPTIONS = { inCombat = false }
+
 -- Update icon-mode glow effects: loss of control, assisted highlight, proc glow, aura glow.
 local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
     local inCombat = InCombatLockdown()
@@ -1329,9 +1334,8 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
             glowIntent = {}
             button._iconGlowIntent = glowIntent
         end
-        ResolveIconGlowIntent(button, buttonData, style, procOverlayActive, glowIntent, {
-            inCombat = inCombat,
-        })
+        GLOW_INTENT_OPTIONS.inCombat = inCombat
+        ResolveIconGlowIntent(button, buttonData, style, procOverlayActive, glowIntent, GLOW_INTENT_OPTIONS)
     end
 
     -- Proc glow (spell activation overlay)

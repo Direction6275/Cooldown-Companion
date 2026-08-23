@@ -192,7 +192,19 @@ end
 local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, maxPowerIsSecret)
     if not bar then return end
 
-    local enabled, mode, entries, tickWidth, combatOnly = GetContinuousTickEntriesConfig(powerType, settings)
+    -- Compiled by ApplyResourceBars for exactly this power type; the stamp is
+    -- what makes a recycled frame (or a preview frame that never went through
+    -- an apply) resolve live instead of wearing another resource's markers.
+    local enabled, mode, entries, tickWidth, combatOnly
+    if bar._ccTickPowerType == powerType then
+        enabled = bar._ccTickEnabled
+        mode = bar._ccTickMode
+        entries = bar._ccTickEntries
+        tickWidth = bar._ccTickWidth
+        combatOnly = bar._ccTickCombatOnly
+    else
+        enabled, mode, entries, tickWidth, combatOnly = GetContinuousTickEntriesConfig(powerType, settings)
+    end
     if not enabled then
         HideContinuousTickMarkers(bar)
         return

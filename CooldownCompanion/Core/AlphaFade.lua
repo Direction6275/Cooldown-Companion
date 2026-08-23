@@ -15,6 +15,7 @@ local GetShapeshiftFormInfo = GetShapeshiftFormInfo
 local pairs = pairs
 local ipairs = ipairs
 local type = type
+local wipe = wipe
 
 local SOAR_SPELL_ID = 430747
 
@@ -79,8 +80,21 @@ local function ConfigNeedsAlphaUpdate(self, config, stateKey)
     return AlphaStateNeedsCleanup(self, stateKey)
 end
 
+-- Composed once per container id and kept for the session: the ids are the small
+-- stable integers the profile assigns, and this key is rebuilt several times per
+-- container per 30 Hz alpha pass.
+local containerAlphaStateKeys = {}
+
 local function GetContainerAlphaStateKey(containerId)
-    return "container_alpha:" .. tostring(containerId)
+    if containerId == nil then
+        return "container_alpha:nil"
+    end
+    local key = containerAlphaStateKeys[containerId]
+    if not key then
+        key = "container_alpha:" .. tostring(containerId)
+        containerAlphaStateKeys[containerId] = key
+    end
+    return key
 end
 
 local EMPTY_TABLE = {}
@@ -241,24 +255,67 @@ function CooldownCompanion:ClearContainerAlphaRuntimeState(containerId)
     self._containerAlphaControlledGroups = nil
 end
 
-local function AddContainerAlphaEntry(entriesByContainer, controlledGroups, containerId, groupId, group, frame)
+-- Per-call-site scratch for the container-alpha entry maps, which the 30 Hz
+-- driver rebuilds twice per pass. Nothing downstream retains the maps, the
+-- per-container lists or the entry records: every consumer reads them inside the
+-- calling pass and drops them. A pass CAN nest another builder call (the driver
+-- refresh at the end of an alpha pass re-evaluates), so each call site owns its
+-- own structures and can never wipe another's live maps. Re-entering the SAME
+-- call site is unreachable: an OnUpdate handler cannot re-enter itself,
+-- EvaluateAlphaDriverNeedsWork only reads state, and the preview is
+-- config-driven. Anything that starts RETAINING a returned map must go back to
+-- fresh tables for that call site.
+local function NewEntryMapScratch()
+    return { maps = {}, pool = {}, used = 0 }
+end
+
+local driverEntryScratch = NewEntryMapScratch()
+local evaluateEntryScratch = NewEntryMapScratch()
+local previewEntryScratch = NewEntryMapScratch()
+
+-- The controlled-group SET is the one value that outlives its build:
+-- AlphaUpdateOnUpdate publishes it on self and the next pass diffs against it.
+-- Its two sets therefore alternate, so a build never writes the published one.
+-- No other call site publishes, so each keeps a single set.
+local driverControlledGroupsA, driverControlledGroupsB = {}, {}
+local evaluateControlledGroups = {}
+local previewControlledGroups = {}
+
+local function AcquireContainerAlphaEntry(scratch, groupId, group, frame)
+    local used = scratch.used + 1
+    scratch.used = used
+    local entry = scratch.pool[used]
+    if not entry then
+        entry = {}
+        scratch.pool[used] = entry
+    end
+    entry.groupId = groupId
+    entry.group = group
+    entry.frame = frame
+    return entry
+end
+
+local function AddContainerAlphaEntry(scratch, entriesByContainer, controlledGroups, containerId, groupId, group, frame)
     local entries = entriesByContainer[containerId]
     if not entries then
         entries = {}
         entriesByContainer[containerId] = entries
     end
-    entries[#entries + 1] = {
-        groupId = groupId,
-        group = group,
-        frame = frame,
-    }
+    entries[#entries + 1] = AcquireContainerAlphaEntry(scratch, groupId, group, frame)
 
     controlledGroups[groupId] = true
 end
 
-local function BuildContainerAlphaEntryMaps(self, groups, panelAlphaAnchorTargets)
-    local entriesByContainer = {}
-    local controlledGroups = {}
+local function BuildContainerAlphaEntryMaps(self, groups, panelAlphaAnchorTargets, scratch, controlledGroups)
+    -- Emptied, not dropped: a container that contributes no entry this pass keeps
+    -- a zero-length list, which every consumer reads the same way it read nil.
+    local entriesByContainer = scratch.maps
+    for _, entries in pairs(entriesByContainer) do
+        wipe(entries)
+    end
+    scratch.used = 0
+    wipe(controlledGroups)
+
     for groupId, group in pairs(groups or {}) do
         local sourceContainerId = self.GetPanelContainerAlphaSource
             and self:GetPanelContainerAlphaSource(groupId)
@@ -266,12 +323,12 @@ local function BuildContainerAlphaEntryMaps(self, groups, panelAlphaAnchorTarget
         if sourceContainerId then
             local frame = GetGroupAlphaFrame(self, groupId)
             if FrameIsAlphaWorkTarget(frame, panelAlphaAnchorTargets and panelAlphaAnchorTargets[groupId]) then
-                AddContainerAlphaEntry(entriesByContainer, controlledGroups, sourceContainerId, groupId, group, frame)
+                AddContainerAlphaEntry(scratch, entriesByContainer, controlledGroups, sourceContainerId, groupId, group, frame)
             end
 
             local host = GetStandaloneTextureHost(frame)
             if host and host.IsShown and host:IsShown() then
-                AddContainerAlphaEntry(entriesByContainer, controlledGroups, sourceContainerId, groupId, group, host)
+                AddContainerAlphaEntry(scratch, entriesByContainer, controlledGroups, sourceContainerId, groupId, group, host)
             end
         end
     end
@@ -432,6 +489,21 @@ local function UpdateFadedAlpha(state, desired, now, fadeInDur, fadeOutDur)
 end
 
 function CooldownCompanion:ResolveMountedAlphaStates(mounted)
+    -- Cache first, so the aura reads below are skipped entirely on the common
+    -- pass. Every input edge dirties the cache (player UNIT_AURA for Soar on
+    -- Dracthyr, PLAYER_MOUNT_DISPLAY_CHANGED, NEW_MOUNT_ADDED, combat exit,
+    -- world entry), so a clean entry for this mounted state already holds the
+    -- answer. The short-circuit is deliberately limited to a cached-INACTIVE
+    -- Soar: only a cached-ACTIVE Soar can read back differently without a dirty
+    -- mark (the restricted-aura window documented below reads nothing for a
+    -- present aura), and that state must keep re-reading so it still degrades to
+    -- regular-mounted at exactly the same moment as before.
+    if not self._mountAlphaDirty
+       and self._mountAlphaCacheSoar == false
+       and self._mountAlphaCacheMounted == (mounted == true) then
+        return self._isRegularMounted == true, self._isDragonridingMounted == true
+    end
+
     local unitAuras = C_UnitAuras
     local soarAura
     if unitAuras then
@@ -720,7 +792,7 @@ function CooldownCompanion:ApplyContainerAlphaPreview(containerId, alpha)
     end
 
     local groups = profile and profile.groups or nil
-    local entriesByContainer = BuildContainerAlphaEntryMaps(self, groups)
+    local entriesByContainer = BuildContainerAlphaEntryMaps(self, groups, nil, previewEntryScratch, previewControlledGroups)
     local entries = entriesByContainer[containerId]
     for i = 1, #(entries or EMPTY_TABLE) do
         local entry = entries[i]
@@ -853,7 +925,7 @@ function CooldownCompanion:EvaluateAlphaDriverNeedsWork()
     local entriesByContainer, containerAlphaControlledGroups = EMPTY_TABLE, EMPTY_TABLE
     if NeedsContainerAlphaPass(self, containers) then
         entriesByContainer, containerAlphaControlledGroups =
-            BuildContainerAlphaEntryMaps(self, groups, panelAlphaAnchorTargets)
+            BuildContainerAlphaEntryMaps(self, groups, panelAlphaAnchorTargets, evaluateEntryScratch, evaluateControlledGroups)
         if GroupSetHasMemberNotInCurrent(self._containerAlphaControlledGroups, containerAlphaControlledGroups) then
             return true
         end
@@ -927,8 +999,13 @@ function CooldownCompanion:AlphaUpdateOnUpdate(dt)
     local entriesByContainer, containerAlphaControlledGroups = EMPTY_TABLE, EMPTY_TABLE
     if NeedsContainerAlphaPass(self, containers) then
         local previousContainerAlphaGroups = self._containerAlphaControlledGroups
+        -- Build into whichever set is NOT the published one, so the diff below
+        -- still sees the previous pass's membership.
+        local controlledGroupsTarget = (previousContainerAlphaGroups == driverControlledGroupsA)
+            and driverControlledGroupsB
+            or driverControlledGroupsA
         entriesByContainer, containerAlphaControlledGroups =
-            BuildContainerAlphaEntryMaps(self, groups, panelAlphaAnchorTargets)
+            BuildContainerAlphaEntryMaps(self, groups, panelAlphaAnchorTargets, driverEntryScratch, controlledGroupsTarget)
 
         if RestoreReleasedContainerAlphaGroups(self, previousContainerAlphaGroups, containerAlphaControlledGroups, groups, containers, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm) then
             processedAlphaWork = true
