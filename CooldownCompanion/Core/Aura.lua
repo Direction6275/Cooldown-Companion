@@ -188,6 +188,15 @@ end
 -- is the exact list Blizzard's own tracked bars match auras against. Pure data
 -- API (no viewer frames); the spell->cooldownID map is the one SoundAlerts
 -- maintains, rebuilt alongside the viewer aura map.
+--
+-- Deliberately NO distinct-identity guard here: that guard protects DISPLAY
+-- identity (which icon/name a plain spell entry shows), and the standing
+-- linked-ID ruling is that multi-link ambiguity gates display labels only,
+-- never resolution. Candidate sets carry EVERY linked stage so Blizzard picks
+-- the active one — Roll the Bones (1214909) links only distinct-NAMED outcome
+-- auras (One of a Kind 1214933, ...), and guarding them out here left a plain
+-- spell entry's includeSpellIDs matching none of the buffs the cast applies,
+-- while the same spell added AS an aura (guard-free path) matched them all.
 local function AppendCdmLinkedAuraIDs(candidateSet, orderedSet, orderedIDs, buttonData, spellID, requiredUnit)
     local addon = CooldownCompanion
     addon:EnsureSoundAlertSpellMap()
@@ -199,8 +208,7 @@ local function AppendCdmLinkedAuraIDs(candidateSet, orderedSet, orderedIDs, butt
         local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID)
         if info and info.linkedSpellIDs then
             for _, linkedID in ipairs(info.linkedSpellIDs) do
-                if not IsDistinctAuraIdentityForButton(buttonData, linkedID)
-                    and IsAuraCandidateUnitAllowed(linkedID, requiredUnit) then
+                if IsAuraCandidateUnitAllowed(linkedID, requiredUnit) then
                     AppendOrderedAuraCandidateID(candidateSet, orderedSet, orderedIDs, linkedID)
                 end
             end
