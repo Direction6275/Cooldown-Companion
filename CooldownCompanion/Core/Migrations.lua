@@ -1205,12 +1205,7 @@ end
 -- and stored auraActive trigger clauses (retired-offer pattern). Custom-bar
 -- aura entries get the same treatment from the bar aura effect pass below,
 -- including the tracked-unit recompute and mixed-list trim.
-local function ClassifyAuraSpellUnit(spellID)
-    if not (spellID and C_Spell.DoesSpellExist and C_Spell.DoesSpellExist(spellID)) then
-        return nil
-    end
-    return C_Spell.IsSpellHarmful(spellID) and "target" or "player"
-end
+local ClassifyAuraSpellUnit = ST.ClassifyAuraSpellUnit
 
 -- Aura sounds play natively through C_UnitAuras.AddAuraSound, which needs a
 -- sound FILE. Both the event set and the playability rule come from
@@ -1461,7 +1456,10 @@ end
 -- dead-key clears, and began mapping bar stack displays onto the split
 -- vocabulary; renamed again when the sound strip moved onto the shared
 -- SoundAlerts rule; gen 4 normalizes the fresh active-only Texture aura
--- indicator by dropping unsupported live-era missing/combat qualifiers.
+-- indicator by dropping unsupported live-era missing/combat qualifiers;
+-- gen 5 re-runs the tracked-unit recompute under the override-aware
+-- classifier (Galactic Guardian 213708 reads harmful but is a player
+-- buff), healing stored auraUnit on profiles gen 4 already stamped.
 -- bar aura effect generations: from _cdcBarAuraGlowMigrated (size resets
 -- and custom-bar traversal), then _cdcBarAuraEffectMigrated, then
 -- _cdcBarAuraEffect2Migrated (all custom-bar storage shapes, the seed
@@ -1471,8 +1469,9 @@ end
 -- observation, not a transform — survives clears so the notice prints
 -- once) and _cdcFlattenedFolderNotice (a notice accumulator, not a guard).
 local AURA_REBUILD_SENTINEL = {
-    current = "_cdcAuraRebuild4Migrated",
-    retired = { "_cdcAuraRebuildMigrated", "_cdcAuraRebuild2Migrated", "_cdcAuraRebuild3Migrated" },
+    current = "_cdcAuraRebuild5Migrated",
+    retired = { "_cdcAuraRebuildMigrated", "_cdcAuraRebuild2Migrated", "_cdcAuraRebuild3Migrated",
+        "_cdcAuraRebuild4Migrated" },
 }
 -- bar aura effect generations: gen 4 added the custom-bar entry strip of
 -- the retired pandemicBar* families (the Phase 3 pandemic retirement).

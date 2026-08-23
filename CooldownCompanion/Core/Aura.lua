@@ -119,13 +119,32 @@ local function AppendOrderedAuraCandidateIDsFromString(candidateSet, orderedSet,
     end
 end
 
+-- The ONE tracked-aura unit classifier; every surface (runtime binds, config,
+-- migrations, panels, custom bars) must route through it or their answers
+-- drift. C_Spell.IsSpellHarmful answers "can this spell target hostiles",
+-- NOT buff-vs-debuff: a self-buff whose record carries an enemy-facing rider
+-- effect reads harmful even on its applied-aura ID, and no static API
+-- distinguishes that shape from a real target debuff. Those auras need an
+-- explicit unit here; everything else keeps the harmful probe.
+local AURA_UNIT_OVERRIDES = {
+    -- Galactic Guardian: the buff lands on the player, but its record's
+    -- empowered-Moonfire hook targets the enemy, so it reads harmful.
+    [213708] = "player",
+}
+
 local function ClassifyAuraSpellUnit(spellID)
     local numericID = tonumber(spellID)
     if not (numericID and C_Spell.DoesSpellExist(numericID)) then
         return nil
     end
+    local override = AURA_UNIT_OVERRIDES[numericID]
+    if override then
+        return override
+    end
     return C_Spell.IsSpellHarmful(numericID) and "target" or "player"
 end
+ST.ClassifyAuraSpellUnit = ClassifyAuraSpellUnit
+CooldownCompanion.ClassifyAuraSpellUnit = ClassifyAuraSpellUnit
 
 local function IsAuraCandidateUnitAllowed(spellID, requiredUnit)
     if requiredUnit == nil then
@@ -716,10 +735,10 @@ end
 function CooldownCompanion:ResolveStandaloneAuraDefaultUnit(buttonData)
     local resolvedSpellID = self:ResolveStandaloneAuraDefaultSpellID(buttonData)
     if resolvedSpellID then
-        return C_Spell.IsSpellHarmful(resolvedSpellID) and "target" or "player"
+        return ClassifyAuraSpellUnit(resolvedSpellID) or "player"
     end
     if buttonData and buttonData.id then
-        return C_Spell.IsSpellHarmful(buttonData.id) and "target" or "player"
+        return ClassifyAuraSpellUnit(buttonData.id) or "player"
     end
     return "player"
 end

@@ -1330,7 +1330,7 @@ local function IsValidCustomAuraUnit(unit)
 end
 
 local function GetDefaultCustomAuraUnit(spellID)
-    return (spellID and C_Spell.IsSpellHarmful(spellID)) and "target" or "player"
+    return ST.ClassifyAuraSpellUnit(spellID) or "player"
 end
 
 local function GetDefaultSpellCustomBarAuraUnit(cabConfig, spellID)
