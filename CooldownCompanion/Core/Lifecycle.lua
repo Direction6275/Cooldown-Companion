@@ -168,13 +168,17 @@ function CooldownCompanion:OnEnable()
                 self:OnSpellCast(event, ...)
             elseif event == "UNIT_AURA" then
                 self:OnUnitAura(event, ...)
+            elseif event == "UNIT_PET" then
+                self:OnPetChanged(event, ...)
             end
         end)
     end
     self._unitEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
-    -- Player-only: the slim OnUnitAura handler only invalidates the Dracthyr
-    -- Soar mount-alpha cache (12.1 demolition removed aura tracking).
-    self._unitEventFrame:RegisterUnitEvent("UNIT_AURA", "player")
+    -- UNIT_PET carries the OWNER's token, and OnPetChanged reads no unit state:
+    -- only the player's own pet can change which pet-spell buttons exist. The
+    -- filtered registration must live on this frame because AceEvent owners have
+    -- no RegisterUnitEvent (same reason as the UNIT_TARGET frame below).
+    self._unitEventFrame:RegisterUnitEvent("UNIT_PET", "player")
 
     -- Combat events
     self:RegisterEvent("PLAYER_REGEN_DISABLED", "OnCombatStart")
@@ -207,8 +211,8 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("PLAYER_PVP_TALENT_UPDATE", "OnSpellAvailabilityChanged")
     self:RegisterEvent("WAR_MODE_STATUS_UPDATE", "OnSpellAvailabilityChanged")
 
-    -- Pet summon/dismiss — show/hide pet spell buttons dynamically
-    self:RegisterEvent("UNIT_PET", "OnPetChanged")
+    -- Pet summon/dismiss — show/hide pet spell buttons dynamically.
+    -- Registered player-filtered on _unitEventFrame above.
 
     -- Totem/guardian slots — the only source of remaining time for summons.
     -- The slot index arrives plain even in combat (TotemTracking.lua).
@@ -272,12 +276,16 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", "OnViewerSpellOverrideUpdated")
 
     -- Hook RefreshLayout on CDM viewers so pool churn re-queues the viewer
-    -- aura map rebuild.
+    -- aura map rebuild. Blizzard fires this on every full-update UNIT_AURA
+    -- (target swap, zone-in, vehicle), and pool churn invalidates the frame
+    -- map every time — but the derived associations usually have not moved, so
+    -- this is the ONE caller that lets the association gate skip the rebuild's
+    -- tail. Every other caller runs it unconditionally.
     for _, name in ipairs(VIEWER_NAMES) do
         local viewer = _G[name]
         if viewer then
             hooksecurefunc(viewer, "RefreshLayout", function()
-                CooldownCompanion:QueueBuildViewerAuraMap()
+                CooldownCompanion:QueueBuildViewerAuraMap(true)
             end)
         end
     end
@@ -297,6 +305,15 @@ function CooldownCompanion:OnEnable()
     self._playerClassFilename = classFilename
     self._playerClassID = classID
     self._isDracthyr = (select(2, UnitRace("player")) == "Dracthyr")
+
+    -- Player UNIT_AURA exists for exactly one consumer: OnUnitAura invalidating
+    -- the Soar mount-alpha cache. Soar is a Dracthyr racial, so no other race can
+    -- ever change that cache's inputs through an aura. Race is session-constant,
+    -- so the registration is decided once here (after the identity cache above,
+    -- which _unitEventFrame's other registrations do not depend on).
+    if self._isDracthyr then
+        self._unitEventFrame:RegisterUnitEvent("UNIT_AURA", "player")
+    end
 
     -- Store class info in global scope for cross-character browse mode
     self.db.global.characterInfo[self.db.keys.char] = {

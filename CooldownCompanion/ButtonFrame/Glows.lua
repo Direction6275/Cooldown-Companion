@@ -884,21 +884,37 @@ local function SetAssistedHighlight(button, show)
     if not hl then return end
     local highlightStyle = button.style and button.style.assistedHighlightStyle or "blizzard"
 
-    -- Determine desired state, including color in cache key for solid/proc styles
-    -- so color changes via settings invalidate the cache
-    local colorKey
-    if show and highlightStyle == "solid" then
-        local c = button.style.assistedHighlightColor or DEFAULT_ASSISTED_HL_COLOR
-        colorKey = ST.FormatColorKey(c)
-    elseif show and highlightStyle == "proc" then
-        local c = button.style.assistedHighlightProcColor or DEFAULT_WHITE
-        colorKey = ST.FormatColorKey(c)
+    -- Determine desired state. The color is part of that state for solid/proc
+    -- styles so color changes via settings invalidate the cache; it is compared
+    -- component-wise (color tables mutate in place) rather than formatted into
+    -- a key string, which would allocate on every walk. The color only counts
+    -- while a state is desired, so an external `currentState = nil` reset still
+    -- behaves exactly as it does with a single composed key.
+    local desiredStyle, cr, cg, cb, ca
+    if show then
+        desiredStyle = highlightStyle
+        local c
+        if highlightStyle == "solid" then
+            c = button.style.assistedHighlightColor or DEFAULT_ASSISTED_HL_COLOR
+        elseif highlightStyle == "proc" then
+            c = button.style.assistedHighlightProcColor or DEFAULT_WHITE
+        end
+        if c then
+            cr, cg, cb, ca = c[1], c[2], c[3], c[4] or 1
+        end
     end
-    local desiredState = show and (highlightStyle .. (colorKey or "")) or nil
 
     -- Skip if state unchanged, unless the animation died and needs a restart.
-    if hl.currentState == desiredState and (not desiredState or IsGlowAnimationAlive(hl)) then return end
-    hl.currentState = desiredState
+    if hl.currentState == desiredStyle
+       and (not desiredStyle
+            or (hl.currentStateR == cr and hl.currentStateG == cg
+                and hl.currentStateB == cb and hl.currentStateA == ca
+                and IsGlowAnimationAlive(hl))) then
+        return
+    end
+    hl.currentState = desiredStyle
+    hl.currentStateR, hl.currentStateG = cr, cg
+    hl.currentStateB, hl.currentStateA = cb, ca
 
     HideGlowStyles(hl)
 
@@ -949,7 +965,21 @@ local function MakeGlowSetter(cfg)
     local colorKey    = cfg.colorKey
     local color2Key   = cfg.color2Key
     local defColor2   = cfg.defaultColor2
-    local cC2         = cfg.cacheColor2
+    -- Color2 cache field names, built once at load time. The compare below
+    -- stores four numeric components plus a presence flag (the original field
+    -- name) instead of a formatted key string, so the per-walk compare
+    -- allocates nothing. Held in one table so the closure's upvalue count
+    -- stays flat against the 60 ceiling noted above.
+    local cC2Fields
+    if cfg.cacheColor2 then
+        cC2Fields = {
+            set = cfg.cacheColor2,
+            r = cfg.cacheColor2 .. "R",
+            g = cfg.cacheColor2 .. "G",
+            b = cfg.cacheColor2 .. "B",
+            a = cfg.cacheColor2 .. "A",
+        }
+    end
     local defSpeeds   = cfg.defaultSpeeds
     local sizeKey     = cfg.sizeKey
     local thKey       = cfg.thicknessKey
@@ -1071,7 +1101,10 @@ local function MakeGlowSetter(cfg)
 
         -- On path: compare individual cached fields
         local ca = color[4] or defaultAlpha
-        local c2sig = color2 and ST.FormatColorKey(color2) or false
+        local c2set, c2r, c2g, c2b, c2a = false
+        if color2 then
+            c2set, c2r, c2g, c2b, c2a = true, color2[1], color2[2], color2[3], color2[4] or 1
+        end
         if button[cActive]
            and button[cStyle] == glowStyle
            and button[cR] == color[1] and button[cG] == color[2]
@@ -1080,7 +1113,9 @@ local function MakeGlowSetter(cfg)
            and (not cTh or button[cTh] == th)
            and (not cSpd or button[cSpd] == spd)
            and (not cLn or button[cLn] == ln)
-           and (not cC2 or button[cC2] == c2sig)
+           and (not cC2Fields or (button[cC2Fields.set] == c2set
+                and button[cC2Fields.r] == c2r and button[cC2Fields.g] == c2g
+                and button[cC2Fields.b] == c2b and button[cC2Fields.a] == c2a))
            and (not cPandemic or button[cPandemic] == pandemicOverride)
            and IsGlowAnimationAlive(container) then
             return
@@ -1115,7 +1150,11 @@ local function MakeGlowSetter(cfg)
         if cTh then button[cTh] = th end
         if cSpd then button[cSpd] = spd end
         if cLn then button[cLn] = ln end
-        if cC2 then button[cC2] = c2sig end
+        if cC2Fields then
+            button[cC2Fields.set] = c2set
+            button[cC2Fields.r], button[cC2Fields.g] = c2r, c2g
+            button[cC2Fields.b], button[cC2Fields.a] = c2b, c2a
+        end
         if cPandemic then button[cPandemic] = pandemicOverride end
 
         if updateInPlace and TryUpdateGlowStyleInPlace(container, glowStyle, button, color, opts) then

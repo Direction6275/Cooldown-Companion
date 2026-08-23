@@ -965,6 +965,8 @@ end
 function CooldownCompanion:EnsureAuraTextureHost(button)
     if button.auraTextureHost then
         EnsureAuraTextureRuntimeRoot(button.auraTextureHost)
+        -- Acquisition for a live display: the teardown latch never survives it.
+        button.auraTextureHost._standaloneTeardownFor = nil
         return button.auraTextureHost
     end
 
@@ -1164,14 +1166,37 @@ local function GetTexturePanelAlphaModuleId(groupId)
     return "texture_panel_" .. tostring(groupId)
 end
 
+-- The host check leads because "texture_panel_<groupId>" is registered only by
+-- FinalizeStandaloneDisplay, which cannot run without a host, and the release
+-- path below already returns on the same condition before its own unregister.
+-- A host-less button therefore never owns the module, and this function is
+-- reached for every icon/bar button on every walk.
 function CooldownCompanion:HideAuraTextureVisual(button)
-    local alphaModuleId = button and GetTexturePanelAlphaModuleId(button._groupId) or nil
-    if alphaModuleId then
+    local host = button and button.auraTextureHost
+    if not host then
+        return
+    end
+
+    local groupId = button._groupId
+    local alphaModuleId = GetTexturePanelAlphaModuleId(groupId)
+    -- Edge-guarded so a hidden panel does not re-run RefreshAlphaUpdateDriver
+    -- (a full group/container evaluation) every pass. Both stores are checked
+    -- because the unregister clears the module target and its alpha state.
+    if alphaModuleId
+        and ((self._moduleAlphaTargets and self._moduleAlphaTargets[alphaModuleId] ~= nil)
+            or (self.alphaState and self.alphaState[alphaModuleId] ~= nil)) then
         self:UnregisterModuleAlpha(alphaModuleId, true)
     end
 
-    local host = button and button.auraTextureHost
-    if not host then
+    -- Already-torn-down latch. Keyed by the group this host was torn down for,
+    -- so a pooled host that changes hands cannot inherit it, and re-validated
+    -- against the two states the body itself leaves behind (hidden, not
+    -- dragging) so anything that shows or grabs the host reopens the teardown.
+    -- Cleared explicitly on every prepare/render/finalize/release path.
+    if groupId ~= nil
+        and host._standaloneTeardownFor == groupId
+        and not host:IsShown()
+        and not host._isDragging then
         return
     end
 
@@ -1202,8 +1227,9 @@ function CooldownCompanion:HideAuraTextureVisual(button)
     SetAuraTextureOutlineShown(host, false)
     SetAuraTextureDragControlsShown(host, false)
     host:Hide()
+    host._standaloneTeardownFor = groupId
 
-    local group = button and button._groupId and ResolveGroup(button._groupId) or nil
+    local group = groupId and ResolveGroup(groupId) or nil
     if group and group.parentContainerId and self.RefreshContainerWrapper then
         self:RefreshContainerWrapper(group.parentContainerId)
     end
@@ -1219,6 +1245,9 @@ function CooldownCompanion:ReleaseAuraTextureVisual(button)
     if alphaModuleId then
         self:UnregisterModuleAlpha(alphaModuleId)
     end
+    -- A retained host outlives this release, so the next hide must run the full
+    -- body rather than trust a latch set before the entry changed hands.
+    button.auraTextureHost._standaloneTeardownFor = nil
     -- AuraButton has a permanent ChangeParent forbidden aspect. Once this
     -- host owns an AuraContainer, retain the whole topology across pooling;
     -- AuraDisplay parks the container and owns the pool token reconciliation.
@@ -1430,6 +1459,9 @@ function CooldownCompanion:RenderStandaloneDisplay(host, driverButton, group, se
     local hostWidth, hostHeight
     local shown = false
 
+    -- Anything that repaints the host invalidates the teardown latch.
+    host._standaloneTeardownFor = nil
+
     host:SetFrameStrata(driverButton:GetFrameStrata())
     host:SetFrameLevel((driverButton:GetFrameLevel() or 1) + 20)
     SyncAuraTextureControlLevels(host, false)
@@ -1497,6 +1529,8 @@ function CooldownCompanion:PrepareManagedAuraTextureDisplay(host, driverButton, 
         return false
     end
 
+    -- Anything that repaints the host invalidates the teardown latch.
+    host._standaloneTeardownFor = nil
     host:SetFrameStrata(driverButton:GetFrameStrata())
     host:SetFrameLevel((driverButton:GetFrameLevel() or 1) + 20)
     SyncAuraTextureControlLevels(host, false)
@@ -1518,6 +1552,9 @@ function CooldownCompanion:PrepareManagedAuraTextureDisplay(host, driverButton, 
 end
 
 function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, group, settings, displayType, isTriggerPanel, visibilityState)
+    -- This is the only path that shows the host and the only registrar of the
+    -- panel alpha module, so it is the mandatory latch clear.
+    host._standaloneTeardownFor = nil
     local sharedSettings = GetStandaloneTextureSettings(group) or {
         point = "CENTER",
         relativePoint = "CENTER",

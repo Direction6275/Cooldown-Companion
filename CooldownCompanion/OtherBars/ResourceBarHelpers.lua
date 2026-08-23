@@ -182,7 +182,17 @@ local function GetEffectiveAnchorGroupId(settings)
     return CooldownCompanion:GetFirstAvailableAnchorGroup()
 end
 
+-- The addon already keeps this id and refreshes it on the exact spec-change
+-- events (CacheCurrentSpec, Core/EventHandlers.lua), and it is written during
+-- OnEnable before any bar exists — so the resource poll reads the cache
+-- instead of two C calls per resolution. The live calls remain the answer
+-- while the cache is still empty, so a caller can never be handed a spec id
+-- this addon has not seen yet.
 local function GetCurrentSpecID()
+    local cachedSpecID = CooldownCompanion._currentSpecId
+    if cachedSpecID then
+        return cachedSpecID
+    end
     local specIdx = C_SpecializationInfo.GetSpecialization()
     if specIdx then
         local specID = C_SpecializationInfo.GetSpecializationInfo(specIdx)
@@ -191,9 +201,14 @@ local function GetCurrentSpecID()
     return nil
 end
 
+-- Class cannot change within a session, so the lookup happens once.
+local cachedPlayerClassID = nil
 local function GetPlayerClassID()
-    local _, _, classID = UnitClass("player")
-    return classID
+    if cachedPlayerClassID == nil then
+        local _, _, classID = UnitClass("player")
+        cachedPlayerClassID = classID
+    end
+    return cachedPlayerClassID
 end
 
 local customBarContentFields = {
@@ -1512,10 +1527,23 @@ GetSpecLayoutOrder = function(settings, specID)
     return settings.layoutOrder[specID]
 end
 
+-- Seeding only fills nils and normalizes one key, and every key it touches is
+-- non-nil once it has run, so a second pass over the same profile table can
+-- never change the result. It is therefore first-touch: the write-back below
+-- lands in SavedVariables, and GetSpecResourceDisplayProfile is read at the
+-- poll cadence. Weak keys so a profile table dropped by a profile switch,
+-- import or spec copy is not pinned here — and a replaced table is a new
+-- table, which seeds again.
+local seededResourceDisplayProfiles = setmetatable({}, { __mode = "k" })
+
 local function SeedResourceDisplayProfileFromGlobal(profile, settings)
     if type(profile) ~= "table" or type(settings) ~= "table" then
         return profile
     end
+    if seededResourceDisplayProfiles[profile] then
+        return profile
+    end
+    seededResourceDisplayProfiles[profile] = true
     for _, key in ipairs(RESOURCE_DISPLAY_PROFILE_KEYS) do
         if profile[key] == nil then
             local value = settings[key]
@@ -2010,6 +2038,12 @@ local function CollectNumericKeys(tbl)
     return keys
 end
 
+-- One shared list stands in for every disabled path below. Those paths are the
+-- default and they are reached at the poll cadence, so a fresh empty table per
+-- read was pure garbage. Read-only by convention: no caller mutates a returned
+-- entry list, they only walk it.
+local EMPTY_THRESHOLD_TICK_ENTRIES = {}
+
 local function NormalizeEntryList(entries, clampValue, colorFallback, colorResolver)
     local normalized = {}
     local seen = {}
@@ -2093,21 +2127,21 @@ local function GetSegmentedThresholdEntriesConfig(powerType, settings)
     -- member (reached through RB, which adds no local to this chunk).
     if powerType ~= RESOURCE_MAELSTROM_WEAPON and SEGMENTED_TYPES[powerType] ~= true
         and RB.AURA_STACK_RESOURCES[powerType] == nil then
-        return false, {}
+        return false, EMPTY_THRESHOLD_TICK_ENTRIES
     end
     if not settings or not settings.resources then
-        return false, {}
+        return false, EMPTY_THRESHOLD_TICK_ENTRIES
     end
 
     local resource = settings.resources[powerType]
     if type(resource) ~= "table" then
-        return false, {}
+        return false, EMPTY_THRESHOLD_TICK_ENTRIES
     end
 
     local specID = GetCurrentSpecID()
     local enabled = ResolveSpecOverrideKey(resource, specID, "segThresholdEnabled")
     if enabled ~= true then
-        return false, {}
+        return false, EMPTY_THRESHOLD_TICK_ENTRIES
     end
 
     local rawEntries, cleared = ResolveSpecEntryList(resource, specID, "segThresholdEntries", "segThresholdEntriesCleared")
@@ -2118,13 +2152,25 @@ local function GetSegmentedThresholdEntriesConfig(powerType, settings)
     return true, entries
 end
 
-local function GetSegmentedThresholdColorForValue(powerType, settings, currentValue)
+-- `holder` is optional and is the applied bar frame when the caller has one.
+-- The list it carries was compiled by ApplyResourceBars for exactly this power
+-- type (RB.CompileResourceBarConfig); the power-type stamp is what makes a
+-- recycled frame fall back to a live resolution instead of answering with the
+-- previous occupant's thresholds. A holder with no stamp resolves live, so
+-- preview frames and any caller without a holder behave exactly as before.
+local function GetSegmentedThresholdColorForValue(powerType, settings, currentValue, holder)
     currentValue = tonumber(currentValue)
     if not currentValue then
         return false, nil
     end
 
-    local enabled, entries = GetSegmentedThresholdEntriesConfig(powerType, settings)
+    local enabled, entries
+    if holder ~= nil and holder._ccSegThresholdPowerType == powerType then
+        enabled = holder._ccSegThresholdEnabled
+        entries = holder._ccSegThresholdEntries
+    else
+        enabled, entries = GetSegmentedThresholdEntriesConfig(powerType, settings)
+    end
     if not enabled then
         return false, nil
     end
@@ -2144,21 +2190,21 @@ end
 local function GetContinuousTickEntriesConfig(powerType, settings)
     if SEGMENTED_TYPES[powerType] or powerType == RESOURCE_MAELSTROM_WEAPON
         or RB.AURA_STACK_RESOURCES[powerType] then
-        return false, nil, {}, nil, nil
+        return false, nil, EMPTY_THRESHOLD_TICK_ENTRIES, nil, nil
     end
     if not settings or not settings.resources then
-        return false, nil, {}, nil, nil
+        return false, nil, EMPTY_THRESHOLD_TICK_ENTRIES, nil, nil
     end
 
     local resource = settings.resources[powerType]
     if type(resource) ~= "table" then
-        return false, nil, {}, nil, nil
+        return false, nil, EMPTY_THRESHOLD_TICK_ENTRIES, nil, nil
     end
 
     local specID = GetCurrentSpecID()
     local enabled = ResolveSpecOverrideKey(resource, specID, "continuousTickEnabled")
     if enabled ~= true then
-        return false, nil, {}, nil, nil
+        return false, nil, EMPTY_THRESHOLD_TICK_ENTRIES, nil, nil
     end
 
     local mode = ResolveSpecOverrideKey(resource, specID, "continuousTickMode")
@@ -2178,6 +2224,46 @@ local function GetContinuousTickEntriesConfig(powerType, settings)
     if tickWidth < 1 then tickWidth = 1 elseif tickWidth > 10 then tickWidth = 10 end
     local combatOnly = ResolveSpecOverrideKey(resource, specID, "continuousTickCombatOnly") or false
     return true, mode, entries, tickWidth, combatOnly
+end
+
+-- Derived config the poll body would otherwise rebuild 30 times a second,
+-- compiled once at the apply boundary and hung off the applied bar. Both lists
+-- are pure functions of the resource's settings bucket, its spec overrides and
+-- the current spec — and every writer of those commits through
+-- ApplyResourceBars (config commits, profile switch, import, migration) or
+-- through the lifecycle events that re-evaluate on a spec, talent or form
+-- change. The power-type stamp is the reuse guard: a recycled frame that now
+-- renders a different resource, and any frame this never ran for, resolves
+-- live instead.
+function RB.ClearCompiledResourceBarConfig(holder)
+    if not holder then return end
+    holder._ccSegThresholdPowerType = nil
+    holder._ccSegThresholdEnabled = nil
+    holder._ccSegThresholdEntries = nil
+    holder._ccTickPowerType = nil
+    holder._ccTickEnabled = nil
+    holder._ccTickMode = nil
+    holder._ccTickEntries = nil
+    holder._ccTickWidth = nil
+    holder._ccTickCombatOnly = nil
+end
+
+function RB.CompileResourceBarConfig(holder, powerType, settings)
+    if not holder or powerType == nil then return end
+
+    local thresholdEnabled, thresholdEntries = GetSegmentedThresholdEntriesConfig(powerType, settings)
+    holder._ccSegThresholdEnabled = thresholdEnabled
+    holder._ccSegThresholdEntries = thresholdEntries
+    holder._ccSegThresholdPowerType = powerType
+
+    local tickEnabled, tickMode, tickEntries, tickWidth, tickCombatOnly =
+        GetContinuousTickEntriesConfig(powerType, settings)
+    holder._ccTickEnabled = tickEnabled
+    holder._ccTickMode = tickMode
+    holder._ccTickEntries = tickEntries
+    holder._ccTickWidth = tickWidth
+    holder._ccTickCombatOnly = tickCombatOnly
+    holder._ccTickPowerType = powerType
 end
 
 local function SupportsResourceAuraStackMode(powerType)

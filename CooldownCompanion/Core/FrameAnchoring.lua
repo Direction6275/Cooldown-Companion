@@ -571,8 +571,18 @@ function CooldownCompanion:ApplyFrameAnchoring(opts)
         local accumulator = 0
         local SYNC_INTERVAL = 1 / 30
         alphaSyncFrame:SetScript("OnUpdate", function(self, dt)
-            local now = GetTime()
-            local rapidSyncActive = now < rapidAlphaSyncUntil
+            -- Steady state is an expired window, so clear it once observed and
+            -- keep the per-frame test to one comparison. Single-threaded: the
+            -- only writer that opens a window (QueueInheritedUnitFrameAlphaResync)
+            -- cannot run between this read and this clear.
+            local rapidSyncActive = false
+            if rapidAlphaSyncUntil ~= 0 then
+                if GetTime() < rapidAlphaSyncUntil then
+                    rapidSyncActive = true
+                else
+                    rapidAlphaSyncUntil = 0
+                end
+            end
             accumulator = accumulator + dt
             if not rapidSyncActive then
                 if accumulator < SYNC_INTERVAL then return end

@@ -16,6 +16,7 @@ local type = type
 local tostring = tostring
 local tonumber = tonumber
 local issecretvalue = issecretvalue
+local wipe = wipe
 
 local function UsesChargeBehavior(buttonData)
     return CooldownCompanion.UsesChargeBehavior(buttonData)
@@ -237,7 +238,9 @@ function CooldownCompanion:GetValidSoundAlertEventsForCooldownID(cooldownID)
     return validEvents
 end
 
-function CooldownCompanion:GetValidSoundAlertEventsForButton(buttonData, spellIDOverride)
+-- scratch (optional): a caller-owned set, emptied here, for callers that read the
+-- result inside their own call and keep nothing. See WALK_EVENT_SCRATCH.
+function CooldownCompanion:GetValidSoundAlertEventsForButton(buttonData, spellIDOverride, scratch)
     if not buttonData or buttonData.type ~= "spell" then return nil end
 
     self:EnsureSoundAlertSpellMap()
@@ -248,7 +251,8 @@ function CooldownCompanion:GetValidSoundAlertEventsForButton(buttonData, spellID
     local cooldownIDs = ResolveCooldownIDsForSpell(spellToCooldownIDs, spellID)
     if not cooldownIDs then return nil end
 
-    local validEvents = {}
+    local validEvents = scratch or {}
+    if scratch then wipe(scratch) end
     for cooldownID in pairs(cooldownIDs) do
         local perCooldownEvents = self:GetValidSoundAlertEventsForCooldownID(cooldownID)
         for eventKey in pairs(perCooldownEvents) do
@@ -277,16 +281,20 @@ local function GetSoundAlertEntryScope(buttonData)
     return true, buttonData.auraTracking == true
 end
 
-function CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData, spellIDOverride)
+-- scratch (optional): { scoped = {}, valid = {} }, both emptied here. Only for
+-- callers that read the result inside their own call and keep nothing; the config
+-- surface both holds and mutates the returned set, so it keeps fresh tables.
+function CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData, spellIDOverride, scratch)
     local allowSpellEvents, allowAuraEvents = GetSoundAlertEntryScope(buttonData)
     if allowSpellEvents == nil then
         return nil
     end
 
-    local scopedEvents = {}
+    local scopedEvents = scratch and scratch.scoped or {}
+    if scratch then wipe(scopedEvents) end
     if allowSpellEvents then
         local spellSourceID = spellIDOverride or buttonData.id
-        local spellEvents = self:GetValidSoundAlertEventsForButton(buttonData, spellSourceID)
+        local spellEvents = self:GetValidSoundAlertEventsForButton(buttonData, spellSourceID, scratch and scratch.valid)
         if spellEvents then
             for eventKey in pairs(spellEvents) do
                 if SPELL_SOUND_ALERT_EVENTS[eventKey] then
@@ -898,8 +906,24 @@ function CooldownCompanion:PlayTriggerPanelSoundAlertEvent(groupOrId, eventKey)
     return PlaySharedMediaSound(soundName, DEFAULT_SOUND_CHANNEL, GetTriggerPanelSpeechText(group))
 end
 
-local function CollectEnabledSoundAlertEvents(events, validEvents, mergeChargeEvents)
-    local enabledEvents = {}
+-- Necessary condition for CollectEnabledSoundAlertEvents below to return
+-- anything: it only ever enables a key from SOUND_ALERT_EVENT_ORDER, and only
+-- when that key (or, under charge merging, chargeGained) carries a real sound.
+-- With none selected the answer is nil whatever the valid/scoped sets say, so
+-- resolving them is pure waste.
+local function HasAnySpellSoundSelection(events)
+    for _, eventKey in ipairs(SOUND_ALERT_EVENT_ORDER) do
+        local soundName = events[eventKey]
+        if soundName and soundName ~= SOUND_NONE_KEY then
+            return true
+        end
+    end
+    return false
+end
+
+local function CollectEnabledSoundAlertEvents(events, validEvents, mergeChargeEvents, scratch)
+    local enabledEvents = scratch or {}
+    if scratch then wipe(scratch) end
     for _, eventKey in ipairs(SOUND_ALERT_EVENT_ORDER) do
         if not (mergeChargeEvents and eventKey == "chargeGained") then
             local soundName = events[eventKey]
@@ -918,23 +942,43 @@ local function CollectEnabledSoundAlertEvents(events, validEvents, mergeChargeEv
     return enabledEvents
 end
 
-function CooldownCompanion:GetEnabledSoundAlertEventsForButton(buttonData, spellIDOverride)
+-- scratch (optional): { scoped = {}, valid = {}, enabled = {} }. See
+-- WALK_EVENT_SCRATCH; every other caller keeps the fresh-table contract.
+function CooldownCompanion:GetEnabledSoundAlertEventsForButton(buttonData, spellIDOverride, scratch)
     local cfg = self:GetButtonSoundAlertConfig(buttonData, false)
     if not cfg or type(cfg.events) ~= "table" then
         return nil
     end
 
-    local validEvents = self:GetScopedValidSoundAlertEventsForButton(buttonData, spellIDOverride)
+    -- Both exits below are the answer this function already produced, reached
+    -- without resolving the scoped set. An entry with no spell-side scope (a
+    -- standalone aura entry: its events are the native aura ones, which the
+    -- collector never enables) and an entry with no spell-side sound selected
+    -- both resolve to nil by construction.
+    if not GetSoundAlertEntryScope(buttonData) then
+        return nil
+    end
+    if not HasAnySpellSoundSelection(cfg.events) then
+        return nil
+    end
+
+    local validEvents = self:GetScopedValidSoundAlertEventsForButton(buttonData, spellIDOverride, scratch)
     if not validEvents then
         return nil
     end
 
-    return CollectEnabledSoundAlertEvents(cfg.events, validEvents, UsesChargeBehavior(buttonData))
+    return CollectEnabledSoundAlertEvents(cfg.events, validEvents, UsesChargeBehavior(buttonData), scratch and scratch.enabled)
 end
 
 function CooldownCompanion:GetEnabledSoundAlertEventsForCustomBar(customBar)
     local cfg = self:GetCustomBarSoundAlertConfig(customBar, false)
     if not cfg or type(cfg.events) ~= "table" then
+        return nil
+    end
+
+    -- Same construction as the button path above: no spell-side sound selected
+    -- means nil whatever the scoped set holds, so it is never resolved.
+    if not HasAnySpellSoundSelection(cfg.events) then
         return nil
     end
 
@@ -1080,6 +1124,17 @@ function CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, auraActive, coold
     UpdateCooldownSoundAlertTransitions(barInfo, enabledEvents, opts)
 end
 
+-- Walk-path scratch. UpdateButtonSoundAlerts is its ONLY user: the sets it fills
+-- are read by UpdateCooldownSoundAlertTransitions, which tests flags and stores
+-- nothing, and are dead the moment that call returns. The walk cannot re-enter
+-- itself. Any new caller must either keep the fresh-table contract or prove the
+-- same non-escape.
+local WALK_EVENT_SCRATCH = {
+    valid = {},
+    scoped = {},
+    enabled = {},
+}
+
 function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, _isOnGCD, cooldownActive, auraActive, currentCharges, _maxCharges, chargeRecharging, chargeCooldownStartTime)
     local buttonData = button and button.buttonData
     if not buttonData or buttonData.type ~= "spell" then return end
@@ -1090,9 +1145,9 @@ function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, _isO
         return
     end
 
-    local enabledEvents = self:GetEnabledSoundAlertEventsForButton(buttonData, cooldownSpellID)
+    local enabledEvents = self:GetEnabledSoundAlertEventsForButton(buttonData, cooldownSpellID, WALK_EVENT_SCRATCH)
     if not enabledEvents and cooldownSpellID and cooldownSpellID ~= buttonData.id then
-        enabledEvents = self:GetEnabledSoundAlertEventsForButton(buttonData, buttonData.id)
+        enabledEvents = self:GetEnabledSoundAlertEventsForButton(buttonData, buttonData.id, WALK_EVENT_SCRATCH)
     end
     if not enabledEvents then
         button._sndInitialized = nil

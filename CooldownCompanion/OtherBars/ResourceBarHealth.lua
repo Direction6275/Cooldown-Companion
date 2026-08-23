@@ -388,6 +388,14 @@ end
 
 function HealthBar.LayoutEffectBars(bar, borderStyle, borderSize, borderRenderMode, config)
     if not bar then return end
+    -- Every effect bar is re-anchored and re-sized from scratch below, so the
+    -- per-effect style and anchor records the poll keeps are dropped here: the
+    -- first tick after an apply always restyles and re-anchors.
+    bar._healthLowAlertStyled = nil
+    bar._healthIncomingHealStyled = nil
+    bar._healthAbsorbStyled = nil
+    bar._healthHealAbsorbStyled = nil
+    bar._healthAbsorbAnchoredToHeals = nil
     if bar.healthEffectClip then
         bar.healthEffectClip:SetFrameLevel(bar:GetFrameLevel() + 1)
         bar.healthEffectClip:ClearAllPoints()
@@ -412,27 +420,64 @@ function HealthBar.LayoutEffectBars(bar, borderStyle, borderSize, borderRenderMo
     end
 end
 
+-- Per-pass state for UpdateEffectBars. At file scope rather than in three
+-- closures rebuilt on every 30 Hz tick: the pass writes widgets and calls only
+-- HealthBar helpers, so it can never be re-entered while one is running.
+local effectPassConfig = nil
+local effectPassPreview = NO_HEALTH_EFFECT_PREVIEW
+local effectPassCanvasMode = false
+local netHealingCalcPopulated = false
+local standaloneHealingCalcPopulated = false
+
+local function GetNetHealingCalc()
+    if not netHealingCalcPopulated then
+        UnitGetDetailedHealPrediction("player", nil, HEALTH_EFFECTS.netHealingCalc)
+        netHealingCalcPopulated = true
+    end
+    return HEALTH_EFFECTS.netHealingCalc
+end
+
+local function GetStandaloneHealingCalc()
+    if not standaloneHealingCalcPopulated then
+        UnitGetDetailedHealPrediction("player", nil, HEALTH_EFFECTS.standaloneHealingCalc)
+        standaloneHealingCalcPopulated = true
+    end
+    return HEALTH_EFFECTS.standaloneHealingCalc
+end
+
+-- Which effects render at all: the armed previews on the canvas, the
+-- enabled settings on the live bar. Never the union.
+local function WantsEffect(previewKey, settingKey)
+    if effectPassCanvasMode then
+        return effectPassPreview[previewKey] == true
+    end
+    return effectPassConfig[settingKey] == true
+end
+
+-- An effect's styling (texture fetch plus colour) is a pure function of the
+-- resolved config, which is a fresh table per apply, so the latch is that
+-- table's identity. Cleared whenever the effect goes hidden, so a re-show
+-- always restyles: the hidden branches zero the widget's value, and
+-- ApplyLowHealthAlertStyle is what puts it back.
+local function NeedsEffectStyle(bar, key, config)
+    if bar[key] == config then
+        return false
+    end
+    bar[key] = config
+    return true
+end
+
 function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
     if not bar then return end
 
-    local netHealingCalcPopulated = false
-    local standaloneHealingCalcPopulated = false
-    local function GetNetHealingCalc()
-        if not netHealingCalcPopulated then
-            UnitGetDetailedHealPrediction("player", nil, HEALTH_EFFECTS.netHealingCalc)
-            netHealingCalcPopulated = true
-        end
-        return HEALTH_EFFECTS.netHealingCalc
-    end
-    local function GetStandaloneHealingCalc()
-        if not standaloneHealingCalcPopulated then
-            UnitGetDetailedHealPrediction("player", nil, HEALTH_EFFECTS.standaloneHealingCalc)
-            standaloneHealingCalcPopulated = true
-        end
-        return HEALTH_EFFECTS.standaloneHealingCalc
-    end
+    netHealingCalcPopulated = false
+    standaloneHealingCalcPopulated = false
 
     if not config then
+        bar._healthLowAlertStyled = nil
+        bar._healthIncomingHealStyled = nil
+        bar._healthAbsorbStyled = nil
+        bar._healthHealAbsorbStyled = nil
         if bar.lowHealthAlertBar then bar.lowHealthAlertBar:Hide() end
         if bar.incomingHealBar then bar.incomingHealBar:Hide() end
         if bar.absorbBar then bar.absorbBar:Hide() end
@@ -450,6 +495,9 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
     -- the shared preview table leaked the other way onto the live bar.
     local canvasMode = preview ~= nil
     preview = preview or NO_HEALTH_EFFECT_PREVIEW
+    effectPassConfig = config
+    effectPassPreview = preview
+    effectPassCanvasMode = canvasMode
 
     -- The stand-in amounts below are shares of the maximum, and a secret
     -- maximum cannot be multiplied (agent-reference/secret-values.md). The
@@ -460,24 +508,21 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
         previewMax = nil
     end
 
-    -- Which effects render at all: the armed previews on the canvas, the
-    -- enabled settings on the live bar. Never the union.
-    local function WantsEffect(previewKey, settingKey)
-        if canvasMode then
-            return preview[previewKey] == true
-        end
-        return config[settingKey] == true
-    end
-
     if bar.lowHealthAlertBar then
-        HealthBar.ApplyLowHealthAlertStyle(bar.lowHealthAlertBar, config)
         if WantsEffect("lowHealthAlert", "showLowHealthAlert") then
+            -- Styling is what restores the widget's full value, and the hidden
+            -- branch below is what zeroes it, so the two stay paired: the latch
+            -- is cleared there and the style re-runs on the way back in.
+            if NeedsEffectStyle(bar, "_healthLowAlertStyled", config) then
+                HealthBar.ApplyLowHealthAlertStyle(bar.lowHealthAlertBar, config)
+            end
             -- Canvas mode takes the flat configured colour; the curve leg
             -- reads live health, which is exactly what must not happen here.
             HealthBar.ApplyLowHealthAlertColor(bar, config, canvasMode)
             bar.lowHealthAlertBar:SetAlpha(0.6 + (0.4 * math_sin(GetTime() * 2 * math_pi / HEALTH_EFFECTS.lowHealthAlertPulseSpeed)))
             bar.lowHealthAlertBar:Show()
         else
+            bar._healthLowAlertStyled = nil
             bar.lowHealthAlertBar:Hide()
             bar.lowHealthAlertBar:SetAlpha(1)
             SetStatusBarImmediateValue(bar.lowHealthAlertBar, 0)
@@ -488,8 +533,10 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
         and (not canvasMode or previewMax ~= nil)
     local incomingHealAnchorTexture = nil
     if bar.incomingHealBar then
-        HealthBar.ApplyEffectStyle(bar.incomingHealBar, config, "healthIncomingHealColor", HEALTH_EFFECTS.incomingHealColor, "healthIncomingHealTexture")
         if incomingHealsVisible then
+            if NeedsEffectStyle(bar, "_healthIncomingHealStyled", config) then
+                HealthBar.ApplyEffectStyle(bar.incomingHealBar, config, "healthIncomingHealColor", HEALTH_EFFECTS.incomingHealColor, "healthIncomingHealTexture")
+            end
             SetStatusBarSmoothRange(bar.incomingHealBar, 0, maxHealth)
             if canvasMode then
                 -- A share of the bar, not a raw amount: the preview renders
@@ -501,16 +548,26 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
             bar.incomingHealBar:Show()
             incomingHealAnchorTexture = bar.incomingHealBar:GetStatusBarTexture()
         else
+            bar._healthIncomingHealStyled = nil
             bar.incomingHealBar:Hide()
             SetStatusBarImmediateValue(bar.incomingHealBar, 0)
         end
     end
 
     if bar.absorbBar then
-        HealthBar.LayoutForwardEffectBar(bar, bar.absorbBar, incomingHealAnchorTexture, true)
-        HealthBar.ApplyEffectStyle(bar.absorbBar, config, "healthAbsorbColor", HEALTH_EFFECTS.absorbColor, "healthAbsorbTexture")
-        HealthBar.ApplyEffectStyle(bar.absorbOverflowBar, config, "healthAbsorbColor", HEALTH_EFFECTS.absorbColor, "healthAbsorbTexture")
+        -- The absorb bar hangs off the incoming-heal fill when that effect is
+        -- up and off the health fill when it is not, so the anchor only has to
+        -- move when that flips. LayoutEffectBars clears the record at every
+        -- apply, so the first tick after one always re-anchors.
+        if bar._healthAbsorbAnchoredToHeals ~= incomingHealsVisible then
+            bar._healthAbsorbAnchoredToHeals = incomingHealsVisible
+            HealthBar.LayoutForwardEffectBar(bar, bar.absorbBar, incomingHealAnchorTexture, true)
+        end
         if WantsEffect("absorbs", "showAbsorbs") and (not canvasMode or previewMax ~= nil) then
+            if NeedsEffectStyle(bar, "_healthAbsorbStyled", config) then
+                HealthBar.ApplyEffectStyle(bar.absorbBar, config, "healthAbsorbColor", HEALTH_EFFECTS.absorbColor, "healthAbsorbTexture")
+                HealthBar.ApplyEffectStyle(bar.absorbOverflowBar, config, "healthAbsorbColor", HEALTH_EFFECTS.absorbColor, "healthAbsorbTexture")
+            end
             local missingHealthAbsorb
             local absorbOverflowing
             local overflowAbsorb
@@ -546,6 +603,7 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
                 bar.absorbOverflowBar:Show()
             end
         else
+            bar._healthAbsorbStyled = nil
             bar.absorbBar:Hide()
             SetStatusBarImmediateValue(bar.absorbBar, 0)
             if bar.absorbOverflowBar then
@@ -556,8 +614,10 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
     end
 
     if bar.healAbsorbBar then
-        HealthBar.ApplyEffectStyle(bar.healAbsorbBar, config, "healthHealAbsorbColor", HEALTH_EFFECTS.healAbsorbColor, "healthHealAbsorbTexture")
         if WantsEffect("healAbsorbs", "showHealAbsorbs") and (not canvasMode or previewMax ~= nil) then
+            if NeedsEffectStyle(bar, "_healthHealAbsorbStyled", config) then
+                HealthBar.ApplyEffectStyle(bar.healAbsorbBar, config, "healthHealAbsorbColor", HEALTH_EFFECTS.healAbsorbColor, "healthHealAbsorbTexture")
+            end
             SetStatusBarSmoothRange(bar.healAbsorbBar, 0, maxHealth)
             if canvasMode then
                 SetStatusBarSmoothValue(bar.healAbsorbBar, previewMax * 0.22)
@@ -567,6 +627,7 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
             end
             bar.healAbsorbBar:Show()
         else
+            bar._healthHealAbsorbStyled = nil
             bar.healAbsorbBar:Hide()
             SetStatusBarImmediateValue(bar.healAbsorbBar, 0)
         end
@@ -738,7 +799,15 @@ function HealthBar.Update(bar, settings)
 
     SetStatusBarSmoothRange(bar, 0, maxHealth)
     SetStatusBarSmoothValue(bar, currentHealth)
-    local config = HealthBar.GetConfig(settings)
+    -- Compiled by HealthBar.Style at the apply boundary. Resolving it here
+    -- means a recursive CopyTable of the whole health bucket on every tick,
+    -- and every writer of that bucket commits through ApplyResourceBars, which
+    -- always re-styles this bar. A bar that somehow never went through Style
+    -- resolves live, exactly as before.
+    local config = bar._ccHealthConfig
+    if config == nil then
+        config = HealthBar.GetConfig(settings)
+    end
     HealthBar.ApplyFillColor(bar, config)
     HealthBar.ApplyBackgroundColor(bar, config)
     HealthBar.UpdateEffectBars(bar, config, maxHealth)
@@ -772,6 +841,10 @@ end
 
 function HealthBar.Style(bar, settings)
     local resourceConfig = HealthBar.GetConfig(settings)
+    -- The resolved bucket for the poll body to read (HealthBar.Update). A new
+    -- table every apply, so it doubles as the edge every per-effect style latch
+    -- below keys off.
+    bar._ccHealthConfig = resourceConfig
     local texName = ST.GetEffectiveBarTextureName(GetResourceDisplayValue(settings, "barTexture", "Solid"))
     local isVertical = IsVerticalResourceLayout(settings)
     local reverseFill = IsVerticalFillReversed(settings)
