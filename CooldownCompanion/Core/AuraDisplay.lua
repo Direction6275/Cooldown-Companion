@@ -588,14 +588,32 @@ local function BuildSlotKit(slotButton)
         kit.stackCountFormatterKey = "off"
     end
 
-    -- Bar name replica: the bar backdrop occludes the CC name text along with
-    -- everything else on the bar, so the kit re-renders the entry name.
-    -- CC-authored, bind-time text (live aura names via SetSpellName are an
-    -- unvalidated future option). The template is a base font only: SetText
-    -- errors on a FontString with no font, and icon-host binds clear the text
-    -- before ApplyFontStyle ever runs (bar binds restyle it).
+    -- Bar name replicas: the bar backdrop occludes the CC name text along
+    -- with everything else on the bar, so the kit re-renders the name. Two
+    -- regions because they have different owners. The STATIC region is
+    -- CC-authored, bind-time text (custom names, and the entry-name fallback
+    -- when no live registration exists). The template is a base font only:
+    -- SetText errors on a FontString with no font, and icon-host binds clear
+    -- the text before ApplyFontStyle ever runs (bar binds restyle it).
     kit.barNameText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
     kit.barNameText:SetAlpha(0)
+
+    -- The LIVE region is the SetSpellName registration: Blizzard writes the
+    -- MATCHED aura's real name into it on every aura update, so a Roll the
+    -- Bones bar reads "Jackpot", not the cast name. Registration permanently
+    -- marks the region's Text and Shown aspects secret (write-only forever),
+    -- which is why it is a dedicated second region instead of the static one
+    -- above. Order is load-bearing: font template and alpha 0 BEFORE
+    -- SetSpellName — registration synchronously forces UpdateAuraDisplay,
+    -- which SetTexts into a region that must already own a font. Creation-
+    -- only and permanent; binds gate it by alpha alone (Shown is secret, and
+    -- SetText is Blizzard's channel — CC never writes or reads it).
+    if slotButton.SetSpellName then
+        kit.liveBarNameText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
+        kit.liveBarNameText:SetPoint("LEFT", slotButton, "LEFT", 3, 0)
+        kit.liveBarNameText:SetAlpha(0)
+        slotButton:SetSpellName(kit.liveBarNameText)
+    end
 
     -- Keybind replica (icon shells): show-only-while-active entries hide CC's
     -- pinnedTextFrame, which is where the keybind text lives — and CC can't
@@ -1544,50 +1562,75 @@ local function StyleSlotKit(slot, button, buttonData, style)
     end
     slotButton:SetDurationText(kit.durationText, durationOptions)
 
-    -- Bar name replica: bind-time entry name in the bar name-text style (the
-    -- backdrop occludes CC's name text; a live aura-name override would need
-    -- the unvalidated SetSpellName registration).
+    -- Bar name: pick ONE of the two replica regions per bind. The live
+    -- SetSpellName region wins on plain bar-panel binds (Blizzard writes the
+    -- matched aura's real name into it); the static CC-authored region keeps
+    -- custom names and every host the live region must not touch (resource
+    -- and custom-bar hosts gate explicitly — their adapters also pass
+    -- showBarNameText=false, but the live region must not hang on that).
+    -- BOTH alphas are written on every bind: the registration is permanent,
+    -- so a pooled slot rebound to an icon host would otherwise keep showing
+    -- the live name over the icon.
+    local nameEnabled = style.showBarNameText ~= false
+    local useLiveName = isBar and nameEnabled and kit.liveBarNameText ~= nil
+        and not buttonData.customName
+        and not isResourceHost and not isCustomBarHost
+    local useStaticName = isBar and not useLiveName
+        and (nameEnabled or buttonData.customName ~= nil)
+    local nameText = useLiveName and kit.liveBarNameText
+        or useStaticName and kit.barNameText
+        or nil
     kit.barNameText:ClearAllPoints()
-    if isBar and (style.showBarNameText ~= false or buttonData.customName) then
+    if kit.liveBarNameText then
+        kit.liveBarNameText:ClearAllPoints()
+    end
+    if nameText then
         if ApplyFontStyle then
-            ApplyFontStyle(kit.barNameText, style, "barName", 10)
+            ApplyFontStyle(nameText, style, "barName", 10)
         end
         local nameOffX = style.barNameTextOffsetX or 0
         local nameOffY = style.barNameTextOffsetY or 0
         local nameReverse = style.barNameTextReverse
         if button._isVertical then
             if nameReverse then
-                kit.barNameText:SetPoint("TOP", innerHost, "TOP", nameOffX, -3 + nameOffY)
+                nameText:SetPoint("TOP", innerHost, "TOP", nameOffX, -3 + nameOffY)
             else
-                kit.barNameText:SetPoint("BOTTOM", innerHost, "BOTTOM", nameOffX, 3 + nameOffY)
+                nameText:SetPoint("BOTTOM", innerHost, "BOTTOM", nameOffX, 3 + nameOffY)
             end
-            kit.barNameText:SetJustifyH("CENTER")
+            nameText:SetJustifyH("CENTER")
         else
             if nameReverse then
-                kit.barNameText:SetPoint("RIGHT", innerHost, "RIGHT", -3 + nameOffX, nameOffY)
-                kit.barNameText:SetJustifyH("RIGHT")
+                nameText:SetPoint("RIGHT", innerHost, "RIGHT", -3 + nameOffX, nameOffY)
+                nameText:SetJustifyH("RIGHT")
             else
-                kit.barNameText:SetPoint("LEFT", innerHost, "LEFT", 3 + nameOffX, nameOffY)
-                kit.barNameText:SetJustifyH("LEFT")
+                nameText:SetPoint("LEFT", innerHost, "LEFT", 3 + nameOffX, nameOffY)
+                nameText:SetJustifyH("LEFT")
             end
             -- Same-side truncation guard, replicated from CreateBarFrame:
             -- when the visible duration text shares the name's side, pin the
-            -- name against it so the two can't overlap. Decided from the
-            -- style key CC just wrote the alpha FROM — never read back from a
-            -- registered kit region: PTR 7 stamps "initial secrets" into them
-            -- at creation (AuraContainerFrameProviders.lua CreateFrame forces
+            -- name against it so the two can't overlap. The renderer
+            -- truncates the live region's secret text inside these anchors —
+            -- never measure it. Decided from the style key CC just wrote the
+            -- alpha FROM — never read back from a registered kit region:
+            -- PTR 7 stamps "initial secrets" into them at creation
+            -- (AuraContainerFrameProviders.lua CreateFrame forces
             -- UpdateAuraDisplay), so GetAlpha returns a SECRET number even
             -- OOC and any comparison errors. Registered regions are
             -- write-only from the moment the slot exists.
             if style.barNameTextReverse == style.barTimeTextReverse
                 and style.showAuraText ~= false then
                 if nameReverse then
-                    kit.barNameText:SetPoint("LEFT", kit.durationText, "RIGHT", 4, 0)
+                    nameText:SetPoint("LEFT", kit.durationText, "RIGHT", 4, 0)
                 else
-                    kit.barNameText:SetPoint("RIGHT", kit.durationText, "LEFT", -4, 0)
+                    nameText:SetPoint("RIGHT", kit.durationText, "LEFT", -4, 0)
                 end
             end
         end
+    end
+    -- Text writes stay on the STATIC region only — the live region's text is
+    -- Blizzard's channel and a CC SetText there would error on the secret
+    -- aspect.
+    if useStaticName then
         local displayName = buttonData.customName
         if not displayName and buttonData.type == "spell" and buttonData.id then
             -- Same resolution as the CC name text underneath: the live
@@ -1595,10 +1638,12 @@ local function StyleSlotKit(slot, button, buttonData, style)
             displayName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
         end
         kit.barNameText:SetText(displayName or buttonData.name or "")
-        kit.barNameText:SetAlpha(1)
     else
         kit.barNameText:SetText("")
-        kit.barNameText:SetAlpha(0)
+    end
+    kit.barNameText:SetAlpha(useStaticName and 1 or 0)
+    if kit.liveBarNameText then
+        kit.liveBarNameText:SetAlpha(useLiveName and 1 or 0)
     end
 
     -- Duration swipe: Blizzard drives the swipe's cooldown; draw flags and
