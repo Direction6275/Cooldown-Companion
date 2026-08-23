@@ -2532,9 +2532,10 @@ local function ResolveEntryAuraUnits(self, buttonData, allowGroupScope)
     local first = allowGroupScope == false
         and self:ResolveTexturePanelAuraSpellID(buttonData)
         or self:ResolveAuraSpellID(buttonData)
+    local classifiedUnit = ST.ClassifyAuraSpellUnit(first)
     local harmful
-    if first and C_Spell.DoesSpellExist(first) then
-        harmful = C_Spell.IsSpellHarmful(first)
+    if classifiedUnit then
+        harmful = classifiedUnit == "target"
     else
         harmful = buttonData.auraUnit == "target"
     end

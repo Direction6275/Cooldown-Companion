@@ -289,7 +289,7 @@ end
 
 local function GetSpellOfferability(input, spellId)
     local canEverCast = CanPlayerEverCastSpellCached(spellId)
-    local isHarmful = C_Spell.IsSpellHarmful(spellId)
+    local isHarmful = CooldownCompanion.ClassifyAuraSpellUnit(spellId) == "target"
     local canOfferSpell = canEverCast and not IsPassiveOrProc(spellId)
     -- Exact numeric entry is explicit Aura intent. Some player-applied
     -- harmful auras (for example, passive/proc effects) are not themselves
@@ -345,7 +345,7 @@ local function TryAddSpell(input, isPetSpell, forceAura)
         local addAsAura = forceAura == true or IsPassiveOrProc(spellId)
         local routedToAura
         if not addAsAura and not CanPlayerEverCastSpellCached(spellId) then
-            if C_Spell.IsSpellHarmful(spellId) then
+            if CooldownCompanion.ClassifyAuraSpellUnit(spellId) == "target" then
                 PrintCannotTrackAsAura(spellName)
                 return false
             end
@@ -1087,7 +1087,7 @@ local function AddUniqueSpellAuraTwin(results, targetAcceptsAuraEntries)
     if not uniqueSpell or not targetAcceptsAuraEntries then return end
 
     local spellId = tonumber(uniqueSpell.id)
-    if not spellId or C_Spell.IsSpellHarmful(spellId) then return end
+    if not spellId or CooldownCompanion.ClassifyAuraSpellUnit(spellId) == "target" then return end
     for _, entry in ipairs(results) do
         if entry.autocompleteKind == "aura" and tonumber(entry.id) == spellId then
             return

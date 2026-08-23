@@ -49,10 +49,9 @@ local tabInfoButtons = CS.tabInfoButtons
 -- differently. Callers supply their own derived unit and a post-change hook
 -- (each surface normalizes its own entry shape afterwards).
 
-local function ClassifyAuraSpellUnit(spellID)
-    if not (spellID and C_Spell.DoesSpellExist(spellID)) then return nil end
-    return C_Spell.IsSpellHarmful(spellID) and "target" or "player"
-end
+-- Delegates to the Core classifier (Core/Aura.lua) — the one owner of the
+-- harmful probe and its self-buff unit overrides.
+local ClassifyAuraSpellUnit = CooldownCompanion.ClassifyAuraSpellUnit
 
 local function GetAuraCandidateList(config)
     local list = {}
