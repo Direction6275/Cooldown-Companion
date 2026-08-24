@@ -484,8 +484,9 @@ local function ClearStaleRecycledBarRuntimeState(frame, keepBorderVisuals)
     -- wears the outgoing one's border for a tick. Every other caller
     -- hides the frame right after this, so those keep the eager clear
     -- and a reused frame always comes up dark. One pool field
-    -- for Maelstrom Weapon and the aura-stack family alike: a frame is
-    -- only ever one of them at a time, so they share the cleanup.
+    -- for Maelstrom Weapon, the aura-stack family and the native segmented
+    -- resources alike: a frame only ever renders one resource at a time,
+    -- so they share the cleanup.
     local mwBorder = frame._ccMWMaxBorder
     if mwBorder and mwBorder.key ~= "off" then
         if keepBorderVisuals then
@@ -494,9 +495,6 @@ local function ClearStaleRecycledBarRuntimeState(frame, keepBorderVisuals)
             mwBorder.key = "off"
             if mwBorder.glow then
                 ST._StyleKitBarGlowRegions(mwBorder.glow, nil, mwBorder.host, false)
-            end
-            if mwBorder.segBorders then
-                ST._StyleKitSegmentBorders(mwBorder.segBorders, nil, nil, 0, false)
             end
         end
     end
@@ -1210,6 +1208,12 @@ local function SetRechargeText(holder, segmentIndex, remaining, showZero)
     text:SetShown(formatted ~= "")
 end
 
+-- Forward declaration: the native segmented branches below light the
+-- max-stack border, and its definition lives with the border section
+-- further down. Declared-then-assigned, so the chunk's local count is
+-- unchanged (200-local ceiling).
+local UpdateMaxStackBorder
+
 local function UpdateSegmentedBar(holder, powerType, settings)
     if not holder or not holder.segments then return end
     if not settings then
@@ -1260,6 +1264,9 @@ local function UpdateSegmentedBar(holder, powerType, settings)
         end
         local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, readyCount, holder)
         local activeReadyColor = allReady and maxColor or (thresholdActive and thresholdColor or readyColor)
+        -- At max means all runes ready. numSegs > 0 so a holder with no
+        -- segments never lights the border off the vacuously-true allReady.
+        UpdateMaxStackBorder(holder, settings, allReady and numSegs > 0, powerType)
         local runeValueTotal = 0
         local showAllRechargeText = IsRechargeTextAllSegmentsMode(holder)
         for i = 1, numSegs do
@@ -1295,6 +1302,8 @@ local function UpdateSegmentedBar(holder, powerType, settings)
 
     if powerType == 7 then
         if IsUnitPowerSecret("player", 7) or IsUnitPowerMaxSecret("player", 7) then
+            -- Unreadable values read as not-at-max: the border clears.
+            UpdateMaxStackBorder(holder, settings, false, powerType)
             segmentedUpdateScratch.ClearValues(holder)
             segmentedUpdateScratch.FinishText(holder, nil, nil, true)
             return
@@ -1305,11 +1314,16 @@ local function UpdateSegmentedBar(holder, powerType, settings)
         local rawMax = UnitPowerMax("player", 7, true)
         local max = UnitPowerMax("player", 7)
         if issecretvalue and (issecretvalue(raw) or issecretvalue(rawMax) or issecretvalue(max)) then
+            UpdateMaxStackBorder(holder, settings, false, powerType)
             segmentedUpdateScratch.ClearValues(holder)
             segmentedUpdateScratch.FinishText(holder, nil, nil, true)
             return
         end
 
+        -- At max means every shard is WHOLE; a partial shard on top of
+        -- max-1 stays dark. The false start covers both fallback legs
+        -- below, so a bar that loses its readable maximum drops the border.
+        local shardsAtMax = false
         local displayCurrent
         if max > 0 and rawMax > 0 then
             local perShard = rawMax / max
@@ -1319,6 +1333,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
                 displayCurrent = filled + partial
                 local readyColor, rechargingColor, maxColor = GetResourceColors(7, settings)
                 local isMax = (filled == max)
+                shardsAtMax = isMax
                 local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, filled, holder)
                 local activeReadyColor = isMax and maxColor or (thresholdActive and thresholdColor or readyColor)
                 for i = 1, math_min(#holder.segments, max) do
@@ -1340,6 +1355,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
         else
             segmentedUpdateScratch.ClearValues(holder)
         end
+        UpdateMaxStackBorder(holder, settings, shardsAtMax, powerType)
         if type(displayCurrent) == "number" then
             segmentedUpdateScratch.FinishText(holder, displayCurrent, max, false)
         else
@@ -1350,6 +1366,8 @@ local function UpdateSegmentedBar(holder, powerType, settings)
 
     if powerType == 19 then
         if IsUnitPowerSecret("player", 19) or IsUnitPowerMaxSecret("player", 19) then
+            -- Unreadable values read as not-at-max: the border clears.
+            UpdateMaxStackBorder(holder, settings, false, powerType)
             segmentedUpdateScratch.ClearValues(holder)
             segmentedUpdateScratch.FinishText(holder, nil, nil, true)
             return
@@ -1360,6 +1378,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
         local max = UnitPowerMax("player", 19)
         local partialRaw = UnitPartialPower("player", 19)
         if issecretvalue and (issecretvalue(filled) or issecretvalue(max) or issecretvalue(partialRaw)) then
+            UpdateMaxStackBorder(holder, settings, false, powerType)
             segmentedUpdateScratch.ClearValues(holder)
             segmentedUpdateScratch.FinishText(holder, nil, nil, true)
             return
@@ -1371,6 +1390,11 @@ local function UpdateSegmentedBar(holder, powerType, settings)
         local isMax = (filled == max)
         local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, filled, holder)
         local activeReadyColor = isMax and maxColor or (thresholdActive and thresholdColor or readyColor)
+        -- At max means every essence is WHOLE (a recharging partial stays
+        -- dark), and max > 0 so an empty 0/0 read never lights the border —
+        -- the color path's 0/0 case paints zero segments, but a border has
+        -- no segment count to hide behind.
+        UpdateMaxStackBorder(holder, settings, isMax and max > 0, powerType)
         for i = 1, math_min(#holder.segments, max) do
             local seg = holder.segments[i]
             if i <= filled then
@@ -1391,6 +1415,8 @@ local function UpdateSegmentedBar(holder, powerType, settings)
     -- Combo Points: color changes at max, charged coloring for Rogues
     if powerType == 4 then
         if IsUnitPowerSecret("player", 4) or IsUnitPowerMaxSecret("player", 4) then
+            -- Unreadable values read as not-at-max: the border clears.
+            UpdateMaxStackBorder(holder, settings, false, powerType)
             segmentedUpdateScratch.ClearValues(holder)
             segmentedUpdateScratch.FinishText(holder, nil, nil, true)
             return
@@ -1399,6 +1425,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
         local current = UnitPower("player", 4)
         local max = UnitPowerMax("player", 4)
         if issecretvalue and (issecretvalue(current) or issecretvalue(max)) then
+            UpdateMaxStackBorder(holder, settings, false, powerType)
             segmentedUpdateScratch.ClearValues(holder)
             segmentedUpdateScratch.FinishText(holder, nil, nil, true)
             return
@@ -1408,6 +1435,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
         local isMax = (current == max and max > 0)
         local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, current, holder)
         local baseColor = isMax and maxColor or (thresholdActive and thresholdColor or normalColor)
+        UpdateMaxStackBorder(holder, settings, isMax, powerType)
 
         -- Charged combo points (Rogue only)
         local chargedPoints
@@ -1434,6 +1462,8 @@ local function UpdateSegmentedBar(holder, powerType, settings)
 
     -- Generic segmented with max color: HolyPower, Chi, ArcaneCharges
     if IsUnitPowerSecret("player", powerType) or IsUnitPowerMaxSecret("player", powerType) then
+        -- Unreadable values read as not-at-max: the border clears.
+        UpdateMaxStackBorder(holder, settings, false, powerType)
         segmentedUpdateScratch.ClearValues(holder)
         segmentedUpdateScratch.FinishText(holder, nil, nil, true)
         return
@@ -1442,6 +1472,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
     local current = UnitPower("player", powerType)
     local max = UnitPowerMax("player", powerType)
     if issecretvalue and (issecretvalue(current) or issecretvalue(max)) then
+        UpdateMaxStackBorder(holder, settings, false, powerType)
         segmentedUpdateScratch.ClearValues(holder)
         segmentedUpdateScratch.FinishText(holder, nil, nil, true)
         return
@@ -1456,6 +1487,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
     local isMax = (current == max and max > 0)
     local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, current, holder)
     local activeColor = isMax and maxColor or (thresholdActive and thresholdColor or normalColor)
+    UpdateMaxStackBorder(holder, settings, isMax, powerType)
     for i = 1, math_min(#holder.segments, max) do
         local seg = holder.segments[i]
         if i <= current then
@@ -1471,11 +1503,13 @@ end
 ------------------------------------------------------------------------
 -- Max-stack border (owner ruling 2026-08-02): a CC-drawn border that lights
 -- while a stack-counted resource sits at its stack maximum. Legal in combat
--- because these resources' auras are server-flagged never-secret — the same
--- plain read the bars themselves run on — and everything here is plain CC
--- frames. Renders through the same pure builders as the resource aura
--- border: per segment on the segmented shapes, whole-bar on continuous.
--- Shared by Maelstrom Weapon and the aura-stack family; only the key names
+-- because every value it follows is one the bar itself already renders from
+-- — never-secret aura reads for the aura family, guarded power reads for
+-- the native segmented resources — and everything here is plain CC frames.
+-- Renders through the same pure builder as the resource aura border: ONE
+-- rect around the whole bar field on every shape (owner ruling 2026-08-23,
+-- retiring the per-segment rings). Shared by Maelstrom Weapon, the
+-- aura-stack family and the native segmented resources; only the key names
 -- differ (RB.MAX_STACK_BORDER_KEYS).
 ------------------------------------------------------------------------
 
@@ -1505,7 +1539,7 @@ end
 -- (lit flips, style or colour edited, bar shape swapped) touches regions.
 -- The pool hangs off the bar frame and is reset by
 -- ClearStaleRecycledBarRuntimeState when the frame is recycled.
-local function UpdateMaxStackBorder(holder, settings, barType, isMax, powerType)
+function UpdateMaxStackBorder(holder, settings, isMax, powerType)
     local style, color, resource, keys
     if isMax then
         style, color, resource, keys = GetMaxStackBorderConfig(settings, powerType or RESOURCE_MAELSTROM_WEAPON)
@@ -1516,9 +1550,6 @@ local function UpdateMaxStackBorder(holder, settings, barType, isMax, powerType)
             pool.key = "off"
             if pool.glow then
                 ST._StyleKitBarGlowRegions(pool.glow, nil, pool.host, false)
-            end
-            if pool.segBorders then
-                ST._StyleKitSegmentBorders(pool.segBorders, nil, nil, 0, false)
             end
         end
         return
@@ -1542,29 +1573,19 @@ local function UpdateMaxStackBorder(holder, settings, barType, isMax, powerType)
     local speed = tonumber(resource[keys.speed])
     local lines = tonumber(resource[keys.lines])
 
-    -- The active count, not the array length: a family holder is
-    -- re-segmented in place and parks its extra widgets (EnsureSegmentCount),
-    -- so the array is the high-water mark. MW and the plain segmented shapes
-    -- set no _activeSegments and read the length exactly as before.
-    local segments = holder.segments
-    local segCount = segments and (holder._activeSegments or #segments) or 0
-    -- Above the border pool's cap the per-segment path would ring only the
-    -- first ten of a fifty-segment cluster. Growing the pool is refused on
-    -- performance grounds (no fifty animated border pools), so the whole
-    -- cluster takes the continuous path instead — the same one-rect shape
-    -- the resource AURA border already uses on every segment cluster.
-    local isContinuous = barType == "mw_continuous"
-        or barType == "stackaura_continuous" or not segments
-        or segCount > ST.RESOURCE_SEGMENT_BORDER_MAX
-    -- The count is part of the key: an in-place re-segment keeps the pool, so
-    -- without it a cluster that changed length would keep its old rings.
+    -- Explicit rect dims for the dash geometry: the bar carries an explicit
+    -- size, the SetAllPoints host may not have resolved yet.
+    local fw, fh = holder:GetSize()
+    fw = (fw and fw > 1) and fw or 1
+    fh = (fh and fh > 1) and fh or 1
+    -- The dims are part of the key: a resized bar keeps its pool, so without
+    -- them a bar that changed size would keep the old rect's geometry.
     -- Compared field by field rather than through a composed string: this runs
     -- on every tick a stack-counted resource sits at its maximum, and the
     -- string was built before the early-out, not after it.
     if pool.key == "on"
-        and pool.keyContinuous == isContinuous
         and pool.keyStyle == style
-        and pool.keySegCount == segCount
+        and pool.keyW == fw and pool.keyH == fh
         and pool.keyR == color[1] and pool.keyG == color[2]
         and pool.keyB == color[3] and pool.keyA == color[4]
         and pool.keySize == size and pool.keyThickness == thickness
@@ -1572,9 +1593,9 @@ local function UpdateMaxStackBorder(holder, settings, barType, isMax, powerType)
         return
     end
     pool.key = "on"
-    pool.keyContinuous = isContinuous
     pool.keyStyle = style
-    pool.keySegCount = segCount
+    pool.keyW = fw
+    pool.keyH = fh
     pool.keyR, pool.keyG, pool.keyB, pool.keyA = color[1], color[2], color[3], color[4]
     pool.keySize = size
     pool.keyThickness = thickness
@@ -1590,32 +1611,12 @@ local function UpdateMaxStackBorder(holder, settings, barType, isMax, powerType)
         barAuraEffectSpeed = speed,
         barAuraEffectLines = lines,
     }
-    if isContinuous then
-        if not pool.glow then
-            pool.glow = ST._BuildKitGlowRegions(pool.host)
-        end
-        -- Explicit rect dims for the dash geometry: the bar carries an
-        -- explicit size, the SetAllPoints host may not have resolved yet.
-        local fw, fh = holder:GetSize()
-        pool.host._ccKitRectW = (fw and fw > 1) and fw or 1
-        pool.host._ccKitRectH = (fh and fh > 1) and fh or 1
-        ST._StyleKitBarGlowRegions(pool.glow, borderStyle, pool.host, true)
-        if pool.segBorders then
-            ST._StyleKitSegmentBorders(pool.segBorders, nil, nil, 0, false)
-        end
-    else
-        if not pool.segBorders then
-            pool.segBorders = ST._BuildKitSegmentBorderPool(pool.host, ST.RESOURCE_SEGMENT_BORDER_MAX)
-        end
-        local n = math_min(segCount, ST.RESOURCE_SEGMENT_BORDER_MAX)
-        for i = 1, n do
-            segments[i]._ccW, segments[i]._ccH = segments[i]:GetSize()
-        end
-        ST._StyleKitSegmentBorders(pool.segBorders, borderStyle, segments, n, true)
-        if pool.glow then
-            ST._StyleKitBarGlowRegions(pool.glow, nil, pool.host, false)
-        end
+    if not pool.glow then
+        pool.glow = ST._BuildKitGlowRegions(pool.host)
     end
+    pool.host._ccKitRectW = fw
+    pool.host._ccKitRectH = fh
+    ST._StyleKitBarGlowRegions(pool.glow, borderStyle, pool.host, true)
 end
 -- For the config canvas (ResourceBarPreview), which renders these bars at max.
 RB.UpdateMaxStackBorder = UpdateMaxStackBorder
@@ -1654,7 +1655,7 @@ local function UpdateMaelstromWeaponBar(holder, settings, barType)
     end
     if issecretvalue and issecretvalue(stacks) then
         -- Unreadable stacks read as not-at-max: the border clears.
-        UpdateMaxStackBorder(holder, settings, barType, false, RESOURCE_MAELSTROM_WEAPON)
+        UpdateMaxStackBorder(holder, settings, false, RESOURCE_MAELSTROM_WEAPON)
         if isContinuous then
             SetStatusBarImmediateValue(holder, 0)
             if holder.text then holder.text:SetText("") end
@@ -1677,7 +1678,7 @@ local function UpdateMaelstromWeaponBar(holder, settings, barType)
     -- Colour precedence is identical in all three shapes: at max wins, then
     -- a configured threshold, then the resource's own colour.
     local activeColor = isMax and maxColor or (thresholdActive and thresholdColor or baseColor)
-    UpdateMaxStackBorder(holder, settings, barType, isMax, RESOURCE_MAELSTROM_WEAPON)
+    UpdateMaxStackBorder(holder, settings, isMax, RESOURCE_MAELSTROM_WEAPON)
 
     if isContinuous then
         -- One bar, empty to full, the stack maximum as its range.
@@ -1796,7 +1797,7 @@ local function UpdateAuraStackResourceBar(holder, settings, barType, powerType)
     end
     if issecretvalue and issecretvalue(stacks) then
         -- Unreadable stacks read as not-at-max: the border clears.
-        UpdateMaxStackBorder(holder, settings, barType, false, powerType)
+        UpdateMaxStackBorder(holder, settings, false, powerType)
         if isContinuous then
             SetStatusBarImmediateValue(holder, 0)
             if holder.text then holder.text:SetText("") end
@@ -1817,7 +1818,7 @@ local function UpdateAuraStackResourceBar(holder, settings, barType, powerType)
     -- colour and the border.
     local isMax = stacks > 0 and stacks >= maxStacks
     local activeColor = isMax and maxColor or (thresholdActive and thresholdColor or baseColor)
-    UpdateMaxStackBorder(holder, settings, barType, isMax, powerType)
+    UpdateMaxStackBorder(holder, settings, isMax, powerType)
 
     if isContinuous then
         -- One bar, empty to full, the stack maximum as its range.

@@ -1943,6 +1943,12 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 barType = "segmented",
                 powerType = slot.powerType,
             }
+        else
+            -- Same pooled-identity restamp as the aura-stack shapes above:
+            -- a reused equal-count frame otherwise keeps the previous
+            -- resource's power type, and colors and the max-stack border
+            -- resolve from it.
+            barInfo.powerType = slot.powerType
         end
         barInfo.frame:SetSize(width, height)
         LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings)
@@ -1957,6 +1963,13 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 barType = "continuous",
                 powerType = slot.powerType,
             }
+        else
+            -- Same pooled-identity restamp as the other reused shapes: every
+            -- continuous power type shares this barType, so a reused frame
+            -- otherwise keeps the previous resource's power type — and the
+            -- bar text maximum and the Active Aura preview state resolve
+            -- from it.
+            barInfo.powerType = slot.powerType
         end
         barInfo.frame:SetSize(width, height)
         StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings)
