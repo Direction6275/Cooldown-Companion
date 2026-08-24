@@ -80,7 +80,7 @@ local moverChromeFadeState = {
     generation = 0,
 }
 
-function CooldownCompanion:ApplyMoverChromeFadeToFrames(header, coordLabel, nudger, resizeGrip)
+function CooldownCompanion:ApplyMoverChromeFadeToFrames(header, coordLabel, nudger, resizeGrip, sizeLabel)
     local alpha = moverChromeFadeState.active and 0 or 1
     if header then
         header:SetAlpha(alpha)
@@ -98,11 +98,16 @@ function CooldownCompanion:ApplyMoverChromeFadeToFrames(header, coordLabel, nudg
         resizeGrip:SetIgnoreParentAlpha(isActiveTool)
         resizeGrip:SetAlpha(isActiveTool and 1 or alpha)
     end
+    if sizeLabel then
+        sizeLabel:SetAlpha(alpha)
+    end
 end
 
 function CooldownCompanion:ApplyMoverChromeFadeState()
     for _, frame in pairs(CooldownCompanion.groupFrames or {}) do
-        self:ApplyMoverChromeFadeToFrames(frame.dragHandle, frame.coordLabel, frame.nudger, frame.resizeGrip)
+        self:ApplyMoverChromeFadeToFrames(
+            frame.dragHandle, frame.coordLabel, frame.nudger, frame.resizeGrip, frame.sizeLabel
+        )
         if CooldownCompanion.GetAuraTextureMoverChromeForGroupFrame then
             self:ApplyMoverChromeFadeToFrames(
                 CooldownCompanion:GetAuraTextureMoverChromeForGroupFrame(frame)
@@ -490,6 +495,52 @@ local function UpdateCoordLabel(frame, x, y)
         frame.coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x, y))
     else
         frame._pendingCoordX, frame._pendingCoordY = x, y
+    end
+end
+
+function ST.UpdateGroupSizeLabel(frame)
+    if not (frame and frame.sizeLabel) then
+        return
+    end
+
+    local group = frame.groupId and CooldownCompanion.db.profile.groups[frame.groupId]
+    local style = group and group.style
+    if not style then
+        return
+    end
+
+    local kind
+    if group.displayMode == "bars" then
+        kind = "bar"
+    elseif style.maintainAspectRatio then
+        kind = "square"
+    else
+        kind = "icon"
+    end
+
+    if frame.sizeLabel._editing then
+        if frame.sizeLabel._sizeKind == kind then
+            return
+        end
+        -- A mode change invalidates the active edit's field schema.
+        ST.CancelCoordinateEdit(frame.sizeLabel)
+    end
+    frame.sizeLabel._sizeKind = kind
+
+    if kind == "bar" then
+        local length = ST.RoundToTenths(style.barLength or 180)
+        local height = ST.RoundToTenths(style.barHeight or 20)
+        ST.ConfigureEditableCoordLabel(frame.sizeLabel, "l:", "h:", false)
+        frame.sizeLabel.text:SetText(("l:%.1f, h:%.1f"):format(length, height))
+    elseif kind == "square" then
+        local size = ST.RoundToTenths(style.buttonSize or ST.BUTTON_SIZE)
+        ST.ConfigureEditableCoordLabel(frame.sizeLabel, "size:", nil, true)
+        frame.sizeLabel.text:SetText(("size:%.1f"):format(size))
+    else
+        local width = ST.RoundToTenths(style.iconWidth or style.buttonSize or ST.BUTTON_SIZE)
+        local height = ST.RoundToTenths(style.iconHeight or style.buttonSize or ST.BUTTON_SIZE)
+        ST.ConfigureEditableCoordLabel(frame.sizeLabel, "w:", "h:", false)
+        frame.sizeLabel.text:SetText(("w:%.1f, h:%.1f"):format(width, height))
     end
 end
 
@@ -1782,6 +1833,7 @@ local function CreateNudger(frame, groupId)
 
         btn:SetScript("OnMouseDown", function(self)
             CancelCoordinateEdit(frame.coordLabel)
+            CancelCoordinateEdit(frame.sizeLabel)
             DoNudge()
             CooldownCompanion:VerifyMoverChromeHoverFade(nudger)
         end)
@@ -1945,6 +1997,7 @@ local function EndPanelResizeGesture(grip, applyFinal)
     elseif restylePending then
         CooldownCompanion._pendingFullRefresh = true
     end
+    ST.UpdateGroupSizeLabel(grip._resizeFrame)
 
     grip._resizeGroupId = nil
     grip._resizeKind = nil
@@ -1978,6 +2031,7 @@ local function UpdatePanelResizeGesture(grip, elapsed)
             grip._resizeRestylePending = nil
             CooldownCompanion:UpdateGroupStyle(grip._resizeGroupId)
         end
+        ST.UpdateGroupSizeLabel(grip._resizeFrame)
     end
 end
 
@@ -1990,6 +2044,7 @@ local function BeginPanelResizeGesture(grip)
     end
 
     CancelCoordinateEdit(frame.coordLabel)
+    CancelCoordinateEdit(frame.sizeLabel)
     local cursorX, cursorY = GetPanelResizeCursorPosition()
     if not (cursorX and cursorY) then
         return
@@ -2144,6 +2199,7 @@ local function OnUnlockedPanelMouseWheel(frame, delta)
     end
 
     CancelCoordinateEdit(frame.coordLabel)
+    CancelCoordinateEdit(frame.sizeLabel)
     CooldownCompanion:BeginMoverChromeWheelFade(frame)
     local step = delta > 0 and 1 or -1
     local changed = false
@@ -2182,6 +2238,7 @@ local function OnUnlockedPanelMouseWheel(frame, delta)
     if changed then
         CooldownCompanion:UpdateGroupStyle(groupId)
     end
+    ST.UpdateGroupSizeLabel(frame)
 end
 
 local function AddPanelDragHelpTooltipLines(tooltip, isCursorPreview, isResizable)
@@ -2204,7 +2261,12 @@ local function AddPanelDragHelpTooltipLines(tooltip, isCursorPreview, isResizabl
         tooltip:AddLine("Drag the corner grip or mouse wheel to resize.", 1, 1, 1, false)
         tooltip:AddLine(" ")
     end
-    tooltip:AddLine("Click the coordinates below to type exact values.", 1, 1, 1, false)
+    tooltip:AddLine(
+        isResizable
+            and "Click the coordinates or size below to type exact values."
+            or "Click the coordinates below to type exact values.",
+        1, 1, 1, false
+    )
 end
 
 local function LockPanelFromMover(groupId)
@@ -2298,6 +2360,10 @@ local function SyncGroupControlLevels(frame, raiseAboveWrapper)
         frame.dragHelpButton:SetFrameStrata(strata)
         frame.dragHelpButton:SetFrameLevel(baseLevel + 2)
     end
+    if frame.sizeLabel then
+        frame.sizeLabel:SetFrameStrata(strata)
+        frame.sizeLabel:SetFrameLevel(baseLevel + 3)
+    end
     if frame.resizeGrip then
         frame.resizeGrip:SetFrameStrata(strata)
         frame.resizeGrip:SetFrameLevel(baseLevel + 4)
@@ -2349,7 +2415,15 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
     if frame.resizeGrip then
         frame.resizeGrip:SetShown(resizeShown)
     end
-    CooldownCompanion:ApplyMoverChromeFadeToFrames(frame.dragHandle, frame.coordLabel, frame.nudger, frame.resizeGrip)
+    if frame.sizeLabel then
+        if resizeShown then
+            ST.UpdateGroupSizeLabel(frame)
+        end
+        frame.sizeLabel:SetShown(resizeShown)
+    end
+    CooldownCompanion:ApplyMoverChromeFadeToFrames(
+        frame.dragHandle, frame.coordLabel, frame.nudger, frame.resizeGrip, frame.sizeLabel
+    )
 
     -- Aura Panels replace their live container with a full-cell preview while
     -- they can be arranged. A container preview needs that preview on EVERY
@@ -3260,6 +3334,73 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     )
     UpdateCoordLabel(frame)
 
+    frame.sizeLabel = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
+    frame.sizeLabel:SetHeight(15)
+    frame.sizeLabel:SetPoint("TOPLEFT", frame.coordLabel, "BOTTOMLEFT", 0, -2)
+    frame.sizeLabel:SetPoint("TOPRIGHT", frame.coordLabel, "BOTTOMRIGHT", 0, -2)
+    frame.sizeLabel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    frame.sizeLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    CreatePixelBorders(frame.sizeLabel)
+    frame.sizeLabel.text = frame.sizeLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.sizeLabel.text:SetPoint("CENTER")
+    frame.sizeLabel.text:SetTextColor(1, 1, 1, 1)
+    CreateEditableCoordLabel(
+        frame.sizeLabel,
+        function()
+            local currentGroup = CooldownCompanion.db.profile.groups[groupId]
+            local style = currentGroup and currentGroup.style
+            if not style then
+                return 0, 0
+            end
+            if currentGroup.displayMode == "bars" then
+                return style.barLength or 180, style.barHeight or 20
+            elseif style.maintainAspectRatio then
+                return style.buttonSize or ST.BUTTON_SIZE
+            end
+            return style.iconWidth or style.buttonSize or ST.BUTTON_SIZE,
+                style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
+        end,
+        function(primary, secondary)
+            local currentGroup = CooldownCompanion.db.profile.groups[groupId]
+            local style = currentGroup and currentGroup.style
+            if not style then
+                return
+            end
+            local currentKind
+            if currentGroup.displayMode == "bars" then
+                currentKind = "bar"
+            elseif style.maintainAspectRatio then
+                currentKind = "square"
+            else
+                currentKind = "icon"
+            end
+            if currentKind ~= frame.sizeLabel._sizeKind
+                or (currentKind ~= "square" and secondary == nil) then
+                return
+            end
+            if currentKind == "bar" then
+                style.barLength = math_max(10, math_min(500, ST.RoundToTenths(primary)))
+                style.barHeight = math_max(5, math_min(100, ST.RoundToTenths(secondary)))
+            elseif currentKind == "square" then
+                style.buttonSize = math_max(10, math_min(150, ST.RoundToTenths(primary)))
+            else
+                style.iconWidth = math_max(10, math_min(150, ST.RoundToTenths(primary)))
+                style.iconHeight = math_max(10, math_min(150, ST.RoundToTenths(secondary)))
+            end
+            CooldownCompanion:UpdateGroupStyle(groupId)
+            RefreshConfigPanelIfShown()
+            ST.UpdateGroupSizeLabel(frame)
+        end,
+        function()
+            return frame._dragInProgress == true
+                or (frame.resizeGrip and frame.resizeGrip._resizeActive == true)
+        end,
+        { labelA = "w:", labelB = "h:" }
+    )
+    frame.coordLabel._exclusiveEditLabel = frame.sizeLabel
+    frame.sizeLabel._exclusiveEditLabel = frame.coordLabel
+    ST.UpdateGroupSizeLabel(frame)
+
     local isCursorAnchored = IsCursorAnchor(group.anchor)
     -- An Aura Panel is exempt alongside the Rotation Assistant: it holds a
     -- reserved one-cell footprint while empty precisely so it can be placed
@@ -3272,6 +3413,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- Drag scripts (check lock state at drag time)
     frame:SetScript("OnDragStart", function(self)
         CancelCoordinateEdit(self.coordLabel)
+        CancelCoordinateEdit(self.sizeLabel)
         local locked = GetContainerState(self.groupId)
         local previewActive, selectedInContainer, containerId = GetContainerPreviewSelectionState(self.groupId)
         local dragGroup = CooldownCompanion.db.profile.groups[self.groupId]
@@ -3336,6 +3478,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.dragHandle:RegisterForDrag("LeftButton")
     frame.dragHandle:SetScript("OnDragStart", function()
         CancelCoordinateEdit(frame.coordLabel)
+        CancelCoordinateEdit(frame.sizeLabel)
         local locked = GetContainerState(groupId)
         local previewActive, selectedInContainer, containerId = GetContainerPreviewSelectionState(groupId)
         local dragGroup = CooldownCompanion.db.profile.groups[groupId]
@@ -5203,6 +5346,7 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
         self._pendingFullRefresh = true
         return
     end
+    ST.UpdateGroupSizeLabel(frame)
 
     local entries, buttonUsabilityOptions = GetStyleUpdateEntries(self, groupId, frame, group)
     if not entries then
