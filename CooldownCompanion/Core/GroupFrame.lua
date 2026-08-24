@@ -5607,6 +5607,7 @@ local function EnsureContainerMemberOverlay(frame, index)
         if not (self.containerId and self.groupId and containerFrame) then
             return
         end
+        CooldownCompanion:BeginContainerChromeHoverWatch(self.containerId)
         if containerFrame._containerHoveredGroupId ~= self.groupId then
             containerFrame._containerHoveredGroupId = self.groupId
             CooldownCompanion:RefreshContainerWrapper(self.containerId)
@@ -5788,6 +5789,82 @@ function CooldownCompanion:ClearContainerUnlockState(containerId)
     HideContainerMemberOverlays(frame)
 end
 
+-- Arrange-mode chrome reveal: while everything is unlocked at once, a
+-- container rests as outline + header only; its nudger and coordinate label
+-- show only while the container is hovered or is the focused (last-clicked)
+-- container. One focused container at a time, session-only state. A container
+-- unlocked on its own outside arrange mode keeps full chrome.
+function CooldownCompanion:IsContainerArrangeChromeRevealed(containerId, frame)
+    if not self._arrangeModeActive then
+        return true
+    end
+    frame = frame or (self.containerFrames and self.containerFrames[containerId])
+    return self._arrangeFocusContainerId == containerId
+        or (frame ~= nil and frame._arrangeChromeHover == true)
+end
+
+function CooldownCompanion:FocusArrangeContainer(containerId)
+    if not self._arrangeModeActive then
+        return
+    end
+    local previous = self._arrangeFocusContainerId
+    if previous == containerId then
+        return
+    end
+    self._arrangeFocusContainerId = containerId
+    if previous then
+        self:RefreshContainerWrapper(previous)
+    end
+    if containerId then
+        self:RefreshContainerWrapper(containerId)
+    end
+end
+
+function CooldownCompanion:IsContainerChromePointerOver(frame)
+    -- 4px of grace bridges the small gaps between the wrapper, header, nudger
+    -- and coordinate label so crossing between them keeps the reveal alive.
+    local wrapper = frame.dragHandle
+    if wrapper and wrapper:IsMouseOver(4, -4, -4, 4) then
+        return true
+    end
+    if wrapper and wrapper.header and wrapper.header:IsMouseOver(4, -4, -4, 4) then
+        return true
+    end
+    if frame.nudger and frame.nudger:IsShown() and frame.nudger:IsMouseOver(4, -4, -4, 4) then
+        return true
+    end
+    if frame.coordLabel and frame.coordLabel:IsShown() and frame.coordLabel:IsMouseOver(4, -4, -4, 4) then
+        return true
+    end
+    return false
+end
+
+function CooldownCompanion:BeginContainerChromeHoverWatch(containerId)
+    if not self._arrangeModeActive then
+        return
+    end
+    local frame = self.containerFrames and self.containerFrames[containerId]
+    if not frame or frame._arrangeChromeHover then
+        return
+    end
+    frame._arrangeChromeHover = true
+    frame._arrangeHoverGen = (frame._arrangeHoverGen or 0) + 1
+    local generation = frame._arrangeHoverGen
+    self:RefreshContainerWrapper(containerId)
+    local function Watch()
+        if frame._arrangeHoverGen ~= generation or frame._arrangeChromeHover ~= true then
+            return
+        end
+        if CooldownCompanion._arrangeModeActive and CooldownCompanion:IsContainerChromePointerOver(frame) then
+            C_Timer.After(0.2, Watch)
+            return
+        end
+        frame._arrangeChromeHover = nil
+        CooldownCompanion:RefreshContainerWrapper(containerId)
+    end
+    C_Timer.After(0.2, Watch)
+end
+
 function CooldownCompanion:SelectContainerWrapper(containerId)
     local frame = self.containerFrames and self.containerFrames[containerId]
     if not frame then
@@ -5808,6 +5885,8 @@ function CooldownCompanion:SelectContainerPanel(containerId, groupId)
     if not (frame and group and group.parentContainerId == containerId) then
         return
     end
+
+    self:FocusArrangeContainer(containerId)
 
     if not self:IsGroupVisibleInUnlockPreview(groupId, {
         group = group,
@@ -6085,6 +6164,7 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
 
     local selectedGroupId = frame._containerSelectedGroupId
     local hoveredGroupId = frame._containerHoveredGroupId
+    local revealChrome = self:IsContainerArrangeChromeRevealed(containerId, frame)
     local headerWidth = 96
 
     if header then
@@ -6103,10 +6183,10 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
             header:Show()
         end
         if frame.coordLabel then
-            frame.coordLabel:SetShown(true)
+            frame.coordLabel:SetShown(revealChrome)
         end
         if frame.nudger then
-            frame.nudger:SetShown(true)
+            frame.nudger:SetShown(revealChrome)
         end
         frame._isRefreshingContainerWrapper = nil
         return
@@ -6118,10 +6198,10 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
     end
 
     if frame.coordLabel then
-        frame.coordLabel:SetShown(selectedGroupId == nil)
+        frame.coordLabel:SetShown(selectedGroupId == nil and revealChrome)
     end
     if frame.nudger then
-        frame.nudger:SetShown(selectedGroupId == nil)
+        frame.nudger:SetShown(selectedGroupId == nil and revealChrome)
     end
 
     local usedOverlayIndices = {}
@@ -6345,6 +6425,7 @@ local function CreateContainerNudger(frame, containerId)
 
         btn:SetScript("OnMouseDown", function(self)
             CancelCoordinateEdit(frame.coordLabel)
+            CooldownCompanion:FocusArrangeContainer(containerId)
             DoNudge()
             CooldownCompanion:VerifyMoverChromeHoverFade(nudger)
         end)
@@ -6365,6 +6446,9 @@ local function LockContainerFromMover(containerId)
 
     if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
         CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId)
+    end
+    if CooldownCompanion._arrangeFocusContainerId == containerId then
+        CooldownCompanion._arrangeFocusContainerId = nil
     end
     CooldownCompanion:SetContainerLocked(containerId, true)
     CooldownCompanion:CaptureArrangeContainerRecord(containerId)
@@ -6460,6 +6544,11 @@ function CooldownCompanion:CreateContainerFrame(containerId)
             return frame._dragInProgress == true
         end
     )
+    -- Starting a coordinate edit is an explicit interaction: pin the container
+    -- so the label cannot hover-hide mid-edit.
+    frame.coordLabel:HookScript("OnMouseDown", function()
+        CooldownCompanion:FocusArrangeContainer(containerId)
+    end)
     UpdateCoordLabel(frame)
 
     -- Start hidden (drag handle shows only when unlocked)
@@ -6500,12 +6589,16 @@ function CooldownCompanion:CreateContainerFrame(containerId)
 
     frame.dragHandle:EnableMouse(true)
     frame.dragHandle:RegisterForDrag("LeftButton")
+    frame.dragHandle:SetScript("OnEnter", function()
+        CooldownCompanion:BeginContainerChromeHoverWatch(containerId)
+    end)
     frame.dragHandle:SetScript("OnDragStart", function()
         CancelCoordinateEdit(frame.coordLabel)
         local c = CooldownCompanion.db.profile.groupContainers[containerId]
         if c and not CooldownCompanion._combatForcedLock and CooldownCompanion:IsContainerUnlockPreviewActive(containerId) then
             frame.dragHandle._suppressClick = true
             CooldownCompanion:SelectContainerWrapper(containerId)
+            CooldownCompanion:FocusArrangeContainer(containerId)
             frame._dragCancelPending = nil
             frame._dragInProgress = true
             frame:StartMoving()
@@ -6539,16 +6632,21 @@ function CooldownCompanion:CreateContainerFrame(containerId)
             return
         end
         CooldownCompanion:SelectContainerWrapper(containerId)
+        CooldownCompanion:FocusArrangeContainer(containerId)
     end)
 
     frame.dragHandle.header:EnableMouse(true)
     frame.dragHandle.header:RegisterForDrag("LeftButton")
+    frame.dragHandle.header:SetScript("OnEnter", function()
+        CooldownCompanion:BeginContainerChromeHoverWatch(containerId)
+    end)
     frame.dragHandle.header:SetScript("OnDragStart", function()
         CancelCoordinateEdit(frame.coordLabel)
         local c = CooldownCompanion.db.profile.groupContainers[containerId]
         if c and not CooldownCompanion._combatForcedLock and CooldownCompanion:IsContainerUnlockPreviewActive(containerId) then
             frame.dragHandle.header._suppressClick = true
             CooldownCompanion:SelectContainerWrapper(containerId)
+            CooldownCompanion:FocusArrangeContainer(containerId)
             frame._dragCancelPending = nil
             frame._dragInProgress = true
             frame:StartMoving()
@@ -6581,6 +6679,7 @@ function CooldownCompanion:CreateContainerFrame(containerId)
                 return
             end
             CooldownCompanion:SelectContainerWrapper(containerId)
+            CooldownCompanion:FocusArrangeContainer(containerId)
         end
     end)
 

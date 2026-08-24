@@ -3808,6 +3808,7 @@ function CooldownCompanion:EnterArrangeMode()
 
     self:CaptureArrangeSnapshot()
     self._arrangeModeActive = true
+    self._arrangeFocusContainerId = nil
     for containerId in pairs(self.db.profile.groupContainers or {}) do
         if self:IsContainerVisibleToCurrentChar(containerId)
             and self:ContainerHasArrangeEligiblePanel(containerId) then
@@ -3830,6 +3831,7 @@ end
 function CooldownCompanion:ExitArrangeMode(opts)
     self._arrangeSnapshot = nil
     self._arrangeModeActive = nil
+    self._arrangeFocusContainerId = nil
     CancelActiveMoverGestures(self)
     self:LockAllFrames()
     if self.SetIndependentCastBarLocked then
