@@ -648,13 +648,9 @@ local function CreateIndependentWrapperFrame()
     -- Drag handle (full-width, anchored to containers by UpdateIndependentStackChrome)
     local dragHandle = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     dragHandle:SetHeight(15)
-    dragHandle:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
+    dragHandle:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     dragHandle:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    dragHandle:SetBackdropBorderColor(0, 0, 0, 1)
+    ST.CreatePixelBorders(dragHandle)
     dragHandle:EnableMouse(false)
     dragHandle:Hide()
 
@@ -677,13 +673,9 @@ local function CreateIndependentWrapperFrame()
     local nudger = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
     nudger:SetSize(INDEPENDENT_NUDGE_BTN_SIZE * 2 + NUDGE_GAP, INDEPENDENT_NUDGE_BTN_SIZE * 2 + NUDGE_GAP)
     nudger:SetPoint("BOTTOM", dragHandle, "TOP", 0, 2)
-    nudger:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
+    nudger:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     nudger:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    nudger:SetBackdropBorderColor(0, 0, 0, 1)
+    ST.CreatePixelBorders(nudger)
     nudger:EnableMouse(false)
     nudger._cdcButtons = {}
     nudger:SetScript("OnEnter", function(self)
@@ -761,13 +753,9 @@ local function CreateIndependentWrapperFrame()
     -- Coordinate label (parented to dragHandle, anchored by UpdateIndependentStackChrome)
     local coordLabel = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
     coordLabel:SetHeight(15)
-    coordLabel:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
+    coordLabel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     coordLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    coordLabel:SetBackdropBorderColor(0, 0, 0, 1)
+    ST.CreatePixelBorders(coordLabel)
     coordLabel.text = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     coordLabel.text:SetPoint("CENTER")
     coordLabel.text:SetTextColor(1, 1, 1, 1)

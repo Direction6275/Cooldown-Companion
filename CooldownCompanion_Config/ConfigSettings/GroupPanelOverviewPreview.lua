@@ -213,14 +213,6 @@ local function ApplyTileBorder(tile, color)
     )
 end
 
-local function DisableTileBorderTexelSnapping(textures)
-    for index = 1, 4 do
-        local texture = textures[index]
-        texture:SetSnapToPixelGrid(false)
-        texture:SetTexelSnappingBias(0)
-    end
-end
-
 local function SetScrollOffset(overview, offset)
     offset = Clamp(offset or 0, 0, overview.maxScroll or 0)
     overview.scrollOffset = offset
@@ -241,7 +233,6 @@ local function EnsureTile(overview, index)
     tile:SetBackdropColor(0, 0, 0, 0)
     tile:SetClipsChildren(true)
     tile.borderTextures = ST.CreateBorderTextureSet(tile, "OVERLAY", 7)
-    DisableTileBorderTexelSnapping(tile.borderTextures)
     ApplyTileBorder(tile, TILE_BORDER_COLOR)
     tile:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     tile:EnableMouseWheel(true)
@@ -330,7 +321,6 @@ local function EnsureAddTile(overview)
     tile:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     tile:SetBackdropColor(0, 0, 0, 0)
     tile.borderTextures = ST.CreateBorderTextureSet(tile, "OVERLAY", 7)
-    DisableTileBorderTexelSnapping(tile.borderTextures)
     ApplyTileBorder(tile, TILE_BORDER_COLOR)
     tile:RegisterForClicks("LeftButtonUp")
     tile:EnableMouseWheel(true)
@@ -487,7 +477,6 @@ local function EnsurePickerCard(overview, block, index)
     card:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     card:SetBackdropColor(0, 0, 0, 0)
     card.borderTextures = ST.CreateBorderTextureSet(card, "OVERLAY", 7)
-    DisableTileBorderTexelSnapping(card.borderTextures)
     card:RegisterForClicks("LeftButtonUp")
     card:EnableMouseWheel(true)
     -- Layout shows it; until then it must not float over the surface.

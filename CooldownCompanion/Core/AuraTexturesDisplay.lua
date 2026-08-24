@@ -50,28 +50,9 @@ local function CreateAuraTextureOutline(host)
     fill:SetColorTexture(PANEL_HIGHLIGHT_R, PANEL_HIGHLIGHT_G, PANEL_HIGHLIGHT_B, 0)
     fill:Hide()
 
-    local edges = {}
-    local edgeSpecs = {
-        { point1 = "TOPLEFT", point2 = "TOPRIGHT", x1 = 0, y1 = 0, x2 = 0, y2 = 0, width = 1, height = nil },
-        { point1 = "BOTTOMLEFT", point2 = "BOTTOMRIGHT", x1 = 0, y1 = 0, x2 = 0, y2 = 0, width = 1, height = nil },
-        { point1 = "TOPLEFT", point2 = "BOTTOMLEFT", x1 = 0, y1 = 0, x2 = 0, y2 = 0, width = nil, height = 1 },
-        { point1 = "TOPRIGHT", point2 = "BOTTOMRIGHT", x1 = 0, y1 = 0, x2 = 0, y2 = 0, width = nil, height = 1 },
-    }
-
-    for index, spec in ipairs(edgeSpecs) do
-        local edge = host:CreateTexture(nil, "OVERLAY")
-        edge:SetColorTexture(1, 1, 1, PANEL_HIGHLIGHT_HAIRLINE_ALPHA)
-        edge:SetPoint(spec.point1, host, spec.point1, spec.x1, spec.y1)
-        edge:SetPoint(spec.point2, host, spec.point2, spec.x2, spec.y2)
-        if spec.width then
-            edge:SetHeight(spec.width)
-        end
-        if spec.height then
-            edge:SetWidth(spec.height)
-        end
-        edge:Hide()
-        edges[index] = edge
-    end
+    local edges = ST.CreateBorderTextureSet(host, "OVERLAY")
+    ST.ApplyBorderTextures(edges, host, { 1, 1, 1, PANEL_HIGHLIGHT_HAIRLINE_ALPHA }, 1, ST.BORDER_RENDER_MODE_CRISP)
+    ST.HideBorderTextures(edges)
 
     host.auraTextureOutlineFill = fill
     host.auraTextureOutlineEdges = edges
@@ -1031,10 +1012,7 @@ function CooldownCompanion.EnsureTriggerIconVisual(host)
 
     frame.icon = frame:CreateTexture(nil, "ARTWORK")
 
-    frame.borderTextures = {}
-    for index = 1, 4 do
-        frame.borderTextures[index] = frame:CreateTexture(nil, "OVERLAY")
-    end
+    frame.borderTextures = ST.CreateBorderTextureSet(frame, "OVERLAY")
 
     host.iconFrame = frame
     return frame
@@ -1053,10 +1031,7 @@ function CooldownCompanion.EnsureTriggerTextVisual(host)
     frame.bg = frame:CreateTexture(nil, "BACKGROUND")
     frame.bg:SetAllPoints()
 
-    frame.borderTextures = {}
-    for index = 1, 4 do
-        frame.borderTextures[index] = frame:CreateTexture(nil, "OVERLAY")
-    end
+    frame.borderTextures = ST.CreateBorderTextureSet(frame, "OVERLAY")
 
     frame.text = frame:CreateFontString(nil, "OVERLAY")
     frame.text:SetPoint("CENTER", frame, "CENTER", 0, 0)
@@ -1362,6 +1337,8 @@ function CooldownCompanion.ApplyTriggerIconVisual(host, settings)
             borderColor[3] or 0,
             borderColor[4] ~= nil and borderColor[4] or 1
         )
+        -- Shared border sets start hidden; the positions helper never shows.
+        border:Show()
     end
     ST._ApplyBorderEdgePositions(iconFrame.borderTextures, iconFrame, borderSize, borderRenderMode)
     iconFrame:Show()
