@@ -37,7 +37,11 @@ local function WireMirrorFirstSlider(slider, applyValue, commitFn, previewFn, st
     local function RestoreState(state)
         for index, key in ipairs(stateKeys) do
             local value = state[index]
-            stateOwner[key] = value == NIL_SETTING and nil or value
+            if value == NIL_SETTING then
+                stateOwner[key] = nil
+            else
+                stateOwner[key] = value
+            end
         end
     end
 
