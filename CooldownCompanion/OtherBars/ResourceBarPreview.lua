@@ -621,6 +621,9 @@ function RB.CreateResourceBarPreviewModule(deps)
             -- same one the live bar shows at full.
             ApplySegmentedPreviewColors(barInfo.frame, barInfo.powerType, settings, n)
             SetSegmentedText(barInfo.frame, n, n)
+            -- The canvas bar is at max by construction, so the max-stack
+            -- border previews lit (and clears when the toggle goes off).
+            RB.UpdateMaxStackBorder(barInfo.frame, settings, true, barInfo.powerType)
         elseif barInfo.barType == "stagger_continuous" then
             -- A full stagger pool: the real threshold logic puts that in the
             -- red band, so that is what a full stagger bar genuinely looks
@@ -659,7 +662,7 @@ function RB.CreateResourceBarPreviewModule(deps)
             SetSegmentedText(barInfo.frame, maxStacks, maxStacks)
             -- The canvas bar is at max by construction, so the max-stack
             -- border previews lit (and clears when the toggle goes off).
-            RB.UpdateMaxStackBorder(barInfo.frame, settings, barInfo.barType, true, 100)
+            RB.UpdateMaxStackBorder(barInfo.frame, settings, true, 100)
         elseif barInfo.barType == "mw_segments" then
             -- One segment per stack, all full at rest.
             local maxStacks = GetMWMaxStacks()
@@ -669,7 +672,7 @@ function RB.CreateResourceBarPreviewModule(deps)
                 seg:SetStatusBarColor(mwMaxColor[1], mwMaxColor[2], mwMaxColor[3], 1)
             end
             SetSegmentedText(barInfo.frame, maxStacks, maxStacks)
-            RB.UpdateMaxStackBorder(barInfo.frame, settings, barInfo.barType, true, 100)
+            RB.UpdateMaxStackBorder(barInfo.frame, settings, true, 100)
         elseif barInfo.barType == "mw_continuous" then
             local maxStacks = GetMWMaxStacks()
             local _, _, mwMaxColor = GetResourceColors(100, settings)
@@ -689,7 +692,7 @@ function RB.CreateResourceBarPreviewModule(deps)
                     barInfo.frame.text:SetFormattedText("%d / %d", maxStacks, maxStacks)
                 end
             end
-            RB.UpdateMaxStackBorder(barInfo.frame, settings, barInfo.barType, true, 100)
+            RB.UpdateMaxStackBorder(barInfo.frame, settings, true, 100)
         elseif barInfo.barType == "stackaura_segments" then
             -- Aura-stack family, one segment per stack: full at rest, in the
             -- at-max colour — what the real bar shows at its cap, and what
@@ -701,7 +704,7 @@ function RB.CreateResourceBarPreviewModule(deps)
                 seg:SetStatusBarColor(stackMaxColor[1], stackMaxColor[2], stackMaxColor[3], 1)
             end
             SetSegmentedText(barInfo.frame, maxStacks, maxStacks)
-            RB.UpdateMaxStackBorder(barInfo.frame, settings, barInfo.barType, true, barInfo.powerType)
+            RB.UpdateMaxStackBorder(barInfo.frame, settings, true, barInfo.powerType)
         elseif barInfo.barType == "stackaura_continuous" then
             local maxStacks = RB.GetAuraStackResourceMax(barInfo.powerType)
             local _, stackMaxColor = GetResourceColors(barInfo.powerType, settings)
@@ -721,7 +724,7 @@ function RB.CreateResourceBarPreviewModule(deps)
                     barInfo.frame.text:SetFormattedText("%d / %d", maxStacks, maxStacks)
                 end
             end
-            RB.UpdateMaxStackBorder(barInfo.frame, settings, barInfo.barType, true, barInfo.powerType)
+            RB.UpdateMaxStackBorder(barInfo.frame, settings, true, barInfo.powerType)
         elseif barInfo.barType == "custom_cooldown" then
             -- Spell custom bar, ready: full fill in the bar's own color
             -- (StyleCustomAuraBar already applied it), no cooldown or aura

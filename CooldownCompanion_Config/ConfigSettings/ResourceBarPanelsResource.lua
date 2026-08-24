@@ -2666,6 +2666,31 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         end
     end
 
+    -- The native segmented resources' max-stack border (owner ruling
+    -- 2026-08-23): the same border the stack-counted families offer, in its
+    -- own section — these resources have no Stack Display shape to pair it
+    -- with. Driven off the guarded power reads the bar itself renders from,
+    -- so it works in combat too.
+    if showResourceSettings and SEGMENTED_TYPES[resourceSettingsPowerType] == true then
+        local segResourceName = POWER_NAMES[resourceSettingsPowerType]
+            or ("Power " .. resourceSettingsPowerType)
+        local _, borderCollapsed = BuildCollapsibleSection(container, "Max Stack Border", "rb_max_stack_border", resourceBarCollapsedSections, nil, ROW_SECTION)
+
+        if not borderCollapsed then
+            local borderLeft = BeginRowGrid(container)
+
+            -- Everything in this section renders on the workspace Live
+            -- Preview, which does not rebuild with the settings column.
+            local applySegBars = function()
+                applyBars()
+                RefreshLayoutOrderPreview()
+            end
+
+            BuildMaxStackBorderRows(borderLeft, settings, resourceSettingsPowerType,
+                segResourceName, applySegBars, previewOnly)
+        end
+    end
+
     if showBarText then
     if not showResourceSettings then
     -- ============================================================
