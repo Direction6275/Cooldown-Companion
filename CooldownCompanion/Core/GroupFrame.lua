@@ -499,7 +499,7 @@ local function UpdateCoordLabel(frame, x, y)
 end
 
 function ST.UpdateGroupSizeLabel(frame)
-    if not (frame and frame.sizeLabel) or frame.sizeLabel._editing then
+    if not (frame and frame.sizeLabel) then
         return
     end
 
@@ -509,12 +509,30 @@ function ST.UpdateGroupSizeLabel(frame)
         return
     end
 
+    local kind
     if group.displayMode == "bars" then
+        kind = "bar"
+    elseif style.maintainAspectRatio then
+        kind = "square"
+    else
+        kind = "icon"
+    end
+
+    if frame.sizeLabel._editing then
+        if frame.sizeLabel._sizeKind == kind then
+            return
+        end
+        -- A mode change invalidates the active edit's field schema.
+        ST.CancelCoordinateEdit(frame.sizeLabel)
+    end
+    frame.sizeLabel._sizeKind = kind
+
+    if kind == "bar" then
         local length = ST.RoundToTenths(style.barLength or 180)
         local height = ST.RoundToTenths(style.barHeight or 20)
         ST.ConfigureEditableCoordLabel(frame.sizeLabel, "l:", "h:", false)
         frame.sizeLabel.text:SetText(("l:%.1f, h:%.1f"):format(length, height))
-    elseif style.maintainAspectRatio then
+    elseif kind == "square" then
         local size = ST.RoundToTenths(style.buttonSize or ST.BUTTON_SIZE)
         ST.ConfigureEditableCoordLabel(frame.sizeLabel, "size:", nil, true)
         frame.sizeLabel.text:SetText(("size:%.1f"):format(size))
@@ -3348,10 +3366,22 @@ function CooldownCompanion:CreateGroupFrame(groupId)
             if not style then
                 return
             end
+            local currentKind
             if currentGroup.displayMode == "bars" then
+                currentKind = "bar"
+            elseif style.maintainAspectRatio then
+                currentKind = "square"
+            else
+                currentKind = "icon"
+            end
+            if currentKind ~= frame.sizeLabel._sizeKind
+                or (currentKind ~= "square" and secondary == nil) then
+                return
+            end
+            if currentKind == "bar" then
                 style.barLength = math_max(10, math_min(500, ST.RoundToTenths(primary)))
                 style.barHeight = math_max(5, math_min(100, ST.RoundToTenths(secondary)))
-            elseif style.maintainAspectRatio then
+            elseif currentKind == "square" then
                 style.buttonSize = math_max(10, math_min(150, ST.RoundToTenths(primary)))
             else
                 style.iconWidth = math_max(10, math_min(150, ST.RoundToTenths(primary)))

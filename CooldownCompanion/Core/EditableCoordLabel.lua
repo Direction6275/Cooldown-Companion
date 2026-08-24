@@ -138,13 +138,16 @@ function ST.CreateEditableCoordLabel(coordLabel, getCoordinates, applyCoordinate
             applyCoordinates(newX, newY)
         end
     end
+    coordLabel._CommitPendingEdit = CommitEdit
 
     local function BeginEdit()
         if coordLabel._editing or (isDragging and isDragging()) then
             return
         end
 
-        CancelCoordinateEdit(coordLabel._exclusiveEditLabel)
+        if coordLabel._exclusiveEditLabel and coordLabel._exclusiveEditLabel._editing then
+            coordLabel._exclusiveEditLabel._CommitPendingEdit()
+        end
         local x, y = getCoordinates()
         coordLabel._editGeneration = (coordLabel._editGeneration or 0) + 1
         coordLabel._editing = true
