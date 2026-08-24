@@ -323,13 +323,9 @@ local function CreateCastBarMoverFrame()
     dragHandle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2)
     dragHandle:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, 2)
     dragHandle:SetHeight(15)
-    dragHandle:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
+    dragHandle:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     dragHandle:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    dragHandle:SetBackdropBorderColor(0, 0, 0, 1)
+    ST.CreatePixelBorders(dragHandle)
     dragHandle:EnableMouse(false)
     dragHandle:RegisterForDrag()
 
@@ -352,13 +348,9 @@ local function CreateCastBarMoverFrame()
     local nudger = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
     nudger:SetSize(CAST_NUDGE_BTN_SIZE * 2 + NUDGE_GAP, CAST_NUDGE_BTN_SIZE * 2 + NUDGE_GAP)
     nudger:SetPoint("BOTTOM", dragHandle, "TOP", 0, 2)
-    nudger:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
+    nudger:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     nudger:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    nudger:SetBackdropBorderColor(0, 0, 0, 1)
+    ST.CreatePixelBorders(nudger)
     nudger:EnableMouse(false)
     nudger._cdcButtons = {}
     nudger:SetScript("OnEnter", function(self)
@@ -435,13 +427,9 @@ local function CreateCastBarMoverFrame()
     coordLabel:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -2)
     coordLabel:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, -2)
     coordLabel:SetHeight(15)
-    coordLabel:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
+    coordLabel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     coordLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    coordLabel:SetBackdropBorderColor(0, 0, 0, 1)
+    ST.CreatePixelBorders(coordLabel)
     coordLabel.text = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     coordLabel.text:SetPoint("CENTER")
     coordLabel.text:SetTextColor(1, 1, 1, 1)

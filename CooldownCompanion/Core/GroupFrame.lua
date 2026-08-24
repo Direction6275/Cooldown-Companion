@@ -5499,7 +5499,6 @@ end
 ------------------------------------------------------------------------
 
 local CONTAINER_WRAPPER_PADDING = 10
-local CONTAINER_WRAPPER_BORDER_SIZE = 2
 local CONTAINER_WRAPPER_LABEL_OFFSET = 2
 local CONTAINER_WRAPPER_HEADER_HEIGHT = 27
 local CONTAINER_WRAPPER_HEADER_FONT_SIZE = 14
@@ -5671,52 +5670,18 @@ local function HideContainerMemberOverlays(frame)
     end
 end
 
-local function EnsureContainerWrapperBorder(wrapper, r, g, b, a, borderSize)
+local function EnsureContainerWrapperBorder(wrapper, r, g, b, a)
     if not wrapper then
         return
     end
 
     local borderTextures = wrapper._containerWrapperBorderTextures
     if not borderTextures then
-        borderTextures = {}
-        for i = 1, 4 do
-            borderTextures[i] = wrapper:CreateTexture(nil, "BORDER")
-        end
+        borderTextures = ST.CreateBorderTextureSet(wrapper, "BORDER")
         wrapper._containerWrapperBorderTextures = borderTextures
     end
 
-    if wrapper.borderTextures then
-        for _, texture in ipairs(wrapper.borderTextures) do
-            texture:Hide()
-        end
-    end
-
-    local size = borderSize or CONTAINER_WRAPPER_BORDER_SIZE
-    local top = borderTextures[1]
-    local bottom = borderTextures[2]
-    local left = borderTextures[3]
-    local right = borderTextures[4]
-
-    for _, texture in ipairs(borderTextures) do
-        texture:SetColorTexture(r, g, b, a)
-        texture:Show()
-    end
-
-    PixelUtil.SetPoint(top, "BOTTOMLEFT", wrapper, "TOPLEFT", -size, 0)
-    PixelUtil.SetPoint(top, "BOTTOMRIGHT", wrapper, "TOPRIGHT", size, 0)
-    PixelUtil.SetHeight(top, size, 1)
-
-    PixelUtil.SetPoint(bottom, "TOPLEFT", wrapper, "BOTTOMLEFT", -size, 0)
-    PixelUtil.SetPoint(bottom, "TOPRIGHT", wrapper, "BOTTOMRIGHT", size, 0)
-    PixelUtil.SetHeight(bottom, size, 1)
-
-    PixelUtil.SetPoint(left, "TOPRIGHT", wrapper, "TOPLEFT", 0, size)
-    PixelUtil.SetPoint(left, "BOTTOMRIGHT", wrapper, "BOTTOMLEFT", 0, -size)
-    PixelUtil.SetWidth(left, size, 1)
-
-    PixelUtil.SetPoint(right, "TOPLEFT", wrapper, "TOPRIGHT", 0, size)
-    PixelUtil.SetPoint(right, "BOTTOMLEFT", wrapper, "BOTTOMRIGHT", 0, -size)
-    PixelUtil.SetWidth(right, size, 1)
+    ST.ApplyBorderTextures(borderTextures, wrapper, { r, g, b, a }, 1, ST.BORDER_RENDER_MODE_CRISP)
 end
 
 local function HideContainerWrapperBorder(wrapper)

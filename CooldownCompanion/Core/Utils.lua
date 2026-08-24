@@ -490,6 +490,12 @@ function ST.CreateBorderTextureSet(parent, layer, sublevel)
     for index, side in ipairs(BORDER_EDGE_NAMES) do
         local tex = parent:CreateTexture(nil, layer or "OVERLAY", nil, sublevel)
         tex:SetColorTexture(0, 0, 0, 1)
+        -- Keep default pixel-grid snapping: an exactly-one-physical-pixel quad
+        -- always snaps to exactly one row. With snapping off, a quad at a
+        -- fractional position blends across two rows and reads as a 2px line
+        -- (measured in game 2026-08-24). Edges vanish only when the computed
+        -- size goes stale against the effective scale; the rescale registry
+        -- below handles that.
         tex:Hide()
         textures[index] = tex
         textures[side] = tex
@@ -524,8 +530,28 @@ local function ApplyBorderPoint(tex, point, relativeTo, relativePoint, offsetX, 
     end
 end
 
+-- Crisp borders are laid out in physical-pixel units, which go stale when the
+-- UI scale or display resolution changes. Every positioned set records its
+-- latest layout arguments here so those events can re-run the same layout.
+-- Weak keys let a set drop out if nothing references its textures anymore.
+local borderRescaleRegistry = setmetatable({}, { __mode = "k" })
+
+local function RecordBorderLayout(textures, leftFrame, rightFrame, size, mode)
+    local entry = borderRescaleRegistry[textures]
+    if not entry then
+        entry = {}
+        borderRescaleRegistry[textures] = entry
+    end
+    entry.leftFrame = leftFrame
+    entry.rightFrame = rightFrame
+    entry.size = size
+    entry.mode = mode
+end
+
 function ST.PositionBorderTexturesBetween(textures, leftFrame, rightFrame, size, mode)
     if not (textures and leftFrame and rightFrame) then return end
+
+    RecordBorderLayout(textures, leftFrame, rightFrame, size, mode)
 
     local crisp = ST.IsCrispBorderRenderMode(mode)
     local customEdgeSize = GetBorderSize(size, 1)
@@ -600,6 +626,28 @@ function ST.CreatePixelBorders(frame, r, g, b, a)
     frame.borderTextures = textures
     return textures
 end
+
+-- Only crisp layouts depend on the effective scale; custom-size layouts are in
+-- UI units and survive these events unchanged. PLAYER_ENTERING_WORLD covers
+-- sets created before the login scale settled. In combat the pass defers to
+-- PLAYER_REGEN_ENABLED so no anchor work happens while frames may be locked.
+local borderRescaleEventFrame = CreateFrame("Frame")
+borderRescaleEventFrame:RegisterEvent("UI_SCALE_CHANGED")
+borderRescaleEventFrame:RegisterEvent("DISPLAY_SIZE_CHANGED")
+borderRescaleEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+borderRescaleEventFrame:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    elseif InCombatLockdown() then
+        self:RegisterEvent("PLAYER_REGEN_ENABLED")
+        return
+    end
+    for textures, entry in pairs(borderRescaleRegistry) do
+        if ST.IsCrispBorderRenderMode(entry.mode) then
+            ST.PositionBorderTexturesBetween(textures, entry.leftFrame, entry.rightFrame, entry.size, entry.mode)
+        end
+    end
+end)
 
 --------------------------------------------------------------------------------
 -- Runtime Info Buttons
