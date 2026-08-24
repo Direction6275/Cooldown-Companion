@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.2.1",
         "2.2",
         "2.1.4",
         "2.1.3",
@@ -32,6 +33,22 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.2.1"] = {
+            markdown = [[
+## Polish | QoL
+
+- **Max Stack Border for every segmented resource:** Combo Points, Holy Power, Chi, Arcane Charges, Runes, Soul Shards, and Essence can now show the Max Stack Border, joining Maelstrom Weapon and the aura-stack bars. The border lights when the resource is completely full, works in combat, and now always draws as one continuous outline around the entire bar instead of ringing each segment. Each resource gets its own Max Stack Border section in its settings panel, off by default.
+
+## Performance
+
+- **Lower CPU usage:** A general efficiency pass trimmed background work throughout the addon, most noticeably during busy combat. Fades now rest once settled and hidden bars pause their updates until they reappear. Nothing looks or behaves differently.
+
+## Bug Fixes
+
+- **Config preview bars keep their identity:** A preview bar in the config canvas that gets reused for a different resource no longer briefly shows the previous resource's text maximum or border settings.
+- **Resized bars drop stale borders:** Resizing a resource bar in the config canvas can no longer leave an outdated border outline behind.
+]],
+        },
         ["2.2"] = {
             markdown = [[
 ## New Features
