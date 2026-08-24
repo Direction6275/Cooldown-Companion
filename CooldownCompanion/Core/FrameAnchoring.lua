@@ -37,6 +37,8 @@ local anchorWriteGuards = setmetatable({}, { __mode = "k" })
 local anchorWriteHooksInstalled = setmetatable({}, { __mode = "k" })
 local externalAnchorRepairQueued = false
 local externalAnchorRepairCount = 0
+local lastAppliedPlayerAnchor = nil   -- {point, body, relativePoint, x, y} as last applied
+local lastAppliedTargetAnchor = nil
 local lastResolvedProvider = nil
 local lastAnchorGroupId = nil
 local lastPlayerFrameName = nil
@@ -370,6 +372,27 @@ local function QueueExternalAnchorRepair(frame)
 
     local settings = GetFrameAnchoringSettings()
     if not (settings and settings.enabled) then return end
+
+    -- Same-frame reclaim: replay the exact anchor Apply last wrote, so the
+    -- render this write lands on never shows the provider's position (the
+    -- one-frame "blink" a next-frame-only repair leaves behind). Runs on every
+    -- external write — the provider's own layout pass can touch the frame
+    -- several times and the last write before render must be ours. The write
+    -- guard inside SetManagedFrameAnchor keeps this invisible to these hooks.
+    -- The deferred full re-evaluate below stays authoritative: it re-resolves
+    -- the anchor group and body in case this cached spec went stale.
+    if not InCombatLockdown() then
+        local spec
+        if frame == playerFrameRef then
+            spec = lastAppliedPlayerAnchor
+        else
+            spec = lastAppliedTargetAnchor
+        end
+        if spec then
+            SetManagedFrameAnchor(frame, spec.point, spec.body, spec.relativePoint, spec.x, spec.y)
+        end
+    end
+
     if pendingReevaluate or externalAnchorRepairQueued then return end
 
     externalAnchorRepairQueued = true
@@ -390,7 +413,9 @@ local function InstallAnchorWriteHooks(frame)
 
     -- Unit-frame providers can run delayed layout passes after login and take
     -- their points back. Observe those writes instead of polling GetPoint
-    -- (which can expose secret anchor data), then reclaim ownership next frame.
+    -- (which can expose secret anchor data): reclaim ownership same-frame with
+    -- the cached applied spec so the provider's position never renders, and
+    -- follow with a full next-frame re-evaluate as the authoritative repair.
     -- The guard makes CC's own apply/restore writes invisible to this repair.
     hooksecurefunc(frame, "ClearAllPoints", function(self)
         QueueExternalAnchorRepair(self)
@@ -521,11 +546,18 @@ function CooldownCompanion:ApplyFrameAnchoring(opts)
     -- dependency check all stay on `groupFrame` itself.
     local anchorBody = ST.GetPanelAnchorBodyFrame(groupFrame)
 
-    -- Apply player frame anchoring
+    -- Apply player frame anchoring. Each applied spec is also cached so the
+    -- anchor-write hooks can replay it same-frame when a provider takes the
+    -- points back (see QueueExternalAnchorRepair).
     local ps = settings.player
+    lastAppliedPlayerAnchor = nil
+    lastAppliedTargetAnchor = nil
     if playerFrame and ps then
         SetManagedFrameAnchor(playerFrame, ps.anchorPoint, anchorBody, ps.relativePoint,
                               ps.xOffset or 0, ps.yOffset or 0)
+        lastAppliedPlayerAnchor = { point = ps.anchorPoint, body = anchorBody,
+                                    relativePoint = ps.relativePoint,
+                                    x = ps.xOffset or 0, y = ps.yOffset or 0 }
     end
 
     -- Apply target frame anchoring
@@ -536,12 +568,18 @@ function CooldownCompanion:ApplyFrameAnchoring(opts)
             local mRelative = MIRROR_POINTS[ps.relativePoint] or ps.relativePoint
             SetManagedFrameAnchor(targetFrame, mAnchor, anchorBody, mRelative,
                                   -(ps.xOffset or 0), ps.yOffset or 0)
+            lastAppliedTargetAnchor = { point = mAnchor, body = anchorBody,
+                                        relativePoint = mRelative,
+                                        x = -(ps.xOffset or 0), y = ps.yOffset or 0 }
         else
             -- Independent target settings
             local ts = settings.target
             if ts then
                 SetManagedFrameAnchor(targetFrame, ts.anchorPoint, anchorBody, ts.relativePoint,
                                       ts.xOffset or 0, ts.yOffset or 0)
+                lastAppliedTargetAnchor = { point = ts.anchorPoint, body = anchorBody,
+                                            relativePoint = ts.relativePoint,
+                                            x = ts.xOffset or 0, y = ts.yOffset or 0 }
             end
         end
     end
@@ -657,6 +695,8 @@ function CooldownCompanion:RevertFrameAnchoring()
     savedTargetAnchors = nil
     playerFrameRef = nil
     targetFrameRef = nil
+    lastAppliedPlayerAnchor = nil
+    lastAppliedTargetAnchor = nil
 end
 
 ------------------------------------------------------------------------
