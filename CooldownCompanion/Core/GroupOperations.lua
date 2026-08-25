@@ -1054,14 +1054,10 @@ local function GetArrangeModePill(addon)
     -- Gold accents tie the pill to the snap guides shown while arranging.
     ST.CreatePixelBorders(pill, 1, 0.82, 0, 0.45)
 
-    local icon = pill:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(16, 16)
-    icon:SetPoint("LEFT", pill, "LEFT", 10, 0)
-    icon:SetAtlas("questlog-questtypeicon-lock", false)
-    icon:SetVertexColor(1, 0.82, 0, 0.9)
-
+    -- The top row lives in a fixed 30px band so the pill can grow downward
+    -- when the group list expands.
     local title = pill:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("LEFT", icon, "RIGHT", 8, 0)
+    title:SetPoint("LEFT", pill, "TOPLEFT", 10, -15)
     title:SetText("Arranging panels")
     title:SetTextColor(1, 0.82, 0, 1)
 
@@ -1071,12 +1067,37 @@ local function GetArrangeModePill(addon)
         tooltip:AddLine("Esc or Cancel reverts unsaved changes.", 1, 1, 1, false)
         tooltip:AddLine(" ")
         tooltip:AddLine("Done, a padlock, or /cdc lock saves.", 1, 1, 1, false)
+        tooltip:AddLine(" ")
+        tooltip:AddLine("Click a group name to work on it alone.", 1, 1, 1, false)
+        tooltip:AddLine(" ")
+        tooltip:AddLine("Click it again to bring the others back.", 1, 1, 1, false)
+        tooltip:AddLine(" ")
+        tooltip:AddLine("Uncheck a group to hide its handles.", 1, 1, 1, false)
     end)
     ST.SetRuntimeInfoButtonShown(helpButton, true)
 
+    local expander = CreateFrame("Button", nil, pill)
+    expander:SetSize(16, 16)
+    expander:SetPoint("LEFT", helpButton, "RIGHT", 2, 0)
+    local expanderArrow = expander:CreateTexture(nil, "OVERLAY")
+    expanderArrow:SetAllPoints()
+    expanderArrow:SetAtlas("common-dropdown-icon-next")
+    expanderArrow:SetVertexColor(1, 0.82, 0, 0.9)
+    pill._expanderArrow = expanderArrow
+    expander:SetScript("OnClick", function()
+        pill._listExpanded = not pill._listExpanded or nil
+        CooldownCompanion:RefreshArrangePillList()
+    end)
+    expander:SetScript("OnEnter", function()
+        expanderArrow:SetVertexColor(1, 1, 1, 1)
+    end)
+    expander:SetScript("OnLeave", function()
+        expanderArrow:SetVertexColor(1, 0.82, 0, 0.9)
+    end)
+
     local doneButton = CreateFrame("Button", nil, pill, "BackdropTemplate")
     doneButton:SetSize(52, 20)
-    doneButton:SetPoint("RIGHT", pill, "RIGHT", -10, 0)
+    doneButton:SetPoint("RIGHT", pill, "TOPRIGHT", -10, -15)
     doneButton:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     doneButton:SetBackdropColor(0.16, 0.16, 0.16, 1)
     ST.CreatePixelBorders(doneButton, 0.3, 0.85, 0.3, 0.7)
@@ -1097,11 +1118,9 @@ local function GetArrangeModePill(addon)
     local cancelButtonWidth = math.ceil(cancelText:GetStringWidth() + 16)
     cancelButton:SetSize(cancelButtonWidth, 20)
 
-    -- One row: [icon] title [?] ... [Cancel] [Done], everything on the center line.
-    pill:SetSize(
-        math.ceil(10 + 16 + 8 + title:GetStringWidth() + 4 + 16 + 14 + cancelButtonWidth + 6 + 52 + 10),
-        30
-    )
+    -- Top band: title [?] [>] ... [Cancel] [Done]. The list rows stack below.
+    pill._baseWidth = math.ceil(10 + title:GetStringWidth() + 4 + 16 + 2 + 16 + 14 + cancelButtonWidth + 6 + 52 + 10)
+    pill:SetSize(pill._baseWidth, 30)
 
     cancelButton:SetScript("OnClick", function()
         CooldownCompanion:CancelArrangeMode()
@@ -1132,6 +1151,14 @@ local function GetArrangeModePill(addon)
         self._dragInProgress = nil
         self:StopMovingOrSizing()
     end)
+    pill:EnableMouseWheel(true)
+    pill:SetScript("OnMouseWheel", function(self, delta)
+        if not self._listExpanded or (self._listMaxScrollOffset or 0) == 0 then
+            return
+        end
+        self._listScrollOffset = (self._listScrollOffset or 0) - delta
+        CooldownCompanion:RefreshArrangePillList()
+    end)
     pill:EnableKeyboard(true)
     pill:SetScript("OnKeyDown", function(self, key)
         if key == "ESCAPE" then
@@ -1147,6 +1174,7 @@ local function GetArrangeModePill(addon)
         if not InCombatLockdown() then
             self:SetPropagateKeyboardInput(true)
         end
+        CooldownCompanion:RefreshArrangePillList()
     end)
     pill:SetScript("OnHide", function(self)
         if self._dragInProgress then
@@ -1159,6 +1187,183 @@ local function GetArrangeModePill(addon)
 
     addon._arrangeModePill = pill
     return pill
+end
+
+-- Rebuild the pill's group list: one row per arrange-managed group, sorted by
+-- name. Row name click pins the group's controls (WS2 focus); the checkbox is
+-- the session-only chrome filter. Collapsed, the pill is just the top band.
+function CooldownCompanion:RefreshArrangePillList()
+    local pill = self._arrangeModePill
+    if not (pill and pill:IsShown()) then
+        return
+    end
+
+    local ROW_HEIGHT = 18
+    local rows = pill._rows
+    if not rows then
+        rows = {}
+        pill._rows = rows
+    end
+
+    local entries = {}
+    if self._arrangeModeActive then
+        for containerId, container in pairs(self.db.profile.groupContainers or {}) do
+            if container.locked == false
+                and self:IsContainerVisibleToCurrentChar(containerId)
+                and self:ContainerHasArrangeEligiblePanel(containerId) then
+                entries[#entries + 1] = { id = containerId, name = container.name or ("Group " .. containerId) }
+            end
+        end
+        table.sort(entries, function(a, b)
+            if a.name == b.name then
+                return a.id < b.id
+            end
+            return a.name < b.name
+        end)
+    end
+
+    local expanded = pill._listExpanded == true and #entries > 0
+    if pill._expanderArrow then
+        pill._expanderArrow:SetRotation(expanded and -math.pi / 2 or 0)
+    end
+
+    -- Cap the viewport so a large roster cannot push rows off screen; the
+    -- overflow scrolls with the mouse wheel.
+    local MAX_VISIBLE_ROWS = 12
+    local maxOffset = math.max(0, #entries - MAX_VISIBLE_ROWS)
+    local scrollOffset = pill._listScrollOffset or 0
+    if scrollOffset > maxOffset then
+        scrollOffset = maxOffset
+    end
+    if scrollOffset < 0 then
+        scrollOffset = 0
+    end
+    pill._listScrollOffset = scrollOffset
+    pill._listMaxScrollOffset = maxOffset
+    local visibleCount = math.min(#entries, MAX_VISIBLE_ROWS)
+
+    local function EnsureRow(index)
+        local row = rows[index]
+        if row then
+            return row
+        end
+
+        row = CreateFrame("Button", nil, pill)
+        row:SetHeight(ROW_HEIGHT)
+
+        row.bg = row:CreateTexture(nil, "BACKGROUND")
+        row.bg:SetAllPoints()
+        row.bg:SetColorTexture(1, 0.82, 0, 0.12)
+        row.bg:Hide()
+
+        row.check = CreateFrame("Button", nil, row, "BackdropTemplate")
+        row.check:SetSize(12, 12)
+        row.check:SetPoint("LEFT", row, "LEFT", 2, 0)
+        row.check:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+        row.check:SetBackdropColor(0.16, 0.16, 0.16, 1)
+        ST.CreatePixelBorders(row.check)
+        row.check.fill = row.check:CreateTexture(nil, "OVERLAY")
+        row.check.fill:SetSize(6, 6)
+        row.check.fill:SetPoint("CENTER")
+        row.check.fill:SetColorTexture(1, 0.82, 0, 0.9)
+        row.check:SetScript("OnClick", function()
+            if row.containerId then
+                -- Toggle the MANUAL flag the checkbox renders; the effective
+                -- state also folds in solo and would misread during one.
+                local hiddenSet = CooldownCompanion._arrangeChromeHidden
+                local manuallyHidden = hiddenSet ~= nil and hiddenSet[row.containerId] == true
+                CooldownCompanion:SetContainerArrangeChromeHidden(row.containerId, not manuallyHidden)
+                CooldownCompanion:RefreshArrangePillList()
+            end
+        end)
+
+        row.name = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        row.name:SetPoint("LEFT", row.check, "RIGHT", 6, 0)
+        row.name:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+        row.name:SetJustifyH("LEFT")
+        row.name:SetWordWrap(false)
+
+        row:SetScript("OnClick", function()
+            local id = row.containerId
+            if not id then
+                return
+            end
+            local hiddenSet = CooldownCompanion._arrangeChromeHidden
+            if hiddenSet and hiddenSet[id] == true then
+                return
+            end
+            if CooldownCompanion._arrangeSoloContainerId == id then
+                CooldownCompanion:SetArrangeSoloContainer(nil)
+            else
+                CooldownCompanion:SetArrangeSoloContainer(id)
+            end
+        end)
+        row:SetScript("OnEnter", function(self)
+            if not self._selected then
+                self.bg:SetColorTexture(1, 1, 1, 0.06)
+                self.bg:Show()
+            end
+        end)
+        row:SetScript("OnLeave", function(self)
+            if not self._selected then
+                self.bg:Hide()
+            end
+        end)
+
+        rows[index] = row
+        return row
+    end
+
+    local maxNameWidth = 0
+    for index = 1, visibleCount do
+        local entry = entries[scrollOffset + index]
+        local row = EnsureRow(index)
+        row.containerId = entry.id
+        row.name:SetText(entry.name)
+
+        -- The checkbox mirrors the MANUAL flag; the gray name mirrors the
+        -- effective state, so a solo grays the others without unticking them.
+        local hiddenSet = self._arrangeChromeHidden
+        local manuallyHidden = hiddenSet ~= nil and hiddenSet[entry.id] == true
+        local hidden = self:IsContainerArrangeChromeHidden(entry.id)
+        row.check.fill:SetShown(not manuallyHidden)
+        row.name:SetTextColor(hidden and 0.55 or 1, hidden and 0.55 or 1, hidden and 0.55 or 1, 1)
+
+        row._selected = self._arrangeFocusContainerId == entry.id and not hidden or nil
+        if row._selected then
+            row.bg:SetColorTexture(1, 0.82, 0, 0.12)
+            row.bg:Show()
+        elseif row:IsMouseOver() then
+            row.bg:SetColorTexture(1, 1, 1, 0.06)
+            row.bg:Show()
+        else
+            row.bg:Hide()
+        end
+
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", pill, "TOPLEFT", 8, -(30 + (index - 1) * ROW_HEIGHT))
+        row:SetPoint("TOPRIGHT", pill, "TOPRIGHT", -8, -(30 + (index - 1) * ROW_HEIGHT))
+        row:SetShown(expanded)
+
+        local nameWidth = row.name:GetStringWidth() or 0
+        if nameWidth > maxNameWidth then
+            maxNameWidth = nameWidth
+        end
+    end
+
+    for index = visibleCount + 1, #rows do
+        rows[index].containerId = nil
+        rows[index]:Hide()
+    end
+
+    if expanded then
+        pill:SetSize(
+            math.max(pill._baseWidth or 200, math.ceil(8 + 2 + 12 + 6 + maxNameWidth + 2 + 8 + 12)),
+            30 + visibleCount * ROW_HEIGHT + 6
+        )
+    else
+        pill:SetSize(pill._baseWidth or 200, 30)
+    end
 end
 
 local function CancelActiveMoverDrag(addon, frame, activeField)
@@ -3674,9 +3879,17 @@ end
 function CooldownCompanion:SetContainerLocked(containerId, locked)
     local container = self.db.profile.groupContainers[containerId]
     if not container then return end
+    -- Locking the soloed group would strand every other group solo-hidden
+    -- with no chrome anywhere; release the solo first.
+    if locked and self._arrangeSoloContainerId == containerId and self.SetArrangeSoloContainer then
+        self:SetArrangeSoloContainer(nil)
+    end
     container.locked = locked
     self:UpdateContainerDragHandle(containerId, locked)
     self:RefreshContainerPanels(containerId)
+    if self._arrangeModeActive and self.RefreshArrangePillList then
+        self:RefreshArrangePillList()
+    end
 end
 
 function CooldownCompanion:SetPanelLocked(panelId, locked)
@@ -3809,6 +4022,8 @@ function CooldownCompanion:EnterArrangeMode()
     self:CaptureArrangeSnapshot()
     self._arrangeModeActive = true
     self._arrangeFocusContainerId = nil
+    self._arrangeChromeHidden = nil
+    self._arrangeSoloContainerId = nil
     for containerId in pairs(self.db.profile.groupContainers or {}) do
         if self:IsContainerVisibleToCurrentChar(containerId)
             and self:ContainerHasArrangeEligiblePanel(containerId) then
@@ -3832,6 +4047,8 @@ function CooldownCompanion:ExitArrangeMode(opts)
     self._arrangeSnapshot = nil
     self._arrangeModeActive = nil
     self._arrangeFocusContainerId = nil
+    self._arrangeChromeHidden = nil
+    self._arrangeSoloContainerId = nil
     CancelActiveMoverGestures(self)
     self:LockAllFrames()
     if self.SetIndependentCastBarLocked then
