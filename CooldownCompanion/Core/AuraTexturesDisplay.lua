@@ -725,36 +725,6 @@ local function AddTexturePanelDragHelpTooltipLines(tooltip)
     tooltip:AddLine("Click the coordinates below to type exact values.", 1, 1, 1, false)
 end
 
-local function CreateAuraTextureLockButton(parent, onLock)
-    local button = CreateFrame("Button", nil, parent)
-    button:SetSize(12, 12)
-    button:RegisterForClicks("LeftButtonUp")
-
-    local icon = button:CreateTexture(nil, "OVERLAY")
-    icon:SetSize(10, 10)
-    icon:SetPoint("CENTER")
-    icon:SetAtlas("questlog-questtypeicon-lock", false)
-    icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-    button.icon = icon
-
-    button:SetScript("OnEnter", function(self)
-        self.icon:SetVertexColor(1, 1, 1, 1)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine("Lock")
-        GameTooltip:Show()
-    end)
-    button:SetScript("OnLeave", function(self)
-        self.icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-        GameTooltip:Hide()
-    end)
-    button:SetScript("OnClick", function(self)
-        self.icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-        onLock()
-    end)
-
-    return button
-end
-
 local function IsTextureHostGroupedPreviewActive(host)
     local owner = host and host._ownerButton or nil
     local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
@@ -819,7 +789,7 @@ local function EnsureAuraTextureDragHandle(host)
     text:SetTextColor(1, 1, 1, 1)
     dragHandle.text = text
 
-    dragHandle.lockButton = CreateAuraTextureLockButton(dragHandle, function()
+    dragHandle.lockButton = ST.CreateMoverLockBadge(dragHandle, 12, function()
         LockAuraTexturePanelFromMover(host)
     end)
     host.dragHelpButton = CreateAuraTextureDragHelpButton(host, dragHandle)
@@ -829,7 +799,7 @@ local function EnsureAuraTextureDragHandle(host)
         dragHandle.lockButton:SetPoint("RIGHT", dragHandle, "RIGHT", -2, 0)
     end
     -- Symmetric insets matching the badge cluster keep the name centered on the bar
-    local headerTextInset = host.dragHelpButton and 34 or 16
+    local headerTextInset = dragHandle.lockButton:GetWidth() + (host.dragHelpButton and 22 or 4)
     text:ClearAllPoints()
     text:SetPoint("LEFT", dragHandle, "LEFT", headerTextInset, 0)
     text:SetPoint("RIGHT", dragHandle, "RIGHT", -headerTextInset, 0)

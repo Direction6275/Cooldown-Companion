@@ -590,7 +590,7 @@ function CooldownCompanion:SlashCommand(input)
     elseif input == "help" then
         self:Print("Cooldown Companion commands:")
         self:Print("/cdc - Open settings")
-        self:Print("/cdc lock - Toggle arrange mode (/cdc unlock does the same)")
+        self:Print("/cdc lock - Lock or unlock everything (/cdc unlock does the same)")
         self:Print("/cdc minimap - Toggle minimap icon")
         self:Print("/cdc reset - Reset profile to defaults")
     elseif input == "reset" then

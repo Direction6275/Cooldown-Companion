@@ -1027,6 +1027,7 @@ local function ClearColumn1ButtonBar()
     end
     wipe(CS.col1BarWidgets)
     CS.col1CreateButton = nil
+    CS.col1ArrangeButton = nil
     if CS.col1ButtonBar then
         CS.col1ButtonBar._topRowBtns = nil
         CS.col1ButtonBar:SetScript("OnSizeChanged", nil)
@@ -1124,6 +1125,20 @@ end
 -- Exported for the Group overview's add tile.
 ST._ShowPanelTypeMenuForContainer = ShowPanelTypeMenuForContainer
 
+-- Keeps the rail's Arrange button truthful when the mode changes underneath
+-- the config (auto-exit, /cdc lock). The refresh paths call this through
+-- ST.UpdateArrangeBadge; the guard covers bars repopulated for other modes.
+local function UpdateArrangeRailButton()
+    local arrangeBtn = CS.col1ArrangeButton
+    if not arrangeBtn then return end
+    if CooldownCompanion.IsArrangeModeActive and CooldownCompanion:IsArrangeModeActive() then
+        arrangeBtn:SetText("Lock")
+    else
+        arrangeBtn:SetText("Unlock")
+    end
+end
+ST.UpdateArrangeBadge = UpdateArrangeRailButton
+
 local function PopulateColumn1ButtonBar()
     if not CS.col1ButtonBar then
         return
@@ -1137,11 +1152,57 @@ local function PopulateColumn1ButtonBar()
     createBtn.frame:SetParent(CS.col1ButtonBar)
     createBtn.frame:ClearAllPoints()
     createBtn.frame:SetPoint("TOPLEFT", CS.col1ButtonBar, "TOPLEFT", 0, -1)
-    createBtn.frame:SetPoint("TOPRIGHT", CS.col1ButtonBar, "TOPRIGHT", 0, -1)
     createBtn.frame:SetHeight(28)
     createBtn.frame:Show()
     CS.col1CreateButton = createBtn
     table.insert(CS.col1BarWidgets, createBtn)
+
+    local arrangeBtn = AceGUI:Create("Button")
+    arrangeBtn:SetCallback("OnClick", function()
+        if CooldownCompanion.IsArrangeModeActive and CooldownCompanion:IsArrangeModeActive() then
+            CooldownCompanion:ExitArrangeMode()
+        else
+            CooldownCompanion:EnterArrangeMode()
+        end
+        UpdateArrangeRailButton()
+    end)
+    arrangeBtn:SetCallback("OnEnter", function(widget)
+        GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
+        if CooldownCompanion.IsArrangeModeActive and CooldownCompanion:IsArrangeModeActive() then
+            GameTooltip:AddLine("Lock panels")
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Locks everything and saves your changes.", 1, 1, 1, true)
+        else
+            GameTooltip:AddLine("Unlock panels")
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Unlocks everything for moving.", 1, 1, 1, true)
+        end
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Typing /cdc lock does the same thing.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    arrangeBtn:SetCallback("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    arrangeBtn.frame:SetParent(CS.col1ButtonBar)
+    arrangeBtn.frame:ClearAllPoints()
+    arrangeBtn.frame:SetPoint("TOPRIGHT", CS.col1ButtonBar, "TOPRIGHT", 0, -1)
+    arrangeBtn.frame:SetHeight(28)
+    arrangeBtn.frame:Show()
+    CS.col1ArrangeButton = arrangeBtn
+    table.insert(CS.col1BarWidgets, arrangeBtn)
+    UpdateArrangeRailButton()
+
+    local function SizeMainBarButtons(width)
+        local half = math.max(1, math.floor(((width or 0) - 4) / 2))
+        createBtn.frame:SetWidth(half)
+        arrangeBtn.frame:SetWidth(half)
+    end
+    CS.col1ButtonBar._topRowBtns = { createBtn.frame, arrangeBtn.frame }
+    CS.col1ButtonBar:SetScript("OnSizeChanged", function(_, w)
+        SizeMainBarButtons(w)
+    end)
+    SizeMainBarButtons(CS.col1ButtonBar:GetWidth())
 end
 
 local function PopulateOtherClassBrowseButtonBar()
