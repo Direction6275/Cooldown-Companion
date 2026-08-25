@@ -69,7 +69,13 @@ local CURSOR_LAYOUT_PREVIEW_TOP_OFFSET = -120
 local CURSOR_LAYOUT_PREVIEW_TINT = { 0.35, 0.92, 1, 1 }
 local SNAP_THRESHOLD = 8
 local SNAP_VISIBLE_ALPHA_THRESHOLD = 0.05
-local SNAP_GUIDE_COLOR = { 1, 0.82, 0, 0.9 }
+-- Guide color per winning target scope: gold = panels touching, cyan = group
+-- centered on group, silver = aligned to the screen itself.
+local SNAP_GUIDE_COLORS = {
+    panel = { 1, 0.82, 0, 0.9 },
+    group = { 0.2, 0.8, 1, 0.9 },
+    screen = { 0.85, 0.85, 0.85, 0.8 },
+}
 local SNAP_GUIDE_THICKNESS = 2
 local dragSnapGuideOverlay = nil
 local dragSnapGuideVertical = nil
@@ -116,8 +122,10 @@ function CooldownCompanion:ApplyMoverChromeFadeState()
     end
 
     for _, frame in pairs(CooldownCompanion.containerFrames or {}) do
-        local wrapper = frame.dragHandle
-        self:ApplyMoverChromeFadeToFrames(wrapper and wrapper.header, frame.coordLabel, frame.nudger)
+        -- Fade the whole wrapper, outline included: while dragging or nudging,
+        -- only the real panels should remain as alignment references. The
+        -- active nudger survives via SetIgnoreParentAlpha below.
+        self:ApplyMoverChromeFadeToFrames(frame.dragHandle, frame.coordLabel, frame.nudger)
     end
 
     if CooldownCompanion.GetIndependentCastBarMoverChrome then
@@ -708,12 +716,12 @@ local function EnsureDragSnapGuides()
     overlay:EnableMouse(false)
 
     local vertical = overlay:CreateTexture(nil, "OVERLAY")
-    vertical:SetColorTexture(SNAP_GUIDE_COLOR[1], SNAP_GUIDE_COLOR[2], SNAP_GUIDE_COLOR[3], SNAP_GUIDE_COLOR[4])
+    vertical:SetColorTexture(SNAP_GUIDE_COLORS.panel[1], SNAP_GUIDE_COLORS.panel[2], SNAP_GUIDE_COLORS.panel[3], SNAP_GUIDE_COLORS.panel[4])
     vertical:SetWidth(SNAP_GUIDE_THICKNESS)
     vertical:Hide()
 
     local horizontal = overlay:CreateTexture(nil, "OVERLAY")
-    horizontal:SetColorTexture(SNAP_GUIDE_COLOR[1], SNAP_GUIDE_COLOR[2], SNAP_GUIDE_COLOR[3], SNAP_GUIDE_COLOR[4])
+    horizontal:SetColorTexture(SNAP_GUIDE_COLORS.panel[1], SNAP_GUIDE_COLORS.panel[2], SNAP_GUIDE_COLORS.panel[3], SNAP_GUIDE_COLORS.panel[4])
     horizontal:SetHeight(SNAP_GUIDE_THICKNESS)
     horizontal:Hide()
 
@@ -722,8 +730,15 @@ local function EnsureDragSnapGuides()
     dragSnapGuideHorizontal = horizontal
 end
 
-local function AddDragSnapTarget(targets, value, kind)
-    targets[#targets + 1] = { value = value, kind = kind }
+local function AddDragSnapTarget(targets, value, kind, isCenter, scope, orthoMin, orthoMax)
+    targets[#targets + 1] = {
+        value = value,
+        kind = kind,
+        isCenter = isCenter or nil,
+        scope = scope,
+        orthoMin = orthoMin,
+        orthoMax = orthoMax,
+    }
 end
 
 local function AddDragSnapRectTargets(session, frame, prefix)
@@ -732,12 +747,12 @@ local function AddDragSnapRectTargets(session, frame, prefix)
         return false
     end
 
-    AddDragSnapTarget(session.targetsX, left, prefix .. "Left")
-    AddDragSnapTarget(session.targetsX, (left + right) / 2, prefix .. "CenterX")
-    AddDragSnapTarget(session.targetsX, right, prefix .. "Right")
-    AddDragSnapTarget(session.targetsY, bottom, prefix .. "Bottom")
-    AddDragSnapTarget(session.targetsY, (bottom + top) / 2, prefix .. "CenterY")
-    AddDragSnapTarget(session.targetsY, top, prefix .. "Top")
+    AddDragSnapTarget(session.targetsX, left, prefix .. "Left", nil, nil, bottom, top)
+    AddDragSnapTarget(session.targetsX, (left + right) / 2, prefix .. "CenterX", true, "panel", bottom, top)
+    AddDragSnapTarget(session.targetsX, right, prefix .. "Right", nil, nil, bottom, top)
+    AddDragSnapTarget(session.targetsY, bottom, prefix .. "Bottom", nil, nil, left, right)
+    AddDragSnapTarget(session.targetsY, (bottom + top) / 2, prefix .. "CenterY", true, "panel", left, right)
+    AddDragSnapTarget(session.targetsY, top, prefix .. "Top", nil, nil, left, right)
     return true
 end
 
@@ -783,35 +798,62 @@ local function SortDragSnapTargets(left, right)
     return left.value < right.value
 end
 
-local function FindNearestDragSnap(targets, firstValue, centerValue, lastValue)
-    local bestDistance, bestDelta, bestTargetValue
+-- Centers snap only to center targets and edges only to edge targets: the
+-- cross-pairings (an edge passing a center or vice versa) produce guides no
+-- one reads as alignment (owner ruling 2026-08-24). Center scopes are strict:
+-- a dragged group's midpoint matches only other groups' midpoints (and screen
+-- centerlines), a dragged panel's midpoint only other panels' (and screen).
+local function FindNearestDragSnap(targets, firstValue, centerValue, lastValue, dragClass, previousTarget, orthoMin, orthoMax)
+    -- 2px hysteresis: the target currently shown keeps its snap until a rival
+    -- is decisively closer, so the guide does not hop position and color at
+    -- every crossover between near-equal candidates.
+    local bestScore, bestDelta, bestTargetValue, bestTarget
     for index = 1, #targets do
-        local targetValue = targets[index].value
-        local delta = targetValue - firstValue
-        local distance = math_abs(delta)
-        if distance <= SNAP_THRESHOLD and (bestDistance == nil or distance < bestDistance) then
-            bestDistance = distance
-            bestDelta = delta
-            bestTargetValue = targetValue
-        end
+        local target = targets[index]
+        local targetValue = target.value
+        local bonus = target == previousTarget and 2 or 0
+        if target.orthoMin ~= nil
+            and (target.orthoMin - 40 > orthoMax
+                or target.orthoMax + 40 < orthoMin) then
+            -- Ortho gate (40px): a target may snap only if its span on the
+            -- OTHER axis overlaps the dragged rect's span, give or take —
+            -- you snap to what you are beside, not to everything sharing a
+            -- coordinate across the screen. Screen lines are exempt (no
+            -- orthoMin). Not a file-level constant: the main chunk rides the
+            -- 200-local ceiling.
+        elseif target.isCenter then
+            local scope = target.scope
+            if scope == "screen" or scope == dragClass then
+                local delta = targetValue - centerValue
+                local distance = math_abs(delta)
+                if distance <= SNAP_THRESHOLD and (bestScore == nil or distance - bonus < bestScore) then
+                    bestScore = distance - bonus
+                    bestDelta = delta
+                    bestTargetValue = targetValue
+                    bestTarget = target
+                end
+            end
+        else
+            local delta = targetValue - firstValue
+            local distance = math_abs(delta)
+            if distance <= SNAP_THRESHOLD and (bestScore == nil or distance - bonus < bestScore) then
+                bestScore = distance - bonus
+                bestDelta = delta
+                bestTargetValue = targetValue
+                bestTarget = target
+            end
 
-        delta = targetValue - centerValue
-        distance = math_abs(delta)
-        if distance <= SNAP_THRESHOLD and (bestDistance == nil or distance < bestDistance) then
-            bestDistance = distance
-            bestDelta = delta
-            bestTargetValue = targetValue
-        end
-
-        delta = targetValue - lastValue
-        distance = math_abs(delta)
-        if distance <= SNAP_THRESHOLD and (bestDistance == nil or distance < bestDistance) then
-            bestDistance = distance
-            bestDelta = delta
-            bestTargetValue = targetValue
+            delta = targetValue - lastValue
+            distance = math_abs(delta)
+            if distance <= SNAP_THRESHOLD and (bestScore == nil or distance - bonus < bestScore) then
+                bestScore = distance - bonus
+                bestDelta = delta
+                bestTargetValue = targetValue
+                bestTarget = target
+            end
         end
     end
-    return bestDelta, bestTargetValue
+    return bestDelta, bestTargetValue, bestTarget
 end
 
 function CooldownCompanion:BeginDragSnapSession(frame, excludeFn)
@@ -829,15 +871,68 @@ function CooldownCompanion:BeginDragSnapSession(frame, excludeFn)
         targetsX = {},
         targetsY = {},
         dragFrame = frame._dragSnapRectFrame or frame,
+        dragClass = frame.containerId and "group" or "panel",
         screenLeft = screenLeft,
         screenBottom = screenBottom,
     }
-    AddDragSnapTarget(session.targetsX, screenLeft, "screenLeft")
-    AddDragSnapTarget(session.targetsX, (screenLeft + screenRight) / 2, "screenCenterX")
-    AddDragSnapTarget(session.targetsX, screenRight, "screenRight")
-    AddDragSnapTarget(session.targetsY, screenBottom, "screenBottom")
-    AddDragSnapTarget(session.targetsY, (screenBottom + screenTop) / 2, "screenCenterY")
-    AddDragSnapTarget(session.targetsY, screenTop, "screenTop")
+    AddDragSnapTarget(session.targetsX, screenLeft, "screenLeft", nil, "screen")
+    AddDragSnapTarget(session.targetsX, (screenLeft + screenRight) / 2, "screenCenterX", true, "screen")
+    AddDragSnapTarget(session.targetsX, screenRight, "screenRight", nil, "screen")
+    AddDragSnapTarget(session.targetsY, screenBottom, "screenBottom", nil, "screen")
+    AddDragSnapTarget(session.targetsY, (screenBottom + screenTop) / 2, "screenCenterY", true, "screen")
+    AddDragSnapTarget(session.targetsY, screenTop, "screenTop", nil, "screen")
+
+    -- Group-on-group centering: each other group's panel-union midpoint is a
+    -- center target (scope "group"). Union edges are omitted on purpose: they
+    -- coincide with outermost panel edges, which are already panel targets.
+    -- The union is computed from the member PANELS directly: chrome may be
+    -- hidden (drag-solo) while the displays stay visible and snappable.
+    if session.dragClass == "group" then
+        local unions = {}
+        local function AccumulateGroupUnion(cid, rectFrame)
+            local l, r, b, t = GetFrameRectInUIParentSpace(rectFrame)
+            if not l then
+                return
+            end
+            local u = unions[cid]
+            if not u then
+                unions[cid] = { l = l, r = r, b = b, t = t }
+            else
+                if l < u.l then u.l = l end
+                if r > u.r then u.r = r end
+                if b < u.b then u.b = b end
+                if t > u.t then u.t = t end
+            end
+        end
+        for groupId, candidateFrame in pairs(self.groupFrames or {}) do
+            local group = self.db and self.db.profile and self.db.profile.groups
+                and self.db.profile.groups[groupId]
+                or nil
+            local cid = group and group.parentContainerId
+            if cid and cid ~= frame.containerId then
+                -- Texture panels live on their aura texture host, not the
+                -- group frame; both contribute so texture-only groups get a
+                -- center and mixed groups get the true midpoint.
+                if not self:IsStandaloneTexturePanelGroup(group)
+                    and GroupFrameRendersVisibleSnapTarget(candidateFrame, groupId) then
+                    AccumulateGroupUnion(cid, candidateFrame)
+                end
+                local textureHost = self.GetAuraTextureHostForGroupFrame
+                    and self:GetAuraTextureHostForGroupFrame(candidateFrame)
+                    or nil
+                if textureHost and textureHost:IsVisible() then
+                    AccumulateGroupUnion(cid, textureHost)
+                end
+            end
+        end
+        -- No ortho gate on group centers: centering a group on another is a
+        -- deliberate ACROSS-a-gap alignment (stacking at a distance), exactly
+        -- what the gate would veto. One target per group keeps them quiet.
+        for _, u in pairs(unions) do
+            AddDragSnapTarget(session.targetsX, (u.l + u.r) / 2, "groupCenterX", true, "group")
+            AddDragSnapTarget(session.targetsY, (u.b + u.t) / 2, "groupCenterY", true, "group")
+        end
+    end
 
     for groupId, candidateFrame in pairs(self.groupFrames or {}) do
         local group = self.db and self.db.profile and self.db.profile.groups
@@ -891,6 +986,10 @@ function CooldownCompanion:UpdateDragSnapSession(frame)
     if IsShiftKeyDown() then
         session.snapDX = nil
         session.snapDY = nil
+        -- Also forget the hysteresis targets: a bypassed snap must not keep
+        -- its "currently shown" scoring bonus into the next live update.
+        session.lastSnapTargetX = nil
+        session.lastSnapTargetY = nil
         HideDragSnapGuides()
         return
     end
@@ -899,12 +998,16 @@ function CooldownCompanion:UpdateDragSnapSession(frame)
     if not left then
         session.snapDX = nil
         session.snapDY = nil
+        session.lastSnapTargetX = nil
+        session.lastSnapTargetY = nil
         HideDragSnapGuides()
         return
     end
 
-    local snapDX, snapX = FindNearestDragSnap(session.targetsX, left, (left + right) / 2, right)
-    local snapDY, snapY = FindNearestDragSnap(session.targetsY, bottom, (bottom + top) / 2, top)
+    local snapDX, snapX, snapTargetX = FindNearestDragSnap(session.targetsX, left, (left + right) / 2, right, session.dragClass, session.lastSnapTargetX, bottom, top)
+    local snapDY, snapY, snapTargetY = FindNearestDragSnap(session.targetsY, bottom, (bottom + top) / 2, top, session.dragClass, session.lastSnapTargetY, left, right)
+    session.lastSnapTargetX = snapTargetX
+    session.lastSnapTargetY = snapTargetY
     session.snapDX = snapDX
     session.snapDY = snapDY
 
@@ -912,6 +1015,8 @@ function CooldownCompanion:UpdateDragSnapSession(frame)
         EnsureDragSnapGuides()
     end
     if snapDX ~= nil then
+        local color = SNAP_GUIDE_COLORS[snapTargetX and snapTargetX.scope or "panel"] or SNAP_GUIDE_COLORS.panel
+        dragSnapGuideVertical:SetColorTexture(color[1], color[2], color[3], color[4])
         dragSnapGuideVertical:ClearAllPoints()
         dragSnapGuideVertical:SetPoint("TOP", dragSnapGuideOverlay, "TOPLEFT", snapX - session.screenLeft, 0)
         dragSnapGuideVertical:SetPoint("BOTTOM", dragSnapGuideOverlay, "BOTTOMLEFT", snapX - session.screenLeft, 0)
@@ -920,6 +1025,8 @@ function CooldownCompanion:UpdateDragSnapSession(frame)
         dragSnapGuideVertical:Hide()
     end
     if snapDY ~= nil then
+        local color = SNAP_GUIDE_COLORS[snapTargetY and snapTargetY.scope or "panel"] or SNAP_GUIDE_COLORS.panel
+        dragSnapGuideHorizontal:SetColorTexture(color[1], color[2], color[3], color[4])
         dragSnapGuideHorizontal:ClearAllPoints()
         dragSnapGuideHorizontal:SetPoint("LEFT", dragSnapGuideOverlay, "BOTTOMLEFT", 0, snapY - session.screenBottom)
         dragSnapGuideHorizontal:SetPoint("RIGHT", dragSnapGuideOverlay, "BOTTOMRIGHT", 0, snapY - session.screenBottom)
@@ -5794,6 +5901,82 @@ end
 -- show only while the container is hovered or is the focused (last-clicked)
 -- container. One focused container at a time, session-only state. A container
 -- unlocked on its own outside arrange mode keeps full chrome.
+-- Arrange-pill chrome filter: session-only per-container flags that tuck a
+-- container's whole mover away mid-arrange (wrapper, header, overlays, hover
+-- reveal) while its real displays stay on screen. Never touches
+-- container.locked; wiped on entering and leaving arrange mode.
+function CooldownCompanion:IsContainerArrangeChromeHidden(containerId)
+    if self._arrangeModeActive ~= true then
+        return false
+    end
+    local hiddenSet = self._arrangeChromeHidden
+    if hiddenSet ~= nil and hiddenSet[containerId] == true then
+        return true
+    end
+    -- Solo layer: while one group is soloed from the pill list, every other
+    -- group's chrome hides without touching the manual checkbox flags.
+    local solo = self._arrangeSoloContainerId
+    return solo ~= nil and solo ~= containerId
+end
+
+-- Solo one container's chrome from the pill list (nil releases the solo and
+-- restores whatever the manual flags say). The solo target becomes the
+-- focused container so its controls pin open.
+function CooldownCompanion:SetArrangeSoloContainer(containerId)
+    if not self._arrangeModeActive then
+        return
+    end
+    if self._arrangeSoloContainerId == containerId then
+        return
+    end
+    self._arrangeSoloContainerId = containerId
+    if containerId then
+        self._arrangeFocusContainerId = containerId
+    end
+
+    -- Effective hidden state changed for every arranged container: re-present
+    -- them all, mirroring the lock presentation without profile writes.
+    for cid, container in pairs(self.db.profile.groupContainers or {}) do
+        if container.locked == false then
+            self:UpdateContainerDragHandle(cid, self:IsContainerArrangeChromeHidden(cid))
+            self:RefreshContainerPanels(cid)
+        end
+    end
+    if self.RefreshArrangePillList then
+        self:RefreshArrangePillList()
+    end
+end
+
+function CooldownCompanion:SetContainerArrangeChromeHidden(containerId, hidden)
+    if not self._arrangeModeActive then
+        return
+    end
+    local container = self.db.profile.groupContainers[containerId]
+    if not container then
+        return
+    end
+
+    hidden = hidden and true or nil
+    self._arrangeChromeHidden = self._arrangeChromeHidden or {}
+    if self._arrangeChromeHidden[containerId] == hidden then
+        return
+    end
+    -- Manually hiding the soloed group would leave every group hidden with no
+    -- visible way back; release the solo (restoring the others) first.
+    if hidden and self._arrangeSoloContainerId == containerId then
+        self:SetArrangeSoloContainer(nil)
+    end
+    self._arrangeChromeHidden[containerId] = hidden
+    if hidden and self._arrangeFocusContainerId == containerId then
+        self._arrangeFocusContainerId = nil
+    end
+
+    -- Mirror the lock presentation without writing the profile: hiding takes
+    -- the suppressed-chrome path, showing rebuilds the unlock preview.
+    self:UpdateContainerDragHandle(containerId, hidden ~= nil or container.locked ~= false)
+    self:RefreshContainerPanels(containerId)
+end
+
 function CooldownCompanion:IsContainerArrangeChromeRevealed(containerId, frame)
     if not self._arrangeModeActive then
         return true
@@ -5818,6 +6001,9 @@ function CooldownCompanion:FocusArrangeContainer(containerId)
     if containerId then
         self:RefreshContainerWrapper(containerId)
     end
+    if self.RefreshArrangePillList then
+        self:RefreshArrangePillList()
+    end
 end
 
 function CooldownCompanion:IsContainerChromePointerOver(frame)
@@ -5840,7 +6026,7 @@ function CooldownCompanion:IsContainerChromePointerOver(frame)
 end
 
 function CooldownCompanion:BeginContainerChromeHoverWatch(containerId)
-    if not self._arrangeModeActive then
+    if not self._arrangeModeActive or self:IsContainerArrangeChromeHidden(containerId) then
         return
     end
     local frame = self.containerFrames and self.containerFrames[containerId]
@@ -6100,6 +6286,19 @@ function CooldownCompanion:UpdateContainerWrapperUnion(containerId, previewRects
     end
     wrapper:SetShown(true)
 
+    -- Keep the snap proxy on the panels' bounding box (wrapper minus padding).
+    -- The empty-container fallback box is too small to inset, so match it.
+    local snapRect = frame._dragSnapRectFrame
+    if snapRect then
+        snapRect:ClearAllPoints()
+        if visibleRectCount == 0 then
+            snapRect:SetAllPoints(wrapper)
+        else
+            snapRect:SetPoint("TOPLEFT", wrapper, "TOPLEFT", CONTAINER_WRAPPER_PADDING, -CONTAINER_WRAPPER_PADDING)
+            snapRect:SetPoint("BOTTOMRIGHT", wrapper, "BOTTOMRIGHT", -CONTAINER_WRAPPER_PADDING, CONTAINER_WRAPPER_PADDING)
+        end
+    end
+
     return visibleRectCount, minLeft, minBottom, CONTAINER_WRAPPER_PADDING
 end
 
@@ -6113,12 +6312,16 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
     frame._isRefreshingContainerWrapper = true
     local wrapper = frame.dragHandle
     local header = wrapper.header
-    self:ApplyMoverChromeFadeToFrames(header, frame.coordLabel, frame.nudger)
+    -- Same fade target as ApplyMoverChromeFadeState: the WRAPPER. Fading the
+    -- header here would zero its own alpha, which the end-of-fade restore
+    -- (wrapper-level) never puts back.
+    self:ApplyMoverChromeFadeToFrames(wrapper, frame.coordLabel, frame.nudger)
     HideContainerPanelLabels(frame)
     UpdateContainerWrapperLevels(frame)
 
     if self._combatForcedLock
         or container.locked ~= false
+        or self:IsContainerArrangeChromeHidden(containerId)
         or not self:IsContainerVisibleToCurrentChar(containerId) then
         if self.UpdateContainerDragHandle then
             self:UpdateContainerDragHandle(containerId, true)
@@ -6490,7 +6693,14 @@ function CooldownCompanion:CreateContainerFrame(containerId)
     frame.dragHandle:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     frame.dragHandle:SetBackdropColor(0.15, 0.35, 0.55, 0.08)
     EnsureContainerWrapperBorder(frame.dragHandle, 0.2, 0.8, 1, CONTAINER_MOVER_COLORS.wrapperBorderAlpha)
-    frame._dragSnapRectFrame = frame.dragHandle
+    -- Snap guides align to the panels' bounding box, not the outline: the
+    -- wrapper rect is the panel union plus padding, and entries are what
+    -- players actually line up.
+    local snapRect = CreateFrame("Frame", nil, frame.dragHandle)
+    snapRect:SetPoint("TOPLEFT", frame.dragHandle, "TOPLEFT", CONTAINER_WRAPPER_PADDING, -CONTAINER_WRAPPER_PADDING)
+    snapRect:SetPoint("BOTTOMRIGHT", frame.dragHandle, "BOTTOMRIGHT", -CONTAINER_WRAPPER_PADDING, CONTAINER_WRAPPER_PADDING)
+    snapRect:EnableMouse(false)
+    frame._dragSnapRectFrame = snapRect
 
     frame.dragHandle.header = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
     frame.dragHandle.header:SetHeight(CONTAINER_WRAPPER_HEADER_HEIGHT)
@@ -6598,7 +6808,7 @@ function CooldownCompanion:CreateContainerFrame(containerId)
         if c and not CooldownCompanion._combatForcedLock and CooldownCompanion:IsContainerUnlockPreviewActive(containerId) then
             frame.dragHandle._suppressClick = true
             CooldownCompanion:SelectContainerWrapper(containerId)
-            CooldownCompanion:FocusArrangeContainer(containerId)
+            CooldownCompanion:SetArrangeSoloContainer(containerId)
             frame._dragCancelPending = nil
             frame._dragInProgress = true
             frame:StartMoving()
@@ -6632,6 +6842,11 @@ function CooldownCompanion:CreateContainerFrame(containerId)
             return
         end
         CooldownCompanion:SelectContainerWrapper(containerId)
+        if CooldownCompanion._arrangeSoloContainerId == containerId then
+            CooldownCompanion:SetArrangeSoloContainer(nil)
+        else
+            CooldownCompanion:SetArrangeSoloContainer(containerId)
+        end
         CooldownCompanion:FocusArrangeContainer(containerId)
     end)
 
@@ -6646,7 +6861,7 @@ function CooldownCompanion:CreateContainerFrame(containerId)
         if c and not CooldownCompanion._combatForcedLock and CooldownCompanion:IsContainerUnlockPreviewActive(containerId) then
             frame.dragHandle.header._suppressClick = true
             CooldownCompanion:SelectContainerWrapper(containerId)
-            CooldownCompanion:FocusArrangeContainer(containerId)
+            CooldownCompanion:SetArrangeSoloContainer(containerId)
             frame._dragCancelPending = nil
             frame._dragInProgress = true
             frame:StartMoving()
@@ -6679,6 +6894,11 @@ function CooldownCompanion:CreateContainerFrame(containerId)
                 return
             end
             CooldownCompanion:SelectContainerWrapper(containerId)
+            if CooldownCompanion._arrangeSoloContainerId == containerId then
+                CooldownCompanion:SetArrangeSoloContainer(nil)
+            else
+                CooldownCompanion:SetArrangeSoloContainer(containerId)
+            end
             CooldownCompanion:FocusArrangeContainer(containerId)
         end
     end)
