@@ -1246,7 +1246,7 @@ local function CreateConfigPanel()
     local savedFrameRight, savedFrameTop
     local savedOffsetRight, savedOffsetTop
 
-    -- Title bar buttons: [Arrange] [Import] [Gear] [Collapse] [X] at top-right
+    -- Title bar buttons: [Export] [Import] [Gear] [Collapse] [X] at top-right
 
     -- X (close) button — rightmost
     local closeBtn = CreateFrame("Button", nil, content)
@@ -1802,58 +1802,6 @@ local function CreateConfigPanel()
         GameTooltip:Show()
     end)
     groupInfoBtn:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-
-    -- Arrange toggle in the Navigator header corner
-    local arrangeBtn = CreateFrame("Button", nil, col1.frame)
-    arrangeBtn:SetSize(16, 16)
-    -- Share the info button's baseline: it is centred on the title text, and
-    -- both buttons are the same size, so TOP-to-TOP puts them on one line.
-    arrangeBtn:SetPoint("TOP", groupInfoBtn, "TOP", 0, 0)
-    arrangeBtn:SetPoint("RIGHT", col1.frame, "RIGHT", -10, 0)
-    local arrangeIcon = arrangeBtn:CreateTexture(nil, "OVERLAY")
-    arrangeIcon:SetSize(16, 16)
-    arrangeIcon:SetPoint("CENTER")
-    arrangeIcon:SetAtlas("questlog-questtypeicon-lock", false)
-    local function UpdateArrangeBadgeTint()
-        -- The modes own the Navigator; arranging is parked until they end.
-        arrangeBtn:SetShown(not CS.exportMode and not CS.importMode)
-        if CooldownCompanion.IsArrangeModeActive and CooldownCompanion:IsArrangeModeActive() then
-            arrangeIcon:SetVertexColor(1, 0.82, 0, 0.9)
-        else
-            arrangeIcon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-        end
-    end
-    ST.UpdateArrangeBadge = UpdateArrangeBadgeTint
-    UpdateArrangeBadgeTint()
-    arrangeBtn:SetScript("OnClick", function()
-        if CS.exportMode or CS.importMode then return end
-        if CooldownCompanion.IsArrangeModeActive and CooldownCompanion:IsArrangeModeActive() then
-            CooldownCompanion:ExitArrangeMode()
-        else
-            CooldownCompanion:EnterArrangeMode()
-        end
-        UpdateArrangeBadgeTint()
-    end)
-    arrangeBtn:SetScript("OnEnter", function(self)
-        arrangeIcon:SetVertexColor(1, 1, 1, 1)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if CooldownCompanion.IsArrangeModeActive and CooldownCompanion:IsArrangeModeActive() then
-            GameTooltip:AddLine("Finish arranging")
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Locks everything and saves your changes.", 1, 1, 1, true)
-        else
-            GameTooltip:AddLine("Arrange panels")
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Unlocks everything for moving.", 1, 1, 1, true)
-        end
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Typing /cdc lock does the same thing.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    arrangeBtn:SetScript("OnLeave", function()
-        UpdateArrangeBadgeTint()
         GameTooltip:Hide()
     end)
 

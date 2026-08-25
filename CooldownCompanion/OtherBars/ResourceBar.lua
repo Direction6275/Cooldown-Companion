@@ -604,36 +604,6 @@ local function LockIndependentStackFromMover(frame)
     CooldownCompanion:CheckArrangeModeAutoExit()
 end
 
-local function CreateResourceBarLockButton(parent, onLock)
-    local button = CreateFrame("Button", nil, parent)
-    button:SetSize(INDEPENDENT_NUDGE_BTN_SIZE, INDEPENDENT_NUDGE_BTN_SIZE)
-    button:RegisterForClicks("LeftButtonUp")
-
-    local icon = button:CreateTexture(nil, "OVERLAY")
-    icon:SetSize(INDEPENDENT_NUDGE_BTN_SIZE - 2, INDEPENDENT_NUDGE_BTN_SIZE - 2)
-    icon:SetPoint("CENTER")
-    icon:SetAtlas("questlog-questtypeicon-lock", false)
-    icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-    button.icon = icon
-
-    button:SetScript("OnEnter", function(self)
-        self.icon:SetVertexColor(1, 1, 1, 1)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine("Lock")
-        GameTooltip:Show()
-    end)
-    button:SetScript("OnLeave", function(self)
-        self.icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-        GameTooltip:Hide()
-    end)
-    button:SetScript("OnClick", function(self)
-        self.icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-        onLock()
-    end)
-
-    return button
-end
-
 local function CreateIndependentWrapperFrame()
     if independentWrapperFrame then return end
 
@@ -659,13 +629,15 @@ local function CreateIndependentWrapperFrame()
     dragHandle.text:SetText("Resource Bars")
     dragHandle.text:SetTextColor(1, 1, 1, 1)
 
-    dragHandle.lockButton = CreateResourceBarLockButton(dragHandle, function()
+    dragHandle.lockButton = ST.CreateMoverLockBadge(dragHandle, 12, function()
         LockIndependentStackFromMover(frame)
     end)
     dragHandle.lockButton:SetPoint("RIGHT", dragHandle, "RIGHT", -2, 0)
+    -- Symmetric insets matching the lock button keep the name centered on the bar
+    local headerTextInset = dragHandle.lockButton:GetWidth() + 4
     dragHandle.text:ClearAllPoints()
-    dragHandle.text:SetPoint("LEFT", dragHandle, "LEFT", 16, 0)
-    dragHandle.text:SetPoint("RIGHT", dragHandle, "RIGHT", -16, 0)
+    dragHandle.text:SetPoint("LEFT", dragHandle, "LEFT", headerTextInset, 0)
+    dragHandle.text:SetPoint("RIGHT", dragHandle, "RIGHT", -headerTextInset, 0)
     dragHandle.text:SetJustifyH("CENTER")
 
     -- Nudger (4-direction pixel nudge, same pattern as custom aura bars)

@@ -1793,36 +1793,6 @@ local GetTextEntryMetrics = ST._GetTextEntryMetrics
 
 local PropagateFrameStrata
 
-local function CreateMoverLockButton(parent, buttonSize, idleColor, onLock)
-    local button = CreateFrame("Button", nil, parent)
-    button:SetSize(buttonSize, buttonSize)
-    button:RegisterForClicks("LeftButtonUp")
-
-    local icon = button:CreateTexture(nil, "OVERLAY")
-    icon:SetSize(buttonSize - 2, buttonSize - 2)
-    icon:SetPoint("CENTER")
-    icon:SetAtlas("questlog-questtypeicon-lock", false)
-    icon:SetVertexColor(idleColor, idleColor, idleColor, idleColor)
-    button.icon = icon
-
-    button:SetScript("OnEnter", function(self)
-        self.icon:SetVertexColor(1, 1, 1, 1)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine("Lock")
-        GameTooltip:Show()
-    end)
-    button:SetScript("OnLeave", function(self)
-        self.icon:SetVertexColor(idleColor, idleColor, idleColor, idleColor)
-        GameTooltip:Hide()
-    end)
-    button:SetScript("OnClick", function(self)
-        self.icon:SetVertexColor(idleColor, idleColor, idleColor, idleColor)
-        onLock()
-    end)
-
-    return button
-end
-
 local function PropagateChildFrameStrata(strata, ...)
     for i = 1, select("#", ...) do
         PropagateFrameStrata(select(i, ...), strata)
@@ -3395,7 +3365,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
 
     -- Pixel nudger (parented to dragHandle, inherits show/hide)
     frame.nudger = CreateNudger(frame, groupId)
-    frame.dragHandle.lockButton = CreateMoverLockButton(frame.dragHandle, NUDGE_BTN_SIZE, 0.8, function()
+    frame.dragHandle.lockButton = ST.CreateMoverLockBadge(frame.dragHandle, 12, function()
         LockPanelFromMover(groupId)
     end)
     frame.dragHelpButton = CreatePanelDragHelpButton(frame, groupId)
@@ -3405,7 +3375,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         frame.dragHandle.lockButton:SetPoint("RIGHT", frame.dragHandle, "RIGHT", -2, 0)
     end
     -- Symmetric insets matching the badge cluster keep the name centered on the bar
-    local headerTextInset = frame.dragHelpButton and 34 or 16
+    local headerTextInset = frame.dragHandle.lockButton:GetWidth() + (frame.dragHelpButton and 22 or 4)
     frame.dragHandle.text:ClearAllPoints()
     frame.dragHandle.text:SetPoint("LEFT", frame.dragHandle, "LEFT", headerTextInset, 0)
     frame.dragHandle.text:SetPoint("RIGHT", frame.dragHandle, "RIGHT", -headerTextInset, 0)
@@ -6374,7 +6344,9 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         local titleText = header.text or wrapper.text
         if titleText then
             titleText:SetText(container.name or "Group")
-            headerWidth = math_max(96, math_floor((titleText:GetStringWidth() or 0) + 48.5))
+            -- Left inset + name + gap + lock badge + right inset
+            local lockWidth = frame.dragHandle.lockButton and frame.dragHandle.lockButton:GetWidth() or 16
+            headerWidth = math_max(96, math_floor((titleText:GetStringWidth() or 0) + 10 + 8 + lockWidth + 4 + 0.5))
         end
     end
 
@@ -6710,7 +6682,8 @@ function CooldownCompanion:CreateContainerFrame(containerId)
     CreatePixelBorders(frame.dragHandle.header)
 
     frame.dragHandle.text = frame.dragHandle.header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.dragHandle.text:SetPoint("CENTER")
+    -- Title-bar layout: name left, lock badge right
+    frame.dragHandle.text:SetPoint("LEFT", frame.dragHandle.header, "LEFT", 10, 0)
     do
         local fontPath, _, fontFlags = frame.dragHandle.text:GetFont()
         if fontPath then
@@ -6721,7 +6694,7 @@ function CooldownCompanion:CreateContainerFrame(containerId)
     frame.dragHandle.text:SetTextColor(1, 1, 1, 1)
     frame.dragHandle.header.text = frame.dragHandle.text
 
-    frame.dragHandle.lockButton = CreateMoverLockButton(frame.dragHandle.header, 16, 0.9, function()
+    frame.dragHandle.lockButton = ST.CreateMoverLockBadge(frame.dragHandle.header, 18, function()
         LockContainerFromMover(containerId)
     end)
     frame.dragHandle.lockButton:SetPoint("RIGHT", frame.dragHandle.header, "RIGHT", -4, 0)

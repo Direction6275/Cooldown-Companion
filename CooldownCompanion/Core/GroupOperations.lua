@@ -1058,11 +1058,11 @@ local function GetArrangeModePill(addon)
     -- when the group list expands.
     local title = pill:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("LEFT", pill, "TOPLEFT", 10, -15)
-    title:SetText("Arranging panels")
+    title:SetText("Panels unlocked")
     title:SetTextColor(1, 0.82, 0, 1)
 
     local helpButton = ST.CreateRuntimeInfoButton(pill, title, "LEFT", "RIGHT", 4, 0, function(tooltip)
-        tooltip:AddLine("Arranging panels")
+        tooltip:AddLine("Panels unlocked")
         tooltip:AddLine(" ")
         tooltip:AddLine("Esc or Cancel reverts unsaved changes.", 1, 1, 1, false)
         tooltip:AddLine(" ")
@@ -4012,7 +4012,7 @@ end
 
 function CooldownCompanion:EnterArrangeMode()
     if InCombatLockdown() or self._combatForcedLock then
-        self:Print("Cannot arrange during combat.")
+        self:Print("Cannot unlock during combat.")
         return
     end
     if self._arrangeModeActive then
@@ -4076,7 +4076,7 @@ function CooldownCompanion:CancelArrangeMode()
         return
     end
     if InCombatLockdown() or self._combatForcedLock then
-        self:Print("Cannot cancel arranging during combat.")
+        self:Print("Cannot cancel unlocking during combat.")
         return
     end
 
@@ -4086,7 +4086,7 @@ function CooldownCompanion:CancelArrangeMode()
     if snapshot then
         RestoreArrangeSnapshot(self, snapshot)
     end
-    self:Print("Arranging cancelled. Unsaved changes reverted.")
+    self:Print("Unlock cancelled. Unsaved changes reverted.")
 end
 
 -- TALENT NODE CACHE (for per-button talent conditions)

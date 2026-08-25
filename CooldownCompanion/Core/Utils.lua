@@ -707,6 +707,54 @@ function ST.CreateRuntimeInfoButton(parentFrame, anchorFrame, anchorPoint, ancho
 end
 
 --------------------------------------------------------------------------------
+-- Mover Lock Button
+--------------------------------------------------------------------------------
+
+-- Small lock badge shared by every mover header (panel, container, cast bar,
+-- resource bars, texture panel). The character-customize dropdown lock is the
+-- client's only flat lock silhouette drawn for tiny sizes (Blizzard renders
+-- it at 8x12), so it stays crisp where shaded padlock art turns to mush.
+-- The hit box is a full square; the icon keeps the art's 30x43 aspect.
+function ST.CreateMoverLockBadge(parent, size, onLock)
+    local button = CreateFrame("Button", nil, parent)
+    button:SetSize(size, size)
+    button:RegisterForClicks("LeftButtonUp")
+
+    -- The atlas art is painted ~47% gray, so vertex color alone can never
+    -- reach white. A solid fill masked by the lock's silhouette renders the
+    -- shape at whatever color the states ask for.
+    -- Glyph rides a bit under the hit box so the badge reads light, not chunky
+    local iconHeight = math.floor(size * 0.8 + 0.5)
+    local icon = button:CreateTexture(nil, "OVERLAY")
+    icon:SetSize(math.floor(iconHeight * 30 / 43 + 0.5), iconHeight)
+    icon:SetPoint("CENTER")
+    icon:SetColorTexture(1, 1, 1, 1)
+    local mask = button:CreateMaskTexture()
+    mask:SetAllPoints(icon)
+    mask:SetAtlas("charactercreate-customize-dropdown-icon-lock")
+    icon:AddMaskTexture(mask)
+    button.icon = icon
+
+    button:SetScript("OnEnter", function(self)
+        self.icon:SetVertexColor(1, 0.82, 0, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Lock")
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function(self)
+        self.icon:SetVertexColor(1, 1, 1, 1)
+        GameTooltip:Hide()
+    end)
+    button:SetScript("OnClick", function(self)
+        self.icon:SetVertexColor(1, 1, 1, 1)
+        GameTooltip:Hide()
+        onLock()
+    end)
+
+    return button
+end
+
+--------------------------------------------------------------------------------
 -- Color Utilities
 --------------------------------------------------------------------------------
 

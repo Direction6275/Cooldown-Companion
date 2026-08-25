@@ -279,36 +279,6 @@ local function LockIndependentCastBarFromMover(frame)
     CooldownCompanion:CheckArrangeModeAutoExit()
 end
 
-local function CreateCastBarLockButton(parent, onLock)
-    local button = CreateFrame("Button", nil, parent)
-    button:SetSize(CAST_NUDGE_BTN_SIZE, CAST_NUDGE_BTN_SIZE)
-    button:RegisterForClicks("LeftButtonUp")
-
-    local icon = button:CreateTexture(nil, "OVERLAY")
-    icon:SetSize(CAST_NUDGE_BTN_SIZE - 2, CAST_NUDGE_BTN_SIZE - 2)
-    icon:SetPoint("CENTER")
-    icon:SetAtlas("questlog-questtypeicon-lock", false)
-    icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-    button.icon = icon
-
-    button:SetScript("OnEnter", function(self)
-        self.icon:SetVertexColor(1, 1, 1, 1)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine("Lock")
-        GameTooltip:Show()
-    end)
-    button:SetScript("OnLeave", function(self)
-        self.icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-        GameTooltip:Hide()
-    end)
-    button:SetScript("OnClick", function(self)
-        self.icon:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-        onLock()
-    end)
-
-    return button
-end
-
 local function CreateCastBarMoverFrame()
     if independentMoverFrame then return end
 
@@ -334,13 +304,15 @@ local function CreateCastBarMoverFrame()
     dragHandle.text:SetText("Cast Bar")
     dragHandle.text:SetTextColor(1, 1, 1, 1)
 
-    dragHandle.lockButton = CreateCastBarLockButton(dragHandle, function()
+    dragHandle.lockButton = ST.CreateMoverLockBadge(dragHandle, 12, function()
         LockIndependentCastBarFromMover(frame)
     end)
     dragHandle.lockButton:SetPoint("RIGHT", dragHandle, "RIGHT", -2, 0)
+    -- Symmetric insets matching the lock button keep the name centered on the bar
+    local headerTextInset = dragHandle.lockButton:GetWidth() + 4
     dragHandle.text:ClearAllPoints()
-    dragHandle.text:SetPoint("LEFT", dragHandle, "LEFT", 16, 0)
-    dragHandle.text:SetPoint("RIGHT", dragHandle, "RIGHT", -16, 0)
+    dragHandle.text:SetPoint("LEFT", dragHandle, "LEFT", headerTextInset, 0)
+    dragHandle.text:SetPoint("RIGHT", dragHandle, "RIGHT", -headerTextInset, 0)
     dragHandle.text:SetJustifyH("CENTER")
 
     -- Nudger (4-direction pixel nudge, matches icon panel pattern)
