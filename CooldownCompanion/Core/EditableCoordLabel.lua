@@ -228,7 +228,9 @@ end
 -- the cast bar subtree forbids position reads (see CastBar.lua header).
 ------------------------------------------------------------------------
 
-local MOVER_WIDTH_RESIZE_INTERVAL = 0.1
+-- 0 = re-apply every frame during a grip drag (owner ruling: smooth resize
+-- everywhere in arrange mode; movers can pass applyInterval to throttle).
+local MOVER_WIDTH_RESIZE_INTERVAL = 0
 
 local function GetMoverResizeCursorPosition()
     local cursorX, cursorY = GetCursorPosition()
@@ -265,7 +267,7 @@ end
 --   minWidth/maxWidth   width clamps (default 20/600, the config slider range)
 --   minHeight/maxHeight height clamps (default 4/40, the config slider range)
 --   applyInterval    seconds between live re-applies during a grip drag;
---                    0 applies every frame (default 0.1)
+--                    0 applies every frame (the default)
 function ST.AttachMoverWidthResize(frame, opts)
     local addon = ST.Addon
     local dragHandle = opts.dragHandle

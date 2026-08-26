@@ -1782,7 +1782,9 @@ end
 -- Nudger constants
 local NUDGE_BTN_SIZE = 12
 local PANEL_RESIZE_GRIP_SIZE = 12
-local PANEL_RESIZE_REFRESH_INTERVAL = 0.05
+-- 0 = restyle every frame during a grip drag (owner ruling: smooth resize
+-- everywhere in arrange mode; raise if a huge panel ever hitches).
+local PANEL_RESIZE_REFRESH_INTERVAL = 0
 
 local CreatePixelBorders = ST.CreatePixelBorders
 -- Text entries are auto-sized from a measured worst-case render of their

@@ -766,8 +766,6 @@ local function CreateIndependentWrapperFrame()
         dragHandle = dragHandle,
         coordLabel = coordLabel,
         gripAnchor = frame._dragSnapRectFrame,
-        -- Whole-stack relayout per apply: panel-parity 20/s, not per-frame.
-        applyInterval = 0.05,
         getWidth = function()
             local settings = GetResourceBarSettings()
             local placementSettings = settings and GetSpecLayoutOrder(settings)

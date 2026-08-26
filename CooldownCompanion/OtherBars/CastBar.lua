@@ -438,8 +438,6 @@ local function CreateCastBarMoverFrame()
     ST.AttachMoverWidthResize(frame, {
         dragHandle = dragHandle,
         coordLabel = coordLabel,
-        -- One cheap bar: re-apply every frame so the drag tracks smoothly.
-        applyInterval = 0,
         getWidth = function()
             local settings = GetCastBarSettings()
             return settings and settings.independentWidth or 200
