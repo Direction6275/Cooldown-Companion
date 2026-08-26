@@ -1124,6 +1124,30 @@ local function BuildResourceBarAnchoringPanel(container)
                 end,
             })
         end
+
+        if settings.enabled and classID == 11 then
+            local keepSpecResourcesRow = AddCheckboxRow(togglesLeft, {
+                label = "Keep Spec Resources in All Forms",
+                value = settings.keepSpecResourcesInAllForms == true,
+                onChange = function(val)
+                    settings.keepSpecResourcesInAllForms = val == true
+                    CooldownCompanion:ApplyResourceBars()
+                    CooldownCompanion:UpdateAnchorStacking()
+                    RefreshLayoutOrderPreview()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+            AnchorRowBadge(keepSpecResourcesRow, CreateInfoButton(
+                keepSpecResourcesRow.frame, keepSpecResourcesRow.frame,
+                "LEFT", "LEFT", 0, 0, {
+                    "Keep Spec Resources in All Forms",
+                    {"Balance keeps Astral Power, Feral keeps Combo Points and Energy, "
+                        .. "and Guardian keeps Rage in every form. Restoration is unchanged.", 1, 1, 1, true},
+                    " ",
+                    {"Resources used by your current form can still join the stack. "
+                        .. "This does not show every Druid resource at once.", 1, 1, 1, true},
+                }, keepSpecResourcesRow))
+        end
     end
 
     if not settings.enabled then return end

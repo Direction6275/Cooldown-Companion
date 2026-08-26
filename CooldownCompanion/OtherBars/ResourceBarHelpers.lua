@@ -31,6 +31,7 @@ local DEFAULT_CONTINUOUS_TICK_COLOR = RB.DEFAULT_CONTINUOUS_TICK_COLOR
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local CLASS_RESOURCES = RB.CLASS_RESOURCES
 local SPEC_RESOURCES = RB.SPEC_RESOURCES
+local DRUID_PERSISTENT_RESOURCES_BY_SPEC = RB.DRUID_PERSISTENT_RESOURCES_BY_SPEC
 local DRUID_FORM_RESOURCES = RB.DRUID_FORM_RESOURCES
 local DRUID_DEFAULT_RESOURCES = RB.DRUID_DEFAULT_RESOURCES
 local DRUID_BALANCE_SPEC_ID = 102
@@ -1878,13 +1879,33 @@ local function AddHealthResource(resources)
 end
 
 --- Determine which resources the current class/spec should display.
-local function DetermineActiveResources()
+local function DetermineActiveResources(settings)
     local classID = GetPlayerClassID()
     if not classID then return {} end
 
-    -- Druid: form-dependent
+    -- Druid: current-form resources, optionally unioned with persistent spec resources.
     if classID == 11 then
         local resources = GetDruidResources()
+        if settings and settings.keepSpecResourcesInAllForms == true then
+            local persistentResources = DRUID_PERSISTENT_RESOURCES_BY_SPEC[GetCurrentSpecID()]
+            local orderedResources = {}
+            local seen = {}
+
+            for _, pt in ipairs(persistentResources or {}) do
+                if not seen[pt] then
+                    seen[pt] = true
+                    orderedResources[#orderedResources + 1] = pt
+                end
+            end
+            for _, pt in ipairs(resources) do
+                if not seen[pt] then
+                    seen[pt] = true
+                    orderedResources[#orderedResources + 1] = pt
+                end
+            end
+
+            resources = orderedResources
+        end
         -- Always add Mana if not already present and not hidden
         local hasMana = false
         for _, pt in ipairs(resources) do

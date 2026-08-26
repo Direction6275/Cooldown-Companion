@@ -921,7 +921,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
     requireRuntimeEligibleSlots)
     includeResourceSlots = includeResourceSlots == true
     local activeResources = CollapseToPlacementPowerTypes(includeResourceSlots
-        and (requireRuntimeEligibleSlots and RB.DetermineActiveResources() or GetConfigActiveResources())
+        and (requireRuntimeEligibleSlots and RB.DetermineActiveResources(rbSettings) or GetConfigActiveResources())
         or {})
     local customBars = includeResourceSlots and CooldownCompanion:GetSpecCustomAuraBars() or {}
     local primarySlots = {}
@@ -4354,9 +4354,9 @@ end
 -- three-way choice CollectPreviewSlots makes, exported so the preview command
 -- center can offer a resource-aura toggle exactly when its destination lane is
 -- on screen. Re-deriving the list over there is what put the two out of step
--- in BOTH directions — the runtime list is form-dependent (a druid out of cat
--- form has no Combo Points bar) while the config list is spec-based, and each
--- is the right answer for a different anchor mode.
+-- in BOTH directions — the runtime list honors form eligibility and the
+-- Druid persistent-spec setting while the config list is spec-based, and
+-- each is the right answer for a different anchor mode.
 --
 -- Offer test only, like the cast-slot sibling above: a nil layout is the
 -- transient spec-change state, not a reason to stop a running preview.
@@ -4382,7 +4382,7 @@ function ST._ResourcesPreviewResourceLanePowerTypes()
         if not IsBarsWorkspaceActive() then
             return {}
         end
-        powerTypes = RB.DetermineActiveResources and RB.DetermineActiveResources() or {}
+        powerTypes = RB.DetermineActiveResources and RB.DetermineActiveResources(rbSettings) or {}
     else
         powerTypes = GetConfigActiveResources()
     end
