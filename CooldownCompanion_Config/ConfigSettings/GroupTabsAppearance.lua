@@ -182,6 +182,24 @@ local function GroupDrawsCooldownTextRow(group)
     return not ST.IsAuraPanelGroup(group)
 end
 
+-- Low Time Threshold is drawn once beside a duration surface that can consume
+-- it: cooldown-side when effective cooldown text is visible, otherwise
+-- aura-side while the group tracks an aura and effective aura text is visible.
+local function IconsDrawCooldownDurationLowTimeRows(group, style)
+    return not ST.IsAuraPanelGroup(group)
+        and style and style.showCooldownText == true
+end
+
+local function IconsDrawAuraDurationLowTimeRows(group, style)
+    return IconsGroupTracksAura(group)
+        and style and style.showAuraText ~= false
+end
+
+local function IconsDrawDurationLowTimeRows(group, style)
+    return IconsDrawCooldownDurationLowTimeRows(group, style)
+        or IconsDrawAuraDurationLowTimeRows(group, style)
+end
+
 -- The fill timer's own interlock, exactly as BuildEffectsTab derives it
 -- (`fillSec.read.iconFillEnabled == true and group.masqueEnabled ~= true`):
 -- Masque is GROUP data with no override section, so that half stays
@@ -216,6 +234,10 @@ ST._SECTION_HOME.icons = {
         tab = "appearance", collapseKey = "appearance_text",
         available = GroupDrawsCooldownTextRow,
         gearEnabled = function(_, style) return (style.showCooldownText) ~= false end,
+    },
+    durationLowTime = {
+        tab = "appearance", collapseKey = "appearance_text",
+        available = IconsDrawDurationLowTimeRows,
     },
     chargeText = {
         tab = "appearance", collapseKey = "appearance_text",
@@ -883,6 +905,31 @@ local function BuildAppearanceTab(container)
         })
     end
 
+    -- Dedicated override section (owner ruling 2026-08-25): the shared keys
+    -- are entry-customizable as one unit, independent of cooldownText and
+    -- auraText. The master row carries the section's one scope affordance and
+    -- the inert sweep gates the whole dependent family.
+    local function AddDurationLowTimeSection(column)
+        if not ST._AddDurationLowTimeRows then return end
+        local lowTimeSec = BeginLensSection(lens, group, "durationLowTime", { column = column })
+        local rows = ST._AddDurationLowTimeRows(column, lowTimeSec.tbl, refreshStyle, {
+            indent = true,
+            explicitOff = lowTimeSec.scope == "customized",
+            infoButtons = tabInfoButtons,
+            rebuild = function()
+                refreshStyle()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+        if rows and rows[1] then
+            lowTimeSec:Chrome(rows[1])
+        end
+        lowTimeSec:Finish()
+    end
+
+    local durationLowTimeStyle = (lens and lens.effective) or group.style
+    local drawsCooldownLowTime = IconsDrawCooldownDurationLowTimeRows(group, durationLowTimeStyle)
+
     -- Show Cooldown Text toggle. An Aura Panel has no cooldown to count down, so
     -- the toggle itself is dead there and is left out; the two live things that
     -- hung off it (Duration Format, and the cooldownText* position keys that
@@ -932,24 +979,9 @@ local function BuildAppearanceTab(container)
         if dfRow then
             cdTextSec:PanelRowChrome(dfRow)
         end
-        -- Low Time Threshold: cooldown-side companions of Duration Format,
-        -- same panel-owned chrome. The Aura Panel's duration format row must
-        -- never gain these (aura urgency is the Pandemic Marker).
-        if ST._AddDurationLowTimeRows then
-            local lowTimeRows = ST._AddDurationLowTimeRows(textLeft, group.style, refreshStyle, {
-                indent = true,
-                infoButtons = tabInfoButtons,
-                rebuild = function()
-                    refreshStyle()
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-            if lowTimeRows then
-                for _, lowTimeRow in ipairs(lowTimeRows) do
-                    cdTextSec:PanelRowChrome(lowTimeRow)
-                end
-            end
-        end
+    end
+    if drawsCooldownLowTime then
+        AddDurationLowTimeSection(textLeft)
     end
     end -- not isAuraPanel
 
@@ -1142,6 +1174,13 @@ local function BuildAppearanceTab(container)
             if dfRow then
                 auraTextSec:PanelRowChrome(dfRow)
             end
+        end
+
+        -- Ordinary panels keep one row family: if effective cooldown text is
+        -- hidden, the visible aura duration surface becomes its config home.
+        if IconsDrawAuraDurationLowTimeRows(group, durationLowTimeStyle)
+            and not drawsCooldownLowTime then
+            AddDurationLowTimeSection(auraTextHost)
         end
 
         -- Show Aura Stack Text toggle

@@ -229,6 +229,7 @@ ST._SECTION_HOME.bars = {
         available = GroupDrawsCooldownTextRow,
         gearEnabled = function(_, style) return (style.showCooldownText) ~= false end,
     },
+    durationLowTime = { tab = "appearance", collapseKey = "barappearance_textIcon" },
     chargeText = {
         tab = "appearance", collapseKey = "barappearance_textIcon",
         gearEnabled = function(_, style) return (style.showChargeText ~= false) ~= false end,
@@ -700,6 +701,27 @@ local function BuildBarAppearanceTab(container, group, style)
     -- the panel-level packing toggle.
     local textLeft, textRight = BeginRowGrid(container)
 
+    -- Dedicated override section (owner ruling 2026-08-25): one shared policy
+    -- for cooldown and aura duration phases, customized as one entry-owned
+    -- unit. The master row carries the section's scope affordance.
+    local function AddDurationLowTimeSection(column)
+        if not ST._AddDurationLowTimeRows then return end
+        local lowTimeSec = BeginLensSection(lens, group, "durationLowTime", { column = column })
+        local rows = ST._AddDurationLowTimeRows(column, lowTimeSec.tbl, refreshStyle, {
+            indent = true,
+            explicitOff = lowTimeSec.scope == "customized",
+            infoButtons = tabInfoButtons,
+            rebuild = function()
+                refreshStyle()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+        if rows and rows[1] then
+            lowTimeSec:Chrome(rows[1])
+        end
+        lowTimeSec:Finish()
+    end
+
     -- ================================================================
     -- Show Icon
     -- ================================================================
@@ -928,24 +950,7 @@ local function BuildBarAppearanceTab(container, group, style)
     if durationFormatRow then
         cdTextSec:PanelRowChrome(durationFormatRow)
     end
-    -- Low Time Threshold: cooldown-side companions of Duration Format with the
-    -- same panel-owned chrome. The aura duration format row below must never
-    -- gain these (aura urgency is the Pandemic Marker).
-    if ST._AddDurationLowTimeRows then
-        local lowTimeRows = ST._AddDurationLowTimeRows(textLeft, group.style, refreshStyle, {
-            indent = true,
-            infoButtons = tabInfoButtons,
-            rebuild = function()
-                refreshStyle()
-                CooldownCompanion:RefreshConfigPanel()
-            end,
-        })
-        if lowTimeRows then
-            for _, lowTimeRow in ipairs(lowTimeRows) do
-                cdTextSec:PanelRowChrome(lowTimeRow)
-            end
-        end
-    end
+    AddDurationLowTimeSection(textLeft)
     end -- not isAuraPanel
 
     -- Show Charge Text toggle. Charges and uses are spell mechanics, so an Aura
@@ -1169,6 +1174,7 @@ local function BuildBarAppearanceTab(container, group, style)
             if auraFormatRow then
                 auraTextSec:PanelRowChrome(auraFormatRow)
             end
+            AddDurationLowTimeSection(textRight)
         end
 
         -- Aura stack text: Blizzard writes the live stack count; anchored to

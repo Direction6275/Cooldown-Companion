@@ -241,11 +241,9 @@ local function UpdateBarFill(button)
             local durationStyle = button.style
             if button._durationObj then
                 button._lastBarTimeText = nil
-                -- allowLowTime: this branch is structurally cooldown text, but
-                -- the totem active phase is aura-side by owner ruling and the
-                -- low-time threshold is cooldowns-only.
-                BindDurationText(button.timeText, button._durationObj, durationStyle,
-                    button._totemActive ~= true)
+                -- One urgency policy covers both the cooldown phase and the
+                -- aura-style active phase used by totems and summons.
+                BindDurationText(button.timeText, button._durationObj, durationStyle, true)
             else
                 if itemRemaining > 0 then
                     SetBarTimeText(button, FormatCooldownTime(itemRemaining, durationStyle))

@@ -60,7 +60,6 @@ local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
 local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
 local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
 
-local FormatTime = CooldownCompanion.FormatTime
 local FormatCooldownTime = CooldownCompanion.FormatCooldownTime or CooldownCompanion.FormatTime
 local UnbindDurationText = CooldownCompanion.UnbindDurationText
 local SetAuraStackCountText = EntryRuntime.SetAuraStackCountText
@@ -277,16 +276,16 @@ function RB.CreateResourceBarPreviewModule(deps)
 
         if bar.text and bar.text:IsShown() then
             UnbindDurationText(bar.text)
-            local durationText = FormatTime(PREVIEW_DURATION, cabConfig)
             -- Pandemic marker stand-in: the sample is a still, so the marker
             -- shows only while its own preview is armed. The cab config carries
             -- these keys itself (the aura host's adapter reads them straight
-            -- through), and the shared cab gate decides the same way the live
-            -- bind does.
-            if bar._barMarkerPreview
-                and CooldownCompanion:IsCustomBarPandemicMarkerPreviewWanted(cabConfig) then
-                durationText = CooldownCompanion:DecoratePandemicPreviewText(durationText, cabConfig)
-            end
+            -- through), and the shared manual formatter composes Duration
+            -- Format, Low Time Threshold, and Pandemic precedence like the
+            -- live aura bind.
+            local pandemicActive = bar._barMarkerPreview
+                and CooldownCompanion:IsCustomBarPandemicMarkerPreviewWanted(cabConfig)
+            local durationText = CooldownCompanion:FormatAuraDurationPreviewText(
+                PREVIEW_DURATION, cabConfig, pandemicActive)
             bar.text:SetText(durationText)
         elseif bar.text then
             UnbindDurationText(bar.text)
@@ -373,9 +372,8 @@ function RB.CreateResourceBarPreviewModule(deps)
 
         if bar.text and bar.text:IsShown() then
             UnbindDurationText(bar.text)
-            -- Cooldown/recharge stand-in mirrors the live bind's low-time
-            -- look (review 2026-08-16); the aura stand-in above stays on
-            -- FormatTime — the feature is cooldown-only.
+            -- Cooldown/recharge stand-in mirrors the live bind's shared
+            -- low-time look (review 2026-08-16).
             bar.text:SetText(FormatCooldownTime(PREVIEW_DURATION, cabConfig))
         elseif bar.text then
             UnbindDurationText(bar.text)

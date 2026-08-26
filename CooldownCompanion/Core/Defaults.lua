@@ -1144,6 +1144,29 @@ ST.OVERRIDE_SECTIONS = {
         keys = {"showCooldownText", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor", "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset"},
         modes = {icons = true, bars = true},
     },
+    -- One urgency policy for every duration-text phase (owner ruling
+    -- 2026-08-25). Its own section is what lets an entry customize the shared
+    -- values without splitting them across cooldownText and auraText. Aura
+    -- Panels and no-cooldown entries intentionally keep it: their aura text is
+    -- a first-class consumer.
+    durationLowTime = {
+        label = "Low Time Threshold",
+        keys = {"durationLowTimeThreshold", "durationLowTimeDecimals",
+            "durationLowTimeColor", "durationLowTimeThreshold2",
+            "durationLowTimeColor2"},
+        -- Entry overrides need a complete baseline plus explicit off values.
+        -- Without these, promoting while the panel is off leaves missing keys
+        -- that later read through styleOverrides.__index and start following
+        -- panel changes again.
+        defaults = {
+            durationLowTimeThreshold = 0,
+            durationLowTimeDecimals = false,
+            durationLowTimeColor = {1, 0.2, 0.2, 1},
+            durationLowTimeThreshold2 = 0,
+            durationLowTimeColor2 = {1, 0.55, 0.1, 1},
+        },
+        modes = {icons = true, bars = true},
+    },
     -- The four pandemicMarker* keys used to ride this list, because the marker
     -- is drawn into this text. They moved to the pandemic sections below when
     -- the config grew a Pandemic section, so one override covers the whole
@@ -1415,7 +1438,7 @@ ST.OVERRIDE_SECTIONS = {
 -- listed (the entry-slot hover tooltip and the config's Customizations list
 -- both walk this).
 ST.OVERRIDE_SECTION_ORDER = {
-    "borderSettings", "cooldownText", "auraText", "whileAuraActive", "auraStackText",
+    "borderSettings", "cooldownText", "durationLowTime", "auraText", "whileAuraActive", "auraStackText",
     "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "auraMissingDesaturation", "showOutOfRange", "showTooltips",
     -- "pandemic" spans both display modes (like auraText above), so it sits in
     -- the icons run rather than being listed twice.
@@ -1569,7 +1592,7 @@ ST.PANEL_COPY_SCOPES = {
     icons = {
         appearance = {
             sections = {
-                "cooldownText", "chargeText", "auraText", "auraStackText",
+                "cooldownText", "durationLowTime", "chargeText", "auraText", "auraStackText",
                 "keybindText", "whileAuraActive", "borderSettings", "iconTint",
                 "iconZoom",
             },
@@ -1577,11 +1600,9 @@ ST.PANEL_COPY_SCOPES = {
                 -- Icon Settings (shape, size, spacing)
                 "maintainAspectRatio", "buttonSize", "iconWidth", "iconHeight",
                 "buttonSpacing",
-                -- Duration Format + Low Time Threshold (panel-owned rows in
-                -- the Text section)
-                "durationFormat", "durationLowTimeThreshold",
-                "durationLowTimeDecimals", "durationLowTimeColor",
-                "durationLowTimeThreshold2", "durationLowTimeColor2",
+                -- Duration Format is panel-owned; Low Time Threshold is the
+                -- durationLowTime override section above.
+                "durationFormat",
             },
             copiesMasque = true,
             copiesCompact = true,
@@ -1606,7 +1627,7 @@ ST.PANEL_COPY_SCOPES = {
             sections = {
                 "barColor", "barBgColor", "barCooldownColor", "barChargeColor",
                 "borderSettings", "iconTint", "barIcon", "barNameText",
-                "cooldownText", "chargeText", "barReadyText", "auraText",
+                "cooldownText", "durationLowTime", "chargeText", "barReadyText", "auraText",
                 "auraStackText", "iconZoom", "whileAuraActive",
             },
             styleKeys = {
@@ -1615,10 +1636,9 @@ ST.PANEL_COPY_SCOPES = {
                 -- Bar-wide text placement (panel-owned rows in the text gears)
                 "barTimeTextReverse", "barCdTextOffsetX", "barCdTextOffsetY",
                 "barNameTextOffsetX", "barNameTextOffsetY",
-                -- Duration Format + Low Time Threshold
-                "durationFormat", "durationLowTimeThreshold",
-                "durationLowTimeDecimals", "durationLowTimeColor",
-                "durationLowTimeThreshold2", "durationLowTimeColor2",
+                -- Duration Format is panel-owned; Low Time Threshold is the
+                -- durationLowTime override section above.
+                "durationFormat",
             },
             copiesCompact = true,
         },
