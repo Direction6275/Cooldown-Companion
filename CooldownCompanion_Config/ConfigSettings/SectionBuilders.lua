@@ -419,27 +419,29 @@ local function AddDurationFormatDropdown(container, settings, refreshCallback, o
     })
 end
 
--- Low Time Threshold rows (2026-08-15 program): cooldown-side companions of
--- the Duration Format dropdown, panel-owned like it. COOLDOWN text call
--- sites only — icon-mode Cooldown Text, bar-mode Cooldown Text, custom
--- bars. Never attach these to an aura duration format row: aura urgency is
--- the Pandemic Marker, by owner ruling.
+-- Low Time Threshold rows (2026-08-15 program, aura extension ruled
+-- 2026-08-25): one shared duration-text policy for cooldown and aura phases.
+-- Panel tabs resolve these rows through their dedicated durationLowTime
+-- override section; custom bars own the same keys directly. Each surface draws
+-- the family once beside its applicable Duration Format row.
 -- Decimals/color keys survive a disable so re-enabling restores the old
--- look; only the threshold key is the on/off switch (nil = off, the shape
--- GetDurationLowTime reads). Dependent rows exist ONLY while the toggle is
--- on (owner ruling: hide, don't disable), so structural toggles go through
--- opts.rebuild. Returns the rows it added so panel-owned call sites can
--- chrome each one.
+-- look; only the threshold key is the on/off switch (nil at panel/custom-bar
+-- scope, explicit 0 in an entry override). Dependent rows exist ONLY while
+-- the toggle is on (owner ruling: hide, don't disable), so structural toggles
+-- go through opts.rebuild. Returns the rows it added so a section host can
+-- attach scope chrome to the master row.
 -- opts:
 --   indent       master-row indent
 --   infoButtons  "?" badge registry (falls back to the row itself)
 --   rebuild      structural re-render for toggles that add/remove rows;
 --                falls back to refreshCallback
+--   explicitOff  preserve 0/false in a metatable-backed entry override
 local LOW_TIME_DEFAULT_COLOR = { 1, 0.2, 0.2, 1 }
 local LOW_TIME_DEFAULT_COLOR2 = { 1, 0.55, 0.1, 1 }
 local LOW_TIME_TOOLTIP = {
     "Low Time Threshold",
-    {"Changes cooldown text below the chosen seconds.", 1, 1, 1, true},
+    {"Changes duration text below the chosen seconds.", 1, 1, 1, true},
+    {"With Pandemic: Low Time wins over whole-text color; marker-only color still colors the marker.", 1, 1, 1, true},
 }
 local LOW_TIME_SECOND_TOOLTIP = {
     "Second Threshold",
@@ -451,6 +453,11 @@ local LOW_TIME_SECOND_TOOLTIP = {
 local function AddDurationLowTimeRows(container, settings, refreshCallback, opts)
     if not (container and settings) then return nil end
     opts = opts or {}
+    -- A customized entry's settings table inherits from the panel style. Its
+    -- off state therefore has to be stored explicitly; panel/custom-bar stores
+    -- keep the existing nil cleanup. Callers opt in only for that scope.
+    local explicitOff = opts.explicitOff == true
+    local disabledThresholdValue = explicitOff and 0 or nil
 
     local function refresh()
         if refreshCallback then refreshCallback() end
@@ -483,7 +490,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
                     settings.durationLowTimeThreshold2 = 4
                 end
             else
-                settings.durationLowTimeThreshold = nil
+                settings.durationLowTimeThreshold = disabledThresholdValue
             end
             rebuild()
         end,
@@ -510,7 +517,8 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
             -- slider's shown value honest.
             local second = tonumber(settings.durationLowTimeThreshold2)
             if second and second >= value then
-                settings.durationLowTimeThreshold2 = (value > 1) and (value - 1) or nil
+                settings.durationLowTimeThreshold2 = (value > 1)
+                    and (value - 1) or disabledThresholdValue
             end
             rebuild()
         end,
@@ -541,7 +549,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
                 value = first - 1
             end
             if value <= 0 then
-                settings.durationLowTimeThreshold2 = nil
+                settings.durationLowTimeThreshold2 = disabledThresholdValue
             else
                 settings.durationLowTimeThreshold2 = value
                 if settings.durationLowTimeColor2 == nil then
@@ -577,7 +585,13 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
         indent = true,
         value = settings.durationLowTimeDecimals == true,
         onChange = function(value)
-            settings.durationLowTimeDecimals = (value == true) or nil
+            if value == true then
+                settings.durationLowTimeDecimals = true
+            elseif explicitOff then
+                settings.durationLowTimeDecimals = false
+            else
+                settings.durationLowTimeDecimals = nil
+            end
             refresh()
         end,
     })

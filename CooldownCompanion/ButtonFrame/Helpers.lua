@@ -249,12 +249,13 @@ function CooldownCompanion:GetDurationFormatOptions()
     return DURATION_FORMAT_LABELS, DURATION_FORMAT_ORDER
 end
 
--- Low Time Threshold (cooldown texts ONLY — aura duration text keeps pandemic
--- as its urgency system; owner ruling 2026-08-15). Reads the three panel-owned
--- keys beside durationFormat. Returns nil when the feature is off, else:
+-- Low Time Threshold for duration text (cooldown and aura alike; owner ruling
+-- 2026-08-25). Reads the shared durationLowTime* policy beside durationFormat.
+-- Returns nil when the feature is off, else:
 -- threshold seconds, decimals flag, and the color as a raw "rrggbb" hex (nil
--- when no recolor). Only surfaces that are structurally cooldown-side may call
--- the allowLowTime/FormatCooldownTime variants below.
+-- when no recolor). Text panels and resource-bar recharge text deliberately
+-- remain outside this policy; their callers keep using FormatTime/plain
+-- formatters rather than opting into the variants below.
 local function LowTimeHex(color)
     if type(color) ~= "table" then return nil end
     return string_format("%02x%02x%02x",
@@ -413,9 +414,10 @@ local function FormatTime(seconds, formatOrDecimal)
 end
 CooldownCompanion.FormatTime = FormatTime
 
--- Manual-path twin of the low-time brackets, for COOLDOWN text call sites
--- that format plain (non-secret) values. FormatTime itself stays untouched:
--- aura-side callers share it and must never pick the low-time look up.
+-- Manual-path twin of the low-time brackets for plain (non-secret) duration
+-- values. FormatTime itself stays untouched so deliberately excluded surfaces
+-- cannot acquire the policy implicitly; cooldown and aura preview callers opt
+-- in through this helper.
 local function FormatCooldownTime(seconds, source)
     local text = FormatTime(seconds, source)
     local threshold, decimals, colorHex, threshold2, colorHex2 = GetDurationLowTime(source)
@@ -472,10 +474,10 @@ local function FloorBreakpoint(threshold, format)
 end
 
 -- One ascending breakpoint list per format key: the single definition of what
--- each Duration Format looks like for NumericRuleFormatter consumers. The
--- cooldown text formatter below builds straight from it, and the aura display
--- reads it to derive per-spell pandemic marker formatters that keep the same
--- shape. Cached lists are shared and must never be mutated.
+-- each Duration Format looks like for NumericRuleFormatter consumers. Shared
+-- duration formatters and the aura duration composer both build from it, so
+-- low-time and Pandemic decorations cannot change the underlying format
+-- transitions. Cached lists are shared and must never be mutated.
 local function BuildDurationFormatBrackets(formatKey)
     local brackets = {}
 
@@ -635,6 +637,23 @@ local function BuildLowTimeBrackets(formatKey, threshold, decimals, colorHex, th
     return out
 end
 
+-- Bracket-level duration policy for consumers that must compose another
+-- engine-side decoration onto the same countdown (the aura Pandemic marker is
+-- the first). Low-time lists are always fresh; plain lists come from the
+-- shared format cache and must be treated as immutable. Consumers clone before
+-- changing a threshold or format string.
+local function GetDurationTextBrackets(source, allowLowTime)
+    local formatKey = GetDurationFormat(source)
+    if allowLowTime then
+        local threshold, decimals, colorHex, threshold2, colorHex2 = GetDurationLowTime(source)
+        if threshold then
+            return BuildLowTimeBrackets(formatKey, threshold, decimals, colorHex, threshold2, colorHex2), formatKey
+        end
+    end
+    return GetDurationFormatBrackets(source)
+end
+CooldownCompanion.GetDurationTextBrackets = GetDurationTextBrackets
+
 local function CreateDurationTextFormatter(formatKey, lowThreshold, lowDecimals, lowColorHex, lowThreshold2, lowColorHex2)
     if not (C_StringUtil and C_StringUtil.CreateNumericRuleFormatter) then
         return nil
@@ -659,8 +678,9 @@ local function CreateDurationTextFormatter(formatKey, lowThreshold, lowDecimals,
 end
 
 -- Front cache for the key-building above the shared formatter cache, keyed by
--- the config table, with a separate record per allowLowTime side (the same
--- style resolves to different keys on the cooldown and aura sides). Same
+-- the config table, with a separate record per allowLowTime side (callers that
+-- deliberately exclude the policy must not collide with duration surfaces
+-- that opt into it). Same
 -- no-write-back rule as durationLowTimeMemo. The recorded dependencies are the
 -- two raw format fields plus the RESOLVED low-time tuple, which
 -- GetDurationLowTime revalidates against every raw low-time field and color
@@ -670,7 +690,8 @@ local durationTextFormatterMemo = setmetatable({}, { __mode = "k" })
 -- Second return is the CACHE key (formatKey when low-time is off, composite
 -- when on) — BindDurationText uses it for change detection, so a low-time
 -- config edit re-applies the formatter even when the format key is unchanged.
--- allowLowTime must only be passed by cooldown-side surfaces.
+-- allowLowTime is explicit so text panels and recharge text stay excluded;
+-- both cooldown and aura duration surfaces may pass it.
 local function GetDurationTextFormatter(source, allowLowTime)
     local allowLow = (allowLowTime and true) or false
     local sourceIsTable = type(source) == "table"
@@ -774,9 +795,9 @@ local function UnbindDurationText(fontString, clearText)
 end
 CooldownCompanion.UnbindDurationText = UnbindDurationText
 
--- allowLowTime: pass true ONLY from cooldown-text call sites (bar-mode cd
--- text, custom-bar cd text). Aura-side callers must omit it — the low-time
--- feature is cooldown-only by owner ruling (auras have pandemic).
+-- allowLowTime is explicit so every governed duration surface opts into the
+-- shared urgency policy. Both cooldown and aura-style phases use it; excluded
+-- consumers leave it false and retain the base Duration Format only.
 local function BindDurationText(fontString, durationObj, source, allowLowTime)
     if not (fontString and durationObj and IsDurationTextBindingSupported()) then
         UnbindDurationText(fontString, true)

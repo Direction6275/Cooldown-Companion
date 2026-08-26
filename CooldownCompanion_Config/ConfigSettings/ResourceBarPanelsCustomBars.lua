@@ -1716,11 +1716,10 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                         })
 
                         AddDurationFormatDropdown(panel, customBars[cabIdx], cabApplyBars, { row = true })
-                        -- Low Time Threshold: custom-bar COOLDOWN lane text
-                        -- only. Standalone aura bars render through the aura
-                        -- host, which never consumes these keys (review
-                        -- 2026-08-16: no dead controls on aura bars).
-                        if ST._AddDurationLowTimeRows and isSpellCustomBar then
+                        -- One shared policy for both custom-bar phases. Spell
+                        -- bars use it for cooldown and tracked-aura duration;
+                        -- standalone aura bars use it for their aura duration.
+                        if ST._AddDurationLowTimeRows then
                             ST._AddDurationLowTimeRows(panel, customBars[cabIdx], cabApplyBars, {
                                 indent = true,
                                 rebuild = RefreshCustomBarAuraConfig,
