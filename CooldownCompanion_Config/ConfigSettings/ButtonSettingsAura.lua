@@ -148,6 +148,9 @@ local function CharacterCanCommandPets()
     end
     return false
 end
+-- Shared with the custom-bar Aura Tracking section (read late-bound there:
+-- this file loads after ResourceBarPanelsCustomBars in the TOC).
+ST._CharacterCanCommandPets = CharacterCanCommandPets
 
 -- Shared with the Visibility tab's Show & Hide Rules row for ordinary spell
 -- entries. Primary Aura entries are always enabled in Texture panels; layered

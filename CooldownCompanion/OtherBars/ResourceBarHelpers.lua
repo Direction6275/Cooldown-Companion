@@ -227,9 +227,16 @@ local customBarContentFields = {
     "loadConditions",
     "talentConditions",
     "hideWhenInactive",
+    "auraShellDim",
+    "hideWhileOnCooldown",
+    "hideWhileNotOnCooldown",
+    "showOnlyAtZeroCharges",
+    "hideWhileZeroCharges",
     "hideWhileAuraActive",
     "hideAuraActiveExceptPandemic",
     "auraTracking",
+    "auraTrackGroup",
+    "auraTrackPet",
     "auraSpellID",
     "barAuraIndicatorEnabled",
     "barAuraColor",
@@ -369,9 +376,16 @@ end
 -- the CC accumulator can never pack the stack around it. These entries leave
 -- the stack and mount into the Blizzard-side collapsing aura container.
 local function IsAuraBlockEntry(cab)
+    -- Group/pet-tracked bars always keep their slot (owner ruling
+    -- 2026-08-26): the block chain is one container per (side, unit) with
+    -- SetUnit fixed at creation, and roster tokens would need a churning
+    -- per-member bucket chain. The config greys the toggle; this is the
+    -- runtime backstop for drifted stored data.
     return type(cab) == "table"
         and not IsSpellCustomBarConfig(cab)
         and cab.hideWhenInactive == true
+        and cab.auraTrackGroup ~= true
+        and cab.auraTrackPet ~= true
 end
 
 -- Which per-unit bucket of a side's aura block sits nearer the panel. A
