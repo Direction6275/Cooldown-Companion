@@ -65,7 +65,9 @@ local CURSOR_LAYOUT_PREVIEW_ATLAS = "cursor_point_128"
 local CURSOR_LAYOUT_PREVIEW_SIZE = 48
 local CURSOR_LAYOUT_PREVIEW_LABEL_WIDTH = 118
 local CURSOR_LAYOUT_PREVIEW_LABEL_HEIGHT = 18
-local CURSOR_LAYOUT_PREVIEW_TOP_OFFSET = -120
+-- Default parking spot: above screen center, clear of the top-center arrange
+-- toolbar and roughly where a live cursor hovers.
+local CURSOR_LAYOUT_PREVIEW_DEFAULT_Y = 150
 local CURSOR_LAYOUT_PREVIEW_TINT = { 0.35, 0.92, 1, 1 }
 local SNAP_THRESHOLD = 8
 local SNAP_VISIBLE_ALPHA_THRESHOLD = 0.05
@@ -2907,7 +2909,7 @@ local function ResetCursorAnchorLayoutPreviewPosition(self)
     end
 
     frame:ClearAllPoints()
-    frame:SetPoint("TOP", UIParent, "TOP", 0, CURSOR_LAYOUT_PREVIEW_TOP_OFFSET)
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, CURSOR_LAYOUT_PREVIEW_DEFAULT_Y)
     preview.hasCustomPosition = nil
     preview.hasDefaultPosition = true
     self:UpdateCursorAnchoredFrames()
@@ -2999,7 +3001,7 @@ local function EnsureCursorAnchorLayoutPreview(self)
         self.icon:SetVertexColor(1, 1, 1, 1)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Reset Dummy Cursor")
-        GameTooltip:AddLine("Returns this preview cursor to its default top-center position for this session.", 1, 1, 1, true)
+        GameTooltip:AddLine("Returns this preview cursor to its default position above screen center for this session.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     resetButton:SetScript("OnLeave", function(self)
@@ -3041,9 +3043,12 @@ local function EnsureCursorAnchorLayoutPreview(self)
     return preview
 end
 
+-- groupId names the panel that takes drag/nudge chrome. A nil groupId is the
+-- pin-only form used by arrange mode: every active cursor panel parks on the
+-- dummy cursor with no selection chrome.
 function CooldownCompanion:ShowCursorAnchorLayoutPreview(groupId)
     local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
-    if not (group and IsCursorAnchor(group.anchor)) then
+    if groupId ~= nil and not (group and IsCursorAnchor(group.anchor)) then
         self:ClearCursorAnchorLayoutPreview()
         return
     end
@@ -3052,12 +3057,16 @@ function CooldownCompanion:ShowCursorAnchorLayoutPreview(groupId)
     local frame = preview.frame
     local previousActiveGroupIds = preview.activeGroupIds
     local activeGroupIds = BuildCursorAnchorLayoutPreviewGroupMap(self)
+    if groupId == nil and next(activeGroupIds) == nil then
+        self:ClearCursorAnchorLayoutPreview()
+        return
+    end
     preview.selectedGroupId = groupId
     preview.activeGroupIds = activeGroupIds
     preview.stagedAnchors = nil
     if not preview.hasCustomPosition and not preview.hasDefaultPosition then
         frame:ClearAllPoints()
-        frame:SetPoint("TOP", UIParent, "TOP", 0, CURSOR_LAYOUT_PREVIEW_TOP_OFFSET)
+        frame:SetPoint("CENTER", UIParent, "CENTER", 0, CURSOR_LAYOUT_PREVIEW_DEFAULT_Y)
         preview.hasDefaultPosition = true
     end
     if ST.SetRuntimeInfoButtonShown then
@@ -3148,6 +3157,17 @@ function CooldownCompanion:ClearCursorAnchorLayoutPreview()
         and not preview.draggedGroupId
         and not preview.stagedAnchors
         and not (preview.frame and preview.frame:IsShown()) then
+        return
+    end
+
+    -- While arrange mode holds cursor panels on the dummy cursor, a
+    -- config-side clear only drops the selection chrome; the pin itself
+    -- stays until arrange mode exits. Combat forced lock bypasses the
+    -- demote: cursor panels must follow the real cursor for the fight.
+    if self._arrangeModeActive == true
+        and not self._combatForcedLock
+        and next(BuildCursorAnchorLayoutPreviewGroupMap(self)) ~= nil then
+        self:ShowCursorAnchorLayoutPreview(nil)
         return
     end
 
@@ -5912,6 +5932,9 @@ function CooldownCompanion:SetArrangeSoloContainer(containerId)
             self:RefreshContainerPanels(cid)
         end
     end
+    -- The solo also decides the independent bar movers' effective hidden state.
+    self:RefreshArrangeSpecialMoverChrome("cast")
+    self:RefreshArrangeSpecialMoverChrome("resource")
     if self.RefreshArrangePillList then
         self:RefreshArrangePillList()
     end
@@ -5921,8 +5944,10 @@ function CooldownCompanion:SetContainerArrangeChromeHidden(containerId, hidden)
     if not self._arrangeModeActive then
         return
     end
-    local container = self.db.profile.groupContainers[containerId]
-    if not container then
+    -- "cast"/"resource" ride the same map and solo slot as container ids.
+    local isSpecialMover = self:IsArrangeSpecialMoverId(containerId)
+    local container = not isSpecialMover and self.db.profile.groupContainers[containerId] or nil
+    if not isSpecialMover and not container then
         return
     end
 
@@ -5943,8 +5968,12 @@ function CooldownCompanion:SetContainerArrangeChromeHidden(containerId, hidden)
 
     -- Mirror the lock presentation without writing the profile: hiding takes
     -- the suppressed-chrome path, showing rebuilds the unlock preview.
-    self:UpdateContainerDragHandle(containerId, hidden ~= nil or container.locked ~= false)
-    self:RefreshContainerPanels(containerId)
+    if isSpecialMover then
+        self:RefreshArrangeSpecialMoverChrome(containerId)
+    else
+        self:UpdateContainerDragHandle(containerId, hidden ~= nil or container.locked ~= false)
+        self:RefreshContainerPanels(containerId)
+    end
 end
 
 function CooldownCompanion:IsContainerArrangeChromeRevealed(containerId, frame)

@@ -72,7 +72,8 @@ end
 
 function CooldownCompanion:GetIndependentCastBarMoverChrome()
     local frame = independentMoverFrame
-    return frame and frame._dragHandle, frame and frame._coordLabel, frame and frame._nudger
+    return frame and frame._dragHandle, frame and frame._coordLabel, frame and frame._nudger,
+        frame and frame._resizeGrip, frame and frame._sizeLabel
 end
 
 ------------------------------------------------------------------------
@@ -268,6 +269,12 @@ end
 local function LockIndependentCastBarFromMover(frame)
     local settings = GetCastBarSettings()
     if not settings then return end
+    -- Locking the soloed mover would strand every other mover solo-hidden;
+    -- release the solo first (mirrors SetContainerLocked).
+    if CooldownCompanion._arrangeSoloContainerId == "cast"
+        and CooldownCompanion.SetArrangeSoloContainer then
+        CooldownCompanion:SetArrangeSoloContainer(nil)
+    end
     settings.independentAnchorLocked = true
     frame._dragInProgress = nil
     StopIndependentCastBarCoordUpdates(frame)
@@ -276,6 +283,9 @@ local function LockIndependentCastBarFromMover(frame)
     CooldownCompanion:EndMoverChromeFade(frame)
     UpdateIndependentCastBarDragState(settings)
     CooldownCompanion:CaptureArrangeCastBarRecord()
+    if CooldownCompanion._arrangeModeActive and CooldownCompanion.RefreshArrangePillList then
+        CooldownCompanion:RefreshArrangePillList()
+    end
     CooldownCompanion:CheckArrangeModeAutoExit()
 end
 
@@ -384,6 +394,7 @@ local function CreateCastBarMoverFrame()
         end)
         btn:SetScript("OnMouseDown", function(self)
             CancelCoordinateEdit(frame._coordLabel)
+            CancelCoordinateEdit(frame._sizeLabel)
             DoNudge()
             CooldownCompanion:VerifyMoverChromeHoverFade(nudger)
         end)
@@ -417,13 +428,62 @@ local function CreateCastBarMoverFrame()
         end,
         function()
             return frame._dragInProgress == true
+                or (frame._resizeGrip and frame._resizeGrip._resizeActive == true)
         end
     )
+
+    -- Width resize chrome (grip + wheel + typed label). Width is read from
+    -- and written to settings.independentWidth only; the bar frame itself is
+    -- never measured (see the FRAME RULES header).
+    ST.AttachMoverWidthResize(frame, {
+        dragHandle = dragHandle,
+        coordLabel = coordLabel,
+        -- One cheap bar: re-apply every frame so the drag tracks smoothly.
+        applyInterval = 0,
+        getWidth = function()
+            local settings = GetCastBarSettings()
+            return settings and settings.independentWidth or 200
+        end,
+        setWidth = function(width)
+            local settings = GetCastBarSettings()
+            if settings then
+                settings.independentWidth = width
+            end
+        end,
+        -- The shared height key: it also drives the attached form, exactly as
+        -- the config Height slider does.
+        getHeight = function()
+            local settings = GetCastBarSettings()
+            return settings and settings.height or 15
+        end,
+        setHeight = function(height)
+            local settings = GetCastBarSettings()
+            if settings then
+                settings.height = height
+            end
+        end,
+        apply = function()
+            CooldownCompanion:ApplyCastBarSettings()
+        end,
+        isUnlocked = function()
+            local settings = GetCastBarSettings()
+            return settings ~= nil
+                and settings.independentAnchorEnabled == true
+                and not settings.independentAnchorLocked
+                and not CooldownCompanion._combatForcedLock
+        end,
+        getAnchorPoint = function()
+            local settings = GetCastBarSettings()
+            local anchor = settings and settings.independentAnchor
+            return anchor and anchor.point or "CENTER"
+        end,
+    })
 
     -- Drag scripts
     dragHandle:RegisterForDrag("LeftButton")
     dragHandle:SetScript("OnDragStart", function()
         CancelCoordinateEdit(coordLabel)
+        CancelCoordinateEdit(frame._sizeLabel)
         local settings = GetCastBarSettings()
         if not settings or settings.independentAnchorLocked then return end
         if InCombatLockdown() then return end
@@ -461,7 +521,7 @@ local function CreateCastBarMoverFrame()
     frame._nudger = nudger
     frame._coordLabel = coordLabel
     independentMoverFrame = frame
-    CooldownCompanion:ApplyMoverChromeFadeToFrames(dragHandle, coordLabel, nudger)
+    CooldownCompanion:ApplyMoverChromeFadeToFrames(dragHandle, coordLabel, nudger, frame._resizeGrip, frame._sizeLabel)
 end
 
 UpdateIndependentCastBarDragState = function(settings)
@@ -475,12 +535,18 @@ UpdateIndependentCastBarDragState = function(settings)
         CooldownCompanion:CancelIndependentCastBarDrag()
     end
 
+    -- The toolbar's checkbox/solo can tuck this mover's chrome away for the
+    -- session while it stays unlocked; the unlock-assist display stays up.
+    local chromeHidden = CooldownCompanion.IsContainerArrangeChromeHidden
+        and CooldownCompanion:IsContainerArrangeChromeHidden("cast")
+    local chromeShown = (unlocked and not chromeHidden) or false
+
     frame:SetMovable(unlocked or false)
 
     if frame._dragHandle then
-        frame._dragHandle:SetShown(unlocked or false)
-        frame._dragHandle:EnableMouse(unlocked or false)
-        if unlocked then
+        frame._dragHandle:SetShown(chromeShown)
+        frame._dragHandle:EnableMouse(chromeShown)
+        if chromeShown then
             frame._dragHandle:RegisterForDrag("LeftButton")
         else
             frame._dragHandle:RegisterForDrag()
@@ -488,19 +554,27 @@ UpdateIndependentCastBarDragState = function(settings)
     end
 
     if frame._nudger then
-        frame._nudger:SetShown(unlocked or false)
-        frame._nudger:EnableMouse(unlocked or false)
+        frame._nudger:SetShown(chromeShown)
+        frame._nudger:EnableMouse(chromeShown)
         if frame._nudger._cdcButtons then
             for _, btn in ipairs(frame._nudger._cdcButtons) do
-                btn:EnableMouse(unlocked or false)
+                btn:EnableMouse(chromeShown)
             end
         end
     end
 
     if frame._coordLabel then
-        frame._coordLabel:SetShown(unlocked or false)
+        frame._coordLabel:SetShown(chromeShown)
     end
-    CooldownCompanion:ApplyMoverChromeFadeToFrames(frame._dragHandle, frame._coordLabel, frame._nudger)
+    if frame._sizeLabel then
+        -- Explicit SetShown: mover teardown hides this label directly, so
+        -- parent visibility alone would leave it hidden on re-enable.
+        frame._sizeLabel:SetShown(chromeShown)
+        if chromeShown and frame._sizeLabel.UpdateText then
+            frame._sizeLabel.UpdateText()
+        end
+    end
+    CooldownCompanion:ApplyMoverChromeFadeToFrames(frame._dragHandle, frame._coordLabel, frame._nudger, frame._resizeGrip, frame._sizeLabel)
 
     -- Show a stand-in cast while unlocked so the bar is visible for
     -- positioning. Unlike a resource bar, a cast bar that is not casting has
@@ -514,6 +588,12 @@ UpdateIndependentCastBarDragState = function(settings)
         frame._cdcUnlockAssist = false
         CooldownCompanion:StopCastBarUnlockAssist()
     end
+end
+
+-- Re-present the mover chrome from current settings; the toolbar's
+-- chrome-hide and solo controls call this when their session state flips.
+function CooldownCompanion:RefreshIndependentCastBarMoverChrome()
+    UpdateIndependentCastBarDragState(GetCastBarSettings())
 end
 
 local function HideIndependentCastBarMover()
@@ -530,6 +610,9 @@ local function HideIndependentCastBarMover()
     end
     if independentMoverFrame._coordLabel then
         independentMoverFrame._coordLabel:Hide()
+    end
+    if independentMoverFrame._sizeLabel then
+        independentMoverFrame._sizeLabel:Hide()
     end
     if independentMoverFrame._cdcUnlockAssist then
         independentMoverFrame._cdcUnlockAssist = false

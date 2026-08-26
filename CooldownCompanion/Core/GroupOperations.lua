@@ -839,6 +839,7 @@ function CooldownCompanion:CaptureArrangeCastBarRecord()
         anchor = CopyArrangeTable(settings.independentAnchor),
         locked = settings.independentAnchorLocked,
         width = settings.independentWidth,
+        height = settings.height,
     }
 end
 
@@ -865,6 +866,10 @@ function CooldownCompanion:CaptureArrangeResourceRecord()
         anchor = CopyArrangeTable(placementSettings.independentAnchor),
         locked = placementSettings.independentAnchorLocked,
         width = placementSettings.independentWidth,
+        -- Thickness keys: which one is live flips with orientation, so both
+        -- are captured and restored verbatim.
+        barWidth = placementSettings.barWidth,
+        barHeight = placementSettings.barHeight,
     }
 end
 
@@ -934,12 +939,15 @@ local function RestoreArrangeSnapshot(addon, snapshot)
         RestoreArrangeTable(record.settings, "independentAnchor", record.anchor)
         record.settings.independentAnchorLocked = record.locked
         record.settings.independentWidth = record.width
+        record.settings.height = record.height
     end
     if snapshot.resource and snapshot.resource.settings then
         local record = snapshot.resource
         RestoreArrangeTable(record.settings, "independentAnchor", record.anchor)
         record.settings.independentAnchorLocked = record.locked
         record.settings.independentWidth = record.width
+        record.settings.barWidth = record.barWidth
+        record.settings.barHeight = record.barHeight
     end
 
     addon:UnlockAllFrames()
@@ -1192,6 +1200,26 @@ end
 -- Rebuild the pill's group list: one row per arrange-managed group, sorted by
 -- name. Row name click pins the group's controls (WS2 focus); the checkbox is
 -- the session-only chrome filter. Collapsed, the pill is just the top band.
+-- The unlock toolbar lists the independent bar movers next to the group
+-- containers. They share the containers' session-only chrome-hidden map and
+-- solo slot, keyed by the string ids "cast" and "resource" -- collision-free
+-- beside numeric container ids.
+function CooldownCompanion:IsArrangeSpecialMoverId(id)
+    return id == "cast" or id == "resource"
+end
+
+function CooldownCompanion:RefreshArrangeSpecialMoverChrome(id)
+    if id == "cast" then
+        if self.RefreshIndependentCastBarMoverChrome then
+            self:RefreshIndependentCastBarMoverChrome()
+        end
+    elseif id == "resource" then
+        if self.RefreshIndependentResourceStackMoverChrome then
+            self:RefreshIndependentResourceStackMoverChrome()
+        end
+    end
+end
+
 function CooldownCompanion:RefreshArrangePillList()
     local pill = self._arrangeModePill
     if not (pill and pill:IsShown()) then
@@ -1214,9 +1242,26 @@ function CooldownCompanion:RefreshArrangePillList()
                 entries[#entries + 1] = { id = containerId, name = container.name or ("Group " .. containerId) }
             end
         end
+        local castSettings = self.GetCastBarSettings and self:GetCastBarSettings()
+        if castSettings
+            and castSettings.enabled == true
+            and castSettings.independentAnchorEnabled == true
+            and not castSettings.independentAnchorLocked then
+            entries[#entries + 1] = { id = "cast", name = "Cast Bar" }
+        end
+        local rbSettings = self.GetResourceBarSettings and self:GetResourceBarSettings()
+        local rbPlacement = rbSettings and self.GetSpecLayoutOrder and self:GetSpecLayoutOrder()
+        if rbSettings
+            and rbSettings.enabled == true
+            and rbPlacement
+            and rbPlacement.independentAnchorEnabled == true
+            and not rbPlacement.independentAnchorLocked then
+            entries[#entries + 1] = { id = "resource", name = "Resource Bars" }
+        end
         table.sort(entries, function(a, b)
             if a.name == b.name then
-                return a.id < b.id
+                -- Mixed id types: special movers use string ids.
+                return tostring(a.id) < tostring(b.id)
             end
             return a.name < b.name
         end)
@@ -1443,6 +1488,12 @@ function CooldownCompanion:BeginCombatForcedLock()
         self._arrangeModePill:Hide()
     end
     CancelActiveMoverGestures(self)
+    -- Combat hands cursor panels back to the real cursor: the arrange pin
+    -- (and any config selection preview) suspends for the fight. The
+    -- forced-lock flag above makes this a full clear, not a demote.
+    if self.ClearCursorAnchorLayoutPreview then
+        self:ClearCursorAnchorLayoutPreview()
+    end
 
     for groupId, frame in pairs(self.groupFrames or {}) do
         local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
@@ -1588,6 +1639,11 @@ function CooldownCompanion:EndCombatForcedLock()
     if self._arrangeModeActive and self._arrangeModePill then
         self._arrangeModePill:Show()
     end
+    -- Re-park cursor panels on the dummy cursor for the rest of the
+    -- arrange session (the pin suspended on combat entry).
+    if self._arrangeModeActive and self.ShowCursorAnchorLayoutPreview then
+        self:ShowCursorAnchorLayoutPreview(nil)
+    end
 
     return snapshot
 end
@@ -1673,11 +1729,16 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
     return true
 end
 
+-- Cursor-anchored panels have no stable position (they ride the live cursor,
+-- or park on the dummy cursor while pinned), so they never join the container
+-- mover's footprint: no wrapper stretch, no member overlay, no arrange
+-- selection. Their offset is edited through the dummy-cursor preview instead.
 function CooldownCompanion:GetContainerUnlockPreviewPanels(containerId, panels)
     local previewPanels = {}
     local panelList = panels or self:GetPanels(containerId)
     for _, panelInfo in ipairs(panelList) do
-        if self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
+        if not self:IsGroupCursorAnchored(panelInfo.group)
+            and self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
                 group = panelInfo.group,
                 checkCharVisibility = true,
             }) then
@@ -1689,7 +1750,8 @@ end
 
 function CooldownCompanion:ContainerHasArrangeEligiblePanel(containerId)
     for _, panelInfo in ipairs(self:GetPanels(containerId)) do
-        if self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
+        if not self:IsGroupCursorAnchored(panelInfo.group)
+            and self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
                 group = panelInfo.group,
                 checkCharVisibility = true,
                 assumeContainerUnlocked = true,
@@ -4039,7 +4101,18 @@ function CooldownCompanion:EnterArrangeMode()
     if ST.CollapseConfigForUnlock then
         ST.CollapseConfigForUnlock()
     end
-    GetArrangeModePill(self):Show()
+    -- Cursor-anchored panels chase the live cursor, which would sweep their
+    -- mover chrome across every other outline mid-arrange. Park them on the
+    -- dummy cursor for the whole unlock instead.
+    if self.ShowCursorAnchorLayoutPreview then
+        self:ShowCursorAnchorLayoutPreview(nil)
+    end
+    local pill = GetArrangeModePill(self)
+    -- The group list is where solo focus and chrome hiding live; start every
+    -- unlock with it open so those controls are discoverable.
+    pill._listExpanded = true
+    pill._listScrollOffset = 0
+    pill:Show()
     self:Print("All frames unlocked. Drag to move.")
 end
 
@@ -4050,6 +4123,11 @@ function CooldownCompanion:ExitArrangeMode(opts)
     self._arrangeChromeHidden = nil
     self._arrangeSoloContainerId = nil
     CancelActiveMoverGestures(self)
+    -- The arrange flag is already down, so this is a full teardown; config
+    -- re-expand below restores its own selection preview if one applies.
+    if self.ClearCursorAnchorLayoutPreview then
+        self:ClearCursorAnchorLayoutPreview()
+    end
     self:LockAllFrames()
     if self.SetIndependentCastBarLocked then
         self:SetIndependentCastBarLocked(true)
