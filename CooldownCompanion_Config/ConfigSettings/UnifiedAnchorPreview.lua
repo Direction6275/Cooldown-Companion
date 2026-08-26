@@ -175,12 +175,12 @@ local function UpdateAttachedBarsBadge(host, eligible)
 end
 
 ------------------------------------------------------------------------
--- The second quick toggle: hide currently-unavailable entries from the
+-- The second quick toggle: hide unavailable or disabled entries from the
 -- focused mirror
 ------------------------------------------------------------------------
 
--- Wears the mirror's own "Spell/item unavailable" warn mark, so the badge
--- names exactly what it hides. Sits one badge width inside the attached-bars
+-- Keeps the mirror's "Spell/item unavailable" warn mark as the umbrella for
+-- entries this toggle can hide. Sits one badge width inside the attached-bars
 -- pin when the pin is up, and takes the pin's corner spot when it is not.
 local UNAVAILABLE_BADGE_ATLAS = "Ping_Marker_Icon_Warning"
 local BADGE_GAP = 2
@@ -221,8 +221,8 @@ local function UpdateUnavailableEntriesBadge(host, groupId, pinShown)
             host,
             UNAVAILABLE_BADGE_ATLAS,
             AreUnavailableEntriesHidden,
-            "Show unavailable entries",
-            "Hide unavailable entries",
+            "Show unavailable and disabled entries",
+            "Hide unavailable and disabled entries",
             ToggleUnavailableEntries
         )
         host._cdcUnavailableEntriesBadge = badge
@@ -275,7 +275,7 @@ local function BuildUnifiedCastMirror(host, groupId)
     inner:SetSize(UNIFIED_MEASURE_SIZE, UNIFIED_MEASURE_SIZE)
     inner:Show()
     -- applySessionFilter: this duplicate is a visible copy of the filtered
-    -- interactive mirror above, not a saved-design tile, so the unavailable
+    -- interactive mirror above, not a saved-design tile, so the session
     -- filter must reflow both copies identically.
     ST._BuildButtonPanelPreview(inner, groupId,
         { readOnly = true, applySessionFilter = true })

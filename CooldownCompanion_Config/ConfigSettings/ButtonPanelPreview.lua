@@ -3180,7 +3180,7 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
         GameTooltip:AddLine("Right-click for options.", 0.75, 0.82, 0.92)
         if slot._cdcReorderPausedByFilter then
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Reordering is paused while unavailable entries are hidden.",
+            GameTooltip:AddLine("Reordering is paused while entries are hidden.",
                 0.7, 0.7, 0.7, true)
         end
     end
@@ -3313,8 +3313,8 @@ local function GetPanelGeometry(group, isBarMode, isTextMode, visibleIndices)
         -- currently USABLE entries only, while the mirror measures every saved
         -- entry, so the mirror shows the pitch the panel takes with everything
         -- showing rather than the pitch of this character's current subset.
-        -- The session unavailable filter narrows the scan to the entries it
-        -- kept (visibleIndices), so a hidden wide entry stops setting pitch.
+        -- The session filter narrows the scan to the entries it kept
+        -- (visibleIndices), so a hidden wide entry stops setting pitch.
         if GetTextEntryMetrics then
             w, h = GetTextEntryMetrics(style, nil, style.textFormat)
             local buttons = group.buttons or {}
@@ -6185,15 +6185,16 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         return
     end
 
-    -- Session view filter (the preview host's quick toggle): drop entries the
-    -- warn badge would mark unavailable and reflow the rest, except for any
-    -- selected entries the player is still editing. Dense ordinals place the
-    -- cells; every per-entry surface keeps its group.buttons index.
+    -- Session view filter (the preview host's quick toggle): drop unavailable
+    -- or disabled entries and reflow the rest, except for any selected entries
+    -- the player is still editing. Dense ordinals place the cells; every
+    -- per-entry surface keeps its group.buttons index.
     -- Never on Bar panels: their mirror is a saved-design projection that
-    -- deliberately keeps live usability out (CollectBarEntryStatus), so there
-    -- is no warn signal there for the toggle to hide. Read-only mirrors stay
-    -- unfiltered except the unified cast duplicate, which opts in so both
-    -- copies of the anchor panel show the same filtered set.
+    -- deliberately keeps live usability and enabled state out
+    -- (CollectBarEntryStatus), so there is no unavailable/disabled state there
+    -- for the toggle to hide. Read-only mirrors stay unfiltered except the
+    -- unified cast duplicate, which opts in so both copies of the anchor panel
+    -- show the same filtered set.
     local visibleIndices
     if (not readOnly or (options and options.applySessionFilter == true))
         and not isBarMode
@@ -6201,8 +6202,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         and not CS.otherClassLibraryActive then
         local kept = {}
         for index, buttonData in ipairs(buttons) do
-            if buttonData.enabled == false
-                or CooldownCompanion:IsButtonUsable(buttonData, group)
+            if CooldownCompanion:IsButtonUsable(buttonData, group)
                 or IsEntrySelected(index) then
                 kept[#kept + 1] = index
             end
@@ -6214,7 +6214,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     end
     if count == 0 then
         SetPreviewMessage(preview,
-            "Every entry here is unavailable and hidden by the preview toggle.")
+            "All entries here are unavailable or disabled, so the preview toggle has hidden them.")
         FinalizePreviewState(preview)
         return
     end
@@ -6402,7 +6402,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     end
     preview.layoutDrag = layoutDrag
     -- Reorder maps dense cells to group.buttons indices, so it stays off
-    -- while the unavailable filter has punched holes in that mapping. A
+    -- while the session filter has punched holes in that mapping. A
     -- sectioned panel counts ENTRIES, not base cells: an entry sitting in a
     -- section still has the base row and the other anchors to be dragged to.
     -- A one-entry panel has nowhere to go and stays off -- UNLESS that one entry
@@ -6534,7 +6534,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     end
 
     -- Tick only while at least one slot is animating a conditional preview
-    -- (pairs, not 1..count: the unavailable filter keys slots sparsely).
+    -- (pairs, not 1..count: the session filter keys slots sparsely).
     local anyAnimated = false
     for _, s in pairs(layoutDrag.slots) do
         if s._cdcCondAnim then
@@ -6556,8 +6556,8 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
 end
 
 -- Entry selection normally does not change saved panel geometry or mirrored
--- visuals. The unavailable filter is the exception: selection determines
--- whether an unavailable entry remains in the visible subset, so that path
+-- visuals. The session filter is the exception: selection determines whether
+-- a filtered entry remains in the visible subset, so that path
 -- falls back to a full mirror rebuild. Otherwise update the existing selection
 -- rings (and bar ghost exposure) in place.
 function ST._RefreshButtonPanelPreviewSelection(host, panelId)
@@ -6727,9 +6727,9 @@ ST._CollectEntryStatus = CollectEntryStatus
 ST._EntryStatusBadges = ENTRY_STATUS_BADGES
 
 -- Quick-toggle support for the buttons-view preview host: nil when this
--- panel type renders no entry grid the filter touches; otherwise whether any
--- entry currently wears the "Spell/item unavailable" warn signal the
--- unavailable filter hides (same computation as CollectEntryStatus's warn).
+-- panel type renders no entry grid the filter touches; otherwise whether it
+-- contains any unavailable or disabled entry the filter can act on. Filtering
+-- reuses IsButtonUsable; selected entries are preserved by the build pass.
 -- Bar panels are nil on purpose: their mirror is a saved-design projection
 -- the filter never applies to, so the badge must not offer it there.
 function ST._PanelPreviewUnavailableEntryState(group)
@@ -6738,8 +6738,7 @@ function ST._PanelPreviewUnavailableEntryState(group)
         return nil
     end
     for _, buttonData in ipairs(group.buttons or {}) do
-        if buttonData.enabled ~= false
-            and not CooldownCompanion:IsButtonUsable(buttonData, group) then
+        if not CooldownCompanion:IsButtonUsable(buttonData, group) then
             return true
         end
     end
