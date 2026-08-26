@@ -3668,7 +3668,10 @@ function CooldownCompanion:CreateGroupFrame(groupId)
 
     -- Arrange selection for parked cursor panels: click toggles the one
     -- panel that carries the positioning chrome (container-member grammar).
-    frame:SetScript("OnMouseUp", function(self, button)
+    -- SetFrameClickThrough WIPES OnMouseUp scripts whenever the frame goes
+    -- clickthrough, so the handler is kept on the frame and re-attached by
+    -- UpdateGroupClickthrough's interactive cursor branches.
+    frame._cursorSelectOnMouseUp = function(self, button)
         local suppressed = self._cursorSelectClickSuppressed
         self._cursorSelectClickSuppressed = nil
         if suppressed or button ~= "LeftButton" or self._dragInProgress then
@@ -3678,7 +3681,8 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         if clickGroup and IsCursorAnchor(clickGroup.anchor) then
             CooldownCompanion:SelectArrangeCursorPanel(self.groupId, true)
         end
-    end)
+    end
+    frame:SetScript("OnMouseUp", frame._cursorSelectOnMouseUp)
 
     -- Also allow dragging from the handle
     frame.dragHandle:EnableMouse(true)
@@ -5633,6 +5637,9 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     if isCursorLayoutPreviewSelected and not isTextureMode then
         SetFrameClickThrough(frame, false, false)
         frame:RegisterForDrag("LeftButton")
+        -- Clickthrough transitions wipe OnMouseUp; restore the selection
+        -- handler alongside the drag registration.
+        frame:SetScript("OnMouseUp", frame._cursorSelectOnMouseUp)
         if frame.dragHandle then
             SetFrameClickThrough(frame.dragHandle, false, false)
             frame.dragHandle:EnableMouse(true)
@@ -5654,6 +5661,9 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
         and IsCursorAnchorLayoutPreviewGroupActive(self, groupId) then
         SetFrameClickThrough(frame, false, false)
         frame:RegisterForDrag("LeftButton")
+        -- Clickthrough transitions wipe OnMouseUp; restore the selection
+        -- handler alongside the drag registration.
+        frame:SetScript("OnMouseUp", frame._cursorSelectOnMouseUp)
         if frame.dragHandle then
             SetFrameClickThrough(frame.dragHandle, true, true)
         end
