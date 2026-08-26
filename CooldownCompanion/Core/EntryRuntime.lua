@@ -651,6 +651,14 @@ function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
     customBarSpellCooldownLaneOpts.suppressCooldownSurface = resourceGatedNoCooldown == true
     local result = EvaluateSpellCooldownLane(cooldownSpellID, secrecy, spellID, customBarSpellCooldownLaneOpts)
 
+    -- The combined classification visibility rules need (display AND base,
+    -- the IsNoCooldownForVisibility pair), published on the result because
+    -- the frame's cached base field is only refreshed when an override
+    -- diverges — a recycled frame could otherwise serve another spell's
+    -- stale base classification. The scratch is wiped per call, so this is
+    -- always current.
+    result.noCooldownForVisibility = noCooldown == true and baseNoCooldown == true
+
     if hasCharges then
         ApplyCustomBarChargeState(owner, result, spellID, cooldownSpellID, charges, maxCharges)
     else

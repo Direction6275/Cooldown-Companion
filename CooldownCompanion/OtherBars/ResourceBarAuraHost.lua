@@ -246,6 +246,13 @@ function RB.CreateResourceBarAuraHostModule(deps)
             -- only now, where BuildStyleAdapter turns this bar's own key into
             -- a mode. A field no reader consumes would only look live.
             hideWhileAuraNotActive = cabConfig.hideWhenInactive == true,
+            auraShellDim = cabConfig.auraShellDim == true or nil,
+            -- Scope opt-ins ride the shared rebind-pass unit resolution
+            -- (ResolveEntryAuraUnits): wants leave unit nil, so group fan-out,
+            -- the pet-wins backstop, and the harmful-ignores-scope rule all
+            -- apply exactly as they do to panel entries.
+            auraTrackGroup = cabConfig.auraTrackGroup == true or nil,
+            auraTrackPet = cabConfig.auraTrackPet == true or nil,
             -- Shared BY REFERENCE: GetButtonSoundAlertConfig and
             -- GetCustomBarSoundAlertConfig read the identical .soundAlerts
             -- shape, so the donor's native aura sound path works unchanged.
@@ -1270,6 +1277,20 @@ function RB.CreateResourceBarAuraHostModule(deps)
         -- restricted max lookup.
         AnchorHolderToBar(holder, frame,
             GetCustomBarHolderInset(barInfo, GetCustomBarBorderInset(settings)))
+    end
+
+    -- Show & hide rules (spell bars): the kit holder is parented to a
+    -- stable root, not the bar frame, so a cooldown-rule hide on the CC bar
+    -- would leave the aura visuals standing. This mirrors ONLY the rule
+    -- alpha onto the holder — the aura shell (hideWhenInactive/auraShellDim)
+    -- deliberately keeps the kit at full strength, and holder alpha writes
+    -- are legal in combat. Composes multiplicatively with the root's fade.
+    function RB.SetCustomBarAuraHostRuleAlpha(barInfo, alpha)
+        local customBarId = barInfo and barInfo.customBarId
+        local holder = customBarId and holders[customBarId]
+        if holder then
+            holder:SetAlpha(alpha)
+        end
     end
 
     -- The resource-holder mirror of the repair above, keyed by powerType.

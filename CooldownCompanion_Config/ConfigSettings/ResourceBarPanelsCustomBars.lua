@@ -482,6 +482,7 @@ local function BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
         })
     end
 
+    local auraNoteColumn
     if #cooldownEvents > 0 and #auraEvents > 0 then
         for _, eventKey in ipairs(cooldownEvents) do
             AddSoundEventRow(soundLeft, eventKey)
@@ -489,6 +490,7 @@ local function BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
         for _, eventKey in ipairs(auraEvents) do
             AddSoundEventRow(soundRight, eventKey)
         end
+        auraNoteColumn = soundRight
     else
         -- ceil(n/2) left, the rest right - the per-resource Colors precedent.
         local survivors = (#cooldownEvents > 0) and cooldownEvents or auraEvents
@@ -496,12 +498,111 @@ local function BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
         for index, eventKey in ipairs(survivors) do
             AddSoundEventRow(index <= splitAt and soundLeft or soundRight, eventKey)
         end
+        if survivors == auraEvents then
+            auraNoteColumn = soundRight
+        end
+    end
+
+    -- Group scope caveat: the aura sound registration is per person, so the
+    -- engine only arms it while the tracked unit set is a single unit
+    -- (ungrouped). The rows stay live because they DO play solo; this line
+    -- keeps the limitation visible instead of silent.
+    if cab.auraTrackGroup == true and #auraEvents > 0 and auraNoteColumn then
+        local groupNote = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(groupNote)
+        groupNote:SetText("|cff888888Tracking your group: aura sounds only play while you are ungrouped.|r")
+        groupNote:SetFullWidth(true)
+        auraNoteColumn:AddChild(groupNote)
     end
 end
 
 local function BuildCustomBarLoadConditionsTab(container, cab, infoButtons)
     local settings = CooldownCompanion:GetResourceBarSettings()
     local currentSpecID = GetCurrentConfigSpecID()
+
+    -- Show & hide rules (spell bars): the cheap panel subset, computed from
+    -- state the per-tick cooldown evaluation already resolves. Labels,
+    -- keys, and interlocks mirror ButtonConditions so the two surfaces
+    -- teach each other.
+    if IsSpellCustomBarConfig(cab) then
+        local rulesHeading, rulesCollapsed =
+            AddCustomBarSection(container, "Show & Hide Rules", "hiderules", GetCustomBarCollapseKey(cab))
+        local rulesInfoBtn = CreateInfoButton(rulesHeading.frame, rulesHeading.label, "LEFT", "RIGHT", 4, 0, {
+            "Show & Hide Rules",
+            {"Hides the bar by cooldown or charge state.", 1, 1, 1, true},
+            {" ", 1, 1, 1, true},
+            {"Its slot in the bar stack stays reserved while hidden.", 1, 1, 1, true},
+            {" ", 1, 1, 1, true},
+            {"When the game hides a spell's cooldown from addons, the bar stays shown.", 1, 1, 1, true},
+        }, infoButtons)
+        AnchorLeftAlignedHeadingRule(rulesHeading, rulesInfoBtn)
+
+        if not rulesCollapsed then
+            local function CommitRules()
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:RefreshConfigPanel()
+            end
+            local rulesLeft, rulesRight = BeginRowGrid(container)
+            local isChargeSpell = cab.hasCharges == true
+                or (tonumber(cab.maxCharges) or 0) > 1
+
+            AddCheckboxRow(rulesLeft, {
+                label = "Hide While On Cooldown",
+                value = cab.hideWhileOnCooldown == true,
+                onChange = function(value)
+                    cab.hideWhileOnCooldown = value or nil
+                    if value then
+                        cab.hideWhileNotOnCooldown = nil
+                        cab.showOnlyAtZeroCharges = nil
+                    end
+                    CommitRules()
+                end,
+            })
+
+            AddCheckboxRow(rulesLeft, {
+                label = "Hide While Not On Cooldown",
+                value = cab.hideWhileNotOnCooldown == true,
+                onChange = function(value)
+                    cab.hideWhileNotOnCooldown = value or nil
+                    if value then
+                        cab.hideWhileOnCooldown = nil
+                    else
+                        cab.showOnlyAtZeroCharges = nil
+                    end
+                    CommitRules()
+                end,
+            })
+
+            if isChargeSpell and cab.hideWhileNotOnCooldown == true then
+                AddCheckboxRow(rulesLeft, {
+                    label = "Only Show At Zero Charges",
+                    indent = true,
+                    value = cab.showOnlyAtZeroCharges == true,
+                    onChange = function(value)
+                        cab.showOnlyAtZeroCharges = value or nil
+                        if value then
+                            cab.hideWhileZeroCharges = nil
+                        end
+                        CommitRules()
+                    end,
+                })
+            end
+
+            if isChargeSpell then
+                AddCheckboxRow(rulesRight, {
+                    label = "Hide While At Zero Charges",
+                    value = cab.hideWhileZeroCharges == true,
+                    onChange = function(value)
+                        cab.hideWhileZeroCharges = value or nil
+                        if value then
+                            cab.showOnlyAtZeroCharges = nil
+                        end
+                        CommitRules()
+                    end,
+                })
+            end
+        end
+    end
 
     -- The who-half of this tab: which specs the bar belongs to. The
     -- where-half is the shared toggles below.
@@ -656,10 +757,29 @@ end
 -- Store the derived unit whenever tracking config changes, so the runtime
 -- fallback (uncached spells at login) starts from the right value.
 local function SyncCustomBarDerivedAuraUnit(cab)
-    local unit = ClassifyAuraSpellUnit(CooldownCompanion:ResolveAuraSpellID(BuildCustomBarAuraProbe(cab)))
+    local probe = BuildCustomBarAuraProbe(cab)
+    local unit = ClassifyAuraSpellUnit(CooldownCompanion:ResolveAuraSpellID(probe))
     if unit then
         cab.auraUnit = unit
         cab.auraUnitExplicit = nil
+        -- Drop scope flags the runtime would ignore (panel parity:
+        -- SyncDerivedAuraUnit): debuffs resolve to your target and ignore
+        -- them, and an unowned aura would match nowhere. Ownership probes
+        -- the bar's OWN castable spell — the resolved aura can be a linked
+        -- applied ID, which is never castable. The opposite-polarity veto
+        -- clears group only: a helpful aura off a harmful base is exactly
+        -- the shape pet tracking exists for.
+        if unit == "target"
+            or CooldownCompanion:EntryOwnsAuraForGroupScope(probe, tonumber(cab.spellID)) ~= true then
+            cab.auraTrackGroup = nil
+            cab.auraTrackPet = nil
+        elseif cab.auraTrackGroup == true and IsSpellCustomBarConfig(cab)
+            and #GetAuraCandidateList(cab) > 0 then
+            local baseUnit = ClassifyAuraSpellUnit(tonumber(cab.spellID))
+            if baseUnit and baseUnit ~= unit then
+                cab.auraTrackGroup = nil
+            end
+        end
     end
 end
 
@@ -698,13 +818,106 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         end
     end
 
-    -- Derived unit line (read-only by design; the "?" heading explains why).
-    local unit = GetCustomBarAuraUnit(cab)
-    AddLabelRow(auraLeft, {
-        label = "Tracked on",
-        indent = isSpellBar,
-        controlText = unit == "target" and "Target" or "You",
-    })
+    -- Tracked unit. Polarity (you vs target) stays derived and never
+    -- user-set; a confirmed castable buff additionally offers the scope
+    -- choice (you / group / pet) as a dropdown on this same row — the one
+    -- part the user picks, mirroring the panel Aura tab's opt-ins with the
+    -- exclusivity made structural (owner ruling 2026-08-26).
+    local probe = BuildCustomBarAuraProbe(cab)
+    local resolvedAuraID = CooldownCompanion:ResolveAuraSpellID(probe)
+    -- The resolved aura can be a LINKED applied-aura ID distinct from the
+    -- castable spell (Lifebloom 33763 applies 1227806, runtime-confirmed
+    -- 2026-08-26), so classification falls back to the bar's own spell and
+    -- ownership is probed on the bar's own spell only — that IS the
+    -- castable identity the user added; the applied ID is never castable.
+    local barSpellID = tonumber(cab.spellID)
+    local classifiedUnit = ClassifyAuraSpellUnit(resolvedAuraID)
+        or ClassifyAuraSpellUnit(barSpellID)
+    local unit = classifiedUnit or cab.auraUnit or "player"
+    local isBuff = unit ~= "target"
+
+    -- Reconcile stale scope on a CONFIRMED-harmful bar (imported or drifted
+    -- config): the runtime resolves it to the target and ignores the flags,
+    -- and the read-only label below would leave them no clearing path —
+    -- while they still steer IsAuraBlockEntry. Confirmed polarity only;
+    -- never clear on the uncached-spell fallback guess.
+    if classifiedUnit == "target"
+        and (cab.auraTrackGroup ~= nil or cab.auraTrackPet ~= nil) then
+        cab.auraTrackGroup = nil
+        cab.auraTrackPet = nil
+    end
+
+    -- Scope eligibility, panel parity (ButtonSettingsAura): confirmed
+    -- polarity and a buff the entry can vouch for. Group scope additionally
+    -- loses to an opposite-polarity aura list on spell bars (the base spell
+    -- cannot make an independent override group-trackable); pet scope uses
+    -- the core ownership rule alone plus the sticky pet-class capability.
+    -- A stored flag always keeps its clearing path regardless of gates.
+    local coreOwnsForScope = classifiedUnit ~= nil and isBuff
+        and CooldownCompanion:EntryOwnsAuraForGroupScope(probe, barSpellID) == true
+    local groupVetoed = false
+    if isSpellBar and #GetAuraCandidateList(cab) > 0 then
+        local baseUnit = ClassifyAuraSpellUnit(tonumber(cab.spellID))
+        if baseUnit and classifiedUnit and baseUnit ~= classifiedUnit then
+            groupVetoed = true
+        end
+    end
+    local canPets = ST._CharacterCanCommandPets
+    local canTrackGroup = (coreOwnsForScope and not groupVetoed)
+        or cab.auraTrackGroup == true
+    local canTrackPet = (coreOwnsForScope and canPets and canPets() == true)
+        or cab.auraTrackPet == true
+
+    if not isBuff or not (canTrackGroup or canTrackPet) then
+        AddLabelRow(auraLeft, {
+            label = "Tracked on",
+            indent = isSpellBar,
+            controlText = unit == "target" and "Target" or "You",
+        })
+    else
+        local scope = cab.auraTrackPet == true and "pet"
+            or cab.auraTrackGroup == true and "group"
+            or "player"
+        local scopeList = { player = "You" }
+        local scopeOrder = { "player" }
+        if canTrackGroup then
+            scopeList.group = "You and your group"
+            scopeOrder[#scopeOrder + 1] = "group"
+        end
+        if canTrackPet then
+            scopeList.pet = "Your pet"
+            scopeOrder[#scopeOrder + 1] = "pet"
+        end
+        local scopeRow = AddDropdownRow(auraLeft, {
+            label = "Tracked on",
+            indent = isSpellBar,
+            list = scopeList,
+            order = scopeOrder,
+            value = scope,
+            onChange = function(value)
+                cab.auraTrackGroup = value == "group" and true or nil
+                cab.auraTrackPet = value == "pet" and true or nil
+                SyncCustomBarDerivedAuraUnit(cab)
+                -- Scope can move an aura bar between the collapsing block
+                -- and the fixed stack (group/pet bars always keep a slot),
+                -- so commit like a layout change, not just a refresh.
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:RepositionCastBar()
+                CooldownCompanion:UpdateAnchorStacking()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+        AnchorRowBadge(scopeRow, CreateInfoButton(scopeRow.frame, scopeRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Tracked On",
+            {"You and your group follows the buff onto anyone in your party or raid, like a healer's Lifebloom on a tank.", 1, 1, 1, true},
+            {" ", 1, 1, 1, true},
+            {"Best for buffs that sit on one person at a time. The addon is never told who holds the aura, so a buff on several people draws overlapping displays.", 1, 1, 1, true},
+            {" ", 1, 1, 1, true},
+            {"Aura sounds only play while you are ungrouped. In a group they fire per person, so moving the buff would sound like it dropped.", 1, 1, 1, true},
+            {" ", 1, 1, 1, true},
+            {"Your pet tracks the buff on your summoned pet instead of on you, like Dark Transformation on a ghoul.", 1, 1, 1, true},
+        }, infoButtons))
+    end
 
     for _, spellID in ipairs(GetAuraCandidateList(cab)) do
         AddAuraCandidateRow(auraLeft, spellID, function(removedID)
@@ -921,11 +1134,22 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         })
     end
 
+    -- Group/pet-tracked aura bars cannot join the collapsing aura block
+    -- (owner ruling 2026-08-26: they always keep their slot), so the toggle
+    -- greys out rather than lying. The stored key survives, and switching
+    -- the scope back restores it. Spell bars shell in place, so their
+    -- toggle stays live under every scope.
+    local scopeExpanded = cab.auraTrackGroup == true or cab.auraTrackPet == true
+    local shellDisabled = scopeExpanded and not isSpellBar
     local shellRow = AddCheckboxRow(auraRight, {
         label = "Show Only While Aura Active",
         value = cab.hideWhenInactive == true,
+        disabled = shellDisabled,
         onChange = function(value)
             cab.hideWhenInactive = value or nil
+            if value then
+                cab.auraShellDim = nil
+            end
             -- Toggling moves an aura bar between the fixed stack and the
             -- collapsing block, so the stack's extent changes: this needs
             -- the same commit as a layout drop, not just a config refresh.
@@ -953,7 +1177,35 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         shellInfo[#shellInfo + 1] = {" ", 1, 1, 1, true}
         shellInfo[#shellInfo + 1] = {"Splitting your auras and the target's onto different sides avoids the extra gap.", 1, 1, 1, true}
     end
+    if shellDisabled then
+        shellInfo[#shellInfo + 1] = {" ", 1, 1, 1, true}
+        shellInfo[#shellInfo + 1] = {"Not available while tracking your group or your pet. Those bars keep their place in the stack.", 1, 1, 1, true}
+    end
     AnchorRowBadge(shellRow, CreateInfoButton(shellRow.frame, shellRow.frame, "LEFT", "LEFT", 0, 0, shellInfo, infoButtons))
+
+    -- The dim twin (panel parity: Dim While Aura Inactive / auraShellDim).
+    -- The bar keeps its place at reduced strength until the aura runs, so
+    -- it works under every scope; mutually exclusive with the hide above.
+    local dimRow = AddCheckboxRow(auraRight, {
+        label = "Dim While Aura Inactive",
+        value = cab.auraShellDim == true,
+        onChange = function(value)
+            cab.auraShellDim = value and true or nil
+            if value then
+                cab.hideWhenInactive = nil
+            end
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RepositionCastBar()
+            CooldownCompanion:UpdateAnchorStacking()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+    AnchorRowBadge(dimRow, CreateInfoButton(dimRow.frame, dimRow.frame, "LEFT", "LEFT", 0, 0, {
+        "Dim While Aura Inactive",
+        {"Shows the bar dimmed until its tracked aura is active, then at full strength while it runs.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"The bar keeps its place in the stack.", 1, 1, 1, true},
+    }, infoButtons))
 end
 
 local function BuildCustomBarWorkspaceAddBox(container)

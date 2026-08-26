@@ -49,6 +49,10 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         or ClearCustomAuraBarIndicatorState
     local UpdateCustomAuraBarIndicatorVisuals = deps.UpdateCustomAuraBarIndicatorVisuals
 
+    -- Defined with the shell-composition block below; referenced by the
+    -- per-tick spell-bar update above them.
+    local ApplyCustomBarShellAlpha, GetCustomBarRuleAlpha
+
     ------------------------------------------------------------------------
     -- Update logic: Custom aura bars (aura-based, secret-safe)
     ------------------------------------------------------------------------
@@ -180,6 +184,11 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         UpdateSpellCustomBarChargeText(bar, cooldownResult)
 
+        -- Show & hide rules ride this same evaluation. Sounds keep running
+        -- below regardless of alpha (panel parity: hidden buttons still
+        -- alert).
+        ApplyCustomBarShellAlpha(barInfo, GetCustomBarRuleAlpha(barInfo, cooldownResult))
+
         if CooldownCompanion.UpdateCustomBarSoundAlerts then
             local soundCooldownActive = cooldownActive
             if cooldownResult and cooldownResult.hasCharges == true then
@@ -288,29 +297,124 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end
     end
 
-    -- Shell composition (hideWhenInactive, 12.1): the CC frame stays SHOWN
-    -- as the layout member and aura host but renders nothing — the kit's
-    -- shell replicas (bg + border ring + fill + texts) are the entire
-    -- visible bar, Blizzard-shown only while the aura runs. The slot stays
-    -- reserved in combat (no reflow) — documented, accepted. Whole-frame
-    -- alpha, not per-region: the kit lives in a separate holder subtree,
-    -- and abandoned frames are never reused so a zeroed alpha cannot leak
-    -- into another bar type. The unlock assist lifts the shell so the bar
-    -- can be dragged at all: nothing else raises a zeroed whole-frame alpha,
-    -- and an invisible drag target is not a target.
-    local function ApplyCustomBarShellAlpha(barInfo)
+    -- Shell composition (hideWhenInactive/auraShellDim, 12.1): the CC frame
+    -- stays SHOWN as the layout member and aura host but renders nothing (or
+    -- renders dimmed) — the kit's shell replicas (bg + border ring + fill +
+    -- texts) are the entire visible bar, Blizzard-shown only while the aura
+    -- runs. The slot stays reserved in combat (no reflow) — documented,
+    -- accepted. Whole-frame alpha, not per-region: the kit lives in a
+    -- separate holder subtree, and abandoned frames are never reused so a
+    -- zeroed alpha cannot leak into another bar type. The unlock assist
+    -- lifts the shell so the bar can be dragged at all: nothing else raises
+    -- a zeroed whole-frame alpha, and an invisible drag target is not a
+    -- target.
+    local function GetCustomBarShellAlpha(cabConfig)
+        local auraTracked = not RB.IsSpellCustomBarConfig(cabConfig)
+            or cabConfig.auraTracking == true
+        if not auraTracked then
+            return 1
+        end
+        -- Aura entries reach the zeroed branch only on an unlock-assist pass
+        -- or as drifted group/pet config: the aura block partition
+        -- (RB.IsAuraBlockEntry) keeps them out of the stack otherwise. Spell
+        -- bars with aura tracking still shell here. Hide wins over dim when
+        -- both keys drift on (panel parity: GetAuraShellRestingAlpha).
+        if cabConfig.hideWhenInactive == true then
+            return 0
+        end
+        if cabConfig.auraShellDim == true then
+            return CooldownCompanion.DIM_FALLBACK_ALPHA
+        end
+        return 1
+    end
+
+    -- Show & hide rules (spell custom bars): computed from the same
+    -- per-tick cooldown evaluation the fill uses, so hiding costs nothing
+    -- new. Panel semantics (ButtonFrame/Visibility.lua): charge spells
+    -- treat zero/missing charges as "on cooldown" and full charges as "not
+    -- on cooldown"; no-cooldown spells skip both directional rules. An
+    -- unreadable (secret) charge state matches no branch, so every rule
+    -- fails open to shown.
+    function GetCustomBarRuleAlpha(barInfo, cooldownResult)
+        local cabConfig = barInfo.cabConfig
+        if not (cabConfig.hideWhileOnCooldown
+            or cabConfig.hideWhileNotOnCooldown
+            or cabConfig.hideWhileZeroCharges) then
+            return 1
+        end
+        if not cooldownResult then
+            return 1
+        end
+
+        local CL = ST.CooldownLogic
+        local hasCharges = cooldownResult.hasCharges == true
+        local chargeState = cooldownResult.chargeState
+        local cooldownActive = cooldownResult.state == CL.STATE_COOLDOWN
+        -- Panel parity (IsNoCooldownForVisibility): a spell with no real
+        -- cooldown is permanently "not on cooldown", so hiding on either
+        -- direction would stick forever — skip both. Read from the result,
+        -- not the frame cache: a recycled frame's base classification is
+        -- only refreshed when an override diverges, so the cached field can
+        -- belong to another spell.
+        local noCooldown = cooldownResult.noCooldownForVisibility == true
+
+        if cabConfig.hideWhileOnCooldown and not noCooldown then
+            if hasCharges then
+                if chargeState == CL.CHARGE_STATE_ZERO
+                    or chargeState == CL.CHARGE_STATE_MISSING then
+                    return 0
+                end
+            elseif cooldownActive then
+                return 0
+            end
+        end
+
+        if cabConfig.hideWhileNotOnCooldown and not noCooldown then
+            if hasCharges then
+                if cabConfig.showOnlyAtZeroCharges then
+                    if chargeState == CL.CHARGE_STATE_FULL
+                        or chargeState == CL.CHARGE_STATE_MISSING then
+                        return 0
+                    end
+                elseif chargeState == CL.CHARGE_STATE_FULL then
+                    return 0
+                end
+            elseif not cooldownActive and cooldownResult.fetchOk == true then
+                -- fetchOk gate: an unavailable fetch leaves state at its
+                -- READY default, and unknown must fail open to shown (the
+                -- section tooltip promises exactly that). Charge branches
+                -- key off concrete charge states and need no extra gate.
+                return 0
+            end
+        end
+
+        if cabConfig.hideWhileZeroCharges
+            and chargeState == CL.CHARGE_STATE_ZERO then
+            return 0
+        end
+
+        return 1
+    end
+
+    function ApplyCustomBarShellAlpha(barInfo, ruleAlpha)
         local bar = barInfo.frame
         local cabConfig = barInfo.cabConfig
         if not (bar and cabConfig) then return end
-        local auraTracked = not RB.IsSpellCustomBarConfig(cabConfig)
-            or cabConfig.auraTracking == true
-        -- Aura entries reach the zeroed branch only on an unlock-assist pass:
-        -- the aura block partition (RB.IsAuraBlockEntry) keeps them out of
-        -- the stack otherwise. Spell bars with aura tracking still shell here.
-        local shell = auraTracked
-            and cabConfig.hideWhenInactive == true
-            and not GetUnlockAssistActive()
-        bar:SetAlpha(shell and 0 or 1)
+        local unlockAssist = GetUnlockAssistActive()
+        local alpha = 1
+        if not unlockAssist then
+            alpha = GetCustomBarShellAlpha(cabConfig)
+            if ruleAlpha and ruleAlpha < alpha then
+                alpha = ruleAlpha
+            end
+        end
+        bar:SetAlpha(alpha)
+        -- Rule alpha ONLY on the kit holder: the aura shell keeps the kit
+        -- at full strength by design (it IS the visible bar there).
+        if RB.SetCustomBarAuraHostRuleAlpha then
+            RB.SetCustomBarAuraHostRuleAlpha(barInfo,
+                (not unlockAssist) and ruleAlpha or 1)
+        end
     end
 
     local function FinalizeAppliedBarVisibility(barInfo)
