@@ -629,10 +629,16 @@ end
 
 local function IsCursorAnchorLayoutPreviewSelected(self, groupId)
     local preview = self and self._cursorAnchorLayoutPreview
-    return preview
-        and preview.selectedGroupId == groupId
-        and PreviewMapContains(preview.activeGroupIds, groupId)
-        or false
+    if not (preview and PreviewMapContains(preview.activeGroupIds, groupId)) then
+        return false
+    end
+    if preview.selectedGroupId == groupId then
+        return true
+    end
+    -- Arrange's pin-only form still positions panels: every parked panel
+    -- takes the selection affordances (drag to set the offset, nudge,
+    -- editable coordinates), not just the one config picked.
+    return self._arrangeModeActive == true
 end
 
 local function GetAnchorOffset(point, width, height)
@@ -1943,10 +1949,15 @@ end
 
 local function CanUsePanelResizeInteractions(groupId, group)
     if not IsGroupPanelResizable(group)
-        or IsCursorAnchor(group.anchor)
         or CooldownCompanion._combatForcedLock
         or InCombatLockdown() then
         return false
+    end
+
+    -- The cursor positioning preview owns cursor panels; resize rides the
+    -- same gate that grants them drag and nudge.
+    if IsCursorAnchor(group.anchor) then
+        return IsCursorAnchorLayoutPreviewSelected(CooldownCompanion, groupId)
     end
 
     if not GetContainerState(groupId) then
@@ -2329,6 +2340,10 @@ local function AddPanelDragHelpTooltipLines(tooltip, isCursorPreview, isResizabl
         tooltip:AddLine(" ")
         tooltip:AddLine("Use the arrow pad to nudge the saved cursor offset by 1 pixel.", 1, 1, 1, true)
         tooltip:AddLine(" ")
+        if isResizable then
+            tooltip:AddLine("Drag the corner grip or mouse wheel to resize.", 1, 1, 1, false)
+            tooltip:AddLine(" ")
+        end
         tooltip:AddLine("Position coordinates are shown below while editing.", 1, 1, 1, false)
         return
     end
@@ -2486,9 +2501,12 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
     if frame.nudger then
         frame.nudger:SetShown(shown)
     end
+    -- Cursor panels resize through the positioning preview's selection gate,
+    -- same as their drag; other panels keep the plain resizable check.
     local resizeShown = shown
         and IsGroupPanelResizable(group)
-        and not IsCursorAnchor(group.anchor)
+        and (not IsCursorAnchor(group.anchor)
+            or IsCursorAnchorLayoutPreviewSelected(CooldownCompanion, frame.groupId))
         or false
     if resizeShown and not frame.resizeGrip then
         frame.resizeGrip = CreatePanelResizeGrip(frame)
@@ -5507,7 +5525,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
         or ST.IsAuraPanelGroup(group)
         or #group.buttons > 0
     local resizeWheelEnabled = hasResizeEntry
-        and (not containerPreviewActive or isSelectedInContainer)
+        and (isCursorLayoutPreviewSelected or not containerPreviewActive or isSelectedInContainer)
         and CanUsePanelResizeInteractions(groupId, group)
 
     SyncGroupControlLevels(
@@ -6480,9 +6498,13 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         local isCursorAnchored = group and IsCursorAnchor(group.anchor)
 
         if groupFrame and not isStandaloneDisplay then
-            SyncGroupControlLevels(groupFrame, isSelected and not isCursorAnchored)
-            if self:IsContainerUnlockPreviewActive(containerId) then
-                self:SetGroupDragControlsShown(groupFrame, isSelected and not isCursorAnchored)
+            -- Cursor-anchored panels are owned by the cursor positioning
+            -- preview, not the container mover: leave their chrome alone.
+            if not isCursorAnchored then
+                SyncGroupControlLevels(groupFrame, isSelected)
+                if self:IsContainerUnlockPreviewActive(containerId) then
+                    self:SetGroupDragControlsShown(groupFrame, isSelected)
+                end
             end
             self:UpdateGroupClickthrough(groupId)
         elseif isStandaloneDisplay and self.UpdateGroupedStandalonePreviewSelection then
