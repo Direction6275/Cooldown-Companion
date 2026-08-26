@@ -230,6 +230,15 @@ local SPEC_RESOURCES = {
     [1480] = { 104, 105, 17 },
 }
 
+-- Druid specialization resources that can remain visible across forms.
+-- This is Cooldown Companion display policy, not a Blizzard form mapping.
+local DRUID_PERSISTENT_RESOURCES_BY_SPEC = {
+    [102] = { 8 },            -- Balance: Astral Power
+    [103] = { 4, 3 },         -- Feral: Combo Points, Energy
+    [104] = { 1 },            -- Guardian: Rage
+    [105] = {},               -- Restoration: Mana is appended separately
+}
+
 -- Druid form mapping (verified in-game: Bear=5, Cat=1, Moonkin=31)
 local DRUID_FORM_RESOURCES = {
     [5]  = { 1 },           -- Bear: Rage
@@ -535,6 +544,7 @@ ST._RB = {
     -- Class/spec mappings
     CLASS_RESOURCES = CLASS_RESOURCES,
     SPEC_RESOURCES = SPEC_RESOURCES,
+    DRUID_PERSISTENT_RESOURCES_BY_SPEC = DRUID_PERSISTENT_RESOURCES_BY_SPEC,
     DRUID_FORM_RESOURCES = DRUID_FORM_RESOURCES,
     DRUID_DEFAULT_RESOURCES = DRUID_DEFAULT_RESOURCES,
     CLASS_RESOURCES_CONFIG = CLASS_RESOURCES_CONFIG,

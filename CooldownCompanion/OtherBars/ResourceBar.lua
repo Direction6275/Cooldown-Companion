@@ -2568,7 +2568,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
     local reverseVerticalFill = IsVerticalFillReversed(settings)
 
     -- Determine which resources to show
-    local resources = DetermineActiveResources()
+    local resources = DetermineActiveResources(settings)
     local filtered = {}
     -- A mutually exclusive pair (the Devourer resources) is filtered here
     -- rather than in the spec list itself: DetermineActiveResources also

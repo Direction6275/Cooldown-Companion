@@ -431,6 +431,11 @@ local function BuildCurrentCompactProfileDefaults()
         compactDefaults.castBar.highlightPenultimateChannelTick = nil
         compactDefaults.castBar.penultimateChannelTickColor = nil
     end
+    if compactDefaults.resourceBars then
+        -- This setting postdates compact5. Keep it outside the frozen baseline
+        -- so both explicit states serialize without changing older imports.
+        compactDefaults.resourceBars.keepSpecResourcesInAllForms = nil
+    end
     return compactDefaults
 end
 

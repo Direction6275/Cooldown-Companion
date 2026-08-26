@@ -957,6 +957,10 @@ local function NormalizeResourceBarSettingsForClass(settings, classKey)
     NormalizeResourceSpecOverridesForClass(settings, classKey)
     NormalizeResourceThresholdTickEntries(settings)
     if type(settings) == "table" then
+        -- Missing values from pre-feature class buckets mean the default off state.
+        if settings.keepSpecResourcesInAllForms == nil then
+            settings.keepSpecResourcesInAllForms = false
+        end
         RESOURCE_BAR_NORMALIZED_CLASS_KEYS[settings] = NormalizeClassKey(classKey)
     end
 end
@@ -1113,10 +1117,15 @@ local function IsDefaultResourceBarClassSettings(settings, classKey)
     if type(settings) ~= "table" then
         return false
     end
+    local comparable = settings
+    if settings.keepSpecResourcesInAllForms == nil then
+        comparable = CopyTable(settings)
+        comparable.keepSpecResourcesInAllForms = false
+    end
     local defaults = CopySubsystemDefaults("resourceBars")
     NormalizeResourceBarSettingsForClass(defaults, classKey)
     SanitizeResourceBarAnchors(defaults, classKey)
-    return DeepEqual(settings, defaults)
+    return DeepEqual(comparable, defaults)
 end
 
 local function SortedMapKeys(map)

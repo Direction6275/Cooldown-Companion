@@ -519,6 +519,7 @@ local defaults = {
             segmentedSmoothing = "on",
             segmentGap = 4,
             hideManaForNonHealer = true,
+            keepSpecResourcesInAllForms = false,
             resources = {
                 [-1] = {
                     enabled = false,
