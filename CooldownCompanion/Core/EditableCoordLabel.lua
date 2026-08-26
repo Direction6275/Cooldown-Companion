@@ -281,7 +281,12 @@ function ST.BeginMoverChromeHoverReveal(frame, refresh)
         if frame._arrangeHoverGen ~= generation or frame._arrangeChromeHover ~= true then
             return
         end
-        if addon._arrangeModeActive and ST.IsMoverChromePointerOver(frame) then
+        -- An active gesture holds the reveal open even when the pointer
+        -- strays off the chrome: retracting would hide the grip mid-drag
+        -- and its OnHide would end the gesture underneath the user.
+        local gestureActive = frame._dragInProgress == true
+            or (frame._resizeGrip and frame._resizeGrip._resizeActive == true)
+        if addon._arrangeModeActive and (gestureActive or ST.IsMoverChromePointerOver(frame)) then
             C_Timer.After(0.2, Watch)
             return
         end
@@ -650,6 +655,7 @@ function ST.AttachMoverWidthResize(frame, opts)
         if changed then
             opts.apply()
             UpdateSizeLabelText()
+            RefreshConfigPanelIfShown()
         end
     end)
 

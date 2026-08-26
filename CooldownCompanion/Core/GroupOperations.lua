@@ -977,21 +977,8 @@ function CooldownCompanion:IsAnyFrameUnlocked()
         end
     end
 
-    local castSettings = self.GetCastBarSettings and self:GetCastBarSettings()
-    if castSettings
-        and castSettings.enabled == true
-        and castSettings.independentAnchorEnabled == true
-        and not castSettings.independentAnchorLocked then
-        return true
-    end
-
-    local resourceSettings = self.GetResourceBarSettings and self:GetResourceBarSettings()
-    local resourceLayout = resourceSettings and self.GetSpecLayoutOrder and self:GetSpecLayoutOrder()
-    if resourceSettings
-        and resourceSettings.enabled == true
-        and resourceLayout
-        and resourceLayout.independentAnchorEnabled == true
-        and not resourceLayout.independentAnchorLocked then
+    if self:IsSpecialMoverUnlockEligible("cast")
+        or self:IsSpecialMoverUnlockEligible("resource") then
         return true
     end
 
@@ -1017,6 +1004,13 @@ function CooldownCompanion:CheckArrangeModeAutoExit()
         return
     end
 
+    -- Arrange survives combat through the forced lock; combat also hides the
+    -- movers, so the runtime-visibility eligibility below must not read that
+    -- suppression as "everything locked" and exit mid-fight.
+    if InCombatLockdown() or self._combatForcedLock then
+        return
+    end
+
     for containerId, container in pairs(self.db.profile.groupContainers or {}) do
         if self:IsContainerVisibleToCurrentChar(containerId)
             and container.locked == false then
@@ -1024,21 +1018,8 @@ function CooldownCompanion:CheckArrangeModeAutoExit()
         end
     end
 
-    local castSettings = self.GetCastBarSettings and self:GetCastBarSettings()
-    if castSettings
-        and castSettings.enabled == true
-        and castSettings.independentAnchorEnabled == true
-        and not castSettings.independentAnchorLocked then
-        return
-    end
-
-    local resourceSettings = self.GetResourceBarSettings and self:GetResourceBarSettings()
-    local resourceLayout = resourceSettings and self.GetSpecLayoutOrder and self:GetSpecLayoutOrder()
-    if resourceSettings
-        and resourceSettings.enabled == true
-        and resourceLayout
-        and resourceLayout.independentAnchorEnabled == true
-        and not resourceLayout.independentAnchorLocked then
+    if self:IsSpecialMoverUnlockEligible("cast")
+        or self:IsSpecialMoverUnlockEligible("resource") then
         return
     end
 
@@ -1208,6 +1189,38 @@ function CooldownCompanion:IsArrangeSpecialMoverId(id)
     return id == "cast" or id == "resource"
 end
 
+-- One unlock-eligibility gate for the special movers. Saved unlock state is
+-- not enough on its own: the runtime mover only materializes when the bar
+-- actually built for this character and spec. Toolbar rows, unlocked checks,
+-- and arrange auto-exit all share this answer so a mover that never appeared
+-- cannot hold arrange open or take a solo that shows nothing.
+function CooldownCompanion:IsSpecialMoverUnlockEligible(id)
+    if id == "cast" then
+        local settings = self.GetCastBarSettings and self:GetCastBarSettings()
+        if not (settings
+            and settings.enabled == true
+            and settings.independentAnchorEnabled == true
+            and not settings.independentAnchorLocked) then
+            return false
+        end
+        local frame = self.GetIndependentCastBarSnapFrame and self:GetIndependentCastBarSnapFrame()
+        return frame ~= nil and frame:IsVisible() == true
+    elseif id == "resource" then
+        local settings = self.GetResourceBarSettings and self:GetResourceBarSettings()
+        local layout = settings and self.GetSpecLayoutOrder and self:GetSpecLayoutOrder()
+        if not (settings
+            and settings.enabled == true
+            and layout
+            and layout.independentAnchorEnabled == true
+            and not layout.independentAnchorLocked) then
+            return false
+        end
+        local snapFrame = self.GetIndependentResourceStackSnapFrame and self:GetIndependentResourceStackSnapFrame()
+        return snapFrame ~= nil and snapFrame:IsVisible() == true
+    end
+    return false
+end
+
 function CooldownCompanion:RefreshArrangeSpecialMoverChrome(id)
     if id == "cast" then
         if self.RefreshIndependentCastBarMoverChrome then
@@ -1242,20 +1255,10 @@ function CooldownCompanion:RefreshArrangePillList()
                 entries[#entries + 1] = { id = containerId, name = container.name or ("Group " .. containerId) }
             end
         end
-        local castSettings = self.GetCastBarSettings and self:GetCastBarSettings()
-        if castSettings
-            and castSettings.enabled == true
-            and castSettings.independentAnchorEnabled == true
-            and not castSettings.independentAnchorLocked then
+        if self:IsSpecialMoverUnlockEligible("cast") then
             entries[#entries + 1] = { id = "cast", name = "Cast Bar" }
         end
-        local rbSettings = self.GetResourceBarSettings and self:GetResourceBarSettings()
-        local rbPlacement = rbSettings and self.GetSpecLayoutOrder and self:GetSpecLayoutOrder()
-        if rbSettings
-            and rbSettings.enabled == true
-            and rbPlacement
-            and rbPlacement.independentAnchorEnabled == true
-            and not rbPlacement.independentAnchorLocked then
+        if self:IsSpecialMoverUnlockEligible("resource") then
             entries[#entries + 1] = { id = "resource", name = "Resource Bars" }
         end
         table.sort(entries, function(a, b)

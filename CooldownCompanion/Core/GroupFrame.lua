@@ -1999,8 +1999,8 @@ local function ApplyPanelResizeFromCursor(grip)
         return false
     end
 
-    local dx = cursorX - grip._resizeStartX
-    local dy = cursorY - grip._resizeStartY
+    local dx = (cursorX - grip._resizeStartX) * (grip._resizeSignX or 1)
+    local dy = (cursorY - grip._resizeStartY) * (grip._resizeSignY or 1)
     local perButtonDW = dx / (grip._resizeCols * grip._resizeKX)
     local perButtonDH = -dy / (grip._resizeRows * grip._resizeKY)
     local changed = false
@@ -2096,6 +2096,8 @@ local function EndPanelResizeGesture(grip, applyFinal)
     grip._resizeRows = nil
     grip._resizeKX = nil
     grip._resizeKY = nil
+    grip._resizeSignX = nil
+    grip._resizeSignY = nil
     grip._resizeElapsed = nil
     grip._resizeRestylePending = nil
     CooldownCompanion:EndMoverChromeFade(grip)
@@ -2206,6 +2208,22 @@ local function BeginPanelResizeGesture(grip)
     end
     if grip._resizeKY == 0 then
         grip._resizeKY = 1
+    end
+    -- A parked cursor panel extends away from its anchored point, so the
+    -- factors and delta signs come from that anchor: the grip sits on the
+    -- movable corner and dragging it outward always grows the panel.
+    grip._resizeSignX = 1
+    grip._resizeSignY = 1
+    if IsCursorAnchor(group.anchor) then
+        local point = group.anchor.point or "CENTER"
+        grip._resizeKX = (point:find("LEFT", 1, true) or point:find("RIGHT", 1, true)) and 1 or 0.5
+        grip._resizeKY = (point:find("TOP", 1, true) or point:find("BOTTOM", 1, true)) and 1 or 0.5
+        if point:find("RIGHT", 1, true) then
+            grip._resizeSignX = -1
+        end
+        if point:find("BOTTOM", 1, true) then
+            grip._resizeSignY = -1
+        end
     end
 
     if group.displayMode == "bars" then
@@ -2469,6 +2487,37 @@ local function SyncGroupControlLevels(frame, raiseAboveWrapper)
     ST._SyncAuraPanelPlaceholderLevels(frame, raiseAboveWrapper)
 end
 
+-- The resize grip lives on the panel's movable corner. Ordinary panels keep
+-- the BOTTOMRIGHT default; a parked cursor panel's anchored point is fixed at
+-- the dummy cursor, so the opposite corner is the one that tracks resizes.
+function CooldownCompanion:RepositionPanelResizeGrip(frame)
+    local grip = frame.resizeGrip
+    if not grip then
+        return
+    end
+    local group = frame.groupId and self.db.profile.groups[frame.groupId]
+    local xSide, ySide = "RIGHT", "BOTTOM"
+    if group and IsCursorAnchor(group.anchor) then
+        local point = group.anchor.point or "CENTER"
+        if point:find("RIGHT", 1, true) then
+            xSide = "LEFT"
+        end
+        if point:find("BOTTOM", 1, true) then
+            ySide = "TOP"
+        end
+    end
+    if grip._cornerX == xSide and grip._cornerY == ySide then
+        return
+    end
+    grip._cornerX = xSide
+    grip._cornerY = ySide
+    local corner = ySide .. xSide
+    grip:ClearAllPoints()
+    grip:SetPoint(corner, frame, corner,
+        xSide == "LEFT" and 1 or -1,
+        ySide == "TOP" and -1 or 1)
+end
+
 function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
     if not frame then
         return
@@ -2506,6 +2555,9 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
         frame.resizeGrip = CreatePanelResizeGrip(frame)
     end
     if frame.resizeGrip then
+        if resizeShown then
+            CooldownCompanion:RepositionPanelResizeGrip(frame)
+        end
         frame.resizeGrip:SetShown(resizeShown)
     end
     if frame.sizeLabel then
@@ -2697,7 +2749,14 @@ local function SetCursorAnchorLayoutPreviewGroupState(self, groupId, active)
     end
 
     self:SetGroupDragControlsShown(frame, selected and not isStandaloneDisplay)
-    if selected then
+    if isStandaloneDisplay then
+        -- Standalone displays edit through their HOST: it carries the mover
+        -- chrome and the click/drag selection route while parked.
+        local host = GetCursorAnchoredStandaloneHost(frame, group)
+        if host and self.RefreshCursorAnchoredHostControls then
+            self:RefreshCursorAnchoredHostControls(host, groupId, group, active == true, selected == true)
+        end
+    elseif selected then
         UpdateCoordLabel(frame, group.anchor.x or CURSOR_ANCHOR_X, group.anchor.y or CURSOR_ANCHOR_Y)
     end
     self:UpdateGroupClickthrough(groupId)
@@ -2797,9 +2856,12 @@ end
 local function SaveCursorAnchorLayoutPreviewPanelPosition(self, groupId)
     local frame = self.groupFrames and self.groupFrames[groupId] or nil
     local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
+    -- A standalone display's visible body is its host, so a host drag must be
+    -- measured against the host; the alpha-0 group frame never moved.
+    local host = GetCursorAnchoredStandaloneHost(frame, group)
     local newX, newY, cursorX, cursorY, point = ComputeCursorAnchorLayoutPreviewPanelCoordinates(
         self,
-        frame,
+        host or frame,
         groupId,
         group
     )
@@ -2816,6 +2878,9 @@ local function SaveCursorAnchorLayoutPreviewPanelPosition(self, groupId)
 
     ApplyCursorAnchorPosition(self, frame, group.anchor, cursorX, cursorY)
     UpdateCoordLabel(frame, newX, newY)
+    if host and self.RefreshCursorAnchoredHostControls then
+        self:RefreshCursorAnchoredHostControls(host, groupId, group, true, true)
+    end
     self:RefreshConfigPanel()
     self:UpdateCursorAnchoredFrames()
     return true
@@ -2941,6 +3006,44 @@ local function EndCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId, cance
         self:UpdateCursorAnchoredFrames()
     end
     self:EndMoverChromeFade(frame)
+    return true
+end
+
+-- Host-drag entry points for parked standalone displays (Texture and Trigger
+-- panels). The drag mechanics live with the host in AuraTexturesDisplay;
+-- these own the preview bookkeeping and the cursor-anchor save, mirroring
+-- the ordinary panel drag pair above.
+function CooldownCompanion:BeginCursorAnchorLayoutPreviewHostDrag(host, groupId)
+    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
+    if not (host and group and IsCursorAnchor(group.anchor)) then
+        return false
+    end
+    if not IsCursorAnchorLayoutPreviewSelected(self, groupId) then
+        return false
+    end
+    if self._combatForcedLock or (InCombatLockdown() and host.IsProtected and host:IsProtected()) then
+        return false
+    end
+
+    local preview = self._cursorAnchorLayoutPreview
+    if preview then
+        preview.draggedGroupId = groupId
+    end
+    return true
+end
+
+function CooldownCompanion:EndCursorAnchorLayoutPreviewHostDrag(groupId, cancelSave)
+    local preview = self._cursorAnchorLayoutPreview
+    if preview and GroupIdsEqual(preview.draggedGroupId, groupId) then
+        preview.draggedGroupId = nil
+    end
+    if cancelSave then
+        self:UpdateCursorAnchoredFrames()
+        return true
+    end
+    if not SaveCursorAnchorLayoutPreviewPanelPosition(self, groupId) then
+        self:UpdateCursorAnchoredFrames()
+    end
     return true
 end
 
