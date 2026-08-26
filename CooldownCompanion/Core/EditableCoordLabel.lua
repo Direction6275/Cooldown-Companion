@@ -250,6 +250,47 @@ local function RefreshConfigPanelIfShown()
     end
 end
 
+local function IsMoverChromeRegionOver(region)
+    -- 4px of grace bridges the small gaps between chrome pieces, matching
+    -- the container reveal.
+    return region ~= nil and region:IsShown() and region:IsMouseOver(4, -4, -4, 4)
+end
+
+function ST.IsMoverChromePointerOver(frame)
+    return IsMoverChromeRegionOver(frame._dragHandle)
+        or IsMoverChromeRegionOver(frame._nudger)
+        or IsMoverChromeRegionOver(frame._coordLabel)
+        or IsMoverChromeRegionOver(frame._sizeLabel)
+        or IsMoverChromeRegionOver(frame._resizeGrip)
+end
+
+-- Arrange chrome reveal for the independent bar movers, mirroring the
+-- container model: at rest only the name bar shows; hovering it reveals the
+-- nudger, labels, and grip until the pointer leaves the chrome. Outside
+-- arrange mode the movers keep their full chrome, so this never starts.
+function ST.BeginMoverChromeHoverReveal(frame, refresh)
+    local addon = ST.Addon
+    if not addon._arrangeModeActive or frame._arrangeChromeHover then
+        return
+    end
+    frame._arrangeChromeHover = true
+    frame._arrangeHoverGen = (frame._arrangeHoverGen or 0) + 1
+    local generation = frame._arrangeHoverGen
+    refresh()
+    local function Watch()
+        if frame._arrangeHoverGen ~= generation or frame._arrangeChromeHover ~= true then
+            return
+        end
+        if addon._arrangeModeActive and ST.IsMoverChromePointerOver(frame) then
+            C_Timer.After(0.2, Watch)
+            return
+        end
+        frame._arrangeChromeHover = nil
+        refresh()
+    end
+    C_Timer.After(0.2, Watch)
+end
+
 -- opts:
 --   dragHandle       name-bar frame; kit parent and mouse-wheel target
 --   coordLabel       existing coordinate label; the size label anchors below it

@@ -639,6 +639,28 @@ local function CreateIndependentWrapperFrame()
     dragHandle.text:SetText("Resource Bars")
     dragHandle.text:SetTextColor(1, 1, 1, 1)
 
+    -- Quiet-chrome reveal, container grammar: hovering the name bar brings
+    -- out the nudger, labels, and grip while arranging; clicking it toggles
+    -- a solo and keeps this mover focused (pinned open).
+    dragHandle:SetScript("OnEnter", function()
+        ST.BeginMoverChromeHoverReveal(frame, function()
+            CooldownCompanion:RefreshIndependentResourceStackMoverChrome()
+        end)
+    end)
+    dragHandle:SetScript("OnMouseUp", function(_, button)
+        local suppressed = frame._focusClickSuppressed
+        frame._focusClickSuppressed = nil
+        if suppressed or button ~= "LeftButton" or frame._dragInProgress then
+            return
+        end
+        if CooldownCompanion._arrangeSoloContainerId == "resource" then
+            CooldownCompanion:SetArrangeSoloContainer(nil)
+        else
+            CooldownCompanion:SetArrangeSoloContainer("resource")
+        end
+        CooldownCompanion:FocusArrangeContainer("resource")
+    end)
+
     dragHandle.lockButton = ST.CreateMoverLockBadge(dragHandle, 12, function()
         LockIndependentStackFromMover(frame)
     end)
@@ -848,6 +870,11 @@ local function CreateIndependentWrapperFrame()
         if not placementSettings then return end
         if placementSettings.independentAnchorLocked then return end
         if InCombatLockdown() then return end
+        -- Dragging solos this mover, mirroring container header drags.
+        if CooldownCompanion._arrangeModeActive and CooldownCompanion.SetArrangeSoloContainer then
+            frame._focusClickSuppressed = true
+            CooldownCompanion:SetArrangeSoloContainer("resource")
+        end
         frame._dragCancelPending = nil
         frame._dragInProgress = true
         frame:StartMoving()
@@ -858,6 +885,9 @@ local function CreateIndependentWrapperFrame()
         StartIndependentStackCoordUpdates(frame, placementSettings.independentAnchor)
     end)
     dragHandle:SetScript("OnDragStop", function()
+        -- The release that ends this drag also fires OnMouseUp; it must not
+        -- read as a focus-toggling click.
+        frame._focusClickSuppressed = true
         local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
         frame._dragCancelPending = nil
         frame._dragInProgress = nil
@@ -902,6 +932,12 @@ UpdateIndependentStackDragState = function(settings, placementSettings)
     local chromeHidden = CooldownCompanion.IsContainerArrangeChromeHidden
         and CooldownCompanion:IsContainerArrangeChromeHidden("resource")
     local chromeShown = (unlocked and not chromeHidden) or false
+    -- Quiet-chrome grammar in arrange: the name bar rests alone; nudger,
+    -- labels, and grip reveal on hover or while this mover holds focus.
+    local revealed = not CooldownCompanion._arrangeModeActive
+        or CooldownCompanion._arrangeFocusContainerId == "resource"
+        or frame._arrangeChromeHover == true
+    local toolsShown = (chromeShown and revealed) or false
 
     frame:SetMovable(unlocked or false)
 
@@ -916,25 +952,28 @@ UpdateIndependentStackDragState = function(settings, placementSettings)
     end
 
     if frame._nudger then
-        frame._nudger:SetShown(chromeShown)
-        frame._nudger:EnableMouse(chromeShown)
+        frame._nudger:SetShown(toolsShown)
+        frame._nudger:EnableMouse(toolsShown)
         if frame._nudger._cdcButtons then
             for _, btn in ipairs(frame._nudger._cdcButtons) do
-                btn:EnableMouse(chromeShown)
+                btn:EnableMouse(toolsShown)
             end
         end
     end
 
     if frame._coordLabel then
-        frame._coordLabel:SetShown(chromeShown)
+        frame._coordLabel:SetShown(toolsShown)
     end
     if frame._sizeLabel then
         -- Explicit SetShown: mover teardown hides this label directly, so
         -- parent visibility alone would leave it hidden on re-enable.
-        frame._sizeLabel:SetShown(chromeShown)
-        if chromeShown and frame._sizeLabel.UpdateText then
+        frame._sizeLabel:SetShown(toolsShown)
+        if toolsShown and frame._sizeLabel.UpdateText then
             frame._sizeLabel.UpdateText()
         end
+    end
+    if frame._resizeGrip then
+        frame._resizeGrip:SetShown(toolsShown)
     end
     CooldownCompanion:ApplyMoverChromeFadeToFrames(frame._dragHandle, frame._coordLabel, frame._nudger, frame._resizeGrip, frame._sizeLabel)
 

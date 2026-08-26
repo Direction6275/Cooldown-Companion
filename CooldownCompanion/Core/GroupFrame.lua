@@ -629,16 +629,10 @@ end
 
 local function IsCursorAnchorLayoutPreviewSelected(self, groupId)
     local preview = self and self._cursorAnchorLayoutPreview
-    if not (preview and PreviewMapContains(preview.activeGroupIds, groupId)) then
-        return false
-    end
-    if preview.selectedGroupId == groupId then
-        return true
-    end
-    -- Arrange's pin-only form still positions panels: every parked panel
-    -- takes the selection affordances (drag to set the offset, nudge,
-    -- editable coordinates), not just the one config picked.
-    return self._arrangeModeActive == true
+    return preview
+        and preview.selectedGroupId == groupId
+        and PreviewMapContains(preview.activeGroupIds, groupId)
+        or false
 end
 
 local function GetAnchorOffset(point, width, height)
@@ -2726,6 +2720,35 @@ local function ApplyCursorAnchorLayoutPreviewGroupStates(self, previousGroupIds,
     end
 end
 
+-- Arrange selection for parked cursor panels: one panel at a time takes the
+-- positioning chrome, mirroring container member selection. A click toggles
+-- the selection; a drag selects without ever toggling off.
+function CooldownCompanion:SelectArrangeCursorPanel(groupId, toggle)
+    local preview = self._cursorAnchorLayoutPreview
+    if not (self._arrangeModeActive
+        and preview
+        and PreviewMapContains(preview.activeGroupIds, groupId)) then
+        return false
+    end
+
+    local previous = preview.selectedGroupId
+    if previous == groupId then
+        if toggle then
+            preview.selectedGroupId = nil
+            SetCursorAnchorLayoutPreviewGroupState(self, groupId, true)
+            return false
+        end
+        return true
+    end
+
+    preview.selectedGroupId = groupId
+    if previous ~= nil and PreviewMapContains(preview.activeGroupIds, previous) then
+        SetCursorAnchorLayoutPreviewGroupState(self, previous, true)
+    end
+    SetCursorAnchorLayoutPreviewGroupState(self, groupId, true)
+    return true
+end
+
 local function BeginCursorLayoutPreviewDrag(ownerFrame, dragRegion)
     ownerFrame._dragInProgress = true
     dragRegion:SetScript("OnUpdate", function()
@@ -2964,6 +2987,39 @@ local function EnsureCursorAnchorLayoutPreview(self)
     dragFrame:SetScript("OnDragStop", function(self)
         EndCursorLayoutPreviewDrag(frame, self)
     end)
+    -- Arrange rests the dummy cursor as the pointer icon alone; the label,
+    -- reset, and help reveal on hover, following the quiet-chrome grammar.
+    -- The config Layout-tab form keeps its chrome pinned open.
+    dragFrame:SetScript("OnEnter", function()
+        if not CooldownCompanion._arrangeModeActive or frame._cursorChromeHover then
+            return
+        end
+        frame._cursorChromeHover = true
+        frame._cursorHoverGen = (frame._cursorHoverGen or 0) + 1
+        local generation = frame._cursorHoverGen
+        local activePreview = CooldownCompanion._cursorAnchorLayoutPreview
+        if activePreview and activePreview.UpdateChrome then
+            activePreview.UpdateChrome()
+        end
+        local function Watch()
+            if frame._cursorHoverGen ~= generation or frame._cursorChromeHover ~= true then
+                return
+            end
+            local watchPreview = CooldownCompanion._cursorAnchorLayoutPreview
+            local labelShown = watchPreview and watchPreview.labelFrame and watchPreview.labelFrame:IsShown()
+            if frame:IsShown()
+                and (dragFrame:IsMouseOver(4, -4, -4, 4)
+                    or (labelShown and watchPreview.labelFrame:IsMouseOver(4, -4, -4, 4))) then
+                C_Timer.After(0.2, Watch)
+                return
+            end
+            frame._cursorChromeHover = nil
+            if watchPreview and watchPreview.UpdateChrome then
+                watchPreview.UpdateChrome()
+            end
+        end
+        C_Timer.After(0.2, Watch)
+    end)
 
     local texture = dragFrame:CreateTexture(nil, "OVERLAY")
     texture:SetAtlas(CURSOR_LAYOUT_PREVIEW_ATLAS, false)
@@ -3044,6 +3100,8 @@ local function EnsureCursorAnchorLayoutPreview(self)
             function(tooltip)
                 tooltip:AddLine("Dummy Cursor")
                 tooltip:AddLine("Drag this preview cursor to position active cursor panels without using your live cursor.", 1, 1, 1, true)
+                tooltip:AddLine(" ")
+                tooltip:AddLine("Click a parked panel to select and adjust it.", 1, 1, 1, true)
             end
         )
         if ST.SetRuntimeInfoButtonShown then
@@ -3059,13 +3117,23 @@ local function EnsureCursorAnchorLayoutPreview(self)
         resetButton = resetButton,
         texture = texture,
     }
+    -- resetButton and helpButton are labelFrame children, so the label's
+    -- visibility carries the whole chrome block.
+    preview.UpdateChrome = function()
+        labelFrame:SetShown(
+            not CooldownCompanion._arrangeModeActive
+                or frame._cursorChromeHover == true
+                or frame._dragInProgress == true
+        )
+    end
     self._cursorAnchorLayoutPreview = preview
     return preview
 end
 
 -- groupId names the panel that takes drag/nudge chrome. A nil groupId is the
 -- pin-only form used by arrange mode: every active cursor panel parks on the
--- dummy cursor with no selection chrome.
+-- dummy cursor quietly, and clicking or dragging one selects it into the
+-- positioning chrome (SelectArrangeCursorPanel).
 function CooldownCompanion:ShowCursorAnchorLayoutPreview(groupId)
     local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
     if groupId ~= nil and not (group and IsCursorAnchor(group.anchor)) then
@@ -3094,6 +3162,9 @@ function CooldownCompanion:ShowCursorAnchorLayoutPreview(groupId)
     end
     if preview.resetButton then
         preview.resetButton:Show()
+    end
+    if preview.UpdateChrome then
+        preview.UpdateChrome()
     end
     frame:Show()
     ApplyCursorAnchorLayoutPreviewGroupStates(self, previousActiveGroupIds, activeGroupIds)
@@ -3535,6 +3606,8 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         local previewActive, selectedInContainer, containerId = GetContainerPreviewSelectionState(self.groupId)
         local dragGroup = CooldownCompanion.db.profile.groups[self.groupId]
         if dragGroup and IsCursorAnchor(dragGroup.anchor) then
+            -- A drag on a parked-but-unselected panel selects it first.
+            CooldownCompanion:SelectArrangeCursorPanel(self.groupId, false)
             BeginCursorAnchorLayoutPreviewPanelDrag(CooldownCompanion, self, self.groupId)
             return
         end
@@ -3566,6 +3639,9 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         local dragGroup = CooldownCompanion.db.profile.groups[self.groupId]
         if dragGroup and IsCursorAnchor(dragGroup.anchor) then
             local cancelSave = self._dragCancelPending == true or CooldownCompanion._combatForcedLock
+            -- The release that ends this drag also fires OnMouseUp; it must
+            -- not read as a selection-toggling click.
+            self._cursorSelectClickSuppressed = true
             EndCursorAnchorLayoutPreviewPanelDrag(CooldownCompanion, self, self.groupId, cancelSave)
             return
         end
@@ -3588,6 +3664,20 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         end
         CooldownCompanion:SaveGroupPosition(self.groupId)
         CooldownCompanion:EndMoverChromeFade(self)
+    end)
+
+    -- Arrange selection for parked cursor panels: click toggles the one
+    -- panel that carries the positioning chrome (container-member grammar).
+    frame:SetScript("OnMouseUp", function(self, button)
+        local suppressed = self._cursorSelectClickSuppressed
+        self._cursorSelectClickSuppressed = nil
+        if suppressed or button ~= "LeftButton" or self._dragInProgress then
+            return
+        end
+        local clickGroup = CooldownCompanion.db.profile.groups[self.groupId]
+        if clickGroup and IsCursorAnchor(clickGroup.anchor) then
+            CooldownCompanion:SelectArrangeCursorPanel(self.groupId, true)
+        end
     end)
 
     -- Also allow dragging from the handle
@@ -5556,6 +5646,23 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
         return
     end
 
+    -- A parked-but-unselected cursor panel stays clickable in arrange so a
+    -- click or drag can select it; its chrome stays down until then.
+    if isCursorAnchored
+        and not isTextureMode
+        and self._arrangeModeActive
+        and IsCursorAnchorLayoutPreviewGroupActive(self, groupId) then
+        SetFrameClickThrough(frame, false, false)
+        frame:RegisterForDrag("LeftButton")
+        if frame.dragHandle then
+            SetFrameClickThrough(frame.dragHandle, true, true)
+        end
+        if frame.nudger then
+            SetFrameClickThrough(frame.nudger, true, true)
+        end
+        return
+    end
+
     if containerPreviewActive then
         if resizeWheelEnabled then
             SetFrameClickThrough(frame, true, false)
@@ -6020,6 +6127,9 @@ function CooldownCompanion:FocusArrangeContainer(containerId)
     if containerId then
         self:RefreshContainerWrapper(containerId)
     end
+    -- Focus also pins the independent bar movers' revealed chrome.
+    self:RefreshArrangeSpecialMoverChrome("cast")
+    self:RefreshArrangeSpecialMoverChrome("resource")
     if self.RefreshArrangePillList then
         self:RefreshArrangePillList()
     end
