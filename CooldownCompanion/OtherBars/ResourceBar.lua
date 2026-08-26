@@ -216,7 +216,8 @@ end
 
 function CooldownCompanion:GetIndependentResourceStackMoverChrome()
     local frame = independentWrapperFrame
-    return frame and frame._dragHandle, frame and frame._coordLabel, frame and frame._nudger
+    return frame and frame._dragHandle, frame and frame._coordLabel, frame and frame._nudger,
+        frame and frame._resizeGrip, frame and frame._sizeLabel
 end
 
 function CooldownCompanion:SetIndependentResourceStackLocked(locked)
@@ -593,6 +594,12 @@ local function LockIndependentStackFromMover(frame)
     if not settings then return end
     local placementSettings = GetSpecLayoutOrder(settings)
     if not placementSettings then return end
+    -- Locking the soloed mover would strand every other mover solo-hidden;
+    -- release the solo first (mirrors SetContainerLocked).
+    if CooldownCompanion._arrangeSoloContainerId == "resource"
+        and CooldownCompanion.SetArrangeSoloContainer then
+        CooldownCompanion:SetArrangeSoloContainer(nil)
+    end
     placementSettings.independentAnchorLocked = true
     frame._dragInProgress = nil
     StopIndependentStackCoordUpdates(frame)
@@ -601,6 +608,9 @@ local function LockIndependentStackFromMover(frame)
     CooldownCompanion:EndMoverChromeFade(frame)
     UpdateIndependentStackDragState(settings, placementSettings)
     CooldownCompanion:CaptureArrangeResourceRecord()
+    if CooldownCompanion._arrangeModeActive and CooldownCompanion.RefreshArrangePillList then
+        CooldownCompanion:RefreshArrangePillList()
+    end
     CooldownCompanion:CheckArrangeModeAutoExit()
 end
 
@@ -628,6 +638,28 @@ local function CreateIndependentWrapperFrame()
     dragHandle.text:SetPoint("CENTER")
     dragHandle.text:SetText("Resource Bars")
     dragHandle.text:SetTextColor(1, 1, 1, 1)
+
+    -- Quiet-chrome reveal, container grammar: hovering the name bar brings
+    -- out the nudger, labels, and grip while arranging; clicking it toggles
+    -- a solo and keeps this mover focused (pinned open).
+    dragHandle:SetScript("OnEnter", function()
+        ST.BeginMoverChromeHoverReveal(frame, function()
+            CooldownCompanion:RefreshIndependentResourceStackMoverChrome()
+        end)
+    end)
+    dragHandle:SetScript("OnMouseUp", function(_, button)
+        local suppressed = frame._focusClickSuppressed
+        frame._focusClickSuppressed = nil
+        if suppressed or button ~= "LeftButton" or frame._dragInProgress then
+            return
+        end
+        if CooldownCompanion._arrangeSoloContainerId == "resource" then
+            CooldownCompanion:SetArrangeSoloContainer(nil)
+        else
+            CooldownCompanion:SetArrangeSoloContainer("resource")
+        end
+        CooldownCompanion:FocusArrangeContainer("resource")
+    end)
 
     dragHandle.lockButton = ST.CreateMoverLockBadge(dragHandle, 12, function()
         LockIndependentStackFromMover(frame)
@@ -712,6 +744,7 @@ local function CreateIndependentWrapperFrame()
         end)
         btn:SetScript("OnMouseDown", function(self)
             CancelCoordinateEdit(frame._coordLabel)
+            CancelCoordinateEdit(frame._sizeLabel)
             DoNudge()
             CooldownCompanion:VerifyMoverChromeHoverFade(nudger)
         end)
@@ -744,18 +777,104 @@ local function CreateIndependentWrapperFrame()
         end,
         function()
             return frame._dragInProgress == true
+                or (frame._resizeGrip and frame._resizeGrip._resizeActive == true)
         end
     )
+
+    -- Width resize chrome (grip + wheel + typed label). Writes go to the
+    -- per-spec layout table, mirroring the config slider; the grip anchors to
+    -- the snap rect because the wrapper itself is a 1x1 pin.
+    ST.AttachMoverWidthResize(frame, {
+        dragHandle = dragHandle,
+        coordLabel = coordLabel,
+        gripAnchor = frame._dragSnapRectFrame,
+        getWidth = function()
+            local settings = GetResourceBarSettings()
+            local placementSettings = settings and GetSpecLayoutOrder(settings)
+            return placementSettings and placementSettings.independentWidth
+                or (settings and settings.independentWidth)
+                or 200
+        end,
+        setWidth = function(width)
+            local settings = GetResourceBarSettings()
+            local placementSettings = settings and GetSpecLayoutOrder(settings)
+            if placementSettings then
+                placementSettings.independentWidth = width
+            end
+        end,
+        -- Height edits the shared thickness, whose key flips with orientation
+        -- exactly as the config slider's does; per-resource custom heights
+        -- disable it here the same way they disable that slider.
+        getHeight = function()
+            local settings = GetResourceBarSettings()
+            local placementSettings = settings and GetSpecLayoutOrder(settings)
+            if not placementSettings then
+                return 12
+            end
+            if RB.IsVerticalResourceLayout(settings) then
+                return placementSettings.barWidth or placementSettings.barHeight
+                    or settings.barWidth or settings.barHeight or 12
+            end
+            return placementSettings.barHeight or placementSettings.barWidth
+                or settings.barHeight or settings.barWidth or 12
+        end,
+        setHeight = function(height)
+            local settings = GetResourceBarSettings()
+            local placementSettings = settings and GetSpecLayoutOrder(settings)
+            if not placementSettings then
+                return
+            end
+            if RB.IsVerticalResourceLayout(settings) then
+                placementSettings.barWidth = height
+            else
+                placementSettings.barHeight = height
+            end
+        end,
+        isHeightEnabled = function()
+            local settings = GetResourceBarSettings()
+            local placementSettings = settings and GetSpecLayoutOrder(settings)
+            return placementSettings ~= nil and placementSettings.customBarHeights ~= true
+        end,
+        isVertical = function()
+            local settings = GetResourceBarSettings()
+            return RB.IsVerticalResourceLayout(settings) == true
+        end,
+        apply = function()
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RepositionCastBar()
+            CooldownCompanion:UpdateAnchorStacking()
+        end,
+        isUnlocked = function()
+            local settings = GetResourceBarSettings()
+            local placementSettings = settings and GetSpecLayoutOrder(settings)
+            return placementSettings ~= nil
+                and placementSettings.independentAnchorEnabled == true
+                and not placementSettings.independentAnchorLocked
+                and not CooldownCompanion._combatForcedLock
+        end,
+        getAnchorPoint = function()
+            local settings = GetResourceBarSettings()
+            local placementSettings = settings and GetSpecLayoutOrder(settings)
+            local anchor = placementSettings and placementSettings.independentAnchor
+            return anchor and anchor.point or "CENTER"
+        end,
+    })
 
     dragHandle:RegisterForDrag("LeftButton")
     dragHandle:SetScript("OnDragStart", function()
         CancelCoordinateEdit(coordLabel)
+        CancelCoordinateEdit(frame._sizeLabel)
         local settings = GetResourceBarSettings()
         if not settings then return end
         local placementSettings = GetSpecLayoutOrder(settings)
         if not placementSettings then return end
         if placementSettings.independentAnchorLocked then return end
         if InCombatLockdown() then return end
+        -- Dragging solos this mover, mirroring container header drags.
+        if CooldownCompanion._arrangeModeActive and CooldownCompanion.SetArrangeSoloContainer then
+            frame._focusClickSuppressed = true
+            CooldownCompanion:SetArrangeSoloContainer("resource")
+        end
         frame._dragCancelPending = nil
         frame._dragInProgress = true
         frame:StartMoving()
@@ -766,6 +885,9 @@ local function CreateIndependentWrapperFrame()
         StartIndependentStackCoordUpdates(frame, placementSettings.independentAnchor)
     end)
     dragHandle:SetScript("OnDragStop", function()
+        -- The release that ends this drag also fires OnMouseUp; it must not
+        -- read as a focus-toggling click.
+        frame._focusClickSuppressed = true
         local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
         frame._dragCancelPending = nil
         frame._dragInProgress = nil
@@ -790,7 +912,7 @@ local function CreateIndependentWrapperFrame()
     frame._nudger = nudger
     frame._coordLabel = coordLabel
     independentWrapperFrame = frame
-    CooldownCompanion:ApplyMoverChromeFadeToFrames(dragHandle, coordLabel, nudger)
+    CooldownCompanion:ApplyMoverChromeFadeToFrames(dragHandle, coordLabel, nudger, frame._resizeGrip, frame._sizeLabel)
 end
 
 UpdateIndependentStackDragState = function(settings, placementSettings)
@@ -805,12 +927,24 @@ UpdateIndependentStackDragState = function(settings, placementSettings)
         CooldownCompanion:CancelIndependentResourceStackDrag()
     end
 
+    -- The toolbar's checkbox/solo can tuck this mover's chrome away for the
+    -- session while it stays unlocked; the unlock-assist display stays up.
+    local chromeHidden = CooldownCompanion.IsContainerArrangeChromeHidden
+        and CooldownCompanion:IsContainerArrangeChromeHidden("resource")
+    local chromeShown = (unlocked and not chromeHidden) or false
+    -- Quiet-chrome grammar in arrange: the name bar rests alone; nudger,
+    -- labels, and grip reveal on hover or while this mover holds focus.
+    local revealed = not CooldownCompanion._arrangeModeActive
+        or CooldownCompanion._arrangeFocusContainerId == "resource"
+        or frame._arrangeChromeHover == true
+    local toolsShown = (chromeShown and revealed) or false
+
     frame:SetMovable(unlocked or false)
 
     if frame._dragHandle then
-        frame._dragHandle:SetShown(unlocked or false)
-        frame._dragHandle:EnableMouse(unlocked or false)
-        if unlocked then
+        frame._dragHandle:SetShown(chromeShown)
+        frame._dragHandle:EnableMouse(chromeShown)
+        if chromeShown then
             frame._dragHandle:RegisterForDrag("LeftButton")
         else
             frame._dragHandle:RegisterForDrag()
@@ -818,19 +952,30 @@ UpdateIndependentStackDragState = function(settings, placementSettings)
     end
 
     if frame._nudger then
-        frame._nudger:SetShown(unlocked or false)
-        frame._nudger:EnableMouse(unlocked or false)
+        frame._nudger:SetShown(toolsShown)
+        frame._nudger:EnableMouse(toolsShown)
         if frame._nudger._cdcButtons then
             for _, btn in ipairs(frame._nudger._cdcButtons) do
-                btn:EnableMouse(unlocked or false)
+                btn:EnableMouse(toolsShown)
             end
         end
     end
 
     if frame._coordLabel then
-        frame._coordLabel:SetShown(unlocked or false)
+        frame._coordLabel:SetShown(toolsShown)
     end
-    CooldownCompanion:ApplyMoverChromeFadeToFrames(frame._dragHandle, frame._coordLabel, frame._nudger)
+    if frame._sizeLabel then
+        -- Explicit SetShown: mover teardown hides this label directly, so
+        -- parent visibility alone would leave it hidden on re-enable.
+        frame._sizeLabel:SetShown(toolsShown)
+        if toolsShown and frame._sizeLabel.UpdateText then
+            frame._sizeLabel.UpdateText()
+        end
+    end
+    if frame._resizeGrip then
+        frame._resizeGrip:SetShown(toolsShown)
+    end
+    CooldownCompanion:ApplyMoverChromeFadeToFrames(frame._dragHandle, frame._coordLabel, frame._nudger, frame._resizeGrip, frame._sizeLabel)
 
     -- Force the bars visible while unlocked so they can be dragged. Their
     -- contents stay real — a health bar shows your health, a shell bar shows
@@ -842,6 +987,12 @@ UpdateIndependentStackDragState = function(settings, placementSettings)
         frame._cdcUnlockAssist = false
         CooldownCompanion:StopResourceBarUnlockAssist()
     end
+end
+
+-- Re-present the mover chrome from current settings; the toolbar's
+-- chrome-hide and solo controls call this when their session state flips.
+function CooldownCompanion:RefreshIndependentResourceStackMoverChrome()
+    UpdateIndependentStackDragState(GetResourceBarSettings())
 end
 
 local function HideIndependentWrapperFrame()
@@ -858,6 +1009,9 @@ local function HideIndependentWrapperFrame()
     end
     if independentWrapperFrame._coordLabel then
         independentWrapperFrame._coordLabel:Hide()
+    end
+    if independentWrapperFrame._sizeLabel then
+        independentWrapperFrame._sizeLabel:Hide()
     end
     if independentWrapperFrame._cdcUnlockAssist then
         independentWrapperFrame._cdcUnlockAssist = false
