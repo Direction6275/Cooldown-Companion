@@ -763,21 +763,27 @@ local function SyncCustomBarDerivedAuraUnit(cab)
         cab.auraUnit = unit
         cab.auraUnitExplicit = nil
         -- Drop scope flags the runtime would ignore (panel parity:
-        -- SyncDerivedAuraUnit): debuffs resolve to your target and ignore
-        -- them, and an unowned aura would match nowhere. Ownership probes
-        -- the bar's OWN castable spell — the resolved aura can be a linked
-        -- applied ID, which is never castable. The opposite-polarity veto
-        -- clears group only: a helpful aura off a harmful base is exactly
-        -- the shape pet tracking exists for.
-        if unit == "target"
-            or CooldownCompanion:EntryOwnsAuraForGroupScope(probe, tonumber(cab.spellID)) ~= true then
+        -- SyncDerivedAuraUnit). Debuffs resolve to your target and ignore both.
+        -- Group scope still requires ownership through the bar's castable spell;
+        -- pet scope also accepts standalone Aura bars because they may describe
+        -- a pet self-buff with no separate cast entry.
+        local barSpellID = tonumber(cab.spellID)
+        if unit == "target" then
             cab.auraTrackGroup = nil
             cab.auraTrackPet = nil
-        elseif cab.auraTrackGroup == true and IsSpellCustomBarConfig(cab)
-            and #GetAuraCandidateList(cab) > 0 then
-            local baseUnit = ClassifyAuraSpellUnit(tonumber(cab.spellID))
-            if baseUnit and baseUnit ~= unit then
+        else
+            if CooldownCompanion:EntryOwnsAuraForGroupScope(probe, barSpellID) ~= true then
                 cab.auraTrackGroup = nil
+            end
+            if not CooldownCompanion:EntryCanUsePetAuraScope(probe, barSpellID) then
+                cab.auraTrackPet = nil
+            end
+            if cab.auraTrackGroup == true and IsSpellCustomBarConfig(cab)
+                and #GetAuraCandidateList(cab) > 0 then
+                local baseUnit = ClassifyAuraSpellUnit(barSpellID)
+                if baseUnit and baseUnit ~= unit then
+                    cab.auraTrackGroup = nil
+                end
             end
         end
     end
@@ -818,11 +824,11 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         end
     end
 
-    -- Tracked unit. Polarity (you vs target) stays derived and never
-    -- user-set; a confirmed castable buff additionally offers the scope
-    -- choice (you / group / pet) as a dropdown on this same row — the one
-    -- part the user picks, mirroring the panel Aura tab's opt-ins with the
-    -- exclusivity made structural (owner ruling 2026-08-26).
+    -- Tracked unit. Polarity (you vs target) stays derived and never user-set.
+    -- A confirmed helpful aura offers eligible scope choices on this same row:
+    -- group still requires castable ownership, while standalone Aura bars may
+    -- choose pet for self-buffs with no separate cast entry. The dropdown makes
+    -- the scopes structurally exclusive (owner ruling 2026-08-26).
     local probe = BuildCustomBarAuraProbe(cab)
     local resolvedAuraID = CooldownCompanion:ResolveAuraSpellID(probe)
     -- The resolved aura can be a LINKED applied-aura ID distinct from the
@@ -847,14 +853,15 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         cab.auraTrackPet = nil
     end
 
-    -- Scope eligibility, panel parity (ButtonSettingsAura): confirmed
-    -- polarity and a buff the entry can vouch for. Group scope additionally
-    -- loses to an opposite-polarity aura list on spell bars (the base spell
-    -- cannot make an independent override group-trackable); pet scope uses
-    -- the core ownership rule alone plus the sticky pet-class capability.
-    -- A stored flag always keeps its clearing path regardless of gates.
-    local coreOwnsForScope = classifiedUnit ~= nil and isBuff
+    -- Scope eligibility, panel parity (ButtonSettingsAura): group requires a
+    -- confirmed owned buff and additionally loses to an opposite-polarity Aura
+    -- list on spell bars. Pet requires a confirmed buff plus the CORE pet rule,
+    -- which admits standalone Aura bars, and sticky pet-class capability. A
+    -- stored flag always keeps its clearing path regardless of gates.
+    local coreOwnsForGroupScope = classifiedUnit ~= nil and isBuff
         and CooldownCompanion:EntryOwnsAuraForGroupScope(probe, barSpellID) == true
+    local coreAllowsPetScope = classifiedUnit ~= nil and isBuff
+        and CooldownCompanion:EntryCanUsePetAuraScope(probe, barSpellID)
     local groupVetoed = false
     if isSpellBar and #GetAuraCandidateList(cab) > 0 then
         local baseUnit = ClassifyAuraSpellUnit(tonumber(cab.spellID))
@@ -863,9 +870,9 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         end
     end
     local canPets = ST._CharacterCanCommandPets
-    local canTrackGroup = (coreOwnsForScope and not groupVetoed)
+    local canTrackGroup = (coreOwnsForGroupScope and not groupVetoed)
         or cab.auraTrackGroup == true
-    local canTrackPet = (coreOwnsForScope and canPets and canPets() == true)
+    local canTrackPet = (coreAllowsPetScope and canPets and canPets() == true)
         or cab.auraTrackPet == true
 
     if not isBuff or not (canTrackGroup or canTrackPet) then

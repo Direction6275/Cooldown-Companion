@@ -1871,6 +1871,17 @@ function CooldownCompanion:EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpe
     return self:CanPlayerEverCastSpell(primaryAuraSpellID)
 end
 
+-- Pet scope can follow a pet self-buff, so a standalone Aura entry does not
+-- need a separate castable identity. Spell entries still use their castable
+-- spell as the ownership proof that keeps their Aura override meaningful.
+function CooldownCompanion:EntryCanUsePetAuraScope(buttonData, primaryAuraSpellID)
+    if type(buttonData) ~= "table" then return false end
+    if buttonData.type == "spell" and buttonData.addedAs == "aura" then
+        return true
+    end
+    return self:EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID) == true
+end
+
 -- Search the off-spec spellbook for a spell by name or ID.
 -- Returns spellID, name if found; nil otherwise.
 local function FindOffSpecSpell(spellIdentifier)

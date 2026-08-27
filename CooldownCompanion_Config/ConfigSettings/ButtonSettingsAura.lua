@@ -112,13 +112,12 @@ local function SyncDerivedAuraUnit(buttonData)
         if unit == "target" or not EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID) then
             buttonData.auraTrackGroup = nil
         end
-        -- Pet scope normalizes through the CORE ownership rule, not the
-        -- wrapper above: the wrapper's opposite-polarity veto is group-only,
-        -- and clearing pet scope through it would strip the harmful-base/
-        -- helpful-pet-aura shape pet tracking exists for (Barbed Shot ->
-        -- Frenzy).
+        -- Pet scope has its own CORE eligibility rule, not the wrapper above:
+        -- standalone Aura entries may follow pet self-buffs without a separate
+        -- castable spell, while the wrapper's opposite-polarity veto remains
+        -- group-only. Spell entries still retain their castable-identity proof.
         if unit == "target"
-            or CooldownCompanion:EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID) ~= true then
+            or not CooldownCompanion:EntryCanUsePetAuraScope(buttonData, primaryAuraSpellID) then
             buttonData.auraTrackPet = nil
         end
     end
@@ -217,7 +216,7 @@ local AURA_TRACKING_TOOLTIP = {
     "Aura Tracking",
     {"Blizzard tracks the aura and drives the display; the addon never reads aura state in combat.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Buffs are tracked on you. A buff tied to a helpful spell you can cast can also follow your group, or be tracked only on your pet; a buff overriding a harmful spell stays on you. Your own debuffs are tracked on your target.", 1, 1, 1, true},
+    {"Buffs are tracked on you. A buff tied to a helpful spell you can cast can also follow your group. Helpful buffs can instead be tracked only on your pet, including buffs the pet gains on its own. A buff overriding a harmful spell stays on you. Your own debuffs are tracked on your target.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"Whether an entry is a buff or a debuff is detected automatically.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
@@ -448,20 +447,19 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         })
     end
 
-    -- Pet eligibility is deliberately NOT canTrackGroup: the local wrapper's
-    -- opposite-polarity veto above is a group-only rule, but a harmful base
-    -- spell applying a helpful pet aura is exactly the shape pet tracking
-    -- exists for (Barbed Shot -> Frenzy), so pet uses the CORE ownership
-    -- rule alone — the base spell is player-castable, which is what lets
-    -- the own-or-pet caster filter match pet self-buffs. The extra gate is
-    -- character capability (learned sticky, see CharacterCanCommandPets):
+    -- Pet eligibility is deliberately NOT canTrackGroup: standalone Aura
+    -- entries can follow pet self-buffs without a separate castable spell, and
+    -- a harmful base spell applying a helpful pet aura is also valid (Barbed
+    -- Shot -> Frenzy). Spell entries keep the CORE castable-identity check.
+    -- The extra gate is character capability (learned sticky, see
+    -- CharacterCanCommandPets):
     -- per-spell "lands on the pet" knowledge does not exist in any API, so
     -- character level is the finest honest cut. A stored flag shows the row
     -- regardless of every gate, so retained or imported pet state always
     -- has a clearing path.
     local canTrackPet = not isTexturePanel and not isAuraPanel and isBuff and polarityKnown
         and CharacterCanCommandPets()
-        and CooldownCompanion:EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID) == true
+        and CooldownCompanion:EntryCanUsePetAuraScope(buttonData, primaryAuraSpellID)
     if canTrackPet or buttonData.auraTrackPet == true then
         AddCheckboxRow(auraLeft, {
             label = "Track on your pet",
