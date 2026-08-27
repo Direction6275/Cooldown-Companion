@@ -522,12 +522,24 @@ local function ResolveDirectBuffViewerSpellID(spellID)
     return nil
 end
 
+local function IsExactStandaloneAuraIdentity(buttonData)
+    local spellID = buttonData and tonumber(buttonData.id)
+    return buttonData and buttonData.addedAs == "aura"
+        and (spellID == 48107 or spellID == 48108)
+end
+
 local function BuildStandaloneOriginalAuraCandidateIDs(buttonData)
     local candidateIDs = {}
     local orderedCandidateSet = {}
     local orderedCandidateIDs = {}
 
     if not (buttonData and buttonData.type == "spell") then
+        return orderedCandidateIDs, candidateIDs, orderedCandidateSet
+    end
+
+    if IsExactStandaloneAuraIdentity(buttonData) then
+        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet,
+            orderedCandidateIDs, buttonData.id)
         return orderedCandidateIDs, candidateIDs, orderedCandidateSet
     end
 
@@ -870,6 +882,12 @@ function CooldownCompanion:ResolveStandaloneAuraDefaultSpellID(buttonData)
 
     if not numericSpellID then
         return nil
+    end
+
+    -- Use the same exact-linked identity rule as the candidate builder. This
+    -- keeps config-time unit classification from borrowing a sibling stage.
+    if IsExactStandaloneAuraIdentity(buttonData) then
+        return numericSpellID
     end
 
     local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
