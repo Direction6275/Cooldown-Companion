@@ -137,6 +137,18 @@ local INDIRECT_AURA_AUTOCOMPLETE = {
     { ownerSpellID = 1246769, auraSpellID = 1221389 }, -- Shatter -> Freezing
 }
 
+local function IsHeatingUpHotStreakRow(cooldownInfo)
+    local hasHeatingUp, hasHotStreak
+    for _, linkedID in ipairs(cooldownInfo and cooldownInfo.linkedSpellIDs or {}) do
+        if linkedID == 48107 then
+            hasHeatingUp = true
+        elseif linkedID == 48108 then
+            hasHotStreak = true
+        end
+    end
+    return hasHeatingUp and hasHotStreak
+end
+
 local ADD_BOX_TRACKABILITY_TOOLTIP = {
     "What Can Be Tracked",
     {"Spells: anything your class can cast or learn. Tracks cooldowns and charges.", 1, 1, 1, true},
@@ -853,12 +865,14 @@ local function BuildAutocompleteCache()
     -- Rows are deduped by underlying tracked aura: two data rows whose
     -- resolved/linked spellIDs overlap (e.g. an ability row and its applied
     -- DoT) would produce identical tracking entries, so only the first shows.
+    -- Heating Up and Hot Streak share one legacy multi-stage row, but are
+    -- offered as independent auras now that runtime tracking uses AuraContainer.
     --
     -- trackedAuraID is the spellID the APPLIED aura carries (shared rule:
-    -- ST.ResolveCDMAppliedAuraSpellID, SpellQueries.lua). Tracked-aura list
-    -- fields must store the applied ID or Blizzard's aura matching never
-    -- fires on it; standalone aura entries keep the row identity, which
-    -- their candidate build expands to the same applied ID.
+    -- ST.ResolveCDMAppliedAuraSpellID, SpellQueries.lua). Unambiguous applied
+    -- auras keep the row identity and expand to trackedAuraID at bind time.
+    -- The Fire Mage pair stores each aura identity directly so selecting one
+    -- can never inherit its sibling.
     local seenAuras = {}
     local auraRows = {}
     for _, cat in ipairs({ Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar }) do
@@ -867,6 +881,41 @@ local function BuildAutocompleteCache()
             for _, cdID in ipairs(ids) do
                 local cdInfo = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
                 local id = cdInfo and cdInfo.spellID and ResolveCDMAuraSpellID(cdInfo)
+                if id and IsHeatingUpHotStreakRow(cdInfo) then
+                    local linkedSeen = {}
+                    for _, linkedID in ipairs(cdInfo.linkedSpellIDs or {}) do
+                        local numericLinkedID = tonumber(linkedID)
+                        if numericLinkedID
+                            and (numericLinkedID == 48107 or numericLinkedID == 48108)
+                            and not linkedSeen[numericLinkedID] then
+                            linkedSeen[numericLinkedID] = true
+                            local linkedInfo = not seenAuras[numericLinkedID]
+                                and not IsNeverTrackableSpell(numericLinkedID)
+                                and C_Spell.GetSpellInfo(numericLinkedID)
+                            if linkedInfo and linkedInfo.name then
+                                seenAuras[numericLinkedID] = true
+                                local searchLower = linkedInfo.name:lower()
+                                    .. " " .. numericLinkedID
+                                table.insert(cache, {
+                                    id = numericLinkedID,
+                                    trackedAuraID = numericLinkedID,
+                                    name = linkedInfo.name,
+                                    displayName = ("%s |cff999999(%d)|r"):format(
+                                        linkedInfo.name, numericLinkedID),
+                                    nameLower = linkedInfo.name:lower(),
+                                    searchLower = searchLower,
+                                    icon = linkedInfo.iconID or 134400,
+                                    category = "Aura",
+                                    autocompleteKind = "aura",
+                                    isItem = false,
+                                    forceAura = true,
+                                })
+                                auraRows[numericLinkedID] = true
+                            end
+                        end
+                    end
+                    id = nil
+                end
                 if id and not IsNeverTrackableSpell(id) then
                     local duplicate = seenAuras[id]
                     if not duplicate and cdInfo.linkedSpellIDs then
