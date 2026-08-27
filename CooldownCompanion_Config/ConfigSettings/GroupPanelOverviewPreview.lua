@@ -8,8 +8,8 @@
     grid's last row, wearing the content tiles' own border so it reads as part
     of the surface. An empty Group instead gets the create surface itself: a
     centered block that says why the Group is empty, then a picker of clickable
-    panel-type cards -- the two everyday types large, each with its subtypes
-    tucked in beneath it, the specialists quiet below -- and a Cooldown Manager
+    panel-type cards -- the two everyday types large, Aura variants compressed
+    into one shared band, the specialists quiet below -- and a Cooldown Manager
     starter card. A Group that cannot take a new Panel (Browse Other Classes,
     invalid class scope) keeps the plain label and nothing clickable.
 ]]
@@ -66,37 +66,39 @@ local EMPTY_STATE_DIVIDER_ALPHA = 0.8
 local EMPTY_STATE_SECTION_GAP = 14
 local EMPTY_STATE_SUBLINE_COLOR = { 0.7, 0.7, 0.7 }
 local EMPTY_STATE_HEADING_TEXT = "This group is empty."
-local EMPTY_STATE_SUBLINE_TEXT = "Panels display the spells and items you track. Choose a type below to get started."
+local EMPTY_STATE_SUBLINE_TEXT = "Choose a panel type to get started."
 
--- Panel-type picker. Every card says what it makes on its own face, centered,
--- so nothing here needs a tooltip to be understood.
+-- Panel-type picker. Every card says what it makes on its own face; ordinary
+-- cards also keep the descriptor's fuller explanation as hover help.
 local CARD_GAP = 8
--- Wider than the gap between cards, so the drop from the two everyday types to
--- the four specialists reads as a change in rank and not as another row.
 local CARD_TIER_GAP = 12
 local CARD_TITLE_BODY_GAP = 4
--- A subtype card renders UNDER the everyday type it belongs to: same column,
--- one step in from that card's left edge, wearing the quiet tier's smaller
--- face, and held closer to its parent than the gap that separates unrelated
--- cards. Three signals for one relationship, which is what makes it read as
--- nesting rather than as another row. The indent matches the create menus'
--- own subtype indent (PanelShared's PANEL_TYPE_SUBTYPE_INDENT), so the picker
--- and the menus subordinate the same types by the same amount.
-local CARD_SUBTYPE_INDENT = 10
-local CARD_SUBTYPE_GAP = 4
 local CARD_BODY_COLOR = { 0.72, 0.82, 0.92 }
 local CARD_BODY_FONT = "GameFontHighlight"
 
--- The two tiers differ only in weight: same face, same centering, smaller type
--- and tighter padding for the quiet one. `columnChoices` is tried widest-first
--- and the first count the band can hold wins. The specialists skip 3 on
--- purpose: four cards in threes leave a lone orphan on the second row.
+-- Aura variants are choices, not a second prose tier. They share one compact
+-- band: a family label, two title-only buttons, and one sentence describing
+-- the behavior both variants have in common.
+local AURA_BAND_LABEL = "Aura Panels"
+local AURA_BAND_NOTE = "Show active auras only; inactive auras collapse."
+local AURA_BAND_MIN_HEIGHT = 54
+local AURA_BAND_PADDING = 8
+local AURA_BAND_GAP = 8
+local AURA_BAND_BUTTON_GAP = 6
+local AURA_BAND_NARROW_WIDTH = 720
+local AURA_BAND_FADE_FRACTION = 0.25
+local AURA_BAND_FILL_COLOR = CREATE_ACCENT.idleFill
+local AURA_BAND_BORDER_COLOR = { 0.32, 0.82, 1, 0.30 }
+
+-- All picker buttons share the same face and centering. Their styles change
+-- only hierarchy, density, and whether the body copy is shown. The specialists
+-- skip 3 columns on purpose: four cards in threes leave a lone orphan.
 local PRIMARY_CARD_STYLE = {
     titleFont = "GameFontNormalLarge",
     bodyFont = CARD_BODY_FONT,
     titleHeight = 22,
     padding = 12,
-    minHeight = 96,
+    minHeight = 84,
     minWidth = 220,
     columnChoices = { 2, 1 },
 }
@@ -105,13 +107,39 @@ local SECONDARY_CARD_STYLE = {
     bodyFont = CARD_BODY_FONT,
     titleHeight = 18,
     padding = 8,
-    minHeight = 0,
+    minHeight = 48,
     minWidth = 168,
     columnChoices = { 4, 2, 1 },
+    titleOnly = true,
 }
--- The everyday row must never end up shorter than the quiet one below it, which
--- the Trigger Panel's long blurb can otherwise force.
-local PRIMARY_CARD_HEIGHT_LEAD = 12
+local AURA_CARD_STYLE = {
+    titleFont = "GameFontNormal",
+    bodyFont = CARD_BODY_FONT,
+    titleHeight = 18,
+    padding = 6,
+    minHeight = 34,
+    minWidth = 120,
+    columnChoices = { 2, 1 },
+    titleOnly = true,
+}
+-- Invert the band's old emphasis: the non-interactive strip now carries the
+-- same dark plate as the rest of the picker, while its two actual choices get
+-- the slightly brighter cool tint.
+local AURA_CARD_ACCENT = {
+    idleBorder = CREATE_ACCENT.idleBorder,
+    hoverBorder = CREATE_ACCENT.hoverBorder,
+    idleFill = { 0.13, 0.20, 0.25, 0.88 },
+    hoverFill = { 0.16, 0.25, 0.31, 0.92 },
+}
+local STARTER_CARD_STYLE = {
+    titleFont = "GameFontNormal",
+    bodyFont = CARD_BODY_FONT,
+    titleHeight = 18,
+    padding = 8,
+    minHeight = 58,
+    minWidth = 168,
+    columnChoices = { 1 },
+}
 
 -- The Cooldown Manager starter is a different kind of offer, so it wears gold
 -- rather than the create accent and answers hover with its border alone.
@@ -120,7 +148,7 @@ local STARTER_CARD_HOVER_BORDER_COLOR = { 0.86, 0.72, 0.38, 1 }
 local STARTER_CARD_FILL_COLOR = { 0.16, 0.13, 0.07, 0.80 }
 local STARTER_CARD_TITLE = "Start from the Cooldown Manager"
 local STARTER_CARD_BODY =
-    "Adds the Cooldown Manager starter panels this group is missing."
+    "Add its starter panels to this group."
 
 local function Clamp(value, low, high)
     return math_max(low, math_min(value, high))
@@ -420,6 +448,40 @@ local function NewEmptyStateLine(block, size, color)
     return line
 end
 
+-- Three textures make the treatment explicit: transparent outer ends fade
+-- into a flat, fully colored center, then fade back out. Geometry can be the
+-- band itself or one of the shared crisp-border textures.
+local function CreateCenteredFadeStrip(parent, layer, color, geometry, sublevel)
+    local target = geometry or parent
+    local clear = CreateColor(color[1], color[2], color[3], 0)
+    local fill = CreateColor(color[1], color[2], color[3], color[4])
+    local strip = {}
+
+    strip.left = parent:CreateTexture(nil, layer, nil, sublevel)
+    strip.left:SetPoint("TOPLEFT", target, "TOPLEFT", 0, 0)
+    strip.left:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", 0, 0)
+    strip.left:SetTexture("Interface/Buttons/WHITE8x8")
+    strip.left:SetGradient("HORIZONTAL", clear, fill)
+
+    strip.right = parent:CreateTexture(nil, layer, nil, sublevel)
+    strip.right:SetPoint("TOPRIGHT", target, "TOPRIGHT", 0, 0)
+    strip.right:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", 0, 0)
+    strip.right:SetTexture("Interface/Buttons/WHITE8x8")
+    strip.right:SetGradient("HORIZONTAL", fill, clear)
+
+    strip.center = parent:CreateTexture(nil, layer, nil, sublevel)
+    strip.center:SetPoint("TOPLEFT", strip.left, "TOPRIGHT", 0, 0)
+    strip.center:SetPoint("BOTTOMRIGHT", strip.right, "BOTTOMLEFT", 0, 0)
+    strip.center:SetColorTexture(color[1], color[2], color[3], color[4])
+
+    return strip
+end
+
+local function SetCenteredFadeStripWidth(strip, width)
+    strip.left:SetWidth(width)
+    strip.right:SetWidth(width)
+end
+
 -- The block and its header fixtures outlive a rebuild. The picker cards are
 -- pooled too, but they are re-styled from scratch every build, so nothing about
 -- one card's last tier can survive into its next one.
@@ -440,6 +502,42 @@ local function EnsureEmptyStateBlock(overview)
     block.subline:SetText(EMPTY_STATE_SUBLINE_TEXT)
 
     block.divider = block:CreateTexture(nil, "ARTWORK")
+
+    local auraBand = CreateFrame("Frame", nil, block)
+    auraBand:EnableMouse(false)
+    auraBand:Hide()
+    block.auraBand = auraBand
+
+    auraBand.backgroundFade = CreateCenteredFadeStrip(
+        auraBand, "BACKGROUND", AURA_BAND_FILL_COLOR)
+    auraBand.horizontalBorders = ST.CreateBorderTextureSet(
+        auraBand, "ARTWORK", 1)
+    ST.ApplyBorderTextures(auraBand.horizontalBorders, auraBand,
+        AURA_BAND_BORDER_COLOR, 1, ST.BORDER_RENDER_MODE_CRISP)
+    -- Keep the shared horizontal border textures as invisible geometry. Their
+    -- scale-aware sizing gives the visible fade strips a true physical pixel.
+    auraBand.horizontalBorders.LEFT:Hide()
+    auraBand.horizontalBorders.RIGHT:Hide()
+    auraBand.horizontalBorders.TOP:SetAlpha(0)
+    auraBand.horizontalBorders.BOTTOM:SetAlpha(0)
+    auraBand.topBorderFade = CreateCenteredFadeStrip(auraBand, "ARTWORK",
+        AURA_BAND_BORDER_COLOR, auraBand.horizontalBorders.TOP, 1)
+    auraBand.bottomBorderFade = CreateCenteredFadeStrip(auraBand, "ARTWORK",
+        AURA_BAND_BORDER_COLOR, auraBand.horizontalBorders.BOTTOM, 1)
+
+    auraBand.label = auraBand:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    auraBand.label:SetText(AURA_BAND_LABEL)
+    auraBand.label:SetJustifyH("CENTER")
+    auraBand.label:SetWordWrap(false)
+
+    auraBand.note = auraBand:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    auraBand.note:SetText(AURA_BAND_NOTE)
+    auraBand.note:SetTextColor(CARD_BODY_COLOR[1], CARD_BODY_COLOR[2],
+        CARD_BODY_COLOR[3])
+    auraBand.note:SetJustifyH("CENTER")
+    if ST._ConfigureWrappedHelperLabel then
+        ST._ConfigureWrappedHelperLabel(auraBand.note)
+    end
 
     return block
 end
@@ -508,10 +606,21 @@ local function EnsurePickerCard(overview, block, index)
         if not create or IsCardTutorialLocked(create) then return end
         ApplyTileBorder(self, self._cdcHoverBorder or self._cdcIdleBorder)
         ApplyCardFill(self, self._cdcHoverFill or self._cdcIdleFill)
+        if create.tooltipText then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(create.tooltipTitle or "Panel", 1, 1, 1)
+            GameTooltip:AddLine(create.tooltipText,
+                CARD_BODY_COLOR[1], CARD_BODY_COLOR[2],
+                CARD_BODY_COLOR[3], true)
+            GameTooltip:Show()
+        end
     end)
     card:SetScript("OnLeave", function(self)
         ApplyTileBorder(self, self._cdcIdleBorder)
         ApplyCardFill(self, self._cdcIdleFill)
+        if GameTooltip:GetOwner() == self then
+            GameTooltip:Hide()
+        end
     end)
     card:SetScript("OnMouseWheel", function(_, delta)
         SetScrollOffset(overview, (overview.scrollOffset or 0) - (delta * SCROLL_STEP))
@@ -551,6 +660,7 @@ local function ApplyPickerCardStyle(card, style, textWidth)
     if ST._ConfigureWrappedHelperLabel then
         ST._ConfigureWrappedHelperLabel(card.body)
     end
+    card.body:SetShown(style.titleOnly ~= true)
     AnchorPickerCardText(card, style, style.padding)
 end
 
@@ -581,14 +691,18 @@ local function PlacePickerCard(block, card, entry, style, containerId, accent,
         containerId = containerId,
         mode = entry.mode,
         cdmStarter = entry.cdmStarter,
+        tooltipTitle = entry.tooltipTitle,
+        tooltipText = entry.tooltipText,
     }
     card:SetAlpha(IsCardTutorialLocked(card._cdcOverviewCreate) and 0.35 or 1)
     ApplyPickerCardAccent(card, accent)
     card:ClearAllPoints()
     card:SetPoint("TOPLEFT", block, "TOP", x, -y)
     card:SetSize(math_max(1, width), math_max(1, height))
-    local bodyHeight = card.body:GetStringHeight() or 0
-    local contentHeight = style.titleHeight + CARD_TITLE_BODY_GAP + bodyHeight
+    local bodyHeight = style.titleOnly and 0
+        or (card.body:GetStringHeight() or 0)
+    local contentHeight = style.titleHeight
+        + (bodyHeight > 0 and (CARD_TITLE_BODY_GAP + bodyHeight) or 0)
     AnchorPickerCardText(card, style,
         math_max(style.padding, (height - contentHeight) / 2))
     card:Show()
@@ -596,10 +710,11 @@ end
 
 -- Widest count the band can hold wins, so a narrow host collapses 2 -> 1 and
 -- 4 -> 2 -> 1 instead of squeezing unreadable cards.
-local function ResolveTierColumns(style, bandWidth)
+local function ResolveTierColumns(style, bandWidth, gap)
+    gap = gap or CARD_GAP
     for _, columns in ipairs(style.columnChoices) do
         local needed = (columns * style.minWidth)
-            + ((columns - 1) * CARD_GAP)
+            + ((columns - 1) * gap)
         if bandWidth >= needed then
             return columns
         end
@@ -607,14 +722,14 @@ local function ResolveTierColumns(style, bandWidth)
     return 1
 end
 
--- Styles and fills one tier's cards and reports the geometry the block needs,
--- without placing anything: the everyday row cannot be positioned until the
--- quiet row below it has confessed its height. `forceColumns` is for the
--- starter, which is one full-width offer rather than a tier that packs.
+-- Styles and fills one tier's cards and reports the geometry the block needs
+-- without placing anything. `forceColumns` is for the starter, which is one
+-- full-width offer rather than a tier that packs.
 local function MeasurePickerTier(overview, block, firstIndex, entries, style,
-    bandWidth, forceColumns)
-    local columns = forceColumns or ResolveTierColumns(style, bandWidth)
-    local cardWidth = (bandWidth - ((columns - 1) * CARD_GAP)) / columns
+    bandWidth, forceColumns, gap)
+    gap = gap or CARD_GAP
+    local columns = forceColumns or ResolveTierColumns(style, bandWidth, gap)
+    local cardWidth = (bandWidth - ((columns - 1) * gap)) / columns
     local textWidth = math_max(1, cardWidth - (style.padding * 2))
     local bodyHeight = 0
 
@@ -627,14 +742,17 @@ local function MeasurePickerTier(overview, block, firstIndex, entries, style,
         -- block is: the measurement should come from a live region. Placement
         -- follows in this same pass, so nothing is left floating.
         card:Show()
-        bodyHeight = math_max(bodyHeight, card.body:GetStringHeight() or 0)
+        if not style.titleOnly then
+            bodyHeight = math_max(bodyHeight,
+                card.body:GetStringHeight() or 0)
+        end
     end
 
     -- One height for the whole tier, taken from its tallest wrapped
     -- description, so the row reads as a row instead of a ragged edge.
     local height = math_max(style.minHeight or 0,
-        (style.padding * 2) + style.titleHeight + CARD_TITLE_BODY_GAP
-            + bodyHeight)
+        (style.padding * 2) + style.titleHeight
+            + (bodyHeight > 0 and (CARD_TITLE_BODY_GAP + bodyHeight) or 0))
 
     return {
         columns = columns,
@@ -662,6 +780,7 @@ local function PlacePickerTier(overview, block, firstIndex, entries, metrics,
         for offset = 1, rowCount do
             local entry = entries[placed + offset]
             local card = overview.cards[firstIndex + placed + offset - 1]
+            card:SetFrameLevel(block:GetFrameLevel() + 1)
             PlacePickerCard(block, card, entry, style, containerId, accent,
                 x, y, metrics.cardWidth, metrics.height)
             x = x + metrics.cardWidth + CARD_GAP
@@ -673,78 +792,108 @@ local function PlacePickerTier(overview, block, firstIndex, entries, metrics,
     return (y - top) - CARD_GAP
 end
 
--- Measures the everyday band: the parent row's geometry, plus the subtype cards
--- that hang off it. Subtypes are one indent narrower than their parent, so they
--- take their own measure pass at exactly that width -- forceColumns 1 makes
--- MeasurePickerTier hand back the width it is given. Both metric tables come
--- back so the caller can settle the parent height against them before placing.
-local function MeasureFamilyBand(overview, block, parentFirst, subtypeFirst,
-    families, subtypeEntries, bandWidth)
-    local parentEntries = {}
-    for _, family in ipairs(families) do
-        parentEntries[#parentEntries + 1] = family.parent
-    end
-    local parentMetrics = MeasurePickerTier(overview, block, parentFirst,
-        parentEntries, PRIMARY_CARD_STYLE, bandWidth)
-    local subtypeMetrics = MeasurePickerTier(overview, block, subtypeFirst,
-        subtypeEntries, SECONDARY_CARD_STYLE,
-        math_max(1, parentMetrics.cardWidth - CARD_SUBTYPE_INDENT), 1)
-    return parentMetrics, subtypeMetrics
-end
-
--- Places the everyday band: parents on their own grid, and each family's
--- subtypes stacked directly beneath their parent, indented and narrower. Rows
--- carry a uniform height -- the parent card plus room for the deepest family in
--- the band -- so a family with fewer subtypes leaves that space empty instead
--- of letting the next row ride up under its neighbour. Subtype cards are pooled
--- in family order, which is the order this walk consumes them in.
-local function PlaceFamilyBand(overview, block, parentFirst, subtypeFirst,
-    families, parentMetrics, subtypeMetrics, containerId, accent, top)
-    local count = #families
-    if count == 0 then
+-- The Aura choices share one visual explanation. At normal config widths the
+-- label, two compact buttons, and note sit on one line. Narrow surfaces stack
+-- those three pieces but keep the two choices paired whenever they still fit.
+local function LayoutAuraBand(overview, block, firstIndex, entries,
+    bandWidth, containerId, top)
+    local band = block.auraBand
+    if #entries == 0 then
+        band:Hide()
         return 0
     end
 
-    local maxSubtypes = 0
-    for _, family in ipairs(families) do
-        maxSubtypes = math_max(maxSubtypes, #family.subtypes)
+    band:Show()
+    band.label:Show()
+    band.note:Show()
+
+    local labelWidth = math_max(90,
+        math_ceil(band.label:GetStringWidth() or 0))
+    local noteWidth = math_min(330, bandWidth * 0.36)
+    local actionWidth = math_max(1, bandWidth - (AURA_BAND_PADDING * 2)
+        - labelWidth - noteWidth - (AURA_BAND_GAP * 2))
+    local wide = bandWidth >= AURA_BAND_NARROW_WIDTH
+        and actionWidth >= ((AURA_CARD_STYLE.minWidth * 2)
+            + AURA_BAND_BUTTON_GAP)
+
+    if not wide then
+        actionWidth = math_max(1, bandWidth - (AURA_BAND_PADDING * 2))
+        noteWidth = actionWidth
     end
-    local subtypeStep = subtypeMetrics.height + CARD_SUBTYPE_GAP
-    local rowHeight = parentMetrics.height + (maxSubtypes * subtypeStep)
-    local subtypeWidth = math_max(1,
-        parentMetrics.cardWidth - CARD_SUBTYPE_INDENT)
+
+    local metrics = MeasurePickerTier(overview, block, firstIndex, entries,
+        AURA_CARD_STYLE, actionWidth, nil, AURA_BAND_BUTTON_GAP)
+    local rows = math_ceil(metrics.count / metrics.columns)
+    local buttonsHeight = (rows * metrics.height)
+        + ((rows - 1) * AURA_BAND_BUTTON_GAP)
+
+    band.label:SetWidth(wide and labelWidth or actionWidth)
+    band.note:SetWidth(noteWidth)
+    local noteHeight = math_max(EMPTY_STATE_BODY_SIZE,
+        band.note:GetStringHeight() or 0)
+    local labelHeight = math_max(AURA_CARD_STYLE.titleHeight,
+        band.label:GetStringHeight() or 0)
+    local bandHeight
+    local actionLeft
+    local buttonsTop
+
+    if wide then
+        bandHeight = math_max(AURA_BAND_MIN_HEIGHT,
+            buttonsHeight + (AURA_BAND_PADDING * 2),
+            noteHeight + (AURA_BAND_PADDING * 2),
+            labelHeight + (AURA_BAND_PADDING * 2))
+        band.label:ClearAllPoints()
+        band.label:SetPoint("LEFT", band, "LEFT", AURA_BAND_PADDING, 0)
+        band.label:SetWidth(labelWidth)
+        band.note:ClearAllPoints()
+        band.note:SetPoint("RIGHT", band, "RIGHT", -AURA_BAND_PADDING, 0)
+        band.note:SetJustifyH("LEFT")
+        actionLeft = -(bandWidth / 2) + AURA_BAND_PADDING
+            + labelWidth + AURA_BAND_GAP
+        buttonsTop = top + ((bandHeight - buttonsHeight) / 2)
+    else
+        bandHeight = AURA_BAND_PADDING + labelHeight + AURA_BAND_GAP
+            + buttonsHeight + AURA_BAND_GAP + noteHeight
+            + AURA_BAND_PADDING
+        band.label:ClearAllPoints()
+        band.label:SetPoint("TOP", band, "TOP", 0, -AURA_BAND_PADDING)
+        band.label:SetWidth(actionWidth)
+        band.note:ClearAllPoints()
+        band.note:SetPoint("BOTTOM", band, "BOTTOM", 0, AURA_BAND_PADDING)
+        band.note:SetJustifyH("CENTER")
+        actionLeft = -(actionWidth / 2)
+        buttonsTop = top + AURA_BAND_PADDING + labelHeight + AURA_BAND_GAP
+    end
+
+    band:ClearAllPoints()
+    band:SetPoint("TOP", block, "TOP", 0, -top)
+    band:SetSize(bandWidth, bandHeight)
+    local fadeWidth = bandWidth * AURA_BAND_FADE_FRACTION
+    SetCenteredFadeStripWidth(band.backgroundFade, fadeWidth)
+    SetCenteredFadeStripWidth(band.topBorderFade, fadeWidth)
+    SetCenteredFadeStripWidth(band.bottomBorderFade, fadeWidth)
 
     local placed = 0
-    local subtypesPlaced = 0
-    local y = top
-    while placed < count do
-        local rowCount = math_min(parentMetrics.columns, count - placed)
-        local rowSpan = (rowCount * parentMetrics.cardWidth)
-            + ((rowCount - 1) * CARD_GAP)
-        local x = -(rowSpan / 2)
+    local rowTop = buttonsTop
+    while placed < metrics.count do
+        local rowCount = math_min(metrics.columns, metrics.count - placed)
+        local rowSpan = (rowCount * metrics.cardWidth)
+            + ((rowCount - 1) * AURA_BAND_BUTTON_GAP)
+        local x = actionLeft + ((actionWidth - rowSpan) / 2)
         for offset = 1, rowCount do
-            local family = families[placed + offset]
-            PlacePickerCard(block,
-                overview.cards[parentFirst + placed + offset - 1],
-                family.parent, PRIMARY_CARD_STYLE, containerId, accent,
-                x, y, parentMetrics.cardWidth, parentMetrics.height)
-            local subtypeY = y + parentMetrics.height + CARD_SUBTYPE_GAP
-            for _, subtype in ipairs(family.subtypes) do
-                subtypesPlaced = subtypesPlaced + 1
-                PlacePickerCard(block,
-                    overview.cards[subtypeFirst + subtypesPlaced - 1],
-                    subtype, SECONDARY_CARD_STYLE, containerId, accent,
-                    x + CARD_SUBTYPE_INDENT, subtypeY, subtypeWidth,
-                    subtypeMetrics.height)
-                subtypeY = subtypeY + subtypeStep
-            end
-            x = x + parentMetrics.cardWidth + CARD_GAP
+            local entry = entries[placed + offset]
+            local card = overview.cards[firstIndex + placed + offset - 1]
+            card:SetFrameLevel(band:GetFrameLevel() + 1)
+            PlacePickerCard(block, card, entry, AURA_CARD_STYLE,
+                containerId, AURA_CARD_ACCENT, x, rowTop,
+                metrics.cardWidth, metrics.height)
+            x = x + metrics.cardWidth + AURA_BAND_BUTTON_GAP
         end
         placed = placed + rowCount
-        y = y + rowHeight + CARD_GAP
+        rowTop = rowTop + metrics.height + AURA_BAND_BUTTON_GAP
     end
 
-    return (y - top) - CARD_GAP
+    return bandHeight
 end
 
 -- Lays the whole block out top-down in block coordinates and returns its
@@ -787,39 +936,32 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth)
     block.divider:Show()
     y = y + EMPTY_STATE_DIVIDER_HEIGHT + EMPTY_STATE_DIVIDER_GAP
 
-    -- Tiers come from the descriptor's own flags and nothing else, so promoting
-    -- a panel type stays a one-word edit in PanelShared. `primary` opens a
-    -- family; a `parentMode` type joins the family it names and renders as a
-    -- subtype card beneath that parent, the same subordination the two create
-    -- menus give it. A subtype whose parent is not a family (nothing declares
-    -- one today) falls back to a plain quiet card rather than vanishing.
-    local families, secondaryEntries = {}, {}
-    local familyByMode = {}
+    -- The descriptor remains the source of truth for rank and relationships.
+    -- Primary types keep the large first row; subtypes of a primary join the
+    -- shared Aura band; everything else becomes a title-only specialist card.
+    local panelTypeByMode = {}
+    for _, panelType in ipairs(ST._PANEL_TYPES or {}) do
+        panelTypeByMode[panelType.mode] = panelType
+    end
+    local primaryEntries, auraEntries, secondaryEntries = {}, {}, {}
     for _, panelType in ipairs(ST._PANEL_TYPES or {}) do
         local entry = {
-            title = panelType.label,
-            body = panelType.description,
+            title = panelType.pickerLabel or panelType.label,
+            body = panelType.pickerDescription or panelType.description,
             mode = panelType.mode,
         }
-        local family = panelType.parentMode
-            and familyByMode[panelType.parentMode]
-        if family then
-            family.subtypes[#family.subtypes + 1] = entry
-        elseif panelType.primary then
-            family = { parent = entry, subtypes = {} }
-            familyByMode[panelType.mode] = family
-            families[#families + 1] = family
+        local parent = panelType.parentMode
+            and panelTypeByMode[panelType.parentMode]
+        if panelType.primary then
+            entry.tooltipTitle = panelType.label
+            entry.tooltipText = panelType.description
+            primaryEntries[#primaryEntries + 1] = entry
+        elseif parent and parent.primary then
+            auraEntries[#auraEntries + 1] = entry
         else
+            entry.tooltipTitle = panelType.label
+            entry.tooltipText = panelType.description
             secondaryEntries[#secondaryEntries + 1] = entry
-        end
-    end
-    -- Flattened from the families rather than collected above, so the pooled
-    -- card order the measure pass writes is exactly the order the placement
-    -- walk reads back.
-    local subtypeEntries = {}
-    for _, family in ipairs(families) do
-        for _, subtype in ipairs(family.subtypes) do
-            subtypeEntries[#subtypeEntries + 1] = subtype
         end
     end
     local starterEntries = {
@@ -832,36 +974,36 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth)
 
     local cardBandWidth = math_max(1,
         math_min(visibleWidth, EMPTY_STATE_MAX_CARD_WIDTH))
-    local parentFirst = 1
-    local subtypeFirst = parentFirst + #families
-    local secondaryFirst = subtypeFirst + #subtypeEntries
+    local primaryFirst = 1
+    local auraFirst = primaryFirst + #primaryEntries
+    local secondaryFirst = auraFirst + #auraEntries
     local starterFirst = secondaryFirst + #secondaryEntries
 
+    local primaryMetrics = MeasurePickerTier(overview, block, primaryFirst,
+        primaryEntries, PRIMARY_CARD_STYLE, cardBandWidth)
     local secondaryMetrics = MeasurePickerTier(overview, block, secondaryFirst,
         secondaryEntries, SECONDARY_CARD_STYLE, cardBandWidth)
-    local parentMetrics, subtypeMetrics = MeasureFamilyBand(overview, block,
-        parentFirst, subtypeFirst, families, subtypeEntries, cardBandWidth)
-    -- PRIMARY_CARD_HEIGHT_LEAD's promise, extended to the subtype cards: their
-    -- blurbs are as long as any specialist's. An empty subtype list has no
-    -- height to answer for, so it joins the comparison only when there is one.
-    local quietHeight = secondaryMetrics.height
-    if #subtypeEntries > 0 then
-        quietHeight = math_max(quietHeight, subtypeMetrics.height)
-    end
-    parentMetrics.height = math_max(parentMetrics.height,
-        quietHeight + PRIMARY_CARD_HEIGHT_LEAD)
     -- The starter is one full-width offer, so it never shares a row.
     local starterMetrics = MeasurePickerTier(overview, block, starterFirst,
-        starterEntries, SECONDARY_CARD_STYLE, cardBandWidth, 1)
+        starterEntries, STARTER_CARD_STYLE, cardBandWidth, 1)
 
-    y = y + PlaceFamilyBand(overview, block, parentFirst, subtypeFirst,
-        families, parentMetrics, subtypeMetrics, containerId, CREATE_ACCENT, y)
-    y = y + CARD_TIER_GAP
+    y = y + PlacePickerTier(overview, block, primaryFirst, primaryEntries,
+        primaryMetrics, PRIMARY_CARD_STYLE, containerId, CREATE_ACCENT, y)
+    if #auraEntries > 0 then
+        y = y + CARD_TIER_GAP
+        y = y + LayoutAuraBand(overview, block, auraFirst, auraEntries,
+            cardBandWidth, containerId, y)
+    else
+        block.auraBand:Hide()
+    end
+    if #secondaryEntries > 0 then
+        y = y + CARD_TIER_GAP
+    end
     y = y + PlacePickerTier(overview, block, secondaryFirst, secondaryEntries,
         secondaryMetrics, SECONDARY_CARD_STYLE, containerId, CREATE_ACCENT, y)
     y = y + EMPTY_STATE_SECTION_GAP
     y = y + PlacePickerTier(overview, block, starterFirst, starterEntries,
-        starterMetrics, SECONDARY_CARD_STYLE, containerId,
+        starterMetrics, STARTER_CARD_STYLE, containerId,
         CARD_STARTER_ACCENT, y)
 
     overview.usedCards = starterFirst + #starterEntries - 1
@@ -872,7 +1014,7 @@ end
 -- An editable Group with no Panels gets the create surface itself instead of a
 -- bare label and glyph. The block rides in the scroll child, so a short host
 -- scrolls it rather than clipping the lowest cards out of reach; when it fits,
--- it centers on the surface.
+-- it centers on the full empty workspace.
 local function BuildEmptyGroupState(overview, host, containerId, sameContainer)
     if not (ST._IsCreateTargetContainer
         and ST._IsCreateTargetContainer(containerId)) then
@@ -1009,6 +1151,9 @@ local function ResetOverview(overview)
     -- on the Group that just left the screen.
     for index = 1, overview.usedCards do
         local card = overview.cards[index]
+        if GameTooltip:GetOwner() == card then
+            GameTooltip:Hide()
+        end
         card._cdcOverviewCreate = nil
         card:Hide()
     end

@@ -679,21 +679,27 @@ local function ScheduleFinalWidePreviewLayout(col3, host, forceRebuild)
         end
         if (col3.content:GetHeight() or 0) <= 0 then return end
 
-        local newHeight = ComputePreviewHostHeight(col3)
-        local heightChanged = math.abs(
+        local takeover = col3._cdcEmptyGroupPreviewTakeover == true
+        local newHeight = takeover and (requestedHost:GetHeight() or 0)
+            or ComputePreviewHostHeight(col3)
+        local hostHeightChanged = not takeover and math.abs(
             (requestedHost:GetHeight() or 0) - newHeight) >= 0.5
-        if heightChanged then
+        if hostHeightChanged then
             requestedHost:SetHeight(newHeight)
         end
 
         local width = requestedHost:GetWidth() or 0
         local widthChanged = math.abs(
             (requestedHost._cdcLastLayoutWidth or 0) - width) >= 0.5
-        if not (requestedForceRebuild or heightChanged or widthChanged) then
+        local heightChanged = math.abs(
+            (requestedHost._cdcLastLayoutHeight or 0) - newHeight) >= 0.5
+        if not (requestedForceRebuild or hostHeightChanged
+            or heightChanged or widthChanged) then
             return
         end
 
         requestedHost._cdcLastLayoutWidth = width
+        requestedHost._cdcLastLayoutHeight = newHeight
         RebuildActiveWidePreview(col3)
     end)
 end
@@ -708,6 +714,10 @@ local function ReapplyPanelPreviewSplit()
     local host = col3 and col3._cdcActiveWideHost
     if not (host and host:IsShown()) then return end
     if (col3.content:GetHeight() or 0) <= 0 then return end
+    if col3._cdcEmptyGroupPreviewTakeover == true then
+        ScheduleFinalWidePreviewLayout(col3, host)
+        return
+    end
     local newHeight = ComputePreviewHostHeight(col3)
     local heightChanged = math.abs((host:GetHeight() or 0) - newHeight) >= 0.5
     -- The preview's scale-to-fit reads the host width too, so a width-only
@@ -1190,7 +1200,22 @@ local function HidePanelPreview(col3)
     -- staged preview so the browser cannot reappear or strand a texture.
     CloseInlineTextureBrowser(col3)
     col3._cdcEditingContext = nil
+    col3._cdcEmptyGroupPreviewTakeover = nil
     HideEditingChrome(col3)
+end
+
+-- A new editable Group has no visible object for position, alpha, strata, or
+-- visibility settings to affect. Let its create surface own the workspace until
+-- the first Panel exists; ineligible/browse-only Groups keep the normal split.
+local function ShouldEmptyGroupPreviewTakeOver(containerId, container)
+    if not (containerId and container and not CS.selectedGroup) then
+        return false
+    end
+    if not (ST._IsCreateTargetContainer
+        and ST._IsCreateTargetContainer(containerId)) then
+        return false
+    end
+    return CooldownCompanion:GetPanelCount(containerId) == 0
 end
 
 -- Pinned preview of the selected Panel, or an organized navigation overview
@@ -1217,9 +1242,16 @@ local function UpdatePanelPreview(col3, selectionOnly)
         host:SetClipsChildren(false)
         col3.buttonsPreviewHost = host
     end
+    local emptyGroupTakeover = ShouldEmptyGroupPreviewTakeOver(
+        containerId, container)
+    col3._cdcEmptyGroupPreviewTakeover = emptyGroupTakeover
     host:ClearAllPoints()
-    host:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
-    host:SetPoint("TOPRIGHT", col3.content, "TOPRIGHT", 0, 0)
+    if emptyGroupTakeover then
+        host:SetAllPoints(col3.content)
+    else
+        host:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
+        host:SetPoint("TOPRIGHT", col3.content, "TOPRIGHT", 0, 0)
+    end
     local function BuildPreview(hostFrame)
         -- Owns the host's bottom reserve, so it must settle before either
         -- renderer measures itself. Sits inside the build closure so every
@@ -1283,7 +1315,9 @@ local function UpdatePanelPreview(col3, selectionOnly)
     end
 
     SetActiveWidePreview(col3, host, BuildPreview, RefitPreview)
-    host:SetHeight(ComputePreviewHostHeight(col3))
+    if not emptyGroupTakeover then
+        host:SetHeight(ComputePreviewHostHeight(col3))
+    end
     host:Show()
     BuildPreview(host)
     UpdatePreviewDropOverlay()
@@ -1872,6 +1906,17 @@ local function RefreshButtonsWideColumn(selectionOnly)
     UpdateEditingContext(col3)
     -- Final height pass (see the entry branch above).
     ReapplyPanelPreviewSplit()
+
+    -- The empty Group picker is the only actionable surface until a Panel is
+    -- created. Keep stale Group settings and the split chrome fully out of the
+    -- workspace; the next refresh restores both automatically once one exists.
+    if col3._cdcEmptyGroupPreviewTakeover == true then
+        if col3.groupSettingsHost then
+            col3.groupSettingsHost:Hide()
+        end
+        HideEditingChrome(col3)
+        return
+    end
 
     local host = EnsureGroupSettingsHost(col3)
     AnchorButtonsContentFrame(col3, host)
