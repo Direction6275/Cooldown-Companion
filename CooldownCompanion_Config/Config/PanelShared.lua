@@ -49,7 +49,9 @@ local CREATE_ACCENT = {
 
 -- Single source of truth for the creatable panel types: menu order, menu
 -- label, tooltip copy, and the per-type defaults a create menu applies.
--- Every create surface reads this so the two menus cannot drift apart.
+-- The empty-Group picker may use an optional shorter `pickerLabel` or
+-- `pickerDescription`; the full label and description remain the create menus'
+-- richer explanation. Every create surface still reads this one descriptor.
 -- Descriptor order is the menu order, and a `parentMode` type is a SUBTYPE of
 -- the type it names: it sits directly under its parent and the menus indent it.
 -- Its `mode` is a pseudo-mode CreatePanel resolves into a real displayMode plus
@@ -62,6 +64,7 @@ local PANEL_TYPES = {
         mode = "icons",
         label = "Icon Panel",
         description = "Shows spells or items as classic cooldown icons.",
+        pickerDescription = "Classic cooldown icons",
         primary = true,
         -- The tutorial's create-panel step only advances on an Icon Panel.
         notifyTutorial = true,
@@ -70,18 +73,21 @@ local PANEL_TYPES = {
         mode = "auraIcons",
         parentMode = "icons",
         label = "Aura Icon Panel",
+        pickerLabel = "Aura Icons",
         description = "Holds only aura entries, and shows each icon while its aura is up. Inactive auras take no space. The first entry you add sets whether the panel tracks your buffs or your target's debuffs.",
     },
     {
         mode = "bars",
         label = "Bar Panel",
         description = "Shows spells or items as timer bars with names and durations.",
+        pickerDescription = "Named timer bars",
         primary = true,
     },
     {
         mode = "auraBars",
         parentMode = "bars",
         label = "Aura Bar Panel",
+        pickerLabel = "Aura Bars",
         description = "Holds only aura entries, and shows each bar while its aura is up. Inactive auras take no space. The first entry you add sets whether the panel tracks your buffs or your target's debuffs.",
     },
     {
