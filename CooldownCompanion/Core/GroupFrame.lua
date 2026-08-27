@@ -6120,10 +6120,35 @@ function CooldownCompanion:ClearContainerUnlockState(containerId)
         return
     end
 
+    local selectedGroupId = frame._containerSelectedGroupId
+    local hoveredGroupId = frame._containerHoveredGroupId
     frame._containerSelectedGroupId = nil
     frame._containerHoveredGroupId = nil
     self:StopContainerMemberPreviewTracking(containerId)
     HideContainerMemberOverlays(frame)
+
+    -- Only the selected panel can have container-owned drag controls showing,
+    -- while a hovered standalone panel can own an outline. Clear that chrome
+    -- directly instead of rebuilding every runtime panel in the container.
+    local group = selectedGroupId and self.db.profile.groups[selectedGroupId] or nil
+    local groupFrame = selectedGroupId and self.groupFrames and self.groupFrames[selectedGroupId] or nil
+    local isStandaloneDisplay = group and self:IsStandaloneTexturePanelGroup(group)
+    if groupFrame and not isStandaloneDisplay then
+        if not (self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group)) then
+            SyncGroupControlLevels(groupFrame, false)
+            self:SetGroupDragControlsShown(groupFrame, false)
+        end
+        self:UpdateGroupClickthrough(selectedGroupId)
+    elseif isStandaloneDisplay and self.UpdateGroupedStandalonePreviewSelection then
+        self:UpdateGroupedStandalonePreviewSelection(selectedGroupId)
+    end
+
+    if hoveredGroupId ~= selectedGroupId and self.UpdateGroupedStandalonePreviewSelection then
+        local hoveredGroup = hoveredGroupId and self.db.profile.groups[hoveredGroupId] or nil
+        if hoveredGroup and self:IsStandaloneTexturePanelGroup(hoveredGroup) then
+            self:UpdateGroupedStandalonePreviewSelection(hoveredGroupId)
+        end
+    end
 end
 
 -- Arrange-mode chrome reveal: while everything is unlocked at once, a
@@ -6164,12 +6189,11 @@ function CooldownCompanion:SetArrangeSoloContainer(containerId)
         self._arrangeFocusContainerId = containerId
     end
 
-    -- Effective hidden state changed for every arranged container: re-present
-    -- them all, mirroring the lock presentation without profile writes.
+    -- Effective hidden state changed for every arranged container: refresh
+    -- their mover presentation without rebuilding the runtime panels.
     for cid, container in pairs(self.db.profile.groupContainers or {}) do
         if container.locked == false then
             self:UpdateContainerDragHandle(cid, self:IsContainerArrangeChromeHidden(cid))
-            self:RefreshContainerPanels(cid)
         end
     end
     -- The solo also decides the independent bar movers' effective hidden state.
@@ -6212,7 +6236,6 @@ function CooldownCompanion:SetContainerArrangeChromeHidden(containerId, hidden)
         self:RefreshArrangeSpecialMoverChrome(containerId)
     else
         self:UpdateContainerDragHandle(containerId, hidden ~= nil or container.locked ~= false)
-        self:RefreshContainerPanels(containerId)
     end
 end
 
@@ -7067,6 +7090,11 @@ function CooldownCompanion:CreateContainerFrame(containerId)
         end
     end)
     frame.dragHandle:SetScript("OnDragStop", function()
+        -- Preserve suppression through this release cycle, but do not let a
+        -- missing OnMouseUp consume the player's next intentional click.
+        C_Timer.After(0, function()
+            frame.dragHandle._suppressClick = nil
+        end)
         local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
         frame._dragCancelPending = nil
         frame._dragInProgress = nil
@@ -7120,6 +7148,11 @@ function CooldownCompanion:CreateContainerFrame(containerId)
         end
     end)
     frame.dragHandle.header:SetScript("OnDragStop", function()
+        -- Preserve suppression through this release cycle, but do not let a
+        -- missing OnMouseUp consume the player's next intentional click.
+        C_Timer.After(0, function()
+            frame.dragHandle.header._suppressClick = nil
+        end)
         local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
         frame._dragCancelPending = nil
         frame._dragInProgress = nil
