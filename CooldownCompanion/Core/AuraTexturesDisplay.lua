@@ -557,17 +557,19 @@ local function StopGroupedStandaloneWrapperTracking(host)
     end
 end
 
-local function BeginTextureHostDrag(host)
+local function BeginTextureHostDrag(host, surfaceDrag)
     if CooldownCompanion._combatForcedLock or not host then
         return false
     end
     local owner = host._ownerButton
+    local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
     if owner and CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(owner._groupId) then
         -- Parked cursor panel: the drag selects it (never toggling off) and
         -- routes through the cursor-preview owner, so the offset saves to the
         -- cursor anchor rather than the standalone position settings.
-        if CooldownCompanion.SelectArrangeCursorPanel then
-            CooldownCompanion:SelectArrangeCursorPanel(owner._groupId, false)
+        if not (group and CooldownCompanion.ActivateArrangePanel
+            and CooldownCompanion:ActivateArrangePanel(group.parentContainerId, owner._groupId, false)) then
+            return false
         end
         if not (CooldownCompanion.BeginCursorAnchorLayoutPreviewHostDrag
             and CooldownCompanion:BeginCursorAnchorLayoutPreviewHostDrag(host, owner._groupId)) then
@@ -577,6 +579,7 @@ local function BeginTextureHostDrag(host)
         host._dragCancelPending = nil
         host._isDragging = true
         host._cursorAnchorDrag = true
+        host._arrangePanelSurfaceDrag = surfaceDrag and true or nil
         host:StartMoving()
         CooldownCompanion:BeginMoverChromeFade(host)
         return true
@@ -584,10 +587,20 @@ local function BeginTextureHostDrag(host)
     if not host._dragEnabled then
         return false
     end
+    if not (group and group.parentContainerId
+        and CooldownCompanion.ActivateArrangePanel
+        and CooldownCompanion:ActivateArrangePanel(
+            group.parentContainerId,
+            owner._groupId,
+            false
+        )) then
+        return false
+    end
 
     CancelCoordinateEdit(host.coordLabel)
     host._dragCancelPending = nil
     host._isDragging = true
+    host._arrangePanelSurfaceDrag = surfaceDrag and true or nil
     StartGroupedStandaloneWrapperTracking(host)
     host:StartMoving()
     CooldownCompanion:BeginMoverChromeFade(host)
@@ -607,12 +620,12 @@ local function FinishTextureHostDrag(host)
         local cancelSave = host._dragCancelPending == true or CooldownCompanion._combatForcedLock
         host._dragCancelPending = nil
         host._isDragging = nil
-        if host._cursorHostSurfaceDrag then
+        if host._arrangePanelSurfaceDrag then
             -- The release that ends a host-surface drag also fires the host's
             -- OnMouseUp; it must not read as a selection-toggling click.
-            host._cursorSelectClickSuppressed = true
+            host._arrangeSelectClickSuppressed = true
         end
-        host._cursorHostSurfaceDrag = nil
+        host._arrangePanelSurfaceDrag = nil
         if not (InCombatLockdown() and host:IsProtected()) then
             host:StopMovingOrSizing()
         end
@@ -631,12 +644,16 @@ local function FinishTextureHostDrag(host)
         -- A cursor-anchored host whose drag never began must not fall through
         -- to the standalone save; that would write the host's parked screen
         -- position into the standalone settings.
-        host._cursorHostSurfaceDrag = nil
+        host._arrangePanelSurfaceDrag = nil
         return false
     end
 
     local cancelSave = host._dragCancelPending == true or CooldownCompanion._combatForcedLock
     host._dragCancelPending = nil
+    if host._arrangePanelSurfaceDrag then
+        host._arrangeSelectClickSuppressed = true
+    end
+    host._arrangePanelSurfaceDrag = nil
     host._isDragging = nil
     if not (InCombatLockdown() and host:IsProtected()) then
         host:StopMovingOrSizing()
@@ -805,32 +822,16 @@ local function EnsureAuraTextureNudger(host)
     host.nudger = nudger
 end
 
-local function AddTexturePanelDragHelpTooltipLines(tooltip)
-    tooltip:AddLine("Panel Controls")
-    tooltip:AddLine("Drag anywhere on the panel to move it.", 1, 1, 1, false)
-    tooltip:AddLine(" ")
-    tooltip:AddLine("Use the arrow pad to nudge by 1 pixel.", 1, 1, 1, false)
-    tooltip:AddLine(" ")
-    tooltip:AddLine("Click the coordinates below to type exact values.", 1, 1, 1, false)
-end
-
-local function IsTextureHostGroupedPreviewActive(host)
-    local owner = host and host._ownerButton or nil
-    local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
-    return group
-        and group.parentContainerId
-        and CooldownCompanion.IsContainerUnlockPreviewActive
-        and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)
-        or false
-end
-
 local function LockAuraTexturePanelFromMover(host)
     local owner = host._ownerButton
     local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
-    if not group or IsTextureHostGroupedPreviewActive(host) then
+    if not group then
         return
     end
 
+    if CooldownCompanion.ClearArrangeMoverSelection then
+        CooldownCompanion:ClearArrangeMoverSelection()
+    end
     CooldownCompanion:SetPanelLocked(owner._groupId, true)
     CooldownCompanion:CaptureArrangePanelRecord(owner._groupId)
     CooldownCompanion:RefreshAllAuraTextureVisuals()
@@ -838,24 +839,7 @@ local function LockAuraTexturePanelFromMover(host)
         CooldownCompanion:RefreshConfigPanel()
     end
     CooldownCompanion:Print((group.name or "Texture Panel") .. " locked.")
-end
-
-local function CreateAuraTextureDragHelpButton(host, dragHandle)
-    if not (host and dragHandle and ST.CreateRuntimeInfoButton) then
-        return nil
-    end
-
-    return ST.CreateRuntimeInfoButton(
-        dragHandle,
-        dragHandle,
-        "RIGHT",
-        "RIGHT",
-        -2,
-        0,
-        function(tooltip)
-            AddTexturePanelDragHelpTooltipLines(tooltip)
-        end
-    )
+    CooldownCompanion:CheckArrangeModeAutoExit()
 end
 
 local function EnsureAuraTextureDragHandle(host)
@@ -881,14 +865,25 @@ local function EnsureAuraTextureDragHandle(host)
     dragHandle.lockButton = ST.CreateMoverLockBadge(dragHandle, 12, function()
         LockAuraTexturePanelFromMover(host)
     end)
-    host.dragHelpButton = CreateAuraTextureDragHelpButton(host, dragHandle)
-    if host.dragHelpButton then
-        dragHandle.lockButton:SetPoint("RIGHT", host.dragHelpButton, "LEFT", -2, 0)
-    else
-        dragHandle.lockButton:SetPoint("RIGHT", dragHandle, "RIGHT", -2, 0)
-    end
+    dragHandle.lockButton:SetPoint("RIGHT", dragHandle, "RIGHT", -2, 0)
+    dragHandle.menuButton = ST.CreateMoverQuickMenuButton(
+        dragHandle,
+        12,
+        function()
+            local groupId = host._ownerButton and host._ownerButton._groupId
+            local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+            return groupId and {
+                kind = "panel",
+                id = groupId,
+                containerId = group and group.parentContainerId,
+                focusId = group and group.parentContainerId,
+            } or nil
+        end,
+        dragHandle
+    )
+    dragHandle.menuButton:SetPoint("RIGHT", dragHandle.lockButton, "LEFT", -2, 0)
     -- Symmetric insets matching the badge cluster keep the name centered on the bar
-    local headerTextInset = dragHandle.lockButton:GetWidth() + (host.dragHelpButton and 22 or 4)
+    local headerTextInset = dragHandle.lockButton:GetWidth() + dragHandle.menuButton:GetWidth() + 8
     text:ClearAllPoints()
     text:SetPoint("LEFT", dragHandle, "LEFT", headerTextInset, 0)
     text:SetPoint("RIGHT", dragHandle, "RIGHT", -headerTextInset, 0)
@@ -906,7 +901,7 @@ local function EnsureAuraTextureDragHandle(host)
     coordLabel.text:SetTextColor(1, 1, 1, 1)
 
     dragHandle:SetScript("OnDragStart", function()
-        BeginTextureHostDrag(host)
+        BeginTextureHostDrag(host, false)
     end)
     dragHandle:SetScript("OnDragStop", function()
         FinishTextureHostDrag(host)
@@ -951,9 +946,9 @@ local function SyncAuraTextureControlLevels(host, raiseAboveWrapper)
         host.coordLabel:SetFrameStrata(strata)
         host.coordLabel:SetFrameLevel(baseLevel + 6)
     end
-    if host.dragHelpButton then
-        host.dragHelpButton:SetFrameStrata(strata)
-        host.dragHelpButton:SetFrameLevel(baseLevel + 7)
+    if host.dragHandle and host.dragHandle.menuButton then
+        host.dragHandle.menuButton:SetFrameStrata(strata)
+        host.dragHandle.menuButton:SetFrameLevel(baseLevel + 7)
     end
     if host.nudger then
         host.nudger:SetFrameStrata(strata)
@@ -971,26 +966,14 @@ local function SetAuraTextureDragControlsShown(host, shown, unlockGhost)
         host.dragHandle:SetIgnoreParentAlpha(shown and unlockGhost == true)
         host.dragHandle:SetShown(shown)
         if host.dragHandle.lockButton then
-            local ownerFrame = host._ownerButton and host._ownerButton:GetParent()
-            -- Cursor panels carry no padlock: they have no lock state of their
-            -- own, matching the ordinary panel presentation.
-            local ownerGroupId = host._ownerButton and host._ownerButton._groupId
-            local isCursorAnchored = ownerGroupId ~= nil
-                and CooldownCompanion.IsGroupCursorAnchored
-                and CooldownCompanion:IsGroupCursorAnchored(ownerGroupId)
-                or false
-            host.dragHandle.lockButton:SetShown(
-                shown
-                and not (ownerFrame and ownerFrame._containerUnlockPreviewActive == true)
-                and not isCursorAnchored
-            )
+            host.dragHandle.lockButton:SetShown(shown)
         end
     end
     if host.coordLabel then
         host.coordLabel:SetShown(shown)
     end
-    if ST.SetRuntimeInfoButtonShown then
-        ST.SetRuntimeInfoButtonShown(host.dragHelpButton, shown)
+    if host.dragHandle and host.dragHandle.menuButton then
+        host.dragHandle.menuButton:SetShown(shown)
     end
     if host.nudger then
         host.nudger:SetShown(shown)
@@ -1046,26 +1029,26 @@ function CooldownCompanion:EnsureAuraTextureHost(button)
     EnsureAuraTextureRuntimeRoot(host)
 
     host:SetScript("OnDragStart", function(self)
-        self._cursorHostSurfaceDrag = true
-        BeginTextureHostDrag(self)
+        BeginTextureHostDrag(self, true)
     end)
 
     host:SetScript("OnDragStop", function(self)
         FinishTextureHostDrag(self)
     end)
 
-    -- Arrange selection for a parked cursor panel: clicking the host toggles
-    -- its positioning chrome, mirroring the ordinary panel click route. The
-    -- selection call gates itself, so this is inert everywhere else.
+    -- Arrange selection for grouped standalone displays, including parked
+    -- cursor panels: clicking the visible host uses the same toggle/solo
+    -- grammar as ordinary panel overlays and toolbar rows.
     host:SetScript("OnMouseUp", function(self, mouseButton)
-        local suppressed = self._cursorSelectClickSuppressed
-        self._cursorSelectClickSuppressed = nil
+        local suppressed = self._arrangeSelectClickSuppressed
+        self._arrangeSelectClickSuppressed = nil
         if suppressed or mouseButton ~= "LeftButton" or self._isDragging then
             return
         end
         local owner = self._ownerButton
-        if owner and owner._groupId and CooldownCompanion.SelectArrangeCursorPanel then
-            CooldownCompanion:SelectArrangeCursorPanel(owner._groupId, true)
+        local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
+        if group and CooldownCompanion.ActivateArrangePanel then
+            CooldownCompanion:ActivateArrangePanel(group.parentContainerId, owner._groupId, true)
         end
     end)
 
@@ -1747,9 +1730,13 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         and self.IsCursorAnchorLayoutPreviewSelected
         and self:IsCursorAnchorLayoutPreviewSelected(driverButton._groupId)
         or false
+    local independentPanelMoverShown = visibilityState.isGroupedPreview
+        or self._arrangeSoloContainerId == nil
+        or self._arrangeSelectedPanelId == driverButton._groupId
     host._hasSavedDisplay = hasSavedDisplay
     host._dragEnabled = (visibilityState.isUnlocked
         and hasSavedDisplay
+        and independentPanelMoverShown
         and (not visibilityState.isGroupedPreview or isGroupedPreviewSelected))
         or (isCursorPreviewSelected and hasSavedDisplay)
     host._wrapperManaged = visibilityState.isGroupedPreview or nil
@@ -1833,6 +1820,26 @@ function CooldownCompanion:RefreshCursorAnchoredHostControls(host, groupId, grou
     end
 end
 
+function CooldownCompanion:SetIndependentStandalonePanelMoverShown(groupId, shown)
+    local group = groupId and ResolveGroup(groupId) or nil
+    if not (group and self:IsStandaloneTexturePanelGroup(group)) then
+        return
+    end
+    local groupFrame = self.groupFrames and self.groupFrames[groupId]
+    local driverButton = groupFrame and groupFrame.buttons and groupFrame.buttons[1]
+    local host = driverButton and driverButton.auraTextureHost
+    if not host then
+        return
+    end
+
+    shown = shown == true and host._hasSavedDisplay == true
+    host._dragEnabled = shown
+    SetTextureHostMouseEnabled(host, shown)
+    SetAuraTextureOutlineShown(host, false)
+    SyncAuraTextureControlLevels(host, false)
+    SetAuraTextureDragControlsShown(host, shown, groupFrame and groupFrame._unlockGhost)
+end
+
 function CooldownCompanion:UpdateGroupedStandalonePreviewSelection(groupId)
     local group = groupId and ResolveGroup(groupId) or nil
     if not (group and group.parentContainerId and (group.displayMode == "textures" or group.displayMode == "trigger")) then
@@ -1857,7 +1864,13 @@ function CooldownCompanion:UpdateGroupedStandalonePreviewSelection(groupId)
 
     host._dragEnabled = showControls
     SyncAuraTextureControlLevels(host, showControls)
-    SetAuraTextureOutlineShown(host, isSelected, isHovered)
+    -- Once a panel is selected, its title-bar mover and information rows are
+    -- the only visible arrange chrome; the selection itself is already clear
+    -- from those controls, so the standalone outline would be redundant.
+    local containerHasSelection = self.GetContainerSelectedGroupId
+        and self:GetContainerSelectedGroupId(group.parentContainerId) ~= nil
+        or false
+    SetAuraTextureOutlineShown(host, false, not containerHasSelection and isHovered)
 
     SetAuraTextureDragControlsShown(host, showControls, groupFrame and groupFrame._unlockGhost)
 end

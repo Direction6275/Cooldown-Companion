@@ -91,7 +91,7 @@ local moverChromeFadeState = {
 function CooldownCompanion:ApplyMoverChromeFadeToFrames(header, coordLabel, nudger, resizeGrip, sizeLabel)
     local alpha = moverChromeFadeState.active and 0 or 1
     if header then
-        header:SetAlpha(alpha)
+        header:SetAlpha(header._moverMenuPinned and 1 or alpha)
     end
     if coordLabel then
         coordLabel:SetAlpha(alpha)
@@ -476,6 +476,12 @@ local function GetContainerPreviewSelectionState(groupId)
     local containerId = group and group.parentContainerId or nil
     if not containerId then
         return false, false, nil
+    end
+    if (CooldownCompanion.IsArrangePanelSuppressed
+            and CooldownCompanion:IsArrangePanelSuppressed(groupId))
+        or (CooldownCompanion.IsArrangeContainerSuppressed
+            and CooldownCompanion:IsArrangeContainerSuppressed(containerId)) then
+        return false, false, containerId
     end
 
     local previewActive = CooldownCompanion.IsContainerUnlockPreviewActive
@@ -2345,75 +2351,23 @@ local function OnUnlockedPanelMouseWheel(frame, delta)
     ST.UpdateGroupSizeLabel(frame)
 end
 
-local function AddPanelDragHelpTooltipLines(tooltip, isCursorPreview, isResizable)
-    if isCursorPreview then
-        tooltip:AddLine("Cursor Offset")
-        tooltip:AddLine("Drag this panel to set its saved offset from the dummy cursor.", 1, 1, 1, true)
-        tooltip:AddLine(" ")
-        tooltip:AddLine("Use the arrow pad to nudge the saved cursor offset by 1 pixel.", 1, 1, 1, true)
-        tooltip:AddLine(" ")
-        if isResizable then
-            tooltip:AddLine("Drag the corner grip or mouse wheel to resize.", 1, 1, 1, false)
-            tooltip:AddLine(" ")
-        end
-        tooltip:AddLine("Position coordinates are shown below while editing.", 1, 1, 1, false)
-        return
-    end
-
-    tooltip:AddLine("Panel Controls")
-    tooltip:AddLine("Drag anywhere on the panel to move it.", 1, 1, 1, false)
-    tooltip:AddLine(" ")
-    tooltip:AddLine("Use the arrow pad to nudge by 1 pixel.", 1, 1, 1, false)
-    tooltip:AddLine(" ")
-    if isResizable then
-        tooltip:AddLine("Drag the corner grip or mouse wheel to resize.", 1, 1, 1, false)
-        tooltip:AddLine(" ")
-    end
-    tooltip:AddLine(
-        isResizable
-            and "Click the coordinates or size below to type exact values."
-            or "Click the coordinates below to type exact values.",
-        1, 1, 1, false
-    )
-end
-
 local function LockPanelFromMover(groupId)
     local group = CooldownCompanion.db.profile.groups[groupId]
     if not group then
         return
     end
-    local containerPreviewActive = GetContainerPreviewSelectionState(groupId)
-    if IsCursorAnchor(group.anchor) or containerPreviewActive then
-        return
-    end
 
-    -- Lock this specific group/panel
+    -- Close this panel's mover without touching its owning group. The shared
+    -- setter adds the session suppression that container and cursor previews
+    -- need in addition to the ordinary panel's saved independent lock flag.
+    if CooldownCompanion.ClearArrangeMoverSelection then
+        CooldownCompanion:ClearArrangeMoverSelection()
+    end
     CooldownCompanion:SetPanelLocked(groupId, true)
     CooldownCompanion:CaptureArrangePanelRecord(groupId)
     CooldownCompanion:RefreshConfigPanel()
     CooldownCompanion:Print(group.name .. " locked.")
-end
-
-local function CreatePanelDragHelpButton(frame, groupId)
-    if not (frame and frame.dragHandle and ST.CreateRuntimeInfoButton) then
-        return nil
-    end
-
-    return ST.CreateRuntimeInfoButton(
-        frame.dragHandle,
-        frame.dragHandle,
-        "RIGHT",
-        "RIGHT",
-        -2,
-        0,
-        function(tooltip)
-            local group = CooldownCompanion.db.profile.groups[groupId]
-            local cursorPreviewActive = CooldownCompanion.IsCursorAnchorLayoutPreviewSelected
-                and CooldownCompanion:IsCursorAnchorLayoutPreviewSelected(groupId)
-                or false
-            AddPanelDragHelpTooltipLines(tooltip, cursorPreviewActive, IsGroupPanelResizable(group))
-        end
-    )
+    CooldownCompanion:CheckArrangeModeAutoExit()
 end
 
 -- Both placeholder roots take the same rule: an Aura Panel owns the first, a
@@ -2463,10 +2417,6 @@ local function SyncGroupControlLevels(frame, raiseAboveWrapper)
     if frame.coordLabel then
         frame.coordLabel:SetFrameStrata(strata)
         frame.coordLabel:SetFrameLevel(baseLevel + 1)
-    end
-    if frame.dragHelpButton then
-        frame.dragHelpButton:SetFrameStrata(strata)
-        frame.dragHelpButton:SetFrameLevel(baseLevel + 2)
     end
     if frame.sizeLabel then
         frame.sizeLabel:SetFrameStrata(strata)
@@ -2530,16 +2480,11 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
         frame.dragHandle:SetIgnoreParentAlpha(shown and frame._unlockGhost == true)
         frame.dragHandle:SetShown(shown)
         if frame.dragHandle.lockButton then
-            frame.dragHandle.lockButton:SetShown(
-                shown and not containerPreviewActive and not IsCursorAnchor(group and group.anchor)
-            )
+            frame.dragHandle.lockButton:SetShown(shown)
         end
     end
     if frame.coordLabel then
         frame.coordLabel:SetShown(shown)
-    end
-    if ST.SetRuntimeInfoButtonShown then
-        ST.SetRuntimeInfoButtonShown(frame.dragHelpButton, shown)
     end
     if frame.nudger then
         frame.nudger:SetShown(shown)
@@ -2583,6 +2528,45 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
         and (shown == true or containerPreviewActive)
         or false
     CooldownCompanion:SetAuraPanelPlaceholderPreviewShown(frame, auraPreviewShown)
+end
+
+-- Independently unlocked panels sit outside a container preview, so toolbar
+-- solo changes update only their mover chrome. Runtime displays and panel
+-- contents stay untouched.
+function CooldownCompanion:RefreshIndependentPanelMoverChrome(groupId)
+    local group = self.db and self.db.profile and self.db.profile.groups
+        and self.db.profile.groups[groupId]
+    if not group
+        or (self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group))
+        or (group.parentContainerId
+            and self:IsContainerUnlockPreviewActive(group.parentContainerId)) then
+        return
+    end
+
+    local shown = self:IsUnlockToolbarPanelEligible(groupId, group)
+        and (self._arrangeSoloContainerId == nil
+            or self._arrangeSelectedPanelId == groupId)
+        or false
+    if self:IsStandaloneTexturePanelGroup(group) then
+        if self.SetIndependentStandalonePanelMoverShown then
+            self:SetIndependentStandalonePanelMoverShown(groupId, shown)
+        end
+        return
+    end
+
+    local frame = self.groupFrames and self.groupFrames[groupId]
+    if frame then
+        self:SetGroupDragControlsShown(frame, shown)
+        self:UpdateGroupClickthrough(groupId)
+    end
+end
+
+function CooldownCompanion:RefreshAllIndependentPanelMoverChrome()
+    for groupId, group in pairs(self.db.profile.groups or {}) do
+        if group and group.locked == false then
+            self:RefreshIndependentPanelMoverChrome(groupId)
+        end
+    end
 end
 
 local function GetCursorPositionInUIParentSpace(self)
@@ -2695,6 +2679,10 @@ local function BuildCursorAnchorLayoutPreviewGroupMap(self)
 
     for groupId, group in pairs(groups) do
         if IsCursorAnchor(group.anchor)
+            and not (self.IsArrangePanelSuppressed and self:IsArrangePanelSuppressed(groupId))
+            and not (group.parentContainerId
+                and self.IsArrangeContainerSuppressed
+                and self:IsArrangeContainerSuppressed(group.parentContainerId))
             and self:CanGroupUseCursorAnchor(group)
             and self:IsGroupActive(groupId, {
                 group = group,
@@ -2795,6 +2783,12 @@ function CooldownCompanion:SelectArrangeCursorPanel(groupId, toggle)
         if toggle then
             preview.selectedGroupId = nil
             SetCursorAnchorLayoutPreviewGroupState(self, groupId, true)
+            local selectedGroup = self.db.profile.groups[groupId]
+            local selectedContainerId = selectedGroup and selectedGroup.parentContainerId
+            if selectedContainerId and not self:IsContainerArrangeChromeHidden(selectedContainerId) then
+                self:RefreshContainerWrapper(selectedContainerId)
+            end
+            if self.RefreshArrangePillList then self:RefreshArrangePillList() end
             return false
         end
         return true
@@ -2805,6 +2799,19 @@ function CooldownCompanion:SelectArrangeCursorPanel(groupId, toggle)
         SetCursorAnchorLayoutPreviewGroupState(self, previous, true)
     end
     SetCursorAnchorLayoutPreviewGroupState(self, groupId, true)
+    local previousGroup = previous and self.db.profile.groups[previous]
+    local previousContainerId = previousGroup and previousGroup.parentContainerId
+    local selectedGroup = self.db.profile.groups[groupId]
+    local selectedContainerId = selectedGroup and selectedGroup.parentContainerId
+    if previousContainerId
+        and previousContainerId ~= selectedContainerId
+        and not self:IsContainerArrangeChromeHidden(previousContainerId) then
+        self:RefreshContainerWrapper(previousContainerId)
+    end
+    if selectedContainerId and not self:IsContainerArrangeChromeHidden(selectedContainerId) then
+        self:RefreshContainerWrapper(selectedContainerId)
+    end
+    if self.RefreshArrangePillList then self:RefreshArrangePillList() end
     return true
 end
 
@@ -3537,6 +3544,8 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.buttons = {}
     frame._containerUnlockPreviewActive = group.parentContainerId
         and self:IsContainerUnlockPreviewActive(group.parentContainerId)
+        and not self:IsArrangePanelSuppressed(groupId)
+        and not self:IsArrangeContainerSuppressed(group.parentContainerId)
         or nil
     frame._panelUnlockPreviewActive = self:IsPanelUnlockPreviewActive(group) or nil
     
@@ -3555,6 +3564,10 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     
     -- Resolve locked state from container (or group for legacy)
     local isLocked, baseAlpha = GetContainerState(groupId)
+    if self:IsArrangePanelSuppressed(groupId)
+        or (group.parentContainerId and self:IsArrangeContainerSuppressed(group.parentContainerId)) then
+        isLocked = true
+    end
 
     -- Make it movable when unlocked. Texture panels use direct texture dragging
     -- instead of the standard panel drag handle.
@@ -3582,14 +3595,24 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.dragHandle.lockButton = ST.CreateMoverLockBadge(frame.dragHandle, 12, function()
         LockPanelFromMover(groupId)
     end)
-    frame.dragHelpButton = CreatePanelDragHelpButton(frame, groupId)
-    if frame.dragHelpButton then
-        frame.dragHandle.lockButton:SetPoint("RIGHT", frame.dragHelpButton, "LEFT", -2, 0)
-    else
-        frame.dragHandle.lockButton:SetPoint("RIGHT", frame.dragHandle, "RIGHT", -2, 0)
-    end
+    frame.dragHandle.lockButton:SetPoint("RIGHT", frame.dragHandle, "RIGHT", -2, 0)
+    frame.dragHandle.menuButton = ST.CreateMoverQuickMenuButton(
+        frame.dragHandle,
+        12,
+        function()
+            local current = CooldownCompanion.db.profile.groups[groupId]
+            return {
+                kind = "panel",
+                id = groupId,
+                containerId = current and current.parentContainerId,
+                focusId = current and current.parentContainerId,
+            }
+        end,
+        frame.dragHandle
+    )
+    frame.dragHandle.menuButton:SetPoint("RIGHT", frame.dragHandle.lockButton, "LEFT", -2, 0)
     -- Symmetric insets matching the badge cluster keep the name centered on the bar
-    local headerTextInset = frame.dragHandle.lockButton:GetWidth() + (frame.dragHelpButton and 22 or 4)
+    local headerTextInset = frame.dragHandle.lockButton:GetWidth() + frame.dragHandle.menuButton:GetWidth() + 8
     frame.dragHandle.text:ClearAllPoints()
     frame.dragHandle.text:SetPoint("LEFT", frame.dragHandle, "LEFT", headerTextInset, 0)
     frame.dragHandle.text:SetPoint("RIGHT", frame.dragHandle, "RIGHT", -headerTextInset, 0)
@@ -3703,6 +3726,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
 
     -- Drag scripts (check lock state at drag time)
     frame:SetScript("OnDragStart", function(self)
+        self._arrangePanelSurfaceDrag = nil
         CancelCoordinateEdit(self.coordLabel)
         CancelCoordinateEdit(self.sizeLabel)
         local locked = GetContainerState(self.groupId)
@@ -3710,7 +3734,10 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         local dragGroup = CooldownCompanion.db.profile.groups[self.groupId]
         if dragGroup and IsCursorAnchor(dragGroup.anchor) then
             -- A drag on a parked-but-unselected panel selects it first.
-            CooldownCompanion:SelectArrangeCursorPanel(self.groupId, false)
+            if not CooldownCompanion:ActivateArrangePanel(dragGroup.parentContainerId, self.groupId, false) then
+                return
+            end
+            self._arrangePanelSurfaceDrag = true
             BeginCursorAnchorLayoutPreviewPanelDrag(CooldownCompanion, self, self.groupId)
             return
         end
@@ -3729,6 +3756,15 @@ function CooldownCompanion:CreateGroupFrame(groupId)
             CooldownCompanion:BeginMoverChromeFade(self)
             BeginSelfExcludedDragSnapSession(self)
         elseif not locked then
+            if dragGroup and dragGroup.parentContainerId
+                and not CooldownCompanion:ActivateArrangePanel(
+                    dragGroup.parentContainerId,
+                    self.groupId,
+                    false
+                ) then
+                return
+            end
+            self._arrangePanelSurfaceDrag = true
             self._dragCancelPending = nil
             self._dragInProgress = true
             self:StartMoving()
@@ -3742,15 +3778,22 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         local dragGroup = CooldownCompanion.db.profile.groups[self.groupId]
         if dragGroup and IsCursorAnchor(dragGroup.anchor) then
             local cancelSave = self._dragCancelPending == true or CooldownCompanion._combatForcedLock
-            -- The release that ends this drag also fires OnMouseUp; it must
-            -- not read as a selection-toggling click.
-            self._cursorSelectClickSuppressed = true
+            if self._arrangePanelSurfaceDrag then
+                -- A body-drag release also fires the body's OnMouseUp; a title
+                -- drag does not consume the next deliberate body click.
+                self._arrangeSelectClickSuppressed = true
+            end
+            self._arrangePanelSurfaceDrag = nil
             EndCursorAnchorLayoutPreviewPanelDrag(CooldownCompanion, self, self.groupId, cancelSave)
             return
         end
 
         local _, selectedInContainer, containerId = GetContainerPreviewSelectionState(self.groupId)
         local cancelSave = self._dragCancelPending == true or CooldownCompanion._combatForcedLock
+        if self._arrangePanelSurfaceDrag then
+            self._arrangeSelectClickSuppressed = true
+        end
+        self._arrangePanelSurfaceDrag = nil
         self._dragCancelPending = nil
         self._dragInProgress = nil
         if not (InCombatLockdown() and self:IsProtected()) then
@@ -3769,34 +3812,37 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         CooldownCompanion:EndMoverChromeFade(self)
     end)
 
-    -- Arrange selection for parked cursor panels: click toggles the one
-    -- panel that carries the positioning chrome (container-member grammar).
+    -- Every interactive panel body uses the shared toggle/solo grammar.
     -- SetFrameClickThrough WIPES OnMouseUp scripts whenever the frame goes
     -- clickthrough, so the handler is kept on the frame and re-attached by
-    -- UpdateGroupClickthrough's interactive cursor branches.
-    frame._cursorSelectOnMouseUp = function(self, button)
-        local suppressed = self._cursorSelectClickSuppressed
-        self._cursorSelectClickSuppressed = nil
+    -- UpdateGroupClickthrough's interactive branches.
+    frame._arrangeSelectOnMouseUp = function(self, button)
+        local suppressed = self._arrangeSelectClickSuppressed
+        self._arrangeSelectClickSuppressed = nil
         if suppressed or button ~= "LeftButton" or self._dragInProgress then
             return
         end
         local clickGroup = CooldownCompanion.db.profile.groups[self.groupId]
-        if clickGroup and IsCursorAnchor(clickGroup.anchor) then
-            CooldownCompanion:SelectArrangeCursorPanel(self.groupId, true)
+        if clickGroup and clickGroup.parentContainerId then
+            CooldownCompanion:ActivateArrangePanel(clickGroup.parentContainerId, self.groupId, true)
         end
     end
-    frame:SetScript("OnMouseUp", frame._cursorSelectOnMouseUp)
+    frame:SetScript("OnMouseUp", frame._arrangeSelectOnMouseUp)
 
     -- Also allow dragging from the handle
     frame.dragHandle:EnableMouse(true)
     frame.dragHandle:RegisterForDrag("LeftButton")
     frame.dragHandle:SetScript("OnDragStart", function()
+        frame._arrangePanelSurfaceDrag = nil
         CancelCoordinateEdit(frame.coordLabel)
         CancelCoordinateEdit(frame.sizeLabel)
         local locked = GetContainerState(groupId)
         local previewActive, selectedInContainer, containerId = GetContainerPreviewSelectionState(groupId)
         local dragGroup = CooldownCompanion.db.profile.groups[groupId]
         if dragGroup and IsCursorAnchor(dragGroup.anchor) then
+            if not CooldownCompanion:ActivateArrangePanel(dragGroup.parentContainerId, groupId, false) then
+                return
+            end
             BeginCursorAnchorLayoutPreviewPanelDrag(CooldownCompanion, frame, groupId)
             return
         end
@@ -3815,6 +3861,14 @@ function CooldownCompanion:CreateGroupFrame(groupId)
             CooldownCompanion:BeginMoverChromeFade(frame)
             BeginSelfExcludedDragSnapSession(frame)
         elseif not locked then
+            if dragGroup and dragGroup.parentContainerId
+                and not CooldownCompanion:ActivateArrangePanel(
+                    dragGroup.parentContainerId,
+                    groupId,
+                    false
+                ) then
+                return
+            end
             frame._dragCancelPending = nil
             frame._dragInProgress = true
             frame:StartMoving()
@@ -5242,6 +5296,8 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
 
         frame._containerUnlockPreviewActive = group.parentContainerId
             and self:IsContainerUnlockPreviewActive(group.parentContainerId)
+            and not self:IsArrangePanelSuppressed(groupId)
+            and not self:IsArrangeContainerSuppressed(group.parentContainerId)
             or nil
         frame._panelUnlockPreviewActive = self:IsPanelUnlockPreviewActive(group) or nil
         self:PopulateGroupButtons(groupId)
@@ -5249,6 +5305,10 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
 
     -- Resolve locked/alpha from container
     local isLocked, baseAlpha = GetContainerState(groupId)
+    if self:IsArrangePanelSuppressed(groupId)
+        or (group.parentContainerId and self:IsArrangeContainerSuppressed(group.parentContainerId)) then
+        isLocked = true
+    end
 
     -- Update drag handle text and lock state. An empty Aura Panel is exempt for
     -- the same reason the Rotation Assistant is: its one reserved cell is what
@@ -5263,6 +5323,9 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         or false
     local containerPreviewActive = frame._containerUnlockPreviewActive == true
     local panelPreviewActive = frame._panelUnlockPreviewActive == true
+    local independentPanelMoverShown = not panelPreviewActive
+        or self._arrangeSoloContainerId == nil
+        or self._arrangeSelectedPanelId == groupId
     local selectedInContainer = containerPreviewActive and self:IsContainerPanelSelected(group.parentContainerId, groupId)
     local isActive = ShouldShowGroupFrameForRuntime(self, groupId, group)
     if (containerPreviewActive or panelPreviewActive) and isActive then
@@ -5288,7 +5351,8 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
                 isCursorLayoutPreviewSelected
                 or (
                     not isCursorAnchored
-                    and ((containerPreviewActive and selectedInContainer) or (not containerPreviewActive and not isLocked))
+                    and ((containerPreviewActive and selectedInContainer)
+                        or (not containerPreviewActive and not isLocked and independentPanelMoverShown))
                 )
             )
     )
@@ -5711,10 +5775,26 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     local isLocked = GetContainerState(groupId)
     local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
     local isCursorAnchored = IsCursorAnchor(group.anchor)
+    if self:IsArrangePanelSuppressed(groupId)
+        or (group.parentContainerId and self:IsArrangeContainerSuppressed(group.parentContainerId)) then
+        isLocked = true
+    end
     local isCursorLayoutPreviewSelected = isCursorAnchored
         and IsCursorAnchorLayoutPreviewSelected(self, groupId)
         or false
-    local containerPreviewActive = group.parentContainerId and self:IsContainerUnlockPreviewActive(group.parentContainerId)
+    local containerPreviewActive = group.parentContainerId
+        and self:IsContainerUnlockPreviewActive(group.parentContainerId)
+        and not self:IsArrangePanelSuppressed(groupId)
+        and not self:IsArrangeContainerSuppressed(group.parentContainerId)
+        or false
+    local independentPanelSoloHidden = not containerPreviewActive
+        and group.locked == false
+        and self._arrangeSoloContainerId ~= nil
+        and self._arrangeSelectedPanelId ~= groupId
+        or false
+    if independentPanelSoloHidden then
+        isLocked = true
+    end
     local isSelectedInContainer = containerPreviewActive and self:IsContainerPanelSelected(group.parentContainerId, groupId)
     -- Exempt with the Rotation Assistant: an empty Aura Panel still lays out one
     -- reserved cell, so the wheel has a real cell to scale.
@@ -5722,6 +5802,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
         or ST.IsAuraPanelGroup(group)
         or #group.buttons > 0
     local resizeWheelEnabled = hasResizeEntry
+        and not independentPanelSoloHidden
         and (isCursorLayoutPreviewSelected or not containerPreviewActive or isSelectedInContainer)
         and CanUsePanelResizeInteractions(groupId, group)
 
@@ -5742,7 +5823,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
         frame:RegisterForDrag("LeftButton")
         -- Clickthrough transitions wipe OnMouseUp; restore the selection
         -- handler alongside the drag registration.
-        frame:SetScript("OnMouseUp", frame._cursorSelectOnMouseUp)
+        frame:SetScript("OnMouseUp", frame._arrangeSelectOnMouseUp)
         if frame.dragHandle then
             SetFrameClickThrough(frame.dragHandle, false, false)
             frame.dragHandle:EnableMouse(true)
@@ -5766,7 +5847,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
         frame:RegisterForDrag("LeftButton")
         -- Clickthrough transitions wipe OnMouseUp; restore the selection
         -- handler alongside the drag registration.
-        frame:SetScript("OnMouseUp", frame._cursorSelectOnMouseUp)
+        frame:SetScript("OnMouseUp", frame._arrangeSelectOnMouseUp)
         if frame.dragHandle then
             SetFrameClickThrough(frame.dragHandle, true, true)
         end
@@ -5818,6 +5899,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     else
         SetFrameClickThrough(frame, false, false)
         frame:RegisterForDrag("LeftButton")
+        frame:SetScript("OnMouseUp", frame._arrangeSelectOnMouseUp)
         if frame.dragHandle then
             SetFrameClickThrough(frame.dragHandle, false, false)
             frame.dragHandle:EnableMouse(true)
@@ -5948,6 +6030,9 @@ local function EnsureContainerMemberOverlay(frame, index)
         if containerFrame._containerHoveredGroupId ~= self.groupId then
             containerFrame._containerHoveredGroupId = self.groupId
             CooldownCompanion:RefreshContainerWrapper(self.containerId)
+            if CooldownCompanion.RefreshArrangePillList then
+                CooldownCompanion:RefreshArrangePillList()
+            end
         end
     end)
 
@@ -5962,6 +6047,9 @@ local function EnsureContainerMemberOverlay(frame, index)
         if containerFrame._containerHoveredGroupId == self.groupId then
             containerFrame._containerHoveredGroupId = nil
             CooldownCompanion:RefreshContainerWrapper(self.containerId)
+            if CooldownCompanion.RefreshArrangePillList then
+                CooldownCompanion:RefreshArrangePillList()
+            end
         end
     end)
 
@@ -5985,7 +6073,7 @@ local function EnsureContainerMemberOverlay(frame, index)
             self._suppressClick = nil
             return
         end
-        CooldownCompanion:SelectContainerPanel(self.containerId, self.groupId)
+        CooldownCompanion:ActivateArrangePanel(self.containerId, self.groupId, true)
     end)
 
     frame._containerMemberOverlays[index] = overlay
@@ -6124,6 +6212,20 @@ function CooldownCompanion:ClearContainerUnlockState(containerId)
     local hoveredGroupId = frame._containerHoveredGroupId
     frame._containerSelectedGroupId = nil
     frame._containerHoveredGroupId = nil
+    if selectedGroupId and self._arrangeSelectedPanelId == selectedGroupId then
+        self._arrangeSelectedPanelId = nil
+    end
+    local cursorPreview = self._cursorAnchorLayoutPreview
+    local cursorSelectedGroupId = cursorPreview and cursorPreview.selectedGroupId
+    local cursorSelectedGroup = cursorSelectedGroupId
+        and self.db.profile.groups[cursorSelectedGroupId]
+        or nil
+    if cursorSelectedGroup and cursorSelectedGroup.parentContainerId == containerId then
+        if self._arrangeSelectedPanelId == cursorSelectedGroupId then
+            self._arrangeSelectedPanelId = nil
+        end
+        self:SelectArrangeCursorPanel(cursorSelectedGroupId, true)
+    end
     self:StopContainerMemberPreviewTracking(containerId)
     HideContainerMemberOverlays(frame)
 
@@ -6151,17 +6253,16 @@ function CooldownCompanion:ClearContainerUnlockState(containerId)
     end
 end
 
--- Arrange-mode chrome reveal: while everything is unlocked at once, a
+-- Unlock-toolbar chrome reveal: while several movers are available at once, a
 -- container rests as outline + header only; its nudger and coordinate label
--- show only while the container is hovered or is the focused (last-clicked)
--- container. One focused container at a time, session-only state. A container
--- unlocked on its own outside arrange mode keeps full chrome.
--- Arrange-pill chrome filter: session-only per-container flags that tuck a
+-- show while the container is hovered or focused. An individually unlocked
+-- container keeps full chrome until the user makes a toolbar selection.
+-- The session-only per-container filter can tuck a
 -- container's whole mover away mid-arrange (wrapper, header, overlays, hover
 -- reveal) while its real displays stay on screen. Never touches
 -- container.locked; wiped on entering and leaving arrange mode.
 function CooldownCompanion:IsContainerArrangeChromeHidden(containerId)
-    if self._arrangeModeActive ~= true then
+    if not self:IsUnlockToolbarActive() then
         return false
     end
     local hiddenSet = self._arrangeChromeHidden
@@ -6178,7 +6279,7 @@ end
 -- restores whatever the manual flags say). The solo target becomes the
 -- focused container so its controls pin open.
 function CooldownCompanion:SetArrangeSoloContainer(containerId)
-    if not self._arrangeModeActive then
+    if not self:IsUnlockToolbarActive() then
         return
     end
     if self._arrangeSoloContainerId == containerId then
@@ -6196,6 +6297,7 @@ function CooldownCompanion:SetArrangeSoloContainer(containerId)
             self:UpdateContainerDragHandle(cid, self:IsContainerArrangeChromeHidden(cid))
         end
     end
+    self:RefreshAllIndependentPanelMoverChrome()
     -- The solo also decides the independent bar movers' effective hidden state.
     self:RefreshArrangeSpecialMoverChrome("cast")
     self:RefreshArrangeSpecialMoverChrome("resource")
@@ -6205,7 +6307,7 @@ function CooldownCompanion:SetArrangeSoloContainer(containerId)
 end
 
 function CooldownCompanion:SetContainerArrangeChromeHidden(containerId, hidden)
-    if not self._arrangeModeActive then
+    if not self:IsUnlockToolbarActive() then
         return
     end
     -- "cast"/"resource" ride the same map and solo slot as container ids.
@@ -6240,7 +6342,12 @@ function CooldownCompanion:SetContainerArrangeChromeHidden(containerId, hidden)
 end
 
 function CooldownCompanion:IsContainerArrangeChromeRevealed(containerId, frame)
-    if not self._arrangeModeActive then
+    if not self:IsUnlockToolbarActive() then
+        return true
+    end
+    if not self._arrangeModeActive
+        and self._arrangeFocusContainerId == nil
+        and self._arrangeSoloContainerId == nil then
         return true
     end
     frame = frame or (self.containerFrames and self.containerFrames[containerId])
@@ -6249,7 +6356,7 @@ function CooldownCompanion:IsContainerArrangeChromeRevealed(containerId, frame)
 end
 
 function CooldownCompanion:FocusArrangeContainer(containerId)
-    if not self._arrangeModeActive then
+    if not self:IsUnlockToolbarActive() then
         return
     end
     local previous = self._arrangeFocusContainerId
@@ -6257,6 +6364,12 @@ function CooldownCompanion:FocusArrangeContainer(containerId)
         return
     end
     self._arrangeFocusContainerId = containerId
+    if containerId ~= nil then
+        self._arrangeTreeRevealEntry = {
+            kind = self:IsArrangeSpecialMoverId(containerId) and "special" or "root",
+            id = containerId,
+        }
+    end
     if previous then
         self:RefreshContainerWrapper(previous)
     end
@@ -6291,7 +6404,7 @@ function CooldownCompanion:IsContainerChromePointerOver(frame)
 end
 
 function CooldownCompanion:BeginContainerChromeHoverWatch(containerId)
-    if not self._arrangeModeActive or self:IsContainerArrangeChromeHidden(containerId) then
+    if not self:IsUnlockToolbarActive() or self:IsContainerArrangeChromeHidden(containerId) then
         return
     end
     local frame = self.containerFrames and self.containerFrames[containerId]
@@ -6306,7 +6419,7 @@ function CooldownCompanion:BeginContainerChromeHoverWatch(containerId)
         if frame._arrangeHoverGen ~= generation or frame._arrangeChromeHover ~= true then
             return
         end
-        if CooldownCompanion._arrangeModeActive and CooldownCompanion:IsContainerChromePointerOver(frame) then
+        if CooldownCompanion:IsUnlockToolbarActive() and CooldownCompanion:IsContainerChromePointerOver(frame) then
             C_Timer.After(0.2, Watch)
             return
         end
@@ -6328,13 +6441,14 @@ function CooldownCompanion:SelectContainerWrapper(containerId)
 
     frame._containerSelectedGroupId = nil
     self:RefreshContainerWrapper(containerId)
+    if self.RefreshArrangePillList then self:RefreshArrangePillList() end
 end
 
 function CooldownCompanion:SelectContainerPanel(containerId, groupId)
     local frame = self.containerFrames and self.containerFrames[containerId]
     local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
     if not (frame and group and group.parentContainerId == containerId) then
-        return
+        return false
     end
 
     self:FocusArrangeContainer(containerId)
@@ -6344,16 +6458,106 @@ function CooldownCompanion:SelectContainerPanel(containerId, groupId)
         checkCharVisibility = true,
     }) then
         self:SelectContainerWrapper(containerId)
-        return
+        return false
     end
 
     if frame._containerSelectedGroupId == groupId and frame._containerHoveredGroupId == groupId then
-        return
+        return true
     end
 
     frame._containerSelectedGroupId = groupId
     frame._containerHoveredGroupId = groupId
     self:RefreshContainerWrapper(containerId)
+    if self.RefreshArrangePillList then self:RefreshArrangePillList() end
+    return true
+end
+
+local function ClearArrangePanelSelectionState(self)
+    self._arrangeSelectedPanelId = nil
+    local preview = self._cursorAnchorLayoutPreview
+    if preview and preview.selectedGroupId then
+        self:SelectArrangeCursorPanel(preview.selectedGroupId, true)
+    end
+    for containerId, frame in pairs(self.containerFrames or {}) do
+        if frame._containerSelectedGroupId or frame._containerHoveredGroupId then
+            frame._containerSelectedGroupId = nil
+            frame._containerHoveredGroupId = nil
+            self:RefreshContainerWrapper(containerId)
+        end
+    end
+end
+
+function CooldownCompanion:ClearArrangeMoverSelection()
+    ClearArrangePanelSelectionState(self)
+    if self._arrangeSoloContainerId ~= nil then
+        self:SetArrangeSoloContainer(nil)
+    end
+    self:FocusArrangeContainer(nil)
+    self._arrangeTreeRevealEntry = nil
+    self:RefreshArrangePillList()
+end
+
+-- One selection grammar for every panel surface. Clicks toggle the active
+-- panel; drags pass toggle=false so they can select/solo without ever turning
+-- the panel off on release.
+function CooldownCompanion:ActivateArrangePanel(containerId, groupId, toggle)
+    if not self:IsUnlockToolbarActive() then return false end
+    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
+    if not (group and group.parentContainerId == containerId) then return false end
+    if self:IsArrangePanelSuppressed(groupId)
+        or self:IsArrangeContainerSuppressed(containerId) then
+        return false
+    end
+
+    local cursorAnchored = self:IsGroupCursorAnchored(group)
+    local containerUnlocked = self:IsContainerUnlockPreviewActive(containerId)
+    local panelUnlocked = self:IsUnlockToolbarPanelEligible(groupId, group)
+    local selected = self._arrangeSelectedPanelId == groupId
+    if cursorAnchored then
+        local preview = self._cursorAnchorLayoutPreview
+        if not (preview and PreviewMapContains(preview.activeGroupIds, groupId)) then
+            return false
+        end
+        selected = selected or (preview and preview.selectedGroupId == groupId or false)
+    elseif containerUnlocked then
+        local frame = self.containerFrames and self.containerFrames[containerId]
+        if not (frame and self:IsGroupVisibleInUnlockPreview(groupId, {
+            group = group,
+            checkCharVisibility = true,
+        })) then
+            return false
+        end
+        selected = selected or (frame and frame._containerSelectedGroupId == groupId or false)
+    elseif not panelUnlocked then
+        return false
+    end
+
+    if selected and self._arrangeSoloContainerId == containerId then
+        if toggle then
+            self:ClearArrangeMoverSelection()
+            return false
+        end
+        return true
+    end
+
+    ClearArrangePanelSelectionState(self)
+    local activated
+    if cursorAnchored then
+        activated = self:SelectArrangeCursorPanel(groupId, false)
+    elseif containerUnlocked then
+        activated = self:SelectContainerPanel(containerId, groupId)
+    else
+        self:FocusArrangeContainer(containerId)
+        activated = true
+    end
+    if not activated then return false end
+
+    self._arrangeSelectedPanelId = groupId
+    self:SetArrangeSoloContainer(containerId)
+    self:RefreshAllIndependentPanelMoverChrome()
+    self._arrangeTreeRevealEntry = { kind = "panel", id = groupId }
+    self:RefreshArrangePillList()
+    return true
 end
 
 function CooldownCompanion:StartContainerPreviewMemberDrag(containerId, groupId)
@@ -6362,7 +6566,9 @@ function CooldownCompanion:StartContainerPreviewMemberDrag(containerId, groupId)
         return false
     end
 
-    self:SelectContainerPanel(containerId, groupId)
+    if not self:ActivateArrangePanel(containerId, groupId, false) then
+        return false
+    end
     if IsCursorAnchor(group.anchor) then
         return false
     end
@@ -6501,6 +6707,25 @@ local function GetContainerMemberDisplayRect(self, containerFrame, groupId, grou
     return rect
 end
 
+local function GetContainerPanelSoloSelection(self, containerId, frame)
+    local selectedGroupId = frame and frame._containerSelectedGroupId or nil
+    if selectedGroupId then
+        return selectedGroupId
+    end
+
+    -- Cursor-anchored panels use their own preview selection state rather than
+    -- the container member overlay, but selecting one from the arrange tree
+    -- should still suppress its owning container's outer mover chrome.
+    local preview = self._cursorAnchorLayoutPreview
+    local cursorGroupId = preview and preview.selectedGroupId or nil
+    local cursorGroup = cursorGroupId and self.db.profile.groups[cursorGroupId] or nil
+    if cursorGroup and cursorGroup.parentContainerId == containerId then
+        return cursorGroupId
+    end
+
+    return nil
+end
+
 function CooldownCompanion:UpdateContainerWrapperUnion(containerId, previewRects, headerWidth)
     local frame = self.containerFrames and self.containerFrames[containerId]
     local wrapper = frame and frame.dragHandle
@@ -6549,7 +6774,7 @@ function CooldownCompanion:UpdateContainerWrapperUnion(containerId, previewRects
         wrapper:SetPoint("BOTTOMLEFT", frame, "CENTER", RoundPreviewOffset(minLeft - padding), RoundPreviewOffset(minBottom - padding))
         wrapper:SetPoint("TOPRIGHT", frame, "CENTER", RoundPreviewOffset(maxRight + padding), RoundPreviewOffset(maxTop + padding))
     end
-    wrapper:SetShown(true)
+    wrapper:SetShown(GetContainerPanelSoloSelection(self, containerId, frame) == nil)
 
     -- Keep the snap proxy on the panels' bounding box (wrapper minus padding).
     -- The empty-container fallback box is too small to inset, so match it.
@@ -6618,8 +6843,11 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
     for _, panelInfo in ipairs(previewPanels) do
         local rect = GetContainerMemberDisplayRect(self, frame, panelInfo.groupId, panelInfo.group)
         if rect then
+            rect.panelSuppressed = self:IsArrangePanelSuppressed(rect.groupId)
             previewRects[#previewRects + 1] = rect
-            previewedGroupIds[rect.groupId] = true
+            if not rect.panelSuppressed then
+                previewedGroupIds[rect.groupId] = true
+            end
         end
     end
 
@@ -6630,7 +6858,7 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         frame._containerHoveredGroupId = nil
     end
 
-    local selectedGroupId = frame._containerSelectedGroupId
+    local selectedGroupId = GetContainerPanelSoloSelection(self, containerId, frame)
     local hoveredGroupId = frame._containerHoveredGroupId
     local revealChrome = self:IsContainerArrangeChromeRevealed(containerId, frame)
     local headerWidth = 96
@@ -6639,9 +6867,13 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         local titleText = header.text or wrapper.text
         if titleText then
             titleText:SetText(container.name or "Group")
-            -- Left inset + name + gap + lock badge + right inset
+            -- Left inset + name + quick menu + lock badge + right inset.
             local lockWidth = frame.dragHandle.lockButton and frame.dragHandle.lockButton:GetWidth() or 16
-            headerWidth = math_max(96, math_floor((titleText:GetStringWidth() or 0) + 10 + 8 + lockWidth + 4 + 0.5))
+            local menuWidth = frame.dragHandle.menuButton and frame.dragHandle.menuButton:GetWidth() or 0
+            headerWidth = math_max(
+                96,
+                math_floor((titleText:GetStringWidth() or 0) + 10 + 8 + menuWidth + 2 + lockWidth + 4 + 0.5)
+            )
         end
     end
 
@@ -6676,50 +6908,49 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
 
     local usedOverlayIndices = {}
     for labelIndex, rect in ipairs(previewRects) do
-        local isSelected = selectedGroupId == rect.groupId
-        local isHovered = hoveredGroupId == rect.groupId
-        local isStandaloneDisplay = CooldownCompanion:IsStandaloneTexturePanelGroup(rect.group)
+        if not rect.panelSuppressed then
+            local isHovered = hoveredGroupId == rect.groupId
+            local isStandaloneDisplay = CooldownCompanion:IsStandaloneTexturePanelGroup(rect.group)
 
-        local overlay = EnsureContainerMemberOverlay(frame, labelIndex)
-        usedOverlayIndices[labelIndex] = true
-        overlay.containerId = containerId
-        overlay.groupId = rect.groupId
-        overlay:ClearAllPoints()
-        overlay:SetPoint("BOTTOMLEFT", rect.displayFrame, "BOTTOMLEFT", 0, 0)
-        overlay:SetPoint("TOPRIGHT", rect.displayFrame, "TOPRIGHT", 0, 0)
-        overlay:SetShown(true)
+            local overlay = EnsureContainerMemberOverlay(frame, labelIndex)
+            usedOverlayIndices[labelIndex] = true
+            overlay.containerId = containerId
+            overlay.groupId = rect.groupId
+            overlay:ClearAllPoints()
+            overlay:SetPoint("BOTTOMLEFT", rect.displayFrame, "BOTTOMLEFT", 0, 0)
+            overlay:SetPoint("TOPRIGHT", rect.displayFrame, "TOPRIGHT", 0, 0)
+            overlay:SetShown(true)
 
-        local fillAlpha = 0
-        if not isStandaloneDisplay then
-            if isSelected then
-                fillAlpha = CONTAINER_MOVER_COLORS.memberSelectedAlpha
-            elseif isHovered then
-                fillAlpha = CONTAINER_MOVER_COLORS.memberHoverAlpha
+            local fillAlpha = 0
+            if selectedGroupId == nil and not isStandaloneDisplay then
+                if isHovered then
+                    fillAlpha = CONTAINER_MOVER_COLORS.memberHoverAlpha
+                end
             end
-        end
-        overlay:SetBackdropColor(
-            CONTAINER_MOVER_COLORS.memberR,
-            CONTAINER_MOVER_COLORS.memberG,
-            CONTAINER_MOVER_COLORS.memberB,
-            fillAlpha
-        )
-        HideContainerWrapperBorder(overlay)
-
-        local showLabel = hoveredGroupId ~= nil and isHovered and not isSelected
-
-        if showLabel then
-            local labelFrame = EnsureContainerPanelLabel(frame, labelIndex)
-            labelFrame.text:SetText(rect.label)
-            labelFrame:SetWidth(math_max(CONTAINER_PANEL_LABEL_MIN_WIDTH, math_floor((labelFrame.text:GetStringWidth() or 0) + 16.5)))
-            labelFrame:ClearAllPoints()
-            labelFrame:SetPoint(
-                "BOTTOM",
-                wrapper,
-                "BOTTOMLEFT",
-                RoundPreviewOffset(rect.centerX - minLeft + padding),
-                RoundPreviewOffset(rect.top - minBottom + padding + CONTAINER_WRAPPER_LABEL_OFFSET)
+            overlay:SetBackdropColor(
+                CONTAINER_MOVER_COLORS.memberR,
+                CONTAINER_MOVER_COLORS.memberG,
+                CONTAINER_MOVER_COLORS.memberB,
+                fillAlpha
             )
-            labelFrame:Show()
+            HideContainerWrapperBorder(overlay)
+
+            local showLabel = selectedGroupId == nil and hoveredGroupId ~= nil and isHovered
+
+            if showLabel then
+                local labelFrame = EnsureContainerPanelLabel(frame, labelIndex)
+                labelFrame.text:SetText(rect.label)
+                labelFrame:SetWidth(math_max(CONTAINER_PANEL_LABEL_MIN_WIDTH, math_floor((labelFrame.text:GetStringWidth() or 0) + 16.5)))
+                labelFrame:ClearAllPoints()
+                labelFrame:SetPoint(
+                    "BOTTOM",
+                    wrapper,
+                    "BOTTOMLEFT",
+                    RoundPreviewOffset(rect.centerX - minLeft + padding),
+                    RoundPreviewOffset(rect.top - minBottom + padding + CONTAINER_WRAPPER_LABEL_OFFSET)
+                )
+                labelFrame:Show()
+            end
         end
     end
 
@@ -6997,6 +7228,16 @@ function CooldownCompanion:CreateContainerFrame(containerId)
         LockContainerFromMover(containerId)
     end)
     frame.dragHandle.lockButton:SetPoint("RIGHT", frame.dragHandle.header, "RIGHT", -4, 0)
+    frame.dragHandle.menuButton = ST.CreateMoverQuickMenuButton(
+        frame.dragHandle.header,
+        16,
+        function()
+            return { kind = "container", id = containerId, focusId = containerId }
+        end,
+        frame.dragHandle
+    )
+    frame.dragHandle.menuButton:SetPoint("RIGHT", frame.dragHandle.lockButton, "LEFT", -2, 0)
+    frame.dragHandle.text:SetPoint("RIGHT", frame.dragHandle.menuButton, "LEFT", -4, 0)
 
     -- Pixel nudger
     frame.nudger = CreateContainerNudger(frame, containerId)
@@ -7111,20 +7352,9 @@ function CooldownCompanion:CreateContainerFrame(containerId)
         CooldownCompanion:EndMoverChromeFade(frame)
     end)
     frame.dragHandle:SetScript("OnMouseUp", function(_, button)
-        if button ~= "LeftButton" then
-            return
-        end
-        if frame.dragHandle._suppressClick then
+        if button == "LeftButton" and frame.dragHandle._suppressClick then
             frame.dragHandle._suppressClick = nil
-            return
         end
-        CooldownCompanion:SelectContainerWrapper(containerId)
-        if CooldownCompanion._arrangeSoloContainerId == containerId then
-            CooldownCompanion:SetArrangeSoloContainer(nil)
-        else
-            CooldownCompanion:SetArrangeSoloContainer(containerId)
-        end
-        CooldownCompanion:FocusArrangeContainer(containerId)
     end)
 
     frame.dragHandle.header:EnableMouse(true)
@@ -7170,18 +7400,8 @@ function CooldownCompanion:CreateContainerFrame(containerId)
     end)
 
     frame.dragHandle.header:SetScript("OnMouseUp", function(_, btn)
-        if btn == "LeftButton" then
-            if frame.dragHandle.header._suppressClick then
-                frame.dragHandle.header._suppressClick = nil
-                return
-            end
-            CooldownCompanion:SelectContainerWrapper(containerId)
-            if CooldownCompanion._arrangeSoloContainerId == containerId then
-                CooldownCompanion:SetArrangeSoloContainer(nil)
-            else
-                CooldownCompanion:SetArrangeSoloContainer(containerId)
-            end
-            CooldownCompanion:FocusArrangeContainer(containerId)
+        if btn == "LeftButton" and frame.dragHandle.header._suppressClick then
+            frame.dragHandle.header._suppressClick = nil
         end
     end)
 

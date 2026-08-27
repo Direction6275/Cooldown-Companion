@@ -573,7 +573,7 @@ function CooldownCompanion:SlashCommand(input)
     input = input:match("^%s*(.-)%s*$")
 
     if input == "unlock" or input == "lock" then
-        if self:IsArrangeModeActive() then
+        if self:IsArrangeModeActive() or self:IsUnlockToolbarActive() then
             self:ExitArrangeMode()
         else
             self:EnterArrangeMode()

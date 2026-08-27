@@ -96,6 +96,9 @@ function CooldownCompanion:SetIndependentCastBarLocked(locked)
     if not settings then return end
     settings.independentAnchorLocked = locked == true
     self:ApplyCastBarSettings()
+    if self.RefreshUnlockToolbar then
+        self:RefreshUnlockToolbar()
+    end
 end
 
 local function GetEffectiveAnchorGroupId(settings)
@@ -283,8 +286,8 @@ local function LockIndependentCastBarFromMover(frame)
     CooldownCompanion:EndMoverChromeFade(frame)
     UpdateIndependentCastBarDragState(settings)
     CooldownCompanion:CaptureArrangeCastBarRecord()
-    if CooldownCompanion._arrangeModeActive and CooldownCompanion.RefreshArrangePillList then
-        CooldownCompanion:RefreshArrangePillList()
+    if CooldownCompanion.RefreshUnlockToolbar then
+        CooldownCompanion:RefreshUnlockToolbar()
     end
     CooldownCompanion:CheckArrangeModeAutoExit()
 end
@@ -314,34 +317,32 @@ local function CreateCastBarMoverFrame()
     dragHandle.text:SetText("Cast Bar")
     dragHandle.text:SetTextColor(1, 1, 1, 1)
 
-    -- Quiet-chrome reveal, container grammar: hovering the name bar brings
-    -- out the nudger, labels, and grip while arranging; clicking it toggles
-    -- a solo and keeps this mover focused (pinned open).
+    -- Hovering the name bar reveals precise controls. Selection belongs to
+    -- the unlock toolbar; the title bar remains a drag/menu/lock surface.
     dragHandle:SetScript("OnEnter", function()
         ST.BeginMoverChromeHoverReveal(frame, function()
             CooldownCompanion:RefreshIndependentCastBarMoverChrome()
         end)
     end)
     dragHandle:SetScript("OnMouseUp", function(_, button)
-        local suppressed = frame._focusClickSuppressed
-        frame._focusClickSuppressed = nil
-        if suppressed or button ~= "LeftButton" or frame._dragInProgress then
-            return
+        if button == "LeftButton" then
+            frame._focusClickSuppressed = nil
         end
-        if CooldownCompanion._arrangeSoloContainerId == "cast" then
-            CooldownCompanion:SetArrangeSoloContainer(nil)
-        else
-            CooldownCompanion:SetArrangeSoloContainer("cast")
-        end
-        CooldownCompanion:FocusArrangeContainer("cast")
     end)
 
     dragHandle.lockButton = ST.CreateMoverLockBadge(dragHandle, 12, function()
         LockIndependentCastBarFromMover(frame)
     end)
     dragHandle.lockButton:SetPoint("RIGHT", dragHandle, "RIGHT", -2, 0)
+    dragHandle.menuButton = ST.CreateMoverQuickMenuButton(
+        dragHandle,
+        12,
+        function() return { kind = "cast", focusId = "cast" } end,
+        dragHandle
+    )
+    dragHandle.menuButton:SetPoint("RIGHT", dragHandle.lockButton, "LEFT", -2, 0)
     -- Symmetric insets matching the lock button keep the name centered on the bar
-    local headerTextInset = dragHandle.lockButton:GetWidth() + 4
+    local headerTextInset = dragHandle.lockButton:GetWidth() + dragHandle.menuButton:GetWidth() + 8
     dragHandle.text:ClearAllPoints()
     dragHandle.text:SetPoint("LEFT", dragHandle, "LEFT", headerTextInset, 0)
     dragHandle.text:SetPoint("RIGHT", dragHandle, "RIGHT", -headerTextInset, 0)
@@ -2147,6 +2148,7 @@ function CooldownCompanion:EvaluateCastBar(opts)
         and self.RefreshBarsAndFramesRuntimeFeatureGate
         and not self:RefreshBarsAndFramesRuntimeFeatureGate("castBar", opts.reason or "castbar-evaluate") then
         self:RevertCastBar()
+        self:RefreshUnlockToolbar()
         return
     end
     if self.RecordBarsAndFramesRuntimeWork then
@@ -2155,16 +2157,19 @@ function CooldownCompanion:EvaluateCastBar(opts)
 
     if self._unsupportedLegacyProfile then
         self:RevertCastBar()
+        self:RefreshUnlockToolbar()
         return
     end
 
     local settings = GetCastBarSettings()
     if not settings or not settings.enabled then
         self:RevertCastBar()
+        self:RefreshUnlockToolbar()
         return
     end
     InstallHooks()
     self:ApplyCastBarSettings({ skipRuntimeGate = true })
+    self:RefreshUnlockToolbar()
 end
 
 function CooldownCompanion:GetCastBarRuntimeDebugInfo()
