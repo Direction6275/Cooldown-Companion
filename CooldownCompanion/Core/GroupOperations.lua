@@ -985,6 +985,110 @@ function CooldownCompanion:IsAnyFrameUnlocked()
     return false
 end
 
+function CooldownCompanion:IsUnlockToolbarPanelEligible(groupId, group)
+    group = group or (self.db.profile.groups and self.db.profile.groups[groupId])
+    return group ~= nil
+        and not (self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group))
+        and self:IsGroupVisibleInUnlockPreview(groupId, {
+            group = group,
+            panelUnlockPreview = true,
+            checkCharVisibility = true,
+        })
+        or false
+end
+
+-- Padlocks inside an active unlock session remove only the mover they belong
+-- to. Containers normally preview every child regardless of the child's saved
+-- independent lock flag, while cursor panels have no independent saved lock at
+-- all, so the session needs an explicit effective-lock layer shared by every
+-- preview, toolbar, and activation path.
+function CooldownCompanion:IsArrangePanelSuppressed(groupId)
+    return self._arrangePanelSuppressed ~= nil
+        and self._arrangePanelSuppressed[groupId] == true
+        or false
+end
+
+function CooldownCompanion:IsArrangeContainerSuppressed(containerId)
+    return self._arrangeContainerSuppressed ~= nil
+        and self._arrangeContainerSuppressed[containerId] == true
+        or false
+end
+
+function CooldownCompanion:ClearArrangePanelSuppressionsForContainer(containerId)
+    local suppressed = self._arrangePanelSuppressed
+    if not suppressed then return false end
+    local changed = false
+    for groupId, group in pairs(self.db.profile.groups or {}) do
+        if group.parentContainerId == containerId and suppressed[groupId] then
+            suppressed[groupId] = nil
+            changed = true
+        end
+    end
+    if not next(suppressed) then
+        self._arrangePanelSuppressed = nil
+    end
+    return changed
+end
+
+function CooldownCompanion:SetArrangePanelSuppressed(groupId, suppressed)
+    local group = self.db.profile.groups and self.db.profile.groups[groupId]
+    if not group then return false end
+    local wasSuppressed = self:IsArrangePanelSuppressed(groupId)
+    suppressed = suppressed == true
+    if wasSuppressed == suppressed then return false end
+
+    if suppressed
+        and self._arrangeSelectedPanelId == groupId
+        and self.ClearArrangeMoverSelection then
+        self:ClearArrangeMoverSelection()
+    end
+    self._arrangePanelSuppressed = self._arrangePanelSuppressed or {}
+    self._arrangePanelSuppressed[groupId] = suppressed and true or nil
+    if not next(self._arrangePanelSuppressed) then
+        self._arrangePanelSuppressed = nil
+    end
+
+    -- Rebuild only cursor-preview membership and mover chrome. Ordinary
+    -- runtime panels remain intact; their caller refreshes the one affected
+    -- frame after its saved lock flag is updated.
+    if self._arrangeModeActive
+        and self._cursorAnchorLayoutPreview
+        and self.ShowCursorAnchorLayoutPreview then
+        self:ShowCursorAnchorLayoutPreview(nil)
+    end
+    if group.parentContainerId and self.RefreshContainerWrapper then
+        self:RefreshContainerWrapper(group.parentContainerId)
+    end
+    return true
+end
+
+function CooldownCompanion:IsUnlockToolbarContainerEligible(containerId)
+    return self:IsContainerUnlockPreviewActive(containerId)
+        and self:ContainerHasArrangeEligiblePanel(containerId)
+        or false
+end
+
+function CooldownCompanion:HasEligibleUnlockedMover()
+    for containerId in pairs(self.db.profile.groupContainers or {}) do
+        if self:IsUnlockToolbarContainerEligible(containerId) then
+            return true
+        end
+    end
+    for groupId, group in pairs(self.db.profile.groups or {}) do
+        if self:IsUnlockToolbarPanelEligible(groupId, group) then
+            return true
+        end
+    end
+    return self:IsSpecialMoverUnlockEligible("cast")
+        or self:IsSpecialMoverUnlockEligible("resource")
+end
+
+function CooldownCompanion:IsUnlockToolbarActive()
+    return not InCombatLockdown()
+        and not self._combatForcedLock
+        and (self:IsArrangeModeActive() or self:HasEligibleUnlockedMover())
+end
+
 function CooldownCompanion:CheckConfigReExpandAfterLock()
     if InCombatLockdown() or self._combatForcedLock then
         return
@@ -1018,6 +1122,11 @@ function CooldownCompanion:CheckArrangeModeAutoExit()
         end
     end
 
+    local cursorPreview = self._cursorAnchorLayoutPreview
+    if cursorPreview and next(cursorPreview.activeGroupIds or {}) ~= nil then
+        return
+    end
+
     if self:IsSpecialMoverUnlockEligible("cast")
         or self:IsSpecialMoverUnlockEligible("resource") then
         return
@@ -1049,40 +1158,22 @@ local function GetArrangeModePill(addon)
     title:SetPoint("LEFT", pill, "TOPLEFT", 10, -15)
     title:SetText("Panels unlocked")
     title:SetTextColor(1, 0.82, 0, 1)
+    pill._title = title
 
     local helpButton = ST.CreateRuntimeInfoButton(pill, title, "LEFT", "RIGHT", 4, 0, function(tooltip)
         tooltip:AddLine("Panels unlocked")
         tooltip:AddLine(" ")
-        tooltip:AddLine("Esc or Cancel reverts unsaved changes.", 1, 1, 1, false)
-        tooltip:AddLine(" ")
-        tooltip:AddLine("Done, a padlock, or /cdc lock saves.", 1, 1, 1, false)
-        tooltip:AddLine(" ")
-        tooltip:AddLine("Click a name to work on it alone.", 1, 1, 1, false)
-        tooltip:AddLine(" ")
-        tooltip:AddLine("Click it again to bring the others back.", 1, 1, 1, false)
-        tooltip:AddLine(" ")
-        tooltip:AddLine("Uncheck a row to hide its handles.", 1, 1, 1, false)
+        tooltip:AddLine("Drag title bars to move. Hold Shift to ignore snapping.", 1, 1, 1, true)
+        tooltip:AddLine("Use mover controls for precise placement.", 1, 1, 1, true)
+        tooltip:AddLine("Click a group or panel row to work on it alone; click it again to show all movers.", 1, 1, 1, true)
+        tooltip:AddLine("Uncheck a group to hide its handles.", 1, 1, 1, true)
+        if CooldownCompanion:IsArrangeModeActive() then
+            tooltip:AddLine("Done, a padlock, or /cdc lock saves. Esc or Cancel reverts.", 1, 1, 1, true)
+        else
+            tooltip:AddLine("Done or /cdc lock locks all shown movers. A padlock locks only its panel, group, or bar.", 1, 1, 1, true)
+        end
     end)
     ST.SetRuntimeInfoButtonShown(helpButton, true)
-
-    local expander = CreateFrame("Button", nil, pill)
-    expander:SetSize(16, 16)
-    expander:SetPoint("LEFT", helpButton, "RIGHT", 2, 0)
-    local expanderArrow = expander:CreateTexture(nil, "OVERLAY")
-    expanderArrow:SetAllPoints()
-    expanderArrow:SetAtlas("common-dropdown-icon-next")
-    expanderArrow:SetVertexColor(1, 0.82, 0, 0.9)
-    pill._expanderArrow = expanderArrow
-    expander:SetScript("OnClick", function()
-        pill._listExpanded = not pill._listExpanded or nil
-        CooldownCompanion:RefreshArrangePillList()
-    end)
-    expander:SetScript("OnEnter", function()
-        expanderArrow:SetVertexColor(1, 1, 1, 1)
-    end)
-    expander:SetScript("OnLeave", function()
-        expanderArrow:SetVertexColor(1, 0.82, 0, 0.9)
-    end)
 
     local doneButton = CreateFrame("Button", nil, pill, "BackdropTemplate")
     doneButton:SetSize(52, 20)
@@ -1094,6 +1185,8 @@ local function GetArrangeModePill(addon)
     doneText:SetPoint("CENTER")
     doneText:SetText("Done")
     doneText:SetTextColor(1, 1, 1, 1)
+    pill._doneButton = doneButton
+    pill._doneText = doneText
 
     local cancelButton = CreateFrame("Button", nil, pill, "BackdropTemplate")
     cancelButton:SetPoint("RIGHT", doneButton, "LEFT", -6, 0)
@@ -1104,11 +1197,16 @@ local function GetArrangeModePill(addon)
     cancelText:SetPoint("CENTER")
     cancelText:SetText("Cancel")
     cancelText:SetTextColor(1, 1, 1, 1)
+    pill._cancelButton = cancelButton
+    pill._cancelText = cancelText
     local cancelButtonWidth = math.ceil(cancelText:GetStringWidth() + 16)
     cancelButton:SetSize(cancelButtonWidth, 20)
 
-    -- Top band: title [?] [>] ... [Cancel] [Done]. The list rows stack below.
-    pill._baseWidth = math.ceil(10 + title:GetStringWidth() + 4 + 16 + 2 + 16 + 14 + cancelButtonWidth + 6 + 52 + 10)
+    -- Top band: title [?] ... [Cancel] [Done]. The tree rows stack below.
+    pill._baseWidth = math.max(
+        300,
+        math.ceil(10 + title:GetStringWidth() + 4 + 16 + 14 + cancelButtonWidth + 6 + 52 + 10)
+    )
     pill:SetSize(pill._baseWidth, 30)
 
     cancelButton:SetScript("OnClick", function()
@@ -1142,7 +1240,7 @@ local function GetArrangeModePill(addon)
     end)
     pill:EnableMouseWheel(true)
     pill:SetScript("OnMouseWheel", function(self, delta)
-        if not self._listExpanded or (self._listMaxScrollOffset or 0) == 0 then
+        if (self._listMaxScrollOffset or 0) == 0 then
             return
         end
         self._listScrollOffset = (self._listScrollOffset or 0) - delta
@@ -1150,7 +1248,7 @@ local function GetArrangeModePill(addon)
     end)
     pill:EnableKeyboard(true)
     pill:SetScript("OnKeyDown", function(self, key)
-        if key == "ESCAPE" then
+        if key == "ESCAPE" and CooldownCompanion:IsArrangeModeActive() then
             if not InCombatLockdown() then
                 self:SetPropagateKeyboardInput(false)
             end
@@ -1176,6 +1274,38 @@ local function GetArrangeModePill(addon)
 
     addon._arrangeModePill = pill
     return pill
+end
+
+-- The unlock toolbar is the shared control surface for every unlocked mover,
+-- whether it came from the global arrange action or an individual lock toggle.
+-- Only global arrange owns a rollback snapshot, so Cancel is exclusive to it.
+function CooldownCompanion:RefreshUnlockToolbar()
+    if not self:IsUnlockToolbarActive() then
+        if not self:IsArrangeModeActive() then
+            self._arrangeFocusContainerId = nil
+            self._arrangeChromeHidden = nil
+            self._arrangeSoloContainerId = nil
+            self._arrangeSelectedPanelId = nil
+            self._arrangeTreeRevealEntry = nil
+            self._arrangePanelSuppressed = nil
+            self._arrangeContainerSuppressed = nil
+        end
+        if self._arrangeModePill then
+            self._arrangeModePill:Hide()
+        end
+        return
+    end
+
+    local pill = GetArrangeModePill(self)
+    pill._listExpanded = true
+    if pill._cancelButton then
+        pill._cancelButton:SetShown(self:IsArrangeModeActive())
+    end
+    if not pill:IsShown() then
+        pill:Show()
+    else
+        self:RefreshArrangePillList()
+    end
 end
 
 -- Rebuild the pill's group list: one row per arrange-managed group, sorted by
@@ -1234,6 +1364,9 @@ function CooldownCompanion:RefreshArrangeSpecialMoverChrome(id)
 end
 
 function CooldownCompanion:RefreshArrangePillList()
+    if ST.RefreshArrangeTreePill then
+        return ST.RefreshArrangeTreePill(self)
+    end
     local pill = self._arrangeModePill
     if not (pill and pill:IsShown()) then
         return
@@ -1486,6 +1619,9 @@ function CooldownCompanion:BeginCombatForcedLock()
 
     self._combatForcedLock = true
     self._combatForcedLockSnapshot = snapshot
+    self._arrangeSelectedPanelId = nil
+    self._arrangeSoloContainerId = nil
+    self._arrangeFocusContainerId = nil
 
     if self._arrangeModePill then
         self._arrangeModePill:Hide()
@@ -1639,14 +1775,12 @@ function CooldownCompanion:EndCombatForcedLock()
         self:ApplyResourceBars()
     end
 
-    if self._arrangeModeActive and self._arrangeModePill then
-        self._arrangeModePill:Show()
-    end
     -- Re-park cursor panels on the dummy cursor for the rest of the
     -- arrange session (the pin suspended on combat entry).
     if self._arrangeModeActive and self.ShowCursorAnchorLayoutPreview then
         self:ShowCursorAnchorLayoutPreview(nil)
     end
+    self:RefreshUnlockToolbar()
 
     return snapshot
 end
@@ -1656,6 +1790,11 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
 
     local group = opts.group or self.db.profile.groups[groupId]
     if not group then
+        return false
+    end
+    if (not opts.ignoreArrangePanelSuppression and self:IsArrangePanelSuppressed(groupId))
+        or (group.parentContainerId
+            and self:IsArrangeContainerSuppressed(group.parentContainerId)) then
         return false
     end
 
@@ -1744,6 +1883,7 @@ function CooldownCompanion:GetContainerUnlockPreviewPanels(containerId, panels)
             and self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
                 group = panelInfo.group,
                 checkCharVisibility = true,
+                ignoreArrangePanelSuppression = true,
             }) then
             previewPanels[#previewPanels + 1] = panelInfo
         end
@@ -3944,6 +4084,23 @@ end
 function CooldownCompanion:SetContainerLocked(containerId, locked)
     local container = self.db.profile.groupContainers[containerId]
     if not container then return end
+    local toolbarWasActive = self:IsUnlockToolbarActive()
+    local suppressionChanged = false
+    if locked and toolbarWasActive and self:IsArrangeModeActive() then
+        self._arrangeContainerSuppressed = self._arrangeContainerSuppressed or {}
+        suppressionChanged = self._arrangeContainerSuppressed[containerId] ~= true
+        self._arrangeContainerSuppressed[containerId] = true
+    elseif not locked then
+        if self._arrangeContainerSuppressed and self._arrangeContainerSuppressed[containerId] then
+            self._arrangeContainerSuppressed[containerId] = nil
+            suppressionChanged = true
+            if not next(self._arrangeContainerSuppressed) then
+                self._arrangeContainerSuppressed = nil
+            end
+        end
+        suppressionChanged = self:ClearArrangePanelSuppressionsForContainer(containerId)
+            or suppressionChanged
+    end
     -- Locking the soloed group would strand every other group solo-hidden
     -- with no chrome anywhere; release the solo first.
     if locked and self._arrangeSoloContainerId == containerId and self.SetArrangeSoloContainer then
@@ -3952,21 +4109,34 @@ function CooldownCompanion:SetContainerLocked(containerId, locked)
     container.locked = locked
     self:UpdateContainerDragHandle(containerId, locked)
     self:RefreshContainerPanels(containerId)
-    if self._arrangeModeActive and self.RefreshArrangePillList then
-        self:RefreshArrangePillList()
+    if suppressionChanged
+        and self._arrangeModeActive
+        and self._cursorAnchorLayoutPreview
+        and self.ShowCursorAnchorLayoutPreview then
+        self:ShowCursorAnchorLayoutPreview(nil)
     end
+    self:RefreshUnlockToolbar()
 end
 
 function CooldownCompanion:SetPanelLocked(panelId, locked)
     local group = self.db.profile.groups[panelId]
     if not group then return end
-    if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then return end
-    if locked then
-        group.locked = nil
-    else
-        group.locked = false
+    local containerId = group.parentContainerId
+    local isCursorAnchored = self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group)
+    if locked
+        and self._arrangeSelectedPanelId == panelId
+        and self.ClearArrangeMoverSelection then
+        self:ClearArrangeMoverSelection()
     end
-    self:RefreshGroupFrame(panelId)
+    self:SetArrangePanelSuppressed(panelId, locked)
+    if not isCursorAnchored then
+        if locked then
+            group.locked = nil
+        else
+            group.locked = false
+        end
+        self:RefreshGroupFrame(panelId)
+    end
     -- Panels are not part of the arrange-managed set (arrange unlocks containers,
     -- and panel padlocks hide while their container is unlocked), so this must not
     -- be the broader CheckArrangeModeAutoExit: a bulk multi-select lock would then
@@ -3974,6 +4144,18 @@ function CooldownCompanion:SetPanelLocked(panelId, locked)
     if locked then
         self:CheckConfigReExpandAfterLock()
     end
+    -- Once the last panel mover in an unlocked group is padlocked, the group
+    -- wrapper has nothing left to operate on. Lock it too instead of leaving
+    -- an empty border/title mover behind.
+    if locked
+        and containerId
+        and self:IsContainerUnlockPreviewActive(containerId)
+        and not self:ContainerHasArrangeEligiblePanel(containerId) then
+        self:SetContainerLocked(containerId, true)
+        self:CaptureArrangeContainerRecord(containerId)
+        return
+    end
+    self:RefreshUnlockToolbar()
 end
 
 -- Refresh all panel frames belonging to a container.
@@ -4012,6 +4194,8 @@ function CooldownCompanion:UpdateContainerDragHandle(containerId, locked)
 end
 
 function CooldownCompanion:LockAllFrames()
+    self._arrangePanelSuppressed = nil
+    self._arrangeContainerSuppressed = nil
     -- Lock every container, including containers hidden for this character.
     -- Write the bulk state directly: SetContainerLocked refreshes that
     -- container's panels, while the single RefreshAllGroups below reconciles
@@ -4042,6 +4226,7 @@ function CooldownCompanion:LockAllFrames()
         end
     end
     self:RefreshAllGroups()
+    self:RefreshUnlockToolbar()
 end
 
 function CooldownCompanion:UnlockAllFrames()
@@ -4073,6 +4258,7 @@ function CooldownCompanion:UnlockAllFrames()
         end
     end
     self:RefreshAllGroups()
+    self:RefreshUnlockToolbar()
 end
 
 function CooldownCompanion:EnterArrangeMode()
@@ -4089,6 +4275,10 @@ function CooldownCompanion:EnterArrangeMode()
     self._arrangeFocusContainerId = nil
     self._arrangeChromeHidden = nil
     self._arrangeSoloContainerId = nil
+    self._arrangeSelectedPanelId = nil
+    self._arrangeTreeRevealEntry = nil
+    self._arrangePanelSuppressed = nil
+    self._arrangeContainerSuppressed = nil
     for containerId in pairs(self.db.profile.groupContainers or {}) do
         if self:IsContainerVisibleToCurrentChar(containerId)
             and self:ContainerHasArrangeEligiblePanel(containerId) then
@@ -4113,9 +4303,8 @@ function CooldownCompanion:EnterArrangeMode()
     local pill = GetArrangeModePill(self)
     -- The group list is where solo focus and chrome hiding live; start every
     -- unlock with it open so those controls are discoverable.
-    pill._listExpanded = true
     pill._listScrollOffset = 0
-    pill:Show()
+    self:RefreshUnlockToolbar()
     self:Print("All frames unlocked. Drag to move.")
 end
 
@@ -4125,6 +4314,10 @@ function CooldownCompanion:ExitArrangeMode(opts)
     self._arrangeFocusContainerId = nil
     self._arrangeChromeHidden = nil
     self._arrangeSoloContainerId = nil
+    self._arrangeSelectedPanelId = nil
+    self._arrangeTreeRevealEntry = nil
+    self._arrangePanelSuppressed = nil
+    self._arrangeContainerSuppressed = nil
     CancelActiveMoverGestures(self)
     -- The arrange flag is already down, so this is a full teardown; config
     -- re-expand below restores its own selection preview if one applies.

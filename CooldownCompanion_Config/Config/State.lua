@@ -3238,6 +3238,41 @@ ST._SetConfigPrimaryModeImpl = SetConfigPrimaryMode
 ST._GroupsHaveForeignSpecs = GroupsHaveForeignSpecs
 ST._ContainersHaveForeignSpecs = ContainersHaveForeignSpecs
 
+-- Runtime mover menus load the config on demand, then route directly to the
+-- selected object's Layout controls. Keeping the route inside the config
+-- addon avoids duplicating its selection state in the runtime addon.
+ST._ApplyConfigRoute = function(route)
+    if type(route) ~= "table" then return end
+    if route.kind == "panel" and route.id then
+        SelectConfigPanel(route.id, { containerId = route.containerId })
+        CS.selectedTab = "layout"
+        CS.panelSettingsTab = "layout"
+        CS.panelSettingsTabExplicit = true
+        CS.collapsedSections.layout_anchor = false
+    elseif route.kind == "container" and route.id then
+        SelectConfigContainer(route.id)
+        CS.selectedContainerTab = "general"
+        CS.collapsedSections.container_layout = false
+    elseif route.kind == "resource" then
+        SetConfigPrimaryMode("bars")
+        SelectConfigBarsEntry()
+        CS.resourcesSettingsTab = "layout"
+        if ST._RBP and ST._RBP.collapsedSections then
+            ST._RBP.collapsedSections.rb_stack_position = false
+        end
+    elseif route.kind == "cast" then
+        SetConfigPrimaryMode("bars")
+        SelectConfigBarsEntry()
+        SelectConfigCastFramesItem("castbar")
+        CS.unifiedRowScope = "detail"
+        CS.castBarHomeTab = "layout"
+        CS.collapsedSections.castbar_anchor = false
+    else
+        return
+    end
+    CooldownCompanion:RefreshConfigPanel()
+end
+
 ------------------------------------------------------------------------
 -- Helper: Get class-colored text for current player
 ------------------------------------------------------------------------

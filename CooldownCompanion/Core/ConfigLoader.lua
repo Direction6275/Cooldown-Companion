@@ -157,6 +157,9 @@ function CooldownCompanion:RunConfigIntent(intent)
             self:Print(FormatConfigLoadFailure(entryPoint, "config panel unavailable"))
             return false
         end
+        if intent.route and ST._ApplyConfigRoute then
+            ST._ApplyConfigRoute(intent.route)
+        end
         return true
     elseif intent.action == "debugimport" then
         if self._configOpenDiagnosticDecodePanelImpl then

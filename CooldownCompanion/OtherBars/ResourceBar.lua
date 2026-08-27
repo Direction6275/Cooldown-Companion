@@ -227,6 +227,9 @@ function CooldownCompanion:SetIndependentResourceStackLocked(locked)
     if not placementSettings then return end
     placementSettings.independentAnchorLocked = locked == true
     self:ApplyResourceBars()
+    if self.RefreshUnlockToolbar then
+        self:RefreshUnlockToolbar()
+    end
 end
 
 function CooldownCompanion:CancelIndependentResourceStackDrag()
@@ -610,8 +613,8 @@ local function LockIndependentStackFromMover(frame)
     CooldownCompanion:EndMoverChromeFade(frame)
     UpdateIndependentStackDragState(settings, placementSettings)
     CooldownCompanion:CaptureArrangeResourceRecord()
-    if CooldownCompanion._arrangeModeActive and CooldownCompanion.RefreshArrangePillList then
-        CooldownCompanion:RefreshArrangePillList()
+    if CooldownCompanion.RefreshUnlockToolbar then
+        CooldownCompanion:RefreshUnlockToolbar()
     end
     CooldownCompanion:CheckArrangeModeAutoExit()
 end
@@ -641,34 +644,32 @@ local function CreateIndependentWrapperFrame()
     dragHandle.text:SetText("Resource Bars")
     dragHandle.text:SetTextColor(1, 1, 1, 1)
 
-    -- Quiet-chrome reveal, container grammar: hovering the name bar brings
-    -- out the nudger, labels, and grip while arranging; clicking it toggles
-    -- a solo and keeps this mover focused (pinned open).
+    -- Hovering the name bar reveals precise controls. Selection belongs to
+    -- the unlock toolbar; the title bar remains a drag/menu/lock surface.
     dragHandle:SetScript("OnEnter", function()
         ST.BeginMoverChromeHoverReveal(frame, function()
             CooldownCompanion:RefreshIndependentResourceStackMoverChrome()
         end)
     end)
     dragHandle:SetScript("OnMouseUp", function(_, button)
-        local suppressed = frame._focusClickSuppressed
-        frame._focusClickSuppressed = nil
-        if suppressed or button ~= "LeftButton" or frame._dragInProgress then
-            return
+        if button == "LeftButton" then
+            frame._focusClickSuppressed = nil
         end
-        if CooldownCompanion._arrangeSoloContainerId == "resource" then
-            CooldownCompanion:SetArrangeSoloContainer(nil)
-        else
-            CooldownCompanion:SetArrangeSoloContainer("resource")
-        end
-        CooldownCompanion:FocusArrangeContainer("resource")
     end)
 
     dragHandle.lockButton = ST.CreateMoverLockBadge(dragHandle, 12, function()
         LockIndependentStackFromMover(frame)
     end)
     dragHandle.lockButton:SetPoint("RIGHT", dragHandle, "RIGHT", -2, 0)
+    dragHandle.menuButton = ST.CreateMoverQuickMenuButton(
+        dragHandle,
+        12,
+        function() return { kind = "resource", focusId = "resource" } end,
+        dragHandle
+    )
+    dragHandle.menuButton:SetPoint("RIGHT", dragHandle.lockButton, "LEFT", -2, 0)
     -- Symmetric insets matching the lock button keep the name centered on the bar
-    local headerTextInset = dragHandle.lockButton:GetWidth() + 4
+    local headerTextInset = dragHandle.lockButton:GetWidth() + dragHandle.menuButton:GetWidth() + 8
     dragHandle.text:ClearAllPoints()
     dragHandle.text:SetPoint("LEFT", dragHandle, "LEFT", headerTextInset, 0)
     dragHandle.text:SetPoint("RIGHT", dragHandle, "RIGHT", -headerTextInset, 0)
@@ -3620,6 +3621,7 @@ function CooldownCompanion:EvaluateResourceBars(opts)
         and self.RefreshBarsAndFramesRuntimeFeatureGate
         and not self:RefreshBarsAndFramesRuntimeFeatureGate("resourceBars", opts.reason or "resource-evaluate") then
         self:DisableResourceBarRuntime()
+        self:RefreshUnlockToolbar()
         return
     end
     if self.RecordBarsAndFramesRuntimeWork then
@@ -3628,12 +3630,14 @@ function CooldownCompanion:EvaluateResourceBars(opts)
 
     if self._unsupportedLegacyProfile then
         self:DisableResourceBarRuntime()
+        self:RefreshUnlockToolbar()
         return
     end
 
     local settings = GetResourceBarSettings()
     if not settings or not settings.enabled then
         self:DisableResourceBarRuntime()
+        self:RefreshUnlockToolbar()
         return
     end
     local rebuilt = false
@@ -3645,6 +3649,7 @@ function CooldownCompanion:EvaluateResourceBars(opts)
     if not rebuilt then
         self:ApplyResourceBars({ skipRuntimeGate = true })
     end
+    self:RefreshUnlockToolbar()
 end
 
 -- Returns the last visible resource/custom aura bar on `side` with order < upToOrder.
