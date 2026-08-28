@@ -698,10 +698,25 @@ end
 
 ------------------------------------------------------------------------
 -- Aura tracking section (the aura pass): the panel Aura-tab vocabulary on
--- custom bars. The tracked unit is auto-derived from spell polarity and
--- never user-set (Blizzard's anti-cheat gate makes illegal configurations
--- unrepresentable); max stacks is automatic from game data. Every change
--- goes through ApplyResourceBars, which requests the OOC aura rebind.
+-- custom bars. The tracked unit is auto-derived from spell polarity by
+-- default, with the same user override as panels (Blizzard's anti-cheat
+-- gate checks the live aura instance, so an override that lies about real
+-- polarity harmlessly matches nothing); max stacks is automatic from game
+-- data. Every change goes through ApplyResourceBars, which requests the
+-- OOC aura rebind.
+--
+-- PARITY TWIN (owner directive 2026-08-28): this section mirrors the panel
+-- entry Aura Tracking section (ButtonSettingsAura.lua). A feature added or
+-- changed there must land here in the same change, or the gap explicitly
+-- surfaced to the owner. Custom bars behave exactly like bar panel entries
+-- outside their two structural roles (panels anchor freely; custom bars
+-- ride the resource stack). One shape difference stands: polarity override
+-- and scope share this section's single Tracked on dropdown (scope
+-- exclusivity ruling 2026-08-26) where panels use a dropdown + checkboxes.
+-- Known gap from that shape: a bar holding BOTH a player unit override and
+-- a group/pet scope displays the scope, so the override is active but
+-- invisible until Automatic clears both (panels show two controls and
+-- never shadow it).
 ------------------------------------------------------------------------
 
 local function RefreshCustomBarAuraConfig()
@@ -733,7 +748,21 @@ local function BuildCustomBarAuraProbe(cab)
         auraTracking = true,
         auraSpellID = cab.auraSpellID,
         auraUnit = cab.auraUnit,
+        -- User overrides (panel parity 2026-08-28): every cab synthetic
+        -- carries both keys so config, block, and slot paths agree.
+        auraUnitOverride = cab.auraUnitOverride,
+        auraIDOverride = tonumber(cab.auraIDOverride),
     }
+end
+
+-- The user's explicit unit override, when set (panel parity: absolute over
+-- every derived answer in this section).
+local function GetCustomBarAuraUnitOverride(cab)
+    local override = cab.auraUnitOverride
+    if override == "player" or override == "target" then
+        return override
+    end
+    return nil
 end
 
 -- Whether this bar renders aura stack text, mirroring the runtime style
@@ -748,7 +777,13 @@ local function CustomBarShowsStackText(cab)
     return showStack == true
 end
 
-local function GetCustomBarAuraUnit(cab)
+-- Polarity guard unit for the shared add path (panel parity,
+-- GetCandidateAddGuardUnit): inert while the unit override is set — the
+-- guard judges by the classifier the override exists to overrule.
+local function GetCustomBarAuraAddGuardUnit(cab)
+    if GetCustomBarAuraUnitOverride(cab) then
+        return nil
+    end
     local resolved = CooldownCompanion:ResolveAuraSpellID(BuildCustomBarAuraProbe(cab))
     return ClassifyAuraSpellUnit(resolved) or cab.auraUnit or "player"
 end
@@ -757,7 +792,10 @@ end
 -- fallback (uncached spells at login) starts from the right value.
 local function SyncCustomBarDerivedAuraUnit(cab)
     local probe = BuildCustomBarAuraProbe(cab)
-    local unit = ClassifyAuraSpellUnit(CooldownCompanion:ResolveAuraSpellID(probe))
+    -- The stored auraUnit tracks the EFFECTIVE unit (panel parity): the
+    -- user override when set, else derived.
+    local unit = GetCustomBarAuraUnitOverride(cab)
+        or ClassifyAuraSpellUnit(CooldownCompanion:ResolveAuraSpellID(probe))
     if unit then
         cab.auraUnit = unit
         cab.auraUnitExplicit = nil
@@ -777,7 +815,10 @@ local function SyncCustomBarDerivedAuraUnit(cab)
             if not CooldownCompanion:EntryCanUsePetAuraScope(probe, barSpellID) then
                 cab.auraTrackPet = nil
             end
+            -- Same classifier-polarity veto as the section's groupVetoed:
+            -- inert under a valid unit override.
             if cab.auraTrackGroup == true and IsSpellCustomBarConfig(cab)
+                and not GetCustomBarAuraUnitOverride(cab)
                 and #GetAuraCandidateList(cab) > 0 then
                 local baseUnit = ClassifyAuraSpellUnit(barSpellID)
                 if baseUnit and baseUnit ~= unit then
@@ -794,7 +835,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     local _, collapsed = AddCustomBarSettingsHeading(container, "Aura Tracking", "aura", sectionKey, infoButtons, {
         "Blizzard tracks the aura and drives the bar; the addon never reads aura state in combat.",
         " ",
-        "Buffs are tracked on you, and your own debuffs on your target. This is a Blizzard restriction. The tracked unit is set automatically.",
+        "Buffs are tracked on you, and your own debuffs on your target. This is a Blizzard restriction. The tracked unit is detected automatically. If the game's data gets one wrong, set Tracked on yourself.",
         " ",
         "With no auras listed, the bar tracks its own aura. Added aura IDs override that; spell bars always keep their own aura as a fallback.",
     })
@@ -823,11 +864,10 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         end
     end
 
-    -- Tracked unit. Polarity (you vs target) stays derived and never user-set.
-    -- A confirmed helpful aura offers eligible scope choices on this same row:
-    -- group still requires castable ownership, while standalone Aura bars may
-    -- choose pet for self-buffs with no separate cast entry. The dropdown makes
-    -- the scopes structurally exclusive (owner ruling 2026-08-26).
+    -- Tracked unit: automatic polarity with a user override, plus the
+    -- eligible scope choices, in ONE dropdown — scopes stay structurally
+    -- exclusive (owner ruling 2026-08-26) and the polarity entries are the
+    -- user unit override (panel parity 2026-08-28, absolute at bind time).
     local probe = BuildCustomBarAuraProbe(cab)
     local resolvedAuraID = CooldownCompanion:ResolveAuraSpellID(probe)
     -- The resolved aura can be a LINKED applied-aura ID distinct from the
@@ -836,17 +876,19 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     -- ownership is probed on the bar's own spell only — that IS the
     -- castable identity the user added; the applied ID is never castable.
     local barSpellID = tonumber(cab.spellID)
+    local unitOverride = GetCustomBarAuraUnitOverride(cab)
     local classifiedUnit = ClassifyAuraSpellUnit(resolvedAuraID)
         or ClassifyAuraSpellUnit(barSpellID)
-    local unit = classifiedUnit or cab.auraUnit or "player"
+    -- A user override IS confirmed polarity: it decides the bind unit.
+    local confirmedUnit = unitOverride or classifiedUnit
+    local unit = confirmedUnit or cab.auraUnit or "player"
     local isBuff = unit ~= "target"
 
     -- Reconcile stale scope on a CONFIRMED-harmful bar (imported or drifted
     -- config): the runtime resolves it to the target and ignores the flags,
-    -- and the read-only label below would leave them no clearing path —
     -- while they still steer IsAuraBlockEntry. Confirmed polarity only;
     -- never clear on the uncached-spell fallback guess.
-    if classifiedUnit == "target"
+    if confirmedUnit == "target"
         and (cab.auraTrackGroup ~= nil or cab.auraTrackPet ~= nil) then
         cab.auraTrackGroup = nil
         cab.auraTrackPet = nil
@@ -857,14 +899,17 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     -- list on spell bars. Pet requires a confirmed buff plus the CORE pet rule,
     -- which admits standalone Aura bars, and sticky pet-class capability. A
     -- stored flag always keeps its clearing path regardless of gates.
-    local coreOwnsForGroupScope = classifiedUnit ~= nil and isBuff
+    local coreOwnsForGroupScope = confirmedUnit ~= nil and isBuff
         and CooldownCompanion:EntryOwnsAuraForGroupScope(probe, barSpellID) == true
-    local coreAllowsPetScope = classifiedUnit ~= nil and isBuff
+    local coreAllowsPetScope = confirmedUnit ~= nil and isBuff
         and CooldownCompanion:EntryCanUsePetAuraScope(probe, barSpellID)
+    -- The opposite-polarity veto judges by classifier polarity, which a
+    -- valid unit override overrules by fiat — skip only the veto under an
+    -- override; castability/ownership checks above still apply.
     local groupVetoed = false
-    if isSpellBar and #GetAuraCandidateList(cab) > 0 then
+    if isSpellBar and not unitOverride and #GetAuraCandidateList(cab) > 0 then
         local baseUnit = ClassifyAuraSpellUnit(tonumber(cab.spellID))
-        if baseUnit and classifiedUnit and baseUnit ~= classifiedUnit then
+        if baseUnit and confirmedUnit and baseUnit ~= confirmedUnit then
             groupVetoed = true
         end
     end
@@ -874,56 +919,150 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     local canTrackPet = (coreAllowsPetScope and canPets and canPets() == true)
         or cab.auraTrackPet == true
 
-    if not isBuff or not (canTrackGroup or canTrackPet) then
-        AddLabelRow(auraLeft, {
-            label = "Tracked on",
-            indent = isSpellBar,
-            controlText = unit == "target" and "Target" or "You",
-        })
-    else
-        local scope = cab.auraTrackPet == true and "pet"
-            or cab.auraTrackGroup == true and "group"
-            or "player"
-        local scopeList = { player = "You" }
-        local scopeOrder = { "player" }
-        if canTrackGroup then
-            scopeList.group = "You and your group"
-            scopeOrder[#scopeOrder + 1] = "group"
-        end
-        if canTrackPet then
-            scopeList.pet = "Your pet"
-            scopeOrder[#scopeOrder + 1] = "pet"
-        end
-        local scopeRow = AddDropdownRow(auraLeft, {
-            label = "Tracked on",
-            indent = isSpellBar,
-            list = scopeList,
-            order = scopeOrder,
-            value = scope,
-            onChange = function(value)
+    local automaticLabel = "Automatic"
+    if classifiedUnit == "target" then
+        automaticLabel = "Automatic (Target)"
+    elseif classifiedUnit == "player" then
+        automaticLabel = "Automatic (You)"
+    end
+    local scopeList = {
+        automatic = automaticLabel,
+        player = "You",
+        target = "Target",
+    }
+    local scopeOrder = { "automatic", "player", "target" }
+    if canTrackGroup then
+        scopeList.group = "You and your group"
+        scopeOrder[#scopeOrder + 1] = "group"
+    end
+    if canTrackPet then
+        scopeList.pet = "Your pet"
+        scopeOrder[#scopeOrder + 1] = "pet"
+    end
+    local scopeValue = cab.auraTrackPet == true and "pet"
+        or cab.auraTrackGroup == true and "group"
+        or unitOverride
+        or "automatic"
+    local scopeRow = AddDropdownRow(auraLeft, {
+        label = "Tracked on",
+        indent = isSpellBar,
+        list = scopeList,
+        order = scopeOrder,
+        value = scopeValue,
+        onChange = function(value)
+            if value == "group" or value == "pet" then
+                -- Scope choices leave the unit override untouched: both
+                -- are only offered on confirmed buffs, and an override to
+                -- "player" is what confirmed some of them.
                 cab.auraTrackGroup = value == "group" and true or nil
                 cab.auraTrackPet = value == "pet" and true or nil
-                SyncCustomBarDerivedAuraUnit(cab)
-                -- Scope can move an aura bar between the collapsing block
-                -- and the fixed stack (group/pet bars always keep a slot),
-                -- so commit like a layout change, not just a refresh.
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:RepositionCastBar()
-                CooldownCompanion:UpdateAnchorStacking()
-                CooldownCompanion:RefreshConfigPanel()
-            end,
-        })
-        AnchorRowBadge(scopeRow, CreateInfoButton(scopeRow.frame, scopeRow.frame, "LEFT", "LEFT", 0, 0, {
-            "Tracked On",
-            {"You and your group follows the buff onto anyone in your party or raid, like a healer's Lifebloom on a tank.", 1, 1, 1, true},
-            {" ", 1, 1, 1, true},
-            {"Best for buffs that sit on one person at a time. The addon is never told who holds the aura, so a buff on several people draws overlapping displays.", 1, 1, 1, true},
-            {" ", 1, 1, 1, true},
-            {"Aura sounds only play while you are ungrouped. In a group they fire per person, so moving the buff would sound like it dropped.", 1, 1, 1, true},
-            {" ", 1, 1, 1, true},
-            {"Your pet tracks the buff on your summoned pet instead of on you, like Dark Transformation on a ghoul.", 1, 1, 1, true},
-        }, infoButtons))
+            else
+                cab.auraTrackGroup = nil
+                cab.auraTrackPet = nil
+                cab.auraUnitOverride = (value == "player" or value == "target")
+                    and value or nil
+            end
+            SyncCustomBarDerivedAuraUnit(cab)
+            -- Scope can move an aura bar between the collapsing block
+            -- and the fixed stack (group/pet bars always keep a slot),
+            -- so commit like a layout change, not just a refresh.
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RepositionCastBar()
+            CooldownCompanion:UpdateAnchorStacking()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+    AnchorRowBadge(scopeRow, CreateInfoButton(scopeRow.frame, scopeRow.frame, "LEFT", "LEFT", 0, 0, {
+        "Tracked On",
+        {"Automatic follows the detected buff or debuff. You and Target force it when the game's data gets one wrong.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"You and your group follows the buff onto anyone in your party or raid, like a healer's Lifebloom on a tank.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Best for buffs that sit on one person at a time. The addon is never told who holds the aura, so a buff on several people draws overlapping displays.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Aura sounds only play while you are ungrouped. In a group they fire per person, so moving the buff would sound like it dropped.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Your pet tracks the buff on your summoned pet instead of on you, like Dark Transformation on a ghoul.", 1, 1, 1, true},
+    }, infoButtons))
+
+    -- Read-only, panel parity (ButtonSettingsAura "Tracked Aura ID"): the
+    -- aura ID(s) that can actually appear on a unit for this bar, not the
+    -- bind's full insurance filter. Spell bars list the user's adds plus
+    -- their own aura, which custom bars keep as a fallback unconditionally
+    -- (their candidate build is unconstrained); Aura bars lead with the
+    -- resolved applied identity.
+    local trackedAuraIDs = {}
+    local trackedAuraIDSeen = {}
+    local function AppendTrackedAuraID(id)
+        id = tonumber(id)
+        if id and not trackedAuraIDSeen[id] then
+            trackedAuraIDSeen[id] = true
+            trackedAuraIDs[#trackedAuraIDs + 1] = tostring(id)
+        end
     end
+    local hasIDOverride = tonumber(cab.auraIDOverride) ~= nil
+    if isSpellBar then
+        -- An ID override replaces the implicit head: it leads the line and
+        -- the bar's own aura leaves the filter with the rest of the
+        -- automatic machinery (panel parity).
+        if hasIDOverride then
+            AppendTrackedAuraID(resolvedAuraID)
+        end
+        for _, id in ipairs(GetAuraCandidateList(cab)) do
+            AppendTrackedAuraID(id)
+        end
+        if not hasIDOverride then
+            AppendTrackedAuraID(CooldownCompanion:ResolveImplicitAuraSpellID(probe))
+        end
+    else
+        AppendTrackedAuraID(resolvedAuraID)
+        for _, id in ipairs(GetAuraCandidateList(cab)) do
+            AppendTrackedAuraID(id)
+        end
+    end
+    AddLabelRow(auraLeft, {
+        label = #trackedAuraIDs > 1 and "Tracked Aura IDs" or "Tracked Aura ID",
+        indent = isSpellBar,
+        controlText = #trackedAuraIDs > 0
+            and table.concat(trackedAuraIDs, ", ") or "None",
+    })
+
+    -- The head-replacement escape hatch, one shape on every entry kind
+    -- (panel parity, ButtonSettingsAura): replaces the automatic aura head
+    -- verbatim; the list below keeps adding auras beside it. On spell bars
+    -- it also retires the own-aura implicit fallback.
+    AddEditBoxRow(auraLeft, {
+        label = "Aura ID Override",
+        indent = isSpellBar,
+        value = cab.auraIDOverride and tostring(cab.auraIDOverride) or "",
+        tooltip = {
+            "Aura ID Override",
+            {"Replaces the automatically detected aura with exactly this ID. Auras added below still track alongside it.", 1, 1, 1, true},
+            {" ", 1, 1, 1, true},
+            {"Use when detection picks the wrong aura for this bar. Leave empty for automatic.", 1, 1, 1, true},
+        },
+        onEnterPressed = function(text, widget)
+            text = text and text:gsub("%s+", "") or ""
+            if text == "" then
+                if cab.auraIDOverride ~= nil then
+                    cab.auraIDOverride = nil
+                    SyncCustomBarDerivedAuraUnit(cab)
+                end
+                RefreshCustomBarAuraConfig()
+                return
+            end
+            local spellID = tonumber(text)
+            if not (spellID and spellID > 0 and C_Spell.DoesSpellExist(spellID)) then
+                CooldownCompanion:Print("Aura ID not found: " .. text
+                    .. ". Enter a numeric spell ID, or leave empty for automatic.")
+                widget:SetText(cab.auraIDOverride and tostring(cab.auraIDOverride) or "")
+                return
+            end
+            cab.auraIDOverride = spellID
+            SyncCustomBarDerivedAuraUnit(cab)
+            RefreshCustomBarAuraConfig()
+        end,
+    })
 
     for _, spellID in ipairs(GetAuraCandidateList(cab)) do
         AddAuraCandidateRow(auraLeft, spellID, function(removedID)
@@ -938,7 +1077,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         indent = true,
         value = "",
         onEnterPressed = function(text, widget)
-            if TryAddAuraCandidate(cab, text, GetCustomBarAuraUnit(cab), SyncCustomBarDerivedAuraUnit) then
+            if TryAddAuraCandidate(cab, text, GetCustomBarAuraAddGuardUnit(cab), SyncCustomBarDerivedAuraUnit) then
                 widget:SetText("")
                 RefreshCustomBarAuraConfig()
             end

@@ -2672,22 +2672,35 @@ end
 -- Polarity is still derived from the spell every pass (Blizzard's identity gate
 -- permits spell-ID matching only for helpful auras on assistable units and
 -- harmful auras on non-assistable ones); the stored auraUnit is a fallback for
--- uncached spells, so config, migration and runtime can't drift.
+-- uncached spells, so config, migration and runtime can't drift. The one
+-- authority above the derivation is the user's explicit auraUnitOverride —
+-- written only by the config's Tracked On control. An override that lies
+-- about the aura's real polarity simply matches nothing (the gate checks the
+-- live aura instance), so illegal pairings stay inert.
 --
 -- Harmful entries resolve to the target UNCONDITIONALLY and ignore the group
 -- opt-in. That is what keeps an illegal pairing — your debuff on an ally, which
 -- the gate would silently refuse to filter — unrepresentable at runtime even if
 -- stored config drifts.
 local function ResolveEntryAuraUnits(self, buttonData, allowGroupScope)
-    local first = allowGroupScope == false
-        and self:ResolveTexturePanelAuraSpellID(buttonData)
-        or self:ResolveAuraSpellID(buttonData)
-    local classifiedUnit = ST.ClassifyAuraSpellUnit(first)
+    -- A user unit override is absolute (owner ruling 2026-08-28): the
+    -- classifier exists to guess polarity from spell data, and the override
+    -- exists for the entries where that data lies. "player" continues into
+    -- the buff scope rows below; "target" resolves like any harmful entry.
+    local unitOverride = ST.GetEntryAuraUnitOverride(buttonData)
     local harmful
-    if classifiedUnit then
-        harmful = classifiedUnit == "target"
+    if unitOverride then
+        harmful = unitOverride == "target"
     else
-        harmful = buttonData.auraUnit == "target"
+        local first = allowGroupScope == false
+            and self:ResolveTexturePanelAuraSpellID(buttonData)
+            or self:ResolveAuraSpellID(buttonData)
+        local classifiedUnit = ST.ClassifyAuraSpellUnit(first)
+        if classifiedUnit then
+            harmful = classifiedUnit == "target"
+        else
+            harmful = buttonData.auraUnit == "target"
+        end
     end
     if harmful then return { "target" } end
     -- Pet scope is EXCLUSIVE (owner ruling 2026-08-21): a pet-tracked buff

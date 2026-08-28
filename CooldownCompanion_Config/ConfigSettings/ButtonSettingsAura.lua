@@ -4,11 +4,22 @@
     concepts). It was its own entry tab until the entry cluster collapsed to
     one Settings tab; it now renders into that pane directly below Show
     Conditions, whose aura toggles depend on the setup made here.
-    Scope: enable toggle, tracked-aura list + add box, derived unit line,
-    display toggles and style rows.
-    The tracked unit is auto-derived from spell polarity and never user-set:
-    Blizzard's anti-cheat gate allows only buffs-on-player and own-debuffs-
-    on-target, so illegal configurations are unrepresentable here.
+    Scope: enable toggle, tracked-aura list + add box, tracked-unit dropdown,
+    standalone aura ID override, display toggles and style rows.
+    The tracked unit is auto-derived from spell polarity by default, with a
+    user override (owner ruling 2026-08-28) for auras whose spell data
+    misclassifies. Blizzard's anti-cheat gate checks the live aura instance,
+    so an override that lies about real polarity harmlessly matches nothing.
+
+    PARITY TWIN (owner directive 2026-08-28): the custom-bar Aura Tracking
+    section (ResourceBarPanelsCustomBars.lua, BuildCustomBarAuraTrackingSection)
+    mirrors this section. A feature added or changed here must be applied to
+    the twin in the same change, or the gap explicitly surfaced to the owner.
+    Custom bars behave exactly like bar panel entries outside their two
+    structural roles (panels anchor freely; custom bars ride the resource
+    stack). Both user overrides (auraUnitOverride, auraIDOverride) exist on
+    both surfaces; on custom bars the polarity override shares the single
+    Tracked on dropdown with the scope choices.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -61,7 +72,22 @@ local function ResolveConfiguredAuraSpellID(buttonData)
         or CooldownCompanion:ResolveTexturePanelAuraSpellID(buttonData)
 end
 
+-- The user's explicit unit override, when set. Absolute over every derived
+-- answer in this section (owner ruling 2026-08-28): it exists for auras
+-- whose spell data misclassifies, so no classifier read may outrank it.
+local function GetAuraUnitOverride(buttonData)
+    local override = buttonData.auraUnitOverride
+    if override == "player" or override == "target" then
+        return override
+    end
+    return nil
+end
+
 local function GetExplicitAuraCandidateUnit(buttonData)
+    local unitOverride = GetAuraUnitOverride(buttonData)
+    if unitOverride then
+        return unitOverride
+    end
     if buttonData.addedAs == "aura" then
         local resolved = ResolveConfiguredAuraSpellID(buttonData)
         return ClassifyAuraSpellUnit(resolved) or buttonData.auraUnit or "player"
@@ -82,9 +108,66 @@ local function GetExplicitAuraCandidateUnit(buttonData)
     return buttonData.auraUnit
 end
 
+-- Polarity guard unit for the shared add path. The guard rejects an ID
+-- whose CLASSIFIED polarity disagrees with the entry's, which is exactly
+-- backwards once the user has overridden the unit: a misclassified aura is
+-- the reason the override exists, so the guard goes inert (nil) and the
+-- user's word stands. A genuinely wrong add just matches nothing at
+-- runtime; Blizzard's identity gate checks the live aura instance.
+local function GetCandidateAddGuardUnit(buttonData)
+    if GetAuraUnitOverride(buttonData) then
+        return nil
+    end
+    return GetExplicitAuraCandidateUnit(buttonData)
+end
+
+-- Preflight for the override writers (call sites write the prospective
+-- value, ask this, and roll back on a refusal): Aura Panels and Aura
+-- Sections are single-unit surfaces whose admission checks run at add and
+-- move time, and an override edit is the one path that can flip an ALREADY
+-- ADMITTED entry's effective unit afterward — the bind pass answers such a
+-- mismatch by parking entries. The surface unit is derived from the OTHER
+-- members, because the edited entry may be the very donor the normal
+-- derivation reads first. Wording matches the admission doors.
+local function GetOverrideSurfaceRejectMessage(group, buttonData)
+    local isPanel = ST.IsAuraPanelGroup(group)
+    local isSection = not isPanel and ST.IsAuraSectionEntry
+        and ST.IsAuraSectionEntry(group, buttonData)
+    if not (isPanel or isSection) then return nil end
+    local entryUnit = CooldownCompanion:ResolveAuraEntryUnit(buttonData)
+    if not entryUnit then return nil end
+    local anchor = isSection and ST.GetPanelSectionForEntry
+        and ST.GetPanelSectionForEntry(group, buttonData) or nil
+    if isSection and not anchor then return nil end
+    local surfaceUnit
+    for _, sibling in ipairs(group.buttons or {}) do
+        if sibling ~= buttonData and type(sibling) == "table"
+            and sibling.addedAs == "aura"
+            and (isPanel or ST.GetPanelSectionForEntry(group, sibling) == anchor) then
+            surfaceUnit = CooldownCompanion:ResolveAuraEntryUnit(sibling)
+            if surfaceUnit then break end
+        end
+    end
+    if not surfaceUnit or surfaceUnit == entryUnit then return nil end
+    if isPanel then
+        if surfaceUnit == "player" then
+            return "This panel tracks your buffs. Target debuff auras need their own Aura Panel."
+        end
+        return "This panel tracks target debuffs. Your own buff auras need their own Aura Panel."
+    end
+    if surfaceUnit == "player" then
+        return "This section tracks your buffs. Target debuff auras need a section of their own."
+    end
+    return "This section tracks target debuffs. Your own buff auras need a section of their own."
+end
+
 local function EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
+    -- The opposite-polarity veto below judges by classifier polarity, which
+    -- a valid unit override overrules by fiat — skip only that veto under
+    -- an override; the core castability/ownership checks still apply.
     if type(buttonData) == "table"
         and buttonData.addedAs ~= "aura"
+        and not GetAuraUnitOverride(buttonData)
         and #GetAuraCandidateList(buttonData) > 0 then
         local baseUnit = ClassifyAuraSpellUnit(buttonData.id)
         local explicitUnit = ClassifyAuraSpellUnit(primaryAuraSpellID)
@@ -102,7 +185,9 @@ end
 -- fallback (uncached spells at login) starts from the right value.
 local function SyncDerivedAuraUnit(buttonData)
     local primaryAuraSpellID = ResolveConfiguredAuraSpellID(buttonData)
-    local unit = ClassifyAuraSpellUnit(primaryAuraSpellID)
+    -- The stored auraUnit is the runtime's uncached-spell fallback, so it
+    -- tracks the EFFECTIVE unit: the user override when set, else derived.
+    local unit = GetAuraUnitOverride(buttonData) or ClassifyAuraSpellUnit(primaryAuraSpellID)
     if unit then
         buttonData.auraUnit = unit
         -- Group scope is limited to buffs the player can cast: debuffs resolve
@@ -218,7 +303,7 @@ local AURA_TRACKING_TOOLTIP = {
     {" ", 1, 1, 1, true},
     {"Buffs are tracked on you. A buff tied to a helpful spell you can cast can also follow your group. Helpful buffs can instead be tracked only on your pet, including buffs the pet gains on its own. A buff overriding a harmful spell stays on you. Your own debuffs are tracked on your target.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Whether an entry is a buff or a debuff is detected automatically.", 1, 1, 1, true},
+    {"Whether an entry is a buff or a debuff is detected automatically. If the game's data gets one wrong, set Tracked on yourself.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"With no auras listed, the entry tracks its own aura. Added aura IDs take priority; its own aura remains a fallback only when both are buffs or both are debuffs.", 1, 1, 1, true},
 }
@@ -232,6 +317,13 @@ local TEXTURE_AURA_TRACKING_TOOLTIP = {
     {"With no auras listed, the entry tracks its own aura. Added aura IDs take priority; its own aura remains a fallback only when both are buffs or both are debuffs.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"This is presence-only: duration and stacks are not displayed. An optional active-aura effect can be configured in the Indicators tab.", 1, 1, 1, true},
+}
+
+local AURA_ID_OVERRIDE_TOOLTIP = {
+    "Aura ID Override",
+    {"Replaces the automatically detected aura with exactly this ID. Auras added below still track alongside it.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Use when detection picks the wrong aura for this entry. Leave empty for automatic.", 1, 1, 1, true},
 }
 
 local GROUP_SCOPE_TOOLTIP = {
@@ -338,43 +430,56 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         return
     end
 
-    -- Derived polarity line (read-only by design; the heading's "?" explains
-    -- why). Only the buff/debuff split is automatic — a buff's scope is the
-    -- one part the user chooses, in the row below.
+    -- Tracked unit: automatic polarity with a user override. Detection is
+    -- derived from spell data, which can be wrong (a self-buff whose record
+    -- reads harmful); the override is the user's escape hatch and is
+    -- absolute at bind time. Shown for Aura Panel cells too: they are
+    -- single-unit, but WHICH unit is still polarity.
+    local unitOverride = GetAuraUnitOverride(buttonData)
     local primaryAuraSpellID = ResolveConfiguredAuraSpellID(buttonData)
     local classifiedUnit = ClassifyAuraSpellUnit(primaryAuraSpellID)
-    local unit = classifiedUnit or buttonData.auraUnit or "player"
+    local unit = unitOverride or classifiedUnit or buttonData.auraUnit or "player"
     local isBuff = unit ~= "target"
     -- The derived unit falls back to the stored auraUnit (then "player") when
     -- the spell's data is not cached yet, so `isBuff` can be a guess. The scope
     -- row is gated on a CONFIRMED polarity: offering it off the fallback lets
     -- the user tick a box on what turns out to be a debuff, where the runtime
     -- resolves to the target unconditionally and the setting does nothing.
-    local polarityKnown = classifiedUnit ~= nil
+    -- A user override IS confirmation: it decides the bind unit outright.
+    local polarityKnown = unitOverride ~= nil or classifiedUnit ~= nil
     local canTrackGroup = not isTexturePanel and not isAuraPanel and isBuff and polarityKnown
         and EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
-    -- The read-only line exists to state the SCOPE the checkbox below sets. An
-    -- Aura Panel cell has one unit and no checkbox, so the line has nothing left
-    -- to report and goes with it.
-    if not isAuraPanel then
-        local scopeText
-        if not isBuff then
-            scopeText = "Target"
-        elseif isTexturePanel then
-            scopeText = "You"
-        elseif buttonData.auraTrackPet then
-            scopeText = "Your pet"
-        elseif buttonData.auraTrackGroup then
-            scopeText = "You and your group"
-        else
-            scopeText = "You"
-        end
-        AddLabelRow(auraLeft, {
-            label = "Tracked on",
-            indent = not isStandalone,
-            controlText = scopeText,
-        })
+    local automaticLabel = "Automatic"
+    if classifiedUnit == "target" then
+        automaticLabel = "Automatic (Target)"
+    elseif classifiedUnit == "player" then
+        automaticLabel = "Automatic (You)"
     end
+    AddDropdownRow(auraLeft, {
+        label = "Tracked on",
+        indent = not isStandalone,
+        list = {
+            automatic = automaticLabel,
+            player = "You",
+            target = "Target",
+        },
+        order = { "automatic", "player", "target" },
+        value = unitOverride or "automatic",
+        onChange = function(value)
+            local previousOverride = buttonData.auraUnitOverride
+            buttonData.auraUnitOverride = (value == "player" or value == "target")
+                and value or nil
+            local reject = GetOverrideSurfaceRejectMessage(group, buttonData)
+            if reject then
+                buttonData.auraUnitOverride = previousOverride
+                CooldownCompanion:Print(reject)
+                RefreshAuraConfig()
+                return
+            end
+            SyncDerivedAuraUnit(buttonData)
+            RefreshAuraConfig()
+        end,
+    })
 
     -- Read-only: the aura ID(s) that can actually appear on a unit for this
     -- entry — NOT the bind's full match filter, which also registers
@@ -395,22 +500,35 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     if isTexturePanel then
         AppendTrackedAuraID(primaryAuraSpellID)
     elseif isStandalone then
-        -- The resolver's head is the entry's applied-aura identity; the
-        -- candidate list holds the user's added fallbacks.
+        -- The resolver's head is the entry's applied-aura identity (the ID
+        -- override when set); the candidate list holds the user's added
+        -- fallbacks, which track beside the head either way.
         AppendTrackedAuraID(primaryAuraSpellID)
         for _, id in ipairs(GetAuraCandidateList(buttonData)) do
             AppendTrackedAuraID(id)
         end
     else
+        -- An ID override replaces the implicit head: it leads the line and
+        -- the entry's own aura leaves the filter with the rest of the
+        -- automatic machinery.
+        local hasIDOverride = tonumber(buttonData.auraIDOverride) ~= nil
+        if hasIDOverride then
+            AppendTrackedAuraID(primaryAuraSpellID)
+        end
         for _, id in ipairs(GetAuraCandidateList(buttonData)) do
             AppendTrackedAuraID(id)
         end
         -- The entry's own aura stays a fallback beside explicit adds only
         -- when polarities match (the constrained bind drops it otherwise).
-        local implicitID = CooldownCompanion:ResolveImplicitAuraSpellID(buttonData)
+        local implicitID = not hasIDOverride
+            and CooldownCompanion:ResolveImplicitAuraSpellID(buttonData) or nil
         if implicitID then
             local implicitUnit = ClassifyAuraSpellUnit(implicitID)
-            local explicitUnit = #trackedAuraIDs > 0
+            -- Under a unit override the bind keeps implicit candidates
+            -- unfiltered (the classifier is what the override overrules),
+            -- so the line must not polarity-drop what the bind registers.
+            local explicitUnit = not GetAuraUnitOverride(buttonData)
+                and #trackedAuraIDs > 0
                 and GetExplicitAuraCandidateUnit(buttonData) or nil
             if not explicitUnit or not implicitUnit or implicitUnit == explicitUnit then
                 AppendTrackedAuraID(implicitID)
@@ -474,8 +592,61 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         })
     end
 
+    -- The head-replacement escape hatch, one shape on every entry kind
+    -- (owner ruling 2026-08-28): automatic detection resolves the entry's
+    -- aura head through game data that can be wrong, and this field
+    -- replaces exactly that head verbatim. The list below keeps adding
+    -- auras beside it, same as beside a correct automatic result. On spell
+    -- entries it also retires the own-aura implicit fallback, which the
+    -- list alone never could.
+    do
+        AddEditBoxRow(auraLeft, {
+            label = "Aura ID Override",
+            indent = not isStandalone,
+            value = buttonData.auraIDOverride and tostring(buttonData.auraIDOverride) or "",
+            tooltip = AURA_ID_OVERRIDE_TOOLTIP,
+            onEnterPressed = function(text, widget)
+                text = text and text:gsub("%s+", "") or ""
+                local previousOverride = buttonData.auraIDOverride
+                local function RejectIfSurfaceMismatch()
+                    local reject = GetOverrideSurfaceRejectMessage(group, buttonData)
+                    if reject then
+                        buttonData.auraIDOverride = previousOverride
+                        CooldownCompanion:Print(reject)
+                        widget:SetText(previousOverride and tostring(previousOverride) or "")
+                        RefreshAuraConfig()
+                        return true
+                    end
+                    return false
+                end
+                if text == "" then
+                    if buttonData.auraIDOverride ~= nil then
+                        buttonData.auraIDOverride = nil
+                        if RejectIfSurfaceMismatch() then return end
+                        OnCandidateListChanged(buttonData)
+                    end
+                    RefreshAuraConfig()
+                    return
+                end
+                local spellID = tonumber(text)
+                if not (spellID and spellID > 0 and C_Spell.DoesSpellExist(spellID)) then
+                    CooldownCompanion:Print("Aura ID not found: " .. text
+                        .. ". Enter a numeric spell ID, or leave empty for automatic.")
+                    widget:SetText(previousOverride and tostring(previousOverride) or "")
+                    return
+                end
+                buttonData.auraIDOverride = spellID
+                if RejectIfSurfaceMismatch() then return end
+                OnCandidateListChanged(buttonData)
+                RefreshAuraConfig()
+            end,
+        })
+    end
+
     -- Tracked aura list (empty = tracking the entry's own aura; the heading's
-    -- "?" explains the default and override behavior).
+    -- "?" explains the default and override behavior). Stays live alongside
+    -- an ID override: the override replaces the automatic head only, and
+    -- these adds track beside it.
     for _, spellID in ipairs(GetAuraCandidateList(buttonData)) do
         AddCandidateRow(auraLeft, buttonData, spellID)
     end
@@ -486,7 +657,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         if entry and TryAddAuraCandidate(
             buttonData,
             tostring(entry.id),
-            GetExplicitAuraCandidateUnit(buttonData),
+            GetCandidateAddGuardUnit(buttonData),
             OnCandidateListChanged
         ) then
             auraAddBox:SetText("")
@@ -501,7 +672,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         onEnterPressed = function(text, widget)
             if CS.ConsumeAutocompleteEnter() then return end
             CS.HideAutocomplete()
-            if TryAddAuraCandidate(buttonData, text, GetExplicitAuraCandidateUnit(buttonData), OnCandidateListChanged) then
+            if TryAddAuraCandidate(buttonData, text, GetCandidateAddGuardUnit(buttonData), OnCandidateListChanged) then
                 widget:SetText("")
                 RefreshAuraConfig()
             end
