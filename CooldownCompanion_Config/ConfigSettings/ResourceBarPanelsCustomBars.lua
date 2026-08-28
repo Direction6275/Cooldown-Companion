@@ -516,7 +516,7 @@ local function BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
     end
 end
 
-local function BuildCustomBarLoadConditionsTab(container, cab, infoButtons)
+local function BuildCustomBarLoadConditionsTab(container, cab, infoButtons, capabilities)
     local settings = CooldownCompanion:GetResourceBarSettings()
     local currentSpecID = GetCurrentConfigSpecID()
 
@@ -524,7 +524,7 @@ local function BuildCustomBarLoadConditionsTab(container, cab, infoButtons)
     -- state the per-tick cooldown evaluation already resolves. Labels,
     -- keys, and interlocks mirror ButtonConditions so the two surfaces
     -- teach each other.
-    if IsSpellCustomBarConfig(cab) then
+    if capabilities.isSpellBar and capabilities.cooldownConsumer then
         local rulesHeading, rulesCollapsed =
             AddCustomBarSection(container, "Show & Hide Rules", "hiderules", GetCustomBarCollapseKey(cab))
         local rulesInfoBtn = CreateInfoButton(rulesHeading.frame, rulesHeading.label, "LEFT", "RIGHT", 4, 0, {
@@ -543,8 +543,7 @@ local function BuildCustomBarLoadConditionsTab(container, cab, infoButtons)
                 CooldownCompanion:RefreshConfigPanel()
             end
             local rulesLeft, rulesRight = BeginRowGrid(container)
-            local isChargeSpell = cab.hasCharges == true
-                or (tonumber(cab.maxCharges) or 0) > 1
+            local isChargeSpell = capabilities.hasCharges
 
             AddCheckboxRow(rulesLeft, {
                 label = "Hide While On Cooldown",
@@ -1117,7 +1116,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         {" ", 1, 1, 1, true},
         {"Auras that gain no time when refreshed never show it.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
-        {"A bar showing stacks keeps its stack look.", 1, 1, 1, true},
+        {"While the bar shows stacks, its filled stack run or filled segments wear this color; gaps, borders, and stack geometry stay unchanged.", 1, 1, 1, true},
     }, infoButtons))
     if cab.pandemicEffect == true then
         -- No alpha: the pandemic color REPLACES the aura fill color (owner
@@ -1156,6 +1155,12 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
             cab.hideWhenInactive = value or nil
             if value then
                 cab.auraShellDim = nil
+                -- The hidden spell shell has no cooldown/zero-charge or
+                -- recharge look. Disarm its canvas stand-in immediately;
+                -- saved colors remain untouched and return with the shell.
+                if isSpellBar then
+                    CooldownCompanion:SetCustomBarCooldownPreview(cab, nil)
+                end
             end
             -- Toggling moves an aura bar between the fixed stack and the
             -- collapsing block, so the stack's extent changes: this needs
@@ -1510,7 +1515,8 @@ local function BuildCustomAuraBarPanel(container, customBarId)
     local layoutSpecID = resolveLayoutSpecID(cab, currentConfigSpecID)
     local layout = RB.GetSpecLayoutOrder and RB.GetSpecLayoutOrder(settings, layoutSpecID) or CooldownCompanion:GetSpecLayoutOrder()
     local thicknessField, thicknessLabel = GetResourceThicknessFieldConfig(settings, layout)
-    local isSpellCustomBar = IsSpellCustomBarConfig(cab)
+    local capabilities = RB.GetCustomBarConfigCapabilities(cab)
+    local isSpellCustomBar = capabilities.isSpellBar
 
     BuildCustomBarIdentityHeading(container, cab)
 
@@ -1571,7 +1577,7 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                 -- panel mirror: nothing a bar colour or font can change
                 -- reaches the icon panel the lanes wrap.
                 local cabPreviewOnly = RefreshLayoutOrderPreviewForDrag
-                local isAuraTracked = (not isSpellCustomBar) or cab.auraTracking == true
+                local isAuraTracked = capabilities.auraTracked
 
                 local _, colorsCollapsed = AddCustomBarSettingsHeading(container, "Colors", "colors", capturedKey)
 
@@ -1589,44 +1595,50 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                 -- Standalone aura bars: the fill IS the aura, so the label
                 -- says so — "Bar Color" stays the spell-cooldown verbiage.
                 -- Same barColor key either way; label only.
-                AddColorRow(colorsLeft, {
-                    label = isSpellCustomBar and "Bar Color" or "Aura Bar Color",
-                    tbl = customBars[cabIdx],
-                    key = "barColor",
-                    default = {0.5, 0.5, 1},
-                    onConfirm = cabApplyBars,
-                    onChange = cabPreviewOnly,
-                    deferCommit = true,
-                })
+                if not isSpellCustomBar or capabilities.baseSpellShellConsumer then
+                    AddColorRow(colorsLeft, {
+                        label = isSpellCustomBar and "Bar Color" or "Aura Bar Color",
+                        tbl = customBars[cabIdx],
+                        key = "barColor",
+                        default = {0.5, 0.5, 1},
+                        onConfirm = cabApplyBars,
+                        onChange = cabPreviewOnly,
+                        deferCommit = true,
+                    })
+                end
 
                 if isSpellCustomBar then
-                    AddColorRow(colorsLeft, {
-                        label = "Bar Cooldown Color",
-                        tbl = customBars[cabIdx],
-                        key = "barCooldownColor",
-                        default = {0.6, 0.13, 0.18, 1},
-                        hasAlpha = true,
-                        onConfirm = cabApplyBars,
-                        onChange = cabPreviewOnly,
-                        deferCommit = true,
-                    })
+                    if capabilities.baseSpellShellConsumer and capabilities.cooldownConsumer then
+                        AddColorRow(colorsLeft, {
+                            label = "Bar Cooldown Color",
+                            tbl = customBars[cabIdx],
+                            key = "barCooldownColor",
+                            default = {0.6, 0.13, 0.18, 1},
+                            hasAlpha = true,
+                            onConfirm = cabApplyBars,
+                            onChange = cabPreviewOnly,
+                            deferCommit = true,
+                        })
 
-                    AddColorRow(colorsRight, {
-                        label = "Bar Recharging Color",
-                        tbl = customBars[cabIdx],
-                        key = "barChargeColor",
-                        default = {1.0, 0.82, 0.0, 1},
-                        hasAlpha = true,
-                        onConfirm = cabApplyBars,
-                        onChange = cabPreviewOnly,
-                        deferCommit = true,
-                    })
+                        if capabilities.hasCharges then
+                            AddColorRow(colorsRight, {
+                                label = "Bar Recharging Color",
+                                tbl = customBars[cabIdx],
+                                key = "barChargeColor",
+                                default = {1.0, 0.82, 0.0, 1},
+                                hasAlpha = true,
+                                onConfirm = cabApplyBars,
+                                onChange = cabPreviewOnly,
+                                deferCommit = true,
+                            })
+                        end
+                    end
 
                     if isAuraTracked then
                         -- The kit's aura-drain fill while the tracked aura
                         -- runs (pure aura bars use Bar Color — the fill IS
                         -- the bar there).
-                        AddColorRow(colorsRight, {
+                        AddColorRow(capabilities.baseSpellShellConsumer and colorsRight or colorsLeft, {
                             label = "Aura Bar Color",
                             tbl = customBars[cabIdx],
                             key = "barAuraColor",
@@ -1641,7 +1653,23 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                 end -- not colorsCollapsed
 
                 -- ---- Text / Duration controls ----
-                local _, textsCollapsed = AddCustomBarSettingsHeading(container, "Texts", "texts", capturedKey)
+                -- A capability change can remove one of these rows while its
+                -- advanced window remains in the same custom-bar context.
+                -- Close that exact window before omitting its replacement
+                -- gear, otherwise it keeps editing a setting now hidden here.
+                if CS.CloseAdvancedSettingsPanel then
+                    if not capabilities.durationConsumer then
+                        CS.CloseAdvancedSettingsPanel({ settingKey = "rbCabDurationText_" .. capturedKey })
+                    end
+                    if not capabilities.countConsumer then
+                        CS.CloseAdvancedSettingsPanel({ settingKey = "rbCabStackText_" .. capturedKey })
+                    end
+                end
+                local textsCollapsed = true
+                if capabilities.durationConsumer or capabilities.countConsumer then
+                    local _
+                    _, textsCollapsed = AddCustomBarSettingsHeading(container, "Texts", "texts", capturedKey)
+                end
 
                 if not textsCollapsed then
                     -- One text per column: each carries its own gear, and the
@@ -1649,7 +1677,7 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                     -- anything.
                     local textsLeft, textsRight = BeginRowGrid(container)
 
-                    local showDurationControls = true
+                    local showDurationControls = capabilities.durationConsumer
                     local durationTextRow
                     if showDurationControls then
                         durationTextRow = AddCheckboxRow(textsLeft, {
@@ -1679,18 +1707,21 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                     local stackTextLabel = isSpellCustomBar
                         and "Show Count Text (Charges/Uses)"
                         or "Show Stack Text"
-                    local stackTextRow = AddCheckboxRow(textsRight, {
-                        label = stackTextLabel,
-                        value = stackVal == true,
-                        onChange = function(val)
-                            customBars[cabIdx].showStackText = val or nil
-                            CooldownCompanion:ApplyResourceBars()
-                            CooldownCompanion:RefreshConfigPanel()
-                        end,
-                    })
+                    local stackTextRow
+                    if capabilities.countConsumer then
+                        stackTextRow = AddCheckboxRow(textsRight, {
+                            label = stackTextLabel,
+                            value = stackVal == true,
+                            onChange = function(val)
+                                customBars[cabIdx].showStackText = val or nil
+                                CooldownCompanion:ApplyResourceBars()
+                                CooldownCompanion:RefreshConfigPanel()
+                            end,
+                        })
+                    end
 
                     local showDuration = showDurationControls and cab.showDurationText == true
-                    local showStack = (stackVal == true)
+                    local showStack = capabilities.countConsumer and stackVal == true
                     -- The font trio's store keys are exactly durationTextFont /
                     -- durationTextFontSize / durationTextFontOutline, so the
                     -- shared helper owns it; it writes the same table `cab`
@@ -1761,10 +1792,12 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                         })
                     end
 
-                    AddAdvancedToggle(stackTextRow, "rbCabStackText_" .. capturedKey, rbCabTextAdvBtns, showStack, {
-                        title = stackTextLabel .. " Advanced",
-                        build = BuildStackTextAdvanced,
-                    })
+                    if capabilities.countConsumer then
+                        AddAdvancedToggle(stackTextRow, "rbCabStackText_" .. capturedKey, rbCabTextAdvBtns, showStack, {
+                            title = stackTextLabel .. " Advanced",
+                            build = BuildStackTextAdvanced,
+                        })
+                    end
                 end -- not textsCollapsed
             end -- cab.spellID (Colors/Texts)
 
@@ -1785,7 +1818,7 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                 -- caller passing opts.singleRail suppresses that grid: the
                 -- bar-mode advanced panel, whose popout is too narrow for two
                 -- columns.
-                local isAuraTracked = (not isSpellCustomBar) or cab.auraTracking == true
+                local isAuraTracked = capabilities.auraTracked
                 if isAuraTracked and ST._BuildBarActiveAuraControls then
                     local _, effectsCollapsed = AddCustomBarSettingsHeading(container, "Effects",
                         "aura_effects", capturedKey, infoButtons, {
@@ -1815,7 +1848,7 @@ local function BuildCustomAuraBarPanel(container, customBarId)
             -- ---- Visibility ----
             -- The former Visibility tab body: the Specializations and
             -- Where To Hide It sections, each its own collapsible.
-            BuildCustomBarLoadConditionsTab(container, cab, infoButtons)
+            BuildCustomBarLoadConditionsTab(container, cab, infoButtons, capabilities)
 
             -- ---- Talent Conditions (LAST, panel-entry parity) ----
             if cab.spellID then

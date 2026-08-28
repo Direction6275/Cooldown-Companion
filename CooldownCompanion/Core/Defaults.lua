@@ -1260,7 +1260,7 @@ ST.OVERRIDE_SECTIONS = {
     showOutOfRange = {
         label = "Show Out of Range",
         keys = {"showOutOfRange"},
-        modes = {icons = true, rotationAssistant = true},
+        modes = {icons = true, bars = true, rotationAssistant = true},
     },
     showTooltips = {
         label = "Show Tooltips",
@@ -1649,8 +1649,8 @@ ST.PANEL_COPY_SCOPES = {
             -- as part of the one section.
             sections = {
                 "barActiveAura", "pandemic", "showGCDSwipe", "desaturation",
-                "auraMissingDesaturation", "unusableDimming", "lossOfControl",
-                "showTooltips",
+                "auraMissingDesaturation", "unusableDimming", "showOutOfRange",
+                "lossOfControl", "showTooltips",
             },
             styleKeys = {
                 "allowPings", "tooltipAnchor", "tooltipHideInCombat",

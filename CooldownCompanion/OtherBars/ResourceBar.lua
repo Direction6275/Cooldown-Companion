@@ -279,6 +279,46 @@ local function SetCustomBarFillAlpha(bar, fillTexture, alpha)
     fillTexture:SetAlpha(alpha)
 end
 
+-- The segmented Custom Bar preview paints its active stack run onto CC-owned
+-- block textures rather than the StatusBar fill. Carry the same pulse alpha
+-- onto only those lit blocks; background-capacity blocks keep their configured
+-- alpha. The host stamps counts it already invented for the preview, so this
+-- never reads a live aura application value.
+local function SetCustomBarPreviewStackAlpha(bar, alpha)
+    if not (bar and bar._ccCabStackBlocksActive) then return end
+    local blocks = bar._ccCabStackBlocks
+    local lit = bar._ccCabPreviewLitStacks
+    local max = bar._ccCabPreviewLitStackMax
+    if not (blocks and lit and max) then return end
+    local reverse = bar.GetReverseFill and bar:GetReverseFill() == true
+    max = math_min(max, #blocks)
+    for i = 1, max do
+        local logical = reverse and (max - i + 1) or i
+        if logical <= lit then
+            blocks[i]:SetAlpha(alpha)
+        end
+    end
+end
+
+-- Color-shift parity for the same preview-only lit run. Segmented stacks do
+-- not expose the StatusBar fill visually, so every color write the stand-in
+-- makes to that fill must reach these CC-owned block textures as well.
+local function SetCustomBarPreviewStackColor(bar, r, g, b, a)
+    if not (bar and bar._ccCabStackBlocksActive) then return end
+    local blocks = bar._ccCabStackBlocks
+    local lit = bar._ccCabPreviewLitStacks
+    local max = bar._ccCabPreviewLitStackMax
+    if not (blocks and lit and max) then return end
+    local reverse = bar.GetReverseFill and bar:GetReverseFill() == true
+    max = math_min(max, #blocks)
+    for i = 1, max do
+        local logical = reverse and (max - i + 1) or i
+        if logical <= lit then
+            blocks[i]:SetColorTexture(r, g, b, a)
+        end
+    end
+end
+
 local function ResetCustomAuraBarIndicatorVisuals(bar, cabConfig)
     if not bar then return end
 
@@ -289,6 +329,7 @@ local function ResetCustomAuraBarIndicatorVisuals(bar, cabConfig)
     bar._barCSShiftColor = nil
     bar._barCSSpeed = nil
     SetCustomBarFillAlpha(bar, bar.GetStatusBarTexture and bar:GetStatusBarTexture(), 1)
+    SetCustomBarPreviewStackAlpha(bar, 1)
 
     local baseColor = (cabConfig and cabConfig.barColor) or {0.5, 0.5, 1}
     bar:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
@@ -344,9 +385,12 @@ local function AnimateCustomAuraBarIndicator(bar)
     local fillTexture = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
     if bar._barPulseActive then
         local speed = bar._barPulseSpeed or 0.5
-        SetCustomBarFillAlpha(bar, fillTexture, 0.6 + 0.4 * math_sin(now * 2 * math_pi / speed))
+        local alpha = 0.6 + 0.4 * math_sin(now * 2 * math_pi / speed)
+        SetCustomBarFillAlpha(bar, fillTexture, alpha)
+        SetCustomBarPreviewStackAlpha(bar, alpha)
     else
         SetCustomBarFillAlpha(bar, fillTexture, 1)
+        SetCustomBarPreviewStackAlpha(bar, 1)
     end
 
     if bar._barColorShiftActive then
@@ -356,12 +400,12 @@ local function AnimateCustomAuraBarIndicator(bar)
             local speed = bar._barCSSpeed or 0.5
             local t = 0.5 + 0.5 * math_sin(now * 2 * math_pi / speed)
             local baseAlpha = base[4] or 1
-            bar:SetStatusBarColor(
-                base[1] + (shift[1] - base[1]) * t,
-                base[2] + (shift[2] - base[2]) * t,
-                base[3] + (shift[3] - base[3]) * t,
-                baseAlpha + ((shift[4] or 1) - baseAlpha) * t
-            )
+            local r = base[1] + (shift[1] - base[1]) * t
+            local g = base[2] + (shift[2] - base[2]) * t
+            local b = base[3] + (shift[3] - base[3]) * t
+            local a = baseAlpha + ((shift[4] or 1) - baseAlpha) * t
+            bar:SetStatusBarColor(r, g, b, a)
+            SetCustomBarPreviewStackColor(bar, r, g, b, a)
         else
             bar._barColorShiftActive = nil
         end
@@ -376,8 +420,7 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig)
     local isSpellCustomCooldown = barInfo and barInfo.barType == "custom_cooldown"
     if not barInfo or (barInfo.barType ~= "custom_continuous" and not isSpellCustomCooldown) then return end
     if not cabConfig
-        or (isSpellCustomCooldown and cabConfig.auraTracking ~= true)
-        or (not isSpellCustomCooldown and cabConfig.trackingMode ~= "active") then
+        or (isSpellCustomCooldown and cabConfig.auraTracking ~= true) then
         ClearCustomAuraBarIndicatorVisualState(barInfo, false)
         return
     end
@@ -402,6 +445,8 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig)
 
     if not bar._barColorShiftActive then
         bar:SetStatusBarColor(wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4] or 1)
+        SetCustomBarPreviewStackColor(bar,
+            wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4] or 1)
     end
 
     if not bar.barAuraEffect then
@@ -434,13 +479,17 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig)
         bar._barCSShiftColor = nil
         bar._barCSSpeed = nil
         bar:SetStatusBarColor(wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4] or 1)
+        SetCustomBarPreviewStackColor(bar,
+            wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4] or 1)
     end
 
     -- Last write wins: the pandemic color REPLACES the aura color, opaque
     -- (owner ruling), matching the live clone's forced-opaque render.
     if pandemicPreview then
         local pc = cabConfig.pandemicColor
-        bar:SetStatusBarColor((pc and pc[1]) or 1, (pc and pc[2]) or 0.5, (pc and pc[3]) or 0, 1)
+        local r, g, b = (pc and pc[1]) or 1, (pc and pc[2]) or 0.5, (pc and pc[3]) or 0
+        bar:SetStatusBarColor(r, g, b, 1)
+        SetCustomBarPreviewStackColor(bar, r, g, b, 1)
     end
 end
 local function ClearStaleRecycledBarRuntimeState(frame, keepBorderVisuals)

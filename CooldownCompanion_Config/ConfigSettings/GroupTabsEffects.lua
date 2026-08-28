@@ -374,10 +374,16 @@ end
 -- reconcile here and no nil-container contract to honour.
 --
 -- The marker rides the aura duration text, which lives on the Appearance tab.
--- The rows stay visible when that text is off and the info tooltip says what
--- happens; a control that vanishes onto another tab is harder to find than an
--- inert one.
+-- Hide this half while that effective text surface is off; the glow half above
+-- remains live because it does not depend on duration text.
 local function BuildPandemicMarkerSection(container, group, style, lens)
+    local effectiveStyle = (lens and lens.effective) or style
+    if effectiveStyle and effectiveStyle.showAuraText == false then
+        if CS.CloseAdvancedSettingsPanel then
+            CS.CloseAdvancedSettingsPanel({ settingKey = "pandemicMarker" })
+        end
+        return
+    end
     if not container or not GroupHasAuraTrackingEntry(group) then
         return
     end

@@ -317,6 +317,31 @@ local function ResolveTargetStyle(group, buttonIndex)
     return style
 end
 
+-- Bar-mode range tint has exactly one render consumer: a visible icon square
+-- on an entry that can use the Show Out of Range section. At panel scope one
+-- qualifying entry is enough; a selected entry must itself qualify.
+local function BarRangeIconConsumerApplies(group, buttonIndex)
+    local buttons = group.buttons or {}
+    local function EntryApplies(index, buttonData)
+        local style = ResolveTargetStyle(group, index)
+        return buttonData ~= nil
+            and buttonData.isPassive ~= true
+            and SectionApplies(group, "showOutOfRange", index)
+            and style.showBarIcon ~= false
+            and style.showOutOfRange == true
+    end
+
+    if buttonIndex then
+        return EntryApplies(buttonIndex, buttons[buttonIndex])
+    end
+    for index, buttonData in ipairs(buttons) do
+        if EntryApplies(index, buttonData) then
+            return true
+        end
+    end
+    return false
+end
+
 -- Keep-swipe entries never draw the aura duration swipe (the spell's own
 -- cooldown swipe owns the icon), so the preview would render nothing for
 -- them. Same scoping rule as ChargeEntryApplies: a selected entry must
@@ -664,9 +689,11 @@ local CONTROLS = {
         id = "outOfRange",
         label = "Preview Out of Range State",
         group = GROUP_STATES,
-        modes = { icons = true, text = true, rotationAssistant = true },
+        modes = { icons = true, bars = true, text = true, rotationAssistant = true },
         styleKey = "showOutOfRange",
         lensSection = "showOutOfRange",
+        requiresBarRangeIconConsumer = true,
+        stopWhenInapplicable = true,
         settings = StateRoute(nil),
         preview = ConditionalPreview("out_of_range"),
     },
@@ -810,6 +837,11 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
         return false
     end
     if control.section and not SectionApplies(group, control.section, buttonIndex) then
+        return false
+    end
+    if control.requiresBarRangeIconConsumer
+        and displayMode == "bars"
+        and not BarRangeIconConsumerApplies(group, buttonIndex) then
         return false
     end
     if control.styleKey and not StyleFlagEnabled(group, buttonIndex, control.styleKey) then
@@ -1019,17 +1051,6 @@ local OBJECT_CONTROLS = {
     },
 }
 
--- Does this spell custom bar track a charge spell? Decides whether the
--- recharge look exists at all, and which label the cooldown entry wears
--- (zero charges IS the cooldown colour on a charge spell). The shared
--- resolver (RB.GetCustomBarReadyChargeCount), which the canvas's charge
--- readout and its recharge-preview gate also use — split answers would let
--- the entries offered and the stand-in drawn disagree.
-local function CustomBarMaxCharges(cab)
-    if not (RB and RB.GetCustomBarReadyChargeCount) then return nil end
-    return RB.GetCustomBarReadyChargeCount(cab)
-end
-
 -- Which objects a surface hosts. The homes list the objects that
 -- workspace configures; the buttons workspace lists the bars its unified
 -- anchor preview actually draws as lanes, which is also exactly when a
@@ -1057,9 +1078,22 @@ local function CollectObjectControls(objects)
             and CooldownCompanion:GetResourceBarSettings()
         if settings and settings.enabled == true then
             for _, cab in ipairs(CooldownCompanion:GetSpecCustomAuraBars()) do
-                local isSpellBar = type(cab) == "table" and cab.entryType == "spell"
-                local auraTracked = type(cab) == "table"
-                    and (not isSpellBar or cab.auraTracking == true)
+                local capabilities = type(cab) == "table"
+                    and RB.GetCustomBarConfigCapabilities(cab)
+                local isSpellBar = capabilities and capabilities.isSpellBar
+                local auraTracked = capabilities and capabilities.auraTracked
+                local cooldownPreviewKind = type(cab) == "table"
+                    and CooldownCompanion:GetCustomBarCooldownPreviewKind(cab)
+                if cooldownPreviewKind
+                    and (not (isSpellBar
+                            and capabilities.baseSpellShellConsumer
+                            and capabilities.cooldownConsumer)
+                        or (cooldownPreviewKind == "recharge" and not capabilities.hasCharges)) then
+                    -- A capability change or hidden base shell removes the
+                    -- command that could stop this stand-in. Disarm it now
+                    -- rather than leave an invisible preview running.
+                    CooldownCompanion:SetCustomBarCooldownPreview(cab, nil)
+                end
                 if type(cab) == "table" and CooldownCompanion:IsCustomBarRuntimeEligible(cab) then
                     local name = cab.label
                     if not name or name == "" then
@@ -1071,8 +1105,10 @@ local function CollectObjectControls(objects)
                     -- occludes it. On a charge spell the cooldown colour is
                     -- the zero-charges look, so the entry says so, and the
                     -- recharge look exists only there.
-                    if isSpellBar then
-                        local maxCharges = CustomBarMaxCharges(cab)
+                    if isSpellBar
+                        and capabilities.baseSpellShellConsumer
+                        and capabilities.cooldownConsumer then
+                        local maxCharges = capabilities.maxCharges
                         -- Both looks share the bar's Colors section, so the
                         -- gear route is one shape.
                         local cooldownRoute = {
@@ -2318,8 +2354,14 @@ local function UpdatePreviewCommandCenter(host)
     local displayMode = group.displayMode or "icons"
     local applicable = {}
     for _, control in ipairs(CONTROLS) do
-        if ControlApplies(control, group, displayMode, buttonIndex) then
+        local applies = ControlApplies(control, group, displayMode, buttonIndex)
+        if applies then
             applicable[#applicable + 1] = control
+        elseif control.stopWhenInapplicable
+            and control.preview.IsActive(panelId, buttonIndex) == true then
+            -- A hidden command must not keep running and silently resume if
+            -- its consumer returns later (for example, Show Icon toggled on).
+            control.preview.SetActive(panelId, buttonIndex, false)
         end
     end
 

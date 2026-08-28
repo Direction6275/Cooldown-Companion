@@ -550,6 +550,12 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
 
+    -- Text panels render an item's count inline through the {stacks} token,
+    -- using the panel's text font and color. The per-entry itemCount* keys
+    -- below style only the separate count overlay owned by Icon/Bar mode, so
+    -- this otherwise-empty section has nothing relevant to edit in Text mode.
+    if group.displayMode == "text" then return end
+
     -- Charge text settings now live in group Appearance tab (with per-button overrides)
     if UsesChargeBehavior(buttonData) then return end
 

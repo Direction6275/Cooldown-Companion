@@ -490,6 +490,8 @@ function RB.CreateResourceBarAuraHostModule(deps)
         if not frame then return end
         local max = WantsAbsentStackBlocks(barInfo, opts)
         if not max then
+            frame._ccCabPreviewLitStacks = nil
+            frame._ccCabPreviewLitStackMax = nil
             if frame._ccCabStackBlocksActive then
                 frame._ccCabStackBlocksActive = nil
                 ST.HideStackBlocks(frame._ccCabStackBlocks)
@@ -554,14 +556,21 @@ function RB.CreateResourceBarAuraHostModule(deps)
         -- no kit on the canvas, CC lights them itself, in the same colour the
         -- kit's stack fill uses.
         local lit = opts and tonumber(opts.litStacks) or nil
+        frame._ccCabPreviewLitStacks = nil
+        frame._ccCabPreviewLitStackMax = nil
         if lit and lit > 0 then
-            local auraColor = style.barAuraColor or { 0.2, 1.0, 0.2, 1.0 }
+            local pandemicActive = opts and opts.pandemicActive == true
+            local auraColor = pandemicActive
+                and (style.barPandemicColor or { 1, 0.5, 0, 1 })
+                or (style.barAuraColor or { 0.2, 1.0, 0.2, 1.0 })
             -- Reverse fill starts the lit run at the opposite physical end,
             -- so each block maps to its LOGICAL stack before lighting
             -- (review 2026-08-15: the run landed on the wrong end of
             -- reversed bars).
             local reverse = frame.GetReverseFill and frame:GetReverseFill() == true
             lit = math_min(lit, max)
+            frame._ccCabPreviewLitStacks = lit
+            frame._ccCabPreviewLitStackMax = max
             for i = 1, max do
                 local logical = reverse and (max - i + 1) or i
                 local tex = logical <= lit and blocks[i] or nil
@@ -570,7 +579,8 @@ function RB.CreateResourceBarAuraHostModule(deps)
                         auraColor[1] or 0.2,
                         auraColor[2] or 1.0,
                         auraColor[3] or 0.2,
-                        auraColor[4] ~= nil and auraColor[4] or 1
+                        pandemicActive and 1
+                            or (auraColor[4] ~= nil and auraColor[4] or 1)
                     )
                 end
             end

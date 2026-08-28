@@ -160,6 +160,26 @@ local function GroupDrawsCooldownTextRow(group)
     return not ST.IsAuraPanelGroup(group)
 end
 
+-- Low Time Threshold is drawn once beside a duration surface that can consume
+-- it: cooldown-side when effective cooldown text is visible, otherwise
+-- aura-side while the group tracks an aura and effective aura text is visible.
+-- Keep these predicates in step with the icon-mode twins in
+-- GroupTabsAppearance.lua: both modes edit the same durationLowTime policy.
+local function BarsDrawCooldownDurationRows(group, style)
+    return not ST.IsAuraPanelGroup(group)
+        and style and style.showCooldownText == true
+end
+
+local function BarsDrawAuraDurationRows(group, style)
+    return BarsGroupTracksAura(group)
+        and style and style.showAuraText ~= false
+end
+
+local function BarsDrawDurationRows(group, style)
+    return BarsDrawCooldownDurationRows(group, style)
+        or BarsDrawAuraDurationRows(group, style)
+end
+
 -- Where each bars override section is EDITED, now that the panel tabs are the
 -- lens onto a selected entry: the tab that draws it and the collapse key of the
 -- section it is drawn in. Per-MODE axis, because the same section id is drawn
@@ -229,7 +249,10 @@ ST._SECTION_HOME.bars = {
         available = GroupDrawsCooldownTextRow,
         gearEnabled = function(_, style) return (style.showCooldownText) ~= false end,
     },
-    durationLowTime = { tab = "appearance", collapseKey = "barappearance_textIcon" },
+    durationLowTime = {
+        tab = "appearance", collapseKey = "barappearance_textIcon",
+        available = BarsDrawDurationRows,
+    },
     chargeText = {
         tab = "appearance", collapseKey = "barappearance_textIcon",
         gearEnabled = function(_, style) return (style.showChargeText ~= false) ~= false end,
@@ -271,9 +294,13 @@ ST._SECTION_HOME.bars = {
         tab = "effects", collapseKey = EFFECTS_PANDEMIC_SECTION,
         available = BarsGroupTracksAura,
         -- One gear on this section in bar mode (barPandemicMarker), so the
-        -- list can resolve it - unlike icons, where the glow and the marker
-        -- are two and the row carries none.
-        gearEnabled = function(_, style) return style.pandemicMarkerMode ~= "off" end,
+        -- list can resolve it while the marker's aura-duration-text surface
+        -- renders - unlike icons, where the glow and the marker are two and
+        -- the row carries none. The fill half remains available independently.
+        gearEnabled = function(group, style)
+            return BarsDrawAuraDurationRows(group, style)
+                and style.pandemicMarkerMode ~= "off"
+        end,
     },
     -- The Timers and States sections are drawn only while the bar icon renders
     -- for the current selection (BuildBarEffectsTab's
@@ -299,6 +326,10 @@ ST._SECTION_HOME.bars = {
         tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
         available = BarsIconShown,
         gearEnabled = function(_, style) return (style.showUnusable == true) ~= false end,
+    },
+    showOutOfRange = {
+        tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
+        available = BarsIconShown,
     },
     lossOfControl = {
         tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
@@ -722,6 +753,18 @@ local function BuildBarAppearanceTab(container, group, style)
         lowTimeSec:Finish()
     end
 
+    local panelDurationStyle = group.style or {}
+    local effectiveDurationStyle = (lens and lens.effective) or panelDurationStyle
+    local drawsCooldownLowTime = BarsDrawCooldownDurationRows(group, effectiveDurationStyle)
+    local drawsAuraLowTime = BarsDrawAuraDurationRows(group, effectiveDurationStyle)
+    -- Duration Format is panel-owned. Keep it reachable when either the panel
+    -- default or the selected entry still has a duration consumer; an entry
+    -- override must not strand a setting that remains live on other entries.
+    local drawsCooldownFormat = BarsDrawCooldownDurationRows(group, panelDurationStyle)
+        or drawsCooldownLowTime
+    local drawsAuraFormat = BarsDrawAuraDurationRows(group, panelDurationStyle)
+        or drawsAuraLowTime
+
     -- ================================================================
     -- Show Icon
     -- ================================================================
@@ -936,9 +979,9 @@ local function BuildBarAppearanceTab(container, group, style)
     -- column from the mark at call time).
     cdTextSec:Finish()
 
-    -- Duration Format sits with the cooldown text it formats. It is not gated
-    -- on that toggle in bar mode (ready text reads it too), so it is a row of
-    -- its own rather than an indented child.
+    -- Duration Format sits with the effective cooldown text it formats. Ready
+    -- Text is a fixed label, not a duration consumer, so it does not keep this
+    -- row alive by itself.
     --
     -- durationFormat is not one of the Cooldown Text section's override keys, so
     -- the row is openly PANEL-OWNED: it reads and writes group.style whatever
@@ -946,11 +989,15 @@ local function BuildBarAppearanceTab(container, group, style)
     -- grey "Panel setting" label there. It used to hide itself once the section
     -- was customized, which stranded the setting on some other selection state.
     -- The icons tab draws it the same way (GroupTabsAppearance.lua).
-    local durationFormatRow = AddDurationFormatDropdown(textLeft, group.style, refreshStyle, { row = true })
-    if durationFormatRow then
-        cdTextSec:PanelRowChrome(durationFormatRow)
+    if drawsCooldownFormat then
+        local durationFormatRow = AddDurationFormatDropdown(textLeft, group.style, refreshStyle, { row = true })
+        if durationFormatRow then
+            cdTextSec:PanelRowChrome(durationFormatRow)
+        end
     end
-    AddDurationLowTimeSection(textLeft)
+    if drawsCooldownLowTime then
+        AddDurationLowTimeSection(textLeft)
+    end
     end -- not isAuraPanel
 
     -- Show Charge Text toggle. Charges and uses are spell mechanics, so an Aura
@@ -1164,16 +1211,16 @@ local function BuildBarAppearanceTab(container, group, style)
 
         auraTextSec:Finish()
 
-        -- Duration Format, re-homed. On an Aura Panel this is the text the
-        -- format applies to (there is no cooldown text and no ready text), so
-        -- the row sits with THIS toggle instead. Drawn after Finish for the same
-        -- reason the cooldown-side copy is: the inert sweep covers the rows above
-        -- and leaves this panel-owned one live.
-        if isAuraPanel then
+        -- Duration Format is panel-owned, so it follows either the panel's or
+        -- selected entry's remaining duration surface. Low Time stays
+        -- entry-effective because that override section belongs to the lens.
+        if drawsAuraFormat and not drawsCooldownFormat then
             local auraFormatRow = AddDurationFormatDropdown(textRight, group.style, refreshStyle, { row = true })
             if auraFormatRow then
                 auraTextSec:PanelRowChrome(auraFormatRow)
             end
+        end
+        if drawsAuraLowTime and not drawsCooldownLowTime then
             AddDurationLowTimeSection(textRight)
         end
 
@@ -1517,6 +1564,13 @@ end
 -- Rows only, and no nil-container contract: nothing previews the marker in
 -- any mode, so there is no preview state to reconcile.
 local function BuildBarPandemicMarkerSection(container, group, style, lens)
+    local effectiveStyle = (lens and lens.effective) or style
+    if effectiveStyle and effectiveStyle.showAuraText == false then
+        if CS.CloseAdvancedSettingsPanel then
+            CS.CloseAdvancedSettingsPanel({ settingKey = "barPandemicMarker" })
+        end
+        return
+    end
     if not container or not GroupHasAuraTrackingEntry(group) then
         return
     end
@@ -1673,13 +1727,14 @@ local function BuildBarEffectsTab(container, group, style)
         local _, statesCollapsed = BuildCollapsibleSection(container, "States", EFFECTS_STATES_SECTION, nil, nil, ROW_SECTION)
 
         if not statesCollapsed then
-        -- LEFT column: the two looks the bar's icon takes on by itself.
+        -- LEFT column: the looks the bar's icon takes on by itself.
         -- RIGHT column: the situational state and the hover behavior.
         local stateLeft, stateRight = BeginRowGrid(container)
 
         -- On an Aura Panel the left column empties out and Loss of Control
-        -- leaves the right one: desaturate-on-cooldown, the unusable visual and
-        -- the control lockout all read spell state these entries do not have.
+        -- leaves the right one: desaturate-on-cooldown, the unusable visual,
+        -- out-of-range tint and the control lockout all read spell state these
+        -- entries do not have.
         if barIconShown and CanGroupUseOverrideSection(group, "desaturation") then
         local desatSec = BeginLensSection(lens, group, "desaturation")
         local desatRow = AddCheckboxRow(stateLeft, {
@@ -1742,6 +1797,25 @@ local function BuildBarEffectsTab(container, group, style)
         unusableSec:Chrome(unusableRow)
         unusableSec:Finish()
         end -- CanGroupUseOverrideSection unusableDimming
+
+        -- Same single-row override the icons States section exposes. The live
+        -- bar path already applies range tint to the icon square, so this row is
+        -- relevant only while that square renders.
+        if barIconShown and CanGroupUseOverrideSection(group, "showOutOfRange") then
+        local oorSec = BeginLensSection(lens, group, "showOutOfRange")
+        local oorRow = AddCheckboxRow(stateLeft, {
+            label = "Show Out of Range",
+            value = oorSec.read.showOutOfRange or false,
+            disabled = oorSec.disabled,
+            onChange = function(val)
+                if not oorSec.write then return end
+                oorSec.write.showOutOfRange = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+        oorSec:Chrome(oorRow)
+        end -- CanGroupUseOverrideSection showOutOfRange
 
         if barIconShown and CanGroupUseOverrideSection(group, "lossOfControl") then
         local locSec = BeginLensSection(lens, group, "lossOfControl")
