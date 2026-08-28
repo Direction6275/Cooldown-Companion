@@ -1422,7 +1422,53 @@ local function MigrateEntryAuraResidue(self, buttonData, counts)
     end
 end
 
+-- Strip stored list IDs the curated applied-ID corrections suppress (the
+-- pre-correction resolver offered and persisted them). Lives in the residue
+-- worker, not MigrateAuraEntry, so a dormant list on an entry with tracking
+-- currently OFF is healed too instead of resurfacing poisoned when the user
+-- re-enables tracking. Runs BEFORE any polarity read can judge the entry by
+-- the poisoned ID.
+local function StripCuratedSuppressedAuraIDs(self, buttonData, counts)
+    if buttonData.type ~= "spell" or not self.IsCuratedSuppressedLinkedAuraID then
+        return
+    end
+    local rawStored = buttonData.auraSpellID and tostring(buttonData.auraSpellID) or nil
+    if not rawStored then
+        return
+    end
+    local kept, removedAny = {}, false
+    for id in rawStored:gmatch("%d+") do
+        if self:IsCuratedSuppressedLinkedAuraID(buttonData.id, id) then
+            removedAny = true
+        else
+            kept[#kept + 1] = id
+        end
+    end
+    if removedAny then
+        buttonData.auraSpellID = #kept > 0 and table.concat(kept, ",") or nil
+        counts.curated = counts.curated + 1
+    end
+end
+
 local function MigrateAuraEntry(self, buttonData, counts)
+    -- A user unit override is absolute: the recompute below exists to heal
+    -- DERIVED state after classifier or curated-data changes, and the
+    -- mixed-polarity trim judges IDs by the same classifier the override
+    -- exists to overrule — running it here could delete the user's IDs.
+    local unitOverride = buttonData.auraUnitOverride
+    if unitOverride == "player" or unitOverride == "target" then
+        if buttonData.auraUnit ~= unitOverride then
+            if buttonData.auraUnit ~= nil then
+                counts.unit = counts.unit + 1
+            end
+            buttonData.auraUnit = unitOverride
+        end
+        if buttonData.addedAs == "aura" and self.NormalizeStandaloneAuraButtonData then
+            self:NormalizeStandaloneAuraButtonData(buttonData)
+        end
+        return
+    end
+
     local polarity, trimmed = ResolveAuraCandidatePolarity(buttonData)
     if trimmed then
         counts.mixed = counts.mixed + 1
@@ -1459,7 +1505,15 @@ end
 -- indicator by dropping unsupported live-era missing/combat qualifiers;
 -- gen 5 re-runs the tracked-unit recompute under the override-aware
 -- classifier (Galactic Guardian 213708 reads harmful but is a player
--- buff), healing stored auraUnit on profiles gen 4 already stamped.
+-- buff), healing stored auraUnit on profiles gen 4 already stamped;
+-- gen 6 re-runs it under the curated applied-ID corrections plus the
+-- Blade Flurry unit override (13877 promoted to inert 22482 and read as
+-- a target debuff; Dancing Rune Weapon 49028 never promoted to 81256),
+-- and honors the new user auraUnitOverride as absolute;
+-- gen 7 re-runs it with the curated stale-ID strip moved onto pure data
+-- (the gen-6 strip confirmed against the logged-in character's CDM rows,
+-- so a wrong-class first login on a shared profile skipped the heal and
+-- stamped anyway).
 -- bar aura effect generations: from _cdcBarAuraGlowMigrated (size resets
 -- and custom-bar traversal), then _cdcBarAuraEffectMigrated, then
 -- _cdcBarAuraEffect2Migrated (all custom-bar storage shapes, the seed
@@ -1469,16 +1523,20 @@ end
 -- observation, not a transform — survives clears so the notice prints
 -- once) and _cdcFlattenedFolderNotice (a notice accumulator, not a guard).
 local AURA_REBUILD_SENTINEL = {
-    current = "_cdcAuraRebuild5Migrated",
+    current = "_cdcAuraRebuild7Migrated",
     retired = { "_cdcAuraRebuildMigrated", "_cdcAuraRebuild2Migrated", "_cdcAuraRebuild3Migrated",
-        "_cdcAuraRebuild4Migrated" },
+        "_cdcAuraRebuild4Migrated", "_cdcAuraRebuild5Migrated", "_cdcAuraRebuild6Migrated" },
 }
 -- bar aura effect generations: gen 4 added the custom-bar entry strip of
--- the retired pandemicBar* families (the Phase 3 pandemic retirement).
+-- the retired pandemicBar* families (the Phase 3 pandemic retirement);
+-- gen 5 adds the curated stale-ID strip (custom-bar twin of the
+-- aura-rebuild pass's — Blade Flurry lists holding inert 22482) and makes
+-- the identity worker honor the user auraUnitOverride.
 local BAR_AURA_EFFECT_SENTINEL = {
-    current = "_cdcBarAuraEffect4Migrated",
+    current = "_cdcBarAuraEffect5Migrated",
     retired = { "_cdcBarAuraGlowMigrated", "_cdcBarAuraEffectMigrated",
-        "_cdcBarAuraEffect2Migrated", "_cdcBarAuraEffect3Migrated" },
+        "_cdcBarAuraEffect2Migrated", "_cdcBarAuraEffect3Migrated",
+        "_cdcBarAuraEffect4Migrated" },
 }
 -- aura glow generations: gen 2 (renamed from _cdcAuraGlowMigrated) gained
 -- the pandemic pixel-scale sanitizers and the live-era per-entry
@@ -1826,7 +1884,7 @@ local function MigrateAuraTrackingRebuild(self, profile)
     local counts = {
         hideActive = 0, hidePandemic = 0, stackModes = 0,
         threshold = 0, maxGlow = 0, soundForm = 0, mixed = 0, unit = 0,
-        dormantPlacement = 0, textureAuraQualifier = 0,
+        curated = 0, dormantPlacement = 0, textureAuraQualifier = 0,
     }
     local groups = profile.groups
     if type(groups) == "table" then
@@ -1842,6 +1900,7 @@ local function MigrateAuraTrackingRebuild(self, profile)
                 local standardAuraCapable = displayMode == "icons" or displayMode == "bars"
                 for _, buttonData in ipairs(buttons) do
                     if type(buttonData) == "table" then
+                        StripCuratedSuppressedAuraIDs(self, buttonData, counts)
                         MigrateEntryAuraResidue(self, buttonData, counts)
                         local isAuraEntry = buttonData.type == "spell"
                             and (buttonData.auraTracking or buttonData.addedAs == "aura")
@@ -1905,6 +1964,7 @@ local function MigrateAuraTrackingRebuild(self, profile)
     if counts.soundForm > 0 then dropped[#dropped + 1] = ("aura sounds needing a file-based sound (x%d)"):format(counts.soundForm) end
     if counts.mixed > 0 then dropped[#dropped + 1] = ("mixed buff/debuff aura lists trimmed (x%d)"):format(counts.mixed) end
     if counts.unit > 0 then dropped[#dropped + 1] = ("tracked-unit corrections (x%d)"):format(counts.unit) end
+    if counts.curated > 0 then dropped[#dropped + 1] = ("wrong game-data aura IDs removed (x%d)"):format(counts.curated) end
     if counts.textureAuraQualifier > 0 then
         dropped[#dropped + 1] = ("Texture Aura inactive/combat-only effect qualifiers (x%d)")
             :format(counts.textureAuraQualifier)
@@ -1947,7 +2007,14 @@ local function MigrateAuraGroupScopeIdentity(self, profile)
                 for _, buttonData in ipairs(buttons) do
                     if type(buttonData) == "table" and buttonData.auraTrackGroup == true then
                         local primaryAuraSpellID = self:ResolveAuraSpellID(buttonData)
-                        local unit = ClassifyAuraSpellUnit(primaryAuraSpellID)
+                        -- A valid user unit override IS the effective unit
+                        -- (it exists for misclassified auras); the classifier
+                        -- is the fallback, and the ownership checks below run
+                        -- against the effective unit either way.
+                        local unitOverride = buttonData.auraUnitOverride
+                        local unit = (unitOverride == "player" or unitOverride == "target")
+                            and unitOverride
+                            or ClassifyAuraSpellUnit(primaryAuraSpellID)
                         if unit == "target" then
                             buttonData.auraTrackGroup = nil
                         elseif unit == "player" and talentDataReady then
@@ -2472,6 +2539,17 @@ local function MigrateCustomBarAuraIdentity(entry, counts)
         return
     end
 
+    -- A valid user unit override is absolute (panel-entry migration twin):
+    -- the mixed-polarity trim judges IDs by the same classifier the
+    -- override exists to overrule, so running it here could delete IDs the
+    -- override deliberately permits. The stored unit is still not written
+    -- here — RunResourceBarClassScopeMigration recomputes it through the
+    -- runtime resolver, which reads the override off the cab keys.
+    local unitOverride = entry.auraUnitOverride
+    if unitOverride == "player" or unitOverride == "target" then
+        return
+    end
+
     -- Mixed buff/debuff candidate lists are a real transform on stored data
     -- and stay here; the unit that falls out of them is the resolver's.
     local _, trimmed = ResolveAuraCandidatePolarity(entry)
@@ -2503,6 +2581,27 @@ local function MigrateOneCustomBarEntry(self, entry, counts)
         end
     end
     counts.cabSoundForm = counts.cabSoundForm + StripUnplayableAuraSoundForms(self, entry)
+    -- Curated stale-ID strip, custom-bar twin of the aura-rebuild pass's
+    -- StripCuratedSuppressedAuraIDs: the pre-correction resolver offered
+    -- Blizzard's wrong linked IDs into custom-bar tracked lists too, and a
+    -- stored explicit ID outranks the corrected implicit identity. Runs
+    -- BEFORE the identity worker so its polarity trim never judges the
+    -- entry by a poisoned ID.
+    local rawStored = entry.auraSpellID and tostring(entry.auraSpellID) or nil
+    if rawStored and self.IsCuratedSuppressedLinkedAuraID then
+        local kept, removedAny = {}, false
+        for id in rawStored:gmatch("%d+") do
+            if self:IsCuratedSuppressedLinkedAuraID(entry.spellID, id) then
+                removedAny = true
+            else
+                kept[#kept + 1] = id
+            end
+        end
+        if removedAny then
+            entry.auraSpellID = #kept > 0 and table.concat(kept, ",") or nil
+            counts.cabCurated = counts.cabCurated + 1
+        end
+    end
     MigrateCustomBarAuraIdentity(entry, counts)
 end
 
@@ -2592,7 +2691,7 @@ local function MigrateBarAuraEffectStyles(self, profile)
     if type(profile) ~= "table" or not ClaimMigrationPass(profile, BAR_AURA_EFFECT_SENTINEL) then return end
     local counts = {
         remapped = 0, cabOptions = 0, cabSoundForm = 0,
-        cabMixed = 0, cabUnit = 0,
+        cabMixed = 0, cabUnit = 0, cabCurated = 0,
     }
 
     MigrateBarAuraEffectTable(profile.globalStyle, counts)
@@ -2647,6 +2746,7 @@ local function MigrateBarAuraEffectStyles(self, profile)
     if counts.cabSoundForm > 0 then changed[#changed + 1] = ("custom bar aura sounds needing a file-based sound (x%d)"):format(counts.cabSoundForm) end
     if counts.cabMixed > 0 then changed[#changed + 1] = ("custom bar mixed buff/debuff aura lists trimmed (x%d)"):format(counts.cabMixed) end
     if counts.cabUnit > 0 then changed[#changed + 1] = ("custom bar tracked-unit pins released to automatic (x%d)"):format(counts.cabUnit) end
+    if counts.cabCurated > 0 then changed[#changed + 1] = ("custom bar wrong game-data aura IDs removed (x%d)"):format(counts.cabCurated) end
     if #changed > 0 then
         self:Print("Bar aura effects updated for 12.1: " .. table.concat(changed, "; ") .. ".")
     end

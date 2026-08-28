@@ -24,6 +24,7 @@ local BUFF_VIEWER_SET = ST._BUFF_VIEWER_SET
 local IsDistinctCDMAuraIdentity = ST.IsDistinctCDMAuraIdentity
 local IsConcreteSpellID = ST.IsConcreteSpellID
 local ResolveCDMAppliedAuraSpellID = ST.ResolveCDMAppliedAuraSpellID
+local GetCuratedAppliedAuraSpellID = ST.GetCuratedAppliedAuraSpellID
 local pendingViewerAuraMapToken = 0
 local pendingViewerAuraMapAllowGate = true
 local FindChildInViewers
@@ -281,6 +282,10 @@ local AURA_UNIT_OVERRIDES = {
     -- Galactic Guardian: the buff lands on the player, but its record's
     -- empowered-Moonfire hook targets the enemy, so it reads harmful.
     [213708] = "player",
+    -- Blade Flurry: a self-buff carried on the cast ID (in-game dump
+    -- 2026-08-28, HELPFUL player filter); its record's cleave rider faces
+    -- enemies, so the harmful probe cannot be trusted on it.
+    [13877] = "player",
 }
 
 local function ClassifyAuraSpellUnit(spellID)
@@ -305,10 +310,48 @@ local function IsAuraCandidateUnitAllowed(spellID, requiredUnit)
     return unit == requiredUnit
 end
 
+-- Per-entry USER overrides — the absolute authority layer above every
+-- automatic resolution (owner ruling 2026-08-28). Both keys are written
+-- ONLY by the config's override controls, never by derivation or Infer:
+-- the stored auraUnit stays a derivation cache, these carry intent.
+--   auraUnitOverride: "player"/"target"; nil means automatic.
+--   auraIDOverride:   replaces the entry's AUTOMATIC aura head verbatim —
+--                     no linked-list promotion, no association expansion,
+--                     no implicit own-aura fallback. The user's explicit
+--                     list still tracks beside it, on standalone aura
+--                     entries and spell entries alike.
+local function GetEntryAuraUnitOverride(buttonData)
+    local override = buttonData and buttonData.auraUnitOverride
+    if override == "player" or override == "target" then
+        return override
+    end
+    return nil
+end
+ST.GetEntryAuraUnitOverride = GetEntryAuraUnitOverride
+
+local function GetEntryAuraIDOverride(buttonData)
+    local numericID = buttonData and tonumber(buttonData.auraIDOverride)
+    return numericID and numericID ~= 0 and numericID or nil
+end
+ST.GetEntryAuraIDOverride = GetEntryAuraIDOverride
+
 -- Explicit candidate lists own the slot polarity for ordinary spell entries.
 -- The migration and config writer keep those lists single-polarity; the stored
 -- unit remains the fallback when spell data is temporarily unavailable.
 local function ResolveExplicitAuraCandidateUnit(buttonData)
+    local unitOverride = GetEntryAuraUnitOverride(buttonData)
+    if unitOverride then
+        return unitOverride
+    end
+    -- An ID override is the entry's head, so with no explicit unit choice
+    -- its classification owns the slot polarity ahead of the list.
+    local idOverride = GetEntryAuraIDOverride(buttonData)
+    if idOverride then
+        local overrideUnit = ClassifyAuraSpellUnit(idOverride)
+        if overrideUnit then
+            return overrideUnit
+        end
+    end
     local rawIDs = buttonData and buttonData.auraSpellID and tostring(buttonData.auraSpellID) or nil
     if not rawIDs then
         return nil
@@ -368,6 +411,17 @@ end
 -- spell entry's includeSpellIDs matching none of the buffs the cast applies,
 -- while the same spell added AS an aura (guard-free path) matched them all.
 local function AppendCdmLinkedAuraIDs(candidateSet, orderedSet, orderedIDs, buttonData, spellID, requiredUnit)
+    -- A curated correction replaces the row's linked list wholesale: the
+    -- correction exists precisely because those links are wrong (inert, or
+    -- missing the real applied ID), so appending them anyway would re-open
+    -- the trap the correction closes.
+    local curated = GetCuratedAppliedAuraSpellID(spellID)
+    if curated then
+        if IsAuraCandidateUnitAllowed(curated, requiredUnit) then
+            AppendOrderedAuraCandidateID(candidateSet, orderedSet, orderedIDs, curated)
+        end
+        return
+    end
     local addon = CooldownCompanion
     addon:EnsureSoundAlertSpellMap()
     local cooldownIDs = addon._soundAlertSpellToCooldownIDs and addon._soundAlertSpellToCooldownIDs[spellID]
@@ -386,6 +440,29 @@ local function AppendCdmLinkedAuraIDs(candidateSet, orderedSet, orderedIDs, butt
     end
 end
 
+-- Migration heal, curated-correction shape only: the pre-correction
+-- resolver both OFFERED Blizzard's wrong linked ID on the attach surfaces
+-- and PERSISTED it through Infer, so stored tracked-aura lists can carry
+-- it (Blade Flurry entries holding inert 22482). True exactly when the
+-- stored ID is on the curated suppressed list for the entry's cast spell —
+-- pure data (SpellQueries), NEVER a live CDM read: the CDM map covers only
+-- the logged-in character's cooldown sets, while the consuming migrations
+-- walk whole account-shared profiles and stamp a generation once, so a
+-- wrong-class first login would silently skip the heal forever. Explicit
+-- listing also guarantees the strip removes only hand-listed IDs, never a
+-- deliberate user add or a multi-link sibling stage.
+function CooldownCompanion:IsCuratedSuppressedLinkedAuraID(castSpellID, auraID)
+    local numericCast = tonumber(castSpellID)
+    local numericAura = tonumber(auraID)
+    if not (numericCast and numericAura) then
+        return false
+    end
+    local suppressed = ST.GetCuratedSuppressedLinkedAuraIDs(
+        C_Spell.GetBaseSpell(numericCast) or numericCast)
+        or ST.GetCuratedSuppressedLinkedAuraIDs(numericCast)
+    return suppressed ~= nil and suppressed[numericAura] == true
+end
+
 -- Pure-data applied-aura resolution: no viewer frames, so it works with the
 -- Cooldown Manager display disabled and before viewers materialize. Walks the
 -- CDM data rows for the spell (the same spell->cooldownID map SoundAlerts
@@ -400,6 +477,14 @@ local function ResolveCdmLinkedAppliedAuraSpellID(spellID)
     local numericID = tonumber(spellID)
     if not numericID or numericID == 0 then
         return nil
+    end
+    -- Curated corrections outrank the CDM rows and also serve spells whose
+    -- rows are wrong or absent. This function's contract is "the applied
+    -- identity when it DIFFERS from the cast ID, else nil", so a self-map
+    -- (cast ID is the aura) resolves to nil here.
+    local curated = GetCuratedAppliedAuraSpellID(numericID)
+    if curated then
+        return curated ~= numericID and curated or nil
     end
     local addon = CooldownCompanion
     addon:EnsureSoundAlertSpellMap()
@@ -537,6 +622,18 @@ local function BuildStandaloneOriginalAuraCandidateIDs(buttonData)
         return orderedCandidateIDs, candidateIDs, orderedCandidateSet
     end
 
+    -- A user ID override replaces the AUTOMATIC head verbatim: no linked
+    -- promotion, no association expansion. The override exists for spells
+    -- whose CDM data lies, so every automatic step below is suspect for it.
+    -- The user's explicit fallback list is not built here — the ordered
+    -- builder appends it after these originals, override or not.
+    local idOverride = GetEntryAuraIDOverride(buttonData)
+    if idOverride then
+        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet,
+            orderedCandidateIDs, idOverride)
+        return orderedCandidateIDs, candidateIDs, orderedCandidateSet
+    end
+
     if IsExactStandaloneAuraIdentity(buttonData) then
         AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet,
             orderedCandidateIDs, buttonData.id)
@@ -544,6 +641,16 @@ local function BuildStandaloneOriginalAuraCandidateIDs(buttonData)
     end
 
     local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
+
+    -- Curated corrections lead the order unconditionally: the frame path
+    -- below is curated-aware but needs a materialized viewer frame, and
+    -- the frame-free walker resolves a self-map to nil, so without this
+    -- step a wrong GetCooldownAuraBySpellID answer could lead the list.
+    local curatedAuraID = GetCuratedAppliedAuraSpellID(baseId)
+        or GetCuratedAppliedAuraSpellID(buttonData.id)
+    if curatedAuraID then
+        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, curatedAuraID)
+    end
 
     local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
     if directAuraID then
@@ -637,13 +744,33 @@ local function BuildOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbac
         for _, spellID in ipairs(originalAuraIDs) do
             AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, spellID)
         end
+        -- With a user ID override the originals collapse to just the
+        -- override (the automatic head is what it replaces); the user's
+        -- added fallbacks still append here, exactly as they would beside
+        -- a correct automatic result (owner ruling 2026-08-28).
         AppendStandaloneFallbackAuraCandidateIDs(candidateIDs, orderedCandidateSet, orderedCandidateIDs,
             buttonData, buttonData.auraSpellID, originalCandidateSet)
     else
+        -- A user ID override replaces the automatic head here too: the
+        -- override leads the order, the explicit list tracks beside it, and
+        -- the implicit association block (own aura, promotions, linked
+        -- expansion) is skipped — it is exactly the machinery the override
+        -- declares wrong for this entry.
+        local idOverride = GetEntryAuraIDOverride(buttonData)
+        if idOverride then
+            AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, idOverride)
+        end
         AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.auraSpellID)
-        local requiredUnit = constrainImplicitFallbacks
-            and ResolveExplicitAuraCandidateUnit(buttonData) or nil
-        AppendSpellAssociationAuraIDs(requiredUnit)
+        if not idOverride then
+            -- Under a user unit override the classifier must not filter
+            -- implicit candidates: the misclassified implicit aura is the
+            -- exact one the override exists to rescue, and Blizzard's live
+            -- unit-specific identity gate remains the safety check.
+            local requiredUnit = constrainImplicitFallbacks
+                and not GetEntryAuraUnitOverride(buttonData)
+                and ResolveExplicitAuraCandidateUnit(buttonData) or nil
+            AppendSpellAssociationAuraIDs(requiredUnit)
+        end
     end
 
     return orderedCandidateIDs, candidateIDs, orderedCandidateSet
@@ -655,8 +782,9 @@ end
 -- a plain call through to the builder, so nothing outside a pass changes.
 --
 -- The memo keys on the entry TABLE, so it is only valid while that table's
--- candidate-relevant fields (type, id, addedAs, auraSpellID, auraUnit) hold
--- still — which is the pass's own contract. It never writes to the entry.
+-- candidate-relevant fields (type, id, addedAs, auraSpellID, auraUnit,
+-- auraIDOverride, auraUnitOverride) hold still — which is the pass's own
+-- contract. It never writes to the entry.
 local function ResolveOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbacks)
     if not (type(buttonData) == "table" and IsAuraCandidatePassActive()) then
         return BuildOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbacks)
@@ -703,6 +831,14 @@ end
 
 local function ResolveImplicitSpellEntryAuraSpellID(buttonData)
     if buttonData.type ~= "spell" then return nil end
+    -- Curated corrections preempt the whole chain: every step below leans
+    -- on CDM rows or GetCooldownAuraBySpellID, which is exactly the data a
+    -- curated entry declares wrong for this spell.
+    local curatedAuraID = GetCuratedAppliedAuraSpellID(buttonData.id)
+        or GetCuratedAppliedAuraSpellID(C_Spell.GetBaseSpell(buttonData.id) or buttonData.id)
+    if curatedAuraID then
+        return curatedAuraID
+    end
     local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
     if directAuraID and not IsDistinctAuraIdentityForButton(buttonData, directAuraID) then
         return directAuraID
@@ -728,6 +864,10 @@ end
 
 function CooldownCompanion:ResolveAuraSpellID(buttonData)
     if not buttonData.auraTracking then return nil end
+    local idOverride = GetEntryAuraIDOverride(buttonData)
+    if idOverride then
+        return idOverride
+    end
     if buttonData.addedAs ~= "aura" and buttonData.auraSpellID then
         local first = tostring(buttonData.auraSpellID):match("%d+")
         return first and tonumber(first)
@@ -783,6 +923,25 @@ function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
 
     if buttonData.auraSpellID then
         return tostring(buttonData.auraSpellID)
+    end
+
+    -- An ID override replaces the automatic head, so seeding the stored
+    -- list from the automatic probes below would plant an "added aura" the
+    -- user never added beside the override.
+    if GetEntryAuraIDOverride(buttonData) then
+        return nil
+    end
+
+    -- Curated corrections preempt every probe below — this resolver
+    -- PERSISTS its answer into stored config, so letting the row metadata
+    -- scan run for a spell whose row data is declared wrong would poison
+    -- auraSpellID with the very ID the correction suppresses. A self-map
+    -- (cast ID is the aura) persists nothing: the implicit chain already
+    -- resolves it.
+    local curatedAuraID = GetCuratedAppliedAuraSpellID(buttonData.id)
+        or GetCuratedAppliedAuraSpellID(C_Spell.GetBaseSpell(buttonData.id) or buttonData.id)
+    if curatedAuraID then
+        return curatedAuraID ~= buttonData.id and tostring(curatedAuraID) or nil
     end
 
     local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
@@ -875,6 +1034,11 @@ function CooldownCompanion:ResolveStandaloneAuraDefaultSpellID(buttonData)
         return resolvedID
     end
 
+    local idOverride = GetEntryAuraIDOverride(buttonData)
+    if idOverride then
+        return idOverride
+    end
+
     local explicitAuraID = buttonData.addedAs ~= "aura" and ResolveSingleSpellID(buttonData.auraSpellID) or nil
     if explicitAuraID then
         return explicitAuraID
@@ -888,6 +1052,15 @@ function CooldownCompanion:ResolveStandaloneAuraDefaultSpellID(buttonData)
     -- keeps config-time unit classification from borrowing a sibling stage.
     if IsExactStandaloneAuraIdentity(buttonData) then
         return numericSpellID
+    end
+
+    -- Curated corrections outrank every probe below, matching the candidate
+    -- builder's order — otherwise config-time classification could borrow
+    -- the wrong identity from a frame or metadata scan.
+    local curatedAuraID = GetCuratedAppliedAuraSpellID(baseId)
+        or GetCuratedAppliedAuraSpellID(numericSpellID)
+    if curatedAuraID then
+        return curatedAuraID
     end
 
     local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
@@ -947,6 +1120,10 @@ function CooldownCompanion:ResolveStandaloneAuraDefaultSpellID(buttonData)
 end
 
 function CooldownCompanion:ResolveStandaloneAuraDefaultUnit(buttonData)
+    local unitOverride = GetEntryAuraUnitOverride(buttonData)
+    if unitOverride then
+        return unitOverride
+    end
     local resolvedSpellID = self:ResolveStandaloneAuraDefaultSpellID(buttonData)
     if resolvedSpellID then
         return ClassifyAuraSpellUnit(resolvedSpellID) or "player"

@@ -239,6 +239,8 @@ local customBarContentFields = {
     "auraTrackGroup",
     "auraTrackPet",
     "auraSpellID",
+    "auraUnitOverride",
+    "auraIDOverride",
     "barAuraIndicatorEnabled",
     "barAuraColor",
     "barAuraEffect",
@@ -1384,6 +1386,11 @@ local function GetDefaultSpellCustomBarAuraUnit(cabConfig, spellID)
             addedAs = isAuraEntry and "aura" or nil,
             auraTracking = true,
             auraSpellID = type(cabConfig) == "table" and cabConfig.auraSpellID or nil,
+            -- User overrides (panel parity): every cab synthetic carries
+            -- both keys, or block and slot paths could watch different
+            -- units for the same bar.
+            auraUnitOverride = type(cabConfig) == "table" and cabConfig.auraUnitOverride or nil,
+            auraIDOverride = type(cabConfig) == "table" and cabConfig.auraIDOverride or nil,
         })
     end
 
@@ -1400,10 +1407,12 @@ local function GetResolvedCustomAuraBarAuraUnit(cabConfig, spellID)
     -- carry a different polarity than the base spell); the helper falls
     -- back to base-spell polarity when no candidate resolves. The migration
     -- and config derive the stored auraUnit from this same identity, and
-    -- the slot display path classifies through the same standalone resolver
-    -- — there is deliberately NO stored-unit override here (the retired
-    -- auraUnitExplicit branch was the one thing that could make the block
-    -- and slot paths watch different units for the same bar).
+    -- the slot display path classifies through the same standalone resolver.
+    -- The USER unit override (auraUnitOverride, panel parity 2026-08-28)
+    -- rides inside that shared resolver via the synthetic's keys — every
+    -- cab probe carries it, so block and slot paths still agree. What stays
+    -- banned is a path-local stored-unit branch like the retired
+    -- auraUnitExplicit, which only ONE path read.
     return GetDefaultSpellCustomBarAuraUnit(cabConfig, resolvedSpellID)
 end
 

@@ -241,6 +241,13 @@ function RB.CreateResourceBarAuraHostModule(deps)
             addedAs = (not isSpellBar) and "aura" or nil,
             auraTracking = true,
             auraSpellID = cabConfig.auraSpellID,
+            -- User overrides (panel parity 2026-08-28): the shared
+            -- resolvers and ResolveEntryAuraUnits read them off this
+            -- adapter exactly as off a panel entry. Every cab synthetic
+            -- carries both keys (see GetDefaultSpellCustomBarAuraUnit) so
+            -- block and slot paths cannot disagree.
+            auraUnitOverride = cabConfig.auraUnitOverride,
+            auraIDOverride = tonumber(cabConfig.auraIDOverride),
             auraUnit = GetResolvedCustomAuraBarAuraUnit(cabConfig, tonumber(cabConfig.spellID)),
             -- No pandemicMarker field: the marker gate reads the STYLE side
             -- only now, where BuildStyleAdapter turns this bar's own key into

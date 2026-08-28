@@ -51,6 +51,51 @@ function ST.ResolveCDMAuraSpellID(cooldownInfo)
     return nil
 end
 
+-- Curated applied-aura corrections, keyed by the CAST (base) spellID. The
+-- linked-list rule below trusts Blizzard's CDM data, and that data can be
+-- flat wrong in both directions: a row can link an inert record its spell
+-- never applies, or carry no link at all for a spell whose aura lands under
+-- a different ID. An entry here is authoritative over the row's linked
+-- list. Mapping a spell to ITSELF means "the cast ID is the aura; ignore
+-- the links entirely."
+-- Adding an ID here follows the AURA_UNIT_OVERRIDES rule: bump the
+-- aura-rebuild migration generation so stored auraUnit/auraSpellID heal.
+local AURA_APPLIED_ID_OVERRIDES = {
+    -- Blade Flurry: the row links only 22482, an inert legacy record the
+    -- game never applies; the live buff carries the cast ID (in-game dump
+    -- 2026-08-28).
+    [13877] = 13877,
+    -- Dancing Rune Weapon: the row carries no links, but the live buff is
+    -- applied as 81256, not the cast ID.
+    [49028] = 81256,
+}
+
+function ST.GetCuratedAppliedAuraSpellID(spellID)
+    local numericID = tonumber(spellID)
+    return numericID and AURA_APPLIED_ID_OVERRIDES[numericID] or nil
+end
+
+-- Suppressed linked IDs, keyed the same way: the wrong linked IDs a curated
+-- correction disowns, listed EXPLICITLY per spell. Pure data on purpose:
+-- the first cut confirmed suppression against the live CDM rows, but that
+-- read is scoped to the logged-in character's cooldown sets while the
+-- migrations that consume this walk whole (often account-shared) profiles,
+-- so a wrong-class first login silently skipped the heal and stamped the
+-- generation. Explicit listing also means the strip can only ever remove
+-- hand-listed IDs, never a legitimate sibling stage on a multi-link row
+-- (Hot Streak's row links both 48107 and 48108).
+-- Maintenance: an AURA_APPLIED_ID_OVERRIDES entry whose row links wrong
+-- IDs lists those IDs here, under the same migration-generation-bump rule.
+local AURA_SUPPRESSED_LINKED_IDS = {
+    -- Blade Flurry: the inert legacy link its tracked-buff row carries.
+    [13877] = { [22482] = true },
+}
+
+function ST.GetCuratedSuppressedLinkedAuraIDs(spellID)
+    local numericID = tonumber(spellID)
+    return numericID and AURA_SUPPRESSED_LINKED_IDS[numericID] or nil
+end
+
 -- The identity the APPLIED aura actually carries, for a CDM data row. The
 -- row's resolved spellID is the cast or talent spell; when the game applies
 -- the aura under a different spellID, that identity exists only in
@@ -62,6 +107,10 @@ end
 function ST.ResolveCDMAppliedAuraSpellID(cooldownInfo, resolvedID)
     if type(cooldownInfo) ~= "table" or not IsConcreteSpellID(resolvedID) then
         return resolvedID
+    end
+    local curated = AURA_APPLIED_ID_OVERRIDES[resolvedID]
+    if curated then
+        return curated
     end
     local linked = cooldownInfo.linkedSpellIDs
     if type(linked) ~= "table" or #linked == 0 then
