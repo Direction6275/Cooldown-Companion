@@ -66,22 +66,79 @@ local SetAuraStackCountText = EntryRuntime.SetAuraStackCountText
 local IsSpellCustomBarConfig = RB.IsSpellCustomBarConfig
 local IsSpellCustomBarAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay
 
+-- One fresh config-time view of a spell bar's saved identity, current
+-- override, and charge capacity. ResolveSpellChargeInfo checks the base and
+-- its override itself; asking it for the current identity as well keeps this
+-- correct for override chains without trusting the creation-time cab fields.
+local function ResolveCustomBarConfigSpellState(cabConfig)
+    local baseSpellID = cabConfig and tonumber(cabConfig.spellID)
+    if not baseSpellID then return nil, nil, nil, false, false end
+
+    local rawOverrideSpellID = C_Spell.GetOverrideSpell(baseSpellID)
+    local overrideResolved = rawOverrideSpellID ~= nil
+    local runtimeSpellID = tonumber(rawOverrideSpellID)
+    if not runtimeSpellID or runtimeSpellID == 0 then
+        runtimeSpellID = baseSpellID
+    end
+
+    local baseChargeInfo, _, baseMaxCharges = ST.ResolveSpellChargeInfo(baseSpellID)
+    local runtimeChargeInfo, _, runtimeMaxCharges = ST.ResolveSpellChargeInfo(runtimeSpellID)
+    local maxCharges = math.max(tonumber(baseMaxCharges) or 0, tonumber(runtimeMaxCharges) or 0)
+    if maxCharges <= 1 then
+        maxCharges = nil
+    end
+
+    -- IsNoCooldownSpell is intentionally boolean, so guard it with the data
+    -- it consults. A missing identity or tooltip must not turn an unknown
+    -- spell into a confirmed GCD-only spell and hide useful controls.
+    local function HasResolvedCooldownData(spellID)
+        if not (spellID
+            and C_Spell.DoesSpellExist(spellID)
+            and C_Spell.GetSpellInfo(spellID)) then
+            return false
+        end
+        local tooltip = C_TooltipInfo.GetSpellByID(spellID)
+        return tooltip ~= nil and tooltip.lines ~= nil
+    end
+
+    local cooldownDataResolved = overrideResolved
+        and HasResolvedCooldownData(baseSpellID)
+        and HasResolvedCooldownData(runtimeSpellID)
+
+    -- A nil charge-info table is a resolved "no charges" only once the
+    -- spell identity itself is loaded. Blizzard marks maxCharges NeverSecret;
+    -- a returned table without a numeric max is still malformed/unknown and
+    -- must not hide saved controls.
+    local function HasReadableChargeData(chargeInfo)
+        if chargeInfo == nil then return true end
+        local value = chargeInfo.maxCharges
+        return value ~= nil and tonumber(value) ~= nil
+    end
+
+    local chargeDataResolved = cooldownDataResolved
+        and HasReadableChargeData(baseChargeInfo)
+        and HasReadableChargeData(runtimeChargeInfo)
+    return baseSpellID, runtimeSpellID, maxCharges, cooldownDataResolved, chargeDataResolved
+end
+
+local function ResolveFailOpenChargeCount(cabConfig, maxCharges, chargeDataResolved)
+    if maxCharges or chargeDataResolved == true then
+        return maxCharges
+    end
+
+    -- Unknown is not confirmed irrelevant. Prefer the last known capacity;
+    -- otherwise use the smallest real charge surface until live data is
+    -- readable again.
+    local rememberedMax = tonumber(cabConfig and cabConfig.maxCharges)
+    return rememberedMax and rememberedMax > 1 and rememberedMax or 2
+end
+
 -- Ready state for a charge spell: its real maximum charges, or nil when the
 -- spell has none (the old renderer showed a hardcoded "1 / 2" on every spell
 -- bar, charges or not). Config-time, out of combat: a plain data read.
 local function GetReadyChargeCount(cabConfig)
-    local baseSpellID = cabConfig and tonumber(cabConfig.spellID)
-    if not baseSpellID then return nil end
-    local runtimeSpellID = C_Spell.GetOverrideSpell(baseSpellID)
-    if not runtimeSpellID or runtimeSpellID == 0 then
-        runtimeSpellID = baseSpellID
-    end
-    local charges = C_Spell.GetSpellCharges(runtimeSpellID)
-    local maxCharges = charges and tonumber(charges.maxCharges)
-    if maxCharges and maxCharges > 1 then
-        return maxCharges
-    end
-    return nil
+    local _, _, maxCharges, _, chargeDataResolved = ResolveCustomBarConfigSpellState(cabConfig)
+    return ResolveFailOpenChargeCount(cabConfig, maxCharges, chargeDataResolved)
 end
 
 -- ONE resolver for everything that asks "does this bar track a charge
@@ -89,6 +146,49 @@ end
 -- and labels, and the canvas's recharge-preview gate. Split answers let
 -- the offered entries and the drawn stand-in disagree.
 RB.GetCustomBarReadyChargeCount = GetReadyChargeCount
+
+-- Recomputed by every settings/command-center rebuild. These predicates are
+-- intentionally about render consumers, not saved values: hidden settings
+-- stay stored and return if a talent or override changes the capabilities.
+function RB.GetCustomBarConfigCapabilities(cabConfig)
+    local isSpellBar = IsSpellCustomBarConfig(cabConfig)
+    local auraTracked = type(cabConfig) == "table"
+        and (not isSpellBar or cabConfig.auraTracking == true)
+    local baseSpellID, runtimeSpellID, maxCharges, cooldownDataResolved, chargeDataResolved
+    if isSpellBar then
+        baseSpellID, runtimeSpellID, maxCharges, cooldownDataResolved, chargeDataResolved =
+            ResolveCustomBarConfigSpellState(cabConfig)
+    end
+
+    if isSpellBar then
+        maxCharges = ResolveFailOpenChargeCount(cabConfig, maxCharges, chargeDataResolved)
+    end
+
+    local hasCharges = maxCharges ~= nil
+    local confirmedNoCooldown = isSpellBar
+        and cooldownDataResolved == true
+        and chargeDataResolved == true
+        and ST.IsNoCooldownSpell(baseSpellID) == true
+        and ST.IsNoCooldownSpell(runtimeSpellID) == true
+    local cooldownConsumer = isSpellBar and not confirmedNoCooldown
+    -- A spell+aura bar that only exists while its aura is active never draws
+    -- the underlying ready/cooldown shell. Keep this separate from the spell's
+    -- cooldown capability: duration text and load rules still have consumers
+    -- through the active aura display.
+    local baseSpellShellConsumer = isSpellBar
+        and not (auraTracked and cabConfig.hideWhenInactive == true)
+
+    return {
+        isSpellBar = isSpellBar,
+        maxCharges = maxCharges,
+        hasCharges = hasCharges,
+        auraTracked = auraTracked,
+        baseSpellShellConsumer = baseSpellShellConsumer,
+        cooldownConsumer = cooldownConsumer,
+        durationConsumer = cooldownConsumer or auraTracked,
+        countConsumer = hasCharges or auraTracked,
+    }
+end
 
 -- Stack capacity for everything the canvas draws on one bar: the capacity
 -- blocks, the stand-in's lit run, and its stack text. ONE resolver, because

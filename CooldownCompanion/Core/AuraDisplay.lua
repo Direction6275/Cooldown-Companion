@@ -568,6 +568,38 @@ local function BuildSlotKit(slotButton)
         kit.stackFillCsAG:SetLooping("BOUNCE")
         kit.stackFillCsAnim = kit.stackFillCsAG:CreateAnimation("VertexColor")
 
+        -- Stack-fill Pandemic recolor: the application bar is Blizzard-driven
+        -- from the secret application count, so the registered clone follows
+        -- its creation-captured fill texture instead of reading any stack
+        -- value or bind-time widget geometry. ARTWORK sublevel 2 puts the
+        -- opaque recolor above the base fill but below the OVERLAY separators
+        -- and per-block borders. As a stackFill child it inherits the aura
+        -- pulse while visually covering the base color-shift animation.
+        if slotButton.AddPandemicRegion then
+            kit.pandemicStackFillClone = kit.stackFill:CreateTexture(nil, "ARTWORK", nil, 2)
+            kit.pandemicStackFillClone:SetAllPoints(stackFillTex)
+            kit.pandemicStackFillClone:SetTexture("Interface\\Buttons\\WHITE8x8")
+            kit.pandemicStackFillClone:SetAlpha(0)
+            -- The clone's rect follows Blizzard's secret application fill.
+            -- A full-bar mask supplies fixed atlas alpha for widget stacks,
+            -- so partial counts reveal only whole blocks without trying to
+            -- read or copy the StatusBar's secret texcoord crop.
+            kit.pandemicStackFillMaskH = kit.stackFill:CreateMaskTexture(nil, "ARTWORK", nil, 2)
+            kit.pandemicStackFillMaskH:SetAllPoints(kit.stackFill)
+            kit.pandemicStackFillMaskH:SetTexture("Interface\\Buttons\\WHITE8x8")
+            kit.pandemicStackFillClone:AddMaskTexture(kit.pandemicStackFillMaskH)
+
+            -- Mask texcoords cannot change after attachment. Pre-create the
+            -- vertical variant with atlas x=0 at the destination bottom, then
+            -- switch which mask carries the atlas by changing only its file.
+            kit.pandemicStackFillMaskV = kit.stackFill:CreateMaskTexture(nil, "ARTWORK", nil, 2)
+            kit.pandemicStackFillMaskV:SetAllPoints(kit.stackFill)
+            kit.pandemicStackFillMaskV:SetTexture("Interface\\Buttons\\WHITE8x8")
+            kit.pandemicStackFillMaskV:SetTexCoord(1, 0, 0, 0, 1, 1, 0, 1)
+            kit.pandemicStackFillClone:AddMaskTexture(kit.pandemicStackFillMaskV)
+            slotButton:AddPandemicRegion(kit.pandemicStackFillClone)
+        end
+
         kit.stackSegments = {}
         for i = 1, ST.STACK_SEGMENT_ATLAS_MAX - 1 do
             local tex = kit.stackFill:CreateTexture(nil, "OVERLAY")
@@ -1011,6 +1043,27 @@ local function RestBarFill(fill, fillTex, pulseAG, csAG)
     csAG:Stop()
     fillTex:SetVertexColor(1, 1, 1, 1)
     fill:SetAlpha(0)
+end
+
+-- Dress one creation-registered Pandemic clone without reading its parent or
+-- the registered fill texture. VertexColor is deliberately last: its opaque
+-- alpha is the enable write, matching the duration clone's validated
+-- SetAlpha(0)/color contract.
+local function StylePandemicBarFillClone(clone, fillTexture, color)
+    if not clone then return end
+    clone:SetTexture(fillTexture)
+    clone:SetTexCoord(0, 1, 0, 1)
+    clone:SetVertexColor(color[1] or 1, color[2] or 0.5, color[3] or 0, 1)
+end
+
+-- Blizzard EncounterTimeline documents that attached-mask texcoords cannot
+-- change. The two masks above therefore keep fixed horizontal/vertical UVs;
+-- exactly one receives the atlas while the other remains fully opaque.
+local function StylePandemicStackFillMasks(horizontalMask, verticalMask, atlas, rotates)
+    if not (horizontalMask and verticalMask) then return end
+    local white = "Interface\\Buttons\\WHITE8x8"
+    horizontalMask:SetTexture(atlas and not rotates and atlas or white)
+    verticalMask:SetTexture(atlas and rotates and atlas or white)
 end
 
 -- The host rect, in numbers CC owns. Aura-host descriptors stamp
@@ -1799,6 +1852,12 @@ local function StyleSlotKit(slot, button, buttonData, style)
         if kit.barFill then
             RestBarFill(kit.barFill, kit.barFillTexture, kit.barFillPulseAG, kit.barFillCsAG)
         end
+        if kit.pandemicFillClone then
+            kit.pandemicFillClone:SetAlpha(0)
+        end
+        if kit.pandemicStackFillClone then
+            kit.pandemicStackFillClone:SetAlpha(0)
+        end
         local stackLaneOn = resShapes.stackLane == true
             and kit.stackFill ~= nil and slot.boundStackMax ~= nil
         if kit.stackFill then
@@ -1889,43 +1948,55 @@ local function StyleSlotKit(slot, button, buttonData, style)
                     kit.barFillCsAG, kit.barFillCsAnim, button, style)
             end
         end
-        -- Pandemic fill recolor: dress the clone in the file the duration
-        -- fill wears plus the pandemic color. The 4-arg SetVertexColor is
-        -- the LAST write and carries the color's own alpha (it replaces
-        -- region alpha through the non-SetAlpha C slot — a trailing
-        -- SetAlpha would clobber the picker's alpha to opaque while the
-        -- mirror honors it). The disabled leg writes only alpha 0 — no
-        -- color write that could resurrect it. Stack-mode, icon, and
-        -- resource binds are covered by RestBarFill's frame alpha-0 (the
-        -- clone is barFill's child), but slots are reused across entries
-        -- so the enable is converged here every bar bind regardless.
-        -- Accepted cosmetic limit: the clone stretches its full texture
-        -- into the drained rect (no per-frame texcoord crop is possible on
-        -- a secret-driven fill), visible only on bar textures with
-        -- horizontal variation.
+        local stackFillTexture
+        local stackFillRotates = false
+        if useStackFill then
+            stackFillTexture = widgetStack and ST.GetStackSegmentsTexture(slot.boundStackMax,
+                CooldownCompanion:GetAuraStackBlockGapTexels(buttonData, slot.boundStackMax))
+                or CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid")
+            stackFillRotates = widgetStack and button._isVertical == true
+        end
+
+        -- Pandemic fill recolor: exactly one clone is armed for every bar
+        -- bind. Duration/continuous fills wear their active texture; a widget
+        -- stack uses a solid clone clipped by a full-bar atlas mask. The clone
+        -- rect still follows Blizzard's secret application fill, while the
+        -- fixed mask preserves the complete stack geometry at partial counts.
+        -- Disabled legs write only alpha 0, so slot reuse cannot strand the
+        -- previous bind's region. Duration/continuous custom textures retain
+        -- the accepted cosmetic limit that horizontal variation stretches
+        -- inside the secret-driven fill rect.
         if kit.pandemicFillClone then
             if pandemicOn and not useStackFill then
                 local pc = style.barPandemicColor or { 1, 0.5, 0, 1 }
-                -- Forced opaque (owner ruling: the pandemic color REPLACES
-                -- the aura fill color, never blends with it) — the alpha
-                -- slot carries the region's visibility, not the picker's.
-                kit.pandemicFillClone:SetTexture(
-                    CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
-                kit.pandemicFillClone:SetVertexColor(pc[1] or 1, pc[2] or 0.5, pc[3] or 0, 1)
+                StylePandemicBarFillClone(kit.pandemicFillClone,
+                    CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"), pc)
             else
                 kit.pandemicFillClone:SetAlpha(0)
             end
         end
         if kit.stackFill then
             if useStackFill then
-                local atlas = widgetStack and ST.GetStackSegmentsTexture(slot.boundStackMax,
-                    CooldownCompanion:GetAuraStackBlockGapTexels(buttonData, slot.boundStackMax)) or nil
                 StyleActiveBarFill(kit.stackFill, kit.stackFillTexture,
                     kit.stackFillPulseAG, kit.stackFillPulseAnim,
                     kit.stackFillCsAG, kit.stackFillCsAnim, button, style,
-                    atlas, widgetStack and button._isVertical)
+                    stackFillTexture, stackFillRotates)
             else
                 RestBarFill(kit.stackFill, kit.stackFillTexture, kit.stackFillPulseAG, kit.stackFillCsAG)
+            end
+        end
+        if kit.pandemicStackFillClone then
+            if pandemicOn and useStackFill then
+                local pc = style.barPandemicColor or { 1, 0.5, 0, 1 }
+                local pandemicFillTexture = widgetStack
+                    and "Interface\\Buttons\\WHITE8x8" or stackFillTexture
+                StylePandemicBarFillClone(kit.pandemicStackFillClone,
+                    pandemicFillTexture, pc)
+                StylePandemicStackFillMasks(
+                    kit.pandemicStackFillMaskH, kit.pandemicStackFillMaskV,
+                    widgetStack and stackFillTexture or nil, stackFillRotates)
+            else
+                kit.pandemicStackFillClone:SetAlpha(0)
             end
         end
         StyleStackSegments(kit, button, buttonData, style, slot.boundStackMax,
@@ -1939,6 +2010,12 @@ local function StyleSlotKit(slot, button, buttonData, style)
         end
         if kit.stackFill then
             RestBarFill(kit.stackFill, kit.stackFillTexture, kit.stackFillPulseAG, kit.stackFillCsAG)
+        end
+        if kit.pandemicFillClone then
+            kit.pandemicFillClone:SetAlpha(0)
+        end
+        if kit.pandemicStackFillClone then
+            kit.pandemicStackFillClone:SetAlpha(0)
         end
         StyleStackSegments(kit, button, buttonData, style, nil, false)
     end

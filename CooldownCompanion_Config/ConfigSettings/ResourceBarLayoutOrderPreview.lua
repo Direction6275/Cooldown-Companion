@@ -2015,6 +2015,10 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 -- fill over the top of them.
                 litStacks = RB.GetCustomBarStandInLitStacks
                     and RB.GetCustomBarStandInLitStacks(barInfo, rbSettings, standInMax) or nil,
+                -- The blocks are the visible fill in segmented stack mode,
+                -- so the Pandemic preview colors their lit run here instead
+                -- of tinting the hidden whole-bar StatusBar beneath them.
+                pandemicActive = barInfo.frame._barPandemicPreview == true,
             })
             -- Bucket wash containment: on a stacks bar the blocks ARE the
             -- bar and the gaps are genuinely empty, so the full-rect wash
