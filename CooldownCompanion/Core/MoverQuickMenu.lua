@@ -407,7 +407,7 @@ local function BuildArrangeTree(addon)
                     or false
                 if (containerUnlocked or panelUnlocked or cursorAvailable)
                     and ArrangeTreePanelVisible(addon, panelInfo, panelUnlocked) then
-                    children[#children + 1] = {
+                    local child = {
                         kind = "panel",
                         id = panelInfo.groupId,
                         containerId = containerId,
@@ -419,6 +419,41 @@ local function BuildArrangeTree(addon)
                         ),
                         cursor = addon:IsGroupCursorAnchored(panelInfo.group),
                     }
+                    -- A third level: one row per Panel Section, addressed as
+                    -- (groupId, anchor). Anchor reading order, matching the
+                    -- Layout tab's blocks and the panel's own geometry.
+                    -- Only under the SELECTED panel (owner ruling 2026-08-29):
+                    -- the rows expand with the panel's selection and collapse
+                    -- away with it, so the list stays panels-first.
+                    local panelSelected = addon._arrangeSelectedPanelId == panelInfo.groupId
+                    if not panelSelected then
+                        local containerFrame = addon.containerFrames
+                            and addon.containerFrames[containerId]
+                        panelSelected = containerFrame
+                            and containerFrame._containerSelectedGroupId == panelInfo.groupId
+                            or false
+                    end
+                    if panelSelected
+                        and ST.PanelSupportsSections(panelInfo.group)
+                        and type(panelInfo.group.sections) == "table" then
+                        for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
+                            if type(panelInfo.group.sections[anchor]) == "table" then
+                                local sections = child.sections
+                                if not sections then
+                                    sections = {}
+                                    child.sections = sections
+                                end
+                                sections[#sections + 1] = {
+                                    kind = "section",
+                                    id = anchor,
+                                    groupId = panelInfo.groupId,
+                                    containerId = containerId,
+                                    name = ST.PANEL_SECTION_ANCHOR_LABELS[anchor] .. " Section",
+                                }
+                            end
+                        end
+                    end
+                    children[#children + 1] = child
                 end
             end
             if #children > 0 or containerUnlocked then
@@ -458,6 +493,10 @@ local function FlattenArrangeTree(roots)
             for _, child in ipairs(root.children) do
                 child.parent = root
                 entries[#entries + 1] = child
+                for _, section in ipairs(child.sections or {}) do
+                    section.parent = root
+                    entries[#entries + 1] = section
+                end
             end
         end
     end
@@ -487,6 +526,10 @@ local function ActivateArrangeTreeEntry(entry)
     local rootId = entry.containerId or entry.id
     if entry.kind == "panel" then
         CooldownCompanion:ActivateArrangePanel(entry.containerId, entry.id, true)
+        return
+    end
+    if entry.kind == "section" then
+        CooldownCompanion:ActivateArrangeSection(entry.groupId, entry.id, true)
         return
     end
     if IsTreeEntrySelected(CooldownCompanion, entry)
@@ -547,16 +590,20 @@ local function EnsureArrangeTreeRow(pill, index)
     row:SetScript("OnEnter", function(self)
         self._hovered = true
         local entry = self.entry
-        if entry and entry.kind == "panel" and not entry.cursor then
-            CooldownCompanion:SetArrangeTreePanelHover(entry.containerId, entry.id, true)
+        if entry and (entry.kind == "panel" or entry.kind == "section")
+            and not entry.cursor then
+            CooldownCompanion:SetArrangeTreePanelHover(entry.containerId,
+                entry.groupId or entry.id, true)
         end
         CooldownCompanion:RefreshArrangePillList()
     end)
     row:SetScript("OnLeave", function(self)
         self._hovered = nil
         local entry = self.entry
-        if entry and entry.kind == "panel" and not entry.cursor then
-            CooldownCompanion:SetArrangeTreePanelHover(entry.containerId, entry.id, false)
+        if entry and (entry.kind == "panel" or entry.kind == "section")
+            and not entry.cursor then
+            CooldownCompanion:SetArrangeTreePanelHover(entry.containerId,
+                entry.groupId or entry.id, false)
         end
         CooldownCompanion:RefreshArrangePillList()
     end)
@@ -589,7 +636,10 @@ end
 local function FindArrangeTreeEntryIndex(entries, requested)
     if not requested then return nil end
     for index, entry in ipairs(entries) do
-        if entry.kind == requested.kind and entry.id == requested.id then
+        -- A section's id is its anchor name, unique only within one panel,
+        -- so the groupId is part of the match (nil == nil for other kinds).
+        if entry.kind == requested.kind and entry.id == requested.id
+            and entry.groupId == requested.groupId then
             return index
         end
     end
@@ -597,6 +647,10 @@ local function FindArrangeTreeEntryIndex(entries, requested)
 end
 
 IsTreeEntrySelected = function(addon, entry)
+    if entry.kind == "section" then
+        return addon._arrangeSectionGroupId == entry.groupId
+            and addon._arrangeSectionAnchor == entry.id
+    end
     if entry.kind == "panel" then
         if addon._arrangeSelectedPanelId == entry.id then
             return true
@@ -650,7 +704,10 @@ local function UpdateArrangeTreeRow(addon, row, entry)
     end
 
     row.name:ClearAllPoints()
-    if entry.kind == "panel" then
+    if entry.kind == "section" then
+        row.name:SetPoint("LEFT", row, "LEFT", 34, 0)
+        row.name:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+    elseif entry.kind == "panel" then
         row.name:SetPoint("LEFT", row, "LEFT", 22, 0)
         row.name:SetPoint("RIGHT", row, "RIGHT", -2, 0)
     elseif entry.wrapperAvailable then

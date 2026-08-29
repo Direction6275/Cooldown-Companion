@@ -106,6 +106,7 @@ local defaults = {
                         --     iconWidth = nil,  -- nil falls back to the panel's own
                         --     iconHeight = nil, -- resolved icon size
                         --     spacing = nil,    -- nil falls back to buttonSpacing
+                        --     maxPerLine = nil, -- wrap count; nil = one unbroken line
                         --     auraOnly = nil,   -- true renders this cluster's
                         --                       -- members through Blizzard's aura
                         --                       -- container instead of CC buttons

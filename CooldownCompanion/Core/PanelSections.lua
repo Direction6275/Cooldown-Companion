@@ -8,8 +8,8 @@
     midpoints). Membership is EXPLICIT per entry (buttonData.section): nothing
     ever migrates on its own, so the base grid's wrap math, buttonsPerRow, and
     auto-max behavior are untouched by the feature. A section owns only its
-    icon size, spacing, and X/Y offset; every other styling key stays panel-wide,
-    text included.
+    icon size, spacing, X/Y offset, and wrap count; every other styling key
+    stays panel-wide, text included.
 
     Sections apply to plain icon panels only. An Aura Panel renders through
     Blizzard's flow container, which assumes one cell size per line, and bar,
@@ -35,6 +35,7 @@ local tonumber = tonumber
 local type = type
 local wipe = wipe
 local math_ceil = math.ceil
+local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
 
@@ -70,11 +71,12 @@ ST.PANEL_SECTION_ANCHOR_LABELS = {
     BOTTOMRIGHT = "Bottom Right",
 }
 
--- Anchor implies both the line's direction and which side of the base cluster
--- the line sits on -- there are no growth or orientation controls.
---   axis "h" = one horizontal line, "v" = one vertical line (never wraps).
---   side     = which outside face of the base cluster the line sits against.
---   from     = where entry 1 sits on that line: "low" is the left/top end,
+-- Anchor implies the lines' direction and which side of the base cluster they
+-- sit on. The owner can cap the line length (section.maxPerLine); direction
+-- itself is the anchor's alone -- there are no growth or orientation controls.
+--   axis "h" = horizontal lines, "v" = vertical lines.
+--   side     = which outside face of the base cluster the cluster sits against.
+--   from     = where entry 1 sits on a line: "low" is the left/top end,
 --              "high" the right/bottom end, "center" the line's own start
 --              after it has been centered on the cluster's edge.
 -- Edge midpoints read the same in both orientations (a TOP section is a
@@ -102,6 +104,20 @@ local SECTION_PLACEMENT = {
         BOTTOMRIGHT = { axis = "v", side = "right", from = "high" },
     },
 }
+
+--- One anchor's placement under the panel's current orientation: axis, side,
+--- and fill direction. The config surface words its per-section controls off
+--- this so the one table above stays the only authority on which way an
+--- anchor grows.
+function ST.GetPanelSectionPlacement(group, anchor)
+    local style = (group and group.style) or {}
+    local orientation = ST.GetPanelLayoutOrientation(
+        (group and group.displayMode) or "icons", style)
+    local placements = SECTION_PLACEMENT[orientation] or SECTION_PLACEMENT.horizontal
+    local placement = placements[anchor]
+    if not placement then return nil end
+    return placement.axis, placement.side, placement.from
+end
 
 ------------------------------------------------------------------------
 -- MEMBERSHIP
@@ -194,6 +210,26 @@ function ST.DissolveEmptyPanelSection(group, anchor)
     return true
 end
 
+--- Drop a wrap count that no longer wraps. A stored maxPerLine at or above
+--- the member count is indistinguishable from "one line" on screen and in
+--- the wrap slider (whose top-of-range stores nil), but left behind it
+--- silently revives as a cap when members are added later. Departures only:
+--- an arrival can only make an existing cap MORE real.
+local function NormalizePanelSectionWrap(group, anchor)
+    local sections = group and group.sections
+    local section = type(sections) == "table" and anchor and sections[anchor] or nil
+    if type(section) ~= "table" or section.maxPerLine == nil then return end
+    local count = 0
+    for _, buttonData in ipairs(group.buttons or {}) do
+        if ST.GetPanelSectionForEntry(group, buttonData) == anchor then
+            count = count + 1
+        end
+    end
+    if (tonumber(section.maxPerLine) or 0) >= count then
+        section.maxPerLine = nil
+    end
+end
+
 --- Move one entry into a section, or back to the base grid with anchor = nil.
 --- A section created here stores only its offsets; every geometry key stays nil
 --- so the section inherits the panel until something sets one.
@@ -238,6 +274,7 @@ function ST.SetPanelSectionForEntry(group, buttonData, anchor)
 
     if rawPrevious then
         ST.DissolveEmptyPanelSection(group, rawPrevious)
+        NormalizePanelSectionWrap(group, rawPrevious)
     end
     -- Now that membership is written, an entry landing in an aura section owes
     -- the aura engine a key. Runs after the write because the stamp reads
@@ -259,6 +296,7 @@ function ST.DetachEntryFromPanelSection(group, buttonData)
     if anchor == nil then return false end
     buttonData.section = nil
     ST.DissolveEmptyPanelSection(group, anchor)
+    NormalizePanelSectionWrap(group, anchor)
     return true
 end
 
@@ -491,15 +529,23 @@ end
 ---   baseOffsetX, baseOffsetY          -- its TOPLEFT inside the frame
 ---                                        (offsetY measured downward)
 ---   totalWidth, totalHeight           -- the union the frame must span
----   sections[anchor] = { width, height, originX, originY, stepX, stepY }
----                                        member k sits at
----                                        (originX + (k-1)*stepX,
----                                         originY + (k-1)*stepY)
----                                        from the frame's TOPLEFT.
---- An AURA section adds spacing, axis, from and the whole line's rectangle
---- (lineX, lineY, lineWidth, lineHeight, also from the frame's TOPLEFT) under an
---- auraOnly flag. Blizzard's container lays the cells out inside that rectangle,
---- so the per-member steps mean nothing there -- the rect and the direction do.
+---   sections[anchor] = {
+---       width, height,                -- one member's cell
+---       positions = { {x, y}, ... },  -- member k's TOPLEFT from the frame's
+---                                        TOPLEFT; the ONLY per-member truth
+---                                        (a wrapped section is not a line, so
+---                                        no origin+step can describe it)
+---       originX, originY, stepX, stepY, -- line 1 as origin+step, kept for the
+---                                        config preview's lane math; describes
+---                                        the whole section only while unwrapped
+---       axis, side, from, spacing,    -- the anchor's placement actually used
+---       perLine,                      -- resolved wrap count (nil = unwrapped)
+---       lineX, lineY,                 -- the whole block's rectangle, also
+---       lineWidth, lineHeight,           from the frame's TOPLEFT
+---   }
+--- An AURA section additionally carries auraOnly = true. Blizzard's container
+--- lays its cells out inside the block rectangle following axis/side/from, so
+--- the per-member positions serve only the unlock placeholder tiles there.
 function ST.BuildPanelSectionLayout(group, sections, lists, panelWidth, panelHeight, panelSpacing, headerHeight, layout)
     local style = group.style or {}
     local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
@@ -549,89 +595,179 @@ function ST.BuildPanelSectionLayout(group, sections, lists, panelWidth, panelHei
                 ST.ResolvePanelSectionGeometry(style, section, panelWidth, panelHeight, panelSpacing)
             local offsetX = tonumber(section.offsetX) or 0
             local offsetY = tonumber(section.offsetY) or 0
-            local info = { width = width, height = height }
+
+            -- The fill direction and the SIDE the cluster sits on are the
+            -- anchor's alone (owner ruling 2026-08-28: a per-section fill
+            -- override was built, seen, and removed -- do not revive it).
+            local from = placement.from
+
+            -- Wrap count. nil is the founding behavior: one unbroken line.
+            -- Extra lines stack AWAY from the base cluster with line 1 nearest
+            -- it, and a partial line aligns to the same end (or center) the
+            -- fill direction names -- exactly how Blizzard's flow layout packs
+            -- an aura section's cells, so the two engines cannot disagree.
+            local maxPerLine = tonumber(section.maxPerLine)
+            local perLine = count
+            if maxPerLine then
+                maxPerLine = math_max(1, math_floor(maxPerLine))
+                if maxPerLine < perLine then perLine = maxPerLine end
+            end
+            local lineCount = math_ceil(count / perLine)
+
+            local positions = {}
+            local info = {
+                width = width, height = height,
+                positions = positions,
+                -- The placement actually used, override folded in. Taken from
+                -- SECTION_PLACEMENT here rather than re-derived by a consumer,
+                -- so one table still answers "which way does this anchor grow"
+                -- for both engines.
+                axis = placement.axis,
+                side = placement.side,
+                from = from,
+                spacing = spacing,
+                perLine = maxPerLine and perLine or nil,
+            }
 
             if placement.axis == "h" then
-                local lineLength = count * width + (count - 1) * spacing
+                local blockWidth = perLine * width + (perLine - 1) * spacing
+                local blockHeight = lineCount * height + (lineCount - 1) * spacing
                 local left
-                if placement.from == "low" then
+                if from == "low" then
                     left = 0
-                elseif placement.from == "high" then
-                    left = baseWidth - lineLength
+                elseif from == "high" then
+                    left = baseWidth - blockWidth
                 else
-                    left = (baseWidth - lineLength) / 2
+                    left = (baseWidth - blockWidth) / 2
                 end
-                -- The line sits OUTSIDE the cluster, one panel spacing clear of
-                -- the face its anchor names.
+                -- The block sits OUTSIDE the cluster, one panel spacing clear
+                -- of the face its anchor names.
                 local top = (placement.side == "above")
-                    and (panelSpacing + height)
+                    and (panelSpacing + blockHeight)
                     or (-baseHeight - panelSpacing)
                 left = left + offsetX
                 top = top + offsetY
 
                 info.lineX, info.lineY = left, top
-                info.lineWidth, info.lineHeight = lineLength, height
-                info.stepY = 0
-                info.originY = top
-                if placement.from == "high" then
-                    -- The corner is the line's right end, so entry 1 sits there
-                    -- and the cluster grows back toward the panel's far side.
-                    info.stepX = -(width + spacing)
-                    info.originX = left + lineLength - width
-                else
-                    info.stepX = width + spacing
-                    info.originX = left
+                info.lineWidth, info.lineHeight = blockWidth, blockHeight
+
+                for index = 1, count do
+                    local line = math_ceil(index / perLine)
+                    local slot = index - (line - 1) * perLine
+                    local inLine = math_min(perLine, count - (line - 1) * perLine)
+                    local lineLength = inLine * width + (inLine - 1) * spacing
+                    local lineLeft
+                    if from == "low" then
+                        lineLeft = left
+                    elseif from == "high" then
+                        lineLeft = left + blockWidth - lineLength
+                    elseif auraCount then
+                        -- Blizzard's flow layout packs a centered section's
+                        -- PARTIAL line from the flow origin, not centered, so
+                        -- an aura section's reserved cells must promise the
+                        -- same spots its container will fill. Full lines are
+                        -- unaffected (lineLength == blockWidth); ordinary
+                        -- icon sections keep their centered partial lines.
+                        lineLeft = left
+                    else
+                        lineLeft = left + (blockWidth - lineLength) / 2
+                    end
+                    local x
+                    if from == "high" then
+                        -- Entry 1 holds the line's right end and the line grows
+                        -- back toward the panel's far side.
+                        x = lineLeft + lineLength - slot * width - (slot - 1) * spacing
+                    else
+                        x = lineLeft + (slot - 1) * (width + spacing)
+                    end
+                    local y
+                    if placement.side == "above" then
+                        -- Line 1 nearest the cluster; later lines climb away.
+                        y = top - blockHeight + line * height + (line - 1) * spacing
+                    else
+                        y = top - (line - 1) * (height + spacing)
+                    end
+                    positions[index] = { x = x, y = y }
                 end
 
+                info.stepX = (from == "high") and -(width + spacing) or (width + spacing)
+                info.stepY = 0
+
                 if left < minX then minX = left end
-                if left + lineLength > maxX then maxX = left + lineLength end
+                if left + blockWidth > maxX then maxX = left + blockWidth end
                 if top > maxY then maxY = top end
-                if top - height < minY then minY = top - height end
+                if top - blockHeight < minY then minY = top - blockHeight end
             else
-                local lineLength = count * height + (count - 1) * spacing
+                local blockHeight = perLine * height + (perLine - 1) * spacing
+                local blockWidth = lineCount * width + (lineCount - 1) * spacing
                 local top
-                if placement.from == "low" then
+                if from == "low" then
                     top = 0
-                elseif placement.from == "high" then
-                    top = -baseHeight + lineLength
+                elseif from == "high" then
+                    top = -baseHeight + blockHeight
                 else
-                    top = (lineLength - baseHeight) / 2
+                    top = (blockHeight - baseHeight) / 2
                 end
                 local left = (placement.side == "left")
-                    and (-panelSpacing - width)
+                    and (-panelSpacing - blockWidth)
                     or (baseWidth + panelSpacing)
                 left = left + offsetX
                 top = top + offsetY
 
                 info.lineX, info.lineY = left, top
-                info.lineWidth, info.lineHeight = width, lineLength
-                info.stepX = 0
-                info.originX = left
-                if placement.from == "high" then
-                    -- Entry 1 sits at the bottom corner and the cluster climbs.
-                    info.stepY = height + spacing
-                    info.originY = top - lineLength + height
-                else
-                    info.stepY = -(height + spacing)
-                    info.originY = top
+                info.lineWidth, info.lineHeight = blockWidth, blockHeight
+
+                for index = 1, count do
+                    local line = math_ceil(index / perLine)
+                    local slot = index - (line - 1) * perLine
+                    local inLine = math_min(perLine, count - (line - 1) * perLine)
+                    local lineLength = inLine * height + (inLine - 1) * spacing
+                    local lineTop
+                    if from == "low" then
+                        lineTop = top
+                    elseif from == "high" then
+                        lineTop = top - blockHeight + lineLength
+                    elseif auraCount then
+                        -- The vertical twin of the aura partial-line rule
+                        -- above: pack from the flow origin, never centered.
+                        lineTop = top
+                    else
+                        lineTop = top - (blockHeight - lineLength) / 2
+                    end
+                    local y
+                    if from == "high" then
+                        -- Entry 1 sits at the column's bottom end and climbs.
+                        y = lineTop - lineLength + slot * height + (slot - 1) * spacing
+                    else
+                        y = lineTop - (slot - 1) * (height + spacing)
+                    end
+                    local x
+                    if placement.side == "left" then
+                        -- Column 1 nearest the cluster; later columns step away.
+                        x = left + blockWidth - line * width - (line - 1) * spacing
+                    else
+                        x = left + (line - 1) * (width + spacing)
+                    end
+                    positions[index] = { x = x, y = y }
                 end
 
+                info.stepX = 0
+                info.stepY = (from == "high") and (height + spacing) or -(height + spacing)
+
                 if left < minX then minX = left end
-                if left + width > maxX then maxX = left + width end
+                if left + blockWidth > maxX then maxX = left + blockWidth end
                 if top > maxY then maxY = top end
-                if top - lineLength < minY then minY = top - lineLength end
+                if top - blockHeight < minY then minY = top - blockHeight end
             end
 
+            -- Line 1 restated as origin+step for the config preview's lane
+            -- math, which still reasons about a section as one segment. True
+            -- for the whole section exactly while it is unwrapped.
+            info.originX = positions[1].x
+            info.originY = positions[1].y
+
             if auraCount then
-                -- What the aura container needs, which is not what a live button
-                -- needs: the rectangle above plus the direction the line runs.
-                -- Taken from SECTION_PLACEMENT here rather than re-derived over
-                -- there, so one table still answers "which way does this anchor
-                -- grow" for both engines.
                 info.auraOnly = true
-                info.axis = placement.axis
-                info.from = placement.from
-                info.spacing = spacing
             end
 
             infos[anchor] = info
@@ -665,9 +801,11 @@ function ST.BuildPanelSectionLayout(group, sections, lists, panelWidth, panelHei
     for _, info in pairs(infos) do
         info.originX = info.originX + layout.baseOffsetX
         info.originY = info.originY - layout.baseOffsetY
-        if info.auraOnly then
-            info.lineX = info.lineX + layout.baseOffsetX
-            info.lineY = info.lineY - layout.baseOffsetY
+        info.lineX = info.lineX + layout.baseOffsetX
+        info.lineY = info.lineY - layout.baseOffsetY
+        for _, position in ipairs(info.positions) do
+            position.x = position.x + layout.baseOffsetX
+            position.y = position.y - layout.baseOffsetY
         end
     end
 
@@ -805,7 +943,7 @@ local function PlaceSectionMembers(frame, lists, layout, panelWidth, panelHeight
         if info.auraOnly then
             -- Nothing to place: the members render through Blizzard's container,
             -- which lays its own cells out inside the host frame. The host IS the
-            -- section here, spanning the FULL expanded line, exactly the way an
+            -- section here, spanning the FULL expanded block, exactly the way an
             -- Aura Panel's frame spans its full expanded grid.
             local host = AcquireAuraSectionHost(frame, anchor)
             host:SetSize(math_max(1, info.lineWidth), math_max(1, info.lineHeight))
@@ -815,18 +953,19 @@ local function PlaceSectionMembers(frame, lists, layout, panelWidth, panelHeight
         else
             local members = lists.members[anchor]
             for index, button in ipairs(members or {}) do
-                ST.ApplyPanelSectionButtonSize(button, info.width, info.height)
-                -- Section members never ride the compact slot cache: the cache keys
-                -- on anchor/x/y alone and cannot tell the panel frame from the base
-                -- anchor frame, so a member crossing that boundary would otherwise
-                -- keep a stale relative frame.
-                button._compactSlotAnchor = nil
-                button._compactSlotX = nil
-                button._compactSlotY = nil
-                button:ClearAllPoints()
-                button:SetPoint("TOPLEFT", frame, "TOPLEFT",
-                    info.originX + (index - 1) * info.stepX,
-                    info.originY + (index - 1) * info.stepY)
+                local position = info.positions[index]
+                if position then
+                    ST.ApplyPanelSectionButtonSize(button, info.width, info.height)
+                    -- Section members never ride the compact slot cache: the cache keys
+                    -- on anchor/x/y alone and cannot tell the panel frame from the base
+                    -- anchor frame, so a member crossing that boundary would otherwise
+                    -- keep a stale relative frame.
+                    button._compactSlotAnchor = nil
+                    button._compactSlotX = nil
+                    button._compactSlotY = nil
+                    button:ClearAllPoints()
+                    button:SetPoint("TOPLEFT", frame, "TOPLEFT", position.x, position.y)
+                end
             end
         end
     end
@@ -925,7 +1064,7 @@ end
     same answer, scoped to its own rectangle.
 
     Every number is READ off the layout pass that has just placed this panel --
-    the same origin and step a plain section's live buttons are placed with --
+    the same per-cell positions a plain section's live buttons are placed with --
     so a tile can never sit anywhere but where the aura container's cell goes.
     Icons only: a sectioned panel is an icon panel by definition, so there is no
     bar flavor of this the way there is for a whole Aura Panel.
@@ -1002,11 +1141,12 @@ function ST.UpdateAuraSectionPlaceholders(addon, groupId, frame, group)
                     cell = cell + 1
                     used = used + 1
                     local tile = AcquireAuraSectionPlaceholderTile(root, tiles, used)
+                    local position = info.positions[cell]
                     tile:SetSize(info.width, info.height)
                     tile:ClearAllPoints()
                     tile:SetPoint("TOPLEFT", frame, "TOPLEFT",
-                        info.originX + (cell - 1) * info.stepX,
-                        info.originY + (cell - 1) * info.stepY)
+                        position and position.x or info.originX,
+                        position and position.y or info.originY)
 
                     local effectiveStyle = addon:GetEffectiveStyle(style, buttonData) or style
                     local borderSize = effectiveStyle.borderSize or ST.DEFAULT_BORDER_SIZE
@@ -1047,6 +1187,398 @@ function ST.UpdateAuraSectionPlaceholders(addon, groupId, frame, group)
     for extra = used + 1, #tiles do
         tiles[extra]:Hide()
     end
+end
+
+------------------------------------------------------------------------
+-- UNLOCK SECTION MOVERS
+------------------------------------------------------------------------
+
+--[[
+    While a panel's drag chrome is up, every section wears a thin clickable
+    overlay spanning its block rectangle. Clicking one selects the SECTION
+    (CooldownCompanion:ActivateArrangeSection), and the panel's ONE chrome
+    kit -- wheel, size and coord readouts, grip, nudger -- retargets to it
+    and goes gold to say so (owner ruling 2026-08-29: selection recolors the
+    existing chrome; never grow a second chrome surface for a section).
+
+    The overlays are pure unlock chrome: created once per frame per anchor,
+    shown on the aura placeholder preview's wide gate (drag controls up, or
+    any member of an active container preview -- unlock-all must reveal what
+    is addressable), forced down for combat alongside that preview, and
+    positioned only ever from the layout pass's own block rect
+    (lineX/lineY/lineWidth/lineHeight) -- no geometry is derived here.
+    _ccNoTouch keeps the strata and click-through walks out of them, exactly
+    like the aura hosts; drags that start on one are forwarded to the panel
+    frame so grabbing a section's air still moves the panel.
+]]
+
+-- The container member overlay's blue for hover, the house gold for selected
+-- (the arrange tree's selected row and the drag grammar's snap accent).
+local SECTION_OVERLAY_COLOR = { 0.6, 0.8, 1 }
+local SECTION_OVERLAY_SELECTED_COLOR = { 1, 0.82, 0 }
+local SECTION_OVERLAY_IDLE_BORDER_ALPHA = 0.35
+local SECTION_OVERLAY_HOVER_FILL_ALPHA = 0.12
+local SECTION_OVERLAY_SELECTED_FILL_ALPHA = 0.18
+local SECTION_OVERLAY_SELECTED_BORDER_ALPHA = 0.9
+
+local function PaintSectionOverlay(overlay)
+    local selected = overlay._selected == true
+    local color = selected and SECTION_OVERLAY_SELECTED_COLOR or SECTION_OVERLAY_COLOR
+    local fillAlpha = 0
+    if selected then
+        fillAlpha = SECTION_OVERLAY_SELECTED_FILL_ALPHA
+    elseif overlay._hovered then
+        fillAlpha = SECTION_OVERLAY_HOVER_FILL_ALPHA
+    end
+    overlay.bg:SetColorTexture(color[1], color[2], color[3], fillAlpha)
+    ST.ApplyBorderTextures(overlay.border, overlay,
+        { color[1], color[2], color[3],
+          selected and SECTION_OVERLAY_SELECTED_BORDER_ALPHA or SECTION_OVERLAY_IDLE_BORDER_ALPHA },
+        1, ST.BORDER_RENDER_MODE_CRISP)
+end
+
+------------------------------------------------------------------
+-- The SELECTED section's own resize grabber (owner ruling 2026-08-29,
+-- twice asked: a section resizes by a grabber on ITS corner, the way a
+-- panel resizes by the grabber on its corner). The panel's grip stays
+-- base-cluster-scoped always. One small gold grabber appears on the
+-- selected overlay's outward corner and scales the section's cells.
+------------------------------------------------------------------
+
+local function ClampSectionSize(value)
+    return math_max(10, math_min(150, ST.RoundToTenths(tonumber(value) or 10)))
+end
+
+local function ResolveOverlaySection(overlay)
+    local frame = overlay:GetParent()
+    local groupId = frame and frame.groupId
+    local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+    local sections = group and group.sections
+    local section = type(sections) == "table"
+        and sections[overlay._sectionAnchor] or nil
+    if type(section) ~= "table" then return nil end
+    return groupId, group, section
+end
+
+local function RefreshConfigPanelIfShown()
+    local configState = ST._configState
+    local configFrame = configState and configState.configFrame
+    local shownFrame = configFrame and configFrame.frame
+    if shownFrame and shownFrame:IsShown() then
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+local function EndSectionGripGesture(grip, applyFinal)
+    if not grip._resizeActive then
+        grip:SetScript("OnUpdate", nil)
+        return
+    end
+    grip._resizeActive = nil
+    grip:SetScript("OnUpdate", nil)
+    if applyFinal then
+        RefreshConfigPanelIfShown()
+    end
+    grip._resizeStartX, grip._resizeStartY = nil, nil
+    grip._resizeStartW, grip._resizeStartH = nil, nil
+    grip._resizeCols, grip._resizeRows = nil, nil
+    grip._resizeSignX, grip._resizeSignY = nil, nil
+    grip._resizeSingle = nil
+end
+
+local function UpdateSectionGripGesture(grip)
+    if not grip._resizeActive then return end
+    if InCombatLockdown() or CooldownCompanion._combatForcedLock then
+        EndSectionGripGesture(grip, false)
+        return
+    end
+    local overlay = grip:GetParent()
+    local groupId, _, section = ResolveOverlaySection(overlay)
+    if not groupId then
+        EndSectionGripGesture(grip, false)
+        return
+    end
+    local cursorX, cursorY = GetCursorPosition()
+    local scale = UIParent:GetEffectiveScale()
+    if not (cursorX and scale and scale > 0) then return end
+    cursorX, cursorY = cursorX / scale, cursorY / scale
+
+    -- Per-cell deltas: the drag scales every cell of the block, so the
+    -- travel divides by the block's cell counts on each axis.
+    local dw = grip._resizeSignX * (cursorX - grip._resizeStartX) / grip._resizeCols
+    local dh = grip._resizeSignY * (cursorY - grip._resizeStartY) / grip._resizeRows
+    local changed = false
+    if grip._resizeSingle then
+        local newSize = ClampSectionSize(grip._resizeStartW + (dw + dh) / 2)
+        if section.iconWidth ~= newSize then
+            section.iconWidth = newSize
+            changed = true
+        end
+    else
+        local newWidth = ClampSectionSize(grip._resizeStartW + dw)
+        local newHeight = ClampSectionSize(grip._resizeStartH + dh)
+        if section.iconWidth ~= newWidth then
+            section.iconWidth = newWidth
+            changed = true
+        end
+        if section.iconHeight ~= newHeight then
+            section.iconHeight = newHeight
+            changed = true
+        end
+    end
+    if changed then
+        CooldownCompanion:UpdateGroupStyle(groupId)
+    end
+end
+
+local function BeginSectionGripGesture(grip)
+    if grip._resizeActive or InCombatLockdown()
+        or CooldownCompanion._combatForcedLock then
+        return
+    end
+    local overlay = grip:GetParent()
+    local groupId, group = ResolveOverlaySection(overlay)
+    if not groupId then return end
+    local cursorX, cursorY = GetCursorPosition()
+    local scale = UIParent:GetEffectiveScale()
+    if not (cursorX and scale and scale > 0) then return end
+
+    grip._resizeStartX = cursorX / scale
+    grip._resizeStartY = cursorY / scale
+    grip._resizeStartW = ClampSectionSize(overlay._cellWidth)
+    grip._resizeStartH = ClampSectionSize(overlay._cellHeight)
+    grip._resizeCols = math_max(1, overlay._resizeCols or 1)
+    grip._resizeRows = math_max(1, overlay._resizeRows or 1)
+    -- Dragging the outward corner away from the cluster grows the cells.
+    grip._resizeSignX = (grip._cornerX == "LEFT") and -1 or 1
+    grip._resizeSignY = (grip._cornerY == "TOP") and 1 or -1
+    grip._resizeSingle = (group.style and group.style.maintainAspectRatio) == true
+    grip._resizeActive = true
+    grip:SetScript("OnUpdate", UpdateSectionGripGesture)
+end
+
+local function AcquireSectionOverlayGrip(overlay)
+    local grip = overlay._grip
+    if grip then return grip end
+    grip = CreateFrame("Button", nil, overlay)
+    grip:SetSize(16, 16)
+    -- The house corner bracket (see ST.ApplyCornerBracketGrip), permanently
+    -- GOLD: this grabber only exists while its section is selected, and gold
+    -- is the selected-section contract everywhere else in the chrome.
+    ST.ApplyCornerBracketGrip(grip, "RIGHT", "BOTTOM")
+    ST.SetCornerBracketGripColor(grip, 1, 0.82, 0)
+    grip:SetScript("OnMouseDown", function(self, mouseButton)
+        if mouseButton == "LeftButton" then
+            BeginSectionGripGesture(self)
+        end
+    end)
+    grip:SetScript("OnMouseUp", function(self, mouseButton)
+        if mouseButton == "LeftButton" then
+            EndSectionGripGesture(self,
+                not CooldownCompanion._combatForcedLock and not InCombatLockdown())
+        end
+    end)
+    grip:SetScript("OnHide", function(self)
+        GameTooltip:Hide()
+        EndSectionGripGesture(self,
+            not CooldownCompanion._combatForcedLock and not InCombatLockdown())
+    end)
+    grip:SetScript("OnEnter", function(self)
+        -- Brighter gold, never white: gold is what says "acts on the section".
+        ST.SetCornerBracketGripColor(self, 1, 0.92, 0.4, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Resize Section")
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Mouse wheel over the panel also resizes the selected section.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    grip:SetScript("OnLeave", function(self)
+        ST.SetCornerBracketGripColor(self, 1, 0.82, 0)
+        GameTooltip:Hide()
+    end)
+    grip:Hide()
+    overlay._grip = grip
+    return grip
+end
+
+-- The grabber lives on the SECTION's bottom-right corner, always -- the
+-- exact grammar the panel's own corner grabber taught (owner ruling
+-- 2026-08-29; an "outward corner" placement moved with the anchor and read
+-- as noise).
+local function PositionSectionOverlayGrip(overlay, grip)
+    grip._cornerX, grip._cornerY = "RIGHT", "BOTTOM"
+    -- Above the panel's labels (chrome band +4/+5 vs the overlay's +3), so
+    -- the grabber stays clickable when a bottom section overlaps them.
+    grip:SetFrameLevel(overlay:GetFrameLevel() + 3)
+    grip:ClearAllPoints()
+    grip:SetPoint("BOTTOMRIGHT", overlay, "BOTTOMRIGHT", -1, 1)
+end
+
+local function AcquireSectionMoverOverlay(frame, anchor)
+    local overlays = frame._sectionMoverOverlays
+    if not overlays then
+        overlays = {}
+        frame._sectionMoverOverlays = overlays
+    end
+    local overlay = overlays[anchor]
+    if overlay then return overlay end
+
+    overlay = CreateFrame("Frame", nil, frame)
+    overlay._ccNoTouch = true
+    overlay._sectionAnchor = anchor
+    overlay:EnableMouse(true)
+    overlay:RegisterForDrag("LeftButton")
+    overlay.bg = overlay:CreateTexture(nil, "BACKGROUND")
+    overlay.bg:SetAllPoints()
+    overlay.border = ST.CreateBorderTextureSet(overlay, "OVERLAY")
+    overlay:SetScript("OnEnter", function(self)
+        self._hovered = true
+        PaintSectionOverlay(self)
+    end)
+    overlay:SetScript("OnLeave", function(self)
+        self._hovered = nil
+        PaintSectionOverlay(self)
+    end)
+    overlay:SetScript("OnMouseUp", function(self, mouseButton)
+        local parent = self:GetParent()
+        if not (parent and parent.groupId) then return end
+        -- Release-suppression contract, OVERLAY-OWNED: a drag forwarded from
+        -- here must never read as a click on release, regardless of which
+        -- panel drag branch ran (the container-preview branch does not set
+        -- the panel's own suppression flag). Both flags are consumed here so
+        -- a stale one can never eat the next deliberate click; the panel's
+        -- flag is still honored for the ordinary body-drag branch.
+        local forwarded = self._forwardedDrag or self._suppressNextClick
+        self._forwardedDrag = nil
+        self._suppressNextClick = nil
+        local suppressed = parent._arrangeSelectClickSuppressed
+        parent._arrangeSelectClickSuppressed = nil
+        if forwarded or suppressed
+            or mouseButton ~= "LeftButton" or parent._dragInProgress then
+            return
+        end
+        CooldownCompanion:ActivateArrangeSection(parent.groupId, self._sectionAnchor, true)
+    end)
+    -- A drag that starts on the overlay is a drag of the PANEL, selected or
+    -- not (owner ruling 2026-08-29, reversed same day after trying a
+    -- drag-to-move: sections position by nudger, typed offsets, and sliders
+    -- only -- do not revive an offset drag). Forwarding keeps the panel
+    -- grabbable by its sections.
+    overlay:SetScript("OnDragStart", function(self)
+        self._forwardedDrag = true
+        local parent = self:GetParent()
+        -- In a container preview the panel's own drag handler refuses an
+        -- UNSELECTED member (the container's member overlay normally selects
+        -- it first, but this overlay sits above that one and takes the
+        -- gesture). Select the panel the same way before forwarding, so the
+        -- first drag moves it instead of dying.
+        local groupId = parent and parent.groupId
+        local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+        local containerId = group and group.parentContainerId
+        if containerId
+            and CooldownCompanion:IsContainerUnlockPreviewActive(containerId)
+            and not CooldownCompanion:IsContainerPanelSelected(containerId, groupId) then
+            CooldownCompanion:ActivateArrangePanel(containerId, groupId, false)
+        end
+        local handler = parent and parent:GetScript("OnDragStart")
+        if handler then handler(parent) end
+    end)
+    overlay:SetScript("OnDragStop", function(self)
+        -- Either release order is safe: stop-then-up consumes the pending
+        -- flag, up-then-stop already consumed _forwardedDrag.
+        if self._forwardedDrag then
+            self._forwardedDrag = nil
+            self._suppressNextClick = true
+        end
+        local parent = self:GetParent()
+        local handler = parent and parent:GetScript("OnDragStop")
+        if handler then handler(parent) end
+    end)
+    overlay:Hide()
+    overlays[anchor] = overlay
+    return overlay
+end
+
+--- Re-fit, repaint, or hide every section overlay from the current layout and
+--- selection. Safe to call from every geometry pass: a frame whose overlays
+--- were never shown pays one flag test.
+function ST.UpdateSectionMoverOverlays(addon, frame, group)
+    if not frame then return end
+    local overlays = frame._sectionMoverOverlays
+    local infos = frame._sectionLayout and frame._sectionLayout.sections or nil
+    local shown = frame._sectionMoverOverlaysShown == true
+        and infos ~= nil
+        and ST.PanelSupportsSections(group)
+    if not shown then
+        if overlays then
+            for _, overlay in pairs(overlays) do overlay:Hide() end
+        end
+        return
+    end
+
+    local selectedAnchor = addon.GetArrangeSelectedSectionAnchor
+        and addon:GetArrangeSelectedSectionAnchor(frame.groupId) or nil
+    -- Stacking: while the panel's own chrome is up, the overlays join ITS
+    -- band just under the resize grip (SyncGroupControlLevels puts the grip
+    -- at handle+4), so the grip and labels stay clickable when a section
+    -- overlaps them. With no chrome up -- an unselected container-preview
+    -- member -- they pin high instead: the wrapper's chrome would otherwise
+    -- draw over them (P3 finding).
+    local handle = frame.dragHandle
+    local chromeUp = handle and handle:IsShown() or false
+    for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
+        local info = infos[anchor]
+        local overlay = overlays and overlays[anchor]
+        if info then
+            overlay = overlay or AcquireSectionMoverOverlay(frame, anchor)
+            overlays = frame._sectionMoverOverlays
+            if chromeUp then
+                overlay:SetFrameStrata(handle:GetFrameStrata())
+                overlay:SetFrameLevel((handle:GetFrameLevel() or 1) + 3)
+            else
+                overlay:SetFrameStrata("FULLSCREEN_DIALOG")
+                overlay:SetFrameLevel(85)
+            end
+            overlay:SetSize(math_max(1, info.lineWidth), math_max(1, info.lineHeight))
+            overlay:ClearAllPoints()
+            overlay:SetPoint("TOPLEFT", frame, "TOPLEFT", info.lineX, info.lineY)
+            -- What the selected-section grabber reads: the placement, the
+            -- resolved cell, and the block's cell counts per axis (its drag
+            -- divides the travel by these).
+            overlay._axis = info.axis
+            overlay._side = info.side
+            overlay._cellWidth = info.width
+            overlay._cellHeight = info.height
+            local count = math_max(1, #info.positions)
+            local perLine = math_max(1, math_min(info.perLine or count, count))
+            local lineCount = math_ceil(count / perLine)
+            if info.axis == "h" then
+                overlay._resizeCols, overlay._resizeRows = perLine, lineCount
+            else
+                overlay._resizeCols, overlay._resizeRows = lineCount, perLine
+            end
+            overlay._selected = selectedAnchor == anchor
+            PaintSectionOverlay(overlay)
+            if overlay._selected then
+                local grip = AcquireSectionOverlayGrip(overlay)
+                PositionSectionOverlayGrip(overlay, grip)
+                grip:Show()
+            elseif overlay._grip then
+                overlay._grip:Hide()
+            end
+            overlay:Show()
+        elseif overlay then
+            overlay:Hide()
+        end
+    end
+end
+
+--- The one visibility switch, driven by the same paths that raise and drop the
+--- panel's drag controls (and the combat forced lock, which bypasses them).
+function ST.SetSectionMoverOverlaysShown(addon, frame, group, shown)
+    if not frame then return end
+    frame._sectionMoverOverlaysShown = (shown == true) or nil
+    ST.UpdateSectionMoverOverlays(addon, frame, group)
 end
 
 ------------------------------------------------------------------------
