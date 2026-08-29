@@ -27,9 +27,10 @@
     initializeFrame and never moved, re-leveled, or reparented afterwards.
     Bind is a container-mutator filter swap. Park is a polarity-crossed
     sentinel filter PLUS container:Hide() — the sentinel is applied inside
-    Blizzard's identity gate and stops being applied at all once a unit is not
-    assistable, so hiding the container is what actually guarantees a parked
-    display renders nothing (and drops it out of the aura event path).
+    Blizzard's identity gate and stops being applied at all when that gate
+    declines the unit relationship, so hiding the container is what actually
+    guarantees a parked display renders nothing (and drops it out of the aura
+    event path).
     Host Show/Hide, alpha fades, and strata changes reach the slot through
     plain parentage again, and a re-shown container re-registers its events
     and refreshes itself (AuraContainerPrivateMixin:OnShow_Intrinsic).
@@ -46,6 +47,8 @@ local pairs = pairs
 local InCombatLockdown = InCombatLockdown
 local CreateFrame = CreateFrame
 local UnitCanAssist = UnitCanAssist
+local UnitExists = UnitExists
+local UnitIsPlayerControlledOrGroupMember = UnitIsPlayerControlledOrGroupMember
 local IsInRaid = IsInRaid
 local GetNumGroupMembers = GetNumGroupMembers
 local GetNumSubgroupMembers = GetNumSubgroupMembers
@@ -94,8 +97,8 @@ local PARK_SENTINEL = {
 -- "my own buff, wherever I put it", so every unit in a group-scoped set carries
 -- PLAYER and the isFromPlayerOrPlayerPet candidate filter. That candidate filter
 -- is evaluated OUTSIDE Blizzard's identity gate
--- (Blizzard_AuraContainerUtil.lua:85-87), so it is the one restriction that
--- survives when a unit stops being assistable.
+-- (Blizzard_AuraContainerUtil.lua:95-97, build 69497), so it is the one
+-- restriction that survives when the identity gate declines the unit.
 local ALLY_CONTRACT = { polarity = "HELPFUL", filter = "HELPFUL|PLAYER", ownOnly = true }
 local SLOT_CONTRACT = {
     player = { polarity = "HELPFUL", filter = "HELPFUL", ownOnly = false },
@@ -119,16 +122,36 @@ local function SlotContract(unit, groupScoped)
     return SLOT_CONTRACT[unit] or ALLY_CONTRACT
 end
 
--- Blizzard applies includeSpellIDs only when the aura's polarity agrees with
--- the unit's current reaction to the player. When that relationship flips
--- (vehicle possession, charm, or a friendly/hostile target transition), an
--- incompatible slot would otherwise accept every aura of its base polarity.
--- Fail closed until the relationship agrees again; the visibility switch is
--- on a CC-owned parent, never on the restricted AuraButton subtree.
+-- Blizzard applies includeSpellIDs only when its identity gate
+-- (AuraContainerUtil.CanApplyIdentityCandidateFilters) agrees the aura's
+-- polarity fits the unit's relationship to the player. When it declines, a
+-- bound slot would accept every aura of its base polarity. Fail closed until
+-- the gate would agree again; the visibility switch is on a CC-owned parent,
+-- never on the restricted AuraButton subtree.
+--
+-- This MUST mirror the gate exactly as hotfixed in build 69465
+-- (Blizzard_AuraContainerUtil.lua:11-46, build 69497): helpful filters always
+-- apply for the player, group members, and their pets
+-- (UnitIsPlayerControlledOrGroupMember), and the remaining checks use the
+-- lenient UnitCanAssist("player", unit, true, true), which ignores
+-- immune/uninteractable states (vehicles, teleports, cutscenes). A stricter
+-- mirror hides displays Blizzard renders correctly; a looser one leaves a
+-- slot visible where the gate declines its filter (junk auras).
+--
+-- Two deliberate deviations (owner rulings 2026-08-28):
+--   * UnitExists guard — a missing unit has no auras to misfilter, and
+--     failing closed on it is what clears a dismissed pet's frozen display
+--     (see EnsurePetWatcher).
+--   * Blizzard's never-secret spell exemption is NOT mirrored: a never-secret
+--     aura tracked against a disagreeing relationship stays hidden, as it did
+--     pre-hotfix.
 local function CanApplySpellIdentityFilter(unit, groupScoped)
-    local isAssistable = UnitCanAssist("player", unit) == true
+    if not UnitExists(unit) then
+        return false
+    end
+    local isAssistable = UnitCanAssist("player", unit, true, true) == true
     if SlotContract(unit, groupScoped).polarity == "HELPFUL" then
-        return isAssistable
+        return UnitIsPlayerControlledOrGroupMember(unit) == true or isAssistable
     end
     return not isAssistable
 end
@@ -386,7 +409,7 @@ end
 -- one: a dismissed pet fires no UNIT_AURA, so without this the last-applied
 -- visual would keep rendering with a frozen timer (probe-observed 2026-08-21).
 -- The identity refresh inside RefreshRecordsForToken is what clears it:
--- UnitCanAssist fails with no pet, so the fail-closed visibility switch hides
+-- UnitExists fails with no pet, so the fail-closed visibility switch hides
 -- the record until a pet exists again. Armed from the entry opt-in, like the
 -- group watcher.
 local function EnsurePetWatcher()
@@ -2469,12 +2492,14 @@ end
 --
 -- The sentinel alone is not a park. It works by handing Blizzard a spell ID
 -- that can never match, but that filter is applied INSIDE the identity gate
--- (Blizzard_AuraContainerUtil.lua:43-55), and the gate stops applying spell-ID
--- filters entirely for a helpful aura on a unit the player cannot assist
--- (:31-33). A charmed ally therefore makes a sentinel-parked slot match the
--- next aura the player has on that unit — wrong icon, wrong timer, on a display
--- the user has switched off. Slots can never be removed, so that state would
--- persist until /reload.
+-- (Blizzard_AuraContainerUtil.lua:53-65, build 69497), and the gate declines
+-- spell-ID filters entirely for a helpful aura on a unit the relationship
+-- checks reject (:41-43). The 69465 hotfix narrowed those decline windows
+-- (group members stay filterable through charm), but they still exist — a unit
+-- whose token no longer resolves to a group member can make a sentinel-parked
+-- slot match the next aura the player has on it — wrong icon, wrong timer, on
+-- a display the user has switched off. Slots can never be removed, so that
+-- state would persist until /reload.
 --
 -- Hiding the container is unconditional: the slot's AuraButton is a direct
 -- child of the container (Blizzard_CustomAuraContainer.lua:656 ->
@@ -2491,9 +2516,8 @@ end
 -- Do NOT split this into "sentinel now, Hide() later". An earlier attempt did, so
 -- that a record could be half-neutralised while its unit was in combat, and it was
 -- wrong in both directions: it leaves a VISIBLE container carrying a sentinel
--- filter, and the sentinel is exactly what the identity gate stops applying on a
--- non-assistable unit — a charmed ally would light that visible slot with an
--- unrelated buff of yours. And clearing `boundEntry` while the container is still
+-- filter, and the sentinel is exactly what the identity gate stops applying on
+-- a declined unit — such a slot would light with an unrelated aura of yours. And clearing `boundEntry` while the container is still
 -- shown makes the pass's token reconciliation treat the host as slot-free,
 -- releasing the pool lock on a live visible slot. The two halves must stay
 -- together; there is no longer any caller that needs them apart.
@@ -2727,8 +2751,8 @@ end
 -- The units an entry is tracked on, in bind order.
 --
 -- Polarity is still derived from the spell every pass (Blizzard's identity gate
--- permits spell-ID matching only for helpful auras on assistable units and
--- harmful auras on non-assistable ones); the stored auraUnit is a fallback for
+-- permits spell-ID matching only for helpful auras on friendly units and
+-- harmful auras on non-friendly ones); the stored auraUnit is a fallback for
 -- uncached spells, so config, migration and runtime can't drift. The one
 -- authority above the derivation is the user's explicit auraUnitOverride —
 -- written only by the config's Tracked On control. An override that lies
