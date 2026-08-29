@@ -1394,7 +1394,7 @@ end
 -- the per-entry text format is a flat field (buttonData.textFormat) outside the
 -- section machinery, and it must still read as the same action.
 local function GetRevertTooltipTextForLabel(label)
-    return "Revert " .. label .. " to group defaults"
+    return "Revert " .. label .. " to panel settings"
 end
 
 local function GetRevertTooltipText(sectionId)
