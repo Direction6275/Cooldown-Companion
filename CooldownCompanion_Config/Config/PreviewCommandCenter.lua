@@ -40,7 +40,13 @@ local PLAY_SIZE = 18
 local PLAY_ICON_SIZE = 13
 local CHEVRON_SIZE = 10
 local LABEL_GAP = 3
-local PLAY_GAP = 6
+-- Equal VISUAL gaps, measured between the chevron, glyphs, and text rather
+-- than between their frames. The two 13px glyphs are centered in 18px hit
+-- areas, so frame gaps have to account for the 2.5px inset on each side.
+-- Preserve the existing 9px play-to-gear visual interval as the shared rhythm.
+local CONTROL_VISUAL_GAP = 9
+local CONTROL_ICON_INSET = (PLAY_SIZE - PLAY_ICON_SIZE) / 2
+local PLAY_GAP = CONTROL_VISUAL_GAP - CONTROL_ICON_INSET
 local PLAY_ATLAS = "CreditsScreen-Assets-Buttons-Play"
 local STOP_ATLAS = "CreditsScreen-Assets-Buttons-Pause"
 local CHEVRON_ATLAS = "uitools-icon-chevron-down"
@@ -49,7 +55,11 @@ local CHEVRON_ATLAS = "uitools-icon-chevron-down"
 -- panel they do. Restated rather than imported because Helpers loads after
 -- this file.
 local GEAR_ATLAS = "QuestLog-icon-setting"
-local GEAR_GAP = 4
+local GEAR_GAP = CONTROL_VISUAL_GAP - (CONTROL_ICON_INSET * 2)
+local CUSTOMIZE_GAP = CONTROL_VISUAL_GAP - CONTROL_ICON_INSET
+local CUSTOMIZE_TEXT = "Customize"
+local CUSTOMIZE_COLOR = { 1, 0.82, 0 }
+local CUSTOMIZE_HOVER_COLOR = { 1, 0.93, 0.45 }
 -- Blizzard's own small inline book glyph (the quest log's campaign lore book),
 -- the only one that still reads as a book at this size. Unlike the flat gear
 -- beside it this is coloured art, and it keeps its own colours at rest for
@@ -528,6 +538,22 @@ end
 -- destination.
 local CHARGE_ROUTE = TextRoute("chargeText", "barChargeText")
 
+-- One ownership answer for every Cooldown Swipe route. Icon Fill replaces the
+-- swipe while it is active (outside Masque), so both the gear and Customize
+-- target that section. Otherwise Cooldown Swipe remains the setting being
+-- previewed even when explicitly off: it is still customizable as a tab-only
+-- setting, matching the command center's other disabled-state previews.
+local function ResolveCooldownVisualOwner(group, buttonIndex)
+    local style = ResolveTargetStyle(group, buttonIndex)
+    if style.iconFillEnabled == true and group.masqueEnabled ~= true then
+        return "iconFillTimer", "iconFillTimer"
+    end
+    if style.showCooldownSwipe ~= false then
+        return "cooldownSwipe", "cooldownSwipe"
+    end
+    return "cooldownSwipe", nil
+end
+
 local CONTROLS = {
     {
         id = "procGlow",
@@ -723,6 +749,7 @@ local CONTROLS = {
         label = "Preview Cooldown Swipe",
         group = GROUP_READOUTS,
         modes = { icons = true },
+        resolveSection = ResolveCooldownVisualOwner,
         -- The state look minus the countdown text (owner ruling 2026-08-08):
         -- desaturation and the cooldown tint preview here and nowhere else,
         -- so the entry carries no style gate - offered even with the swipe
@@ -730,19 +757,12 @@ local CONTROLS = {
         settings = {
             tab = "effects",
             uncollapse = "effects_timers",
-            -- The icon fill timer owns the cooldown visual (and disables the
-            -- swipe checkbox and its gear) while active, so the one panel
-            -- this gear opens moves with that ownership. A nil key (swipe
-            -- explicitly off, no fill) navigates to the tab and stops.
+            -- The same owner resolver drives the section and the advanced key,
+            -- so the gear and Customize cannot disagree. A nil advanced key
+            -- (swipe explicitly off, no fill) navigates to the row and stops.
             resolveKey = function(group, buttonIndex)
-                local style = ResolveTargetStyle(group, buttonIndex)
-                if style.iconFillEnabled == true and group.masqueEnabled ~= true then
-                    return "iconFillTimer"
-                end
-                if style.showCooldownSwipe ~= false then
-                    return "cooldownSwipe"
-                end
-                return nil
+                local _, advancedKey = ResolveCooldownVisualOwner(group, buttonIndex)
+                return advancedKey
             end,
         },
         preview = ConditionalPreview("cooldown_swipe"),
@@ -882,12 +902,6 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
         return false
     end
     return true
-end
-
--- The style section this preview is showing, or nil for previews that are not
--- a section's look (the object previews, the texture indicators).
-local function ControlSectionId(control)
-    return control.lensSection or control.section
 end
 
 -- Where the gear goes for the control the chooser is naming. Returns nil
@@ -1257,6 +1271,25 @@ local function ResolveContext()
     end
 
     return panelId, group, buttonIndex
+end
+
+-- The style section this preview is showing, or nil for previews that are not
+-- a section's look (the object previews, the texture indicators). Most controls
+-- name it statically; Cooldown Swipe resolves it from the same live ownership
+-- rule as its advanced-settings key.
+local function ControlSectionId(control)
+    if not control then
+        return nil
+    end
+    if control.resolveSection then
+        local _, group, buttonIndex = ResolveContext()
+        if not group then
+            return nil
+        end
+        local sectionId = control.resolveSection(group, buttonIndex)
+        return sectionId
+    end
+    return control.lensSection or control.section
 end
 
 ------------------------------------------------------------------------
@@ -1683,7 +1716,8 @@ local function ResolveRouteSectionScope(sectionId)
     if not (lens and lens.mode == "entry") then
         return nil
     end
-    return resolveSection(lens, group, sectionId)
+    local scope = resolveSection(lens, group, sectionId)
+    return scope, lens, group
 end
 
 -- A queued advanced key cannot be consumed by an inherited or unavailable
@@ -1774,6 +1808,63 @@ local function NavigateToPreviewSettings(bar)
     -- route that crossed nothing does not flicker through a clear/set cycle.
     if wasRunning and control.preview.IsActive(panelId, buttonIndex) ~= true then
         SetPreviewRunning(destination, control, panelId, buttonIndex, true)
+    end
+end
+
+-- The command center offers the one-click shortcut whenever one selected entry
+-- inherits the chosen preview's section. Routes with an advanced key open that
+-- panel after promotion; tab-only settings (Show Out of Range, for example)
+-- still customize and land on their row.
+local function ResolvePreviewCustomizeSection(bar)
+    if not (bar and bar._surface == BUTTONS_SURFACE and bar._gearRoute) then
+        return nil
+    end
+
+    local control = bar._selected
+    local sectionId = control and ControlSectionId(control) or nil
+    if not sectionId then
+        return nil
+    end
+
+    local scope, _, group = ResolveRouteSectionScope(sectionId)
+    if scope ~= "inherited" or not group then
+        return nil
+    end
+
+    -- Preview availability and override availability are separate contracts:
+    -- text panels can preview Unusable and Out of Range, but those sections
+    -- cannot be customized in text mode. Fail closed against the authoritative
+    -- override registry before either showing or executing this shortcut.
+    local sectionDef = ST.OVERRIDE_SECTIONS and ST.OVERRIDE_SECTIONS[sectionId]
+    local displayMode = group.displayMode or "icons"
+    if not (sectionDef and sectionDef.modes and sectionDef.modes[displayMode] == true) then
+        return nil
+    end
+
+    return sectionId
+end
+
+local function CustomizePreviewSection(bar)
+    -- Re-resolve at click time. Selection and preview choice normally rebuild
+    -- the bar, but a stale cached button must never customize the entry or
+    -- section it used to describe.
+    local sectionId = ResolvePreviewCustomizeSection(bar)
+    if not sectionId then
+        return
+    end
+
+    local scope, lens, group = ResolveRouteSectionScope(sectionId)
+    local promote = ST._PromoteLensSection
+    if scope ~= "inherited" or not promote then
+        return
+    end
+
+    -- Promotion refreshes the pinned mirror immediately, but leaves the config
+    -- pane in place. NavigateToPreviewSettings then prepares the destination,
+    -- queues the now-live advanced gear, refreshes once, and restores a running
+    -- preview if crossing the tab seam cleared it.
+    if promote(lens, group, sectionId, { deferRefresh = true }) then
+        NavigateToPreviewSettings(bar)
     end
 end
 
@@ -2158,6 +2249,36 @@ local function EnsureBar(host, surface)
     end)
     bar.gear = gear
 
+    -- An inherited preview section cannot open its advanced panel yet. Put the
+    -- escape hatch beside the gear the user already reached for: it gives this
+    -- entry its own copy, then the gear's existing route opens that setting.
+    local customize = CreateFrame("Button", nil, bar)
+    customize:SetHeight(BAR_HEIGHT)
+    customize:SetPoint("LEFT", gear, "RIGHT", CUSTOMIZE_GAP, 0)
+    customize.text = customize:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    customize.text:SetPoint("LEFT")
+    customize.text:SetText(CUSTOMIZE_TEXT)
+    customize.text:SetTextColor(CUSTOMIZE_COLOR[1], CUSTOMIZE_COLOR[2], CUSTOMIZE_COLOR[3])
+    customize:SetWidth(math.max(customize.text:GetStringWidth(), 1))
+
+    customize:SetScript("OnEnter", function(self)
+        self.text:SetTextColor(CUSTOMIZE_HOVER_COLOR[1], CUSTOMIZE_HOVER_COLOR[2], CUSTOMIZE_HOVER_COLOR[3])
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        local sectionId = bar._customizeSectionId
+        local section = sectionId and ST.OVERRIDE_SECTIONS and ST.OVERRIDE_SECTIONS[sectionId]
+        GameTooltip:AddLine(
+            "Customize " .. ((section and section.label) or "this setting") .. " for this entry")
+        GameTooltip:Show()
+    end)
+    customize:SetScript("OnLeave", function(self)
+        self.text:SetTextColor(CUSTOMIZE_COLOR[1], CUSTOMIZE_COLOR[2], CUSTOMIZE_COLOR[3])
+        GameTooltip:Hide()
+    end)
+    customize:SetScript("OnClick", function()
+        CustomizePreviewSection(bar)
+    end)
+    bar.customize = customize
+
     -- Drag spells in from the addon's own list instead of opening Blizzard's
     -- book. Pinned to the opposite end of the band, clear of the controls above.
     local spellbook = CreateFrame("Button", nil, bar)
@@ -2202,6 +2323,7 @@ end
 local function ApplyBarState(bar, control, running, gearRoute, group)
     bar._selected = control
     bar._gearRoute = gearRoute
+    bar._customizeSectionId = nil
     bar.play._running = running
 
     bar.chooser:Show()
@@ -2237,10 +2359,13 @@ local function ApplyBarState(bar, control, running, gearRoute, group)
 
     if not gearRoute then
         bar.gear:Hide()
+        bar.customize:Hide()
         return
     end
     ApplyGearTint(bar)
     bar.gear:Show()
+    bar._customizeSectionId = ResolvePreviewCustomizeSection(bar)
+    bar.customize:SetShown(bar._customizeSectionId ~= nil)
 end
 
 local function ShowSpellbookOnlyBar(host)
@@ -2248,6 +2373,7 @@ local function ShowSpellbookOnlyBar(host)
     bar.chooser:Hide()
     bar.play:Hide()
     bar.gear:Hide()
+    bar.customize:Hide()
     bar.spellbook:Show()
     ApplySpellbookTint(bar)
     host._cdcPreviewReserveBottom = BAR_RESERVE
@@ -2281,6 +2407,9 @@ local function GetPreviewCommandCenterOccupiedWidth(host)
     end
     if bar.gear:IsShown() then
         width = width + GEAR_GAP + PLAY_SIZE
+    end
+    if bar.customize:IsShown() then
+        width = width + CUSTOMIZE_GAP + (bar.customize:GetWidth() or 0)
     end
     return width
 end
