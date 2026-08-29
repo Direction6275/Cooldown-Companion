@@ -269,7 +269,9 @@ local function ApplyIndependentCastBarCoordinates(frame, x, y)
     SaveIndependentCastBarAnchor(true)
 end
 
-local function LockIndependentCastBarFromMover(frame)
+function ST.LockIndependentCastBarFromMover(frame)
+    frame = frame or independentMoverFrame
+    if not frame then return end
     local settings = GetCastBarSettings()
     if not settings then return end
     -- Locking the soloed mover would strand every other mover solo-hidden;
@@ -331,7 +333,7 @@ local function CreateCastBarMoverFrame()
     end)
 
     dragHandle.lockButton = ST.CreateMoverLockBadge(dragHandle, 12, function()
-        LockIndependentCastBarFromMover(frame)
+        ST.LockIndependentCastBarFromMover(frame)
     end)
     dragHandle.lockButton:SetPoint("RIGHT", dragHandle, "RIGHT", -2, 0)
     dragHandle.menuButton = ST.CreateMoverQuickMenuButton(

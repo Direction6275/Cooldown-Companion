@@ -10,13 +10,17 @@ local ARRANGE_TREE_ROW_HEIGHT = 20
 local ARRANGE_TREE_SCROLL_TRACK_WIDTH = 3
 local ARRANGE_TREE_SCREEN_MARGIN = 40
 
-local function GetDescriptor(record)
+local function ResolveDescriptor(record)
     local descriptor = record and record.getDescriptor and record.getDescriptor()
     if descriptor then
         descriptor.header = descriptor.header or record.header
         descriptor.chromeRoot = descriptor.chromeRoot or record.chromeRoot
     end
     return descriptor
+end
+
+local function GetDescriptor(record)
+    return record and record.openDescriptor or ResolveDescriptor(record)
 end
 
 local function SetMenuPinned(root, pinned)
@@ -361,6 +365,10 @@ function ST.CreateMoverQuickMenuButton(header, size, getDescriptor, chromeRoot)
         GameTooltip:Hide()
     end)
     button:SetScript("OnClick", function()
+        -- Toolbar rows are recycled while their dropdown can remain open.
+        -- Freeze this click's target so submenus cannot retarget after a scroll.
+        record.openDescriptor = ResolveDescriptor(record)
+        if not record.openDescriptor then return end
         CloseDropDownMenus()
         ToggleDropDownMenu(1, nil, dropdown, button, 0, 0)
         SetMenuPinned(record.chromeRoot, true)
@@ -517,6 +525,45 @@ end
 local IsTreeEntrySelected
 local RootHasSelectedChild
 
+local function IsArrangeTreeEntryActionable(entry)
+    if not entry then return false end
+    if entry.kind == "root" then
+        return entry.wrapperAvailable == true
+    end
+    return entry.kind == "panel" or entry.kind == "special"
+end
+
+local function GetArrangeTreeEntryDescriptor(entry)
+    if not IsArrangeTreeEntryActionable(entry) then return nil end
+    if entry.kind == "root" then
+        return { kind = "container", id = entry.id, focusId = entry.id }
+    elseif entry.kind == "panel" then
+        return {
+            kind = "panel",
+            id = entry.id,
+            containerId = entry.containerId,
+            focusId = entry.containerId,
+        }
+    elseif entry.kind == "special" then
+        return { kind = entry.id, focusId = entry.id }
+    end
+    return nil
+end
+
+local function LockArrangeTreeEntry(entry)
+    local descriptor = GetArrangeTreeEntryDescriptor(entry)
+    if not descriptor then return end
+    if descriptor.kind == "container" and ST.LockContainerFromMover then
+        ST.LockContainerFromMover(descriptor.id)
+    elseif descriptor.kind == "panel" and ST.LockPanelFromMover then
+        ST.LockPanelFromMover(descriptor.id)
+    elseif descriptor.kind == "cast" and ST.LockIndependentCastBarFromMover then
+        ST.LockIndependentCastBarFromMover()
+    elseif descriptor.kind == "resource" and ST.LockIndependentResourceStackFromMover then
+        ST.LockIndependentResourceStackFromMover()
+    end
+end
+
 local function ActivateArrangeTreeEntry(entry)
     if not entry or entry.manuallyHidden then return end
     if (entry.kind == "root" or entry.kind == "special")
@@ -585,6 +632,22 @@ local function EnsureArrangeTreeRow(pill, index)
     row.name = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     row.name:SetJustifyH("LEFT")
     row.name:SetWordWrap(false)
+
+    row.lockButton = ST.CreateMoverLockBadge(row, 12, function()
+        LockArrangeTreeEntry(row.entry)
+    end)
+    row.lockButton:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+    row.lockButton:SetAlpha(0.82)
+    row.lockButton:HookScript("OnEnter", function(self) self:SetAlpha(1) end)
+    row.lockButton:HookScript("OnLeave", function(self) self:SetAlpha(0.82) end)
+
+    row.menuButton = ST.CreateMoverQuickMenuButton(
+        row,
+        12,
+        function() return GetArrangeTreeEntryDescriptor(row.entry) end,
+        row
+    )
+    row.menuButton:SetPoint("RIGHT", row.lockButton, "LEFT", -2, 0)
 
     row:SetScript("OnClick", function() ActivateArrangeTreeEntry(row.entry) end)
     row:SetScript("OnEnter", function(self)
@@ -695,6 +758,7 @@ local function UpdateArrangeTreeRow(addon, row, entry)
 
     local isRoot = entry.kind == "root"
     local isSpecial = entry.kind == "special"
+    local actionsShown = IsArrangeTreeEntryActionable(entry)
 
     row.check:SetShown((isRoot or isSpecial) and entry.wrapperAvailable)
     if row.check:IsShown() then
@@ -702,19 +766,22 @@ local function UpdateArrangeTreeRow(addon, row, entry)
         row.check:SetPoint("LEFT", row, "LEFT", 2, 0)
         row.check.fill:SetShown(not entry.manuallyHidden)
     end
+    row.lockButton:SetShown(actionsShown)
+    row.menuButton:SetShown(actionsShown)
 
     row.name:ClearAllPoints()
     if entry.kind == "section" then
         row.name:SetPoint("LEFT", row, "LEFT", 34, 0)
-        row.name:SetPoint("RIGHT", row, "RIGHT", -2, 0)
     elseif entry.kind == "panel" then
         row.name:SetPoint("LEFT", row, "LEFT", 22, 0)
-        row.name:SetPoint("RIGHT", row, "RIGHT", -2, 0)
     elseif entry.wrapperAvailable then
         row.name:SetPoint("LEFT", row.check, "RIGHT", 6, 0)
-        row.name:SetPoint("RIGHT", row, "RIGHT", -2, 0)
     else
         row.name:SetPoint("LEFT", row, "LEFT", 2, 0)
+    end
+    if actionsShown then
+        row.name:SetPoint("RIGHT", row.menuButton, "LEFT", -4, 0)
+    else
         row.name:SetPoint("RIGHT", row, "RIGHT", -2, 0)
     end
     row.name:SetText(entry.name)
@@ -776,12 +843,26 @@ function ST.RefreshArrangeTreePill(self)
     pill._listMaxScrollOffset = maxOffset
     local visibleCount = expanded and math.min(#entries, maxVisible) or 0
     local overflow = maxOffset > 0
-    local maxNameWidth = 0
+    local maxContentWidth = 0
     pill._treeMeasure = pill._treeMeasure
         or pill:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     for _, entry in ipairs(entries) do
         pill._treeMeasure:SetText(entry.name)
-        maxNameWidth = math.max(maxNameWidth, pill._treeMeasure:GetStringWidth() or 0)
+        local leftInset
+        if entry.kind == "section" then
+            leftInset = 34
+        elseif entry.kind == "panel" then
+            leftInset = 22
+        elseif entry.wrapperAvailable then
+            leftInset = 20
+        else
+            leftInset = 2
+        end
+        local rightInset = IsArrangeTreeEntryActionable(entry) and 32 or 2
+        maxContentWidth = math.max(
+            maxContentWidth,
+            leftInset + (pill._treeMeasure:GetStringWidth() or 0) + rightInset
+        )
     end
 
     for index = 1, visibleCount do
@@ -804,7 +885,7 @@ function ST.RefreshArrangeTreePill(self)
         local baseWidth = pill._baseWidth or 300
         local requestedWidth = math.max(
             baseWidth,
-            math.ceil(44 + maxNameWidth + (overflow and 6 or 0))
+            math.ceil(16 + maxContentWidth + (overflow and 6 or 0))
         )
         local screenWidth = UIParent and UIParent.GetWidth and UIParent:GetWidth() or nil
         local maxWidth = screenWidth
