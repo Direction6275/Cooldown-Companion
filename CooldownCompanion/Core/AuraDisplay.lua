@@ -483,6 +483,37 @@ local function BuildSlotKit(slotButton)
     kit.barBackdrop:SetAllPoints(slotButton)
     kit.barBackdrop:SetAlpha(0)
 
+    -- Resource-host fill tint (the pre-12.1 "active recolor" revival,
+    -- probe-validated 2026-08-28): a plain texture the resource bind
+    -- anchors to the LIVE bar's fill texture region. The engine resizes
+    -- that region with the resource value, so the tint tracks it through
+    -- anchors alone with no combat Lua, and slot visibility shows it only
+    -- while the aura runs. The live fill spans the bar's FULL rect (the
+    -- bar paints its pixel borders over the fill's edges), so the tint is
+    -- clipped to the slot rect — which mounts inset inside the border ring
+    -- — through a clip window (the validated STK-POP pattern: the window
+    -- clips a child frame's regions, so the texture rides an inner host
+    -- frame). Alpha-0 until a resource bind turns it on.
+    --
+    -- Level discipline: nesting adds default frame levels (each child
+    -- spawns at parent+1), which would lift the tint ABOVE the
+    -- direct-child stack lane and into a tie with the glow — frame level
+    -- beats creation order. Both tint frames are pinned back to the slot
+    -- button's own level: child frames still render above their parent's
+    -- textures, and every other kit frame (lane and fills at +1, swipe at
+    -- +1, glow at swipe+1) outranks the tint.
+    kit.resourceFillTintClip = CreateFrame("Frame", nil, slotButton)
+    kit.resourceFillTintClip:SetAllPoints(slotButton)
+    kit.resourceFillTintClip:EnableMouse(false)
+    kit.resourceFillTintClip:SetClipsChildren(true)
+    kit.resourceFillTintClip:SetFrameLevel(kit.resourceFillTintClip:GetFrameLevel() - 1)
+    local tintHost = CreateFrame("Frame", nil, kit.resourceFillTintClip)
+    tintHost:SetAllPoints(kit.resourceFillTintClip)
+    tintHost:EnableMouse(false)
+    tintHost:SetFrameLevel(kit.resourceFillTintClip:GetFrameLevel())
+    kit.resourceFillTint = tintHost:CreateTexture(nil, "ARTWORK")
+    kit.resourceFillTint:SetAlpha(0)
+
     if slotButton.SetDurationBar then
         kit.barFill = CreateFrame("StatusBar", nil, slotButton)
         kit.barFill:SetAllPoints(slotButton)
@@ -1857,6 +1888,32 @@ local function StyleSlotKit(slot, button, buttonData, style)
         end
         if kit.pandemicStackFillClone then
             kit.pandemicStackFillClone:SetAlpha(0)
+        end
+        -- Fill tint (third independent shape, owner-ruled 2026-08-28;
+        -- continuous shapes only — the collector never sets fillTint on a
+        -- segment cluster). Anchored per-bind to the holder's fill PROXY,
+        -- never the live fill texture directly: a combat-time apply can
+        -- abandon and recreate the bar frame, and the combat-safe anchor
+        -- sync can re-point the CC-owned proxy at the replacement fill
+        -- while this registered texture stays untouched. blizzard_class
+        -- resolves like the health bar's fill: the per-power atlas cannot
+        -- be flat-tinted, so the Blizzard texture stands in.
+        if kit.resourceFillTint then
+            local proxy = resShapes.fillTint == true and button._ccFillProxy or nil
+            if proxy then
+                local texName = ST.GetEffectiveBarTextureName(style.barTexture)
+                kit.resourceFillTint:SetTexture(CooldownCompanion:FetchStatusBar(
+                    texName == "blizzard_class" and "Blizzard" or texName))
+                kit.resourceFillTint:SetTexCoord(0, 1, 0, 1)
+                local fillColor = style.barAuraFillColor or { 1, 0.84, 0 }
+                kit.resourceFillTint:SetVertexColor(fillColor[1], fillColor[2], fillColor[3])
+                kit.resourceFillTint:ClearAllPoints()
+                kit.resourceFillTint:SetPoint("TOPLEFT", proxy, "TOPLEFT", 0, 0)
+                kit.resourceFillTint:SetPoint("BOTTOMRIGHT", proxy, "BOTTOMRIGHT", 0, 0)
+                kit.resourceFillTint:SetAlpha(1)
+            else
+                kit.resourceFillTint:SetAlpha(0)
+            end
         end
         local stackLaneOn = resShapes.stackLane == true
             and kit.stackFill ~= nil and slot.boundStackMax ~= nil

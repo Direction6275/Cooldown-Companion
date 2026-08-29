@@ -655,6 +655,15 @@ function RB.CreateResourceBarAuraHostModule(deps)
             holder._ccBounds = CreateFrame("Frame", nil, holder)
             holder._ccBounds:EnableMouse(false)
             holder._barBounds = holder._ccBounds
+            -- The fill proxy: a holder-owned anchor relay between the slot
+            -- kit's tint (write-locked in combat) and the live bar's fill
+            -- texture (a combat-time apply can abandon and recreate the
+            -- bar). The tint binds to the PROXY once per OOC bind; the
+            -- proxy is a plain CC frame, so the combat-safe anchor sync
+            -- re-points it at a replacement bar's fill without touching
+            -- the registered subtree.
+            holder._ccFillProxy = CreateFrame("Frame", nil, holder)
+            holder._ccFillProxy:EnableMouse(false)
             resourceHolders[powerType] = holder
         end
         return holder
@@ -671,6 +680,23 @@ function RB.CreateResourceBarAuraHostModule(deps)
             return 0
         end
         return borderInset
+    end
+
+    -- Point one holder's fill proxy at the live bar's fill texture. Plain
+    -- CC anchor writes, legal in combat — this is what keeps the tint on
+    -- the CURRENT fill through a combat-time slot recycle. Bar types with
+    -- no single fill just clear the proxy; the tint is off for them.
+    local function AnchorResourceFillProxy(holder, frame, barType)
+        local proxy = holder and holder._ccFillProxy
+        if not proxy then return end
+        local fillTex = RB.ResourceOverlayFillSupportsBarType(barType)
+            and frame and frame.GetStatusBarTexture
+            and frame:GetStatusBarTexture() or nil
+        proxy:ClearAllPoints()
+        if fillTex then
+            proxy:SetPoint("TOPLEFT", fillTex, "TOPLEFT", 0, 0)
+            proxy:SetPoint("BOTTOMRIGHT", fillTex, "BOTTOMRIGHT", 0, 0)
+        end
     end
 
     local function IsLiveResourceAuraHolderBar(barInfo, settings)
@@ -711,6 +737,32 @@ function RB.CreateResourceBarAuraHostModule(deps)
         return DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
     end
 
+    -- The fill tint (the pre-12.1 "active recolor" revival, probe-validated
+    -- 2026-08-28). Own enable and colour keys, per the border/lane rule:
+    -- each overlay system is independent with its own colour. OFF unless
+    -- explicitly on (owner ruling 2026-08-28) — the tint is a new visual,
+    -- so pre-feature configs keep their look with no migration. Shared with
+    -- the config panel and the preview stand-in.
+    function RB.IsResourceOverlayFillEnabled(entry)
+        return type(entry) == "table" and entry.auraFillEnabled == true
+    end
+
+    function RB.GetResourceOverlayFillColor(entry)
+        local color = type(entry) == "table" and entry.auraFillColor or nil
+        if type(color) == "table" and color[1] ~= nil and color[2] ~= nil and color[3] ~= nil then
+            return color
+        end
+        return DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
+    end
+
+    -- Which bar types the fill tint can ride: the tint anchors to the ONE
+    -- fill texture a continuous StatusBar carries, so segment clusters are
+    -- out (no single fill, and the per-segment mechanism is unprobed).
+    function RB.ResourceOverlayFillSupportsBarType(barType)
+        return RESOURCE_OVERLAY_BAR_TYPES[barType] == true
+            and not SEGMENT_CLUSTER_BAR_TYPES[barType]
+    end
+
     -- Which overlay shapes an entry renders. The BORDER and the STACK LANE
     -- are INDEPENDENT toggles (owner ruling 2026-08-02: they are separate
     -- systems — any combination, including neither). The border is the
@@ -719,7 +771,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
     -- combat-grade stand-in), wrapping the WHOLE bar rect — one rect on
     -- segment clusters too, as if the bar were continuous. The lane fills
     -- with stacks on the same resources live offers it on.
-    local function ResolveResourceOverlayShapes(entry, powerType)
+    local function ResolveResourceOverlayShapes(entry, powerType, barType)
         local shapes = {}
         if RB.IsResourceOverlayBorderEnabled(entry) then
             shapes.border = true
@@ -727,6 +779,13 @@ function RB.CreateResourceBarAuraHostModule(deps)
         if GetResourceAuraTrackingMode(entry) == "stacks"
             and SupportsResourceAuraStackMode(powerType) then
             shapes.stackLane = true
+        end
+        -- Only the collector passes barType (the live bar's shape); the
+        -- config-facing callers resolve without it and never see fillTint.
+        if barType ~= nil
+            and RB.IsResourceOverlayFillEnabled(entry)
+            and RB.ResourceOverlayFillSupportsBarType(barType) then
+            shapes.fillTint = true
         end
         return shapes
     end
@@ -786,6 +845,9 @@ function RB.CreateResourceBarAuraHostModule(deps)
         -- builders style off when it is false.
         style.barAuraColor = RB.GetResourceOverlayLaneColor(entry)
         style.barAuraIndicatorEnabled = shapes.border == true
+        -- The fill tint's colour rides its own key beside the lane's and
+        -- the border's; the kit reads it only when shapes.fillTint is set.
+        style.barAuraFillColor = RB.GetResourceOverlayFillColor(entry)
         style.barAuraEffect = RB.GetResourceOverlayBorderStyle(entry)
         style.barAuraEffectColor = color
         style.barAuraEffectSize = tonumber(entry.auraBorderSize)
@@ -1160,7 +1222,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
                         and GetActiveResourceAuraEntry(resource) or nil
                     local auraSpellID = entry and tonumber(entry.auraColorSpellID) or nil
                     if auraSpellID and auraSpellID > 0 then
-                        local shapes = ResolveResourceOverlayShapes(entry, barInfo.powerType)
+                        local shapes = ResolveResourceOverlayShapes(entry, barInfo.powerType, barInfo.barType)
                         local buttonData = BuildResourceOverlayEntryAdapter(entry, settings, shapes)
                         local spellSet = CooldownCompanion:GetAuraCandidateSpellIDSet(buttonData)
                         if spellSet then
@@ -1190,6 +1252,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
                             AnchorHolderToBar(holder, frame,
                                 GetResourceHolderInset(barInfo, inset),
                                 HOLDER_LEVEL_RESOURCE)
+                            AnchorResourceFillProxy(holder, frame, barInfo.barType)
                             -- Orientation from the LAYOUT, not the frame:
                             -- segment-cluster frames never carry the
                             -- _isVertical/_reverseFill fields continuous
@@ -1339,6 +1402,11 @@ function RB.CreateResourceBarAuraHostModule(deps)
             -- Layout-derived, like the collector: cluster frames carry no
             -- _isVertical field for AnchorHolderToBar to read.
             holder._isVertical = IsVerticalResourceLayout(settings) == true
+            -- The tint's anchor relay follows the replacement frame too —
+            -- this is the combat-safe half of the fill-tint contract (the
+            -- registered tint itself is bound to the proxy and never
+            -- touched here).
+            AnchorResourceFillProxy(holder, frame, barInfo.barType)
         end
         -- A form can bring back a holder that this same restriction window
         -- hid. Its existing binding remains underneath; showing the plain CC
