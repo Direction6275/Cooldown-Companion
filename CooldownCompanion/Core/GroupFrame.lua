@@ -2519,7 +2519,7 @@ local function OnUnlockedPanelMouseWheel(frame, delta)
     ST.UpdateGroupSizeLabel(frame)
 end
 
-local function LockPanelFromMover(groupId)
+function ST.LockPanelFromMover(groupId)
     local group = CooldownCompanion.db.profile.groups[groupId]
     if not group then
         return
@@ -2528,7 +2528,13 @@ local function LockPanelFromMover(groupId)
     -- Close this panel's mover without touching its owning group. The shared
     -- setter adds the session suppression that container and cursor previews
     -- need in addition to the ordinary panel's saved independent lock flag.
-    if CooldownCompanion.ClearArrangeMoverSelection then
+    local selected = CooldownCompanion._arrangeSelectedPanelId == groupId
+    local cursorPreview = CooldownCompanion._cursorAnchorLayoutPreview
+    selected = selected or (cursorPreview and cursorPreview.selectedGroupId == groupId or false)
+    if not selected and group.parentContainerId and CooldownCompanion.IsContainerPanelSelected then
+        selected = CooldownCompanion:IsContainerPanelSelected(group.parentContainerId, groupId)
+    end
+    if selected and CooldownCompanion.ClearArrangeMoverSelection then
         CooldownCompanion:ClearArrangeMoverSelection()
     end
     CooldownCompanion:SetPanelLocked(groupId, true)
@@ -3780,7 +3786,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- Pixel nudger (parented to dragHandle, inherits show/hide)
     frame.nudger = CreateNudger(frame, groupId)
     frame.dragHandle.lockButton = ST.CreateMoverLockBadge(frame.dragHandle, 12, function()
-        LockPanelFromMover(groupId)
+        ST.LockPanelFromMover(groupId)
     end)
     frame.dragHandle.lockButton:SetPoint("RIGHT", frame.dragHandle, "RIGHT", -2, 0)
     frame.dragHandle.menuButton = ST.CreateMoverQuickMenuButton(
@@ -7491,7 +7497,7 @@ local function CreateContainerNudger(frame, containerId)
     return nudger
 end
 
-local function LockContainerFromMover(containerId)
+function ST.LockContainerFromMover(containerId)
     local container = CooldownCompanion.db.profile.groupContainers[containerId]
     if not container then
         return
@@ -7573,7 +7579,7 @@ function CooldownCompanion:CreateContainerFrame(containerId)
     frame.dragHandle.header.text = frame.dragHandle.text
 
     frame.dragHandle.lockButton = ST.CreateMoverLockBadge(frame.dragHandle.header, 18, function()
-        LockContainerFromMover(containerId)
+        ST.LockContainerFromMover(containerId)
     end)
     frame.dragHandle.lockButton:SetPoint("RIGHT", frame.dragHandle.header, "RIGHT", -4, 0)
     frame.dragHandle.menuButton = ST.CreateMoverQuickMenuButton(

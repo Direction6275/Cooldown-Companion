@@ -643,7 +643,9 @@ local function ApplyIndependentStackCoordinates(frame, x, y)
     SaveIndependentStackAnchor(true)
 end
 
-local function LockIndependentStackFromMover(frame)
+function ST.LockIndependentResourceStackFromMover(frame)
+    frame = frame or independentWrapperFrame
+    if not frame then return end
     local settings = GetResourceBarSettings()
     if not settings then return end
     local placementSettings = GetSpecLayoutOrder(settings)
@@ -707,7 +709,7 @@ local function CreateIndependentWrapperFrame()
     end)
 
     dragHandle.lockButton = ST.CreateMoverLockBadge(dragHandle, 12, function()
-        LockIndependentStackFromMover(frame)
+        ST.LockIndependentResourceStackFromMover(frame)
     end)
     dragHandle.lockButton:SetPoint("RIGHT", dragHandle, "RIGHT", -2, 0)
     dragHandle.menuButton = ST.CreateMoverQuickMenuButton(
