@@ -575,15 +575,6 @@ function CooldownCompanion:CopyPanelSettings(sourceGroupId, targetGroupId, scope
     -- comparison below, and before the combat-deferred return.
     self:EnforceAuraPanelInvariants(targetGroup)
 
-    -- A target serving as the stable anchor for Resources, the Cast Bar, or
-    -- Unit Frames must never come out of a copy compacted: the attached
-    -- displays need its full footprint. The same normalizer the compact
-    -- toggle's own build path runs (GroupOperations.lua); without it the
-    -- invariant would only self-heal on the next full refresh pass.
-    if self.NormalizeStableExternalAnchorCompactLayout then
-        self:NormalizeStableExternalAnchorCompactLayout(targetGroupId, targetGroup)
-    end
-
     local newMasqueEnabled = targetGroup.masqueEnabled and true or false
 
     -- The source can carry a Masque flag from a client that had it installed.
@@ -743,6 +734,9 @@ function CooldownCompanion:DeleteContainer(containerId)
     db.groupContainers[containerId] = nil
     if self.ClearContainerAlphaRuntimeState then
         self:ClearContainerAlphaRuntimeState(containerId)
+    end
+    if self.RefreshStableExternalAnchorCompactSuppression then
+        self:RefreshStableExternalAnchorCompactSuppression()
     end
     RefreshPanelAlphaDependencyTargets(self)
     self:RequestAuraRebind("delete")
@@ -1122,6 +1116,9 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     end
 
     self:CreateGroupFrame(groupId)
+    if self.RefreshStableExternalAnchorCompactSuppression then
+        self:RefreshStableExternalAnchorCompactSuppression()
+    end
     return groupId
 end
 
@@ -1134,6 +1131,9 @@ function CooldownCompanion:DeletePanel(containerId, groupId)
     self:UnloadGroup(groupId)
     self:DiscardDormantFrame(groupId)
     db.groups[groupId] = nil
+    if self.RefreshStableExternalAnchorCompactSuppression then
+        self:RefreshStableExternalAnchorCompactSuppression()
+    end
     RefreshPanelAlphaDependencyTargets(self)
     -- Native aura sounds are held by the display bindings, not the frame, so
     -- unloading alone leaves a deleted entry's alert registered and firing.
@@ -1217,6 +1217,8 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
     if self:GetPanelCount(sourceContainerId) == 0 then
         self:DeleteContainer(sourceContainerId)
         sourceDeleted = true
+    elseif self.RefreshStableExternalAnchorCompactSuppression then
+        self:RefreshStableExternalAnchorCompactSuppression()
     end
 
     RefreshPanelAlphaDependencyTargets(self)
@@ -1403,6 +1405,8 @@ function CooldownCompanion:DeleteGroup(id)
     -- If this was the last panel, delete the parent container too
     if parentId and self:GetPanelCount(parentId) == 0 then
         self:DeleteContainer(parentId)
+    elseif self.RefreshStableExternalAnchorCompactSuppression then
+        self:RefreshStableExternalAnchorCompactSuppression()
     end
     RefreshPanelAlphaDependencyTargets(self)
     self:RequestAuraRebind("delete")

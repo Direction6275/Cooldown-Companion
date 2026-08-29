@@ -2954,17 +2954,13 @@ end
 local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
     if CooldownCompanion:IsAuraPanel(group) then return end
 
-    local stableAnchorLocked = false
-    if CooldownCompanion.NormalizeStableExternalAnchorCompactLayout and CS.selectedGroup then
-        stableAnchorLocked = CooldownCompanion:NormalizeStableExternalAnchorCompactLayout(CS.selectedGroup, group) == true
-    end
+    local suppressionReasons = CooldownCompanion.GetGroupCompactLayoutSuppressionReasons
+        and CooldownCompanion:GetGroupCompactLayoutSuppressionReasons(CS.selectedGroup)
+        or nil
+    local compactSuppressed = type(suppressionReasons) == "table" and #suppressionReasons > 0
 
     local function ApplyCompactLayout(val)
-        if stableAnchorLocked then
-            group.compactLayout = false
-            return
-        end
-        group.compactLayout = val or false
+        group.compactLayout = val == true
         CooldownCompanion:PopulateGroupButtons(CS.selectedGroup)
         local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
         if frame then frame._layoutDirty = true end
@@ -2972,9 +2968,8 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
     end
 
     local compactCb = ST._AddCheckboxRow(container, {
-        label = "Compact Mode",
+        label = compactSuppressed and "Compact Mode (temporarily inactive)" or "Compact Mode",
         value = group.compactLayout or false,
-        disabled = stableAnchorLocked,
         indent = opts and opts.indent,
         onChange = ApplyCompactLayout,
     })
@@ -3056,7 +3051,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
             maxVisTooltip, tabInfoButtons))
     end
 
-    AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout and not stableAnchorLocked, {
+    AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout, {
         title = "Compact Mode Advanced",
         build = BuildCompactAdvanced,
     })
@@ -3064,14 +3059,37 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
     -- (?) tooltip for compact mode. The gear is already chained off the label,
     -- so this info button lands to its right; the anchor args below are a
     -- placeholder - AnchorRowBadge re-points the button.
-    local compactInfo = CreateInfoButton(compactCb.frame, compactCb.frame, "LEFT", "LEFT", 0, 0, {
+    local compactTooltip = {
         "Compact Mode",
         {"Compacts visible buttons or bars when hide conditions remove entries, helping centered layouts stay centered.", 1, 1, 1, true},
         {" ", 1, 1, 1},
         {"Auras set to |cffffd100Show Only While Aura Active|r always keep their space reserved. The game hides whether auras are active from addons, so the panel cannot tighten around a hidden aura.", 1, 1, 1, true},
         {" ", 1, 1, 1},
-        {"Does not function when unit frames, resources, or cast bars are anchored to this panel.", 1, 1, 1, true},
-    }, tabInfoButtons)
+    }
+    if compactSuppressed then
+        local reasonLabels = {
+            frameAnchoring = "Unit Frames",
+            resourceBars = "Resources",
+            castBar = "Cast Bar",
+        }
+        local activeLabels = {}
+        for _, reason in ipairs(suppressionReasons) do
+            activeLabels[#activeLabels + 1] = reasonLabels[reason] or tostring(reason)
+        end
+        compactTooltip[#compactTooltip + 1] = {
+            "Temporarily inactive while these attached features use this panel: "
+                .. table.concat(activeLabels, ", ")
+                .. ". Your preference is saved and will resume automatically when each attachment is disabled or given an independent anchor.",
+            1, 1, 1, true,
+        }
+    else
+        compactTooltip[#compactTooltip + 1] = {
+            "When Unit Frames, Resources, or the Cast Bar uses this panel as its attached anchor, Compact Mode pauses temporarily so the attached layout keeps a stable footprint. Your preference remains saved.",
+            1, 1, 1, true,
+        }
+    end
+    local compactInfo = CreateInfoButton(compactCb.frame, compactCb.frame, "LEFT", "LEFT", 0, 0,
+        compactTooltip, tabInfoButtons)
     ST._AnchorRowBadge(compactCb, compactInfo)
 end
 

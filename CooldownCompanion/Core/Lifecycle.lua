@@ -336,6 +336,12 @@ function CooldownCompanion:OnEnable()
         return
     end
 
+    -- Resolve runtime-only compact suppression before any panel frame is built,
+    -- so attached external displays receive a stable footprint immediately.
+    if self.RefreshStableExternalAnchorCompactSuppression then
+        self:RefreshStableExternalAnchorCompactSuppression({ refreshAffected = false })
+    end
+
     -- Create all container frames, then group (panel) frames
     self:CreateAllContainerFrames()
     self:CreateAllGroupFrames()

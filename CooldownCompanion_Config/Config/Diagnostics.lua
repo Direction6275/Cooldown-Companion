@@ -68,6 +68,20 @@ end
 local function SummarizePanel(panelId, panel)
     if type(panel) ~= "table" then return nil end
 
+    local suppressionReasons = CooldownCompanion.GetGroupCompactLayoutSuppressionReasons
+        and CooldownCompanion:GetGroupCompactLayoutSuppressionReasons(panelId)
+        or nil
+    local suppressedBy = {}
+    if type(suppressionReasons) == "table" and #suppressionReasons > 0 then
+        for index, reason in ipairs(suppressionReasons) do
+            suppressedBy[index] = reason
+        end
+    end
+    local compactLayoutEffective = panel.compactLayout == true
+    if CooldownCompanion.IsGroupCompactLayoutActive then
+        compactLayoutEffective = CooldownCompanion:IsGroupCompactLayoutActive(panelId, panel)
+    end
+
     return {
         id = panelId,
         name = panel.name,
@@ -79,6 +93,8 @@ local function SummarizePanel(panelId, panel)
         loadConditionCount = CountTableEntries(panel.loadConditions),
         masqueEnabled = panel.masqueEnabled == true,
         compactLayout = panel.compactLayout == true,
+        compactLayoutEffective = compactLayoutEffective,
+        compactLayoutSuppressedBy = suppressedBy,
         maxVisibleButtons = panel.maxVisibleButtons,
     }
 end

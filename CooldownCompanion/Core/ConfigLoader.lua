@@ -251,6 +251,9 @@ local function RunProfileMigrationAndRefresh(addon, reason)
         return
     end
 
+    if addon.RefreshStableExternalAnchorCompactSuppression then
+        addon:RefreshStableExternalAnchorCompactSuppression({ refreshAffected = false })
+    end
     addon:RefreshConfigPanel()
     addon:RefreshAllGroups()
     if addon.EvaluateBarsAndFramesRuntime then
