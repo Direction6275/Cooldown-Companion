@@ -1551,8 +1551,8 @@ ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS = {
 -- the entry list is conservative: an aura-tracking entry on an ORDINARY bar
 -- panel still has a base fill, a spell cooldown and a recharge to paint. On an
 -- Aura Panel none exists: the panel materializes no CC buttons at all, and the
--- only fill is the aura kit's, which reads barAuraColor and nothing else
--- (StyleActiveBarFill, AuraDisplay.lua).
+-- only fill is the aura kit's. Aura Panels expose no barColor override
+-- section, so ResolveBarAuraFillColor stays on their barAuraColor.
 ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS = {
     keybindText = true,
     barColor = true,

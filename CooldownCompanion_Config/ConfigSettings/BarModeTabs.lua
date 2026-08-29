@@ -654,10 +654,11 @@ local function BuildBarAppearanceTab(container, group, style)
     -- section's WRITE table with the panel style behind it in opts - the
     -- styleTable + fallbackStyle pair a customized section passes - or, inert,
     -- the read-only snapshot. The lens draws one shape for both scopes.
-    BuildBorderControls(borderLeft, borderSec.tbl, refreshStyle, {
+    local borderColorRow = BuildBorderControls(borderLeft, borderSec.tbl, refreshStyle, {
         row = true,
         fallbackStyle = borderSec.fallbackStyle,
     })
+    borderSec:DirectColorControl(borderColorRow, "borderColor")
 
     borderSec:Finish()
     end -- not borderCollapsed

@@ -5,6 +5,7 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local effectiveStyleCache = setmetatable({}, { __mode = "k" })
+local DEFAULT_BAR_AURA_FILL_COLOR = { 0.2, 1.0, 0.2, 1.0 }
 
 local function PruneDisallowedOverrideSections(buttonData)
     if not (buttonData and buttonData.overrideSections) then
@@ -65,6 +66,30 @@ function CooldownCompanion:GetEffectiveStyle(groupStyle, buttonData)
         effectiveStyleCache[buttonData] = nil
     end
     return groupStyle
+end
+
+-- Active aura fills preserve an entry's visual identity unless that entry
+-- explicitly owns its Active Aura Indicator color. The effective style may
+-- inherit from the panel through __index, so source precedence must read the
+-- saved override table and section ownership directly.
+--
+-- A whole Aura Panel has no resting/base fill and exposes no barColor section.
+-- Entries keep that override when moved so it can return on an ordinary bar
+-- panel, but it must not influence the Aura Panel while stored out of scope.
+function ST.ResolveBarAuraFillColor(style, buttonData, isWholeAuraPanel)
+    local sections = buttonData and buttonData.overrideSections
+    local overrides = buttonData and buttonData.styleOverrides
+    if sections and overrides then
+        if sections.barActiveAura then
+            local color = rawget(overrides, "barAuraColor")
+            if color then return color end
+        end
+        if not isWholeAuraPanel and sections.barColor then
+            local color = rawget(overrides, "barColor")
+            if color then return color end
+        end
+    end
+    return (style and style.barAuraColor) or DEFAULT_BAR_AURA_FILL_COLOR
 end
 
 --- Promote a section: copy current group values into buttonData.styleOverrides,

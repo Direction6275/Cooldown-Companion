@@ -1493,7 +1493,7 @@ local function BuildAppearanceTab(container)
     -- border art for the whole panel, and no entry can override that.
     --
     -- Border Color owns the section; thickness and size are its children.
-    AddColorRow(borderLeft, {
+    local borderColorRow = AddColorRow(borderLeft, {
         label = "Border Color",
         tbl = borderSec.tbl,
         key = "borderColor",
@@ -1503,6 +1503,7 @@ local function BuildAppearanceTab(container)
         onConfirm = refreshStyle,
         onChange = refreshStyle,
     })
+    borderSec:DirectColorControl(borderColorRow, "borderColor", group.masqueEnabled == true)
 
     local renderMode = AddBorderRenderModeDropdown(borderLeft, borderSec.tbl, "borderRenderMode", function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)

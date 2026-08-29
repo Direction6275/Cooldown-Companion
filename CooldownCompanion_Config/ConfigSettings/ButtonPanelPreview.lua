@@ -43,8 +43,8 @@ local AnchorIconFill = ST._AnchorIconFill
 local ApplyIconFillGeometry = ST._ApplyIconFillGeometry
 local ApplyIconFillLayer = ST._ApplyIconFillLayer
 local ResolveIconFillTimerValue = ST._ResolveIconFillTimerValue
-local DEFAULT_BAR_AURA_COLOR = ST._DEFAULT_BAR_AURA_COLOR
 local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
+local ResolveBarAuraFillColor = ST.ResolveBarAuraFillColor
 local AuraTextures = ST._AT
 local ApplyTextureIndicatorEffects = AuraTextures and AuraTextures.ApplyTextureIndicatorEffects
 local SetTextureIndicatorBaseVisuals = AuraTextures and AuraTextures.SetTextureIndicatorBaseVisuals
@@ -4053,7 +4053,7 @@ end
 -- the shift animation own the color while the pandemic preview runs — the
 -- pulse still applies, matching the clone inheriting the fill frame's
 -- pulse alpha.
-local function ApplyBarSlotFillEffects(slot, style, suppressShift)
+local function ApplyBarSlotFillEffects(slot, style, auraColor, suppressShift)
     local fillTex = slot.statusBar:GetStatusBarTexture()
     if not fillTex then return false end
     if style.barAuraPulseEnabled == true then
@@ -4076,9 +4076,9 @@ local function ApplyBarSlotFillEffects(slot, style, suppressShift)
             slot._cdcFillShiftAG = ag
             slot._cdcFillShiftAnim = ag:CreateAnimation("VertexColor")
         end
-        local base = style.barAuraColor or DEFAULT_BAR_AURA_COLOR or { 0, 1, 0.3, 1 }
         local shiftC = style.barAuraColorShiftColor or { 1, 1, 1, 1 }
-        slot._cdcFillShiftAnim:SetStartColor(CreateColor(base[1], base[2], base[3], base[4] or 1))
+        slot._cdcFillShiftAnim:SetStartColor(CreateColor(
+            auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1))
         slot._cdcFillShiftAnim:SetEndColor(CreateColor(shiftC[1], shiftC[2], shiftC[3], shiftC[4] or 1))
         slot._cdcFillShiftAnim:SetDuration(style.barAuraColorShiftSpeed or 0.5)
         slot._cdcFillShiftAG:Play()
@@ -4135,8 +4135,9 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
 
     style = style or slot.style or group.style or {}
     -- Same ticker stamp as the icon slots (see ApplySlotConditionalPreview).
+    local isAuraPanel = ST.IsAuraPanelGroup(group)
     slot._cdcAuraLowTime = CooldownCompanion.AllowAuraDurationLowTime(
-        style, ST.IsAuraPanelGroup(group)
+        style, isAuraPanel
             or ST.IsAuraSectionEntry(group, buttonData))
     -- Bars run the same icon tint pipeline live (UpdateIconTint on the
     -- bar icon); baseline restored every rebuild like the icon slots.
@@ -4191,7 +4192,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         tintG = auraTint and auraTint[2] or 1
         tintB = auraTint and auraTint[3] or 1
         tintA = auraTint and auraTint[4] or 1
-        local auraColor = style.barAuraColor or DEFAULT_BAR_AURA_COLOR or { 0, 1, 0.3, 1 }
+        local auraColor = ResolveBarAuraFillColor(style, buttonData, isAuraPanel)
         slot.statusBar:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1)
     end
 
@@ -4219,10 +4220,10 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
                 and ST.IsBarAuraIndicatorEnabled
                 and ST.IsBarAuraIndicatorEnabled(style) == true
             local shifted = false
+            local auraColor = ResolveBarAuraFillColor(style, buttonData, isAuraPanel)
             if fxActive then
-                shifted = ApplyBarSlotFillEffects(slot, style, pandemicActive)
+                shifted = ApplyBarSlotFillEffects(slot, style, auraColor, pandemicActive)
             end
-            local auraColor = style.barAuraColor or DEFAULT_BAR_AURA_COLOR or { 0, 1, 0.3, 1 }
             if pandemicActive then
                 -- Forced opaque, matching the live clone (owner ruling: the
                 -- pandemic color replaces the aura fill color, never blends).

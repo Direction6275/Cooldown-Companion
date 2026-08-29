@@ -883,7 +883,7 @@ local function BuildBorderControls(container, styleTable, refreshCallback, opts)
 
     -- deferCommit is deliberately absent, matching the stock color picker this
     -- row replaced.
-    AddColorRow(container, {
+    local colorRow = AddColorRow(container, {
         label = "Border Color",
         indent = opts.indent,
         tbl = styleTable,
@@ -893,6 +893,7 @@ local function BuildBorderControls(container, styleTable, refreshCallback, opts)
         onConfirm = refreshCallback,
         onChange = refreshCallback,
     })
+    return colorRow
 end
 
 -- Row grammar only: one slider row. WeakAuras-style zoom: crops the icon

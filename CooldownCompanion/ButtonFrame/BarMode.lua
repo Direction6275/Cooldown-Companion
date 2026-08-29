@@ -26,7 +26,7 @@ local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
 local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
-local DEFAULT_BAR_AURA_COLOR = ST._DEFAULT_BAR_AURA_COLOR
+local ResolveBarAuraFillColor = ST.ResolveBarAuraFillColor
 
 -- Imports from VisualState
 local ClearButtonVisualState = ST._ClearButtonVisualState
@@ -420,7 +420,7 @@ local function UpdateBarDisplay(button)
     local cdColorReason
     if onCooldown and not button.buttonData.isPassive then
         if button._totemActive == true then
-            wantCdColor = style.barAuraColor or DEFAULT_BAR_AURA_COLOR
+            wantCdColor = ResolveBarAuraFillColor(style, button.buttonData)
             cdColorReason = "totem"
         elseif isChargeButton and chargeState == CHARGE_STATE_MISSING then
             wantCdColor = style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR

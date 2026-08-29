@@ -1060,8 +1060,10 @@ end
 -- VertexColor animation owns the full color range (same trick as the kit
 -- border colorShift). fillTexture/rotates override the user bar texture
 -- for the widget-stack atlas (rotated so vertical bars keep the blocks).
-local function StyleActiveBarFill(fill, fillTex, pulseAG, pulseAnim, csAG, csAnim, button, style, fillTexture, rotates)
-    local auraColor = style.barAuraColor or { 0.2, 1.0, 0.2, 1.0 }
+local function StyleActiveBarFill(fill, fillTex, pulseAG, pulseAnim, csAG, csAnim,
+        button, buttonData, style, fillTexture, rotates)
+    local auraColor = ST.ResolveBarAuraFillColor(
+        style, buttonData, button._ccWholeAuraPanel == true)
     fill:SetOrientation(button._isVertical and "VERTICAL" or "HORIZONTAL")
     fill:SetReverseFill(style.barReverseFill or false)
     fill:SetRotatesTexture(rotates == true)
@@ -1956,7 +1958,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
                 AnchorResourceStackLane(kit.stackFill, slotButton, laneHost, laneVertical)
                 StyleActiveBarFill(kit.stackFill, kit.stackFillTexture,
                     kit.stackFillPulseAG, kit.stackFillPulseAnim,
-                    kit.stackFillCsAG, kit.stackFillCsAnim, button, style)
+                    kit.stackFillCsAG, kit.stackFillCsAnim, button, buttonData, style)
             else
                 RestBarFill(kit.stackFill, kit.stackFillTexture, kit.stackFillPulseAG, kit.stackFillCsAG)
             end
@@ -2036,7 +2038,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
             else
                 StyleActiveBarFill(kit.barFill, kit.barFillTexture,
                     kit.barFillPulseAG, kit.barFillPulseAnim,
-                    kit.barFillCsAG, kit.barFillCsAnim, button, style)
+                    kit.barFillCsAG, kit.barFillCsAnim, button, buttonData, style)
             end
         end
         local stackFillTexture
@@ -2070,7 +2072,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
             if useStackFill then
                 StyleActiveBarFill(kit.stackFill, kit.stackFillTexture,
                     kit.stackFillPulseAG, kit.stackFillPulseAnim,
-                    kit.stackFillCsAG, kit.stackFillCsAnim, button, style,
+                    kit.stackFillCsAG, kit.stackFillCsAnim, button, buttonData, style,
                     stackFillTexture, stackFillRotates)
             else
                 RestBarFill(kit.stackFill, kit.stackFillTexture, kit.stackFillPulseAG, kit.stackFillCsAG)
@@ -3968,6 +3970,10 @@ local function BindPanelGroup(pgroup, entry)
     -- hands out next is Blizzard's business.
     for _, host in ipairs(pgroup.hosts) do
         ApplyPanelHostGeometry(pgroup, host)
+        -- Both whole Aura Panels and ordinary-panel aura sections use the
+        -- auraPanel host kit. Preserve the distinction explicitly: only the
+        -- whole panel suppresses a retained entry-owned base bar color.
+        host.proxy._ccWholeAuraPanel = pgroup.record.anchor == nil
         -- Before StyleSlotKit: the styler reads the square's texture and crop
         -- for the occluding cover and the aura icon's own texcoords.
         ApplyPanelHostIcon(pgroup, host, entry.buttonData, entry.style)
