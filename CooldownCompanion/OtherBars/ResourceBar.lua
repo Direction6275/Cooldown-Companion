@@ -575,6 +575,7 @@ local function ClearStaleRecycledBarRuntimeState(frame, keepBorderVisuals)
     frame._baseNoCooldownSpellId = nil
     frame._chargeRecharging = nil
     frame._chargesSpent = nil
+    frame._ccShellAlpha = nil
     frame:SetAlpha(1)
 end
 

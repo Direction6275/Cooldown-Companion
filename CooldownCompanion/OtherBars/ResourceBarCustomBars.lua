@@ -408,7 +408,13 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                 alpha = ruleAlpha
             end
         end
-        bar:SetAlpha(alpha)
+        -- Change-detected: this runs from the per-tick cooldown update, and
+        -- the alpha is almost always unchanged. The recycle reset clears the
+        -- cache alongside its SetAlpha(1).
+        if bar._ccShellAlpha ~= alpha then
+            bar._ccShellAlpha = alpha
+            bar:SetAlpha(alpha)
+        end
         -- Rule alpha ONLY on the kit holder: the aura shell keeps the kit
         -- at full strength by design (it IS the visible bar there).
         if RB.SetCustomBarAuraHostRuleAlpha then

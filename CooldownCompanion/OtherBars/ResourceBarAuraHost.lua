@@ -1379,7 +1379,10 @@ function RB.CreateResourceBarAuraHostModule(deps)
     function RB.SetCustomBarAuraHostRuleAlpha(barInfo, alpha)
         local customBarId = barInfo and barInfo.customBarId
         local holder = customBarId and holders[customBarId]
-        if holder then
+        -- Change-detected: called per tick from the cooldown update loop,
+        -- and nothing else writes holder alpha.
+        if holder and holder._ccRuleAlpha ~= alpha then
+            holder._ccRuleAlpha = alpha
             holder:SetAlpha(alpha)
         end
     end
