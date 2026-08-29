@@ -303,6 +303,7 @@ end
 -- opts.leftAligned opts into the row-grammar header shape (caret, then a
 -- left-aligned label, then a rule fading right). Omitting opts keeps the
 -- stock centered heading every existing call site draws today.
+local RegisterLensAnchorHeading
 local function BuildCollapsibleSection(container, title, key, store, refreshFn, opts)
     store = store or CS.collapsedSections
     local heading = AceGUI:Create("Heading")
@@ -310,6 +311,9 @@ local function BuildCollapsibleSection(container, title, key, store, refreshFn, 
     ColorHeading(heading)
     heading:SetFullWidth(true)
     container:AddChild(heading)
+    if RegisterLensAnchorHeading then
+        RegisterLensAnchorHeading(heading, key)
+    end
 
     local collapsed = store[key]
     local btn = AttachCollapseButton(heading, collapsed, function()
@@ -821,6 +825,172 @@ local function ScrollNavTargetIntoView(widget)
     end
 end
 
+------------------------------------------------------------------------
+-- Place-preserving Panel <-> Entry lens handoff
+------------------------------------------------------------------------
+
+local function NormalizeLensAnchorKey(key)
+    if type(key) == "string" and key:sub(1, 5) == "lens_" then
+        return key:sub(6)
+    end
+    return key
+end
+
+local function BeginLensAnchorBuild(scroll)
+    CS.lensAnchorRegistry = {
+        scroll = scroll,
+        panelId = CS.selectedGroup,
+        tab = CS.selectedTab,
+        headings = {},
+        building = true,
+    }
+end
+
+local function EndLensAnchorBuild()
+    local registry = CS.lensAnchorRegistry
+    if registry then
+        registry.building = false
+    end
+end
+
+RegisterLensAnchorHeading = function(widget, key)
+    local registry = CS.lensAnchorRegistry
+    if not (registry and registry.building and widget and key) then
+        return
+    end
+    registry.headings[#registry.headings + 1] = {
+        widget = widget,
+        semanticKey = NormalizeLensAnchorKey(key),
+    }
+end
+
+local function GetLensAnchorHeadingOffset(scroll, heading)
+    local contentTop = scroll and scroll.content and scroll.content:GetTop()
+    local frame = heading and heading.widget and heading.widget.frame
+    local headingTop = frame and frame:GetTop()
+    if not (contentTop and headingTop) then
+        return nil
+    end
+    return contentTop - headingTop
+end
+
+local function CaptureLensAnchor()
+    CS.pendingLensAnchor = nil
+    if CS.pendingSettingHighlight then
+        return nil
+    end
+
+    local registry = CS.lensAnchorRegistry
+    local scroll = CS.col4Scroll
+    if not (registry and registry.scroll == scroll and scroll and scroll.scrollframe) then
+        return nil
+    end
+
+    local status = scroll.status or scroll.localstatus
+    local offset = (status and status.offset) or 0
+    local anchorIndex
+    local anchorOffset
+    local orderKeys = {}
+    for index, heading in ipairs(registry.headings or {}) do
+        orderKeys[index] = heading.semanticKey
+        local headingOffset = GetLensAnchorHeadingOffset(scroll, heading)
+        if headingOffset ~= nil then
+            if not anchorIndex then
+                anchorIndex = index
+                anchorOffset = headingOffset
+            end
+            if headingOffset <= offset then
+                anchorIndex = index
+                anchorOffset = headingOffset
+            end
+        end
+    end
+    if not anchorIndex then
+        return nil
+    end
+
+    CS.pendingLensAnchor = {
+        panelId = registry.panelId,
+        tab = registry.tab,
+        semanticKey = orderKeys[anchorIndex],
+        anchorIndex = anchorIndex,
+        orderKeys = orderKeys,
+        relativeOffset = anchorOffset - offset,
+        rawOffset = offset,
+    }
+    return CS.pendingLensAnchor
+end
+
+local function FindLensAnchorDestination(registry, pending)
+    local byKey = {}
+    for _, heading in ipairs(registry.headings or {}) do
+        if heading.semanticKey ~= nil and byKey[heading.semanticKey] == nil then
+            byKey[heading.semanticKey] = heading
+        end
+    end
+    if byKey[pending.semanticKey] then
+        return byKey[pending.semanticKey]
+    end
+
+    local keys = pending.orderKeys or {}
+    local index = pending.anchorIndex or 1
+    for i = index + 1, #keys do
+        if byKey[keys[i]] then
+            return byKey[keys[i]]
+        end
+    end
+    for i = index - 1, 1, -1 do
+        if byKey[keys[i]] then
+            return byKey[keys[i]]
+        end
+    end
+    return nil
+end
+
+local function RestoreLensAnchor()
+    local pending = CS.pendingLensAnchor
+    CS.pendingLensAnchor = nil
+    if not pending or CS.pendingSettingHighlight then
+        return
+    end
+
+    local registry = CS.lensAnchorRegistry
+    local scroll = registry and registry.scroll
+    if not (registry and scroll and scroll.scrollframe and scroll.content
+        and registry.panelId == pending.panelId
+        and registry.tab == pending.tab
+        and CS.selectedGroup == pending.panelId
+        and CS.selectedTab == pending.tab) then
+        return
+    end
+
+    local viewHeight = scroll.scrollframe:GetHeight() or 0
+    local maxOffset = math.max(0, (scroll.content:GetHeight() or 0) - viewHeight)
+    local desired = pending.rawOffset or 0
+    local destination = FindLensAnchorDestination(registry, pending)
+    local destinationOffset = destination
+        and GetLensAnchorHeadingOffset(scroll, destination) or nil
+    if destinationOffset ~= nil then
+        desired = destinationOffset - (pending.relativeOffset or 0)
+    end
+    desired = math.max(0, math.min(desired, maxOffset))
+
+    local value = maxOffset > 0 and (desired / maxOffset * 1000) or 0
+    scroll:SetScroll(value)
+    if scroll.scrollBarShown and scroll.scrollbar then
+        scroll.scrollbar:SetValue(value)
+    end
+end
+
+local function ScheduleLensAnchorRestore()
+    local pending = CS.pendingLensAnchor
+    if not pending or pending.scheduled then
+        return
+    end
+    pending.scheduled = true
+    C_Timer.After(0, RestoreLensAnchor)
+end
+
 local function FireNavSettingHighlight()
     local pending = CS.pendingSettingHighlight
     CS.pendingSettingHighlight = nil
@@ -876,6 +1046,8 @@ local function BeginNavSettingHighlightRefresh()
     StopNavSettingFlash()
     local pending = CS.pendingSettingHighlight
     if pending then
+        -- Explicit setting navigation owns this rebuild's semantic scroll.
+        CS.pendingLensAnchor = nil
         pending.refreshCount = (pending.refreshCount or 0) + 1
         if pending.refreshCount > 1 then
             CS.pendingSettingHighlight = nil
@@ -885,6 +1057,10 @@ end
 
 ST._ScheduleNavSettingHighlight = ScheduleNavSettingHighlight
 ST._BeginNavSettingHighlightRefresh = BeginNavSettingHighlightRefresh
+ST._BeginLensAnchorBuild = BeginLensAnchorBuild
+ST._EndLensAnchorBuild = EndLensAnchorBuild
+ST._CaptureLensAnchor = CaptureLensAnchor
+ST._ScheduleLensAnchorRestore = ScheduleLensAnchorRestore
 
 local function GroupSupportsPerButtonOverrides(group)
     return group and (group.displayMode or "icons") ~= "textures"

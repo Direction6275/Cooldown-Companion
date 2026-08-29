@@ -287,6 +287,10 @@ ST._configState = {
     -- the section and advanced-gear builders during the rebuild, consumed by
     -- the deferred scroll-and-pulse fire (ConfigSettings/Helpers.lua).
     pendingSettingHighlight = nil,
+    -- One-shot semantic scroll handoff between the Panel and Entry lenses.
+    -- Helpers.lua owns both the active heading registry and the pending anchor.
+    lensAnchorRegistry = nil,
+    pendingLensAnchor = nil,
 
     -- Collapsed sections state
     collapsedSections = {},
@@ -1060,6 +1064,10 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CS.selectedGroup = panelId
     CS.selectedButton = buttonIndex
     CS.selectedRotationAssistantEntry = nil
+    -- Finder results are explicit destinations, not ordinary focus changes.
+    -- Never let an anchor captured by an earlier selection switch override
+    -- the result the user chose.
+    CS.pendingLensAnchor = nil
     CS.barsEntrySelected = false
     CS.castFramesSelectedItem = nil
     CS.unifiedBarKind = nil
@@ -2342,10 +2350,20 @@ end
 -- Shared selection / spec helpers (consumed by Popups, Panel, Column*, DragReorder)
 ------------------------------------------------------------------------
 
-local function ClearSelectedButton()
+local function CaptureLensTransition()
+    CS.pendingLensAnchor = nil
+    if ST._CaptureLensAnchor then
+        ST._CaptureLensAnchor()
+    end
+end
+
+local function ClearSelectedButton(opts)
     CS.selectedButton = nil
     CS.selectedRotationAssistantEntry = nil
     wipe(CS.selectedButtons)
+    if not (opts and opts.preserveLensAnchor) then
+        CS.pendingLensAnchor = nil
+    end
 end
 
 local function ClearConfigButtonSelection()
@@ -2448,6 +2466,20 @@ local function SelectConfigPanel(panelId, opts)
     wipe(CS.selectedPanels)
     wipe(CS.selectedGroups)
 
+    -- The selected object is the editing target. Returning from an entry to
+    -- its own panel clears the entry highlight, but hands the semantic viewport
+    -- anchor to the panel build so the user keeps their place.
+    local samePanelEntry = CS.selectedGroup == panelId
+        and (CS.selectedButton ~= nil or CS.selectedRotationAssistantEntry == true)
+    local profile = CooldownCompanion.db and CooldownCompanion.db.profile
+    local selectedPanel = profile and profile.groups and profile.groups[panelId]
+    local supportsEntryLens = ST._GroupSupportsPerButtonOverrides
+        and ST._GroupSupportsPerButtonOverrides(selectedPanel)
+    local preservePlace = samePanelEntry and supportsEntryLens
+    if preservePlace then
+        CaptureLensTransition()
+    end
+
     if opts and opts.toggle
         and CS.selectedGroup == panelId
         and not CS.selectedButton
@@ -2459,7 +2491,9 @@ local function SelectConfigPanel(panelId, opts)
 
     CS.barsEntrySelected = false
     CS.castFramesSelectedItem = nil
-    ClearSelectedButton()
+    CS.unifiedBarKind = nil
+    CS.unifiedRowScope = "primary"
+    ClearSelectedButton({ preserveLensAnchor = preservePlace })
 end
 
 local function ToggleConfigPanelMultiSelect(panelId)
@@ -2481,14 +2515,37 @@ local function ToggleConfigPanelMultiSelect(panelId)
     CS.addingToPanelId = nil
 end
 
--- Selecting an entry does NOT move the tab row: the panel tabs are a lens
--- onto whatever is selected, so a panel tab that is already open stays open
--- and simply re-reads the new entry. Only two things pull the surface to the
+-- Selecting an entry makes that entry the editing target. A panel tab that is
+-- already open stays open and re-resolves through the selected entry's lens,
+-- so changing entries immediately shows the new entry's customization state.
+-- Only two things pull the surface to the
 -- entry cluster: growing a multi-select (its one tab is the only place that
 -- surface lives), and a caller that names a destination with opts.scope -
 -- adding a spell, whose new entry is the destination.
 local function SelectConfigButton(panelId, buttonIndex, opts)
     local panelChanged = CS.selectedGroup ~= panelId
+    local hadEntryFocus = not panelChanged
+        and (CS.selectedButton ~= nil or CS.selectedRotationAssistantEntry == true)
+    local explicitDestination = opts
+        and (opts.scope == "detail" or opts.scope == "primary")
+    local togglingOff = not panelChanged
+        and not (opts and (opts.force or opts.multi))
+        and CS.selectedButton == buttonIndex
+    local enteringFromPanel = not panelChanged
+        and not hadEntryFocus
+        and not (opts and opts.multi)
+    local profile = CooldownCompanion.db and CooldownCompanion.db.profile
+    local group = profile and profile.groups and profile.groups[panelId]
+    local supportsEntryLens = ST._GroupSupportsPerButtonOverrides
+        and ST._GroupSupportsPerButtonOverrides(group)
+    local preservePlace = supportsEntryLens
+        and not explicitDestination
+        and (togglingOff or enteringFromPanel)
+    if preservePlace then
+        CaptureLensTransition()
+    elseif explicitDestination then
+        CS.pendingLensAnchor = nil
+    end
     if opts and opts.containerId ~= nil then
         CS.selectedContainer = opts.containerId
     end
@@ -2532,6 +2589,10 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
         end
     end
 
+    if not CS.selectedButton and not next(CS.selectedButtons) then
+        CS.unifiedRowScope = "primary"
+    end
+
     -- An explicit destination outranks the lens rule, in both directions.
     if opts and (opts.scope == "detail" or opts.scope == "primary") then
         CS.unifiedRowScope = opts.scope
@@ -2554,6 +2615,7 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
     CS.castFramesSelectedItem = nil
     CS.unifiedBarKind = nil
     wipe(CS.selectedButtons)
+    CS.pendingLensAnchor = nil
     -- The rotation assistant entry has no entry tabs of its own. Everything
     -- it offers is visibility, and the panel-side Visibility tab reads the
     -- selected entry, so this selection lands on the panel tabs and names
@@ -2567,16 +2629,9 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
 end
 
 local function SelectConfigButtonPanel(panelId, opts)
-    -- Selecting the panel (even the already-selected one) always returns
-    -- the settings area to panel settings, so any unified bar selection ends.
+    -- The panel becomes the sole selected editing target.
     CS.unifiedBarKind = nil
-    if CS.selectedGroup ~= panelId then
-        CooldownCompanion:ClearAllConfigPreviews()
-        CS.selectedGroup = panelId
-        CS.barsEntrySelected = false
-        CS.castFramesSelectedItem = nil
-        ClearSelectedButton()
-    end
+    SelectConfigPanel(panelId)
     if opts and opts.clearPanelMulti then
         wipe(CS.selectedPanels)
     end
@@ -2872,6 +2927,7 @@ local function ResetConfigSelection(full)
     CS.customBarSpecExpandedId = nil
     ClearConfigResourceSelection()
     wipe(CS.selectedButtons)
+    CS.pendingLensAnchor = nil
     wipe(CS.selectedPanels)
     wipe(CS.selectedCustomBars)
     if full then

@@ -453,8 +453,11 @@ local function BreadcrumbToGroup()
 end
 
 local function BreadcrumbToPanel()
+    GameTooltip:Hide()
     CS.unifiedBarKind = nil
-    if ST._ClearConfigButtonSelection then
+    if CS.selectedGroup and ST._SelectConfigPanel then
+        ST._SelectConfigPanel(CS.selectedGroup)
+    elseif ST._ClearConfigButtonSelection then
         ST._ClearConfigButtonSelection()
     end
     CooldownCompanion:RefreshConfigPanel()

@@ -2294,7 +2294,10 @@ local function RefreshColumn1(preserveDrag)
 
                 if CS.selectedPanels[panelId] then
                     panelEntry:SetColor(0.4, 0.7, 1.0)
-                elseif CS.selectedGroup == panelId then
+                elseif CS.selectedGroup == panelId
+                    and CS.selectedButton == nil
+                    and CS.selectedRotationAssistantEntry ~= true
+                    and not next(CS.selectedButtons) then
                     panelEntry:SetColor(0, 1, 0)
                 elseif panel.enabled == false or isInactive then
                     panelEntry:SetColor(0.5, 0.5, 0.5)

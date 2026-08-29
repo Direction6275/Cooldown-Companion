@@ -1920,7 +1920,9 @@ local function CreateConfigPanel()
                 GameTooltip:AddLine("Settings")
                 GameTooltip:AddLine("Settings for the selected group, panel, or entry, with a live preview of the panel above them.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("Panel settings apply to every button in the panel. Selecting a button shows that entry's own settings; deselect it to return to the panel settings.", 1, 1, 1, true)
+                GameTooltip:AddLine("Panel settings apply to every button in the panel. Selecting an entry shows that entry's effective settings and customizations immediately.", 1, 1, 1, true)
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("Use the panel name in the Editing path to return to the whole panel. The settings view keeps your place where the same section exists.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine("With a button selected, each section shows whose settings you are looking at.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
@@ -1995,8 +1997,8 @@ local function CreateConfigPanel()
         end
         local previousTab = col3._activeButtonSettingsTab
         local tabChanged = previousTab ~= nil and previousTab ~= tab
-        -- Selecting an entry tab hands the settings surface back to entry
-        -- scope; the panel tabs stay in the row, just unselected.
+        -- Both tab clusters belong to the selected entry. This only chooses
+        -- which part of that entry's settings occupies the shared surface.
         local scopeChanged = ST._UnifiedRowGetScope() ~= "detail"
         ST._UnifiedRowSetScope("detail")
         col3._activeButtonSettingsTab = tab
