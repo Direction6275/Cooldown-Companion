@@ -1278,7 +1278,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Apply visibility alpha or early-return for hidden buttons
-    if not group or not group.compactLayout then
+    if not group or not CooldownCompanion:IsGroupCompactLayoutActive(button._groupId, group) then
         -- Non-compact mode: alpha=0 for hidden, restore for visible
         if button._visibilityHidden then
             button.cooldown:Hide()  -- prevent stale IsShown() across ticks

@@ -2960,67 +2960,117 @@ function CooldownCompanion:IsResourceBarAnchorIndependent()
     return IsResourceBarIndependentAnchor(settings, self._currentSpecId)
 end
 
-function CooldownCompanion:IsGroupStableExternalAnchor(groupId)
+local function CollectStableExternalAnchorCompactReasons(self, groupId)
     groupId = tonumber(groupId)
-    if not groupId then
-        return false
-    end
+    if not groupId then return nil end
 
     local anchorGroupId = self.GetFirstAvailableAnchorGroup and tonumber(self:GetFirstAvailableAnchorGroup()) or nil
-    if anchorGroupId ~= groupId then
-        return false
+    if anchorGroupId ~= groupId then return nil end
+
+    local reasons = nil
+    local function AddReason(reason)
+        reasons = reasons or {}
+        reasons[#reasons + 1] = reason
     end
 
     local frameSettings = self.GetFrameAnchoringSettings and self:GetFrameAnchoringSettings() or nil
     if frameSettings and frameSettings.enabled == true then
-        return true
-    end
-
-    local castSettings = self.GetCastBarSettings and self:GetCastBarSettings() or nil
-    if castSettings and castSettings.enabled == true and castSettings.independentAnchorEnabled ~= true then
-        return true
+        AddReason("frameAnchoring")
     end
 
     local resourceSettings = self.GetResourceBarSettings and self:GetResourceBarSettings() or nil
     if resourceSettings
         and resourceSettings.enabled == true
         and not IsResourceBarIndependentAnchor(resourceSettings, self._currentSpecId) then
-        return true
+        AddReason("resourceBars")
     end
 
-    return false
+    local castSettings = self.GetCastBarSettings and self:GetCastBarSettings() or nil
+    if castSettings and castSettings.enabled == true and castSettings.independentAnchorEnabled ~= true then
+        AddReason("castBar")
+    end
+
+    return reasons
 end
 
-function CooldownCompanion:NormalizeStableExternalAnchorCompactLayout(groupId, group)
-    local isStableAnchor = self:IsGroupStableExternalAnchor(groupId)
-    if not isStableAnchor then
-        return false, false
-    end
+function CooldownCompanion:IsGroupStableExternalAnchor(groupId)
+    return CollectStableExternalAnchorCompactReasons(self, groupId) ~= nil
+end
 
+function CooldownCompanion:GetGroupCompactLayoutSuppressionReasons(groupId)
+    groupId = tonumber(groupId)
+    if groupId and groupId == self._compactLayoutSuppressedGroupId then
+        return self._compactLayoutSuppressionReasons
+    end
+    return nil
+end
+
+function CooldownCompanion:IsGroupCompactLayoutActive(groupId, group)
     group = group or (self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId])
-    if group and group.compactLayout then
-        group.compactLayout = false
-        local frame = self.groupFrames and self.groupFrames[groupId]
-        if frame then
-            frame._layoutDirty = true
-            if InCombatLockdown and InCombatLockdown() and frame:IsProtected() then
-                self._pendingFullRefresh = true
-            elseif self.PopulateGroupButtons then
-                self:PopulateGroupButtons(groupId)
-            end
-        end
-        return true, true
+    if not group or group.compactLayout ~= true then
+        return false
     end
-
-    return true, false
+    return tonumber(groupId) ~= self._compactLayoutSuppressedGroupId
 end
 
-function CooldownCompanion:NormalizeCurrentStableExternalAnchorCompactLayout()
-    local groupId = self.GetFirstAvailableAnchorGroup and self:GetFirstAvailableAnchorGroup() or nil
-    if not groupId then
-        return false, false
+local function AreCompactSuppressionReasonsEqual(left, right)
+    if left == right then return true end
+    if type(left) ~= "table" or type(right) ~= "table" or #left ~= #right then
+        return false
     end
-    return self:NormalizeStableExternalAnchorCompactLayout(groupId)
+    for index = 1, #left do
+        if left[index] ~= right[index] then
+            return false
+        end
+    end
+    return true
+end
+
+local function RefreshCompactSuppressionAffectedGroup(self, groupId)
+    groupId = tonumber(groupId)
+    if not groupId then return end
+
+    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
+    if not group or group.compactLayout ~= true then return end
+
+    local frame = self.groupFrames and self.groupFrames[groupId]
+    if frame then
+        frame._layoutDirty = true
+    end
+
+    if (InCombatLockdown and InCombatLockdown() and frame and frame:IsProtected()) or not frame then
+        self._pendingFullRefresh = true
+    elseif self.RefreshGroupFrame then
+        self:RefreshGroupFrame(groupId)
+    end
+end
+
+function CooldownCompanion:RefreshStableExternalAnchorCompactSuppression(options)
+    options = options or {}
+
+    local oldGroupId = self._compactLayoutSuppressedGroupId
+    local oldReasons = self._compactLayoutSuppressionReasons
+    local newGroupId = self.GetFirstAvailableAnchorGroup and tonumber(self:GetFirstAvailableAnchorGroup()) or nil
+    local newReasons = newGroupId and CollectStableExternalAnchorCompactReasons(self, newGroupId) or nil
+    if not newReasons then
+        newGroupId = nil
+    end
+
+    local targetChanged = oldGroupId ~= newGroupId
+    local reasonsChanged = not AreCompactSuppressionReasonsEqual(oldReasons, newReasons)
+    if not targetChanged and not reasonsChanged then
+        return false
+    end
+
+    self._compactLayoutSuppressedGroupId = newGroupId
+    self._compactLayoutSuppressionReasons = newReasons
+
+    if targetChanged and options.refreshAffected ~= false then
+        RefreshCompactSuppressionAffectedGroup(self, oldGroupId)
+        RefreshCompactSuppressionAffectedGroup(self, newGroupId)
+    end
+
+    return true
 end
 
 function CooldownCompanion:PopulatePanelAnchorTargetDropdown(dropdown, sourceGroupId)
@@ -3599,16 +3649,15 @@ function CooldownCompanion:FinalizePanelAnchors()
         return
     end
 
+    self:RefreshStableExternalAnchorCompactSuppression()
+
     -- This is the post-create/post-refresh owner for panel lifecycle order:
     -- size every panel first, then re-apply saved anchors from roots outward.
     local panels = {}
     for groupId, group in pairs(groups) do
         local frame = self.groupFrames[groupId]
         if group and group.parentContainerId and group.anchor and frame then
-            if self.NormalizeStableExternalAnchorCompactLayout then
-                self:NormalizeStableExternalAnchorCompactLayout(groupId, group)
-            end
-            if not group.compactLayout then
+            if not self:IsGroupCompactLayoutActive(groupId, group) then
                 frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group)
             else
                 frame.layoutButtonCount = nil
@@ -3631,7 +3680,8 @@ function CooldownCompanion:FinalizePanelAnchors()
     end)
 
     for _, panel in ipairs(panels) do
-        if not (panel.group.compactLayout and IsFrameAnchoredToSavedTarget(panel.frame, panel.group.anchor)) then
+        local compactLayoutActive = self:IsGroupCompactLayoutActive(panel.groupId, panel.group)
+        if not (compactLayoutActive and IsFrameAnchoredToSavedTarget(panel.frame, panel.group.anchor)) then
             self:AnchorGroupFrame(panel.frame, panel.group.anchor)
         end
     end
@@ -3664,6 +3714,8 @@ function CooldownCompanion:RefreshAllGroups()
         self:ClearUnsupportedProfileRuntime()
         return
     end
+
+    self:RefreshStableExternalAnchorCompactSuppression({ refreshAffected = false })
 
     -- Defer entire refresh during combat — protected frame operations
     -- (Show/Hide/SetSize/SetPoint/SetFrameStrata/RegisterForDrag/EnableMouse)
@@ -3755,6 +3807,8 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
         self:ClearUnsupportedProfileRuntime()
         return
     end
+
+    self:RefreshStableExternalAnchorCompactSuppression()
 
     -- Fully unload frames for groups not in the current profile
     for groupId, _ in pairs(self.groupFrames) do
@@ -3850,7 +3904,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                         if frame.UpdateCooldowns then
                             frame:UpdateCooldowns()
                         end
-                        if group.compactLayout then
+                        if self:IsGroupCompactLayoutActive(groupId, group) then
                             frame._layoutDirty = true
                             self:UpdateGroupLayout(groupId)
                         end

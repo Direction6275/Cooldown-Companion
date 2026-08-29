@@ -2284,7 +2284,7 @@ local function BeginPanelResizeGesture(grip)
     local numButtons = frame.visibleButtonCount
         or (CooldownCompanion:IsRotationAssistantGroup(group) and 1)
         or #group.buttons
-    if group.parentContainerId and not group.compactLayout and frame.layoutButtonCount then
+    if group.parentContainerId and not CooldownCompanion:IsGroupCompactLayoutActive(groupId, group) and frame.layoutButtonCount then
         numButtons = math_max(numButtons, frame.layoutButtonCount)
     end
     -- On a sectioned panel the counts above include the section members, but the
@@ -2315,7 +2315,7 @@ local function BeginPanelResizeGesture(grip)
     if not ST.IsAuraPanelGroup(group) then
         factorPoint = ST.GetCenteredGrowthEdge(style.growthOrigin, orientation)
     end
-    if not factorPoint and group.compactLayout then
+    if not factorPoint and CooldownCompanion:IsGroupCompactLayoutActive(groupId, group) then
         factorPoint = GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, style.growthOrigin)
     end
     factorPoint = factorPoint or ((group.anchor and group.anchor.point) or "CENTER")
@@ -2925,7 +2925,7 @@ local function SetCursorAnchorLayoutPreviewGroupState(self, groupId, active)
     if frame.UpdateCooldowns then
         frame:UpdateCooldowns()
     end
-    if group.compactLayout and self.UpdateGroupLayout then
+    if self:IsGroupCompactLayoutActive(groupId, group) and self.UpdateGroupLayout then
         self:UpdateGroupLayout(groupId)
     end
 
@@ -4886,7 +4886,7 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
         visibleIndex = #frame.buttons
     end
     frame.visibleButtonCount = isTriggerMode and (visibleIndex > 0 and 1 or 0) or visibleIndex
-    if group.parentContainerId and not group.compactLayout and self.GetGroupLayoutButtonCount then
+    if group.parentContainerId and not self:IsGroupCompactLayoutActive(groupId, group) and self.GetGroupLayoutButtonCount then
         frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group, {
             buttonUsabilityOptions = buttonSizingOptions,
         })
@@ -4907,7 +4907,7 @@ local function FinishGroupButtonRefresh(self, groupId, frame, group)
     -- edge must hold across config-driven size changes. Explicit re-anchors
     -- (AnchorGroupFrame) still reset, so a freshly placed frame baselines.
     local style = group.style or {}
-    local holdCenteredBaseline = not group.compactLayout
+    local holdCenteredBaseline = not self:IsGroupCompactLayoutActive(groupId, group)
         and not ST.IsAuraPanelGroup(group)
         and ST.GetCenteredGrowthEdge(style.growthOrigin, ST.GetPanelLayoutOrientation(group.displayMode, style)) ~= nil
     if not holdCenteredBaseline then
@@ -4922,7 +4922,7 @@ local function FinishGroupButtonRefresh(self, groupId, frame, group)
 
     -- Compact mode: apply reflow immediately so newly rebuilt buttons don't
     -- briefly appear before the next ticker-driven layout pass.
-    if group.compactLayout then
+    if self:IsGroupCompactLayoutActive(groupId, group) then
         frame._layoutDirty = true
         self:UpdateGroupLayout(groupId)
     end
@@ -5147,7 +5147,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     self:RequestAuraRebind("populate")
     -- _hasBeenSized is now true if the compact resize ran (set by
     -- ResizeGroupFrame), or still false if all buttons were visible and no
-    -- compact resize was needed.  When compactLayout is off, it stays false
+    -- compact resize was needed. When effective compact layout is off, it stays false
     -- (harmless — ResizeGroupFrame skips compensation for non-compact groups).
     -- Either state is correct: the first ticker-driven resize after this
     -- will either compensate (true) relative to the established compact
@@ -5177,7 +5177,7 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     local numButtons = frame.visibleButtonCount
         or (self:IsRotationAssistantGroup(group) and 1)
         or #group.buttons
-    if group.parentContainerId and not group.compactLayout and frame.layoutButtonCount then
+    if group.parentContainerId and not self:IsGroupCompactLayoutActive(groupId, group) and frame.layoutButtonCount then
         numButtons = math_max(numButtons, frame.layoutButtonCount)
     end
 
@@ -5253,7 +5253,7 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
         -- start/center/end alignment, which it supersedes.
         fixedPoint = ST.GetCenteredGrowthEdge(style.growthOrigin, orientation)
     end
-    if not fixedPoint and group.compactLayout then
+    if not fixedPoint and self:IsGroupCompactLayoutActive(groupId, group) then
         fixedPoint = GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, style.growthOrigin)
     end
     local canCompensateAnchor = frame._hasBeenSized and oldWidth > 0 and oldHeight > 0
@@ -5339,13 +5339,13 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
 end
 
 -- Compact layout reflow: reposition visible buttons to fill gaps left by hidden ones.
--- Only runs when compactLayout is enabled and _layoutDirty is true.
+-- Only runs when compact layout is effective and _layoutDirty is true.
 function CooldownCompanion:UpdateGroupLayout(groupId)
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
     if not frame or not group then return end
 
-    if not group.compactLayout then
+    if not self:IsGroupCompactLayoutActive(groupId, group) then
         for _, button in ipairs(frame.buttons) do
             ClearButtonCompactSlotCache(button)
         end
