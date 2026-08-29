@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.3",
         "2.2.1",
         "2.2",
         "2.1.4",
@@ -33,6 +34,34 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.3"] = {
+            markdown = [[
+## New Features
+
+- **Unlock Mode, rebuilt:** Unlocking your layout is now a focused workspace for positioning, sizing, and managing every mover directly on screen.
+  - **Quieter controls:** Movers rest cleanly until hovered or selected, and dragging hides extra chrome so your real layout stays easy to see.
+  - **One complete toolbar:** Browse groups, panels, sections, the Cast Bar, and Resource Bars in a scrollable tree, then solo, hide, lock, open settings, change anchors, or reset them from one place.
+  - **Resize in place:** Drag, scroll, or type exact sizes for panels and independent bars. Cursor-anchored panels park beside a movable Dummy Cursor while you work instead of chasing the mouse.
+  - **Smarter layout tools:** Crisp color-coded snap guides hold steady, Panel Sections can wrap into rows, and sections can be selected and adjusted with the same on-screen controls as their panel.
+- **More capable Custom Bars:** Buff bars can track your group or pet, dim while inactive, and hide based on cooldown or charge state without shifting the surrounding stack.
+- **Low-time colors for auras:** Aura timers can use your Low Time Threshold colors and forced decimals. Mixed cooldown and aura displays opt in with Apply to Aura Text, while aura-only displays use the setting automatically.
+- **Druid resources across forms:** Balance, Feral, and Guardian Druids can keep their specialization resources visible while shapeshifting without losing the resource used by the current form.
+- **Active-aura resource colors:** Continuous resource bars can use a separate fill color while their tracked aura is active, with matching Live Preview support.
+
+## Polish | QoL
+
+- **Faster Live Preview customization:** Selecting an entry now cleanly switches the preview and settings to that entry, preserves your place, and offers a one-click Customize action for inherited settings. Irrelevant options stay hidden and stacked aura previews more closely match the finished result.
+- **Cleaner panel setup:** Empty groups now open with a focused panel picker, and the preview filter can hide disabled entries alongside unavailable ones.
+- **Sharper layout chrome:** Unlock borders, lock badges, and resize grips are now crisp and consistent, including after UI scale or resolution changes.
+
+## Bug Fixes
+
+- **More reliable aura tracking:** Blade Flurry and Dancing Rune Weapon now detect the correct buffs, while Heating Up and Hot Streak can be tracked separately. New unit and Aura ID overrides handle future detection misses, and Aura-only entries can track pet buffs directly.
+- **Auras stay visible through unusual states:** Aura displays no longer go blank in vehicles, during teleports, or through cutscenes, while friendly-target debuffs and dismissed pets still fail closed correctly.
+- **Attached layouts stay stable:** Anchored unit frames no longer blink back to their original position for a frame. Compact Mode preferences also survive reloads and automatically resume when an attachment no longer needs the full panel footprint.
+- **Entry colors apply correctly:** Clicking an inherited Border Color now starts entry customization immediately, and active aura bars respect entry-level Aura Timer and Bar colors before falling back to the panel color.
+]],
+        },
         ["2.2.1"] = {
             markdown = [[
 ## Polish | QoL
