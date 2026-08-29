@@ -3093,10 +3093,9 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
     end
 end
 
--- There is one Visibility tab, and it is a lens: with a single entry
--- selected it edits that entry's rules, and with nothing (or a multi-select)
--- selected it edits the panel's. The rotation assistant's virtual entry is
--- served here too - it has no entry tabs of its own.
+-- There is one Visibility tab, and the selected object owns it: an entry edits
+-- its rules, while a panel selection and multi-select edit the panel's. The
+-- rotation assistant's virtual entry is served here too.
 --
 -- The info buttons go into CS.tabInfoButtons, not the entry-tab host's
 -- CS.buttonSettingsInfoButtons: this tab is built by the panel host, and

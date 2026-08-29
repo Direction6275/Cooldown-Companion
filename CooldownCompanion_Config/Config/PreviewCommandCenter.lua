@@ -1550,6 +1550,9 @@ local function NavigateToSectionHome(sectionId, opts)
         }
     end
 
+    -- This route originates in the selected entry's Customizations list.
+    -- Selection already owns the editing target; only choose the panel-tab
+    -- half of that entry's settings surface.
     SetRowScope("primary")
     CS.selectedTab = tab
     CS.panelSettingsTab = tab
@@ -1675,6 +1678,7 @@ local function ResolveRouteSectionScope(sectionId)
     if not group then
         return nil
     end
+    -- Preview gears are entry-targeted whenever ResolveContext found one.
     local lens = resolveLens(group)
     if not (lens and lens.mode == "entry") then
         return nil
@@ -1709,10 +1713,6 @@ local function NavigateToPreviewSettings(bar)
     -- Read BEFORE ApplyGearRoute: the lens is resolved from the selection,
     -- which navigation does not touch, but keeping the read on this side of it
     -- keeps the answer tied to the state the click was made in.
-    local sectionScope = ResolveRouteSectionScope(sectionId)
-    local suppressQueue = queueKey ~= nil
-        and RouteSectionSuppressesAdvancedPanel(sectionScope)
-
     local surface = bar._surface
     local ok, panelId, buttonIndex = surface.ResolveTarget()
     if not ok then
@@ -1724,6 +1724,13 @@ local function NavigateToPreviewSettings(bar)
     -- a live check afterwards always reports "not running" and the preview
     -- the user was studying would silently die on the way to its settings.
     local wasRunning = control.preview.IsActive(panelId, buttonIndex) == true
+
+    -- The preview target is the selected object, so its entry/panel ownership
+    -- is already settled. Resolve customization scope before choosing the
+    -- panel-tab half of that object's settings surface below.
+    local sectionScope = ResolveRouteSectionScope(sectionId)
+    local suppressQueue = queueKey ~= nil
+        and RouteSectionSuppressesAdvancedPanel(sectionScope)
 
     -- The inline texture browser takes over the settings area; leave it
     -- before landing somewhere underneath it.

@@ -30,10 +30,9 @@ local function FillHostFrame(host, frame)
     frame:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
 end
 
--- stripOnly: an entry owns the settings surface, so the panel tabs are
--- painted as the left half of the unified row and no panel content is
--- built. Clicking one of them selects it, which builds its content and
--- flips the scope without touching the entry selection.
+-- stripOnly: the selected entry's Settings/Customizations tab owns the shared
+-- surface, so its style tabs are painted beside it without building content.
+-- Both strips still belong to the same selected entry.
 local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     anchorFn = anchorFn or FillHostFrame
     -- Callers that re-select the panel tab (e.g. the custom strata toggle)
@@ -179,9 +178,9 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             end
             local previousTab = container._activePanelSettingsTab
             local tabChanged = previousTab ~= nil and previousTab ~= tab
-            -- Selecting a panel tab hands the settings surface to panel
-            -- scope. Any entry stays selected: the list highlight,
-            -- breadcrumb and preview identity are untouched.
+            -- Selecting a style tab hands that strip the settings surface.
+            -- The selected object decides whether its values come from an
+            -- entry lens or the panel defaults.
             local scopeChanged = ST._UnifiedRowGetScope() ~= "primary"
             ST._UnifiedRowSetScope("primary")
             container._activePanelSettingsTab = tab
@@ -204,6 +203,9 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             scroll:SetLayout("List")
             widget:AddChild(scroll)
             CS.col4Scroll = scroll
+            if ST._BeginLensAnchorBuild then
+                ST._BeginLensAnchorBuild(scroll)
+            end
 
             if tab == "format" then
                 ST._BuildTextFormatTab(scroll)
@@ -226,6 +228,12 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             -- returns are invisible until something else triggers a layout
             -- (the two-column tabs' trailing widgets mis-wrapped otherwise).
             scroll:DoLayout()
+            if ST._EndLensAnchorBuild then
+                ST._EndLensAnchorBuild()
+            end
+            if ST._ScheduleLensAnchorRestore then
+                ST._ScheduleLensAnchorRestore()
+            end
 
         end)
 
@@ -248,22 +256,39 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     -- format editor).
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     local isTextMode = group and group.displayMode == "text"
-    local tabsMode = isTextMode and "text" or "standard"
+    local isRotationEntry = group
+        and CS.selectedRotationAssistantEntry == true
+        and CooldownCompanion:IsRotationAssistantGroup(group)
+    local isSingleEntry = group
+        and CS.selectedButton ~= nil
+        and group.buttons
+        and group.buttons[CS.selectedButton] ~= nil
+        and ST._GroupSupportsPerButtonOverrides
+        and ST._GroupSupportsPerButtonOverrides(group)
+    local selectionMode = isRotationEntry and "rotation-entry"
+        or (isSingleEntry and "entry" or "panel")
+    local tabsMode = (isTextMode and "text" or "standard") .. ":" .. selectionMode
     if container._cdcPanelSettingsTabsMode ~= tabsMode then
-        -- Layout precedes the styling tabs: it is the one tab the entry lens
-        -- never touches, so it sits at the panel end of the row, farthest from
-        -- the entry cluster, and the lens-capable tabs group toward the seam.
-        -- Format still leads a text panel (the format is what the panel IS).
         local tabs = {}
-        if isTextMode then
-            tabs[#tabs + 1] = { value = "format", text = "Format" }
+        if isRotationEntry then
+            -- The assistant's virtual entry owns Visibility alone. Its style
+            -- and layout belong to the panel reached through the breadcrumb.
+            tabs[#tabs + 1] = { value = "loadconditions", text = "Visibility" }
+        else
+            if isTextMode then
+                tabs[#tabs + 1] = { value = "format", text = "Format" }
+            end
+            -- Layout is intrinsically panel-owned, so it is absent while a
+            -- normal entry is the selected editing target.
+            if not isSingleEntry then
+                tabs[#tabs + 1] = { value = "layout", text = "Layout" }
+            end
+            tabs[#tabs + 1] = { value = "appearance", text = "Appearance" }
+            if not isTextMode then
+                tabs[#tabs + 1] = { value = "effects", text = "Indicators" }
+            end
+            tabs[#tabs + 1] = { value = "loadconditions",  text = "Visibility" }
         end
-        tabs[#tabs + 1] = { value = "layout", text = "Layout" }
-        tabs[#tabs + 1] = { value = "appearance", text = "Appearance" }
-        if not isTextMode then
-            tabs[#tabs + 1] = { value = "effects", text = "Indicators" }
-        end
-        tabs[#tabs + 1] = { value = "loadconditions",  text = "Visibility" }
         container.tabGroup:SetTabs(tabs)
         container._cdcPanelSettingsTabsMode = tabsMode
     end
@@ -279,6 +304,11 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     -- Indicators redirects the other direction.
     if not isTextMode and CS.selectedTab == "format" then
         CS.selectedTab = "appearance"
+    end
+    if isRotationEntry then
+        CS.selectedTab = "loadconditions"
+    elseif isSingleEntry and CS.selectedTab == "layout" then
+        CS.selectedTab = isTextMode and "format" or "appearance"
     end
     -- A text panel with no tab choice to honor lands on Format. The remembered
     -- tab is one shared value with no "unset" state (it ships as "appearance"),

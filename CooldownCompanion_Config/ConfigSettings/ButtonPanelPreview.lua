@@ -5275,13 +5275,9 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly, layo
                 if GetCursorInfo() then return end
                 if mouseButton ~= "LeftButton" then return end
                 if CS.selectedRotationAssistantEntry == true then
-                    -- This click MEANS "deselect the assistant", and the flag
-                    -- is cleared here because SelectConfigButtonPanel's
-                    -- same-panel path deliberately leaves selection alone. The
-                    -- Visibility tab dispatches on this flag, so a stale true
-                    -- would pin it to entry rules with no way back to the
-                    -- panel's own.
-                    CS.selectedRotationAssistantEntry = nil
+                    -- This click means "select the panel"; the shared selector
+                    -- clears the virtual entry and preserves the Visibility
+                    -- viewport while ownership changes.
                     ST._SelectConfigButtonPanel(panelId, { clearPanelMulti = true })
                 else
                     ST._SelectConfigRotationAssistantEntry(panelId, { containerId = CS.selectedContainer })
