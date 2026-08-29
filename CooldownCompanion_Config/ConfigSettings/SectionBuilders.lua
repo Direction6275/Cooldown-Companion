@@ -436,6 +436,9 @@ end
 --   rebuild      structural re-render for toggles that add/remove rows;
 --                falls back to refreshCallback
 --   explicitOff  preserve 0/false in a metatable-backed entry override
+--   auraToggle   draw the "Apply to Aura Text" opt-in row; passed only on
+--                surfaces with both cooldown and aura text (aura-only
+--                surfaces apply unconditionally and never draw it)
 local LOW_TIME_DEFAULT_COLOR = { 1, 0.2, 0.2, 1 }
 local LOW_TIME_DEFAULT_COLOR2 = { 1, 0.55, 0.1, 1 }
 local LOW_TIME_TOOLTIP = {
@@ -448,6 +451,12 @@ local LOW_TIME_SECOND_TOOLTIP = {
     {"An even more urgent window with its own color.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"0 turns it off.", 1, 1, 1, true},
+}
+local LOW_TIME_AURA_TOOLTIP = {
+    "Apply to Aura Text",
+    {"Low Time affects cooldown text.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Check to affect aura duration text too.", 1, 1, 1, true},
 }
 
 local function AddDurationLowTimeRows(container, settings, refreshCallback, opts)
@@ -595,6 +604,31 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
             refresh()
         end,
     })
+
+    -- Aura application is opt-in (owner ruling 2026-08-28): by default the
+    -- policy colors cooldown text only. Callers pass auraToggle only on
+    -- surfaces with BOTH text kinds; aura-only surfaces (Aura Panels,
+    -- standalone aura bars) apply unconditionally and never draw this row.
+    if opts.auraToggle then
+        local auraRow = AddCheckboxRow(container, {
+            label = "Apply to Aura Text",
+            indent = true,
+            value = settings.durationLowTimeAuras == true,
+            onChange = function(value)
+                if value == true then
+                    settings.durationLowTimeAuras = true
+                elseif explicitOff then
+                    settings.durationLowTimeAuras = false
+                else
+                    settings.durationLowTimeAuras = nil
+                end
+                refresh()
+            end,
+        })
+        AnchorRowBadge(auraRow, CreateInfoButton(auraRow.frame, auraRow.frame, "LEFT", "LEFT", 0, 0,
+            LOW_TIME_AURA_TOOLTIP, opts.infoButtons or auraRow))
+        rows[#rows + 1] = auraRow
+    end
 
     return rows
 end

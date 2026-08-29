@@ -337,6 +337,17 @@ local function GetDurationLowTime(source)
 end
 CooldownCompanion.GetDurationLowTime = GetDurationLowTime
 
+-- Aura duration text applies the low-time policy only when opted in
+-- (durationLowTimeAuras, default off). Aura-only surfaces (Aura Panels,
+-- standalone aura custom bars) have no cooldown text for the policy to
+-- serve, so enabling the threshold means aura application there and the
+-- caller passes auraOnlySurface. Cooldown-lane text never consults this.
+local function AllowAuraDurationLowTime(source, auraOnlySurface)
+    return auraOnlySurface == true
+        or (type(source) == "table" and source.durationLowTimeAuras == true)
+end
+CooldownCompanion.AllowAuraDurationLowTime = AllowAuraDurationLowTime
+
 local function GetEnumValue(enumName, valueName, fallback)
     local enumTable = Enum and Enum[enumName]
     if enumTable and enumTable[valueName] ~= nil then
@@ -857,11 +868,18 @@ local function BindDurationText(fontString, durationObj, source, allowLowTime)
 end
 CooldownCompanion.BindDurationText = BindDurationText
 
-local function ApplyDurationFormatToCooldown(cooldown, source)
+-- allowLowTime: nil/true keeps the unconditional cooldown-lane policy every
+-- existing caller relies on; false is the aura-phase opt-out — the totem/
+-- summon active phase re-installs per phase edge with the aura gate resolved
+-- (AllowAuraDurationLowTime), because that countdown is aura text by contract.
+local function ApplyDurationFormatToCooldown(cooldown, source, allowLowTime)
     if not cooldown then return end
 
     local formatKey = GetDurationFormat(source)
-    local lowThreshold, lowDecimals, lowColorHex = GetDurationLowTime(source)
+    local lowThreshold, lowDecimals, lowColorHex
+    if allowLowTime ~= false then
+        lowThreshold, lowDecimals, lowColorHex = GetDurationLowTime(source)
+    end
 
     -- Low-time COLOR is the one thing native countdown rendering cannot do:
     -- it needs the bracket formatter (which reproduces the format's whole

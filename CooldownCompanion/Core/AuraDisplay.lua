@@ -1316,7 +1316,7 @@ end
 --   second low window > first low window > Pandemic whole-text > aura color.
 -- This also avoids combining inline low-time colors with a binding color curve
 -- whose interaction has not been proven on SetDurationText.
-local function BuildComposedAuraDurationFormatter(threshold, style)
+local function BuildComposedAuraDurationFormatter(threshold, style, allowLowTime)
     local marker = SanitizePandemicMarkerText(style.pandemicMarkerText or "!!")
     local mode = style.pandemicMarkerColorMode or "marker"
     if marker == "" and mode ~= "whole" then
@@ -1338,7 +1338,7 @@ local function BuildComposedAuraDurationFormatter(threshold, style)
         return format .. suffix
     end
 
-    local brackets = CooldownCompanion.GetDurationTextBrackets(style, true)
+    local brackets = CooldownCompanion.GetDurationTextBrackets(style, allowLowTime)
     local list = {}
     local containing, atThreshold
     for _, bracket in ipairs(brackets) do
@@ -1374,13 +1374,13 @@ end
 -- it reuses the shared duration formatter (including low time). With one, it
 -- creates the per-spell composed formatter above because the Pandemic edge is
 -- relative to that spell's base duration.
-local function BuildAuraDurationOptions(baseDuration, style)
+local function BuildAuraDurationOptions(baseDuration, style, allowLowTime)
     local formatter
     if baseDuration then
-        formatter = BuildComposedAuraDurationFormatter(baseDuration * PANDEMIC_FRACTION, style)
+        formatter = BuildComposedAuraDurationFormatter(baseDuration * PANDEMIC_FRACTION, style, allowLowTime)
     end
     if not formatter and CooldownCompanion.GetDurationTextFormatter then
-        formatter = CooldownCompanion.GetDurationTextFormatter(style, true)
+        formatter = CooldownCompanion.GetDurationTextFormatter(style, allowLowTime)
     end
     return formatter and { textFormatter = formatter } or nil
 end
@@ -1440,18 +1440,24 @@ end
 -- Full manual twin for aura preview stand-ins. Live aura remaining time stays
 -- secret and is evaluated only by Blizzard's formatter; preview seconds are
 -- ordinary CC-owned numbers, so they may use the same thresholds directly.
-function CooldownCompanion:FormatAuraDurationPreviewText(seconds, style, pandemicActive)
-    local text = self.FormatCooldownTime(seconds, style)
+function CooldownCompanion:FormatAuraDurationPreviewText(seconds, style, pandemicActive, allowLowTime)
+    -- Same opt-in gate the live bind resolves (AllowAuraDurationLowTime);
+    -- callers pass it resolved because only they know the surface. Off means
+    -- the plain Duration Format text with no low-time window or color lift.
+    local text = allowLowTime and self.FormatCooldownTime(seconds, style)
+        or self.FormatTime(seconds, style)
     if not pandemicActive then
         return text
     end
 
     local lowTimeColorHex
-    local threshold, _, colorHex, threshold2, colorHex2 = self.GetDurationLowTime(style)
-    if threshold and seconds > 0 and seconds < threshold then
-        lowTimeColorHex = colorHex
-        if threshold2 and colorHex2 and seconds < threshold2 then
-            lowTimeColorHex = colorHex2
+    if allowLowTime then
+        local threshold, _, colorHex, threshold2, colorHex2 = self.GetDurationLowTime(style)
+        if threshold and seconds > 0 and seconds < threshold then
+            lowTimeColorHex = colorHex
+            if threshold2 and colorHex2 and seconds < threshold2 then
+                lowTimeColorHex = colorHex2
+            end
         end
     end
     return self:DecoratePandemicPreviewText(text, style, lowTimeColorHex)
@@ -1756,7 +1762,12 @@ local function StyleSlotKit(slot, button, buttonData, style)
         pandemicBaseDuration = GetPandemicBaseDuration(
             buttonData, not isCustomBarHost and not isResourceHost)
     end
-    local durationOptions = BuildAuraDurationOptions(pandemicBaseDuration, style)
+    -- Aura text is opt-in for the low-time policy (durationLowTimeAuras).
+    -- Aura Panel hosts apply unconditionally: their aura text is the
+    -- threshold's only consumer. Custom-bar hosts resolve their own gate
+    -- into the adapter style (BuildStyleAdapter), which this read honors.
+    local allowLowTime = CooldownCompanion.AllowAuraDurationLowTime(style, isAuraPanelHost)
+    local durationOptions = BuildAuraDurationOptions(pandemicBaseDuration, style, allowLowTime)
     slotButton:SetDurationText(kit.durationText, durationOptions)
 
     -- Bar name: pick ONE of the two replica regions per bind. The live

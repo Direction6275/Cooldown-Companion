@@ -1897,8 +1897,13 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                         -- bars use it for cooldown and tracked-aura duration;
                         -- standalone aura bars use it for their aura duration.
                         if ST._AddDurationLowTimeRows then
+                            -- Spell bars carry the aura opt-in (their tracked
+                            -- aura phase follows it); a standalone aura bar's
+                            -- duration text is the policy's only consumer, so
+                            -- it applies unconditionally and hides the row.
                             ST._AddDurationLowTimeRows(panel, customBars[cabIdx], cabApplyBars, {
                                 indent = true,
+                                auraToggle = isSpellCustomBar,
                                 rebuild = RefreshCustomBarAuraConfig,
                             })
                         end

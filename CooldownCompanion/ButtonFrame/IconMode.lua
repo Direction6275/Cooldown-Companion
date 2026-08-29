@@ -1235,8 +1235,16 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             if wantFontMode == "auraText" then
                 ApplyFontStyle(button._cdTextRegion, style, "auraText", nil,
                     CooldownCompanion.DEFAULT_AURA_TEXT_COLOR)
+                -- The phase countdown is aura text by contract, so its Low
+                -- Time application follows the aura opt-in. Rides this latch
+                -- because SetCountdownFormatter per tick is as forbidden as
+                -- SetFont; a mid-phase restyle installs the cooldown-lane
+                -- formatter and this edge re-resolves on the next tick.
+                ApplyDurationFormatToCooldown(button.cooldown, style,
+                    CooldownCompanion.AllowAuraDurationLowTime(style, false))
             else
                 ApplyFontStyle(button._cdTextRegion, style, "cooldown")
+                ApplyDurationFormatToCooldown(button.cooldown, style)
             end
         end
 

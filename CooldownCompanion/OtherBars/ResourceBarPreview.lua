@@ -410,8 +410,12 @@ function RB.CreateResourceBarPreviewModule(deps)
             -- live aura bind.
             local pandemicActive = bar._barMarkerPreview
                 and CooldownCompanion:IsCustomBarPandemicMarkerPreviewWanted(cabConfig)
+            -- Same gate the live adapter resolves (ResourceBarAuraHost):
+            -- aura bars always, spell bars only when opted in.
+            local allowLowTime = CooldownCompanion.AllowAuraDurationLowTime(
+                cabConfig, not IsSpellCustomBarConfig(cabConfig))
             local durationText = CooldownCompanion:FormatAuraDurationPreviewText(
-                PREVIEW_DURATION, cabConfig, pandemicActive)
+                PREVIEW_DURATION, cabConfig, pandemicActive, allowLowTime)
             bar.text:SetText(durationText)
         elseif bar.text then
             UnbindDurationText(bar.text)

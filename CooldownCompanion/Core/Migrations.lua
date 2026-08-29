@@ -1609,6 +1609,15 @@ local PANDEMIC_SWITCH_SENTINEL = {
     current = "_cdcPandemicSwitch2Migrated",
     retired = { "_cdcPandemicSwitchMigrated" },
 }
+-- durationLowTimeAuras backfill (2026-08-28): the aura opt-in key joined the
+-- durationLowTime override section after entries could already customize it.
+-- Under GetEffectiveStyle's presence-based merge a customized store with the
+-- key MISSING follows later panel toggle edits instead of staying independent
+-- (the same drift the While Aura Active gen-2 seed repaired), so the pass
+-- seeds the explicit off default into every active section store lacking it.
+local DURATION_LOW_TIME_AURAS_SENTINEL = {
+    current = "_cdcDurationLowTimeAurasMigrated",
+}
 local MIGRATION_SENTINELS = {
     AURA_REBUILD_SENTINEL,
     BAR_AURA_EFFECT_SENTINEL,
@@ -1625,6 +1634,7 @@ local MIGRATION_SENTINELS = {
     { current = "_cdcLcgGlowMigrated" },
     { current = "_cdcPerModeOrientationMigrated" },
     { current = "_cdcAuraPanelIntegrityMigrated" },
+    DURATION_LOW_TIME_AURAS_SENTINEL,
 }
 
 -- False when the profile is already stamped; otherwise clears the retired
@@ -3409,6 +3419,35 @@ end
 
 -- Consolidated entry point: enforces the 1.15 data cutoff and stamps profiles
 -- that are allowed to continue. Add new post-1.15 migrations here in order.
+-- See DURATION_LOW_TIME_AURAS_SENTINEL. Only stores with an ACTIVE
+-- durationLowTime section are touched: an inactive section's stale keys are
+-- ignored by GetEffectiveStyle, and future promotions get the explicit
+-- baseline from the section registry's defaults. Idempotent via the rawget
+-- guard; re-runs on import through the sentinel registry.
+local function MigrateDurationLowTimeAurasBackfill(self, profile)
+    if type(profile) ~= "table" or not ClaimMigrationPass(profile, DURATION_LOW_TIME_AURAS_SENTINEL) then return end
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            if type(group) == "table" and type(group.buttons) == "table" then
+                for _, buttonData in ipairs(group.buttons) do
+                    if type(buttonData) == "table"
+                        and type(buttonData.overrideSections) == "table"
+                        and buttonData.overrideSections.durationLowTime then
+                        local overrides = rawget(buttonData, "styleOverrides")
+                        if type(overrides) == "table"
+                            and rawget(overrides, "durationLowTimeAuras") == nil then
+                            overrides.durationLowTimeAuras = false
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    profile[DURATION_LOW_TIME_AURAS_SENTINEL.current] = true
+end
+
 function CooldownCompanion:RunAllMigrations()
     local checkpointState = self._savedProfileCheckpointState
     local allowMissingCheckpoint = self._allowMissingMigrationCheckpointOnce
@@ -3490,6 +3529,9 @@ function CooldownCompanion:RunAllMigrations()
     -- goes with it. After MigratePandemicOverrideOwnership above: that pass
     -- decides marker-key ownership by the OLD names, and this one renames them.
     MigratePandemicSwitchOwnership(self, self.db and self.db.profile)
+    -- After the section-ownership passes above: it only seeds stores whose
+    -- durationLowTime section is active once those passes have settled.
+    MigrateDurationLowTimeAurasBackfill(self, self.db and self.db.profile)
     if self.RunResourceBarClassScopeMigration then
         self:RunResourceBarClassScopeMigration()
     end

@@ -912,9 +912,21 @@ local function BuildAppearanceTab(container)
     local function AddDurationLowTimeSection(column)
         if not ST._AddDurationLowTimeRows then return end
         local lowTimeSec = BeginLensSection(lens, group, "durationLowTime", { column = column })
+        -- Master row unindented (owner ruling 2026-08-28): the policy serves
+        -- cooldown AND aura text, so it no longer reads as a child of Show
+        -- Cooldown Text. The aura opt-in row rides only where the aura
+        -- surface exists; Aura Panels apply unconditionally (runtime gate).
         local rows = ST._AddDurationLowTimeRows(column, lowTimeSec.tbl, refreshStyle, {
-            indent = true,
             explicitOff = lowTimeSec.scope == "customized",
+            -- Aura-section entries render through the auraPanel host live,
+            -- so their aura text applies unconditionally: the opt-in row
+            -- would be a lie at that entry's lens and hides there. The
+            -- panel-scope row stays: the base grid can still hold
+            -- cooldown-capable entries.
+            auraToggle = not isAuraPanel
+                and not ((lens and lens.mode == "entry") and lens.buttonData
+                    and ST.IsAuraSectionEntry(group, lens.buttonData))
+                and IconsDrawAuraDurationLowTimeRows(group, (lens and lens.effective) or group.style),
             infoButtons = tabInfoButtons,
             rebuild = function()
                 refreshStyle()
