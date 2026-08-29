@@ -1538,6 +1538,16 @@ local function PromoteLensSection(lens, group, sectionId, opts)
     return true
 end
 
+-- One-click promotion for an inherited color control rebuilds the whole tab,
+-- so the physical AceGUI ColorPicker the user clicked is released. Carry only
+-- semantic identity across that rebuild; the replacement row consumes this
+-- request and opens its own picker on the next frame.
+local pendingInheritedColorOpen
+local INHERITED_COLOR_CONTROL_TOOLTIP = {
+    "Panel setting",
+    { "Click to customize this color for the selected entry.", 1, 1, 1, true },
+}
+
 local function HideScopeChrome(frame, fields)
     for i = 1, #fields do
         local element = frame[fields[i]]
@@ -1931,6 +1941,78 @@ function LensSection:Chrome(row)
         pendingHighlight.sectionRowWidget = row
     end
     return AttachRowScopeChrome(row, self.lens, self.group, self.sectionId)
+end
+
+-- Make an inherited color swatch direct-manipulable without enabling the
+-- underlying inert ColorPicker. Promotion still owns the whole override
+-- section; this is only a second entrance to the same Customize action.
+function LensSection:DirectColorControl(row, key, externallyDisabled)
+    if not (row and key) then return end
+
+    if row.SetScopeControlAction then
+        row:SetScopeControlAction(nil)
+    end
+
+    local pending = pendingInheritedColorOpen
+    local contextMatches = pending
+        and pending.group == self.group
+        and pending.buttonData == (self.lens and self.lens.buttonData)
+        and pending.groupId == CS.selectedGroup
+        and pending.buttonIndex == CS.selectedButton
+        and pending.sectionId == self.sectionId
+        and pending.key == key
+
+    if contextMatches and self.scope == "customized" then
+        pendingInheritedColorOpen = nil
+        local picker = row.colorPicker
+        C_Timer.After(0, function()
+            if CS.selectedGroup == pending.groupId
+                and CS.selectedButton == pending.buttonIndex
+                and self.lens and self.lens.buttonData == pending.buttonData
+                and row.colorPicker == picker
+                and row.disabled ~= true
+                and picker and picker.frame and picker.frame:IsShown()
+            then
+                picker.frame:Click()
+            end
+        end)
+    elseif pending and pending.sectionId == self.sectionId and pending.key == key then
+        -- A rebuild landed on a different selection or scope. Never let its
+        -- delayed action leak onto a later pooled row with the same setting.
+        pendingInheritedColorOpen = nil
+    end
+
+    if self.scope ~= "inherited" or externallyDisabled
+        or not row.SetScopeControlAction or not row.SetScopeTooltip then
+        return
+    end
+
+    local expectedGroupId = CS.selectedGroup
+    local expectedButtonIndex = self.lens and self.lens.buttonIndex
+    row:SetScopeTooltip(INHERITED_COLOR_CONTROL_TOOLTIP)
+    row:SetScopeControlAction(function(_, mouseButton)
+        if mouseButton and mouseButton ~= "LeftButton" then return end
+        if not (self.lens and self.lens.buttonData)
+            or CS.selectedGroup ~= expectedGroupId
+            or CS.selectedButton ~= expectedButtonIndex
+        then
+            return
+        end
+
+        local request = {
+            group = self.group,
+            buttonData = self.lens.buttonData,
+            groupId = expectedGroupId,
+            buttonIndex = expectedButtonIndex,
+            sectionId = self.sectionId,
+            key = key,
+        }
+        pendingInheritedColorOpen = request
+        PromoteLensSection(self.lens, self.group, self.sectionId)
+        if pendingInheritedColorOpen == request then
+            pendingInheritedColorOpen = nil
+        end
+    end)
 end
 
 function LensSection:HeadingChrome(heading)

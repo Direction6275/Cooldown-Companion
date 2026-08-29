@@ -259,12 +259,11 @@ end
 -- of it hides and re-shows the row-only tooltip. No double-show, no flicker
 -- beyond the one hide/show every control crossing already does.
 --
--- Clicks: the overlay eats clicks on the control while it is shown. It is only
--- ever shown in the two INERT scopes, where the section host disables the row
--- either at build time (`disabled = sec.disabled`) or in the inert sweep of
--- sec:Finish() - so the click had nothing to do. Note it may go up BEFORE that
--- sweep runs (several call sites chrome the row, then Finish), which is why
--- nothing here reads self.disabled.
+-- Clicks: the overlay normally eats clicks on an inert control. A narrow
+-- caller may attach scopeControlAction to turn that otherwise-dead click into
+-- a scope action; the underlying disabled widget is never re-enabled. Note the
+-- overlay may go up BEFORE the inert sweep runs (several call sites chrome the
+-- row, then Finish), which is why nothing here reads self.disabled.
 ------------------------------------------------------------------------
 local function ScopeHover_OnEnter(frame)
     local self = frame.cdcRow
@@ -280,6 +279,14 @@ local function ScopeHover_OnLeave(frame)
     self:Fire("OnLeave")
 end
 
+local function ScopeHover_OnClick(frame, mouseButton)
+    local self = frame.cdcRow
+    local action = self and self.scopeControlAction
+    if action then
+        action(self, mouseButton)
+    end
+end
+
 -- Park the overlay: no points into a control frame (the borrowed children go
 -- back to a pool shared with every other addon, so a hidden overlay must not
 -- keep an anchor into one), no mouse, no scripts.
@@ -291,19 +298,21 @@ local function ParkScopeHover(self)
     hover:EnableMouse(false)
     hover:SetScript("OnEnter", nil)
     hover:SetScript("OnLeave", nil)
+    hover:SetScript("OnClick", nil)
 end
 
 local function UpdateScopeHover(self)
     local lines = self.scopeTooltipLines
+    local action = self.scopeControlAction
     local anchor = self.controlHoverAnchor
-    if not (lines and lines[1] and anchor) then
+    if not (anchor and ((lines and lines[1]) or action)) then
         ParkScopeHover(self)
         return
     end
 
     local hover = self.scopeHover
     if not hover then
-        hover = CreateFrame("Frame", nil, self.frame)
+        hover = CreateFrame("Button", nil, self.frame)
         hover.cdcRow = self
         self.scopeHover = hover
     end
@@ -319,6 +328,7 @@ local function UpdateScopeHover(self)
     hover:EnableMouse(true)
     hover:SetScript("OnEnter", ScopeHover_OnEnter)
     hover:SetScript("OnLeave", ScopeHover_OnLeave)
+    hover:SetScript("OnClick", action and ScopeHover_OnClick or nil)
     hover:Show()
 end
 
@@ -364,6 +374,14 @@ local sharedMethods = {
         UpdateScopeHover(self)
     end,
 
+    -- Optional action for an inert control. The scope overlay already owns
+    -- mouse input over that control; this gives selected call sites a safe
+    -- direct-manipulation path without re-enabling the disabled widget below.
+    ["SetScopeControlAction"] = function(self, action)
+        self.scopeControlAction = type(action) == "function" and action or nil
+        UpdateScopeHover(self)
+    end,
+
     ["OnWidthSet"] = function(self, width)
         UpdateControlColumnWidth(self, width)
     end,
@@ -381,6 +399,7 @@ local function ResetRowBase(self)
     self.disabled = false
     self.indented = false
     self.tooltipLines = nil
+    self.scopeControlAction = nil
     -- Through the setter, not the field: this is also what parks a scope
     -- overlay the previous tenant of this pooled row left raised.
     self:SetScopeTooltip(nil)
@@ -1252,6 +1271,7 @@ do
             local child = self.colorPicker
             -- Before the swatch goes back to the shared pool: parks the scope
             -- overlay, which is anchored to the swatch.
+            self:SetScopeControlAction(nil)
             self:SetScopeTooltip(nil)
             self.controlHoverAnchor = nil
             self.colorPicker = nil
