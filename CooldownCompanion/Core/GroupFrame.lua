@@ -501,6 +501,18 @@ end
 -- arrives early is held on the frame. Call with no coordinates once the label
 -- is built to replay it; otherwise the label stays blank until the first move.
 local function UpdateCoordLabel(frame, x, y)
+    -- ONE owner at a time: while a section is selected, the readout shows
+    -- ITS offsets, whatever panel-side refresh (anchoring, drags, chrome
+    -- re-shows) tried to write. Deselecting hands the label back to the
+    -- panel. Guarded at the sink so no writer can forget the rule.
+    local groupId = frame.groupId
+    if groupId and CooldownCompanion.GetArrangeSelectedSectionAnchor then
+        local _, section = CooldownCompanion:GetArrangeSelectedSectionAnchor(groupId)
+        if section then
+            x = tonumber(section.offsetX) or 0
+            y = tonumber(section.offsetY) or 0
+        end
+    end
     x = x or frame._pendingCoordX
     y = y or frame._pendingCoordY
     if not (x and y) then
@@ -543,6 +555,29 @@ function ST.UpdateGroupSizeLabel(frame)
     end
     frame.sizeLabel._sizeKind = kind
 
+    -- With a section selected, the ONE chrome kit speaks for THAT section
+    -- (owner ruling 2026-08-29: no second chrome surface -- the gold tint is
+    -- the signal): same fields, same kinds (a sectioned panel is an icon
+    -- panel by definition), values resolved with the layout's own fallbacks.
+    local sectionAnchor, section = CooldownCompanion:GetArrangeSelectedSectionAnchor(frame.groupId)
+    if sectionAnchor and kind ~= "bar" then
+        if kind == "square" then
+            local size = ST.RoundToTenths(tonumber(section.iconWidth)
+                or tonumber(section.iconHeight)
+                or style.buttonSize or ST.BUTTON_SIZE)
+            ST.ConfigureEditableCoordLabel(frame.sizeLabel, "size:", nil, true)
+            frame.sizeLabel.text:SetText(("size:%.1f"):format(size))
+        else
+            local width = ST.RoundToTenths(tonumber(section.iconWidth)
+                or style.iconWidth or style.buttonSize or ST.BUTTON_SIZE)
+            local height = ST.RoundToTenths(tonumber(section.iconHeight)
+                or style.iconHeight or style.buttonSize or ST.BUTTON_SIZE)
+            ST.ConfigureEditableCoordLabel(frame.sizeLabel, "w:", "h:", false)
+            frame.sizeLabel.text:SetText(("w:%.1f, h:%.1f"):format(width, height))
+        end
+        return
+    end
+
     if kind == "bar" then
         local length = ST.RoundToTenths(style.barLength or 180)
         local height = ST.RoundToTenths(style.barHeight or 20)
@@ -557,6 +592,51 @@ function ST.UpdateGroupSizeLabel(frame)
         local height = ST.RoundToTenths(style.iconHeight or style.buttonSize or ST.BUTTON_SIZE)
         ST.ConfigureEditableCoordLabel(frame.sizeLabel, "w:", "h:", false)
         frame.sizeLabel.text:SetText(("w:%.1f, h:%.1f"):format(width, height))
+    end
+end
+
+-- The ONE chrome kit changes color instead of growing a second surface
+-- (owner ruling 2026-08-29): while a section is selected, the handle bar,
+-- both readouts, the grip, and the nudger arrows go gold -- the signal that
+-- every control now drives the section. Grey/white is the panel's own state.
+local function ApplySectionSelectionTint(frame)
+    if not frame then return end
+    local selectedAnchor = CooldownCompanion:GetArrangeSelectedSectionAnchor(frame.groupId)
+    local selected = selectedAnchor ~= nil
+    local r, g, b = 1, 1, 1
+    if selected then
+        r, g, b = 1, 0.82, 0
+    end
+    if frame.dragHandle then
+        if selected then
+            frame.dragHandle:SetBackdropColor(0.35, 0.28, 0.04, 0.85)
+        else
+            frame.dragHandle:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+        end
+        if frame.dragHandle.text then
+            -- The bar names what the chrome is driving: the panel, or the
+            -- panel's selected section.
+            local group = CooldownCompanion.db.profile.groups[frame.groupId]
+            local name = (group and group.name) or ""
+            if selectedAnchor then
+                name = name .. ": "
+                    .. ST.PANEL_SECTION_ANCHOR_LABELS[selectedAnchor] .. " Section"
+            end
+            frame.dragHandle.text:SetText(name)
+            frame.dragHandle.text:SetTextColor(r, g, b, 1)
+        end
+    end
+    if frame.coordLabel and frame.coordLabel.text then
+        frame.coordLabel.text:SetTextColor(r, g, b, 1)
+    end
+    if frame.sizeLabel and frame.sizeLabel.text then
+        frame.sizeLabel.text:SetTextColor(r, g, b, 1)
+    end
+    -- Deliberately NOT the panel's corner grip: it is base-cluster-scoped in
+    -- every state (the selected section carries its own gold grabber), so it
+    -- keeps its plain look as the one grey control while a section is gold.
+    if frame.nudger and frame.nudger.RefreshSectionTint then
+        frame.nudger.RefreshSectionTint()
     end
 end
 
@@ -1787,7 +1867,9 @@ end
 
 -- Nudger constants
 local NUDGE_BTN_SIZE = 12
-local PANEL_RESIZE_GRIP_SIZE = 12
+-- 16 fits the corner-bracket glyph at the size it reads well (12px art +
+-- inset); the old chat-grabber art sat in a 12px button.
+local PANEL_RESIZE_GRIP_SIZE = 16
 -- 0 = restyle every frame during a grip drag (owner ruling: smooth resize
 -- everywhere in arrange mode; raise if a huge panel ever hitches).
 local PANEL_RESIZE_REFRESH_INTERVAL = 0
@@ -1860,6 +1942,19 @@ local function CreateNudger(frame, groupId)
             or false
     end
 
+    -- A section nudge moves stored offsets, not the frame, so the anchor-side
+    -- save on release has nothing to persist.
+    local function IsSectionNudge()
+        return (CooldownCompanion:GetArrangeSelectedSectionAnchor(groupId)) ~= nil
+    end
+
+    -- The offset sliders' own range and precision (Layout tab: -100..100,
+    -- tenths), so a nudged value is always one the config can show back.
+    local function RoundAndClampSectionOffset(value)
+        value = math_floor(value * 10 + 0.5) / 10
+        return math_max(-100, math_min(100, value))
+    end
+
     for _, dir in ipairs(directions) do
         local btn = CreateFrame("Button", nil, nudger)
         nudger.buttons[#nudger.buttons + 1] = btn
@@ -1880,8 +1975,8 @@ local function CreateNudger(frame, groupId)
             CooldownCompanion:BeginMoverChromeHoverFade(nudger)
         end)
         btn:SetScript("OnLeave", function(self)
-            self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-            if not IsCursorPreviewNudge() then
+            if nudger.RefreshSectionTint then nudger.RefreshSectionTint() end
+            if not IsCursorPreviewNudge() and not IsSectionNudge() then
                 CooldownCompanion:SaveGroupPosition(groupId)
             end
             if not nudger:IsMouseOver() then
@@ -1894,6 +1989,22 @@ local function CreateNudger(frame, groupId)
             if not group then return end
             local gFrame = CooldownCompanion.groupFrames[groupId]
             if gFrame then
+                -- A selected SECTION takes the nudge as its own X/Y offset;
+                -- the panel does not move (owner grammar: select it, then
+                -- adjust it). offsetY is positive-up, matching dir.dy.
+                local _, section = CooldownCompanion:GetArrangeSelectedSectionAnchor(groupId)
+                if section then
+                    section.offsetX = RoundAndClampSectionOffset(
+                        (tonumber(section.offsetX) or 0) + dir.dx)
+                    section.offsetY = RoundAndClampSectionOffset(
+                        (tonumber(section.offsetY) or 0) + dir.dy)
+                    CooldownCompanion:UpdateGroupStyle(groupId)
+                    UpdateCoordLabel(gFrame,
+                        tonumber(section.offsetX) or 0,
+                        tonumber(section.offsetY) or 0)
+                    return
+                end
+
                 if IsCursorAnchor(group.anchor)
                     and IsCursorAnchorLayoutPreviewSelected(CooldownCompanion, groupId) then
                     group.anchor.x = math_floor(((group.anchor.x or CURSOR_ANCHOR_X) + dir.dx) * 10 + 0.5) / 10
@@ -1926,11 +2037,24 @@ local function CreateNudger(frame, groupId)
         end)
 
         btn:SetScript("OnMouseUp", function(self)
-            if not IsCursorPreviewNudge() then
+            if not IsCursorPreviewNudge() and not IsSectionNudge() then
                 CooldownCompanion:SaveGroupPosition(groupId)
             end
         end)
     end
+
+    -- Gold arrows while a section is selected: the nudger is shared chrome,
+    -- and the tint is what says it is currently driving the section.
+    function nudger.RefreshSectionTint()
+        local r, g, b, a = 0.8, 0.8, 0.8, 0.8
+        if IsSectionNudge() then
+            r, g, b, a = 1, 0.82, 0, 0.9
+        end
+        for _, button in ipairs(nudger.buttons) do
+            button.arrow:SetVertexColor(r, g, b, a)
+        end
+    end
+    nudger.RefreshSectionTint()
 
     return nudger
 end
@@ -2261,9 +2385,10 @@ local function CreatePanelResizeGrip(frame)
     grip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
     grip:SetFrameStrata(frame.dragHandle:GetFrameStrata())
     grip:SetFrameLevel(frame.dragHandle:GetFrameLevel() + 4)
-    grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
-    grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
-    grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    -- The house corner bracket (owner ruling 2026-08-29: one quiet resize
+    -- glyph everywhere, replacing the stock chat grabber). Re-mirrored by
+    -- RepositionPanelResizeGrip when a cursor panel moves the corner.
+    ST.ApplyCornerBracketGrip(grip, "RIGHT", "BOTTOM")
 
     grip:SetScript("OnMouseDown", function(self, button)
         if button == "LeftButton" then
@@ -2280,13 +2405,17 @@ local function CreatePanelResizeGrip(frame)
         EndPanelResizeGesture(self, not CooldownCompanion._combatForcedLock and not InCombatLockdown())
     end)
     grip:SetScript("OnEnter", function(self)
+        -- White at rest, gold on hover (owner ruling) -- the same feedback
+        -- the section grabber gives.
+        ST.SetCornerBracketGripColor(self, 1, 0.82, 0, 1)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Resize")
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Mouse wheel over the panel also resizes.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
-    grip:SetScript("OnLeave", function()
+    grip:SetScript("OnLeave", function(self)
+        ST.SetCornerBracketGripColor(self, 1, 1, 1)
         GameTooltip:Hide()
     end)
 
@@ -2313,6 +2442,45 @@ local function OnUnlockedPanelMouseWheel(frame, delta)
     CooldownCompanion:BeginMoverChromeWheelFade(frame)
     local step = delta > 0 and 1 or -1
     local changed = false
+
+    -- A selected SECTION captures the wheel: the panel's own size keys stay
+    -- untouched and the section's stored icon size moves instead (owner
+    -- ruling 2026-08-28: panel-level resize drives the base cluster only).
+    -- Current values resolve exactly the way ResolvePanelSectionGeometry
+    -- resolves them, so the first wheel tick moves from what is on screen.
+    local sectionAnchor, section = CooldownCompanion:GetArrangeSelectedSectionAnchor(groupId)
+    if sectionAnchor and group.displayMode ~= "bars" then
+        if style.maintainAspectRatio then
+            local current = math_floor((tonumber(section.iconWidth)
+                or tonumber(section.iconHeight)
+                or style.buttonSize or ST.BUTTON_SIZE) + 0.5)
+            local newSize = RoundAndClampPanelSize(current + step, 10, 150)
+            if section.iconWidth ~= newSize then
+                section.iconWidth = newSize
+                changed = true
+            end
+        else
+            local currentWidth = math_floor((tonumber(section.iconWidth)
+                or style.iconWidth or style.buttonSize or ST.BUTTON_SIZE) + 0.5)
+            local currentHeight = math_floor((tonumber(section.iconHeight)
+                or style.iconHeight or style.buttonSize or ST.BUTTON_SIZE) + 0.5)
+            local newWidth = RoundAndClampPanelSize(currentWidth + step, 10, 150)
+            local newHeight = RoundAndClampPanelSize(currentHeight + step, 10, 150)
+            if section.iconWidth ~= newWidth then
+                section.iconWidth = newWidth
+                changed = true
+            end
+            if section.iconHeight ~= newHeight then
+                section.iconHeight = newHeight
+                changed = true
+            end
+        end
+        if changed then
+            CooldownCompanion:UpdateGroupStyle(groupId)
+        end
+        ST.UpdateGroupSizeLabel(frame)
+        return
+    end
 
     if group.displayMode == "bars" then
         -- barHeight is thickness: screen height for horizontal fill and screen
@@ -2410,28 +2578,32 @@ local function SyncGroupControlLevels(frame, raiseAboveWrapper)
     local strata = raiseAboveWrapper and "FULLSCREEN_DIALOG" or frame:GetFrameStrata()
     local baseLevel = raiseAboveWrapper and 90 or ((frame:GetFrameLevel() or 1) + 5)
 
+    -- Explicit ordering against the section overlays, which join this band
+    -- at baseLevel + 3 (ST.UpdateSectionMoverOverlays): every interactive
+    -- chrome piece sits ABOVE them, so a section that overlaps a label, the
+    -- grip, or the nudger can never intercept their mouse.
     if frame.dragHandle then
         frame.dragHandle:SetFrameStrata(strata)
         frame.dragHandle:SetFrameLevel(baseLevel)
     end
     if frame.coordLabel then
         frame.coordLabel:SetFrameStrata(strata)
-        frame.coordLabel:SetFrameLevel(baseLevel + 1)
+        frame.coordLabel:SetFrameLevel(baseLevel + 4)
     end
     if frame.sizeLabel then
         frame.sizeLabel:SetFrameStrata(strata)
-        frame.sizeLabel:SetFrameLevel(baseLevel + 3)
+        frame.sizeLabel:SetFrameLevel(baseLevel + 5)
     end
     if frame.resizeGrip then
         frame.resizeGrip:SetFrameStrata(strata)
-        frame.resizeGrip:SetFrameLevel(baseLevel + 4)
+        frame.resizeGrip:SetFrameLevel(baseLevel + 6)
     end
     if frame.nudger then
         frame.nudger:SetFrameStrata(strata)
-        frame.nudger:SetFrameLevel(baseLevel + 5)
+        frame.nudger:SetFrameLevel(baseLevel + 7)
         for buttonIndex, btn in ipairs(frame.nudger.buttons or {}) do
             btn:SetFrameStrata(strata)
-            btn:SetFrameLevel(baseLevel + 6 + buttonIndex)
+            btn:SetFrameLevel(baseLevel + 8 + buttonIndex)
         end
     end
     ST._SyncAuraPanelPlaceholderLevels(frame, raiseAboveWrapper)
@@ -2466,6 +2638,8 @@ function CooldownCompanion:RepositionPanelResizeGrip(frame)
     grip:SetPoint(corner, frame, corner,
         xSide == "LEFT" and 1 or -1,
         ySide == "TOP" and -1 or 1)
+    -- The bracket's L opens toward the corner it lives on.
+    ST.ApplyCornerBracketGrip(grip, xSide, ySide)
 end
 
 function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
@@ -2511,6 +2685,9 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
         end
         frame.sizeLabel:SetShown(resizeShown)
     end
+    if shown then
+        ApplySectionSelectionTint(frame)
+    end
     CooldownCompanion:ApplyMoverChromeFadeToFrames(
         frame.dragHandle, frame.coordLabel, frame.nudger, frame.resizeGrip, frame.sizeLabel
     )
@@ -2528,6 +2705,16 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
         and (shown == true or containerPreviewActive)
         or false
     CooldownCompanion:SetAuraPanelPlaceholderPreviewShown(frame, auraPreviewShown)
+
+    -- Section click targets ride the same wide gate the aura placeholder
+    -- preview does: every member of an active container preview shows its
+    -- sections, not only the selected one -- unlock-all must reveal what is
+    -- addressable (owner finding, P3 validation). Clicking one on an
+    -- unselected panel selects the panel AND the section in one gesture
+    -- (ActivateArrangeSection piggybacks the panel activation).
+    ST.SetSectionMoverOverlaysShown(CooldownCompanion, frame, group,
+        (shown == true or containerPreviewActive)
+            and not CooldownCompanion._combatForcedLock)
 end
 
 -- Independently unlocked panels sit outside a container preview, so toolbar
@@ -3632,6 +3819,13 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     CreateEditableCoordLabel(
         frame.coordLabel,
         function()
+            -- A selected section answers with its own offsets; the write half
+            -- below mirrors the same branch. Same fields, same "x:, y:" face;
+            -- the gold tint is what says whose numbers these are.
+            local _, section = CooldownCompanion:GetArrangeSelectedSectionAnchor(groupId)
+            if section then
+                return tonumber(section.offsetX) or 0, tonumber(section.offsetY) or 0
+            end
             local currentGroup = CooldownCompanion.db.profile.groups[groupId]
             local anchor = currentGroup and currentGroup.anchor
             if anchor and IsCursorAnchor(anchor) then
@@ -3640,6 +3834,20 @@ function CooldownCompanion:CreateGroupFrame(groupId)
             return anchor and anchor.x or 0, anchor and anchor.y or 0
         end,
         function(x, y)
+            local _, section = CooldownCompanion:GetArrangeSelectedSectionAnchor(groupId)
+            if section then
+                -- The offset sliders' own range and tenths precision.
+                section.offsetX = math_max(-100, math_min(100,
+                    math_floor((tonumber(x) or 0) * 10 + 0.5) / 10))
+                section.offsetY = math_max(-100, math_min(100,
+                    math_floor((tonumber(y) or 0) * 10 + 0.5) / 10))
+                CooldownCompanion:UpdateGroupStyle(groupId)
+                RefreshConfigPanelIfShown()
+                UpdateCoordLabel(frame,
+                    tonumber(section.offsetX) or 0,
+                    tonumber(section.offsetY) or 0)
+                return
+            end
             ApplyPanelCoordinates(frame, groupId, x, y)
         end,
         function()
@@ -3666,6 +3874,19 @@ function CooldownCompanion:CreateGroupFrame(groupId)
             if not style then
                 return 0, 0
             end
+            -- A selected section answers with ITS resolved size; the write
+            -- half below mirrors the same branch.
+            local _, section = CooldownCompanion:GetArrangeSelectedSectionAnchor(groupId)
+            if section and currentGroup.displayMode ~= "bars" then
+                if style.maintainAspectRatio then
+                    return tonumber(section.iconWidth) or tonumber(section.iconHeight)
+                        or style.buttonSize or ST.BUTTON_SIZE
+                end
+                return tonumber(section.iconWidth) or style.iconWidth
+                        or style.buttonSize or ST.BUTTON_SIZE,
+                    tonumber(section.iconHeight) or style.iconHeight
+                        or style.buttonSize or ST.BUTTON_SIZE
+            end
             if currentGroup.displayMode == "bars" then
                 return style.barLength or 180, style.barHeight or 20
             elseif style.maintainAspectRatio then
@@ -3690,6 +3911,22 @@ function CooldownCompanion:CreateGroupFrame(groupId)
             end
             if currentKind ~= frame.sizeLabel._sizeKind
                 or (currentKind ~= "square" and secondary == nil) then
+                return
+            end
+            -- The section branch of the getter's answer, committed to the
+            -- section's own keys. Selection is re-read at commit time, so an
+            -- edit that outlived its selection falls through to the panel.
+            local _, section = CooldownCompanion:GetArrangeSelectedSectionAnchor(groupId)
+            if section and currentKind ~= "bar" then
+                if currentKind == "square" then
+                    section.iconWidth = math_max(10, math_min(150, ST.RoundToTenths(primary)))
+                else
+                    section.iconWidth = math_max(10, math_min(150, ST.RoundToTenths(primary)))
+                    section.iconHeight = math_max(10, math_min(150, ST.RoundToTenths(secondary)))
+                end
+                CooldownCompanion:UpdateGroupStyle(groupId)
+                RefreshConfigPanelIfShown()
+                ST.UpdateGroupSizeLabel(frame)
                 return
             end
             if currentKind == "bar" then
@@ -5089,6 +5326,9 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
         ST.SetAuraSectionPlaceholderRootShown(frame,
             frame._auraPanelPlaceholderPreviewShown == true)
     end
+    -- The section click overlays re-fit at the same choke point, so a wheel or
+    -- grip resize mid-gesture keeps them glued to the rects they name.
+    ST.UpdateSectionMoverOverlays(self, frame, group)
     return true
 end
 
@@ -6472,8 +6712,42 @@ function CooldownCompanion:SelectContainerPanel(containerId, groupId)
     return true
 end
 
+local function ClearArrangeSectionSelectionState(self)
+    local sectionGroupId = self._arrangeSectionGroupId
+    if sectionGroupId == nil then return end
+    -- Cancel any in-flight typed edit BEFORE the keys move: the commit
+    -- callbacks re-read the selection at commit time, so an edit that
+    -- outlived this transition would write to the wrong owner.
+    local editFrame = self.groupFrames and self.groupFrames[sectionGroupId]
+    if editFrame then
+        CancelCoordinateEdit(editFrame.coordLabel)
+        CancelCoordinateEdit(editFrame.sizeLabel)
+    end
+    self._arrangeSectionGroupId = nil
+    self._arrangeSectionAnchor = nil
+    local frame = self.groupFrames and self.groupFrames[sectionGroupId]
+    if frame then
+        local group = self.db.profile.groups[sectionGroupId]
+        ST.UpdateSectionMoverOverlays(self, frame, group)
+        ST.UpdateGroupSizeLabel(frame)
+        -- The readouts go back to speaking for the panel.
+        local anchor = group and group.anchor
+        UpdateCoordLabel(frame, (anchor and anchor.x) or 0, (anchor and anchor.y) or 0)
+        ApplySectionSelectionTint(frame)
+    end
+end
+
+--- Public face of the section-selection clear, for the arrange teardowns
+--- that live in GroupOperations (toolbar shutdown, the combat forced lock):
+--- every path that drops the panel selection must drop the section with it,
+--- canceling its in-flight edits and repainting its chrome.
+function CooldownCompanion:ClearArrangeSectionSelection()
+    ClearArrangeSectionSelectionState(self)
+end
+
 local function ClearArrangePanelSelectionState(self)
     self._arrangeSelectedPanelId = nil
+    ClearArrangeSectionSelectionState(self)
     local preview = self._cursorAnchorLayoutPreview
     if preview and preview.selectedGroupId then
         self:SelectArrangeCursorPanel(preview.selectedGroupId, true)
@@ -6557,6 +6831,80 @@ function CooldownCompanion:ActivateArrangePanel(containerId, groupId, toggle)
     self:RefreshAllIndependentPanelMoverChrome()
     self._arrangeTreeRevealEntry = { kind = "panel", id = groupId }
     self:RefreshArrangePillList()
+    return true
+end
+
+--- The selected section for one panel, validated against the profile: the
+--- anchor and its live section table, or nil. Selection is (groupId, anchor)
+--- on the addon, one at a time, riding on top of the panel selection.
+function CooldownCompanion:GetArrangeSelectedSectionAnchor(groupId)
+    if groupId == nil or self._arrangeSectionGroupId ~= groupId then return nil end
+    local anchor = self._arrangeSectionAnchor
+    local group = self.db and self.db.profile and self.db.profile.groups
+        and self.db.profile.groups[groupId]
+    local sections = group and group.sections
+    local section = type(sections) == "table" and anchor and sections[anchor] or nil
+    if type(section) ~= "table" then return nil end
+    return anchor, section
+end
+
+--- Select one SECTION of one panel. Rides the panel grammar: activating a
+--- section first activates its panel (never toggling the panel off), and
+--- everything that clears the panel selection clears the section with it.
+--- While a section is selected, the panel's mouse wheel and size label write
+--- that section's stored icon size instead of the panel style's (owner
+--- ruling 2026-08-28: panel-level resize drives the base cluster only).
+function CooldownCompanion:ActivateArrangeSection(groupId, anchor, toggle)
+    local group = self.db and self.db.profile and self.db.profile.groups
+        and self.db.profile.groups[groupId]
+    if not (group and ST.PANEL_SECTION_ANCHOR_SET[anchor]) then return false end
+
+    local wasSelected = self._arrangeSectionGroupId == groupId
+        and self._arrangeSectionAnchor == anchor
+    -- Piggyback the panel activation when the arrange toolbar is up. A panel
+    -- unlocked outside it already has its chrome (and these overlays) shown,
+    -- so the section stays addressable either way.
+    if self:IsUnlockToolbarActive()
+        and not self:ActivateArrangePanel(group.parentContainerId, groupId, false) then
+        return false
+    end
+
+    local frame = self.groupFrames and self.groupFrames[groupId]
+    -- Cancel any in-flight typed edit before the target changes hands (the
+    -- commit callbacks re-read the selection at commit time).
+    if frame then
+        CancelCoordinateEdit(frame.coordLabel)
+        CancelCoordinateEdit(frame.sizeLabel)
+    end
+
+    if toggle and wasSelected then
+        self._arrangeSectionGroupId = nil
+        self._arrangeSectionAnchor = nil
+    else
+        self._arrangeSectionGroupId = groupId
+        self._arrangeSectionAnchor = anchor
+        -- Reveal the section's own tree row, not the panel row the piggyback
+        -- activation stamped a moment ago.
+        self._arrangeTreeRevealEntry = { kind = "section", id = anchor, groupId = groupId }
+    end
+    if self.RefreshArrangePillList then self:RefreshArrangePillList() end
+
+    if frame then
+        ST.UpdateSectionMoverOverlays(self, frame, group)
+        ST.UpdateGroupSizeLabel(frame)
+        -- The readouts follow the selection: section values while one is
+        -- selected, the panel's own otherwise.
+        local _, selectedSection = self:GetArrangeSelectedSectionAnchor(groupId)
+        if selectedSection then
+            UpdateCoordLabel(frame,
+                tonumber(selectedSection.offsetX) or 0,
+                tonumber(selectedSection.offsetY) or 0)
+        else
+            local anchor2 = group.anchor
+            UpdateCoordLabel(frame, (anchor2 and anchor2.x) or 0, (anchor2 and anchor2.y) or 0)
+        end
+        ApplySectionSelectionTint(frame)
+    end
     return true
 end
 

@@ -1041,9 +1041,10 @@ local function BuildLayoutTab(container)
     -- gets its block - the section lives in the profile either way, and the
     -- owner has to be able to nudge it before it comes back.
     --
-    -- Placement only: a section's icon size and spacing live with the panel's
-    -- own copies of those in the Appearance tab (owner ruling 2026-08-22 --
-    -- size and spacing are Appearance's vocabulary, placement is Layout's).
+    -- Placement and layout grammar only: a section's icon size and spacing
+    -- live with the panel's own copies of those in the Appearance tab (owner
+    -- ruling 2026-08-22 -- size and spacing are Appearance's vocabulary;
+    -- placement, direction, and wrap are Layout's).
     local panelSections = ST.PanelSupportsSections(group) and group.sections or nil
     if type(panelSections) == "table" and next(panelSections) then
         -- Reading order, so the blocks sit in the order the anchors read on the
@@ -1075,6 +1076,36 @@ local function BuildLayoutTab(container)
                 WireMirrorFirstSlider(sectionYRow, function(val)
                     section.offsetY = val
                 end, nil, nil, section, "offsetY")
+
+                -- The section's one layout-grammar control: a wrap count.
+                -- Direction is ALWAYS the anchor's own (owner ruling
+                -- 2026-08-28: a Growth Direction override was built, seen,
+                -- and removed -- do not revive it). Wrap only once there is
+                -- something to wrap, the same gate the base row's own wrap
+                -- slider keeps. Top of the range stores nil: "everything on
+                -- one line" must stay open-ended so a member added later
+                -- joins the line instead of wrapping under a count that
+                -- silently became a cap.
+                local axis = ST.GetPanelSectionPlacement(group, anchor)
+                local memberCount = 0
+                for _, buttonData in ipairs(group.buttons or {}) do
+                    if ST.GetPanelSectionForEntry(group, buttonData) == anchor then
+                        memberCount = memberCount + 1
+                    end
+                end
+                if axis and memberCount > 1 then
+                    local wrapLabel = (axis == "h") and "Icons Per Row" or "Icons Per Column"
+                    local sectionWrapRow = AddSliderRow(sectionLeft, {
+                        label = wrapLabel,
+                        min = 1, max = memberCount, step = 1,
+                        value = math.min(section.maxPerLine or memberCount, memberCount),
+                    })
+                    WireMirrorFirstSlider(sectionWrapRow, function(val)
+                        section.maxPerLine = (val < memberCount) and val or nil
+                    end, function()
+                        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                    end, nil, section, "maxPerLine")
+                end
                 end -- not sectionCollapsed
             end
         end

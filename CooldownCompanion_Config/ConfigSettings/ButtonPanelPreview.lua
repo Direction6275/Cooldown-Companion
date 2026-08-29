@@ -1602,11 +1602,10 @@ do
 
     -- Growth direction is not worked out here either. The engine already
     -- handed back the line's own step vector, and the SIGN of that vector is
-    -- the arrow to draw. The one thing a step vector cannot say is whether the
-    -- line spreads from its middle, and that is a property of the anchor's
-    -- NAME alone: the four edge midpoints read `from = "center"` in BOTH
-    -- orientations of Core/PanelSections.lua's SECTION_PLACEMENT, and the four
-    -- corners never do.
+    -- the arrow to draw. Whether the line spreads from its middle is the
+    -- engine's answer too: the fill direction (`from`) rides every pad and
+    -- lane. The anchor-name table is only the fallback for a rect built
+    -- before the engine carried it.
     local CENTERED_ANCHORS = {
         TOP = true, BOTTOM = true, LEFT = true, RIGHT = true,
     }
@@ -1700,27 +1699,70 @@ do
     end
 
     local function LanePosition(lane, position)
+        local positions = lane.positions
+        if positions then
+            local cell = positions[position]
+            if cell then return cell.x, cell.y end
+            local last = positions[#positions]
+            if last then
+                -- One past the end: a step extrapolated from the last resting
+                -- cell. Approximate for a wrapped or centered lane (the drop
+                -- re-lays everything out for real), exactly as the linear
+                -- extrapolation always was.
+                return last.x + lane.stepX, last.y + lane.stepY
+            end
+        end
         return lane.originX + (position - 1) * lane.stepX,
             lane.originY + (position - 1) * lane.stepY
     end
 
-    -- Where in a lane's line the cursor sits, 1 .. #members + 1, counted over
-    -- the members' resting positions (never their in-flight frames). Projecting
-    -- onto the lane's own step vector covers both axes and both growth
-    -- directions with one expression.
+    -- Where in a lane the cursor sits, 1 .. #members + 1, counted over the
+    -- members' resting positions (never their in-flight frames). A lane can
+    -- wrap, so this is two questions, both answered from the engine's own
+    -- cells: which line is the cursor nearest (by the cross-axis coordinate),
+    -- then how many of THAT line's cell centers has it passed along the fill
+    -- direction. Unwrapped lanes are the one-line case of the same walk.
     local function LaneInsertPosition(lane, view, cursorX, cursorY)
-        local ux, uy = lane.stepX * view.factor, lane.stepY * view.factor
-        local length = math.sqrt(ux * ux + uy * uy)
-        if length <= 0 then return 1 end
-        ux, uy = ux / length, uy / length
-        local baseX, baseY = ToScreen(view, LanePosition(lane, 1))
+        local count = #lane.members
+        local positions = lane.positions
+        if count == 0 or not (positions and positions[count]) then return 1 end
+        local perLine = lane.perLine or count
+        if perLine < 1 then perLine = 1 end
+        local horizontal = lane.axis ~= "v"
         local halfW = lane.width * view.factor / 2
         local halfH = lane.height * view.factor / 2
-        local cursorScalar = (cursorX - baseX - halfW) * ux
-            + (cursorY - baseY + halfH) * uy
-        local position = 1
-        for k = 1, #lane.members do
-            if ((k - 1) * length) < cursorScalar then position = k + 1 end
+
+        local lineCount = math.ceil(count / perLine)
+        local bestLine, bestDist = 1, nil
+        for line = 1, lineCount do
+            local first = positions[(line - 1) * perLine + 1]
+            local firstX, firstY = ToScreen(view, first.x, first.y)
+            local distance
+            if horizontal then
+                distance = math.abs(cursorY - (firstY - halfH))
+            else
+                distance = math.abs(cursorX - (firstX + halfW))
+            end
+            if not bestDist or distance < bestDist then
+                bestLine, bestDist = line, distance
+            end
+        end
+
+        local firstIndex = (bestLine - 1) * perLine + 1
+        local lastIndex = math_min(bestLine * perLine, count)
+        local position = firstIndex
+        for k = firstIndex, lastIndex do
+            local cell = positions[k]
+            local cellX, cellY = ToScreen(view, cell.x, cell.y)
+            local passed
+            if horizontal then
+                local center = cellX + halfW
+                passed = (lane.stepX >= 0) and (cursorX > center) or (lane.stepX < 0) and (cursorX < center)
+            else
+                local center = cellY - halfH
+                passed = (lane.stepY <= 0) and (cursorY < center) or (lane.stepY > 0) and (cursorY > center)
+            end
+            if passed then position = k + 1 end
         end
         return position
     end
@@ -1748,28 +1790,30 @@ do
             if members and #members > 0 then
                 local ids = {}
                 for k, entry in ipairs(members) do ids[k] = entry.index end
-                -- The line's own rect, from its first and last member's
-                -- placements; a lane grows in either direction on its axis, so
-                -- the ends are compared rather than assumed.
-                local lastX = info.originX + (#ids - 1) * info.stepX
-                local lastY = info.originY + (#ids - 1) * info.stepY
-                local x0 = math_min(info.originX, lastX)
-                local y0 = math_max(info.originY, lastY)
                 model.lanes[anchor] = {
                     members = ids,
                     -- Read from the PROFILE, not from the layout info: the
                     -- mirror never populates auraCounts (it draws the full
-                    -- expanded line as its own slots), so the engine's own
+                    -- expanded cluster as its own slots), so the engine's own
                     -- auraOnly marker is not on this pass's info.
                     auraOnly = ST.IsAuraOnlyPanelSection(group, anchor) or nil,
                     originX = info.originX, originY = info.originY,
                     stepX = info.stepX, stepY = info.stepY,
                     width = info.width, height = info.height,
+                    -- The engine's per-cell truth: resting positions, the wrap
+                    -- count in force, the axis, and the fill direction.
+                    positions = info.positions,
+                    perLine = info.perLine,
+                    axis = info.axis,
+                    from = info.from,
+                    -- The whole block's rect, straight off the layout -- a
+                    -- wrapped section's bounding box is not its first and last
+                    -- member's box, so nothing here derives it from the ends.
                     rect = {
-                        x = x0,
-                        y = y0,
-                        width = math_max(info.originX, lastX) + info.width - x0,
-                        height = y0 - (math_min(info.originY, lastY) - info.height),
+                        x = info.lineX,
+                        y = info.lineY,
+                        width = info.lineWidth,
+                        height = info.lineHeight,
                     },
                 }
             end
@@ -1808,9 +1852,12 @@ do
                         height = info.height,
                         -- Carried, not computed: this is the step the second
                         -- member of that section would take, which is exactly
-                        -- the line the direction pips promise.
+                        -- the line the direction pips promise. `from` is the
+                        -- fill direction, which decides whether the pips
+                        -- spread from the middle.
                         stepX = info.stepX,
                         stepY = info.stepY,
+                        from = info.from,
                     }
                 end
             end
@@ -2000,7 +2047,7 @@ do
     --- Direction pips: two or three cosmetic markers INSIDE the pad tile,
     --- stepping along the line the section would grow on. Which way they point
     --- is read straight off the engine's step vector for that anchor; whether
-    --- they point both ways is read off the anchor's name.
+    --- they point both ways is read off the engine's effective fill direction.
     local function LayoutPadPips(pad, anchor, rect)
         local pips = pad.pips
         local stepX, stepY = rect.stepX or 0, rect.stepY or 0
@@ -2019,7 +2066,8 @@ do
         local size = math_max(6, math_min(14,
             math_min(rect.width or 0, rect.height or 0) * 0.34))
         local gap = size * 0.8
-        local centered = CENTERED_ANCHORS[anchor] == true
+        local centered = (rect.from
+            or (CENTERED_ANCHORS[anchor] and "center")) == "center"
         local shown = centered and 2 or 3
         for k = 1, 3 do
             local tex = pips[k]
@@ -2559,10 +2607,11 @@ do
         if not (lane and group) then return end
 
         local old = group.sections and group.sections[anchor]
-        local offsetX, offsetY, iconWidth, iconHeight, spacing, auraOnly
+        local offsetX, offsetY, iconWidth, iconHeight, spacing, maxPerLine, auraOnly
         if type(old) == "table" then
             offsetX, offsetY = old.offsetX, old.offsetY
             iconWidth, iconHeight, spacing = old.iconWidth, old.iconHeight, old.spacing
+            maxPerLine = old.maxPerLine
             -- Aura-ness is one of the section's own settings, so it MOVES with
             -- it like the rest. Left out, a handle drop would quietly turn an
             -- aura section back into ordinary icons: the members arrive at a
@@ -2587,6 +2636,7 @@ do
             fresh.iconWidth = iconWidth
             fresh.iconHeight = iconHeight
             fresh.spacing = spacing
+            fresh.maxPerLine = maxPerLine
             fresh.auraOnly = auraOnly
             if auraOnly then
                 -- Cheap and idempotent: the members carry the keys they were
@@ -6302,11 +6352,12 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         sectionPlacement = {}
         for anchor, info in pairs(sectionLayout.sections) do
             for k, entry in ipairs(lists.members[anchor]) do
-                -- Same expression Core/PanelSections.lua places a live button
-                -- with; the fields are the whole of the arithmetic.
+                -- Same per-cell positions Core/PanelSections.lua places a live
+                -- button with; the fields are the whole of the arithmetic.
+                local position = info.positions[k]
                 sectionPlacement[entry.index] = {
-                    x = info.originX + (k - 1) * info.stepX,
-                    y = info.originY + (k - 1) * info.stepY,
+                    x = position and position.x or info.originX,
+                    y = position and position.y or info.originY,
                     width = info.width,
                     height = info.height,
                 }

@@ -4143,37 +4143,46 @@ end
 -- (GroupFrame's populate loop skips them the way it skips a whole Aura Panel),
 -- and ONE container per (PANEL, unit, ANCHOR) mounts on the section's own host
 -- frame -- a plain create-once child of the panel frame that PanelSections.lua
--- sizes to the section's FULL expanded line and positions from the very layout
+-- sizes to the section's FULL expanded block and positions from the very layout
 -- the base grid was placed from. So the base grid keeps its fixed slots while
 -- the section beside it appears, packs and collapses with aura activity.
 --
 -- The ANCHOR is the whole direction story. SECTION_PLACEMENT already answers
--- "which way does this line run, and which end does entry 1 sit at" for CC's own
--- icons, and the layout pass hands both answers through on the section's layout
--- info -- so the container fills exactly the cells CC's placement would have.
--- A section is ONE line by definition, so the wrap ceiling is left at its
--- default and the line can never break.
+-- "which way do this section's lines run, which end does entry 1 sit at, and
+-- which face of the base cluster does it sit against" for CC's own icons, and
+-- the layout pass hands all three through on the section's layout info -- so
+-- the container fills exactly the cells CC's placement would have. A section with a wrap count
+-- (info.perLine) gets the same line ceiling a whole Aura Panel does; extra
+-- lines stack away from the base cluster, line 1 nearest it, matching
+-- BuildPanelSectionLayout's per-member positions cell for cell.
 ------------------------------------------------------------------------
 
--- A section's PANEL_FLOW row, derived from its axis and its start end instead of
--- from a panel growth origin. Returns flow, axis, direction -- the same three
--- ApplyPanelMount and the flow setters take for a whole panel.
+-- A section's PANEL_FLOW row, derived from its axis, its start end, and the
+-- base-cluster face it sits against, instead of from a panel growth origin.
+-- Returns flow, axis, direction -- the same three ApplyPanelMount and the flow
+-- setters take for a whole panel.
 local function SectionFlowSpec(info)
     local flow, axis
     if info.axis == "h" then
-        -- "high" is the corner anchors whose line runs BACK toward the panel's
-        -- far side; BuildPanelSectionLayout encodes the same reversal as a
-        -- negative stepX for a live-button section.
+        -- Primary fill: "high" is the anchors whose line runs BACK toward the
+        -- panel's far side; BuildPanelSectionLayout encodes the same reversal
+        -- as a negative stepX for a live-button section. Cross growth points
+        -- AWAY from the base cluster ("above" wraps upward), so the anchor
+        -- corner is the block's nearest-the-cluster edge.
         axis = "Horizontal"
-        flow = (info.from == "high") and PANEL_FLOW.TOPRIGHT or PANEL_FLOW.TOPLEFT
+        flow = PANEL_FLOW[
+            ((info.side == "above") and "BOTTOM" or "TOP")
+            .. ((info.from == "high") and "RIGHT" or "LEFT")]
     else
         axis = "Vertical"
-        flow = (info.from == "high") and PANEL_FLOW.BOTTOMLEFT or PANEL_FLOW.TOPLEFT
+        flow = PANEL_FLOW[
+            ((info.from == "high") and "BOTTOM" or "TOP")
+            .. ((info.side == "left") and "RIGHT" or "LEFT")]
     end
     -- Where the PACKED block sits once some of the auras are down. A centered
-    -- section keeps its line centered on the base cluster's edge, which is where
-    -- its full line was laid out; every other anchor holds the end entry 1 sits
-    -- at, and that end is the flow's own origin corner -- "start".
+    -- section keeps its lines centered on the base cluster's edge, which is
+    -- where its full lines were laid out; every other fill holds the end entry
+    -- 1 sits at, and that end is the flow's own origin corner -- "start".
     return flow, axis, (info.from == "center") and "center" or "start"
 end
 
@@ -4203,9 +4212,18 @@ local function BindAuraSection(self, groupId, group, frame, anchor, info)
     record.container:SetFlowLayoutGrowthDirection(
         AnchorUtil.FlowDirection[flow.h], AnchorUtil.FlowDirection[flow.v])
     record.container:SetFlowLayoutPadding(0, 0, 0, 0)
-    -- nil restores the default ceiling (math.huge). A section is a single line
-    -- and must never wrap, so there is nothing to cap it at.
-    record.container:SetFlowLayoutMaximumLineSize(nil)
+    -- The same half-open-window ceiling PanelFlowSpec computes for a whole
+    -- Aura Panel, from the section's own wrap count and cell metrics. nil
+    -- (no wrap count) restores the default ceiling (math.huge): one unbroken
+    -- line, the founding behavior.
+    local maximumLineSize
+    if info.perLine then
+        local primary = (info.axis == "h") and info.width or info.height
+        maximumLineSize = info.perLine * primary
+            + (info.perLine - 1) * info.spacing
+            + math.max(info.spacing, 1) * 0.5
+    end
+    record.container:SetFlowLayoutMaximumLineSize(maximumLineSize)
 
     -- Cells are the SECTION's, resolved once by the layout pass that just sized
     -- the host frame, so the container's cells and the rectangle they pack into

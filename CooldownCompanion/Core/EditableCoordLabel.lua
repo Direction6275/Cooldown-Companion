@@ -221,6 +221,55 @@ function ST.CreateEditableCoordLabel(coordLabel, getCoordinates, applyCoordinate
 end
 
 ------------------------------------------------------------------------
+-- Corner-bracket resize glyph, shared by the panel grips and the section
+-- grabber (owner ruling 2026-08-29: one quiet bracket everywhere -- the
+-- stock chat grabber reads as noise). A soft white L over a dark shadow L,
+-- inset a little from the corner, mirrored to whichever corner the grip
+-- occupies. The caller keeps its own Button, scripts, and gestures; this
+-- only draws.
+------------------------------------------------------------------------
+
+-- CC's own baked corner bracket (Media/corner-bracket.tga, generated art):
+-- an anti-aliased white L with a soft dark rim, so it reads on any ground
+-- without a separate shadow. Every shipped Blizzard candidate failed on
+-- inspection -- the uitools "window-resize" family decodes to dark navy
+-- triangles that no vertex color can lighten (owner findings, 2026-08-29).
+local BRACKET_TEXTURE = "Interface\\AddOns\\CooldownCompanion\\Media\\corner-bracket.tga"
+local BRACKET_ALPHA = 0.95
+local BRACKET_INSET = 1
+-- The art's corner points bottom-right at rest; rotation maps it to
+-- whichever corner the grip occupies (SetRotation is counterclockwise).
+local BRACKET_ROTATION = {
+    BOTTOMRIGHT = 0,
+    TOPRIGHT = math.pi / 2,
+    TOPLEFT = math.pi,
+    BOTTOMLEFT = -math.pi / 2,
+}
+
+function ST.SetCornerBracketGripColor(grip, r, g, b, a)
+    if not grip._bracketGlyph then return end
+    grip._bracketGlyph:SetVertexColor(r, g, b, a or BRACKET_ALPHA)
+end
+
+function ST.ApplyCornerBracketGrip(grip, xSide, ySide)
+    xSide = xSide == "LEFT" and "LEFT" or "RIGHT"
+    ySide = ySide == "TOP" and "TOP" or "BOTTOM"
+    if not grip._bracketGlyph then
+        grip._bracketGlyph = grip:CreateTexture(nil, "ARTWORK")
+        grip._bracketGlyph:SetTexture(BRACKET_TEXTURE)
+        ST.SetCornerBracketGripColor(grip, 1, 1, 1)
+    end
+    local corner = ySide .. xSide
+    local size = math.max(8, math.min(grip:GetWidth(), grip:GetHeight()) - 2 * BRACKET_INSET)
+    grip._bracketGlyph:SetRotation(BRACKET_ROTATION[corner] or 0)
+    grip._bracketGlyph:SetSize(size, size)
+    grip._bracketGlyph:ClearAllPoints()
+    grip._bracketGlyph:SetPoint(corner, grip, corner,
+        (xSide == "LEFT") and BRACKET_INSET or -BRACKET_INSET,
+        (ySide == "TOP") and -BRACKET_INSET or BRACKET_INSET)
+end
+
+------------------------------------------------------------------------
 -- Resize kit for the independent bar movers (cast bar, resource stack): a
 -- corner grip, mouse-wheel steps on the name bar, and a typed size label,
 -- driving the saved width and (where one exists) height. Sizes always come

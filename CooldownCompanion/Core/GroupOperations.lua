@@ -712,6 +712,16 @@ local ARRANGE_PANEL_SIZE_KEYS = {
     "barLength",
     "barHeight",
 }
+-- The section-owned geometry Arrange Mode can now edit (nudger/coord label
+-- write offsets, wheel/grip/size label write icon dimensions). Deliberately
+-- NOT spacing or maxPerLine: those are config-only, so Cancel must not
+-- roll them back.
+local ARRANGE_SECTION_GEOMETRY_KEYS = {
+    "offsetX",
+    "offsetY",
+    "iconWidth",
+    "iconHeight",
+}
 local ARRANGE_TEXTURE_POSITION_KEYS = {
     "point",
     "relativePoint",
@@ -788,9 +798,27 @@ function CooldownCompanion:CaptureArrangePanelRecord(groupId)
         return
     end
 
+    local sections
+    if type(group.sections) == "table" then
+        for anchor, section in pairs(group.sections) do
+            if type(section) == "table" then
+                sections = sections or {}
+                -- The table REFERENCE is the identity token: a section that
+                -- dissolves and is recreated at the same anchor is a new
+                -- table, and Cancel must not pour the old one's geometry
+                -- into it (structural changes are left alone).
+                sections[anchor] = {
+                    ref = section,
+                    fields = CaptureArrangeFields(section, ARRANGE_SECTION_GEOMETRY_KEYS),
+                }
+            end
+        end
+    end
+
     snapshot.panels[groupId] = {
         anchor = CopyArrangeTable(group.anchor),
         size = CaptureArrangeFields(group.style, ARRANGE_PANEL_SIZE_KEYS),
+        sections = sections,
         texture = CaptureArrangeFields(group.textureSettings, ARRANGE_TEXTURE_POSITION_KEYS),
         signal = CaptureArrangeFields(
             group.triggerSettings and group.triggerSettings.signal,
@@ -901,6 +929,19 @@ local function RestoreArrangeSnapshot(addon, snapshot)
             if record.size then
                 group.style = type(group.style) == "table" and group.style or {}
                 RestoreArrangeFields(group.style, record.size, ARRANGE_PANEL_SIZE_KEYS)
+            end
+            -- Only the SAME section instance takes its geometry back (table
+            -- identity, captured above); one created, dissolved, or
+            -- recreated mid-arrange is a structural change this rollback
+            -- deliberately leaves alone.
+            if record.sections and type(group.sections) == "table" then
+                for anchor, sectionRecord in pairs(record.sections) do
+                    local section = group.sections[anchor]
+                    if type(section) == "table" and sectionRecord
+                        and section == sectionRecord.ref and sectionRecord.fields then
+                        RestoreArrangeFields(section, sectionRecord.fields, ARRANGE_SECTION_GEOMETRY_KEYS)
+                    end
+                end
             end
             if record.texture then
                 group.textureSettings = type(group.textureSettings) == "table" and group.textureSettings or {}
@@ -1289,6 +1330,11 @@ function CooldownCompanion:RefreshUnlockToolbar()
             self._arrangeTreeRevealEntry = nil
             self._arrangePanelSuppressed = nil
             self._arrangeContainerSuppressed = nil
+            -- The section selection dies with the panel selection, through
+            -- the aware path (cancels its edits, repaints its chrome).
+            if self.ClearArrangeSectionSelection then
+                self:ClearArrangeSectionSelection()
+            end
         end
         if self._arrangeModePill then
             self._arrangeModePill:Hide()
@@ -1622,6 +1668,11 @@ function CooldownCompanion:BeginCombatForcedLock()
     self._arrangeSelectedPanelId = nil
     self._arrangeSoloContainerId = nil
     self._arrangeFocusContainerId = nil
+    -- The panel selection just went; the section selection goes with it
+    -- (the aware path cancels its typed edits before the chrome comes down).
+    if self.ClearArrangeSectionSelection then
+        self:ClearArrangeSectionSelection()
+    end
 
     if self._arrangeModePill then
         self._arrangeModePill:Hide()
@@ -1656,6 +1707,10 @@ function CooldownCompanion:BeginCombatForcedLock()
         -- frame-owned placeholder preview too. The live aura display stays
         -- bound and resumes for the fight; no rebind is possible in combat.
         self:SetAuraPanelPlaceholderPreviewShown(frame, false)
+        -- The section click overlays are chrome by the same argument, and
+        -- they hold mouse focus over live icons -- they may not do that in
+        -- combat.
+        ST.SetSectionMoverOverlaysShown(self, frame, group, false)
         ForceCombatMouseLock(frame)
         ForceCombatMouseLock(frame.dragHandle)
         ForceCombatMouseLock(frame.dragHelpButton)
@@ -1731,6 +1786,10 @@ function CooldownCompanion:EndCombatForcedLock()
             or false
         local handleShown = (frame.dragHandle and frame.dragHandle:IsShown()) == true
         self:SetAuraPanelPlaceholderPreviewShown(frame, handleShown or containerPreviewActive)
+        -- Section overlays share the aura placeholder preview's wide gate:
+        -- drag controls up, or any member of an active container preview.
+        ST.SetSectionMoverOverlaysShown(self, frame, group,
+            handleShown or containerPreviewActive)
         for _, button in ipairs(frame.buttons or {}) do
             local host = button and button.auraTextureHost or nil
             RestoreFrameVisibilityAfterCombat(host and host.dragHandle or nil)
@@ -4276,6 +4335,8 @@ function CooldownCompanion:EnterArrangeMode()
     self._arrangeChromeHidden = nil
     self._arrangeSoloContainerId = nil
     self._arrangeSelectedPanelId = nil
+    self._arrangeSectionGroupId = nil
+    self._arrangeSectionAnchor = nil
     self._arrangeTreeRevealEntry = nil
     self._arrangePanelSuppressed = nil
     self._arrangeContainerSuppressed = nil
@@ -4315,6 +4376,8 @@ function CooldownCompanion:ExitArrangeMode(opts)
     self._arrangeChromeHidden = nil
     self._arrangeSoloContainerId = nil
     self._arrangeSelectedPanelId = nil
+    self._arrangeSectionGroupId = nil
+    self._arrangeSectionAnchor = nil
     self._arrangeTreeRevealEntry = nil
     self._arrangePanelSuppressed = nil
     self._arrangeContainerSuppressed = nil
