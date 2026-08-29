@@ -1659,33 +1659,34 @@ local function IsRoutePanelOpen(route)
     return key ~= nil and CS.IsAdvancedSettingsPanelOpen(key) == true
 end
 
--- Will the section's controls land INERT for the current selection? Under the
--- style lens a section the selected entry only inherits builds read-only, gear
--- included, so a queued advanced key would open a panel on controls that
--- cannot commit - or expire against a gear that was never enabled. Arriving on
--- the tab with the section open, where its Customize chrome explains the
--- state, is the whole answer there.
-local function RouteSectionIsInert(sectionId)
+-- Which entry-lens scope the route's section has right now. Panel and multi
+-- lenses deliberately answer nil: their sections write the panel style and the
+-- preview gear can open the advanced panel normally.
+local function ResolveRouteSectionScope(sectionId)
     if not sectionId then
-        return false
+        return nil
     end
     local resolveLens = ST._ResolveStyleLens
     local resolveSection = ST._ResolveLensSection
     if not (resolveLens and resolveSection) then
-        return false
+        return nil
     end
     local _, group = ResolveContext()
     if not group then
-        return false
+        return nil
     end
     local lens = resolveLens(group)
-    -- Only the entry lens can be inert; panel and multi always write the panel
-    -- style, and asking about them would misread a styleless panel as inert.
     if not (lens and lens.mode == "entry") then
-        return false
+        return nil
     end
-    local _, _, writeStyle = resolveSection(lens, group, sectionId)
-    return writeStyle == nil
+    return resolveSection(lens, group, sectionId)
+end
+
+-- A queued advanced key cannot be consumed by an inherited or unavailable
+-- section: both build inert under the entry lens. The route still lands on and
+-- points at the section; only the advanced-panel open is suppressed.
+local function RouteSectionSuppressesAdvancedPanel(scope)
+    return scope == "inherited" or scope == "denied"
 end
 
 local function NavigateToPreviewSettings(bar)
@@ -1708,7 +1709,9 @@ local function NavigateToPreviewSettings(bar)
     -- Read BEFORE ApplyGearRoute: the lens is resolved from the selection,
     -- which navigation does not touch, but keeping the read on this side of it
     -- keeps the answer tied to the state the click was made in.
-    local suppressQueue = queueKey ~= nil and RouteSectionIsInert(sectionId)
+    local sectionScope = ResolveRouteSectionScope(sectionId)
+    local suppressQueue = queueKey ~= nil
+        and RouteSectionSuppressesAdvancedPanel(sectionScope)
 
     local surface = bar._surface
     local ok, panelId, buttonIndex = surface.ResolveTarget()
@@ -2119,8 +2122,23 @@ local function EnsureBar(host, surface)
             GameTooltip:AddLine("Close settings")
             GameTooltip:AddLine("Close the advanced settings for this preview.", 0.7, 0.7, 0.7)
         else
-            GameTooltip:AddLine("Open settings")
-            GameTooltip:AddLine("Go to the settings for this preview.", 0.7, 0.7, 0.7)
+            local control = bar._selected
+            local sectionScope = control
+                and ResolveRouteSectionScope(ControlSectionId(control)) or nil
+            if sectionScope == "inherited" then
+                GameTooltip:AddLine("Go to settings")
+                GameTooltip:AddLine(
+                    "This entry follows the panel here. Customize the section to edit it.",
+                    0.7, 0.7, 0.7, true)
+            elseif sectionScope == "denied" then
+                GameTooltip:AddLine("Go to settings")
+                GameTooltip:AddLine(
+                    "Advanced settings aren't available for this entry.",
+                    0.7, 0.7, 0.7, true)
+            else
+                GameTooltip:AddLine("Open settings")
+                GameTooltip:AddLine("Go to the settings for this preview.", 0.7, 0.7, 0.7)
+            end
         end
         GameTooltip:Show()
     end)
