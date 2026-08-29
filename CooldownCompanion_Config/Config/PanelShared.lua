@@ -533,7 +533,7 @@ local function IsAuraPanelMoveDestination(group, entryData)
         and CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData) == nil
 end
 
-local function BuildEntryMoveDestinationSections(db, sourceGroupId, entryData)
+local function BuildEntryMoveDestinationSections(db, sourceGroupId, entryData, acceptsDestination)
     local containers = db and db.groupContainers or {}
     local groupedByContainer = {}
 
@@ -542,6 +542,7 @@ local function BuildEntryMoveDestinationSections(db, sourceGroupId, entryData)
             and CanMoveEntryToGroup(sourceGroupId, groupId)
             and CooldownCompanion:CanPanelAcceptManualEntry(group)
             and IsAuraPanelMoveDestination(group, entryData)
+            and (not acceptsDestination or acceptsDestination(groupId, group))
         then
             local containerId = group.parentContainerId
             local container = containerId and containers[containerId]
@@ -883,6 +884,10 @@ end
 -- ST._ exports
 ------------------------------------------------------------------------
 ST._ShowEntryContextMenu = ShowEntryContextMenu
+-- Single- and multi-entry move menus share one Group -> Panel hierarchy. The
+-- optional predicate lets batch moves retain their stricter whole-selection
+-- capacity checks without duplicating destination names or ordering.
+ST._BuildEntryMoveDestinationSections = BuildEntryMoveDestinationSections
 ST._AddPanelTypeMenuTooltip = AddPanelTypeMenuTooltip
 ST._ApplyPanelTypeMenuIndent = ApplyPanelTypeMenuIndent
 ST._AddCDMStarterMenuTooltip = AddCDMStarterMenuTooltip

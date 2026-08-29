@@ -7,6 +7,7 @@ local ColorHeading = ST._ColorHeading
 local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
 local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
 local ClearConfigContainerMultiSelection = ST._ClearConfigContainerMultiSelection
+local BuildEntryMoveDestinationSections = ST._BuildEntryMoveDestinationSections
 
 local function IsContainerVisibleInConfig(containerOrContainerId)
     if CooldownCompanion.ResolveContainerClassScope then
@@ -66,6 +67,27 @@ local function CollectSelectedEntryData(db, sourceGroupId, indices)
         entries[#entries + 1] = sourceGroup.buttons[idx]
     end
     return entries[1] and entries or nil
+end
+
+local BATCH_ENTRY_MOVE_GROUP_MENU_PREFIX = "BATCH_ENTRY_MOVE_GROUP:"
+
+local function ParseBatchEntryMoveContainerId(menuList)
+    if type(menuList) ~= "string" then
+        return nil
+    end
+    local idText = menuList:match("^" .. BATCH_ENTRY_MOVE_GROUP_MENU_PREFIX .. "(%d+)$")
+    return idText and tonumber(idText) or nil
+end
+
+local function FindBatchEntryMoveContainerEntry(sections, containerId)
+    for _, section in ipairs(sections or {}) do
+        for _, containerEntry in ipairs(section.entries or {}) do
+            if containerEntry.containerId == containerId then
+                return containerEntry
+            end
+        end
+    end
+    return nil
 end
 
 -- Row-grammar action strips: compact buttons on grammar-height lines (the
@@ -188,27 +210,56 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
         local indices = multiIndices
         local db = CooldownCompanion.db.profile
         local selectedEntries = CollectSelectedEntryData(db, sourceGroupId, indices)
-        UIDropDownMenu_Initialize(moveMenuFrame, function(self, level)
-            local destinationGroups = {}
-            for id, groupInfo in pairs(db.groups) do
-                if id ~= sourceGroupId
-                    and CanMoveEntryToGroup(sourceGroupId, id)
-                    and not GetManualMoveRejectMessage(groupInfo, multiCount, selectedEntries) then
-                    table.insert(destinationGroups, {
-                        id = id,
-                        name = groupInfo.name or ("Group " .. id),
-                    })
+        UIDropDownMenu_Initialize(moveMenuFrame, function(self, level, menuList)
+            local sections = BuildEntryMoveDestinationSections(
+                db,
+                sourceGroupId,
+                selectedEntries,
+                function(_, groupInfo)
+                    return not GetManualMoveRejectMessage(groupInfo, multiCount, selectedEntries)
                 end
+            )
+
+            local targetContainerId = ParseBatchEntryMoveContainerId(menuList)
+            if not targetContainerId then
+                for _, section in ipairs(sections) do
+                    if section.title then
+                        local header = UIDropDownMenu_CreateInfo()
+                        header.text = section.title
+                        header.isTitle = true
+                        header.notCheckable = true
+                        UIDropDownMenu_AddButton(header, level)
+                    end
+
+                    for _, containerEntry in ipairs(section.entries) do
+                        local info = UIDropDownMenu_CreateInfo()
+                        info.text = containerEntry.containerName
+                        info.notCheckable = true
+                        info.hasArrow = true
+                        info.menuList = BATCH_ENTRY_MOVE_GROUP_MENU_PREFIX
+                            .. tostring(containerEntry.containerId)
+                        info.leftPadding = section.title and 10 or 0
+                        UIDropDownMenu_AddButton(info, level)
+                    end
+                end
+                return
             end
-            table.sort(destinationGroups, function(a, b) return a.name < b.name end)
-            for _, groupEntry in ipairs(destinationGroups) do
+
+            local containerEntry = FindBatchEntryMoveContainerEntry(sections, targetContainerId)
+            if not containerEntry then
+                return
+            end
+
+            for _, panelEntry in ipairs(containerEntry.panels) do
+                local targetGroupId = panelEntry.groupId
                 local info = UIDropDownMenu_CreateInfo()
-                info.text = groupEntry.name
+                info.text = panelEntry.name
+                info.notCheckable = true
                 info.func = function()
-                    if not CanMoveEntryToGroup(sourceGroupId, groupEntry.id) then
+                    if not CanMoveEntryToGroup(sourceGroupId, targetGroupId) then
                         return
                     end
-                    local targetGroup = db.groups[groupEntry.id]
+                    local targetGroup = db.groups[targetGroupId]
                     local rejectMessage = GetManualMoveRejectMessage(targetGroup, multiCount, selectedEntries)
                     if rejectMessage then
                         CooldownCompanion:Print(rejectMessage)
@@ -235,7 +286,7 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
                         table.remove(db.groups[sourceGroupId].buttons, idx)
                     end
                     CooldownCompanion:KeepPanelSingleLineOnGrowth(targetGroup, previousCount)
-                    CooldownCompanion:RefreshGroupFrame(groupEntry.id)
+                    CooldownCompanion:RefreshGroupFrame(targetGroupId)
                     CooldownCompanion:RefreshGroupFrame(sourceGroupId)
                     ClearConfigButtonSelection()
                     CooldownCompanion:RefreshConfigPanel()
