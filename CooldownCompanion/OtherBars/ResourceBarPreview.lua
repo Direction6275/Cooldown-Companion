@@ -256,12 +256,35 @@ local function EnsureResourceAuraOverlayStandIn(frame)
     if not layer then
         local host = CreateFrame("Frame", nil, frame)
         host:EnableMouse(false)
+        -- The fill-tint stand-in: a texture anchored onto the canvas bar's
+        -- own fill texture, clipped to the host rect exactly like the live
+        -- kit's clip window. The bar's own fill is never repainted, so the
+        -- shape-specific painters (Stagger, MW and aura-stack max colors)
+        -- stay authoritative when the preview ends.
+        --
+        -- Level discipline (the live kit's rule): nesting adds default
+        -- frame levels, which would lift the tint above the lane and the
+        -- glow — frame level beats creation order. Both tint frames are
+        -- pinned to the HOST's level; the pins are relative offsets, so
+        -- they survive the host's per-apply level restamp, and the lane
+        -- and glow (host children at +1) keep outranking the tint.
+        local tintClip = CreateFrame("Frame", nil, host)
+        tintClip:SetAllPoints(host)
+        tintClip:EnableMouse(false)
+        tintClip:SetClipsChildren(true)
+        tintClip:Hide()
+        tintClip:SetFrameLevel(host:GetFrameLevel())
+        local tintHost = CreateFrame("Frame", nil, tintClip)
+        tintHost:SetAllPoints(tintClip)
+        tintHost:EnableMouse(false)
+        tintHost:SetFrameLevel(host:GetFrameLevel())
+        local tint = tintHost:CreateTexture(nil, "ARTWORK")
         -- A StatusBar, like the kit's lane, so orientation and reverse fill
         -- come from the widget instead of being recomputed here.
         local lane = CreateFrame("StatusBar", nil, host)
         lane:SetMinMaxValues(0, 1)
         lane:Hide()
-        layer = { host = host, lane = lane }
+        layer = { host = host, lane = lane, tintClip = tintClip, tint = tint }
         frame._ccResourceAuraPreview = layer
     end
     return layer
@@ -297,6 +320,9 @@ function RB.CreateResourceBarPreviewModule(deps)
     local IsResourceOverlayBorderEnabled = RB.IsResourceOverlayBorderEnabled
     local GetResourceOverlayLaneColor = RB.GetResourceOverlayLaneColor
     local ResolveResourceOverlayStackMax = RB.ResolveResourceOverlayStackMax
+    local IsResourceOverlayFillEnabled = RB.IsResourceOverlayFillEnabled
+    local GetResourceOverlayFillColor = RB.GetResourceOverlayFillColor
+    local ResourceOverlayFillSupportsBarType = RB.ResourceOverlayFillSupportsBarType
 
     ------------------------------------------------------------------------
     -- The Active Aura stand-in
@@ -601,6 +627,30 @@ function RB.CreateResourceBarPreviewModule(deps)
             layer.host._ccKitRectW = rw > 1 and rw or 1
             layer.host._ccKitRectH = rh > 1 and rh or 1
             ST._StyleKitBarGlowRegions(layer.glow, borderStyle, layer.host, true)
+
+            -- Fill recolor stand-in (continuous shapes only, matching the
+            -- runtime gate): the tint overlay anchors onto the canvas
+            -- bar's own fill texture, mirroring the live composition —
+            -- same blizzard_class-to-Blizzard texture fallback, and the
+            -- bar's own fill is never repainted.
+            if layer.tint and IsResourceOverlayFillEnabled(auraEntry)
+                and ResourceOverlayFillSupportsBarType(barInfo.barType)
+                and frame.GetStatusBarTexture then
+                local canvasFillTex = frame:GetStatusBarTexture()
+                local texName = ST.GetEffectiveBarTextureName(
+                    GetResourceDisplayValue(settings, "barTexture", "Solid"))
+                layer.tint:SetTexture(CooldownCompanion:FetchStatusBar(
+                    texName == "blizzard_class" and "Blizzard" or texName))
+                layer.tint:SetTexCoord(0, 1, 0, 1)
+                local fillColor = GetResourceOverlayFillColor(auraEntry)
+                layer.tint:SetVertexColor(fillColor[1], fillColor[2], fillColor[3])
+                layer.tint:ClearAllPoints()
+                layer.tint:SetPoint("TOPLEFT", canvasFillTex, "TOPLEFT", 0, 0)
+                layer.tint:SetPoint("BOTTOMRIGHT", canvasFillTex, "BOTTOMRIGHT", 0, 0)
+                layer.tintClip:Show()
+            elseif layer.tintClip then
+                layer.tintClip:Hide()
+            end
 
             local stackMax = GetResourceOverlayTrackingMode(auraEntry, powerType) == "stacks"
                 and ResolveResourceOverlayStackMax(auraEntry, powerType)

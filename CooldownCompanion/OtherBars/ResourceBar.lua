@@ -2384,8 +2384,12 @@ local function StyleContinuousBar(bar, powerType, settings, skipLiveFillColor)
     -- Text setup. The factory parks the text layer at the custom-bar height
     -- (bar+2, under the aura kit); resource bars hoist it into the stack's
     -- text band here so resource text renders above every bar's fills and
-    -- kit visuals (RESOURCE_TEXT_LAYER_LEVEL has the band map).
+    -- kit visuals (RESOURCE_TEXT_LAYER_LEVEL has the band map). The tick
+    -- layer re-stamps into its own band just below, same reasoning.
     bar.textLayer:SetFrameLevel(bar:GetFrameLevel() + RB.RESOURCE_TEXT_LAYER_LEVEL)
+    if bar.tickLayer then
+        bar.tickLayer:SetFrameLevel(bar:GetFrameLevel() + RB.RESOURCE_TICK_LAYER_LEVEL)
+    end
     local resourceConfig = GetResourceDisplayConfig(settings, powerType)
     local textFormat = resourceConfig and resourceConfig.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT
     if textFormat ~= "current" and textFormat ~= "current_max" and textFormat ~= "percent" then

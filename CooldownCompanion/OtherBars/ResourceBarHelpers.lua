@@ -2315,6 +2315,30 @@ local function SupportsResourceAuraStackMode(powerType)
         or RB.AURA_STACK_RESOURCES[powerType] ~= nil
 end
 
+-- Whether this resource renders as ONE continuous StatusBar under the
+-- current settings. Mirrors the ApplyResourceBars shape dispatch, so the
+-- config panel and the preview stand-in can answer "can the aura fill
+-- recolor ride this bar" without a live frame (the recolor needs a single
+-- fill texture; segment clusters and health have none it can ride).
+-- specID is optional and matters to the config panel: an inactive-spec
+-- page must resolve THAT spec's display style, not the active one the
+-- style getters default to.
+local function IsContinuousResourceShape(settings, powerType, specID)
+    if powerType == nil or powerType == RESOURCE_HEALTH then
+        return false
+    end
+    if powerType == 101 then -- Stagger
+        return true
+    end
+    if powerType == RESOURCE_MAELSTROM_WEAPON then
+        return GetMWDisplayStyle(settings, specID) == "continuous"
+    end
+    if RB.AURA_STACK_RESOURCES[powerType] then
+        return GetAuraStackDisplayStyle(settings, powerType, specID) == "continuous"
+    end
+    return SEGMENTED_TYPES[powerType] ~= true
+end
+
 ------------------------------------------------------------------------
 -- IsResourceEnabled
 ------------------------------------------------------------------------
@@ -2482,6 +2506,7 @@ RB.ResolveSpecEntryList = ResolveSpecEntryList
 RB.GetSegmentedThresholdColorForValue = GetSegmentedThresholdColorForValue
 RB.GetContinuousTickEntriesConfig = GetContinuousTickEntriesConfig
 RB.SupportsResourceAuraStackMode = SupportsResourceAuraStackMode
+RB.IsContinuousResourceShape = IsContinuousResourceShape
 RB.IsResourceEnabled = IsResourceEnabled
 RB.IsSegmentedTextResource = IsSegmentedTextResource
 RB.ClearSegmentedText = ClearSegmentedText

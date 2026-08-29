@@ -2387,6 +2387,46 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
         end
     end
 
+    -- The fill recolor is a fact about the BAR BODY, so it sits with the
+    -- lane on the left, independent of border and lane (each system its own
+    -- toggle and colour). Continuous shapes only: segment clusters have no
+    -- single fill for the tint to ride, so the rows only appear where the
+    -- runtime can draw them.
+    if RB.IsContinuousResourceShape(settings, powerType, specID) then
+        local fillOn = RB.IsResourceOverlayFillEnabled(entry)
+        local fillRow = AddCheckboxRow(auraLeft, {
+            label = "Recolor Fill",
+            indent = true,
+            value = fillOn,
+            onChange = function(value)
+                local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
+                if not target then return end
+                -- Off is the shipped look; nil keeps pre-feature configs
+                -- clean of the key.
+                target.auraFillEnabled = value == true and true or nil
+                refresh()
+            end,
+        })
+        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+        -- onto the end of the row's label.
+        AnchorRowBadge(fillRow, CreateInfoButton(fillRow.frame, fillRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Recolor Fill",
+            {"Changes the bar's fill to this color while the aura is active.", 1, 1, 1, true},
+        }, fillRow))
+
+        if fillOn then
+            AddColorRow(auraLeft, {
+                label = "Fill Color",
+                indent = true,
+                tbl = entry,
+                key = "auraFillColor",
+                default = RB.GetResourceOverlayFillColor(entry),
+                onConfirm = applyBars,
+                onChange = previewOnly,
+            })
+        end
+    end
+
     local borderOn = RB.IsResourceOverlayBorderEnabled(entry)
     AddCheckboxRow(auraRight, {
         label = "Border",

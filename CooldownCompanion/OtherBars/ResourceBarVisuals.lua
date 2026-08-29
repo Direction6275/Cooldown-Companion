@@ -158,16 +158,28 @@ end
 -- Continuous Tick & Fill
 ------------------------------------------------------------------------
 
+-- Tick markers ride their own band ABOVE the aura overlay kit (frame level
+-- beats draw layer, so bar-parented textures lose to the kit's fill tint):
+-- ticks are value landmarks and must stay readable while the tint covers
+-- the fill. Level re-stamped by StyleContinuousBar, textLayer-style.
+local function EnsureContinuousTickLayer(bar)
+    if not bar.tickLayer then
+        local layer = CreateFrame("Frame", nil, bar)
+        layer:SetAllPoints(bar)
+        layer:EnableMouse(false)
+        layer:SetFrameLevel(bar:GetFrameLevel() + RB.RESOURCE_TICK_LAYER_LEVEL)
+        bar.tickLayer = layer
+    end
+    return bar.tickLayer
+end
+
 local function EnsureContinuousTickMarker(bar, index)
     if not bar then return nil end
     if type(bar.tickMarkers) ~= "table" then
         bar.tickMarkers = {}
-        if bar.tickMarker then
-            bar.tickMarkers[1] = bar.tickMarker
-        end
     end
     if not bar.tickMarkers[index] then
-        bar.tickMarkers[index] = bar:CreateTexture(nil, "OVERLAY", nil, 6)
+        bar.tickMarkers[index] = EnsureContinuousTickLayer(bar):CreateTexture(nil, "OVERLAY", nil, 6)
         bar.tickMarkers[index]:SetColorTexture(1, 0.84, 0, 1)
         bar.tickMarkers[index]:Hide()
     end
@@ -366,11 +378,8 @@ local function CreateContinuousBar(parent)
     bar.brightnessOverlay:SetBlendMode("ADD")
     bar.brightnessOverlay:Hide()
 
-    -- Optional static tick markers for continuous bars.
-    bar.tickMarker = bar:CreateTexture(nil, "OVERLAY", nil, 6)
-    bar.tickMarker:SetColorTexture(1, 0.84, 0, 1)
-    bar.tickMarker:Hide()
-    bar.tickMarkers = { bar.tickMarker }
+    -- Tick markers are created lazily on bar.tickLayer, above the aura kit
+    -- (EnsureContinuousTickMarker) — never on the bar itself.
 
     bar._barType = "continuous"
     return bar
