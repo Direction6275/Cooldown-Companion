@@ -239,14 +239,21 @@ local function UpdateBarFill(button)
             end
             -- Eligible DurationObjects use native text binding; other timer sources stay on the manual path.
             local durationStyle = button.style
+            -- Active totem/summon duration is AURA text by contract (like its
+            -- font and color above), so its Low Time application follows the
+            -- aura opt-in; the cooldown phase stays unconditional. Safe per
+            -- tick: BindDurationText memoizes by formatter cache key, so the
+            -- formatter only re-applies on the phase edge.
+            local allowLowTime = not totemPhase
+                or CooldownCompanion.AllowAuraDurationLowTime(durationStyle, false)
             if button._durationObj then
                 button._lastBarTimeText = nil
-                -- One urgency policy covers both the cooldown phase and the
-                -- aura-style active phase used by totems and summons.
-                BindDurationText(button.timeText, button._durationObj, durationStyle, true)
+                BindDurationText(button.timeText, button._durationObj, durationStyle, allowLowTime)
             else
                 if itemRemaining > 0 then
-                    SetBarTimeText(button, FormatCooldownTime(itemRemaining, durationStyle))
+                    SetBarTimeText(button, allowLowTime
+                        and FormatCooldownTime(itemRemaining, durationStyle)
+                        or CooldownCompanion.FormatTime(itemRemaining, durationStyle))
                 else
                     SetBarTimeText(button, "")
                 end

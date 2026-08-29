@@ -1154,7 +1154,7 @@ ST.OVERRIDE_SECTIONS = {
         label = "Low Time Threshold",
         keys = {"durationLowTimeThreshold", "durationLowTimeDecimals",
             "durationLowTimeColor", "durationLowTimeThreshold2",
-            "durationLowTimeColor2"},
+            "durationLowTimeColor2", "durationLowTimeAuras"},
         -- Entry overrides need a complete baseline plus explicit off values.
         -- Without these, promoting while the panel is off leaves missing keys
         -- that later read through styleOverrides.__index and start following
@@ -1165,6 +1165,7 @@ ST.OVERRIDE_SECTIONS = {
             durationLowTimeColor = {1, 0.2, 0.2, 1},
             durationLowTimeThreshold2 = 0,
             durationLowTimeColor2 = {1, 0.55, 0.1, 1},
+            durationLowTimeAuras = false,
         },
         modes = {icons = true, bars = true},
     },

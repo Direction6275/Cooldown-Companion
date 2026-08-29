@@ -738,9 +738,14 @@ local function BuildBarAppearanceTab(container, group, style)
     local function AddDurationLowTimeSection(column)
         if not ST._AddDurationLowTimeRows then return end
         local lowTimeSec = BeginLensSection(lens, group, "durationLowTime", { column = column })
+        -- Master row unindented and aura opt-in row: keep in step with the
+        -- icon-mode twin in GroupTabsAppearance.lua (owner ruling 2026-08-28).
         local rows = ST._AddDurationLowTimeRows(column, lowTimeSec.tbl, refreshStyle, {
-            indent = true,
             explicitOff = lowTimeSec.scope == "customized",
+            auraToggle = not ST.IsAuraPanelGroup(group)
+                and not ((lens and lens.mode == "entry") and lens.buttonData
+                    and ST.IsAuraSectionEntry(group, lens.buttonData))
+                and BarsDrawAuraDurationRows(group, (lens and lens.effective) or group.style),
             infoButtons = tabInfoButtons,
             rebuild = function()
                 refreshStyle()

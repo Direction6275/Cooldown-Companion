@@ -386,6 +386,12 @@ function RB.CreateResourceBarAuraHostModule(deps)
         style.durationLowTimeColor = cabConfig.durationLowTimeColor
         style.durationLowTimeThreshold2 = cabConfig.durationLowTimeThreshold2
         style.durationLowTimeColor2 = cabConfig.durationLowTimeColor2
+        -- Aura application is opt-in on spell bars (their cooldown lane keeps
+        -- the policy regardless); a standalone aura bar's duration text is the
+        -- threshold's only consumer, so it applies unconditionally there. The
+        -- kit bind reads the resolved gate off this throwaway style.
+        style.durationLowTimeAuras = not IsSpellCustomBarConfig(cabConfig)
+            or cabConfig.durationLowTimeAuras == true
         -- Stack text resolution mirrors StyleCustomAuraBar's compat rule:
         -- stacks-mode bars with no explicit showStackText fall back to the
         -- legacy showText flag.
