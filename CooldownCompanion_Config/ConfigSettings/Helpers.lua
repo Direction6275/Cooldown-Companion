@@ -1518,15 +1518,24 @@ end
 -- Customize: copy the panel's values for this section onto the entry, then
 -- rebuild. Deliberately no tab navigation - the section the owner is looking
 -- at is the section that just became editable, in place.
-local function PromoteLensSection(lens, group, sectionId)
+--
+-- The preview command center is the one caller that defers the config rebuild:
+-- it has to prepare the destination and queue the section's advanced panel
+-- first, then its existing navigation path performs the one refresh that
+-- consumes both. The pinned mirror still updates immediately through
+-- UpdateGroupStyle, so the preview never waits on that navigation.
+local function PromoteLensSection(lens, group, sectionId, opts)
     local buttonData = lens and lens.buttonData
     local groupStyle = group and group.style
     if not (buttonData and groupStyle and sectionId) then
-        return
+        return false
     end
     CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
     CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    CooldownCompanion:RefreshConfigPanel()
+    if not (opts and opts.deferRefresh) then
+        CooldownCompanion:RefreshConfigPanel()
+    end
+    return true
 end
 
 local function HideScopeChrome(frame, fields)
@@ -3394,6 +3403,7 @@ ST._CanButtonUseConfigOverrideSection = CanButtonUseConfigOverrideSection
 ST._GroupSupportsPerButtonOverrides = GroupSupportsPerButtonOverrides
 ST._ResolveStyleLens = ResolveStyleLens
 ST._ResolveLensSection = ResolveLensSection
+ST._PromoteLensSection = PromoteLensSection
 ST._BeginLensSection = BeginLensSection
 ST._ResolveLensCollapseKey = ResolveLensCollapseKey
 ST._AddLensPanelScopeNote = AddLensPanelScopeNote
