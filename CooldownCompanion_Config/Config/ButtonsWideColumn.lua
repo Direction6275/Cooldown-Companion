@@ -1346,7 +1346,7 @@ local function EnsureAddBox(col3)
     instructions:SetPoint("RIGHT", editFrame, "RIGHT", -6, 0)
     instructions:SetJustifyH("LEFT")
     instructions:SetTextColor(0.5, 0.5, 0.5)
-    instructions:SetText("Add spell, item, trinket slot, or ID")
+    instructions:SetText("Search spells, items, trinket slots, or IDs")
     addBox._cdcInstructions = instructions
     editFrame:SetPoint("BOTTOMRIGHT", addBox.frame, "BOTTOMRIGHT", -18, 0)
     CreateAddBoxInfoButton(addBox.frame, addBox.frame)
@@ -1417,6 +1417,9 @@ local function UpdateAddBox(col3)
     end
 
     local addBox = EnsureAddBox(col3)
+    addBox._cdcInstructions:SetText(CooldownCompanion:IsAuraPanel(group)
+        and "Search aura spells or enter an ID"
+        or "Search spells, items, trinket slots, or IDs")
     local header = EnsureEditingSurface(col3)._cdcHeader
     addBox.frame:ClearAllPoints()
     addBox.frame:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
