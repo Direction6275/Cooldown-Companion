@@ -463,10 +463,11 @@ local function AnyTriggerEffectEnabled(group)
 end
 
 ------------------------------------------------------------------------
--- Every panel preview, in menu order, grouped by what the preview
--- actually is: something CC draws on top, a situation the button is in,
--- or a readout it displays. Labels are the existing ones verbatim - the
--- no-rename ruling holds here too.
+-- Every panel preview stays in its behavior/fallback order here. The chooser
+-- sorts a shallow copy for display, grouping by the subject a player is looking
+-- for rather than by the rendering mechanism that happens to draw it. Canonical
+-- labels remain unchanged for the collapsed command bar; the open menu removes
+-- the redundant "Preview" prefix.
 --
 -- The cooldown previews follow the aura pattern (owner ruling 2026-08-08):
 -- on icons and bars the old single "Preview Cooldown State" is split into
@@ -477,9 +478,21 @@ end
 -- look is indivisible.
 ------------------------------------------------------------------------
 
-local GROUP_EFFECTS = "Effects"
-local GROUP_STATES = "Button States"
-local GROUP_READOUTS = "Text & Timers"
+local GROUP_AURAS = "Auras"
+local GROUP_COOLDOWNS_CHARGES = "Cooldowns & Charges"
+local GROUP_FEEDBACK_STATES = "Feedback & States"
+
+local PANEL_MENU_GROUP_ORDER = {
+    [GROUP_COOLDOWNS_CHARGES] = 1,
+    [GROUP_AURAS] = 2,
+    [GROUP_FEEDBACK_STATES] = 3,
+}
+
+-- Blizzard's stock dropdown row puts a 16px radio at x=0 and its text at
+-- x=20. The font outline consumes that narrow optical gap at common UI scales,
+-- so selectable rows reserve two additional spaces. Headers keep their normal
+-- alignment.
+local MENU_ROW_TEXT_INSET = "  "
 
 ------------------------------------------------------------------------
 -- Where each preview's settings live (the quick-access gear)
@@ -558,7 +571,8 @@ local CONTROLS = {
     {
         id = "procGlow",
         label = "Preview Proc Glow",
-        group = GROUP_EFFECTS,
+        group = GROUP_FEEDBACK_STATES,
+        menuOrder = 10,
         modes = { icons = true },
         section = "procGlow",
         glowStyleKey = "procGlowStyle",
@@ -568,7 +582,8 @@ local CONTROLS = {
     {
         id = "auraGlow",
         label = "Preview Aura Glow",
-        group = GROUP_EFFECTS,
+        group = GROUP_AURAS,
+        menuOrder = 10,
         modes = { icons = true },
         section = "auraIndicator",
         glowStyleKey = "auraGlowStyle",
@@ -578,7 +593,8 @@ local CONTROLS = {
     {
         id = "pandemicGlow",
         label = "Preview Pandemic Effect",
-        group = GROUP_EFFECTS,
+        group = GROUP_AURAS,
+        menuOrder = 50,
         modes = { icons = true },
         section = "pandemic",
         requiresPandemicEffect = true,
@@ -588,7 +604,8 @@ local CONTROLS = {
     {
         id = "readyGlow",
         label = "Preview Ready Glow Style",
-        group = GROUP_EFFECTS,
+        group = GROUP_FEEDBACK_STATES,
+        menuOrder = 20,
         modes = { icons = true },
         section = "readyGlow",
         glowStyleKey = "readyGlowStyle",
@@ -598,7 +615,8 @@ local CONTROLS = {
     {
         id = "keyPressHighlight",
         label = "Preview Key Press Highlight",
-        group = GROUP_EFFECTS,
+        group = GROUP_FEEDBACK_STATES,
+        menuOrder = 30,
         modes = { icons = true },
         section = "keyPressHighlight",
         glowStyleKey = "keyPressHighlightStyle",
@@ -608,7 +626,8 @@ local CONTROLS = {
     {
         id = "barActiveAura",
         label = "Preview Active Aura Indicator",
-        group = GROUP_EFFECTS,
+        group = GROUP_AURAS,
+        menuOrder = 10,
         modes = { bars = true },
         section = "barActiveAura",
         requiresBarAuraIndicator = true,
@@ -618,7 +637,8 @@ local CONTROLS = {
     {
         id = "barPandemic",
         label = "Preview Pandemic Color",
-        group = GROUP_EFFECTS,
+        group = GROUP_AURAS,
+        menuOrder = 50,
         modes = { bars = true },
         section = "pandemic",
         requiresPandemicEffect = true,
@@ -632,7 +652,8 @@ local CONTROLS = {
     {
         id = "textureProc",
         label = "Preview Proc Effect",
-        group = GROUP_EFFECTS,
+        group = GROUP_FEEDBACK_STATES,
+        menuOrder = 10,
         modes = { textures = true },
         indicatorKey = "proc",
         excludesTextureAuraDisplay = true,
@@ -642,7 +663,8 @@ local CONTROLS = {
     {
         id = "textureAura",
         label = "Preview Aura Effect",
-        group = GROUP_EFFECTS,
+        group = GROUP_AURAS,
+        menuOrder = 10,
         modes = { textures = true },
         indicatorKey = "aura",
         requiresTextureAuraDisplay = true,
@@ -654,7 +676,8 @@ local CONTROLS = {
     {
         id = "textureReady",
         label = "Preview Ready Effect",
-        group = GROUP_EFFECTS,
+        group = GROUP_FEEDBACK_STATES,
+        menuOrder = 20,
         modes = { textures = true },
         indicatorKey = "ready",
         excludesTextureAuraDisplay = true,
@@ -664,7 +687,8 @@ local CONTROLS = {
     {
         id = "textureUnusable",
         label = "Preview Unusable Effect",
-        group = GROUP_EFFECTS,
+        group = GROUP_FEEDBACK_STATES,
+        menuOrder = 40,
         modes = { textures = true },
         indicatorKey = "unusable",
         excludesTextureAuraDisplay = true,
@@ -674,7 +698,8 @@ local CONTROLS = {
     {
         id = "triggerEffects",
         label = "Preview Effects",
-        group = GROUP_EFFECTS,
+        group = GROUP_FEEDBACK_STATES,
+        menuOrder = 30,
         modes = { trigger = true },
         requiresTriggerEffect = true,
         -- No key: the preview plays every enabled trigger effect at once, and
@@ -687,7 +712,8 @@ local CONTROLS = {
     {
         id = "cooldown",
         label = "Preview Cooldown State",
-        group = GROUP_STATES,
+        group = GROUP_COOLDOWNS_CHARGES,
+        menuOrder = 10,
         -- Icons and bars split this into the Cooldown Text / Cooldown Swipe
         -- readouts below (owner ruling 2026-08-08); the modes whose cooldown
         -- look is indivisible keep the state entry. The rotation assistant's
@@ -704,7 +730,8 @@ local CONTROLS = {
     {
         id = "unusable",
         label = "Preview Unusable State",
-        group = GROUP_STATES,
+        group = GROUP_FEEDBACK_STATES,
+        menuOrder = 40,
         modes = { icons = true, bars = true, text = true, rotationAssistant = true },
         styleKey = "showUnusable",
         lensSection = "unusableDimming",
@@ -714,7 +741,8 @@ local CONTROLS = {
     {
         id = "outOfRange",
         label = "Preview Out of Range State",
-        group = GROUP_STATES,
+        group = GROUP_FEEDBACK_STATES,
+        menuOrder = 50,
         modes = { icons = true, bars = true, text = true, rotationAssistant = true },
         styleKey = "showOutOfRange",
         lensSection = "showOutOfRange",
@@ -726,7 +754,8 @@ local CONTROLS = {
     {
         id = "lossOfControl",
         label = "Preview Loss of Control",
-        group = GROUP_STATES,
+        group = GROUP_FEEDBACK_STATES,
+        menuOrder = 60,
         modes = { icons = true, bars = true, rotationAssistant = true },
         section = "lossOfControl",
         styleKey = "showLossOfControl",
@@ -737,7 +766,8 @@ local CONTROLS = {
     {
         id = "cooldownText",
         label = "Preview Cooldown Text",
-        group = GROUP_READOUTS,
+        group = GROUP_COOLDOWNS_CHARGES,
+        menuOrder = 20,
         modes = { icons = true, bars = true },
         section = "cooldownText",
         styleKeyDefaultOn = "showCooldownText",
@@ -747,7 +777,8 @@ local CONTROLS = {
     {
         id = "cooldownSwipe",
         label = "Preview Cooldown Swipe",
-        group = GROUP_READOUTS,
+        group = GROUP_COOLDOWNS_CHARGES,
+        menuOrder = 10,
         modes = { icons = true },
         resolveSection = ResolveCooldownVisualOwner,
         -- The state look minus the countdown text (owner ruling 2026-08-08):
@@ -770,7 +801,8 @@ local CONTROLS = {
     {
         id = "auraDurationText",
         label = "Preview Aura Duration Text",
-        group = GROUP_READOUTS,
+        group = GROUP_AURAS,
+        menuOrder = 30,
         modes = { icons = true, bars = true },
         section = "auraText",
         styleKeyDefaultOn = "showAuraText",
@@ -780,7 +812,8 @@ local CONTROLS = {
     {
         id = "pandemicMarker",
         label = "Preview Pandemic Marker",
-        group = GROUP_READOUTS,
+        group = GROUP_AURAS,
+        menuOrder = 60,
         modes = { icons = true, bars = true },
         -- Sits with the readouts, not the effects: the marker IS the duration
         -- text, dressed. Its settings live in the Indicators tab's Pandemic
@@ -799,7 +832,8 @@ local CONTROLS = {
     {
         id = "auraStackText",
         label = "Preview Aura Stack Text",
-        group = GROUP_READOUTS,
+        group = GROUP_AURAS,
+        menuOrder = 40,
         modes = { icons = true, bars = true },
         section = "auraStackText",
         styleKeyDefaultOn = "showAuraStackText",
@@ -809,7 +843,8 @@ local CONTROLS = {
     {
         id = "auraDurationSwipe",
         label = "Preview Aura Duration Swipe",
-        group = GROUP_READOUTS,
+        group = GROUP_AURAS,
+        menuOrder = 20,
         modes = { icons = true },
         section = "auraDurationSwipe",
         styleKeyDefaultOn = "showAuraDurationSwipe",
@@ -820,7 +855,9 @@ local CONTROLS = {
     {
         id = "chargeFull",
         label = "Preview Max Charges",
-        group = GROUP_READOUTS,
+        menuLabel = "Full Charges",
+        group = GROUP_COOLDOWNS_CHARGES,
+        menuOrder = 30,
         modes = { icons = true, bars = true },
         section = "chargeText",
         styleKeyDefaultOn = "showChargeText",
@@ -831,7 +868,9 @@ local CONTROLS = {
     {
         id = "chargeMissing",
         label = "Preview Missing Charges",
-        group = GROUP_READOUTS,
+        menuLabel = "Some Charges Missing",
+        group = GROUP_COOLDOWNS_CHARGES,
+        menuOrder = 40,
         modes = { icons = true, bars = true },
         section = "chargeText",
         styleKeyDefaultOn = "showChargeText",
@@ -842,7 +881,8 @@ local CONTROLS = {
     {
         id = "chargeZero",
         label = "Preview Zero Charges",
-        group = GROUP_READOUTS,
+        group = GROUP_COOLDOWNS_CHARGES,
+        menuOrder = 50,
         modes = { icons = true, bars = true },
         section = "chargeText",
         styleKeyDefaultOn = "showChargeText",
@@ -1980,6 +2020,42 @@ local function EnsureMenuFrame()
     return CS.previewCommandCenterMenu
 end
 
+local function PanelMenuLabel(control)
+    local label = control.menuLabel or control.label or ""
+    return (label:gsub("^Preview%s+", ""))
+end
+
+local function PanelMenuControlComesBefore(a, b)
+    local aGroup = PANEL_MENU_GROUP_ORDER[a.group] or 99
+    local bGroup = PANEL_MENU_GROUP_ORDER[b.group] or 99
+    if aGroup ~= bGroup then
+        return aGroup < bGroup
+    end
+
+    local aOrder = a.menuOrder or 99
+    local bOrder = b.menuOrder or 99
+    if aOrder ~= bOrder then
+        return aOrder < bOrder
+    end
+
+    return PanelMenuLabel(a) < PanelMenuLabel(b)
+end
+
+local function BuildMenuControls(applicable, surface)
+    local controls = {}
+    for index, control in ipairs(applicable) do
+        controls[index] = control
+    end
+
+    -- Sorting this copy keeps CONTROLS' behavior order intact: remembered and
+    -- running previews still resolve there, including the first-applicable
+    -- fallback when a remembered choice no longer fits the selected target.
+    if surface == BUTTONS_SURFACE then
+        table.sort(controls, PanelMenuControlComesBefore)
+    end
+    return controls
+end
+
 local function OpenPreviewMenu(bar)
     local surface = bar._surface
     local ok, panelId, buttonIndex = surface.ResolveTarget()
@@ -1989,9 +2065,9 @@ local function OpenPreviewMenu(bar)
 
     local menu = EnsureMenuFrame()
     UIDropDownMenu_Initialize(menu, function(_, level)
-        local applicable = bar._applicable or {}
+        local applicable = BuildMenuControls(bar._applicable or {}, surface)
         -- Headers only earn their space once the menu actually spans more
-        -- than one group (a texture or trigger panel offers Effects only).
+        -- than one group (texture and trigger panels often offer only one).
         local showHeaders = false
         local firstGroup = applicable[1] and applicable[1].group
         for _, control in ipairs(applicable) do
@@ -2013,7 +2089,11 @@ local function OpenPreviewMenu(bar)
             end
 
             local info = UIDropDownMenu_CreateInfo()
-            info.text = control.label
+            local menuLabel = control.label
+            if surface == BUTTONS_SURFACE then
+                menuLabel = PanelMenuLabel(control)
+            end
+            info.text = MENU_ROW_TEXT_INSET .. menuLabel
             -- Radio, not check: picking one is picking the only one.
             info.checked = (CS[surface.selectionKey] == control.id)
             info.func = function()
