@@ -499,10 +499,13 @@ local function FinalizePreviewState(preview)
     -- Written inline rather than as a helper: this file rides the 200-local
     -- ceiling (see the CopyMode do-block above), and every build path already
     -- passes through here, which is also what makes the hide reliable when the
-    -- preview moves onto an ordinary panel.
+    -- preview moves onto an ordinary panel. Empty Aura Panels suppress it
+    -- until there is an inactive-aura layout to explain.
     local auraCaptionGroup = preview.readOnly ~= true and preview.panelId
         and CooldownCompanion.db.profile.groups[preview.panelId] or nil
-    if auraCaptionGroup and (ST.IsAuraPanelGroup(auraCaptionGroup)
+    local emptyAuraPanel = auraCaptionGroup and ST.IsAuraPanelGroup(auraCaptionGroup)
+        and #(auraCaptionGroup.buttons or {}) == 0
+    if auraCaptionGroup and not emptyAuraPanel and (ST.IsAuraPanelGroup(auraCaptionGroup)
         or ST.PanelHasAuraSection(auraCaptionGroup)) then
         local caption = preview.auraCaption
         if not caption then
@@ -729,7 +732,7 @@ local function AcquireSlot(preview, parent, poolName)
     return frame
 end
 
-local function SetPreviewMessage(preview, message)
+local function SetPreviewMessage(preview, message, title, note)
     local label = preview.messageLabel
     if not label then
         label = preview.root:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -738,20 +741,80 @@ local function SetPreviewMessage(preview, message)
         label:SetWordWrap(true)
         preview.messageLabel = label
     end
-    -- Re-anchored on every call: the trigger preview tucks this label into its
-    -- bottom band after calling here, so the full-area default must come back
-    -- for every other caller on a shared host.
     label:ClearAllPoints()
+    label:SetText(message or "")
+
+    -- A title opts this message into the focused empty-panel treatment. The
+    -- plain-message path remains for read-only and filtered states, and for the
+    -- compact bands beneath Texture and Trigger mirrors.
+    if title then
+        local titleLabel = preview.messageTitle
+        if not titleLabel then
+            titleLabel = preview.root:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+            titleLabel:SetJustifyH("CENTER")
+            titleLabel:SetWordWrap(true)
+            preview.messageTitle = titleLabel
+        end
+        titleLabel:ClearAllPoints()
+        titleLabel:SetPoint("LEFT", preview.root, "LEFT", 18, 0)
+        titleLabel:SetPoint("RIGHT", preview.root, "RIGHT", -18, 0)
+        titleLabel:SetPoint("BOTTOM", preview.root, "CENTER", 0, 0)
+        titleLabel:SetText(title)
+        titleLabel:Show()
+
+        label:SetPoint("TOPLEFT", titleLabel, "BOTTOMLEFT", 0, -8)
+        label:SetPoint("TOPRIGHT", titleLabel, "BOTTOMRIGHT", 0, -8)
+        label:Show()
+
+        local noteLabel = preview.messageNote
+        if note then
+            if not noteLabel then
+                noteLabel = preview.root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+                noteLabel:SetJustifyH("CENTER")
+                noteLabel:SetWordWrap(true)
+                preview.messageNote = noteLabel
+            end
+            noteLabel:ClearAllPoints()
+            noteLabel:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -8)
+            noteLabel:SetPoint("TOPRIGHT", label, "BOTTOMRIGHT", 0, -8)
+            noteLabel:SetText(note)
+            noteLabel:Show()
+        elseif noteLabel then
+            noteLabel:Hide()
+        end
+
+        -- Center the complete text stack rather than centering one line and
+        -- guessing an offset for the rest. This stays balanced when the body
+        -- or Aura note wraps at narrower config widths.
+        local titleHeight = math_max(1, titleLabel:GetStringHeight() or 0)
+        local belowTitleHeight = 8 + math_max(1, label:GetStringHeight() or 0)
+        if note then
+            belowTitleHeight = belowTitleHeight
+                + 8 + math_max(1, noteLabel:GetStringHeight() or 0)
+        end
+        titleLabel:ClearAllPoints()
+        titleLabel:SetPoint("LEFT", preview.root, "LEFT", 18, 0)
+        titleLabel:SetPoint("RIGHT", preview.root, "RIGHT", -18, 0)
+        titleLabel:SetPoint("BOTTOM", preview.root, "CENTER", 0,
+            (belowTitleHeight - titleHeight) / 2)
+        return
+    end
+
+    if preview.messageTitle then preview.messageTitle:Hide() end
+    if preview.messageNote then preview.messageNote:Hide() end
+
+    -- Re-anchored on every plain call: compact mirrors tuck this label into a
+    -- bottom band after calling here, so the full-area default must return for
+    -- every other caller on the shared host.
     label:SetPoint("TOPLEFT", preview.root, "TOPLEFT", 18, -18)
     label:SetPoint("BOTTOMRIGHT", preview.root, "BOTTOMRIGHT", -18, 18)
-    label:SetText(message or "")
     label:Show()
 end
 
 local function HidePreviewMessage(preview)
-    if preview.messageLabel then
-        preview.messageLabel:Hide()
-    end
+    if preview.messageLabel then preview.messageLabel:Hide() end
+    if preview.messageTitle then preview.messageTitle:Hide() end
+    if preview.messageNote then preview.messageNote:Hide() end
 end
 
 local function IsEntrySelected(index)
@@ -5037,8 +5100,8 @@ local STRIP_PER_ROW = 8
 -- one preview: the strip may claim at most this share of the fit height, and
 -- the band between the two reuses the preview's own padding rhythm.
 local TRIGGER_PREVIEW_STRIP_MAX_SHARE = 0.35
--- Bottom band reserved for the "no entries yet" message when there is no strip.
-local TRIGGER_PREVIEW_EMPTY_BAND = 44
+-- Bottom band reserved for compact entry guidance beneath a specialized mirror.
+local EMPTY_ENTRY_GUIDANCE_BAND = 44
 
 local function GetStripNaturalSize(count)
     if count <= 0 then
@@ -5200,8 +5263,13 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly, layo
 
     local count = #entries
     if count == 0 then
-        SetPreviewMessage(preview, readOnly and "Empty Panel"
-            or "This panel has no entries yet. Add spells or items in the Panels column.")
+        if readOnly then
+            SetPreviewMessage(preview, "Empty Panel")
+        else
+            SetPreviewMessage(preview,
+                "Search for a spell or item in the field below, enter an ID, or drag one into this preview.",
+                "Add your first entry")
+        end
         FinalizePreviewState(preview)
         return
     end
@@ -5609,8 +5677,9 @@ local function EnsureTextureMirror(preview)
     return mirror
 end
 
--- Hosts are shared across selections and the trigger preview reserves a bottom
--- band for its strip, so the mirror's extent must be re-anchored every build.
+-- Hosts are shared across selections, and specialized previews can reserve a
+-- bottom band for their strip or empty-entry guidance, so the mirror's extent
+-- must be re-anchored every build.
 local function ApplyMirrorBand(mirror, previewRoot, bottomReserve)
     local root = mirror.root
     root:ClearAllPoints()
@@ -5987,7 +6056,6 @@ local function BuildTextureMirror(preview, host, panelId, group, readOnly)
 
     local mirror = EnsureTextureMirror(preview)
     mirror.root:Show()
-    ApplyMirrorBand(mirror, preview.root, 0)
 
     -- The mirror is shared with the trigger preview on this host, so restore
     -- the texture-panel presentation before rendering.
@@ -6000,6 +6068,8 @@ local function BuildTextureMirror(preview, host, panelId, group, readOnly)
     -- An empty texture panel still offers drop-to-add on the preview host, and
     -- an interactive mirror would swallow the drop.
     local hasEntry = group and group.buttons and group.buttons[1] ~= nil
+    local guidanceReserve = not readOnly and not hasEntry and EMPTY_ENTRY_GUIDANCE_BAND or 0
+    ApplyMirrorBand(mirror, preview.root, guidanceReserve)
     mirror.root:EnableMouse(not readOnly and hasEntry and true or false)
     if not hasEntry then
         mirror.hoverCue:Hide()
@@ -6008,6 +6078,7 @@ local function BuildTextureMirror(preview, host, panelId, group, readOnly)
     -- Focused texture mirrors retain the established measurement guard;
     -- overview mirrors use the tile's actual smaller fit box.
     local boxWidth, boxHeight = GetHostFitBox(host, readOnly)
+    local mirrorBoxHeight = math_max(1, boxHeight - guidanceReserve)
 
     -- Prefer the picker's staged selection for the panel being edited, else the
     -- saved texture. Both are NormalizeAuraTextureSettings tables, so the shared
@@ -6022,14 +6093,22 @@ local function BuildTextureMirror(preview, host, panelId, group, readOnly)
     mirror.texturePanelId = panelId
     mirror.texturePanelSettings = settings
     mirror.texturePanelBoxWidth = boxWidth
-    mirror.texturePanelBoxHeight = boxHeight
+    mirror.texturePanelBoxHeight = mirrorBoxHeight
 
     local render = ST._UpdateTexturePanelPreview
     if render then
-        render(mirror, settings, boxWidth, boxHeight)
+        render(mirror, settings, boxWidth, mirrorBoxHeight)
     end
     if not readOnly then
-        ApplyTextureMirrorEffectPreview(mirror, panelId, group, settings, boxWidth, boxHeight)
+        ApplyTextureMirrorEffectPreview(mirror, panelId, group, settings, boxWidth, mirrorBoxHeight)
+    end
+    if guidanceReserve > 0 then
+        SetPreviewMessage(preview,
+            "Add an entry with the field below, or drag it into this preview.")
+        local label = preview.messageLabel
+        label:ClearAllPoints()
+        label:SetPoint("BOTTOMLEFT", preview.root, "BOTTOMLEFT", 18, PANEL_PREVIEW_PADDING)
+        label:SetPoint("BOTTOMRIGHT", preview.root, "BOTTOMRIGHT", -18, PANEL_PREVIEW_PADDING)
     end
 
     FinalizePreviewState(preview)
@@ -6083,7 +6162,7 @@ local function BuildTriggerPanelPreview(preview, host, panelId, group, readOnly)
         reserve = (stripH * stripScale) + PANEL_PREVIEW_PADDING
         stripLayout = { anchorPoint = "BOTTOM", scaleOverride = stripScale }
     else
-        reserve = TRIGGER_PREVIEW_EMPTY_BAND
+        reserve = EMPTY_ENTRY_GUIDANCE_BAND
     end
 
     ApplyMirrorBand(mirror, preview.root, reserve)
@@ -6103,7 +6182,7 @@ local function BuildTriggerPanelPreview(preview, host, panelId, group, readOnly)
     end
 
     SetPreviewMessage(preview,
-        "This panel has no entries yet. Add spells or items in the Panels column.")
+        "Add entries with the field below, or drag them into this preview.")
     -- Tuck the message into the reserved bottom band so it never overlaps the
     -- display visual; SetPreviewMessage restores the default anchors for the
     -- next build.
@@ -6241,8 +6320,18 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     local buttons = group.buttons or {}
     local count = #buttons
     if count == 0 then
-        SetPreviewMessage(preview, readOnly and "Empty Panel"
-            or "This panel has no entries yet. Add spells or items in the Panels column.")
+        if readOnly then
+            SetPreviewMessage(preview, "Empty Panel")
+        elseif ST.IsAuraPanelGroup(group) then
+            SetPreviewMessage(preview,
+                "Search for a spell in the field below, enter its ID, or drag it into this preview.",
+                "Add your first aura",
+                "Your first aura sets whether this panel tracks your buffs or your target's debuffs.")
+        else
+            SetPreviewMessage(preview,
+                "Search for a spell or item in the field below, enter an ID, or drag one into this preview.",
+                "Add your first entry")
+        end
         FinalizePreviewState(preview)
         return
     end
