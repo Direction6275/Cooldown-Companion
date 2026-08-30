@@ -252,8 +252,8 @@ end
 -- Low Time Threshold for duration text (cooldown and aura alike; owner ruling
 -- 2026-08-25). Reads the shared durationLowTime* policy beside durationFormat.
 -- Returns nil when the feature is off, else:
--- threshold seconds, decimals flag, and the color as a raw "rrggbb" hex (nil
--- when no recolor). Text panels and resource-bar recharge text deliberately
+-- threshold seconds, decimal-window scope, and the color as a raw "rrggbb"
+-- hex (nil when no recolor). Text panels and resource-bar recharge text deliberately
 -- remain outside this policy; their callers keep using FormatTime/plain
 -- formatters rather than opting into the variants below.
 local function LowTimeHex(color)
@@ -272,7 +272,30 @@ end
 -- component-wise because color tables are mutated in place.
 local durationLowTimeMemo = setmetatable({}, { __mode = "k" })
 
--- Fifth/sixth returns: the optional SECOND, more urgent window — its own
+local DURATION_LOW_TIME_DECIMAL_SCOPES = {
+    first = true,
+    urgent = true,
+    both = true,
+}
+
+-- Existing profiles stored a boolean. Preserve their exact behavior: true
+-- applied decimals throughout the complete low-time window, including a
+-- configured urgent sub-window, so it resolves to "both". Missing/false and
+-- unknown imported values stay off.
+local function NormalizeDurationLowTimeDecimals(value)
+    if value == true then return "both" end
+    if DURATION_LOW_TIME_DECIMAL_SCOPES[value] then return value end
+    return nil
+end
+CooldownCompanion.NormalizeDurationLowTimeDecimals = NormalizeDurationLowTimeDecimals
+
+local function LowTimeDecimalsApplyToWindow(scope, urgentWindow)
+    return scope == "both"
+        or (urgentWindow and scope == "urgent")
+        or (not urgentWindow and scope == "first")
+end
+
+-- Fourth/fifth returns: the optional SECOND, more urgent window — its own
 -- color below threshold2 seconds. Only honored when strictly inside the
 -- first window (threshold2 < threshold); anything else is ignored rather
 -- than guessed at.
@@ -300,19 +323,19 @@ local function GetDurationLowTime(source)
         and memo.hasColor == hasColor and memo.hasColor2 == hasColor2
         and memo.cr == cr and memo.cg == cg and memo.cb == cb
         and memo.c2r == c2r and memo.c2g == c2g and memo.c2b == c2b then
-        return memo.threshold, memo.decimals, memo.colorHex, memo.threshold2, memo.colorHex2
+        return memo.threshold, memo.decimalScope, memo.colorHex, memo.threshold2, memo.colorHex2
     end
 
     local threshold = tonumber(rawThreshold)
-    local decimals, colorHex, threshold2, colorHex2
+    local decimalScope, colorHex, threshold2, colorHex2
     if threshold and threshold <= 0 then
         threshold = nil
     end
     if threshold then
-        decimals = rawDecimals == true
+        decimalScope = NormalizeDurationLowTimeDecimals(rawDecimals)
         colorHex = LowTimeHex(color)
-        if not decimals and not colorHex then
-            threshold, decimals, colorHex = nil, nil, nil
+        if not decimalScope and not colorHex then
+            threshold, decimalScope, colorHex = nil, nil, nil
         else
             threshold2 = tonumber(rawThreshold2)
             colorHex2 = LowTimeHex(color2)
@@ -330,10 +353,10 @@ local function GetDurationLowTime(source)
     memo.hasColor, memo.hasColor2 = hasColor, hasColor2
     memo.cr, memo.cg, memo.cb = cr, cg, cb
     memo.c2r, memo.c2g, memo.c2b = c2r, c2g, c2b
-    memo.threshold, memo.decimals, memo.colorHex = threshold, decimals, colorHex
+    memo.threshold, memo.decimalScope, memo.colorHex = threshold, decimalScope, colorHex
     memo.threshold2, memo.colorHex2 = threshold2, colorHex2
 
-    return threshold, decimals, colorHex, threshold2, colorHex2
+    return threshold, decimalScope, colorHex, threshold2, colorHex2
 end
 CooldownCompanion.GetDurationLowTime = GetDurationLowTime
 
@@ -347,6 +370,24 @@ local function AllowAuraDurationLowTime(source, auraOnlySurface)
         or (type(source) == "table" and source.durationLowTimeAuras == true)
 end
 CooldownCompanion.AllowAuraDurationLowTime = AllowAuraDurationLowTime
+
+-- Independent visibility windows for the two duration-text lanes. A missing
+-- or false key means "Always"; imported/hand-edited values outside the UI's
+-- whole-second 1-60 contract fail open rather than hiding text unexpectedly.
+local function GetDurationTextVisibilityThreshold(source, kind)
+    if type(source) ~= "table" then return nil end
+    local key = kind == "aura"
+        and "auraTextVisibilityThreshold"
+        or "cooldownTextVisibilityThreshold"
+    local threshold = tonumber(source[key])
+    if not threshold then return nil end
+    local wholeThreshold = math_floor(threshold)
+    if threshold ~= wholeThreshold then return nil end
+    threshold = wholeThreshold
+    if threshold < 1 or threshold > 60 then return nil end
+    return threshold
+end
+CooldownCompanion.GetDurationTextVisibilityThreshold = GetDurationTextVisibilityThreshold
 
 local function GetEnumValue(enumName, valueName, fallback)
     local enumTable = Enum and Enum[enumName]
@@ -429,13 +470,23 @@ CooldownCompanion.FormatTime = FormatTime
 -- values. FormatTime itself stays untouched so deliberately excluded surfaces
 -- cannot acquire the policy implicitly; cooldown and aura preview callers opt
 -- in through this helper.
-local function FormatCooldownTime(seconds, source)
+local function FormatDurationText(seconds, source, allowLowTime, visibilityKind)
+    local visibilityThreshold = GetDurationTextVisibilityThreshold(source, visibilityKind)
+    if visibilityThreshold and seconds > visibilityThreshold then
+        return ""
+    end
+
     local text = FormatTime(seconds, source)
-    local threshold, decimals, colorHex, threshold2, colorHex2 = GetDurationLowTime(source)
+    if not allowLowTime then
+        return text
+    end
+    local threshold, decimalScope, colorHex, threshold2, colorHex2 = GetDurationLowTime(source)
     if not threshold or text == "" or not (seconds > 0) or seconds >= threshold then
         return text
     end
-    if decimals and not text:find(".", 1, true) then
+    local urgentWindow = threshold2 and colorHex2 and seconds < threshold2 or false
+    if LowTimeDecimalsApplyToWindow(decimalScope, urgentWindow)
+        and not text:find(".", 1, true) then
         if GetDurationFormat(source) == DURATION_FORMAT_UNITS then
             text = string_format("%.1fs", seconds)
         else
@@ -443,13 +494,18 @@ local function FormatCooldownTime(seconds, source)
         end
     end
     local hex = colorHex
-    if threshold2 and colorHex2 and seconds < threshold2 then
+    if urgentWindow then
         hex = colorHex2
     end
     if hex then
         text = "|cff" .. hex .. text .. "|r"
     end
     return text
+end
+CooldownCompanion.FormatDurationText = FormatDurationText
+
+local function FormatCooldownTime(seconds, source, visibilityKind)
+    return FormatDurationText(seconds, source, true, visibilityKind or "cooldown")
 end
 CooldownCompanion.FormatCooldownTime = FormatCooldownTime
 
@@ -574,18 +630,40 @@ local function CopyBracket(bracket)
     return copy
 end
 
-local function BuildLowTimeBrackets(formatKey, threshold, decimals, colorHex, threshold2, colorHex2)
+-- NumericRuleFormatter breakpoints are lower bounds. Preserve the configured
+-- duration format through the selected whole second, then install one empty
+-- tail at the next representable-scale value so an exact 10.0 remains visible
+-- while values above 10 are blank. The formatter evaluates the real (and
+-- potentially secret) remaining duration; Lua never reads it.
+local NUMBER_EPSILON = 2.220446049250313e-16
+local function BuildDurationVisibilityBrackets(brackets, threshold)
+    if not threshold then return brackets end
+
+    local out = {}
+    for _, bracket in ipairs(brackets) do
+        if bracket.threshold <= threshold then
+            out[#out + 1] = CopyBracket(bracket)
+        end
+    end
+    out[#out + 1] = {
+        threshold = threshold + threshold * NUMBER_EPSILON,
+        format = "",
+    }
+    return out
+end
+
+local function BuildLowTimeBrackets(formatKey, threshold, decimalScope, colorHex, threshold2, colorHex2)
     local base = BuildDurationFormatBrackets(formatKey)
 
     -- Colored copy of one base segment, clipped to start at `at`. Force
     -- Decimals upgrades plain-seconds formats only: a component format like
     -- m:ss would have its FIRST field mangled by the same substitution
     -- (unreachable at the 30s threshold cap, guarded anyway).
-    local function WindowBracket(segment, at, hex)
+    local function WindowBracket(segment, at, hex, useDecimals)
         local b = CopyBracket(segment)
         b.threshold = at
         local fmt = b.format
-        if decimals and not b.components then
+        if useDecimals and not b.components then
             local upgraded = fmt:gsub("%%%.0f", "%%.1f", 1)
             if upgraded ~= fmt then
                 fmt = upgraded
@@ -607,14 +685,18 @@ local function BuildLowTimeBrackets(formatKey, threshold, decimals, colorHex, th
     -- in color1 (GetDurationLowTime guarantees threshold2 < threshold when
     -- present). Base-format transitions INSIDE a window are preserved and
     -- recolored (review 2026-08-16): the feature colors text, it must never
-    -- change which format renders — only Force Decimals may do that, and it
+    -- change which format renders — only Show Decimals Near Expiry may do
+    -- that, and it
     -- is applied per segment so manual and bound paths agree.
     local windows = {}
     if threshold2 and colorHex2 then
-        windows[1] = { lo = 0, hi = threshold2, hex = colorHex2 }
-        windows[2] = { lo = threshold2, hi = threshold, hex = colorHex }
+        windows[1] = { lo = 0, hi = threshold2, hex = colorHex2,
+            decimals = LowTimeDecimalsApplyToWindow(decimalScope, true) }
+        windows[2] = { lo = threshold2, hi = threshold, hex = colorHex,
+            decimals = LowTimeDecimalsApplyToWindow(decimalScope, false) }
     else
-        windows[1] = { lo = 0, hi = threshold, hex = colorHex }
+        windows[1] = { lo = 0, hi = threshold, hex = colorHex,
+            decimals = LowTimeDecimalsApplyToWindow(decimalScope, false) }
     end
 
     local out = {}
@@ -623,7 +705,8 @@ local function BuildLowTimeBrackets(formatKey, threshold, decimals, colorHex, th
             local segStart = base[i].threshold
             local segEnd = base[i + 1] and base[i + 1].threshold
             if segStart < window.hi and (not segEnd or segEnd > window.lo) then
-                out[#out + 1] = WindowBracket(base[i], math.max(segStart, window.lo), window.hex)
+                out[#out + 1] = WindowBracket(base[i], math.max(segStart, window.lo),
+                    window.hex, window.decimals)
             end
         end
     end
@@ -653,19 +736,25 @@ end
 -- the first). Low-time lists are always fresh; plain lists come from the
 -- shared format cache and must be treated as immutable. Consumers clone before
 -- changing a threshold or format string.
-local function GetDurationTextBrackets(source, allowLowTime)
+local function GetDurationTextBrackets(source, allowLowTime, visibilityKind)
     local formatKey = GetDurationFormat(source)
+    local brackets
     if allowLowTime then
-        local threshold, decimals, colorHex, threshold2, colorHex2 = GetDurationLowTime(source)
+        local threshold, decimalScope, colorHex, threshold2, colorHex2 = GetDurationLowTime(source)
         if threshold then
-            return BuildLowTimeBrackets(formatKey, threshold, decimals, colorHex, threshold2, colorHex2), formatKey
+            brackets = BuildLowTimeBrackets(formatKey, threshold, decimalScope, colorHex, threshold2, colorHex2)
         end
     end
-    return GetDurationFormatBrackets(source)
+    if not brackets then
+        brackets = GetDurationFormatBrackets(source)
+    end
+    return BuildDurationVisibilityBrackets(brackets,
+        GetDurationTextVisibilityThreshold(source, visibilityKind)), formatKey
 end
 CooldownCompanion.GetDurationTextBrackets = GetDurationTextBrackets
 
-local function CreateDurationTextFormatter(formatKey, lowThreshold, lowDecimals, lowColorHex, lowThreshold2, lowColorHex2)
+local function CreateDurationTextFormatter(formatKey, lowThreshold, lowDecimalScope, lowColorHex, lowThreshold2, lowColorHex2,
+        visibilityThreshold)
     if not (C_StringUtil and C_StringUtil.CreateNumericRuleFormatter) then
         return nil
     end
@@ -677,10 +766,11 @@ local function CreateDurationTextFormatter(formatKey, lowThreshold, lowDecimals,
 
     local brackets
     if lowThreshold then
-        brackets = BuildLowTimeBrackets(formatKey, lowThreshold, lowDecimals, lowColorHex, lowThreshold2, lowColorHex2)
+        brackets = BuildLowTimeBrackets(formatKey, lowThreshold, lowDecimalScope, lowColorHex, lowThreshold2, lowColorHex2)
     else
         brackets = BuildDurationFormatBrackets(formatKey)
     end
+    brackets = BuildDurationVisibilityBrackets(brackets, visibilityThreshold)
     for _, breakpoint in ipairs(brackets) do
         formatter:AddBreakpoint(breakpoint)
     end
@@ -703,29 +793,40 @@ local durationTextFormatterMemo = setmetatable({}, { __mode = "k" })
 -- config edit re-applies the formatter even when the format key is unchanged.
 -- allowLowTime is explicit so text panels and recharge text stay excluded;
 -- both cooldown and aura duration surfaces may pass it.
-local function GetDurationTextFormatter(source, allowLowTime)
+local function GetDurationTextFormatter(source, allowLowTime, visibilityKind)
     local allowLow = (allowLowTime and true) or false
     local sourceIsTable = type(source) == "table"
+    local visibilityThreshold = GetDurationTextVisibilityThreshold(source, visibilityKind)
 
-    local lowThreshold, lowDecimals, lowColorHex, lowThreshold2, lowColorHex2
+    local lowThreshold, lowDecimalScope, lowColorHex, lowThreshold2, lowColorHex2
     if allowLow then
-        lowThreshold, lowDecimals, lowColorHex, lowThreshold2, lowColorHex2 = GetDurationLowTime(source)
+        lowThreshold, lowDecimalScope, lowColorHex, lowThreshold2, lowColorHex2 = GetDurationLowTime(source)
     end
 
     local memoRoot, memo, rawFormat, rawDecimalTimers
     if sourceIsTable then
         rawFormat, rawDecimalTimers = source.durationFormat, source.decimalTimers
         memoRoot = durationTextFormatterMemo[source]
-        memo = memoRoot and memoRoot[allowLow]
+        local memoKey = (allowLow and "low:" or "plain:") .. (visibilityKind or "none")
+        memo = memoRoot and memoRoot[memoKey]
         if memo
             and memo.rawFormat == rawFormat
             and memo.rawDecimalTimers == rawDecimalTimers
             and memo.lowThreshold == lowThreshold
-            and memo.lowDecimals == lowDecimals
+            and memo.lowDecimalScope == lowDecimalScope
             and memo.lowColorHex == lowColorHex
             and memo.lowThreshold2 == lowThreshold2
-            and memo.lowColorHex2 == lowColorHex2 then
+            and memo.lowColorHex2 == lowColorHex2
+            and memo.visibilityThreshold == visibilityThreshold then
             return memo.formatter or nil, memo.cacheKey
+        end
+        if not memoRoot then
+            memoRoot = {}
+            durationTextFormatterMemo[source] = memoRoot
+        end
+        if not memo then
+            memo = {}
+            memoRoot[memoKey] = memo
         end
     end
 
@@ -734,32 +835,31 @@ local function GetDurationTextFormatter(source, allowLowTime)
     if allowLow then
         if lowThreshold then
             cacheKey = formatKey .. "#low" .. lowThreshold
-                .. (lowDecimals and "d" or "") .. (lowColorHex or "")
+                .. (lowDecimalScope and ("d:" .. lowDecimalScope .. ":") or "")
+                .. (lowColorHex or "")
             if lowThreshold2 then
                 cacheKey = cacheKey .. "#2:" .. lowThreshold2 .. (lowColorHex2 or "")
             end
         end
     end
+    if visibilityThreshold then
+        cacheKey = cacheKey .. "#visible:" .. (visibilityKind or "cooldown")
+            .. ":" .. visibilityThreshold
+    end
 
     local formatter = durationTextFormatterCache[cacheKey]
     if formatter == nil then
-        formatter = CreateDurationTextFormatter(formatKey, lowThreshold, lowDecimals, lowColorHex, lowThreshold2, lowColorHex2)
+        formatter = CreateDurationTextFormatter(formatKey, lowThreshold, lowDecimalScope, lowColorHex,
+            lowThreshold2, lowColorHex2, visibilityThreshold)
             or false
         durationTextFormatterCache[cacheKey] = formatter
     end
 
     if sourceIsTable then
-        if not memoRoot then
-            memoRoot = {}
-            durationTextFormatterMemo[source] = memoRoot
-        end
-        if not memo then
-            memo = {}
-            memoRoot[allowLow] = memo
-        end
         memo.rawFormat, memo.rawDecimalTimers = rawFormat, rawDecimalTimers
-        memo.lowThreshold, memo.lowDecimals, memo.lowColorHex = lowThreshold, lowDecimals, lowColorHex
+        memo.lowThreshold, memo.lowDecimalScope, memo.lowColorHex = lowThreshold, lowDecimalScope, lowColorHex
         memo.lowThreshold2, memo.lowColorHex2 = lowThreshold2, lowColorHex2
+        memo.visibilityThreshold = visibilityThreshold
         memo.formatter, memo.cacheKey = formatter, cacheKey
     end
 
@@ -809,13 +909,13 @@ CooldownCompanion.UnbindDurationText = UnbindDurationText
 -- allowLowTime is explicit so every governed duration surface opts into the
 -- shared urgency policy. Both cooldown and aura-style phases use it; excluded
 -- consumers leave it false and retain the base Duration Format only.
-local function BindDurationText(fontString, durationObj, source, allowLowTime)
+local function BindDurationText(fontString, durationObj, source, allowLowTime, visibilityKind)
     if not (fontString and durationObj and IsDurationTextBindingSupported()) then
         UnbindDurationText(fontString, true)
         return false
     end
 
-    local formatter, formatKey = GetDurationTextFormatter(source, allowLowTime)
+    local formatter, formatKey = GetDurationTextFormatter(source, allowLowTime, visibilityKind)
     if not formatter then
         UnbindDurationText(fontString, true)
         return false
@@ -872,25 +972,29 @@ CooldownCompanion.BindDurationText = BindDurationText
 -- existing caller relies on; false is the aura-phase opt-out — the totem/
 -- summon active phase re-installs per phase edge with the aura gate resolved
 -- (AllowAuraDurationLowTime), because that countdown is aura text by contract.
-local function ApplyDurationFormatToCooldown(cooldown, source, allowLowTime)
+local function ApplyDurationFormatToCooldown(cooldown, source, allowLowTime, visibilityKind)
     if not cooldown then return end
 
     local formatKey = GetDurationFormat(source)
-    local lowThreshold, lowDecimals, lowColorHex
-    if allowLowTime ~= false then
-        lowThreshold, lowDecimals, lowColorHex = GetDurationLowTime(source)
+    local lowThreshold, lowDecimalScope, lowColorHex, lowThreshold2
+    local allowLow = allowLowTime ~= false
+    if allowLow then
+        lowThreshold, lowDecimalScope, lowColorHex, lowThreshold2 = GetDurationLowTime(source)
     end
+    visibilityKind = visibilityKind or "cooldown"
+    local visibilityThreshold = GetDurationTextVisibilityThreshold(source, visibilityKind)
 
     -- Low-time COLOR is the one thing native countdown rendering cannot do:
     -- it needs the bracket formatter (which reproduces the format's whole
     -- shape, escapes baked into the low bracket). Color off — or a client
     -- without rule formatters — keeps the legacy nil-formatter path
     -- byte-for-byte: that is the feature's kill switch (pandemic
-    -- fragile-surface precedent). Decimals-only rides the native
-    -- milliseconds threshold below and adds no new surface.
+    -- fragile-surface precedent). Scoped decimals ride the native
+    -- milliseconds threshold below where that API can represent the chosen
+    -- window exactly; the bracket formatter remains the full-fidelity path.
     local formatter
-    if lowColorHex then
-        formatter = GetDurationTextFormatter(source, true)
+    if lowColorHex or visibilityThreshold then
+        formatter = GetDurationTextFormatter(source, allowLow, visibilityKind)
     end
     if not formatter and formatKey == DURATION_FORMAT_UNITS then
         formatter = GetUnitsSecondsFormatter()
@@ -906,8 +1010,15 @@ local function ApplyDurationFormatToCooldown(cooldown, source, allowLowTime)
         elseif formatKey == DURATION_FORMAT_DECIMAL_UNDER_60 then
             threshold = 60
         end
-        if lowDecimals and lowThreshold and lowThreshold > threshold then
-            threshold = lowThreshold
+        local lowDecimalThreshold
+        if lowDecimalScope == "both"
+            or (lowDecimalScope == "first" and not lowThreshold2) then
+            lowDecimalThreshold = lowThreshold
+        elseif lowDecimalScope == "urgent" then
+            lowDecimalThreshold = lowThreshold2
+        end
+        if lowDecimalThreshold and lowDecimalThreshold > threshold then
+            threshold = lowDecimalThreshold
         end
         cooldown:SetCountdownMillisecondsThreshold(threshold)
     end

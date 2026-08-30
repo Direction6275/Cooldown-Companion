@@ -1782,6 +1782,17 @@ local function BeginRowGrid(container)
     return left, right, grid
 end
 
+-- One resize-safe full-width List rail. This uses the same owned container as
+-- the two-column grid instead of stock SimpleGroup, whose OnWidthSet does not
+-- re-run layout when the surrounding config pane changes width.
+local function BeginFullWidthRowGroup(container)
+    local group = AceGUI:Create(ROW_GRID_COL_TYPE)
+    group:SetFullWidth(true)
+    group:SetLayout("List")
+    container:AddChild(group)
+    return group
+end
+
 ------------------------------------------------------------------------
 -- Expose for the conversion packets
 ------------------------------------------------------------------------
@@ -1806,3 +1817,4 @@ ST._AddColorRow = AddColorRow
 ST._AddLabelRow = AddLabelRow
 ST._AnchorRowBadge = AnchorRowBadge
 ST._BeginRowGrid = BeginRowGrid
+ST._BeginFullWidthRowGroup = BeginFullWidthRowGroup

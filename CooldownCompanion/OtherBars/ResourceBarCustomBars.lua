@@ -174,7 +174,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         if bar.text and bar.text:IsShown() then
             if cooldownActive and durationObj then
                 -- allowLowTime: custom-bar cooldown lane text.
-                BindDurationText(bar.text, durationObj, cabConfig, true)
+                BindDurationText(bar.text, durationObj, cabConfig, true, "cooldown")
             else
                 SetManualDurationText(bar.text, "")
             end

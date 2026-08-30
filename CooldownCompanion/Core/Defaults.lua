@@ -1143,7 +1143,8 @@ ST.OVERRIDE_SECTIONS = {
     },
     cooldownText = {
         label = "Cooldown Text",
-        keys = {"showCooldownText", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor", "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset"},
+        keys = {"showCooldownText", "cooldownTextVisibilityThreshold", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor", "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset"},
+        defaults = { cooldownTextVisibilityThreshold = false },
         modes = {icons = true, bars = true},
     },
     -- One urgency policy for every duration-text phase (owner ruling
@@ -1163,9 +1164,9 @@ ST.OVERRIDE_SECTIONS = {
         defaults = {
             durationLowTimeThreshold = 0,
             durationLowTimeDecimals = false,
-            durationLowTimeColor = {1, 0.2, 0.2, 1},
+            durationLowTimeColor = {1, 0.55, 0.1, 1},
             durationLowTimeThreshold2 = 0,
-            durationLowTimeColor2 = {1, 0.55, 0.1, 1},
+            durationLowTimeColor2 = {1, 0.2, 0.2, 1},
             durationLowTimeAuras = false,
         },
         modes = {icons = true, bars = true},
@@ -1185,7 +1186,8 @@ ST.OVERRIDE_SECTIONS = {
     -- RevertSection stops clearing a key it no longer owns.
     auraText = {
         label = "Aura Duration Text",
-        keys = {"showAuraText", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor", "auraTextAnchor", "auraTextXOffset", "auraTextYOffset"},
+        keys = {"showAuraText", "auraTextVisibilityThreshold", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor", "auraTextAnchor", "auraTextXOffset", "auraTextYOffset"},
+        defaults = { auraTextVisibilityThreshold = false },
         modes = {icons = true, bars = true},
     },
     -- How the entry looks while its tracked aura is up. Four keys, all four

@@ -1326,6 +1326,12 @@ local function BuildComposedAuraDurationFormatter(threshold, style, allowLowTime
     end
 
     local function DecorateFormat(format)
+        -- The shared formatter's visibility window uses an empty tail above
+        -- its threshold. Never decorate that tail: the Pandemic marker rides
+        -- the duration text and must disappear with it.
+        if format == "" then
+            return ""
+        end
         local suffix = marker ~= "" and (" " .. marker) or ""
         if mode == "marker" then
             return format .. " " .. PandemicColorEscape(style.pandemicMarkerColor) .. marker .. "|r"
@@ -1340,7 +1346,7 @@ local function BuildComposedAuraDurationFormatter(threshold, style, allowLowTime
         return format .. suffix
     end
 
-    local brackets = CooldownCompanion.GetDurationTextBrackets(style, allowLowTime)
+    local brackets = CooldownCompanion.GetDurationTextBrackets(style, allowLowTime, "aura")
     local list = {}
     local containing, atThreshold
     for _, bracket in ipairs(brackets) do
@@ -1382,7 +1388,7 @@ local function BuildAuraDurationOptions(baseDuration, style, allowLowTime)
         formatter = BuildComposedAuraDurationFormatter(baseDuration * PANDEMIC_FRACTION, style, allowLowTime)
     end
     if not formatter and CooldownCompanion.GetDurationTextFormatter then
-        formatter = CooldownCompanion.GetDurationTextFormatter(style, allowLowTime)
+        formatter = CooldownCompanion.GetDurationTextFormatter(style, allowLowTime, "aura")
     end
     return formatter and { textFormatter = formatter } or nil
 end
@@ -1446,8 +1452,10 @@ function CooldownCompanion:FormatAuraDurationPreviewText(seconds, style, pandemi
     -- Same opt-in gate the live bind resolves (AllowAuraDurationLowTime);
     -- callers pass it resolved because only they know the surface. Off means
     -- the plain Duration Format text with no low-time window or color lift.
-    local text = allowLowTime and self.FormatCooldownTime(seconds, style)
-        or self.FormatTime(seconds, style)
+    local text = self.FormatDurationText(seconds, style, allowLowTime, "aura")
+    if text == "" then
+        return ""
+    end
     if not pandemicActive then
         return text
     end

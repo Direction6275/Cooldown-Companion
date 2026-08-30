@@ -246,14 +246,15 @@ local function UpdateBarFill(button)
             -- formatter only re-applies on the phase edge.
             local allowLowTime = not totemPhase
                 or CooldownCompanion.AllowAuraDurationLowTime(durationStyle, false)
+            local visibilityKind = totemPhase and "aura" or "cooldown"
             if button._durationObj then
                 button._lastBarTimeText = nil
-                BindDurationText(button.timeText, button._durationObj, durationStyle, allowLowTime)
+                BindDurationText(button.timeText, button._durationObj, durationStyle, allowLowTime,
+                    visibilityKind)
             else
                 if itemRemaining > 0 then
-                    SetBarTimeText(button, allowLowTime
-                        and FormatCooldownTime(itemRemaining, durationStyle)
-                        or CooldownCompanion.FormatTime(itemRemaining, durationStyle))
+                    SetBarTimeText(button, CooldownCompanion.FormatDurationText(
+                        itemRemaining, durationStyle, allowLowTime, visibilityKind))
                 else
                     SetBarTimeText(button, "")
                 end

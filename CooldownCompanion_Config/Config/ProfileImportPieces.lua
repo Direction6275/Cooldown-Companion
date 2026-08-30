@@ -31,6 +31,8 @@ local CUSTOM_BAR_CONTENT_FIELDS = {
     "durationLowTimeThreshold2",
     "durationLowTimeColor2",
     "durationLowTimeAuras",
+    "cooldownTextVisibilityThreshold",
+    "auraTextVisibilityThreshold",
     "trackingMode",
     "auraTracking",
     "enabled",

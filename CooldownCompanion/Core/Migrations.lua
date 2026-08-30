@@ -1618,6 +1618,15 @@ local PANDEMIC_SWITCH_SENTINEL = {
 local DURATION_LOW_TIME_AURAS_SENTINEL = {
     current = "_cdcDurationLowTimeAurasMigrated",
 }
+-- Duration-text visibility backfill (2026-08-30): cooldown and aura text
+-- override sections gained independent Last Seconds thresholds after entries
+-- could already customize those sections. A missing raw key in an active
+-- override store inherits the panel through GetEffectiveStyle's __index,
+-- which would let a later panel edit change an older entry's prior Always
+-- behavior. Seed explicit false only for active sections that lack the key.
+local DURATION_TEXT_VISIBILITY_SENTINEL = {
+    current = "_cdcDurationTextVisibilityMigrated",
+}
 local MIGRATION_SENTINELS = {
     AURA_REBUILD_SENTINEL,
     BAR_AURA_EFFECT_SENTINEL,
@@ -1635,6 +1644,7 @@ local MIGRATION_SENTINELS = {
     { current = "_cdcPerModeOrientationMigrated" },
     { current = "_cdcAuraPanelIntegrityMigrated" },
     DURATION_LOW_TIME_AURAS_SENTINEL,
+    DURATION_TEXT_VISIBILITY_SENTINEL,
 }
 
 -- False when the profile is already stamped; otherwise clears the retired
@@ -3448,6 +3458,47 @@ local function MigrateDurationLowTimeAurasBackfill(self, profile)
     profile[DURATION_LOW_TIME_AURAS_SENTINEL.current] = true
 end
 
+local function BackfillDurationTextVisibilityOverride(buttonData, sectionId, key)
+    if type(buttonData) ~= "table" then return end
+    local sections = rawget(buttonData, "overrideSections")
+    if type(sections) ~= "table" or not sections[sectionId] then return end
+
+    local overrides = rawget(buttonData, "styleOverrides")
+    if type(overrides) ~= "table" then
+        overrides = {}
+        buttonData.styleOverrides = overrides
+    end
+    if rawget(overrides, key) == nil then
+        overrides[key] = false
+    end
+end
+
+-- Independent from the low-time backfill above so imported profiles can
+-- rerun either generation without coupling their stamps or data contracts.
+-- Numeric thresholds and existing explicit false values are preserved;
+-- inactive sections are untouched.
+local function MigrateDurationTextVisibilityBackfill(self, profile)
+    if type(profile) ~= "table"
+        or not ClaimMigrationPass(profile, DURATION_TEXT_VISIBILITY_SENTINEL) then
+        return
+    end
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            if type(group) == "table" and type(group.buttons) == "table" then
+                for _, buttonData in ipairs(group.buttons) do
+                    BackfillDurationTextVisibilityOverride(
+                        buttonData, "cooldownText", "cooldownTextVisibilityThreshold")
+                    BackfillDurationTextVisibilityOverride(
+                        buttonData, "auraText", "auraTextVisibilityThreshold")
+                end
+            end
+        end
+    end
+
+    profile[DURATION_TEXT_VISIBILITY_SENTINEL.current] = true
+end
+
 function CooldownCompanion:RunAllMigrations()
     local checkpointState = self._savedProfileCheckpointState
     local allowMissingCheckpoint = self._allowMissingMigrationCheckpointOnce
@@ -3532,6 +3583,9 @@ function CooldownCompanion:RunAllMigrations()
     -- After the section-ownership passes above: it only seeds stores whose
     -- durationLowTime section is active once those passes have settled.
     MigrateDurationLowTimeAurasBackfill(self, self.db and self.db.profile)
+    -- Same presence-based inheritance hazard, for the visibility keys newly
+    -- added to the cooldownText and auraText override sections.
+    MigrateDurationTextVisibilityBackfill(self, self.db and self.db.profile)
     if self.RunResourceBarClassScopeMigration then
         self:RunResourceBarClassScopeMigration()
     end
