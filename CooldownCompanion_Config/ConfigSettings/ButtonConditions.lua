@@ -46,6 +46,9 @@ local REMOVE_BADGE_WIDGET_TYPE = "CDCEligibilityRemoveBadge"
 -- "Death Knight: Blood", so these four pickers widen their pullout past their
 -- host. The pullout floats, so it may overhang the grid column it opens in.
 local ELIGIBILITY_PULLOUT_WIDTH = 300
+-- Same overhang for the same reason: "Inherit Target Frame Alpha" does not fit
+-- the 140px control column.
+local PANEL_ALPHA_PULLOUT_WIDTH = 300
 -- Row-grammar action strip: compact buttons sharing one grammar-height line
 -- (the preset-trio shape in Helpers.lua). Flow insets its single row by 3px
 -- top and bottom, so 3 + 24 + 3 centres inside the 30px band. The gutter's
@@ -2991,21 +2994,19 @@ local function BuildLoadConditionsTab(container)
     -- Alpha (moved here from the Layout tab: transparency behavior
     -- reads as visibility, not layout)
     -- ============================================================
-    -- Same gating the Layout tab applied: a panel whose alpha is owned
-    -- elsewhere (Group Alpha, or an anchor it inherits from) shows the
-    -- section disabled with the reason. Derived from stored anchors
-    -- rather than the Layout tab's target-mode UI state; the two agree
-    -- because an unresolved or addon-internal target never inherits.
-    local alphaControlsDisabled, alphaDisabledText = false, nil
-    if CooldownCompanion.GetPanelContainerAlphaSource
-        and CooldownCompanion:GetPanelContainerAlphaSource(groupId) then
-        alphaControlsDisabled = true
-        alphaDisabledText = "Group Alpha is enabled. This panel uses the group's Alpha settings."
-    elseif CooldownCompanion.ShouldInheritPanelAnchorAlpha
-        and CooldownCompanion:ShouldInheritPanelAnchorAlpha(groupId) then
-        alphaControlsDisabled = true
-        alphaDisabledText = "This panel inherits alpha from the parent panel. Change the parent panel's Alpha settings to affect it."
-    elseif group.parentContainerId and group.inheritPanelAlpha ~= false then
+    local isTexturePanel = group.displayMode == "textures" or group.displayMode == "trigger"
+
+    -- Where this panel's alpha comes from, when it hangs off something that
+    -- has one to give: another panel, or a resolved external frame. Derived
+    -- from stored anchors rather than the Layout tab's target-mode UI state;
+    -- the two agree because an unresolved or addon-internal target never
+    -- inherits. It drives both the source row below and the gating, so it is
+    -- resolved once.
+    local alphaAnchorSourceMode = nil
+    if CooldownCompanion.IsPanelAnchoredToPanel
+        and CooldownCompanion:IsPanelAnchoredToPanel(groupId) then
+        alphaAnchorSourceMode = "panel"
+    elseif group.parentContainerId then
         local anchorSettings = CooldownCompanion.GetStandaloneTextureAnchorSettings
             and CooldownCompanion:GetStandaloneTextureAnchorSettings(group)
         local relativeTo = anchorSettings and anchorSettings.relativeTo
@@ -3017,13 +3018,70 @@ local function BuildLoadConditionsTab(container)
             and CooldownCompanion:ParseAddonAnchorFrameName(relativeTo) == nil then
             local target = _G[relativeTo]
             if type(target) == "table" and type(target.GetObjectType) == "function" then
-                alphaControlsDisabled = true
-                alphaDisabledText = "This panel inherits alpha from the target frame. Change the Panel Alpha setting on the Layout tab to use custom alpha."
+                alphaAnchorSourceMode = "frame"
             end
         end
     end
+    -- The panel half of this is exactly ShouldInheritPanelAnchorAlpha; both
+    -- halves read the one inheritPanelAlpha key the source row writes.
+    local inheritsAnchorAlpha = alphaAnchorSourceMode ~= nil
+        and group.inheritPanelAlpha ~= false
 
-    local isTexturePanel = group.displayMode == "textures" or group.displayMode == "trigger"
+    -- A panel whose alpha is owned elsewhere (Group Alpha, or an anchor it
+    -- inherits from) shows the section disabled with the reason.
+    local alphaControlsDisabled, alphaDisabledText = false, nil
+    if CooldownCompanion.GetPanelContainerAlphaSource
+        and CooldownCompanion:GetPanelContainerAlphaSource(groupId) then
+        alphaControlsDisabled = true
+        alphaDisabledText = "Group Alpha is enabled. This panel uses the group's Alpha settings."
+    elseif inheritsAnchorAlpha then
+        alphaControlsDisabled = true
+        -- The source row sits directly above, so neither line has to say
+        -- where the choice is made any more. The panel case keeps its
+        -- pointer to the OTHER panel, which is elsewhere either way; an
+        -- external frame has no Alpha settings of ours to send anyone to.
+        alphaDisabledText = alphaAnchorSourceMode == "panel"
+            and "This panel inherits alpha from the parent panel. Change the parent panel's Alpha settings to affect it."
+            or "This panel inherits alpha from the target frame."
+    end
+
+    -- The alpha-source row leads the section (Helpers' leadingRows hook): it
+    -- is the reason every row under it is live or greyed, so it reads first.
+    -- It used to sit in the Layout tab's Anchor section, a tab away from what
+    -- it gates.
+    local alphaLeadingRows = nil
+    if alphaAnchorSourceMode then
+        alphaLeadingRows = function(alphaLeft)
+            AddDropdownRow(alphaLeft, {
+                label = "Panel Alpha",
+                pulloutWidth = PANEL_ALPHA_PULLOUT_WIDTH,
+                list = {
+                    inherit = alphaAnchorSourceMode == "frame"
+                        and "Inherit Target Frame Alpha"
+                        or "Inherit Target Panel Alpha",
+                    custom = "Custom Alpha",
+                },
+                order = { "inherit", "custom" },
+                value = group.inheritPanelAlpha == false and "custom" or "inherit",
+                onChange = function(val)
+                    group.inheritPanelAlpha = val ~= "custom"
+                    if isTexturePanel then
+                        -- A texture panel's alpha rides its texture visuals,
+                        -- not a group frame shell.
+                        CooldownCompanion:RefreshAllAuraTextureVisuals()
+                    else
+                        local frame = CooldownCompanion.groupFrames[groupId]
+                        if frame then
+                            CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
+                        end
+                        CooldownCompanion:RebuildPanelAlphaDependencyTargets()
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+        end
+    end
+
     if isTexturePanel then
         BuildAlphaControls(container, group, function()
             CooldownCompanion:RefreshAllAuraTextureVisuals()
@@ -3033,6 +3091,7 @@ local function BuildLoadConditionsTab(container)
             row = true,
             disabled = alphaControlsDisabled,
             disabledText = alphaDisabledText,
+            leadingRows = alphaLeadingRows,
             onBaselineCommitted = function()
                 CooldownCompanion:RefreshAllAuraTextureVisuals()
             end,
@@ -3045,6 +3104,7 @@ local function BuildLoadConditionsTab(container)
             row = true,
             disabled = alphaControlsDisabled,
             disabledText = alphaDisabledText,
+            leadingRows = alphaLeadingRows,
         })
     end
 end

@@ -2934,10 +2934,15 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
     end
 end
 
--- Builds the compact mode section shared by the icon (GroupTabs), bar
--- (BarModeTabs) and text (TextModeTabs) tabs: a CDC-CheckBoxRow whose gear
--- and info badge chain off the end of its label, with the growth-direction
--- and max-visible-buttons controls behind the gear.
+-- Builds the compact mode row: a CDC-CheckBoxRow whose gear and info badge
+-- chain off the end of its label, with the growth-direction and
+-- max-visible-buttons controls behind the gear.
+--
+-- ONE call site, for every mode that offers it: the Layout tab's Arrangement
+-- section (GroupTabsLayout.lua). It used to be built three times, once per
+-- mode's Appearance tab. Compact mode is packing, so it reads beside the wrap
+-- count; its copy membership deliberately stayed on the appearance scope
+-- (ST.PANEL_COPY_SCOPES, Defaults.lua).
 --
 -- Row grammar only (RowWidgets.lua) - the pre-redesign full-width/half-width
 -- checkbox shape had no call sites left once the bar and text tabs converted.
@@ -3540,7 +3545,8 @@ ST._SetupColorCallbacks = SetupColorCallbacks
 -- collapseKey: string key for CS.collapsedSections
 -- opts (optional): { previewRefresh = fn(), onBaselinePreview = fn(val),
 -- onBaselineCommitted = fn(val), isGlobal = bool, disabled = bool,
--- disabledText = string, infoButtons = table, hideHeading = bool }
+-- disabledText = string, infoButtons = table, hideHeading = bool,
+-- leadingRows = fn(leftTarget, rightTarget) }
 --
 -- Row grammar only (RowWidgets.lua): a collapsible left-aligned section header
 -- and a two-column grid of fixed-height rows. Every caller opts in, so there is
@@ -3595,6 +3601,14 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
     -- behaviour they all share. Both halves are top-aligned, so the gated
     -- child rows on either side just end their column early.
     local leftTarget, rightTarget = ST._BeginRowGrid(container)
+
+    -- One caller leads the grid with rows of its own: the panel Visibility tab
+    -- puts the Panel Alpha source row here, because it decides whether
+    -- everything below it is live. Nothing else in the section depends on it,
+    -- so it is a plain hook rather than another opts flag per row.
+    if opts.leadingRows then
+        opts.leadingRows(leftTarget, rightTarget)
+    end
 
     local function ApplyBaselineAlpha(val)
         if controlsDisabled then return end

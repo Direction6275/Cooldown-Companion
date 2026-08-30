@@ -92,6 +92,13 @@ local ROW_GRID_MIN_WIDTH     = 64
 local LABEL_COLOR            = { 1, 1, 1 }
 local LABEL_CHILD_COLOR      = { 0.749, 0.714, 0.612 }  -- #bfb69c
 local LABEL_DISABLED_COLOR   = { 0.5, 0.5, 0.5 }
+-- Caption rows (SetCaption) are read-only column headings, not settings.
+-- Small font, uppercase text, and the warm informational gold this config
+-- already uses for read-only readouts (the low-time family label's #c9aa63)
+-- rather than scope-chrome grey, which the owner found too muted in game.
+-- Still quieter than the orange section headings on purpose - a caption
+-- names a column, it does not open one.
+local LABEL_CAPTION_COLOR    = { 0.79, 0.67, 0.39 }
 
 local CHECKBOX_ROW_TYPE = "CDC-CheckBoxRow"
 local SLIDER_ROW_TYPE   = "CDC-SliderRow"
@@ -155,6 +162,8 @@ local function ApplyLabelColor(self)
     local color = LABEL_COLOR
     if self.disabled then
         color = LABEL_DISABLED_COLOR
+    elseif self.captioned then
+        color = LABEL_CAPTION_COLOR
     elseif self.indented then
         color = LABEL_CHILD_COLOR
     end
@@ -358,6 +367,21 @@ local sharedMethods = {
         return self.indented
     end,
 
+    -- Turn the row into a CAPTION: a read-only heading for the column it sits
+    -- in, not a setting. Only the label's look changes - smaller and grey,
+    -- matching the scope chrome's read-only voice - so the row still occupies
+    -- exactly one slot and the two columns of a grid stay in step.
+    --
+    -- The font object is part of the row's POOLED state, so it is set through
+    -- this one method and reset by ResetRowBase on every acquire; a recycled
+    -- row can never come back wearing the caption face.
+    ["SetCaption"] = function(self, caption)
+        self.captioned = caption and true or false
+        self.rowLabel:SetFontObject(self.captioned and GameFontNormalSmall or GameFontHighlight)
+        ApplyLabelColor(self)
+        UpdateBadgeAnchor(self)
+    end,
+
     -- tooltipLines follows CreateInfoButton's shape: plain strings are title
     -- lines, {text, r, g, b, wrap} tables are colored/wrapping body lines.
     ["SetRowTooltip"] = function(self, lines)
@@ -410,6 +434,9 @@ local function ResetRowBase(self)
     self.rowLabel:SetWordWrap(false)
     if self.rowLabel.SetMaxLines then self.rowLabel:SetMaxLines(1) end
     self:SetWidth(CONTROL_COLUMN_WIDTH + MIN_LABEL_WIDTH)
+    -- Through the setter, not the field: this is also what puts the label's
+    -- font object back after a caption row is recycled into an ordinary one.
+    self:SetCaption(false)
     self:SetLabel("")
     self:SetIndent(false)
 end
@@ -1406,6 +1433,7 @@ end
 
 local function ApplyCommonRowOptions(row, opts)
     row:SetLabel(opts.label)
+    if opts.caption then row:SetCaption(true) end
     if opts.indent then row:SetIndent(true) end
     if opts.tooltip then row:SetRowTooltip(opts.tooltip) end
     if opts.relativeWidth then

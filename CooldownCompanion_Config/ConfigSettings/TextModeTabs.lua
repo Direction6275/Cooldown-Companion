@@ -11,7 +11,6 @@ local CS = ST._configState
 -- Imports from Helpers.lua
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local CreateInfoButton = ST._CreateInfoButton
-local BuildCompactModeControls = ST._BuildCompactModeControls
 
 -- Style lens (Helpers.lua). Selecting an entry turns the Appearance tab into a
 -- view of that entry's effective values, with per-section scope deciding where
@@ -475,10 +474,10 @@ end
 -- EMPTY today, deliberately. The three text override sections are drawn by
 -- shared builders that carry no gear at all (BuildTextFontControls,
 -- BuildTextColorsControls and BuildTextBackgroundControls in
--- SectionBuilders.lua build plain rows only), and Compact Mode's gear is NOT
--- listed for the same reason it is not listed on the other two modes' maps:
--- compact mode is group data with no override section and no second table to
--- bind a gear to, so the inert walk disables and dims it in place.
+-- SectionBuilders.lua build plain rows only). Compact Mode's gear is not
+-- listed either, and no longer could be: it is group data with no override
+-- section, and its row now lives on the Layout tab (GroupTabsLayout.lua's
+-- Arrangement section), which this map does not describe.
 --
 -- The map and the sweep at the foot of the builder are kept even so: a gear
 -- added to any of the three sections belongs here the same day, and a sweep
@@ -521,8 +520,8 @@ local function BuildTextAppearanceTab(container, group, style)
     AddLensPanelScopeNote(container, lens)
 
     -- Sections with NO override identity of their own (the panel's padding,
-    -- spacing and group header; Compact Mode): an entry cannot own them, so
-    -- under an entry lens they say "Applies to all entries" and go read-only
+    -- spacing and group header): an entry cannot own them, so under an entry
+    -- lens they say "Applies to all entries" and go read-only
     -- rather than quietly letting a panel-wide edit be made from an entry's
     -- page. They begin a lens section with a nil sectionId, which resolves to
     -- no write table exactly under an entry lens. They keep reading and writing
@@ -532,7 +531,7 @@ local function BuildTextAppearanceTab(container, group, style)
     -- The format itself, and the two settings that are format vocabulary
     -- rather than panel geometry, now own the Format tab (BuildTextFormatTab
     -- below). What is left here decorates what the format already decided to
-    -- say: Font, Colors, Panel, Background & Border, Compact Mode.
+    -- say: Font, Colors, Panel, Background & Border.
 
     -- ================================================================
     -- Font
@@ -808,23 +807,10 @@ local function BuildTextAppearanceTab(container, group, style)
     bgSec:Finish()
     end -- not bgCollapsed
 
-    -- ================================================================
-    -- Compact Mode Controls
-    -- ================================================================
-    -- One row, in a grid of its own so it keeps the grammar's half-width cell
-    -- rather than stretching its control column across the whole tab.
-    --
-    -- Panel-level packing with no override section, so under an entry lens it
-    -- goes read-only along with the rest of the panel-only content rather than
-    -- letting a panel-wide edit be made from an entry's page. Its gear is not
-    -- skipped the way a lens section's would be: compact mode is group data
-    -- with no second table to bind a gear to, so the inert walk disables and
-    -- dims it instead (both other modes' tabs do exactly this). The "?" badge
-    -- stays readable - the inert walk only reaches AceGUI children and the gear.
-    local compactLeft = BeginRowGrid(container)
-    local compactSec = BeginLensSection(lens, group, nil, { column = compactLeft })
-    BuildCompactModeControls(compactLeft, group, tabInfoButtons)
-    compactSec:Finish()
+    -- Compact Mode used to close this tab. It is packing, not look, so it now
+    -- lives on the Layout tab's Arrangement section beside the wrap count (its
+    -- copy membership is unchanged - still this tab's appearance scope in
+    -- ST.PANEL_COPY_SCOPES).
 
     -- Inert-section sweep. A section the lens resolved read-only builds no
     -- gear, so nothing rebound or closed an advanced panel that was already

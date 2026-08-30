@@ -443,6 +443,36 @@ local function AddSettingsSubheading(container, text)
     return heading
 end
 
+-- FAMILY COLUMN CAPTIONS
+--
+-- The standing rule for the styling tabs is that a section's LEFT column holds
+-- the cooldown/spell settings and its RIGHT column the aura ones. The rule is
+-- only useful if it is visible, so a two-column grid that genuinely splits that
+-- way names its columns once at the top.
+--
+-- Row grammar, not a Heading: a caption occupies exactly one row slot in each
+-- column, so the two columns' first real rows stay on the same line - which is
+-- the whole point of a top-aligned grid. The look is the read-only voice
+-- (RowWidgets' SetCaption: small, grey), deliberately quieter than the gold
+-- subheadings above it, and the row carries no control, no badge and no
+-- tooltip.
+--
+-- CALLERS OWN THE PREDICATE. Captions are drawn ONLY where the section will
+-- really put at least one row in EACH column, computed from the same gates the
+-- rows use; a caption over an empty column is a promise of nothing. This
+-- helper only refuses the degenerate case it can see for itself - a
+-- single-rail layout, where both "columns" are the same container (an Aura
+-- Panel's Duration Text rail).
+local FAMILY_CAPTION_SPELL = "COOLDOWN / SPELL"
+local FAMILY_CAPTION_AURA = "AURA"
+
+local function AddFamilyColumnCaptions(leftColumn, rightColumn)
+    if not (leftColumn and rightColumn) then return end
+    if leftColumn == rightColumn then return end
+    AddLabelRow(leftColumn, { label = FAMILY_CAPTION_SPELL, caption = true })
+    AddLabelRow(rightColumn, { label = FAMILY_CAPTION_AURA, caption = true })
+end
+
 local DURATION_VISIBILITY_DEFAULT = 10
 local DURATION_VISIBILITY_MODES = {
     always = "Always",
@@ -2622,6 +2652,7 @@ end
 ------------------------------------------------------------------------
 ST._AddDurationFormatDropdown = AddDurationFormatDropdown
 ST._AddSettingsSubheading = AddSettingsSubheading
+ST._AddFamilyColumnCaptions = AddFamilyColumnCaptions
 ST._AddDurationTextVisibilityRows = AddDurationTextVisibilityRows
 ST._AddDurationLowTimeRows = AddDurationLowTimeRows
 ST._AddPandemicMarkerControls = AddPandemicMarkerControls

@@ -16,7 +16,6 @@ local CanGroupUseOverrideSection = ST.CanGroupUseOverrideSection
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
-local BuildCompactModeControls = ST._BuildCompactModeControls
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
@@ -48,6 +47,7 @@ local AddPandemicMarkerControls = ST._AddPandemicMarkerControls
 local ReconcilePandemicMarkerPreview = ST._ReconcilePandemicMarkerPreview
 local AddDurationTextVisibilityRows = ST._AddDurationTextVisibilityRows
 local AddSettingsSubheading = ST._AddSettingsSubheading
+local AddFamilyColumnCaptions = ST._AddFamilyColumnCaptions
 local BeginFullWidthRowGroup = ST._BeginFullWidthRowGroup
 
 -- Imports from RowWidgets.lua (the row grammar)
@@ -68,7 +68,7 @@ local tabInfoButtons = CS.tabInfoButtons
 -- restating them.
 local ROW_SECTION = { leftAligned = true }
 
--- The bar Effects tab draws the same four sections as the icons Effects tab
+-- The bar Effects tab draws the same sections as the icons Effects tab
 -- and deliberately SHARES their collapse keys, so the gear-to-section map
 -- GroupTabsEffects.lua owns (ST._INDICATORS_SECTION_BY_ADVANCED_KEY) covers both tabs
 -- with one entry per advanced key. Keep these in step with the constants
@@ -78,6 +78,7 @@ local EFFECTS_GLOWS_SECTION = "effects_glows"
 local EFFECTS_PANDEMIC_SECTION = "effects_pandemic"
 local EFFECTS_TIMERS_SECTION = "effects_timers"
 local EFFECTS_STATES_SECTION = "effects_states"
+local EFFECTS_INTERACTION_SECTION = "effects_interaction"
 
 -- LibSharedMedia statusbar names run well past the 140px control column, and a
 -- dropdown sizes its menu from the control it hangs under.
@@ -338,11 +339,13 @@ ST._SECTION_HOME.bars = {
         tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
         available = BarsIconShown,
     },
+    -- Its own Interaction section at the foot of the tab, not States.
+    --
     -- Not BarsIconShown: on an Aura Panel this row is drawn outside the icon
     -- gate, so its Customizations link and gear stay reachable with the bar icon
     -- hidden (BuildBarEffectsTab's `barIconShown or isAuraPanel`).
     showTooltips = {
-        tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
+        tab = "effects", collapseKey = EFFECTS_INTERACTION_SECTION,
         available = BarsTooltipRowShown,
         gearEnabled = function(_, style) return (style.showTooltips == true) ~= false end,
     },
@@ -476,7 +479,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- under an entry lens.
 
     -- ================================================================
-    -- Bar Settings (length, height, spacing, texture)
+    -- Bar Settings (length, height, fill direction, spacing, texture)
     -- ================================================================
     -- Panel-only under an entry lens, so the collapse key is lens-scoped and
     -- opens folded the first time (ST._ResolveLensCollapseKey owns that rule).
@@ -488,8 +491,8 @@ local function BuildBarAppearanceTab(container, group, style)
     barSettingsSec:HeadingChrome(barSettingsHeading)
 
     if not barSettingsCollapsed then
-    -- LEFT column: how one bar is shaped. RIGHT column: how the bars sit
-    -- together and what they are drawn with.
+    -- LEFT column: how one bar is shaped, and which way its own fill runs.
+    -- RIGHT column: how the bars sit together and what they are drawn with.
     local barLeft, barRight = BeginRowGrid(container)
     -- The columns only exist here, so the section's brackets are taken now
     -- rather than at Begin; it fills two, so the right one is a bracket of its
@@ -522,6 +525,31 @@ local function BuildBarAppearanceTab(container, group, style)
         onRelease = function(val)
             style.barHeight = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end,
+    })
+
+    -- Which way a single bar's own fill runs is what the bar LOOKS like, not
+    -- where the bars sit, so it belongs with the bar's shape rather than with
+    -- the Layout tab's arrangement rows. Panel-only like the sliders above:
+    -- plain rows carrying the section's `disabled`, inside its bracket.
+    AddCheckboxRow(barLeft, {
+        label = "Vertical Bar Fill",
+        value = style.barFillVertical or false,
+        disabled = barSettingsSec.disabled,
+        onChange = function(val)
+            style.barFillVertical = val or nil
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+
+    AddCheckboxRow(barLeft, {
+        label = "Flip Fill/Drain Direction",
+        value = style.barReverseFill or false,
+        disabled = barSettingsSec.disabled,
+        onChange = function(val)
+            style.barReverseFill = val or nil
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
         end,
     })
 
@@ -572,11 +600,24 @@ local function BuildBarAppearanceTab(container, group, style)
     -- Bar colors have no heading and no collapse state, so they stay on screen
     -- while Bar Settings is folded away. They get a grid of their own, which is
     -- also what keeps them off the section's last line.
-    -- LEFT column: the bar at rest - its fill and the backdrop behind it.
-    -- RIGHT column: the colors a timer paints over that. The aura timer color
-    -- is one of them, so it lives here rather than beside the aura TEXT toggles
-    -- in Text & Icon, and it carries that section's aura-tracking gate with it.
+    -- LEFT column: everything a SPELL paints - the bar at rest, the backdrop
+    -- behind it, and the two colors a spell timer draws over that.
+    -- RIGHT column: the aura timer color. It lives here rather than beside the
+    -- aura TEXT toggles in Text & Icon, and it carries that section's
+    -- aura-tracking gate with it.
     local colorLeft, colorRight = BeginRowGrid(container)
+
+    -- Captions only where both families really draw. The left predicate is the
+    -- OR of the two spell-side gates below (Bar Background Color is ungated,
+    -- but it is the bar's own chrome rather than a spell row, so it does not
+    -- speak for that family); the right one is the aura timer color's gate.
+    -- Both spell gates are false on an Aura Panel, which is what keeps a
+    -- single-family grid uncaptioned there.
+    if (CanGroupUseOverrideSection(group, "barColor")
+        or CanGroupUseOverrideSection(group, "barCooldownColor"))
+        and GroupHasAuraTrackingEntry(group) then
+        AddFamilyColumnCaptions(colorLeft, colorRight)
+    end
 
     -- Each bar color is a one-key override section of its own, so each row
     -- resolves its own scope and wears its own chrome. A single row needs no
@@ -610,15 +651,16 @@ local function BuildBarAppearanceTab(container, group, style)
         AddBarColorRow(colorLeft, "barColor", "Bar Color", "barColor", {0.2, 0.6, 1.0, 1.0})
     end
     AddBarColorRow(colorLeft, "barBgColor", "Bar Background Color", "barBgColor", {0.1, 0.1, 0.1, 0.8})
-    -- The two colors a spell TIMER paints. An Aura Panel bar has no cooldown and
-    -- no recharge to paint, so the right column starts at the aura timer color.
+    -- The two colors a spell TIMER paints - spell-side, so they close the left
+    -- column. An Aura Panel bar has no cooldown and no recharge to paint.
     if CanGroupUseOverrideSection(group, "barCooldownColor") then
-        AddBarColorRow(colorRight, "barCooldownColor", "Bar Cooldown Color", "barCooldownColor", {0.6, 0.6, 0.6, 1.0})
-        AddBarColorRow(colorRight, "barChargeColor", "Bar Recharging Color", "barChargeColor", {1.0, 0.82, 0.0, 1.0})
+        AddBarColorRow(colorLeft, "barCooldownColor", "Bar Cooldown Color", "barCooldownColor", {0.6, 0.6, 0.6, 1.0})
+        AddBarColorRow(colorLeft, "barChargeColor", "Bar Recharging Color", "barChargeColor", {1.0, 0.82, 0.0, 1.0})
     end
 
-    -- The color the aura timer drains in. Same gate as the aura block down in
-    -- Text & Icon, so it appears only while the group tracks an aura.
+    -- The color the aura timer drains in - the RIGHT column's one row. Same
+    -- gate as the aura block down in Text & Icon, so it appears only while the
+    -- group tracks an aura.
     --
     -- barAuraColor belongs to the barActiveAura section, whose home is the
     -- Effects tab's Active Aura Indicator row - so this row FOLLOWS that
@@ -750,6 +792,16 @@ local function BuildBarAppearanceTab(container, group, style)
     else
         durationLeft, durationRight = BeginRowGrid(container)
     end
+    -- Column captions, drawn only where both families really appear - the same
+    -- rule and the same predicate the icons twin uses. LEFT is the Show
+    -- Cooldown Text block, whose only gate is `not isAuraPanel`; RIGHT is the
+    -- aura duration text block, gated on an aura-tracking entry. An Aura Panel
+    -- is a single rail, which the helper also refuses on its own. The low-time
+    -- grid below is NOT captioned: one feature across two columns, not a family
+    -- split.
+    if not isAuraPanel and GroupHasAuraTrackingEntry(group) then
+        AddFamilyColumnCaptions(durationLeft, durationRight)
+    end
     local lowTimeLeft, lowTimeRight
     if drawsCooldownLowTime or drawsAuraLowTime then
         if isAuraPanel then
@@ -762,9 +814,22 @@ local function BuildBarAppearanceTab(container, group, style)
 
     AddSettingsSubheading(container, "Other Text")
     local otherLeft, otherRight = BeginRowGrid(container)
+    -- Same rule as the Duration Text grid above: the left predicate is the OR
+    -- of the two spell-side row gates (count text, ready text - Show Name Text
+    -- is ungated, but a bar's name is not a spell-state row and does not speak
+    -- for that family); the right one is the aura stack row's gate. Both spell
+    -- gates are false on an Aura Panel, so this grid goes uncaptioned there
+    -- even though it stays a real two-column grid.
+    if (CanGroupUseOverrideSection(group, "chargeText")
+        or CanGroupUseOverrideSection(group, "barReadyText"))
+        and GroupHasAuraTrackingEntry(group) then
+        AddFamilyColumnCaptions(otherLeft, otherRight)
+    end
 
-    AddSettingsSubheading(container, "Icon & Layout")
-    local iconLeft, iconRight = BeginRowGrid(container)
+    -- One setting (Show Icon, with its own gear); the right column stays empty
+    -- now that Compact Mode has moved to the Layout tab.
+    AddSettingsSubheading(container, "Icon")
+    local iconLeft = BeginRowGrid(container)
 
     -- Dedicated override section (owner ruling 2026-08-25): one shared policy
     -- for cooldown and aura duration phases, customized as one entry-owned
@@ -1321,16 +1386,10 @@ local function BuildBarAppearanceTab(container, group, style)
         auraStackSec:Finish()
     end
 
-    -- Compact Mode toggle + advanced (growth direction, max visible buttons).
-    -- Panel-level packing with no override section, so under an entry lens it
-    -- goes read-only along with the rest of the panel-only content rather than
-    -- letting a panel-wide edit be made from an entry's page. Its gear is not
-    -- skipped the way the lens sections' are: compact mode is group data with
-    -- no second table to bind a gear to, so the inert walk disables and dims it
-    -- instead (the icons tab does exactly this).
-    local compactSec = BeginLensSection(lens, group, nil, { column = iconRight })
-    BuildCompactModeControls(iconRight, group, tabInfoButtons)
-    compactSec:Finish()
+    -- Compact Mode used to close this grid's right column. It is packing, not
+    -- look, so it now lives on the Layout tab's Arrangement section beside the
+    -- wrap count (its copy membership is unchanged - still this tab's
+    -- appearance scope in ST.PANEL_COPY_SCOPES).
     end -- not textIconCollapsed
 
     -- ================================================================
@@ -1672,13 +1731,14 @@ local function BuildBarEffectsTab(container, group, style)
     -- for what the scopes mean and why the write table is the only gate.
     local lens = ResolveStyleLens(group)
 
-    -- COLUMN ROUTING on an Aura Panel (owner ruling 2026-08-15). The States
-    -- section below loses its whole LEFT column to the panel predicate and keeps
-    -- one row on the right; the standing fill rule (stated in full in the recipe
-    -- comment at the top of BuildAppearanceTab's icons path in
-    -- GroupTabsAppearance.lua, rule 3) says a filtered row set fills the left
-    -- column first, so that survivor moves across. Gated on this predicate
-    -- alone, so an ordinary bar panel's columns are byte-identical to before.
+    -- An Aura Panel keeps NONE of the States rows below (the panel predicate
+    -- denies every one of them), so that section is skipped outright rather
+    -- than re-columned, and the Interaction section at the foot leads with Show
+    -- Tooltips in its left column on every bar panel - the standing fill rule
+    -- (stated in full in the recipe comment at the top of BuildAppearanceTab's
+    -- icons path in GroupTabsAppearance.lua, rule 3). What this predicate still
+    -- decides is the icon-square block: an Aura Panel opens it for Show
+    -- Tooltips alone, with the bar icon hidden.
     local isAuraPanel = ST.IsAuraPanelGroup(group)
 
     -- Under a multi selection this tab edits the PANEL, and only this line says
@@ -1772,17 +1832,33 @@ local function BuildBarEffectsTab(container, group, style)
         -- ================================================================
         -- States
         -- ================================================================
+        -- Every row below is icon-bound AND spell-state-bound, so the heading
+        -- goes with them rather than standing over nothing - the same pre-check
+        -- shape the Timers section above uses. The block this sits in can open
+        -- for Show Tooltips alone (an Aura Panel with the bar icon hidden), and
+        -- on an Aura Panel the panel predicate denies every row here anyway.
+        if barIconShown and CanGroupUseOverrideSection(group, "desaturation") then
         local _, statesCollapsed = BuildCollapsibleSection(container, "States", EFFECTS_STATES_SECTION, nil, nil, ROW_SECTION)
 
         if not statesCollapsed then
-        -- LEFT column: the looks the bar's icon takes on by itself.
-        -- RIGHT column: the situational state and the hover behavior.
+        -- LEFT column: the looks a SPELL's state gives the bar's icon (on
+        -- cooldown, unusable, out of range, locked out of control).
+        -- RIGHT column: the look the AURA's state gives it.
         local stateLeft, stateRight = BeginRowGrid(container)
 
-        -- On an Aura Panel the left column empties out and Loss of Control
-        -- leaves the right one: desaturate-on-cooldown, the unusable visual,
-        -- out-of-range tint and the control lockout all read spell state these
-        -- entries do not have.
+        -- Captions only where both families really draw - the icons twin's
+        -- predicate plus this tab's icon gate, which every row here shares. On
+        -- an Aura Panel the section never opens at all (the pre-check above).
+        if barIconShown
+            and (CanGroupUseOverrideSection(group, "desaturation")
+                or CanGroupUseOverrideSection(group, "unusableDimming")
+                or CanGroupUseOverrideSection(group, "showOutOfRange")
+                or CanGroupUseOverrideSection(group, "lossOfControl"))
+            and GroupHasAuraTrackingEntry(group)
+            and CanGroupUseOverrideSection(group, "auraMissingDesaturation") then
+            AddFamilyColumnCaptions(stateLeft, stateRight)
+        end
+
         if barIconShown and CanGroupUseOverrideSection(group, "desaturation") then
         local desatSec = BeginLensSection(lens, group, "desaturation")
         local desatRow = AddCheckboxRow(stateLeft, {
@@ -1803,10 +1879,13 @@ local function BuildBarEffectsTab(container, group, style)
         -- the icons tab - passives gray by default with entry-side Never
         -- Desaturate as the off switch, and the section is aura-entry-denied
         -- plus aura-tracking-config-only.
+        --
+        -- Aura-side, so it sits in the RIGHT column - the one aura row this
+        -- section has, and the reason the section is captioned at all.
         if barIconShown and GroupHasAuraTrackingEntry(group)
             and CanGroupUseOverrideSection(group, "auraMissingDesaturation") then
         local missingSec = BeginLensSection(lens, group, "auraMissingDesaturation")
-        local missingRow = AddCheckboxRow(stateLeft, {
+        local missingRow = AddCheckboxRow(stateRight, {
             label = "Desaturate While Aura Missing",
             value = missingSec.read.desaturateWhileAuraNotActive == true,
             disabled = missingSec.disabled,
@@ -1865,21 +1944,39 @@ local function BuildBarEffectsTab(container, group, style)
         oorSec:Chrome(oorRow)
         end -- CanGroupUseOverrideSection showOutOfRange
 
+        -- A control lockout is a spell state, so it closes the LEFT column
+        -- after Out of Range - the icons States twin does the same.
         if barIconShown and CanGroupUseOverrideSection(group, "lossOfControl") then
         local locSec = BeginLensSection(lens, group, "lossOfControl")
-        local locRow = BuildLossOfControlControls(stateRight, locSec.tbl, refreshStyle, {
+        local locRow = BuildLossOfControlControls(stateLeft, locSec.tbl, refreshStyle, {
             row = true,
         })
         locRow:SetDisabled(locSec.disabled)
         locSec:Chrome(locRow)
         end -- CanGroupUseOverrideSection lossOfControl
+        end -- not statesCollapsed
+        end -- States section has at least one row
 
-        -- On an Aura Panel this is the section's ONLY row (everything above is
-        -- denied, and Allow Pings below is not offered), so it takes the left
-        -- column instead of stranding itself beside an empty one.
-        local tooltipHost = isAuraPanel and stateLeft or stateRight
-        local tooltipSec = BeginLensSection(lens, group, "showTooltips", { column = tooltipHost })
-        local tooltipRow = BuildShowTooltipsControls(tooltipHost, tooltipSec.tbl, function()
+        -- ================================================================
+        -- Interaction
+        -- ================================================================
+        -- The bars twin of the icons Interaction section: hover and click
+        -- behavior, at the foot of the tab rather than trailing the States
+        -- rows. It stays INSIDE the icon-square block, which is exactly the two
+        -- rows' existing reach - Show Tooltips gets the Aura Panel exception
+        -- the block already carries (BarsTooltipRowShown), and Allow Pings,
+        -- like the icon-bound rows, has nothing to ping while the bar draws no
+        -- icon square.
+        local _, interactionCollapsed = BuildCollapsibleSection(container, "Interaction", EFFECTS_INTERACTION_SECTION, nil, nil, ROW_SECTION)
+
+        if not interactionCollapsed then
+        -- LEFT column: the hover behavior. RIGHT column: the click behavior,
+        -- which an Aura Panel does not offer - and the fill-left-first rule is
+        -- why the hover row is on the left rather than beside an empty column.
+        local interactionLeft, interactionRight = BeginRowGrid(container)
+
+        local tooltipSec = BeginLensSection(lens, group, "showTooltips", { column = interactionLeft })
+        local tooltipRow = BuildShowTooltipsControls(interactionLeft, tooltipSec.tbl, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end, {
@@ -1900,13 +1997,13 @@ local function BuildBarEffectsTab(container, group, style)
         -- Not offered on an Aura Panel: the row's own tooltip already says
         -- entries added as auras cannot be pinged, and every entry here is one.
         if not CooldownCompanion:IsAuraPanel(group) then
-        local pingsSec = BeginLensSection(lens, group, nil, { column = stateRight })
-        BuildAllowPingsControls(stateRight, style, function()
+        local pingsSec = BeginLensSection(lens, group, nil, { column = interactionRight })
+        BuildAllowPingsControls(interactionRight, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end, { row = true })
         pingsSec:Finish()
         end
-        end -- not statesCollapsed
+        end -- not interactionCollapsed
     end
 
     -- Inert-section sweep, over the WHOLE bars map - see the note by

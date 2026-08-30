@@ -1587,12 +1587,20 @@ end
 -- membership so the copy primitive can run without the config's predicates.
 -- A new style key added to an Appearance or Indicators tab must be added
 -- here (or to a section's key list) the same day, or it silently never
--- copies. Layout-tab keys (orientation, growth, buttonsPerRow, strata,
--- alpha) are deliberately absent: the look copies, the placement does not.
+-- copies. Placement keys (orientation, growth, buttonsPerRow, strata) are
+-- deliberately absent: the look copies, the placement does not. Alpha is
+-- absent for its own reason - it is transparency behavior, not look, and its
+-- rows render on the Visibility tab.
 --
 -- copiesMasque / copiesCompact flag the group-level (non-style) settings the
 -- scope carries; CopyPanelSettings owns their special handling (Masque
 -- lifecycle sync, maxVisibleButtons clamp).
+--
+-- copiesCompact stays on the APPEARANCE scope even though the Compact Mode
+-- row now renders on the Layout tab: compact mode is packing behavior, not
+-- placement, so it copies with the look. The row's tab is a findability
+-- decision; this membership is the behavior contract, and moving one must
+-- never silently move the other.
 ST.PANEL_COPY_SCOPES = {
     icons = {
         appearance = {
@@ -1621,8 +1629,8 @@ ST.PANEL_COPY_SCOPES = {
                 "showOutOfRange", "lossOfControl", "showTooltips",
             },
             styleKeys = {
-                -- Panel-owned rows in the States section: Allow Pings, and the
-                -- tooltip behavior keys the Show Tooltips gear edits.
+                -- Panel-owned rows in the Interaction section: Allow Pings,
+                -- and the tooltip behavior keys the Show Tooltips gear edits.
                 "allowPings", "tooltipAnchor", "tooltipHideInCombat",
             },
         },
@@ -1636,7 +1644,11 @@ ST.PANEL_COPY_SCOPES = {
                 "auraStackText", "iconZoom", "whileAuraActive",
             },
             styleKeys = {
-                -- Bar Settings (shape, texture)
+                -- Bar Settings (shape, texture). barFillVertical and
+                -- barReverseFill render in this same section but are
+                -- deliberately absent: they are Layout-tab keys by the rule
+                -- in the header above, and the findability move that put
+                -- their rows here did not change what copies.
                 "barLength", "barHeight", "buttonSpacing", "barTexture",
                 -- Bar-wide text placement (panel-owned rows in the text gears)
                 "barTimeTextReverse", "barCdTextOffsetX", "barCdTextOffsetY",
