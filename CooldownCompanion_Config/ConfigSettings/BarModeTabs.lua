@@ -46,6 +46,9 @@ local BuildAllowPingsControls = ST._BuildAllowPingsControls
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local AddPandemicMarkerControls = ST._AddPandemicMarkerControls
 local ReconcilePandemicMarkerPreview = ST._ReconcilePandemicMarkerPreview
+local AddDurationTextVisibilityRows = ST._AddDurationTextVisibilityRows
+local AddSettingsSubheading = ST._AddSettingsSubheading
+local BeginFullWidthRowGroup = ST._BeginFullWidthRowGroup
 
 -- Imports from RowWidgets.lua (the row grammar)
 local AddCheckboxRow = ST._AddCheckboxRow
@@ -151,8 +154,8 @@ end
 
 -- The Cooldown Text ROW is left out on an Aura Panel (BuildBarAppearanceTab's
 -- `if not isAuraPanel`): nothing there has a cooldown, so the toggle is dead and
--- the live rows that hung off it - Duration Format, Flip Time Text and the two
--- time-text offsets - move under the aura duration text they actually place. The
+-- Duration Format remains a shared row in the duration options; Flip Time Text
+-- and the two time-text offsets move under the aura duration text they place. The
 -- section itself stays usable, so this is an `available` predicate rather than a
 -- denial in ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS. Without it the
 -- Customizations index would offer a name link onto a row that is not drawn.
@@ -397,7 +400,7 @@ local function MakeBarCooldownTextAdvancedDescriptor(styleTable)
             -- into an entry's override store would leave keys behind that
             -- RevertSection cannot clear. Duration Format has the same problem
             -- and answers it the other way: it stays panel-owned and labeled
-            -- rather than hidden (see the row in the Text section).
+            -- rather than hidden (see the row in the Duration Text section).
             if not isEntryOverride then
                 local flipTimeRow = AddCheckboxRow(panel, {
                     label = "Flip Time Text",
@@ -727,38 +730,6 @@ local function BuildBarAppearanceTab(container, group, style)
     local _, textIconCollapsed = BuildCollapsibleSection(container, "Text & Icon", "barappearance_textIcon", nil, nil, ROW_SECTION)
 
     if not textIconCollapsed then
-    -- LEFT column: what every bar can draw, top to bottom as it reads on the
-    -- bar itself. RIGHT column: the aura block (gated on the group tracking an
-    -- aura, so this column can run short - the grid top-aligns its columns) and
-    -- the panel-level packing toggle.
-    local textLeft, textRight = BeginRowGrid(container)
-
-    -- Dedicated override section (owner ruling 2026-08-25): one shared policy
-    -- for cooldown and aura duration phases, customized as one entry-owned
-    -- unit. The master row carries the section's scope affordance.
-    local function AddDurationLowTimeSection(column)
-        if not ST._AddDurationLowTimeRows then return end
-        local lowTimeSec = BeginLensSection(lens, group, "durationLowTime", { column = column })
-        -- Master row unindented and aura opt-in row: keep in step with the
-        -- icon-mode twin in GroupTabsAppearance.lua (owner ruling 2026-08-28).
-        local rows = ST._AddDurationLowTimeRows(column, lowTimeSec.tbl, refreshStyle, {
-            explicitOff = lowTimeSec.scope == "customized",
-            auraToggle = not ST.IsAuraPanelGroup(group)
-                and not ((lens and lens.mode == "entry") and lens.buttonData
-                    and ST.IsAuraSectionEntry(group, lens.buttonData))
-                and BarsDrawAuraDurationRows(group, (lens and lens.effective) or group.style),
-            infoButtons = tabInfoButtons,
-            rebuild = function()
-                refreshStyle()
-                CooldownCompanion:RefreshConfigPanel()
-            end,
-        })
-        if rows and rows[1] then
-            lowTimeSec:Chrome(rows[1])
-        end
-        lowTimeSec:Finish()
-    end
-
     local panelDurationStyle = group.style or {}
     local effectiveDurationStyle = (lens and lens.effective) or panelDurationStyle
     local drawsCooldownLowTime = BarsDrawCooldownDurationRows(group, effectiveDurationStyle)
@@ -771,12 +742,68 @@ local function BuildBarAppearanceTab(container, group, style)
     local drawsAuraFormat = BarsDrawAuraDurationRows(group, panelDurationStyle)
         or drawsAuraLowTime
 
+    AddSettingsSubheading(container, "Duration Text")
+    local durationLeft, durationRight
+    if isAuraPanel then
+        durationLeft = BeginFullWidthRowGroup(container)
+        durationRight = durationLeft
+    else
+        durationLeft, durationRight = BeginRowGrid(container)
+    end
+    local lowTimeLeft, lowTimeRight
+    if drawsCooldownLowTime or drawsAuraLowTime then
+        if isAuraPanel then
+            lowTimeLeft = BeginFullWidthRowGroup(container)
+            lowTimeRight = lowTimeLeft
+        else
+            lowTimeLeft, lowTimeRight = BeginRowGrid(container)
+        end
+    end
+
+    AddSettingsSubheading(container, "Other Text")
+    local otherLeft, otherRight = BeginRowGrid(container)
+
+    AddSettingsSubheading(container, "Icon & Layout")
+    local iconLeft, iconRight = BeginRowGrid(container)
+
+    -- Dedicated override section (owner ruling 2026-08-25): one shared policy
+    -- for cooldown and aura duration phases, customized as one entry-owned
+    -- unit. The master row carries the section's scope affordance.
+    local function AddDurationLowTimeSection()
+        if not (ST._AddDurationLowTimeRows and lowTimeLeft and lowTimeRight) then return end
+        local lowTimeSec = BeginLensSection(lens, group, "durationLowTime", { column = lowTimeLeft })
+        local rightBracket = lowTimeRight ~= lowTimeLeft
+            and lowTimeSec:Bracket(lowTimeRight) or nil
+        local entryIsAuraOnly = (lens and lens.mode == "entry") and lens.buttonData
+            and ST.IsAuraSectionEntry(group, lens.buttonData)
+        -- Master row unindented and aura opt-in row: keep in step with the
+        -- icon-mode twin in GroupTabsAppearance.lua (owner ruling 2026-08-28).
+        local rows = ST._AddDurationLowTimeRows(lowTimeLeft, lowTimeSec.tbl, refreshStyle, {
+            explicitOff = lowTimeSec.scope == "customized",
+            disabled = lowTimeSec.disabled,
+            rightColumn = lowTimeRight,
+            auraOnly = ST.IsAuraPanelGroup(group) or entryIsAuraOnly,
+            auraToggle = not ST.IsAuraPanelGroup(group) and not entryIsAuraOnly
+                and BarsDrawAuraDurationRows(group, (lens and lens.effective) or group.style),
+            infoButtons = tabInfoButtons,
+            rebuild = function()
+                refreshStyle()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+        if rows and rows[1] then
+            lowTimeSec:Chrome(rows[1])
+        end
+        lowTimeSec:Finish()
+        lowTimeSec:FinishBracket(rightBracket)
+    end
+
     -- ================================================================
     -- Show Icon
     -- ================================================================
-    local iconSec = BeginLensSection(lens, group, "barIcon", { column = textLeft })
+    local iconSec = BeginLensSection(lens, group, "barIcon", { column = iconLeft })
 
-    local showIconRow = AddCheckboxRow(textLeft, {
+    local showIconRow = AddCheckboxRow(iconLeft, {
         label = "Show Icon",
         value = iconSec.read.showBarIcon ~= false,
         disabled = iconSec.disabled,
@@ -887,9 +914,9 @@ local function BuildBarAppearanceTab(container, group, style)
     iconSec:Finish()
 
     -- Show Name Text toggle
-    local nameSec = BeginLensSection(lens, group, "barNameText", { column = textLeft })
+    local nameSec = BeginLensSection(lens, group, "barNameText", { column = otherLeft })
 
-    local showNameRow = AddCheckboxRow(textLeft, {
+    local showNameRow = AddCheckboxRow(otherLeft, {
         label = "Show Name Text",
         value = nameSec.read.showBarNameText ~= false,
         disabled = nameSec.disabled,
@@ -931,7 +958,7 @@ local function BuildBarAppearanceTab(container, group, style)
         -- section. They used to hide themselves once the section was
         -- customized, which stranded the setting on some other selection
         -- state. Duration Format answers the same problem the same way (see
-        -- the row in the Text section).
+        -- the row in the Duration Text section).
         local offsetXRow, offsetYRow = AddOffsetSliders(panel, group.style, "barNameTextOffsetX", "barNameTextOffsetY", {range = 50}, refreshStyle, { row = true })
         nameSec:PanelRowChrome(offsetXRow)
         nameSec:PanelRowChrome(offsetYRow)
@@ -952,9 +979,9 @@ local function BuildBarAppearanceTab(container, group, style)
     -- that hung off it (Duration Format, Flip Time Text, the two time-text
     -- offsets) moves into the aura duration text section on the right.
     if not isAuraPanel then
-    local cdTextSec = BeginLensSection(lens, group, "cooldownText", { column = textLeft })
+    local cdTextSec = BeginLensSection(lens, group, "cooldownText", { column = durationLeft })
 
-    local showTimeRow = AddCheckboxRow(textLeft, {
+    local showTimeRow = AddCheckboxRow(durationLeft, {
         label = "Show Cooldown Text",
         value = cdTextSec.read.showCooldownText or false,
         disabled = cdTextSec.disabled,
@@ -980,29 +1007,31 @@ local function BuildBarAppearanceTab(container, group, style)
     end
     cdTextSec:Chrome(showTimeRow)
 
-    -- The inert sweep is taken HERE, ahead of Duration Format, so the sweep
-    -- covers the rows above and leaves that one live (ApplyInertRange walks the
-    -- column from the mark at call time).
-    cdTextSec:Finish()
+    if cdTextSec.read.showCooldownText == true then
+        AddDurationTextVisibilityRows(durationLeft, cdTextSec.read, cdTextSec.write,
+            "cooldown", refreshStyle, {
+                explicitOff = cdTextSec.scope == "customized",
+                disabled = cdTextSec.disabled,
+                infoButtons = tabInfoButtons,
+                rebuild = function()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+    end
 
-    -- Duration Format sits with the effective cooldown text it formats. Ready
-    -- Text is a fixed label, not a duration consumer, so it does not keep this
-    -- row alive by itself.
-    --
-    -- durationFormat is not one of the Cooldown Text section's override keys, so
-    -- the row is openly PANEL-OWNED: it reads and writes group.style whatever
-    -- the lens shows, stays live when an entry owns the section, and wears the
-    -- grey "Panel setting" label there. It used to hide itself once the section
-    -- was customized, which stranded the setting on some other selection state.
-    -- The icons tab draws it the same way (GroupTabsAppearance.lua).
+    cdTextSec:Finish()
     if drawsCooldownFormat then
-        local durationFormatRow = AddDurationFormatDropdown(textLeft, group.style, refreshStyle, { row = true })
+        local durationFormatRow = AddDurationFormatDropdown(durationLeft, group.style, refreshStyle, {
+            row = true,
+            sharedHelp = true,
+            infoButtons = tabInfoButtons,
+        })
         if durationFormatRow then
             cdTextSec:PanelRowChrome(durationFormatRow)
         end
     end
     if drawsCooldownLowTime then
-        AddDurationLowTimeSection(textLeft)
+        AddDurationLowTimeSection()
     end
     end -- not isAuraPanel
 
@@ -1010,9 +1039,9 @@ local function BuildBarAppearanceTab(container, group, style)
     -- Panel never counts anything here; the aura's own stack count is the Show
     -- Aura Stack Text row.
     if CanGroupUseOverrideSection(group, "chargeText") then
-    local chargeSec = BeginLensSection(lens, group, "chargeText", { column = textLeft })
+    local chargeSec = BeginLensSection(lens, group, "chargeText", { column = otherLeft })
 
-    local chargeTextRow = AddCheckboxRow(textLeft, {
+    local chargeTextRow = AddCheckboxRow(otherLeft, {
         label = "Show Count Text (Charges/Uses)",
         value = chargeSec.read.showChargeText ~= false,
         disabled = chargeSec.disabled,
@@ -1070,9 +1099,9 @@ local function BuildBarAppearanceTab(container, group, style)
     -- Show Ready Text toggle. "Ready" is the off-cooldown state, so an Aura
     -- Panel bar never reaches it.
     if CanGroupUseOverrideSection(group, "barReadyText") then
-    local readySec = BeginLensSection(lens, group, "barReadyText", { column = textLeft })
+    local readySec = BeginLensSection(lens, group, "barReadyText", { column = otherLeft })
 
-    local showReadyRow = AddCheckboxRow(textLeft, {
+    local showReadyRow = AddCheckboxRow(otherLeft, {
         label = "Show Ready Text",
         value = readySec.read.showBarReadyText or false,
         disabled = readySec.disabled,
@@ -1137,9 +1166,9 @@ local function BuildBarAppearanceTab(container, group, style)
         -- Aura duration text: rendered by the aura display at the bar's time
         -- text position (it follows the Flip Time Text and offset settings
         -- from the Cooldown Text section).
-        local auraTextSec = BeginLensSection(lens, group, "auraText", { column = textRight })
+        local auraTextSec = BeginLensSection(lens, group, "auraText", { column = durationRight })
 
-        local auraTextRow = AddCheckboxRow(textRight, {
+        local auraTextRow = AddCheckboxRow(durationRight, {
             label = "Show Aura Duration Text",
             value = auraTextSec.read.showAuraText ~= false,
             disabled = auraTextSec.disabled,
@@ -1215,26 +1244,39 @@ local function BuildBarAppearanceTab(container, group, style)
         }, auraTextRow))
         auraTextSec:Chrome(auraTextRow)
 
-        auraTextSec:Finish()
+        if auraTextSec.read.showAuraText ~= false then
+            AddDurationTextVisibilityRows(durationRight, auraTextSec.read, auraTextSec.write,
+                "aura", refreshStyle, {
+                    explicitOff = auraTextSec.scope == "customized",
+                    disabled = auraTextSec.disabled,
+                    infoButtons = tabInfoButtons,
+                    rebuild = function()
+                        CooldownCompanion:RefreshConfigPanel()
+                    end,
+                })
+        end
 
-        -- Duration Format is panel-owned, so it follows either the panel's or
-        -- selected entry's remaining duration surface. Low Time stays
-        -- entry-effective because that override section belongs to the lens.
+        auraTextSec:Finish()
         if drawsAuraFormat and not drawsCooldownFormat then
-            local auraFormatRow = AddDurationFormatDropdown(textRight, group.style, refreshStyle, { row = true })
+            local auraFormatRow = AddDurationFormatDropdown(durationLeft, group.style, refreshStyle, {
+                row = true,
+                sharedHelp = true,
+                infoButtons = tabInfoButtons,
+            })
             if auraFormatRow then
                 auraTextSec:PanelRowChrome(auraFormatRow)
             end
         end
+
         if drawsAuraLowTime and not drawsCooldownLowTime then
-            AddDurationLowTimeSection(textRight)
+            AddDurationLowTimeSection()
         end
 
         -- Aura stack text: Blizzard writes the live stack count; anchored to
         -- the icon square (or the bar with the icon hidden).
-        local auraStackSec = BeginLensSection(lens, group, "auraStackText", { column = textRight })
+        local auraStackSec = BeginLensSection(lens, group, "auraStackText", { column = otherRight })
 
-        local auraStackRow = AddCheckboxRow(textRight, {
+        local auraStackRow = AddCheckboxRow(otherRight, {
             label = "Show Aura Stack Text",
             value = auraStackSec.read.showAuraStackText ~= false,
             disabled = auraStackSec.disabled,
@@ -1286,8 +1328,8 @@ local function BuildBarAppearanceTab(container, group, style)
     -- skipped the way the lens sections' are: compact mode is group data with
     -- no second table to bind a gear to, so the inert walk disables and dims it
     -- instead (the icons tab does exactly this).
-    local compactSec = BeginLensSection(lens, group, nil, { column = textRight })
-    BuildCompactModeControls(textRight, group, tabInfoButtons)
+    local compactSec = BeginLensSection(lens, group, nil, { column = iconRight })
+    BuildCompactModeControls(iconRight, group, tabInfoButtons)
     compactSec:Finish()
     end -- not textIconCollapsed
 

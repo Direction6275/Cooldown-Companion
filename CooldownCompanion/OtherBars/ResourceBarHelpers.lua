@@ -305,6 +305,8 @@ local customBarContentFields = {
     "durationLowTimeThreshold2",
     "durationLowTimeColor2",
     "durationLowTimeAuras",
+    "cooldownTextVisibilityThreshold",
+    "auraTextVisibilityThreshold",
     "showStackText",
     "showText",
     "stackTextFormat",

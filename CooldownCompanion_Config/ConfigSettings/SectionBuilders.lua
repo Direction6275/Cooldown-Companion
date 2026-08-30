@@ -10,6 +10,8 @@ local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
+local ColorHeading = ST._ColorHeading
+local ApplyLeftAlignedHeading = ST._ApplyLeftAlignedHeading
 
 -- Imports from RowWidgets.lua (the row grammar). Every builder in this file
 -- draws from these: the pre-redesign stock shapes are gone, so there is only
@@ -390,33 +392,142 @@ local function RefreshStructuralControls(container)
     end
 end
 
--- Row grammar only (RowWidgets.lua): opts.indent makes it a child row and
--- opts.pulloutWidth widens its menu. No default pullout width: the longest
--- option ("1:30 / 45.0 / 8.7") sizes fine against the 140px control column.
--- The pre-redesign full-width stock Dropdown had no call sites left after the
--- conversion packets.
+-- Shared Duration Format row used by panel and custom-bar duration sections.
 local function AddDurationFormatDropdown(container, settings, refreshCallback, opts)
     if not (container and settings and CooldownCompanion.GetDurationFormatOptions) then
         return nil
     end
+    opts = opts or {}
 
     local formatOptions, formatOrder = CooldownCompanion:GetDurationFormatOptions()
 
-    return AddDropdownRow(container, {
+    local row = AddDropdownRow(container, {
         label = "Duration Format",
-        indent = opts and opts.indent,
-        pulloutWidth = opts and opts.pulloutWidth,
+        indent = opts.indent,
+        pulloutWidth = opts.pulloutWidth,
         list = formatOptions,
         order = formatOrder,
         value = CooldownCompanion.GetDurationFormat(settings),
-        onChange = function(val)
-            settings.durationFormat = CooldownCompanion.NormalizeDurationFormat(val)
+        onChange = function(value)
+            settings.durationFormat = CooldownCompanion.NormalizeDurationFormat(value)
             settings.decimalTimers = nil
             if refreshCallback then
                 refreshCallback()
             end
         end,
     })
+
+    if opts.sharedHelp then
+        AnchorRowBadge(row, CreateInfoButton(row.frame, row.frame,
+            "LEFT", "LEFT", 0, 0, {
+                "Duration Format",
+                {"Applies to cooldown and aura duration text.", 1, 1, 1, true},
+            }, opts.infoButtons or row))
+    end
+
+    return row
+end
+
+-- A quiet, non-collapsible divider inside an existing settings section. It
+-- reuses the shared row-grammar heading anatomy but deliberately owns no
+-- collapse key: these labels organize one editing surface rather than add a
+-- second layer of remembered open/closed state.
+local function AddSettingsSubheading(container, text)
+    if not (container and text) then return nil end
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(text)
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+    ApplyLeftAlignedHeading(heading, nil, true)
+    return heading
+end
+
+local DURATION_VISIBILITY_DEFAULT = 10
+local DURATION_VISIBILITY_MODES = {
+    always = "Always",
+    last = "Last Seconds",
+}
+local DURATION_VISIBILITY_MODE_ORDER = { "always", "last" }
+local DURATION_VISIBILITY_TOOLTIP = {
+    "Duration Text Visibility",
+    {"Always shows this duration text, or reveals it only during the selected final seconds.", 1, 1, 1, true},
+    {"Cooldown and aura duration text use independent windows.", 1, 1, 1, true},
+}
+
+-- Shared main-surface controls for cooldown and aura duration visibility.
+-- Continuous slider motion is preview-only: the candidate value is written
+-- just long enough for the pinned mirror to render, then restored. Release
+-- commits once and rebuilds the owning config surface. A read-only inherited
+-- section still draws its effective mode and threshold, but every row is inert.
+local function AddDurationTextVisibilityRows(container, readSettings, writeSettings, kind,
+        commitCallback, opts)
+    if not (container and readSettings) then return nil end
+    opts = opts or {}
+    local key = kind == "aura"
+        and "auraTextVisibilityThreshold"
+        or "cooldownTextVisibilityThreshold"
+    local resolver = CooldownCompanion.GetDurationTextVisibilityThreshold
+    local threshold = resolver and resolver(readSettings, kind)
+    local disabledValue = opts.explicitOff and false or nil
+    local disabled = opts.disabled == true or writeSettings == nil
+
+    local function commitAndRebuild()
+        if commitCallback then commitCallback() end
+        if opts.rebuild then opts.rebuild() end
+    end
+
+    local rows = {}
+    local modeRow = AddDropdownRow(container, {
+        label = opts.modeLabel or "Visible",
+        indent = opts.indent ~= false,
+        list = DURATION_VISIBILITY_MODES,
+        order = DURATION_VISIBILITY_MODE_ORDER,
+        value = threshold and "last" or "always",
+        disabled = disabled,
+        onChange = function(value)
+            if disabled then return end
+            if value == "last" then
+                local current = resolver and resolver(readSettings, kind)
+                writeSettings[key] = current or DURATION_VISIBILITY_DEFAULT
+            else
+                writeSettings[key] = disabledValue
+            end
+            commitAndRebuild()
+        end,
+    })
+    AnchorRowBadge(modeRow, CreateInfoButton(modeRow.frame, modeRow.frame,
+        "LEFT", "LEFT", 0, 0, DURATION_VISIBILITY_TOOLTIP,
+        opts.infoButtons or modeRow))
+    rows[1] = modeRow
+
+    if threshold then
+        rows[2] = AddSliderRow(container, {
+            label = opts.sliderLabel or "Show During Last",
+            indent = true,
+            min = 1, max = 60, step = 1,
+            value = threshold,
+            disabled = disabled,
+            onChange = function(value)
+                if disabled then return end
+                local previous = rawget(writeSettings, key)
+                writeSettings[key] = math.floor(value + 0.5)
+                if opts.preview then
+                    opts.preview()
+                elseif ST._RefreshButtonsPreviewMirror then
+                    ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
+                end
+                writeSettings[key] = previous
+            end,
+            onRelease = function(value)
+                if disabled then return end
+                writeSettings[key] = math.floor(value + 0.5)
+                commitAndRebuild()
+            end,
+        })
+    end
+
+    return rows
 end
 
 -- Low Time Threshold rows (2026-08-15 program, aura extension ruled
@@ -436,27 +547,42 @@ end
 --   rebuild      structural re-render for toggles that add/remove rows;
 --                falls back to refreshCallback
 --   explicitOff  preserve 0/false in a metatable-backed entry override
---   auraToggle   draw the "Apply to Aura Text" opt-in row; passed only on
+--   rightColumn  optional second rail for scope and urgent-color controls
+--   auraOnly     label the policy as aura-owned and omit the scope toggle
+--   auraToggle   draw the "Also Apply to Aura Text" opt-in row; passed only on
 --                surfaces with both cooldown and aura text (aura-only
 --                surfaces apply unconditionally and never draw it)
-local LOW_TIME_DEFAULT_COLOR = { 1, 0.2, 0.2, 1 }
-local LOW_TIME_DEFAULT_COLOR2 = { 1, 0.55, 0.1, 1 }
+local LOW_TIME_DEFAULT_THRESHOLD = 10
+local LOW_TIME_DEFAULT_THRESHOLD2 = 5
+local LOW_TIME_DEFAULT_COLOR = { 1, 0.55, 0.1, 1 }
+local LOW_TIME_DEFAULT_COLOR2 = { 1, 0.2, 0.2, 1 }
 local LOW_TIME_TOOLTIP = {
-    "Low Time Threshold",
-    {"Changes duration text below the chosen seconds.", 1, 1, 1, true},
+    "Change Text Near Expiry",
+    {"Changes duration text during the selected final seconds.", 1, 1, 1, true},
     {"With Pandemic: Low Time wins over whole-text color; marker-only color still colors the marker.", 1, 1, 1, true},
 }
 local LOW_TIME_SECOND_TOOLTIP = {
-    "Second Threshold",
-    {"An even more urgent window with its own color.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"0 turns it off.", 1, 1, 1, true},
+    "Add Critical Styling",
+    {"Adds a shorter critical window with its own text color.", 1, 1, 1, true},
 }
 local LOW_TIME_AURA_TOOLTIP = {
-    "Apply to Aura Text",
-    {"Low Time affects cooldown text.", 1, 1, 1, true},
+    "Also Apply to Aura Text",
+    {"Near-expiry styling affects cooldown text by default.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Check to affect aura duration text too.", 1, 1, 1, true},
+    {"Enable this to style aura duration text too.", 1, 1, 1, true},
+}
+local LOW_TIME_DECIMAL_MODES = {
+    off = "Off",
+    first = "Warning Only",
+    urgent = "Critical Only",
+    both = "Warning + Critical",
+}
+local LOW_TIME_DECIMAL_MODE_ORDER = { "off", "first", "urgent", "both" }
+local LOW_TIME_DECIMAL_TOOLTIP = {
+    "Show Decimals Near Expiry",
+    {"Choose which near-expiry window shows tenths of a second.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Critical choices take effect when Critical Styling is enabled.", 1, 1, 1, true},
 }
 
 local function AddDurationLowTimeRows(container, settings, refreshCallback, opts)
@@ -472,18 +598,41 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
         if refreshCallback then refreshCallback() end
     end
     local rebuild = opts.rebuild or refresh
+    local secondary = opts.rightColumn or container
+    local disabled = opts.disabled == true
+
+    local function previewValue(key, value)
+        if disabled then return end
+        local previous = rawget(settings, key)
+        settings[key] = value
+        if opts.preview then
+            opts.preview()
+        elseif ST._RefreshButtonsPreviewMirror then
+            ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
+        end
+        settings[key] = previous
+    end
 
     local threshold = tonumber(settings.durationLowTimeThreshold)
     local active = threshold ~= nil and threshold > 0
-
+    local summaryTarget
+    if opts.auraOnly then
+        summaryTarget = "Aura"
+    elseif opts.auraToggle and settings.durationLowTimeAuras == true then
+        summaryTarget = "Cooldown + Aura"
+    else
+        summaryTarget = "Cooldown"
+    end
     local rows = {}
     local toggleRow = AddCheckboxRow(container, {
-        label = "Low Time Threshold",
+        label = "Change Text Near Expiry",
         indent = opts.indent,
         value = active,
+        disabled = disabled,
         onChange = function(value)
+            if disabled then return end
             if value then
-                settings.durationLowTimeThreshold = 5
+                settings.durationLowTimeThreshold = LOW_TIME_DEFAULT_THRESHOLD
                 -- The color is the point of enabling (owner ruling: no color
                 -- toggle, the picker is always live), so seed it on enable.
                 if settings.durationLowTimeColor == nil then
@@ -495,8 +644,8 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
                 -- 2026-08-16: re-enable could show a second window the
                 -- runtime rejects).
                 local second = tonumber(settings.durationLowTimeThreshold2)
-                if second and second >= 5 then
-                    settings.durationLowTimeThreshold2 = 4
+                if second and second >= LOW_TIME_DEFAULT_THRESHOLD then
+                    settings.durationLowTimeThreshold2 = LOW_TIME_DEFAULT_THRESHOLD2
                 end
             else
                 settings.durationLowTimeThreshold = disabledThresholdValue
@@ -514,12 +663,24 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
         return rows
     end
 
+    rows[#rows + 1] = AddLabelRow(container, {
+        label = "|cffc9aa63Below " .. threshold .. "s · " .. summaryTarget .. "|r",
+        indent = true,
+        disabled = disabled,
+    })
+
     rows[#rows + 1] = AddSliderRow(container, {
-        label = "Low Time Seconds",
+        label = "Start Warning Below",
         indent = true,
         min = 1, max = 30, step = 1,
         value = threshold,
+        disabled = disabled,
+        onChange = function(value)
+            previewValue("durationLowTimeThreshold", math.floor(value + 0.5))
+        end,
         onRelease = function(value)
+            if disabled then return end
+            value = math.floor(value + 0.5)
             settings.durationLowTimeThreshold = value
             -- The second window must stay strictly inside the first; a
             -- shrink drags it along (0 = off). Rebuild keeps the second
@@ -536,85 +697,27 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
     -- No enable toggle on the colors (owner ruling): the pickers are the
     -- setting. Stock checkbox rows stay the only toggles here.
     rows[#rows + 1] = AddColorRow(container, {
-        label = "Low Time Color",
+        label = "Warning Color",
         indent = true,
         tbl = settings,
         key = "durationLowTimeColor",
         default = LOW_TIME_DEFAULT_COLOR,
+        disabled = disabled,
         onConfirm = refresh,
+        onChange = opts.preview,
     })
 
-    -- Second, more urgent window: the slider IS its switch (0 = off), so no
-    -- extra checkbox. Its color row rides only while it is on.
-    local threshold2 = tonumber(settings.durationLowTimeThreshold2) or 0
-    local secondRow = AddSliderRow(container, {
-        label = "Second Threshold",
-        indent = true,
-        min = 0, max = 29, step = 1,
-        value = threshold2,
-        onRelease = function(value)
-            local first = tonumber(settings.durationLowTimeThreshold) or 5
-            if value >= first then
-                value = first - 1
-            end
-            if value <= 0 then
-                settings.durationLowTimeThreshold2 = disabledThresholdValue
-            else
-                settings.durationLowTimeThreshold2 = value
-                if settings.durationLowTimeColor2 == nil then
-                    local c = LOW_TIME_DEFAULT_COLOR2
-                    settings.durationLowTimeColor2 = { c[1], c[2], c[3], c[4] }
-                end
-            end
-            rebuild()
-        end,
-    })
-    AnchorRowBadge(secondRow, CreateInfoButton(secondRow.frame, secondRow.frame, "LEFT", "LEFT", 0, 0,
-        LOW_TIME_SECOND_TOOLTIP, opts.infoButtons or secondRow))
-    rows[#rows + 1] = secondRow
-
-    -- Visibility follows the runtime validity rule (strictly inside the
-    -- first window), so the UI can never show a second color the engine is
-    -- ignoring — even on hand-edited or imported data.
-    if threshold2 > 0 and threshold2 < (tonumber(settings.durationLowTimeThreshold) or 0) then
-        rows[#rows + 1] = AddColorRow(container, {
-            label = "Second Color",
-            indent = true,
-            tbl = settings,
-            key = "durationLowTimeColor2",
-            default = LOW_TIME_DEFAULT_COLOR2,
-            onConfirm = refresh,
-        })
-    end
-
-    -- Last row (owner ruling): it modifies both windows above, so it reads
-    -- as a footnote to them rather than splitting the threshold/color pairs.
-    rows[#rows + 1] = AddCheckboxRow(container, {
-        label = "Force Decimals",
-        indent = true,
-        value = settings.durationLowTimeDecimals == true,
-        onChange = function(value)
-            if value == true then
-                settings.durationLowTimeDecimals = true
-            elseif explicitOff then
-                settings.durationLowTimeDecimals = false
-            else
-                settings.durationLowTimeDecimals = nil
-            end
-            refresh()
-        end,
-    })
-
-    -- Aura application is opt-in (owner ruling 2026-08-28): by default the
-    -- policy colors cooldown text only. Callers pass auraToggle only on
-    -- surfaces with BOTH text kinds; aura-only surfaces (Aura Panels,
-    -- standalone aura bars) apply unconditionally and never draw this row.
+    -- Scope stays simple on mixed surfaces: cooldown is the base consumer and
+    -- aura is the one optional extension. Aura-only surfaces state their scope
+    -- in the summary and draw no redundant toggle.
     if opts.auraToggle then
-        local auraRow = AddCheckboxRow(container, {
-            label = "Apply to Aura Text",
+        local auraRow = AddCheckboxRow(secondary, {
+            label = "Also Apply to Aura Text",
             indent = true,
             value = settings.durationLowTimeAuras == true,
+            disabled = disabled,
             onChange = function(value)
+                if disabled then return end
                 if value == true then
                     settings.durationLowTimeAuras = true
                 elseif explicitOff then
@@ -622,13 +725,100 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
                 else
                     settings.durationLowTimeAuras = nil
                 end
-                refresh()
+                rebuild()
             end,
         })
         AnchorRowBadge(auraRow, CreateInfoButton(auraRow.frame, auraRow.frame, "LEFT", "LEFT", 0, 0,
             LOW_TIME_AURA_TOOLTIP, opts.infoButtons or auraRow))
         rows[#rows + 1] = auraRow
     end
+
+    -- Second, more urgent window gets a real on/off control. The persisted
+    -- contract stays unchanged: a positive threshold means on; nil/0 means off.
+    local threshold2 = tonumber(settings.durationLowTimeThreshold2) or 0
+    local secondActive = threshold2 > 0 and threshold2 < threshold
+    local urgentAvailable = threshold > 1
+    local secondToggle = AddCheckboxRow(secondary, {
+        label = "Add Critical Styling",
+        indent = true,
+        value = secondActive,
+        disabled = disabled or not urgentAvailable,
+        onChange = function(value)
+            if disabled or not urgentAvailable then return end
+            if value then
+                settings.durationLowTimeThreshold2 = math.min(LOW_TIME_DEFAULT_THRESHOLD2, threshold - 1)
+                if settings.durationLowTimeColor2 == nil then
+                    local c = LOW_TIME_DEFAULT_COLOR2
+                    settings.durationLowTimeColor2 = { c[1], c[2], c[3], c[4] }
+                end
+            else
+                settings.durationLowTimeThreshold2 = disabledThresholdValue
+            end
+            rebuild()
+        end,
+    })
+    AnchorRowBadge(secondToggle, CreateInfoButton(secondToggle.frame, secondToggle.frame, "LEFT", "LEFT", 0, 0,
+        urgentAvailable and LOW_TIME_SECOND_TOOLTIP or {
+            "Add Critical Styling",
+            {"Available when Start Warning Below is at least 2 seconds.", 1, 1, 1, true},
+        }, opts.infoButtons or secondToggle))
+    rows[#rows + 1] = secondToggle
+
+    if secondActive then
+        rows[#rows + 1] = AddSliderRow(secondary, {
+            label = "Start Critical Below",
+            indent = true,
+            min = 1, max = threshold - 1, step = 1,
+            value = threshold2,
+            disabled = disabled,
+            onChange = function(value)
+                previewValue("durationLowTimeThreshold2", math.floor(value + 0.5))
+            end,
+            onRelease = function(value)
+                if disabled then return end
+                settings.durationLowTimeThreshold2 = math.min(
+                    math.floor(value + 0.5),
+                    (tonumber(settings.durationLowTimeThreshold) or 5) - 1)
+                rebuild()
+            end,
+        })
+        rows[#rows + 1] = AddColorRow(secondary, {
+            label = "Critical Color",
+            indent = true,
+            tbl = settings,
+            key = "durationLowTimeColor2",
+            default = LOW_TIME_DEFAULT_COLOR2,
+            disabled = disabled,
+            onConfirm = refresh,
+            onChange = opts.preview,
+        })
+    end
+
+    local decimalMode = CooldownCompanion.NormalizeDurationLowTimeDecimals(
+        settings.durationLowTimeDecimals) or "off"
+    local decimalRow = AddDropdownRow(container, {
+        label = "Show Decimals Near Expiry",
+        indent = true,
+        pulloutWidth = WIDE_PULLOUT_WIDTH,
+        list = LOW_TIME_DECIMAL_MODES,
+        order = LOW_TIME_DECIMAL_MODE_ORDER,
+        value = decimalMode,
+        disabled = disabled,
+        onChange = function(value)
+            if disabled then return end
+            if value == "off" then
+                settings.durationLowTimeDecimals = explicitOff and false or nil
+            elseif LOW_TIME_DECIMAL_MODES[value] then
+                settings.durationLowTimeDecimals = value
+            else
+                return
+            end
+            refresh()
+        end,
+    })
+    AnchorRowBadge(decimalRow, CreateInfoButton(decimalRow.frame, decimalRow.frame, "LEFT", "LEFT", 0, 0,
+        LOW_TIME_DECIMAL_TOOLTIP, opts.infoButtons or decimalRow))
+    rows[#rows + 1] = decimalRow
 
     return rows
 end
@@ -2431,6 +2621,8 @@ end
 -- EXPORTS
 ------------------------------------------------------------------------
 ST._AddDurationFormatDropdown = AddDurationFormatDropdown
+ST._AddSettingsSubheading = AddSettingsSubheading
+ST._AddDurationTextVisibilityRows = AddDurationTextVisibilityRows
 ST._AddDurationLowTimeRows = AddDurationLowTimeRows
 ST._AddPandemicMarkerControls = AddPandemicMarkerControls
 ST._ReconcilePandemicMarkerPreview = ReconcilePandemicMarkerPreview

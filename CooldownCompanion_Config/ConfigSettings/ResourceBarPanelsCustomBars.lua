@@ -21,6 +21,9 @@ local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local AddFontControls = ST._AddFontControls
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
+local AddDurationTextVisibilityRows = ST._AddDurationTextVisibilityRows
+local AddSettingsSubheading = ST._AddSettingsSubheading
+local BeginFullWidthRowGroup = ST._BeginFullWidthRowGroup
 
 -- Imports from RowWidgets.lua (the row grammar). The rules every row-grammar
 -- section follows are stated once, in the recipe comment at the top of
@@ -1811,15 +1814,37 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                 end
 
                 if not textsCollapsed then
-                    -- One text per column: each carries its own gear, and the
-                    -- two are independent, so neither has to stay adjacent to
-                    -- anything.
-                    local textsLeft, textsRight = BeginRowGrid(container)
-
                     local showDurationControls = capabilities.durationConsumer
+                    local showDuration = showDurationControls and cab.showDurationText == true
+                    local durationLeft, durationRight
+                    local lowTimeLeft, lowTimeRight
+                    if showDurationControls then
+                        AddSettingsSubheading(container, "Duration Text")
+                        if isSpellCustomBar and isAuraTracked then
+                            durationLeft, durationRight = BeginRowGrid(container)
+                        else
+                            durationLeft = BeginFullWidthRowGroup(container)
+                            durationRight = durationLeft
+                        end
+                        if showDuration then
+                            if isSpellCustomBar and isAuraTracked then
+                                lowTimeLeft, lowTimeRight = BeginRowGrid(container)
+                            else
+                                lowTimeLeft = BeginFullWidthRowGroup(container)
+                                lowTimeRight = lowTimeLeft
+                            end
+                        end
+                    end
+
+                    local otherLeft
+                    if capabilities.countConsumer then
+                        AddSettingsSubheading(container, "Other Text")
+                        otherLeft = BeginFullWidthRowGroup(container)
+                    end
+
                     local durationTextRow
                     if showDurationControls then
-                        durationTextRow = AddCheckboxRow(textsLeft, {
+                        durationTextRow = AddCheckboxRow(durationLeft, {
                             label = "Show Duration Text",
                             value = cab.showDurationText == true,
                             onChange = function(val)
@@ -1848,7 +1873,7 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                         or "Show Stack Text"
                     local stackTextRow
                     if capabilities.countConsumer then
-                        stackTextRow = AddCheckboxRow(textsRight, {
+                        stackTextRow = AddCheckboxRow(otherLeft, {
                             label = stackTextLabel,
                             value = stackVal == true,
                             onChange = function(val)
@@ -1859,7 +1884,6 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                         })
                     end
 
-                    local showDuration = showDurationControls and cab.showDurationText == true
                     local showStack = capabilities.countConsumer and stackVal == true
                     -- The font trio's store keys are exactly durationTextFont /
                     -- durationTextFontSize / durationTextFontOutline, so the
@@ -1891,22 +1915,6 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                             onChange = cabPreviewOnly,
                             deferCommit = true,
                         })
-
-                        AddDurationFormatDropdown(panel, customBars[cabIdx], cabApplyBars, { row = true })
-                        -- One shared policy for both custom-bar phases. Spell
-                        -- bars use it for cooldown and tracked-aura duration;
-                        -- standalone aura bars use it for their aura duration.
-                        if ST._AddDurationLowTimeRows then
-                            -- Spell bars carry the aura opt-in (their tracked
-                            -- aura phase follows it); a standalone aura bar's
-                            -- duration text is the policy's only consumer, so
-                            -- it applies unconditionally and hides the row.
-                            ST._AddDurationLowTimeRows(panel, customBars[cabIdx], cabApplyBars, {
-                                indent = true,
-                                auraToggle = isSpellCustomBar,
-                                rebuild = RefreshCustomBarAuraConfig,
-                            })
-                        end
                     end
 
                     if showDurationControls then
@@ -1914,6 +1922,53 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                             title = "Duration Text Advanced",
                             build = BuildDurationTextAdvanced,
                         })
+                    end
+
+                    if showDuration then
+                        if isSpellCustomBar then
+                            AddDurationTextVisibilityRows(
+                                durationLeft, customBars[cabIdx], customBars[cabIdx],
+                                "cooldown", nil, {
+                                    modeLabel = isAuraTracked and "Cooldown Visibility" or "Visible",
+                                    sliderLabel = isAuraTracked
+                                        and "Cooldown: Show During Last" or "Show During Last",
+                                    infoButtons = infoButtons,
+                                    preview = cabPreviewOnly,
+                                    rebuild = RefreshCustomBarAuraConfig,
+                                })
+                        end
+                        if not isSpellCustomBar or isAuraTracked then
+                            local auraHost = isSpellCustomBar and durationRight or durationLeft
+                            AddDurationTextVisibilityRows(
+                                auraHost, customBars[cabIdx], customBars[cabIdx],
+                                "aura", nil, {
+                                    modeLabel = isSpellCustomBar and "Aura Visibility" or "Visible",
+                                    sliderLabel = isSpellCustomBar
+                                        and "Aura: Show During Last" or "Show During Last",
+                                    infoButtons = infoButtons,
+                                    preview = cabPreviewOnly,
+                                    rebuild = RefreshCustomBarAuraConfig,
+                                })
+                        end
+
+                        AddDurationFormatDropdown(
+                            durationLeft, customBars[cabIdx], cabApplyBars, {
+                                row = true,
+                                sharedHelp = isSpellCustomBar and isAuraTracked,
+                                infoButtons = infoButtons,
+                            })
+
+                        if ST._AddDurationLowTimeRows then
+                            ST._AddDurationLowTimeRows(
+                                lowTimeLeft, customBars[cabIdx], cabApplyBars, {
+                                    rightColumn = lowTimeRight,
+                                    auraOnly = not isSpellCustomBar,
+                                    auraToggle = isSpellCustomBar and isAuraTracked,
+                                    infoButtons = infoButtons,
+                                    preview = cabPreviewOnly,
+                                    rebuild = RefreshCustomBarAuraConfig,
+                                })
+                        end
                     end
 
                     local function BuildStackTextAdvanced(panel)

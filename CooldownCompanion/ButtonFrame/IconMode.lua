@@ -1241,7 +1241,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
                 -- SetFont; a mid-phase restyle installs the cooldown-lane
                 -- formatter and this edge re-resolves on the next tick.
                 ApplyDurationFormatToCooldown(button.cooldown, style,
-                    CooldownCompanion.AllowAuraDurationLowTime(style, false))
+                    CooldownCompanion.AllowAuraDurationLowTime(style, false), "aura")
             else
                 ApplyFontStyle(button._cdTextRegion, style, "cooldown")
                 ApplyDurationFormatToCooldown(button.cooldown, style)

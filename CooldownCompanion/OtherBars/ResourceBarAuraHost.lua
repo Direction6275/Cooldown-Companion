@@ -376,6 +376,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
         style.auraStackFont, style.auraStackFontSize, style.auraStackFontOutline, style.auraStackFontColor =
             ResolveCustomBarFont(cabConfig, "stackText")
         style.showAuraText = cabConfig.showDurationText == true
+        style.auraTextVisibilityThreshold = cabConfig.auraTextVisibilityThreshold
         -- Duration Format + Low Time Threshold: the kit's SetDurationText bind
         -- resolves the same shared policy the bar's CC-side cooldown phase and
         -- preview read off the cab config.
