@@ -519,6 +519,44 @@ local function ApplyPanelDisplayModeChange(panelId, containerId, targetMode, fla
 end
 ST._ApplyPanelDisplayModeChange = ApplyPanelDisplayModeChange
 
+local function TogglePanelAnchorLock(panelId)
+    local panel = CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[panelId]
+    if not panel
+        or (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel)) then
+        return false
+    end
+
+    local isLocked = panel.locked ~= false
+    CooldownCompanion:SetPanelLocked(panelId, not isLocked)
+    if isLocked then
+        CooldownCompanion:Print((panel.name or "Panel") .. " unlocked. Drag to reposition.")
+    else
+        CooldownCompanion:Print((panel.name or "Panel") .. " locked.")
+    end
+    CooldownCompanion:RefreshConfigPanel()
+    if isLocked and ST.CollapseConfigForUnlock then
+        ST.CollapseConfigForUnlock()
+    end
+    return true
+end
+ST._TogglePanelAnchorLock = TogglePanelAnchorLock
+
+local function ToggleContainerLock(containerId)
+    local containers = CooldownCompanion.db.profile.groupContainers
+    local container = containers and containers[containerId]
+    if not container then return false end
+
+    local isLocked = container.locked ~= false
+    CooldownCompanion:SetContainerLocked(containerId, not isLocked)
+    CooldownCompanion:RefreshConfigPanel()
+    if isLocked and ST.CollapseConfigForUnlock then
+        ST.CollapseConfigForUnlock()
+    elseif not isLocked then
+        CooldownCompanion:CheckArrangeModeAutoExit()
+    end
+    return true
+end
+
 local function ShowPanelContextMenu(panelId, containerId)
     local db = CooldownCompanion.db.profile
     local panel = db.groups and db.groups[panelId]
@@ -572,17 +610,7 @@ local function ShowPanelContextMenu(panelId, containerId)
                 info.notCheckable = true
                 info.func = function()
                     CloseDropDownMenus()
-                    local isLocked = panel.locked ~= false
-                    CooldownCompanion:SetPanelLocked(panelId, not isLocked)
-                    if isLocked then
-                        CooldownCompanion:Print((panel.name or "Panel") .. " unlocked. Drag to reposition.")
-                    else
-                        CooldownCompanion:Print((panel.name or "Panel") .. " locked.")
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
-                    if isLocked and ST.CollapseConfigForUnlock then
-                        ST.CollapseConfigForUnlock()
-                    end
+                    TogglePanelAnchorLock(panelId)
                 end
                 UIDropDownMenu_AddButton(info, level)
             end
@@ -902,14 +930,7 @@ local function ShowContainerContextMenu(db, containerId, container)
             info.notCheckable = true
             info.func = function()
                 CloseDropDownMenus()
-                local isLocked = container.locked ~= false
-                CooldownCompanion:SetContainerLocked(containerId, not isLocked)
-                CooldownCompanion:RefreshConfigPanel()
-                if isLocked and ST.CollapseConfigForUnlock then
-                    ST.CollapseConfigForUnlock()
-                elseif not isLocked then
-                    CooldownCompanion:CheckArrangeModeAutoExit()
-                end
+                ToggleContainerLock(containerId)
             end
             UIDropDownMenu_AddButton(info, level)
 
@@ -2175,6 +2196,8 @@ local function RefreshColumn1(preserveDrag)
                 end
             elseif button == "RightButton" then
                 ShowContainerContextMenu(db, containerId, container)
+            elseif button == "MiddleButton" and not browsePanels then
+                ToggleContainerLock(containerId)
             end
         end)
 
@@ -2454,6 +2477,8 @@ local function RefreshColumn1(preserveDrag)
                         end
                     elseif button == "RightButton" and ST._ShowPanelContextMenu then
                         ST._ShowPanelContextMenu(panelId, containerId)
+                    elseif button == "MiddleButton" and not browsePanels then
+                        TogglePanelAnchorLock(panelId)
                     end
                 end)
 
