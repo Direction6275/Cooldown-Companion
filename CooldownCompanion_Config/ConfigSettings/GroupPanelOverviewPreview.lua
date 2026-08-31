@@ -262,7 +262,7 @@ local function EnsureTile(overview, index)
     tile:SetClipsChildren(true)
     tile.borderTextures = ST.CreateBorderTextureSet(tile, "OVERLAY", 7)
     ApplyTileBorder(tile, TILE_BORDER_COLOR)
-    tile:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    tile:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
     tile:EnableMouseWheel(true)
 
     local visualHost = CreateFrame("Frame", nil, tile)
@@ -304,6 +304,10 @@ local function EnsureTile(overview, index)
         elseif button == "RightButton" and ST._ShowPanelContextMenu then
             GameTooltip:Hide()
             ST._ShowPanelContextMenu(record.panelId, record.containerId)
+        elseif button == "MiddleButton" and record.canToggleAnchorLock
+            and ST._TogglePanelAnchorLock then
+            GameTooltip:Hide()
+            ST._TogglePanelAnchorLock(record.panelId)
         end
     end)
     tile:SetScript("OnEnter", function(self)
@@ -315,6 +319,9 @@ local function EnsureTile(overview, index)
         GameTooltip:SetText(record.name, 1, 1, 1)
         GameTooltip:AddLine("Click to configure", 0.72, 0.82, 0.92)
         GameTooltip:AddLine("Right-click for options", 0.62, 0.72, 0.82)
+        if record.canToggleAnchorLock then
+            GameTooltip:AddLine("Middle-click to lock/unlock", 0.62, 0.72, 0.82)
+        end
         if record.hasAttachedResources then
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("Resource Bars are attached to this panel.",
@@ -1350,6 +1357,8 @@ function ST._BuildGroupPanelOverview(host, containerId)
     end
 
     local records = {}
+    local browsingOtherClasses = ST._configState
+        and ST._configState.otherClassLibraryActive == true
     for index, panelInfo in ipairs(panels) do
         local tile = EnsureTile(overview, index)
         local naturalWidth, naturalHeight =
@@ -1362,6 +1371,9 @@ function ST._BuildGroupPanelOverview(host, containerId)
             naturalWidth = math_max(1, tonumber(naturalWidth) or 220),
             naturalHeight = math_max(1, tonumber(naturalHeight) or 90),
             hasAttachedResources = attachedResourcePanelId == panelInfo.groupId,
+            canToggleAnchorLock = not browsingOtherClasses
+                and not (CooldownCompanion.IsGroupCursorAnchored
+                    and CooldownCompanion:IsGroupCursorAnchored(panelInfo.group)),
         }
         -- Row height is intentionally standardized by the overview. Horizontal
         -- allocation should therefore follow the Panel's saved-design width,
