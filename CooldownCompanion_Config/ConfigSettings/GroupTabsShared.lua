@@ -118,7 +118,7 @@ local function ResolveSelectedGroupStyle()
     return group and group.style or nil
 end
 
-local function MakeCooldownTextAdvancedDescriptor(styleTable)
+local function MakeCooldownTextAdvancedDescriptor(styleTable, finderSettings)
     return {
         settingKey = "cooldownText",
         title = "Cooldown Text Advanced",
@@ -131,12 +131,20 @@ local function MakeCooldownTextAdvancedDescriptor(styleTable)
             -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow
             -- column, so every builder is called with { row = true } and no
             -- rightColumn, and each falls back to `container` for its extras.
-            AddFontControls(panel, style, "cooldown", { size = 12 }, RefreshSelectedGroupStyle, { row = true })
+            AddFontControls(panel, style, "cooldown", { size = 12 }, RefreshSelectedGroupStyle, {
+                row = true,
+                settings = finderSettings and {
+                    size = finderSettings.fontSize,
+                    font = finderSettings.font,
+                    outline = finderSettings.outline,
+                },
+            })
 
             -- deferCommit is deliberately absent, matching the stock color picker
             -- this row replaced.
             AddColorRow(panel, {
                 label = "Font Color",
+                setting = finderSettings and finderSettings.color,
                 tbl = style,
                 key = "cooldownFontColor",
                 default = {1, 1, 1, 1},
@@ -144,14 +152,23 @@ local function MakeCooldownTextAdvancedDescriptor(styleTable)
                 onChange = RefreshSelectedGroupStyle,
             })
 
-            AddAnchorDropdown(panel, style, "cooldownTextAnchor", "CENTER", RefreshSelectedGroupStyle, nil, { row = true })
+            AddAnchorDropdown(panel, style, "cooldownTextAnchor", "CENTER", RefreshSelectedGroupStyle, nil, {
+                row = true,
+                setting = finderSettings and finderSettings.anchor,
+            })
 
-            AddOffsetSliders(panel, style, "cooldownTextXOffset", "cooldownTextYOffset", { x = 0, y = 0 }, RefreshSelectedGroupStyle, { row = true })
+            AddOffsetSliders(panel, style, "cooldownTextXOffset", "cooldownTextYOffset", { x = 0, y = 0 }, RefreshSelectedGroupStyle, {
+                row = true,
+                settings = finderSettings and {
+                    x = finderSettings.xOffset,
+                    y = finderSettings.yOffset,
+                },
+            })
         end,
     }
 end
 
-local function MakeCooldownSwipeAdvancedDescriptor(styleTable)
+local function MakeCooldownSwipeAdvancedDescriptor(styleTable, finderSettings)
     return {
         settingKey = "cooldownSwipe",
         title = "Cooldown Swipe Advanced",
@@ -173,6 +190,7 @@ local function MakeCooldownSwipeAdvancedDescriptor(styleTable)
             -- Reverse Swipe
             AddCheckboxRow(panel, {
                 label = "Reverse Swipe",
+                setting = finderSettings and finderSettings.reverse,
                 value = style.cooldownSwipeReverse or false,
                 onChange = function(val)
                     style.cooldownSwipeReverse = val
@@ -183,6 +201,7 @@ local function MakeCooldownSwipeAdvancedDescriptor(styleTable)
             -- Show Swipe Fill
             AddCheckboxRow(panel, {
                 label = "Show Swipe Fill",
+                setting = finderSettings and finderSettings.fill,
                 value = style.showCooldownSwipeFill ~= false,
                 onChange = function(val)
                     style.showCooldownSwipeFill = val
@@ -197,6 +216,7 @@ local function MakeCooldownSwipeAdvancedDescriptor(styleTable)
             if style.showCooldownSwipeFill ~= false then
                 local opacityRow = AddSliderRow(panel, {
                     label = "Swipe Fill Opacity",
+                    setting = finderSettings and finderSettings.fillOpacity,
                     indent = true,
                     min = 0, max = 1, step = 0.05,
                     value = style.cooldownSwipeAlpha or 0.8,
@@ -209,6 +229,7 @@ local function MakeCooldownSwipeAdvancedDescriptor(styleTable)
             -- Show Swipe Edge
             AddCheckboxRow(panel, {
                 label = "Show Swipe Edge",
+                setting = finderSettings and finderSettings.edge,
                 value = style.cooldownSwipeEdgeEnabled == true,
                 onChange = function(val)
                     style.cooldownSwipeEdgeEnabled = val
@@ -222,6 +243,7 @@ local function MakeCooldownSwipeAdvancedDescriptor(styleTable)
             if style.cooldownSwipeEdgeEnabled == true then
                 AddColorRow(panel, {
                     label = "Swipe Edge Color",
+                    setting = finderSettings and finderSettings.edgeColor,
                     indent = true,
                     tbl = style,
                     key = "cooldownSwipeEdgeColor",

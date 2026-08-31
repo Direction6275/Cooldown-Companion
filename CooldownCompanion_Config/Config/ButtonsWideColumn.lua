@@ -41,6 +41,24 @@ local EDIT_CHIPS_HEIGHT = 18
 local EDIT_CHIPS_GAP = 4
 local EDIT_CHIPS_SCROLL_STEP = 80
 local EDIT_CHIPS_SCROLL_BUTTON_WIDTH = 18
+local EDIT_ACTION_FIELD_LEFT_NUDGE = -1
+local SETTINGS_FINDER_WIDTH_FRACTION = 0.38
+local SETTINGS_FINDER_MIN_WIDTH = 220
+local SETTINGS_FINDER_MAX_WIDTH = 360
+local SETTINGS_FINDER_MAX_ROWS = 8
+local SETTINGS_FINDER_ROW_HEIGHT = 25
+local SETTINGS_FINDER_FOOTER_HEIGHT = 19
+
+local settingsFinderDropdown
+
+local SETTINGS_FINDER_TOOLTIP = {
+    "Find Setting",
+    {"Searches every setting for the object you are currently editing, including other tabs, collapsed sections, and Advanced settings.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Choose a result to open its location and highlight the setting.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"It does not search other Groups, Panels, or Entries.", 0.65, 0.65, 0.65, true},
+}
 
 -- The preview/settings split is owner-adjustable via the drag divider below;
 -- the chosen fraction persists per profile.
@@ -174,6 +192,666 @@ local function SetWideEditingAddBox(col3, widget)
         widget.frame._cdcEditingHeight = widget.frame._cdcEditingHeight or ADD_BOX_HEIGHT
         widget.frame:Show()
     end
+end
+
+------------------------------------------------------------------------
+-- Editing action row: Add Entry + Settings Finder
+------------------------------------------------------------------------
+
+local SettingsFinderActionBehavior = {}
+
+local function HasMultipleSelections(selection)
+    local count = 0
+    for _ in pairs(selection or {}) do
+        count = count + 1
+        if count >= 2 then return true end
+    end
+    return false
+end
+
+function SettingsFinderActionBehavior.IsSuppressed(state)
+    state = state or {}
+    return state.importMode ~= nil
+        or state.exportMode ~= nil
+        or state.talentPickerMode == true
+        or state.inlineTextureBrowserOpen ~= nil
+        or state.auraTexturePickerOpen == true
+        or state.emptyGroupPreviewTakeover == true
+        or HasMultipleSelections(state.selectedGroups)
+        or HasMultipleSelections(state.selectedPanels)
+        or HasMultipleSelections(state.selectedButtons)
+        or HasMultipleSelections(state.selectedCustomBars)
+end
+
+function SettingsFinderActionBehavior.IsQueuedSearchCurrent(serial, currentSerial)
+    return serial == currentSerial
+end
+
+function SettingsFinderActionBehavior.ResolveKey(highlightIndex, numResults, key)
+    local selected = tonumber(highlightIndex) or 0
+    local count = math.max(0, tonumber(numResults) or 0)
+    if key == "ESCAPE" then
+        return selected, "clear"
+    elseif count == 0 then
+        return selected, nil
+    elseif key == "DOWN" then
+        return (selected % count) + 1, "move"
+    elseif key == "UP" then
+        selected = selected - 1
+        if selected < 1 then selected = count end
+        return selected, "move"
+    elseif key == "ENTER" then
+        return selected, "select"
+    end
+    return selected, nil
+end
+
+function SettingsFinderActionBehavior.CanSelectResult(
+    expectedIdentity, currentIdentity, descriptorApplicable)
+    if expectedIdentity == nil or currentIdentity == nil
+        or expectedIdentity ~= currentIdentity
+    then
+        return false
+    end
+    return descriptorApplicable ~= false
+end
+
+function SettingsFinderActionBehavior.GetPopupHandoff(owner)
+    if owner == "finder" then
+        return false, true
+    elseif owner == "add" then
+        return true, false
+    end
+    return false, false
+end
+
+-- Internal, deterministic state transitions shared by the UI handlers and
+-- the plain-Lua action-row behavior contract. This is not an addon API.
+ST._SettingsFinderActionRowBehavior = SettingsFinderActionBehavior
+
+local function IsEditingActionRowSuppressed(col3)
+    return SettingsFinderActionBehavior.IsSuppressed({
+        importMode = CS.importMode ~= nil and true or nil,
+        exportMode = CS.exportMode ~= nil and true or nil,
+        talentPickerMode = CS.talentPickerMode,
+        inlineTextureBrowserOpen = CS.inlineTextureBrowserOpen,
+        auraTexturePickerOpen = CS.IsAuraTexturePickerOpen
+            and CS.IsAuraTexturePickerOpen() == true,
+        emptyGroupPreviewTakeover = col3._cdcEmptyGroupPreviewTakeover,
+        selectedGroups = CS.selectedGroups,
+        selectedPanels = CS.selectedPanels,
+        selectedButtons = CS.selectedButtons,
+        selectedCustomBars = CS.selectedCustomBars,
+    })
+end
+
+local function GetSettingsFinderContextIdentity(context)
+    if not context then return nil end
+    if ST._GetSettingsFinderContextIdentity then
+        return ST._GetSettingsFinderContextIdentity(context)
+    end
+    return context.identity
+end
+
+local function HideSettingsFinderResults()
+    if settingsFinderDropdown then
+        settingsFinderDropdown:Hide()
+    end
+end
+
+local function ApplyEditingActionPopupHandoff(owner)
+    local closeFinder, closeAdd = SettingsFinderActionBehavior.GetPopupHandoff(owner)
+    if closeFinder then
+        HideSettingsFinderResults()
+    end
+    if closeAdd then
+        if CS.HideAutocomplete then CS.HideAutocomplete() end
+    end
+end
+
+-- Spell/item autocomplete calls this before showing its own popup. Keeping
+-- that mutual exclusion at the popup boundary also covers alternate Add
+-- widgets (for example, the Custom Bar workspace box).
+CS.HideSettingsFinderResults = function()
+    ApplyEditingActionPopupHandoff("add")
+end
+
+local function UpdateSettingsFinderPlaceholder(widget)
+    if not (widget and widget._cdcInstructions) then return end
+    widget._cdcInstructions:SetShown((widget:GetText() or "") == "")
+end
+
+local function ClearSettingsFinderUI(col3, clearFocus, clearNavigation)
+    HideSettingsFinderResults()
+    col3._cdcSettingsFinderSearchSerial = (col3._cdcSettingsFinderSearchSerial or 0) + 1
+    col3._cdcSettingsFinderRestoreFocus = nil
+    local widget = col3._cdcSettingsFinder
+    if widget then
+        if widget:GetText() ~= "" then
+            widget:SetText("")
+        end
+        UpdateSettingsFinderPlaceholder(widget)
+        if clearFocus and widget.editbox then
+            widget:ClearFocus()
+        end
+    end
+    if clearNavigation and ST._ClearSettingsFinderNavigation then
+        ST._ClearSettingsFinderNavigation()
+    end
+end
+
+-- Config visibility can change without releasing the preserved AceGUI
+-- workspace (the minimized puck is the important case). Keep the owner-side
+-- reset here so callers do not need to know about the Finder's popup, query,
+-- or captured object identity individually.
+local function ClearSettingsFinderActionRowState(col3)
+    if not col3 then return end
+    col3._cdcSettingsFinderContext = nil
+    col3._cdcSettingsFinderContextIdentity = nil
+    ClearSettingsFinderUI(col3, true, true)
+end
+
+ST._ClearSettingsFinderActionRowState = ClearSettingsFinderActionRowState
+
+-- Ordinary settings refreshes rebuild the edited surface without changing
+-- the edited object. Preserve the persistent field's query/focus, but discard
+-- its applicability context so newly shown or hidden settings are recomputed.
+-- Full view changes continue to use ClearSettingsFinderActionRowState.
+local function PrepareSettingsFinderActionRowRefresh(col3)
+    if not col3 then return end
+    HideSettingsFinderResults()
+    col3._cdcSettingsFinderSearchSerial = (col3._cdcSettingsFinderSearchSerial or 0) + 1
+    local widget = col3._cdcSettingsFinder
+    if widget and widget.frame:IsShown() and widget.editbox:HasFocus() then
+        col3._cdcSettingsFinderRestoreFocus = true
+    end
+    col3._cdcSettingsFinderContext = nil
+end
+
+local function UpdateSettingsFinderHighlight(dropdown)
+    local selected = dropdown and dropdown._highlightIndex or 0
+    for index, row in ipairs((dropdown and dropdown.rows) or {}) do
+        row.selectionBg:SetShown(index == selected and row:IsShown())
+    end
+end
+
+local function SelectSettingsFinderResult(col3, descriptor, context, contextIdentity)
+    if not (descriptor and context and ST._NavigateToFinderSetting) then
+        ClearSettingsFinderUI(col3, true, true)
+        return
+    end
+
+    local current = ST._GetSettingsFinderContext and ST._GetSettingsFinderContext()
+    local currentIdentity = GetSettingsFinderContextIdentity(current)
+    local descriptorApplicable
+    if currentIdentity ~= nil and currentIdentity == contextIdentity
+        and ST._IsSettingsFinderDescriptorApplicable
+    then
+        descriptorApplicable = ST._IsSettingsFinderDescriptorApplicable(
+            descriptor, current) == true
+    end
+    if not SettingsFinderActionBehavior.CanSelectResult(
+        contextIdentity, currentIdentity, descriptorApplicable)
+    then
+        ClearSettingsFinderUI(col3, true, true)
+        return
+    end
+
+    -- Navigation owns the pending highlight from this point forward. Clear
+    -- only finder UI here; clearing engine state after navigation would cancel
+    -- the exact-row pulse it just queued.
+    ClearSettingsFinderUI(col3, true, false)
+    if not ST._NavigateToFinderSetting(descriptor, current)
+        and ST._ClearSettingsFinderNavigation then
+        ST._ClearSettingsFinderNavigation()
+    end
+end
+
+local function GetOrCreateSettingsFinderDropdown(col3)
+    if settingsFinderDropdown then return settingsFinderDropdown end
+
+    local dropdown = CreateFrame(
+        "Frame", "CooldownCompanionSettingsFinderResults", UIParent, "BackdropTemplate")
+    dropdown:SetFrameStrata("TOOLTIP")
+    dropdown:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+    })
+    dropdown:SetBackdropColor(0.08, 0.08, 0.08, 0.97)
+    ST.CreatePixelBorders(dropdown, 0, 0, 0, 1)
+    dropdown:Hide()
+    dropdown.rows = {}
+
+    for index = 1, SETTINGS_FINDER_MAX_ROWS do
+        local row = CreateFrame("Button", nil, dropdown)
+        row:RegisterForClicks("AnyUp")
+        row:SetHeight(SETTINGS_FINDER_ROW_HEIGHT)
+        row:SetPoint("TOPLEFT", dropdown, "TOPLEFT", 1,
+            -1 - ((index - 1) * SETTINGS_FINDER_ROW_HEIGHT))
+        row:SetPoint("TOPRIGHT", dropdown, "TOPRIGHT", -1,
+            -1 - ((index - 1) * SETTINGS_FINDER_ROW_HEIGHT))
+
+        local selectionBg = row:CreateTexture(nil, "BACKGROUND")
+        selectionBg:SetPoint("TOPLEFT", row, "TOPLEFT", -1, index == 1 and 1 or 0)
+        selectionBg:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 1, 0)
+        selectionBg:SetColorTexture(0.2, 0.4, 0.7, 0.4)
+        selectionBg:Hide()
+        row.selectionBg = selectionBg
+
+        local hover = row:CreateTexture(nil, "HIGHLIGHT")
+        hover:SetPoint("TOPLEFT", row, "TOPLEFT", -1, index == 1 and 1 or 0)
+        hover:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 1, 0)
+        hover:SetColorTexture(0.3, 0.5, 0.8, 0.3)
+
+        local breadcrumb = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        breadcrumb:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+        breadcrumb:SetWidth(96)
+        breadcrumb:SetJustifyH("RIGHT")
+        breadcrumb:SetWordWrap(false)
+        row.breadcrumb = breadcrumb
+
+        local name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        name:SetPoint("LEFT", row, "LEFT", 7, 0)
+        name:SetPoint("RIGHT", breadcrumb, "LEFT", -8, 0)
+        name:SetJustifyH("LEFT")
+        name:SetWordWrap(false)
+        row.nameText = name
+        row._cdcFinderIndex = index
+
+        row:SetScript("OnMouseDown", function()
+            dropdown._clickInProgress = true
+        end)
+        row:SetScript("OnMouseUp", function()
+            -- A press dragged off the row does not fire OnClick. Always
+            -- release this focus-handoff guard on mouse-up so an abandoned
+            -- click cannot pin the results popup open.
+            dropdown._clickInProgress = false
+        end)
+        row:SetScript("OnEnter", function()
+            dropdown._highlightIndex = row._cdcFinderIndex
+            UpdateSettingsFinderHighlight(dropdown)
+        end)
+        row:SetScript("OnClick", function()
+            dropdown._clickInProgress = false
+            if row.descriptor then
+                SelectSettingsFinderResult(
+                    col3, row.descriptor, dropdown._context, dropdown._contextIdentity)
+            end
+        end)
+        row:Hide()
+        dropdown.rows[index] = row
+    end
+
+    local footer = dropdown:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    footer:SetPoint("BOTTOMLEFT", dropdown, "BOTTOMLEFT", 7, 2)
+    footer:SetPoint("BOTTOMRIGHT", dropdown, "BOTTOMRIGHT", -7, 2)
+    footer:SetJustifyH("CENTER")
+    footer:SetText("Keep typing to narrow results")
+    footer:Hide()
+    dropdown.footer = footer
+
+    dropdown:SetScript("OnUpdate", function(self)
+        if self._clickInProgress then return end
+        if not (self._editbox and self._editbox:HasFocus()) then
+            self:Hide()
+        end
+    end)
+    dropdown:SetScript("OnHide", function(self)
+        self._clickInProgress = nil
+        self._stableWidth = nil
+        self._editbox = nil
+        self._context = nil
+        self._contextIdentity = nil
+        self._highlightIndex = nil
+        self._numResults = nil
+        if self.footer then self.footer:Hide() end
+        for _, row in ipairs(self.rows or {}) do
+            row.descriptor = nil
+            row.selectionBg:Hide()
+            row:Hide()
+        end
+    end)
+
+    settingsFinderDropdown = dropdown
+    return dropdown
+end
+
+local function ShowSettingsFinderResults(col3, results, truncated, context, contextIdentity)
+    local widget = col3._cdcSettingsFinder
+    if not (widget and widget.frame:IsShown() and results and #results > 0) then
+        HideSettingsFinderResults()
+        return
+    end
+
+    ApplyEditingActionPopupHandoff("finder")
+
+    local dropdown = GetOrCreateSettingsFinderDropdown(col3)
+    dropdown._editbox = widget.editbox
+    dropdown._context = context
+    dropdown._contextIdentity = contextIdentity
+    dropdown._highlightIndex = 1
+    dropdown._numResults = math.min(#results, SETTINGS_FINDER_MAX_ROWS)
+
+    local finderWidth = math.max(1, widget.frame:GetWidth() or 1)
+    local actionRow = col3._cdcEditingActionRow
+    local maximumDropdownWidth = math.max(
+        finderWidth, actionRow and actionRow:GetWidth() or finderWidth)
+    local widestName = 0
+    local widestBreadcrumb = 0
+
+    for index = 1, SETTINGS_FINDER_MAX_ROWS do
+        local row = dropdown.rows[index]
+        local descriptor = results[index]
+        if descriptor then
+            local breadcrumb = descriptor.breadcrumb
+            if not breadcrumb or breadcrumb == "" then
+                local pieces = {}
+                if descriptor.tabLabel and descriptor.tabLabel ~= "" then
+                    pieces[#pieces + 1] = descriptor.tabLabel
+                end
+                if descriptor.sectionLabel and descriptor.sectionLabel ~= "" then
+                    pieces[#pieces + 1] = descriptor.sectionLabel
+                end
+                breadcrumb = table.concat(pieces, " \194\187 ")
+            end
+            row.descriptor = descriptor
+            row.nameText:SetText(descriptor.label or "Setting")
+            row.breadcrumb:SetText(breadcrumb or "")
+            widestName = math.max(
+                widestName, row.nameText:GetUnboundedStringWidth() or 0)
+            widestBreadcrumb = math.max(
+                widestBreadcrumb, row.breadcrumb:GetUnboundedStringWidth() or 0)
+            row:Show()
+        else
+            row.descriptor = nil
+            row:Hide()
+        end
+    end
+
+    -- Keep compact one-line results, but size the popup and breadcrumb lane
+    -- from their actual content. It may grow leftward as far as the editing
+    -- row, so labels and routes do not compete for the Finder field's narrow
+    -- default width.
+    local resultHorizontalPadding = 1 + 7 + 8 + 6 + 1
+    local desiredDropdownWidth = math.ceil(
+        widestName + widestBreadcrumb + resultHorizontalPadding)
+    dropdown._stableWidth = math.min(maximumDropdownWidth, math.max(
+        dropdown._stableWidth or finderWidth,
+        finderWidth,
+        desiredDropdownWidth))
+    local dropdownWidth = dropdown._stableWidth
+    local breadcrumbWidth = math.min(
+        math.ceil(widestBreadcrumb + 1),
+        math.max(72, dropdownWidth - math.ceil(widestName) - resultHorizontalPadding))
+    for _, row in ipairs(dropdown.rows) do
+        row.breadcrumb:SetWidth(breadcrumbWidth)
+    end
+
+    dropdown:ClearAllPoints()
+    dropdown:SetPoint("TOPRIGHT", widget.frame, "BOTTOMRIGHT", 0, -2)
+    dropdown:SetWidth(dropdownWidth)
+
+    dropdown.footer:SetShown(truncated == true)
+    local footerHeight = truncated and SETTINGS_FINDER_FOOTER_HEIGHT or 0
+    dropdown:SetHeight(2 + (dropdown._numResults * SETTINGS_FINDER_ROW_HEIGHT) + footerHeight)
+    dropdown:Show()
+    UpdateSettingsFinderHighlight(dropdown)
+end
+
+local function RunSettingsFinderSearch(col3, serial)
+    if not SettingsFinderActionBehavior.IsQueuedSearchCurrent(
+        serial, col3._cdcSettingsFinderSearchSerial)
+    then
+        return
+    end
+    local widget = col3._cdcSettingsFinder
+    if not (widget and widget.frame:IsShown() and widget.editbox:HasFocus()) then
+        HideSettingsFinderResults()
+        return
+    end
+
+    local context = col3._cdcSettingsFinderContext
+    local contextIdentity = GetSettingsFinderContextIdentity(context)
+    local contextIsCurrent = context ~= nil
+        and (not ST._IsSettingsFinderContextCurrent
+            or ST._IsSettingsFinderContextCurrent(context) == true)
+    if not contextIsCurrent
+        or contextIdentity ~= col3._cdcSettingsFinderContextIdentity
+    then
+        ClearSettingsFinderUI(col3, true, true)
+        return
+    end
+
+    if not ST._SearchSettingsFinder then
+        HideSettingsFinderResults()
+        return
+    end
+    local results, truncated = ST._SearchSettingsFinder(widget:GetText() or "", context,
+        SETTINGS_FINDER_MAX_ROWS)
+    ShowSettingsFinderResults(col3, results, truncated, context, contextIdentity)
+end
+
+local function QueueSettingsFinderSearch(col3)
+    col3._cdcSettingsFinderSearchSerial = (col3._cdcSettingsFinderSearchSerial or 0) + 1
+    local serial = col3._cdcSettingsFinderSearchSerial
+    C_Timer.After(0, function()
+        RunSettingsFinderSearch(col3, serial)
+    end)
+end
+
+local function HandleSettingsFinderKeyDown(col3, key)
+    local supportedKey = key == "ESCAPE" or key == "DOWN"
+        or key == "UP" or key == "ENTER"
+    if not supportedKey then return end
+    local dropdown = settingsFinderDropdown
+    local nextIndex, action = SettingsFinderActionBehavior.ResolveKey(
+        dropdown and dropdown._highlightIndex,
+        dropdown and dropdown:IsShown() and dropdown._numResults or 0,
+        key)
+    if action == "clear" then
+        ClearSettingsFinderUI(col3, true, true)
+        return
+    end
+    if not (dropdown and dropdown:IsShown() and dropdown._numResults > 0) then return end
+
+    if action == "move" then
+        dropdown._highlightIndex = nextIndex
+        UpdateSettingsFinderHighlight(dropdown)
+    elseif action == "select" then
+        local row = dropdown.rows[nextIndex]
+        if row and row.descriptor then
+            SelectSettingsFinderResult(
+                col3, row.descriptor, dropdown._context, dropdown._contextIdentity)
+        end
+    end
+end
+
+local function EnsureSettingsFinder(col3)
+    local widget = col3._cdcSettingsFinder
+    if widget then return widget end
+
+    widget = AceGUI:Create("EditBox")
+    if widget.editbox.Instructions then widget.editbox.Instructions:Hide() end
+    widget:SetLabel("")
+    widget:SetText("")
+    widget:DisableButton(true)
+    widget.frame:SetParent(EnsureEditingSurface(col3))
+    widget.frame._cdcEditingHeight = ADD_BOX_HEIGHT
+    widget.editbox:SetPoint("BOTTOMRIGHT", widget.frame, "BOTTOMRIGHT", -18, 0)
+
+    if ST._CreateInfoButton then
+        widget._cdcFinderInfoButton = ST._CreateInfoButton(
+            widget.frame, widget.frame, "RIGHT", "RIGHT", -1, 0,
+            SETTINGS_FINDER_TOOLTIP)
+    end
+
+    local instructions = widget.editbox:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    instructions:SetPoint("LEFT", widget.editbox, "LEFT", 6, 0)
+    instructions:SetPoint("RIGHT", widget.editbox, "RIGHT", -6, 0)
+    instructions:SetJustifyH("LEFT")
+    instructions:SetTextColor(0.5, 0.5, 0.5)
+    instructions:SetText("Find a setting by name or keyword\226\128\166")
+    widget._cdcInstructions = instructions
+
+    widget:SetCallback("OnTextChanged", function(_, _, text)
+        instructions:SetShown((text or "") == "")
+        ApplyEditingActionPopupHandoff("finder")
+        QueueSettingsFinderSearch(col3)
+    end)
+    widget.editbox:HookScript("OnKeyDown", function(_, key)
+        HandleSettingsFinderKeyDown(col3, key)
+    end)
+    widget.editbox:HookScript("OnEditFocusGained", function()
+        ApplyEditingActionPopupHandoff("finder")
+        QueueSettingsFinderSearch(col3)
+    end)
+
+    col3._cdcSettingsFinder = widget
+    return widget
+end
+
+local function LayoutEditingActionRow(col3)
+    local row = col3._cdcEditingActionRow
+    if not (row and row:IsShown()) then return end
+
+    local addBox = row._cdcAddBox
+    local finder = row._cdcFinder
+    local hasAdd = addBox and addBox.frame and addBox.frame:IsShown()
+    local hasFinder = finder and finder.frame and finder.frame:IsShown()
+    if not (hasAdd or hasFinder) then
+        row:Hide()
+        return
+    end
+
+    local height = ADD_BOX_HEIGHT
+    if hasAdd then
+        height = math.max(height, addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
+    end
+    row:SetHeight(height)
+    row._cdcEditingHeight = height
+    if hasAdd and hasFinder then
+        local rowWidth = math.max(1, row:GetWidth() or 1)
+        local finderWidth = math.max(SETTINGS_FINDER_MIN_WIDTH,
+            math.min(SETTINGS_FINDER_MAX_WIDTH, rowWidth * SETTINGS_FINDER_WIDTH_FRACTION))
+        finderWidth = math.min(math.max(1, rowWidth - 40), finderWidth)
+
+        finder.frame:ClearAllPoints()
+        finder.frame:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        finder.frame:SetWidth(finderWidth)
+        finder.frame:SetHeight(ADD_BOX_HEIGHT)
+
+        addBox.frame:ClearAllPoints()
+        addBox.frame:SetPoint(
+            "LEFT", row, "LEFT", EDIT_ACTION_FIELD_LEFT_NUDGE, 0)
+        addBox.frame:SetPoint("RIGHT", finder.frame, "LEFT", 0, 0)
+        addBox.frame:SetHeight(addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
+    elseif hasFinder then
+        finder.frame:ClearAllPoints()
+        finder.frame:SetPoint(
+            "LEFT", row, "LEFT", EDIT_ACTION_FIELD_LEFT_NUDGE, 0)
+        finder.frame:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        finder.frame:SetHeight(ADD_BOX_HEIGHT)
+    else
+        addBox.frame:ClearAllPoints()
+        addBox.frame:SetPoint(
+            "LEFT", row, "LEFT", EDIT_ACTION_FIELD_LEFT_NUDGE, 0)
+        addBox.frame:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        addBox.frame:SetHeight(addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
+    end
+end
+
+local function EnsureEditingActionRow(col3)
+    local row = col3._cdcEditingActionRow
+    if row then return row end
+
+    local surface = EnsureEditingSurface(col3)
+    row = CreateFrame("Frame", nil, surface)
+    row:SetPoint("TOPLEFT", surface._cdcHeader, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
+    row:SetPoint("TOPRIGHT", surface._cdcHeader, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
+    row:SetHeight(ADD_BOX_HEIGHT)
+    row:SetScript("OnSizeChanged", function()
+        LayoutEditingActionRow(col3)
+    end)
+    col3._cdcEditingActionRow = row
+    return row
+end
+
+local function UpdateEditingActionRow(col3)
+    local row = EnsureEditingActionRow(col3)
+    local addBox = GetActiveEditingAddBox(col3)
+    local previousContextIdentity = col3._cdcSettingsFinderContextIdentity
+    local restoreFinderFocus = col3._cdcSettingsFinderRestoreFocus == true
+    local finderEngineLoaded = type(ST._GetSettingsFinderContext) == "function"
+    local context = col3._cdcSettingsFinderContext
+    if not (context and ST._IsSettingsFinderContextCurrent
+        and ST._IsSettingsFinderContextCurrent(context))
+    then
+        context = finderEngineLoaded and ST._GetSettingsFinderContext() or nil
+    end
+    local contextIdentity = GetSettingsFinderContextIdentity(context)
+    local suppressed = IsEditingActionRowSuppressed(col3)
+    local hasFinderEntries = context ~= nil
+        and (not ST._HasSettingsFinderEntries
+            or ST._HasSettingsFinderEntries(context) == true)
+    local showFinder = not suppressed and hasFinderEntries and contextIdentity ~= nil
+    local resumeFinder = restoreFinderFocus and showFinder
+        and previousContextIdentity ~= nil
+        and previousContextIdentity == contextIdentity
+
+    if previousContextIdentity ~= contextIdentity or not showFinder then
+        ClearSettingsFinderUI(col3, true, true)
+    end
+    col3._cdcSettingsFinderContext = showFinder and context or nil
+    col3._cdcSettingsFinderContextIdentity = showFinder and contextIdentity or nil
+
+    local finder = col3._cdcSettingsFinder
+    if showFinder then
+        finder = EnsureSettingsFinder(col3)
+        finder.frame:Show()
+    elseif finder then
+        finder.frame:Hide()
+    end
+
+    -- Add remains available whenever its own panel rules elected to show it;
+    -- a missing or temporarily unavailable finder catalog must never close
+    -- that existing workflow.
+    local showAdd = addBox ~= nil and not suppressed
+    if addBox and not showAdd then
+        addBox.frame:Hide()
+        addBox = nil
+    end
+
+    row._cdcAddBox = addBox
+    row._cdcFinder = showFinder and finder or nil
+    row:SetShown(showAdd or showFinder)
+    if row:IsShown() then
+        LayoutEditingActionRow(col3)
+    end
+    col3._cdcSettingsFinderRestoreFocus = nil
+    if resumeFinder and finder then
+        local resumeIdentity = contextIdentity
+        C_Timer.After(0, function()
+            if col3._cdcSettingsFinderContextIdentity ~= resumeIdentity
+                or not (finder.frame:IsShown() and finder.editbox)
+            then
+                return
+            end
+            finder:SetFocus()
+            -- SetFocus normally fires OnEditFocusGained and queues the
+            -- search. Queue once explicitly as well for clients that retain
+            -- focus while the persistent frame is briefly hidden; the serial
+            -- guard coalesces the duplicate callback.
+            QueueSettingsFinderSearch(col3)
+        end)
+    end
+    return row:IsShown() and row or nil
+end
+
+local function GetActiveEditingActionRow(col3)
+    local row = col3._cdcEditingActionRow
+    if row and row:IsShown() then
+        return row
+    end
+    return nil
 end
 
 local function LayoutWideEditingChips(frame)
@@ -330,7 +1008,7 @@ local function SetWideEditingChips(col3, prefix, items)
     LayoutWideEditingChips(frame)
 end
 
-local function ClearWideEditingExtras(col3)
+local function ClearWideEditingExtras(col3, preserveFinderState)
     local alternate = col3._cdcAlternateEditingAddBox
     if alternate and alternate.frame then
         alternate.frame:Hide()
@@ -338,6 +1016,14 @@ local function ClearWideEditingExtras(col3)
     col3._cdcAlternateEditingAddBox = nil
     if col3._cdcEditingChips then
         col3._cdcEditingChips:Hide()
+    end
+    if preserveFinderState then
+        PrepareSettingsFinderActionRowRefresh(col3)
+    else
+        ClearSettingsFinderActionRowState(col3)
+    end
+    if col3._cdcSettingsFinder then
+        col3._cdcSettingsFinder.frame:Hide()
     end
 end
 
@@ -616,6 +1302,15 @@ local function HideEditingChrome(col3)
     if col3._cdcEditingSurface then
         col3._cdcEditingSurface:Hide()
     end
+    if col3._cdcEditingActionRow then
+        col3._cdcEditingActionRow:Hide()
+    end
+    if col3._cdcSettingsFinder then
+        col3._cdcSettingsFinder.frame:Hide()
+    end
+    col3._cdcSettingsFinderContext = nil
+    col3._cdcSettingsFinderContextIdentity = nil
+    ClearSettingsFinderUI(col3, true, true)
 end
 
 -- Vertical space the editing surface's fixed chrome (header, add box, gaps,
@@ -624,10 +1319,10 @@ end
 local function GetEditingOverhead(col3)
     local overhead = EDIT_HEADER_TOP_GAP + EDIT_HEADER_HEIGHT
         + PREVIEW_GAP + EDIT_BOTTOM_INSET
-    local addBox = GetActiveEditingAddBox(col3)
-    if addBox then
+    local actionRow = GetActiveEditingActionRow(col3)
+    if actionRow then
         overhead = overhead + EDIT_HEADER_GAP
-            + (addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
+            + (actionRow._cdcEditingHeight or ADD_BOX_HEIGHT)
     end
     if GetActiveEditingRow(col3) then
         overhead = overhead + EDIT_HEADER_GAP + ADD_BOX_HEIGHT
@@ -965,6 +1660,7 @@ end
 -- is active.
 local function AnchorButtonsContentFrame(col3, frame)
     frame:ClearAllPoints()
+    local actionRow = UpdateEditingActionRow(col3)
     local previewHost = col3._cdcActiveWideHost
     if previewHost and previewHost:IsShown() then
         local divider = EnsurePreviewDivider(col3)
@@ -981,13 +1677,13 @@ local function AnchorButtonsContentFrame(col3, frame)
         UpdateEditingHeader(col3)
 
         local topAnchor = surface._cdcHeader
-        local addBox = GetActiveEditingAddBox(col3)
-        if addBox then
-            addBox.frame:ClearAllPoints()
-            addBox.frame:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
-            addBox.frame:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
-            addBox.frame:SetHeight(addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
-            topAnchor = addBox.frame
+        if actionRow then
+            actionRow:ClearAllPoints()
+            actionRow:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
+            actionRow:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
+            actionRow:SetHeight(actionRow._cdcEditingHeight or ADD_BOX_HEIGHT)
+            LayoutEditingActionRow(col3)
+            topAnchor = actionRow
         end
         local quietRow = GetActiveEditingRow(col3)
         if quietRow then
@@ -1009,11 +1705,10 @@ local function AnchorButtonsContentFrame(col3, frame)
         frame:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -PREVIEW_GAP)
         frame:SetPoint("BOTTOMRIGHT", surface, "BOTTOMRIGHT", -EDIT_INSET, EDIT_BOTTOM_INSET)
     else
-        local addBox = GetActiveEditingAddBox(col3)
         local quietRow = GetActiveEditingRow(col3)
         local chips = col3._cdcEditingChips
         local hasChips = chips and chips:IsShown()
-        if addBox or hasChips or quietRow then
+        if actionRow or hasChips or quietRow then
             if col3.buttonsSplitDivider then
                 col3.buttonsSplitDivider:CancelDrag()
                 col3.buttonsSplitDivider:Hide()
@@ -1025,12 +1720,13 @@ local function AnchorButtonsContentFrame(col3, frame)
             UpdateEditingHeader(col3)
 
             local topAnchor = surface._cdcHeader
-            if addBox then
-                addBox.frame:ClearAllPoints()
-                addBox.frame:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
-                addBox.frame:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
-                addBox.frame:SetHeight(addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
-                topAnchor = addBox.frame
+            if actionRow then
+                actionRow:ClearAllPoints()
+                actionRow:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
+                actionRow:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
+                actionRow:SetHeight(actionRow._cdcEditingHeight or ADD_BOX_HEIGHT)
+                LayoutEditingActionRow(col3)
+                topAnchor = actionRow
             end
             if quietRow then
                 quietRow:ClearAllPoints()
@@ -1339,6 +2035,7 @@ local function EnsureAddBox(col3)
     addBox:SetText("")
     addBox:DisableButton(true)
     addBox.frame:SetParent(col3.content)
+    addBox.frame._cdcEditingHeight = ADD_BOX_HEIGHT
 
     local editFrame = addBox.editbox
     local instructions = editFrame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
@@ -1346,7 +2043,7 @@ local function EnsureAddBox(col3)
     instructions:SetPoint("RIGHT", editFrame, "RIGHT", -6, 0)
     instructions:SetJustifyH("LEFT")
     instructions:SetTextColor(0.5, 0.5, 0.5)
-    instructions:SetText("Search spells, items, trinket slots, or IDs")
+    instructions:SetText("Add a spell, item, trinket slot, or ID\226\128\166")
     addBox._cdcInstructions = instructions
     editFrame:SetPoint("BOTTOMRIGHT", addBox.frame, "BOTTOMRIGHT", -18, 0)
     CreateAddBoxInfoButton(addBox.frame, addBox.frame)
@@ -1379,6 +2076,7 @@ local function EnsureAddBox(col3)
     addBox:SetCallback("OnTextChanged", function(widget, event, text)
         instructions:SetShown((text or "") == "")
         CS.addingToPanelId = nil
+        HideSettingsFinderResults()
         if text and #text >= 1 then
             local results = ST._SearchAutocomplete(text)
             -- This box is persistent (not rebuilt from CS.newInput like the
@@ -1401,6 +2099,9 @@ local function EnsureAddBox(col3)
         end
     end)
     CS.SetupAutocompleteKeyHandler(addBox)
+    addBox.editbox:HookScript("OnEditFocusGained", function()
+        HideSettingsFinderResults()
+    end)
 
     col3.buttonsAddBox = addBox
     return addBox
@@ -1413,19 +2114,17 @@ local function UpdateAddBox(col3)
         if col3.buttonsAddBox then
             col3.buttonsAddBox.frame:Hide()
         end
+        UpdateEditingActionRow(col3)
         return
     end
 
     local addBox = EnsureAddBox(col3)
     addBox._cdcInstructions:SetText(CooldownCompanion:IsAuraPanel(group)
-        and "Search aura spells or enter an ID"
-        or "Search spells, items, trinket slots, or IDs")
-    local header = EnsureEditingSurface(col3)._cdcHeader
-    addBox.frame:ClearAllPoints()
-    addBox.frame:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
-    addBox.frame:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
+        and "Add an aura spell or ID\226\128\166"
+        or "Add a spell, item, trinket slot, or ID\226\128\166")
     addBox.frame:SetHeight(ADD_BOX_HEIGHT)
     addBox.frame:Show()
+    UpdateEditingActionRow(col3)
 
     -- Also consume the shared autocomplete focus flag when an inline
     -- inline add isn't open (its box consumes it when addingToPanelId is set).
@@ -1726,6 +2425,9 @@ local function EnsureInlineTextureBrowserHost(col3)
 end
 
 local function ShowMultiSelectActions(col3, refreshFn, multiCount, selectedIds)
+    -- Batch actions replace the edited object rather than refreshing it.
+    -- Do not carry a Finder query or captured identity into this takeover.
+    ClearSettingsFinderActionRowState(col3)
     -- The panel Format tab's editor is hidden away with its host here without
     -- the host's own tab seams running, so settle any pending write first.
     -- Release is idempotent.
@@ -1768,7 +2470,7 @@ local function RefreshButtonsWideColumn(selectionOnly)
     if col3._customAuraTabGroup then col3._customAuraTabGroup.frame:Hide() end
     col3._customAuraSubScroll = nil
     if col3._customAuraScroll then col3._customAuraScroll.frame:Hide() end
-    if ST._HideResourcesWideSurfaces then ST._HideResourcesWideSurfaces(col3) end
+    if ST._HideResourcesWideSurfaces then ST._HideResourcesWideSurfaces(col3, true) end
     if col3._inlineTextureBrowserHost then col3._inlineTextureBrowserHost:Hide() end
 
     -- Group multi-select: batch operations replace everything else.

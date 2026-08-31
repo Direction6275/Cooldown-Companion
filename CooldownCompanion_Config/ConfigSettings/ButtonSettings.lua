@@ -210,6 +210,215 @@ local function SoundAlertsCollapseKey()
     return tostring(CS.selectedGroup) .. "_" .. tostring(CS.selectedButton) .. "_soundalerts"
 end
 
+------------------------------------------------------------------------
+-- SETTINGS FINDER CATALOG (entry Settings / Condition pane)
+------------------------------------------------------------------------
+
+local function EntrySettingsCollapseKey(suffix)
+    return function(context)
+        return tostring(context.groupId) .. "_" .. tostring(context.buttonIndex) .. "_" .. suffix
+    end
+end
+
+local function IsEquipmentSlotContext(context)
+    return CooldownCompanion.IsEquipmentSlotEntry
+        and CooldownCompanion.IsEquipmentSlotEntry(context.buttonData)
+end
+
+local function IsTriggerEntryContext(context)
+    return context.group and context.buttonData and context.group.displayMode == "trigger"
+end
+
+local function IsRegularSpellSoundContext(context)
+    return context.group and context.buttonData
+        and context.group.displayMode ~= "trigger"
+        and context.buttonData.type == "spell"
+        and not IsEquipmentSlotContext(context)
+end
+
+local function SoundEventApplies(context, eventKey)
+    if not IsRegularSpellSoundContext(context) then return false end
+
+    local validEvents = context._ccSoundAlertValidEvents
+    if validEvents == nil then
+        validEvents = CooldownCompanion:GetScopedValidSoundAlertEventsForButton(context.buttonData) or false
+        context._ccSoundAlertValidEvents = validEvents
+    end
+    if context.group.displayMode == "textures"
+        and CooldownCompanion:IsAuraSoundAlertEvent(eventKey)
+    then
+        return CooldownCompanion:IsTexturePanelAuraDisplayEnabled(context.group, context.buttonData)
+    end
+    return validEvents and validEvents[eventKey] == true or false
+end
+
+local soundRoute = ST._DefineSettingRoute({
+    idPrefix = "entry.settings.sound_alerts",
+    scope = "entry",
+    rowScope = "detail",
+    tab = "settings",
+    tabLabel = "Settings",
+    section = "sound_alerts",
+    sectionLabel = "Sound Alerts",
+    collapseKeys = EntrySettingsCollapseKey("soundalerts"),
+})
+
+local SOUND_EVENT_SPECS = {
+    available = { label = "Available", aliases = { "ready", "cooldown ready" } },
+    availableWithCharges = {
+        label = "Available / Charge Gained",
+        aliases = { "ready", "charge gained", "cooldown ready" },
+    },
+    onCooldown = { label = "On Cooldown", aliases = { "cooldown started" } },
+    chargeGained = { label = "Charge Gained", aliases = { "charge restored" } },
+    onAuraApplied = { label = "Aura Applied", aliases = { "aura gained" } },
+    onAuraStackGained = { label = "Aura Stack Gained", aliases = { "stack gained" } },
+    onAuraRemoved = { label = "Aura Removed", aliases = { "aura expired", "aura lost" } },
+}
+
+local soundSettings = {}
+local function SoundSettingApplies(eventKey, requiresCharges)
+    return function(context)
+        if not SoundEventApplies(context, eventKey) then return false end
+        local hasCharges = UsesChargeBehavior(context.buttonData)
+        return eventKey ~= "available" or hasCharges == requiresCharges
+    end
+end
+for key, spec in pairs(SOUND_EVENT_SPECS) do
+    local eventKey = key == "availableWithCharges" and "available" or key
+    local requiresCharges = key == "availableWithCharges"
+    soundSettings[key] = soundRoute:Setting({
+        key = key,
+        label = spec.label,
+        aliases = spec.aliases,
+        applies = SoundSettingApplies(eventKey, requiresCharges),
+    })
+end
+
+local triggerSoundSettings = ST._DefineSettingRoute({
+    idPrefix = "entry.condition.sound_alerts",
+    scope = "entry",
+    rowScope = "detail",
+    tab = "settings",
+    tabLabel = "Condition",
+    section = "sound_alerts",
+    sectionLabel = "Sound Alerts",
+    collapseKeys = EntrySettingsCollapseKey("soundalerts"),
+    applies = function(context)
+        return IsTriggerEntryContext(context) and not IsEquipmentSlotContext(context)
+    end,
+}):Settings({
+    triggered = { label = "Triggered", aliases = { "on show", "sound alert" } },
+})
+
+local function GetFinderTriggerConditionClauses(context)
+    if context._ccTriggerConditionClauses ~= nil then
+        return context._ccTriggerConditionClauses or nil
+    end
+    local clauses = IsTriggerEntryContext(context)
+        and CooldownCompanion:GetTriggerConditionClauses(context.buttonData) or nil
+    context._ccTriggerConditionClauses = type(clauses) == "table" and clauses or false
+    return type(clauses) == "table" and clauses or nil
+end
+
+-- Clauses are ordered, persistent items. Give every possible row position its
+-- own static descriptor so repeated Check/State labels still navigate to one
+-- exact widget. Nine is the complete condition-key vocabulary; uniqueness
+-- prevents a trigger entry from ever carrying more clauses than that.
+local triggerConditionSettings = {}
+for clauseIndex = 1, 9 do
+    local routeIndex = clauseIndex
+    triggerConditionSettings[routeIndex] = ST._DefineSettingRoute({
+        idPrefix = "entry.condition.conditions.clause." .. routeIndex,
+        scope = "entry",
+        rowScope = "detail",
+        tab = "settings",
+        tabLabel = "Condition",
+        section = "condition_" .. routeIndex,
+        sectionLabel = "Condition " .. routeIndex,
+        collapseKeys = EntrySettingsCollapseKey("triggerconditions"),
+        applies = function(context)
+            local clauses = GetFinderTriggerConditionClauses(context)
+            return clauses and clauses[routeIndex] ~= nil or false
+        end,
+    }):Settings({
+        check = { label = "Check", aliases = { "condition type" } },
+        state = { label = "State", aliases = { "expected state", "condition value" } },
+    })
+end
+
+local function ItemSettingsApply(context)
+    return context.group and context.buttonData
+        and context.buttonData.type == "item"
+        and context.group.displayMode ~= "text"
+        and not UsesChargeBehavior(context.buttonData)
+end
+
+local itemSettings = ST._DefineSettingRoute({
+    idPrefix = "entry.settings.item",
+    scope = "entry",
+    rowScope = "detail",
+    tab = "settings",
+    section = "item_settings",
+    sectionLabel = "Item Settings",
+    collapseKeys = EntrySettingsCollapseKey("itemsettings"),
+    applies = ItemSettingsApply,
+}):Settings({
+    fontSize = { label = "Item Stack Font Size", aliases = { "count size", "stack size" } },
+    font = { label = "Font", aliases = { "item stack font", "typeface" } },
+    outline = { label = "Font Outline", aliases = { "item stack outline" } },
+    color = { label = "Font Color", aliases = { "item stack color", "count color" } },
+    anchor = { label = "Anchor Point", aliases = { "item stack anchor", "count position" } },
+    xOffset = { label = "X Offset", aliases = { "horizontal offset", "item stack x" } },
+    yOffset = { label = "Y Offset", aliases = { "vertical offset", "item stack y" } },
+})
+
+local customNameSettings = ST._DefineSettingRoute({
+    idPrefix = "entry.settings.custom_name",
+    scope = "entry",
+    rowScope = "detail",
+    tab = "settings",
+    section = "custom_name",
+    sectionLabel = "Custom Name",
+    collapseKeys = EntrySettingsCollapseKey("customname"),
+    applies = function(context)
+        return context.group and context.buttonData
+            and context.group.displayMode == "bars"
+            and not IsEquipmentSlotContext(context)
+    end,
+}):Settings({
+    text = { label = "Custom Name", aliases = { "bar name", "entry name" } },
+})
+
+local customKeybindSettings = ST._DefineSettingRoute({
+    idPrefix = "entry.settings.custom_keybind",
+    scope = "entry",
+    rowScope = "detail",
+    tab = "settings",
+    section = "custom_keybind",
+    sectionLabel = "Custom Keybind Text",
+    collapseKeys = EntrySettingsCollapseKey("customkeybind"),
+    applies = function(context)
+        if not (context.group and context.buttonData and context.group.displayMode == "icons") then
+            return false
+        end
+        if not ST.CanGroupUseOverrideSection(context.group, "keybindText") then return false end
+        local groupStyle = context.group.style or {}
+        local buttonData = context.buttonData
+        local showKeybindText = groupStyle.showKeybindText
+        if buttonData.overrideSections and buttonData.overrideSections.keybindText
+            and buttonData.styleOverrides
+            and (not ST.CanButtonUseOverrideSection
+                or ST.CanButtonUseOverrideSection(buttonData, "keybindText")) then
+            local override = rawget(buttonData.styleOverrides, "showKeybindText")
+            if override ~= nil then showKeybindText = override end
+        end
+        return showKeybindText == true
+    end,
+}):Settings({
+    text = { label = "Custom Keybind Text", aliases = { "keybind override", "hotkey text" } },
+})
+
 -- Row grammar (RowWidgets.lua): one CDC-DropdownRow per alertable event in a
 -- two-column grid. Expects the tab's ScrollFrame (a "List") directly.
 local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons)
@@ -290,8 +499,12 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
 
     local function AddSoundEventRow(column, eventKey)
         local isAuraEvent = CooldownCompanion:IsAuraSoundAlertEvent(eventKey)
+        local setting = soundSettings[eventKey]
+        if eventKey == "available" and UsesChargeBehavior(buttonData) then
+            setting = soundSettings.availableWithCharges
+        end
         AddSoundPreviewDropdownRow(column, {
-            label = CooldownCompanion:GetSoundAlertEventLabelForButton(buttonData, eventKey),
+            setting = setting,
             pulloutWidth = SOUND_PULLOUT_WIDTH,
             list = isAuraEvent and auraSoundOptions or soundOptions,
             order = isAuraEvent and auraSoundOptionOrder or soundOptionOrder,
@@ -362,7 +575,7 @@ local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, in
     local soundLeft = BeginRowGrid(scroll)
 
     AddSoundPreviewDropdownRow(soundLeft, {
-        label = CooldownCompanion:GetTriggerPanelSoundAlertEventLabel("onShow"),
+        setting = triggerSoundSettings.triggered,
         pulloutWidth = SOUND_PULLOUT_WIDTH,
         list = soundOptions,
         order = soundOptionOrder,
@@ -466,7 +679,8 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
 
         local checkOptions, checkOrder = CooldownCompanion:GetTriggerConditionTypeOptions(buttonData, excludedKeys)
         AddDropdownRow(column, {
-            label = "Check",
+            setting = triggerConditionSettings[clauseIndex]
+                and triggerConditionSettings[clauseIndex].check,
             indent = true,
             pulloutWidth = CONDITION_PULLOUT_WIDTH,
             list = checkOptions,
@@ -481,7 +695,8 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
 
         local expectedOptions, expectedOrder = CooldownCompanion:GetTriggerConditionExpectedOptions(clause.key)
         AddDropdownRow(column, {
-            label = "State",
+            setting = triggerConditionSettings[clauseIndex]
+                and triggerConditionSettings[clauseIndex].state,
             indent = true,
             pulloutWidth = CONDITION_PULLOUT_WIDTH,
             list = expectedOptions,
@@ -571,7 +786,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     local itemLeft, itemRight = BeginRowGrid(scroll)
 
     AddSliderRow(itemLeft, {
-        label = "Item Stack Font Size",
+        setting = itemSettings.fontSize,
         min = 8, max = 32, step = 1,
         value = buttonData.itemCountFontSize or 12,
         onChange = function(val)
@@ -594,7 +809,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     -- The value is set AFTER SetupFontDropdown, because SetList rebuilds the
     -- list the displayed text is read from.
     local itemFontRow = AddDropdownRow(itemLeft, {
-        label = "Font",
+        setting = itemSettings.font,
         pulloutWidth = FONT_PULLOUT_WIDTH,
     })
     CS.SetupFontDropdown(itemFontRow)
@@ -605,7 +820,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     end)
 
     local itemOutlineRow = AddDropdownRow(itemLeft, {
-        label = "Font Outline",
+        setting = itemSettings.outline,
     })
     CS.SetupFontOutlineDropdown(itemOutlineRow)
     itemOutlineRow:SetValue(buttonData.itemCountFontOutline or "OUTLINE")
@@ -617,7 +832,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     -- Item count font color. No deferCommit: this call site never had one, and
     -- nothing here re-reads the bound table per tick.
     AddColorRow(itemRight, {
-        label = "Font Color",
+        setting = itemSettings.color,
         tbl = buttonData,
         key = "itemCountFontColor",
         default = {1, 1, 1, 1},
@@ -632,10 +847,10 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     local defItemY = 2
 
     AddAnchorDropdown(itemRight, buttonData, "itemCountAnchor", defItemAnchor, refreshGroup,
-        "Anchor Point", { row = true })
+        "Anchor Point", { row = true, setting = itemSettings.anchor })
 
     AddSliderRow(itemRight, {
-        label = "X Offset",
+        setting = itemSettings.xOffset,
         min = -20, max = 20, step = 0.1,
         value = buttonData.itemCountXOffset or defItemX,
         onChange = function(val)
@@ -648,7 +863,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     })
 
     AddSliderRow(itemRight, {
-        label = "Y Offset",
+        setting = itemSettings.yOffset,
         min = -20, max = 20, step = 0.1,
         value = buttonData.itemCountYOffset or defItemY,
         onChange = function(val)
@@ -1282,7 +1497,7 @@ local function BuildCustomNameSection(scroll, buttonData)
     -- One setting, so the grid keeps its left column only.
     local customNameLeft = BeginRowGrid(scroll)
     local customNameRow = AddEditBoxRow(customNameLeft, {
-        label = "Custom Name",
+        setting = customNameSettings.text,
         value = buttonData.customName or "",
         onEnterPressed = function(text)
             text = strtrim(text)
@@ -1327,7 +1542,7 @@ local function BuildCustomKeybindSection(scroll, buttonData)
 
     local keybindLeft = BeginRowGrid(scroll)
     local customKeybindRow = AddEditBoxRow(keybindLeft, {
-        label = "Custom Keybind Text",
+        setting = customKeybindSettings.text,
         value = buttonData.customKeybindText or "",
         onEnterPressed = function(text)
             text = strtrim(text)

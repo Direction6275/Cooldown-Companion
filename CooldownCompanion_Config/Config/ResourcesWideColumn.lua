@@ -670,7 +670,7 @@ end
 -- the resources preview host holds it. Called from every view branch that
 -- takes col3 over (buttons wide view, cast frames, the normal fall-through,
 -- the talent picker) and at the top of this view's own refresh.
-local function HideResourcesWideSurfaces(col3)
+local function HideResourcesWideSurfaces(col3, preserveFinderState)
     HideWidgetFrame(col3._resourcesConflictScroll)
     HideWidgetFrame(col3._resourcesTabGroup)
     HideWidgetFrame(col3._resourceSettingsTabGroup)
@@ -680,7 +680,7 @@ local function HideResourcesWideSurfaces(col3)
     HideWidgetFrame(col3._castFramesSettingsScroll)
     HideWidgetFrame(col3._resourcesAddBoxHost)
     if ST._ClearWideEditingExtras then
-        ST._ClearWideEditingExtras(col3)
+        ST._ClearWideEditingExtras(col3, preserveFinderState)
     end
     if col3._barsOverviewPane then col3._barsOverviewPane:Hide() end
     local host = col3._resourcesPreviewHost
@@ -1213,14 +1213,20 @@ end
 -- overview pane).
 local function RefreshBarsWideColumn(col3)
     -- Everything restarts hidden; the active surface re-shows below.
-    HideResourcesWideSurfaces(col3)
+    HideResourcesWideSurfaces(col3, true)
 
     if CooldownCompanion.GetCurrentResourceBarConflict and CooldownCompanion:GetCurrentResourceBarConflict() then
+        if ST._ClearSettingsFinderActionRowState then
+            ST._ClearSettingsFinderActionRowState(col3)
+        end
         ShowResourcesConflictScroll(col3)
         return
     end
 
     if ST._IsBarsOverviewActive and ST._IsBarsOverviewActive() then
+        if ST._ClearSettingsFinderActionRowState then
+            ST._ClearSettingsFinderActionRowState(col3)
+        end
         ShowBarsOverviewPane(col3)
         return
     end

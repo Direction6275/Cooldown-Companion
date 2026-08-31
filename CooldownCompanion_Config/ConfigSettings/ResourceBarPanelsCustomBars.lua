@@ -166,6 +166,647 @@ local function GetCustomBarCollapseKey(cab)
     return tostring((type(cab) == "table" and cab.customBarId) or "")
 end
 
+-- Candidate-resolution probe: the buttonData shape Core/Aura.lua reads,
+-- synthesized from Custom Bar config (the same mapping the runtime adapter
+-- uses). It is also safe for the Finder's one-time applicability preparation.
+local function BuildCustomBarAuraProbe(cab)
+    return {
+        type = "spell",
+        id = tonumber(cab.spellID),
+        addedAs = (not IsSpellCustomBarConfig(cab)) and "aura" or nil,
+        auraTracking = true,
+        auraSpellID = cab.auraSpellID,
+        auraUnit = cab.auraUnit,
+        auraUnitOverride = cab.auraUnitOverride,
+        auraIDOverride = tonumber(cab.auraIDOverride),
+    }
+end
+
+local function ResolveCustomBarLayoutSpecID(settings, entry, fallbackSpecID)
+    fallbackSpecID = tonumber(fallbackSpecID) or fallbackSpecID
+    if RB.CustomBarHasSpec and fallbackSpecID
+        and RB.CustomBarHasSpec(entry, fallbackSpecID)
+    then
+        return fallbackSpecID
+    end
+    if RB.CustomBarHasExplicitSpec then
+        for _, spec in ipairs(GetCustomBarSpecOptions()) do
+            if RB.CustomBarHasExplicitSpec(entry, spec.id) then
+                return spec.id
+            end
+        end
+    end
+
+    local entryCustomBarId = type(entry) == "table" and entry.customBarId or nil
+    local layoutOrder = type(settings) == "table" and settings.layoutOrder or nil
+    if type(entryCustomBarId) == "string" and type(layoutOrder) == "table" then
+        local layoutSpecIDs = {}
+        for specID, specLayout in pairs(layoutOrder) do
+            if type(specLayout) == "table"
+                and type(specLayout.customBars) == "table"
+                and type(specLayout.customBars[entryCustomBarId]) == "table"
+            then
+                layoutSpecIDs[#layoutSpecIDs + 1] = tonumber(specID) or specID
+            end
+        end
+        table.sort(layoutSpecIDs, function(a, b) return tostring(a) < tostring(b) end)
+        if layoutSpecIDs[1] then
+            return layoutSpecIDs[1]
+        end
+    end
+    return fallbackSpecID
+end
+
+------------------------------------------------------------------------
+-- SETTINGS FINDER CATALOG
+------------------------------------------------------------------------
+
+local CUSTOM_BAR_FINDER = { sounds = {}, specs = {} }
+
+local function FinderCustomBar(context)
+    return context and context.customBar or nil
+end
+
+local function FinderCustomBarCapabilities(context)
+    local prepared = context and context._settingsFinderCustomBarState
+    return prepared and prepared.capabilities or nil
+end
+
+local function FinderCustomBarHasSpell(context)
+    local cab = FinderCustomBar(context)
+    return cab and cab.spellID ~= nil
+end
+
+local function FinderCustomBarIsSpell(context)
+    local caps = FinderCustomBarCapabilities(context)
+    return caps and caps.isSpellBar == true
+end
+
+local function FinderCustomBarAuraActive(context)
+    local cab = FinderCustomBar(context)
+    return cab and cab.spellID ~= nil
+        and (not IsSpellCustomBarConfig(cab) or cab.auraTracking == true)
+end
+
+local function FinderCustomBarAuraTracked(context)
+    local caps = FinderCustomBarCapabilities(context)
+    return caps and caps.auraTracked == true
+end
+
+local function FinderCustomBarShowsStackText(context)
+    local cab = FinderCustomBar(context)
+    if not cab then return false end
+    local showStack = cab.showStackText
+    if not IsSpellCustomBarConfig(cab) and showStack == nil then
+        return cab.trackingMode ~= "active" and cab.showText == true
+    end
+    return showStack == true
+end
+
+local function FinderCustomBarAuraMax(context)
+    local prepared = context and context._settingsFinderCustomBarState
+    local value = prepared and prepared.auraMax
+    return type(value) == "number" and value or nil
+end
+
+local function FinderCustomBarStackRowsInCombat(context)
+    local prepared = context and context._settingsFinderCustomBarState
+    return prepared and prepared.stackRowsInCombat == true or false
+end
+
+local function FinderCustomBarSizeField(context)
+    local prepared = context and context._settingsFinderCustomBarState
+    return prepared and prepared.sizeField or nil
+end
+
+local function FinderCustomBarSoundEvent(context, key)
+    local prepared = context and context._settingsFinderCustomBarState
+    local events = prepared and prepared.soundEvents
+    return events and events[key] == true
+end
+
+local function FinderCustomBarLowTimeActive(context)
+    local cab = FinderCustomBar(context)
+    local threshold = cab and tonumber(cab.durationLowTimeThreshold)
+    return threshold ~= nil and threshold > 0
+end
+
+local function FinderCustomBarLowTimeCriticalActive(context)
+    local cab = FinderCustomBar(context)
+    if not cab then return false end
+    local threshold = tonumber(cab.durationLowTimeThreshold)
+    local critical = tonumber(cab.durationLowTimeThreshold2)
+    return threshold ~= nil and threshold > 0
+        and critical ~= nil and critical > 0 and critical < threshold
+end
+
+local function PrepareCustomBarFinderContext(context)
+    local cab = FinderCustomBar(context)
+    if not cab then return end
+    local settings = context.resourceSettings
+        or CooldownCompanion:GetResourceBarSettings()
+    local layoutSpecID = ResolveCustomBarLayoutSpecID(
+        settings, cab, context.resourceSpecID or GetCurrentConfigSpecID())
+    local layout = RB.GetSpecLayoutOrder
+        and RB.GetSpecLayoutOrder(settings, layoutSpecID)
+        or CooldownCompanion:GetSpecLayoutOrder()
+    local thicknessField = GetResourceThicknessFieldConfig(settings, layout)
+    local capabilities = RB.GetCustomBarConfigCapabilities(cab)
+
+    local validEvents = CooldownCompanion:GetScopedValidSoundAlertEventsForCustomBar(cab)
+    local soundEvents = {}
+    for eventKey, available in pairs(validEvents or {}) do
+        if available then
+            local finderKey = eventKey
+            if eventKey == "available"
+                and CooldownCompanion:GetCustomBarSoundAlertEventLabel(cab, eventKey)
+                    == "Available / Charge Gained"
+            then
+                finderKey = "availableCharges"
+            end
+            soundEvents[finderKey] = true
+        end
+    end
+
+    local mode = cab.trackingMode
+    if mode ~= "active" and mode ~= "stacks" then
+        mode = capabilities.isSpellBar and "active" or "stacks"
+    end
+    local showsStackText = FinderCustomBarShowsStackText(context)
+    local auraMax
+    if (not capabilities.isSpellBar or cab.auraTracking == true)
+        and (mode == "stacks" or showsStackText)
+    then
+        auraMax = CooldownCompanion:GetAuraStackBarMax(
+            BuildCustomBarAuraProbe(cab), true)
+    end
+
+    context._settingsFinderCustomBarState = {
+        capabilities = capabilities,
+        sizeField = (layout and layout.customBarHeights) and thicknessField or false,
+        soundEvents = soundEvents,
+        auraMax = auraMax,
+        stackRowsInCombat = showsStackText and InCombatLockdown() == true,
+    }
+end
+
+if ST._RegisterSettingsFinderContextPreparer then
+    ST._RegisterSettingsFinderContextPreparer(
+        "customBar", PrepareCustomBarFinderContext)
+end
+
+local function FinderCustomBarCollapse(name)
+    return function(context)
+        return "cab_" .. name .. "_" .. GetCustomBarCollapseKey(FinderCustomBar(context))
+    end
+end
+
+local function DefineCustomBarRoute(name, sectionLabel, opts)
+    opts = opts or {}
+    return ST._DefineSettingRoute({
+        idPrefix = "customBar.settings." .. name,
+        scope = "customBar",
+        tab = "settings",
+        tabLabel = "Settings",
+        section = name,
+        sectionLabel = sectionLabel,
+        collapseKeys = FinderCustomBarCollapse(opts.collapseName or name),
+        collapseStore = "resource",
+        rowScope = "detail",
+        advancedKey = opts.advancedKey,
+        applies = opts.applies,
+    })
+end
+
+if ST._DefineSettingRoute then
+    local size = DefineCustomBarRoute("size", "Size")
+    CUSTOM_BAR_FINDER.size = size:Settings({
+        height = {
+            label = "Bar Height",
+            applies = function(context) return FinderCustomBarSizeField(context) == "barHeight" end,
+        },
+        width = {
+            label = "Bar Width",
+            applies = function(context) return FinderCustomBarSizeField(context) == "barWidth" end,
+        },
+    })
+
+    local colors = DefineCustomBarRoute("colors", "Colors", { applies = FinderCustomBarHasSpell })
+    CUSTOM_BAR_FINDER.colors = colors:Settings({
+        bar = {
+            label = "Bar Color",
+            applies = function(context)
+                local caps = FinderCustomBarCapabilities(context)
+                return caps and caps.isSpellBar and caps.baseSpellShellConsumer
+            end,
+        },
+        cooldown = {
+            label = "Bar Cooldown Color",
+            applies = function(context)
+                local caps = FinderCustomBarCapabilities(context)
+                return caps and caps.isSpellBar and caps.baseSpellShellConsumer and caps.cooldownConsumer
+            end,
+        },
+        recharging = {
+            label = "Bar Recharging Color",
+            aliases = { "charge color" },
+            applies = function(context)
+                local caps = FinderCustomBarCapabilities(context)
+                return caps and caps.isSpellBar and caps.hasCharges
+            end,
+        },
+        aura = {
+            label = "Aura Bar Color",
+            applies = function(context)
+                local caps = FinderCustomBarCapabilities(context)
+                return caps and ((not caps.isSpellBar) or caps.auraTracked)
+            end,
+        },
+    })
+
+    local texts = DefineCustomBarRoute("texts", "Texts", { applies = FinderCustomBarHasSpell })
+    CUSTOM_BAR_FINDER.texts = texts:Settings({
+        duration = {
+            label = "Show Duration Text",
+            applies = function(context)
+                local caps = FinderCustomBarCapabilities(context)
+                return caps and caps.durationConsumer
+            end,
+        },
+        count = {
+            label = "Show Count Text (Charges/Uses)",
+            aliases = { "charges", "uses" },
+            applies = function(context)
+                local caps = FinderCustomBarCapabilities(context)
+                return caps and caps.isSpellBar and caps.countConsumer
+            end,
+        },
+        stacks = {
+            label = "Show Stack Text",
+            applies = function(context)
+                local caps = FinderCustomBarCapabilities(context)
+                return caps and not caps.isSpellBar and caps.countConsumer
+            end,
+        },
+        cooldownVisibility = {
+            label = "Cooldown Visibility",
+            applies = function(context)
+                local caps = FinderCustomBarCapabilities(context)
+                local cab = FinderCustomBar(context)
+                return caps and cab and cab.showDurationText == true
+                    and caps.isSpellBar and caps.auraTracked
+            end,
+        },
+        cooldownLast = {
+            label = "Cooldown: Show During Last",
+            applies = function(context)
+                local caps = FinderCustomBarCapabilities(context)
+                local cab = FinderCustomBar(context)
+                return caps and cab and cab.showDurationText == true
+                    and caps.isSpellBar and caps.auraTracked
+            end,
+        },
+        spellVisibility = {
+            label = "Visible",
+            aliases = { "cooldown visibility" },
+            applies = function(context)
+                local caps = FinderCustomBarCapabilities(context)
+                local cab = FinderCustomBar(context)
+                return caps and cab and cab.showDurationText == true
+                    and caps.isSpellBar and not caps.auraTracked
+            end,
+        },
+        spellLast = {
+            label = "Show During Last",
+            aliases = { "cooldown text threshold" },
+            applies = function(context)
+                local caps = FinderCustomBarCapabilities(context)
+                local cab = FinderCustomBar(context)
+                return caps and cab and cab.showDurationText == true
+                    and caps.isSpellBar and not caps.auraTracked
+            end,
+        },
+        auraVisibility = {
+            label = "Aura Visibility",
+            applies = function(context)
+                local caps = FinderCustomBarCapabilities(context)
+                local cab = FinderCustomBar(context)
+                return caps and cab and cab.showDurationText == true
+                    and caps.isSpellBar and caps.auraTracked
+            end,
+        },
+        auraLast = {
+            label = "Aura: Show During Last",
+            applies = function(context)
+                local caps = FinderCustomBarCapabilities(context)
+                local cab = FinderCustomBar(context)
+                return caps and cab and cab.showDurationText == true
+                    and caps.isSpellBar and caps.auraTracked
+            end,
+        },
+        auraOnlyVisibility = {
+            label = "Visible",
+            aliases = { "aura visibility" },
+            applies = function(context)
+                local caps = FinderCustomBarCapabilities(context)
+                local cab = FinderCustomBar(context)
+                return caps and cab and cab.showDurationText == true and not caps.isSpellBar
+            end,
+        },
+        auraOnlyLast = {
+            label = "Show During Last",
+            aliases = { "aura text threshold" },
+            applies = function(context)
+                local caps = FinderCustomBarCapabilities(context)
+                local cab = FinderCustomBar(context)
+                return caps and cab and cab.showDurationText == true and not caps.isSpellBar
+            end,
+        },
+        format = {
+            label = "Duration Format",
+            aliases = { "timer format" },
+            applies = function(context)
+                local caps = FinderCustomBarCapabilities(context)
+                local cab = FinderCustomBar(context)
+                return caps and cab and caps.durationConsumer and cab.showDurationText == true
+            end,
+        },
+    })
+
+    local function TextAdvanced(suffix, label, keyPrefix, applies)
+        return DefineCustomBarRoute("texts." .. suffix, label, {
+            collapseName = "texts",
+            applies = applies,
+            advancedKey = function(context)
+                return keyPrefix .. GetCustomBarCollapseKey(FinderCustomBar(context))
+            end,
+        })
+    end
+    CUSTOM_BAR_FINDER.durationText = TextAdvanced("duration", "Duration Text", "rbCabDurationText_",
+        function(context)
+            local caps = FinderCustomBarCapabilities(context)
+            local cab = FinderCustomBar(context)
+            return caps and cab and caps.durationConsumer and cab.showDurationText == true
+        end):Settings({
+            fontSize = { label = "Font Size" }, font = { label = "Font" }, outline = { label = "Font Outline" },
+            color = { label = "Duration Text Color" },
+        })
+    CUSTOM_BAR_FINDER.stackText = TextAdvanced("stack", "Other Text", "rbCabStackText_",
+        function(context)
+            local caps = FinderCustomBarCapabilities(context)
+            local cab = FinderCustomBar(context)
+            return caps and cab and caps.countConsumer and cab.showStackText == true
+        end):Settings({
+            fontSize = { label = "Font Size" }, font = { label = "Font" }, outline = { label = "Font Outline" },
+            color = { label = "Stack Text Color" },
+        })
+
+    local lowTime = DefineCustomBarRoute("texts.lowTime", "Duration Text", {
+        collapseName = "texts",
+        applies = function(context)
+            local caps = FinderCustomBarCapabilities(context)
+            local cab = FinderCustomBar(context)
+            return caps and cab and caps.durationConsumer and cab.showDurationText == true
+        end,
+    })
+    CUSTOM_BAR_FINDER.lowTime = lowTime:Settings({
+        enabled = { label = "Change Text Near Expiry", aliases = { "low time", "warning time" } },
+        warningThreshold = { label = "Start Warning Below", applies = FinderCustomBarLowTimeActive },
+        warningColor = { label = "Warning Color", applies = FinderCustomBarLowTimeActive },
+        auras = {
+            label = "Also Apply to Aura Text",
+            applies = function(context)
+                return FinderCustomBarLowTimeActive(context)
+                    and FinderCustomBarIsSpell(context)
+                    and FinderCustomBarAuraTracked(context)
+            end,
+        },
+        critical = { label = "Add Critical Styling", applies = FinderCustomBarLowTimeActive },
+        criticalThreshold = { label = "Start Critical Below", applies = FinderCustomBarLowTimeCriticalActive },
+        criticalColor = { label = "Critical Color", applies = FinderCustomBarLowTimeCriticalActive },
+        decimals = { label = "Show Decimals Near Expiry", applies = FinderCustomBarLowTimeActive },
+    })
+
+    local aura = DefineCustomBarRoute("aura", "Aura Tracking", { applies = FinderCustomBarHasSpell })
+    CUSTOM_BAR_FINDER.aura = aura:Settings({
+        tracking = { label = "Track an Aura", applies = FinderCustomBarIsSpell },
+        trackedOn = { label = "Tracked on", aliases = { "aura unit", "target", "player", "group", "pet" }, applies = FinderCustomBarAuraActive },
+        idOverride = { label = "Aura ID Override", applies = FinderCustomBarAuraActive },
+        showsStacks = { label = "Bar Shows Stacks", applies = FinderCustomBarAuraActive },
+        stackStyle = {
+            label = "Stack Style",
+            applies = function(context)
+                local cab = FinderCustomBar(context)
+                return FinderCustomBarAuraActive(context) and cab and cab.trackingMode == "stacks"
+                    and FinderCustomBarAuraMax(context) ~= nil
+            end,
+        },
+        segmentGap = {
+            label = "Segment Gap",
+            applies = function(context)
+                local cab = FinderCustomBar(context)
+                return FinderCustomBarAuraActive(context) and cab
+                    and not IsSpellCustomBarConfig(cab) and cab.trackingMode == "stacks"
+                    and cab.displayMode ~= "continuous"
+                    and FinderCustomBarAuraMax(context) ~= nil
+                    and FinderCustomBarAuraMax(context) <= ST.STACK_SEGMENT_ATLAS_MAX
+            end,
+        },
+        showOne = {
+            label = "Show Count at 1 Stack",
+            applies = function(context)
+                local cab = FinderCustomBar(context)
+                local auraBar = cab and cab.auraBar
+                return FinderCustomBarAuraActive(context) and FinderCustomBarShowsStackText(context)
+                    and (FinderCustomBarAuraMax(context) ~= nil
+                        or FinderCustomBarStackRowsInCombat(context)
+                        or (type(auraBar) == "table" and auraBar.showCountAtOne == true))
+            end,
+        },
+        threshold = {
+            label = "Stack Text Threshold Color",
+            applies = function(context)
+                return FinderCustomBarAuraActive(context) and FinderCustomBarShowsStackText(context)
+                    and (FinderCustomBarAuraMax(context) ~= nil or FinderCustomBarStackRowsInCombat(context))
+            end,
+        },
+        thresholdStacks = {
+            label = "Threshold Stacks",
+            applies = function(context)
+                local cab = FinderCustomBar(context)
+                return cab and type(cab.auraBar) == "table" and cab.auraBar.thresholdValue ~= nil
+                    and FinderCustomBarShowsStackText(context)
+                    and (FinderCustomBarAuraMax(context) ~= nil or FinderCustomBarStackRowsInCombat(context))
+            end,
+        },
+        thresholdColor = {
+            label = "Threshold Color",
+            applies = function(context)
+                local cab = FinderCustomBar(context)
+                return cab and type(cab.auraBar) == "table" and cab.auraBar.thresholdValue ~= nil
+                    and FinderCustomBarShowsStackText(context)
+                    and (FinderCustomBarAuraMax(context) ~= nil or FinderCustomBarStackRowsInCombat(context))
+            end,
+        },
+        maxStacks = {
+            label = "Max Stacks Text Color",
+            applies = function(context)
+                return FinderCustomBarAuraActive(context) and FinderCustomBarShowsStackText(context)
+                    and FinderCustomBarAuraMax(context) ~= nil
+            end,
+        },
+        maxColor = {
+            label = "Max Color",
+            applies = function(context)
+                local cab = FinderCustomBar(context)
+                return cab and type(cab.auraBar) == "table" and cab.auraBar.maxColorEnabled == true
+                    and FinderCustomBarShowsStackText(context) and FinderCustomBarAuraMax(context) ~= nil
+            end,
+        },
+        pandemic = {
+            label = "Pandemic Marker",
+            applies = function(context)
+                local cab = FinderCustomBar(context)
+                return FinderCustomBarAuraActive(context) and cab and cab.showDurationText == true
+            end,
+        },
+        pandemicColor = { label = "Show Pandemic Color", applies = FinderCustomBarAuraActive },
+        fillColor = {
+            label = "Fill Color",
+            applies = function(context)
+                local cab = FinderCustomBar(context)
+                return FinderCustomBarAuraActive(context) and cab and cab.pandemicEffect == true
+            end,
+        },
+        activeOnly = { label = "Show Only While Aura Active", applies = FinderCustomBarAuraActive },
+        dimInactive = { label = "Dim While Aura Inactive", applies = FinderCustomBarAuraActive },
+    })
+    CUSTOM_BAR_FINDER.stackFormatting = {
+        showOne = CUSTOM_BAR_FINDER.aura.showOne,
+        threshold = CUSTOM_BAR_FINDER.aura.threshold,
+        thresholdStacks = CUSTOM_BAR_FINDER.aura.thresholdStacks,
+        thresholdColor = CUSTOM_BAR_FINDER.aura.thresholdColor,
+        maxStacks = CUSTOM_BAR_FINDER.aura.maxStacks,
+        maxColor = CUSTOM_BAR_FINDER.aura.maxColor,
+    }
+
+    local marker = DefineCustomBarRoute("aura.marker", "Aura Tracking", {
+        collapseName = "aura",
+        applies = function(context)
+            local cab = FinderCustomBar(context)
+            return FinderCustomBarAuraActive(context) and cab and cab.showDurationText == true
+        end,
+        advancedKey = function(context)
+            return "rbCabPandemicMarker_" .. GetCustomBarCollapseKey(FinderCustomBar(context))
+        end,
+    })
+    CUSTOM_BAR_FINDER.marker = marker:Settings({
+        text = { label = "Marker Text" }, coloring = { label = "Marker Coloring" }, color = { label = "Marker Color" },
+    })
+
+    local effects = DefineCustomBarRoute("effects", "Effects", {
+        collapseName = "aura_effects",
+        applies = FinderCustomBarAuraTracked,
+    })
+    local function FinderBarAuraEffectIs(context, expected)
+        local cab = FinderCustomBar(context)
+        return cab and (cab.barAuraEffect or "color") == expected
+    end
+    CUSTOM_BAR_FINDER.effects = effects:Settings({
+        style = { label = "Glow Style" }, color = { label = "Effect Color" },
+        color2 = { label = "Second Color", applies = function(context) return FinderBarAuraEffectIs(context, "colorShift") end },
+        borderSize = {
+            label = "Border Size",
+            applies = function(context)
+                return FinderBarAuraEffectIs(context, "solid") or FinderBarAuraEffectIs(context, "pulse")
+                    or FinderBarAuraEffectIs(context, "colorShift")
+            end,
+        },
+        pulseDuration = { label = "Border Pulse Duration", aliases = { "pulse duration" }, applies = function(context) return FinderBarAuraEffectIs(context, "pulse") end },
+        dashLength = { label = "Dash Length", applies = function(context) return FinderBarAuraEffectIs(context, "dashes") end },
+        dashThickness = { label = "Dash Thickness", applies = function(context) return FinderBarAuraEffectIs(context, "dashes") end },
+        dashCount = { label = "Number of Dashes", applies = function(context) return FinderBarAuraEffectIs(context, "dashes") end },
+        lapDuration = { label = "Lap Duration", applies = function(context) return FinderBarAuraEffectIs(context, "dashes") end },
+        shiftDuration = { label = "Border Shift Duration", aliases = { "shift duration" }, applies = function(context) return FinderBarAuraEffectIs(context, "colorShift") end },
+        pulseFill = { label = "Pulse Bar Fill" },
+        pulseFillDuration = {
+            label = "Fill Pulse Duration", aliases = { "pulse duration" },
+            applies = function(context)
+                local cab = FinderCustomBar(context)
+                return cab and cab.barAuraPulseEnabled == true
+            end,
+        },
+        colorShiftFill = { label = "Color Shift Bar Fill" },
+        colorShiftDuration = {
+            label = "Fill Shift Duration", aliases = { "shift duration" },
+            applies = function(context)
+                local cab = FinderCustomBar(context)
+                return cab and cab.barAuraColorShiftEnabled == true
+            end,
+        },
+        shiftColor = {
+            label = "Shift Color",
+            applies = function(context)
+                local cab = FinderCustomBar(context)
+                return cab and cab.barAuraColorShiftEnabled == true
+            end,
+        },
+    })
+
+    local sound = DefineCustomBarRoute("sound", "Sound Alerts", {
+        applies = FinderCustomBarHasSpell,
+    })
+    local soundLabels = {
+        available = "Available", availableCharges = "Available / Charge Gained", onCooldown = "On Cooldown",
+        onAuraApplied = "Aura Applied", onAuraStackGained = "Aura Stack Gained", onAuraRemoved = "Aura Removed",
+    }
+    for key, label in pairs(soundLabels) do
+        local descriptorKey = key
+        CUSTOM_BAR_FINDER.sounds[descriptorKey] = sound:Setting({
+            key = descriptorKey,
+            label = label,
+            aliases = descriptorKey == "availableCharges" and { "available", "charge gained" } or nil,
+            applies = function(context)
+                return FinderCustomBarSoundEvent(context, descriptorKey)
+            end,
+        })
+    end
+
+    local rules = DefineCustomBarRoute("hiderules", "Show & Hide Rules", {
+        applies = function(context)
+            local caps = FinderCustomBarCapabilities(context)
+            return caps and caps.isSpellBar and caps.cooldownConsumer
+        end,
+    })
+    CUSTOM_BAR_FINDER.rules = rules:Settings({
+        onCooldown = { label = "Hide While On Cooldown" },
+        notOnCooldown = { label = "Hide While Not On Cooldown" },
+        onlyZero = {
+            label = "Only Show At Zero Charges",
+            applies = function(context)
+                local caps, cab = FinderCustomBarCapabilities(context), FinderCustomBar(context)
+                return caps and caps.hasCharges and cab and cab.hideWhileNotOnCooldown == true
+            end,
+        },
+        hideZero = {
+            label = "Hide While At Zero Charges",
+            applies = function(context)
+                local caps = FinderCustomBarCapabilities(context)
+                return caps and caps.hasCharges
+            end,
+        },
+    })
+
+    local specs = DefineCustomBarRoute("specs", "Specializations")
+    for _, spec in ipairs(GetCustomBarSpecOptions()) do
+        CUSTOM_BAR_FINDER.specs[spec.id] = specs:Setting({
+            key = tostring(spec.id),
+            label = spec.name,
+            aliases = { "specialization", "spec" },
+        })
+    end
+end
+
 local function AddCustomBarSection(container, title, name, key)
     local fullKey = "cab_" .. name .. "_" .. key
     local heading, collapsed = BuildCollapsibleSection(container, title, fullKey,
@@ -195,7 +836,7 @@ local function AddCustomBarSpecFilterControls(specLeft, specRight, settings, ent
         if capturedSpec.icon then
             label = ("|T%s:16:16:0:0|t %s"):format(tostring(capturedSpec.icon), label)
         end
-        AddCheckboxRow(index <= splitAt and specLeft or specRight, {
+        local specRow = AddCheckboxRow(index <= splitAt and specLeft or specRight, {
             label = label,
             value = RB.CustomBarHasExplicitSpec and RB.CustomBarHasExplicitSpec(entry, capturedSpec.id) or false,
             onChange = function(value)
@@ -215,6 +856,9 @@ local function AddCustomBarSpecFilterControls(specLeft, specRight, settings, ent
                 })
             end,
         })
+        if ST._BindSettingWidget and CUSTOM_BAR_FINDER.specs[capturedSpec.id] then
+            ST._BindSettingWidget(specRow, CUSTOM_BAR_FINDER.specs[capturedSpec.id])
+        end
     end
 end
 
@@ -421,9 +1065,10 @@ local function BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
     }, infoButtons)
     AnchorLeftAlignedHeadingRule(soundHeading, soundInfoBtn)
 
+    local validEvents = CooldownCompanion:GetScopedValidSoundAlertEventsForCustomBar(cab)
+
     if soundCollapsed then return end
 
-    local validEvents = CooldownCompanion:GetScopedValidSoundAlertEventsForCustomBar(cab)
     if not validEvents then
         local noEvents = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(noEvents)
@@ -465,8 +1110,14 @@ local function BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
 
     local function AddSoundEventRow(column, eventKey)
         local isAuraEvent = CooldownCompanion:IsAuraSoundAlertEvent(eventKey)
+        local soundSettingKey = eventKey
+        if eventKey == "available"
+            and CooldownCompanion:GetCustomBarSoundAlertEventLabel(cab, eventKey) == "Available / Charge Gained" then
+            soundSettingKey = "availableCharges"
+        end
         AddSoundPreviewDropdownRow(column, {
             label = CooldownCompanion:GetCustomBarSoundAlertEventLabel(cab, eventKey),
+            setting = CUSTOM_BAR_FINDER.sounds[soundSettingKey],
             pulloutWidth = SOUND_PULLOUT_WIDTH,
             list = isAuraEvent and auraSoundOptions or soundOptions,
             order = isAuraEvent and auraSoundOptionOrder or soundOptionOrder,
@@ -551,6 +1202,7 @@ local function BuildCustomBarLoadConditionsTab(container, cab, infoButtons, capa
 
             AddCheckboxRow(rulesLeft, {
                 label = "Hide While On Cooldown",
+                setting = CUSTOM_BAR_FINDER.rules.onCooldown,
                 value = cab.hideWhileOnCooldown == true,
                 onChange = function(value)
                     cab.hideWhileOnCooldown = value or nil
@@ -564,6 +1216,7 @@ local function BuildCustomBarLoadConditionsTab(container, cab, infoButtons, capa
 
             AddCheckboxRow(rulesLeft, {
                 label = "Hide While Not On Cooldown",
+                setting = CUSTOM_BAR_FINDER.rules.notOnCooldown,
                 value = cab.hideWhileNotOnCooldown == true,
                 onChange = function(value)
                     cab.hideWhileNotOnCooldown = value or nil
@@ -579,6 +1232,7 @@ local function BuildCustomBarLoadConditionsTab(container, cab, infoButtons, capa
             if isChargeSpell and cab.hideWhileNotOnCooldown == true then
                 AddCheckboxRow(rulesLeft, {
                     label = "Only Show At Zero Charges",
+                    setting = CUSTOM_BAR_FINDER.rules.onlyZero,
                     indent = true,
                     value = cab.showOnlyAtZeroCharges == true,
                     onChange = function(value)
@@ -594,6 +1248,7 @@ local function BuildCustomBarLoadConditionsTab(container, cab, infoButtons, capa
             if isChargeSpell then
                 AddCheckboxRow(rulesRight, {
                     label = "Hide While At Zero Charges",
+                    setting = CUSTOM_BAR_FINDER.rules.hideZero,
                     value = cab.hideWhileZeroCharges == true,
                     onChange = function(value)
                         cab.hideWhileZeroCharges = value or nil
@@ -638,6 +1293,7 @@ local function BuildCustomBarLoadConditionsTab(container, cab, infoButtons, capa
         localCollapsedKey = "loadconditions_custombar_local",
         preserveMissing = true,
         row = true,
+        settings = ST._CustomBarLoadConditionFinderSettings,
         infoTooltipLines = type(buildWhereToHideTooltip) == "function"
             and buildWhereToHideTooltip("bar", false) or nil,
         infoButtons = infoButtons,
@@ -742,23 +1398,6 @@ local AddAuraStackMaxStatusLabel = ST._AddAuraStackMaxStatusLabel
 -- the shared builder writes the right store with `cab` handed in as the style.
 local AddPandemicMarkerControls = ST._AddPandemicMarkerControls
 
--- Candidate-resolution probe: the buttonData shape Core/Aura.lua reads,
--- synthesized from cabConfig (the same mapping the runtime adapter uses).
-local function BuildCustomBarAuraProbe(cab)
-    return {
-        type = "spell",
-        id = tonumber(cab.spellID),
-        addedAs = (not IsSpellCustomBarConfig(cab)) and "aura" or nil,
-        auraTracking = true,
-        auraSpellID = cab.auraSpellID,
-        auraUnit = cab.auraUnit,
-        -- User overrides (panel parity 2026-08-28): every cab synthetic
-        -- carries both keys so config, block, and slot paths agree.
-        auraUnitOverride = cab.auraUnitOverride,
-        auraIDOverride = tonumber(cab.auraIDOverride),
-    }
-end
-
 -- The user's explicit unit override, when set (panel parity: absolute over
 -- every derived answer in this section).
 local function GetCustomBarAuraUnitOverride(cab)
@@ -835,7 +1474,16 @@ end
 
 local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, sectionKey)
     local isSpellBar = IsSpellCustomBarConfig(cab)
-
+    local mode = cab.trackingMode
+    if mode ~= "active" and mode ~= "stacks" then
+        mode = isSpellBar and "active" or "stacks"
+    end
+    local showsStackText = CustomBarShowsStackText(cab)
+    local maxStacks
+    if (not isSpellBar or cab.auraTracking == true)
+        and (mode == "stacks" or showsStackText) then
+        maxStacks = CooldownCompanion:GetAuraStackBarMax(BuildCustomBarAuraProbe(cab), true)
+    end
     local _, collapsed = AddCustomBarSettingsHeading(container, "Aura Tracking", "aura", sectionKey, infoButtons, {
         "Blizzard tracks the aura and drives the bar; the addon never reads aura state in combat.",
         " ",
@@ -854,6 +1502,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     if isSpellBar then
         AddCheckboxRow(auraLeft, {
             label = "Track an Aura",
+            setting = CUSTOM_BAR_FINDER.aura.tracking,
             value = cab.auraTracking == true,
             onChange = function(value)
                 cab.auraTracking = value and true or nil
@@ -949,6 +1598,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         or "automatic"
     local scopeRow = AddDropdownRow(auraLeft, {
         label = "Tracked on",
+        setting = CUSTOM_BAR_FINDER.aura.trackedOn,
         indent = isSpellBar,
         list = scopeList,
         order = scopeOrder,
@@ -995,6 +1645,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     -- it also retires the own-aura implicit fallback.
     AddEditBoxRow(auraLeft, {
         label = "Aura ID Override",
+        setting = CUSTOM_BAR_FINDER.aura.idOverride,
         indent = isSpellBar,
         value = cab.auraIDOverride and tostring(cab.auraIDOverride) or "",
         tooltip = {
@@ -1094,12 +1745,9 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
 
     -- Bar fill mode: duration drain or stack count. Max stacks is automatic
     -- (game data); the status line shows what resolved.
-    local mode = cab.trackingMode
-    if mode ~= "active" and mode ~= "stacks" then
-        mode = isSpellBar and "active" or "stacks"
-    end
     local stacksRow = AddCheckboxRow(auraRight, {
         label = "Bar Shows Stacks",
+        setting = CUSTOM_BAR_FINDER.aura.showsStacks,
         value = mode == "stacks",
         onChange = function(value)
             cab.trackingMode = value and "stacks" or "active"
@@ -1120,10 +1768,10 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     if mode == "stacks" then
         -- Constrained, matching every runtime resolve since the review
         -- alignment (2026-08-15): one max across config, bind, and policy.
-        local maxStacks = CooldownCompanion:GetAuraStackBarMax(BuildCustomBarAuraProbe(cab), true)
         if maxStacks then
             AddDropdownRow(auraRight, {
                 label = "Stack Style",
+                setting = CUSTOM_BAR_FINDER.aura.stackStyle,
                 indent = true,
                 list = { segmented = "Segmented", continuous = "Continuous" },
                 order = { "segmented", "continuous" },
@@ -1141,6 +1789,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
             if not isSpellBar and cab.displayMode ~= "continuous"
                 and maxStacks <= ST.STACK_SEGMENT_ATLAS_MAX then
                 ST._AddStackBlockGapRow(auraRight, cab, {
+                    setting = CUSTOM_BAR_FINDER.aura.segmentGap,
                     maxStacks = maxStacks,
                     commit = function()
                         CooldownCompanion:ApplyResourceBars()
@@ -1165,10 +1814,10 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     -- Resolved with constrained fallbacks,
     -- the one max every custom-bar surface shares since the review
     -- alignment.
-    if CustomBarShowsStackText(cab) then
-        ST._BuildStackThresholdColorRows(auraRight, cab,
-            CooldownCompanion:GetAuraStackBarMax(BuildCustomBarAuraProbe(cab), true), {
+    if showsStackText then
+        ST._BuildStackThresholdColorRows(auraRight, cab, maxStacks, {
                 infoButtons = infoButtons,
+                settings = CUSTOM_BAR_FINDER.stackFormatting,
                 refresh = RefreshCustomBarAuraConfig,
                 commit = function()
                     CooldownCompanion:ApplyResourceBars()
@@ -1191,6 +1840,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         if pandemicValue == nil then pandemicValue = pandemicDefault end
         local pandemicRow = AddCheckboxRow(auraRight, {
             label = "Pandemic Marker",
+            setting = CUSTOM_BAR_FINDER.aura.pandemic,
             value = pandemicValue == true,
             onChange = function(value)
                 if value == pandemicDefault then
@@ -1224,7 +1874,10 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
                 if CS.RefreshAdvancedSettingsPanel then
                     CS.RefreshAdvancedSettingsPanel()
                 end
-            end, { childrenOnly = true })
+            end, {
+                childrenOnly = true,
+                settings = CUSTOM_BAR_FINDER.marker,
+            })
         end
         AddAdvancedToggle(pandemicRow, "rbCabPandemicMarker_" .. tostring(sectionKey), infoButtons,
             pandemicValue == true, {
@@ -1244,6 +1897,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     -- must never be written again.
     local effectRow = AddCheckboxRow(auraRight, {
         label = "Show Pandemic Color",
+        setting = CUSTOM_BAR_FINDER.aura.pandemicColor,
         value = cab.pandemicEffect == true,
         onChange = function(value)
             cab.pandemicEffect = value and true or nil
@@ -1273,6 +1927,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         -- opens its own "Marker Color", and the two drive different visuals.
         AddColorRow(auraRight, {
             label = "Fill Color",
+            setting = CUSTOM_BAR_FINDER.aura.fillColor,
             indent = true,
             tbl = cab,
             key = "pandemicColor",
@@ -1296,6 +1951,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     local shellDisabled = scopeExpanded and not isSpellBar
     local shellRow = AddCheckboxRow(auraRight, {
         label = "Show Only While Aura Active",
+        setting = CUSTOM_BAR_FINDER.aura.activeOnly,
         value = cab.hideWhenInactive == true,
         disabled = shellDisabled,
         onChange = function(value)
@@ -1347,6 +2003,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     -- it works under every scope; mutually exclusive with the hide above.
     local dimRow = AddCheckboxRow(auraRight, {
         label = "Dim While Aura Inactive",
+        setting = CUSTOM_BAR_FINDER.aura.dimInactive,
         value = cab.auraShellDim == true,
         onChange = function(value)
             cab.auraShellDim = value and true or nil
@@ -1387,7 +2044,7 @@ local function BuildCustomBarWorkspaceAddBox(container)
     addBox:SetLabel("")
     addBox:SetFullWidth(true)
     addBox:DisableButton(true)
-    local updatePlaceholder = ConfigureCustomBarAddInstructions(addBox, "Add spell by name or ID")
+    local updatePlaceholder = ConfigureCustomBarAddInstructions(addBox, "Add a spell by name or ID…")
 
     local function GetCustomBarEntryTypeForAutocomplete(entry)
         if type(entry) ~= "table" then
@@ -1626,40 +2283,8 @@ local function BuildCustomAuraBarPanel(container, customBarId)
     local capturedId = EnsureCustomBarId(settings, cab)
     local capturedKey = capturedId or tostring(capturedIdx)
     local currentConfigSpecID = GetCurrentConfigSpecID()
-    local function resolveLayoutSpecID(entry, fallbackSpecID)
-        fallbackSpecID = tonumber(fallbackSpecID) or fallbackSpecID
-        if RB.CustomBarHasSpec and fallbackSpecID and RB.CustomBarHasSpec(entry, fallbackSpecID) then
-            return fallbackSpecID
-        end
-        if RB.CustomBarHasExplicitSpec then
-            for _, spec in ipairs(GetCustomBarSpecOptions()) do
-                if RB.CustomBarHasExplicitSpec(entry, spec.id) then
-                    return spec.id
-                end
-            end
-        end
-
-        local entryCustomBarId = type(entry) == "table" and entry.customBarId or nil
-        local layoutOrder = type(settings) == "table" and settings.layoutOrder or nil
-        if type(entryCustomBarId) == "string" and type(layoutOrder) == "table" then
-            local layoutSpecIDs = {}
-            for specID, specLayout in pairs(layoutOrder) do
-                if type(specLayout) == "table"
-                    and type(specLayout.customBars) == "table"
-                    and type(specLayout.customBars[entryCustomBarId]) == "table" then
-                    layoutSpecIDs[#layoutSpecIDs + 1] = tonumber(specID) or specID
-                end
-            end
-            table.sort(layoutSpecIDs, function(a, b) return tostring(a) < tostring(b) end)
-            if layoutSpecIDs[1] then
-                return layoutSpecIDs[1]
-            end
-        end
-
-        return fallbackSpecID
-    end
-
-    local layoutSpecID = resolveLayoutSpecID(cab, currentConfigSpecID)
+    local layoutSpecID = ResolveCustomBarLayoutSpecID(
+        settings, cab, currentConfigSpecID)
     local layout = RB.GetSpecLayoutOrder and RB.GetSpecLayoutOrder(settings, layoutSpecID) or CooldownCompanion:GetSpecLayoutOrder()
     local thicknessField, thicknessLabel = GetResourceThicknessFieldConfig(settings, layout)
     local capabilities = RB.GetCustomBarConfigCapabilities(cab)
@@ -1689,6 +2314,8 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                     -- resize once, on release.
                     AddMirrorFirstSliderRow(sizeLeft, {
                         label = thicknessLabel,
+                        setting = thicknessField == "barWidth"
+                            and CUSTOM_BAR_FINDER.size.width or CUSTOM_BAR_FINDER.size.height,
                         min = 4, max = 40, step = 0.1,
                         value = thicknessValue,
                         set = function(val)
@@ -1756,6 +2383,8 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                 if not isSpellCustomBar or capabilities.baseSpellShellConsumer then
                     AddColorRow(colorsLeft, {
                         label = isSpellCustomBar and "Bar Color" or "Aura Bar Color",
+                        setting = isSpellCustomBar
+                            and CUSTOM_BAR_FINDER.colors.bar or CUSTOM_BAR_FINDER.colors.aura,
                         tbl = customBars[cabIdx],
                         key = "barColor",
                         default = {0.5, 0.5, 1},
@@ -1769,6 +2398,7 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                     if capabilities.baseSpellShellConsumer and capabilities.cooldownConsumer then
                         AddColorRow(colorsLeft, {
                             label = "Bar Cooldown Color",
+                            setting = CUSTOM_BAR_FINDER.colors.cooldown,
                             tbl = customBars[cabIdx],
                             key = "barCooldownColor",
                             default = {0.6, 0.13, 0.18, 1},
@@ -1781,6 +2411,7 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                         if capabilities.hasCharges then
                             AddColorRow(colorsLeft, {
                                 label = "Bar Recharging Color",
+                                setting = CUSTOM_BAR_FINDER.colors.recharging,
                                 tbl = customBars[cabIdx],
                                 key = "barChargeColor",
                                 default = {1.0, 0.82, 0.0, 1},
@@ -1798,6 +2429,7 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                         -- the bar there).
                         AddColorRow(capabilities.baseSpellShellConsumer and colorsRight or colorsLeft, {
                             label = "Aura Bar Color",
+                            setting = CUSTOM_BAR_FINDER.colors.aura,
                             tbl = customBars[cabIdx],
                             key = "barAuraColor",
                             default = {0.2, 1.0, 0.2, 1},
@@ -1862,6 +2494,7 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                     if showDurationControls then
                         durationTextRow = AddCheckboxRow(durationLeft, {
                             label = "Show Duration Text",
+                            setting = CUSTOM_BAR_FINDER.texts.duration,
                             value = cab.showDurationText == true,
                             onChange = function(val)
                                 customBars[cabIdx].showDurationText = val or nil
@@ -1891,6 +2524,8 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                     if capabilities.countConsumer then
                         stackTextRow = AddCheckboxRow(otherLeft, {
                             label = stackTextLabel,
+                            setting = isSpellCustomBar
+                                and CUSTOM_BAR_FINDER.texts.count or CUSTOM_BAR_FINDER.texts.stacks,
                             value = stackVal == true,
                             onChange = function(val)
                                 customBars[cabIdx].showStackText = val or nil
@@ -1916,13 +2551,22 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                         AddFontControls(panel, customBars[cabIdx], "durationText", {
                             size = DEFAULT_RESOURCE_TEXT_SIZE, sizeMin = 6, sizeMax = 24, sizeStep = 1,
                             font = DEFAULT_RESOURCE_TEXT_FONT, outline = DEFAULT_RESOURCE_TEXT_OUTLINE,
-                        }, cabApplyBars, { row = true, previewRefresh = cabPreviewOnly })
+                        }, cabApplyBars, {
+                            row = true,
+                            previewRefresh = cabPreviewOnly,
+                            settings = {
+                                size = CUSTOM_BAR_FINDER.durationText.fontSize,
+                                font = CUSTOM_BAR_FINDER.durationText.font,
+                                outline = CUSTOM_BAR_FINDER.durationText.outline,
+                            },
+                        })
 
                         -- deferCommit stays true: the Layout & Order canvas
                         -- re-reads this table on every repaint, so a drag value
                         -- may only exist in it while that repaint runs.
                         AddColorRow(panel, {
                             label = "Duration Text Color",
+                            setting = CUSTOM_BAR_FINDER.durationText.color,
                             tbl = customBars[cabIdx],
                             key = "durationTextFontColor",
                             default = DEFAULT_RESOURCE_TEXT_COLOR,
@@ -1950,6 +2594,13 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                                         and "Cooldown: Show During Last" or "Show During Last",
                                     infoButtons = infoButtons,
                                     preview = cabPreviewOnly,
+                                    settings = isAuraTracked and {
+                                        mode = CUSTOM_BAR_FINDER.texts.cooldownVisibility,
+                                        threshold = CUSTOM_BAR_FINDER.texts.cooldownLast,
+                                    } or {
+                                        mode = CUSTOM_BAR_FINDER.texts.spellVisibility,
+                                        threshold = CUSTOM_BAR_FINDER.texts.spellLast,
+                                    },
                                     rebuild = RefreshCustomBarAuraConfig,
                                 })
                         end
@@ -1963,6 +2614,13 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                                         and "Aura: Show During Last" or "Show During Last",
                                     infoButtons = infoButtons,
                                     preview = cabPreviewOnly,
+                                    settings = isSpellCustomBar and {
+                                        mode = CUSTOM_BAR_FINDER.texts.auraVisibility,
+                                        threshold = CUSTOM_BAR_FINDER.texts.auraLast,
+                                    } or {
+                                        mode = CUSTOM_BAR_FINDER.texts.auraOnlyVisibility,
+                                        threshold = CUSTOM_BAR_FINDER.texts.auraOnlyLast,
+                                    },
                                     rebuild = RefreshCustomBarAuraConfig,
                                 })
                         end
@@ -1970,6 +2628,7 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                         AddDurationFormatDropdown(
                             durationLeft, customBars[cabIdx], cabApplyBars, {
                                 row = true,
+                                setting = CUSTOM_BAR_FINDER.texts.format,
                                 sharedHelp = isSpellCustomBar and isAuraTracked,
                                 infoButtons = infoButtons,
                             })
@@ -1977,6 +2636,7 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                         if ST._AddDurationLowTimeRows then
                             ST._AddDurationLowTimeRows(
                                 lowTimeLeft, customBars[cabIdx], cabApplyBars, {
+                                    settings = CUSTOM_BAR_FINDER.lowTime,
                                     rightColumn = lowTimeRight,
                                     auraOnly = not isSpellCustomBar,
                                     auraToggle = isSpellCustomBar and isAuraTracked,
@@ -1991,12 +2651,21 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                         AddFontControls(panel, customBars[cabIdx], "stackText", {
                             size = DEFAULT_RESOURCE_TEXT_SIZE, sizeMin = 6, sizeMax = 24, sizeStep = 1,
                             font = DEFAULT_RESOURCE_TEXT_FONT, outline = DEFAULT_RESOURCE_TEXT_OUTLINE,
-                        }, cabApplyBars, { row = true, previewRefresh = cabPreviewOnly })
+                        }, cabApplyBars, {
+                            row = true,
+                            previewRefresh = cabPreviewOnly,
+                            settings = {
+                                size = CUSTOM_BAR_FINDER.stackText.fontSize,
+                                font = CUSTOM_BAR_FINDER.stackText.font,
+                                outline = CUSTOM_BAR_FINDER.stackText.outline,
+                            },
+                        })
 
                         -- deferCommit stays true, for the same reason as the
                         -- duration text color above.
                         AddColorRow(panel, {
                             label = "Stack Text Color",
+                            setting = CUSTOM_BAR_FINDER.stackText.color,
                             tbl = customBars[cabIdx],
                             key = "stackTextFontColor",
                             default = DEFAULT_RESOURCE_TEXT_COLOR,
@@ -2050,6 +2719,7 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                             RefreshLayoutOrderPreview()
                         end, {
                             row = true,
+                            settings = CUSTOM_BAR_FINDER.effects,
                             infoButtons = infoButtons,
                             previewRefresh = RefreshLayoutOrderPreviewForDrag,
                         })

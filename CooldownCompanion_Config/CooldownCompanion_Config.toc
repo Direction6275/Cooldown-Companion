@@ -48,6 +48,7 @@ Config\PanelChangelogOverlay.lua
 Config\Panel.lua
 ConfigSettings\Helpers.lua
 ConfigSettings\RowWidgets.lua
+ConfigSettings\SettingsFinder.lua
 ConfigSettings\AdvancedSettingsPanel.lua
 ConfigSettings\SectionBuilders.lua
 ConfigSettings\CastBarPanels.lua

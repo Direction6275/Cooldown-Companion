@@ -227,6 +227,7 @@ local function AddStackBlockGapRow(container, buttonData, opts)
     end
     return AddDropdownRow(container, {
         label = "Segment Gap",
+        setting = opts.setting,
         indent = true,
         list = list,
         order = order,
@@ -273,6 +274,7 @@ local function BuildStackThresholdColorRows(container, buttonData, maxStacks, op
 
     local showOneRow = AddCheckboxRow(container, {
         label = "Show Count at 1 Stack",
+        setting = opts.settings and opts.settings.showOne,
         value = showCountAtOne,
         onChange = function(value)
             CooldownCompanion:SetAuraStackCountAtOneEnabled(buttonData, value)
@@ -290,6 +292,7 @@ local function BuildStackThresholdColorRows(container, buttonData, maxStacks, op
     local threshold = CooldownCompanion:GetAuraStackThresholdValue(buttonData)
     local thresholdRow = AddCheckboxRow(container, {
         label = "Stack Text Threshold Color",
+        setting = opts.settings and opts.settings.threshold,
         value = threshold ~= nil,
         onChange = function(value)
             CooldownCompanion:SetAuraStackThresholdValue(buttonData,
@@ -308,6 +311,7 @@ local function BuildStackThresholdColorRows(container, buttonData, maxStacks, op
         -- restores the user's setting. (review batch 2026-08-15)
         AddSliderRow(container, {
             label = "Threshold Stacks",
+            setting = opts.settings and opts.settings.thresholdStacks,
             indent = true,
             min = 2, max = maxStacks or 20, step = 1,
             value = math.min(threshold, maxStacks or 20),
@@ -333,6 +337,7 @@ local function BuildStackThresholdColorRows(container, buttonData, maxStacks, op
         })
         AddColorRow(container, {
             label = "Threshold Color",
+            setting = opts.settings and opts.settings.thresholdColor,
             indent = true,
             tbl = buttonData.auraBar,
             key = "thresholdColor",
@@ -347,6 +352,7 @@ local function BuildStackThresholdColorRows(container, buttonData, maxStacks, op
     if maxStacks then
         AddCheckboxRow(container, {
             label = "Max Stacks Text Color",
+            setting = opts.settings and opts.settings.maxStacks,
             value = CooldownCompanion:IsAuraStackMaxColorEnabled(buttonData),
             onChange = function(value)
                 CooldownCompanion:SetAuraStackMaxColorEnabled(buttonData, value)
@@ -356,6 +362,7 @@ local function BuildStackThresholdColorRows(container, buttonData, maxStacks, op
         if CooldownCompanion:IsAuraStackMaxColorEnabled(buttonData) then
             AddColorRow(container, {
                 label = "Max Color",
+                setting = opts.settings and opts.settings.maxColor,
                 indent = true,
                 tbl = buttonData.auraBar,
                 key = "maxColor",
@@ -403,6 +410,7 @@ local function AddDurationFormatDropdown(container, settings, refreshCallback, o
 
     local row = AddDropdownRow(container, {
         label = "Duration Format",
+        setting = opts.setting,
         indent = opts.indent,
         pulloutWidth = opts.pulloutWidth,
         list = formatOptions,
@@ -510,6 +518,7 @@ local function AddDurationTextVisibilityRows(container, readSettings, writeSetti
     local rows = {}
     local modeRow = AddDropdownRow(container, {
         label = opts.modeLabel or "Visible",
+        setting = opts.settings and opts.settings.mode,
         indent = opts.indent ~= false,
         list = DURATION_VISIBILITY_MODES,
         order = DURATION_VISIBILITY_MODE_ORDER,
@@ -534,6 +543,7 @@ local function AddDurationTextVisibilityRows(container, readSettings, writeSetti
     if threshold then
         rows[2] = AddSliderRow(container, {
             label = opts.sliderLabel or "Show During Last",
+            setting = opts.settings and opts.settings.threshold,
             indent = true,
             min = 1, max = 60, step = 1,
             value = threshold,
@@ -656,6 +666,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
     local rows = {}
     local toggleRow = AddCheckboxRow(container, {
         label = "Change Text Near Expiry",
+        setting = opts.settings and opts.settings.enabled,
         indent = opts.indent,
         value = active,
         disabled = disabled,
@@ -701,6 +712,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
 
     rows[#rows + 1] = AddSliderRow(container, {
         label = "Start Warning Below",
+        setting = opts.settings and opts.settings.warningThreshold,
         indent = true,
         min = 1, max = 30, step = 1,
         value = threshold,
@@ -728,6 +740,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
     -- setting. Stock checkbox rows stay the only toggles here.
     rows[#rows + 1] = AddColorRow(container, {
         label = "Warning Color",
+        setting = opts.settings and opts.settings.warningColor,
         indent = true,
         tbl = settings,
         key = "durationLowTimeColor",
@@ -743,6 +756,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
     if opts.auraToggle then
         local auraRow = AddCheckboxRow(secondary, {
             label = "Also Apply to Aura Text",
+            setting = opts.settings and opts.settings.auras,
             indent = true,
             value = settings.durationLowTimeAuras == true,
             disabled = disabled,
@@ -770,6 +784,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
     local urgentAvailable = threshold > 1
     local secondToggle = AddCheckboxRow(secondary, {
         label = "Add Critical Styling",
+        setting = opts.settings and opts.settings.critical,
         indent = true,
         value = secondActive,
         disabled = disabled or not urgentAvailable,
@@ -797,6 +812,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
     if secondActive then
         rows[#rows + 1] = AddSliderRow(secondary, {
             label = "Start Critical Below",
+            setting = opts.settings and opts.settings.criticalThreshold,
             indent = true,
             min = 1, max = threshold - 1, step = 1,
             value = threshold2,
@@ -814,6 +830,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
         })
         rows[#rows + 1] = AddColorRow(secondary, {
             label = "Critical Color",
+            setting = opts.settings and opts.settings.criticalColor,
             indent = true,
             tbl = settings,
             key = "durationLowTimeColor2",
@@ -828,6 +845,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
         settings.durationLowTimeDecimals) or "off"
     local decimalRow = AddDropdownRow(container, {
         label = "Show Decimals Near Expiry",
+        setting = opts.settings and opts.settings.decimals,
         indent = true,
         pulloutWidth = WIDE_PULLOUT_WIDTH,
         list = LOW_TIME_DECIMAL_MODES,
@@ -950,6 +968,7 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
     if not opts.childrenOnly then
         enableRow = AddDropdownRow(container, {
             label = "Pandemic Marker",
+            setting = opts.setting,
             indent = opts.indent,
             list = PANDEMIC_MARKER_MODES,
             order = PANDEMIC_MARKER_MODE_ORDER,
@@ -977,6 +996,7 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
 
     AddEditBoxRow(container, {
         label = "Marker Text",
+        setting = opts.settings and opts.settings.text,
         indent = childIndent,
         value = styleTable.pandemicMarkerText or "!!",
         onEnterPressed = function(text, widget)
@@ -989,6 +1009,7 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
 
     AddDropdownRow(container, {
         label = "Marker Coloring",
+        setting = opts.settings and opts.settings.coloring,
         indent = childIndent,
         pulloutWidth = WIDE_PULLOUT_WIDTH,
         list = PANDEMIC_COLOR_MODES,
@@ -1006,6 +1027,7 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
         -- this row replaced.
         AddColorRow(container, {
             label = "Marker Color",
+            setting = opts.settings and opts.settings.color,
             indent = childIndent,
             tbl = styleTable,
             key = "pandemicMarkerColor",
@@ -1036,6 +1058,7 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback, 
 
     local kbRow = AddCheckboxRow(container, {
         label = label,
+        setting = opts.setting,
         value = styleTable.showKeybindText or false,
         indent = opts.indent,
         onChange = ApplyShowKeybindText,
@@ -1047,11 +1070,20 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback, 
 
     if styleTable.showKeybindText then
         AddFontControls(container, styleTable, "keybind", {size = 10, sizeMin = 6, sizeMax = 24},
-            refreshCallback, { row = true, indent = true })
+            refreshCallback, {
+                row = true,
+                indent = true,
+                settings = opts.settings and {
+                    size = opts.settings.fontSize,
+                    font = opts.settings.font,
+                    outline = opts.settings.outline,
+                },
+            })
         -- deferCommit is deliberately absent, matching the stock color picker
         -- this row replaced.
         AddColorRow(right, {
             label = "Font Color",
+            setting = opts.settings and opts.settings.color,
             tbl = styleTable,
             key = "keybindFontColor",
             default = {1, 1, 1, 1},
@@ -1060,9 +1092,15 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback, 
             onChange = refreshCallback,
         })
         AddAnchorDropdown(right, styleTable, "keybindAnchor", "TOPRIGHT", refreshCallback,
-            nil, { row = true })
+            nil, { row = true, setting = opts.settings and opts.settings.anchor })
         AddOffsetSliders(right, styleTable, "keybindXOffset", "keybindYOffset", {x = -2, y = -2},
-            refreshCallback, { row = true })
+            refreshCallback, {
+                row = true,
+                settings = opts.settings and {
+                    x = opts.settings.xOffset,
+                    y = opts.settings.yOffset,
+                },
+            })
     end
 end
 
@@ -1079,12 +1117,17 @@ local function BuildBorderControls(container, styleTable, refreshCallback, opts)
         RefreshStructuralControls(container)
     end
     local renderMode = AddBorderRenderModeDropdown(container, styleTable, "borderRenderMode",
-        ApplyRenderModeChanged, nil, { row = true, indent = opts.indent })
+        ApplyRenderModeChanged, nil, {
+            row = true,
+            indent = opts.indent,
+            setting = opts.settings and opts.settings.thickness,
+        })
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
         AddSliderRow(container, {
             label = "Border Size",
+            setting = opts.settings and opts.settings.size,
             indent = true,
             min = 0, max = 5, step = 0.1,
             value = styleTable.borderSize or ST.DEFAULT_BORDER_SIZE,
@@ -1105,6 +1148,7 @@ local function BuildBorderControls(container, styleTable, refreshCallback, opts)
     -- row replaced.
     local colorRow = AddColorRow(container, {
         label = "Border Color",
+        setting = opts.settings and opts.settings.color,
         indent = opts.indent,
         tbl = styleTable,
         key = "borderColor",
@@ -1129,6 +1173,7 @@ local function BuildIconZoomControls(container, styleTable, refreshCallback, opt
     local previewRefresh = (opts and opts.previewRefresh) or ST._RefreshSelectedButtonsPreview
     return AddSliderRow(container, {
         label = "Icon Zoom",
+        setting = opts and opts.setting,
         indent = opts and opts.indent,
         disabled = locked,
         min = 0, max = 50, step = 1,
@@ -1180,6 +1225,7 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
 
     AddColorRow(leftColumn, {
         label = "Base Icon Color",
+        setting = opts.settings and opts.settings.base,
         tbl = tintTbl, key = "iconTintColor",
         default = {1, 1, 1, 1}, hasAlpha = true,
         disabled = sec.disabled,
@@ -1189,6 +1235,7 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
     if opts.mode == "icons" then
         AddColorRow(leftColumn, {
             label = "Background Color",
+            setting = opts.settings and opts.settings.background,
             tbl = tintTbl, key = "backgroundColor",
             default = {0, 0, 0, 0.5}, hasAlpha = true,
             disabled = sec.disabled,
@@ -1201,6 +1248,7 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
     if opts.hasCooldownState ~= false then
         AddCheckboxRow(leftColumn, {
             label = "Use Separate Cooldown Tint",
+            setting = opts.settings and opts.settings.separateCooldown,
             value = sec.read.iconCooldownTintEnabled or false,
             disabled = sec.disabled,
             onChange = function(val)
@@ -1214,6 +1262,7 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
         if sec.read.iconCooldownTintEnabled then
             AddColorRow(leftColumn, {
                 label = "Cooldown Icon Color",
+                setting = opts.settings and opts.settings.cooldown,
                 indent = true,
                 tbl = tintTbl, key = "iconCooldownTintColor",
                 default = {1, 0, 0.102, 1}, hasAlpha = true,
@@ -1226,6 +1275,7 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
     if opts.hasAuraEntry then
         AddCheckboxRow(rightColumn, {
             label = "Use Separate Aura Tint",
+            setting = opts.settings and opts.settings.separateAura,
             value = sec.read.iconAuraTintEnabled or false,
             disabled = sec.disabled,
             onChange = function(val)
@@ -1239,6 +1289,7 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
         if sec.read.iconAuraTintEnabled then
             AddColorRow(rightColumn, {
                 label = "Aura Active Icon Color",
+                setting = opts.settings and opts.settings.aura,
                 indent = true,
                 tbl = tintTbl, key = "iconAuraTintColor",
                 default = {0, 0.925, 1, 1}, hasAlpha = true,
@@ -1277,6 +1328,7 @@ end
 local function BuildDesaturationControls(container, styleTable, refreshCallback, opts)
     return AddCheckboxRow(container, {
         label = "Desaturate On Cooldown",
+        setting = opts and opts.setting,
         value = styleTable.desaturateOnCooldown or false,
         indent = opts and opts.indent,
         onChange = function(val)
@@ -1303,9 +1355,11 @@ local TOOLTIP_ANCHOR_ORDER = { "default", "above", "below", "left", "right", "cu
 -- Show Tooltips advanced panel and has no other call site. A panel is one
 -- narrow column (AdvancedSettingsPanel.lua), so both rows go straight onto
 -- `container`.
-local function BuildTooltipBehaviorControls(container, styleTable, refreshCallback)
+local function BuildTooltipBehaviorControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
     local drop = AddDropdownRow(container, {
         label = "Tooltip Position",
+        setting = opts.settings and opts.settings.position,
         list = TOOLTIP_ANCHOR_LIST,
         order = TOOLTIP_ANCHOR_ORDER,
         value = styleTable.tooltipAnchor or "default",
@@ -1317,6 +1371,7 @@ local function BuildTooltipBehaviorControls(container, styleTable, refreshCallba
 
     local combatCb = AddCheckboxRow(container, {
         label = "Hide Tooltips in Combat",
+        setting = opts.settings and opts.settings.hideInCombat,
         value = styleTable.tooltipHideInCombat == true,
         onChange = function(val)
             styleTable.tooltipHideInCombat = val
@@ -1338,6 +1393,7 @@ local function BuildShowTooltipsControls(container, styleTable, refreshCallback,
 
     local cb = AddCheckboxRow(container, {
         label = "Show Tooltips",
+        setting = opts.setting,
         value = styleTable.showTooltips == true,
         indent = opts.indent,
         onChange = function(val)
@@ -1355,7 +1411,7 @@ local function BuildShowTooltipsControls(container, styleTable, refreshCallback,
         styleTable.showTooltips == true, {
             title = "Tooltip Advanced",
             build = function(panel)
-                BuildTooltipBehaviorControls(panel, styleTable, refreshCallback)
+                BuildTooltipBehaviorControls(panel, styleTable, refreshCallback, opts)
             end,
         })
 
@@ -1366,6 +1422,7 @@ end
 local function BuildShowOutOfRangeControls(container, styleTable, refreshCallback, opts)
     return AddCheckboxRow(container, {
         label = "Show Out of Range",
+        setting = opts and opts.setting,
         value = styleTable.showOutOfRange or false,
         indent = opts and opts.indent,
         onChange = function(val)
@@ -1390,6 +1447,7 @@ local ALLOW_PINGS_TOOLTIP_LINES = {
 local function BuildAllowPingsControls(container, styleTable, refreshCallback, opts)
     local cb = AddCheckboxRow(container, {
         label = "Allow Pings",
+        setting = opts and opts.setting,
         value = styleTable.allowPings == true,
         indent = opts and opts.indent,
         onChange = function(val)
@@ -1406,6 +1464,7 @@ end
 local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback, opts)
     return AddCheckboxRow(container, {
         label = "Show GCD Swipe",
+        setting = opts and opts.setting,
         value = styleTable.showGCDSwipe == true,
         indent = opts and opts.indent,
         onChange = function(val)
@@ -1470,6 +1529,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
 
     local swipeRow = AddCheckboxRow(container, {
         label = "Show Cooldown Swipe",
+        setting = opts.settings and opts.settings.enabled,
         value = styleTable.showCooldownSwipe ~= false,
         indent = opts.indent,
         disabled = disabledByIconFill,
@@ -1478,6 +1538,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
 
     AddCheckboxRow(container, {
         label = "Reverse Swipe",
+        setting = opts.settings and opts.settings.reverse,
         value = styleTable.cooldownSwipeReverse or false,
         indent = childIndent,
         disabled = disabledByIconFill,
@@ -1486,6 +1547,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
 
     AddCheckboxRow(container, {
         label = "Show Swipe Fill",
+        setting = opts.settings and opts.settings.fill,
         value = styleTable.showCooldownSwipeFill ~= false,
         indent = childIndent,
         disabled = disabledByIconFill,
@@ -1498,6 +1560,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         -- The resource-bar opacity rows already read that way.
         AddSliderRow(container, {
             label = "Swipe Fill Opacity",
+            setting = opts.settings and opts.settings.fillOpacity,
             indent = true,
             min = 0, max = 1, step = 0.05,
             value = styleTable.cooldownSwipeAlpha or 0.8,
@@ -1513,6 +1576,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
 
     AddCheckboxRow(container, {
         label = "Show Swipe Edge",
+        setting = opts.settings and opts.settings.edge,
         value = styleTable.cooldownSwipeEdgeEnabled == true,
         indent = childIndent,
         disabled = disabledByIconFill,
@@ -1524,6 +1588,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         -- this row replaced.
         AddColorRow(container, {
             label = "Swipe Edge Color",
+            setting = opts.settings and opts.settings.edgeColor,
             indent = true,
             tbl = styleTable,
             key = "cooldownSwipeEdgeColor",
@@ -1560,6 +1625,7 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
 
     local blizzardRow = AddCheckboxRow(container, {
         label = "Blizzard Style Aura Swipe",
+        setting = opts.settings and opts.settings.blizzard,
         value = blizzardStyleActive,
         indent = childIndent,
         onChange = function(val)
@@ -1575,6 +1641,7 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
 
     AddCheckboxRow(container, {
         label = "Reverse Swipe",
+        setting = opts.settings and opts.settings.reverse,
         value = styleTable.auraDurationSwipeReverse ~= false,
         indent = childIndent,
         disabled = blizzardStyleActive,
@@ -1587,6 +1654,7 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
 
     AddCheckboxRow(container, {
         label = "Show Swipe Fill",
+        setting = opts.settings and opts.settings.fill,
         value = styleTable.showAuraDurationSwipeFill ~= false,
         indent = childIndent,
         disabled = blizzardStyleActive,
@@ -1603,6 +1671,7 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
         -- the pre-redesign slider's 0% - 100%; same store, same range.
         AddSliderRow(container, {
             label = "Swipe Fill Opacity",
+            setting = opts.settings and opts.settings.fillOpacity,
             indent = true,
             min = 0, max = 1, step = 0.05,
             value = styleTable.auraDurationSwipeAlpha or 0.8,
@@ -1621,6 +1690,7 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
 
     AddCheckboxRow(container, {
         label = "Show Swipe Edge",
+        setting = opts.settings and opts.settings.edge,
         value = styleTable.auraDurationSwipeEdgeEnabled == true,
         indent = childIndent,
         disabled = blizzardStyleActive,
@@ -1637,6 +1707,7 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
         -- this row replaced.
         AddColorRow(container, {
             label = "Swipe Edge Color",
+            setting = opts.settings and opts.settings.edgeColor,
             indent = true,
             tbl = styleTable,
             key = "auraDurationSwipeEdgeColor",
@@ -1659,6 +1730,7 @@ local function BuildAuraDurationSwipeControls(container, styleTable, refreshCall
     -- Row grammar only: one checkbox row.
     local auraCb = AddCheckboxRow(container, {
         label = "Show Aura Duration Swipe",
+        setting = opts.setting,
         value = showAuraDurationSwipe ~= false,
         indent = opts.indent,
         onChange = function(val)
@@ -1695,6 +1767,7 @@ local function BuildIconFillTimerControls(container, styleTable, refreshCallback
 
     local cb = AddCheckboxRow(container, {
         label = "Icon Fill Timer",
+        setting = opts.setting,
         value = styleTable.iconFillEnabled == true,
         disabled = disabledByMasque,
         indent = opts.indent,
@@ -1735,6 +1808,7 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
     local childIndent = opts.indent ~= false
     AddDropdownRow(container, {
         label = "Orientation",
+        setting = opts.settings and opts.settings.orientation,
         indent = childIndent,
         list = { vertical = "Vertical", horizontal = "Horizontal" },
         order = { "vertical", "horizontal" },
@@ -1755,6 +1829,7 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
     end
     AddDropdownRow(container, {
         label = "Anchor Edge",
+        setting = opts.settings and opts.settings.anchorEdge,
         indent = childIndent,
         list = edgeList,
         order = edgeOrder,
@@ -1768,6 +1843,7 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
 
     AddDropdownRow(container, {
         label = "Timer Motion",
+        setting = opts.settings and opts.settings.motion,
         indent = childIndent,
         pulloutWidth = WIDE_PULLOUT_WIDTH,
         list = { drain = "Starts Full (Drain)", fill = "Starts Empty (Fill)" },
@@ -1784,6 +1860,7 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
     -- row replaced.
     AddColorRow(container, {
         label = "Cooldown Fill Color",
+        setting = opts.settings and opts.settings.color,
         indent = childIndent,
         tbl = styleTable,
         key = "iconFillCooldownColor",
@@ -1798,6 +1875,7 @@ end
 local function BuildLossOfControlControls(container, styleTable, refreshCallback, opts)
     return AddCheckboxRow(container, {
         label = "Show Loss of Control",
+        setting = opts and opts.setting,
         value = styleTable.showLossOfControl or false,
         indent = opts and opts.indent,
         onChange = function(val)
@@ -1811,9 +1889,11 @@ end
 -- Unusable Visual advanced panel and has no other call site. `container` stays
 -- the panel scroll, which is what keeps RefreshStructuralControls routing to a
 -- panel rebuild rather than a whole-config one.
-local function BuildUnusableVisualModeControls(container, styleTable, refreshCallback)
+local function BuildUnusableVisualModeControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
     AddCheckboxRow(container, {
         label = "Dim Icon",
+        setting = opts.settings and opts.settings.dim,
         value = ST.UnusableVisualUsesDimTint(styleTable),
         onChange = function(val)
             ST.SetUnusableVisualMode(styleTable, val == true, ST.UnusableVisualUsesDesaturation(styleTable))
@@ -1837,6 +1917,7 @@ local function BuildUnusableVisualModeControls(container, styleTable, refreshCal
         end
         AddColorRow(container, {
             label = "Unusable Dim Color",
+            setting = opts.settings and opts.settings.dimColor,
             indent = true,
             tbl = styleTable, key = "iconUnusableTintColor",
             default = {0.4, 0.4, 0.4, 1}, hasAlpha = true,
@@ -1846,6 +1927,7 @@ local function BuildUnusableVisualModeControls(container, styleTable, refreshCal
 
     AddCheckboxRow(container, {
         label = "Desaturate Icon",
+        setting = opts.settings and opts.settings.desaturate,
         value = ST.UnusableVisualUsesDesaturation(styleTable),
         onChange = function(val)
             ST.SetUnusableVisualMode(styleTable, ST.UnusableVisualUsesDimTint(styleTable), val == true)
@@ -1862,6 +1944,7 @@ local function BuildUnusableDimmingControls(container, styleTable, refreshCallba
 
     local unusableCb = AddCheckboxRow(container, {
         label = "Show Unusable Visual",
+        setting = opts.setting,
         value = styleTable.showUnusable == true,
         indent = opts.indent,
         onChange = function(val)
@@ -1877,7 +1960,7 @@ local function BuildUnusableDimmingControls(container, styleTable, refreshCallba
         styleTable.showUnusable == true, {
             title = "Unusable Visual Advanced",
             build = function(panel)
-                BuildUnusableVisualModeControls(panel, styleTable, refreshCallback)
+                BuildUnusableVisualModeControls(panel, styleTable, refreshCallback, opts)
             end,
         })
 
@@ -1901,6 +1984,7 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
 
     AddCheckboxRow(container, {
         label = "Hostile Target Only",
+        setting = opts.settings and opts.settings.hostileOnly,
         value = styleTable.assistedHighlightHostileTargetOnly ~= false,
         indent = opts.indent,
         onChange = function(val)
@@ -1911,6 +1995,7 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
 
     AddDropdownRow(right, {
         label = "Highlight Style",
+        setting = opts.settings and opts.settings.style,
         pulloutWidth = WIDE_PULLOUT_WIDTH,
         list = ASSISTED_HIGHLIGHT_STYLES,
         value = styleTable.assistedHighlightStyle or "blizzard",
@@ -1923,9 +2008,10 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
 
     -- deferCommit is deliberately absent throughout, matching the
     -- stock color pickers these rows replaced.
-    local function HighlightColorRow(rowLabel, key, default)
+    local function HighlightColorRow(rowLabel, key, default, setting)
         AddColorRow(right, {
             label = rowLabel,
+            setting = setting,
             indent = true,
             tbl = styleTable,
             key = key,
@@ -1935,9 +2021,10 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
             onChange = refreshCallback,
         })
     end
-    local function HighlightSliderRow(rowLabel, key, minValue, maxValue, default)
+    local function HighlightSliderRow(rowLabel, key, minValue, maxValue, default, setting)
         AddSliderRow(right, {
             label = rowLabel,
+            setting = setting,
             indent = true,
             min = minValue, max = maxValue, step = 0.1,
             value = styleTable[key] or default,
@@ -1952,13 +2039,18 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
     end
 
     if styleTable.assistedHighlightStyle == "solid" then
-        HighlightColorRow("Highlight Color", "assistedHighlightColor", {0.3, 1, 0.3, 0.9})
-        HighlightSliderRow("Border Size", "assistedHighlightBorderSize", 1, 6, 2)
+        HighlightColorRow("Highlight Color", "assistedHighlightColor", {0.3, 1, 0.3, 0.9},
+            opts.settings and opts.settings.solidColor)
+        HighlightSliderRow("Border Size", "assistedHighlightBorderSize", 1, 6, 2,
+            opts.settings and opts.settings.solidBorderSize)
     elseif styleTable.assistedHighlightStyle == "blizzard" then
-        HighlightSliderRow("Glow Size", "assistedHighlightBlizzardOverhang", 0, 60, 32)
+        HighlightSliderRow("Glow Size", "assistedHighlightBlizzardOverhang", 0, 60, 32,
+            opts.settings and opts.settings.blizzardGlowSize)
     elseif styleTable.assistedHighlightStyle == "proc" then
-        HighlightColorRow("Glow Color", "assistedHighlightProcColor", {1, 1, 1, 1})
-        HighlightSliderRow("Glow Size", "assistedHighlightProcOverhang", 0, 60, 32)
+        HighlightColorRow("Glow Color", "assistedHighlightProcColor", {1, 1, 1, 1},
+            opts.settings and opts.settings.procColor)
+        HighlightSliderRow("Glow Size", "assistedHighlightProcOverhang", 0, 60, 32,
+            opts.settings and opts.settings.procGlowSize)
     end
 end
 
@@ -1990,42 +2082,42 @@ end
 -- nothing, exactly as the old if/else chain did by falling through.
 local GLOW_SLIDER_SPEC = {
     solid = {
-        {label = "Border Size", keyField = "size", min = 1, max = 8, step = 0.1,
+        {label = "Border Size", settingField = "borderSize", keyField = "size", min = 1, max = 8, step = 0.1,
             default = 5, defaultFrom = "solidSizeDefault"},
     },
     pulse = {
-        {label = "Border Size", keyField = "size", min = 1, max = 8, step = 0.1,
+        {label = "Border Size", settingField = "borderSize", keyField = "size", min = 1, max = 8, step = 0.1,
             default = 2, defaultFrom = "solidSizeDefault"},
-        {label = "Pulse Duration", keyField = "speed", min = 0.1, max = 2.0, step = 0.05, default = 0.5},
+        {label = "Pulse Duration", settingField = "pulseDuration", keyField = "speed", min = 0.1, max = 2.0, step = 0.05, default = 0.5},
     },
     pixel = {
-        {label = "Line Length", keyField = "size", minFrom = "pixelSizeMin", max = 12, step = 0.1, default = 8},
-        {label = "Line Thickness", keyField = "thickness", min = 1, max = 6, step = 0.1, default = 4},
-        {label = "Speed", keyField = "speed", min = 10, max = 200, step = 0.1, default = 50},
-        {label = "Number of Lines", keyField = "lines", min = 1, max = 16, step = 1, default = 8, requiresKey = true},
+        {label = "Line Length", settingField = "lineLength", keyField = "size", minFrom = "pixelSizeMin", max = 12, step = 0.1, default = 8},
+        {label = "Line Thickness", settingField = "lineThickness", keyField = "thickness", min = 1, max = 6, step = 0.1, default = 4},
+        {label = "Speed", settingField = "speed", keyField = "speed", min = 10, max = 200, step = 0.1, default = 50},
+        {label = "Number of Lines", settingField = "lineCount", keyField = "lines", min = 1, max = 16, step = 1, default = 8, requiresKey = true},
     },
     glow = {
-        {label = "Glow Size", keyField = "size", min = 0, max = 60, step = 0.1, default = 30},
+        {label = "Glow Size", settingField = "glowSize", keyField = "size", min = 0, max = 60, step = 0.1, default = 30},
     },
     -- Same slider as glow, tighter default: the marching-ants art overhangs
     -- less than Blizzard's proc glow at the same nominal size.
     ants = {
-        {label = "Glow Size", keyField = "size", min = 0, max = 60, step = 0.1, default = 23},
+        {label = "Glow Size", settingField = "glowSize", keyField = "size", min = 0, max = 60, step = 0.1, default = 23},
     },
     colorShift = {
-        {label = "Border Size", keyField = "size", min = 1, max = 8, step = 0.1,
+        {label = "Border Size", settingField = "borderSize", keyField = "size", min = 1, max = 8, step = 0.1,
             default = 2, defaultFrom = "solidSizeDefault"},
-        {label = "Shift Duration", keyField = "speed", min = 0.1, max = 2.0, step = 0.05, default = 0.8},
+        {label = "Shift Duration", settingField = "shiftDuration", keyField = "speed", min = 0.1, max = 2.0, step = 0.05, default = 0.8},
     },
     dashes = {
-        {label = "Dash Length", keyField = "size", min = 2, max = 20, step = 0.5, default = 12},
-        {label = "Dash Thickness", keyField = "thickness", min = 1, max = 8, step = 0.5, default = 3, requiresKey = true},
-        {label = "Number of Dashes", keyField = "lines", min = 1, max = 8, step = 1, default = 5, requiresKey = true},
-        {label = "Lap Duration", keyField = "speed", min = 1, max = 3, step = 0.05, default = 2},
+        {label = "Dash Length", settingField = "dashLength", keyField = "size", min = 2, max = 20, step = 0.5, default = 12},
+        {label = "Dash Thickness", settingField = "dashThickness", keyField = "thickness", min = 1, max = 8, step = 0.5, default = 3, requiresKey = true},
+        {label = "Number of Dashes", settingField = "dashCount", keyField = "lines", min = 1, max = 8, step = 1, default = 5, requiresKey = true},
+        {label = "Lap Duration", settingField = "lapDuration", keyField = "speed", min = 1, max = 3, step = 0.05, default = 2},
     },
     autocast = {
-        {label = "Particle Scale", keyField = "size", min = 0.2, max = 3, step = 0.05, default = 2, clampToRange = true},
-        {label = "Frequency", keyField = "speed", min = 10, max = 200, step = 0.1, default = 50},
+        {label = "Particle Scale", settingField = "particleScale", keyField = "size", min = 0.2, max = 3, step = 0.05, default = 2, clampToRange = true},
+        {label = "Frequency", settingField = "frequency", keyField = "speed", min = 10, max = 200, step = 0.1, default = 50},
     },
 }
 -- proc is Blizzard's glow under the aura kit's name, and pulsingBorder is the
@@ -2078,13 +2170,15 @@ end
 -- `previewRefresh` lets resource/cast surfaces name their own canvas. Ordinary
 -- panel callers fall back to the pinned Buttons preview. Every live apply runs
 -- once on release.
-local function AddGlowSliderRows(container, styleTable, currentStyle, keys, refreshCallback, pixelSizeMin, indent, previewRefresh)
+local function AddGlowSliderRows(container, styleTable, currentStyle, keys, refreshCallback, pixelSizeMin, indent, previewRefresh, settings, labelOverrides)
     previewRefresh = previewRefresh or ST._RefreshSelectedButtonsPreview
     for _, entry in ipairs(GLOW_SLIDER_SPEC[currentStyle] or {}) do
         local ok, storeKey, minValue, value = ResolveGlowSliderEntry(entry, styleTable, keys, pixelSizeMin)
         if ok then
             AddSliderRow(container, {
-                label = entry.label,
+                label = labelOverrides and labelOverrides[entry.settingField]
+                    or entry.label,
+                setting = settings and settings[entry.settingField],
                 indent = indent,
                 min = minValue, max = entry.max, step = entry.step,
                 value = value,
@@ -2160,6 +2254,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
 
     AddDropdownRow(container, {
         label = "Glow Style",
+        setting = opts.settings and opts.settings.style,
         indent = childIndent,
         pulloutWidth = WIDE_PULLOUT_WIDTH,
         list = styleOptions,
@@ -2179,6 +2274,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
         and not (cfg.noColorStyles and cfg.noColorStyles[currentStyle]) then
         AddColorRow(container, {
             label = cfg.colorLabel,
+            setting = opts.settings and opts.settings.color,
             indent = childIndent,
             tbl = styleTable,
             key = cfg.colorKey,
@@ -2192,6 +2288,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
     if cfg.color2Key and currentStyle == "colorShift" then
         AddColorRow(container, {
             label = cfg.color2Label or "Second Color",
+            setting = opts.settings and opts.settings.color2,
             indent = true,
             tbl = styleTable,
             key = cfg.color2Key,
@@ -2203,7 +2300,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
     end
 
     AddGlowSliderRows(container, styleTable, currentStyle, GlowSliderKeys(cfg), refreshCallback, 1, true,
-        opts.previewRefresh)
+        opts.previewRefresh, opts.settings, cfg.sliderLabels)
 end
 
 ------------------------------------------------------------------------
@@ -2349,6 +2446,10 @@ local BAR_AURA_EFFECT_CFG = {
     enableKey = "barAuraIndicatorEnabled",
     styleOptions = BAR_AURA_EFFECT_STYLE_OPTIONS,
     styleOrder = BAR_AURA_EFFECT_STYLE_ORDER,
+    sliderLabels = {
+        pulseDuration = "Border Pulse Duration",
+        shiftDuration = "Border Shift Duration",
+    },
     solidSizeDefault = 2,
     onStyleChanged = function(targetStyle, val)
         targetStyle.barAuraEffectSize = AURA_GLOW_SIZE_RESETS[val] or 2
@@ -2392,10 +2493,12 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
     -- store.
     BuildGlowStyleControls(effectsLeft, styleTable, refreshCallback, BAR_AURA_EFFECT_CFG, {
         previewRefresh = opts.previewRefresh,
+        settings = opts.settings,
     })
 
     local pulseRow = AddCheckboxRow(effectsRight, {
         label = "Pulse Bar Fill",
+        setting = opts.settings and opts.settings.pulseFill,
         value = styleTable.barAuraPulseEnabled == true,
         onChange = function(val)
             styleTable.barAuraPulseEnabled = val
@@ -2414,7 +2517,8 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
 
     if styleTable.barAuraPulseEnabled == true then
         AddSliderRow(effectsRight, {
-            label = "Pulse Duration",
+            label = "Fill Pulse Duration",
+            setting = opts.settings and opts.settings.pulseFillDuration,
             indent = true,
             min = 0.1, max = 2.0, step = 0.05,
             value = styleTable.barAuraPulseSpeed or 0.5,
@@ -2430,6 +2534,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
 
     AddCheckboxRow(effectsRight, {
         label = "Color Shift Bar Fill",
+        setting = opts.settings and opts.settings.colorShiftFill,
         value = styleTable.barAuraColorShiftEnabled == true,
         onChange = function(val)
             styleTable.barAuraColorShiftEnabled = val
@@ -2440,7 +2545,8 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
 
     if styleTable.barAuraColorShiftEnabled == true then
         AddSliderRow(effectsRight, {
-            label = "Shift Duration",
+            label = "Fill Shift Duration",
+            setting = opts.settings and opts.settings.colorShiftDuration,
             indent = true,
             min = 0.1, max = 2.0, step = 0.05,
             value = styleTable.barAuraColorShiftSpeed or 0.5,
@@ -2455,6 +2561,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
 
         AddColorRow(effectsRight, {
             label = "Shift Color",
+            setting = opts.settings and opts.settings.shiftColor,
             indent = true,
             tbl = styleTable,
             key = "barAuraColorShiftColor",
@@ -2498,6 +2605,7 @@ local function BuildTextBackgroundControls(container, styleTable, refreshCallbac
     -- stock color pickers this section used to make.
     AddColorRow(container, {
         label = "Background Color",
+        setting = opts.settings and opts.settings.background,
         indent = opts.indent,
         tbl = styleTable,
         key = "textBgColor",
@@ -2510,11 +2618,16 @@ local function BuildTextBackgroundControls(container, styleTable, refreshCallbac
     local renderMode = AddBorderRenderModeDropdown(container, styleTable, "textBorderRenderMode", function()
         refreshCallback()
         RefreshStructuralControls(container)
-    end, nil, { row = true, indent = opts.indent })
+    end, nil, {
+        row = true,
+        indent = opts.indent,
+        setting = opts.settings and opts.settings.thickness,
+    })
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
         AddSliderRow(container, {
             label = "Border Size",
+            setting = opts.settings and opts.settings.size,
             indent = true,
             min = 0, max = 5, step = 0.1,
             value = styleTable.textBorderSize or 0,
@@ -2533,6 +2646,7 @@ local function BuildTextBackgroundControls(container, styleTable, refreshCallbac
 
     AddColorRow(container, {
         label = "Border Color",
+        setting = opts.settings and opts.settings.color,
         indent = opts.indent,
         tbl = styleTable,
         key = "textBorderColor",
@@ -2550,10 +2664,19 @@ local function BuildTextFontControls(container, styleTable, refreshCallback, opt
     local right = opts.rightColumn or container
 
     AddFontControls(container, styleTable, "text", {sizeMin = 6, sizeMax = 72}, refreshCallback,
-        { row = true, indent = opts.indent })
+        {
+            row = true,
+            indent = opts.indent,
+            settings = opts.settings and {
+                size = opts.settings.fontSize,
+                font = opts.settings.font,
+                outline = opts.settings.outline,
+            },
+        })
 
     AddDropdownRow(right, {
         label = "Alignment",
+        setting = opts.settings and opts.settings.alignment,
         list = {LEFT = "Left", CENTER = "Center", RIGHT = "Right"},
         value = styleTable.textAlignment or "LEFT",
         onChange = function(val)
@@ -2564,6 +2687,7 @@ local function BuildTextFontControls(container, styleTable, refreshCallback, opt
 
     AddCheckboxRow(right, {
         label = "Text Shadow",
+        setting = opts.settings and opts.settings.shadow,
         value = styleTable.textShadow == true,
         onChange = function(val)
             styleTable.textShadow = val or false
@@ -2592,9 +2716,10 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback, o
 
     -- deferCommit is deliberately absent throughout, matching the
     -- stock color pickers these rows replaced.
-    local function TextColorRow(host, rowLabel, key, default, tooltipLines)
+    local function TextColorRow(host, rowLabel, key, default, tooltipLines, setting)
         local row = AddColorRow(host, {
             label = rowLabel,
+            setting = setting,
             indent = opts.indent,
             tbl = styleTable,
             key = key,
@@ -2617,33 +2742,33 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback, o
         {"Paints |cff00ff00{name}|r, |cff00ff00{keybind}|r, |cff00ff00{stacks}|r and |cff00ff00{maxcharges}|r.", 1, 1, 1, true},
         " ",
         {"Color tags in the format override it.", 1, 1, 1, true},
-    })
+    }, opts.settings and opts.settings.text)
 
     TextColorRow(container, "Cooldown Color", "textCooldownColor", {1, 0.3, 0.3, 1}, {
         "Cooldown Color",
         {"Paints |cff00ff00{time}|r, and |cff00ff00{status}|r while the spell is on cooldown.", 1, 1, 1, true},
         " ",
         {"The |cff44bbff{cooldown}|r tag paints anything with it.", 1, 1, 1, true},
-    })
+    }, opts.settings and opts.settings.cooldown)
 
     TextColorRow(container, "Ready Color", "textReadyColor", {0.2, 1.0, 0.2, 1}, {
         "Ready Color",
         {"Paints |cff00ff00{status}|r when the spell is ready.", 1, 1, 1, true},
         " ",
         {"The |cff44bbff{ready}|r tag paints anything with it.", 1, 1, 1, true},
-    })
+    }, opts.settings and opts.settings.ready)
 
     TextColorRow(right, "Aura Color", "textAuraColor", {0, 0.925, 1, 1}, {
         "Aura Color",
         {"The |cff44bbff{active}|r tag paints anything with it.", 1, 1, 1, true},
-    })
+    }, opts.settings and opts.settings.aura)
 
     TextColorRow(right, "Custom Color", "textCustomColor", {1, 0.82, 0, 1}, {
         "Custom Color",
         {"No token paints with this color on its own.", 1, 1, 1, true},
         " ",
         {"The |cff44bbff{custom}|r tag paints anything with it.", 1, 1, 1, true},
-    })
+    }, opts.settings and opts.settings.custom)
 
 end
 

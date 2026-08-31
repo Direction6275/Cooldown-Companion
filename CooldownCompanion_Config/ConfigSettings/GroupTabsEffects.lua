@@ -70,6 +70,15 @@ local ROW_SECTION = { leftAligned = true }
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
 
+-- Populated at module load near the exports. Exact maps are passed through the
+-- shared effects builders because many advanced panels intentionally reuse
+-- labels such as Glow Style, Border Size, and Show Only In Combat.
+local EFFECTS_FINDER = {
+    icons = { spell = {}, aura = {}, interaction = {} },
+    assistant = { spell = {}, interaction = {} },
+    advanced = {},
+}
+
 -- Both primers take an optional entry: the transition state they re-arm is
 -- per-BUTTON runtime state, so an edit made through the entry lens re-arms
 -- only the entry it changed. nil primes the whole panel (a panel-scope edit
@@ -178,6 +187,7 @@ local function BuildProcGlowSection(container, group, style, lens)
 
     local procEnableCb = AddCheckboxRow(container, {
         label = "Show Proc Glow",
+        setting = EFFECTS_FINDER.icons.spell.proc,
         value = procSec.read.procGlowStyle ~= "none",
         disabled = procSec.disabled,
         onChange = function(val)
@@ -197,6 +207,7 @@ local function BuildProcGlowSection(container, group, style, lens)
     local function BuildProcGlowAdvanced(panel)
         AddCheckboxRow(panel, {
             label = "Show Only In Combat",
+            setting = EFFECTS_FINDER.advanced.proc and EFFECTS_FINDER.advanced.proc.combatOnly,
             value = procSec.write.procGlowCombatOnly or false,
             onChange = function(val)
                 procSec.write.procGlowCombatOnly = val
@@ -204,7 +215,10 @@ local function BuildProcGlowSection(container, group, style, lens)
             end,
         })
 
-        BuildProcGlowControls(panel, procSec.write, UpdateSelectedGroupStyle, { row = true })
+        BuildProcGlowControls(panel, procSec.write, UpdateSelectedGroupStyle, {
+            row = true,
+            settings = EFFECTS_FINDER.advanced.proc,
+        })
 
     end
 
@@ -245,6 +259,7 @@ local function BuildAuraGlowSection(container, group, style, lens)
     local auraGlowEnabled = (auraSec.read.auraGlowStyle or "pulse") ~= "none"
     local auraEnableCb = AddCheckboxRow(container, {
         label = "Show Aura Glow",
+        setting = EFFECTS_FINDER.icons.aura.auraGlow,
         value = auraGlowEnabled,
         disabled = auraSec.disabled,
         onChange = function(val)
@@ -264,7 +279,10 @@ local function BuildAuraGlowSection(container, group, style, lens)
     -- panel captures the section's WRITE table and is only built while there is
     -- one - an inert section has no gear to open it from.
     local function BuildAuraGlowAdvanced(panel)
-        BuildAuraGlowControls(panel, auraSec.write, UpdateSelectedGroupStyle, { row = true })
+        BuildAuraGlowControls(panel, auraSec.write, UpdateSelectedGroupStyle, {
+            row = true,
+            settings = EFFECTS_FINDER.advanced.auraGlow,
+        })
     end
 
     if auraSec.write then
@@ -323,6 +341,7 @@ local function BuildPandemicGlowSection(container, group, style, lens)
 
         local pandemicCb = AddCheckboxRow(container, {
             label = "Show Pandemic Effect",
+            setting = EFFECTS_FINDER.icons.aura.pandemicEffect,
             value = pandemicEnabled,
             disabled = pandemicSec.disabled,
             onChange = function(val)
@@ -342,6 +361,7 @@ local function BuildPandemicGlowSection(container, group, style, lens)
             BuildPandemicGlowControls(panel, pandemicSec.write, UpdateSelectedGroupStyle, {
                 row = true,
                 fallbackStyle = pandemicSec.fallbackStyle,
+                settings = EFFECTS_FINDER.advanced.pandemicGlow,
             })
         end
 
@@ -398,6 +418,7 @@ local function BuildPandemicMarkerSection(container, group, style, lens)
         CooldownCompanion:RefreshConfigPanel()
     end, {
         enableOnly = true,
+        setting = EFFECTS_FINDER.icons.aura.pandemicMarker,
         onModeChanged = function(mode)
             ReconcilePandemicMarkerPreview(lens, mode)
         end,
@@ -408,7 +429,10 @@ local function BuildPandemicMarkerSection(container, group, style, lens)
     -- captures the section's WRITE table, and is only built while there is one.
     local function BuildPandemicMarkerAdvanced(panel)
         AddPandemicMarkerControls(panel, markerSec.write, applyStyle, RefreshActiveAdvancedSettingsPanel,
-            { childrenOnly = true })
+            {
+                childrenOnly = true,
+                settings = EFFECTS_FINDER.advanced.pandemicMarker,
+            })
     end
 
     if markerSec.write then
@@ -429,6 +453,7 @@ local function BuildReadyGlowSection(container, group, style, lens)
 
     local readyEnableCb = AddCheckboxRow(container, {
         label = "Show Ready Glow",
+        setting = EFFECTS_FINDER.icons.spell.ready,
         value = readySec.read.readyGlowStyle and readySec.read.readyGlowStyle ~= "none",
         disabled = readySec.disabled,
         onChange = function(val)
@@ -454,6 +479,7 @@ local function BuildReadyGlowSection(container, group, style, lens)
     local function BuildReadyGlowAdvanced(panel)
         AddCheckboxRow(panel, {
             label = "Show Only In Combat",
+            setting = EFFECTS_FINDER.advanced.ready and EFFECTS_FINDER.advanced.ready.combatOnly,
             value = readySec.write.readyGlowCombatOnly or false,
             onChange = function(val)
                 readySec.write.readyGlowCombatOnly = val
@@ -466,6 +492,7 @@ local function BuildReadyGlowSection(container, group, style, lens)
         -- risking a silent truncation at a narrower config width.
         local readyChargesRow = AddCheckboxRow(panel, {
             label = "Glow When Charges Are Capped",
+            setting = EFFECTS_FINDER.advanced.ready and EFFECTS_FINDER.advanced.ready.cappedCharges,
             value = readySec.write.readyGlowOnlyAtMaxCharges or false,
             tooltip = { "Glow When Charges Are Capped" },
             onChange = function(val)
@@ -490,6 +517,7 @@ local function BuildReadyGlowSection(container, group, style, lens)
 
         AddCheckboxRow(panel, {
             label = "Auto-Hide After Duration",
+            setting = EFFECTS_FINDER.advanced.ready and EFFECTS_FINDER.advanced.ready.autoHide,
             value = (readySec.write.readyGlowDuration or 0) > 0,
             onChange = function(val)
                 readySec.write.readyGlowDuration = val and 3 or 0
@@ -511,6 +539,7 @@ local function BuildReadyGlowSection(container, group, style, lens)
         if (readySec.write.readyGlowDuration or 0) > 0 then
             local durationRow = AddSliderRow(panel, {
                 label = "Duration (seconds)",
+                setting = EFFECTS_FINDER.advanced.ready and EFFECTS_FINDER.advanced.ready.duration,
                 indent = true,
                 min = 0.5, max = 5, step = 0.5,
                 value = readySec.write.readyGlowDuration or 3,
@@ -520,7 +549,10 @@ local function BuildReadyGlowSection(container, group, style, lens)
             end, UpdateSelectedGroupStyle, nil, readySec.write, "readyGlowDuration")
         end
 
-        BuildReadyGlowControls(panel, readySec.write, UpdateSelectedGroupStyle, { row = true })
+        BuildReadyGlowControls(panel, readySec.write, UpdateSelectedGroupStyle, {
+            row = true,
+            settings = EFFECTS_FINDER.advanced.ready,
+        })
 
     end
 
@@ -550,6 +582,7 @@ local function BuildKeyPressHighlightSection(container, group, style, lens)
 
     local kphEnableCb = AddCheckboxRow(container, {
         label = "Show Key Press Highlight",
+        setting = EFFECTS_FINDER.icons.spell.keyPress,
         value = kphSec.read.keyPressHighlightStyle and kphSec.read.keyPressHighlightStyle ~= "none",
         disabled = kphSec.disabled,
         onChange = function(val)
@@ -565,6 +598,7 @@ local function BuildKeyPressHighlightSection(container, group, style, lens)
     local function BuildKeyPressHighlightAdvanced(panel)
         AddCheckboxRow(panel, {
             label = "Show Only In Combat",
+            setting = EFFECTS_FINDER.advanced.keyPress and EFFECTS_FINDER.advanced.keyPress.combatOnly,
             value = kphSec.write.keyPressHighlightCombatOnly or false,
             onChange = function(val)
                 kphSec.write.keyPressHighlightCombatOnly = val
@@ -572,7 +606,10 @@ local function BuildKeyPressHighlightSection(container, group, style, lens)
             end,
         })
 
-        BuildKeyPressHighlightControls(panel, kphSec.write, UpdateSelectedGroupStyle, { row = true })
+        BuildKeyPressHighlightControls(panel, kphSec.write, UpdateSelectedGroupStyle, {
+            row = true,
+            settings = EFFECTS_FINDER.advanced.keyPress,
+        })
 
     end
 
@@ -757,10 +794,10 @@ local function BuildEffectsTab(container)
 
         BuildCooldownSwipeControls(raTimerLeft, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, { row = true })
+        end, { row = true, settings = EFFECTS_FINDER.assistant.cooldownSwipe })
         BuildShowGCDSwipeControls(raTimerLeft, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, { row = true })
+        end, { row = true, setting = EFFECTS_FINDER.assistant.spell.gcd })
 
         AddSettingsSubheading(container, "States")
         -- A single left rail, for the same reason as Timers above: the four
@@ -771,18 +808,22 @@ local function BuildEffectsTab(container)
 
         BuildDesaturationControls(raStateLeft, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, { row = true })
+        end, { row = true, setting = EFFECTS_FINDER.assistant.spell.desaturate })
         BuildUnusableDimmingControls(raStateLeft, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
-        end, { row = true })
+        end, {
+            row = true,
+            setting = EFFECTS_FINDER.assistant.spell.unusable,
+            settings = EFFECTS_FINDER.assistant.unusableAdvanced,
+        })
         BuildShowOutOfRangeControls(raStateLeft, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
-        end, { row = true })
+        end, { row = true, setting = EFFECTS_FINDER.assistant.spell.outOfRange })
         BuildLossOfControlControls(raStateLeft, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, { row = true })
+        end, { row = true, setting = EFFECTS_FINDER.assistant.spell.lossOfControl })
         end -- not raSpellCollapsed
 
         -- Interaction: the same split-out the icons and bars tabs make, under
@@ -797,10 +838,15 @@ local function BuildEffectsTab(container)
         BuildShowTooltipsControls(raInteractionLeft, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
-        end, { row = true, advanced = true })
+        end, {
+            row = true,
+            advanced = true,
+            setting = EFFECTS_FINDER.assistant.interaction.tooltips,
+            settings = EFFECTS_FINDER.assistant.tooltipAdvanced,
+        })
         BuildAllowPingsControls(raInteractionRight, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, { row = true })
+        end, { row = true, setting = EFFECTS_FINDER.assistant.interaction.pings })
         end -- not raInteractionCollapsed
         return
     end
@@ -921,6 +967,7 @@ local function BuildEffectsTab(container)
 
     local assistedCb = AddCheckboxRow(glowRight, {
         label = "Show Assisted Highlight",
+        setting = EFFECTS_FINDER.icons.spell.assisted,
         value = assistedSec.read.showAssistedHighlight or false,
         disabled = assistedSec.disabled,
         onChange = function(val)
@@ -938,6 +985,7 @@ local function BuildEffectsTab(container)
     local function BuildAssistedHighlightAdvanced(panel)
         AddCheckboxRow(panel, {
             label = "Show Only In Combat",
+            setting = EFFECTS_FINDER.advanced.assisted and EFFECTS_FINDER.advanced.assisted.combatOnly,
             value = assistedSec.write.assistedHighlightCombatOnly or false,
             onChange = function(val)
                 assistedSec.write.assistedHighlightCombatOnly = val
@@ -947,7 +995,7 @@ local function BuildEffectsTab(container)
 
         BuildAssistedHighlightControls(panel, assistedSec.write, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, { row = true })
+        end, { row = true, settings = EFFECTS_FINDER.advanced.assisted })
     end
 
     if assistedSec.write then
@@ -1007,6 +1055,8 @@ local function BuildEffectsTab(container)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end, {
         row = true,
+        setting = EFFECTS_FINDER.icons.spell.iconFill,
+        settings = EFFECTS_FINDER.advanced.iconFill,
         masqueEnabled = group.masqueEnabled == true,
         showAdvancedControlsInline = false,
         fallbackStyle = fillSec.fallbackStyle,
@@ -1023,7 +1073,11 @@ local function BuildEffectsTab(container)
         if BuildIconFillTimerAdvancedControls then
             BuildIconFillTimerAdvancedControls(panel, fillSec.write, function()
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end, { row = true, indent = false })
+            end, {
+                row = true,
+                indent = false,
+                settings = EFFECTS_FINDER.advanced.iconFill,
+            })
         end
     end
 
@@ -1054,6 +1108,7 @@ local function BuildEffectsTab(container)
     local swipeSec = BeginLensSection(lens, group, "cooldownSwipe")
     local swipeCb = AddCheckboxRow(timerLeft, {
         label = "Show Cooldown Swipe",
+        setting = EFFECTS_FINDER.icons.spell.cooldownSwipe,
         value = swipeSec.read.showCooldownSwipe ~= false,
         disabled = swipeSec.disabled or iconFillTimerActive,
         onChange = function(val)
@@ -1069,7 +1124,8 @@ local function BuildEffectsTab(container)
         -- live group style itself (see the factory's note). An entry's override
         -- store has no such resolver, so that one is handed over explicitly.
         local swipeAdvanced = MakeCooldownSwipeAdvancedDescriptor(
-            swipeSec.scope == "customized" and swipeSec.write or nil)
+            swipeSec.scope == "customized" and swipeSec.write or nil,
+            EFFECTS_FINDER.advanced.cooldownSwipe)
 
         AddAdvancedToggle(swipeCb, swipeAdvanced.settingKey, tabInfoButtons,
             swipeSec.read.showCooldownSwipe ~= false and not iconFillTimerActive, {
@@ -1090,6 +1146,7 @@ local function BuildEffectsTab(container)
     local gcdSec = BeginLensSection(lens, group, "showGCDSwipe")
     local gcdCb = AddCheckboxRow(timerRight, {
         label = "Show GCD Swipe",
+        setting = EFFECTS_FINDER.icons.spell.gcd,
         value = gcdSec.read.showGCDSwipe == true,
         disabled = gcdSec.disabled,
         onChange = function(val)
@@ -1128,6 +1185,7 @@ local function BuildEffectsTab(container)
     local desatSec = BeginLensSection(lens, group, "desaturation")
     local desatCb = AddCheckboxRow(stateLeft, {
         label = "Desaturate On Cooldown",
+        setting = EFFECTS_FINDER.icons.spell.desaturate,
         value = desatSec.read.desaturateOnCooldown or false,
         disabled = desatSec.disabled,
         onChange = function(val)
@@ -1150,6 +1208,8 @@ local function BuildEffectsTab(container)
         CooldownCompanion:RefreshConfigPanel()
     end, {
         row = true,
+        setting = EFFECTS_FINDER.icons.spell.unusable,
+        settings = EFFECTS_FINDER.advanced.unusable,
         fallbackStyle = unusableSec.fallbackStyle,
     })
     unusableSec:Chrome(unusableCb)
@@ -1164,6 +1224,7 @@ local function BuildEffectsTab(container)
     local oorSec = BeginLensSection(lens, group, "showOutOfRange")
     local oorCb = AddCheckboxRow(stateRight, {
         label = "Show Out of Range",
+        setting = EFFECTS_FINDER.icons.spell.outOfRange,
         value = oorSec.read.showOutOfRange or false,
         disabled = oorSec.disabled,
         onChange = function(val)
@@ -1183,6 +1244,7 @@ local function BuildEffectsTab(container)
     local locSec = BeginLensSection(lens, group, "lossOfControl")
     local locCb = AddCheckboxRow(stateRight, {
         label = "Show Loss of Control",
+        setting = EFFECTS_FINDER.icons.spell.lossOfControl,
         value = locSec.read.showLossOfControl or false,
         disabled = locSec.disabled,
         onChange = function(val)
@@ -1244,6 +1306,8 @@ local function BuildEffectsTab(container)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end, {
             row = true,
+            setting = EFFECTS_FINDER.icons.aura.auraSwipe,
+            settings = EFFECTS_FINDER.advanced.auraSwipe,
             showAdvancedControlsInline = false,
             fallbackStyle = auraSwipeSec.fallbackStyle,
         })
@@ -1253,7 +1317,7 @@ local function BuildEffectsTab(container)
         local function BuildAuraDurationSwipeAdvanced(panel)
             BuildAuraDurationSwipeAdvancedControls(panel, auraSwipeSec.write, function()
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end, { row = true })
+            end, { row = true, settings = EFFECTS_FINDER.advanced.auraSwipe })
         end
         if auraSwipeSec.write then
             AddAdvancedToggle(auraDurationCb, "auraDurationSwipe", tabInfoButtons, auraSwipeSec.read.showAuraDurationSwipe ~= false, {
@@ -1281,6 +1345,7 @@ local function BuildEffectsTab(container)
     local missingSec = BeginLensSection(lens, group, "auraMissingDesaturation")
     local missingCb = AddCheckboxRow(auraRight, {
         label = "Desaturate While Aura Missing",
+        setting = EFFECTS_FINDER.icons.aura.missing,
         value = missingSec.read.desaturateWhileAuraNotActive == true,
         disabled = missingSec.disabled,
         onChange = function(val)
@@ -1365,6 +1430,8 @@ local function BuildEffectsTab(container)
     end, {
         row = true,
         advanced = true,
+        setting = EFFECTS_FINDER.icons.interaction.tooltips,
+        settings = EFFECTS_FINDER.advanced.tooltip,
         infoButtons = tabInfoButtons,
         fallbackStyle = tooltipSec.fallbackStyle,
     })
@@ -1389,7 +1456,7 @@ local function BuildEffectsTab(container)
     local pingsSec = BeginLensSection(lens, group, nil, { column = interactionRight })
     BuildAllowPingsControls(interactionRight, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end, { row = true })
+    end, { row = true, setting = EFFECTS_FINDER.icons.interaction.pings })
     pingsSec:Finish()
     end
     end -- not interactionCollapsed
@@ -1423,6 +1490,531 @@ local function BuildEffectsTab(container)
             end
         end
     end
+end
+
+------------------------------------------------------------------------
+-- SETTINGS FINDER CATALOG
+------------------------------------------------------------------------
+
+local EFFECTS_FINDER_SCOPE = { "panel", "entry" }
+
+local function EffectsFinderIcons(context)
+    return context and context.group and context.displayMode == "icons"
+end
+
+local function EffectsFinderAssistant(context)
+    return context and context.group
+        and context.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
+end
+
+local function EffectsFinderTracksAura(context)
+    return context and context.group and GroupHasAuraTrackingEntry(context.group)
+end
+
+local function EffectsFinderCanUse(context, sectionId)
+    return context and context.group
+        and CanGroupUseOverrideSection(context.group, sectionId)
+end
+
+local function EffectsFinderSectionState(context, sectionId)
+    local group = context and context.group
+    if not group then return nil, nil, nil end
+    local lens = ST._ResolveStyleLens(group)
+    return ResolveLensSection(lens, group, sectionId)
+end
+
+local function EffectsFinderEffectiveStyle(context)
+    local group = context and context.group
+    if not group then return nil end
+    local lens = ST._ResolveStyleLens(group)
+    return (lens and lens.effective) or group.style
+end
+
+local function EffectsFinderIconsRow(sectionId, needsAura)
+    return function(context)
+        return EffectsFinderIcons(context)
+            and (not needsAura or EffectsFinderTracksAura(context))
+            and (not sectionId or EffectsFinderCanUse(context, sectionId))
+    end
+end
+
+local function EffectsFinderIconsAdvanced(sectionId, enabled, needsAura)
+    return function(context)
+        if not EffectsFinderIcons(context)
+            or (needsAura and not EffectsFinderTracksAura(context))
+            or (sectionId and not EffectsFinderCanUse(context, sectionId))
+        then
+            return false
+        end
+        local _, read, write = EffectsFinderSectionState(context, sectionId)
+        return write ~= nil and (not enabled or enabled(read or {}, context))
+    end
+end
+
+local function EffectsFinderNormalizeGlowStyle(style, fallback)
+    style = style or fallback
+    if style == "lcgProc" or style == "lcgButton" then
+        return "glow"
+    elseif style == "lcgAutoCast" then
+        return "autocast"
+    elseif style == "pulsingBorder" then
+        return "pulse"
+    end
+    return style
+end
+
+local function EffectsFinderGlowStyleApplies(sectionId, styleKey, fallback, allowed)
+    return function(context)
+        local _, read = EffectsFinderSectionState(context, sectionId)
+        local style = EffectsFinderNormalizeGlowStyle(read and read[styleKey], fallback)
+        return allowed[style] == true
+    end
+end
+
+local function EffectsFinderDefineGlowSettings(route, options)
+    local sectionId = options.sectionId
+    local styleKey = options.styleKey
+    local fallback = options.fallback
+    local supported = options.supported
+    local function Uses(...)
+        local allowed = {}
+        for index = 1, select("#", ...) do
+            allowed[select(index, ...)] = true
+        end
+        return EffectsFinderGlowStyleApplies(sectionId, styleKey, fallback, allowed)
+    end
+
+    local result = {
+        style = route:Setting({ key = "style", label = "Glow Style" }),
+        color = route:Setting({
+            key = "color", label = options.colorLabel,
+            applies = options.noColorStyle and function(context)
+                local _, read = EffectsFinderSectionState(context, sectionId)
+                return EffectsFinderNormalizeGlowStyle(read and read[styleKey], fallback)
+                    ~= options.noColorStyle
+            end or nil,
+        }),
+    }
+    if options.color2 then
+        result.color2 = route:Setting({ key = "color2", label = "Second Color", applies = Uses("colorShift") })
+    end
+    if supported.solid or supported.pulse or supported.colorShift then
+        result.borderSize = route:Setting({
+            key = "borderSize", label = "Border Size", applies = Uses("solid", "pulse", "colorShift"),
+        })
+    end
+    if supported.pulse then
+        result.pulseDuration = route:Setting({ key = "pulseDuration", label = "Pulse Duration", applies = Uses("pulse") })
+    end
+    if supported.pixel then
+        result.lineLength = route:Setting({ key = "lineLength", label = "Line Length", applies = Uses("pixel") })
+        result.lineThickness = route:Setting({ key = "lineThickness", label = "Line Thickness", applies = Uses("pixel") })
+        result.speed = route:Setting({ key = "speed", label = "Speed", applies = Uses("pixel") })
+        result.lineCount = route:Setting({ key = "lineCount", label = "Number of Lines", applies = Uses("pixel") })
+    end
+    if supported.glow or supported.ants or supported.proc then
+        result.glowSize = route:Setting({ key = "glowSize", label = "Glow Size", applies = Uses("glow", "ants", "proc") })
+    end
+    if supported.colorShift then
+        result.shiftDuration = route:Setting({ key = "shiftDuration", label = "Shift Duration", applies = Uses("colorShift") })
+    end
+    if supported.dashes then
+        result.dashLength = route:Setting({ key = "dashLength", label = "Dash Length", applies = Uses("dashes") })
+        result.dashThickness = route:Setting({ key = "dashThickness", label = "Dash Thickness", applies = Uses("dashes") })
+        result.dashCount = route:Setting({ key = "dashCount", label = "Number of Dashes", applies = Uses("dashes") })
+        result.lapDuration = route:Setting({ key = "lapDuration", label = "Lap Duration", applies = Uses("dashes") })
+    end
+    if supported.autocast then
+        result.particleScale = route:Setting({ key = "particleScale", label = "Particle Scale", applies = Uses("autocast") })
+        result.frequency = route:Setting({ key = "frequency", label = "Frequency", applies = Uses("autocast") })
+    end
+    return result
+end
+
+local EFFECTS_FINDER_ADVANCED_SECTION_LABELS = {
+    procGlow = "Proc Glow",
+    readyGlow = "Ready Glow",
+    keyPressHighlight = "Key Press Highlight",
+    auraGlow = "Aura Glow",
+    pandemicGlow = "Pandemic Effect",
+    assistedHighlight = "Assisted Highlight",
+    iconFillTimer = "Icon Fill Timer",
+    cooldownSwipe = "Cooldown Swipe",
+    auraDurationSwipe = "Aura Duration Swipe",
+    unusableVisual = "Unusable Visual",
+    pandemicMarker = "Pandemic Marker",
+    tooltipBehavior = "Tooltips",
+}
+
+local function EffectsFinderRoute(prefix, section, sectionLabel, applies, advancedKey, sectionId)
+    return ST._DefineSettingRoute({
+        idPrefix = prefix,
+        scope = EFFECTS_FINDER_SCOPE,
+        tab = "effects",
+        tabLabel = "Indicators",
+        section = section,
+        sectionId = sectionId,
+        sectionLabel = EFFECTS_FINDER_ADVANCED_SECTION_LABELS[advancedKey]
+            or sectionLabel,
+        collapseKeys = { section },
+        rowScope = "primary",
+        advancedKey = advancedKey,
+        applies = applies,
+    })
+end
+
+if ST._DefineSettingRoute then
+    local spell = EffectsFinderRoute(
+        "panel.icons.effects.spell", EFFECTS_SPELL_SECTION,
+        "Cooldown / Spell Indicators", EffectsFinderIcons)
+    EFFECTS_FINDER.icons.spell = spell:Settings({
+        proc = { label = "Show Proc Glow", applies = EffectsFinderIconsRow("procGlow") },
+        ready = { label = "Show Ready Glow", applies = EffectsFinderIconsRow("readyGlow") },
+        keyPress = { label = "Show Key Press Highlight", applies = EffectsFinderIconsRow("keyPressHighlight") },
+        assisted = { label = "Show Assisted Highlight", applies = EffectsFinderIconsRow("assistedHighlight") },
+        iconFill = { label = "Icon Fill Timer", applies = EffectsFinderIconsRow("iconFillTimer") },
+        cooldownSwipe = { label = "Show Cooldown Swipe", applies = EffectsFinderIconsRow("cooldownSwipe") },
+        gcd = { label = "Show GCD Swipe", applies = EffectsFinderIconsRow("showGCDSwipe") },
+        desaturate = { label = "Desaturate On Cooldown", applies = EffectsFinderIconsRow("desaturation") },
+        unusable = { label = "Show Unusable Visual", applies = EffectsFinderIconsRow("unusableDimming") },
+        outOfRange = { label = "Show Out of Range", applies = EffectsFinderIconsRow("showOutOfRange") },
+        lossOfControl = { label = "Show Loss of Control", applies = EffectsFinderIconsRow("lossOfControl") },
+    })
+
+    local aura = EffectsFinderRoute(
+        "panel.icons.effects.aura", EFFECTS_AURA_SECTION,
+        "Aura Indicators", function(context)
+            return EffectsFinderIcons(context) and EffectsFinderTracksAura(context)
+        end)
+    EFFECTS_FINDER.icons.aura = aura:Settings({
+        auraGlow = { label = "Show Aura Glow" },
+        auraSwipe = { label = "Show Aura Duration Swipe" },
+        missing = { label = "Desaturate While Aura Missing", applies = EffectsFinderIconsRow("auraMissingDesaturation", true) },
+        pandemicEffect = { label = "Show Pandemic Effect" },
+        pandemicMarker = {
+            label = "Pandemic Marker",
+            applies = function(context)
+                local style = EffectsFinderEffectiveStyle(context)
+                return style and style.showAuraText ~= false
+            end,
+        },
+    })
+
+    local interaction = EffectsFinderRoute(
+        "panel.icons.effects.interaction", EFFECTS_INTERACTION_SECTION,
+        "Interaction", EffectsFinderIcons)
+    EFFECTS_FINDER.icons.interaction = interaction:Settings({
+        tooltips = { label = "Show Tooltips" },
+        pings = {
+            label = "Allow Pings",
+            applies = function(context)
+                return context and context.group
+                    and not CooldownCompanion:IsAuraPanel(context.group)
+            end,
+        },
+    })
+
+    local assistantSpell = EffectsFinderRoute(
+        "panel.assistant.effects.spell", EFFECTS_SPELL_SECTION,
+        "Cooldown / Spell Indicators", EffectsFinderAssistant)
+    EFFECTS_FINDER.assistant.spell = assistantSpell:Settings({
+        gcd = { label = "Show GCD Swipe" },
+        desaturate = { label = "Desaturate On Cooldown" },
+        unusable = { label = "Show Unusable Visual" },
+        outOfRange = { label = "Show Out of Range" },
+        lossOfControl = { label = "Show Loss of Control" },
+    })
+    EFFECTS_FINDER.assistant.cooldownSwipe = assistantSpell:Settings({
+        enabled = { label = "Show Cooldown Swipe" },
+        reverse = { label = "Reverse Swipe" },
+        fill = { label = "Show Swipe Fill" },
+        fillOpacity = {
+            label = "Swipe Fill Opacity",
+            applies = function(context)
+                local style = context and context.group and context.group.style
+                return style and style.showCooldownSwipeFill ~= false
+            end,
+        },
+        edge = { label = "Show Swipe Edge" },
+        edgeColor = {
+            label = "Swipe Edge Color",
+            applies = function(context)
+                local style = context and context.group and context.group.style
+                return style and style.cooldownSwipeEdgeEnabled == true
+            end,
+        },
+    })
+
+    local assistantInteraction = EffectsFinderRoute(
+        "panel.assistant.effects.interaction", EFFECTS_INTERACTION_SECTION,
+        "Interaction", EffectsFinderAssistant)
+    EFFECTS_FINDER.assistant.interaction = assistantInteraction:Settings({
+        tooltips = { label = "Show Tooltips" },
+        pings = { label = "Allow Pings" },
+    })
+
+    local function DefineGlowAdvanced(prefix, sectionId, advancedKey, enabled, needsAura, options)
+        local route = EffectsFinderRoute(prefix, needsAura and EFFECTS_AURA_SECTION or EFFECTS_SPELL_SECTION,
+            needsAura and "Aura Indicators" or "Cooldown / Spell Indicators",
+            EffectsFinderIconsAdvanced(sectionId, enabled, needsAura), advancedKey, sectionId)
+        options.sectionId = sectionId
+        return EffectsFinderDefineGlowSettings(route, options), route
+    end
+
+    local proc, procRoute = DefineGlowAdvanced(
+        "panel.icons.effects.proc", "procGlow", "procGlow",
+        function(read) return read.procGlowStyle ~= "none" end, false, {
+            styleKey = "procGlowStyle", fallback = "glow", colorLabel = "Glow Color",
+            supported = { solid = true, pixel = true, glow = true, autocast = true },
+        })
+    proc.combatOnly = procRoute:Setting({ key = "combatOnly", label = "Show Only In Combat" })
+    EFFECTS_FINDER.advanced.proc = proc
+
+    local ready, readyRoute = DefineGlowAdvanced(
+        "panel.icons.effects.ready", "readyGlow", "readyGlow",
+        function(read) return read.readyGlowStyle and read.readyGlowStyle ~= "none" end, false, {
+            styleKey = "readyGlowStyle", fallback = "solid", colorLabel = "Glow Color",
+            supported = { solid = true, pixel = true, glow = true, autocast = true },
+        })
+    ready.combatOnly = readyRoute:Setting({ key = "combatOnly", label = "Show Only In Combat" })
+    ready.cappedCharges = readyRoute:Setting({ key = "cappedCharges", label = "Glow When Charges Are Capped" })
+    ready.autoHide = readyRoute:Setting({ key = "autoHide", label = "Auto-Hide After Duration" })
+    ready.duration = readyRoute:Setting({
+        key = "duration", label = "Duration (seconds)",
+        applies = function(context)
+            local _, read = EffectsFinderSectionState(context, "readyGlow")
+            return read and (read.readyGlowDuration or 0) > 0
+        end,
+    })
+    EFFECTS_FINDER.advanced.ready = ready
+
+    local keyPress, keyPressRoute = DefineGlowAdvanced(
+        "panel.icons.effects.keyPress", "keyPressHighlight", "keyPressHighlight",
+        function(read) return read.keyPressHighlightStyle and read.keyPressHighlightStyle ~= "none" end, false, {
+            styleKey = "keyPressHighlightStyle", fallback = "solid", colorLabel = "Highlight Color",
+            supported = { solid = true, overlay = true },
+        })
+    keyPress.combatOnly = keyPressRoute:Setting({ key = "combatOnly", label = "Show Only In Combat" })
+    EFFECTS_FINDER.advanced.keyPress = keyPress
+
+    local auraGlow = DefineGlowAdvanced(
+        "panel.icons.effects.auraGlow", "auraIndicator", "auraGlow",
+        function(read) return (read.auraGlowStyle or "pulse") ~= "none" end, true, {
+            styleKey = "auraGlowStyle", fallback = "pulse", colorLabel = "Glow Color", color2 = true,
+            supported = {
+                solid = true, pulse = true, colorShift = true, dashes = true,
+                ants = true, proc = true, overlay = true,
+            },
+        })
+    EFFECTS_FINDER.advanced.auraGlow = auraGlow
+
+    local pandemicGlow = DefineGlowAdvanced(
+        "panel.icons.effects.pandemicGlow", "pandemic", "pandemicGlow",
+        function(read) return read.pandemicEffectEnabled == true end, true, {
+            styleKey = "pandemicGlowStyle", fallback = "solid", colorLabel = "Effect Color",
+            color2 = true, noColorStyle = "cdm",
+            supported = {
+                solid = true, pulse = true, colorShift = true, dashes = true,
+                ants = true, proc = true, overlay = true, cdm = true,
+            },
+        })
+    EFFECTS_FINDER.advanced.pandemicGlow = pandemicGlow
+
+    local assistedRoute = EffectsFinderRoute(
+        "panel.icons.effects.assisted", EFFECTS_SPELL_SECTION,
+        "Cooldown / Spell Indicators",
+        EffectsFinderIconsAdvanced("assistedHighlight", function(read)
+            return read.showAssistedHighlight == true
+        end), "assistedHighlight", "assistedHighlight")
+    EFFECTS_FINDER.advanced.assisted = assistedRoute:Settings({
+        combatOnly = { label = "Show Only In Combat" },
+        hostileOnly = { label = "Hostile Target Only" },
+        style = { label = "Highlight Style" },
+        solidColor = {
+            label = "Highlight Color",
+            applies = function(context)
+                local _, read = EffectsFinderSectionState(context, "assistedHighlight")
+                return read and read.assistedHighlightStyle == "solid"
+            end,
+        },
+        solidBorderSize = {
+            label = "Border Size",
+            applies = function(context)
+                local _, read = EffectsFinderSectionState(context, "assistedHighlight")
+                return read and read.assistedHighlightStyle == "solid"
+            end,
+        },
+        blizzardGlowSize = {
+            label = "Glow Size",
+            applies = function(context)
+                local _, read = EffectsFinderSectionState(context, "assistedHighlight")
+                return not read or (read.assistedHighlightStyle or "blizzard") == "blizzard"
+            end,
+        },
+        procColor = {
+            label = "Glow Color",
+            applies = function(context)
+                local _, read = EffectsFinderSectionState(context, "assistedHighlight")
+                return read and read.assistedHighlightStyle == "proc"
+            end,
+        },
+        procGlowSize = {
+            label = "Glow Size",
+            applies = function(context)
+                local _, read = EffectsFinderSectionState(context, "assistedHighlight")
+                return read and read.assistedHighlightStyle == "proc"
+            end,
+        },
+    })
+
+    local iconFillRoute = EffectsFinderRoute(
+        "panel.icons.effects.iconFill", EFFECTS_SPELL_SECTION,
+        "Cooldown / Spell Indicators",
+        EffectsFinderIconsAdvanced("iconFillTimer", function(read, context)
+            return read.iconFillEnabled == true and context.group.masqueEnabled ~= true
+        end), "iconFillTimer", "iconFillTimer")
+    EFFECTS_FINDER.advanced.iconFill = iconFillRoute:Settings({
+        orientation = { label = "Orientation" },
+        anchorEdge = { label = "Anchor Edge" },
+        motion = { label = "Timer Motion" },
+        color = { label = "Cooldown Fill Color" },
+    })
+
+    local function CooldownSwipeAdvancedApplies(context)
+        if not EffectsFinderIcons(context) or not EffectsFinderCanUse(context, "cooldownSwipe") then
+            return false
+        end
+        local _, read, write = EffectsFinderSectionState(context, "cooldownSwipe")
+        local fillStyle = EffectsFinderEffectiveStyle(context) or {}
+        local fillActive = fillStyle.iconFillEnabled == true and context.group.masqueEnabled ~= true
+        return write ~= nil and read and read.showCooldownSwipe ~= false and not fillActive
+    end
+    local cooldownSwipeRoute = EffectsFinderRoute(
+        "panel.icons.effects.cooldownSwipe", EFFECTS_SPELL_SECTION,
+        "Cooldown / Spell Indicators", CooldownSwipeAdvancedApplies,
+        "cooldownSwipe", "cooldownSwipe")
+    EFFECTS_FINDER.advanced.cooldownSwipe = cooldownSwipeRoute:Settings({
+        reverse = { label = "Reverse Swipe" },
+        fill = { label = "Show Swipe Fill" },
+        fillOpacity = {
+            label = "Swipe Fill Opacity",
+            applies = function(context)
+                local _, read = EffectsFinderSectionState(context, "cooldownSwipe")
+                return read and read.showCooldownSwipeFill ~= false
+            end,
+        },
+        edge = { label = "Show Swipe Edge" },
+        edgeColor = {
+            label = "Swipe Edge Color",
+            applies = function(context)
+                local _, read = EffectsFinderSectionState(context, "cooldownSwipe")
+                return read and read.cooldownSwipeEdgeEnabled == true
+            end,
+        },
+    })
+
+    local auraSwipeRoute = EffectsFinderRoute(
+        "panel.icons.effects.auraSwipe", EFFECTS_AURA_SECTION,
+        "Aura Indicators",
+        EffectsFinderIconsAdvanced("auraDurationSwipe", function(read)
+            return read.showAuraDurationSwipe ~= false
+        end, true), "auraDurationSwipe", "auraDurationSwipe")
+    EFFECTS_FINDER.advanced.auraSwipe = auraSwipeRoute:Settings({
+        blizzard = { label = "Blizzard Style Aura Swipe" },
+        reverse = { label = "Reverse Swipe" },
+        fill = { label = "Show Swipe Fill" },
+        fillOpacity = {
+            label = "Swipe Fill Opacity",
+            applies = function(context)
+                local _, read = EffectsFinderSectionState(context, "auraDurationSwipe")
+                return read and read.showAuraDurationSwipeFill ~= false
+            end,
+        },
+        edge = { label = "Show Swipe Edge" },
+        edgeColor = {
+            label = "Swipe Edge Color",
+            applies = function(context)
+                local _, read = EffectsFinderSectionState(context, "auraDurationSwipe")
+                return read and read.auraDurationSwipeEdgeEnabled == true
+            end,
+        },
+    })
+
+    local unusableRoute = EffectsFinderRoute(
+        "panel.icons.effects.unusable", EFFECTS_SPELL_SECTION,
+        "Cooldown / Spell Indicators",
+        EffectsFinderIconsAdvanced("unusableDimming", function(read)
+            return read.showUnusable == true
+        end), "unusableVisual", "unusableDimming")
+    EFFECTS_FINDER.advanced.unusable = unusableRoute:Settings({
+        dim = { label = "Dim Icon" },
+        dimColor = {
+            label = "Unusable Dim Color",
+            applies = function(context)
+                local _, read = EffectsFinderSectionState(context, "unusableDimming")
+                return read and ST.UnusableVisualUsesDimTint(read)
+            end,
+        },
+        desaturate = { label = "Desaturate Icon" },
+    })
+
+    local markerRoute = EffectsFinderRoute(
+        "panel.icons.effects.pandemicMarker", EFFECTS_AURA_SECTION,
+        "Aura Indicators",
+        EffectsFinderIconsAdvanced("pandemic", function(read)
+            return read.pandemicMarkerMode ~= "off" and read.showAuraText ~= false
+        end, true), "pandemicMarker", "pandemic")
+    EFFECTS_FINDER.advanced.pandemicMarker = markerRoute:Settings({
+        text = { label = "Marker Text" },
+        coloring = { label = "Marker Coloring" },
+        color = {
+            label = "Marker Color",
+            applies = function(context)
+                local _, read = EffectsFinderSectionState(context, "pandemic")
+                return read and (read.pandemicMarkerColorMode or "marker") ~= "off"
+            end,
+        },
+    })
+
+    local tooltipRoute = EffectsFinderRoute(
+        "panel.icons.effects.tooltip", EFFECTS_INTERACTION_SECTION,
+        "Interaction",
+        EffectsFinderIconsAdvanced("showTooltips", function(read)
+            return read.showTooltips == true
+        end), "tooltipBehavior", "showTooltips")
+    EFFECTS_FINDER.advanced.tooltip = tooltipRoute:Settings({
+        position = { label = "Tooltip Position" },
+        hideInCombat = { label = "Hide Tooltips in Combat" },
+    })
+
+    local assistantUnusable = EffectsFinderRoute(
+        "panel.assistant.effects.unusable", EFFECTS_SPELL_SECTION,
+        "Cooldown / Spell Indicators", function(context)
+            local style = context and context.group and context.group.style
+            return EffectsFinderAssistant(context) and style and style.showUnusable == true
+        end, "unusableVisual")
+    EFFECTS_FINDER.assistant.unusableAdvanced = assistantUnusable:Settings({
+        dim = { label = "Dim Icon" },
+        dimColor = {
+            label = "Unusable Dim Color",
+            applies = function(context)
+                local style = context and context.group and context.group.style
+                return style and ST.UnusableVisualUsesDimTint(style)
+            end,
+        },
+        desaturate = { label = "Desaturate Icon" },
+    })
+
+    local assistantTooltip = EffectsFinderRoute(
+        "panel.assistant.effects.tooltip", EFFECTS_INTERACTION_SECTION,
+        "Interaction", function(context)
+            local style = context and context.group and context.group.style
+            return EffectsFinderAssistant(context) and style and style.showTooltips == true
+        end, "tooltipBehavior")
+    EFFECTS_FINDER.assistant.tooltipAdvanced = assistantTooltip:Settings({
+        position = { label = "Tooltip Position" },
+        hideInCombat = { label = "Hide Tooltips in Combat" },
+    })
 end
 
 ST._BuildEffectsTab = BuildEffectsTab

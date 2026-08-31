@@ -61,6 +61,15 @@ local BeginRowGrid = ST._BeginRowGrid
 
 local tabInfoButtons = CS.tabInfoButtons
 
+-- Populated at module load near the exports. Bar mode has several advanced
+-- text panels with identical visible labels, so callers pass exact descriptor
+-- maps instead of relying on label-only binding.
+local BAR_FINDER = {
+    appearance = {},
+    advanced = {},
+    effects = { aura = {}, spell = {}, interaction = {} },
+}
+
 -- Row-grammar section headers: caret far left, label, then a class-colored
 -- rule fading right. The rules every row-grammar section follows are stated
 -- once, in the recipe comment at the top of BuildAppearanceTab's icons path in
@@ -388,7 +397,7 @@ local function ResolveSelectedGroupStyle()
     return group and group.style or nil
 end
 
-local function MakeBarCooldownTextAdvancedDescriptor(styleTable)
+local function MakeBarCooldownTextAdvancedDescriptor(styleTable, finderSettings)
     local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
     -- Panel scope hands this factory NO table, so the panel keeps resolving the
     -- live group style itself; a table means the panel is editing one entry's
@@ -418,6 +427,7 @@ local function MakeBarCooldownTextAdvancedDescriptor(styleTable)
             if not isEntryOverride then
                 local flipTimeRow = AddCheckboxRow(panel, {
                     label = "Flip Time Text",
+                    setting = finderSettings and finderSettings.flip,
                     value = style.barTimeTextReverse or false,
                     onChange = function(val)
                         style.barTimeTextReverse = val or nil
@@ -433,11 +443,19 @@ local function MakeBarCooldownTextAdvancedDescriptor(styleTable)
                 }, flipTimeRow))
             end
 
-            AddFontControls(panel, style, "cooldown", {sizeMin = 6, sizeMax = 24}, refreshStyle, { row = true })
+            AddFontControls(panel, style, "cooldown", {sizeMin = 6, sizeMax = 24}, refreshStyle, {
+                row = true,
+                settings = finderSettings and {
+                    size = finderSettings.fontSize,
+                    font = finderSettings.font,
+                    outline = finderSettings.outline,
+                },
+            })
             -- deferCommit is deliberately absent, matching the stock color-picker
             -- call this row replaced.
             AddColorRow(panel, {
                 label = "Font Color",
+                setting = finderSettings and finderSettings.color,
                 tbl = style,
                 key = "cooldownFontColor",
                 default = {1, 1, 1, 1},
@@ -445,7 +463,13 @@ local function MakeBarCooldownTextAdvancedDescriptor(styleTable)
                 onChange = refreshStyle,
             })
             if not isEntryOverride then
-                AddOffsetSliders(panel, style, "barCdTextOffsetX", "barCdTextOffsetY", {range = 50}, refreshStyle, { row = true })
+                AddOffsetSliders(panel, style, "barCdTextOffsetX", "barCdTextOffsetY", {range = 50}, refreshStyle, {
+                    row = true,
+                    settings = finderSettings and {
+                        x = finderSettings.xOffset,
+                        y = finderSettings.yOffset,
+                    },
+                })
             end
         end,
     }
@@ -513,6 +537,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     AddSliderRow(barLeft, {
         label = "Bar Length",
+        setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.length,
         min = 10, max = 500, step = 0.1,
         value = style.barLength or 180,
         disabled = barSettingsSec.disabled,
@@ -527,6 +552,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     AddSliderRow(barLeft, {
         label = "Bar Height",
+        setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.height,
         min = 5, max = 100, step = 0.1,
         value = style.barHeight or 20,
         disabled = barSettingsSec.disabled,
@@ -545,6 +571,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- plain rows carrying the section's `disabled`, inside its bracket.
     AddCheckboxRow(barLeft, {
         label = "Vertical Bar Fill",
+        setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.vertical,
         value = style.barFillVertical or false,
         disabled = barSettingsSec.disabled,
         onChange = function(val)
@@ -556,6 +583,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     AddCheckboxRow(barLeft, {
         label = "Flip Fill/Drain Direction",
+        setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.reverse,
         value = style.barReverseFill or false,
         disabled = barSettingsSec.disabled,
         onChange = function(val)
@@ -567,6 +595,7 @@ local function BuildBarAppearanceTab(container, group, style)
     if group.buttons and #group.buttons > 1 then
         AddSliderRow(barRight, {
             label = "Bar Spacing",
+            setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.spacing,
             min = -10, max = 100, step = 0.1,
             value = style.buttonSpacing or ST.BUTTON_SPACING,
             disabled = barSettingsSec.disabled,
@@ -595,6 +624,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- the lock's own SetDisabled and the lens' cannot fight over the row.
     local barTexRow = AddDropdownRow(barRight, {
         label = "Bar Texture",
+        setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.texture,
         pulloutWidth = BAR_TEXTURE_PULLOUT_WIDTH,
     })
     CS.SetupBarTextureDropdown(barTexRow)
@@ -640,10 +670,11 @@ local function BuildBarAppearanceTab(container, group, style)
     -- read-only snapshot whose stray writes go nowhere by design. Promotion
     -- copies the section's keys across (PromoteSection), so a customized read
     -- finds real values rather than the row's fallback default.
-    local function AddBarColorRow(column, sectionId, label, key, default)
+    local function AddBarColorRow(column, sectionId, label, key, default, setting)
         local sec = BeginLensSection(lens, group, sectionId)
         local row = AddColorRow(column, {
             label = label,
+            setting = setting,
             tbl = sec.tbl, key = key,
             default = default, hasAlpha = true,
             disabled = sec.disabled,
@@ -659,14 +690,18 @@ local function BuildBarAppearanceTab(container, group, style)
     -- (StyleActiveBarFill, AuraDisplay.lua). The backdrop still shows, so
     -- Bar Background Color stays.
     if CanGroupUseOverrideSection(group, "barColor") then
-        AddBarColorRow(colorLeft, "barColor", "Bar Color", "barColor", {0.2, 0.6, 1.0, 1.0})
+        AddBarColorRow(colorLeft, "barColor", "Bar Color", "barColor", {0.2, 0.6, 1.0, 1.0},
+            BAR_FINDER.appearance.colors and BAR_FINDER.appearance.colors.bar)
     end
-    AddBarColorRow(colorLeft, "barBgColor", "Bar Background Color", "barBgColor", {0.1, 0.1, 0.1, 0.8})
+    AddBarColorRow(colorLeft, "barBgColor", "Bar Background Color", "barBgColor", {0.1, 0.1, 0.1, 0.8},
+        BAR_FINDER.appearance.colors and BAR_FINDER.appearance.colors.background)
     -- The two colors a spell TIMER paints - spell-side, so they close the left
     -- column. An Aura Panel bar has no cooldown and no recharge to paint.
     if CanGroupUseOverrideSection(group, "barCooldownColor") then
-        AddBarColorRow(colorLeft, "barCooldownColor", "Bar Cooldown Color", "barCooldownColor", {0.6, 0.6, 0.6, 1.0})
-        AddBarColorRow(colorLeft, "barChargeColor", "Bar Recharging Color", "barChargeColor", {1.0, 0.82, 0.0, 1.0})
+        AddBarColorRow(colorLeft, "barCooldownColor", "Bar Cooldown Color", "barCooldownColor", {0.6, 0.6, 0.6, 1.0},
+            BAR_FINDER.appearance.colors and BAR_FINDER.appearance.colors.cooldown)
+        AddBarColorRow(colorLeft, "barChargeColor", "Bar Recharging Color", "barChargeColor", {1.0, 0.82, 0.0, 1.0},
+            BAR_FINDER.appearance.colors and BAR_FINDER.appearance.colors.recharging)
     end
 
     -- The color the aura timer drains in - the RIGHT column's one row. Same
@@ -681,6 +716,7 @@ local function BuildBarAppearanceTab(container, group, style)
         local auraColorSec = BeginLensSection(lens, group, "barActiveAura")
         AddColorRow(colorRight, {
             label = "Bar Aura Timer Color",
+            setting = BAR_FINDER.appearance.colors and BAR_FINDER.appearance.colors.aura,
             tbl = auraColorSec.tbl, key = "barAuraColor",
             default = {0.2, 1.0, 0.2, 1.0}, hasAlpha = true,
             disabled = auraColorSec.disabled,
@@ -713,6 +749,7 @@ local function BuildBarAppearanceTab(container, group, style)
     local borderColorRow = BuildBorderControls(borderLeft, borderSec.tbl, refreshStyle, {
         row = true,
         fallbackStyle = borderSec.fallbackStyle,
+        settings = BAR_FINDER.appearance.border,
     })
     borderSec:DirectColorControl(borderColorRow, "borderColor")
 
@@ -766,6 +803,7 @@ local function BuildBarAppearanceTab(container, group, style)
             hasAuraEntry = GroupHasAuraTrackingEntry(group),
             hasCooldownState = CanGroupUseOverrideSection(group, "desaturation"),
             refresh = refreshStyle,
+            settings = BAR_FINDER.appearance.tint,
         })
 
         tintSec:Finish()
@@ -862,6 +900,7 @@ local function BuildBarAppearanceTab(container, group, style)
             auraToggle = not ST.IsAuraPanelGroup(group) and not entryIsAuraOnly
                 and BarsDrawAuraDurationRows(group, (lens and lens.effective) or group.style),
             infoButtons = tabInfoButtons,
+            settings = BAR_FINDER.appearance.lowTime,
             rebuild = function()
                 refreshStyle()
                 CooldownCompanion:RefreshConfigPanel()
@@ -881,6 +920,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     local showIconRow = AddCheckboxRow(iconLeft, {
         label = "Show Icon",
+        setting = BAR_FINDER.appearance.text and BAR_FINDER.appearance.text.icon,
         value = iconSec.read.showBarIcon ~= false,
         disabled = iconSec.disabled,
         onChange = function(val)
@@ -902,6 +942,7 @@ local function BuildBarAppearanceTab(container, group, style)
     local function BuildBarIconAdvanced(panel)
         AddCheckboxRow(panel, {
             label = "Flip Icon Side",
+            setting = BAR_FINDER.advanced.icon and BAR_FINDER.advanced.icon.flip,
             value = iconSec.read.barIconReverse or false,
             onChange = function(val)
                 -- An override store needs the explicit false: nil DELETES the
@@ -917,6 +958,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
         AddSliderRow(panel, {
             label = "Icon Offset",
+            setting = BAR_FINDER.advanced.icon and BAR_FINDER.advanced.icon.offset,
             min = -5, max = 50, step = 0.1,
             value = iconSec.read.barIconOffset or 0,
             onChange = function(val)
@@ -930,6 +972,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
         AddCheckboxRow(panel, {
             label = "Custom Icon Size",
+            setting = BAR_FINDER.advanced.icon and BAR_FINDER.advanced.icon.customSize,
             value = iconSec.read.barIconSizeOverride or false,
             onChange = function(val)
                 iconSec.write.barIconSizeOverride = val
@@ -941,6 +984,7 @@ local function BuildBarAppearanceTab(container, group, style)
         if iconSec.read.barIconSizeOverride then
             AddSliderRow(panel, {
                 label = "Icon Size",
+                setting = BAR_FINDER.advanced.icon and BAR_FINDER.advanced.icon.size,
                 indent = true,
                 min = 5, max = 100, step = 0.1,
                 value = iconSec.read.barIconSize or 20,
@@ -965,6 +1009,7 @@ local function BuildBarAppearanceTab(container, group, style)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end, {
             disabled = zoomSec.disabled,
+            setting = BAR_FINDER.advanced.icon and BAR_FINDER.advanced.icon.zoom,
             previewRefresh = function()
                 if ST._RefreshButtonsPreviewMirror then
                     ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
@@ -994,6 +1039,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     local showNameRow = AddCheckboxRow(otherLeft, {
         label = "Show Name Text",
+        setting = BAR_FINDER.appearance.text and BAR_FINDER.appearance.text.name,
         value = nameSec.read.showBarNameText ~= false,
         disabled = nameSec.disabled,
         onChange = function(val)
@@ -1008,6 +1054,7 @@ local function BuildBarAppearanceTab(container, group, style)
     local function BuildBarNameTextAdvanced(panel)
         AddCheckboxRow(panel, {
             label = "Flip Name Text",
+            setting = BAR_FINDER.advanced.name and BAR_FINDER.advanced.name.flip,
             value = nameSec.read.barNameTextReverse or false,
             onChange = function(val)
                 -- Explicit false for an override store; see Flip Icon Side.
@@ -1016,11 +1063,19 @@ local function BuildBarAppearanceTab(container, group, style)
             end,
         })
 
-        AddFontControls(panel, nameSec.write, "barName", {sizeMin = 6, sizeMax = 24, size = 10}, refreshStyle, { row = true })
+        AddFontControls(panel, nameSec.write, "barName", {sizeMin = 6, sizeMax = 24, size = 10}, refreshStyle, {
+            row = true,
+            settings = BAR_FINDER.advanced.name and {
+                size = BAR_FINDER.advanced.name.fontSize,
+                font = BAR_FINDER.advanced.name.font,
+                outline = BAR_FINDER.advanced.name.outline,
+            },
+        })
         -- deferCommit is deliberately absent, matching the stock color-picker call
         -- this row replaced.
         AddColorRow(panel, {
             label = "Font Color",
+            setting = BAR_FINDER.advanced.name and BAR_FINDER.advanced.name.color,
             tbl = nameSec.write,
             key = "barNameFontColor",
             default = {1, 1, 1, 1},
@@ -1035,7 +1090,13 @@ local function BuildBarAppearanceTab(container, group, style)
         -- customized, which stranded the setting on some other selection
         -- state. Duration Format answers the same problem the same way (see
         -- the row in the Duration Text section).
-        local offsetXRow, offsetYRow = AddOffsetSliders(panel, group.style, "barNameTextOffsetX", "barNameTextOffsetY", {range = 50}, refreshStyle, { row = true })
+        local offsetXRow, offsetYRow = AddOffsetSliders(panel, group.style, "barNameTextOffsetX", "barNameTextOffsetY", {range = 50}, refreshStyle, {
+            row = true,
+            settings = BAR_FINDER.advanced.name and {
+                x = BAR_FINDER.advanced.name.xOffset,
+                y = BAR_FINDER.advanced.name.yOffset,
+            },
+        })
         nameSec:PanelRowChrome(offsetXRow)
         nameSec:PanelRowChrome(offsetYRow)
     end
@@ -1059,6 +1120,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     local showTimeRow = AddCheckboxRow(durationLeft, {
         label = "Show Cooldown Text",
+        setting = BAR_FINDER.appearance.text and BAR_FINDER.appearance.text.cooldown,
         value = cdTextSec.read.showCooldownText or false,
         disabled = cdTextSec.disabled,
         onChange = function(val)
@@ -1074,7 +1136,8 @@ local function BuildBarAppearanceTab(container, group, style)
         -- live group style itself (see the factory's note). An entry's override
         -- store has no such resolver, so that one is handed over explicitly.
         local barCdTextAdvanced = MakeBarCooldownTextAdvancedDescriptor(
-            cdTextSec.scope == "customized" and cdTextSec.write or nil)
+            cdTextSec.scope == "customized" and cdTextSec.write or nil,
+            BAR_FINDER.advanced.cooldown)
 
         AddAdvancedToggle(showTimeRow, barCdTextAdvanced.settingKey, tabInfoButtons, cdTextSec.read.showCooldownText, {
             title = barCdTextAdvanced.title,
@@ -1092,6 +1155,7 @@ local function BuildBarAppearanceTab(container, group, style)
                 rebuild = function()
                     CooldownCompanion:RefreshConfigPanel()
                 end,
+                settings = BAR_FINDER.appearance.cooldownVisibility,
             })
     end
 
@@ -1101,6 +1165,7 @@ local function BuildBarAppearanceTab(container, group, style)
             row = true,
             sharedHelp = true,
             infoButtons = tabInfoButtons,
+            setting = BAR_FINDER.appearance.text and BAR_FINDER.appearance.text.durationFormat,
         })
         if durationFormatRow then
             cdTextSec:PanelRowChrome(durationFormatRow)
@@ -1119,6 +1184,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     local chargeTextRow = AddCheckboxRow(otherLeft, {
         label = "Show Count Text (Charges/Uses)",
+        setting = BAR_FINDER.appearance.text and BAR_FINDER.appearance.text.count,
         value = chargeSec.read.showChargeText ~= false,
         disabled = chargeSec.disabled,
         onChange = function(val)
@@ -1139,11 +1205,19 @@ local function BuildBarAppearanceTab(container, group, style)
     -- deferCommit is deliberately absent throughout, matching the stock color-picker
     -- calls these rows replaced.
     local function BuildBarChargeTextAdvanced(panel)
-        AddFontControls(panel, chargeSec.write, "charge", {}, refreshStyle, { row = true })
+        AddFontControls(panel, chargeSec.write, "charge", {}, refreshStyle, {
+            row = true,
+            settings = BAR_FINDER.advanced.charge and {
+                size = BAR_FINDER.advanced.charge.fontSize,
+                font = BAR_FINDER.advanced.charge.font,
+                outline = BAR_FINDER.advanced.charge.outline,
+            },
+        })
 
         local function ChargeColorRow(rowLabel, key)
             AddColorRow(panel, {
                 label = rowLabel,
+                setting = BAR_FINDER.advanced.charge and BAR_FINDER.advanced.charge[key],
                 tooltip = { rowLabel },
                 tbl = chargeSec.write,
                 key = key,
@@ -1157,8 +1231,17 @@ local function BuildBarAppearanceTab(container, group, style)
         ChargeColorRow("Font Color (Missing Charges)", "chargeFontColorMissing")
         ChargeColorRow("Font Color (Zero Charges)", "chargeFontColorZero")
 
-        AddAnchorDropdown(panel, chargeSec.write, "chargeAnchor", "BOTTOMRIGHT", refreshStyle, nil, { row = true })
-        AddOffsetSliders(panel, chargeSec.write, "chargeXOffset", "chargeYOffset", {x = -2, y = 2}, refreshStyle, { row = true })
+        AddAnchorDropdown(panel, chargeSec.write, "chargeAnchor", "BOTTOMRIGHT", refreshStyle, nil, {
+            row = true,
+            setting = BAR_FINDER.advanced.charge and BAR_FINDER.advanced.charge.anchor,
+        })
+        AddOffsetSliders(panel, chargeSec.write, "chargeXOffset", "chargeYOffset", {x = -2, y = 2}, refreshStyle, {
+            row = true,
+            settings = BAR_FINDER.advanced.charge and {
+                x = BAR_FINDER.advanced.charge.xOffset,
+                y = BAR_FINDER.advanced.charge.yOffset,
+            },
+        })
     end
 
     if chargeSec.write then
@@ -1179,6 +1262,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     local showReadyRow = AddCheckboxRow(otherLeft, {
         label = "Show Ready Text",
+        setting = BAR_FINDER.appearance.text and BAR_FINDER.appearance.text.ready,
         value = readySec.read.showBarReadyText or false,
         disabled = readySec.disabled,
         onChange = function(val)
@@ -1195,6 +1279,7 @@ local function BuildBarAppearanceTab(container, group, style)
     local function BuildBarReadyTextAdvanced(panel)
         local readyRow = AddEditBoxRow(panel, {
             label = "Ready Text",
+            setting = BAR_FINDER.advanced.ready and BAR_FINDER.advanced.ready.text,
             value = readySec.read.barReadyText or "Ready",
             onEnterPressed = function(val)
                 readySec.write.barReadyText = val
@@ -1209,6 +1294,7 @@ local function BuildBarAppearanceTab(container, group, style)
         -- this row replaced.
         AddColorRow(panel, {
             label = "Ready Text Color",
+            setting = BAR_FINDER.advanced.ready and BAR_FINDER.advanced.ready.color,
             tbl = readySec.write,
             key = "barReadyTextColor",
             default = {0.2, 1.0, 0.2, 1.0},
@@ -1216,7 +1302,14 @@ local function BuildBarAppearanceTab(container, group, style)
             onConfirm = refreshStyle,
             onChange = refreshStyle,
         })
-        AddFontControls(panel, readySec.write, "barReady", {sizeMin = 6, sizeMax = 24}, refreshStyle, { row = true })
+        AddFontControls(panel, readySec.write, "barReady", {sizeMin = 6, sizeMax = 24}, refreshStyle, {
+            row = true,
+            settings = BAR_FINDER.advanced.ready and {
+                size = BAR_FINDER.advanced.ready.fontSize,
+                font = BAR_FINDER.advanced.ready.font,
+                outline = BAR_FINDER.advanced.ready.outline,
+            },
+        })
     end
 
     if readySec.write then
@@ -1246,6 +1339,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
         local auraTextRow = AddCheckboxRow(durationRight, {
             label = "Show Aura Duration Text",
+            setting = BAR_FINDER.appearance.text and BAR_FINDER.appearance.text.auraDuration,
             value = auraTextSec.read.showAuraText ~= false,
             disabled = auraTextSec.disabled,
             onChange = function(val)
@@ -1260,9 +1354,17 @@ local function BuildBarAppearanceTab(container, group, style)
         -- deferCommit is deliberately absent, matching the stock color-picker call
         -- the color row replaced.
         local function BuildBarAuraTextAdvanced(panel)
-            AddFontControls(panel, auraTextSec.write, "auraText", { size = 12 }, refreshStyle, { row = true })
+            AddFontControls(panel, auraTextSec.write, "auraText", { size = 12 }, refreshStyle, {
+                row = true,
+                settings = BAR_FINDER.advanced.auraText and {
+                    size = BAR_FINDER.advanced.auraText.fontSize,
+                    font = BAR_FINDER.advanced.auraText.font,
+                    outline = BAR_FINDER.advanced.auraText.outline,
+                },
+            })
             AddColorRow(panel, {
                 label = "Font Color",
+                setting = BAR_FINDER.advanced.auraText and BAR_FINDER.advanced.auraText.color,
                 tbl = auraTextSec.write,
                 key = "auraTextFontColor",
                 default = {0, 0.925, 1, 1},
@@ -1285,13 +1387,20 @@ local function BuildBarAppearanceTab(container, group, style)
                 local panelStyle = group.style
                 local flipRow = AddCheckboxRow(panel, {
                     label = "Flip Time Text",
+                    setting = BAR_FINDER.advanced.auraText and BAR_FINDER.advanced.auraText.flip,
                     value = panelStyle.barTimeTextReverse or false,
                     onChange = function(val)
                         panelStyle.barTimeTextReverse = val or nil
                         refreshStyle()
                     end,
                 })
-                local offsetXRow, offsetYRow = AddOffsetSliders(panel, panelStyle, "barCdTextOffsetX", "barCdTextOffsetY", {range = 50}, refreshStyle, { row = true })
+                local offsetXRow, offsetYRow = AddOffsetSliders(panel, panelStyle, "barCdTextOffsetX", "barCdTextOffsetY", {range = 50}, refreshStyle, {
+                    row = true,
+                    settings = BAR_FINDER.advanced.auraText and {
+                        x = BAR_FINDER.advanced.auraText.xOffset,
+                        y = BAR_FINDER.advanced.auraText.yOffset,
+                    },
+                })
                 auraTextSec:PanelRowChrome(flipRow)
                 auraTextSec:PanelRowChrome(offsetXRow)
                 auraTextSec:PanelRowChrome(offsetYRow)
@@ -1329,6 +1438,7 @@ local function BuildBarAppearanceTab(container, group, style)
                     rebuild = function()
                         CooldownCompanion:RefreshConfigPanel()
                     end,
+                    settings = BAR_FINDER.appearance.auraVisibility,
                 })
         end
 
@@ -1338,6 +1448,7 @@ local function BuildBarAppearanceTab(container, group, style)
                 row = true,
                 sharedHelp = true,
                 infoButtons = tabInfoButtons,
+                setting = BAR_FINDER.appearance.text and BAR_FINDER.appearance.text.durationFormat,
             })
             if auraFormatRow then
                 auraTextSec:PanelRowChrome(auraFormatRow)
@@ -1354,6 +1465,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
         local auraStackRow = AddCheckboxRow(otherRight, {
             label = "Show Aura Stack Text",
+            setting = BAR_FINDER.appearance.text and BAR_FINDER.appearance.text.auraStacks,
             value = auraStackSec.read.showAuraStackText ~= false,
             disabled = auraStackSec.disabled,
             onChange = function(val)
@@ -1366,11 +1478,19 @@ local function BuildBarAppearanceTab(container, group, style)
 
         -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
         local function BuildBarAuraStackTextAdvanced(panel)
-            AddFontControls(panel, auraStackSec.write, "auraStack", { size = 12 }, refreshStyle, { row = true })
+            AddFontControls(panel, auraStackSec.write, "auraStack", { size = 12 }, refreshStyle, {
+                row = true,
+                settings = BAR_FINDER.advanced.auraStack and {
+                    size = BAR_FINDER.advanced.auraStack.fontSize,
+                    font = BAR_FINDER.advanced.auraStack.font,
+                    outline = BAR_FINDER.advanced.auraStack.outline,
+                },
+            })
             -- deferCommit is deliberately absent, matching the stock color-picker
             -- call this row replaced.
             AddColorRow(panel, {
                 label = "Font Color",
+                setting = BAR_FINDER.advanced.auraStack and BAR_FINDER.advanced.auraStack.color,
                 tbl = auraStackSec.write,
                 key = "auraStackFontColor",
                 default = {1, 1, 1, 1},
@@ -1378,8 +1498,17 @@ local function BuildBarAppearanceTab(container, group, style)
                 onConfirm = refreshStyle,
                 onChange = refreshStyle,
             })
-            AddAnchorDropdown(panel, auraStackSec.write, "auraStackAnchor", "BOTTOMLEFT", refreshStyle, nil, { row = true })
-            AddOffsetSliders(panel, auraStackSec.write, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle, { row = true })
+            AddAnchorDropdown(panel, auraStackSec.write, "auraStackAnchor", "BOTTOMLEFT", refreshStyle, nil, {
+                row = true,
+                setting = BAR_FINDER.advanced.auraStack and BAR_FINDER.advanced.auraStack.anchor,
+            })
+            AddOffsetSliders(panel, auraStackSec.write, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle, {
+                row = true,
+                settings = BAR_FINDER.advanced.auraStack and {
+                    x = BAR_FINDER.advanced.auraStack.xOffset,
+                    y = BAR_FINDER.advanced.auraStack.yOffset,
+                },
+            })
         end
 
         if auraStackSec.write then
@@ -1449,6 +1578,7 @@ local function BuildBarAppearanceTab(container, group, style)
         and not (whileAuraLensEntry and CooldownCompanion:IsAuraIconForcedEntry(whileAuraLensEntry)) then
         AddCheckboxRow(whileAuraLeft, {
             label = "Show Aura Icon",
+            setting = BAR_FINDER.appearance.whileAura and BAR_FINDER.appearance.whileAura.icon,
             value = WhileAuraOn("auraShowAuraIcon"),
             disabled = whileAuraSec.disabled,
             onChange = function(val)
@@ -1462,6 +1592,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     AddCheckboxRow(whileAuraLeft, {
         label = "Desaturate Icon",
+        setting = BAR_FINDER.appearance.whileAura and BAR_FINDER.appearance.whileAura.desaturate,
         value = WhileAuraOn("invertAuraDesaturationLogic"),
         disabled = whileAuraSec.disabled,
         onChange = function(val)
@@ -1538,6 +1669,7 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
 
         local enableRow = AddCheckboxRow(container, {
             label = "Show Active Aura Indicator",
+            setting = BAR_FINDER.effects.aura.active,
             value = indicatorOn,
             disabled = auraSec.disabled,
             onChange = function(val)
@@ -1574,6 +1706,7 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
                 singleRail = true,
                 infoButtons = tabInfoButtons,
                 fallbackStyle = auraSec.fallbackStyle,
+                settings = BAR_FINDER.advanced.activeAura,
             })
         end
 
@@ -1628,6 +1761,7 @@ local function BuildBarPandemicSection(container, group, style, lens)
 
         local enableRow = AddCheckboxRow(container, {
             label = "Show Pandemic Color",
+            setting = BAR_FINDER.effects.aura.pandemicColor,
             value = pandemicOn,
             disabled = pandemicSec.disabled,
             onChange = function(val)
@@ -1655,6 +1789,7 @@ local function BuildBarPandemicSection(container, group, style, lens)
             -- thing would leave no way to tell the fill from the text.
             AddColorRow(container, {
                 label = "Fill Color",
+                setting = BAR_FINDER.effects.aura.pandemicFill,
                 indent = true,
                 tbl = pandemicSec.tbl,
                 key = "barPandemicColor",
@@ -1702,6 +1837,7 @@ local function BuildBarPandemicMarkerSection(container, group, style, lens)
     local markerRow = AddPandemicMarkerControls(container, markerSec.tbl, applyStyle, function()
         CooldownCompanion:RefreshConfigPanel()
     end, {
+        setting = BAR_FINDER.effects.aura.pandemicMarker,
         enableOnly = true,
         onModeChanged = function(mode)
             ReconcilePandemicMarkerPreview(lens, mode)
@@ -1716,7 +1852,10 @@ local function BuildBarPandemicMarkerSection(container, group, style, lens)
             if CS.RefreshAdvancedSettingsPanel then
                 CS.RefreshAdvancedSettingsPanel()
             end
-        end, { childrenOnly = true })
+        end, {
+            childrenOnly = true,
+            settings = BAR_FINDER.advanced.pandemicMarker,
+        })
     end
 
     -- "barPandemicMarker", not the icons key: every bars gear in this file
@@ -1810,6 +1949,7 @@ local function BuildBarEffectsTab(container, group, style)
     local missingSec = BeginLensSection(lens, group, "auraMissingDesaturation")
     local missingRow = AddCheckboxRow(auraRight, {
         label = "Desaturate While Aura Missing",
+        setting = BAR_FINDER.effects.aura.missing,
         value = missingSec.read.desaturateWhileAuraNotActive == true,
         disabled = missingSec.disabled,
         onChange = function(val)
@@ -1904,6 +2044,7 @@ local function BuildBarEffectsTab(container, group, style)
         local gcdSec = BeginLensSection(lens, group, "showGCDSwipe")
         local gcdRow = AddCheckboxRow(timerLeft, {
             label = "Show GCD Swipe",
+            setting = BAR_FINDER.effects.spell.gcd,
             value = gcdSec.read.showGCDSwipe == true,
             disabled = gcdSec.disabled,
             onChange = function(val)
@@ -1938,6 +2079,7 @@ local function BuildBarEffectsTab(container, group, style)
         local desatSec = BeginLensSection(lens, group, "desaturation")
         local desatRow = AddCheckboxRow(stateLeft, {
             label = "Desaturate On Cooldown",
+            setting = BAR_FINDER.effects.spell.desaturate,
             value = desatSec.read.desaturateOnCooldown or false,
             disabled = desatSec.disabled,
             onChange = function(val)
@@ -1961,6 +2103,8 @@ local function BuildBarEffectsTab(container, group, style)
         end, {
             row = true,
             fallbackStyle = unusableSec.fallbackStyle,
+            setting = BAR_FINDER.effects.spell.unusable,
+            settings = BAR_FINDER.advanced.unusable,
         })
         unusableSec:Chrome(unusableRow)
         unusableSec:Finish()
@@ -1973,6 +2117,7 @@ local function BuildBarEffectsTab(container, group, style)
         local oorSec = BeginLensSection(lens, group, "showOutOfRange")
         local oorRow = AddCheckboxRow(stateRight, {
             label = "Show Out of Range",
+            setting = BAR_FINDER.effects.spell.outOfRange,
             value = oorSec.read.showOutOfRange or false,
             disabled = oorSec.disabled,
             onChange = function(val)
@@ -1992,6 +2137,7 @@ local function BuildBarEffectsTab(container, group, style)
         local locSec = BeginLensSection(lens, group, "lossOfControl")
         local locRow = BuildLossOfControlControls(stateRight, locSec.tbl, refreshStyle, {
             row = true,
+            setting = BAR_FINDER.effects.spell.lossOfControl,
         })
         locRow:SetDisabled(locSec.disabled)
         locSec:Chrome(locRow)
@@ -2028,6 +2174,8 @@ local function BuildBarEffectsTab(container, group, style)
             advanced = true,
             infoButtons = tabInfoButtons,
             fallbackStyle = tooltipSec.fallbackStyle,
+            setting = BAR_FINDER.effects.interaction.tooltips,
+            settings = BAR_FINDER.advanced.tooltip,
         })
         tooltipSec:Chrome(tooltipRow)
         tooltipSec:Finish()
@@ -2044,7 +2192,10 @@ local function BuildBarEffectsTab(container, group, style)
         local pingsSec = BeginLensSection(lens, group, nil, { column = interactionRight })
         BuildAllowPingsControls(interactionRight, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, { row = true })
+        end, {
+            row = true,
+            setting = BAR_FINDER.effects.interaction.pings,
+        })
         pingsSec:Finish()
         end
         end -- not interactionCollapsed
@@ -2061,6 +2212,657 @@ local function BuildBarEffectsTab(container, group, style)
             end
         end
     end
+end
+
+------------------------------------------------------------------------
+-- SETTINGS FINDER CATALOG
+------------------------------------------------------------------------
+
+local BAR_FINDER_SCOPE = { "panel", "entry" }
+
+local function BarFinderUsesBars(context)
+    return context and context.group and context.displayMode == "bars"
+end
+
+-- Finder predicates resolve the same current style lens as the builders. This
+-- is table-only work over the selected panel/entry; searching never builds an
+-- unopened tab or calls a gameplay API.
+local function BarFinderLens(context)
+    local group = context and context.group
+    if not group then return nil end
+    local cached = rawget(context, "_cdcBarFinderLens")
+    if cached and cached.group == group and cached.buttonData == context.buttonData then
+        return cached.lens
+    end
+    local lens = ResolveStyleLens(group)
+    rawset(context, "_cdcBarFinderLens", {
+        group = group,
+        buttonData = context.buttonData,
+        lens = lens,
+    })
+    return lens
+end
+
+local function BarFinderStyle(context)
+    local group = context and context.group
+    local lens = BarFinderLens(context)
+    return (lens and lens.effective) or (group and group.style) or nil
+end
+
+local function BarFinderSectionState(context, sectionId)
+    local group = context and context.group
+    local lens = BarFinderLens(context)
+    if not (group and lens) then return nil, nil end
+    local _, read, write = ResolveLensSection(lens, group, sectionId)
+    return read, write
+end
+
+local function BarFinderTracksAura(context)
+    return context and context.group and GroupHasAuraTrackingEntry(context.group) or false
+end
+
+local function BarFinderIconShown(context)
+    local style = BarFinderStyle(context)
+    return style and style.showBarIcon ~= false or false
+end
+
+local function BarFinderCanUse(context, sectionId)
+    return context and context.group
+        and CanGroupUseOverrideSection(context.group, sectionId) or false
+end
+
+local function BarFinderWrap(predicate)
+    return function(context)
+        return BarFinderUsesBars(context)
+            and (predicate == nil or predicate(context) == true)
+    end
+end
+
+local function BarFinderAdvanced(sectionId, structural, enabled)
+    return BarFinderWrap(function(context)
+        if structural and not structural(context) then return false end
+        local read, write = BarFinderSectionState(context, sectionId)
+        return write ~= nil and read ~= nil
+            and (enabled == nil or enabled(read, context) == true)
+    end)
+end
+
+local function BarFinderRoute(prefix, tab, section, sectionLabel, collapseKey,
+        applies, advancedKey, sectionId)
+    return ST._DefineSettingRoute({
+        idPrefix = prefix,
+        scope = BAR_FINDER_SCOPE,
+        tab = tab,
+        tabLabel = tab == "effects" and "Indicators" or "Appearance",
+        section = section,
+        sectionId = sectionId or section,
+        sectionLabel = sectionLabel,
+        collapseKeys = collapseKey and { collapseKey } or nil,
+        rowScope = "primary",
+        advancedKey = advancedKey,
+        applies = BarFinderWrap(applies),
+    })
+end
+
+local BAR_FINDER_ADVANCED_SECTION_LABELS = {
+    barIcon = "Icon",
+    barNameText = "Name Text",
+    barCooldownText = "Cooldown Text",
+    barChargeText = "Count Text",
+    barReadyText = "Ready Text",
+    barAuraText = "Aura Duration Text",
+    barAuraStackText = "Aura Stack Text",
+}
+
+local BAR_FINDER_TEXT_SECTION_LABELS = {
+    cooldownText = "Cooldown Text",
+    auraText = "Aura Duration Text",
+    durationLowTime = "Low-Time Text",
+}
+
+local function BarFinderTextRoute(prefix, sectionId, advancedKey, applies)
+    local sectionLabel = BAR_FINDER_ADVANCED_SECTION_LABELS[advancedKey]
+        or BAR_FINDER_TEXT_SECTION_LABELS[sectionId]
+        or "Text & Icon"
+    return BarFinderRoute(prefix, "appearance", "textIcon", sectionLabel,
+        "barappearance_textIcon", applies, advancedKey, sectionId)
+end
+
+local function BarFinderEffectRoute(prefix, section, sectionLabel, applies,
+        advancedKey, sectionId)
+    return BarFinderRoute(prefix, "effects", section, sectionLabel, section,
+        applies, advancedKey, sectionId)
+end
+
+local function BarFinderCooldownText(context)
+    return context and context.group and not ST.IsAuraPanelGroup(context.group)
+end
+
+local function BarFinderCooldownTextVisible(context)
+    if not BarFinderCooldownText(context) then return false end
+    local read = BarFinderSectionState(context, "cooldownText")
+    return read and read.showCooldownText == true or false
+end
+
+local function BarFinderAuraTextVisible(context)
+    if not BarFinderTracksAura(context) then return false end
+    local read = BarFinderSectionState(context, "auraText")
+    return read and read.showAuraText ~= false or false
+end
+
+local function BarFinderDurationFormat(context)
+    local group = context and context.group
+    if not group then return false end
+    local panelStyle = group.style or {}
+    local effectiveStyle = BarFinderStyle(context) or panelStyle
+    return BarsDrawCooldownDurationRows(group, panelStyle)
+        or BarsDrawCooldownDurationRows(group, effectiveStyle)
+        or BarsDrawAuraDurationRows(group, panelStyle)
+        or BarsDrawAuraDurationRows(group, effectiveStyle)
+end
+
+local function BarFinderLowTime(context)
+    local group = context and context.group
+    local style = BarFinderStyle(context)
+    return group and style and BarsDrawDurationRows(group, style) or false
+end
+
+local function BarFinderLowTimeState(context)
+    local read = BarFinderSectionState(context, "durationLowTime") or {}
+    local first = tonumber(read.durationLowTimeThreshold) or 0
+    local second = tonumber(read.durationLowTimeThreshold2) or 0
+    return read, first, second, first > 0, second > 0 and second < first
+end
+
+local function BarFinderLowTimeAuraToggle(context)
+    if not BarFinderLowTime(context) or not BarFinderTracksAura(context) then return false end
+    local _, _, _, active = BarFinderLowTimeState(context)
+    if not active then return false end
+    local group = context.group
+    if ST.IsAuraPanelGroup(group) then return false end
+    if context.scope == "entry" and context.buttonData
+        and ST.IsAuraSectionEntry(group, context.buttonData) then
+        return false
+    end
+    return BarsDrawAuraDurationRows(group, BarFinderStyle(context))
+end
+
+if ST._DefineSettingRoute then
+    BAR_FINDER.appearance.barSettings = BarFinderRoute(
+        "panel.bars.appearance.settings", "appearance", "barSettings",
+        "Bar Settings", "barappearance_settings"):Settings({
+        length = { label = "Bar Length" },
+        height = { label = "Bar Height" },
+        vertical = { label = "Vertical Bar Fill", aliases = { "orientation" } },
+        reverse = { label = "Flip Fill/Drain Direction", aliases = { "reverse fill" } },
+        spacing = {
+            label = "Bar Spacing",
+            applies = function(context)
+                local buttons = context and context.group and context.group.buttons
+                return buttons and #buttons > 1 or false
+            end,
+        },
+        texture = { label = "Bar Texture" },
+    })
+
+    BAR_FINDER.appearance.colors = BarFinderRoute(
+        "panel.bars.appearance.colors", "appearance", "barColors",
+        "Bar Colors", nil):Settings({
+        bar = {
+            label = "Bar Color", sectionId = "barColor",
+            applies = function(context) return BarFinderCanUse(context, "barColor") end,
+        },
+        background = { label = "Bar Background Color", sectionId = "barBgColor" },
+        cooldown = {
+            label = "Bar Cooldown Color", sectionId = "barCooldownColor",
+            applies = function(context) return BarFinderCanUse(context, "barCooldownColor") end,
+        },
+        recharging = {
+            label = "Bar Recharging Color", aliases = { "charges" }, sectionId = "barChargeColor",
+            applies = function(context) return BarFinderCanUse(context, "barCooldownColor") end,
+        },
+        aura = {
+            label = "Bar Aura Timer Color", aliases = { "aura fill color" }, sectionId = "barActiveAura",
+            applies = BarFinderTracksAura,
+        },
+    })
+
+    BAR_FINDER.appearance.border = BarFinderRoute(
+        "panel.bars.appearance.border", "appearance", "borderSettings",
+        "Border", "barappearance_border", nil, nil, "borderSettings"):Settings({
+        thickness = { label = "Border Thickness" },
+        size = {
+            label = "Border Size",
+            applies = function(context)
+                local read = BarFinderSectionState(context, "borderSettings")
+                return read and ST.GetBorderRenderMode(read, "borderRenderMode")
+                    ~= ST.BORDER_RENDER_MODE_CRISP
+            end,
+        },
+        color = { label = "Border Color" },
+    })
+
+    BAR_FINDER.appearance.tint = BarFinderRoute(
+        "panel.bars.appearance.iconTint", "appearance", "iconTint",
+        "Icon Tint", "barappearance_iconTint", BarFinderIconShown, nil,
+        "iconTint"):Settings({
+        base = { label = "Base Icon Color" },
+        separateCooldown = {
+            label = "Use Separate Cooldown Tint",
+            applies = function(context) return BarFinderCanUse(context, "desaturation") end,
+        },
+        cooldown = {
+            label = "Cooldown Icon Color",
+            applies = function(context)
+                if not BarFinderCanUse(context, "desaturation") then return false end
+                local read = BarFinderSectionState(context, "iconTint")
+                return read and read.iconCooldownTintEnabled == true or false
+            end,
+        },
+        separateAura = { label = "Use Separate Aura Tint", applies = BarFinderTracksAura },
+        aura = {
+            label = "Aura Active Icon Color",
+            applies = function(context)
+                if not BarFinderTracksAura(context) then return false end
+                local read = BarFinderSectionState(context, "iconTint")
+                return read and read.iconAuraTintEnabled == true or false
+            end,
+        },
+    })
+
+    BAR_FINDER.appearance.text = BarFinderTextRoute(
+        "panel.bars.appearance.text", "textIcon", nil):Settings({
+        icon = { label = "Show Icon", sectionId = "barIcon" },
+        name = { label = "Show Name Text", sectionId = "barNameText" },
+        cooldown = {
+            label = "Show Cooldown Text", sectionId = "cooldownText",
+            applies = BarFinderCooldownText,
+        },
+        count = {
+            label = "Show Count Text (Charges/Uses)", aliases = { "charges", "uses" },
+            sectionId = "chargeText",
+            applies = function(context) return BarFinderCanUse(context, "chargeText") end,
+        },
+        ready = {
+            label = "Show Ready Text", sectionId = "barReadyText",
+            applies = function(context) return BarFinderCanUse(context, "barReadyText") end,
+        },
+        auraDuration = {
+            label = "Show Aura Duration Text", sectionId = "auraText",
+            applies = BarFinderTracksAura,
+        },
+        auraStacks = {
+            label = "Show Aura Stack Text", sectionId = "auraStackText",
+            applies = BarFinderTracksAura,
+        },
+        durationFormat = {
+            label = "Duration Format", aliases = { "timer format" },
+            applies = BarFinderDurationFormat,
+        },
+    })
+
+    BAR_FINDER.appearance.cooldownVisibility = BarFinderTextRoute(
+        "panel.bars.appearance.cooldownVisibility", "cooldownText", nil,
+        BarFinderCooldownTextVisible):Settings({
+        mode = { label = "Visible", aliases = { "cooldown text visibility" } },
+        threshold = {
+            label = "Show During Last", aliases = { "cooldown text threshold" },
+            applies = function(context)
+                local read = BarFinderSectionState(context, "cooldownText")
+                return read and CooldownCompanion.GetDurationTextVisibilityThreshold
+                    and CooldownCompanion.GetDurationTextVisibilityThreshold(read, "cooldown") ~= nil
+            end,
+        },
+    })
+
+    BAR_FINDER.appearance.auraVisibility = BarFinderTextRoute(
+        "panel.bars.appearance.auraVisibility", "auraText", nil,
+        BarFinderAuraTextVisible):Settings({
+        mode = { label = "Visible", aliases = { "aura text visibility" } },
+        threshold = {
+            label = "Show During Last", aliases = { "aura text threshold" },
+            applies = function(context)
+                local read = BarFinderSectionState(context, "auraText")
+                return read and CooldownCompanion.GetDurationTextVisibilityThreshold
+                    and CooldownCompanion.GetDurationTextVisibilityThreshold(read, "aura") ~= nil
+            end,
+        },
+    })
+
+    BAR_FINDER.appearance.lowTime = BarFinderTextRoute(
+        "panel.bars.appearance.lowTime", "durationLowTime", nil,
+        BarFinderLowTime):Settings({
+        enabled = { label = "Change Text Near Expiry", aliases = { "low time", "warning time" } },
+        warningThreshold = {
+            label = "Start Warning Below",
+            applies = function(context) local _, _, _, active = BarFinderLowTimeState(context); return active end,
+        },
+        warningColor = {
+            label = "Warning Color",
+            applies = function(context) local _, _, _, active = BarFinderLowTimeState(context); return active end,
+        },
+        auras = { label = "Also Apply to Aura Text", applies = BarFinderLowTimeAuraToggle },
+        critical = {
+            label = "Add Critical Styling",
+            applies = function(context) local _, _, _, active = BarFinderLowTimeState(context); return active end,
+        },
+        criticalThreshold = {
+            label = "Start Critical Below",
+            applies = function(context) local _, _, _, _, active = BarFinderLowTimeState(context); return active end,
+        },
+        criticalColor = {
+            label = "Critical Color",
+            applies = function(context) local _, _, _, _, active = BarFinderLowTimeState(context); return active end,
+        },
+        decimals = {
+            label = "Show Decimals Near Expiry",
+            applies = function(context) local _, _, _, active = BarFinderLowTimeState(context); return active end,
+        },
+    })
+
+    BAR_FINDER.appearance.whileAura = BarFinderRoute(
+        "panel.bars.appearance.whileAura", "appearance", "whileAuraActive",
+        "While Aura Active", "barappearance_whileAuraActive", function(context)
+            return BarFinderTracksAura(context) and BarFinderIconShown(context)
+        end, nil, "whileAuraActive"):Settings({
+        icon = {
+            label = "Show Aura Icon",
+            applies = function(context)
+                local group = context and context.group
+                if not group or ST.IsAuraPanelGroup(group) then return false end
+                return not (context.scope == "entry" and context.buttonData
+                    and CooldownCompanion:IsAuraIconForcedEntry(context.buttonData))
+            end,
+        },
+        desaturate = { label = "Desaturate Icon", aliases = { "while aura active" } },
+    })
+
+    local iconAdvanced = BarFinderTextRoute(
+        "panel.bars.appearance.iconAdvanced", "barIcon", "barIcon",
+        BarFinderAdvanced("barIcon", nil, function(read) return read.showBarIcon ~= false end))
+    BAR_FINDER.advanced.icon = iconAdvanced:Settings({
+        flip = { label = "Flip Icon Side" },
+        offset = { label = "Icon Offset" },
+        customSize = { label = "Custom Icon Size" },
+        size = {
+            label = "Icon Size",
+            applies = function(context)
+                local read = BarFinderSectionState(context, "barIcon")
+                return read and read.barIconSizeOverride == true or false
+            end,
+        },
+        zoom = { label = "Icon Zoom", sectionId = "iconZoom" },
+    })
+
+    BAR_FINDER.advanced.name = BarFinderTextRoute(
+        "panel.bars.appearance.nameAdvanced", "barNameText", "barNameText",
+        BarFinderAdvanced("barNameText", nil, function(read) return read.showBarNameText ~= false end)):Settings({
+        flip = { label = "Flip Name Text" },
+        fontSize = { label = "Font Size" }, font = { label = "Font" },
+        outline = { label = "Font Outline" }, color = { label = "Font Color" },
+        xOffset = { label = "X Offset" }, yOffset = { label = "Y Offset" },
+    })
+
+    BAR_FINDER.advanced.cooldown = BarFinderTextRoute(
+        "panel.bars.appearance.cooldownAdvanced", "cooldownText", "barCooldownText",
+        BarFinderAdvanced("cooldownText", BarFinderCooldownText,
+            function(read) return read.showCooldownText ~= false end)):Settings({
+        flip = { label = "Flip Time Text", applies = function(context) return context.scope == "panel" end },
+        fontSize = { label = "Font Size" }, font = { label = "Font" },
+        outline = { label = "Font Outline" }, color = { label = "Font Color" },
+        xOffset = { label = "X Offset", applies = function(context) return context.scope == "panel" end },
+        yOffset = { label = "Y Offset", applies = function(context) return context.scope == "panel" end },
+    })
+
+    BAR_FINDER.advanced.charge = BarFinderTextRoute(
+        "panel.bars.appearance.countAdvanced", "chargeText", "barChargeText",
+        BarFinderAdvanced("chargeText",
+            function(context) return BarFinderCanUse(context, "chargeText") end,
+            function(read) return read.showChargeText ~= false end)):Settings({
+        fontSize = { label = "Font Size" }, font = { label = "Font" },
+        outline = { label = "Font Outline" },
+        chargeFontColor = { label = "Font Color (Max Charges)" },
+        chargeFontColorMissing = { label = "Font Color (Missing Charges)" },
+        chargeFontColorZero = { label = "Font Color (Zero Charges)" },
+        anchor = { label = "Anchor" }, xOffset = { label = "X Offset" },
+        yOffset = { label = "Y Offset" },
+    })
+
+    BAR_FINDER.advanced.ready = BarFinderTextRoute(
+        "panel.bars.appearance.readyAdvanced", "barReadyText", "barReadyText",
+        BarFinderAdvanced("barReadyText",
+            function(context) return BarFinderCanUse(context, "barReadyText") end,
+            function(read) return read.showBarReadyText ~= false end)):Settings({
+        text = { label = "Ready Text" }, color = { label = "Ready Text Color" },
+        fontSize = { label = "Font Size" }, font = { label = "Font" },
+        outline = { label = "Font Outline" },
+    })
+
+    BAR_FINDER.advanced.auraText = BarFinderTextRoute(
+        "panel.bars.appearance.auraTextAdvanced", "auraText", "barAuraText",
+        BarFinderAdvanced("auraText", BarFinderTracksAura,
+            function(read) return read.showAuraText ~= false end)):Settings({
+        fontSize = { label = "Font Size" }, font = { label = "Font" },
+        outline = { label = "Font Outline" }, color = { label = "Font Color" },
+        flip = {
+            label = "Flip Time Text",
+            applies = function(context) return ST.IsAuraPanelGroup(context.group) end,
+        },
+        xOffset = {
+            label = "X Offset", applies = function(context) return ST.IsAuraPanelGroup(context.group) end,
+        },
+        yOffset = {
+            label = "Y Offset", applies = function(context) return ST.IsAuraPanelGroup(context.group) end,
+        },
+    })
+
+    BAR_FINDER.advanced.auraStack = BarFinderTextRoute(
+        "panel.bars.appearance.auraStackAdvanced", "auraStackText", "barAuraStackText",
+        BarFinderAdvanced("auraStackText", BarFinderTracksAura,
+            function(read) return read.showAuraStackText ~= false end)):Settings({
+        fontSize = { label = "Font Size" }, font = { label = "Font" },
+        outline = { label = "Font Outline" }, color = { label = "Font Color" },
+        anchor = { label = "Anchor" }, xOffset = { label = "X Offset" },
+        yOffset = { label = "Y Offset" },
+    })
+
+    local auraEffects = BarFinderEffectRoute(
+        "panel.bars.effects.aura", EFFECTS_AURA_SECTION, "Aura Indicators",
+        BarFinderTracksAura)
+    BAR_FINDER.effects.aura = auraEffects:Settings({
+        active = { label = "Show Active Aura Indicator", sectionId = "barActiveAura" },
+        missing = {
+            label = "Desaturate While Aura Missing", sectionId = "auraMissingDesaturation",
+            applies = function(context)
+                return BarFinderIconShown(context)
+                    and BarFinderCanUse(context, "auraMissingDesaturation")
+            end,
+        },
+        pandemicColor = { label = "Show Pandemic Color", sectionId = "pandemic" },
+        pandemicFill = {
+            label = "Fill Color", aliases = { "pandemic fill color" }, sectionId = "pandemic",
+            applies = function(context)
+                local read = BarFinderSectionState(context, "pandemic")
+                return read and read.pandemicEffectEnabled == true or false
+            end,
+        },
+        pandemicMarker = {
+            label = "Pandemic Marker", sectionId = "pandemic",
+            applies = BarFinderAuraTextVisible,
+        },
+    })
+
+    local spellEffects = BarFinderEffectRoute(
+        "panel.bars.effects.spell", EFFECTS_SPELL_SECTION,
+        "Cooldown / Spell Indicators")
+    local function SpellStates(context)
+        return BarFinderIconShown(context) and BarFinderCanUse(context, "desaturation")
+    end
+    BAR_FINDER.effects.spell = spellEffects:Settings({
+        gcd = {
+            label = "Show GCD Swipe", sectionId = "showGCDSwipe",
+            applies = function(context)
+                return BarFinderIconShown(context) and BarFinderCanUse(context, "showGCDSwipe")
+            end,
+        },
+        desaturate = {
+            label = "Desaturate On Cooldown", sectionId = "desaturation",
+            applies = SpellStates,
+        },
+        unusable = {
+            label = "Show Unusable Visual", sectionId = "unusableDimming",
+            applies = function(context)
+                return SpellStates(context) and BarFinderCanUse(context, "unusableDimming")
+            end,
+        },
+        outOfRange = {
+            label = "Show Out of Range", sectionId = "showOutOfRange",
+            applies = function(context)
+                return SpellStates(context) and BarFinderCanUse(context, "showOutOfRange")
+            end,
+        },
+        lossOfControl = {
+            label = "Show Loss of Control", sectionId = "lossOfControl",
+            applies = function(context)
+                return SpellStates(context) and BarFinderCanUse(context, "lossOfControl")
+            end,
+        },
+    })
+
+    local interaction = BarFinderEffectRoute(
+        "panel.bars.effects.interaction", EFFECTS_INTERACTION_SECTION,
+        "Interaction")
+    BAR_FINDER.effects.interaction = interaction:Settings({
+        tooltips = { label = "Show Tooltips", sectionId = "showTooltips", applies = function(context)
+            return BarsTooltipRowShown(context.group, BarFinderStyle(context))
+        end },
+        pings = { label = "Allow Pings", applies = function(context)
+            return BarFinderIconShown(context)
+                and not CooldownCompanion:IsAuraPanel(context.group)
+        end },
+    })
+
+    local ActiveAuraAdvanced = BarFinderAdvanced(
+        "barActiveAura", BarFinderTracksAura,
+        function(read) return BarAuraIndicatorRenders(read) end)
+    local function ActiveAuraStyle(context)
+        local read = BarFinderSectionState(context, "barActiveAura") or {}
+        local style = read.barAuraEffect or "color"
+        if style == "lcgProc" or style == "lcgButton" then
+            style = "glow"
+        elseif style == "lcgAutoCast" then
+            style = "autocast"
+        end
+        if style == "none" then style = "color" end
+        return style, read
+    end
+    local function ActiveAuraStyleIs(...)
+        local allowed = {}
+        for index = 1, select("#", ...) do allowed[select(index, ...)] = true end
+        return function(context)
+            local style = ActiveAuraStyle(context)
+            return allowed[style] == true
+        end
+    end
+
+    local activeAura = BarFinderEffectRoute(
+        "panel.bars.effects.activeAura", EFFECTS_AURA_SECTION, "Aura Indicators",
+        ActiveAuraAdvanced, "barActiveAura", "barActiveAura")
+    BAR_FINDER.advanced.activeAura = activeAura:Settings({
+        style = { label = "Glow Style", aliases = { "border effect", "aura indicator style" } },
+        color = { label = "Effect Color" },
+        color2 = { label = "Second Color", applies = ActiveAuraStyleIs("colorShift") },
+        borderSize = {
+            label = "Border Size",
+            applies = ActiveAuraStyleIs("solid", "pulse", "pulsingBorder", "colorShift"),
+        },
+        pulseDuration = {
+            label = "Border Pulse Duration", aliases = { "pulse duration" },
+            applies = ActiveAuraStyleIs("pulse", "pulsingBorder"),
+        },
+        shiftDuration = {
+            label = "Border Shift Duration", aliases = { "shift duration" },
+            applies = ActiveAuraStyleIs("colorShift"),
+        },
+        dashLength = { label = "Dash Length", applies = ActiveAuraStyleIs("dashes") },
+        dashThickness = { label = "Dash Thickness", applies = ActiveAuraStyleIs("dashes") },
+        dashCount = { label = "Number of Dashes", applies = ActiveAuraStyleIs("dashes") },
+        lapDuration = { label = "Lap Duration", applies = ActiveAuraStyleIs("dashes") },
+        lineLength = { label = "Line Length", applies = ActiveAuraStyleIs("pixel") },
+        lineThickness = { label = "Line Thickness", applies = ActiveAuraStyleIs("pixel") },
+        speed = { label = "Speed", applies = ActiveAuraStyleIs("pixel") },
+        lineCount = { label = "Number of Lines", applies = ActiveAuraStyleIs("pixel") },
+        glowSize = { label = "Glow Size", applies = ActiveAuraStyleIs("glow", "ants", "proc") },
+        particleScale = { label = "Particle Scale", applies = ActiveAuraStyleIs("autocast") },
+        frequency = { label = "Frequency", applies = ActiveAuraStyleIs("autocast") },
+        pulseFill = { label = "Pulse Bar Fill" },
+        pulseFillDuration = {
+            label = "Fill Pulse Duration", aliases = { "pulse duration" },
+            applies = function(context)
+                local _, read = ActiveAuraStyle(context)
+                return read.barAuraPulseEnabled == true
+            end,
+        },
+        colorShiftFill = { label = "Color Shift Bar Fill" },
+        colorShiftDuration = {
+            label = "Fill Shift Duration", aliases = { "shift duration" },
+            applies = function(context)
+                local _, read = ActiveAuraStyle(context)
+                return read.barAuraColorShiftEnabled == true
+            end,
+        },
+        shiftColor = {
+            label = "Shift Color",
+            applies = function(context)
+                local _, read = ActiveAuraStyle(context)
+                return read.barAuraColorShiftEnabled == true
+            end,
+        },
+    })
+
+    BAR_FINDER.advanced.pandemicMarker = BarFinderEffectRoute(
+        "panel.bars.effects.pandemicMarker", EFFECTS_AURA_SECTION,
+        "Aura Indicators", BarFinderAdvanced("pandemic", BarFinderAuraTextVisible,
+            function(read) return read.pandemicMarkerMode ~= "off" end),
+        "barPandemicMarker", "pandemic"):Settings({
+        text = { label = "Marker Text" },
+        coloring = { label = "Marker Coloring" },
+        color = {
+            label = "Marker Color",
+            applies = function(context)
+                local read = BarFinderSectionState(context, "pandemic")
+                return read and (read.pandemicMarkerColorMode or "marker") ~= "off"
+            end,
+        },
+    })
+
+    BAR_FINDER.advanced.unusable = BarFinderEffectRoute(
+        "panel.bars.effects.unusable", EFFECTS_SPELL_SECTION,
+        "Cooldown / Spell Indicators", BarFinderAdvanced("unusableDimming",
+            function(context)
+                return SpellStates(context) and BarFinderCanUse(context, "unusableDimming")
+            end, function(read) return read.showUnusable == true end),
+        "unusableVisual", "unusableDimming"):Settings({
+        dim = { label = "Dim Icon" },
+        dimColor = {
+            label = "Unusable Dim Color",
+            applies = function(context)
+                local read = BarFinderSectionState(context, "unusableDimming")
+                return read and ST.UnusableVisualUsesDimTint(read) or false
+            end,
+        },
+        desaturate = { label = "Desaturate Icon" },
+    })
+
+    BAR_FINDER.advanced.tooltip = BarFinderEffectRoute(
+        "panel.bars.effects.tooltip", EFFECTS_INTERACTION_SECTION,
+        "Interaction", BarFinderAdvanced("showTooltips", function(context)
+            return BarsTooltipRowShown(context.group, BarFinderStyle(context))
+        end, function(read) return read.showTooltips == true end),
+        "tooltipBehavior", "showTooltips"):Settings({
+        position = { label = "Tooltip Position" },
+        hideInCombat = { label = "Hide Tooltips in Combat" },
+    })
 end
 
 -- Expose for the tab dispatchers (GroupTabsAppearance.lua / GroupTabsEffects.lua)

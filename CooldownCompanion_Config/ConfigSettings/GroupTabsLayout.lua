@@ -55,6 +55,341 @@ local AURA_SECTION_TOOLTIP = {
 -- rule fading right.
 local ROW_SECTION = { leftAligned = true }
 
+------------------------------------------------------------------------
+-- SETTINGS FINDER CATALOG
+------------------------------------------------------------------------
+
+local LAYOUT_FINDER = { sections = {}, layers = {} }
+-- Layout never lenses into an entry. When an entry is selected this page
+-- remains panel-owned, and Settings Finder must not offer it in entry scope.
+local PRIMARY_LAYOUT_SCOPE = "panel"
+
+local function LayoutFinderGroup(context)
+    if context and context.group then return context.group end
+    return CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup] or nil
+end
+
+-- Resolve the same structural choices BuildLayoutTab uses without opening the
+-- tab or mutating its remembered target mode. Settings Finder prepares this
+-- snapshot once per editing context, so every off-tab result is correct on the
+-- first refresh and typing only reads the prepared descriptor booleans.
+local function GetLayoutFinderState(context)
+    if context and context._ccLayoutFinderState then
+        return context._ccLayoutFinderState
+    end
+
+    local group = LayoutFinderGroup(context)
+    if not group then return nil end
+
+    local state = { sections = {} }
+    if context then context._ccLayoutFinderState = state end
+
+    local displayMode = group.displayMode or "icons"
+    local standalone = displayMode == "textures" or displayMode == "trigger"
+    local isPanel = group.parentContainerId ~= nil
+    local groupId = (context and context.groupId) or CS.selectedGroup
+    local anchor = group.anchor or {}
+    local targetMode
+
+    if standalone then
+        local settings = GetStandaloneTextureSettings(group, false) or {}
+        local relativeTo = type(settings.relativeTo) == "string" and settings.relativeTo ~= ""
+            and settings.relativeTo or "UIParent"
+        local isCursorAnchor = CooldownCompanion.IsCursorAnchor
+            and CooldownCompanion:IsCursorAnchor(anchor) or false
+        local canUseCursorAnchor = CooldownCompanion:CanGroupUseCursorAnchor(group)
+        if isCursorAnchor and not canUseCursorAnchor then
+            isCursorAnchor = false
+        end
+        local anchorKind = CooldownCompanion:ParseAddonAnchorFrameName(relativeTo)
+        local currentAnchorIsPanel = anchorKind == "group"
+            and isPanel
+            and CooldownCompanion.IsPanelAnchoredToPanel
+            and CooldownCompanion:IsPanelAnchoredToPanel(groupId)
+            or false
+        local storedTargetMode = CS.layoutAnchorTargetMode
+            and CS.layoutAnchorTargetMode[groupId]
+
+        if isCursorAnchor then
+            targetMode = "cursor"
+        elseif currentAnchorIsPanel then
+            targetMode = "panel"
+        elseif relativeTo ~= "UIParent" then
+            targetMode = "frame"
+        elseif storedTargetMode == "panel" and isPanel then
+            targetMode = "panel"
+        elseif storedTargetMode == "frame" then
+            targetMode = "frame"
+        else
+            targetMode = "group"
+        end
+    else
+        local currentAnchor = anchor.relativeTo
+        local panelContainerFrame = isPanel
+            and ("CooldownCompanionContainer" .. group.parentContainerId) or nil
+        local isCursorAnchor = isPanel
+            and CooldownCompanion.IsCursorAnchor
+            and CooldownCompanion:IsCursorAnchor(anchor)
+            or false
+        local currentAnchorGroupId = type(currentAnchor) == "string"
+            and currentAnchor:match("^CooldownCompanionGroup(%d+)$") or nil
+
+        if isCursorAnchor then
+            targetMode = "cursor"
+        elseif currentAnchorGroupId and isPanel then
+            targetMode = "panel"
+        elseif currentAnchor == nil or currentAnchor == "UIParent"
+            or (isPanel and currentAnchor == panelContainerFrame) then
+            targetMode = "group"
+        else
+            targetMode = "frame"
+        end
+
+        local preferredTargetMode = CS.layoutAnchorTargetMode
+            and CS.layoutAnchorTargetMode[groupId]
+        if (targetMode == "group" or targetMode == "cursor")
+            and (preferredTargetMode == "frame"
+                or (isPanel and preferredTargetMode == "panel")) then
+            targetMode = preferredTargetMode
+        end
+    end
+
+    local isAuraPanel = CooldownCompanion:IsAuraPanel(group)
+    local buttonCount = #(group.buttons or {})
+    local isIconsMode = displayMode == "icons"
+    local isBarMode = displayMode == "bars"
+    local isTextMode = displayMode == "text"
+    local auraBarPanel = isBarMode and isAuraPanel
+
+    state.anchorTarget = true
+    state.anchorPanel = isPanel and targetMode == "panel"
+    state.anchorFrame = targetMode == "frame"
+    state.autoAnchor = not standalone
+        and CooldownCompanion:IsIconLikeDisplayMode(group.displayMode)
+        and not isAuraPanel
+
+    state.panelPoint = targetMode == "cursor"
+    state.anchorPoint = not standalone and targetMode ~= "cursor"
+    state.displayPoint = standalone and displayMode == "trigger" and targetMode ~= "cursor"
+    state.texturePoint = standalone and displayMode == "textures" and targetMode ~= "cursor"
+    state.targetPoint = standalone and targetMode ~= "cursor"
+        and (targetMode == "panel" or targetMode == "frame")
+    state.screenPoint = standalone and targetMode ~= "cursor" and targetMode == "group"
+    state.relativePoint = not standalone and targetMode ~= "cursor"
+    state.xOffset = true
+    state.yOffset = true
+
+    state.horizontalBars = not standalone and isBarMode and buttonCount > 1 and not auraBarPanel
+    state.orientation = not standalone and not isBarMode
+    state.growth = not standalone and buttonCount > 1
+    state.collapse = not standalone and isAuraPanel
+    state.buttonsPerLine = not standalone and not auraBarPanel and not isTextMode
+    state.entriesPerLine = not standalone and isTextMode and buttonCount > 1
+    state.compact = not standalone and not isAuraPanel
+        and (isIconsMode or isBarMode or isTextMode)
+    state.compactAdvanced = state.compact and group.compactLayout == true
+    local style = group.style or {}
+    state.compactGrowth = state.compactAdvanced
+        and ST.GetCenteredGrowthEdge(
+            style.growthOrigin,
+            ST.GetPanelLayoutOrientation(group.displayMode, style)
+        ) == nil
+
+    state.customStrata = not standalone and isIconsMode and not isAuraPanel
+    state.customStrataLayers = state.customStrata
+        and type(style.strataOrder) == "table"
+    state.frameStrata = not standalone
+
+    if not standalone and ST.PanelSupportsSections(group)
+        and type(group.sections) == "table" then
+        for _, sectionAnchor in ipairs(ST.PANEL_SECTION_ANCHORS or {}) do
+            local section = group.sections[sectionAnchor]
+            if type(section) == "table" then
+                local sectionState = {
+                    auraOnly = true,
+                    xOffset = true,
+                    yOffset = true,
+                }
+                local memberCount = 0
+                for _, buttonData in ipairs(group.buttons or {}) do
+                    if ST.GetPanelSectionForEntry(group, buttonData) == sectionAnchor then
+                        memberCount = memberCount + 1
+                    end
+                end
+                local axis = ST.GetPanelSectionPlacement(group, sectionAnchor)
+                sectionState.iconsPerRow = axis == "h" and memberCount > 1
+                sectionState.iconsPerColumn = axis == "v" and memberCount > 1
+                state.sections[sectionAnchor] = sectionState
+            end
+        end
+    end
+
+    return state
+end
+
+local function LayoutFinderFlag(key)
+    return function(context)
+        local state = GetLayoutFinderState(context)
+        return state and state[key] == true or false
+    end
+end
+
+local function LayoutFinderSectionFlag(anchor, key)
+    return function(context)
+        local state = GetLayoutFinderState(context)
+        local section = state and state.sections[anchor]
+        return section and section[key] == true or false
+    end
+end
+
+if ST._DefineSettingRoute then
+    local anchor = ST._DefineSettingRoute({
+        idPrefix = "panel.layout.anchor",
+        scope = PRIMARY_LAYOUT_SCOPE,
+        tab = "layout",
+        tabLabel = "Layout",
+        section = "anchor",
+        sectionLabel = "Anchor",
+        collapseKeys = { "layout_anchor" },
+        rowScope = "primary",
+    })
+    LAYOUT_FINDER.anchor = anchor:Settings({
+        target = { label = "Anchor Target", aliases = { "anchor mode" }, applies = LayoutFinderFlag("anchorTarget") },
+        panel = { label = "Anchor to Panel", aliases = { "parent panel" }, applies = LayoutFinderFlag("anchorPanel") },
+        frame = { label = "Anchor to Frame", aliases = { "relative frame" }, applies = LayoutFinderFlag("anchorFrame") },
+        autoAnchor = { label = "Include in Auto-Anchoring", aliases = { "auto anchor" }, applies = LayoutFinderFlag("autoAnchor") },
+    })
+
+    local position = ST._DefineSettingRoute({
+        idPrefix = "panel.layout.position",
+        scope = PRIMARY_LAYOUT_SCOPE,
+        tab = "layout",
+        tabLabel = "Layout",
+        section = "position",
+        sectionLabel = "Position",
+        collapseKeys = { "layout_position" },
+        rowScope = "primary",
+    })
+    LAYOUT_FINDER.position = position:Settings({
+        panelPoint = { label = "Panel Point", aliases = { "anchor point" }, applies = LayoutFinderFlag("panelPoint") },
+        anchorPoint = {
+            label = "Anchor Point",
+            aliases = { "panel point" },
+            applies = LayoutFinderFlag("anchorPoint"),
+        },
+        displayPoint = {
+            label = "Display Point",
+            aliases = { "anchor point", "trigger point" },
+            applies = LayoutFinderFlag("displayPoint"),
+        },
+        texturePoint = {
+            label = "Texture Point",
+            aliases = { "anchor point" },
+            applies = LayoutFinderFlag("texturePoint"),
+        },
+        targetPoint = { label = "Target Point", aliases = { "relative point" }, applies = LayoutFinderFlag("targetPoint") },
+        screenPoint = { label = "Screen Point", aliases = { "relative point" }, applies = LayoutFinderFlag("screenPoint") },
+        relativePoint = { label = "Relative Point", aliases = { "target point" }, applies = LayoutFinderFlag("relativePoint") },
+        xOffset = { label = "X Offset", aliases = { "horizontal position" }, applies = LayoutFinderFlag("xOffset") },
+        yOffset = { label = "Y Offset", aliases = { "vertical position" }, applies = LayoutFinderFlag("yOffset") },
+    })
+
+    local arrangement = ST._DefineSettingRoute({
+        idPrefix = "panel.layout.arrangement",
+        scope = PRIMARY_LAYOUT_SCOPE,
+        tab = "layout",
+        tabLabel = "Layout",
+        section = "arrangement",
+        sectionLabel = "Arrangement",
+        collapseKeys = { "layout_arrangement" },
+        rowScope = "primary",
+    })
+    LAYOUT_FINDER.arrangement = arrangement:Settings({
+        horizontalBars = { label = "Horizontal Bar Layout", aliases = { "bar direction" }, applies = LayoutFinderFlag("horizontalBars") },
+        orientation = { label = "Orientation", applies = LayoutFinderFlag("orientation") },
+        growth = { label = "Growth Direction", applies = LayoutFinderFlag("growth") },
+        collapse = { label = "Collapse Direction", applies = LayoutFinderFlag("collapse") },
+        buttonsPerLine = { label = "Buttons Per Row/Column", aliases = { "wrap count" }, applies = LayoutFinderFlag("buttonsPerLine") },
+        entriesPerLine = { label = "Entries per Row/Column", aliases = { "wrap count" }, applies = LayoutFinderFlag("entriesPerLine") },
+        compact = { label = "Compact Mode", aliases = { "pack visible buttons" }, applies = LayoutFinderFlag("compact") },
+    })
+
+    local compact = ST._DefineSettingRoute({
+        idPrefix = "panel.layout.arrangement.compact",
+        scope = PRIMARY_LAYOUT_SCOPE,
+        tab = "layout",
+        tabLabel = "Layout",
+        section = "arrangement",
+        sectionLabel = "Compact Mode",
+        collapseKeys = { "layout_arrangement" },
+        rowScope = "primary",
+        advancedKey = "compactLayout",
+    })
+    LAYOUT_FINDER.compact = compact:Settings({
+        growth = { label = "Growth Direction", applies = LayoutFinderFlag("compactGrowth") },
+        maxVisible = { label = "Max Visible Buttons", aliases = { "button limit" }, applies = LayoutFinderFlag("compactAdvanced") },
+    })
+
+    for _, sectionAnchor in ipairs(ST.PANEL_SECTION_ANCHORS or {}) do
+        local routeAnchor = sectionAnchor
+        local route = ST._DefineSettingRoute({
+            idPrefix = "panel.layout.section." .. tostring(routeAnchor),
+            scope = PRIMARY_LAYOUT_SCOPE,
+            tab = "layout",
+            tabLabel = "Layout",
+            section = "section_" .. tostring(routeAnchor),
+            sectionLabel = (ST.PANEL_SECTION_ANCHOR_LABELS[routeAnchor] or tostring(routeAnchor)) .. " Section",
+            collapseKeys = { "layout_section_" .. tostring(routeAnchor) },
+            rowScope = "primary",
+            applies = LayoutFinderSectionFlag(routeAnchor, "auraOnly"),
+        })
+        LAYOUT_FINDER.sections[routeAnchor] = route:Settings({
+            auraOnly = { label = "Aura Only Section" },
+            xOffset = { label = "X Offset", applies = LayoutFinderSectionFlag(routeAnchor, "xOffset") },
+            yOffset = { label = "Y Offset", applies = LayoutFinderSectionFlag(routeAnchor, "yOffset") },
+            iconsPerRow = { label = "Icons Per Row", applies = LayoutFinderSectionFlag(routeAnchor, "iconsPerRow") },
+            iconsPerColumn = { label = "Icons Per Column", applies = LayoutFinderSectionFlag(routeAnchor, "iconsPerColumn") },
+        })
+    end
+
+    local strata = ST._DefineSettingRoute({
+        idPrefix = "panel.layout.strata",
+        scope = PRIMARY_LAYOUT_SCOPE,
+        tab = "layout",
+        tabLabel = "Layout",
+        section = "strata",
+        sectionLabel = "Strata",
+        collapseKeys = { "layout_strata" },
+        rowScope = "primary",
+    })
+    LAYOUT_FINDER.strata = strata:Settings({
+        custom = { label = "Custom Icon Strata", aliases = { "layer order" }, applies = LayoutFinderFlag("customStrata") },
+        frame = { label = "Frame Strata", aliases = { "panel layer" }, applies = LayoutFinderFlag("frameStrata") },
+    })
+
+    local layerRoute = ST._DefineSettingRoute({
+        idPrefix = "panel.layout.strata.layer",
+        scope = PRIMARY_LAYOUT_SCOPE,
+        tab = "layout",
+        tabLabel = "Layout",
+        section = "strata",
+        sectionLabel = "Strata",
+        collapseKeys = { "layout_strata" },
+        rowScope = "primary",
+        applies = LayoutFinderFlag("customStrataLayers"),
+    })
+    local layerCount = #(ST.DEFAULT_STRATA_ORDER or {})
+    for position = 1, layerCount do
+        local label = position == layerCount and ("Layer " .. position .. " (Top)")
+            or (position == 1 and "Layer 1 (Bottom)" or ("Layer " .. position))
+        LAYOUT_FINDER.layers[position] = layerRoute:Setting({
+            key = tostring(position),
+            label = label,
+            aliases = { "layer order", "strata" },
+        })
+    end
+end
+
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
 
@@ -232,6 +567,7 @@ local function BuildLayoutTab(container)
 
         AddDropdownRow(anchorLeft, {
             label = "Anchor Target",
+            setting = LAYOUT_FINDER.anchor and LAYOUT_FINDER.anchor.target,
             list = anchorTargetList,
             order = anchorTargetOrder,
             value = targetMode,
@@ -277,6 +613,7 @@ local function BuildLayoutTab(container)
         if targetMode == "panel" then
             local panelAnchorRow = AddDropdownRow(anchorLeft, {
                 label = "Anchor to Panel",
+                setting = LAYOUT_FINDER.anchor and LAYOUT_FINDER.anchor.panel,
                 pulloutWidth = WIDE_PULLOUT_WIDTH,
                 onChange = function(val, widget)
                     if not val or val == "" then return end
@@ -308,6 +645,7 @@ local function BuildLayoutTab(container)
 
             local anchorRow = AddEditBoxRow(frameLeft, {
                 label = "Anchor to Frame",
+                setting = LAYOUT_FINDER.anchor and LAYOUT_FINDER.anchor.frame,
                 value = frameAnchorText,
                 onEnterPressed = function(text, widget)
                     if SetStandaloneFrameAnchorTarget(text) then
@@ -383,7 +721,10 @@ local function BuildLayoutTab(container)
 
         if targetMode == "cursor" then
             AddAnchorDropdown(positionLeft, group.anchor, "point", "BOTTOMLEFT",
-                RefreshCursorAnchor, "Panel Point", { row = true })
+                RefreshCursorAnchor, "Panel Point", {
+                    row = true,
+                    setting = LAYOUT_FINDER.position and LAYOUT_FINDER.position.panelPoint,
+                })
             AddOffsetSliders(positionRight, group.anchor, "x", "y", {
                 x = 16,
                 y = 16,
@@ -391,6 +732,10 @@ local function BuildLayoutTab(container)
                 step = 1,
             }, RefreshCursorAnchor, {
                 row = true,
+                settings = LAYOUT_FINDER.position and {
+                    x = LAYOUT_FINDER.position.xOffset,
+                    y = LAYOUT_FINDER.position.yOffset,
+                },
                 previewRefresh = function()
                     if CooldownCompanion.SetCursorAnchorLayoutPreviewOffset then
                         CooldownCompanion:SetCursorAnchorLayoutPreviewOffset(
@@ -423,17 +768,34 @@ local function BuildLayoutTab(container)
             positionLeft:AddChild(resetBtn)
         else
             AddAnchorDropdown(positionLeft, settings, "point", "CENTER",
-                RefreshTextureVisual, anchorLabel, { row = true })
+                RefreshTextureVisual, anchorLabel, {
+                    row = true,
+                    setting = LAYOUT_FINDER.position and (
+                        isTriggerPanel and LAYOUT_FINDER.position.displayPoint
+                        or LAYOUT_FINDER.position.texturePoint),
+                })
             AddAnchorDropdown(positionLeft, settings, "relativePoint", "CENTER",
                 RefreshTextureVisual,
                 (targetMode == "panel" or targetMode == "frame") and "Target Point" or "Screen Point",
-                { row = true })
+                {
+                    row = true,
+                    setting = LAYOUT_FINDER.position and (
+                        (targetMode == "panel" or targetMode == "frame")
+                            and LAYOUT_FINDER.position.targetPoint
+                            or LAYOUT_FINDER.position.screenPoint),
+                })
             AddOffsetSliders(positionRight, settings, "x", "y", {
                 x = 0,
                 y = 0,
                 range = 2000,
                 step = 1,
-            }, RefreshTextureVisual, { row = true })
+            }, RefreshTextureVisual, {
+                row = true,
+                settings = LAYOUT_FINDER.position and {
+                    x = LAYOUT_FINDER.position.xOffset,
+                    y = LAYOUT_FINDER.position.yOffset,
+                },
+            })
 
             -- Both columns are two rows here, so the Reset goes with the
             -- offsets it zeroes rather than with the points.
@@ -558,6 +920,7 @@ local function BuildLayoutTab(container)
 
     AddDropdownRow(anchorLeft, {
         label = "Anchor Target",
+        setting = LAYOUT_FINDER.anchor and LAYOUT_FINDER.anchor.target,
         list = iconAnchorTargetList,
         order = iconAnchorTargetOrder,
         value = targetMode,
@@ -585,6 +948,7 @@ local function BuildLayoutTab(container)
     if isPanel and targetMode == "panel" then
         local panelAnchorRow = AddDropdownRow(anchorLeft, {
             label = "Anchor to Panel",
+            setting = LAYOUT_FINDER.anchor and LAYOUT_FINDER.anchor.panel,
             onChange = function(val, widget)
                 if not val or val == "" then return end
                 local targetGroupId = tonumber(val)
@@ -619,6 +983,7 @@ local function BuildLayoutTab(container)
         and not CooldownCompanion:IsAuraPanel(group) then
         local anchorEligibleRow = AddCheckboxRow(anchorRight, {
             label = "Include in Auto-Anchoring",
+            setting = LAYOUT_FINDER.anchor and LAYOUT_FINDER.anchor.autoAnchor,
             value = group.anchorEligible ~= false,
             onChange = function(val)
                 if val then
@@ -661,6 +1026,7 @@ local function BuildLayoutTab(container)
 
         local anchorRow = AddEditBoxRow(frameLeft, {
             label = "Anchor to Frame",
+            setting = LAYOUT_FINDER.anchor and LAYOUT_FINDER.anchor.frame,
             value = frameAnchorText,
             onEnterPressed = function(text, widget)
                 local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= defaultFrame
@@ -751,17 +1117,26 @@ local function BuildLayoutTab(container)
         targetMode == "cursor" and "BOTTOMLEFT" or "CENTER",
         refreshGroupAnchor,
         targetMode == "cursor" and "Panel Point" or "Anchor Point",
-        { row = true })
+        {
+            row = true,
+            setting = LAYOUT_FINDER.position and (
+                targetMode == "cursor" and LAYOUT_FINDER.position.panelPoint
+                or LAYOUT_FINDER.position.anchorPoint),
+        })
 
     if targetMode ~= "cursor" then
         AddAnchorDropdown(positionLeft, group.anchor, "relativePoint", "CENTER",
-            refreshGroupAnchor, "Relative Point", { row = true })
+            refreshGroupAnchor, "Relative Point", {
+                row = true,
+                setting = LAYOUT_FINDER.position and LAYOUT_FINDER.position.relativePoint,
+            })
     end
 
     -- Screen position is not represented inside the pinned mirror. Store the
     -- drag value and re-anchor the live panel once on release.
     local xOffsetRow = AddSliderRow(positionRight, {
         label = "X Offset",
+        setting = LAYOUT_FINDER.position and LAYOUT_FINDER.position.xOffset,
         min = -2000, max = 2000, step = 0.1,
         value = group.anchor.x or 0,
     })
@@ -788,6 +1163,7 @@ local function BuildLayoutTab(container)
 
     local yOffsetRow = AddSliderRow(positionRight, {
         label = "Y Offset",
+        setting = LAYOUT_FINDER.position and LAYOUT_FINDER.position.yOffset,
         min = -2000, max = 2000, step = 0.1,
         value = group.anchor.y or 0,
     })
@@ -846,6 +1222,7 @@ local function BuildLayoutTab(container)
         if #group.buttons > 1 and not auraBarPanel then
             AddCheckboxRow(arrangeLeft, {
                 label = "Horizontal Bar Layout",
+                setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.horizontalBars,
                 value = orientation == "horizontal",
                 onChange = function(val)
                     style.barOrientation = val and "horizontal" or "vertical"
@@ -858,6 +1235,7 @@ local function BuildLayoutTab(container)
     else
         AddDropdownRow(arrangeLeft, {
             label = "Orientation",
+            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.orientation,
             -- Owner ruling 2026-08-08 (supersedes 2026-07-28): the display
             -- reads the same per-mode helper the core lays out with, and
             -- text panels now default vertical like bars. Each mode writes
@@ -910,6 +1288,7 @@ local function BuildLayoutTab(container)
 
         AddDropdownRow(arrangeLeft, {
             label = "Growth Direction",
+            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.growth,
             list = labels,
             order = order,
             value = shownValue,
@@ -936,6 +1315,7 @@ local function BuildLayoutTab(container)
         local collapseOrientation = isBarMode and "vertical" or nil
         local collapseRow = AddDropdownRow(arrangeLeft, {
             label = "Collapse Direction",
+            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.collapse,
             list = GetCompactGrowthDirectionLabels(group, collapseOrientation),
             order = { "start", "center", "end" },
             value = NormalizeCompactGrowthDirection(group.compactGrowthDirection),
@@ -965,6 +1345,9 @@ local function BuildLayoutTab(container)
         local numButtons = math.max(1, #group.buttons)
         local wrapRow = AddSliderRow(arrangeRight, {
             label = isTextMode and "Entries per Row/Column" or "Buttons Per Row/Column",
+            setting = LAYOUT_FINDER.arrangement and (
+                isTextMode and LAYOUT_FINDER.arrangement.entriesPerLine
+                or LAYOUT_FINDER.arrangement.buttonsPerLine),
             min = 1, max = numButtons, step = 1,
             value = math.min(style.buttonsPerRow or 12, numButtons),
         })
@@ -1000,7 +1383,10 @@ local function BuildLayoutTab(container)
     -- packing behavior, not placement - and this move deliberately does not
     -- change that.
     if isIconsMode or isBarMode or isTextMode then
-        BuildCompactModeControls(arrangeRight, group, tabInfoButtons)
+        BuildCompactModeControls(arrangeRight, group, tabInfoButtons, {
+            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.compact,
+            settings = LAYOUT_FINDER.compact,
+        })
     end
     end -- not arrangementCollapsed
 
@@ -1061,6 +1447,8 @@ local function BuildLayoutTab(container)
 
                 AddCheckboxRow(container, {
                     label = "Aura Only Section",
+                    setting = LAYOUT_FINDER.sections[anchor]
+                        and LAYOUT_FINDER.sections[anchor].auraOnly,
                     relativeWidth = 0.5,
                     value = sectionAuraOnly,
                     tooltip = sectionToggleTooltip,
@@ -1084,6 +1472,8 @@ local function BuildLayoutTab(container)
 
                 local sectionXRow = AddSliderRow(sectionLeft, {
                     label = "X Offset",
+                    setting = LAYOUT_FINDER.sections[anchor]
+                        and LAYOUT_FINDER.sections[anchor].xOffset,
                     min = -100, max = 100, step = 0.1,
                     value = section.offsetX or 0,
                 })
@@ -1093,6 +1483,8 @@ local function BuildLayoutTab(container)
 
                 local sectionYRow = AddSliderRow(sectionRight, {
                     label = "Y Offset",
+                    setting = LAYOUT_FINDER.sections[anchor]
+                        and LAYOUT_FINDER.sections[anchor].yOffset,
                     min = -100, max = 100, step = 0.1,
                     value = section.offsetY or 0,
                 })
@@ -1120,6 +1512,9 @@ local function BuildLayoutTab(container)
                     local wrapLabel = (axis == "h") and "Icons Per Row" or "Icons Per Column"
                     local sectionWrapRow = AddSliderRow(sectionLeft, {
                         label = wrapLabel,
+                        setting = LAYOUT_FINDER.sections[anchor] and (
+                            axis == "h" and LAYOUT_FINDER.sections[anchor].iconsPerRow
+                            or LAYOUT_FINDER.sections[anchor].iconsPerColumn),
                         min = 1, max = memberCount, step = 1,
                         value = math.min(section.maxPerLine or memberCount, memberCount),
                     })
@@ -1162,6 +1557,7 @@ local function BuildLayoutTab(container)
     if showCustomStrata then
     local strataToggleRow = AddCheckboxRow(strataLeft, {
         label = "Custom Icon Strata",
+        setting = LAYOUT_FINDER.strata and LAYOUT_FINDER.strata.custom,
         value = customStrataEnabled,
         onChange = function(val)
             if not val then
@@ -1199,6 +1595,7 @@ local function BuildLayoutTab(container)
 
     local frameStrataRow = AddDropdownRow(frameStrataHost, {
         label = "Frame Strata",
+        setting = LAYOUT_FINDER.strata and LAYOUT_FINDER.strata.frame,
         list = {
             BACKGROUND = "Background",
             LOW = "Low",
@@ -1279,6 +1676,7 @@ local function BuildLayoutTab(container)
 
             local drop = AddDropdownRow(displayIdx <= splitAt and layerLeft or layerRight, {
                 label = label,
+                setting = LAYOUT_FINDER.layers[pos],
                 indent = true,
                 list = BuildStrataList(),
                 value = CS.pendingStrataOrder[pos],

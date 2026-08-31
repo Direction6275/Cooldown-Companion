@@ -1123,6 +1123,14 @@ local function CreateConfigPanel()
         if ST._FlushTextFormatTabCommit then
             ST._FlushTextFormatTabCommit()
         end
+        -- The minimized config deliberately preserves the editing widgets,
+        -- but Finder query/results are visibility-scoped and must not return
+        -- when the workspace expands again.
+        if ST._ClearSettingsFinderActionRowState
+            and CS.configFrame and CS.configFrame.col3
+        then
+            ST._ClearSettingsFinderActionRowState(CS.configFrame.col3)
+        end
         if isCollapsing then return end
         -- Truly closing: the next open runs RefreshConfigPanel, which rebuilds
         -- the tab and its editor, so drop this one's animation driver and any

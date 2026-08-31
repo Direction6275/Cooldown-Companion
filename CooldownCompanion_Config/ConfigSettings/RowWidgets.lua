@@ -429,6 +429,7 @@ local function ResetRowBase(self)
     self:SetScopeTooltip(nil)
     self.rangeTooltip = nil
     self._cdcLastBadge = nil
+    self._cdcSettingDescriptor = nil
     self.controlColumnWidthOverride = nil
     self.frame:SetHeight(ROW_HEIGHT)
     self.rowLabel:SetWordWrap(false)
@@ -1432,7 +1433,17 @@ end
 ------------------------------------------------------------------------
 
 local function ApplyCommonRowOptions(row, opts)
-    row:SetLabel(opts.label)
+    local descriptor = opts.setting
+    if descriptor and ST._BindSettingWidget then
+        descriptor = ST._BindSettingWidget(row, descriptor, opts.label)
+    end
+    if descriptor then
+        -- The catalog label is the single source of truth for both the row
+        -- and search results. Callers may omit opts.label entirely.
+        row:SetLabel(descriptor.label)
+    else
+        row:SetLabel(opts.label)
+    end
     if opts.caption then row:SetCaption(true) end
     if opts.indent then row:SetIndent(true) end
     if opts.tooltip then row:SetRowTooltip(opts.tooltip) end
