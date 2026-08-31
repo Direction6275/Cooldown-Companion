@@ -37,6 +37,16 @@ local WIDE_PULLOUT_WIDTH = 300
 -- rule fading right.
 local ROW_SECTION = { leftAligned = true }
 
+-- Populated at module load near the exports. The builders close over the
+-- descriptor tables so custom AceGUI controls and duplicate effect labels can
+-- bind exact Settings Finder targets.
+local SPECIAL_FINDER = {
+    trigger = {},
+    triggerEffects = {},
+    textureEffects = {},
+    texture = {},
+}
+
 local TEXTURE_BLEND_OPTIONS = {
     BLEND = "Normal / Original",
     ADD = "Soft / Transparent",
@@ -566,6 +576,9 @@ end
 local function AddTriggerDisplayTypeDropdown(container, group)
     local displayDrop = AceGUI:Create("Dropdown")
     displayDrop:SetLabel("Display Type")
+    if SPECIAL_FINDER.trigger.displayType and ST._BindSettingWidget then
+        ST._BindSettingWidget(displayDrop, SPECIAL_FINDER.trigger.displayType, "Display Type")
+    end
     displayDrop:SetList(TRIGGER_DISPLAY_TYPE_OPTIONS, TRIGGER_DISPLAY_TYPE_ORDER)
     displayDrop:SetValue(CooldownCompanion:GetTriggerPanelDisplayType(group, true))
     displayDrop:SetFullWidth(true)
@@ -611,6 +624,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
 
     AddCheckboxRow(iconLeft, {
         label = "Square Icons",
+        setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.square,
         value = settings.maintainAspectRatio ~= false,
         onChange = function(value)
             settings.maintainAspectRatio = value ~= false
@@ -627,6 +641,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
     if settings.maintainAspectRatio ~= false then
         local sizeRow = AddSliderRow(iconLeft, {
             label = "Button Size",
+            setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.size,
             min = 10, max = 150, step = 0.1,
             value = settings.buttonSize or ST.BUTTON_SIZE,
         })
@@ -642,6 +657,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
     else
         local widthRow = AddSliderRow(iconLeft, {
             label = "Icon Width",
+            setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.width,
             min = 10, max = 150, step = 0.1,
             value = settings.iconWidth or settings.buttonSize or ST.BUTTON_SIZE,
         })
@@ -655,6 +671,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
 
         local heightRow = AddSliderRow(iconLeft, {
             label = "Icon Height",
+            setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.height,
             min = 10, max = 150, step = 0.1,
             value = settings.iconHeight or settings.buttonSize or ST.BUTTON_SIZE,
         })
@@ -668,6 +685,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
     end
 
     ST._BuildIconZoomControls(iconLeft, settings, RefreshIconPreview, {
+        setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.zoom,
         previewRefresh = function()
             RefreshTriggerPreviewMirror(groupId)
         end,
@@ -678,6 +696,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
     -- canvas, they do not re-read the bound table every tick.
     AddColorRow(iconLeft, {
         label = "Base Icon Color",
+        setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.baseColor,
         tbl = settings, key = "iconTintColor",
         default = { 1, 1, 1, 1 }, hasAlpha = true,
         onConfirm = RefreshIconPreview, onChange = RefreshIconPreview,
@@ -685,6 +704,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
 
     AddColorRow(iconLeft, {
         label = "Background Color",
+        setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.background,
         tbl = settings, key = "backgroundColor",
         default = { 0, 0, 0, 0.5 }, hasAlpha = true,
         onConfirm = RefreshIconPreview, onChange = RefreshIconPreview,
@@ -693,12 +713,16 @@ local function BuildTriggerIconAppearanceTab(container, group)
     local renderMode = AddBorderRenderModeDropdown(iconRight, settings, "borderRenderMode", function()
         RefreshIconPreview()
         CooldownCompanion:RefreshConfigPanel()
-    end, nil, { row = true })
+    end, nil, {
+        row = true,
+        setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.borderThickness,
+    })
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
         local borderRow = AddSliderRow(iconRight, {
             label = "Border Size",
+            setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.borderSize,
             indent = true,
             min = 0, max = 5, step = 0.1,
             value = settings.borderSize or ST.DEFAULT_BORDER_SIZE,
@@ -718,6 +742,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
 
     AddColorRow(iconRight, {
         label = "Border Color",
+        setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.borderColor,
         tbl = settings, key = "borderColor",
         default = { 0, 0, 0, 1 }, hasAlpha = true,
         onConfirm = RefreshIconPreview, onChange = RefreshIconPreview,
@@ -746,6 +771,11 @@ local function BuildTriggerTextAppearanceTab(container, group)
 
     local textBox = AceGUI:Create("MultiLineEditBox")
     textBox:SetLabel("Display Text")
+    if SPECIAL_FINDER.trigger.text and SPECIAL_FINDER.trigger.text.value
+        and ST._BindSettingWidget
+    then
+        ST._BindSettingWidget(textBox, SPECIAL_FINDER.trigger.text.value, "Display Text")
+    end
     textBox:SetFullWidth(true)
     textBox:SetNumLines(maxTextLines)
     textBox.button:Hide()
@@ -798,6 +828,11 @@ local function BuildTriggerTextAppearanceTab(container, group)
         outline = "OUTLINE",
     }, RefreshTextPreview, {
         row = true,
+        settings = SPECIAL_FINDER.trigger.text and {
+            size = SPECIAL_FINDER.trigger.text.fontSize,
+            font = SPECIAL_FINDER.trigger.text.font,
+            outline = SPECIAL_FINDER.trigger.text.outline,
+        },
         previewRefresh = function()
             RefreshTriggerPreviewMirror(groupId)
         end,
@@ -807,6 +842,7 @@ local function BuildTriggerTextAppearanceTab(container, group)
     -- order pairs() produced; the row states the reading order outright.
     AddDropdownRow(textRight, {
         label = "Alignment",
+        setting = SPECIAL_FINDER.trigger.text and SPECIAL_FINDER.trigger.text.alignment,
         list = { LEFT = "Left", CENTER = "Center", RIGHT = "Right" },
         order = { "LEFT", "CENTER", "RIGHT" },
         value = settings.textAlignment or "CENTER",
@@ -820,6 +856,7 @@ local function BuildTriggerTextAppearanceTab(container, group)
     -- these rows replace.
     AddColorRow(textRight, {
         label = "Text Color",
+        setting = SPECIAL_FINDER.trigger.text and SPECIAL_FINDER.trigger.text.color,
         tbl = settings, key = "textFontColor",
         default = { 1, 1, 1, 1 }, hasAlpha = true,
         onConfirm = RefreshTextPreview, onChange = RefreshTextPreview,
@@ -827,6 +864,7 @@ local function BuildTriggerTextAppearanceTab(container, group)
 
     AddColorRow(textRight, {
         label = "Background Color",
+        setting = SPECIAL_FINDER.trigger.text and SPECIAL_FINDER.trigger.text.background,
         tbl = settings, key = "textBgColor",
         default = { 0, 0, 0, 0 }, hasAlpha = true,
         onConfirm = RefreshTextPreview, onChange = RefreshTextPreview,
@@ -857,7 +895,7 @@ end
 -- already accepts one decimal place, which is the whole job the pre-redesign
 -- editbox hook it replaced did. Aura-controlled Texture effects also use this
 -- inline on the Indicators tab, so the caller decides whether it is indented.
-local function BuildTextureIndicatorSpeedSlider(container, config, label, onChange, indent)
+local function BuildTextureIndicatorSpeedSlider(container, config, label, onChange, indent, setting)
     local function RefreshSpeedPreview()
         local refreshedMirror = ST._RefreshTextureIndicatorMirrorEffect
             and ST._RefreshTextureIndicatorMirrorEffect(CS.selectedGroup)
@@ -867,6 +905,7 @@ local function BuildTextureIndicatorSpeedSlider(container, config, label, onChan
     end
     AddSliderRow(container, {
         label = label,
+        setting = setting,
         indent = indent == true,
         min = 0.1, max = 2.0, step = 0.05,
         value = config.speed or 0.5,
@@ -901,6 +940,7 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
         return
     end
     local auraControlled = opts and opts.auraControlled == true
+    local finder = SPECIAL_FINDER.textureEffects[sectionKey]
     local function RefreshRuntime()
         RefreshTextureIndicatorRuntime(group, auraControlled)
     end
@@ -908,6 +948,7 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
     if container then
     local enableCb = AddCheckboxRow(container, {
         label = sectionDef.label,
+        setting = finder and finder.enabled,
         value = config.enabled,
         onChange = function(value)
             if value then
@@ -940,6 +981,7 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
         if not auraControlled then
             AddCheckboxRow(primary, {
                 label = "Show Only In Combat",
+                setting = finder and finder.combatOnly,
                 value = config.combatOnly or false,
                 onChange = function(value)
                     config.combatOnly = value == true
@@ -951,6 +993,7 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
         local effectList, effectOrder = GetTextureIndicatorEffectList(indicators, sectionKey)
         AddDropdownRow(primary, {
             label = "Effect Type",
+            setting = finder and finder.effectType,
             indent = inline == true,
             pulloutWidth = WIDE_PULLOUT_WIDTH,
             list = effectList,
@@ -967,6 +1010,7 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
         if config.effectType == "colorShift" then
             AddColorRow(details, {
                 label = "Shift Color",
+                setting = finder and finder.shiftColor,
                 indent = inline == true,
                 tbl = config,
                 key = "color",
@@ -975,13 +1019,17 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
                 onConfirm = RefreshRuntime,
                 onChange = RefreshRuntime,
             })
-            BuildTextureIndicatorSpeedSlider(details, config, "Shift Duration", RefreshRuntime, inline)
+            BuildTextureIndicatorSpeedSlider(details, config, "Shift Duration", RefreshRuntime, inline,
+                finder and finder.shiftDuration)
         elseif config.effectType == "pulse" then
-            BuildTextureIndicatorSpeedSlider(details, config, "Pulse Duration", RefreshRuntime, inline)
+            BuildTextureIndicatorSpeedSlider(details, config, "Pulse Duration", RefreshRuntime, inline,
+                finder and finder.pulseDuration)
         elseif config.effectType == "shrinkExpand" then
-            BuildTextureIndicatorSpeedSlider(details, config, "Cycle Duration", RefreshRuntime, inline)
+            BuildTextureIndicatorSpeedSlider(details, config, "Cycle Duration", RefreshRuntime, inline,
+                finder and finder.cycleDuration)
         elseif config.effectType == "bounce" then
-            BuildTextureIndicatorSpeedSlider(details, config, "Bounce Duration", RefreshRuntime, inline)
+            BuildTextureIndicatorSpeedSlider(details, config, "Bounce Duration", RefreshRuntime, inline,
+                finder and finder.bounceDuration)
         end
     end
 
@@ -1012,12 +1060,14 @@ end
 local function BuildTriggerPanelEffectSection(container, effects, effectKey)
     local config = effects and effects[effectKey]
     local def = TRIGGER_PANEL_EFFECT_DEFS[effectKey]
+    local finder = SPECIAL_FINDER.triggerEffects[effectKey]
     if not config or not def then
         return
     end
 
     local enableCb = AddCheckboxRow(container, {
         label = def.label,
+        setting = finder and finder.enabled,
         value = config.enabled,
         onChange = function(value)
             config.enabled = value == true
@@ -1034,6 +1084,7 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
         if effectKey == "colorShift" then
             AddColorRow(panel, {
                 label = "Shift Color",
+                setting = finder and finder.shiftColor,
                 tbl = config,
                 key = "color",
                 default = { 1, 1, 1, 1 },
@@ -1049,7 +1100,8 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
             })
         end
 
-        BuildTextureIndicatorSpeedSlider(panel, config, def.speedLabel)
+        BuildTextureIndicatorSpeedSlider(panel, config, def.speedLabel, nil, false,
+            finder and finder.duration)
 
     end
 
@@ -1357,6 +1409,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
     local selectedLayoutValue = CooldownCompanion:GetTexturePanelLayoutSelectionValue(settings.locationType or 0)
     AddDropdownRow(textureLeft, {
         label = "Texture Layout",
+        setting = SPECIAL_FINDER.texture.layout,
         list = locationOptions,
         order = locationOrder,
         value = selectedLayoutValue,
@@ -1374,6 +1427,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
         -- of the layout above it.
         local spacingRow = AddSliderRow(textureLeft, {
             label = "Pair Spacing",
+            setting = SPECIAL_FINDER.texture.spacing,
             indent = true,
             min = MIN_TEXTURE_PAIR_SPACING, max = MAX_TEXTURE_PAIR_SPACING, step = 0.01,
             value = settings.pairSpacing or 0,
@@ -1383,6 +1437,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
 
     AddDropdownRow(textureLeft, {
         label = "Texture Look",
+        setting = SPECIAL_FINDER.texture.look,
         pulloutWidth = WIDE_PULLOUT_WIDTH,
         list = TEXTURE_BLEND_OPTIONS,
         order = TEXTURE_BLEND_ORDER,
@@ -1397,6 +1452,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
 
     local scaleRow = AddSliderRow(textureRight, {
         label = "Texture Scale",
+        setting = SPECIAL_FINDER.texture.scale,
         min = 0.25, max = 4, step = 0.05,
         value = settings.scale or 1,
     })
@@ -1404,6 +1460,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
 
     local rotationRow = AddSliderRow(textureRight, {
         label = "Rotation",
+        setting = SPECIAL_FINDER.texture.rotation,
         min = MIN_TEXTURE_ROTATION, max = MAX_TEXTURE_ROTATION, step = 1,
         value = settings.rotation or 0,
     })
@@ -1411,6 +1468,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
 
     local stretchXRow = AddSliderRow(textureRight, {
         label = "Horizontal Stretch / Compress",
+        setting = SPECIAL_FINDER.texture.stretchX,
         min = MIN_TEXTURE_STRETCH, max = MAX_TEXTURE_STRETCH, step = 0.05,
         value = settings.stretchX or 0,
     })
@@ -1418,6 +1476,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
 
     local stretchYRow = AddSliderRow(textureRight, {
         label = "Vertical Stretch / Compress",
+        setting = SPECIAL_FINDER.texture.stretchY,
         min = MIN_TEXTURE_STRETCH, max = MAX_TEXTURE_STRETCH, step = 0.05,
         value = settings.stretchY or 0,
     })
@@ -1425,6 +1484,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
 
     local alphaRow = AddSliderRow(textureLeft, {
         label = "Texture Alpha",
+        setting = SPECIAL_FINDER.texture.alpha,
         min = 0.05, max = 1, step = 0.05,
         value = settings.alpha or 1,
     })
@@ -1443,6 +1503,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
     -- renderers off the uncommitted value.
     local colorRow = AddColorRow(textureLeft, {
         label = "Texture Color",
+        setting = SPECIAL_FINDER.texture.color,
         tbl = previewSettings,
         key = "color",
         default = { 1, 1, 1, 1 },
@@ -1500,6 +1561,314 @@ local function BuildTexturePanelAppearanceTab(container, group)
     end
 
     RefreshTexturePreview()
+end
+
+------------------------------------------------------------------------
+-- SETTINGS FINDER CATALOG
+------------------------------------------------------------------------
+
+local SPECIAL_FINDER_SCOPE = { "panel", "entry" }
+
+local function SpecialFinderTrigger(context)
+    return context and context.group and context.displayMode == "trigger"
+end
+
+local function SpecialFinderTriggerDisplayType(context)
+    local settings = context and context.group and context.group.triggerSettings
+    local displayType = settings and settings.displayType
+    if displayType == "icon" or displayType == "text" then
+        return displayType
+    end
+    return "texture"
+end
+
+local function SpecialFinderTriggerType(displayType)
+    return function(context)
+        return SpecialFinderTrigger(context)
+            and SpecialFinderTriggerDisplayType(context) == displayType
+    end
+end
+
+local function SpecialFinderTexture(context)
+    return context and context.group and context.displayMode == "textures"
+end
+
+local function SpecialFinderTriggerIconSettings(context)
+    local trigger = context and context.group and context.group.triggerSettings
+    return trigger and trigger.icon or nil
+end
+
+local function SpecialFinderTriggerTextSettings(context)
+    local trigger = context and context.group and context.group.triggerSettings
+    return trigger and trigger.text or nil
+end
+
+local function SpecialFinderTriggerEffects(context)
+    local trigger = context and context.group and context.group.triggerSettings
+    return trigger and trigger.effects or nil
+end
+
+local function SpecialFinderTextureIndicators(context)
+    local style = context and context.group and context.group.style
+    return style and style.textureIndicators or nil
+end
+
+local function SpecialFinderTextureAuraControlled(context)
+    local group = context and context.group
+    local buttonData = group and group.buttons and group.buttons[1]
+    return SpecialFinderTexture(context)
+        and CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)
+end
+
+local function SpecialFinderTextureStandard(context)
+    return SpecialFinderTexture(context) and not SpecialFinderTextureAuraControlled(context)
+end
+
+local function SpecialFinderTextureSettings(context)
+    local group = context and context.group
+    if not group then return nil end
+    if group.displayMode == "trigger" then
+        local trigger = group.triggerSettings
+        return trigger and trigger.signal or nil
+    end
+    return group.textureSettings
+end
+
+local function SpecialFinderTextureAppearance(context)
+    local group = context and context.group
+    local rightMode = SpecialFinderTexture(context)
+        or (SpecialFinderTrigger(context) and SpecialFinderTriggerDisplayType(context) == "texture")
+    if not rightMode or (group.displayMode == "textures" and not (group.buttons and group.buttons[1])) then
+        return false
+    end
+    local settings = SpecialFinderTextureSettings(context)
+    return settings and settings.sourceType ~= nil and settings.sourceValue ~= nil
+end
+
+local function SpecialFinderTexturePair(context)
+    if not SpecialFinderTextureAppearance(context) then return false end
+    local settings = SpecialFinderTextureSettings(context)
+    local layout = CooldownCompanion:GetTexturePanelLayoutSelectionValue(settings.locationType or 0)
+    return layout == PREVIEW_LOCATION_LEFTRIGHT or layout == PREVIEW_LOCATION_TOPBOTTOM
+end
+
+local function SpecialFinderTriggerIconSquare(context)
+    if not SpecialFinderTriggerType("icon")(context) then return false end
+    local settings = SpecialFinderTriggerIconSettings(context)
+    return not settings or settings.maintainAspectRatio ~= false
+end
+
+local function SpecialFinderTriggerIconFreeform(context)
+    if not SpecialFinderTriggerType("icon")(context) then return false end
+    local settings = SpecialFinderTriggerIconSettings(context)
+    return settings and settings.maintainAspectRatio == false
+end
+
+local function SpecialFinderTriggerIconCustomBorder(context)
+    if not SpecialFinderTriggerType("icon")(context) then return false end
+    local settings = SpecialFinderTriggerIconSettings(context) or {}
+    return ST.GetBorderRenderMode(settings, "borderRenderMode") ~= ST.BORDER_RENDER_MODE_CRISP
+end
+
+local function SpecialFinderTriggerEffectOffered(context, effectKey)
+    if not SpecialFinderTrigger(context) then return false end
+    return effectKey ~= "shrinkExpand" or SpecialFinderTriggerDisplayType(context) ~= "text"
+end
+
+local function SpecialFinderTriggerEffectEnabled(context, effectKey)
+    if not SpecialFinderTriggerEffectOffered(context, effectKey) then return false end
+    local effects = SpecialFinderTriggerEffects(context)
+    return effects and effects[effectKey] and effects[effectKey].enabled == true
+end
+
+local function SpecialFinderTextureEffectShown(context, sectionKey)
+    if sectionKey == "aura" then
+        return SpecialFinderTextureAuraControlled(context)
+    end
+    return SpecialFinderTextureStandard(context)
+end
+
+local function SpecialFinderTextureEffectEnabled(context, sectionKey)
+    if not SpecialFinderTextureEffectShown(context, sectionKey) then return false end
+    local indicators = SpecialFinderTextureIndicators(context)
+    return indicators and indicators[sectionKey] and indicators[sectionKey].enabled == true
+end
+
+local function SpecialFinderTextureEffectType(context, sectionKey, effectType)
+    if not SpecialFinderTextureEffectEnabled(context, sectionKey) then return false end
+    local indicators = SpecialFinderTextureIndicators(context)
+    return indicators[sectionKey].effectType == effectType
+end
+
+if ST._DefineSettingRoute then
+    SPECIAL_FINDER.trigger.displayType = ST._DefineSettingRoute({
+        idPrefix = "panel.trigger.appearance.display",
+        scope = SPECIAL_FINDER_SCOPE,
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "display",
+        sectionLabel = "Trigger Display",
+        rowScope = "primary",
+        applies = SpecialFinderTrigger,
+    }):Setting({ key = "type", label = "Display Type", aliases = { "trigger type" } })
+
+    SPECIAL_FINDER.trigger.icon = ST._DefineSettingRoute({
+        idPrefix = "panel.trigger.appearance.icon",
+        scope = SPECIAL_FINDER_SCOPE,
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "triggerIcon",
+        sectionLabel = "Trigger Icon",
+        collapseKeys = { "appearance_triggerIcon" },
+        rowScope = "primary",
+        applies = SpecialFinderTriggerType("icon"),
+    }):Settings({
+        square = { label = "Square Icons" },
+        size = { label = "Button Size", applies = SpecialFinderTriggerIconSquare },
+        width = { label = "Icon Width", applies = SpecialFinderTriggerIconFreeform },
+        height = { label = "Icon Height", applies = SpecialFinderTriggerIconFreeform },
+        zoom = { label = "Icon Zoom" },
+        baseColor = { label = "Base Icon Color" },
+        background = { label = "Background Color" },
+        borderThickness = { label = "Border Thickness" },
+        borderSize = { label = "Border Size", applies = SpecialFinderTriggerIconCustomBorder },
+        borderColor = { label = "Border Color" },
+    })
+
+    SPECIAL_FINDER.trigger.text = ST._DefineSettingRoute({
+        idPrefix = "panel.trigger.appearance.text",
+        scope = SPECIAL_FINDER_SCOPE,
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "triggerText",
+        sectionLabel = "Trigger Text",
+        collapseKeys = { "appearance_triggerText" },
+        rowScope = "primary",
+        applies = SpecialFinderTriggerType("text"),
+    }):Settings({
+        value = { label = "Display Text", aliases = { "trigger text" } },
+        fontSize = { label = "Font Size" },
+        font = { label = "Font" },
+        outline = { label = "Font Outline" },
+        alignment = { label = "Alignment" },
+        color = { label = "Text Color" },
+        background = { label = "Background Color" },
+    })
+
+    for _, effectKey in ipairs(TEXTURE_INDICATOR_EFFECT_ORDER) do
+        local key = effectKey
+        local def = TRIGGER_PANEL_EFFECT_DEFS[key]
+        local top = ST._DefineSettingRoute({
+            idPrefix = "panel.trigger.effects." .. key,
+            scope = SPECIAL_FINDER_SCOPE,
+            tab = "effects",
+            tabLabel = "Indicators",
+            section = "triggerEffects",
+            sectionLabel = "Trigger Panel Effects",
+            collapseKeys = { "effects_triggerEffects" },
+            rowScope = "primary",
+            applies = function(context) return SpecialFinderTriggerEffectOffered(context, key) end,
+        })
+        local finder = {
+            enabled = top:Setting({ key = "enabled", label = def.label }),
+        }
+        local advanced = ST._DefineSettingRoute({
+            idPrefix = "panel.trigger.effects." .. key .. ".advanced",
+            scope = SPECIAL_FINDER_SCOPE,
+            tab = "effects",
+            tabLabel = "Indicators",
+            section = "triggerEffects",
+            sectionLabel = def.label .. " Effect",
+            collapseKeys = { "effects_triggerEffects" },
+            rowScope = "primary",
+            advancedKey = "triggerEffect_" .. key,
+            applies = function(context) return SpecialFinderTriggerEffectEnabled(context, key) end,
+        })
+        finder.duration = advanced:Setting({ key = "duration", label = def.speedLabel })
+        if key == "colorShift" then
+            finder.shiftColor = advanced:Setting({ key = "color", label = "Shift Color" })
+        end
+        SPECIAL_FINDER.triggerEffects[key] = finder
+    end
+
+    for _, sectionKey in ipairs({ "proc", "aura", "ready", "unusable" }) do
+        local key = sectionKey
+        local sectionDef = TEXTURE_INDICATOR_SECTION_DEFS[key]
+        local top = ST._DefineSettingRoute({
+            idPrefix = "panel.texture.effects." .. key,
+            scope = SPECIAL_FINDER_SCOPE,
+            tab = "effects",
+            tabLabel = "Indicators",
+            section = "textureIndicators",
+            sectionLabel = "Texture Indicators",
+            collapseKeys = { EFFECTS_TEXTURE_INDICATORS_SECTION },
+            rowScope = "primary",
+            applies = function(context) return SpecialFinderTextureEffectShown(context, key) end,
+        })
+        local finder = {
+            enabled = top:Setting({ key = "enabled", label = sectionDef.label }),
+        }
+        local options = ST._DefineSettingRoute({
+            idPrefix = "panel.texture.effects." .. key .. ".options",
+            scope = SPECIAL_FINDER_SCOPE,
+            tab = "effects",
+            tabLabel = "Indicators",
+            section = "textureIndicators",
+            sectionLabel = sectionDef.label:gsub("^Show ", ""),
+            collapseKeys = { EFFECTS_TEXTURE_INDICATORS_SECTION },
+            rowScope = "primary",
+            advancedKey = key == "aura" and nil or ("textureIndicator_" .. key),
+            applies = function(context) return SpecialFinderTextureEffectEnabled(context, key) end,
+        })
+        finder.combatOnly = options:Setting({
+            key = "combatOnly", label = "Show Only In Combat",
+            applies = function(context) return key ~= "aura" and SpecialFinderTextureEffectEnabled(context, key) end,
+        })
+        finder.effectType = options:Setting({ key = "type", label = "Effect Type" })
+        finder.shiftColor = options:Setting({
+            key = "shiftColor", label = "Shift Color",
+            applies = function(context) return SpecialFinderTextureEffectType(context, key, "colorShift") end,
+        })
+        finder.shiftDuration = options:Setting({
+            key = "shiftDuration", label = "Shift Duration",
+            applies = function(context) return SpecialFinderTextureEffectType(context, key, "colorShift") end,
+        })
+        finder.pulseDuration = options:Setting({
+            key = "pulseDuration", label = "Pulse Duration",
+            applies = function(context) return SpecialFinderTextureEffectType(context, key, "pulse") end,
+        })
+        finder.cycleDuration = options:Setting({
+            key = "cycleDuration", label = "Cycle Duration",
+            applies = function(context) return SpecialFinderTextureEffectType(context, key, "shrinkExpand") end,
+        })
+        finder.bounceDuration = options:Setting({
+            key = "bounceDuration", label = "Bounce Duration",
+            applies = function(context) return SpecialFinderTextureEffectType(context, key, "bounce") end,
+        })
+        SPECIAL_FINDER.textureEffects[key] = finder
+    end
+
+    SPECIAL_FINDER.texture = ST._DefineSettingRoute({
+        idPrefix = "panel.texture.appearance",
+        scope = SPECIAL_FINDER_SCOPE,
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "texture",
+        sectionLabel = "Texture",
+        collapseKeys = { "appearance_texture" },
+        rowScope = "primary",
+        applies = SpecialFinderTextureAppearance,
+    }):Settings({
+        layout = { label = "Texture Layout" },
+        spacing = { label = "Pair Spacing", applies = SpecialFinderTexturePair },
+        look = { label = "Texture Look", aliases = { "blend mode" } },
+        scale = { label = "Texture Scale" },
+        rotation = { label = "Rotation" },
+        stretchX = { label = "Horizontal Stretch / Compress", aliases = { "horizontal stretch" } },
+        stretchY = { label = "Vertical Stretch / Compress", aliases = { "vertical stretch" } },
+        alpha = { label = "Texture Alpha", aliases = { "opacity" } },
+        color = { label = "Texture Color" },
+    })
 end
 
 ST._AddTriggerDisplayTypeDropdown = AddTriggerDisplayTypeDropdown

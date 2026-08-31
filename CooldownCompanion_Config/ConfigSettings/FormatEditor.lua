@@ -493,6 +493,7 @@ end
 --   controller:Release()      -- safe to call twice
 --
 -- opts.target   initial target table, same shape as SetTarget's argument
+-- opts.setting  Settings Finder descriptor for the Format String editor
 -- opts.onDirty  optional; called with the controller whenever the raw format
 --               string changes from typing, a starter chip, or an insert
 -- opts.onCommit optional; called when editing is explicitly finished by focus
@@ -551,6 +552,9 @@ local function BuildFormatEditorContent(container, opts)
     editGroup.button:Hide()  -- hide "Accept" button, we save on change
     editGroup.scrollBar:Hide()
     editGroup.scrollBG:SetPoint("TOPRIGHT", editGroup.frame, "TOPRIGHT", -4, -23)
+    if opts.setting and ST._BindSettingWidget then
+        ST._BindSettingWidget(editGroup, opts.setting, "Format String")
+    end
     container:AddChild(editGroup)
 
     eb = editGroup.editBox

@@ -364,6 +364,231 @@ local SEGMENTED_SMOOTHING_TOOLTIP = {
     {"Gaining or losing the aura entirely always snaps; the game only animates stack changes.", 1, 1, 1, true},
 }
 
+------------------------------------------------------------------------
+-- SETTINGS FINDER CATALOG (entry Settings > Aura Tracking)
+------------------------------------------------------------------------
+
+local function AuraTrackingCollapseKey(context)
+    return tostring(context.groupId) .. "_" .. tostring(context.buttonIndex) .. "_aura_tracking"
+end
+
+local function AuraTrackingRouteApplies(context)
+    return context.group and context.buttonData
+        and ST._EntryOffersAuraTab(context.group, context.buttonData)
+end
+
+local function GetAuraTrackingCatalogState(context)
+    if context._ccAuraTrackingCatalogState then
+        return context._ccAuraTrackingCatalogState
+    end
+    local group, buttonData = context.group, context.buttonData
+    if not (group and buttonData) then return nil end
+
+    local isStandalone = buttonData.addedAs == "aura"
+    local isTexturePanel = group.displayMode == "textures"
+    local active = (isTexturePanel
+            and CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData))
+        or (not isTexturePanel and (isStandalone or buttonData.auraTracking == true))
+    local isAuraPanel = ST.IsAuraPanelGroup(group)
+        or ST.IsAuraSectionEntry(group, buttonData)
+
+    local state = {
+        group = group,
+        buttonData = buttonData,
+        isStandalone = isStandalone,
+        isTexturePanel = isTexturePanel,
+        isAuraPanel = isAuraPanel,
+        active = active,
+    }
+    context._ccAuraTrackingCatalogState = state
+    if not active then return state end
+
+    local unitOverride = GetAuraUnitOverride(buttonData)
+    local primaryAuraSpellID = ResolveConfiguredAuraSpellID(buttonData)
+    local classifiedUnit = ClassifyAuraSpellUnit(primaryAuraSpellID)
+    local unit = unitOverride or classifiedUnit or buttonData.auraUnit or "player"
+    local isBuff = unit ~= "target"
+    local polarityKnown = unitOverride ~= nil or classifiedUnit ~= nil
+    state.primaryAuraSpellID = primaryAuraSpellID
+    state.canTrackGroup = not isTexturePanel and not isAuraPanel and isBuff and polarityKnown
+        and EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
+
+    -- The visible pane has already called CharacterCanCommandPets while
+    -- building this same section, which learns the sticky character flag.
+    -- Finder applicability stays read-only and consults that cached proof
+    -- rather than repeating the API probe (and its SavedVariables write) on
+    -- every keystroke.
+    local db = CooldownCompanion.db
+    local charKey = db and db.keys and db.keys.char
+    local petCapable = charKey and db.global and db.global.petCapableChars
+        and db.global.petCapableChars[charKey] == true
+    state.canTrackPet = not isTexturePanel and not isAuraPanel and isBuff and polarityKnown
+        and petCapable
+        and CooldownCompanion:EntryCanUsePetAuraScope(buttonData, primaryAuraSpellID)
+
+    if not isTexturePanel then
+        state.maxStacks = CooldownCompanion:GetAuraStackBarMax(buttonData, true)
+    end
+    if not isTexturePanel and (group.displayMode or "icons") == "bars" then
+        state.barShowsStacks = CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData)
+        if state.barShowsStacks then
+            state.stackStyle = CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData)
+        end
+    end
+
+    -- GetEffectiveStyle prunes disallowed SavedVariable sections as a side
+    -- effect. Finder preparation is observational, so resolve this one gate
+    -- with the same active-section precedence without calling the mutator.
+    local groupStyle = group.style or {}
+    local showAuraStackText = groupStyle.showAuraStackText
+    if buttonData.overrideSections and buttonData.overrideSections.auraStackText
+        and buttonData.styleOverrides
+        and (not ST.CanButtonUseOverrideSection
+            or ST.CanButtonUseOverrideSection(buttonData, "auraStackText")) then
+        local override = rawget(buttonData.styleOverrides, "showAuraStackText")
+        if override ~= nil then showAuraStackText = override end
+    end
+    state.stackTextVisible = not isTexturePanel and showAuraStackText ~= false
+    state.showCountAtOne = CooldownCompanion:IsAuraStackCountAtOneEnabled(buttonData)
+    state.threshold = CooldownCompanion:GetAuraStackThresholdValue(buttonData)
+    state.maxColor = CooldownCompanion:IsAuraStackMaxColorEnabled(buttonData)
+    return state
+end
+
+local function AuraStateApplies(predicate)
+    return function(context)
+        local state = GetAuraTrackingCatalogState(context)
+        return state and predicate(state) and true or false
+    end
+end
+
+local auraSettings = ST._DefineSettingRoute({
+    idPrefix = "entry.settings.aura_tracking",
+    scope = "entry",
+    rowScope = "detail",
+    tab = "settings",
+    section = "aura_tracking",
+    sectionLabel = "Aura Tracking",
+    collapseKeys = AuraTrackingCollapseKey,
+    applies = AuraTrackingRouteApplies,
+}):Settings({
+    enabled = {
+        label = "Track an Aura",
+        aliases = { "enable aura tracking", "track aura" },
+        applies = AuraStateApplies(function(state)
+            return not state.isTexturePanel and not state.isStandalone
+        end),
+    },
+    unit = {
+        label = "Tracked on",
+        aliases = { "aura unit", "you target" },
+        applies = AuraStateApplies(function(state) return state.active end),
+    },
+    group = {
+        label = "Track on group members",
+        aliases = { "party raid", "group aura" },
+        applies = AuraStateApplies(function(state) return state.active and state.canTrackGroup end),
+    },
+    pet = {
+        label = "Track on your pet",
+        aliases = { "pet aura" },
+        applies = AuraStateApplies(function(state)
+            return state.active and (state.canTrackPet or state.buttonData.auraTrackPet == true)
+        end),
+    },
+    idOverride = {
+        label = "Aura ID Override",
+        aliases = { "spell id override", "tracked aura id" },
+        applies = AuraStateApplies(function(state) return state.active end),
+    },
+    barShowsStacks = {
+        label = "Bar Shows Stacks",
+        aliases = { "stack fill", "fill by stacks" },
+        applies = AuraStateApplies(function(state)
+            return state.active and not state.isTexturePanel
+                and (state.group.displayMode or "icons") == "bars"
+        end),
+    },
+    stackStyle = {
+        label = "Stack Style",
+        aliases = { "segmented continuous" },
+        applies = AuraStateApplies(function(state)
+            return state.active and state.barShowsStacks and state.maxStacks ~= nil
+        end),
+    },
+    segmentedSmoothing = {
+        label = "Segmented Smoothing",
+        aliases = { "smooth stacks", "snap stacks" },
+        applies = AuraStateApplies(function(state)
+            return state.active and state.barShowsStacks and state.maxStacks ~= nil
+                and state.stackStyle == "segmented"
+        end),
+    },
+    segmentGap = {
+        label = "Segment Gap",
+        aliases = { "stack gap", "divider gap", "block gap" },
+        applies = AuraStateApplies(function(state)
+            return state.active and state.barShowsStacks and state.maxStacks ~= nil
+                and state.stackStyle == "segmented"
+                and (not state.isStandalone or state.maxStacks <= ST.STACK_SEGMENT_ATLAS_MAX)
+        end),
+    },
+    showCountAtOne = {
+        label = "Show Count at 1 Stack",
+        aliases = { "show one stack", "stack count one" },
+        applies = AuraStateApplies(function(state)
+            return state.active and state.stackTextVisible
+                and (state.maxStacks ~= nil or InCombatLockdown() or state.showCountAtOne)
+        end),
+    },
+    thresholdEnabled = {
+        label = "Stack Text Threshold Color",
+        aliases = { "stack threshold", "threshold color" },
+        applies = AuraStateApplies(function(state)
+            return state.active and state.stackTextVisible
+                and (state.maxStacks ~= nil or InCombatLockdown())
+        end),
+    },
+    thresholdStacks = {
+        label = "Threshold Stacks",
+        aliases = { "stack threshold number" },
+        applies = AuraStateApplies(function(state)
+            return state.active and state.stackTextVisible and state.threshold ~= nil
+                and (state.maxStacks ~= nil or InCombatLockdown())
+        end),
+    },
+    thresholdColor = {
+        label = "Threshold Color",
+        aliases = { "stack threshold color" },
+        applies = AuraStateApplies(function(state)
+            return state.active and state.stackTextVisible and state.threshold ~= nil
+                and (state.maxStacks ~= nil or InCombatLockdown())
+        end),
+    },
+    maxColorEnabled = {
+        label = "Max Stacks Text Color",
+        aliases = { "maximum stacks color" },
+        applies = AuraStateApplies(function(state)
+            return state.active and state.stackTextVisible and state.maxStacks ~= nil
+        end),
+    },
+    maxColor = {
+        label = "Max Color",
+        aliases = { "maximum stack color" },
+        applies = AuraStateApplies(function(state)
+            return state.active and state.stackTextVisible and state.maxStacks ~= nil
+                and state.maxColor
+        end),
+    },
+    neverDesaturate = {
+        label = "Never Desaturate",
+        aliases = { "keep color", "passive aura" },
+        applies = AuraStateApplies(function(state)
+            return state.active and not state.isTexturePanel and state.buttonData.isPassive == true
+        end),
+    },
+})
+
 local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     local BeginRowGrid = ST._BeginRowGrid
 
@@ -406,7 +631,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
 
     if not isTexturePanel and not isStandalone then
         AddCheckboxRow(auraLeft, {
-            label = "Track an Aura",
+            setting = auraSettings.enabled,
             value = buttonData.auraTracking == true,
             onChange = function(value)
                 buttonData.auraTracking = value and true or nil
@@ -456,7 +681,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         automaticLabel = "Automatic (You)"
     end
     AddDropdownRow(auraLeft, {
-        label = "Tracked on",
+        setting = auraSettings.unit,
         indent = not isStandalone,
         list = {
             automatic = automaticLabel,
@@ -487,7 +712,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- resolve to your target and ignore the flag, so offering either would lie.
     if canTrackGroup then
         AddCheckboxRow(auraLeft, {
-            label = "Track on group members",
+            setting = auraSettings.group,
             indent = not isStandalone,
             value = buttonData.auraTrackGroup == true,
             tooltip = GROUP_SCOPE_TOOLTIP,
@@ -515,7 +740,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         and CooldownCompanion:EntryCanUsePetAuraScope(buttonData, primaryAuraSpellID)
     if canTrackPet or buttonData.auraTrackPet == true then
         AddCheckboxRow(auraLeft, {
-            label = "Track on your pet",
+            setting = auraSettings.pet,
             indent = not isStandalone,
             value = buttonData.auraTrackPet == true,
             tooltip = PET_SCOPE_TOOLTIP,
@@ -536,7 +761,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- list alone never could.
     do
         AddEditBoxRow(auraLeft, {
-            label = "Aura ID Override",
+            setting = auraSettings.idOverride,
             indent = not isStandalone,
             value = buttonData.auraIDOverride and tostring(buttonData.auraIDOverride) or "",
             tooltip = AURA_ID_OVERRIDE_TOOLTIP,
@@ -722,7 +947,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         -- Anchor args are a placeholder - AnchorRowBadge re-points the button
         -- onto the end of the row's label.
         local stacksRow = AddCheckboxRow(auraRight, {
-            label = "Bar Shows Stacks",
+            setting = auraSettings.barShowsStacks,
             value = CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData),
             onChange = function(value)
                 CooldownCompanion:SetBarPanelAuraStackDisplay(buttonData, value)
@@ -741,7 +966,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
             -- aura-rebuild migration, so this is a fresh 12.1 choice.
             if maxStacks then
                 AddDropdownRow(auraRight, {
-                    label = "Stack Style",
+                    setting = auraSettings.stackStyle,
                     indent = true,
                     list = { segmented = "Segmented", continuous = "Continuous" },
                     order = { "segmented", "continuous" },
@@ -757,7 +982,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
                 -- (resource-bar parity), so the toggle would be dead there.
                 if stackStyle == "segmented" then
                     local smoothRow = AddDropdownRow(auraRight, {
-                        label = "Segmented Smoothing",
+                        setting = auraSettings.segmentedSmoothing,
                         indent = true,
                         list = {
                             [ST.SEGMENTED_SMOOTHING_ON] = "On",
@@ -784,6 +1009,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
             if isStandalone and maxStacks and stackStyle == "segmented"
                 and maxStacks <= ST.STACK_SEGMENT_ATLAS_MAX then
                 ST._AddStackBlockGapRow(auraRight, buttonData, {
+                    setting = auraSettings.segmentGap,
                     maxStacks = maxStacks,
                     commit = function()
                         ST._RefreshSelectedButtonsPreview()
@@ -800,7 +1026,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
             -- continuous style (no segments at all).
             if not isStandalone and maxStacks and stackStyle == "segmented" then
                 AddSliderRow(auraRight, {
-                    label = "Segment Gap",
+                    setting = auraSettings.segmentGap,
                     indent = true,
                     min = 0, max = 20, step = 1,
                     value = CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData),
@@ -852,6 +1078,14 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     if effectiveStyle.showAuraStackText ~= false then
         ST._BuildStackThresholdColorRows(auraRight, buttonData,
             CooldownCompanion:GetAuraStackBarMax(buttonData, true), {
+                settings = {
+                    showOne = auraSettings.showCountAtOne,
+                    threshold = auraSettings.thresholdEnabled,
+                    thresholdStacks = auraSettings.thresholdStacks,
+                    thresholdColor = auraSettings.thresholdColor,
+                    maxStacks = auraSettings.maxColorEnabled,
+                    maxColor = auraSettings.maxColor,
+                },
                 infoButtons = infoButtons,
                 refresh = RefreshAuraConfig,
                 commit = function()
@@ -872,7 +1106,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         -- Passives desaturate while the aura is missing by default; the invert
         -- switch is the While Aura Active section's Desaturate Icon row.
         AddCheckboxRow(auraRight, {
-            label = "Never Desaturate",
+            setting = auraSettings.neverDesaturate,
             value = buttonData.neverDesaturate == true,
             onChange = function(value)
                 buttonData.neverDesaturate = value and true or nil

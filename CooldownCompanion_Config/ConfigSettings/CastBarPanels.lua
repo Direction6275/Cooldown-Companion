@@ -26,6 +26,293 @@ local BeginRowGrid = ST._BeginRowGrid
 -- rule fading right.
 local ROW_SECTION = { leftAligned = true }
 
+------------------------------------------------------------------------
+-- SETTINGS FINDER CATALOG
+------------------------------------------------------------------------
+
+local CASTBAR_FINDER = {}
+
+local function CastBarFinderEnabled(context)
+    local cache = context and context._ccCastBarFinderCache
+    local settings = cache and cache.settings
+    return settings and settings.enabled == true
+end
+
+local function CastBarFinderIconAdvanced(context)
+    local cache = context and context._ccCastBarFinderCache
+    local settings = cache and cache.settings
+    return settings and settings.enabled == true and settings.showIcon ~= false
+end
+
+local function CastBarFinderTicksAdvanced(context)
+    local cache = context and context._ccCastBarFinderCache
+    local settings = cache and cache.settings
+    return settings and settings.enabled == true and settings.showChannelTickMarks == true
+end
+
+local function CastBarFinderNameAdvanced(context)
+    local cache = context and context._ccCastBarFinderCache
+    local settings = cache and cache.settings
+    return settings and settings.enabled == true and settings.showNameText ~= false
+end
+
+local function CastBarFinderTimeAdvanced(context)
+    local cache = context and context._ccCastBarFinderCache
+    local settings = cache and cache.settings
+    return settings and settings.enabled == true and settings.showCastTimeText ~= false
+end
+
+local function CastBarFinderAttached(context)
+    local cache = context and context._ccCastBarFinderCache
+    local settings = cache and cache.settings
+    return settings and settings.enabled == true and settings.independentAnchorEnabled ~= true
+end
+
+local function CastBarFinderIndependent(context)
+    local cache = context and context._ccCastBarFinderCache
+    local settings = cache and cache.settings
+    return settings and settings.enabled == true and settings.independentAnchorEnabled == true
+end
+
+local function CastBarFinderCacheFlag(key)
+    return function(context)
+        local cache = context and context._ccCastBarFinderCache
+        return cache and cache[key] == true
+    end
+end
+
+if ST._DefineSettingRoute then
+    local general = ST._DefineSettingRoute({
+        idPrefix = "castBar.general.castBar",
+        scope = "castBar",
+        tab = "general",
+        tabLabel = "General",
+        tabStateKey = "castBarHomeTab",
+        section = "castBar",
+        sectionLabel = "Cast Bar",
+        collapseKeys = { "castbar_general" },
+        rowScope = "detail",
+    })
+    CASTBAR_FINDER.general = general:Settings({
+        enabled = { label = "Enable Cast Bar Anchoring", aliases = { "enable cast bar" } },
+        anchoringMode = { label = "Anchoring Mode", applies = CastBarFinderEnabled },
+    })
+
+    local attached = ST._DefineSettingRoute({
+        idPrefix = "castBar.layout.attached",
+        scope = "castBar",
+        tab = "layout",
+        tabLabel = "Layout",
+        tabStateKey = "castBarHomeTab",
+        section = "layout",
+        sectionLabel = "Layout",
+        collapseKeys = { "castbar_layout" },
+        rowScope = "detail",
+        applies = CastBarFinderAttached,
+    })
+    CASTBAR_FINDER.attached = attached:Settings({
+        yOffset = { label = "Y Offset", aliases = { "stack gap" } },
+        ownYOffset = {
+            label = "Enable Cast Bar-Only Y Offset",
+            aliases = { "separate cast bar offset" },
+            applies = CastBarFinderCacheFlag("attachedOffsetAvailable"),
+        },
+        castBarYOffset = {
+            label = "Cast Bar Y Offset",
+            applies = CastBarFinderCacheFlag("attachedYOffsetEnabled"),
+        },
+    })
+
+    local independent = ST._DefineSettingRoute({
+        idPrefix = "castBar.layout.anchor",
+        scope = "castBar",
+        tab = "layout",
+        tabLabel = "Layout",
+        tabStateKey = "castBarHomeTab",
+        section = "anchor",
+        sectionLabel = "Anchor Settings",
+        collapseKeys = { "castbar_anchor" },
+        rowScope = "detail",
+        applies = CastBarFinderIndependent,
+    })
+    CASTBAR_FINDER.independent = independent:Settings({
+        anchorFrame = { label = "Anchor to Frame", aliases = { "relative frame", "anchor target" } },
+        unlock = { label = "Unlock Placement", aliases = { "move cast bar" } },
+        anchorPoint = { label = "Anchor Point" },
+        relativePoint = { label = "Relative Point", aliases = { "relative anchor point" } },
+        width = { label = "Cast Bar Width" },
+        xOffset = { label = "X Offset" },
+        yOffset = { label = "Y Offset" },
+    })
+
+    local bar = ST._DefineSettingRoute({
+        idPrefix = "castBar.appearance.bar",
+        scope = "castBar",
+        tab = "appearance",
+        tabLabel = "Appearance",
+        tabStateKey = "castBarHomeTab",
+        section = "bar",
+        sectionLabel = "Bar",
+        collapseKeys = { "castbar_bar" },
+        rowScope = "detail",
+        applies = CastBarFinderEnabled,
+    })
+    CASTBAR_FINDER.bar = bar:Settings({
+        texture = { label = "Bar Texture" },
+        height = { label = "Height", aliases = { "bar height" } },
+        color = { label = "Bar Color", aliases = { "fill color" } },
+        background = { label = "Background Color" },
+    })
+
+    local border = ST._DefineSettingRoute({
+        idPrefix = "castBar.appearance.border",
+        scope = "castBar",
+        tab = "appearance",
+        tabLabel = "Appearance",
+        tabStateKey = "castBarHomeTab",
+        section = "border",
+        sectionLabel = "Border",
+        collapseKeys = { "castbar_border" },
+        rowScope = "detail",
+        applies = CastBarFinderEnabled,
+    })
+    CASTBAR_FINDER.border = border:Settings({
+        style = { label = "Border Style" },
+        color = { label = "Border Color", applies = CastBarFinderCacheFlag("pixelBorder") },
+        thickness = { label = "Border Thickness", applies = CastBarFinderCacheFlag("pixelBorder") },
+        size = { label = "Border Size", applies = CastBarFinderCacheFlag("customBorderSize") },
+    })
+
+    local effects = ST._DefineSettingRoute({
+        idPrefix = "castBar.appearance.effects",
+        scope = "castBar",
+        tab = "appearance",
+        tabLabel = "Appearance",
+        tabStateKey = "castBarHomeTab",
+        section = "effects",
+        sectionLabel = "Cast Effects",
+        collapseKeys = { "castbar_effects" },
+        rowScope = "detail",
+        applies = CastBarFinderEnabled,
+    })
+    CASTBAR_FINDER.effects = effects:Settings({
+        spark = { label = "Show Spark" },
+        sparkTrail = { label = "Show Spark Trail", applies = CastBarFinderCacheFlag("sparkShown") },
+        finish = { label = "Show Cast Finish FX", aliases = { "finish effect" } },
+        interruptShake = { label = "Show Interrupt Shake" },
+        interruptGlow = { label = "Show Interrupt Glow" },
+    })
+
+    local contents = ST._DefineSettingRoute({
+        idPrefix = "castBar.appearance.contents",
+        scope = "castBar",
+        tab = "appearance",
+        tabLabel = "Appearance",
+        tabStateKey = "castBarHomeTab",
+        section = "contents",
+        sectionLabel = "Contents",
+        collapseKeys = { "castbar_contents" },
+        rowScope = "detail",
+        applies = CastBarFinderEnabled,
+    })
+    CASTBAR_FINDER.contents = contents:Settings({
+        icon = { label = "Show Spell Icon", aliases = { "cast icon" } },
+        ticks = { label = "Show Channel Tick Marks", aliases = { "channel ticks" } },
+        name = { label = "Show Spell Name", aliases = { "cast name" } },
+        time = { label = "Show Cast Time", aliases = { "cast duration" } },
+    })
+
+    local icon = ST._DefineSettingRoute({
+        idPrefix = "castBar.appearance.contents.icon",
+        scope = "castBar",
+        tab = "appearance",
+        tabLabel = "Appearance",
+        tabStateKey = "castBarHomeTab",
+        section = "contents",
+        sectionLabel = "Spell Icon",
+        collapseKeys = { "castbar_contents" },
+        rowScope = "detail",
+        advancedKey = "castbarIcon",
+        applies = CastBarFinderIconAdvanced,
+    })
+    CASTBAR_FINDER.icon = icon:Settings({
+        zoom = { label = "Icon Zoom" },
+        rightSide = { label = "Icon on Right Side" },
+        offset = { label = "Icon Offset" },
+        size = { label = "Icon Size", applies = CastBarFinderCacheFlag("iconOffsetEnabled") },
+        xOffset = { label = "Icon X Offset", applies = CastBarFinderCacheFlag("iconOffsetEnabled") },
+        yOffset = { label = "Icon Y Offset", applies = CastBarFinderCacheFlag("iconOffsetEnabled") },
+        borderThickness = {
+            label = "Border Thickness",
+            aliases = { "icon border thickness" },
+            applies = CastBarFinderCacheFlag("iconOffsetEnabled"),
+        },
+        borderSize = { label = "Icon Border Size", applies = CastBarFinderCacheFlag("customIconBorderSize") },
+    })
+
+    local ticks = ST._DefineSettingRoute({
+        idPrefix = "castBar.appearance.contents.channelTicks",
+        scope = "castBar",
+        tab = "appearance",
+        tabLabel = "Appearance",
+        tabStateKey = "castBarHomeTab",
+        section = "contents",
+        sectionLabel = "Channel Tick Marks",
+        collapseKeys = { "castbar_contents" },
+        rowScope = "detail",
+        advancedKey = "castbarChannelTicks",
+        applies = CastBarFinderTicksAdvanced,
+    })
+    CASTBAR_FINDER.ticks = ticks:Settings({
+        width = { label = "Tick Mark Width" },
+        color = { label = "Tick Mark Color" },
+        penultimate = { label = "Highlight Second-to-Last Tick", aliases = { "second to last tick" } },
+        highlightColor = { label = "Highlight Color", applies = CastBarFinderCacheFlag("penultimateHighlight") },
+    })
+
+    local name = ST._DefineSettingRoute({
+        idPrefix = "castBar.appearance.contents.name",
+        scope = "castBar",
+        tab = "appearance",
+        tabLabel = "Appearance",
+        tabStateKey = "castBarHomeTab",
+        section = "contents",
+        sectionLabel = "Spell Name",
+        collapseKeys = { "castbar_contents" },
+        rowScope = "detail",
+        advancedKey = "castbarNameText",
+        applies = CastBarFinderNameAdvanced,
+    })
+    CASTBAR_FINDER.name = name:Settings({
+        fontSize = { label = "Font Size" },
+        font = { label = "Font" },
+        outline = { label = "Font Outline" },
+        color = { label = "Font Color" },
+    })
+
+    local castTime = ST._DefineSettingRoute({
+        idPrefix = "castBar.appearance.contents.castTime",
+        scope = "castBar",
+        tab = "appearance",
+        tabLabel = "Appearance",
+        tabStateKey = "castBarHomeTab",
+        section = "contents",
+        sectionLabel = "Cast Time",
+        collapseKeys = { "castbar_contents" },
+        rowScope = "detail",
+        advancedKey = "castbarCastTime",
+        applies = CastBarFinderTimeAdvanced,
+    })
+    CASTBAR_FINDER.castTime = castTime:Settings({
+        fontSize = { label = "Font Size" },
+        font = { label = "Font" },
+        outline = { label = "Font Outline" },
+        color = { label = "Font Color" },
+        xOffset = { label = "X Offset" },
+        yOffset = { label = "Y Offset" },
+    })
+end
+
 -- LibSharedMedia texture names (and the longer anchoring-mode label) run past
 -- the 140px control column, and a dropdown sizes its menu from the control.
 local WIDE_PULLOUT_WIDTH = 300
@@ -65,6 +352,45 @@ local function CanShowAttachedCastBarOffsetControls(rbSettings, cbSettings, layo
         and cbSettings.independentAnchorEnabled ~= true
 end
 
+-- Built once for the active Cast Bar Finder context. Applicability reads the
+-- context-owned snapshot instead of resolving settings, spec layout, or
+-- border state while a query is being typed.
+local function RefreshCastBarFinderCache()
+    local settings = CooldownCompanion:GetCastBarSettings()
+    local rbSettings = CooldownCompanion:GetResourceBarSettings()
+    local layout = CooldownCompanion:GetSpecLayoutOrder()
+    local castLayout = layout and layout.castBar
+    local attachedOffsetAvailable = CanShowAttachedCastBarOffsetControls(
+        rbSettings, settings, layout)
+    local pixelBorder = settings and (settings.borderStyle or "pixel") == "pixel"
+    local borderMode = settings and ST.GetBorderRenderMode(settings, "borderRenderMode")
+    local iconBorderMode = settings and ST.GetBorderRenderMode(settings, "iconBorderRenderMode")
+
+    local cache = {
+        settings = settings,
+        attachedOffsetAvailable = attachedOffsetAvailable == true,
+        attachedYOffsetEnabled = attachedOffsetAvailable == true
+            and type(castLayout) == "table"
+            and castLayout.panelAnchorYOffsetEnabled == true,
+        pixelBorder = pixelBorder == true,
+        customBorderSize = pixelBorder == true
+            and borderMode ~= ST.BORDER_RENDER_MODE_CRISP,
+        sparkShown = settings and settings.showSpark ~= false or false,
+        iconOffsetEnabled = settings and settings.iconOffset == true or false,
+        customIconBorderSize = settings and settings.iconOffset == true
+            and iconBorderMode ~= ST.BORDER_RENDER_MODE_CRISP or false,
+        penultimateHighlight = settings
+            and settings.highlightPenultimateChannelTick == true or false,
+    }
+    return cache
+end
+
+if ST._RegisterSettingsFinderContextPreparer then
+    ST._RegisterSettingsFinderContextPreparer("castBar", function(context)
+        context._ccCastBarFinderCache = RefreshCastBarFinderCache()
+    end)
+end
+
 local function RefreshAttachedCastBarOffset(refreshConfig)
     CooldownCompanion:RepositionCastBar()
     if refreshConfig then
@@ -89,6 +415,7 @@ local function BuildAttachedCastBarOffsetControls(container, layout)
 
     AddCheckboxRow(container, {
         label = "Enable Cast Bar-Only Y Offset",
+        setting = CASTBAR_FINDER.attached and CASTBAR_FINDER.attached.ownYOffset,
         value = castLayout.panelAnchorYOffsetEnabled == true,
         onChange = function(val)
             castLayout.panelAnchorYOffsetEnabled = val == true
@@ -99,6 +426,7 @@ local function BuildAttachedCastBarOffsetControls(container, layout)
     if castLayout.panelAnchorYOffsetEnabled then
         AddSliderRow(container, {
             label = "Cast Bar Y Offset",
+            setting = CASTBAR_FINDER.attached and CASTBAR_FINDER.attached.castBarYOffset,
             indent = true,
             min = -100, max = 100, step = 0.1,
             value = castLayout.panelAnchorYOffset or 0,
@@ -138,6 +466,7 @@ local function BuildCastBarAnchoringPanel(container)
 
         local enableRow = AddCheckboxRow(generalLeft, {
             label = "Enable Cast Bar Anchoring",
+            setting = CASTBAR_FINDER.general and CASTBAR_FINDER.general.enabled,
             value = settings.enabled,
             onChange = function(val)
                 settings.enabled = val
@@ -155,6 +484,7 @@ local function BuildCastBarAnchoringPanel(container)
         if settings.enabled then
             AddDropdownRow(generalLeft, {
                 label = "Anchoring Mode",
+                setting = CASTBAR_FINDER.general and CASTBAR_FINDER.general.anchoringMode,
                 pulloutWidth = WIDE_PULLOUT_WIDTH,
                 list = {
                     attached = "Attached to Panel",
@@ -203,6 +533,7 @@ local function BuildCastBarPositioningPanel(container)
 
         AddSliderRow(posLeft, {
             label = "Y Offset",
+            setting = CASTBAR_FINDER.attached and CASTBAR_FINDER.attached.yOffset,
             min = -100, max = 100, step = 0.1,
             value = (layout and (layout.yOffset or layout.verticalXOffset))
                 or (rbSettings and rbSettings.yOffset) or 3,
@@ -250,6 +581,7 @@ local function BuildCastBarPositioningPanel(container)
     BuildIndependentAnchorTargetRow(targetLeft, anchor, refreshCastBarAnchor, {
         row = true,
         pickContainer = targetRight,
+        setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.anchorFrame,
     })
 
     -- LEFT column: how the bar is placed - the drag toggle and the two points
@@ -259,6 +591,7 @@ local function BuildCastBarPositioningPanel(container)
 
     AddCheckboxRow(anchorLeft, {
         label = "Unlock Placement",
+        setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.unlock,
         value = not settings.independentAnchorLocked,
         onChange = function(val)
             settings.independentAnchorLocked = not val
@@ -269,11 +602,18 @@ local function BuildCastBarPositioningPanel(container)
         end,
     })
 
-    AddAnchorDropdown(anchorLeft, anchor, "point", "CENTER", refreshCastBarAnchor, "Anchor Point", { row = true })
-    AddAnchorDropdown(anchorLeft, anchor, "relativePoint", "CENTER", refreshCastBarAnchor, "Relative Point", { row = true })
+    AddAnchorDropdown(anchorLeft, anchor, "point", "CENTER", refreshCastBarAnchor, "Anchor Point", {
+        row = true,
+        setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.anchorPoint,
+    })
+    AddAnchorDropdown(anchorLeft, anchor, "relativePoint", "CENTER", refreshCastBarAnchor, "Relative Point", {
+        row = true,
+        setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.relativePoint,
+    })
 
     AddSliderRow(anchorRight, {
         label = "Cast Bar Width",
+        setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.width,
         min = 20, max = 600, step = 1,
         value = settings.independentWidth or 200,
         onChange = function(val)
@@ -287,6 +627,7 @@ local function BuildCastBarPositioningPanel(container)
 
     AddSliderRow(anchorRight, {
         label = "X Offset",
+        setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.xOffset,
         min = -2000, max = 2000, step = 0.1,
         value = anchor.x or 0,
         onRelease = function(val)
@@ -297,6 +638,7 @@ local function BuildCastBarPositioningPanel(container)
 
     AddSliderRow(anchorRight, {
         label = "Y Offset",
+        setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.yOffset,
         min = -2000, max = 2000, step = 0.1,
         value = anchor.y or 0,
         onRelease = function(val)
@@ -349,6 +691,7 @@ local function BuildCastBarStylingPanel(container)
         -- widened - a 140px control would otherwise open a 140px menu.
         local texRow = AddDropdownRow(barLeft, {
             label = "Bar Texture",
+            setting = CASTBAR_FINDER.bar and CASTBAR_FINDER.bar.texture,
             pulloutWidth = WIDE_PULLOUT_WIDTH,
         })
         CS.SetupBarTextureDropdown(texRow)
@@ -362,6 +705,7 @@ local function BuildCastBarStylingPanel(container)
         -- stack reflows under the drag; the live bar restyles on release.
         AddMirrorFirstSliderRow(barLeft, {
             label = "Height",
+            setting = CASTBAR_FINDER.bar and CASTBAR_FINDER.bar.height,
             min = 4, max = 40, step = 0.1,
             value = settings.height or 15,
             set = function(val) settings.height = val end,
@@ -372,6 +716,7 @@ local function BuildCastBarStylingPanel(container)
 
         AddColorRow(barRight, {
             label = "Bar Color",
+            setting = CASTBAR_FINDER.bar and CASTBAR_FINDER.bar.color,
             tbl = settings,
             key = "barColor",
             default = {1.0, 0.7, 0.0, 1.0},
@@ -382,6 +727,7 @@ local function BuildCastBarStylingPanel(container)
 
         AddColorRow(barRight, {
             label = "Background Color",
+            setting = CASTBAR_FINDER.bar and CASTBAR_FINDER.bar.background,
             tbl = settings,
             key = "backgroundColor",
             default = {0, 0, 0, 0.5},
@@ -405,6 +751,7 @@ local function BuildCastBarStylingPanel(container)
 
         AddDropdownRow(borderLeft, {
             label = "Border Style",
+            setting = CASTBAR_FINDER.border and CASTBAR_FINDER.border.style,
             list = {
                 blizzard = "Blizzard",
                 pixel = "Pixel",
@@ -422,6 +769,7 @@ local function BuildCastBarStylingPanel(container)
         if settings.borderStyle == "pixel" then
             AddColorRow(borderLeft, {
                 label = "Border Color",
+                setting = CASTBAR_FINDER.border and CASTBAR_FINDER.border.color,
                 indent = true,
                 tbl = settings,
                 key = "borderColor",
@@ -434,12 +782,16 @@ local function BuildCastBarStylingPanel(container)
             local renderMode = AddBorderRenderModeDropdown(borderRight, settings, "borderRenderMode", function()
                 CooldownCompanion:ApplyCastBarSettings()
                 CooldownCompanion:RefreshConfigPanel()
-            end, nil, { row = true })
+            end, nil, {
+                row = true,
+                setting = CASTBAR_FINDER.border and CASTBAR_FINDER.border.thickness,
+            })
             local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
             if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
                 AddMirrorFirstSliderRow(borderRight, {
                     label = "Border Size",
+                    setting = CASTBAR_FINDER.border and CASTBAR_FINDER.border.size,
                     indent = true,
                     min = 0, max = 5, step = 0.1,
                     value = settings.borderSize or 1,
@@ -469,6 +821,7 @@ local function BuildCastBarStylingPanel(container)
 
         AddCheckboxRow(effectsLeft, {
             label = "Show Spark",
+            setting = CASTBAR_FINDER.effects and CASTBAR_FINDER.effects.spark,
             value = settings.showSpark ~= false,
             onChange = function(val)
                 settings.showSpark = val
@@ -480,6 +833,7 @@ local function BuildCastBarStylingPanel(container)
         if settings.showSpark ~= false then
             AddCheckboxRow(effectsLeft, {
                 label = "Show Spark Trail",
+                setting = CASTBAR_FINDER.effects and CASTBAR_FINDER.effects.sparkTrail,
                 indent = true,
                 value = settings.showSparkTrail ~= false,
                 onChange = function(val)
@@ -491,6 +845,7 @@ local function BuildCastBarStylingPanel(container)
 
         AddCheckboxRow(effectsLeft, {
             label = "Show Cast Finish FX",
+            setting = CASTBAR_FINDER.effects and CASTBAR_FINDER.effects.finish,
             value = settings.showCastFinishFX ~= false,
             onChange = function(val)
                 settings.showCastFinishFX = val
@@ -500,6 +855,7 @@ local function BuildCastBarStylingPanel(container)
 
         AddCheckboxRow(effectsRight, {
             label = "Show Interrupt Shake",
+            setting = CASTBAR_FINDER.effects and CASTBAR_FINDER.effects.interruptShake,
             value = settings.showInterruptShake ~= false,
             onChange = function(val)
                 settings.showInterruptShake = val
@@ -509,6 +865,7 @@ local function BuildCastBarStylingPanel(container)
 
         AddCheckboxRow(effectsRight, {
             label = "Show Interrupt Glow",
+            setting = CASTBAR_FINDER.effects and CASTBAR_FINDER.effects.interruptGlow,
             value = settings.showInterruptGlow ~= false,
             onChange = function(val)
                 settings.showInterruptGlow = val
@@ -530,6 +887,7 @@ local function BuildCastBarStylingPanel(container)
 
     local iconRow = AddCheckboxRow(contentsLeft, {
         label = "Show Spell Icon",
+        setting = CASTBAR_FINDER.contents and CASTBAR_FINDER.contents.icon,
         value = settings.showIcon ~= false,
         onChange = function(val)
             settings.showIcon = val
@@ -547,6 +905,7 @@ local function BuildCastBarStylingPanel(container)
         -- the fill re-measures under the drag.
         AddMirrorFirstSliderRow(panel, {
             label = "Icon Size",
+            setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.size,
             indent = true,
             min = 8, max = 64, step = 0.1,
             value = settings.iconSize or 16,
@@ -560,6 +919,7 @@ local function BuildCastBarStylingPanel(container)
         -- icon flush to the slot's edge and never reads them.
         AddSliderRow(panel, {
             label = "Icon X Offset",
+            setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.xOffset,
             indent = true,
             min = -50, max = 50, step = 0.1,
             value = settings.iconOffsetX or 0,
@@ -571,6 +931,7 @@ local function BuildCastBarStylingPanel(container)
 
         AddSliderRow(panel, {
             label = "Icon Y Offset",
+            setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.yOffset,
             indent = true,
             min = -50, max = 50, step = 0.1,
             value = settings.iconOffsetY or 0,
@@ -587,12 +948,17 @@ local function BuildCastBarStylingPanel(container)
             if CS.RefreshAdvancedSettingsPanel then
                 CS.RefreshAdvancedSettingsPanel()
             end
-        end, nil, { row = true, indent = true })
+        end, nil, {
+            row = true,
+            indent = true,
+            setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.borderThickness,
+        })
         local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
         if iconRenderMode ~= ST.BORDER_RENDER_MODE_CRISP then
             AddMirrorFirstSliderRow(panel, {
                 label = "Icon Border Size",
+                setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.borderSize,
                 indent = true,
                 min = 0, max = 4, step = 0.1,
                 value = settings.iconBorderSize or 1,
@@ -611,10 +977,12 @@ local function BuildCastBarStylingPanel(container)
     local function BuildIconAdvanced(panel)
         ST._BuildIconZoomControls(panel, settings, applyCastBar, {
             previewRefresh = castPreviewOnly,
+            setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.zoom,
         })
 
         AddCheckboxRow(panel, {
             label = "Icon on Right Side",
+            setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.rightSide,
             value = settings.iconFlipSide or false,
             onChange = function(val)
                 settings.iconFlipSide = val
@@ -624,6 +992,7 @@ local function BuildCastBarStylingPanel(container)
 
         AddCheckboxRow(panel, {
             label = "Icon Offset",
+            setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.offset,
             value = settings.iconOffset or false,
             onChange = function(val)
                 settings.iconOffset = val
@@ -646,6 +1015,7 @@ local function BuildCastBarStylingPanel(container)
 
     local channelTickRow = AddCheckboxRow(contentsLeft, {
         label = "Show Channel Tick Marks",
+        setting = CASTBAR_FINDER.contents and CASTBAR_FINDER.contents.ticks,
         value = settings.showChannelTickMarks == true,
         onChange = function(val)
             settings.showChannelTickMarks = val
@@ -657,6 +1027,7 @@ local function BuildCastBarStylingPanel(container)
     local function BuildChannelTickAdvanced(panel)
         AddMirrorFirstSliderRow(panel, {
             label = "Tick Mark Width",
+            setting = CASTBAR_FINDER.ticks and CASTBAR_FINDER.ticks.width,
             min = 1, max = 5, step = 0.1,
             value = settings.channelTickWidth or 1,
             set = function(val) settings.channelTickWidth = val end,
@@ -667,6 +1038,7 @@ local function BuildCastBarStylingPanel(container)
 
         AddColorRow(panel, {
             label = "Tick Mark Color",
+            setting = CASTBAR_FINDER.ticks and CASTBAR_FINDER.ticks.color,
             tbl = settings,
             key = "channelTickColor",
             default = {1, 1, 1, 0.8},
@@ -675,7 +1047,7 @@ local function BuildCastBarStylingPanel(container)
             onChange = castPreviewOnly,
         })
 
-        AddCheckboxRow(panel, {
+        local penultimateRow = AddCheckboxRow(panel, {
             label = "Highlight\nSecond-to-Last Tick",
             labelLines = 2,
             height = 42,
@@ -689,10 +1061,15 @@ local function BuildCastBarStylingPanel(container)
                 end
             end,
         })
+        if CASTBAR_FINDER.ticks and CASTBAR_FINDER.ticks.penultimate
+            and ST._BindSettingWidget then
+            ST._BindSettingWidget(penultimateRow, CASTBAR_FINDER.ticks.penultimate)
+        end
 
         if settings.highlightPenultimateChannelTick == true then
             AddColorRow(panel, {
                 label = "Highlight Color",
+                setting = CASTBAR_FINDER.ticks and CASTBAR_FINDER.ticks.highlightColor,
                 indent = true,
                 tbl = settings,
                 key = "penultimateChannelTickColor",
@@ -712,6 +1089,7 @@ local function BuildCastBarStylingPanel(container)
 
     local nameRow = AddCheckboxRow(contentsRight, {
         label = "Show Spell Name",
+        setting = CASTBAR_FINDER.contents and CASTBAR_FINDER.contents.name,
         value = settings.showNameText ~= false,
         onChange = function(val)
             settings.showNameText = val
@@ -726,12 +1104,21 @@ local function BuildCastBarStylingPanel(container)
         AddFontControls(panel, settings, "name", {
             size = 10, sizeMin = 6, sizeMax = 24, sizeStep = 0.1,
             font = "Friz Quadrata TT", outline = "OUTLINE",
-        }, applyCastBar, { row = true, previewRefresh = castPreviewOnly })
+        }, applyCastBar, {
+            row = true,
+            previewRefresh = castPreviewOnly,
+            settings = CASTBAR_FINDER.name and {
+                size = CASTBAR_FINDER.name.fontSize,
+                font = CASTBAR_FINDER.name.font,
+                outline = CASTBAR_FINDER.name.outline,
+            },
+        })
 
         -- deferCommit is deliberately absent, matching the stock color-picker call
         -- this row replaced.
         AddColorRow(panel, {
             label = "Font Color",
+            setting = CASTBAR_FINDER.name and CASTBAR_FINDER.name.color,
             tbl = settings,
             key = "nameFontColor",
             default = {1, 1, 1, 1},
@@ -748,6 +1135,7 @@ local function BuildCastBarStylingPanel(container)
 
     local castTimeRow = AddCheckboxRow(contentsRight, {
         label = "Show Cast Time",
+        setting = CASTBAR_FINDER.contents and CASTBAR_FINDER.contents.time,
         value = settings.showCastTimeText ~= false,
         onChange = function(val)
             settings.showCastTimeText = val
@@ -763,12 +1151,21 @@ local function BuildCastBarStylingPanel(container)
         AddFontControls(panel, settings, "castTime", {
             size = 10, sizeMin = 6, sizeMax = 24, sizeStep = 0.1,
             font = "Friz Quadrata TT", outline = "OUTLINE",
-        }, applyCastBar, { row = true, previewRefresh = castPreviewOnly })
+        }, applyCastBar, {
+            row = true,
+            previewRefresh = castPreviewOnly,
+            settings = CASTBAR_FINDER.castTime and {
+                size = CASTBAR_FINDER.castTime.fontSize,
+                font = CASTBAR_FINDER.castTime.font,
+                outline = CASTBAR_FINDER.castTime.outline,
+            },
+        })
 
         -- deferCommit is deliberately absent, matching the stock color-picker call
         -- this row replaced.
         AddColorRow(panel, {
             label = "Font Color",
+            setting = CASTBAR_FINDER.castTime and CASTBAR_FINDER.castTime.color,
             tbl = settings,
             key = "castTimeFontColor",
             default = {1, 1, 1, 1},
@@ -780,6 +1177,7 @@ local function BuildCastBarStylingPanel(container)
         -- Both offsets place the countdown on the canvas facsimile too.
         AddMirrorFirstSliderRow(panel, {
             label = "X Offset",
+            setting = CASTBAR_FINDER.castTime and CASTBAR_FINDER.castTime.xOffset,
             min = -50, max = 50, step = 0.1,
             value = settings.castTimeXOffset or 0,
             set = function(val) settings.castTimeXOffset = val end,
@@ -790,6 +1188,7 @@ local function BuildCastBarStylingPanel(container)
 
         AddMirrorFirstSliderRow(panel, {
             label = "Y Offset",
+            setting = CASTBAR_FINDER.castTime and CASTBAR_FINDER.castTime.yOffset,
             min = -20, max = 20, step = 0.1,
             value = settings.castTimeYOffset or 0,
             set = function(val) settings.castTimeYOffset = val end,

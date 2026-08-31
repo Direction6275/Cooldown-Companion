@@ -678,8 +678,10 @@ CS.SetActiveAdvancedSettingsToggleButton = SetActiveAdvancedSettingsToggleButton
 --   collapseKeys - the section collapse keys the route force-opens (both the
 --                  raw key and its lens-resolved variant)
 --   sectionId    - the override section the route is about, when it is one
+--   settingKey   - an exact Settings Finder descriptor id
 --   rowKey       - the setting row's advanced key, when the route names one
 -- The rebuild the navigation triggers consumes it, most specific match first:
+-- BindSettingWidget records the exact finder row (settingKey),
 -- AddAdvancedToggle records the row wearing the matching gear (rowKey),
 -- LensSection:Chrome records the section's anchor row (sectionId - attached
 -- in every lens mode, so an entry-lens destination still lands on its row),
@@ -707,6 +709,16 @@ local NAV_FLASH_EDGE_FADE = 28
 local NAV_SCROLL_PAD = 24
 
 local navFlashFrame
+
+-- SettingsFinder.lua calls this from its widget-binding seam. It lives here
+-- with the rest of the pending-highlight consumer so the finder does not need
+-- to know anything about AceGUI's pooled row anatomy.
+local function RecordSettingHighlightWidget(widget, settingKey)
+    local pending = CS.pendingSettingHighlight
+    if pending and pending.settingKey == settingKey and not pending.settingWidget then
+        pending.settingWidget = widget
+    end
+end
 
 local function EnsureNavFlashFrame()
     if navFlashFrame then
@@ -997,7 +1009,8 @@ local function FireNavSettingHighlight()
     if not pending then
         return
     end
-    local widget = pending.rowWidget or pending.sectionRowWidget or pending.headingWidget
+    local widget = pending.settingWidget or pending.rowWidget
+        or pending.sectionRowWidget or pending.headingWidget
     local frame = widget and widget.frame
     if not (frame and frame:IsVisible()) then
         return
@@ -1057,6 +1070,7 @@ end
 
 ST._ScheduleNavSettingHighlight = ScheduleNavSettingHighlight
 ST._BeginNavSettingHighlightRefresh = BeginNavSettingHighlightRefresh
+ST._RecordSettingHighlightWidget = RecordSettingHighlightWidget
 ST._BeginLensAnchorBuild = BeginLensAnchorBuild
 ST._EndLensAnchorBuild = EndLensAnchorBuild
 ST._CaptureLensAnchor = CaptureLensAnchor
@@ -2340,6 +2354,7 @@ local function BuildIndependentAnchorTargetRow(container, anchor, applyFn, opts)
 
     local targetRow = ST._AddEditBoxRow(container, {
         label = "Anchor to Frame",
+        setting = opts and opts.setting,
         indent = opts and opts.indent,
         value = currentTargetName,
         onEnterPressed = function(text)
@@ -2978,6 +2993,12 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
         indent = opts and opts.indent,
         onChange = ApplyCompactLayout,
     })
+    -- This row's visible label carries a transient suppression suffix, so bind
+    -- after construction instead of replacing that runtime explanation with
+    -- the catalog's stable searchable label.
+    if opts and opts.setting and ST._BindSettingWidget then
+        ST._BindSettingWidget(compactCb, opts.setting)
+    end
 
     -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
     -- both rows go straight onto the panel scroll and their (?) badges chain off
@@ -2995,6 +3016,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
         if not centeredActive then
             local growthRow = ST._AddDropdownRow(panel, {
                 label = "Growth Direction",
+                setting = opts and opts.settings and opts.settings.growth,
                 list = GetCompactGrowthDirectionLabels(group),
                 order = {"start", "center", "end"},
                 value = NormalizeCompactGrowthDirection(group.compactGrowthDirection),
@@ -3028,6 +3050,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
         end
         local maxVisRow = ST._AddSliderRow(panel, {
             label = "Max Visible Buttons",
+            setting = opts and opts.settings and opts.settings.maxVisible,
             min = 1, max = math.max(totalButtons, 1), step = 1,
             value = group.maxVisibleButtons == 0 and totalButtons or group.maxVisibleButtons,
             onChange = function(val)
@@ -3294,6 +3317,7 @@ end
 local function AddAnchorDropdown(container, tbl, key, default, refreshFn, label, opts)
     return ST._AddDropdownRow(container, {
         label = label or "Anchor",
+        setting = opts and opts.setting,
         indent = opts and opts.indent,
         list = CS.anchorDropdownList,
         order = CS.anchorPoints,
@@ -3326,6 +3350,7 @@ local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts
     local sizeKey = prefix .. "FontSize"
     local outlineKey = prefix .. "FontOutline"
     local indent = opts and opts.indent
+    local settings = opts and opts.settings or nil
     -- The slider is mirror-first everywhere. Resources and cast bars provide
     -- their own canvas callback; ordinary panel controls use the pinned
     -- Buttons preview. Dropdowns have no drag phase and remain discrete live
@@ -3334,6 +3359,7 @@ local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts
 
     ST._AddSliderRow(container, {
         label = "Font Size",
+        setting = settings and settings.size,
         indent = indent,
         min = defaults.sizeMin or 8,
         max = defaults.sizeMax or 32,
@@ -3361,6 +3387,7 @@ local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts
     -- rebuilds the list the displayed text is read from.
     local fontRow = ST._AddDropdownRow(container, {
         label = "Font",
+        setting = settings and settings.font,
         indent = indent,
         pulloutWidth = FONT_ROW_PULLOUT_WIDTH,
     })
@@ -3373,6 +3400,7 @@ local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts
 
     local outlineRow = ST._AddDropdownRow(container, {
         label = "Font Outline",
+        setting = settings and settings.outline,
         indent = indent,
     })
     CS.SetupFontOutlineDropdown(outlineRow)
@@ -3394,10 +3422,12 @@ local function AddOffsetSliders(container, tbl, xKey, yKey, defaults, refreshFn,
     local range = defaults.range or 20
     local step = defaults.step or 0.1
     local indent = opts and opts.indent
+    local settings = opts and opts.settings or nil
     local previewRefresh = (opts and opts.previewRefresh) or RefreshSelectedButtonsPreview
 
     local xRow = ST._AddSliderRow(container, {
         label = "X Offset",
+        setting = settings and settings.x,
         indent = indent,
         min = -range, max = range, step = step,
         value = tbl[xKey] or defaults.x or 0,
@@ -3412,6 +3442,7 @@ local function AddOffsetSliders(container, tbl, xKey, yKey, defaults, refreshFn,
 
     local yRow = ST._AddSliderRow(container, {
         label = "Y Offset",
+        setting = settings and settings.y,
         indent = indent,
         min = -range, max = range, step = step,
         value = tbl[yKey] or defaults.y or 0,
@@ -3480,6 +3511,7 @@ local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disab
 
     local modeRow = ST._AddDropdownRow(container, {
         label = "Border Thickness",
+        setting = opts and opts.setting,
         indent = opts and opts.indent,
         list = modeList,
         order = modeOrder,
@@ -3546,7 +3578,7 @@ ST._SetupColorCallbacks = SetupColorCallbacks
 -- opts (optional): { previewRefresh = fn(), onBaselinePreview = fn(val),
 -- onBaselineCommitted = fn(val), isGlobal = bool, disabled = bool,
 -- disabledText = string, infoButtons = table, hideHeading = bool,
--- leadingRows = fn(leftTarget, rightTarget) }
+-- leadingRows = fn(leftTarget, rightTarget), settings = finder descriptor map }
 --
 -- Row grammar only (RowWidgets.lua): a collapsible left-aligned section header
 -- and a two-column grid of fixed-height rows. Every caller opts in, so there is
@@ -3554,6 +3586,7 @@ ST._SetupColorCallbacks = SetupColorCallbacks
 -- that still state it.
 local function BuildAlphaControls(container, config, refreshFn, collapseKey, opts)
     opts = opts or {}
+    local finderSettings = opts.settings or {}
     local tabInfoBtns = opts.infoButtons or CS.tabInfoButtons
     local controlsDisabled = opts.disabled == true
     local previewRefresh = opts.previewRefresh or RefreshSelectedButtonsPreview
@@ -3624,6 +3657,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
 
     ST._AddSliderRow(leftTarget, {
         label = "Baseline Alpha",
+        setting = finderSettings.baseline,
         min = 0, max = 1, step = 0.1,
         value = config.baselineAlpha or 1,
         disabled = controlsDisabled,
@@ -3661,9 +3695,9 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
             ApplyAlphaSettingChange(true)
         end
 
-        local function AddTriStateToggle(parent, label, visibleKey, hiddenKey)
+        local function AddTriStateToggle(parent, label, visibleKey, hiddenKey, setting)
             local val = GetTriState(visibleKey, hiddenKey)
-            return ST._AddCheckboxRow(parent, {
+            local row = ST._AddCheckboxRow(parent, {
                 label = TriStateLabel(label, val),
                 tristate = true,
                 value = val,
@@ -3672,12 +3706,18 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
                     ApplyTriState(visibleKey, hiddenKey, newVal)
                 end,
             })
+            -- Keep the visible state suffix. Passing setting= above would
+            -- replace the dynamic label with the catalog's base label.
+            if setting and ST._BindSettingWidget then
+                ST._BindSettingWidget(row, setting)
+            end
+            return row
         end
 
-        AddTriStateToggle(leftTarget, "In Combat", "forceAlphaInCombat", "forceHideInCombat")
-        AddTriStateToggle(leftTarget, "Out of Combat", "forceAlphaOutOfCombat", "forceHideOutOfCombat")
-        AddTriStateToggle(leftTarget, "Regular Mount", "forceAlphaRegularMounted", "forceHideRegularMounted")
-        AddTriStateToggle(leftTarget, "Skyriding", "forceAlphaDragonriding", "forceHideDragonriding")
+        AddTriStateToggle(leftTarget, "In Combat", "forceAlphaInCombat", "forceHideInCombat", finderSettings.combat)
+        AddTriStateToggle(leftTarget, "Out of Combat", "forceAlphaOutOfCombat", "forceHideOutOfCombat", finderSettings.outOfCombat)
+        AddTriStateToggle(leftTarget, "Regular Mount", "forceAlphaRegularMounted", "forceHideRegularMounted", finderSettings.regularMount)
+        AddTriStateToggle(leftTarget, "Skyriding", "forceAlphaDragonriding", "forceHideDragonriding", finderSettings.skyriding)
 
         local mountedActive = config.forceAlphaRegularMounted
             or config.forceHideRegularMounted
@@ -3696,6 +3736,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
             -- stays in their column.
             ST._AddCheckboxRow(leftTarget, {
                 label = "Include Druid Travel Form (applies to both)",
+                setting = finderSettings.travelForm,
                 indent = true,
                 value = travelVal,
                 disabled = controlsDisabled,
@@ -3711,16 +3752,20 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
 
         local targetVal = config.forceAlphaTargetExists or false
         local targetLabel = targetVal and "Target Exists - |cff00ff00Fully Visible|r" or "Target Exists"
-        ST._AddCheckboxRow(rightTarget, {
+        local targetRow = ST._AddCheckboxRow(rightTarget, {
             label = targetLabel,
             value = targetVal,
             disabled = controlsDisabled,
             onChange = function(val) ApplyForceFlag("forceAlphaTargetExists", val, true) end,
         })
+        if finderSettings.target and ST._BindSettingWidget then
+            ST._BindSettingWidget(targetRow, finderSettings.target)
+        end
 
         if targetVal then
             ST._AddCheckboxRow(rightTarget, {
                 label = "Enemy Only",
+                setting = finderSettings.enemy,
                 indent = true,
                 value = config.forceAlphaTargetEnemyOnly or false,
                 disabled = controlsDisabled,
@@ -3730,12 +3775,15 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
 
         local focusVal = config.forceAlphaFocusExists or false
         local focusLabel = focusVal and "Focus Exists - |cff00ff00Fully Visible|r" or "Focus Exists"
-        ST._AddCheckboxRow(rightTarget, {
+        local focusRow = ST._AddCheckboxRow(rightTarget, {
             label = focusLabel,
             value = focusVal,
             disabled = controlsDisabled,
             onChange = function(val) ApplyForceFlag("forceAlphaFocusExists", val, true) end,
         })
+        if finderSettings.focus and ST._BindSettingWidget then
+            ST._BindSettingWidget(focusRow, finderSettings.focus)
+        end
 
         local mouseoverVal = config.forceAlphaMouseover or false
         local mouseoverLabel = mouseoverVal and "Mouseover - |cff00ff00Fully Visible|r" or "Mouseover"
@@ -3745,6 +3793,9 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
             disabled = controlsDisabled,
             onChange = function(val) ApplyForceFlag("forceAlphaMouseover", val, true) end,
         })
+        if finderSettings.mouseover and ST._BindSettingWidget then
+            ST._BindSettingWidget(mouseoverRow, finderSettings.mouseover)
+        end
         -- Row grammar: the badge hangs off the end of the label. The anchor
         -- args below are a placeholder - AnchorRowBadge re-points it.
         ST._AnchorRowBadge(mouseoverRow, CreateInfoButton(mouseoverRow.frame, mouseoverRow.frame, "LEFT", "LEFT", 0, 0, {
@@ -3760,15 +3811,17 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
 
         ST._AddCheckboxRow(rightTarget, {
             label = "Custom Fade Settings",
+            setting = finderSettings.customFade,
             value = config.customFade or false,
             disabled = controlsDisabled,
             onChange = ApplyCustomFade,
         })
 
         if config.customFade then
-        local function AddFadeSlider(label, key, default)
+        local function AddFadeSlider(label, key, default, setting)
             ST._AddSliderRow(rightTarget, {
                 label = label,
+                setting = setting,
                 indent = true,
                 min = 0, max = 5, step = 0.1,
                 value = config[key] or default,
@@ -3781,9 +3834,9 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
             })
         end
 
-        AddFadeSlider("Fade Delay (seconds)", "fadeDelay", 1)
-        AddFadeSlider("Fade In Duration (seconds)", "fadeInDuration", 0.2)
-        AddFadeSlider("Fade Out Duration (seconds)", "fadeOutDuration", 0.2)
+        AddFadeSlider("Fade Delay (seconds)", "fadeDelay", 1, finderSettings.fadeDelay)
+        AddFadeSlider("Fade In Duration (seconds)", "fadeInDuration", 0.2, finderSettings.fadeIn)
+        AddFadeSlider("Fade Out Duration (seconds)", "fadeOutDuration", 0.2, finderSettings.fadeOut)
         end -- config.customFade
     end
 end

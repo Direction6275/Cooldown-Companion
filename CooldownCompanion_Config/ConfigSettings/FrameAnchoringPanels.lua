@@ -48,6 +48,95 @@ local UNIT_FRAME_OPTIONS = {
 }
 local UNIT_FRAME_ORDER = { "", "blizzard", "uuf", "elvui", "ellesmere", "msuf", "custom" }
 
+------------------------------------------------------------------------
+-- SETTINGS FINDER CATALOG
+------------------------------------------------------------------------
+
+local FRAME_ANCHORING_FINDER = { player = {}, target = {} }
+
+local function FrameAnchoringFinderEnabled()
+    local settings = CooldownCompanion:GetFrameAnchoringSettings()
+    return settings and settings.enabled == true
+end
+
+local function PlayerFrameFinderCustom()
+    local settings = CooldownCompanion:GetFrameAnchoringSettings()
+    return settings and settings.enabled == true and settings.unitFrameAddon == "custom"
+end
+
+local function TargetFrameFinderPositioned()
+    local settings = CooldownCompanion:GetFrameAnchoringSettings()
+    return settings and settings.enabled == true and settings.mirroring ~= true
+end
+
+if ST._DefineSettingRoute then
+    local playerAnchoring = ST._DefineSettingRoute({
+        idPrefix = "playerFrame.settings.anchoring",
+        scope = "playerFrame",
+        tab = "settings",
+        tabLabel = "Settings",
+        section = "anchoring",
+        sectionLabel = "Frame Anchoring",
+        collapseKeys = { "unitframe_player_anchoring" },
+        rowScope = "detail",
+    })
+    FRAME_ANCHORING_FINDER.player.anchoring = playerAnchoring:Settings({
+        enabled = { label = "Enable Frame Anchoring" },
+        unitFrames = { label = "Unit Frames", applies = FrameAnchoringFinderEnabled },
+        mirrorTarget = { label = "Mirror target from player", applies = FrameAnchoringFinderEnabled },
+        inheritAlpha = { label = "Inherit group alpha", applies = FrameAnchoringFinderEnabled },
+        playerFrameName = { label = "Player Frame Name", aliases = { "custom player frame" }, applies = PlayerFrameFinderCustom },
+        targetFrameName = { label = "Target Frame Name", aliases = { "custom target frame" }, applies = PlayerFrameFinderCustom },
+    })
+
+    FRAME_ANCHORING_FINDER.player.position = ST._DefineSettingRoute({
+        idPrefix = "playerFrame.settings.position",
+        scope = "playerFrame",
+        tab = "settings",
+        tabLabel = "Settings",
+        section = "position",
+        sectionLabel = "Player Frame Position",
+        collapseKeys = { "unitframe_player_position" },
+        rowScope = "detail",
+        applies = FrameAnchoringFinderEnabled,
+    }):Settings({
+        anchorPoint = { label = "Anchor Point" },
+        relativePoint = { label = "Relative Anchor Point" },
+        xOffset = { label = "X Offset" },
+        yOffset = { label = "Y Offset" },
+    })
+
+    FRAME_ANCHORING_FINDER.target.anchoring = ST._DefineSettingRoute({
+        idPrefix = "targetFrame.settings.anchoring",
+        scope = "targetFrame",
+        tab = "settings",
+        tabLabel = "Settings",
+        section = "anchoring",
+        sectionLabel = "Frame Anchoring",
+        collapseKeys = { "unitframe_target_anchoring" },
+        rowScope = "detail",
+    }):Settings({
+        enabled = { label = "Enable Frame Anchoring" },
+    })
+
+    FRAME_ANCHORING_FINDER.target.position = ST._DefineSettingRoute({
+        idPrefix = "targetFrame.settings.position",
+        scope = "targetFrame",
+        tab = "settings",
+        tabLabel = "Settings",
+        section = "position",
+        sectionLabel = "Target Frame Position",
+        collapseKeys = { "unitframe_target_position" },
+        rowScope = "detail",
+        applies = TargetFrameFinderPositioned,
+    }):Settings({
+        anchorPoint = { label = "Anchor Point" },
+        relativePoint = { label = "Relative Anchor Point" },
+        xOffset = { label = "X Offset" },
+        yOffset = { label = "Y Offset" },
+    })
+end
+
 local function ValidateCustomUnitFrameName(frameName)
     if not frameName or frameName == "" then
         return true
@@ -79,9 +168,10 @@ end
 -- does not share it: the name row sits in the grid's LEFT column and its Pick
 -- button on the matching line of the RIGHT one. Both columns are List-layout,
 -- so line N on the left meets line N on the right across the 16px gutter.
-local function AddCustomFrameNameRow(nameLeft, nameRight, settings, key, label)
+local function AddCustomFrameNameRow(nameLeft, nameRight, settings, key, label, finderSetting)
     AddEditBoxRow(nameLeft, {
         label = label,
+        setting = finderSetting,
         indent = true,
         value = settings[key] or "",
         onEnterPressed = function(text)
@@ -123,9 +213,11 @@ end
 
 -- The nine anchor points, as the two dropdown rows every position section
 -- opens with: mine first, then the target's.
-local function AddFramePositionRows(posLeft, posRight, frameSettings, anchorDefault, relativeDefault, onChanged)
+local function AddFramePositionRows(posLeft, posRight, frameSettings, anchorDefault, relativeDefault,
+        onChanged, finderSettings)
     AddDropdownRow(posLeft, {
         label = "Anchor Point",
+        setting = finderSettings and finderSettings.anchorPoint,
         list = ANCHOR_POINT_LABELS,
         order = ANCHOR_POINTS,
         value = frameSettings.anchorPoint or anchorDefault,
@@ -137,6 +229,7 @@ local function AddFramePositionRows(posLeft, posRight, frameSettings, anchorDefa
 
     AddDropdownRow(posLeft, {
         label = "Relative Anchor Point",
+        setting = finderSettings and finderSettings.relativePoint,
         list = ANCHOR_POINT_LABELS,
         order = ANCHOR_POINTS,
         value = frameSettings.relativePoint or relativeDefault,
@@ -148,6 +241,7 @@ local function AddFramePositionRows(posLeft, posRight, frameSettings, anchorDefa
 
     AddSliderRow(posRight, {
         label = "X Offset",
+        setting = finderSettings and finderSettings.xOffset,
         min = -200, max = 200, step = 0.1,
         value = frameSettings.xOffset or 0,
         onRelease = function(val)
@@ -158,6 +252,7 @@ local function AddFramePositionRows(posLeft, posRight, frameSettings, anchorDefa
 
     AddSliderRow(posRight, {
         label = "Y Offset",
+        setting = finderSettings and finderSettings.yOffset,
         min = -200, max = 200, step = 0.1,
         value = frameSettings.yOffset or 0,
         onRelease = function(val)
@@ -191,6 +286,8 @@ local function BuildFrameAnchoringPlayerPanel(container)
 
         local enableRow = AddCheckboxRow(generalLeft, {
             label = "Enable Frame Anchoring",
+            setting = FRAME_ANCHORING_FINDER.player.anchoring
+                and FRAME_ANCHORING_FINDER.player.anchoring.enabled,
             value = settings.enabled,
             onChange = function(val)
                 settings.enabled = val
@@ -209,6 +306,8 @@ local function BuildFrameAnchoringPlayerPanel(container)
             -- is widened - a 140px control would otherwise open a 140px menu.
             AddDropdownRow(generalLeft, {
                 label = "Unit Frames",
+                setting = FRAME_ANCHORING_FINDER.player.anchoring
+                    and FRAME_ANCHORING_FINDER.player.anchoring.unitFrames,
                 pulloutWidth = UNIT_FRAME_PULLOUT_WIDTH,
                 list = UNIT_FRAME_OPTIONS,
                 order = UNIT_FRAME_ORDER,
@@ -222,6 +321,8 @@ local function BuildFrameAnchoringPlayerPanel(container)
 
             AddCheckboxRow(generalRight, {
                 label = "Mirror target from player",
+                setting = FRAME_ANCHORING_FINDER.player.anchoring
+                    and FRAME_ANCHORING_FINDER.player.anchoring.mirrorTarget,
                 value = settings.mirroring,
                 onChange = function(val)
                     settings.mirroring = val
@@ -232,6 +333,8 @@ local function BuildFrameAnchoringPlayerPanel(container)
 
             AddCheckboxRow(generalRight, {
                 label = "Inherit group alpha",
+                setting = FRAME_ANCHORING_FINDER.player.anchoring
+                    and FRAME_ANCHORING_FINDER.player.anchoring.inheritAlpha,
                 value = settings.inheritAlpha,
                 onChange = function(val)
                     settings.inheritAlpha = val
@@ -245,8 +348,12 @@ local function BuildFrameAnchoringPlayerPanel(container)
         -- whatever the section grid above happened to end on.
         if settings.enabled and settings.unitFrameAddon == "custom" then
             local nameLeft, nameRight = BeginRowGrid(container)
-            AddCustomFrameNameRow(nameLeft, nameRight, settings, "customPlayerFrame", "Player Frame Name")
-            AddCustomFrameNameRow(nameLeft, nameRight, settings, "customTargetFrame", "Target Frame Name")
+            AddCustomFrameNameRow(nameLeft, nameRight, settings, "customPlayerFrame",
+                "Player Frame Name", FRAME_ANCHORING_FINDER.player.anchoring
+                    and FRAME_ANCHORING_FINDER.player.anchoring.playerFrameName)
+            AddCustomFrameNameRow(nameLeft, nameRight, settings, "customTargetFrame",
+                "Target Frame Name", FRAME_ANCHORING_FINDER.player.anchoring
+                    and FRAME_ANCHORING_FINDER.player.anchoring.targetFrameName)
         end
     end
 
@@ -265,7 +372,7 @@ local function BuildFrameAnchoringPlayerPanel(container)
         AddFramePositionRows(posLeft, posRight, settings.player, "RIGHT", "LEFT", function()
             CooldownCompanion:ApplyFrameAnchoring()
             CooldownCompanion:RefreshConfigPanel()
-        end)
+        end, FRAME_ANCHORING_FINDER.player.position)
     end
 end
 
@@ -285,6 +392,8 @@ local function BuildFrameAnchoringTargetPanel(container)
 
         AddCheckboxRow(generalLeft, {
             label = "Enable Frame Anchoring",
+            setting = FRAME_ANCHORING_FINDER.target.anchoring
+                and FRAME_ANCHORING_FINDER.target.anchoring.enabled,
             value = settings.enabled,
             onChange = function(val)
                 settings.enabled = val
@@ -319,7 +428,7 @@ local function BuildFrameAnchoringTargetPanel(container)
         local posLeft, posRight = BeginRowGrid(container)
         AddFramePositionRows(posLeft, posRight, settings.target, "LEFT", "RIGHT", function()
             CooldownCompanion:ApplyFrameAnchoring()
-        end)
+        end, FRAME_ANCHORING_FINDER.target.position)
     end
 end
 

@@ -1325,11 +1325,9 @@ local function GetOrCreateAutocompleteDropdown()
     dropdown:SetFrameStrata("TOOLTIP")
     dropdown:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
     })
     dropdown:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
-    dropdown:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    ST.CreatePixelBorders(dropdown, 0, 0, 0, 1)
     dropdown:Hide()
 
     dropdown.rows = {}
@@ -1342,14 +1340,16 @@ local function GetOrCreateAutocompleteDropdown()
 
         -- Keyboard selection highlight (manually shown/hidden)
         local selectionBg = row:CreateTexture(nil, "BACKGROUND")
-        selectionBg:SetAllPoints()
+        selectionBg:SetPoint("TOPLEFT", row, "TOPLEFT", -1, i == 1 and 1 or 0)
+        selectionBg:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 1, 0)
         selectionBg:SetColorTexture(0.2, 0.4, 0.7, 0.4)
         selectionBg:Hide()
         row.selectionBg = selectionBg
 
         -- Mouse hover highlight
         local highlight = row:CreateTexture(nil, "HIGHLIGHT")
-        highlight:SetAllPoints()
+        highlight:SetPoint("TOPLEFT", row, "TOPLEFT", -1, i == 1 and 1 or 0)
+        highlight:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 1, 0)
         highlight:SetColorTexture(0.3, 0.5, 0.8, 0.3)
 
         -- Icon
@@ -1411,6 +1411,9 @@ end
 -- Autocomplete: Show results anchored to an edit box widget
 ------------------------------------------------------------------------
 local function ShowAutocompleteResults(results, anchorWidget, onSelect, options)
+    if CS.HideSettingsFinderResults then
+        CS.HideSettingsFinderResults()
+    end
     local dropdown = GetOrCreateAutocompleteDropdown()
     dropdown._onSelect = onSelect
     dropdown._anchorWidget = anchorWidget

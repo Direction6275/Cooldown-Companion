@@ -174,6 +174,12 @@ local GetResourceGapFieldConfig = RBP.GetResourceGapFieldConfig
 local ResolveTrackedAuraSpellIDFromText = RBP.ResolveTrackedAuraSpellIDFromText
 local BuildTrackedAuraAutocompleteCache = RBP.BuildTrackedAuraAutocompleteCache
 
+-- Static settings-finder descriptors are registered at the bottom of this
+-- module, after every dynamic label helper has been defined. Builders execute
+-- only after the file has loaded, so they can bind through this table without
+-- constructing any hidden settings page.
+local RESOURCE_FINDER = {}
+
 local function EnsureResourceLayoutAnchor(settings, layout)
     if type(layout.independentAnchor) ~= "table" then
         layout.independentAnchor = type(settings.independentAnchor) == "table" and CopyTable(settings.independentAnchor)
@@ -309,11 +315,12 @@ end
 -- Row grammar has no percent readout (the value box is the readout, and the
 -- range lives in the row tooltip), so this reads 0 - 1 rather than 0% - 100%.
 -- The stored value is unchanged, and Baseline Alpha already reads that way.
-function HealthResource.AddOpacitySlider(container, health, key, label, defaultValue, applyBars)
+function HealthResource.AddOpacitySlider(container, health, key, label, defaultValue, applyBars, setting)
     -- The canvas draws the health bar with the real health styler, so both
     -- opacities land there; applyBars is the caller's commit chain.
     AddMirrorFirstSliderRow(container, {
         label = label,
+        setting = setting,
         min = 0, max = 1, step = 0.05,
         value = tonumber(health[key]) or defaultValue,
         set = function(val) health[key] = val end,
@@ -323,10 +330,11 @@ function HealthResource.AddOpacitySlider(container, health, key, label, defaultV
     })
 end
 
-function HealthResource.AddEffectTextureDropdown(container, health, key, label, applyBars)
+function HealthResource.AddEffectTextureDropdown(container, health, key, label, applyBars, setting)
     local textureOptions, textureOrder = HealthResource.GetEffectTextureOptions()
     return AddDropdownRow(container, {
         label = label,
+        setting = setting,
         pulloutWidth = MEDIA_PULLOUT_WIDTH,
         list = textureOptions,
         order = textureOrder,
@@ -348,6 +356,7 @@ function HealthResource.AddEffectStyleControls(container, checkbox, health, opti
         -- this row replaced.
         AddColorRow(panel, {
             label = options.colorLabel,
+            setting = options.settings and options.settings.color,
             tbl = health,
             key = options.colorKey,
             default = options.defaultColor,
@@ -355,7 +364,9 @@ function HealthResource.AddEffectStyleControls(container, checkbox, health, opti
             onConfirm = applyBars,
             onChange = applyBars,
         })
-        HealthResource.AddEffectTextureDropdown(panel, health, options.textureKey, options.textureLabel, applyBars)
+        HealthResource.AddEffectTextureDropdown(panel, health, options.textureKey,
+            options.textureLabel, applyBars,
+            options.settings and options.settings.texture)
         if type(options.buildExtra) == "function" then
             options.buildExtra(panel)
         end
@@ -402,6 +413,10 @@ local function BuildResourceTextControls(container, settings, powerType, display
     local baseSettings = settings.resources[capturedPt]
     local resSettings = SeedSpecResourceDisplaySettings(settings, capturedPt, displaySpecID, CS._ResourceTextDisplayKeys) or baseSettings
     local name = POWER_NAMES[capturedPt] or ("Power " .. capturedPt)
+    local finderText = isHealthResource
+        and RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthText
+        or RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[capturedPt]
+            and RESOURCE_FINDER.detail[capturedPt].text
 
     local showTextValue = ReadDisplaySetting(baseSettings, resSettings, "showText", nil)
     local showTextEnabled
@@ -418,6 +433,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
 
     local cb = AddCheckboxRow(textLeft, {
         label = "Show " .. name .. " Text",
+        setting = finderText and finderText.show,
         value = showTextEnabled,
         onChange = function(val)
             resSettings.showText = val == true
@@ -487,6 +503,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
         end
         AddDropdownRow(panel, {
             label = "Text Format",
+            setting = finderText and finderText.advanced and finderText.advanced.format,
             pulloutWidth = MEDIA_PULLOUT_WIDTH,
             list = textFormatOptions,
             order = textFormatOrder,
@@ -525,6 +542,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
         -- anchor and offsets from exactly these keys.
         AddMirrorFirstSliderRow(panel, {
             label = "Font Size",
+            setting = finderText and finderText.advanced and finderText.advanced.size,
             min = 6, max = 24, step = 1,
             value = ReadDisplaySetting(baseSettings, resSettings, "textFontSize", DEFAULT_RESOURCE_TEXT_SIZE),
             set = function(val) resSettings.textFontSize = val end,
@@ -539,6 +557,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
         -- because SetList rebuilds the list the displayed text is read from.
         local fontRow = AddDropdownRow(panel, {
             label = "Font",
+            setting = finderText and finderText.advanced and finderText.advanced.font,
             pulloutWidth = MEDIA_PULLOUT_WIDTH,
         })
         CS.SetupFontDropdown(fontRow)
@@ -548,7 +567,10 @@ local function BuildResourceTextControls(container, settings, powerType, display
             applyBars()
         end)
 
-        local outlineRow = AddDropdownRow(panel, { label = "Font Outline" })
+        local outlineRow = AddDropdownRow(panel, {
+            label = "Font Outline",
+            setting = finderText and finderText.advanced and finderText.advanced.outline,
+        })
         CS.SetupFontOutlineDropdown(outlineRow)
         outlineRow:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textFontOutline", DEFAULT_RESOURCE_TEXT_OUTLINE))
         CS.SetFontOutlineDropdownCallback(outlineRow, function(widget, event, val)
@@ -561,6 +583,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
         -- while the picker is open, and the canvas tracks the colour there.
         AddColorRow(panel, {
             label = "Text Color",
+            setting = finderText and finderText.advanced and finderText.advanced.color,
             tbl = resSettings,
             key = "textFontColor",
             default = DEFAULT_RESOURCE_TEXT_COLOR,
@@ -574,6 +597,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
         -- rebuild by hand on every render.
         AddDropdownRow(panel, {
             label = "Text Anchor",
+            setting = finderText and finderText.advanced and finderText.advanced.anchor,
             list = CS.anchorDropdownList,
             order = CS.anchorPoints,
             value = ReadDisplaySetting(baseSettings, resSettings, "textAnchor", DEFAULT_RESOURCE_TEXT_ANCHOR),
@@ -585,6 +609,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
 
         AddMirrorFirstSliderRow(panel, {
             label = "Text X Offset",
+            setting = finderText and finderText.advanced and finderText.advanced.x,
             min = -50, max = 50, step = 0.1,
             value = ReadDisplaySetting(baseSettings, resSettings, "textXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET),
             set = function(val) resSettings.textXOffset = val end,
@@ -595,6 +620,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
 
         AddMirrorFirstSliderRow(panel, {
             label = "Text Y Offset",
+            setting = finderText and finderText.advanced and finderText.advanced.y,
             min = -50, max = 50, step = 0.1,
             value = ReadDisplaySetting(baseSettings, resSettings, "textYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET),
             set = function(val) resSettings.textYOffset = val end,
@@ -606,6 +632,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
         if HIDE_AT_ZERO_ELIGIBLE[capturedPt] then
             AddCheckboxRow(panel, {
                 label = "Hide at 0",
+                setting = finderText and finderText.advanced and finderText.advanced.hideAtZero,
                 value = ReadDisplaySetting(baseSettings, resSettings, "hideTextAtZero", false) == true,
                 onChange = function(val)
                     resSettings.hideTextAtZero = val == true
@@ -632,6 +659,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
     local rechargeEnabled = ReadDisplaySetting(baseSettings, resSettings, "showRechargeText", DEFAULT_RESOURCE_RECHARGE_TEXT_ENABLED) == true
     local rechargeCb = AddCheckboxRow(textRight, {
         label = "Show " .. name .. " Recharge Text",
+        setting = finderText and finderText.recharge,
         value = rechargeEnabled,
         onChange = function(val)
             resSettings.showRechargeText = val == true
@@ -660,6 +688,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
 
         AddDropdownRow(panel, {
             label = "Show Recharge Text On",
+            setting = finderText and finderText.rechargeAdvanced
+                and finderText.rechargeAdvanced.mode,
             pulloutWidth = MEDIA_PULLOUT_WIDTH,
             list = RECHARGE_TEXT_MODES,
             order = RECHARGE_TEXT_MODE_ORDER,
@@ -677,6 +707,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
         -- above, and hand-written for the same ReadDisplaySetting reason.
         AddSliderRow(panel, {
             label = "Font Size",
+            setting = finderText and finderText.rechargeAdvanced
+                and finderText.rechargeAdvanced.size,
             min = 6, max = 24, step = 1,
             value = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextFontSize", DEFAULT_RESOURCE_TEXT_SIZE),
             onChange = function(val)
@@ -690,6 +722,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
 
         local fontRow = AddDropdownRow(panel, {
             label = "Font",
+            setting = finderText and finderText.rechargeAdvanced
+                and finderText.rechargeAdvanced.font,
             pulloutWidth = MEDIA_PULLOUT_WIDTH,
         })
         CS.SetupFontDropdown(fontRow)
@@ -699,7 +733,11 @@ local function BuildResourceTextControls(container, settings, powerType, display
             CooldownCompanion:ApplyResourceBars()
         end)
 
-        local outlineRow = AddDropdownRow(panel, { label = "Font Outline" })
+        local outlineRow = AddDropdownRow(panel, {
+            label = "Font Outline",
+            setting = finderText and finderText.rechargeAdvanced
+                and finderText.rechargeAdvanced.outline,
+        })
         CS.SetupFontOutlineDropdown(outlineRow)
         outlineRow:SetValue(ReadDisplaySetting(baseSettings, resSettings, "rechargeTextFontOutline", DEFAULT_RESOURCE_TEXT_OUTLINE))
         CS.SetFontOutlineDropdownCallback(outlineRow, function(widget, event, val)
@@ -711,6 +749,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
         -- stock color-picker call this row replaced.
         AddColorRow(panel, {
             label = "Text Color",
+            setting = finderText and finderText.rechargeAdvanced
+                and finderText.rechargeAdvanced.color,
             tbl = resSettings,
             key = "rechargeTextFontColor",
             default = DEFAULT_RESOURCE_TEXT_COLOR,
@@ -720,6 +760,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
 
         AddDropdownRow(panel, {
             label = "Text Anchor",
+            setting = finderText and finderText.rechargeAdvanced
+                and finderText.rechargeAdvanced.anchor,
             list = CS.anchorDropdownList,
             order = CS.anchorPoints,
             value = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextAnchor", DEFAULT_RESOURCE_TEXT_ANCHOR),
@@ -731,6 +773,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
 
         AddSliderRow(panel, {
             label = "Text X Offset",
+            setting = finderText and finderText.rechargeAdvanced
+                and finderText.rechargeAdvanced.x,
             min = -50, max = 50, step = 0.1,
             value = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET),
             onChange = function(val)
@@ -744,6 +788,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
 
         AddSliderRow(panel, {
             label = "Text Y Offset",
+            setting = finderText and finderText.rechargeAdvanced
+                and finderText.rechargeAdvanced.y,
             min = -50, max = 50, step = 0.1,
             value = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET),
             onChange = function(val)
@@ -799,6 +845,8 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
 
         AddCheckboxRow(fillLeft, {
             label = "Use Health Gradient",
+            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill
+                and RESOURCE_FINDER.primary.healthFill.gradient,
             value = fillGradientEnabled == true,
             onChange = function(val)
                 health.healthBarGradient = val == true
@@ -808,13 +856,16 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         })
 
         if fillGradientEnabled == true then
-            AddColorRow(fillLeft, { label = "Full Health", indent = true, tbl = health, key = "healthBarFullColor", default = DEFAULT_HEALTH_BAR_FULL_COLOR, onConfirm = applyBars, onChange = applyBars })
-            AddColorRow(fillLeft, { label = "Half Health", indent = true, tbl = health, key = "healthBarHalfColor", default = DEFAULT_HEALTH_BAR_HALF_COLOR, onConfirm = applyBars, onChange = applyBars })
-            AddColorRow(fillLeft, { label = "Low Health", indent = true, tbl = health, key = "healthBarLowColor", default = DEFAULT_HEALTH_BAR_LOW_COLOR, onConfirm = applyBars, onChange = applyBars })
+            AddColorRow(fillLeft, { label = "Full Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.full, indent = true, tbl = health, key = "healthBarFullColor", default = DEFAULT_HEALTH_BAR_FULL_COLOR, onConfirm = applyBars, onChange = applyBars })
+            AddColorRow(fillLeft, { label = "Half Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.half, indent = true, tbl = health, key = "healthBarHalfColor", default = DEFAULT_HEALTH_BAR_HALF_COLOR, onConfirm = applyBars, onChange = applyBars })
+            AddColorRow(fillLeft, { label = "Low Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.low, indent = true, tbl = health, key = "healthBarLowColor", default = DEFAULT_HEALTH_BAR_LOW_COLOR, onConfirm = applyBars, onChange = applyBars })
         else
-            AddColorRow(fillLeft, { label = "Health Color", indent = true, tbl = health, key = "healthBarColor", default = DEFAULT_HEALTH_BAR_COLOR, onConfirm = applyBars, onChange = applyBars })
+            AddColorRow(fillLeft, { label = "Health Color", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.color, indent = true, tbl = health, key = "healthBarColor", default = DEFAULT_HEALTH_BAR_COLOR, onConfirm = applyBars, onChange = applyBars })
         end
-        HealthResource.AddOpacitySlider(fillRight, health, "healthBarOpacity", "Health Opacity", DEFAULT_HEALTH_BAR_OPACITY, applyBars)
+        HealthResource.AddOpacitySlider(fillRight, health, "healthBarOpacity",
+            "Health Opacity", DEFAULT_HEALTH_BAR_OPACITY, applyBars,
+            RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill
+                and RESOURCE_FINDER.primary.healthFill.opacity)
     end
 
     local healthMissingKey = "rb_health_missing"
@@ -831,6 +882,8 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
 
         AddCheckboxRow(missingLeft, {
             label = "Use Missing Health Gradient",
+            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing
+                and RESOURCE_FINDER.primary.healthMissing.gradient,
             value = gradientEnabled == true,
             onChange = function(val)
                 health.healthBackgroundGradient = val == true
@@ -840,14 +893,17 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         })
 
         if gradientEnabled == true then
-            AddColorRow(missingLeft, { label = "Missing Health Full", indent = true, tbl = health, key = "healthBackgroundFullColor", default = DEFAULT_HEALTH_BACKGROUND_FULL_COLOR, onConfirm = applyBars, onChange = applyBars })
-            AddColorRow(missingLeft, { label = "Missing Health Half", indent = true, tbl = health, key = "healthBackgroundHalfColor", default = DEFAULT_HEALTH_BACKGROUND_HALF_COLOR, onConfirm = applyBars, onChange = applyBars })
-            AddColorRow(missingLeft, { label = "Missing Health Low", indent = true, tbl = health, key = "healthBackgroundLowColor", default = DEFAULT_HEALTH_BACKGROUND_LOW_COLOR, onConfirm = applyBars, onChange = applyBars })
+            AddColorRow(missingLeft, { label = "Missing Health Full", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.full, indent = true, tbl = health, key = "healthBackgroundFullColor", default = DEFAULT_HEALTH_BACKGROUND_FULL_COLOR, onConfirm = applyBars, onChange = applyBars })
+            AddColorRow(missingLeft, { label = "Missing Health Half", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.half, indent = true, tbl = health, key = "healthBackgroundHalfColor", default = DEFAULT_HEALTH_BACKGROUND_HALF_COLOR, onConfirm = applyBars, onChange = applyBars })
+            AddColorRow(missingLeft, { label = "Missing Health Low", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.low, indent = true, tbl = health, key = "healthBackgroundLowColor", default = DEFAULT_HEALTH_BACKGROUND_LOW_COLOR, onConfirm = applyBars, onChange = applyBars })
         else
-            AddColorRow(missingLeft, { label = "Missing Health Color", indent = true, tbl = health, key = "healthBackgroundColor", default = DEFAULT_HEALTH_BACKGROUND_COLOR, onConfirm = applyBars, onChange = applyBars })
+            AddColorRow(missingLeft, { label = "Missing Health Color", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.color, indent = true, tbl = health, key = "healthBackgroundColor", default = DEFAULT_HEALTH_BACKGROUND_COLOR, onConfirm = applyBars, onChange = applyBars })
         end
 
-        HealthResource.AddOpacitySlider(missingRight, health, "healthBackgroundOpacity", "Missing Health Opacity", DEFAULT_HEALTH_BACKGROUND_OPACITY, applyBars)
+        HealthResource.AddOpacitySlider(missingRight, health, "healthBackgroundOpacity",
+            "Missing Health Opacity", DEFAULT_HEALTH_BACKGROUND_OPACITY, applyBars,
+            RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing
+                and RESOURCE_FINDER.primary.healthMissing.opacity)
     end
 
     BuildResourceTextControls(container, settings, HealthResource.ID, specID, applyBars, "rb_health_text")
@@ -865,6 +921,8 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
 
     local absorbsCb = AddCheckboxRow(effectsLeft, {
         label = "Show Absorbs",
+        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffects
+            and RESOURCE_FINDER.primary.healthEffects.absorbs,
         value = health.showAbsorbs == true,
         onChange = function(val)
             health.showAbsorbs = val == true
@@ -880,10 +938,14 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         colorLabel = "Absorb Color",
         textureLabel = "Absorb Texture",
         defaultColor = DEFAULT_HEALTH_ABSORB_COLOR,
+        settings = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffectAdvanced
+            and RESOURCE_FINDER.primary.healthEffectAdvanced.absorbs,
     }, applyBars)
 
     local healAbsorbsCb = AddCheckboxRow(effectsLeft, {
         label = "Show Healing Absorbs",
+        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffects
+            and RESOURCE_FINDER.primary.healthEffects.healingAbsorbs,
         value = health.showHealAbsorbs == true,
         onChange = function(val)
             health.showHealAbsorbs = val == true
@@ -899,10 +961,14 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         colorLabel = "Healing Absorb Color",
         textureLabel = "Healing Absorb Texture",
         defaultColor = DEFAULT_HEALTH_HEAL_ABSORB_COLOR,
+        settings = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffectAdvanced
+            and RESOURCE_FINDER.primary.healthEffectAdvanced.healingAbsorbs,
     }, applyBars)
 
     local incomingHealsCb = AddCheckboxRow(effectsRight, {
         label = "Show Incoming Heals",
+        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffects
+            and RESOURCE_FINDER.primary.healthEffects.incomingHeals,
         value = health.showIncomingHeals == true,
         onChange = function(val)
             health.showIncomingHeals = val == true
@@ -918,10 +984,14 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         colorLabel = "Incoming Heal Color",
         textureLabel = "Incoming Heal Texture",
         defaultColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR,
+        settings = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffectAdvanced
+            and RESOURCE_FINDER.primary.healthEffectAdvanced.incomingHeals,
     }, applyBars)
 
     local lowHealthAlertCb = AddCheckboxRow(effectsRight, {
         label = "Show Low Health Alert",
+        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffects
+            and RESOURCE_FINDER.primary.healthEffects.lowHealth,
         value = health.showLowHealthAlert == true,
         onChange = function(val)
             health.showLowHealthAlert = val == true
@@ -937,9 +1007,15 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         colorLabel = "Low Health Alert Color",
         textureLabel = "Low Health Alert Texture",
         defaultColor = DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR,
+        settings = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffectAdvanced
+            and RESOURCE_FINDER.primary.healthEffectAdvanced.lowHealth,
         buildExtra = function(panel)
             AddCheckboxRow(panel, {
                 label = "Pulse Missing Health Only",
+                setting = RESOURCE_FINDER.primary
+                    and RESOURCE_FINDER.primary.healthEffectAdvanced
+                    and RESOURCE_FINDER.primary.healthEffectAdvanced.lowHealth
+                    and RESOURCE_FINDER.primary.healthEffectAdvanced.lowHealth.missingOnly,
                 value = health.healthLowHealthAlertMissingHealthOnly == true,
                 onChange = function(val)
                     health.healthLowHealthAlertMissingHealthOnly = val == true
@@ -1098,6 +1174,8 @@ local function BuildResourceBarAnchoringPanel(container)
 
         enableCb = AddCheckboxRow(togglesLeft, {
             label = "Enable Resource Bars",
+            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.toggles
+                and RESOURCE_FINDER.primary.toggles.enabled,
             value = settings.enabled,
             onChange = function(val)
                 settings.enabled = val
@@ -1115,6 +1193,8 @@ local function BuildResourceBarAnchoringPanel(container)
         if settings.enabled and classID and not NO_MANA_CLASSES[classID] then
             AddCheckboxRow(togglesLeft, {
                 label = "Hide Mana for Non-Healer Specs",
+                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.toggles
+                    and RESOURCE_FINDER.primary.toggles.hideMana,
                 value = settings.hideManaForNonHealer ~= false,
                 onChange = function(val)
                     settings.hideManaForNonHealer = val
@@ -1128,6 +1208,8 @@ local function BuildResourceBarAnchoringPanel(container)
         if settings.enabled and classID == 11 then
             local keepSpecResourcesRow = AddCheckboxRow(togglesLeft, {
                 label = "Keep Spec Resources in All Forms",
+                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.toggles
+                    and RESOURCE_FINDER.primary.toggles.keepDruidResources,
                 value = settings.keepSpecResourcesInAllForms == true,
                 onChange = function(val)
                     settings.keepSpecResourcesInAllForms = val == true
@@ -1162,6 +1244,8 @@ local function BuildResourceBarAnchoringPanel(container)
 
             AddCheckboxRow(togglesRight, {
                 label = "Show " .. name,
+                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.showResource
+                    and RESOURCE_FINDER.primary.showResource[pt],
                 value = enabled,
                 onChange = function(val)
                     if not settings.resources[pt] then
@@ -1197,6 +1281,7 @@ local function BuildResourceBarAnchoringPanel(container)
         isGlobal = group and group.isGlobal,
         disabled = not isIndependentStack and layout.inheritAlpha == true,
         previewRefresh = RefreshLayoutOrderPreviewForDrag,
+        settings = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.alpha,
     })
 end
 
@@ -1248,6 +1333,8 @@ local function BuildResourceBarPositioningPanel(container)
 
         AddDropdownRow(placementLeft, {
             label = "Anchoring Mode",
+            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.placement
+                and RESOURCE_FINDER.primary.placement.anchoring,
             list = {
                 attached = "Attached to Panel",
                 independent = "Independent",
@@ -1265,6 +1352,8 @@ local function BuildResourceBarPositioningPanel(container)
 
         AddDropdownRow(placementLeft, {
             label = "Bar Orientation",
+            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.placement
+                and RESOURCE_FINDER.primary.placement.orientation,
             list = {
                 horizontal = "Horizontal",
                 vertical = "Vertical",
@@ -1282,6 +1371,8 @@ local function BuildResourceBarPositioningPanel(container)
 
         AddDropdownRow(placementLeft, {
             label = "Vertical Fill Direction",
+            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.placement
+                and RESOURCE_FINDER.primary.placement.verticalFill,
             indent = true,
             list = {
                 bottom_to_top = "Bottom to Top",
@@ -1304,6 +1395,8 @@ local function BuildResourceBarPositioningPanel(container)
         if layout.independentAnchorEnabled ~= true then
             AddCheckboxRow(placementRight, {
                 label = "Inherit panel alpha",
+                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.placement
+                    and RESOURCE_FINDER.primary.placement.inheritAlpha,
                 value = layout.inheritAlpha,
                 onChange = function(val)
                     layout.inheritAlpha = val == true
@@ -1333,6 +1426,8 @@ local function BuildResourceBarPositioningPanel(container)
         -- reposition once, on release.
         AddMirrorFirstSliderRow(sizeRight, {
             label = "Bar Spacing",
+            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
+                and RESOURCE_FINDER.primary.size.spacing,
             min = 0, max = 20, step = 0.1,
             value = layout.barSpacing or settings.barSpacing or 3.6,
             set = function(val) layout.barSpacing = val end,
@@ -1348,6 +1443,8 @@ local function BuildResourceBarPositioningPanel(container)
         -- Segment Gap
         AddMirrorFirstSliderRow(sizeRight, {
             label = "Segment Gap",
+            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
+                and RESOURCE_FINDER.primary.size.segmentGap,
             min = 0, max = 20, step = 0.1,
             value = layout.segmentGap or settings.segmentGap or 4,
             set = function(val) layout.segmentGap = val end,
@@ -1381,6 +1478,8 @@ local function BuildResourceBarPositioningPanel(container)
             BuildIndependentAnchorTargetRow(targetLeft, anchor, refreshResourceBarAnchor, {
                 row = true,
                 pickContainer = targetRight,
+                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
+                    and RESOURCE_FINDER.primary.anchor.frame,
             })
 
             -- LEFT column: how the stack is placed - the drag toggle and the
@@ -1391,6 +1490,8 @@ local function BuildResourceBarPositioningPanel(container)
 
             AddCheckboxRow(stackLeft, {
                 label = "Unlock Placement",
+                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
+                    and RESOURCE_FINDER.primary.anchor.unlock,
                 value = not layout.independentAnchorLocked,
                 onChange = function(val)
                     layout.independentAnchorLocked = not val
@@ -1401,12 +1502,24 @@ local function BuildResourceBarPositioningPanel(container)
                 end,
             })
 
-            AddAnchorDropdown(stackLeft, anchor, "point", "CENTER", refreshResourceBarAnchor, "Anchor Point", { row = true })
-            AddAnchorDropdown(stackLeft, anchor, "relativePoint", "CENTER", refreshResourceBarAnchor, "Relative Point", { row = true })
+            AddAnchorDropdown(stackLeft, anchor, "point", "CENTER",
+                refreshResourceBarAnchor, "Anchor Point", {
+                    row = true,
+                    setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
+                        and RESOURCE_FINDER.primary.anchor.point,
+                })
+            AddAnchorDropdown(stackLeft, anchor, "relativePoint", "CENTER",
+                refreshResourceBarAnchor, "Relative Point", {
+                    row = true,
+                    setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
+                        and RESOURCE_FINDER.primary.anchor.relativePoint,
+                })
 
             -- The canvas sizes an independent stack's slots from this value.
             AddMirrorFirstSliderRow(stackRight, {
                 label = "Bar Width",
+                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
+                    and RESOURCE_FINDER.primary.anchor.width,
                 min = 20, max = 600, step = 1,
                 value = layout.independentWidth or settings.independentWidth or 200,
                 set = function(val) layout.independentWidth = val end,
@@ -1423,6 +1536,8 @@ local function BuildResourceBarPositioningPanel(container)
             -- on release.
             AddSliderRow(stackRight, {
                 label = "X Offset",
+                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
+                    and RESOURCE_FINDER.primary.anchor.x,
                 min = -2000, max = 2000, step = 0.1,
                 value = anchor.x or 0,
                 onRelease = function(val)
@@ -1434,6 +1549,8 @@ local function BuildResourceBarPositioningPanel(container)
 
             AddSliderRow(stackRight, {
                 label = "Y Offset",
+                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
+                    and RESOURCE_FINDER.primary.anchor.y,
                 min = -2000, max = 2000, step = 0.1,
                 value = anchor.y or 0,
                 onRelease = function(val)
@@ -1464,6 +1581,11 @@ local function BuildResourceBarPositioningPanel(container)
 
             AddSliderRow(posLeft, {
                 label = gapLabel,
+                setting = gapField == "verticalXOffset"
+                    and RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.attached
+                        and RESOURCE_FINDER.primary.attached.x
+                    or RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.attached
+                        and RESOURCE_FINDER.primary.attached.y,
                 min = -100, max = 100, step = 0.1,
                 value = gapValue,
                 onChange = function(val)
@@ -1516,6 +1638,11 @@ local function BuildBarHeightControls(container, settings, layout)
     -- override below), so the stack resizes under the drag.
     AddMirrorFirstSliderRow(container, {
         label = thicknessLabel,
+        setting = thicknessField == "barWidth"
+            and RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
+                and RESOURCE_FINDER.primary.size.width
+            or RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
+                and RESOURCE_FINDER.primary.size.height,
         min = 4, max = 40, step = 0.1,
         value = thicknessValue,
         disabled = layout.customBarHeights or false,
@@ -1531,6 +1658,11 @@ local function BuildBarHeightControls(container, settings, layout)
 
     local customHeightsCb = AddCheckboxRow(container, {
         label = customThicknessLabel,
+        setting = thicknessField == "barWidth"
+            and RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
+                and RESOURCE_FINDER.primary.size.customWidths
+            or RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
+                and RESOURCE_FINDER.primary.size.customHeights,
         value = layout.customBarHeights or false,
         onChange = function(val)
             local wasEnabled = layout.customBarHeights == true
@@ -1586,6 +1718,11 @@ local function BuildBarHeightControls(container, settings, layout)
             local rowLabel = name .. " " .. thicknessLabel
             AddMirrorFirstSliderRow(panel, {
                 label = rowLabel,
+                setting = thicknessField == "barWidth"
+                    and RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.customWidth
+                        and RESOURCE_FINDER.primary.customWidth[renderPt]
+                    or RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.customHeight
+                        and RESOURCE_FINDER.primary.customHeight[renderPt],
                 tooltip = { rowLabel },
                 min = 4, max = 40, step = 0.1,
                 value = resThickness,
@@ -1745,6 +1882,9 @@ local function BuildResourceColorControls(container, settings, powerType, specID
         }
         AddColorRow(index <= leftCount and colorLeft or colorRight, {
             label = descriptor.label,
+            setting = RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[powerType]
+                and RESOURCE_FINDER.detail[powerType].colors
+                and RESOURCE_FINDER.detail[powerType].colors[capturedKey],
             tbl = proxy,
             key = capturedKey,
             default = capturedDefault,
@@ -1847,9 +1987,10 @@ end
 --
 -- onEnter takes AddEditBoxRow's (text, widget) contract; the widget it hands
 -- back is the row, which forwards SetText to the embedded stock EditBox.
-local function AddThresholdTickValueRow(panel, label, text, buttonText, onEnter, onButton)
+local function AddThresholdTickValueRow(panel, label, text, buttonText, onEnter, onButton, setting)
     local valueRow = AddEditBoxRow(panel, {
         label = label,
+        setting = setting,
         -- Value labels name their resource ("Fury Threshold Value (>=)"), which
         -- can outrun the label side of a narrow panel row.
         tooltip = { label },
@@ -1877,10 +2018,12 @@ local function AddThresholdTickValueRow(panel, label, text, buttonText, onEnter,
     panel:AddChild(buttonRow)
 end
 
-local function AddThresholdTickEnableCheckbox(container, settings, powerType, specID, settingKey, label, advKey)
+local function AddThresholdTickEnableCheckbox(container, settings, powerType, specID,
+    settingKey, label, advKey, finderSetting)
     local enabled = ReadSpecOverrideKey(settings, powerType, specID, settingKey, false) == true
     local checkbox = AddCheckboxRow(container, {
         label = label,
+        setting = finderSetting,
         value = enabled,
         onChange = function(val)
             local wasEnabled = ReadSpecOverrideKey(settings, powerType, specID, settingKey, false) == true
@@ -1997,7 +2140,9 @@ local function AddThresholdTickEntryEditor(panel, options)
 
     for index, entry in ipairs(entries) do
         local errorKey = options.errorPrefix .. "_" .. tostring(index)
-        AddThresholdTickValueRow(panel, options.valueLabel, tostring(entry.value), "Remove",
+        local valueSetting = options.valueSettings and options.valueSettings[index]
+        local valueLabel = valueSetting and valueSetting.label or options.valueLabel
+        AddThresholdTickValueRow(panel, valueLabel, tostring(entry.value), "Remove",
             function(text, widget)
                 commitValue(index, text, widget)
             end,
@@ -2008,7 +2153,8 @@ local function AddThresholdTickEntryEditor(panel, options)
                 options.writeEntries(updated)
                 options.applyBars()
                 RefreshAdvancedSettingsPanelSoon()
-            end)
+            end,
+            valueSetting)
 
         if thresholdTickEditorErrors[errorKey] then
             AddThresholdTickHelperLabel(panel, "|cffff7777" .. thresholdTickEditorErrors[errorKey] .. "|r")
@@ -2021,9 +2167,12 @@ local function AddThresholdTickEntryEditor(panel, options)
         -- deferCommit is deliberately absent, matching the stock color-picker call
         -- this row replaced: the bound table IS the throwaway proxy, so a drag
         -- value resting in it cannot reach a live renderer.
+        local colorSetting = options.colorSettings and options.colorSettings[index]
+        local colorLabel = colorSetting and colorSetting.label or options.colorLabel
         AddColorRow(panel, {
-            label = options.colorLabel,
-            tooltip = { options.colorLabel },
+            label = colorLabel,
+            setting = colorSetting,
+            tooltip = { colorLabel },
             tbl = proxy,
             key = proxyKey,
             default = options.defaultColor,
@@ -2160,6 +2309,9 @@ end
 
 local function BuildResourceAuraOverlaySection(container, settings, powerType, specID, resourceName)
     local sectionKey = "rb_aura_overlay_" .. powerType
+    local finderAura = RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[powerType]
+        and RESOURCE_FINDER.detail[powerType].aura
+
     local heading, collapsed =
         BuildCollapsibleSection(container, "Aura Tracking", sectionKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
@@ -2198,6 +2350,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
 
     AddCheckboxRow(auraLeft, {
         label = "Enable " .. resourceName .. " Aura Tracking",
+        setting = finderAura and finderAura.enable,
         value = enabled,
         onChange = function(value)
             WriteSpecOverrideKey(settings, powerType, specID, "auraOverlayEnabled", value == true)
@@ -2330,6 +2483,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
 
         local laneRow = AddCheckboxRow(auraLeft, {
             label = "Stack Lane",
+            setting = finderAura and finderAura.stackLane,
             indent = true,
             value = laneOn,
             onChange = function(value)
@@ -2364,6 +2518,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
             if maxStacks or inCombat then
                 AddColorRow(auraLeft, {
                     label = "Lane Color",
+                    setting = finderAura and finderAura.laneColor,
                     indent = true,
                     tbl = entry,
                     key = "auraLaneColor",
@@ -2396,6 +2551,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
         local fillOn = RB.IsResourceOverlayFillEnabled(entry)
         local fillRow = AddCheckboxRow(auraLeft, {
             label = "Recolor Fill",
+            setting = finderAura and finderAura.recolor,
             indent = true,
             value = fillOn,
             onChange = function(value)
@@ -2417,6 +2573,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
         if fillOn then
             AddColorRow(auraLeft, {
                 label = "Fill Color",
+                setting = finderAura and finderAura.fillColor,
                 indent = true,
                 tbl = entry,
                 key = "auraFillColor",
@@ -2430,6 +2587,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
     local borderOn = RB.IsResourceOverlayBorderEnabled(entry)
     AddCheckboxRow(auraRight, {
         label = "Border",
+        setting = finderAura and finderAura.border,
         value = borderOn,
         onChange = function(value)
             local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
@@ -2450,6 +2608,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
     local borderStyle = RB.GetResourceOverlayBorderStyle(entry)
     AddDropdownRow(auraRight, {
         label = "Border Style",
+        setting = finderAura and finderAura.borderStyle,
         indent = true,
         list = { solid = "Solid Border", pixel = "Pixel Glow" },
         order = { "solid", "pixel" },
@@ -2475,6 +2634,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
     -- the lane's own key falls back to it.
     AddColorRow(auraRight, {
         label = "Border Color",
+        setting = finderAura and finderAura.borderColor,
         indent = true,
         tbl = entry,
         key = "auraActiveColor",
@@ -2489,7 +2649,8 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
     -- opt-in, and every non-resource caller leaves it off.
     AddGlowSliderRows(auraRight, entry,
         borderStyle == "pixel" and "dashes" or "solid",
-        AURA_BORDER_SLIDER_KEYS, applyBars, 1, true, previewOnly)
+        AURA_BORDER_SLIDER_KEYS, applyBars, 1, true, previewOnly,
+        finderAura and finderAura.glow)
 end
 
 -- The max-stack border rows, shared by every stack-counted resource: the
@@ -2503,6 +2664,9 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
     -- show and edit ONE border. The label still names the resource whose
     -- panel this is — only the store is shared. Every other resource is its
     -- own canonical half, so nothing else moves.
+    local finderPowerType = powerType
+    local finderStack = RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[finderPowerType]
+        and RESOURCE_FINDER.detail[finderPowerType].stack
     powerType = RB.GetCanonicalPowerType(powerType)
     local keys = RB.MAX_STACK_BORDER_KEYS[powerType] or RB.MAX_STACK_BORDER_KEYS.default
     local resource = settings.resources and settings.resources[powerType]
@@ -2510,6 +2674,7 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
 
     local borderToggleRow = AddCheckboxRow(column, {
         label = "Max Stack Border",
+        setting = finderStack and finderStack.maxBorder,
         value = borderOn,
         onChange = function(value)
             if type(settings.resources[powerType]) ~= "table" then
@@ -2530,6 +2695,7 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
     local borderStyle = resource[keys.style] == "pixel" and "pixel" or "solid"
     AddDropdownRow(column, {
         label = "Border Style",
+        setting = finderStack and finderStack.maxStyle,
         indent = true,
         list = { solid = "Solid Border", pixel = "Pixel Glow" },
         order = { "solid", "pixel" },
@@ -2548,6 +2714,7 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
     })
     AddColorRow(column, {
         label = "Border Color",
+        setting = finderStack and finderStack.maxColor,
         indent = true,
         tbl = resource,
         key = keys.color,
@@ -2557,7 +2724,8 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
     })
     AddGlowSliderRows(column, resource,
         borderStyle == "pixel" and "dashes" or "solid",
-        keys, applyRows, 1, true, previewOnly)
+        keys, applyRows, 1, true, previewOnly,
+        finderStack and finderStack.maxGlow)
 end
 
 local function BuildResourceBarStylingPanel(container, sectionMode, opts)
@@ -2650,6 +2818,9 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
 
             AddDropdownRow(mwLeft, {
                 label = "Stack Display",
+                setting = RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[100]
+                    and RESOURCE_FINDER.detail[100].stack
+                    and RESOURCE_FINDER.detail[100].stack.display,
                 pulloutWidth = MEDIA_PULLOUT_WIDTH,
                 list = {
                     overlay = "Overlay",
@@ -2709,6 +2880,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
 
             AddDropdownRow(stackLeft, {
                 label = "Stack Display",
+                setting = RESOURCE_FINDER.detail
+                    and RESOURCE_FINDER.detail[resourceSettingsPowerType]
+                    and RESOURCE_FINDER.detail[resourceSettingsPowerType].stack
+                    and RESOURCE_FINDER.detail[resourceSettingsPowerType].stack.display,
                 pulloutWidth = MEDIA_PULLOUT_WIDTH,
                 list = {
                     segments = "Segmented",
@@ -2772,6 +2947,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     -- menu is widened - a 140px control would otherwise open a 140px menu.
     local texRow = AddDropdownRow(barLeft, {
         label = "Bar Texture",
+        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.bar
+            and RESOURCE_FINDER.primary.bar.texture,
         pulloutWidth = MEDIA_PULLOUT_WIDTH,
     })
     CS.SetupBarTextureDropdown(texRow, { list = GetResourceBarTextureOptions() })
@@ -2788,6 +2965,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         local brightnessLocked = ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked()
         AddMirrorFirstSliderRow(barLeft, {
             label = "Class Texture Brightness",
+            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.bar
+                and RESOURCE_FINDER.primary.bar.brightness,
             indent = true,
             min = 0.5, max = 2.0, step = 0.1,
             value = displayProfile.classBarBrightness or settings.classBarBrightness or 1.3,
@@ -2804,6 +2983,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
 
     local smoothingRow = AddDropdownRow(barRight, {
         label = "Segmented Smoothing",
+        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.bar
+            and RESOURCE_FINDER.primary.bar.smoothing,
         list = {
             [ST.SEGMENTED_SMOOTHING_ON] = "On",
             [ST.SEGMENTED_SMOOTHING_OFF] = "Off",
@@ -2827,6 +3008,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     -- Resource Background Color
     AddColorRow(barRight, {
         label = "Resource Background Color",
+        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.bar
+            and RESOURCE_FINDER.primary.bar.background,
         tbl = displayProfile,
         key = "backgroundColor",
         default = { 0, 0, 0, 0.5 },
@@ -2849,6 +3032,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
 
     AddDropdownRow(borderLeft, {
         label = "Border Style",
+        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.border
+            and RESOURCE_FINDER.primary.border.style,
         list = {
             pixel = "Pixel",
             none = "None",
@@ -2865,6 +3050,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     if (displayProfile.borderStyle or settings.borderStyle or "pixel") == "pixel" then
         AddColorRow(borderLeft, {
             label = "Border Color",
+            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.border
+                and RESOURCE_FINDER.primary.border.color,
             indent = true,
             tbl = displayProfile,
             key = "borderColor",
@@ -2877,12 +3064,18 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         local renderMode = ST._AddBorderRenderModeDropdown(borderRight, displayProfile, "borderRenderMode", function()
             CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:RefreshConfigPanel()
-        end, nil, { row = true })
+        end, nil, {
+            row = true,
+            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.border
+                and RESOURCE_FINDER.primary.border.thickness,
+        })
         local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
         if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
             AddMirrorFirstSliderRow(borderRight, {
                 label = "Border Size",
+                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.border
+                    and RESOURCE_FINDER.primary.border.size,
                 indent = true,
                 min = 0, max = 4, step = 0.1,
                 value = displayProfile.borderSize or settings.borderSize or 1,
@@ -2956,7 +3149,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                         _colorSpecID,
                         "segThresholdEnabled",
                         "Enable " .. resourceName .. " Threshold Colors",
-                        thresholdAdvKey
+                        thresholdAdvKey,
+                        RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[capturedPt]
+                            and RESOURCE_FINDER.detail[capturedPt].thresholds
+                            and RESOURCE_FINDER.detail[capturedPt].thresholds.enable
                     )
 
                     local function BuildSegmentedThresholdAdvanced(panel)
@@ -2967,8 +3163,16 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                             draftKey = thresholdAdvKey,
                             errorPrefix = thresholdAdvKey,
                             valueLabel = resourceName .. " Threshold Value (>=)",
+                            valueSettings = RESOURCE_FINDER.detail
+                                and RESOURCE_FINDER.detail[capturedPt]
+                                and RESOURCE_FINDER.detail[capturedPt].thresholds
+                                and RESOURCE_FINDER.detail[capturedPt].thresholds.values,
                             colorKey = "segThresholdColor",
                             colorLabel = resourceName .. " Threshold Color",
+                            colorSettings = RESOURCE_FINDER.detail
+                                and RESOURCE_FINDER.detail[capturedPt]
+                                and RESOURCE_FINDER.detail[capturedPt].thresholds
+                                and RESOURCE_FINDER.detail[capturedPt].thresholds.colors,
                             defaultColor = DEFAULT_SEG_THRESHOLD_COLOR,
                             hasAlpha = false,
                             addText = "Add Threshold Color",
@@ -3007,7 +3211,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                         _colorSpecID,
                         "continuousTickEnabled",
                         "Enable " .. resourceName .. " Tick Markers",
-                        tickAdvKey
+                        tickAdvKey,
+                        RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[capturedPt]
+                            and RESOURCE_FINDER.detail[capturedPt].thresholds
+                            and RESOURCE_FINDER.detail[capturedPt].thresholds.enable
                     )
 
                     -- Single rail (AdvancedSettingsPanel.lua): every row goes
@@ -3020,6 +3227,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                     local function BuildTickMarkerAdvanced(panel)
                         AddCheckboxRow(panel, {
                             label = "Show Only In Combat",
+                            setting = RESOURCE_FINDER.detail
+                                and RESOURCE_FINDER.detail[capturedPt]
+                                and RESOURCE_FINDER.detail[capturedPt].thresholds
+                                and RESOURCE_FINDER.detail[capturedPt].thresholds.combat,
                             value = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickCombatOnly", false),
                             onChange = function(val)
                                 WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickCombatOnly", val == true)
@@ -3032,6 +3243,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                         })
                         AddDropdownRow(panel, {
                             label = "Tick Mode",
+                            setting = RESOURCE_FINDER.detail
+                                and RESOURCE_FINDER.detail[capturedPt]
+                                and RESOURCE_FINDER.detail[capturedPt].thresholds
+                                and RESOURCE_FINDER.detail[capturedPt].thresholds.mode,
                             list = {
                                 percent = "Percent",
                                 absolute = "Absolute Value",
@@ -3061,8 +3276,18 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                             draftKey = tickAdvKey .. "_" .. tickMode,
                             errorPrefix = tickAdvKey .. "_" .. tickMode,
                             valueLabel = tickMode == "absolute" and (resourceName .. " Tick Absolute Value") or (resourceName .. " Tick Percent"),
+                            valueSettings = RESOURCE_FINDER.detail
+                                and RESOURCE_FINDER.detail[capturedPt]
+                                and RESOURCE_FINDER.detail[capturedPt].thresholds
+                                and (tickMode == "absolute"
+                                    and RESOURCE_FINDER.detail[capturedPt].thresholds.absoluteValues
+                                    or RESOURCE_FINDER.detail[capturedPt].thresholds.percentValues),
                             colorKey = "continuousTickColor",
                             colorLabel = resourceName .. " Tick Color",
+                            colorSettings = RESOURCE_FINDER.detail
+                                and RESOURCE_FINDER.detail[capturedPt]
+                                and RESOURCE_FINDER.detail[capturedPt].thresholds
+                                and RESOURCE_FINDER.detail[capturedPt].thresholds.colors,
                             defaultColor = DEFAULT_CONTINUOUS_TICK_COLOR,
                             hasAlpha = true,
                             addText = "Add Tick Marker",
@@ -3083,6 +3308,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                         local tickWidthLabel = resourceName .. " Tick Width"
                         AddMirrorFirstSliderRow(panel, {
                             label = tickWidthLabel,
+                            setting = RESOURCE_FINDER.detail
+                                and RESOURCE_FINDER.detail[capturedPt]
+                                and RESOURCE_FINDER.detail[capturedPt].thresholds
+                                and RESOURCE_FINDER.detail[capturedPt].thresholds.width,
                             tooltip = { tickWidthLabel },
                             min = 1, max = 10, step = 1,
                             value = tonumber(_tickWidthVal) or DEFAULT_CONTINUOUS_TICK_WIDTH,
@@ -3158,6 +3387,1278 @@ end
 
 local function BuildResourceBarHealthStylingPanel(container)
     BuildResourceBarStylingPanel(container, "health")
+end
+
+------------------------------------------------------------------------
+-- SETTINGS FINDER CATALOG
+------------------------------------------------------------------------
+
+-- All predicates below read already-resolved config state only. In
+-- particular, none of them call UnitClass, specialization APIs, spell APIs,
+-- or construct a settings page while a query is being typed.
+RESOURCE_FINDER.Settings = function(context)
+    return context and context.resourceSettings or nil
+end
+
+RESOURCE_FINDER.BarsEnabled = function(context)
+    local settings = RESOURCE_FINDER.Settings(context)
+    return settings and settings.enabled == true or false
+end
+
+RESOURCE_FINDER.SelectedPowerIs = function(context, powerType)
+    return tonumber(context and context.resourcePowerType) == tonumber(powerType)
+end
+
+RESOURCE_FINDER.SelectedResource = function(context, canonical)
+    local settings = RESOURCE_FINDER.Settings(context)
+    local powerType = tonumber(context and context.resourcePowerType)
+    if canonical and powerType ~= nil then
+        powerType = RB.GetCanonicalPowerType(powerType)
+    end
+    local resources = settings and settings.resources
+    return type(resources) == "table" and type(resources[powerType]) == "table"
+        and resources[powerType] or nil
+end
+
+RESOURCE_FINDER.SpecResource = function(context, powerType)
+    local settings = RESOURCE_FINDER.Settings(context)
+    local resources = settings and settings.resources
+    local resource = type(resources) == "table" and resources[powerType] or nil
+    if type(resource) ~= "table" then return nil end
+    local specID = tonumber(context and context.resourceSpecID)
+    local overrides = resource.specOverrides
+    return type(overrides) == "table" and specID
+        and (overrides[specID] or overrides[tostring(specID)]) or nil
+end
+
+RESOURCE_FINDER.ReadResourceValue = function(context, powerType, key, fallback)
+    local spec = RESOURCE_FINDER.SpecResource(context, powerType)
+    if type(spec) == "table" and spec[key] ~= nil then
+        return spec[key]
+    end
+    local settings = RESOURCE_FINDER.Settings(context)
+    local resource = settings and settings.resources and settings.resources[powerType]
+    if type(resource) == "table" and resource[key] ~= nil then
+        return resource[key]
+    end
+    return fallback
+end
+
+RESOURCE_FINDER.Layout = function(context)
+    return context and context._settingsFinderResourceLayout
+        or RESOURCE_FINDER.Settings(context)
+end
+
+RESOURCE_FINDER.DisplayProfile = function(context)
+    local settings = RESOURCE_FINDER.Settings(context)
+    local specID = tonumber(context and context.resourceSpecID)
+    local profiles = settings and settings.displayProfiles
+    if type(profiles) == "table" and specID then
+        return profiles[specID] or profiles[tostring(specID)] or settings
+    end
+    return settings
+end
+
+RESOURCE_FINDER.EffectiveTexture = function(context)
+    local settings = RESOURCE_FINDER.Settings(context)
+    local profile = RESOURCE_FINDER.DisplayProfile(context)
+    local texture = profile and profile.barTexture
+        or settings and settings.barTexture or "Solid"
+    return ST.GetEffectiveBarTextureName and ST.GetEffectiveBarTextureName(texture)
+        or texture
+end
+
+RESOURCE_FINDER.TextEnabled = function(context, powerType)
+    local value = RESOURCE_FINDER.ReadResourceValue(context, powerType, "showText", nil)
+    if powerType == RESOURCE_HEALTH
+        or SEGMENTED_TYPES[powerType] == true
+        or powerType == 100
+        or RB.AURA_STACK_RESOURCES[powerType] ~= nil
+    then
+        return value == true
+    end
+    return value ~= false
+end
+
+RESOURCE_FINDER.RechargeTextEnabled = function(context)
+    return RESOURCE_FINDER.ReadResourceValue(
+        context, 5, "showRechargeText", DEFAULT_RESOURCE_RECHARGE_TEXT_ENABLED) == true
+end
+
+RESOURCE_FINDER.ResourceEnabled = function(context, powerType)
+    local settings = RESOURCE_FINDER.Settings(context)
+    local resource = settings and settings.resources and settings.resources[powerType]
+    if powerType == RESOURCE_HEALTH then
+        return type(resource) == "table" and resource.enabled == true
+    end
+    return not (type(resource) == "table" and resource.enabled == false)
+end
+
+RESOURCE_FINDER.MaxBorderState = function(context)
+    local resource = RESOURCE_FINDER.SelectedResource(context, true)
+    local powerType = tonumber(context and context.resourcePowerType)
+    if not (resource and powerType) then return nil, nil end
+    local keys = RB.MAX_STACK_BORDER_KEYS[RB.GetCanonicalPowerType(powerType)]
+        or RB.MAX_STACK_BORDER_KEYS.default
+    return resource, keys
+end
+
+RESOURCE_FINDER.MaxBorderEnabled = function(context)
+    local resource, keys = RESOURCE_FINDER.MaxBorderState(context)
+    return resource and keys and resource[keys.enabled] == true or false
+end
+
+RESOURCE_FINDER.MaxBorderStyleIs = function(context, style)
+    local resource, keys = RESOURCE_FINDER.MaxBorderState(context)
+    if not (resource and keys and resource[keys.enabled] == true) then
+        return false
+    end
+    local current = resource[keys.style] == "pixel" and "pixel" or "solid"
+    return current == style
+end
+
+RESOURCE_FINDER.AuraEntry = function(context)
+    local settings = RESOURCE_FINDER.Settings(context)
+    local powerType = tonumber(context and context.resourcePowerType)
+    local specID = tonumber(context and context.resourceSpecID)
+    return settings and powerType and specID
+        and GetResourceAuraOverlayEntry(settings, powerType, specID) or nil
+end
+
+RESOURCE_FINDER.AuraEnabled = function(context)
+    local settings = RESOURCE_FINDER.Settings(context)
+    local powerType = tonumber(context and context.resourcePowerType)
+    local specID = tonumber(context and context.resourceSpecID)
+    return settings and powerType and specID
+        and IsResourceAuraOverlayEnabledConfig(settings, powerType, specID) or false
+end
+
+RESOURCE_FINDER.AuraBorderEnabled = function(context)
+    local entry = RESOURCE_FINDER.AuraEntry(context)
+    return entry and RB.IsResourceOverlayBorderEnabled(entry) or false
+end
+
+RESOURCE_FINDER.AuraBorderStyleIs = function(context, style)
+    local entry = RESOURCE_FINDER.AuraEntry(context)
+    return entry and RESOURCE_FINDER.AuraBorderEnabled(context)
+        and RB.GetResourceOverlayBorderStyle(entry) == style or false
+end
+
+RESOURCE_FINDER.SegThresholdEnabled = function(context, powerType)
+    return RESOURCE_FINDER.ReadResourceValue(
+        context, powerType, "segThresholdEnabled", false) == true
+end
+
+RESOURCE_FINDER.TickEnabled = function(context, powerType)
+    return RESOURCE_FINDER.ReadResourceValue(
+        context, powerType, "continuousTickEnabled", false) == true
+end
+
+RESOURCE_FINDER.TickMode = function(context, powerType)
+    local value = RESOURCE_FINDER.ReadResourceValue(
+        context, powerType, "continuousTickMode", DEFAULT_CONTINUOUS_TICK_MODE)
+    return value == "absolute" and "absolute" or "percent"
+end
+
+RESOURCE_FINDER.Bind = function(widget, descriptor)
+    if widget and descriptor and ST._BindSettingWidget then
+        ST._BindSettingWidget(widget, descriptor)
+    end
+    return widget
+end
+
+if ST._RegisterSettingsFinderContextPreparer then
+    ST._RegisterSettingsFinderContextPreparer(
+        { "resources", "resource" }, function(context)
+        local settings = RESOURCE_FINDER.Settings(context)
+        local specID = tonumber(context and context.resourceSpecID)
+            or GetCurrentConfigSpecID()
+        context._settingsFinderResourceLayout = RB.GetSpecLayoutOrder
+            and RB.GetSpecLayoutOrder(settings, specID) or settings
+
+        if context.scope == "resources" then
+            local active = {}
+            for _, powerType in ipairs(GetConfigActiveResources()) do
+                active[powerType] = true
+            end
+            context._settingsFinderActiveResourceSet = active
+        end
+    end)
+end
+
+if ST._DefineSettingRoute then
+    RESOURCE_FINDER.primary = {}
+    RESOURCE_FINDER.detail = {}
+
+    -- RESOURCE FINDER PRIMARY ROUTES
+    do
+        local route = ST._DefineSettingRoute({
+            idPrefix = "resources.general.toggles",
+            scope = "resources",
+            rowScope = "primary",
+            tab = "general",
+            tabLabel = "General",
+            section = "toggles",
+            sectionLabel = "Resource Toggles",
+            collapseKeys = { "rb_toggles" },
+            collapseStore = "resource",
+        })
+        RESOURCE_FINDER.primary.toggles = route:Settings({
+            enabled = {
+                label = "Enable Resource Bars",
+                aliases = { "resources on", "resource module" },
+            },
+            hideMana = {
+                label = "Hide Mana for Non-Healer Specs",
+                aliases = { "mana dps" },
+                applies = function(context)
+                    local classID = CooldownCompanion._playerClassID
+                    return RESOURCE_FINDER.BarsEnabled(context)
+                        and classID ~= nil
+                        and not ({ [1] = true, [3] = true, [4] = true,
+                            [6] = true, [12] = true })[classID]
+                end,
+            },
+            keepDruidResources = {
+                label = "Keep Spec Resources in All Forms",
+                aliases = { "druid forms", "persistent druid resources" },
+                applies = function(context)
+                    return RESOURCE_FINDER.BarsEnabled(context)
+                        and CooldownCompanion._playerClassID == 11
+                end,
+            },
+        })
+        RESOURCE_FINDER.primary.showResource = {}
+        for powerType, name in pairs(POWER_NAMES) do
+            local capturedPowerType = powerType
+            RESOURCE_FINDER.primary.showResource[capturedPowerType] = route:Setting({
+                key = "show_" .. tostring(capturedPowerType),
+                label = "Show " .. name,
+                aliases = { name .. " enabled" },
+                applies = function(context)
+                    local active = context and context._settingsFinderActiveResourceSet
+                    return RESOURCE_FINDER.BarsEnabled(context)
+                        and type(active) == "table"
+                        and active[capturedPowerType] == true
+                end,
+            })
+        end
+    end
+
+    RESOURCE_FINDER.primary.alpha = ST._DefineSettingRoute({
+        idPrefix = "resources.general.alpha",
+        scope = "resources",
+        rowScope = "primary",
+        tab = "general",
+        tabLabel = "General",
+        section = "alpha",
+        sectionLabel = "Alpha",
+        collapseKeys = { "rb_alpha" },
+        collapseStore = "resource",
+        applies = RESOURCE_FINDER.BarsEnabled,
+    }):Settings({
+        baseline = { label = "Baseline Alpha", aliases = { "opacity", "transparency" } },
+        combat = { label = "In Combat" },
+        outOfCombat = { label = "Out of Combat" },
+        regularMount = { label = "Regular Mount" },
+        skyriding = { label = "Skyriding", aliases = { "dragonriding" } },
+        travelForm = {
+            label = "Include Druid Travel Form (applies to both)",
+            aliases = { "travel form" },
+            applies = function(context)
+                local settings = RESOURCE_FINDER.Settings(context)
+                return settings
+                    and (settings.forceAlphaRegularMounted
+                        or settings.forceHideRegularMounted
+                        or settings.forceAlphaDragonriding
+                        or settings.forceHideDragonriding)
+                    and CooldownCompanion._playerClassID == 11
+            end,
+        },
+        target = { label = "Target Exists" },
+        enemy = {
+            label = "Enemy Only",
+            applies = function(context)
+                local settings = RESOURCE_FINDER.Settings(context)
+                return settings and settings.forceAlphaTargetExists == true
+            end,
+        },
+        focus = { label = "Focus Exists" },
+        mouseover = { label = "Mouseover" },
+        customFade = { label = "Custom Fade Settings", aliases = { "fade" } },
+        fadeDelay = {
+            label = "Fade Delay (seconds)",
+            applies = function(context)
+                local settings = RESOURCE_FINDER.Settings(context)
+                return settings and settings.customFade == true
+            end,
+        },
+        fadeIn = {
+            label = "Fade In Duration (seconds)",
+            applies = function(context)
+                local settings = RESOURCE_FINDER.Settings(context)
+                return settings and settings.customFade == true
+            end,
+        },
+        fadeOut = {
+            label = "Fade Out Duration (seconds)",
+            applies = function(context)
+                local settings = RESOURCE_FINDER.Settings(context)
+                return settings and settings.customFade == true
+            end,
+        },
+    })
+
+    RESOURCE_FINDER.primary.placement = ST._DefineSettingRoute({
+        idPrefix = "resources.layout.placement",
+        scope = "resources",
+        rowScope = "primary",
+        tab = "layout",
+        tabLabel = "Layout",
+        section = "placement",
+        sectionLabel = "Placement",
+        collapseKeys = { "rb_placement" },
+        collapseStore = "resource",
+        applies = RESOURCE_FINDER.BarsEnabled,
+    }):Settings({
+        anchoring = { label = "Anchoring Mode", aliases = { "attach independent" } },
+        orientation = { label = "Bar Orientation", aliases = { "horizontal vertical" } },
+        verticalFill = {
+            label = "Vertical Fill Direction",
+            applies = function(context)
+                local layout = RESOURCE_FINDER.Layout(context)
+                local settings = RESOURCE_FINDER.Settings(context)
+                return (layout and layout.orientation or settings and settings.orientation)
+                    == "vertical"
+            end,
+        },
+        inheritAlpha = {
+            label = "Inherit panel alpha",
+            aliases = { "panel opacity" },
+            applies = function(context)
+                local layout = RESOURCE_FINDER.Layout(context)
+                return not (layout and layout.independentAnchorEnabled == true)
+            end,
+        },
+    })
+
+    do
+        local route = ST._DefineSettingRoute({
+            idPrefix = "resources.layout.size",
+            scope = "resources",
+            rowScope = "primary",
+            tab = "layout",
+            tabLabel = "Layout",
+            section = "size",
+            sectionLabel = "Bar Size",
+            collapseKeys = { "rb_bar_size" },
+            collapseStore = "resource",
+            applies = RESOURCE_FINDER.BarsEnabled,
+        })
+        RESOURCE_FINDER.primary.size = route:Settings({
+            height = {
+                label = "Bar Height",
+                applies = function(context)
+                    local layout = RESOURCE_FINDER.Layout(context)
+                    local settings = RESOURCE_FINDER.Settings(context)
+                    return (layout and layout.orientation or settings and settings.orientation)
+                        ~= "vertical"
+                end,
+            },
+            width = {
+                label = "Bar Width",
+                applies = function(context)
+                    local layout = RESOURCE_FINDER.Layout(context)
+                    local settings = RESOURCE_FINDER.Settings(context)
+                    return (layout and layout.orientation or settings and settings.orientation)
+                        == "vertical"
+                end,
+            },
+            customHeights = {
+                label = "Custom Resource Bar Heights",
+                advancedKey = "customResourceBarHeights",
+                applies = function(context)
+                    local layout = RESOURCE_FINDER.Layout(context)
+                    local settings = RESOURCE_FINDER.Settings(context)
+                    return (layout and layout.orientation or settings and settings.orientation)
+                        ~= "vertical"
+                end,
+            },
+            customWidths = {
+                label = "Custom Resource Bar Widths",
+                advancedKey = "customResourceBarHeights",
+                applies = function(context)
+                    local layout = RESOURCE_FINDER.Layout(context)
+                    local settings = RESOURCE_FINDER.Settings(context)
+                    return (layout and layout.orientation or settings and settings.orientation)
+                        == "vertical"
+                end,
+            },
+            spacing = { label = "Bar Spacing", aliases = { "resource spacing" } },
+            segmentGap = { label = "Segment Gap", aliases = { "segment spacing" } },
+        })
+        RESOURCE_FINDER.primary.customHeight = {}
+        RESOURCE_FINDER.primary.customWidth = {}
+        for powerType, name in pairs(POWER_NAMES) do
+            local capturedPowerType = powerType
+            local function CustomSizeApplies(context, vertical)
+                local layout = RESOURCE_FINDER.Layout(context)
+                local settings = RESOURCE_FINDER.Settings(context)
+                local orientation = layout and layout.orientation
+                    or settings and settings.orientation
+                local active = context and context._settingsFinderActiveResourceSet
+                return layout and layout.customBarHeights == true
+                    and type(active) == "table" and active[capturedPowerType] == true
+                    and ((orientation == "vertical") == vertical)
+            end
+            RESOURCE_FINDER.primary.customHeight[capturedPowerType] = route:Setting({
+                key = "height_" .. tostring(capturedPowerType),
+                label = name .. " Bar Height",
+                advancedKey = "customResourceBarHeights",
+                applies = function(context) return CustomSizeApplies(context, false) end,
+            })
+            RESOURCE_FINDER.primary.customWidth[capturedPowerType] = route:Setting({
+                key = "width_" .. tostring(capturedPowerType),
+                label = name .. " Bar Width",
+                advancedKey = "customResourceBarHeights",
+                applies = function(context) return CustomSizeApplies(context, true) end,
+            })
+        end
+    end
+
+    RESOURCE_FINDER.primary.anchor = ST._DefineSettingRoute({
+        idPrefix = "resources.layout.anchor",
+        scope = "resources",
+        rowScope = "primary",
+        tab = "layout",
+        tabLabel = "Layout",
+        section = "anchor",
+        sectionLabel = "Anchor Settings",
+        collapseKeys = { "rb_stack_position" },
+        collapseStore = "resource",
+        applies = function(context)
+            local layout = RESOURCE_FINDER.Layout(context)
+            return RESOURCE_FINDER.BarsEnabled(context)
+                and layout and layout.independentAnchorEnabled == true
+        end,
+    }):Settings({
+        frame = { label = "Anchor to Frame", aliases = { "relative frame", "frame name" } },
+        unlock = { label = "Unlock Placement", aliases = { "move resources" } },
+        point = { label = "Anchor Point" },
+        relativePoint = { label = "Relative Point" },
+        width = { label = "Bar Width", aliases = { "stack width" } },
+        x = { label = "X Offset" },
+        y = { label = "Y Offset" },
+    })
+
+    RESOURCE_FINDER.primary.attached = ST._DefineSettingRoute({
+        idPrefix = "resources.layout.attached",
+        scope = "resources",
+        rowScope = "primary",
+        tab = "layout",
+        tabLabel = "Layout",
+        section = "attached",
+        sectionLabel = "Layout",
+        collapseKeys = { "rb_position" },
+        collapseStore = "resource",
+        applies = function(context)
+            local layout = RESOURCE_FINDER.Layout(context)
+            return RESOURCE_FINDER.BarsEnabled(context)
+                and not (layout and layout.independentAnchorEnabled == true)
+        end,
+    }):Settings({
+        x = {
+            label = "X Offset",
+            applies = function(context)
+                local layout = RESOURCE_FINDER.Layout(context)
+                local settings = RESOURCE_FINDER.Settings(context)
+                return (layout and layout.orientation or settings and settings.orientation)
+                    == "vertical"
+            end,
+        },
+        y = {
+            label = "Y Offset",
+            applies = function(context)
+                local layout = RESOURCE_FINDER.Layout(context)
+                local settings = RESOURCE_FINDER.Settings(context)
+                return (layout and layout.orientation or settings and settings.orientation)
+                    ~= "vertical"
+            end,
+        },
+    })
+
+    RESOURCE_FINDER.primary.bar = ST._DefineSettingRoute({
+        idPrefix = "resources.appearance.bar",
+        scope = "resources",
+        rowScope = "primary",
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "bar",
+        sectionLabel = "Bar",
+        collapseKeys = { "rb_appearance_bar" },
+        collapseStore = "resource",
+        applies = RESOURCE_FINDER.BarsEnabled,
+    }):Settings({
+        texture = { label = "Bar Texture", aliases = { "statusbar texture" } },
+        brightness = {
+            label = "Class Texture Brightness",
+            applies = function(context)
+                return RESOURCE_FINDER.EffectiveTexture(context) == "blizzard_class"
+            end,
+        },
+        smoothing = { label = "Segmented Smoothing", aliases = { "smooth animation" } },
+        background = { label = "Resource Background Color", aliases = { "empty color" } },
+    })
+
+    RESOURCE_FINDER.primary.border = ST._DefineSettingRoute({
+        idPrefix = "resources.appearance.border",
+        scope = "resources",
+        rowScope = "primary",
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "border",
+        sectionLabel = "Border",
+        collapseKeys = { "rb_appearance_border" },
+        collapseStore = "resource",
+        applies = RESOURCE_FINDER.BarsEnabled,
+    }):Settings({
+        style = { label = "Border Style" },
+        color = {
+            label = "Border Color",
+            applies = function(context)
+                local settings = RESOURCE_FINDER.Settings(context)
+                local profile = RESOURCE_FINDER.DisplayProfile(context)
+                return (profile and profile.borderStyle
+                    or settings and settings.borderStyle or "pixel") == "pixel"
+            end,
+        },
+        thickness = {
+            label = "Border Thickness",
+            applies = function(context)
+                local settings = RESOURCE_FINDER.Settings(context)
+                local profile = RESOURCE_FINDER.DisplayProfile(context)
+                return (profile and profile.borderStyle
+                    or settings and settings.borderStyle or "pixel") == "pixel"
+            end,
+        },
+        size = {
+            label = "Border Size",
+            applies = function(context)
+                local settings = RESOURCE_FINDER.Settings(context)
+                local profile = RESOURCE_FINDER.DisplayProfile(context)
+                local style = profile and profile.borderStyle
+                    or settings and settings.borderStyle or "pixel"
+                return style == "pixel"
+                    and ST.GetBorderRenderMode(profile or settings, "borderRenderMode")
+                        ~= ST.BORDER_RENDER_MODE_CRISP
+            end,
+        },
+    })
+
+    -- RESOURCE FINDER HEALTH ROUTES
+    do
+        local healthApplies = function(context)
+            return RESOURCE_FINDER.BarsEnabled(context)
+                and RESOURCE_FINDER.ResourceEnabled(context, RESOURCE_HEALTH)
+        end
+        local healthRoute = ST._DefineSettingRoute({
+            idPrefix = "resources.health.fill",
+            scope = "resources",
+            rowScope = "primary",
+            tab = "health",
+            tabLabel = "Health",
+            section = "fill",
+            sectionLabel = "Health",
+            collapseKeys = { "rb_health_fill" },
+            collapseStore = "resource",
+            applies = healthApplies,
+        })
+        RESOURCE_FINDER.primary.healthFill = healthRoute:Settings({
+            gradient = { label = "Use Health Gradient" },
+            full = {
+                label = "Full Health",
+                applies = function(context)
+                    return RESOURCE_FINDER.ReadResourceValue(
+                        context, RESOURCE_HEALTH, "healthBarGradient",
+                        DEFAULT_HEALTH_BAR_GRADIENT) == true
+                end,
+            },
+            half = {
+                label = "Half Health",
+                applies = function(context)
+                    return RESOURCE_FINDER.ReadResourceValue(
+                        context, RESOURCE_HEALTH, "healthBarGradient",
+                        DEFAULT_HEALTH_BAR_GRADIENT) == true
+                end,
+            },
+            low = {
+                label = "Low Health",
+                applies = function(context)
+                    return RESOURCE_FINDER.ReadResourceValue(
+                        context, RESOURCE_HEALTH, "healthBarGradient",
+                        DEFAULT_HEALTH_BAR_GRADIENT) == true
+                end,
+            },
+            color = {
+                label = "Health Color",
+                applies = function(context)
+                    return RESOURCE_FINDER.ReadResourceValue(
+                        context, RESOURCE_HEALTH, "healthBarGradient",
+                        DEFAULT_HEALTH_BAR_GRADIENT) ~= true
+                end,
+            },
+            opacity = { label = "Health Opacity" },
+        })
+
+        RESOURCE_FINDER.primary.healthMissing = ST._DefineSettingRoute({
+            idPrefix = "resources.health.missing",
+            scope = "resources",
+            rowScope = "primary",
+            tab = "health",
+            tabLabel = "Health",
+            section = "missing",
+            sectionLabel = "Missing Health",
+            collapseKeys = { "rb_health_missing" },
+            collapseStore = "resource",
+            applies = healthApplies,
+        }):Settings({
+            gradient = { label = "Use Missing Health Gradient" },
+            full = {
+                label = "Missing Health Full",
+                applies = function(context)
+                    return RESOURCE_FINDER.ReadResourceValue(
+                        context, RESOURCE_HEALTH, "healthBackgroundGradient",
+                        DEFAULT_HEALTH_BACKGROUND_GRADIENT) == true
+                end,
+            },
+            half = {
+                label = "Missing Health Half",
+                applies = function(context)
+                    return RESOURCE_FINDER.ReadResourceValue(
+                        context, RESOURCE_HEALTH, "healthBackgroundGradient",
+                        DEFAULT_HEALTH_BACKGROUND_GRADIENT) == true
+                end,
+            },
+            low = {
+                label = "Missing Health Low",
+                applies = function(context)
+                    return RESOURCE_FINDER.ReadResourceValue(
+                        context, RESOURCE_HEALTH, "healthBackgroundGradient",
+                        DEFAULT_HEALTH_BACKGROUND_GRADIENT) == true
+                end,
+            },
+            color = {
+                label = "Missing Health Color",
+                applies = function(context)
+                    return RESOURCE_FINDER.ReadResourceValue(
+                        context, RESOURCE_HEALTH, "healthBackgroundGradient",
+                        DEFAULT_HEALTH_BACKGROUND_GRADIENT) ~= true
+                end,
+            },
+            opacity = { label = "Missing Health Opacity" },
+        })
+
+        RESOURCE_FINDER.primary.healthText = {}
+        RESOURCE_FINDER.primary.healthText.show = ST._DefineSettingRoute({
+            idPrefix = "resources.health.text",
+            scope = "resources",
+            rowScope = "primary",
+            tab = "health",
+            tabLabel = "Health",
+            section = "text",
+            sectionLabel = "Text",
+            collapseKeys = { "rb_health_text" },
+            collapseStore = "resource",
+            applies = healthApplies,
+        }):Setting({ key = "show", label = "Show Health Text" })
+        RESOURCE_FINDER.primary.healthText.advanced = ST._DefineSettingRoute({
+            idPrefix = "resources.health.text.advanced",
+            scope = "resources",
+            rowScope = "primary",
+            tab = "health",
+            tabLabel = "Health",
+            section = "text",
+            sectionLabel = "Health Text",
+            collapseKeys = { "rb_health_text" },
+            collapseStore = "resource",
+            applies = function(context)
+                return healthApplies(context)
+                    and RESOURCE_FINDER.TextEnabled(context, RESOURCE_HEALTH)
+            end,
+            advancedKey = function(context)
+                local specID = context and context.resourceSpecID
+                if not specID and CS._GetCurrentConfigSpecID then
+                    specID = CS._GetCurrentConfigSpecID()
+                end
+                return "rbText_" .. tostring(RESOURCE_HEALTH) .. "_" .. tostring(specID)
+            end,
+        }):Settings({
+            format = { label = "Text Format" },
+            size = { label = "Font Size" },
+            font = { label = "Font" },
+            outline = { label = "Font Outline" },
+            color = { label = "Text Color" },
+            anchor = { label = "Text Anchor" },
+            x = { label = "Text X Offset" },
+            y = { label = "Text Y Offset" },
+        })
+
+        -- RESOURCE FINDER HEALTH EFFECT ROUTES
+        local effectsRoute = ST._DefineSettingRoute({
+            idPrefix = "resources.health.effects",
+            scope = "resources",
+            rowScope = "primary",
+            tab = "health",
+            tabLabel = "Health",
+            section = "effects",
+            sectionLabel = "Health Effects",
+            collapseKeys = { "rb_health_effects" },
+            collapseStore = "resource",
+            applies = healthApplies,
+        })
+        RESOURCE_FINDER.primary.healthEffects = effectsRoute:Settings({
+            absorbs = { label = "Show Absorbs" },
+            healingAbsorbs = { label = "Show Healing Absorbs" },
+            incomingHeals = { label = "Show Incoming Heals" },
+            lowHealth = { label = "Show Low Health Alert" },
+        })
+        RESOURCE_FINDER.primary.healthEffectAdvanced = {}
+        local effectSpecs = {
+            absorbs = {
+                enabledKey = "showAbsorbs", advancedKey = "healthAbsorbs",
+                color = "Absorb Color", texture = "Absorb Texture",
+            },
+            healingAbsorbs = {
+                enabledKey = "showHealAbsorbs", advancedKey = "healthHealAbsorbs",
+                color = "Healing Absorb Color", texture = "Healing Absorb Texture",
+            },
+            incomingHeals = {
+                enabledKey = "showIncomingHeals", advancedKey = "healthIncomingHeals",
+                color = "Incoming Heal Color", texture = "Incoming Heal Texture",
+            },
+            lowHealth = {
+                enabledKey = "showLowHealthAlert", advancedKey = "healthLowHealthAlert",
+                color = "Low Health Alert Color", texture = "Low Health Alert Texture",
+            },
+        }
+        for key, spec in pairs(effectSpecs) do
+            local captured = spec
+            RESOURCE_FINDER.primary.healthEffectAdvanced[key] = ST._DefineSettingRoute({
+                idPrefix = "resources.health.effects." .. key,
+                scope = "resources",
+                rowScope = "primary",
+                tab = "health",
+                tabLabel = "Health",
+                section = "effects",
+                sectionLabel = "Health Effects",
+                collapseKeys = { "rb_health_effects" },
+                collapseStore = "resource",
+                advancedKey = captured.advancedKey,
+                applies = function(context)
+                    return healthApplies(context)
+                        and RESOURCE_FINDER.ReadResourceValue(
+                            context, RESOURCE_HEALTH, captured.enabledKey, false) == true
+                end,
+            }):Settings({
+                color = { label = captured.color },
+                texture = { label = captured.texture },
+                missingOnly = key == "lowHealth"
+                    and { label = "Pulse Missing Health Only" } or nil,
+            })
+        end
+    end
+
+    -- RESOURCE FINDER DETAIL ROUTES
+    for powerType, name in pairs(POWER_NAMES) do
+        if powerType ~= RESOURCE_HEALTH then
+            local capturedPowerType = powerType
+            local detail = {}
+            RESOURCE_FINDER.detail[capturedPowerType] = detail
+            local appliesPower = function(context)
+                return RESOURCE_FINDER.BarsEnabled(context)
+                    and RESOURCE_FINDER.SelectedPowerIs(context, capturedPowerType)
+            end
+            local colorRoute = ST._DefineSettingRoute({
+                idPrefix = "resource." .. tostring(capturedPowerType) .. ".colors",
+                scope = "resource",
+                rowScope = "detail",
+                tab = "settings",
+                tabLabel = "Settings",
+                section = "colors",
+                sectionLabel = "Colors",
+                collapseKeys = function(context)
+                    return { "rb_colors_" .. tostring(capturedPowerType)
+                        .. "_" .. tostring(context.resourceSpecID) }
+                end,
+                collapseStore = "resource",
+                applies = appliesPower,
+            })
+            detail.colors = {}
+            for _, color in ipairs(GetResourceColorDescriptors(capturedPowerType, "Solid")) do
+                local colorKey = color.key
+                detail.colors[colorKey] = colorRoute:Setting({
+                    key = colorKey,
+                    label = color.label,
+                    applies = colorKey == "color" and function(context)
+                        return not (RESOURCE_FINDER.EffectiveTexture(context)
+                            == "blizzard_class"
+                            and ST.POWER_ATLAS_TYPES
+                            and ST.POWER_ATLAS_TYPES[capturedPowerType])
+                    end or nil,
+                })
+            end
+
+            if capturedPowerType == 100
+                or RB.AURA_STACK_RESOURCES[capturedPowerType]
+                or SEGMENTED_TYPES[capturedPowerType] == true
+            then
+                local stackSection = capturedPowerType == 100 and "rb_mw_stack_display"
+                    or RB.AURA_STACK_RESOURCES[capturedPowerType] and "rb_stack_display"
+                    or "rb_max_stack_border"
+                local stackLabel = (capturedPowerType == 100
+                    or RB.AURA_STACK_RESOURCES[capturedPowerType])
+                    and "Stack Display" or "Max Stack Border"
+                local stackRoute = ST._DefineSettingRoute({
+                    idPrefix = "resource." .. tostring(capturedPowerType) .. ".stack",
+                    scope = "resource",
+                    rowScope = "detail",
+                    tab = "settings",
+                    tabLabel = "Settings",
+                    section = "stack",
+                    sectionLabel = stackLabel,
+                    collapseKeys = { stackSection },
+                    collapseStore = "resource",
+                    applies = appliesPower,
+                })
+                detail.stack = {}
+                if capturedPowerType == 100 or RB.AURA_STACK_RESOURCES[capturedPowerType] then
+                    detail.stack.display = stackRoute:Setting({
+                        key = "display",
+                        label = "Stack Display",
+                    })
+                end
+                detail.stack.maxBorder = stackRoute:Setting({
+                    key = "max_border",
+                    label = "Max Stack Border",
+                })
+                detail.stack.maxStyle = stackRoute:Setting({
+                    key = "max_style",
+                    label = "Border Style",
+                    applies = RESOURCE_FINDER.MaxBorderEnabled,
+                })
+                detail.stack.maxColor = stackRoute:Setting({
+                    key = "max_color",
+                    label = "Border Color",
+                    applies = RESOURCE_FINDER.MaxBorderEnabled,
+                })
+                detail.stack.maxGlow = stackRoute:Settings({
+                    borderSize = {
+                        label = "Border Size",
+                        applies = function(context)
+                            return RESOURCE_FINDER.MaxBorderStyleIs(context, "solid")
+                        end,
+                    },
+                    dashLength = {
+                        label = "Dash Length",
+                        applies = function(context)
+                            return RESOURCE_FINDER.MaxBorderStyleIs(context, "pixel")
+                        end,
+                    },
+                    dashThickness = {
+                        label = "Dash Thickness",
+                        applies = function(context)
+                            return RESOURCE_FINDER.MaxBorderStyleIs(context, "pixel")
+                        end,
+                    },
+                    dashCount = {
+                        label = "Number of Dashes",
+                        applies = function(context)
+                            return RESOURCE_FINDER.MaxBorderStyleIs(context, "pixel")
+                        end,
+                    },
+                    lapDuration = {
+                        label = "Lap Duration",
+                        applies = function(context)
+                            return RESOURCE_FINDER.MaxBorderStyleIs(context, "pixel")
+                        end,
+                    },
+                })
+            end
+
+            -- RESOURCE FINDER DETAIL TEXT ROUTES
+            local textBase = ST._DefineSettingRoute({
+                idPrefix = "resource." .. tostring(capturedPowerType) .. ".text",
+                scope = "resource",
+                rowScope = "detail",
+                tab = "settings",
+                tabLabel = "Settings",
+                section = "text",
+                sectionLabel = "Text",
+                collapseKeys = { "rb_text" },
+                collapseStore = "resource",
+                applies = appliesPower,
+            })
+            detail.text = {
+                show = textBase:Setting({
+                    key = "show",
+                    label = "Show " .. name .. " Text",
+                }),
+            }
+            local textAdvanced = ST._DefineSettingRoute({
+                idPrefix = "resource." .. tostring(capturedPowerType) .. ".text.advanced",
+                scope = "resource",
+                rowScope = "detail",
+                tab = "settings",
+                tabLabel = "Settings",
+                section = "text",
+                sectionLabel = name .. " Text",
+                collapseKeys = { "rb_text" },
+                collapseStore = "resource",
+                advancedKey = function(context)
+                    return "rbText_" .. tostring(capturedPowerType)
+                        .. "_" .. tostring(context.resourceSpecID)
+                end,
+                applies = function(context)
+                    return appliesPower(context)
+                        and RESOURCE_FINDER.TextEnabled(context, capturedPowerType)
+                end,
+            })
+            detail.text.advanced = textAdvanced:Settings({
+                format = { label = "Text Format" },
+                size = { label = "Font Size" },
+                font = { label = "Font" },
+                outline = { label = "Font Outline" },
+                color = { label = "Text Color" },
+                anchor = { label = "Text Anchor" },
+                x = { label = "Text X Offset" },
+                y = { label = "Text Y Offset" },
+                hideAtZero = {
+                    label = "Hide at 0",
+                    applies = function()
+                        return HIDE_AT_ZERO_ELIGIBLE[capturedPowerType] == true
+                    end,
+                },
+            })
+            if capturedPowerType == 5 then
+                detail.text.recharge = textBase:Setting({
+                    key = "show_recharge",
+                    label = "Show " .. name .. " Recharge Text",
+                })
+                detail.text.rechargeAdvanced = ST._DefineSettingRoute({
+                    idPrefix = "resource.5.text.recharge",
+                    scope = "resource",
+                    rowScope = "detail",
+                    tab = "settings",
+                    tabLabel = "Settings",
+                    section = "text",
+                    sectionLabel = name .. " Recharge Text",
+                    collapseKeys = { "rb_text" },
+                    collapseStore = "resource",
+                    advancedKey = function(context)
+                        return "rbRechargeText_5_" .. tostring(context.resourceSpecID)
+                    end,
+                    applies = function(context)
+                        return appliesPower(context)
+                            and RESOURCE_FINDER.RechargeTextEnabled(context)
+                    end,
+                }):Settings({
+                    mode = { label = "Show Recharge Text On" },
+                    size = { label = "Font Size" },
+                    font = { label = "Font" },
+                    outline = { label = "Font Outline" },
+                    color = { label = "Text Color" },
+                    anchor = { label = "Text Anchor" },
+                    x = { label = "Text X Offset" },
+                    y = { label = "Text Y Offset" },
+                })
+            end
+
+            -- RESOURCE FINDER DETAIL THRESHOLD ROUTES
+            local segmented = SEGMENTED_TYPES[capturedPowerType] == true
+                or capturedPowerType == 100
+                or RB.AURA_STACK_RESOURCES[capturedPowerType] ~= nil
+            if segmented or capturedPowerType ~= 101 then
+                local thresholdRoute = ST._DefineSettingRoute({
+                    idPrefix = "resource." .. tostring(capturedPowerType) .. ".thresholds",
+                    scope = "resource",
+                    rowScope = "detail",
+                    tab = "settings",
+                    tabLabel = "Settings",
+                    section = "thresholds",
+                    sectionLabel = "Thresholds & Ticks",
+                    collapseKeys = { "rb_thresholds_ticks" },
+                    collapseStore = "resource",
+                    applies = function(context)
+                        return appliesPower(context)
+                            and RESOURCE_FINDER.ResourceEnabled(
+                                context, capturedPowerType)
+                    end,
+                })
+                detail.thresholds = {}
+                if segmented then
+                    detail.thresholds.enable = thresholdRoute:Setting({
+                        key = "enable",
+                        label = "Enable " .. name .. " Threshold Colors",
+                    })
+                    local thresholdAdvanced = ST._DefineSettingRoute({
+                        idPrefix = "resource." .. tostring(capturedPowerType)
+                            .. ".thresholds.advanced",
+                        scope = "resource",
+                        rowScope = "detail",
+                        tab = "settings",
+                        tabLabel = "Settings",
+                        section = "thresholds",
+                        sectionLabel = name .. " Threshold Colors",
+                        collapseKeys = { "rb_thresholds_ticks" },
+                        collapseStore = "resource",
+                        advancedKey = function(context)
+                            return "rbSegThreshold_" .. tostring(capturedPowerType)
+                                .. "_" .. tostring(context.resourceSpecID)
+                        end,
+                        applies = function(context)
+                            return appliesPower(context)
+                                and RESOURCE_FINDER.SegThresholdEnabled(
+                                    context, capturedPowerType)
+                        end,
+                    })
+                    detail.thresholds.values = {}
+                    detail.thresholds.colors = {}
+                    for index = 1, MAX_RESOURCE_THRESHOLD_TICK_ENTRIES do
+                        local capturedIndex = index
+                        detail.thresholds.values[index] = thresholdAdvanced:Setting({
+                            key = "value_" .. index,
+                            label = name .. " Threshold " .. index .. " Value (>=)",
+                            applies = function(context)
+                                local settings = RESOURCE_FINDER.Settings(context)
+                                return #GetConfigSegmentedThresholdEntries(
+                                    settings, capturedPowerType,
+                                    tonumber(context.resourceSpecID)) >= capturedIndex
+                            end,
+                        })
+                        detail.thresholds.colors[index] = thresholdAdvanced:Setting({
+                            key = "color_" .. index,
+                            label = name .. " Threshold " .. index .. " Color",
+                            applies = function(context)
+                                local settings = RESOURCE_FINDER.Settings(context)
+                                return #GetConfigSegmentedThresholdEntries(
+                                    settings, capturedPowerType,
+                                    tonumber(context.resourceSpecID)) >= capturedIndex
+                            end,
+                        })
+                    end
+                else
+                    -- RESOURCE FINDER CONTINUOUS TICK ROUTES
+                    detail.thresholds.enable = thresholdRoute:Setting({
+                        key = "enable",
+                        label = "Enable " .. name .. " Tick Markers",
+                    })
+                    local tickAdvanced = ST._DefineSettingRoute({
+                        idPrefix = "resource." .. tostring(capturedPowerType)
+                            .. ".ticks.advanced",
+                        scope = "resource",
+                        rowScope = "detail",
+                        tab = "settings",
+                        tabLabel = "Settings",
+                        section = "thresholds",
+                        sectionLabel = name .. " Tick Markers",
+                        collapseKeys = { "rb_thresholds_ticks" },
+                        collapseStore = "resource",
+                        advancedKey = function(context)
+                            return "rbTickMarker_" .. tostring(capturedPowerType)
+                                .. "_" .. tostring(context.resourceSpecID)
+                        end,
+                        applies = function(context)
+                            return appliesPower(context)
+                                and RESOURCE_FINDER.TickEnabled(
+                                    context, capturedPowerType)
+                        end,
+                    })
+                    detail.thresholds.combat = tickAdvanced:Setting({
+                        key = "combat",
+                        label = "Show Only In Combat",
+                    })
+                    detail.thresholds.mode = tickAdvanced:Setting({
+                        key = "mode",
+                        label = "Tick Mode",
+                    })
+                    detail.thresholds.width = tickAdvanced:Setting({
+                        key = "width",
+                        label = name .. " Tick Width",
+                    })
+                    detail.thresholds.percentValues = {}
+                    detail.thresholds.absoluteValues = {}
+                    detail.thresholds.colors = {}
+                    for index = 1, MAX_RESOURCE_THRESHOLD_TICK_ENTRIES do
+                        local capturedIndex = index
+                        detail.thresholds.percentValues[index] = tickAdvanced:Setting({
+                            key = "percent_" .. index,
+                            label = name .. " Tick " .. index .. " Percent",
+                            applies = function(context)
+                                local settings = RESOURCE_FINDER.Settings(context)
+                                return RESOURCE_FINDER.TickMode(
+                                    context, capturedPowerType) == "percent"
+                                    and #GetConfigContinuousTickEntries(
+                                        settings, capturedPowerType,
+                                        tonumber(context.resourceSpecID), "percent")
+                                        >= capturedIndex
+                            end,
+                        })
+                        detail.thresholds.absoluteValues[index] = tickAdvanced:Setting({
+                            key = "absolute_" .. index,
+                            label = name .. " Tick " .. index .. " Absolute Value",
+                            applies = function(context)
+                                local settings = RESOURCE_FINDER.Settings(context)
+                                return RESOURCE_FINDER.TickMode(
+                                    context, capturedPowerType) == "absolute"
+                                    and #GetConfigContinuousTickEntries(
+                                        settings, capturedPowerType,
+                                        tonumber(context.resourceSpecID), "absolute")
+                                        >= capturedIndex
+                            end,
+                        })
+                        detail.thresholds.colors[index] = tickAdvanced:Setting({
+                            key = "color_" .. index,
+                            label = name .. " Tick " .. index .. " Color",
+                            applies = function(context)
+                                local settings = RESOURCE_FINDER.Settings(context)
+                                local mode = RESOURCE_FINDER.TickMode(
+                                    context, capturedPowerType)
+                                return #GetConfigContinuousTickEntries(
+                                    settings, capturedPowerType,
+                                    tonumber(context.resourceSpecID), mode)
+                                    >= capturedIndex
+                            end,
+                        })
+                    end
+                end
+            end
+
+            -- RESOURCE FINDER DETAIL AURA ROUTES
+            local auraRoute = ST._DefineSettingRoute({
+                idPrefix = "resource." .. tostring(capturedPowerType) .. ".aura",
+                scope = "resource",
+                rowScope = "detail",
+                tab = "settings",
+                tabLabel = "Settings",
+                section = "aura",
+                sectionLabel = "Aura Tracking",
+                collapseKeys = { "rb_aura_overlay_" .. tostring(capturedPowerType) },
+                collapseStore = "resource",
+                applies = appliesPower,
+            })
+            detail.aura = {
+                enable = auraRoute:Setting({
+                    key = "enable",
+                    label = "Enable " .. name .. " Aura Tracking",
+                }),
+            }
+            local auraControls = ST._DefineSettingRoute({
+                idPrefix = "resource." .. tostring(capturedPowerType) .. ".aura.controls",
+                scope = "resource",
+                rowScope = "detail",
+                tab = "settings",
+                tabLabel = "Settings",
+                section = "aura",
+                sectionLabel = "Aura Tracking",
+                collapseKeys = { "rb_aura_overlay_" .. tostring(capturedPowerType) },
+                collapseStore = "resource",
+                applies = function(context)
+                    return appliesPower(context)
+                        and RESOURCE_FINDER.AuraEnabled(context)
+                        and RESOURCE_FINDER.AuraEntry(context) ~= nil
+                end,
+            })
+            detail.aura.stackLane = auraControls:Setting({
+                key = "stack_lane",
+                label = "Stack Lane",
+                applies = function()
+                    return SupportsResourceAuraStackMode(capturedPowerType)
+                end,
+            })
+            detail.aura.laneColor = auraControls:Setting({
+                key = "lane_color",
+                label = "Lane Color",
+                applies = function(context)
+                    local entry = RESOURCE_FINDER.AuraEntry(context)
+                    return SupportsResourceAuraStackMode(capturedPowerType)
+                        and entry
+                        and RB.GetResourceOverlayTrackingMode(
+                            entry, capturedPowerType) == "stacks"
+                        and (RB.ResolveResourceOverlayStackMax(
+                            entry, capturedPowerType) ~= nil or InCombatLockdown())
+                end,
+            })
+            detail.aura.recolor = auraControls:Setting({
+                key = "recolor",
+                label = "Recolor Fill",
+                applies = function(context)
+                    local settings = RESOURCE_FINDER.Settings(context)
+                    return RB.IsContinuousResourceShape(
+                        settings, capturedPowerType,
+                        tonumber(context.resourceSpecID))
+                end,
+            })
+            detail.aura.fillColor = auraControls:Setting({
+                key = "fill_color",
+                label = "Fill Color",
+                applies = function(context)
+                    local settings = RESOURCE_FINDER.Settings(context)
+                    local entry = RESOURCE_FINDER.AuraEntry(context)
+                    return RB.IsContinuousResourceShape(
+                        settings, capturedPowerType,
+                        tonumber(context.resourceSpecID))
+                        and entry and RB.IsResourceOverlayFillEnabled(entry)
+                end,
+            })
+            detail.aura.border = auraControls:Setting({
+                key = "border",
+                label = "Border",
+            })
+            detail.aura.borderStyle = auraControls:Setting({
+                key = "border_style",
+                label = "Border Style",
+                applies = RESOURCE_FINDER.AuraBorderEnabled,
+            })
+            detail.aura.borderColor = auraControls:Setting({
+                key = "border_color",
+                label = "Border Color",
+                applies = RESOURCE_FINDER.AuraBorderEnabled,
+            })
+            -- RESOURCE FINDER DETAIL AURA GLOW ROUTES
+            detail.aura.glow = auraControls:Settings({
+                borderSize = {
+                    label = "Border Size",
+                    applies = function(context)
+                        return RESOURCE_FINDER.AuraBorderStyleIs(context, "solid")
+                    end,
+                },
+                dashLength = {
+                    label = "Dash Length",
+                    applies = function(context)
+                        return RESOURCE_FINDER.AuraBorderStyleIs(context, "pixel")
+                    end,
+                },
+                dashThickness = {
+                    label = "Dash Thickness",
+                    applies = function(context)
+                        return RESOURCE_FINDER.AuraBorderStyleIs(context, "pixel")
+                    end,
+                },
+                dashCount = {
+                    label = "Number of Dashes",
+                    applies = function(context)
+                        return RESOURCE_FINDER.AuraBorderStyleIs(context, "pixel")
+                    end,
+                },
+                lapDuration = {
+                    label = "Lap Duration",
+                    applies = function(context)
+                        return RESOURCE_FINDER.AuraBorderStyleIs(context, "pixel")
+                    end,
+                },
+            })
+        end
+    end
 end
 
 -- Expose for ButtonSettings.lua and Config.lua

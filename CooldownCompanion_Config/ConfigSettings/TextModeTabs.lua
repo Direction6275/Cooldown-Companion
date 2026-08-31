@@ -59,6 +59,11 @@ local ROW_SECTION = { leftAligned = true }
 -- the idiom): compact SetAutoWidth buttons, flush left, never page-wide.
 local FORMAT_ACTION_STRIP_HEIGHT = (ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT) or 30
 
+-- Populated at module load near the exports. Builders close over this table so
+-- every rendered row can bind the exact descriptor without constructing an
+-- unopened tab.
+local TEXTMODE_FINDER = {}
+
 ------------------------------------------------------------------------
 -- FORMAT TAB
 --
@@ -323,6 +328,7 @@ local function BuildTextFormatTab(container)
     end
 
     formatTabController = ST._BuildFormatEditorContent(container, {
+        setting = TEXTMODE_FINDER.format and TEXTMODE_FINDER.format.string,
         target = MakeEditorTarget(),
         onDirty = function()
             ScheduleTextFormatTabCommit(style, groupId, entryData)
@@ -427,7 +433,10 @@ local function BuildTextFormatTab(container)
     local fmtRightBracket = settingsSec:Bracket(fmtRight)
 
     -- The shared builder has no tooltip of its own, so the row gets one here.
-    local durationRow = AddDurationFormatDropdown(fmtLeft, style, refreshStyleAndPreview, { row = true })
+    local durationRow = AddDurationFormatDropdown(fmtLeft, style, refreshStyleAndPreview, {
+        row = true,
+        setting = TEXTMODE_FINDER.formatSettings and TEXTMODE_FINDER.formatSettings.duration,
+    })
     if durationRow and durationRow.SetRowTooltip then
         durationRow:SetRowTooltip({
             "Duration Format",
@@ -439,6 +448,7 @@ local function BuildTextFormatTab(container)
     -- Instructions text hangs on is still reachable through row.editbox.
     local readyTextRow = AddEditBoxRow(fmtRight, {
         label = "Ready Text",
+        setting = TEXTMODE_FINDER.formatSettings and TEXTMODE_FINDER.formatSettings.readyText,
         value = style.textReadyText or "Ready",
         disabled = settingsSec.disabled,
         onEnterPressed = function(val)
@@ -563,6 +573,7 @@ local function BuildTextAppearanceTab(container, group, style)
         row = true,
         rightColumn = fontRight,
         fallbackStyle = fontSec.fallbackStyle,
+        settings = TEXTMODE_FINDER.font,
     })
 
     fontSec:Finish()
@@ -599,6 +610,7 @@ local function BuildTextAppearanceTab(container, group, style)
         row = true,
         rightColumn = colorsRight,
         fallbackStyle = colorsSec.fallbackStyle,
+        settings = TEXTMODE_FINDER.colors,
     })
 
     -- Ready Text is a key of THIS section (ST.OVERRIDE_SECTIONS lists
@@ -614,6 +626,7 @@ local function BuildTextAppearanceTab(container, group, style)
         -- with no styleOverrides table behind it). sec.tbl IS that fallback.
         local readyTextRow = AddEditBoxRow(colorsRight, {
             label = "Ready Text",
+            setting = TEXTMODE_FINDER.colors and TEXTMODE_FINDER.colors.readyText,
             value = colorsSec.tbl.textReadyText or "Ready",
             onEnterPressed = function(val)
                 if not colorsSec.write then return end
@@ -690,6 +703,7 @@ local function BuildTextAppearanceTab(container, group, style)
 
     AddSliderRow(panelLeft, {
         label = "Padding",
+        setting = TEXTMODE_FINDER.panel and TEXTMODE_FINDER.panel.padding,
         min = 0, max = 20, step = 1,
         value = style.textPadding or 4,
         disabled = panelSec.disabled,
@@ -726,6 +740,7 @@ local function BuildTextAppearanceTab(container, group, style)
     if group.buttons and #group.buttons > 1 then
         AddSliderRow(panelLeft, {
             label = "Entry Spacing",
+            setting = TEXTMODE_FINDER.panel and TEXTMODE_FINDER.panel.spacing,
             min = -10, max = 100, step = 0.1,
             value = style.buttonSpacing or ST.BUTTON_SPACING,
             disabled = panelSec.disabled,
@@ -741,6 +756,7 @@ local function BuildTextAppearanceTab(container, group, style)
 
     AddCheckboxRow(panelRight, {
         label = "Show Group Header",
+        setting = TEXTMODE_FINDER.panel and TEXTMODE_FINDER.panel.header,
         value = style.showTextGroupHeader == true,
         disabled = panelSec.disabled,
         onChange = function(val)
@@ -753,6 +769,7 @@ local function BuildTextAppearanceTab(container, group, style)
     if style.showTextGroupHeader then
         AddSliderRow(panelRight, {
             label = "Header Font Size",
+            setting = TEXTMODE_FINDER.panel and TEXTMODE_FINDER.panel.headerSize,
             indent = true,
             min = 6, max = 72, step = 1,
             value = style.textHeaderFontSize or 12,
@@ -768,6 +785,7 @@ local function BuildTextAppearanceTab(container, group, style)
 
         AddColorRow(panelRight, {
             label = "Header Color",
+            setting = TEXTMODE_FINDER.panel and TEXTMODE_FINDER.panel.headerColor,
             indent = true,
             tbl = style, key = "textHeaderFontColor",
             default = {1, 1, 1, 1}, hasAlpha = true,
@@ -802,6 +820,7 @@ local function BuildTextAppearanceTab(container, group, style)
     BuildTextBackgroundControls(bgLeft, bgSec.tbl, refreshStyle, {
         row = true,
         fallbackStyle = bgSec.fallbackStyle,
+        settings = TEXTMODE_FINDER.background,
     })
 
     bgSec:Finish()
@@ -832,6 +851,153 @@ local function BuildTextAppearanceTab(container, group, style)
             end
         end
     end
+end
+
+------------------------------------------------------------------------
+-- SETTINGS FINDER CATALOG
+------------------------------------------------------------------------
+
+local TEXTMODE_FINDER_SCOPE = { "panel", "entry" }
+
+local function TextModeFinderApplies(context)
+    return context and context.group and context.displayMode == "text"
+end
+
+local function TextModeFinderEffectiveStyle(context)
+    local group = context and context.group
+    if not group then return nil end
+    local lens = ResolveStyleLens(group)
+    return (lens and lens.effective) or group.style
+end
+
+local function TextModeFinderCustomizedColors(context)
+    if not TextModeFinderApplies(context) or context.scope ~= "entry" then
+        return false
+    end
+    local lens = ResolveStyleLens(context.group)
+    local scope = ResolveLensSection(lens, context.group, "textColors")
+    return scope == "customized"
+end
+
+local function TextModeFinderHasSpacing(context)
+    local buttons = context and context.group and context.group.buttons
+    return TextModeFinderApplies(context) and buttons and #buttons > 1
+end
+
+local function TextModeFinderHeaderEnabled(context)
+    local style = context and context.group and context.group.style
+    return TextModeFinderApplies(context) and style and style.showTextGroupHeader == true
+end
+
+local function TextModeFinderCustomBorder(context)
+    local style = TextModeFinderEffectiveStyle(context)
+    return TextModeFinderApplies(context) and style
+        and ST.GetBorderRenderMode(style, "textBorderRenderMode") ~= ST.BORDER_RENDER_MODE_CRISP
+end
+
+if ST._DefineSettingRoute then
+    TEXTMODE_FINDER.format = ST._DefineSettingRoute({
+        idPrefix = "panel.text.format.editor",
+        scope = TEXTMODE_FINDER_SCOPE,
+        tab = "format",
+        tabLabel = "Format",
+        section = "formatEditor",
+        sectionLabel = "Format",
+        rowScope = "primary",
+        applies = TextModeFinderApplies,
+    }):Settings({
+        string = { label = "Format String", aliases = { "text format", "tokens" } },
+    })
+
+    TEXTMODE_FINDER.formatSettings = ST._DefineSettingRoute({
+        idPrefix = "panel.text.format.settings",
+        scope = TEXTMODE_FINDER_SCOPE,
+        tab = "format",
+        tabLabel = "Format",
+        section = "formatSettings",
+        sectionLabel = "Format Settings",
+        collapseKeys = { "textformat_settings" },
+        rowScope = "primary",
+        applies = TextModeFinderApplies,
+    }):Settings({
+        duration = { label = "Duration Format", aliases = { "timer format" } },
+        readyText = { label = "Ready Text", aliases = { "status text" } },
+    })
+
+    TEXTMODE_FINDER.font = ST._DefineSettingRoute({
+        idPrefix = "panel.text.appearance.font",
+        scope = TEXTMODE_FINDER_SCOPE,
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "font",
+        sectionId = "textFont",
+        sectionLabel = "Font",
+        collapseKeys = { "textappearance_font" },
+        rowScope = "primary",
+        applies = TextModeFinderApplies,
+    }):Settings({
+        fontSize = { label = "Font Size" },
+        font = { label = "Font" },
+        outline = { label = "Font Outline" },
+        alignment = { label = "Alignment" },
+        shadow = { label = "Text Shadow" },
+    })
+
+    TEXTMODE_FINDER.colors = ST._DefineSettingRoute({
+        idPrefix = "panel.text.appearance.colors",
+        scope = TEXTMODE_FINDER_SCOPE,
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "colors",
+        sectionId = "textColors",
+        sectionLabel = "Colors",
+        collapseKeys = { "textappearance_colors" },
+        rowScope = "primary",
+        applies = TextModeFinderApplies,
+    }):Settings({
+        text = { label = "Text Color" },
+        cooldown = { label = "Cooldown Color" },
+        ready = { label = "Ready Color" },
+        aura = { label = "Aura Color" },
+        custom = { label = "Custom Color" },
+        readyText = { label = "Ready Text", aliases = { "status text" }, applies = TextModeFinderCustomizedColors },
+    })
+
+    TEXTMODE_FINDER.panel = ST._DefineSettingRoute({
+        idPrefix = "panel.text.appearance.panel",
+        scope = TEXTMODE_FINDER_SCOPE,
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "panel",
+        sectionLabel = "Panel",
+        collapseKeys = { "textappearance_settings" },
+        rowScope = "primary",
+        applies = TextModeFinderApplies,
+    }):Settings({
+        padding = { label = "Padding" },
+        spacing = { label = "Entry Spacing", applies = TextModeFinderHasSpacing },
+        header = { label = "Show Group Header" },
+        headerSize = { label = "Header Font Size", applies = TextModeFinderHeaderEnabled },
+        headerColor = { label = "Header Color", applies = TextModeFinderHeaderEnabled },
+    })
+
+    TEXTMODE_FINDER.background = ST._DefineSettingRoute({
+        idPrefix = "panel.text.appearance.background",
+        scope = TEXTMODE_FINDER_SCOPE,
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "background",
+        sectionId = "textBackground",
+        sectionLabel = "Background & Border",
+        collapseKeys = { "textappearance_bg" },
+        rowScope = "primary",
+        applies = TextModeFinderApplies,
+    }):Settings({
+        background = { label = "Background Color" },
+        thickness = { label = "Border Thickness" },
+        size = { label = "Border Size", applies = TextModeFinderCustomBorder },
+        color = { label = "Border Color" },
+    })
 end
 
 -- Exports

@@ -355,6 +355,415 @@ ST._SECTION_HOME.icons = {
     },
 }
 
+------------------------------------------------------------------------
+-- SETTINGS FINDER CATALOG
+------------------------------------------------------------------------
+
+local APPEARANCE_FINDER = { sections = {} }
+
+local function AppearanceFinderIcons(context)
+    local mode = context and context.displayMode
+    return mode == nil or mode == "icons"
+end
+
+local function AppearanceFinderAssistant(context)
+    return context and context.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
+end
+
+local function AppearanceFinderTracksAura(context)
+    local group = context and context.group
+        or (CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup])
+    return group and IconsGroupTracksAura(group)
+end
+
+local function AppearanceFinderStateFlag(key)
+    return function(context)
+        local state = context and context._settingsFinderAppearanceState
+        return state and state[key] == true
+    end
+end
+
+-- Resolve the structural facts used by Appearance routes without constructing
+-- the Appearance page. The action row runs this once per edited object before
+-- freezing descriptor applicability; page builders reuse it so both paths
+-- share the same gates.
+local function RefreshAppearanceFinderState(context)
+    local group = context and context.group
+        or (CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup])
+    if not group then
+        return nil
+    end
+    local style = group.style or {}
+    local state = {
+        assistantSquare = style.maintainAspectRatio ~= false,
+        assistantRectangular = style.maintainAspectRatio == false,
+        assistantCustomBorder = ST.GetBorderRenderMode(style)
+            ~= ST.BORDER_RENDER_MODE_CRISP,
+    }
+
+    if (group.displayMode or "icons") == "icons" then
+        local lens = ST._ResolveStyleLens(group)
+        local effective = (lens and lens.effective) or style
+        local _, lowTimeRead = ResolveLensSection(lens, group, "durationLowTime")
+        local _, borderRead = ResolveLensSection(lens, group, "borderSettings")
+        local _, tintRead = ResolveLensSection(lens, group, "iconTint")
+        local _, cooldownRead, cooldownWrite = ResolveLensSection(
+            lens, group, "cooldownText")
+        local _, countRead, countWrite = ResolveLensSection(
+            lens, group, "chargeText")
+        local _, auraTextRead, auraTextWrite = ResolveLensSection(
+            lens, group, "auraText")
+        local _, auraStackRead, auraStackWrite = ResolveLensSection(
+            lens, group, "auraStackText")
+        local _, keybindRead, keybindWrite = ResolveLensSection(
+            lens, group, "keybindText")
+        lowTimeRead = lowTimeRead or effective
+        borderRead = borderRead or effective
+        tintRead = tintRead or effective
+        cooldownRead = cooldownRead or effective
+        countRead = countRead or effective
+        auraTextRead = auraTextRead or effective
+        auraStackRead = auraStackRead or effective
+        keybindRead = keybindRead or effective
+
+        local drawsCooldownLowTime = IconsDrawCooldownDurationLowTimeRows(group, effective)
+        local drawsAuraLowTime = IconsDrawAuraDurationLowTimeRows(group, effective)
+        local threshold = tonumber(lowTimeRead.durationLowTimeThreshold)
+        local threshold2 = tonumber(lowTimeRead.durationLowTimeThreshold2)
+        local lowTimeActive = threshold ~= nil and threshold > 0
+        local entryIsAuraOnly = (lens and lens.mode == "entry") and lens.buttonData
+            and ST.IsAuraSectionEntry(group, lens.buttonData)
+        local hasAura = GroupHasAuraTrackingEntry(group)
+        local isAuraPanel = ST.IsAuraPanelGroup(group)
+
+        state.iconsSquare = style.maintainAspectRatio == true
+        state.iconsRectangular = style.maintainAspectRatio ~= true
+        state.customBorderSize = ST.GetBorderRenderMode(borderRead)
+            ~= ST.BORDER_RENDER_MODE_CRISP
+        state.lowTimeAvailable = drawsCooldownLowTime or drawsAuraLowTime
+        state.lowTimeActive = state.lowTimeAvailable and lowTimeActive
+        state.lowTimeAuraToggle = state.lowTimeActive and not isAuraPanel
+            and not entryIsAuraOnly and drawsAuraLowTime
+        state.lowTimeCritical = state.lowTimeActive and threshold2 ~= nil
+            and threshold2 > 0 and threshold2 < threshold
+        state.cooldownTintColor = CanGroupUseOverrideSection(group, "desaturation")
+            and tintRead.iconCooldownTintEnabled == true
+        state.auraTintColor = hasAura and tintRead.iconAuraTintEnabled == true
+        state.cooldownAvailable = not isAuraPanel
+        state.cooldownVisibility = state.cooldownAvailable
+            and cooldownRead.showCooldownText == true
+        state.countAvailable = CanGroupUseOverrideSection(group, "chargeText")
+        state.auraTextAvailable = hasAura
+        state.auraTextVisibility = hasAura and auraTextRead.showAuraText ~= false
+        state.auraStackAvailable = hasAura
+        state.keybindAvailable = CanGroupUseOverrideSection(group, "keybindText")
+        state.durationFormatAvailable = IconsDrawCooldownDurationLowTimeRows(
+            group, group.style) or drawsCooldownLowTime
+            or IconsDrawAuraDurationLowTimeRows(group, group.style)
+            or drawsAuraLowTime
+        state.advancedCooldown = cooldownWrite ~= nil
+            and cooldownRead.showCooldownText == true
+        state.advancedCount = state.countAvailable and countWrite ~= nil
+            and countRead.showChargeText ~= false
+        state.advancedAuraText = hasAura and auraTextWrite ~= nil
+            and auraTextRead.showAuraText ~= false
+        state.advancedAuraStacks = hasAura and auraStackWrite ~= nil
+            and auraStackRead.showAuraStackText ~= false
+        state.advancedKeybind = state.keybindAvailable and keybindWrite ~= nil
+            and keybindRead.showKeybindText == true
+    end
+
+    if context then
+        context._settingsFinderAppearanceState = state
+    end
+    return state
+end
+
+if ST._RegisterSettingsFinderContextPreparer then
+    ST._RegisterSettingsFinderContextPreparer(
+        { "panel", "entry" }, RefreshAppearanceFinderState)
+end
+
+local function AppearanceFinderSectionSquare(context)
+    local style = context and context.group and context.group.style
+    return style and style.maintainAspectRatio == true
+end
+
+local function AppearanceFinderSectionRectangular(context)
+    local style = context and context.group and context.group.style
+    return style and style.maintainAspectRatio ~= true
+end
+
+local ICON_APPEARANCE_SCOPE = { "panel", "entry" }
+
+if ST._DefineSettingRoute then
+    local assistant = ST._DefineSettingRoute({
+        idPrefix = "panel.appearance.assistant",
+        scope = "panel",
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "assistant",
+        sectionLabel = "Assistant Panel",
+        collapseKeys = { "appearance_assistant" },
+        rowScope = "primary",
+        applies = AppearanceFinderAssistant,
+    })
+    APPEARANCE_FINDER.assistant = assistant:Settings({
+        square = { label = "Square Icons" },
+        size = { label = "Button Size", applies = AppearanceFinderStateFlag("assistantSquare") },
+        width = { label = "Icon Width", applies = AppearanceFinderStateFlag("assistantRectangular") },
+        height = { label = "Icon Height", applies = AppearanceFinderStateFlag("assistantRectangular") },
+        zoom = { label = "Icon Zoom" },
+        thickness = { label = "Border Thickness" },
+        borderSize = { label = "Border Size", applies = AppearanceFinderStateFlag("assistantCustomBorder") },
+        borderColor = { label = "Border Color" },
+        keybind = { label = "Show Keybind Text" },
+        keybindAnchor = { label = "Anchor" },
+        keybindXOffset = { label = "X Offset" },
+        keybindYOffset = { label = "Y Offset" },
+        keybindFontSize = { label = "Font Size" },
+        keybindFont = { label = "Font" },
+        keybindOutline = { label = "Font Outline" },
+        keybindColor = { label = "Font Color" },
+    })
+
+    local icons = ST._DefineSettingRoute({
+        idPrefix = "panel.appearance.icons",
+        scope = ICON_APPEARANCE_SCOPE,
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "icons",
+        sectionLabel = "Icon Settings",
+        collapseKeys = { "appearance_icons" },
+        rowScope = "primary",
+        applies = AppearanceFinderIcons,
+    })
+    APPEARANCE_FINDER.icons = icons:Settings({
+        square = { label = "Square Icons" },
+        size = { label = "Button Size", applies = AppearanceFinderStateFlag("iconsSquare") },
+        width = { label = "Icon Width", applies = AppearanceFinderStateFlag("iconsRectangular") },
+        height = { label = "Icon Height", applies = AppearanceFinderStateFlag("iconsRectangular") },
+        zoom = { label = "Icon Zoom" },
+        spacing = { label = "Button Spacing" },
+    })
+
+    for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS or {}) do
+        local routeAnchor = anchor
+        local route = ST._DefineSettingRoute({
+            idPrefix = "panel.appearance.section." .. tostring(routeAnchor),
+            scope = ICON_APPEARANCE_SCOPE,
+            tab = "appearance",
+            tabLabel = "Appearance",
+            section = "section_" .. tostring(routeAnchor),
+            sectionLabel = (ST.PANEL_SECTION_ANCHOR_LABELS[routeAnchor] or tostring(routeAnchor)) .. " Section",
+            collapseKeys = { "appearance_section_" .. tostring(routeAnchor) },
+            rowScope = "primary",
+            applies = function(context)
+                if not AppearanceFinderIcons(context) then return false end
+                local group = context and context.group
+                return group and type(group.sections and group.sections[routeAnchor]) == "table"
+            end,
+        })
+        APPEARANCE_FINDER.sections[routeAnchor] = route:Settings({
+            size = { label = "Icon Size", applies = AppearanceFinderSectionSquare },
+            width = { label = "Icon Width", applies = AppearanceFinderSectionRectangular },
+            height = { label = "Icon Height", applies = AppearanceFinderSectionRectangular },
+            spacing = { label = "Spacing" },
+        })
+    end
+
+    local text = ST._DefineSettingRoute({
+        idPrefix = "panel.appearance.text",
+        scope = ICON_APPEARANCE_SCOPE,
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "text",
+        sectionLabel = "Text",
+        collapseKeys = { "appearance_text" },
+        rowScope = "primary",
+        applies = AppearanceFinderIcons,
+    })
+    APPEARANCE_FINDER.text = text:Settings({
+        cooldown = { label = "Show Cooldown Text", applies = AppearanceFinderStateFlag("cooldownAvailable") },
+        cooldownVisible = {
+            label = "Visible", sectionLabel = "Cooldown Text",
+            aliases = { "cooldown text visibility" },
+            applies = AppearanceFinderStateFlag("cooldownVisibility"),
+        },
+        cooldownLast = {
+            label = "Show During Last", sectionLabel = "Cooldown Text",
+            aliases = { "cooldown text threshold" },
+            applies = AppearanceFinderStateFlag("cooldownVisibility"),
+        },
+        count = { label = "Show Count Text (Charges/Uses)", aliases = { "charges", "uses" }, applies = AppearanceFinderStateFlag("countAvailable") },
+        auraDuration = { label = "Show Aura Duration Text", applies = AppearanceFinderStateFlag("auraTextAvailable") },
+        auraVisible = {
+            label = "Visible", sectionLabel = "Aura Duration Text",
+            aliases = { "aura text visibility" },
+            applies = AppearanceFinderStateFlag("auraTextVisibility"),
+        },
+        auraLast = {
+            label = "Show During Last", sectionLabel = "Aura Duration Text",
+            aliases = { "aura text threshold" },
+            applies = AppearanceFinderStateFlag("auraTextVisibility"),
+        },
+        auraStacks = { label = "Show Aura Stack Text", applies = AppearanceFinderStateFlag("auraStackAvailable") },
+        keybind = { label = KEYBIND_CUSTOM_LABEL, applies = AppearanceFinderStateFlag("keybindAvailable") },
+        durationFormat = { label = "Duration Format", aliases = { "timer format" }, applies = AppearanceFinderStateFlag("durationFormatAvailable") },
+    })
+
+    local lowTime = ST._DefineSettingRoute({
+        idPrefix = "panel.appearance.text.lowTime",
+        scope = ICON_APPEARANCE_SCOPE,
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "text",
+        sectionLabel = "Low-Time Text",
+        collapseKeys = { "appearance_text" },
+        rowScope = "primary",
+        applies = AppearanceFinderIcons,
+    })
+    APPEARANCE_FINDER.lowTime = lowTime:Settings({
+        enabled = {
+            label = "Change Text Near Expiry",
+            aliases = { "low time", "warning time" },
+            applies = AppearanceFinderStateFlag("lowTimeAvailable"),
+        },
+        warningThreshold = { label = "Start Warning Below", applies = AppearanceFinderStateFlag("lowTimeActive") },
+        warningColor = { label = "Warning Color", applies = AppearanceFinderStateFlag("lowTimeActive") },
+        auras = { label = "Also Apply to Aura Text", applies = AppearanceFinderStateFlag("lowTimeAuraToggle") },
+        critical = { label = "Add Critical Styling", applies = AppearanceFinderStateFlag("lowTimeActive") },
+        criticalThreshold = { label = "Start Critical Below", applies = AppearanceFinderStateFlag("lowTimeCritical") },
+        criticalColor = { label = "Critical Color", applies = AppearanceFinderStateFlag("lowTimeCritical") },
+        decimals = { label = "Show Decimals Near Expiry", applies = AppearanceFinderStateFlag("lowTimeActive") },
+    })
+
+    local function TextAdvanced(sectionId, advancedKey, suffix, label)
+        local stateKeys = {
+            cooldownText = "advancedCooldown",
+            chargeText = "advancedCount",
+            auraText = "advancedAuraText",
+            auraStackText = "advancedAuraStacks",
+            keybindText = "advancedKeybind",
+        }
+        local stateApplies = AppearanceFinderStateFlag(stateKeys[sectionId])
+        return ST._DefineSettingRoute({
+            idPrefix = "panel.appearance.text." .. suffix,
+            scope = ICON_APPEARANCE_SCOPE,
+            tab = "appearance",
+            tabLabel = "Appearance",
+            section = "text",
+            sectionLabel = label,
+            collapseKeys = { "appearance_text" },
+            rowScope = "primary",
+            advancedKey = advancedKey,
+            applies = function(context)
+                return AppearanceFinderIcons(context) and stateApplies(context)
+            end,
+        })
+    end
+
+    APPEARANCE_FINDER.cooldown = TextAdvanced("cooldownText", "cooldownText", "cooldown", "Cooldown Text"):Settings({
+        fontSize = { label = "Font Size" }, font = { label = "Font" }, outline = { label = "Font Outline" },
+        color = { label = "Font Color" }, anchor = { label = "Anchor" },
+        xOffset = { label = "X Offset" }, yOffset = { label = "Y Offset" },
+    })
+    APPEARANCE_FINDER.count = TextAdvanced("chargeText", "chargeText", "count", "Count Text"):Settings({
+        fontSize = { label = "Font Size" }, font = { label = "Font" }, outline = { label = "Font Outline" },
+        maxColor = { label = "Font Color (Max Charges)" },
+        missingColor = { label = "Font Color (Missing Charges)" },
+        zeroColor = { label = "Font Color (Zero Charges)" },
+        anchor = { label = "Anchor" }, xOffset = { label = "X Offset" }, yOffset = { label = "Y Offset" },
+    })
+    APPEARANCE_FINDER.auraText = TextAdvanced("auraText", "auraText", "auraDuration", "Aura Duration Text"):Settings({
+        fontSize = { label = "Font Size" }, font = { label = "Font" }, outline = { label = "Font Outline" },
+        color = { label = "Font Color" }, anchor = { label = "Anchor" },
+        xOffset = { label = "X Offset" }, yOffset = { label = "Y Offset" },
+    })
+    APPEARANCE_FINDER.auraStacks = TextAdvanced("auraStackText", "auraStackText", "auraStacks", "Aura Stack Text"):Settings({
+        fontSize = { label = "Font Size" }, font = { label = "Font" }, outline = { label = "Font Outline" },
+        color = { label = "Font Color" }, anchor = { label = "Anchor" },
+        xOffset = { label = "X Offset" }, yOffset = { label = "Y Offset" },
+    })
+    APPEARANCE_FINDER.keybind = TextAdvanced("keybindText", "keybindText", "keybind", "Keybind Text"):Settings({
+        anchor = { label = "Anchor" }, xOffset = { label = "X Offset" }, yOffset = { label = "Y Offset" },
+        fontSize = { label = "Font Size" }, font = { label = "Font" }, outline = { label = "Font Outline" },
+        color = { label = "Font Color" },
+    })
+
+    local whileAura = ST._DefineSettingRoute({
+        idPrefix = "panel.appearance.whileAuraActive",
+        scope = ICON_APPEARANCE_SCOPE,
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "whileAuraActive",
+        sectionLabel = "While Aura Active",
+        collapseKeys = { "appearance_whileAuraActive" },
+        rowScope = "primary",
+        applies = function(context)
+            return AppearanceFinderIcons(context)
+                and AppearanceFinderTracksAura(context)
+        end,
+    })
+    APPEARANCE_FINDER.whileAura = whileAura:Settings({
+        cooldown = { label = "Cooldown", aliases = { "cooldown while aura active" } },
+        auraIcon = { label = "Show Aura Icon" },
+        desaturate = { label = "Desaturate Icon" },
+    })
+
+    local border = ST._DefineSettingRoute({
+        idPrefix = "panel.appearance.border",
+        scope = ICON_APPEARANCE_SCOPE,
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "borderSettings",
+        sectionLabel = "Border",
+        collapseKeys = { "appearance_border" },
+        rowScope = "primary",
+        applies = AppearanceFinderIcons,
+    })
+    APPEARANCE_FINDER.border = border:Settings({
+        color = { label = "Border Color" },
+        thickness = { label = "Border Thickness" },
+        size = { label = "Border Size", applies = AppearanceFinderStateFlag("customBorderSize") },
+    })
+
+    local tint = ST._DefineSettingRoute({
+        idPrefix = "panel.appearance.iconTint",
+        scope = ICON_APPEARANCE_SCOPE,
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "iconTint",
+        sectionLabel = "Icon Tint",
+        collapseKeys = { "appearance_iconTint" },
+        rowScope = "primary",
+        applies = AppearanceFinderIcons,
+    })
+    APPEARANCE_FINDER.tint = tint:Settings({
+        base = { label = "Base Icon Color" },
+        background = { label = "Background Color" },
+        separateCooldown = { label = "Use Separate Cooldown Tint" },
+        cooldown = { label = "Cooldown Icon Color", applies = AppearanceFinderStateFlag("cooldownTintColor") },
+        separateAura = { label = "Use Separate Aura Tint", applies = AppearanceFinderTracksAura },
+        aura = { label = "Aura Active Icon Color", applies = AppearanceFinderStateFlag("auraTintColor") },
+    })
+
+    APPEARANCE_FINDER.masque = ST._DefineSettingRoute({
+        idPrefix = "panel.appearance.masque",
+        scope = ICON_APPEARANCE_SCOPE,
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "masque",
+        sectionLabel = "Masque",
+        collapseKeys = { "appearance_masque" },
+        rowScope = "primary",
+        applies = function(context)
+            return AppearanceFinderIcons(context) and CooldownCompanion.Masque ~= nil
+                and not CooldownCompanion:IsAuraPanel(context and context.group)
+        end,
+    }):Settings({ enabled = { label = "Enable Masque Skinning", aliases = { "masque" } } })
+end
+
 local function BuildAppearanceTab(container)
     local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
 
@@ -403,6 +812,7 @@ local function BuildAppearanceTab(container)
 
         AddCheckboxRow(assistLeft, {
             label = "Square Icons",
+            setting = APPEARANCE_FINDER.assistant.square,
             value = style.maintainAspectRatio ~= false,
             onChange = function(value)
                 style.maintainAspectRatio = value ~= false
@@ -420,6 +830,7 @@ local function BuildAppearanceTab(container)
         if style.maintainAspectRatio ~= false then
             local sizeRow = AddSliderRow(assistLeft, {
                 label = "Button Size",
+                setting = APPEARANCE_FINDER.assistant.size,
                 min = 10, max = 150, step = 0.1,
                 value = style.buttonSize or ST.BUTTON_SIZE,
             })
@@ -430,6 +841,7 @@ local function BuildAppearanceTab(container)
         else
             local widthRow = AddSliderRow(assistLeft, {
                 label = "Icon Width",
+                setting = APPEARANCE_FINDER.assistant.width,
                 min = 10, max = 150, step = 0.1,
                 value = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE,
             })
@@ -440,6 +852,7 @@ local function BuildAppearanceTab(container)
 
             local heightRow = AddSliderRow(assistLeft, {
                 label = "Icon Height",
+                setting = APPEARANCE_FINDER.assistant.height,
                 min = 10, max = 150, step = 0.1,
                 value = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE,
             })
@@ -450,6 +863,7 @@ local function BuildAppearanceTab(container)
         end
 
         ST._BuildIconZoomControls(assistLeft, style, refreshStyle, {
+            setting = APPEARANCE_FINDER.assistant.zoom,
             previewRefresh = function()
                 if ST._RefreshButtonsPreviewMirror then
                     ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
@@ -459,12 +873,29 @@ local function BuildAppearanceTab(container)
 
         -- The border builder has no second-column split of its own, so its
         -- whole block heads the right column.
-        BuildBorderControls(assistRight, style, refreshStyle, { row = true })
+        BuildBorderControls(assistRight, style, refreshStyle, {
+            row = true,
+            settings = {
+                thickness = APPEARANCE_FINDER.assistant.thickness,
+                size = APPEARANCE_FINDER.assistant.borderSize,
+                color = APPEARANCE_FINDER.assistant.borderColor,
+            },
+        })
 
         BuildKeybindTextControls(assistLeft, style, refreshStyle, {
             row = true,
             rightColumn = assistRight,
             label = "Show Keybind Text",
+            setting = APPEARANCE_FINDER.assistant.keybind,
+            settings = {
+                anchor = APPEARANCE_FINDER.assistant.keybindAnchor,
+                xOffset = APPEARANCE_FINDER.assistant.keybindXOffset,
+                yOffset = APPEARANCE_FINDER.assistant.keybindYOffset,
+                fontSize = APPEARANCE_FINDER.assistant.keybindFontSize,
+                font = APPEARANCE_FINDER.assistant.keybindFont,
+                outline = APPEARANCE_FINDER.assistant.keybindOutline,
+                color = APPEARANCE_FINDER.assistant.keybindColor,
+            },
             tooltip = {
                 "Show Keybind Text",
                 {"Shows detected keybind text for the current recommendation.", 1, 1, 1, true},
@@ -552,7 +983,6 @@ local function BuildAppearanceTab(container)
     -- Resolved ONCE here and handed to every section below, so one tab cannot
     -- disagree with itself about which entry it is showing.
     local lens = ST._ResolveStyleLens(group)
-
     -- Under a multi selection these tabs edit the PANEL, and only this line
     -- says so - the per-section scope chrome speaks under an entry lens alone.
     -- No-op in every other lens mode. The trigger, texture, assistant and
@@ -593,6 +1023,7 @@ local function BuildAppearanceTab(container)
 
     local squareRow = AddCheckboxRow(iconLeft, {
         label = "Square Icons",
+        setting = APPEARANCE_FINDER.icons.square,
         value = style.maintainAspectRatio or false,
         disabled = iconSec.disabled or group.masqueEnabled == true,
         onChange = function(val)
@@ -623,6 +1054,7 @@ local function BuildAppearanceTab(container)
     if style.maintainAspectRatio then
         local sizeRow = AddSliderRow(iconLeft, {
             label = "Button Size",
+            setting = APPEARANCE_FINDER.icons.size,
             min = 10, max = 150, step = 0.1,
             value = style.buttonSize or ST.BUTTON_SIZE,
             disabled = iconSec.disabled,
@@ -633,6 +1065,7 @@ local function BuildAppearanceTab(container)
     else
         local wRow = AddSliderRow(iconLeft, {
             label = "Icon Width",
+            setting = APPEARANCE_FINDER.icons.width,
             min = 10, max = 150, step = 0.1,
             value = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE,
             disabled = iconSec.disabled,
@@ -643,6 +1076,7 @@ local function BuildAppearanceTab(container)
 
         local hRow = AddSliderRow(iconLeft, {
             label = "Icon Height",
+            setting = APPEARANCE_FINDER.icons.height,
             min = 10, max = 150, step = 0.1,
             value = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE,
             disabled = iconSec.disabled,
@@ -667,6 +1101,7 @@ local function BuildAppearanceTab(container)
     local zoomRow = ST._BuildIconZoomControls(iconLeft, zoomSec.tbl, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end, {
+        setting = APPEARANCE_FINDER.icons.zoom,
         disabled = group.masqueEnabled == true or zoomSec.disabled,
         previewRefresh = function()
             if ST._RefreshButtonsPreviewMirror then
@@ -685,6 +1120,7 @@ local function BuildAppearanceTab(container)
     if group.buttons and #group.buttons > 1 then
         local spacingRow = AddSliderRow(iconRight, {
             label = "Button Spacing",
+            setting = APPEARANCE_FINDER.icons.spacing,
             min = 0, max = 30, step = 0.1,
             value = style.buttonSpacing or ST.BUTTON_SPACING,
             disabled = iconSec.disabled,
@@ -752,6 +1188,7 @@ local function BuildAppearanceTab(container)
                     -- slider and it writes that value.
                     local sectionSizeRow = AddSliderRow(sectionLeft, {
                         label = "Icon Size",
+                        setting = APPEARANCE_FINDER.sections[anchor].size,
                         min = 10, max = 150, step = 0.1,
                         value = sectionW,
                         disabled = sectionSec.disabled,
@@ -762,6 +1199,7 @@ local function BuildAppearanceTab(container)
                 else
                     local sectionWidthRow = AddSliderRow(sectionLeft, {
                         label = "Icon Width",
+                        setting = APPEARANCE_FINDER.sections[anchor].width,
                         min = 10, max = 150, step = 0.1,
                         value = sectionW,
                         disabled = sectionSec.disabled,
@@ -772,6 +1210,7 @@ local function BuildAppearanceTab(container)
 
                     local sectionHeightRow = AddSliderRow(sectionLeft, {
                         label = "Icon Height",
+                        setting = APPEARANCE_FINDER.sections[anchor].height,
                         min = 10, max = 150, step = 0.1,
                         value = sectionH,
                         disabled = sectionSec.disabled,
@@ -786,6 +1225,7 @@ local function BuildAppearanceTab(container)
                 local sectionRightBracket = sectionSec:Bracket(sectionRight)
                 local sectionSpacingRow = AddSliderRow(sectionRight, {
                     label = "Spacing",
+                    setting = APPEARANCE_FINDER.sections[anchor].spacing,
                     min = 0, max = 30, step = 0.1,
                     value = sectionSpacing,
                     disabled = sectionSec.disabled,
@@ -872,6 +1312,7 @@ local function BuildAppearanceTab(container)
     local function AddDurationFormatRow()
         if durationFormatAdded then return nil end
         local row = AddDurationFormatDropdown(durationLeft, group.style, refreshStyle, {
+            setting = APPEARANCE_FINDER.text.durationFormat,
             sharedHelp = true,
             infoButtons = tabInfoButtons,
         })
@@ -903,6 +1344,7 @@ local function BuildAppearanceTab(container)
         -- Cooldown Text. The aura opt-in row rides only where the aura
         -- surface exists; Aura Panels apply unconditionally (runtime gate).
         local rows = ST._AddDurationLowTimeRows(lowTimeLeft, lowTimeSec.tbl, refreshStyle, {
+            settings = APPEARANCE_FINDER.lowTime,
             explicitOff = lowTimeSec.scope == "customized",
             disabled = lowTimeSec.disabled,
             rightColumn = lowTimeRight,
@@ -937,6 +1379,7 @@ local function BuildAppearanceTab(container)
 
     local cdTextRow = AddCheckboxRow(durationLeft, {
         label = "Show Cooldown Text",
+        setting = APPEARANCE_FINDER.text.cooldown,
         value = cdTextSec.read.showCooldownText or false,
         disabled = cdTextSec.disabled,
         onChange = function(val)
@@ -952,7 +1395,8 @@ local function BuildAppearanceTab(container)
         -- live group style itself (see the factory's note). An entry's override
         -- store has no such resolver, so that one is handed over explicitly.
         local cdTextAdvanced = MakeCooldownTextAdvancedDescriptor(
-            cdTextSec.scope == "customized" and cdTextSec.write or nil)
+            cdTextSec.scope == "customized" and cdTextSec.write or nil,
+            APPEARANCE_FINDER.cooldown)
 
         AddAdvancedToggle(cdTextRow, cdTextAdvanced.settingKey, tabInfoButtons, cdTextSec.read.showCooldownText, {
             title = cdTextAdvanced.title,
@@ -966,6 +1410,10 @@ local function BuildAppearanceTab(container)
             "cooldown", refreshStyle, {
                 explicitOff = cdTextSec.scope == "customized",
                 disabled = cdTextSec.disabled,
+                settings = {
+                    mode = APPEARANCE_FINDER.text.cooldownVisible,
+                    threshold = APPEARANCE_FINDER.text.cooldownLast,
+                },
                 infoButtons = tabInfoButtons,
                 rebuild = function()
                     CooldownCompanion:RefreshConfigPanel()
@@ -993,6 +1441,7 @@ local function BuildAppearanceTab(container)
 
     local chargeTextRow = AddCheckboxRow(otherLeft, {
         label = "Show Count Text (Charges/Uses)",
+        setting = APPEARANCE_FINDER.text.count,
         value = chargeSec.read.showChargeText ~= false,
         disabled = chargeSec.disabled,
         onChange = function(val)
@@ -1018,11 +1467,19 @@ local function BuildAppearanceTab(container)
     -- the selected entry's override store depending on scope. Only built while
     -- there is one: an inert section has no gear to open it from.
     local function BuildChargeTextAdvanced(panel)
-        AddFontControls(panel, chargeSec.write, "charge", { size = 12 }, refreshStyle, { row = true })
+        AddFontControls(panel, chargeSec.write, "charge", { size = 12 }, refreshStyle, {
+            row = true,
+            settings = {
+                size = APPEARANCE_FINDER.count.fontSize,
+                font = APPEARANCE_FINDER.count.font,
+                outline = APPEARANCE_FINDER.count.outline,
+            },
+        })
 
-        local function ChargeColorRow(rowLabel, key)
+        local function ChargeColorRow(rowLabel, key, setting)
             AddColorRow(panel, {
                 label = rowLabel,
+                setting = setting,
                 tooltip = { rowLabel },
                 tbl = chargeSec.write,
                 key = key,
@@ -1032,12 +1489,18 @@ local function BuildAppearanceTab(container)
                 onChange = refreshStyle,
             })
         end
-        ChargeColorRow("Font Color (Max Charges)", "chargeFontColor")
-        ChargeColorRow("Font Color (Missing Charges)", "chargeFontColorMissing")
-        ChargeColorRow("Font Color (Zero Charges)", "chargeFontColorZero")
+        ChargeColorRow("Font Color (Max Charges)", "chargeFontColor", APPEARANCE_FINDER.count.maxColor)
+        ChargeColorRow("Font Color (Missing Charges)", "chargeFontColorMissing", APPEARANCE_FINDER.count.missingColor)
+        ChargeColorRow("Font Color (Zero Charges)", "chargeFontColorZero", APPEARANCE_FINDER.count.zeroColor)
 
-        AddAnchorDropdown(panel, chargeSec.write, "chargeAnchor", "BOTTOMRIGHT", refreshStyle, nil, { row = true })
-        AddOffsetSliders(panel, chargeSec.write, "chargeXOffset", "chargeYOffset", { x = -2, y = 2 }, refreshStyle, { row = true })
+        AddAnchorDropdown(panel, chargeSec.write, "chargeAnchor", "BOTTOMRIGHT", refreshStyle, nil, {
+            row = true,
+            setting = APPEARANCE_FINDER.count.anchor,
+        })
+        AddOffsetSliders(panel, chargeSec.write, "chargeXOffset", "chargeYOffset", { x = -2, y = 2 }, refreshStyle, {
+            row = true,
+            settings = { x = APPEARANCE_FINDER.count.xOffset, y = APPEARANCE_FINDER.count.yOffset },
+        })
     end
 
     if chargeSec.write then
@@ -1070,6 +1533,7 @@ local function BuildAppearanceTab(container)
 
         local auraTextRow = AddCheckboxRow(auraTextHost, {
             label = "Show Aura Duration Text",
+            setting = APPEARANCE_FINDER.text.auraDuration,
             value = auraTextSec.read.showAuraText ~= false,
             disabled = auraTextSec.disabled,
             onChange = function(val)
@@ -1083,12 +1547,20 @@ local function BuildAppearanceTab(container)
         -- Single rail (AdvancedSettingsPanel.lua): every builder runs with
         -- { row = true } and no rightColumn.
         local function BuildAuraDurationTextAdvanced(panel)
-            AddFontControls(panel, auraTextSec.write, "auraText", { size = 12 }, refreshStyle, { row = true })
+            AddFontControls(panel, auraTextSec.write, "auraText", { size = 12 }, refreshStyle, {
+                row = true,
+                settings = {
+                    size = APPEARANCE_FINDER.auraText.fontSize,
+                    font = APPEARANCE_FINDER.auraText.font,
+                    outline = APPEARANCE_FINDER.auraText.outline,
+                },
+            })
 
             -- deferCommit is deliberately absent, matching the stock color picker
             -- this row replaced.
             AddColorRow(panel, {
                 label = "Font Color",
+                setting = APPEARANCE_FINDER.auraText.color,
                 tbl = auraTextSec.write,
                 key = "auraTextFontColor",
                 default = {0, 0.925, 1, 1},
@@ -1113,8 +1585,14 @@ local function BuildAppearanceTab(container)
             -- otherwise a keep-swipe entry's live position keys would have no
             -- rows to edit them.
             if SeparatePositionsOn() or WhileAuraFlagOn(whileAuraSec, "auraKeepSpellCooldownSwipe") then
-                AddAnchorDropdown(panel, auraTextSec.write, "auraTextAnchor", "TOPLEFT", refreshStyle, nil, { row = true })
-                AddOffsetSliders(panel, auraTextSec.write, "auraTextXOffset", "auraTextYOffset", { x = 2, y = -2 }, refreshStyle, { row = true })
+                AddAnchorDropdown(panel, auraTextSec.write, "auraTextAnchor", "TOPLEFT", refreshStyle, nil, {
+                    row = true,
+                    setting = APPEARANCE_FINDER.auraText.anchor,
+                })
+                AddOffsetSliders(panel, auraTextSec.write, "auraTextXOffset", "auraTextYOffset", { x = 2, y = -2 }, refreshStyle, {
+                    row = true,
+                    settings = { x = APPEARANCE_FINDER.auraText.xOffset, y = APPEARANCE_FINDER.auraText.yOffset },
+                })
             elseif isAuraPanel then
                 -- The re-homed shared-position rows. Same STORAGE KEYS as before
                 -- (the engine reads cooldownTextAnchor/XOffset/YOffset for this
@@ -1128,8 +1606,14 @@ local function BuildAppearanceTab(container)
                 -- and Duration Format both follow). So they are openly
                 -- PANEL-OWNED and wear the grey "Panel setting" label.
                 local panelStyle = group.style
-                local anchorRow = AddAnchorDropdown(panel, panelStyle, "cooldownTextAnchor", "CENTER", refreshStyle, nil, { row = true })
-                local offsetXRow, offsetYRow = AddOffsetSliders(panel, panelStyle, "cooldownTextXOffset", "cooldownTextYOffset", { x = 0, y = 0 }, refreshStyle, { row = true })
+                local anchorRow = AddAnchorDropdown(panel, panelStyle, "cooldownTextAnchor", "CENTER", refreshStyle, nil, {
+                    row = true,
+                    setting = APPEARANCE_FINDER.auraText.anchor,
+                })
+                local offsetXRow, offsetYRow = AddOffsetSliders(panel, panelStyle, "cooldownTextXOffset", "cooldownTextYOffset", { x = 0, y = 0 }, refreshStyle, {
+                    row = true,
+                    settings = { x = APPEARANCE_FINDER.auraText.xOffset, y = APPEARANCE_FINDER.auraText.yOffset },
+                })
                 auraTextSec:PanelRowChrome(anchorRow)
                 auraTextSec:PanelRowChrome(offsetXRow)
                 auraTextSec:PanelRowChrome(offsetYRow)
@@ -1165,6 +1649,10 @@ local function BuildAppearanceTab(container)
                 "aura", refreshStyle, {
                     explicitOff = auraTextSec.scope == "customized",
                     disabled = auraTextSec.disabled,
+                    settings = {
+                        mode = APPEARANCE_FINDER.text.auraVisible,
+                        threshold = APPEARANCE_FINDER.text.auraLast,
+                    },
                     infoButtons = tabInfoButtons,
                     rebuild = function()
                         CooldownCompanion:RefreshConfigPanel()
@@ -1192,6 +1680,7 @@ local function BuildAppearanceTab(container)
 
         local auraStackRow = AddCheckboxRow(otherRight, {
             label = "Show Aura Stack Text",
+            setting = APPEARANCE_FINDER.text.auraStacks,
             value = auraStackSec.read.showAuraStackText ~= false,
             disabled = auraStackSec.disabled,
             onChange = function(val)
@@ -1204,11 +1693,19 @@ local function BuildAppearanceTab(container)
 
         -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
         local function BuildAuraStackTextAdvanced(panel)
-            AddFontControls(panel, auraStackSec.write, "auraStack", { size = 12 }, refreshStyle, { row = true })
+            AddFontControls(panel, auraStackSec.write, "auraStack", { size = 12 }, refreshStyle, {
+                row = true,
+                settings = {
+                    size = APPEARANCE_FINDER.auraStacks.fontSize,
+                    font = APPEARANCE_FINDER.auraStacks.font,
+                    outline = APPEARANCE_FINDER.auraStacks.outline,
+                },
+            })
             -- deferCommit is deliberately absent, matching the stock color picker
             -- this row replaced.
             AddColorRow(panel, {
                 label = "Font Color",
+                setting = APPEARANCE_FINDER.auraStacks.color,
                 tbl = auraStackSec.write,
                 key = "auraStackFontColor",
                 default = {1, 1, 1, 1},
@@ -1216,8 +1713,14 @@ local function BuildAppearanceTab(container)
                 onConfirm = refreshStyle,
                 onChange = refreshStyle,
             })
-            AddAnchorDropdown(panel, auraStackSec.write, "auraStackAnchor", "BOTTOMLEFT", refreshStyle, nil, { row = true })
-            AddOffsetSliders(panel, auraStackSec.write, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle, { row = true })
+            AddAnchorDropdown(panel, auraStackSec.write, "auraStackAnchor", "BOTTOMLEFT", refreshStyle, nil, {
+                row = true,
+                setting = APPEARANCE_FINDER.auraStacks.anchor,
+            })
+            AddOffsetSliders(panel, auraStackSec.write, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle, {
+                row = true,
+                settings = { x = APPEARANCE_FINDER.auraStacks.xOffset, y = APPEARANCE_FINDER.auraStacks.yOffset },
+            })
         end
 
         if auraStackSec.write then
@@ -1240,6 +1743,7 @@ local function BuildAppearanceTab(container)
 
     local kbRow = AddCheckboxRow(otherLeft, {
         label = KEYBIND_CUSTOM_LABEL,
+        setting = APPEARANCE_FINDER.text.keybind,
         value = kbSec.read.showKeybindText or false,
         disabled = kbSec.disabled,
         onChange = function(val)
@@ -1256,6 +1760,7 @@ local function BuildAppearanceTab(container)
         -- so this is a dropdown row of its own rather than AddAnchorDropdown.
         AddDropdownRow(panel, {
             label = "Anchor",
+            setting = APPEARANCE_FINDER.keybind.anchor,
             list = {
                 TOPRIGHT = "Top Right",
                 TOPLEFT = "Top Left",
@@ -1269,12 +1774,23 @@ local function BuildAppearanceTab(container)
             end,
         })
 
-        AddOffsetSliders(panel, kbSec.write, "keybindXOffset", "keybindYOffset", { x = -2, y = -2 }, refreshStyle, { row = true })
-        AddFontControls(panel, kbSec.write, "keybind", { size = 10, sizeMin = 6, sizeMax = 24 }, refreshStyle, { row = true })
+        AddOffsetSliders(panel, kbSec.write, "keybindXOffset", "keybindYOffset", { x = -2, y = -2 }, refreshStyle, {
+            row = true,
+            settings = { x = APPEARANCE_FINDER.keybind.xOffset, y = APPEARANCE_FINDER.keybind.yOffset },
+        })
+        AddFontControls(panel, kbSec.write, "keybind", { size = 10, sizeMin = 6, sizeMax = 24 }, refreshStyle, {
+            row = true,
+            settings = {
+                size = APPEARANCE_FINDER.keybind.fontSize,
+                font = APPEARANCE_FINDER.keybind.font,
+                outline = APPEARANCE_FINDER.keybind.outline,
+            },
+        })
         -- deferCommit is deliberately absent, matching the stock color picker
         -- this row replaced.
         AddColorRow(panel, {
             label = "Font Color",
+            setting = APPEARANCE_FINDER.keybind.color,
             tbl = kbSec.write,
             key = "keybindFontColor",
             default = {1, 1, 1, 1},
@@ -1377,6 +1893,7 @@ local function BuildAppearanceTab(container)
     end
     local cooldownStateRow = AddDropdownRow(whileAuraLeft, {
         label = "Cooldown",
+        setting = APPEARANCE_FINDER.whileAura.cooldown,
         list = cooldownStateList,
         order = cooldownStateOrder,
         value = whileAuraState,
@@ -1418,6 +1935,7 @@ local function BuildAppearanceTab(container)
     if not (lensEntry and CooldownCompanion:IsAuraIconForcedEntry(lensEntry)) then
     AddCheckboxRow(whileAuraLeft, {
         label = "Show Aura Icon",
+        setting = APPEARANCE_FINDER.whileAura.auraIcon,
         value = WhileAuraFlagOn(whileAuraSec, "auraShowAuraIcon"),
         disabled = whileAuraSec.disabled,
         onChange = function(val)
@@ -1443,6 +1961,7 @@ local function BuildAppearanceTab(container)
     if desatHasTarget then
     AddCheckboxRow(whileAuraLeft, {
         label = "Desaturate Icon",
+        setting = APPEARANCE_FINDER.whileAura.desaturate,
         value = WhileAuraFlagOn(whileAuraSec, "invertAuraDesaturationLogic"),
         disabled = whileAuraSec.disabled,
         onChange = function(val)
@@ -1487,6 +2006,7 @@ local function BuildAppearanceTab(container)
     -- Border Color owns the section; thickness and size are its children.
     local borderColorRow = AddColorRow(borderLeft, {
         label = "Border Color",
+        setting = APPEARANCE_FINDER.border.color,
         tbl = borderSec.tbl,
         key = "borderColor",
         default = {0, 0, 0, 1},
@@ -1500,12 +2020,17 @@ local function BuildAppearanceTab(container)
     local renderMode = AddBorderRenderModeDropdown(borderLeft, borderSec.tbl, "borderRenderMode", function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
-    end, group.masqueEnabled or borderSec.disabled, { row = true, indent = true })
+    end, group.masqueEnabled or borderSec.disabled, {
+        row = true,
+        indent = true,
+        setting = APPEARANCE_FINDER.border.thickness,
+    })
     local borderThicknessLocked = group.masqueEnabled or ST.IsBorderThicknessLocked()
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
         local borderSizeRow = AddSliderRow(borderLeft, {
             label = "Border Size",
+            setting = APPEARANCE_FINDER.border.size,
             indent = true,
             min = 0, max = 5, step = 0.1,
             value = borderSec.read.borderSize or ST.DEFAULT_BORDER_SIZE,
@@ -1576,6 +2101,7 @@ local function BuildAppearanceTab(container)
         -- Rows only; the shared builder draws the same block on the bars tab.
         BuildIconTintControls(tintLeft, tintRight, tintSec, {
             mode = "icons",
+            settings = APPEARANCE_FINDER.tint,
             hasAuraEntry = groupHasAuraEntry,
             hasCooldownState = CanGroupUseOverrideSection(group, "desaturation"),
             refresh = tintRefresh,
@@ -1610,6 +2136,7 @@ local function BuildAppearanceTab(container)
 
         local masqueRow = AddCheckboxRow(masqueLeft, {
             label = "Enable Masque Skinning",
+            setting = APPEARANCE_FINDER.masque.enabled,
             value = group.masqueEnabled or false,
             disabled = masqueSec.disabled,
             onChange = function(val)

@@ -24,6 +24,135 @@ local BeginRowGrid = ST._BeginRowGrid
 -- rule fading right.
 local ROW_SECTION = { leftAligned = true }
 
+------------------------------------------------------------------------
+-- SETTINGS FINDER CATALOG
+------------------------------------------------------------------------
+
+-- Declared at module load so unopened tabs remain searchable without being
+-- constructed. Maps stay local so every rendered row binds its exact route.
+local CONTAINER_FINDER = {}
+
+local function ContainerFinderAlphaEnabled(context)
+    return context and context.container and context.container.groupAlphaEnabled == true
+end
+
+local function ContainerFinderMountedAlpha(context)
+    local container = context and context.container
+    return ContainerFinderAlphaEnabled(context) and (
+        container.forceAlphaRegularMounted
+        or container.forceHideRegularMounted
+        or container.forceAlphaDragonriding
+        or container.forceHideDragonriding
+    ) and (container.isGlobal or CooldownCompanion._playerClassID == 11)
+end
+
+local function ContainerFinderTargetAlpha(context)
+    local container = context and context.container
+    return ContainerFinderAlphaEnabled(context)
+        and container.forceAlphaTargetExists == true
+end
+
+local function ContainerFinderCustomFade(context)
+    local container = context and context.container
+    return ContainerFinderAlphaEnabled(context) and container.customFade == true
+end
+
+if ST._DefineSettingRoute then
+    CONTAINER_FINDER.general = ST._DefineSettingRoute({
+        idPrefix = "group.general",
+        scope = "group",
+        tab = "general",
+        tabLabel = "General",
+        section = "basics",
+        sectionLabel = "General",
+        rowScope = "primary",
+    }):Settings({
+        enabled = { label = "Enabled", aliases = { "show group" } },
+        locked = { label = "Locked", aliases = { "unlock group", "move group" } },
+    })
+
+    CONTAINER_FINDER.layout = ST._DefineSettingRoute({
+        idPrefix = "group.general.layout",
+        scope = "group",
+        tab = "general",
+        tabLabel = "General",
+        section = "layout",
+        sectionLabel = "Layout",
+        collapseKeys = { "container_layout" },
+        rowScope = "primary",
+    }):Settings({
+        xOffset = { label = "X Offset", aliases = { "horizontal position" } },
+        yOffset = { label = "Y Offset", aliases = { "vertical position" } },
+    })
+
+    local alphaRoute = ST._DefineSettingRoute({
+        idPrefix = "group.general.alpha",
+        scope = "group",
+        tab = "general",
+        tabLabel = "General",
+        section = "alpha",
+        sectionLabel = "Group Alpha",
+        collapseKeys = { "container_alpha" },
+        rowScope = "primary",
+    })
+    CONTAINER_FINDER.alpha = alphaRoute:Settings({
+        enabled = { label = "Enable Group Alpha", aliases = { "group opacity", "group transparency" } },
+        baseline = { label = "Baseline Alpha", aliases = { "opacity", "transparency" }, applies = ContainerFinderAlphaEnabled },
+        combat = { label = "In Combat", applies = ContainerFinderAlphaEnabled },
+        outOfCombat = { label = "Out of Combat", applies = ContainerFinderAlphaEnabled },
+        regularMount = { label = "Regular Mount", applies = ContainerFinderAlphaEnabled },
+        skyriding = { label = "Skyriding", aliases = { "dragonriding" }, applies = ContainerFinderAlphaEnabled },
+        travelForm = {
+            label = "Include Druid Travel Form (applies to both)",
+            aliases = { "travel form" },
+            applies = ContainerFinderMountedAlpha,
+        },
+        target = { label = "Target Exists", applies = ContainerFinderAlphaEnabled },
+        enemy = { label = "Enemy Only", aliases = { "hostile target" }, applies = ContainerFinderTargetAlpha },
+        focus = { label = "Focus Exists", applies = ContainerFinderAlphaEnabled },
+        mouseover = { label = "Mouseover", applies = ContainerFinderAlphaEnabled },
+        customFade = { label = "Custom Fade Settings", aliases = { "fade" }, applies = ContainerFinderAlphaEnabled },
+        fadeDelay = { label = "Fade Delay (seconds)", applies = ContainerFinderCustomFade },
+        fadeIn = { label = "Fade In Duration (seconds)", applies = ContainerFinderCustomFade },
+        fadeOut = { label = "Fade Out Duration (seconds)", applies = ContainerFinderCustomFade },
+    })
+
+    CONTAINER_FINDER.strata = ST._DefineSettingRoute({
+        idPrefix = "group.general.strata",
+        scope = "group",
+        tab = "general",
+        tabLabel = "General",
+        section = "strata",
+        sectionLabel = "Frame Strata",
+        collapseKeys = { "container_strata" },
+        rowScope = "primary",
+    }):Settings({
+        frameStrata = { label = "Container Frame Strata", aliases = { "layer" } },
+    })
+
+    local whereRoute = ST._DefineSettingRoute({
+        idPrefix = "group.visibility.where",
+        scope = "group",
+        tab = "loadconditions",
+        tabLabel = "Visibility",
+        section = "where",
+        sectionLabel = "Where To Hide It",
+        collapseKeys = { "container_loadconditions_local" },
+        rowScope = "primary",
+    })
+    CONTAINER_FINDER.where = whereRoute:Settings({
+        raid = { label = "Raid" },
+        dungeon = { label = "Dungeon" },
+        delve = { label = "Delve" },
+        battleground = { label = "Battleground" },
+        arena = { label = "Arena" },
+        openWorld = { label = "Open World" },
+        rested = { label = "Rested Area" },
+        petBattle = { label = "Pet Battle" },
+        vehicleUI = { label = "Vehicle / Override UI", aliases = { "vehicle ui", "override ui" } },
+    })
+end
+
 local tabInfoButtons = CS.tabInfoButtons
 
 ------------------------------------------------------------------------
@@ -48,6 +177,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
 
     AddCheckboxRow(masterLeft, {
         label = "Enabled",
+        setting = CONTAINER_FINDER.general and CONTAINER_FINDER.general.enabled,
         value = container.enabled ~= false,
         onChange = function(value)
             container.enabled = value
@@ -58,6 +188,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
 
     AddCheckboxRow(masterRight, {
         label = "Locked",
+        setting = CONTAINER_FINDER.general and CONTAINER_FINDER.general.locked,
         value = container.locked ~= false,
         onChange = function(value)
             CooldownCompanion:SetContainerLocked(containerId, value)
@@ -112,6 +243,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
 
         AddSliderRow(layoutLeft, {
             label = "X Offset",
+            setting = CONTAINER_FINDER.layout and CONTAINER_FINDER.layout.xOffset,
             min = -2000, max = 2000, step = 0.1,
             value = container.anchor.x or 0,
             onRelease = function(val)
@@ -121,6 +253,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
 
         AddSliderRow(layoutRight, {
             label = "Y Offset",
+            setting = CONTAINER_FINDER.layout and CONTAINER_FINDER.layout.yOffset,
             min = -2000, max = 2000, step = 0.1,
             value = container.anchor.y or 0,
             onRelease = function(val)
@@ -146,6 +279,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
 
         local groupAlphaRow = AddCheckboxRow(switchLeft, {
             label = "Enable Group Alpha",
+            setting = CONTAINER_FINDER.alpha and CONTAINER_FINDER.alpha.enabled,
             value = container.groupAlphaEnabled == true,
             onChange = function(value)
                 container.groupAlphaEnabled = value == true
@@ -168,6 +302,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
                 row = true,
                 isGlobal = container.isGlobal,
                 hideHeading = true,
+                settings = CONTAINER_FINDER.alpha,
                 onBaselineCommitted = function(val)
                     if CooldownCompanion.ApplyContainerAlphaPreview then
                         CooldownCompanion:ApplyContainerAlphaPreview(containerId, val)
@@ -188,6 +323,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
 
     AddDropdownRow(strataLeft, {
         label = "Container Frame Strata",
+        setting = CONTAINER_FINDER.strata and CONTAINER_FINDER.strata.frameStrata,
         list = {
             BACKGROUND = "Background",
             LOW = "Low",
@@ -283,6 +419,7 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
         row = true,
         infoTooltipLines = BuildWhereToHideTooltip("group", true, true),
         infoButtons = tabInfoButtons,
+        settings = CONTAINER_FINDER.where,
         onChanged = RefreshContainerLoadConditions,
     })
 end
