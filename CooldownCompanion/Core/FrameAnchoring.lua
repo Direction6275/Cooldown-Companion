@@ -379,9 +379,16 @@ local function QueueExternalAnchorRepair(frame)
     -- external write — the provider's own layout pass can touch the frame
     -- several times and the last write before render must be ours. The write
     -- guard inside SetManagedFrameAnchor keeps this invisible to these hooks.
-    -- The deferred full re-evaluate below stays authoritative: it re-resolves
-    -- the anchor group and body in case this cached spec went stale.
-    if not InCombatLockdown() then
+    --
+    -- Blizzard Edit Mode deliberately clears every system frame before writing
+    -- its temporary layout anchor. Reclaiming between those two writes can make
+    -- PlayerFrame's next SetPoint form an invalid anchor-family connection. Let
+    -- that atomic layout pass finish; the deferred full re-evaluate below then
+    -- re-resolves the anchor group and reclaims the frame on the next turn.
+    local editModeManager = _G.EditModeManagerFrame
+    local editModeLayoutApplyInProgress = editModeManager
+        and editModeManager.layoutApplyInProgress == true
+    if not editModeLayoutApplyInProgress and not InCombatLockdown() then
         local spec
         if frame == playerFrameRef then
             spec = lastAppliedPlayerAnchor
