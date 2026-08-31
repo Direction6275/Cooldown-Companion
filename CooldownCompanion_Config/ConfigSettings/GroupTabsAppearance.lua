@@ -11,7 +11,6 @@ local CS = ST._configState
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
-local BuildCompactModeControls = ST._BuildCompactModeControls
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
@@ -29,6 +28,7 @@ local BuildIconTintControls = ST._BuildIconTintControls
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local AddDurationTextVisibilityRows = ST._AddDurationTextVisibilityRows
 local AddSettingsSubheading = ST._AddSettingsSubheading
+local AddFamilyColumnCaptions = ST._AddFamilyColumnCaptions
 local BeginFullWidthRowGroup = ST._BeginFullWidthRowGroup
 
 -- Imports from RowWidgets.lua (the row grammar)
@@ -51,10 +51,9 @@ local BuildTriggerTextAppearanceTab = ST._BuildTriggerTextAppearanceTab
 local BuildTexturePanelAppearanceTab = ST._BuildTexturePanelAppearanceTab
 
 -- Imports from GroupTabsEffects.lua
-local EFFECTS_GLOWS_SECTION = ST._EFFECTS_GLOWS_SECTION
-local EFFECTS_PANDEMIC_SECTION = ST._EFFECTS_PANDEMIC_SECTION
-local EFFECTS_TIMERS_SECTION = ST._EFFECTS_TIMERS_SECTION
-local EFFECTS_STATES_SECTION = ST._EFFECTS_STATES_SECTION
+local EFFECTS_SPELL_SECTION = ST._EFFECTS_SPELL_SECTION
+local EFFECTS_AURA_SECTION = ST._EFFECTS_AURA_SECTION
+local EFFECTS_INTERACTION_SECTION = ST._EFFECTS_INTERACTION_SECTION
 
 -- Imports from BarModeTabs.lua
 local BuildBarAppearanceTab = ST._BuildBarAppearanceTab
@@ -74,17 +73,6 @@ local KEYBIND_CUSTOM_TOOLTIP = {
     {"Shows detected keybind text on icon buttons by default.", 1, 1, 1, true},
     " ",
     {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
-}
-
--- The per-section aura toggle's tooltip. What the section becomes, and what
--- that changes about the way it takes up room; the rest the surface teaches.
-local AURA_SECTION_TOOLTIP = {
-    "Aura Only Section",
-    {"Only Aura entries can live here.", 1, 1, 1, true},
-    " ",
-    {"Active auras appear and pack together. Inactive auras take no space.", 1, 1, 1, true},
-    " ",
-    {"Buffs on you and debuffs on your target can't share one section.", 1, 1, 1, true},
 }
 
 -- The While Aura Active Cooldown control. Its two style keys used to live elsewhere
@@ -159,7 +147,8 @@ local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 -- A gear added to one of these five sections belongs here the same day. The
 -- tab's other lens sections (Border, Icon Tint, Icon Zoom) carry no gear at
 -- all, and Compact Mode's gear is not listed because compact mode is group
--- data with no override section - see the note at its call site.
+-- data with no override section - see the note at its call site, which is on
+-- the Layout tab (GroupTabsLayout.lua's Arrangement section) for every mode.
 ST._APPEARANCE_SECTION_BY_ADVANCED_KEY = {
     cooldownText = "cooldownText",
     chargeText = "chargeText",
@@ -280,75 +269,88 @@ ST._SECTION_HOME.icons = {
     -- Indicators tab. The collapse keys come from the section constants
     -- imported from GroupTabsEffects.lua, never from literals: the bar tab
     -- shares those same constants, and a copy could drift from them.
+    --
+    -- TWO indicator sections now (owner ruling 2026-08-30) - the cooldown/spell
+    -- family and the aura family - so every row below names one of them. The
+    -- Glows / Timers / States / Pandemic subheadings inside them own no collapse
+    -- state, so there is nothing finer for a home to point at.
     procGlow = {
-        tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION,
+        tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
         gearEnabled = function(_, style) return (style.procGlowStyle ~= "none") ~= false end,
     },
-    -- BuildAuraGlowSection returns early without an aura-tracking entry.
+    -- The aura family has its own section on the Indicators tab (owner ruling
+    -- 2026-08-30), so the three aura rows below name it rather than the spell
+    -- section each used to hang off. BuildAuraGlowSection returns early without
+    -- an aura-tracking entry, and the section itself is gated on one.
     auraIndicator = {
-        tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION,
+        tab = "effects", collapseKey = EFFECTS_AURA_SECTION,
         available = IconsGroupTracksAura,
         gearEnabled = function(_, style) return ((style.auraGlowStyle or "pulse") ~= "none") ~= false end,
     },
     readyGlow = {
-        tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION,
+        tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
         gearEnabled = function(_, style)
             return (style.readyGlowStyle and style.readyGlowStyle ~= "none") ~= false
         end,
     },
     keyPressHighlight = {
-        tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION,
+        tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
         gearEnabled = function(_, style)
             return (style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none") ~= false
         end,
     },
     assistedHighlight = {
-        tab = "effects", collapseKey = EFFECTS_GLOWS_SECTION,
+        tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
         gearEnabled = function(_, style) return (style.showAssistedHighlight or false) ~= false end,
     },
     -- Both halves of the refresh window live in one section, so the feature has
-    -- one home whichever half a consumer was looking for. The whole Pandemic
-    -- heading is gated on an aura-tracking entry (BuildEffectsTab), and both
-    -- halves return early without one.
+    -- one home whichever half a consumer was looking for. It is the Pandemic
+    -- subheading at the foot of Aura Indicators now, so the home names that
+    -- section's key; the subheading is gated on an aura-tracking entry
+    -- (BuildEffectsTab), and both halves return early without one.
     --
     -- No gearEnabled: this section owns TWO gears in icons mode (pandemicGlow
     -- and pandemicMarker), so the Customizations list resolves none for it.
     pandemic = {
-        tab = "effects", collapseKey = EFFECTS_PANDEMIC_SECTION,
+        tab = "effects", collapseKey = EFFECTS_AURA_SECTION,
         available = IconsGroupTracksAura,
     },
     iconFillTimer = {
-        tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION,
+        tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
         gearEnabled = function(group, style) return IconsFillTimerActive(group, style) ~= false end,
     },
     cooldownSwipe = {
-        tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION,
+        tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
         gearEnabled = function(group, style)
             return (style.showCooldownSwipe ~= false and not IconsFillTimerActive(group, style)) ~= false
         end,
     },
-    -- The aura duration swipe is drawn only while the GROUP tracks an aura.
+    -- The aura duration swipe is drawn only while the GROUP tracks an aura -
+    -- in the Aura Indicators section, with the aura glow above it.
     auraDurationSwipe = {
-        tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION,
+        tab = "effects", collapseKey = EFFECTS_AURA_SECTION,
         available = IconsGroupTracksAura,
         gearEnabled = function(_, style) return (style.showAuraDurationSwipe ~= false) ~= false end,
     },
-    showGCDSwipe = { tab = "effects", collapseKey = EFFECTS_TIMERS_SECTION },
-    desaturation = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
-    -- Its own section (owner ruling 2026-08-16); drawn only while the group
-    -- tracks an aura, same gate as the row.
+    showGCDSwipe = { tab = "effects", collapseKey = EFFECTS_SPELL_SECTION },
+    desaturation = { tab = "effects", collapseKey = EFFECTS_SPELL_SECTION },
+    -- Its own override section (owner ruling 2026-08-16), drawn in the Aura
+    -- Indicators section rather than with the spell states (owner ruling
+    -- 2026-08-30); only while the group tracks an aura, same gate as the row.
     auraMissingDesaturation = {
-        tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
+        tab = "effects", collapseKey = EFFECTS_AURA_SECTION,
         available = IconsGroupTracksAura,
     },
     unusableDimming = {
-        tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
+        tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
         gearEnabled = function(_, style) return (style.showUnusable == true) ~= false end,
     },
-    showOutOfRange = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
-    lossOfControl = { tab = "effects", collapseKey = EFFECTS_STATES_SECTION },
+    showOutOfRange = { tab = "effects", collapseKey = EFFECTS_SPELL_SECTION },
+    lossOfControl = { tab = "effects", collapseKey = EFFECTS_SPELL_SECTION },
+    -- Its own Interaction section at the foot of the tab, not States. Always
+    -- drawn on an icons panel, so no `available` predicate.
     showTooltips = {
-        tab = "effects", collapseKey = EFFECTS_STATES_SECTION,
+        tab = "effects", collapseKey = EFFECTS_INTERACTION_SECTION,
         gearEnabled = function(_, style) return (style.showTooltips == true) ~= false end,
     },
 }
@@ -692,14 +694,10 @@ local function BuildAppearanceTab(container)
         end, nil, nil, style, "buttonSpacing")
     end
 
-    -- Compact Mode toggle + advanced (growth direction, max visible buttons).
-    -- Its gear is not skipped under an entry lens the way the Text sections'
-    -- are: compact mode is group data with no override section, so there is no
-    -- second table to bind it to. The inert walk disables and dims it instead,
-    -- and an advanced panel left open from before the selection closes itself
-    -- on the next refresh (its descriptor context carries selectedButton).
-    BuildCompactModeControls(iconRight, group, tabInfoButtons)
-
+    -- Compact Mode used to close this column. It is packing, not look, so it
+    -- now lives on the Layout tab's Arrangement section beside the wrap count
+    -- (its copy membership is unchanged - still this tab's appearance scope in
+    -- ST.PANEL_COPY_SCOPES).
     iconSec:FinishBracket(iconRightBracket)
     end -- not iconSettingsCollapsed
 
@@ -739,59 +737,9 @@ local function BuildAppearanceTab(container)
                 sectionSec:HeadingChrome(sectionHeading)
 
                 if not sectionCollapsed then
-                -- WHAT this cluster is comes before how big it is, so the aura
-                -- toggle heads the block on its own full-width line above the
-                -- size/spacing grid. Its own bracket carries the panel-only
-                -- dimming, exactly like the grid columns below.
-                --
-                -- A section holding anything the aura container cannot draw is
-                -- told so on a DISABLED checkbox rather than being allowed to
-                -- click and fail: the engine's refusal is asked for here, before
-                -- the write, and the blocking entry's own sentence is what the
-                -- row explains itself with. The blocker only ever gates turning
-                -- the flag ON. A section already flagged can still develop one
-                -- (polarity is spec-dependent, so a member admitted on one spec
-                -- can mismatch on another), and the setter deliberately lets OFF
-                -- through unconditionally - so the checkbox must stay clickable
-                -- there, or the section is trapped aura-only.
-                local sectionAuraOnly = ST.IsAuraOnlyPanelSection(group, anchor)
-                local sectionBlocker = not sectionAuraOnly
-                    and ST.GetAuraSectionToggleBlocker(group, anchor) or nil
-                local sectionToggleTooltip = AURA_SECTION_TOOLTIP
-                if sectionBlocker then
-                    sectionToggleTooltip = {
-                        AURA_SECTION_TOOLTIP[1],
-                        {sectionBlocker, 1, 0.4, 0.4, true},
-                        " ",
-                    }
-                    for line = 2, #AURA_SECTION_TOOLTIP do
-                        sectionToggleTooltip[#sectionToggleTooltip + 1] = AURA_SECTION_TOOLTIP[line]
-                    end
-                end
-
-                local sectionTopBracket = sectionSec:Bracket(container)
-                AddCheckboxRow(container, {
-                    label = "Aura Only Section",
-                    relativeWidth = 0.5,
-                    value = sectionAuraOnly,
-                    tooltip = sectionToggleTooltip,
-                    disabled = sectionSec.disabled or sectionBlocker ~= nil,
-                    onChange = function(value, widget)
-                        -- A structural commit, not a styling one: the flag
-                        -- changes which entries materialize a button at all, so
-                        -- it takes the same pair a section drop takes rather
-                        -- than the sliders' UpdateGroupStyle. Safe here for the
-                        -- same reason it is safe there - a click is over.
-                        if not ST.SetPanelSectionAuraOnly(group, anchor, value) then
-                            widget:SetValue(ST.IsAuraOnlyPanelSection(group, anchor))
-                            return
-                        end
-                        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end,
-                })
-                sectionSec:FinishBracket(sectionTopBracket)
-
+                -- Size and spacing only. WHAT this cluster is - the Aura Only
+                -- Section toggle - heads the matching block on the Layout tab,
+                -- where the rest of the cluster's layout grammar lives.
                 local sectionLeft, sectionRight = BeginRowGrid(container)
                 sectionSec:Mark(sectionLeft)
 
@@ -879,6 +827,15 @@ local function BuildAppearanceTab(container)
     else
         durationLeft, durationRight = BeginRowGrid(container)
     end
+    -- Column captions, drawn only where both families really appear. LEFT is
+    -- the Show Cooldown Text block, whose only gate is `not isAuraPanel`; RIGHT
+    -- is the aura duration text block, gated on an aura-tracking entry. An Aura
+    -- Panel is a single rail (durationLeft == durationRight), which the helper
+    -- also refuses on its own. The low-time grid below is NOT captioned: it is
+    -- one feature flowing across two columns, not a family split.
+    if not isAuraPanel and groupHasAuraEntry then
+        AddFamilyColumnCaptions(durationLeft, durationRight)
+    end
     local lowTimeLeft, lowTimeRight
     if drawsCooldownLowTime or drawsAuraLowTime then
         if isAuraPanel then
@@ -896,6 +853,14 @@ local function BuildAppearanceTab(container)
         otherRight = otherLeft
     else
         otherLeft, otherRight = BeginRowGrid(container)
+    end
+    -- Same rule as the Duration Text grid above: the left predicate is the OR
+    -- of the two spell-side row gates (count text, keybind text), the right one
+    -- is the aura stack row's gate.
+    if (CanGroupUseOverrideSection(group, "chargeText")
+        or CanGroupUseOverrideSection(group, "keybindText"))
+        and groupHasAuraEntry then
+        AddFamilyColumnCaptions(otherLeft, otherRight)
     end
 
     -- Ordinary icon panels give cooldown and aura parallel columns. Aura

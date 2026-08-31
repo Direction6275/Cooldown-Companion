@@ -481,71 +481,6 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         end,
     })
 
-    -- Read-only: the aura ID(s) that can actually appear on a unit for this
-    -- entry — NOT the bind's full match filter, which also registers
-    -- cast/base insurance IDs that never exist as auras once the linked
-    -- data names a distinct applied identity (owner ruling 2026-08-16:
-    -- report the player-meaningful auras, not the filter's insurance).
-    -- Built positively: the resolved applied-aura identity plus the user's
-    -- explicit adds. Texture panels bind exactly one aura (the same read
-    -- ResolveTexturePanelAuraSpellID makes), so they show only that.
-    local trackedAuraIDs = {}
-    local trackedAuraIDSeen = {}
-    local function AppendTrackedAuraID(id)
-        if id and not trackedAuraIDSeen[id] then
-            trackedAuraIDSeen[id] = true
-            trackedAuraIDs[#trackedAuraIDs + 1] = id
-        end
-    end
-    if isTexturePanel then
-        AppendTrackedAuraID(primaryAuraSpellID)
-    elseif isStandalone then
-        -- The resolver's head is the entry's applied-aura identity (the ID
-        -- override when set); the candidate list holds the user's added
-        -- fallbacks, which track beside the head either way.
-        AppendTrackedAuraID(primaryAuraSpellID)
-        for _, id in ipairs(GetAuraCandidateList(buttonData)) do
-            AppendTrackedAuraID(id)
-        end
-    else
-        -- An ID override replaces the implicit head: it leads the line and
-        -- the entry's own aura leaves the filter with the rest of the
-        -- automatic machinery.
-        local hasIDOverride = tonumber(buttonData.auraIDOverride) ~= nil
-        if hasIDOverride then
-            AppendTrackedAuraID(primaryAuraSpellID)
-        end
-        for _, id in ipairs(GetAuraCandidateList(buttonData)) do
-            AppendTrackedAuraID(id)
-        end
-        -- The entry's own aura stays a fallback beside explicit adds only
-        -- when polarities match (the constrained bind drops it otherwise).
-        local implicitID = not hasIDOverride
-            and CooldownCompanion:ResolveImplicitAuraSpellID(buttonData) or nil
-        if implicitID then
-            local implicitUnit = ClassifyAuraSpellUnit(implicitID)
-            -- Under a unit override the bind keeps implicit candidates
-            -- unfiltered (the classifier is what the override overrules),
-            -- so the line must not polarity-drop what the bind registers.
-            local explicitUnit = not GetAuraUnitOverride(buttonData)
-                and #trackedAuraIDs > 0
-                and GetExplicitAuraCandidateUnit(buttonData) or nil
-            if not explicitUnit or not implicitUnit or implicitUnit == explicitUnit then
-                AppendTrackedAuraID(implicitID)
-            end
-        end
-    end
-    local trackedAuraIDParts = {}
-    for i, id in ipairs(trackedAuraIDs) do
-        trackedAuraIDParts[i] = tostring(id)
-    end
-    AddLabelRow(auraLeft, {
-        label = #trackedAuraIDs > 1 and "Tracked Aura IDs" or "Tracked Aura ID",
-        indent = not isStandalone,
-        controlText = #trackedAuraIDParts > 0
-            and table.concat(trackedAuraIDParts, ", ") or "None",
-    })
-
     -- Castable buffs only. Blizzard permits spell-ID matching for helpful auras
     -- across the group, but group scope applies its own-cast filter on every
     -- unit, including you. A foreign buff would never match anywhere; debuffs
@@ -690,6 +625,75 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         end
     end)
     CS.SetupAutocompleteKeyHandler(auraAddBox)
+
+    -- Read-only: the aura ID(s) that can actually appear on a unit for this
+    -- entry — NOT the bind's full match filter, which also registers
+    -- cast/base insurance IDs that never exist as auras once the linked
+    -- data names a distinct applied identity (owner ruling 2026-08-16:
+    -- report the player-meaningful auras, not the filter's insurance).
+    -- Built positively: the resolved applied-aura identity plus the user's
+    -- explicit adds. Texture panels bind exactly one aura (the same read
+    -- ResolveTexturePanelAuraSpellID makes), so they show only that.
+    --
+    -- Last row of this block on purpose: it is the RESULT of every control
+    -- above it (the unit choice, the ID override, the added auras), so it
+    -- reads after its causes rather than ahead of them.
+    local trackedAuraIDs = {}
+    local trackedAuraIDSeen = {}
+    local function AppendTrackedAuraID(id)
+        if id and not trackedAuraIDSeen[id] then
+            trackedAuraIDSeen[id] = true
+            trackedAuraIDs[#trackedAuraIDs + 1] = id
+        end
+    end
+    if isTexturePanel then
+        AppendTrackedAuraID(primaryAuraSpellID)
+    elseif isStandalone then
+        -- The resolver's head is the entry's applied-aura identity (the ID
+        -- override when set); the candidate list holds the user's added
+        -- fallbacks, which track beside the head either way.
+        AppendTrackedAuraID(primaryAuraSpellID)
+        for _, id in ipairs(GetAuraCandidateList(buttonData)) do
+            AppendTrackedAuraID(id)
+        end
+    else
+        -- An ID override replaces the implicit head: it leads the line and
+        -- the entry's own aura leaves the filter with the rest of the
+        -- automatic machinery.
+        local hasIDOverride = tonumber(buttonData.auraIDOverride) ~= nil
+        if hasIDOverride then
+            AppendTrackedAuraID(primaryAuraSpellID)
+        end
+        for _, id in ipairs(GetAuraCandidateList(buttonData)) do
+            AppendTrackedAuraID(id)
+        end
+        -- The entry's own aura stays a fallback beside explicit adds only
+        -- when polarities match (the constrained bind drops it otherwise).
+        local implicitID = not hasIDOverride
+            and CooldownCompanion:ResolveImplicitAuraSpellID(buttonData) or nil
+        if implicitID then
+            local implicitUnit = ClassifyAuraSpellUnit(implicitID)
+            -- Under a unit override the bind keeps implicit candidates
+            -- unfiltered (the classifier is what the override overrules),
+            -- so the line must not polarity-drop what the bind registers.
+            local explicitUnit = not GetAuraUnitOverride(buttonData)
+                and #trackedAuraIDs > 0
+                and GetExplicitAuraCandidateUnit(buttonData) or nil
+            if not explicitUnit or not implicitUnit or implicitUnit == explicitUnit then
+                AppendTrackedAuraID(implicitID)
+            end
+        end
+    end
+    local trackedAuraIDParts = {}
+    for i, id in ipairs(trackedAuraIDs) do
+        trackedAuraIDParts[i] = tostring(id)
+    end
+    AddLabelRow(auraLeft, {
+        label = #trackedAuraIDs > 1 and "Tracked Aura IDs" or "Tracked Aura ID",
+        indent = not isStandalone,
+        controlText = #trackedAuraIDParts > 0
+            and table.concat(trackedAuraIDParts, ", ") or "None",
+    })
 
     if isTexturePanel then
         -- Texture Aura display intentionally exposes presence only. The

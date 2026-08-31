@@ -11,6 +11,7 @@ local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddOffsetSliders = ST._AddOffsetSliders
 local GetCompactGrowthDirectionLabels = ST._GetCompactGrowthDirectionLabels
 local NormalizeCompactGrowthDirection = ST._NormalizeCompactGrowthDirection
+local BuildCompactModeControls = ST._BuildCompactModeControls
 
 -- Imports from RowWidgets.lua (the row grammar)
 local AddCheckboxRow = ST._AddCheckboxRow
@@ -36,6 +37,20 @@ local OpenOrRebindStandaloneTexturePicker = ST._OpenOrRebindStandaloneTexturePic
 -- too narrow for user-named panels and the longer worded options below.
 local WIDE_PULLOUT_WIDTH = 300
 
+-- The per-section aura toggle's tooltip. What the section becomes, and what
+-- that changes about the way it takes up room; the rest the surface teaches.
+-- Lives with the row (the Panel Sections blocks below), which moved here from
+-- the Appearance tab: what a cluster IS is layout grammar, and the Appearance
+-- block keeps the cluster's size and spacing.
+local AURA_SECTION_TOOLTIP = {
+    "Aura Only Section",
+    {"Only Aura entries can live here.", 1, 1, 1, true},
+    " ",
+    {"Active auras appear and pack together. Inactive auras take no space.", 1, 1, 1, true},
+    " ",
+    {"Buffs on you and debuffs on your target can't share one section.", 1, 1, 1, true},
+}
+
 -- Row-grammar section headers: caret far left, label, then a class-colored
 -- rule fading right.
 local ROW_SECTION = { leftAligned = true }
@@ -55,17 +70,6 @@ local function BuildLayoutTab(container)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
     local style = group.style
-    local function IsResolvedExternalFrameAnchorTarget(frameName)
-        if type(frameName) ~= "string" or frameName == "" or frameName == "UIParent" then
-            return false
-        end
-        if CooldownCompanion.ParseAddonAnchorFrameName
-            and CooldownCompanion:ParseAddonAnchorFrameName(frameName) ~= nil then
-            return false
-        end
-        local target = _G[frameName]
-        return type(target) == "table" and type(target.GetObjectType) == "function"
-    end
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
     if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
         CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
@@ -162,9 +166,6 @@ local function BuildLayoutTab(container)
         else
             targetMode = "group"
         end
-        local hasFrameAnchorTarget = isPanel
-            and targetMode == "frame"
-            and IsResolvedExternalFrameAnchorTarget(settings.relativeTo)
 
         local function RefreshTextureVisual()
             CooldownCompanion:RefreshAllAuraTextureVisuals()
@@ -222,10 +223,12 @@ local function BuildLayoutTab(container)
         local _, anchorCollapsed = BuildCollapsibleSection(container, "Anchor", "layout_anchor", nil, nil, ROW_SECTION)
 
         if not anchorCollapsed then
-        -- LEFT column: the target itself. RIGHT column: the one setting that
-        -- belongs to the choice of target rather than to this panel - where
-        -- its alpha comes from.
-        local anchorLeft, anchorRight = BeginRowGrid(container)
+        -- LEFT column: the target itself, and nothing else here - the one
+        -- setting that used to fill the right column (where this panel's alpha
+        -- comes from) now leads the Visibility tab's Alpha section, beside the
+        -- rows it gates. The grid stays two-wide; the right column just runs
+        -- empty, as it does elsewhere on this tab.
+        local anchorLeft = BeginRowGrid(container)
 
         AddDropdownRow(anchorLeft, {
             label = "Anchor Target",
@@ -291,24 +294,6 @@ local function BuildLayoutTab(container)
             -- takes the embedded child rather than the row wrapper.
             CooldownCompanion:PopulatePanelAnchorTargetDropdown(panelAnchorRow.dropdown, textureGroupId)
             panelAnchorRow:SetValue(currentAnchorGroupId and tostring(currentAnchorGroupId) or nil)
-        end
-
-        if isPanel and (targetMode == "panel" or hasFrameAnchorTarget) then
-            AddDropdownRow(anchorRight, {
-                label = "Panel Alpha",
-                pulloutWidth = WIDE_PULLOUT_WIDTH,
-                list = {
-                    inherit = targetMode == "frame" and "Inherit Target Frame Alpha" or "Inherit Target Panel Alpha",
-                    custom = "Custom Alpha",
-                },
-                order = { "inherit", "custom" },
-                value = group.inheritPanelAlpha == false and "custom" or "inherit",
-                onChange = function(val)
-                    group.inheritPanelAlpha = val ~= "custom"
-                    CooldownCompanion:RefreshAllAuraTextureVisuals()
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
         end
 
         if targetMode == "frame" then
@@ -515,9 +500,6 @@ local function BuildLayoutTab(container)
         targetMode = preferredTargetMode
     end
     CS.layoutAnchorTargetMode[CS.selectedGroup] = targetMode
-    local hasFrameAnchorTarget = isPanel
-        and targetMode == "frame"
-        and IsResolvedExternalFrameAnchorTarget(currentAnchor)
     if targetMode == "cursor" and isCursorAnchor then
         CooldownCompanion:ShowCursorAnchorLayoutPreview(CS.selectedGroup)
     else
@@ -566,9 +548,12 @@ local function BuildLayoutTab(container)
     local _, anchorCollapsed = BuildCollapsibleSection(container, "Anchor", "layout_anchor", nil, nil, ROW_SECTION)
 
     if not anchorCollapsed then
-    -- LEFT column: the target itself. RIGHT column: the one setting that
-    -- belongs to the choice of target rather than to this panel - where
-    -- its alpha comes from.
+    -- LEFT column: the target itself. RIGHT column: whether other features may
+    -- anchor THEMSELVES to this panel - the one remaining setting that belongs
+    -- to anchoring rather than to the entries inside. (Where the panel's alpha
+    -- comes from used to share this column; it now leads the Visibility tab's
+    -- Alpha section, beside the rows it gates, so on bars and text panels this
+    -- column runs empty.)
     local anchorLeft, anchorRight = BeginRowGrid(container)
 
     AddDropdownRow(anchorLeft, {
@@ -623,30 +608,42 @@ local function BuildLayoutTab(container)
         end
     end
 
-    if isPanel and (targetMode == "panel" or hasFrameAnchorTarget) then
-        AddDropdownRow(anchorRight, {
-            label = "Panel Alpha",
-            list = {
-                inherit = targetMode == "frame" and "Inherit Target Frame Alpha" or "Inherit Target Panel Alpha",
-                custom = "Custom Alpha",
-            },
-            order = { "inherit", "custom" },
-            value = group.inheritPanelAlpha == false and "custom" or "inherit",
+    -- Auto-Anchoring eligibility (icon-like modes only - others are never
+    -- eligible). An Aura Panel is structurally excluded in
+    -- IsGroupAvailableForAnchoring, so the checkbox has nothing to opt into.
+    --
+    -- It reads as anchoring rather than arrangement: it decides whether the
+    -- Resource Bars, the Cast Bar and the Unit Frames may hang off this panel,
+    -- which is the same question the rows above answer in the other direction.
+    if CooldownCompanion:IsIconLikeDisplayMode(group.displayMode)
+        and not CooldownCompanion:IsAuraPanel(group) then
+        local anchorEligibleRow = AddCheckboxRow(anchorRight, {
+            label = "Include in Auto-Anchoring",
+            value = group.anchorEligible ~= false,
             onChange = function(val)
-                if val == "custom" then
-                    group.inheritPanelAlpha = false
+                if val then
+                    group.anchorEligible = nil
                 else
-                    group.inheritPanelAlpha = true
+                    group.anchorEligible = false
                 end
-
-                local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-                if frame then
-                    CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
-                end
-                CooldownCompanion:RebuildPanelAlphaDependencyTargets()
+                CooldownCompanion:EvaluateResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+                CooldownCompanion:EvaluateCastBar()
+                CooldownCompanion:EvaluateFrameAnchoring()
                 CooldownCompanion:RefreshConfigPanel()
             end,
         })
+
+        -- Badge chained off the end of the label; the anchor args below
+        -- are a placeholder - AnchorRowBadge re-points the button.
+        AnchorRowBadge(anchorEligibleRow, CreateInfoButton(anchorEligibleRow.frame, anchorEligibleRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Include in Auto-Anchoring",
+            {"Resource Bars, the Cast Bar, and Unit Frames can attach themselves to a panel automatically.", 1, 1, 1, true},
+            {" ", 1, 1, 1},
+            {"They scan your groups in list order, then the panels inside each group, and attach to the first eligible icon panel that is currently shown.", 1, 1, 1, true},
+            {" ", 1, 1, 1},
+            {"Uncheck this to skip this panel, so they attach to the next eligible panel instead.", 1, 1, 1, true},
+        }, tabInfoButtons))
     end
 
     if targetMode == "frame" then
@@ -810,16 +807,9 @@ local function BuildLayoutTab(container)
     -- direction is relabelled by the orientation above it, so they always
     -- share a column and always sit adjacent.
     --
-    -- LEFT column (most modes): that pair. RIGHT column: the wrap count and
-    -- the one setting that is about other panels rather than this one.
-    --
-    -- Bar panels invert it. They own two rows nothing else has - which way a
-    -- single bar's own fill runs - and a bar's left column is about the bar
-    -- itself, so the fill pair takes the left and the arrangement pair moves
-    -- across to join the wrap count. Either way both columns are populated,
-    -- including the single-bar case where the orientation row is gated away.
+    -- LEFT column, in every mode: that pair. RIGHT column: how the block is
+    -- packed - the wrap count and Compact Mode.
     local arrangeLeft, arrangeRight = BeginRowGrid(container)
-    local arrangeHost = isBarMode and arrangeRight or arrangeLeft
 
     -- An Aura BAR Panel is ONE vertical column by construction: the aura
     -- container's bars branch hard-codes the axis and takes no line ceiling, so
@@ -845,33 +835,16 @@ local function BuildLayoutTab(container)
     end
 
     if isBarMode then
-        -- Which way a bar's own fill runs is independent of how the bars are
-        -- arranged, so these lead the section rather than hanging off it.
-        AddCheckboxRow(arrangeLeft, {
-            label = "Vertical Bar Fill",
-            value = style.barFillVertical or false,
-            onChange = function(val)
-                style.barFillVertical = val or nil
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end,
-        })
-
-        AddCheckboxRow(arrangeLeft, {
-            label = "Flip Fill/Drain Direction",
-            value = style.barReverseFill or false,
-            onChange = function(val)
-                style.barReverseFill = val or nil
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end,
-        })
-
         -- A bar panel's orientation is one question ("do the bars sit in a
         -- row?"), so it is a checkbox rather than the horizontal/vertical
         -- dropdown the other modes show. With a single bar there is nothing
         -- to lay out.
+        --
+        -- Which way a single bar's own FILL runs is a different question - it
+        -- is what the bar looks like, not where the bars sit - so those two
+        -- rows live with the bar's shape on the Appearance tab (Bar Settings).
         if #group.buttons > 1 and not auraBarPanel then
-            AddCheckboxRow(arrangeHost, {
+            AddCheckboxRow(arrangeLeft, {
                 label = "Horizontal Bar Layout",
                 value = orientation == "horizontal",
                 onChange = function(val)
@@ -883,7 +856,7 @@ local function BuildLayoutTab(container)
             })
         end
     else
-        AddDropdownRow(arrangeHost, {
+        AddDropdownRow(arrangeLeft, {
             label = "Orientation",
             -- Owner ruling 2026-08-08 (supersedes 2026-07-28): the display
             -- reads the same per-mode helper the core lays out with, and
@@ -935,7 +908,7 @@ local function BuildLayoutTab(container)
             shownValue = "TOPLEFT"
         end
 
-        AddDropdownRow(arrangeHost, {
+        AddDropdownRow(arrangeLeft, {
             label = "Growth Direction",
             list = labels,
             order = order,
@@ -961,7 +934,7 @@ local function BuildLayoutTab(container)
         -- the labels follow that rather than the (gated-away, possibly stale)
         -- barOrientation key the row above still reads.
         local collapseOrientation = isBarMode and "vertical" or nil
-        local collapseRow = AddDropdownRow(arrangeHost, {
+        local collapseRow = AddDropdownRow(arrangeLeft, {
             label = "Collapse Direction",
             list = GetCompactGrowthDirectionLabels(group, collapseOrientation),
             order = { "start", "center", "end" },
@@ -1002,34 +975,32 @@ local function BuildLayoutTab(container)
         end, nil, style, "buttonsPerRow")
     end
 
-    -- Auto-Anchoring eligibility (icon-like modes only - others are never
-    -- eligible). An Aura Panel is structurally excluded in
-    -- IsGroupAvailableForAnchoring, so the checkbox has nothing to opt into.
-    if CooldownCompanion:IsIconLikeDisplayMode(group.displayMode)
-        and not CooldownCompanion:IsAuraPanel(group) then
-        local anchorEligibleRow = AddCheckboxRow(arrangeRight, {
-            label = "Include in Auto-Anchoring",
-            value = group.anchorEligible ~= false,
-            onChange = function(val)
-                if val then
-                    group.anchorEligible = nil
-                else
-                    group.anchorEligible = false
-                end
-                CooldownCompanion:EvaluateResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
-                CooldownCompanion:EvaluateCastBar()
-                CooldownCompanion:EvaluateFrameAnchoring()
-                CooldownCompanion:RefreshConfigPanel()
-            end,
-        })
-
-        -- Badge chained off the end of the label; the anchor args below
-        -- are a placeholder - AnchorRowBadge re-points the button.
-        AnchorRowBadge(anchorEligibleRow, CreateInfoButton(anchorEligibleRow.frame, anchorEligibleRow.frame, "LEFT", "LEFT", 0, 0, {
-            "Include in Auto-Anchoring",
-            {"Resource Bars, the Cast Bar, and Unit Frames attach to the first available panel automatically. Uncheck this to skip this panel so they attach to the next eligible one instead.", 1, 1, 1, true},
-        }, tabInfoButtons))
+    -- Compact Mode: how the panel packs the entries that are actually visible,
+    -- which is the same question the wrap count above it answers for the ones
+    -- that always are - so it closes the right column rather than sitting with
+    -- the look on the Appearance tab.
+    --
+    -- The builder carries one gate of its own: it draws NOTHING on an Aura
+    -- Panel (Blizzard's aura container packs itself, and "which end" is the
+    -- Collapse Direction row above). The MODE gate is here, and it is the
+    -- three modes that have always offered it - texture and trigger panels
+    -- returned far above, but a rotation assistant panel reaches this section
+    -- and never had a Compact Mode row, so naming the three is what keeps this
+    -- move from handing it one.
+    --
+    -- Panel-only data with no override section, and the Layout tab is panel
+    -- scope throughout (no entry lens ever reaches it), so the row needs no
+    -- lens bracket of its own here. Its gear closes itself when the selection
+    -- moves: an advanced panel's context carries selectedButton AND
+    -- panelSettingsTab, and selecting an entry changes both (the Layout tab is
+    -- not offered under an entry lens, so the surface lands on Appearance).
+    --
+    -- Compact Mode still copies with the APPEARANCE scope of
+    -- "Copy Panel Settings To..." (ST.PANEL_COPY_SCOPES, Defaults.lua) - it is
+    -- packing behavior, not placement - and this move deliberately does not
+    -- change that.
+    if isIconsMode or isBarMode or isTextMode then
+        BuildCompactModeControls(arrangeRight, group, tabInfoButtons)
     end
     end -- not arrangementCollapsed
 
@@ -1041,10 +1012,12 @@ local function BuildLayoutTab(container)
     -- gets its block - the section lives in the profile either way, and the
     -- owner has to be able to nudge it before it comes back.
     --
-    -- Placement and layout grammar only: a section's icon size and spacing
-    -- live with the panel's own copies of those in the Appearance tab (owner
-    -- ruling 2026-08-22 -- size and spacing are Appearance's vocabulary;
-    -- placement, direction, and wrap are Layout's).
+    -- What the cluster IS, then where it sits: a section's icon size and
+    -- spacing stay with the panel's own copies of those in the Appearance tab
+    -- (owner ruling 2026-08-22 -- size and spacing are Appearance's vocabulary;
+    -- placement, direction, and wrap are Layout's), and the aura toggle heads
+    -- the block here because "only auras live here, and they pack" is a
+    -- statement about the cluster's layout rather than its look.
     local panelSections = ST.PanelSupportsSections(group) and group.sections or nil
     if type(panelSections) == "table" and next(panelSections) then
         -- Reading order, so the blocks sit in the order the anchors read on the
@@ -1057,6 +1030,56 @@ local function BuildLayoutTab(container)
                     "layout_section_" .. anchor, nil, nil, ROW_SECTION)
 
                 if not sectionCollapsed then
+                -- WHAT this cluster is comes before where it sits, so the aura
+                -- toggle heads the block on its own full-width line above the
+                -- offsets grid.
+                --
+                -- A section holding anything the aura container cannot draw is
+                -- told so on a DISABLED checkbox rather than being allowed to
+                -- click and fail: the engine's refusal is asked for here, before
+                -- the write, and the blocking entry's own sentence is what the
+                -- row explains itself with. The blocker only ever gates turning
+                -- the flag ON. A section already flagged can still develop one
+                -- (polarity is spec-dependent, so a member admitted on one spec
+                -- can mismatch on another), and the setter deliberately lets OFF
+                -- through unconditionally - so the checkbox must stay clickable
+                -- there, or the section is trapped aura-only.
+                local sectionAuraOnly = ST.IsAuraOnlyPanelSection(group, anchor)
+                local sectionBlocker = not sectionAuraOnly
+                    and ST.GetAuraSectionToggleBlocker(group, anchor) or nil
+                local sectionToggleTooltip = AURA_SECTION_TOOLTIP
+                if sectionBlocker then
+                    sectionToggleTooltip = {
+                        AURA_SECTION_TOOLTIP[1],
+                        {sectionBlocker, 1, 0.4, 0.4, true},
+                        " ",
+                    }
+                    for line = 2, #AURA_SECTION_TOOLTIP do
+                        sectionToggleTooltip[#sectionToggleTooltip + 1] = AURA_SECTION_TOOLTIP[line]
+                    end
+                end
+
+                AddCheckboxRow(container, {
+                    label = "Aura Only Section",
+                    relativeWidth = 0.5,
+                    value = sectionAuraOnly,
+                    tooltip = sectionToggleTooltip,
+                    disabled = sectionBlocker ~= nil,
+                    onChange = function(value, widget)
+                        -- A structural commit, not a styling one: the flag
+                        -- changes which entries materialize a button at all, so
+                        -- it takes the same pair a section drop takes rather
+                        -- than the sliders' UpdateGroupStyle. Safe here for the
+                        -- same reason it is safe there - a click is over.
+                        if not ST.SetPanelSectionAuraOnly(group, anchor, value) then
+                            widget:SetValue(ST.IsAuraOnlyPanelSection(group, anchor))
+                            return
+                        end
+                        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                        CooldownCompanion:RefreshConfigPanel()
+                    end,
+                })
+
                 local sectionLeft, sectionRight = BeginRowGrid(container)
 
                 local sectionXRow = AddSliderRow(sectionLeft, {

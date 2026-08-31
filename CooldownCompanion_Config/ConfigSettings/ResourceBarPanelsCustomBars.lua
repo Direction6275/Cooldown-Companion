@@ -23,6 +23,7 @@ local AddFontControls = ST._AddFontControls
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local AddDurationTextVisibilityRows = ST._AddDurationTextVisibilityRows
 local AddSettingsSubheading = ST._AddSettingsSubheading
+local AddFamilyColumnCaptions = ST._AddFamilyColumnCaptions
 local BeginFullWidthRowGroup = ST._BeginFullWidthRowGroup
 
 -- Imports from RowWidgets.lua (the row grammar). The rules every row-grammar
@@ -988,48 +989,6 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         {"Your pet tracks the buff on your summoned pet instead of on you, like Dark Transformation on a ghoul.", 1, 1, 1, true},
     }, infoButtons))
 
-    -- Read-only, panel parity (ButtonSettingsAura "Tracked Aura ID"): the
-    -- aura ID(s) that can actually appear on a unit for this bar, not the
-    -- bind's full insurance filter. Spell bars list the user's adds plus
-    -- their own aura, which custom bars keep as a fallback unconditionally
-    -- (their candidate build is unconstrained); Aura bars lead with the
-    -- resolved applied identity.
-    local trackedAuraIDs = {}
-    local trackedAuraIDSeen = {}
-    local function AppendTrackedAuraID(id)
-        id = tonumber(id)
-        if id and not trackedAuraIDSeen[id] then
-            trackedAuraIDSeen[id] = true
-            trackedAuraIDs[#trackedAuraIDs + 1] = tostring(id)
-        end
-    end
-    local hasIDOverride = tonumber(cab.auraIDOverride) ~= nil
-    if isSpellBar then
-        -- An ID override replaces the implicit head: it leads the line and
-        -- the bar's own aura leaves the filter with the rest of the
-        -- automatic machinery (panel parity).
-        if hasIDOverride then
-            AppendTrackedAuraID(resolvedAuraID)
-        end
-        for _, id in ipairs(GetAuraCandidateList(cab)) do
-            AppendTrackedAuraID(id)
-        end
-        if not hasIDOverride then
-            AppendTrackedAuraID(CooldownCompanion:ResolveImplicitAuraSpellID(probe))
-        end
-    else
-        AppendTrackedAuraID(resolvedAuraID)
-        for _, id in ipairs(GetAuraCandidateList(cab)) do
-            AppendTrackedAuraID(id)
-        end
-    end
-    AddLabelRow(auraLeft, {
-        label = #trackedAuraIDs > 1 and "Tracked Aura IDs" or "Tracked Aura ID",
-        indent = isSpellBar,
-        controlText = #trackedAuraIDs > 0
-            and table.concat(trackedAuraIDs, ", ") or "None",
-    })
-
     -- The head-replacement escape hatch, one shape on every entry kind
     -- (panel parity, ButtonSettingsAura): replaces the automatic aura head
     -- verbatim; the list below keeps adding auras beside it. On spell bars
@@ -1085,6 +1044,52 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
                 RefreshCustomBarAuraConfig()
             end
         end,
+    })
+
+    -- Read-only, panel parity (ButtonSettingsAura "Tracked Aura ID"): the
+    -- aura ID(s) that can actually appear on a unit for this bar, not the
+    -- bind's full insurance filter. Spell bars list the user's adds plus
+    -- their own aura, which custom bars keep as a fallback unconditionally
+    -- (their candidate build is unconstrained); Aura bars lead with the
+    -- resolved applied identity.
+    --
+    -- Last row of this block, same as the twin: it is the RESULT of every
+    -- control above it, so it reads after its causes rather than ahead of
+    -- them.
+    local trackedAuraIDs = {}
+    local trackedAuraIDSeen = {}
+    local function AppendTrackedAuraID(id)
+        id = tonumber(id)
+        if id and not trackedAuraIDSeen[id] then
+            trackedAuraIDSeen[id] = true
+            trackedAuraIDs[#trackedAuraIDs + 1] = tostring(id)
+        end
+    end
+    local hasIDOverride = tonumber(cab.auraIDOverride) ~= nil
+    if isSpellBar then
+        -- An ID override replaces the implicit head: it leads the line and
+        -- the bar's own aura leaves the filter with the rest of the
+        -- automatic machinery (panel parity).
+        if hasIDOverride then
+            AppendTrackedAuraID(resolvedAuraID)
+        end
+        for _, id in ipairs(GetAuraCandidateList(cab)) do
+            AppendTrackedAuraID(id)
+        end
+        if not hasIDOverride then
+            AppendTrackedAuraID(CooldownCompanion:ResolveImplicitAuraSpellID(probe))
+        end
+    else
+        AppendTrackedAuraID(resolvedAuraID)
+        for _, id in ipairs(GetAuraCandidateList(cab)) do
+            AppendTrackedAuraID(id)
+        end
+    end
+    AddLabelRow(auraLeft, {
+        label = #trackedAuraIDs > 1 and "Tracked Aura IDs" or "Tracked Aura ID",
+        indent = isSpellBar,
+        controlText = #trackedAuraIDs > 0
+            and table.concat(trackedAuraIDs, ", ") or "None",
     })
 
     -- Bar fill mode: duration drain or stack count. Max stacks is automatic
@@ -1724,11 +1729,22 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                 local _, colorsCollapsed = AddCustomBarSettingsHeading(container, "Colors", "colors", capturedKey)
 
                 if not colorsCollapsed then
-                -- LEFT column: the two base fills - what the bar shows when it
-                -- is ready, and what it shows while the cooldown runs. RIGHT
-                -- column: the conditional fills layered over those. Aura bars
-                -- have only the first, so the right side is empty for them.
+                -- The styling tabs' standing column rule, on this grid too:
+                -- LEFT is everything the SPELL paints - the bar at rest, the
+                -- cooldown fill, and the recharge fill drawn over it - and
+                -- RIGHT is the aura fill. A bar that draws only one family
+                -- fills the left column first and takes no captions.
                 local colorsLeft, colorsRight = BeginRowGrid(container)
+
+                -- Captions only where both families really draw, computed from
+                -- the same gates the rows below carry: every spell row sits
+                -- behind baseSpellShellConsumer on a spell bar, and the aura
+                -- row behind auraTracked. A standalone aura bar (no spell
+                -- shell) and a spell bar with no tracked aura each draw one
+                -- family only, so they stay uncaptioned.
+                if isSpellCustomBar and capabilities.baseSpellShellConsumer and isAuraTracked then
+                    AddFamilyColumnCaptions(colorsLeft, colorsRight)
+                end
 
                 -- deferCommit is true on every picker here: the Layout & Order
                 -- canvas re-reads these tables on every repaint, so a drag
@@ -1763,7 +1779,7 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                         })
 
                         if capabilities.hasCharges then
-                            AddColorRow(colorsRight, {
+                            AddColorRow(colorsLeft, {
                                 label = "Bar Recharging Color",
                                 tbl = customBars[cabIdx],
                                 key = "barChargeColor",

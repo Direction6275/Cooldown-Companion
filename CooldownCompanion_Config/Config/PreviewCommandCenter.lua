@@ -521,10 +521,13 @@ local MENU_ROW_TEXT_INSET = "  "
 -- text panel's state styling lives anyway.
 local function StateRoute(advancedKey)
     -- With an advanced key the queue resolves the section for us
-    -- (ST._INDICATORS_SECTION_BY_ADVANCED_KEY maps it to "effects_states");
+    -- (ST._INDICATORS_SECTION_BY_ADVANCED_KEY maps it to "effects_spell");
     -- with none there is nothing to resolve from, so name the section on the
     -- route or the gear lands on a collapsed header with nothing under it.
-    local statesSection = (advancedKey == nil) and "effects_states" or nil
+    -- The state looks are a subgroup of the Cooldown / Spell Indicators section
+    -- in every mode that draws them - icons, bars and the rotation assistant -
+    -- and the subheading over them owns no collapse state of its own.
+    local statesSection = (advancedKey == nil) and "effects_spell" or nil
     return {
         icons = { tab = "effects", key = advancedKey, uncollapse = statesSection },
         bars = { tab = "effects", key = advancedKey, uncollapse = statesSection },
@@ -643,10 +646,12 @@ local CONTROLS = {
         section = "pandemic",
         requiresPandemicEffect = true,
         -- No advanced key exists for the bars pandemic FILL rows (enable +
-        -- color only), so the gear lands on the Effects tab with the Pandemic
-        -- section forced open by name — the rows live inside it. The section
-        -- constant is GroupTabs' (EFFECTS_PANDEMIC_SECTION); bars shares it.
-        settings = { tab = "effects", uncollapse = "effects_pandemic" },
+        -- color only), so the gear lands on the Effects tab with the Aura
+        -- Indicators section forced open by name — the Pandemic rows are a
+        -- subheading inside it, and a subheading owns no collapse state of its
+        -- own. The section constant is GroupTabs' (EFFECTS_AURA_SECTION); bars
+        -- shares it.
+        settings = { tab = "effects", uncollapse = "effects_aura" },
         preview = FlagPreview("_pandemicPreview", "SetBarPandemicPreview", "SetGroupBarPandemicPreview"),
     },
     {
@@ -717,12 +722,12 @@ local CONTROLS = {
         -- Icons and bars split this into the Cooldown Text / Cooldown Swipe
         -- readouts below (owner ruling 2026-08-08); the modes whose cooldown
         -- look is indivisible keep the state entry. The rotation assistant's
-        -- cooldown settings sit inside its collapsible "Timers" section; text
-        -- panels have no advanced panel for cooldown visuals at all, so both
-        -- routes are tab-only.
+        -- cooldown settings sit under the Timers subheading of its collapsible
+        -- "Cooldown / Spell Indicators" section; text panels have no advanced
+        -- panel for cooldown visuals at all, so both routes are tab-only.
         modes = { text = true, rotationAssistant = true },
         settings = {
-            rotationAssistant = { tab = "effects", uncollapse = "effects_timers" },
+            rotationAssistant = { tab = "effects", uncollapse = "effects_spell" },
             text = { tab = "appearance" },
         },
         preview = ConditionalPreview("cooldown"),
@@ -787,7 +792,7 @@ local CONTROLS = {
         -- itself switched off, exactly as the state entry it replaced was.
         settings = {
             tab = "effects",
-            uncollapse = "effects_timers",
+            uncollapse = "effects_spell",
             -- The same owner resolver drives the section and the advanced key,
             -- so the gear and Customize cannot disagree. A nil advanced key
             -- (swipe explicitly off, no fill) navigates to the row and stops.
@@ -816,10 +821,10 @@ local CONTROLS = {
         menuOrder = 60,
         modes = { icons = true, bars = true },
         -- Sits with the readouts, not the effects: the marker IS the duration
-        -- text, dressed. Its settings live in the Indicators tab's Pandemic
-        -- section, so this is a two-mode effects route rather than TextRoute's
-        -- Appearance one; both gear keys are in the gear-to-section map, which
-        -- is what uncollapses the header.
+        -- text, dressed. Its settings live under the Indicators tab's Pandemic
+        -- subheading, inside Aura Indicators, so this is a two-mode effects
+        -- route rather than TextRoute's Appearance one; both gear keys are in
+        -- the gear-to-section map, which is what uncollapses that header.
         section = "pandemic",
         styleKeyDefaultOn = "showAuraText",
         requiresPandemicMarker = true,
@@ -1692,9 +1697,9 @@ local function ApplyGearRoute(route, queueKey, sectionId)
         ForceSectionOpen(home and home.collapseKey, lens, routeGroup)
         ForceSectionOpen(route.uncollapse, lens, routeGroup)
         -- Same rule, read off the key rather than named on the route: the
-        -- Indicators tab collapses all three of its sections, and which one
-        -- holds a given gear is GroupTabs' fact to state - it owns both the
-        -- sections and the advanced keys - so the map lives there. Keys
+        -- Indicators tab collapses each of its sections, and which one holds a
+        -- given gear is GroupTabs' fact to state - it owns both the sections and
+        -- the advanced keys - so the map lives there. Keys
         -- reached in a display mode that has no such section just clear one
         -- nothing uses.
         local sectionByKey = queueKey and ST._INDICATORS_SECTION_BY_ADVANCED_KEY
