@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.4",
         "2.3",
         "2.2.1",
         "2.2",
@@ -34,6 +35,21 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.4"] = {
+            markdown = [[
+## New Features
+
+- **Settings Finder:** A new Find field searches settings for the Group, Panel, Entry, Resource, Custom Bar, Cast Bar, or Unit Frame currently being edited. Results can jump across tabs, open collapsed or Advanced sections, and highlight the exact option.
+- **Timer text visibility:** Cooldown and aura timers can appear always or only during independent 1–60 second windows across icons, bars, Aura Panels, and custom bars. Warning, Critical, decimal, and Pandemic marker behavior now follows these choices more clearly.
+
+## Polish | QoL
+
+- **Middle-click lock toggles:** Middle-click a Group or Panel row in the Navigator, or an eligible Panel tile in the Group overview, to toggle its locked state wherever an on-screen mover is available.
+- **Settings in predictable homes:** Cooldown/spell, aura, and interaction settings are grouped more consistently. Text, color, layout, alpha, tooltip, and ping controls now appear where players are more likely to look for them.
+- **Clearer Preview Command Center:** Preview choices are grouped into Cooldowns & Charges, Auras, and Feedback & States, with shorter labels and cleaner spacing.
+- **Better empty-panel guidance:** Empty panels explain how to add the first spell or item through search, direct IDs, or drag-and-drop. Aura Panels also clarify how the first aura determines buff or debuff tracking.
+]],
+        },
         ["2.3"] = {
             markdown = [[
 ## New Features
