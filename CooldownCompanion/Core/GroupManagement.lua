@@ -361,6 +361,9 @@ local function CopyPresetValue(v)
     end
     return v
 end
+-- Shared with Core/PanelTemplates.lua so a template snapshot copies values
+-- with the same deep-copy rule the settings applier writes them with.
+ST._CopyPresetValue = CopyPresetValue
 
 -- Panel arrangement orientation is remembered PER MODE so a display-mode
 -- swap can never destroy another mode's layout: bars and text panels read
@@ -382,7 +385,11 @@ local function CopyCompactLayoutSettings(sourceGroup, targetGroup)
 
     local sourceMaxVisible = tonumber(sourceGroup.maxVisibleButtons) or 0
     local targetButtonCount = targetGroup.buttons and #targetGroup.buttons or 0
-    if sourceMaxVisible > 0 and targetButtonCount > 0 then
+    if targetButtonCount == 0 then
+        -- An empty target has nothing to clamp against, and a template must
+        -- reproduce the panel's limit as entries arrive.
+        targetGroup.maxVisibleButtons = sourceMaxVisible
+    elseif sourceMaxVisible > 0 then
         targetGroup.maxVisibleButtons = math.min(sourceMaxVisible, targetButtonCount)
         if targetGroup.maxVisibleButtons >= targetButtonCount then
             targetGroup.maxVisibleButtons = 0
@@ -431,6 +438,33 @@ function CooldownCompanion:GetPanelCopyScopeList(mode)
     return list
 end
 
+-- The one enumeration of the style keys a mode's copy scopes carry, in write
+-- order: for each scope name in `scopes`, its override sections' keys, then
+-- its own styleKeys. The settings applier below and the template snapshot
+-- (Core/PanelTemplates.lua) both walk it, so the two can never disagree
+-- about which keys make up the look.
+local function ForEachPanelCopyStyleKey(mode, scopes, fn)
+    local modeScopes = ST.PANEL_COPY_SCOPES[mode]
+    if not modeScopes then return end
+    for _, scopeName in ipairs(scopes) do
+        local scopeData = modeScopes[scopeName]
+        if scopeData then
+            for _, sectionId in ipairs(scopeData.sections or {}) do
+                local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
+                if sectionDef then
+                    for _, key in ipairs(sectionDef.keys or {}) do
+                        fn(key)
+                    end
+                end
+            end
+            for _, key in ipairs(scopeData.styleKeys or {}) do
+                fn(key)
+            end
+        end
+    end
+end
+ST._ForEachPanelCopyStyleKey = ForEachPanelCopyStyleKey
+
 function CooldownCompanion:CanCopyPanelSettings(sourceGroupId, targetGroupId, scope)
     sourceGroupId = tonumber(sourceGroupId)
     targetGroupId = tonumber(targetGroupId)
@@ -474,27 +508,29 @@ function CooldownCompanion:CanCopyPanelSettings(sourceGroupId, targetGroupId, sc
     return true
 end
 
-function CooldownCompanion:CopyPanelSettings(sourceGroupId, targetGroupId, scope)
-    sourceGroupId = tonumber(sourceGroupId)
-    targetGroupId = tonumber(targetGroupId)
-
-    local canCopy, reason = self:CanCopyPanelSettings(sourceGroupId, targetGroupId, scope)
-    if not canCopy then
-        return false, reason
-    end
-
+-- The one writer behind Copy Panel Settings and Panel Templates
+-- (Core/PanelTemplates.lua). `source` is any panel-shaped table - a live
+-- panel or a stored template: its style, masqueEnabled and compact trio are
+-- read, and whether it is an Aura Panel is derived from the table itself.
+-- `scopes` is the list of ST.PANEL_COPY_SCOPES[mode] scope names to write.
+--
+-- opts, every one optional and template-only (the copy feature passes none):
+--   shapeKeys    style keys copied after the look scopes, each by the same
+--                source-value-else-baseline rule (ST.PANEL_TEMPLATE_SHAPE_KEYS)
+--   skipCompact  leave the target's compact trio alone even where a scope
+--                copies it (a template saved from an Aura Panel carries none)
+--   anchor       { point, relativePoint, x, y }: the target's offset from its
+--                own Group frame, written and re-anchored only for a panel
+--                that has one. Never any other anchor target.
+--
+-- Returns true once the data is written, whether the frame refresh ran or
+-- was combat-deferred, exactly as the copy feature always has.
+local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opts)
+    opts = opts or {}
     local db = self.db.profile
-    local sourceGroup = db.groups[sourceGroupId]
     local targetGroup = db.groups[targetGroupId]
     local mode = self:GetPanelCopyMode(targetGroup)
     local modeScopes = ST.PANEL_COPY_SCOPES[mode]
-
-    local scopes
-    if scope == "all" then
-        scopes = self:GetPanelCopyScopeList(mode)
-    else
-        scopes = { scope }
-    end
 
     -- Per key: the source's value, or the shipped default where the source
     -- carries none - so the target's scope comes out exactly matching the
@@ -502,7 +538,7 @@ function CooldownCompanion:CopyPanelSettings(sourceGroupId, targetGroupId, scope
     -- baseline the panel style itself was seeded from; a key absent there too
     -- is nil-defaulted at its read sites, and nil is the faithful copy.
     local baseline = db.globalStyle or {}
-    local sourceStyle = sourceGroup.style or {}
+    local sourceStyle = source.style or {}
     local targetStyle = targetGroup.style
     if type(targetStyle) ~= "table" then
         targetStyle = {}
@@ -527,19 +563,11 @@ function CooldownCompanion:CopyPanelSettings(sourceGroupId, targetGroupId, scope
     for _, scopeName in ipairs(scopes) do
         local scopeData = modeScopes[scopeName]
         if scopeData then
-            for _, sectionId in ipairs(scopeData.sections or {}) do
-                local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
-                if sectionDef then
-                    for _, key in ipairs(sectionDef.keys or {}) do
-                        CopyStyleKey(key)
-                    end
-                end
-            end
-            for _, key in ipairs(scopeData.styleKeys or {}) do
-                CopyStyleKey(key)
-            end
+            -- One scope at a time, so each scope's keys land before its Masque
+            -- and compact writes, exactly as they always have.
+            ForEachPanelCopyStyleKey(mode, { scopeName }, CopyStyleKey)
             if scopeData.copiesMasque then
-                targetGroup.masqueEnabled = sourceGroup.masqueEnabled and true or false
+                targetGroup.masqueEnabled = source.masqueEnabled and true or false
                 copiedMasque = true
             end
             -- Compact settings never cross an Aura Panel boundary in either
@@ -549,11 +577,18 @@ function CooldownCompanion:CopyPanelSettings(sourceGroupId, targetGroupId, scope
             -- false there - so an Aura endpoint has nothing Appearance-shaped
             -- to give or take here.
             if scopeData.copiesCompact
-                and not ST.IsAuraPanelGroup(sourceGroup)
+                and not opts.skipCompact
+                and not ST.IsAuraPanelGroup(source)
                 and not ST.IsAuraPanelGroup(targetGroup) then
-                CopyCompactLayoutSettings(sourceGroup, targetGroup)
+                CopyCompactLayoutSettings(source, targetGroup)
             end
         end
+    end
+
+    -- Shape rides after the look, by the same baseline rule. Only a template
+    -- asks for it: the copy feature's line stops at the look.
+    for _, key in ipairs(opts.shapeKeys or {}) do
+        CopyStyleKey(key)
     end
 
     -- durationFormat: legacy profiles can still carry only decimalTimers=true
@@ -585,10 +620,31 @@ function CooldownCompanion:CopyPanelSettings(sourceGroupId, targetGroupId, scope
         newMasqueEnabled = false
     end
 
+    -- The Group-relative offset is pure data, so it lands before the combat
+    -- gate like every key above; the frame side runs with the refresh below,
+    -- or rides _anchorDirty out of combat the way a deferred layout does.
+    local anchor = opts.anchor
+    local wasCursorAnchored = false
+    if anchor and targetGroup.parentContainerId then
+        wasCursorAnchored = self:IsCursorAnchor(targetGroup.anchor)
+        targetGroup.anchor = {
+            point = anchor.point or "CENTER",
+            relativeTo = "CooldownCompanionContainer" .. targetGroup.parentContainerId,
+            relativePoint = anchor.relativePoint or "CENTER",
+            x = tonumber(anchor.x) or 0,
+            y = tonumber(anchor.y) or 0,
+        }
+    else
+        anchor = nil
+    end
+
     local frame = self.groupFrames and self.groupFrames[targetGroupId]
     if InCombatLockdown() and (not frame or frame:IsProtected()) then
         if frame then
             frame._layoutDirty = true
+            if anchor then
+                frame._anchorDirty = true
+            end
         end
         self._pendingFullRefresh = true
         return true
@@ -600,6 +656,15 @@ function CooldownCompanion:CopyPanelSettings(sourceGroupId, targetGroupId, scope
         self:ToggleGroupMasque(targetGroupId, newMasqueEnabled)
     end
 
+    -- Re-anchoring is the finishing sequence SetGroupAnchor's own container
+    -- branch runs (Core/GroupFrame.lua): anchor, rebuild alpha dependencies,
+    -- refresh interaction state, and tell the cursor runtime if the panel
+    -- just left the cursor. It runs before the layout refresh so the buttons
+    -- are laid out against the final anchor.
+    if anchor and frame and ST._FinishGroupAnchorChange then
+        ST._FinishGroupAnchorChange(self, targetGroupId, frame, targetGroup, wasCursorAnchored)
+    end
+
     if self.PopulateGroupButtons then
         self:PopulateGroupButtons(targetGroupId)
     end
@@ -608,6 +673,30 @@ function CooldownCompanion:CopyPanelSettings(sourceGroupId, targetGroupId, scope
     end
     self:RefreshGroupFrame(targetGroupId)
     return true
+end
+ST._ApplyPanelSettingsSource = ApplyPanelSettingsSource
+
+function CooldownCompanion:CopyPanelSettings(sourceGroupId, targetGroupId, scope)
+    sourceGroupId = tonumber(sourceGroupId)
+    targetGroupId = tonumber(targetGroupId)
+
+    local canCopy, reason = self:CanCopyPanelSettings(sourceGroupId, targetGroupId, scope)
+    if not canCopy then
+        return false, reason
+    end
+
+    local db = self.db.profile
+    local sourceGroup = db.groups[sourceGroupId]
+    local mode = self:GetPanelCopyMode(db.groups[targetGroupId])
+
+    local scopes
+    if scope == "all" then
+        scopes = self:GetPanelCopyScopeList(mode)
+    else
+        scopes = { scope }
+    end
+
+    return ApplyPanelSettingsSource(self, targetGroupId, sourceGroup, scopes)
 end
 
 ------------------------------------------------------------------------
@@ -1466,6 +1555,11 @@ end
 -- (wrap count below the entry count) may start a new row or column. Every
 -- path that grows a panel's entry list calls this with the count from
 -- before the growth, after inserting.
+--
+-- On a panel with sections only BASE members count: a sectioned entry lays
+-- out on its own anchor, never in the base line, so an add into a section
+-- must not widen the base wrap. The entries at or below the old count are
+-- read as the ones already there, which every add path's append makes exact.
 function CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount)
     if not group then return end
     local displayMode = group.displayMode or "icons"
@@ -1475,14 +1569,30 @@ function CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount)
     local style = group.style
     if not style then return end
     previousCount = tonumber(previousCount) or 0
-    local newCount = #(group.buttons or {})
+    local buttons = group.buttons or {}
+    local newCount = #buttons
+    if ST.GetSectionsForLayout(group) then
+        local previousBase, newBase = 0, 0
+        for index, buttonData in ipairs(buttons) do
+            if ST.GetPanelSectionForEntry(group, buttonData) == nil then
+                newBase = newBase + 1
+                if index <= previousCount then
+                    previousBase = previousBase + 1
+                end
+            end
+        end
+        previousCount, newCount = previousBase, newBase
+    end
     local perLine = tonumber(style.buttonsPerRow) or 12
     if perLine >= previousCount and newCount > perLine then
         style.buttonsPerRow = newCount
     end
 end
 
-function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot, preserveSpellID)
+-- `section` (optional): the anchor name of a section the new entry joins on
+-- a panel that supports sections. An aura-only section or a bad anchor is
+-- refused by the membership writer, and the entry stays in the base grid.
+function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot, preserveSpellID, section)
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
@@ -1704,6 +1814,12 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
 
     if group.displayMode == "trigger" and self.NormalizeTriggerConditionRowData then
         self:NormalizeTriggerConditionRowData(newButton)
+    end
+
+    -- Membership lands before the single-line keeper, so a sectioned arrival
+    -- is never counted against the base line.
+    if section and ST.PanelSupportsSections(group) then
+        ST.SetPanelSectionForEntry(group, newButton, section)
     end
 
     self:KeepPanelSingleLineOnGrowth(group, buttonIndex - 1)

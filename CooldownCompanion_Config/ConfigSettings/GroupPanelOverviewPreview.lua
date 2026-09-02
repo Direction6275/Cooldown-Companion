@@ -9,9 +9,10 @@
     of the surface. An empty Group instead gets the create surface itself: a
     centered block that says why the Group is empty, then a picker of clickable
     panel-type cards -- the two everyday types large, Aura variants compressed
-    into one shared band, the specialists quiet below -- and a Cooldown Manager
-    starter card. A Group that cannot take a new Panel (Browse Other Classes,
-    invalid class scope) keeps the plain label and nothing clickable.
+    into one shared band, the specialists quiet below, the account's saved
+    templates after them -- and a Cooldown Manager starter card. A Group that
+    cannot take a new Panel (Browse Other Classes, invalid class scope) keeps
+    the plain label and nothing clickable.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -89,6 +90,11 @@ local AURA_BAND_NARROW_WIDTH = 720
 local AURA_BAND_FADE_FRACTION = 0.25
 local AURA_BAND_FILL_COLOR = CREATE_ACCENT.idleFill
 local AURA_BAND_BORDER_COLOR = { 0.32, 0.82, 1, 0.30 }
+
+-- Saved Panel Templates sit between the specialists and the starter as
+-- title-only cards under one muted label. Templates are account-wide, so the
+-- tier appears on every empty Group once one exists.
+local TEMPLATE_TIER_LABEL = "Your templates"
 
 -- All picker buttons share the same face and centering. Their styles change
 -- only hierarchy, density, and whether the body copy is shown. The specialists
@@ -510,6 +516,11 @@ local function EnsureEmptyStateBlock(overview)
 
     block.divider = block:CreateTexture(nil, "ARTWORK")
 
+    block.templateLabel = NewEmptyStateLine(block, EMPTY_STATE_BODY_SIZE,
+        EMPTY_STATE_SUBLINE_COLOR)
+    block.templateLabel:SetText(TEMPLATE_TIER_LABEL)
+    block.templateLabel:Hide()
+
     local auraBand = CreateFrame("Frame", nil, block)
     auraBand:EnableMouse(false)
     auraBand:Hide()
@@ -566,9 +577,11 @@ end
 -- While the first-run tutorial waits for the player to create an Icon Panel,
 -- every other create card stands down so the guided path cannot dead-end.
 -- Checked live in the handlers (the tutorial can end without a rebuild); the
--- build pass reads it once for the dimmed look.
+-- build pass reads it once for the dimmed look. A template card stands down
+-- by its template's type, so an Icon Panel template stays live: it advances
+-- the tutorial exactly as the Icon Panel card does.
 local function IsCardTutorialLocked(create)
-    if not create or create.mode == "icons" then
+    if not create or (create.mode or create.templateMode) == "icons" then
         return false
     end
     return (ST._IsTutorialAwaitingIconPanel and ST._IsTutorialAwaitingIconPanel()) == true
@@ -600,7 +613,11 @@ local function EnsurePickerCard(overview, block, index)
             and ST._IsCreateTargetContainer(containerId)) then
             return
         end
-        if create.cdmStarter then
+        if create.templateId then
+            if ST._CreatePanelFromTemplateInContainer then
+                ST._CreatePanelFromTemplateInContainer(containerId, create.templateId)
+            end
+        elseif create.cdmStarter then
             if ST._CreateMissingCDMPanelsInSelectedContainer then
                 ST._CreateMissingCDMPanelsInSelectedContainer(containerId)
             end
@@ -698,6 +715,8 @@ local function PlacePickerCard(block, card, entry, style, containerId, accent,
         containerId = containerId,
         mode = entry.mode,
         cdmStarter = entry.cdmStarter,
+        templateId = entry.templateId,
+        templateMode = entry.templateMode,
         tooltipTitle = entry.tooltipTitle,
         tooltipText = entry.tooltipText,
     }
@@ -903,6 +922,17 @@ local function LayoutAuraBand(overview, block, firstIndex, entries,
     return bandHeight
 end
 
+-- A picker card going down takes its create action with it, so a click that
+-- lands mid-refresh finds nothing to act on, and takes its tooltip too when
+-- the cursor was resting on it.
+local function ReleasePickerCard(card)
+    if GameTooltip:GetOwner() == card then
+        GameTooltip:Hide()
+    end
+    card._cdcOverviewCreate = nil
+    card:Hide()
+end
+
 -- Lays the whole block out top-down in block coordinates and returns its
 -- height, which is what tells the caller whether the surface needs to scroll.
 local function LayoutEmptyStateBlock(overview, containerId, visibleWidth)
@@ -971,6 +1001,22 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth)
             secondaryEntries[#secondaryEntries + 1] = entry
         end
     end
+    -- Saved templates are title-only cards like the specialists, each making
+    -- its template's type. Read through the Core API, never the store.
+    local templateEntries = {}
+    if CooldownCompanion.GetPanelTemplates then
+        for _, entry in ipairs(CooldownCompanion:GetPanelTemplates(nil)) do
+            local template = entry.template
+            local templateEntry = {
+                title = template.name,
+                templateId = entry.id,
+                templateMode = template.displayMode,
+            }
+            -- The same title and sentence the create menus show for it.
+            ST._AddPanelTemplateMenuTooltip(templateEntry, template)
+            templateEntries[#templateEntries + 1] = templateEntry
+        end
+    end
     local starterEntries = {
         {
             title = STARTER_CARD_TITLE,
@@ -984,12 +1030,15 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth)
     local primaryFirst = 1
     local auraFirst = primaryFirst + #primaryEntries
     local secondaryFirst = auraFirst + #auraEntries
-    local starterFirst = secondaryFirst + #secondaryEntries
+    local templateFirst = secondaryFirst + #secondaryEntries
+    local starterFirst = templateFirst + #templateEntries
 
     local primaryMetrics = MeasurePickerTier(overview, block, primaryFirst,
         primaryEntries, PRIMARY_CARD_STYLE, cardBandWidth)
     local secondaryMetrics = MeasurePickerTier(overview, block, secondaryFirst,
         secondaryEntries, SECONDARY_CARD_STYLE, cardBandWidth)
+    local templateMetrics = MeasurePickerTier(overview, block, templateFirst,
+        templateEntries, SECONDARY_CARD_STYLE, cardBandWidth)
     -- The starter is one full-width offer, so it never shares a row.
     local starterMetrics = MeasurePickerTier(overview, block, starterFirst,
         starterEntries, STARTER_CARD_STYLE, cardBandWidth, 1)
@@ -1008,12 +1057,31 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth)
     end
     y = y + PlacePickerTier(overview, block, secondaryFirst, secondaryEntries,
         secondaryMetrics, SECONDARY_CARD_STYLE, containerId, CREATE_ACCENT, y)
+    if #templateEntries > 0 then
+        PlaceLine(block.templateLabel, EMPTY_STATE_SECTION_GAP)
+        y = y + CARD_GAP
+        y = y + PlacePickerTier(overview, block, templateFirst,
+            templateEntries, templateMetrics, SECONDARY_CARD_STYLE,
+            containerId, CREATE_ACCENT, y)
+    else
+        block.templateLabel:Hide()
+    end
     y = y + EMPTY_STATE_SECTION_GAP
     y = y + PlacePickerTier(overview, block, starterFirst, starterEntries,
         starterMetrics, STARTER_CARD_STYLE, containerId,
         CARD_STARTER_ACCENT, y)
 
-    overview.usedCards = starterFirst + #starterEntries - 1
+    -- The reflow path re-runs this pass without a reset, so a card the last
+    -- layout used and this one does not (a template gone in between) must
+    -- not linger on screen holding a stale create action.
+    local usedCards = starterFirst + #starterEntries - 1
+    for index = usedCards + 1, overview.usedCards or 0 do
+        local card = overview.cards[index]
+        if card then
+            ReleasePickerCard(card)
+        end
+    end
+    overview.usedCards = usedCards
 
     return y + EMPTY_STATE_BOTTOM_PADDING
 end
@@ -1157,12 +1225,7 @@ local function ResetOverview(overview)
     -- a click that lands mid-refresh finds nothing to act on rather than acting
     -- on the Group that just left the screen.
     for index = 1, overview.usedCards do
-        local card = overview.cards[index]
-        if GameTooltip:GetOwner() == card then
-            GameTooltip:Hide()
-        end
-        card._cdcOverviewCreate = nil
-        card:Hide()
+        ReleasePickerCard(overview.cards[index])
     end
     overview.usedCards = 0
     if overview.emptyBlock then

@@ -797,6 +797,9 @@ local function SetPreviewMessage(preview, message, title, note)
         titleLabel:SetPoint("RIGHT", preview.root, "RIGHT", -18, 0)
         titleLabel:SetPoint("BOTTOM", preview.root, "CENTER", 0,
             (belowTitleHeight - titleHeight) / 2)
+        -- The stack's full height, for anything placed relative to the title
+        -- (the empty-panel placeholder row measures its headroom from it).
+        preview.messageStackHeight = titleHeight + belowTitleHeight
         return
     end
 
@@ -2391,9 +2394,37 @@ do
 
     function SectionDrag.HideSectionOutline(preview)
         local outline = preview and preview.sectionOutline
-        if not (outline and outline:IsShown()) then return end
+        if not outline then return end
+        -- The redraw record goes even when nothing is up, so a ring can only
+        -- ever be skipped for an ask this ring is still showing.
+        outline._lane, outline._scale, outline._color = nil, nil, nil
+        if not outline:IsShown() then return end
         ST.HideBorderTextures(outline.border)
         outline:Hide()
+    end
+
+    --- Ring one lane's cluster. The rect is the engine's; the inset is chrome
+    --- and counter-scales; the colour is the caller's, because the ring answers
+    --- two different questions (see the two callers).
+    --- Redrawn only when the ask changes: the cursor gesture rings the same
+    --- lane on every frame it hovers there, and one ring is one border set.
+    local function OutlineLane(preview, lane, scale, color)
+        if not scale or scale <= 0 then scale = 1 end
+        local outline = EnsureSectionOutline(preview)
+        if outline:IsShown() and outline._lane == lane
+            and outline._scale == scale and outline._color == color then
+            return
+        end
+        local inset = OUTLINE_SCREEN_INSET / scale
+        local rect = lane.rect
+        outline:SetSize(math_max(1, rect.width + inset * 2),
+            math_max(1, rect.height + inset * 2))
+        outline:ClearAllPoints()
+        outline:SetPoint("TOPLEFT", preview.content, "TOPLEFT",
+            rect.x - inset, rect.y + inset)
+        ApplyChromeBorder(outline.border, outline, color, OUTLINE_ALPHA)
+        outline:Show()
+        outline._lane, outline._scale, outline._color = lane, scale, color
     end
 
     --- Ring the cluster at `anchor`. Ring blue, not gold: this is not a drop
@@ -2405,19 +2436,7 @@ do
             SectionDrag.HideSectionOutline(preview)
             return
         end
-        local scale = layoutDrag.scale
-        if not scale or scale <= 0 then scale = 1 end
-        local inset = OUTLINE_SCREEN_INSET / scale
-        local rect = lane.rect
-        local outline = EnsureSectionOutline(preview)
-        outline:SetSize(math_max(1, rect.width + inset * 2),
-            math_max(1, rect.height + inset * 2))
-        outline:ClearAllPoints()
-        outline:SetPoint("TOPLEFT", preview.content, "TOPLEFT",
-            rect.x - inset, rect.y + inset)
-        ApplyChromeBorder(outline.border, outline, PANEL_PREVIEW_RING_COLOR,
-            OUTLINE_ALPHA)
-        outline:Show()
+        OutlineLane(preview, lane, layoutDrag.scale, PANEL_PREVIEW_RING_COLOR)
     end
 
     function SectionDrag.HideHandle(preview)
@@ -2712,6 +2731,150 @@ do
         -- pair triggers has no in-flight gesture to pull the frames out from.
         CooldownCompanion:RefreshGroupFrame(panelId)
         CooldownCompanion:RefreshConfigPanel()
+    end
+
+    ------------------------------------------------------------------
+    -- Cursor drops
+    --
+    -- The same pads, offered to a spell or item riding the CURSOR (the
+    -- spellbook, a bag, the config's own spellbook panel) instead of an entry
+    -- lifted out of this preview. The drop-to-add overlay in ButtonsWideColumn
+    -- owns that gesture and asks three questions here: light the pads under
+    -- the cursor every frame, put them away, and say what a release means.
+    -- The model is the entry drag's own when the build made one, and is
+    -- otherwise built on first use from the inputs the build stashed as
+    -- cursorPadInputs (see ST._BuildButtonPanelPreview); either way it is
+    -- kept on the preview as cursorPadModel.
+
+    --- Forget the frame ShowCursorPads last answered for. Every hand that
+    --- puts the pads or the model away calls this, so a skipped frame can
+    --- never vouch for chrome that is no longer up.
+    function SectionDrag.ClearCursorPadCache(preview)
+        preview.cursorPadLastX = nil
+        preview.cursorPadLastY = nil
+        preview.cursorPadLastModel = nil
+        preview.cursorPadLastTarget = nil
+    end
+
+    --- The preview behind `host` and its cursor model, or nothing when this
+    --- host offers no pads: a released or hidden mirror (the model outlives
+    --- a release, the root does not), a build with no model (a bar, text,
+    --- Aura or empty panel, a read-only, filtered or unified mirror), or a
+    --- mirror of some panel other than the one the drop will add to.
+    local function CursorPadModel(host)
+        local preview = host and host._cdcPanelPreview
+        if not (preview and preview.panelId == CS.selectedGroup
+            and preview.root:IsVisible() and preview.content:IsShown()) then
+            return nil
+        end
+        local model = preview.cursorPadModel
+        if not model then
+            local inputs = preview.cursorPadInputs
+            if not inputs then return nil end
+            -- First use: the build stashed its inputs (positionally, in
+            -- Build's own order, the layoutDrag last) rather than pay for a
+            -- model no payload might ever ask for. Indexed, never unpacked:
+            -- `sections` is nil on every build that takes this path.
+            model = SectionDrag.Build(inputs[1], inputs[2], inputs[3], inputs[4],
+                inputs[5], inputs[6], inputs[7], inputs[8], inputs[9], inputs[10])
+            SectionDrag.FloorEmptyBase(model, inputs[11], inputs[9], inputs[10])
+            preview.cursorPadModel = model
+            preview.cursorPadInputs = nil
+        end
+        return preview, model
+    end
+
+    --- "Would the AURA lane at `anchor` refuse what the cursor carries?"
+    --- Always. An aura-only section admits aura entries of its own polarity,
+    --- and a spell or item on the cursor is not an entry yet; what it becomes
+    --- is the add's decision, after the release. So no aura lane is offered,
+    --- and a release over one is a release over nothing: a plain add.
+    local function CursorLaneBlocked()
+        return true
+    end
+
+    --- What a release at the cursor means: { pad = anchor } starts a section
+    --- there, { section = anchor } joins that one, nil is a plain add. Raw
+    --- cursor coordinates, the space GetScaledRect and the entry drag's
+    --- resolver already share.
+    function SectionDrag.ResolveCursorDrop(host, cursorX, cursorY)
+        local preview, model = CursorPadModel(host)
+        if not preview then return nil end
+        local view = SectionDrag.View(preview.content)
+        if not view then return nil end
+        -- Same first question the entry drag asks: over the base cluster the
+        -- release is a plain add, whatever pad or lane happens to sit nearest.
+        if SectionDrag.InBaseMargin(model, view, cursorX, cursorY) then return nil end
+        local target = SectionDrag.Resolve(model, view, cursorX, cursorY, CursorLaneBlocked)
+        -- A pad sits on a free anchor, and a free anchor can still carry a
+        -- SAVED aura-only placement (Build hands the synthetic pass the saved
+        -- section so the offset holds). That pad would promise a section the
+        -- add refuses, for CursorLaneBlocked's reason, so the release over it
+        -- is a plain add.
+        if target and target.pad then
+            local group = CooldownCompanion.db.profile.groups[preview.panelId]
+            if ST.IsAuraOnlyPanelSection(group, target.pad) then return nil end
+        end
+        return target
+    end
+
+    --- Every frame the overlay is up: the pads, the claimed one gold, and a
+    --- gold ring on the lane a release would join (the same commitment the
+    --- entry drag's gap tile speaks, with no member to open a gap for).
+    --- Returns the resolved target, then whether the model offers anything at
+    --- all (a pad or a lane), then whether it offers a free-anchor pad, so
+    --- the overlay can word itself. A model with neither is answered
+    --- `nil, false, false` with nothing drawn, and the overlay keeps its
+    --- plain look.
+    ---
+    --- A still cursor is the common frame, and nothing here moves between
+    --- two of them (a rebuild replaces the model and clears the cache), so
+    --- the last position over the same model with its pads still up is
+    --- answered from the cache, with no resolve and no redraw.
+    function SectionDrag.ShowCursorPads(host, cursorX, cursorY)
+        local preview, model = CursorPadModel(host)
+        if not preview then return nil, false, false end
+        local hasPads = next(model.pads) ~= nil
+        if not hasPads and next(model.lanes) == nil then
+            SectionDrag.HideCursorPads(host)
+            return nil, false, false
+        end
+        if preview.sectionPadsShown == model and preview.cursorPadLastModel == model
+            and preview.cursorPadLastX == cursorX and preview.cursorPadLastY == cursorY then
+            return preview.cursorPadLastTarget, true, hasPads
+        end
+        local target = SectionDrag.ResolveCursorDrop(host, cursorX, cursorY)
+        if preview.sectionPadsShown ~= model then
+            -- The hover chip is offering a move under an overlay that owns the
+            -- mouse, and its watcher would fight the ring below for the outline.
+            SectionDrag.HideHandle(preview)
+        end
+        SectionDrag.ShowPads(preview, model, target and target.pad or nil)
+        local lane = target and target.section and model.lanes[target.section]
+        if lane then
+            OutlineLane(preview, lane, preview.layoutDrag and preview.layoutDrag.scale,
+                SNAP_COLOR)
+        else
+            SectionDrag.HideSectionOutline(preview)
+        end
+        preview.cursorPadLastX, preview.cursorPadLastY = cursorX, cursorY
+        preview.cursorPadLastModel = model
+        preview.cursorPadLastTarget = target
+        return target, true, hasPads
+    end
+
+    --- Pads down when the overlay goes. The outline goes first and without
+    --- asking: no gesture is live once the overlay hides, and the ring a drop
+    --- left behind (its add rebuilt the model under it) cannot be told from
+    --- this frame's by identity. Only the pads stay behind the identity
+    --- check, so a set some other gesture lit is left to that gesture.
+    function SectionDrag.HideCursorPads(host)
+        local preview = host and host._cdcPanelPreview
+        if not preview then return end
+        SectionDrag.HideSectionOutline(preview)
+        SectionDrag.ClearCursorPadCache(preview)
+        if preview.sectionPadsShown ~= preview.cursorPadModel then return end
+        SectionDrag.HidePads(preview)
     end
 end
 
@@ -6228,6 +6391,180 @@ function ST._StopTriggerPanelEffectsPreviewMirror(groupId)
     return true
 end
 
+------------------------------------------------------------------------
+-- Empty-panel placeholder row. A panel with no entries previews its OWN
+-- style above the "Add your first entry" message: a short row of cells
+-- drawn from the panel's real size, spacing, border, background,
+-- orientation and growth, placed exactly as the populated path would
+-- place that many entries. Not a count, not a control, never persisted:
+-- the first entry routes the build down the populated path, which resets
+-- content's size, scale and anchor, and FinalizePreviewState releases the
+-- pooled cells like any other build's.
+--
+-- Wrapped in a do-block: this file rides the 200-local ceiling. The one
+-- survivor publishes through the EmptyPlaceholders table.
+------------------------------------------------------------------------
+local EmptyPlaceholders = {}
+do
+
+-- Enough cells to read as a row without pretending to be a layout.
+local PLACEHOLDER_CELL_CAP = 3
+-- Root pixels between the scaled row's bottom edge and the title's top.
+local PLACEHOLDER_MESSAGE_GAP = 14
+-- The scaled row never claims more than this share of the root's height:
+-- the message stays the subject, the row stays a swatch.
+local PLACEHOLDER_MAX_ROOT_SHARE = 0.4
+-- Below this scale a row shrunk to fit its headroom stops reading as the
+-- panel's own style, and the message stands alone.
+local PLACEHOLDER_MIN_SCALE = 0.35
+
+-- One cell, styled by the mode's own styler from a stub entry (no id, so no
+-- icon or name resolves; every reader tolerates a bare table), then stripped
+-- of everything that would read as content. The hides are safe on a pooled
+-- slot: each styler re-shows the regions it owns on the next real entry.
+local function StylePlaceholderCell(slot, stub, group, isBarMode, isTextMode)
+    if isBarMode then
+        -- Same order as the populated path: conditional visuals reset before
+        -- the styler, effect previews cleared after it.
+        ResetBarSlotConditionalVisuals(slot)
+        StyleBarEntry(slot, stub, group)
+        ClearSlotEffectPreviews(slot)
+        -- The fallback question mark would read as content; the icon area
+        -- keeps its background and border like an icon cell does.
+        slot.icon:Hide()
+        slot.statusBar:SetValue(0)
+        slot.nameText:Hide()
+        if slot.timeText then slot.timeText:SetText("") end
+    elseif isTextMode then
+        StyleTextEntry(slot, stub, group)
+        -- A real entry's string is written by the conditional text pass; a
+        -- placeholder has none.
+        slot.textString:SetText("")
+    else
+        StyleIconEntry(slot, stub, group)
+        ClearSlotEffectPreviews(slot)
+        ResetSlotConditionalVisuals(slot)
+        -- GetLayoutPreviewIcon answers a question mark for an id-less entry;
+        -- hidden, the cell is the panel's background and border alone.
+        slot.icon:Hide()
+        if slot.keybindText then slot.keybindText:Hide() end
+    end
+    DisableReadOnlySlotInteraction(slot)
+    slot:SetAlpha(PANEL_PREVIEW_DISABLED_ALPHA)
+end
+
+-- Draws the row above the message SetPreviewMessage has already placed, or
+-- nothing when the root cannot hold both. Mirrors the populated path's grid
+-- arithmetic in ST._BuildButtonPanelPreview (GetPanelGeometry through
+-- cellXY) for one complete line; kept here rather than shared because the
+-- main path's copy is interleaved with section, drag-model and badge
+-- bookkeeping a placeholder has no part in.
+function EmptyPlaceholders.Build(preview, host, group, isBarMode, isTextMode)
+    local title = preview.messageTitle
+    if not title then return end
+
+    local style = group.style or {}
+    local geo = GetPanelGeometry(group, isBarMode, isTextMode, nil)
+    local w, h = geo.entryWidth, geo.entryHeight
+    local spacing = geo.spacing
+    local count = math_min(PLACEHOLDER_CELL_CAP,
+        math_max(1, tonumber(style.buttonsPerRow) or PLACEHOLDER_CELL_CAP))
+    -- Never more cells than a line holds, so the row is one complete line.
+    -- An Aura Bar Panel reports one entry per column for its zero entries;
+    -- holding this many it would report this many, and the column stacks.
+    local perRow = math_max(geo.buttonsPerRow, count)
+    local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
+    -- Same gate the live layout applies: aura panels (Blizzard's flow
+    -- container) fold centered growth to TOPLEFT.
+    local centeredEdge = not CooldownCompanion:IsAuraPanel(group)
+        and ST.GetCenteredGrowthEdge(style.growthOrigin, geo.orientation) or nil
+    if centeredEdge then
+        growthAnchor = centeredEdge
+    end
+    local headerHeight = 0
+    if isTextMode and style.showTextGroupHeader == true then
+        headerHeight = (style.textHeaderFontSize or style.textFontSize or 12) + 4
+    end
+    local cols, rows
+    if geo.orientation == "horizontal" then
+        cols = math_min(count, perRow)
+        rows = math_ceil(count / perRow)
+    else
+        rows = math_min(count, perRow)
+        cols = math_ceil(count / perRow)
+    end
+    local contentWidth = (cols - 1) * (w + spacing) + w
+    local contentHeight = (rows - 1) * (h + spacing) + h + headerHeight
+
+    -- Fit like the populated path, then cap. GetHostFitBox has already
+    -- applied the unmeasured-host fallbacks, so the root's height is the fit
+    -- box plus the padding it removed.
+    local _, fitHeight = GetHostFitBox(host, false)
+    local rootHeight = fitHeight + PANEL_PREVIEW_PADDING * 2
+    local scale = math_min(GetHostFitScale(host, contentWidth, contentHeight, false),
+        PLACEHOLDER_MAX_ROOT_SHARE * rootHeight / math_max(1, contentHeight))
+    -- SetPreviewMessage centers its whole text stack on the root, so the
+    -- title's top sits half that stack above center. A row that would poke
+    -- past the root's top (padding included) shrinks until it fits that
+    -- headroom, and is not drawn at all only when the fit leaves it too
+    -- small to read as a swatch.
+    local headroom = (rootHeight - (preview.messageStackHeight or 0)) / 2
+        - PANEL_PREVIEW_PADDING
+    scale = math_min(scale,
+        (headroom - PLACEHOLDER_MESSAGE_GAP) / math_max(1, contentHeight))
+    if scale < PLACEHOLDER_MIN_SCALE then
+        return
+    end
+
+    local content = preview.content
+    content:SetSize(contentWidth, contentHeight)
+    content:Show()
+    UpdateTextGroupHeader(preview, group, style, headerHeight)
+
+    local poolName = isBarMode and "barSlots" or (isTextMode and "textSlots" or "iconSlots")
+    local stub = {}
+    for d = 1, count do
+        local slot = AcquireSlot(preview, content, poolName)
+        -- Sized before the styler: the mirrored icon crops its texture from
+        -- the slot's current size. Text cells take the pitch itself, which
+        -- GetPanelGeometry floors from the panel's own format.
+        slot:SetSize(w, h)
+        local x, y
+        if centeredEdge then
+            -- One complete line of the main path's centered branch: offsets
+            -- hang off the frame's edge midpoint.
+            if geo.orientation == "horizontal" then
+                x = ((d - 1) - (count - 1) / 2) * (w + spacing)
+                y = (centeredEdge == "TOP" and -1 or 1) * headerHeight
+            else
+                x = 0
+                y = ((count - 1) / 2 - (d - 1)) * (h + spacing) - headerHeight / 2
+            end
+        else
+            local row, col
+            if geo.orientation == "horizontal" then
+                row, col = 0, d - 1
+            else
+                col, row = 0, d - 1
+            end
+            x = xMul * col * (w + spacing)
+            y = yMul * (row * (h + spacing) + headerHeight)
+        end
+        ApplyPreviewSlotGeometry(preview, slot, growthAnchor, x, y)
+        StylePlaceholderCell(slot, stub, group, isBarMode, isTextMode)
+    end
+
+    -- Offset in content-local units (the strip anchor's convention) so the
+    -- gap measures PLACEHOLDER_MESSAGE_GAP on screen at any scale. The title
+    -- spans the root, so its top center is the root's horizontal center.
+    content:SetScale(scale)
+    content:ClearAllPoints()
+    content:SetPoint("BOTTOM", title, "TOP", 0,
+        PLACEHOLDER_MESSAGE_GAP / math_max(scale, 0.01))
+end
+
+end
+
 function ST._BuildButtonPanelPreview(host, panelId, options)
     options = type(options) == "table" and options or nil
     local readOnly = options and options.readOnly == true
@@ -6251,6 +6588,14 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         CS.panelPreviewVisualsNeedReconcile = nil
     end
     preview.layoutDrag = nil
+    -- The cursor-drop pad model is rebuilt with the mirror it describes (or
+    -- its build inputs are, when the model waits for first use); every other
+    -- build path leaves both nil, which is how the drop overlay knows this
+    -- preview offers no pads. The still-cursor cache names the model it
+    -- skipped a frame for, so it goes with them.
+    preview.cursorPadModel = nil
+    preview.cursorPadInputs = nil
+    SectionDrag.ClearCursorPadCache(preview)
     StopTextureMirrorEffects(preview.textureMirror)
     -- Fresh static layout: discard any tweens or ghost the canceled drag
     -- queued so they can't fight the rebuilt slot positions
@@ -6264,6 +6609,10 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     -- Anchor pads belong to the drag that revealed them; a rebuild without one
     -- in flight (a refresh from anywhere else) must not leave them lit.
     SectionDrag.HidePads(preview)
+    -- And the section outline, whichever gesture drew it: a cursor drop's gold
+    -- ring outlives the rebuild its own add triggers unless it is put away
+    -- here, and HideHandle below only reaches it when a handle exists.
+    SectionDrag.HideSectionOutline(preview)
     -- Same reasoning for the section handle: it points at a lane in the model
     -- this build is about to replace.
     SectionDrag.HideHandle(preview)
@@ -6331,6 +6680,13 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
             SetPreviewMessage(preview,
                 "Search for a spell or item in the field below, enter an ID, or drag one into this preview.",
                 "Add your first entry")
+        end
+        -- The panel's own style, as a row above the message. Not in the
+        -- unified composition: it shrinks its mirror host to whatever content
+        -- shows (UnifiedAnchorPreview's ShrinkMirrorHostToContent), which
+        -- would leave the message no room, so that mirror keeps it alone.
+        if not readOnly and not preview.laneChromeHost then
+            EmptyPlaceholders.Build(preview, host, group, isBarMode, isTextMode)
         end
         FinalizePreviewState(preview)
         return
@@ -6408,10 +6764,22 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     local wantSectionDrag = not readOnly and not visibleIndices
         and (count >= 2 or sections ~= nil)
         and ST.PanelSupportsSections(group)
+    -- The same pads for a spell or item on the CURSOR (the drop-to-add overlay
+    -- in ButtonsWideColumn asks for them). One entry is enough here: there is
+    -- nothing to move, only something to add, so a lone entry's free anchors
+    -- are as much a destination as a crowd's. Not in the unified composition:
+    -- its attached bar lanes sit on the strip the pads would claim, and the
+    -- overlay does not fade them the way the entry drag does. Not under the
+    -- session filter either, for the entry drag's own reason: a section whose
+    -- members are filtered out reads as a free anchor and would offer a pad
+    -- where a section already sits.
+    local wantCursorPads = not readOnly and not visibleIndices
+        and not preview.laneChromeHost
+        and ST.PanelSupportsSections(group)
     local sectionLayout, sectionPlacement, cellIndex, cellOfIndex
     local sectionLists
     local cellCount = count
-    if sections or wantSectionDrag then
+    if sections or wantSectionDrag or wantCursorPads then
         -- The engine partitions objects carrying .buttonData, which the slots
         -- do not exist yet to be; a throwaway list of the entries this build is
         -- actually rendering (the session filter may have narrowed it) carries
@@ -6566,6 +6934,18 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
             sectionLayout, w, h, spacing, headerHeight, contentWidth, contentHeight)
         SectionDrag.FloorEmptyBase(layoutDrag.sectionDrag, layoutDrag,
             contentWidth, contentHeight)
+        if wantCursorPads then
+            -- One model for both gestures: they cannot overlap (an entry drag
+            -- refuses to start with a payload on the cursor), so sharing
+            -- InBaseMargin's flag only ever decides a first frame in the band.
+            preview.cursorPadModel = layoutDrag.sectionDrag
+        end
+    elseif wantCursorPads then
+        -- A lone entry with no sections has no entry drag to pay for a model,
+        -- and most such builds never meet a cursor payload, so the inputs are
+        -- stashed and CursorPadModel builds on first use.
+        preview.cursorPadInputs = { group, sections, sectionLists, sectionLayout,
+            w, h, spacing, headerHeight, contentWidth, contentHeight, layoutDrag }
     end
 
     for ordinal = 1, count do
@@ -6877,6 +7257,12 @@ end
 
 ST._CollectEntryStatus = CollectEntryStatus
 ST._EntryStatusBadges = ENTRY_STATUS_BADGES
+
+-- The Live Preview's drop-to-add overlay (ButtonsWideColumn) drives the
+-- section anchor pads for a spell or item on the cursor through these.
+ST._ShowPreviewCursorPads = SectionDrag.ShowCursorPads
+ST._HidePreviewCursorPads = SectionDrag.HideCursorPads
+ST._ResolvePreviewCursorDrop = SectionDrag.ResolveCursorDrop
 
 -- Quick-toggle support for the buttons-view preview host: nil when this
 -- panel type renders no entry grid the filter touches; otherwise whether it

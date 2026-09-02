@@ -314,7 +314,15 @@ end
 ------------------------------------------------------------------------
 -- Helper: Add spell to selected group
 ------------------------------------------------------------------------
-local function TryAddSpell(input, isPetSpell, forceAura)
+-- opts.section (cursor drops only): the section anchor the new entry lands
+-- in. A drop on one of the Live Preview's anchor pads, or onto a section's
+-- own cluster, adds the entry AND places it, and the anchor rides into
+-- AddButtonToGroup as its last argument: Core assigns the section ahead of
+-- its own keeper pass and refresh, so the entry is drawn in place the first
+-- time instead of landing in the base grid and moving. Core judges the anchor
+-- against the panel as it is THEN rather than at the drop (an item add can
+-- finish later, from its load callback).
+local function TryAddSpell(input, isPetSpell, forceAura, opts)
     if input == "" or not CS.selectedGroup then return false end
 
     local spellId = tonumber(input)
@@ -389,7 +397,8 @@ local function TryAddSpell(input, isPetSpell, forceAura)
                 return false
             end
         end
-        local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName, isPetSpell, addAsAura or nil, forceAura)
+        local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName,
+            isPetSpell, addAsAura or nil, forceAura, nil, nil, opts and opts.section)
         if not idx then
             return false
         end
@@ -409,14 +418,17 @@ end
 ------------------------------------------------------------------------
 -- Helper: Add item to selected group
 ------------------------------------------------------------------------
-local function FinalizeAddItem(itemId, groupId, autoSelect)
+-- `section` (cursor drops only): the anchor the new entry lands in, handed
+-- to AddButtonToGroup exactly as TryAddSpell hands its own.
+local function FinalizeAddItem(itemId, groupId, autoSelect, section)
     local itemName = C_Item.GetItemNameByID(itemId) or "Unknown Item"
     local spellName = C_Item.GetItemSpell(itemId)
     if not spellName then
         CooldownCompanion:Print("Item has no usable effect: " .. itemName)
         return false
     end
-    local idx = CooldownCompanion:AddButtonToGroup(groupId, "item", itemId, itemName)
+    local idx = CooldownCompanion:AddButtonToGroup(groupId, "item", itemId, itemName,
+        nil, nil, nil, nil, nil, section)
     if not idx then
         return false
     end
@@ -427,9 +439,10 @@ local function FinalizeAddItem(itemId, groupId, autoSelect)
     return true
 end
 
-local function TryAddItem(input)
+local function TryAddItem(input, opts)
     if input == "" or not CS.selectedGroup then return false end
     if RejectNonAuraPanelAdd(CS.selectedGroup, AURA_PANEL_ITEM_PROBE) then return false end
+    local section = opts and opts.section
 
     local itemId = tonumber(input)
     local itemName
@@ -447,7 +460,7 @@ local function TryAddItem(input)
     end
 
     if C_Item.IsItemDataCachedByID(itemId) then
-        return FinalizeAddItem(itemId, CS.selectedGroup)
+        return FinalizeAddItem(itemId, CS.selectedGroup, nil, section)
     end
 
     -- Only do async loading for ID-based input (not name-based).
@@ -477,7 +490,10 @@ local function TryAddItem(input)
         end
         -- Skip auto-select if the user navigated away during async load
         local stillOnGroup = CS.selectedGroup == capturedGroup
-        if FinalizeAddItem(itemId, capturedGroup, stillOnGroup) then
+        -- The section rides the closure like the group does: the drop named a
+        -- place in THAT panel, and the entry lands there whether or not the
+        -- selection has moved on since.
+        if FinalizeAddItem(itemId, capturedGroup, stillOnGroup, section) then
             if ST._ClearWideAddBoxAfterAdd then
                 ST._ClearWideAddBoxAfterAdd(input)
             end
@@ -731,7 +747,9 @@ end
 ------------------------------------------------------------------------
 -- Helper: Receive a spell/item drop from the cursor
 ------------------------------------------------------------------------
-local function TryReceiveCursorDrop()
+-- opts.section (the Live Preview's drop overlay): the section anchor the new
+-- entry is placed in. Every other caller passes nothing and gets the plain add.
+local function TryReceiveCursorDrop(opts)
     local cursorType, cursorID, _, cursorSpellID = GetCursorInfo()
     if not cursorType then return false end
 
@@ -743,11 +761,11 @@ local function TryReceiveCursorDrop()
 
     local added = false
     if cursorType == "spell" and cursorSpellID then
-        added = TryAddSpell(tostring(cursorSpellID))
+        added = TryAddSpell(tostring(cursorSpellID), nil, nil, opts)
     elseif cursorType == "petaction" and cursorID then
-        added = TryAddSpell(tostring(cursorID), true)
+        added = TryAddSpell(tostring(cursorID), true, nil, opts)
     elseif cursorType == "item" and cursorID then
-        added = TryAddItem(tostring(cursorID))
+        added = TryAddItem(tostring(cursorID), opts)
     end
 
     if added then

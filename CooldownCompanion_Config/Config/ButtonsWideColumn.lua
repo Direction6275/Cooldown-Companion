@@ -1779,6 +1779,49 @@ end
 -- Drop-to-add overlay over the preview: shown while a spell/item is on the
 -- cursor, mirroring the Navigator panel drop overlays. TryReceiveCursorDrop
 -- targets CS.selectedGroup, which is exactly the previewed panel.
+--
+-- Two looks. Alone, the overlay is the whole message: a wash, a darker plate,
+-- "Drop here" in the middle. Over a panel whose preview offers its section
+-- anchor pads or lanes to the cursor (ST._ShowPreviewCursorPads), the pads
+-- are the message: the plate goes, since it would bury them, and the line
+-- moves to the bottom band and says what an edge means while a free pad is
+-- on offer, or what a cluster means once every anchor is taken. The pads
+-- draw on the preview beneath the wash; without the plate the wash alone is
+-- light enough to read them through.
+
+-- Screen pixels between the bottom band's line and whatever sits below it:
+-- the command center's reserve when the bar is up, the host's edge otherwise.
+local DROP_OVERLAY_TEXT_INSET = 6
+
+local function SetPreviewDropOverlayPadsMode(overlay, host, padsShown, hasPads)
+    padsShown = padsShown and true or false
+    hasPads = padsShown and hasPads and true or false
+    -- The reserve comes and goes with the selection, so the anchor is re-read
+    -- on every frame the pads are up and rewritten only when it moved.
+    local inset = padsShown
+        and ((host._cdcPreviewReserveBottom or 0) + DROP_OVERLAY_TEXT_INSET) or nil
+    if overlay._cdcPadsMode == padsShown and overlay._cdcHasPads == hasPads
+        and overlay._cdcPadsInset == inset then
+        return
+    end
+    overlay._cdcPadsMode = padsShown
+    overlay._cdcHasPads = hasPads
+    overlay._cdcPadsInset = inset
+    local text = overlay._cdcText
+    text:ClearAllPoints()
+    if padsShown then
+        overlay._cdcInner:Hide()
+        text:SetPoint("BOTTOM", overlay, "BOTTOM", 0, inset)
+        text:SetText(hasPads
+            and "|cffAADDFFDrop here, or onto an edge to start a section|r"
+            or "|cffAADDFFDrop here, or onto a cluster to join it|r")
+    else
+        overlay._cdcInner:Show()
+        text:SetPoint("CENTER", 0, 0)
+        text:SetText("|cffAADDFFDrop here|r")
+    end
+end
+
 local function EnsurePreviewDropOverlay(host)
     local overlay = host._cdcDropOverlay
     if not overlay then
@@ -1792,20 +1835,46 @@ local function EnsurePreviewDropOverlay(host)
         inner:SetPoint("TOPLEFT", 2, -2)
         inner:SetPoint("BOTTOMRIGHT", -2, 2)
         inner:SetColorTexture(0.05, 0.15, 0.25, 0.6)
+        overlay._cdcInner = inner
 
         overlay._cdcText = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         overlay._cdcText:SetPoint("CENTER", 0, 0)
         overlay._cdcText:SetText("|cffAADDFFDrop here|r")
+        overlay._cdcPadsMode = false
+        overlay._cdcHasPads = false
 
         local function ReceiveDrop()
-            if ST._TryReceiveCursorDrop then
-                ST._TryReceiveCursorDrop()
-            end
+            if not ST._TryReceiveCursorDrop then return end
+            -- Read BEFORE the add: the add rebuilds the preview, and the
+            -- rebuild replaces the pads the cursor was over.
+            local target = ST._ResolvePreviewCursorDrop
+                and ST._ResolvePreviewCursorDrop(host, GetCursorPosition())
+            ST._TryReceiveCursorDrop({
+                section = target and (target.pad or target.section) or nil,
+            })
         end
         overlay:SetScript("OnReceiveDrag", ReceiveDrop)
         overlay:SetScript("OnMouseUp", function(self, button)
             if button == "LeftButton" and GetCursorInfo() then
                 ReceiveDrop()
+            end
+        end)
+        -- Runs only while the overlay is shown (a hidden frame gets no
+        -- OnUpdate): the pads follow the cursor, and the overlay wears
+        -- whichever look the preview's answer calls for.
+        overlay:SetScript("OnUpdate", function(self)
+            local padsShown, hasPads
+            if ST._ShowPreviewCursorPads then
+                padsShown, hasPads = select(2, ST._ShowPreviewCursorPads(host, GetCursorPosition()))
+            end
+            SetPreviewDropOverlayPadsMode(self, host, padsShown, hasPads)
+        end)
+        -- One hider, however the overlay goes (the payload cleared, the host
+        -- hidden, the view switched): the pads go with it.
+        overlay:SetScript("OnHide", function(self)
+            SetPreviewDropOverlayPadsMode(self, host, false)
+            if ST._HidePreviewCursorPads then
+                ST._HidePreviewCursorPads(host)
             end
         end)
         overlay:Hide()

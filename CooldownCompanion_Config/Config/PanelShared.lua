@@ -166,6 +166,29 @@ local function AddCDMStarterMenuTooltip(info)
     info.tooltipOnButton = true
 end
 
+-- Panel Templates (Core/PanelTemplates.lua). A template's type label is the
+-- descriptor label of the base type it was saved from, so every surface
+-- names it the same way: "Icon Panel", "Bar Panel", "Text Panel".
+local function GetPanelModeLabel(mode)
+    local panelType = mode and PANEL_TYPE_BY_MODE[mode]
+    return panelType and panelType.label or "Panel"
+end
+local function GetPanelTemplateModeLabel(template)
+    return GetPanelModeLabel(template and template.displayMode)
+end
+-- One sentence for every surface that offers to build from a template, the
+-- article following the label: "an Icon Panel", "a Bar Panel".
+local function GetPanelTemplateTooltipText(template)
+    local modeLabel = GetPanelTemplateModeLabel(template)
+    local article = modeLabel:sub(1, 1):lower():match("[aeiou]") and "an" or "a"
+    return "Creates " .. article .. " " .. modeLabel .. " styled as this template."
+end
+local function AddPanelTemplateMenuTooltip(info, template)
+    info.tooltipTitle = template.name
+    info.tooltipText = GetPanelTemplateTooltipText(template)
+    info.tooltipOnButton = true
+end
+
 local function IsActiveCDMPanelSource(panel)
     if not (panel
         and panel.cdmPanelSource
@@ -212,6 +235,28 @@ local function CreatePanelInSelectedContainer(displayMode, opts, containerId)
     opts.containerId = containerId
     local newPanelId = CooldownCompanion:CreatePanel(containerId, displayMode)
     FinalizeCreatedPanel(newPanelId, displayMode, opts)
+end
+
+-- The one create-from-template path, shared by the add tile's menu, the
+-- Group context menu and the empty-Group picker. Core builds the panel with
+-- the template's name, look, shape and Group offset; it then finishes the
+-- way a typed create does, so an Icon Panel template still advances the
+-- tutorial and the add box still arms.
+local function CreatePanelFromTemplateInContainer(containerId, templateId)
+    containerId = containerId or CS.selectedContainer
+    if not (containerId and ST._IsCreateTargetContainer
+        and ST._IsCreateTargetContainer(containerId)) then
+        return
+    end
+    local template = CooldownCompanion.GetPanelTemplate
+        and CooldownCompanion:GetPanelTemplate(templateId) or nil
+    if not template then
+        return
+    end
+    local opts = BuildPanelCreateOptions(template.displayMode)
+    opts.containerId = containerId
+    local newPanelId = CooldownCompanion:CreatePanelFromTemplate(containerId, templateId)
+    FinalizeCreatedPanel(newPanelId, template.displayMode, opts)
 end
 
 local function PrintCooldownManagerUnavailable(sourceData)
@@ -901,6 +946,13 @@ ST._CREATE_ACCENT = CREATE_ACCENT
 ST._BuildPanelCreateOptions = BuildPanelCreateOptions
 ST._CreatePanelInSelectedContainer = CreatePanelInSelectedContainer
 ST._CreateMissingCDMPanelsInSelectedContainer = CreateMissingCDMPanelsInSelectedContainer
+-- Panel Templates: the one create-from-template path, and the type label and
+-- tooltip every surface that names a template shares.
+ST._CreatePanelFromTemplateInContainer = CreatePanelFromTemplateInContainer
+ST._GetPanelModeLabel = GetPanelModeLabel
+ST._GetPanelTemplateModeLabel = GetPanelTemplateModeLabel
+ST._GetPanelTemplateTooltipText = GetPanelTemplateTooltipText
+ST._AddPanelTemplateMenuTooltip = AddPanelTemplateMenuTooltip
 -- Shared with the panel preview mirror: entry tooltips resolve the
 -- currently-active override spell, not the stored base ID.
 ST._ResolveEntryTooltipSpellId = ResolveEntryTooltipSpellId
