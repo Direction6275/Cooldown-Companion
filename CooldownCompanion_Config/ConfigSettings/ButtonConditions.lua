@@ -1721,24 +1721,6 @@ local function FilterChargeSpellNotOnCooldown(bd)
     return FilterChargeSpell(bd) and bd.hideWhileNotOnCooldown == true
 end
 
--- Returns true if any selected button has field truthy
-local function AnySelectedHas(group, field)
-    for idx in pairs(CS.selectedButtons) do
-        local bd = group.buttons[idx]
-        if bd and bd[field] then return true end
-    end
-    return false
-end
-
--- Scoped version: only checks buttons matching filterFn(bd) → true
-local function AnySelectedHasFiltered(group, field, filterFn)
-    for idx in pairs(CS.selectedButtons) do
-        local bd = group.buttons[idx]
-        if bd and filterFn(bd) and bd[field] then return true end
-    end
-    return false
-end
-
 -- Returns true if all selected buttons have field truthy
 local function AllSelectedAre(group, field)
     for idx in pairs(CS.selectedButtons) do
@@ -1908,95 +1890,36 @@ local entryVisibilitySettings = ST._DefineSettingRoute({
         aliases = { "texture aura", "aura presence" },
         applies = EntryVisibilityApplies(function(state) return state.textureAuraToggle end),
     },
-    auraOnly = {
-        label = "Show Only While Aura Active",
-        aliases = { "hide aura inactive" },
+    -- One descriptor per state dropdown. The aliases carry the retired
+    -- checkbox labels so a search typed from memory of the old rows still
+    -- lands on the row that replaced them.
+    auraInactive = {
+        label = "While Aura Inactive",
+        aliases = { "show only while aura active", "dim while aura inactive", "hide aura inactive", "aura inactive alpha" },
         applies = EntryVisibilityApplies(function(state) return state.auraPair end),
     },
-    auraDim = {
-        label = "Dim While Aura Inactive",
-        aliases = { "aura inactive alpha" },
-        applies = EntryVisibilityApplies(function(state) return state.auraPair end),
-    },
-    cooldown = {
-        label = "Hide While On Cooldown",
+    cooldownVisibility = {
+        label = "Cooldown Visibility",
+        aliases = {
+            "hide while on cooldown", "hide while not on cooldown", "hide while ready", "hide available",
+            "dim instead of hide", "cooldown dim", "only show at zero charges", "zero charges only",
+        },
         applies = EntryVisibilityApplies(function(state) return state.cooldownFamily end),
-    },
-    cooldownDim = {
-        label = "Dim Instead Of Hide",
-        sectionLabel = "Hide While On Cooldown",
-        aliases = { "cooldown dim", "hide while on cooldown dim" },
-        applies = EntryVisibilityApplies(function(state)
-            return state.cooldownFamily and not state.isTexturePanel
-                and state.buttonData.hideWhileOnCooldown == true
-        end),
-    },
-    ready = {
-        label = "Hide While Not On Cooldown",
-        aliases = { "hide while ready", "hide available" },
-        applies = EntryVisibilityApplies(function(state) return state.cooldownFamily end),
-    },
-    readyZeroCharges = {
-        label = "Only Show At Zero Charges",
-        aliases = { "zero charges only" },
-        applies = EntryVisibilityApplies(function(state)
-            return state.cooldownFamily and FilterChargeSpellNotOnCooldown(state.buttonData)
-        end),
-    },
-    readyDim = {
-        label = "Dim Instead Of Hide",
-        sectionLabel = "Hide While Not On Cooldown",
-        aliases = { "ready dim", "not on cooldown dim" },
-        applies = EntryVisibilityApplies(function(state)
-            return state.cooldownFamily and not state.isTexturePanel
-                and state.buttonData.hideWhileNotOnCooldown == true
-        end),
     },
     unusable = {
-        label = "Hide While Unusable",
+        label = "While Unusable",
+        aliases = { "hide while unusable", "unusable dim" },
         applies = EntryVisibilityApplies(function(state) return state.unusableFamily end),
     },
-    unusableDim = {
-        label = "Dim Instead Of Hide",
-        sectionLabel = "Hide While Unusable",
-        aliases = { "unusable dim" },
-        applies = EntryVisibilityApplies(function(state)
-            return state.unusableFamily and not state.isTexturePanel
-                and state.buttonData.hideWhileUnusable == true
-        end),
-    },
     noProc = {
-        label = "Hide While No Proc",
-        aliases = { "proc visibility" },
+        label = "While No Proc",
+        aliases = { "hide while no proc", "proc visibility", "no proc dim" },
         applies = EntryVisibilityApplies(function(state) return state.noProcFamily end),
     },
-    noProcDim = {
-        label = "Dim Instead Of Hide",
-        sectionLabel = "Hide While No Proc",
-        aliases = { "no proc dim" },
-        applies = EntryVisibilityApplies(function(state)
-            return state.noProcFamily and not state.isTexturePanel
-                and state.buttonData.hideWhileNoProc == true
-        end),
-    },
     zeroCharges = {
-        label = "Hide While At Zero Charges",
+        label = "At Zero Charges",
+        aliases = { "hide while at zero charges", "desaturate while at zero charges", "zero charges dim" },
         applies = EntryVisibilityApplies(function(state) return state.chargeFamily end),
-    },
-    zeroChargesDim = {
-        label = "Dim Instead Of Hide",
-        sectionLabel = "Hide While At Zero Charges",
-        aliases = { "zero charges dim" },
-        applies = EntryVisibilityApplies(function(state)
-            return state.chargeFamily and not state.isTexturePanel
-                and state.buttonData.hideWhileZeroCharges == true
-        end),
-    },
-    zeroChargesDesaturate = {
-        label = "Desaturate While At Zero Charges",
-        applies = EntryVisibilityApplies(function(state)
-            return state.chargeFamily and not state.isTexturePanel
-        end),
     },
     chargeCooldown = {
         label = "Hide Cooldown While Charges Remain",
@@ -2004,51 +1927,23 @@ local entryVisibilitySettings = ST._DefineSettingRoute({
         applies = EntryVisibilityApplies(function(state) return state.chargeFamily end),
     },
     zeroStacks = {
-        label = "Hide While At Zero Stacks",
+        label = "At Zero Stacks",
+        aliases = { "hide while at zero stacks", "desaturate while at zero stacks", "zero stacks dim" },
         applies = EntryVisibilityApplies(function(state)
             return state.stackFamily and not state.fallbackItemUses
         end),
     },
     noUses = {
-        label = "Hide While No Uses Available",
-        aliases = { "fallback item uses" },
+        label = "With No Uses Available",
+        aliases = { "hide while no uses available", "desaturate while no uses available", "fallback item uses", "no uses dim" },
         applies = EntryVisibilityApplies(function(state)
             return state.stackFamily and state.fallbackItemUses
         end),
     },
-    zeroStacksDim = {
-        label = "Dim Instead Of Hide",
-        sectionLabel = "Hide While At Zero Stacks / No Uses",
-        aliases = { "zero stacks dim", "no uses dim" },
-        applies = EntryVisibilityApplies(function(state)
-            return state.stackFamily and not state.isTexturePanel
-                and state.buttonData.hideWhileZeroStacks == true
-        end),
-    },
-    zeroStacksDesaturate = {
-        label = "Desaturate While At Zero Stacks",
-        applies = EntryVisibilityApplies(function(state)
-            return state.stackFamily and not state.fallbackItemUses and not state.isTexturePanel
-        end),
-    },
-    noUsesDesaturate = {
-        label = "Desaturate While No Uses Available",
-        applies = EntryVisibilityApplies(function(state)
-            return state.stackFamily and state.fallbackItemUses and not state.isTexturePanel
-        end),
-    },
     equipped = {
-        label = "Hide While Not Equipped",
+        label = "While Not Equipped",
+        aliases = { "hide while not equipped", "not equipped dim" },
         applies = EntryVisibilityApplies(function(state) return state.equipFamily end),
-    },
-    equippedDim = {
-        label = "Dim Instead Of Hide",
-        sectionLabel = "Hide While Not Equipped",
-        aliases = { "not equipped dim" },
-        applies = EntryVisibilityApplies(function(state)
-            return state.equipFamily and not state.isTexturePanel
-                and state.buttonData.hideWhileNotEquipped == true
-        end),
     },
 })
 
@@ -2196,11 +2091,43 @@ end
 ------------------------------------------------------------------------
 -- PER-BUTTON VISIBILITY SETTINGS
 ------------------------------------------------------------------------
--- Seven of the Visibility toggles gate the same dim child, so its
--- tooltip is stated once here rather than seven times inside the builder.
-local DIM_INSTEAD_OF_HIDE_TOOLTIP = {
-    "Dim Instead Of Hide",
-    {"Instead of fully hiding, shows the button dimmed. It keeps its layout position.", 1, 1, 1, true},
+-- Every state dropdown in the Show & Hide Rules section offers the same Hide
+-- choice, and most offer Dim, so what those two do is stated once here and
+-- appended to each row's own tooltip rather than repeated inside the builder.
+-- `lines` is the row's own body; `offersDim` drops the Dim sentence on rows
+-- whose list has no Dim item (Texture panels).
+local VISIBILITY_DIM_TOOLTIP_LINE = {"Dim shows the button dimmed and keeps its layout position.", 1, 1, 1, true}
+local VISIBILITY_HIDE_TOOLTIP_LINE = {"Hide removes the button entirely.", 1, 1, 1, true}
+local VISIBILITY_TOOLTIP_SPACER = { " ", 1, 1, 1, true }
+local function BuildVisibilityModeTooltip(title, lines, offersDim)
+    local tooltip = { title }
+    for _, line in ipairs(lines) do
+        tooltip[#tooltip + 1] = line
+    end
+    if #lines > 0 then
+        tooltip[#tooltip + 1] = VISIBILITY_TOOLTIP_SPACER
+    end
+    if offersDim then
+        tooltip[#tooltip + 1] = VISIBILITY_DIM_TOOLTIP_LINE
+        tooltip[#tooltip + 1] = VISIBILITY_TOOLTIP_SPACER
+    end
+    tooltip[#tooltip + 1] = VISIBILITY_HIDE_TOOLTIP_LINE
+    return tooltip
+end
+
+-- The Cooldown Visibility labels and tooltip are shared with the custom bar
+-- twin and the preview's reason text (Helpers.lua owns them), so a rename
+-- lands on every surface at once.
+local COOLDOWN_VISIBILITY = ST._COOLDOWN_VISIBILITY
+-- Every value a state row can read, for the one case a row has to show a
+-- stored value its own list does not offer (see AddVisibilityDropdown).
+local STATE_VALUE_LABELS = {
+    show = "Show",
+    desaturate = "Desaturate",
+    dim = "Dim",
+    hide = "Hide",
+    dim_cooldown = COOLDOWN_VISIBILITY.labels.dim_cooldown,
+    dim_ready = COOLDOWN_VISIBILITY.labels.dim_ready,
 }
 
 -- Apply a value to all selected buttons if multi-select, else just this one.
@@ -2221,9 +2148,9 @@ local function ApplyFieldToSelection(group, buttonData, field, value)
     buttonData[field] = value
 end
 
--- The entry's live show/hide rules: hide while on cooldown, show only while an
--- aura is active, dim instead of hide, and the item/charge refinements those
--- families carry. Built on the Visibility tab for a single entry and on the
+-- The entry's live show/hide rules: what it does on cooldown, while its aura
+-- is inactive, while unusable, at zero charges or stacks, and while not
+-- equipped, each stated as one Show / Dim / Hide style dropdown. Built on the Visibility tab for a single entry and on the
 -- batch surface for a selection; both draw the row grammar, so this builder
 -- was converted outright rather than growing an opts.row mode.
 local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchContext)
@@ -2298,23 +2225,8 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         end
     end
 
-    -- Filtered apply for the nested "Hide While Not On Cooldown" charge-spell option.
-    -- When clearing, write to ALL selected to remove stale child values.
-    local function ApplyToChargeSpellNotOnCooldown(field, value)
-        if isBatch then
-            for idx in pairs(CS.selectedButtons) do
-                local bd = group.buttons[idx]
-                if bd then
-                    if not value or FilterChargeSpellNotOnCooldown(bd) then
-                        bd[field] = value
-                    end
-                end
-            end
-        else
-            buttonData[field] = value
-        end
-    end
-
+    -- Filtered apply for the Cooldown Visibility row's Show Only At 0 Charges
+    -- value, which only a charge spell hidden while ready can hold.
     local function ApplyToChargeSpellNotOnCooldownOnly(field, value)
         if isBatch then
             for idx in pairs(CS.selectedButtons) do
@@ -2384,6 +2296,15 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         end
         return false
     end
+    local function AllSelectedMatch(predicate)
+        for idx in pairs(CS.selectedButtons) do
+            local bd = group.buttons[idx]
+            if bd and not predicate(bd) then
+                return false
+            end
+        end
+        return true
+    end
 
     -- Every entry an Aura Panel holds is a pure aura entry, so nothing here has
     -- a spell cooldown or a castability state to answer. It gates three row
@@ -2414,11 +2335,13 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- under it. Collection creates no widgets - every family defers its rows to
     -- a build closure - so nothing reaches `scroll` until the count is known.
     --
-    -- One row shape for the whole section: a CDC-CheckBoxRow reading and
-    -- writing through the same batch-aware helpers the stock checkboxes used,
-    -- so the store side of this section is untouched. opts.filter scopes the
-    -- batch read to the write filter, opts.indent marks a child row, and
-    -- opts.tooltip chains a "?" badge off the end of the label.
+    -- Two row shapes for the whole section. The plain toggles (a texture's
+    -- aura presence, hiding the cooldown behind remaining charges) are
+    -- CDC-CheckBoxRows reading and writing through the same batch-aware
+    -- helpers the stock checkboxes used, so the store side is untouched.
+    -- opts.filter scopes the batch read to the write filter, opts.indent
+    -- marks a child row, and opts.tooltip chains a "?" badge off the end of
+    -- the label.
     local function AddVisibilityRow(column, label, field, opts)
         local row = AddCheckboxRow(column, {
             label = label,
@@ -2436,18 +2359,149 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         return row
     end
 
-    -- Every toggle here belongs to a FAMILY: one parent condition plus the
-    -- fallback/refinement children it gates. Which families survive depends on
-    -- the entry type and on what is already checked, so this is a FILTERED row
-    -- set (see the fill rule in the recipe comment at the top of
+    -- The state dropdowns: every hide/dim/desaturate family is one
+    -- CDC-DropdownRow whose value is derived from the family's boolean keys
+    -- (opts.read) and written back as a whole set (opts.write), so two keys
+    -- that contradict each other can never both be on. The keys themselves are
+    -- the ones the checkboxes wrote, so nothing migrates and the runtime reads
+    -- exactly what it read before. In a batch the value is read per selected
+    -- entry inside opts.filter's scope, and a disagreement shows as Mixed
+    -- until one pick writes every entry the same. opts.disabledItems greys the
+    -- values that would contradict another row's current state, which is what
+    -- replaced the old rows' silent clearing of each other.
+    --
+    -- A stored state the row's list does not offer (a dim key on a Texture
+    -- panel, carried in by a display-mode change or a settings copy) is added
+    -- to the list rather than folded into a neighbour: the runtime still
+    -- applies it, so the row has to say so, and AceGUI fires nothing when the
+    -- already-checked item is re-picked, so folding would leave no one-pick
+    -- way to clear it.
+    local function AddVisibilityDropdown(column, opts)
+        local value
+        if isBatch then
+            local anyMatched, mixed = false, false
+            for idx in pairs(CS.selectedButtons) do
+                local bd = group.buttons[idx]
+                if bd and (not opts.filter or opts.filter(bd)) then
+                    local entryValue = opts.read(bd)
+                    if not anyMatched then
+                        value = entryValue
+                        anyMatched = true
+                    elseif entryValue ~= value then
+                        mixed = true
+                    end
+                end
+            end
+            if not anyMatched then value = opts.order[1] end
+            if mixed then value = nil end
+        else
+            value = opts.read(buttonData)
+        end
+        local list, order = opts.list, opts.order
+        if value ~= nil and list[value] == nil then
+            list = CopyTable(list)
+            order = CopyTable(order)
+            list[value] = STATE_VALUE_LABELS[value] or tostring(value)
+            order[#order + 1] = value
+        end
+        local row = AddDropdownRow(column, {
+            setting = opts.setting,
+            indent = opts.indent,
+            list = list,
+            order = order,
+            value = value,
+            onChange = opts.write,
+        })
+        if value == nil then
+            row:SetText("Mixed")
+        end
+        if opts.disabledItems then
+            for _, item in ipairs(opts.disabledItems) do
+                row:SetItemDisabled(item, true)
+            end
+        end
+        if opts.tooltip then
+            -- Anchor args are a placeholder - AnchorRowBadge re-points the
+            -- button onto the end of the row's label.
+            AnchorRowBadge(row, CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0,
+                opts.tooltip, infoButtons))
+        end
+        return row
+    end
+
+    -- The value list, reader and writer the hide/dim families share, so the
+    -- value-to-keys mapping lives in one place. Texture panels never offered
+    -- Dim or Desaturate (the old rows never drew those children there), and
+    -- that stays; a stored one still shows through AddVisibilityDropdown's
+    -- escape above. opts.desaturateKey is nil for the families without one.
+    local function BuildStateList(withDesaturate)
+        local list, order = { show = "Show" }, { "show" }
+        if withDesaturate and not isTexturePanel then
+            list.desaturate = "Desaturate"
+            order[#order + 1] = "desaturate"
+        end
+        if not isTexturePanel then
+            list.dim = "Dim"
+            order[#order + 1] = "dim"
+        end
+        list.hide = "Hide"
+        order[#order + 1] = "hide"
+        return list, order
+    end
+    local function ReadHideDimState(bd, hideKey, dimKey, desaturateKey)
+        if bd[hideKey] then
+            if bd[dimKey] then return "dim" end
+            return "hide"
+        end
+        if desaturateKey and bd[desaturateKey] then return "desaturate" end
+        return "show"
+    end
+    local function WriteHideDimState(apply, value, hideKey, dimKey, desaturateKey)
+        apply(hideKey, (value == "hide" or value == "dim") or nil)
+        apply(dimKey, value == "dim" or nil)
+        if desaturateKey then
+            apply(desaturateKey, value == "desaturate" or nil)
+        end
+    end
+
+    -- Every row here belongs to a FAMILY, the unit the grid is poured by.
+    -- Which families survive depends on the entry type, so this is a FILTERED
+    -- row set (see the fill rule in the recipe comment at the top of
     -- BuildAppearanceTab's icons path): the families are collected first, then
-    -- poured into the grid LEFT column first until it holds half the rows. A
-    -- family is never split across the columns - a child that only exists
-    -- while its parent is checked has to sit directly under it.
+    -- poured into the grid LEFT column first until it holds half the rows.
+    -- Every family is one row now: a state dropdown, or one of the two plain
+    -- toggles that survived.
     local families, totalRows = {}, 0
     local function AddFamily(rows, build)
         families[#families + 1] = { rows = rows, build = build }
         totalRows = totalRows + rows
+    end
+
+    -- One hide/dim state family: its list, reader and writer are built from
+    -- the key names, so the five families below are declarations rather than
+    -- five copies of the same mapping. spec.afterWrite runs the family's own
+    -- extra clearing (the zero-charges row's cross-link) after the shared
+    -- write and before the rebuild.
+    local function AddStateFamily(spec)
+        AddFamily(1, function(column)
+            local list, order = BuildStateList(spec.desaturateKey ~= nil)
+            AddVisibilityDropdown(column, {
+                setting = spec.setting,
+                filter = spec.filter,
+                list = list,
+                order = order,
+                disabledItems = spec.disabledItems,
+                read = function(bd)
+                    return ReadHideDimState(bd, spec.hideKey, spec.dimKey, spec.desaturateKey)
+                end,
+                tooltip = BuildVisibilityModeTooltip(spec.title, spec.tooltipLines, list.dim ~= nil),
+                write = function(value)
+                    WriteHideDimState(spec.apply, value, spec.hideKey, spec.dimKey, spec.desaturateKey)
+                    if spec.afterWrite then spec.afterWrite(value) end
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+        end)
     end
 
     -- Ordinary Texture spell entries may layer presence-only Aura display onto
@@ -2474,7 +2528,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         end)
     end
 
-    -- Show Only While Aura Active (aura entries). 12.1: applied statically —
+    -- While Aura Inactive (aura entries). 12.1: applied statically —
     -- the aura display composes the whole button over an invisible CC shell,
     -- so this needs a restyle + rebind, not the per-tick visibility bits.
     --
@@ -2517,42 +2571,30 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     if anyAuraEntry and (displayMode == "icons" or displayMode == "bars")
         and not isAuraPanel then
         -- Two mutually exclusive inactive-state presentations, stored as
-        -- independent single keys. The dim key is auraShellDim, new in 12.1
-        -- and deliberately not main's useBaselineAlphaFallback: that key's
-        -- presence could not be told apart from residue, so the migration
-        -- had to guess and guessed away live settings.
-        AddFamily(2, function(column)
-            AddVisibilityRow(column, "Show Only While Aura Active", "hideWhileAuraNotActive", {
-                setting = entryVisibilitySettings.auraOnly,
+        -- independent single keys and stated as one dropdown. The dim key is
+        -- auraShellDim, new in 12.1 and deliberately not main's
+        -- useBaselineAlphaFallback: that key's presence could not be told
+        -- apart from residue, so the migration had to guess and guessed away
+        -- live settings. Icons and bars only, so Dim is always offered.
+        AddFamily(1, function(column)
+            AddVisibilityDropdown(column, {
+                setting = entryVisibilitySettings.auraInactive,
                 filter = FilterAuraEntry,
-                tooltip = {
-                    "Show Only While Aura Active",
-                    {"Hides this entry until its tracked aura is active.", 1, 1, 1, true},
-                    {" ", 1, 1, 1},
-                    {"In Compact Mode panels the aura still reserves its space while hidden. The game hides whether auras are active from addons, so other entries cannot close the gap.", 1, 1, 1, true},
-                },
-                onChanged = function(widget, event, val)
-                    ApplyToAuraEntries("hideWhileAuraNotActive", val or nil)
-                    if val then
-                        ApplyToAuraEntries("auraShellDim", nil)
-                    end
-                    CooldownCompanion:RefreshAllGroups()
-                    CooldownCompanion:RefreshConfigPanel()
+                list = { show = "Show", dim = "Dim", hide = "Hide" },
+                order = { "show", "dim", "hide" },
+                read = function(bd)
+                    if bd.hideWhileAuraNotActive then return "hide" end
+                    if bd.auraShellDim then return "dim" end
+                    return "show"
                 end,
-            })
-
-            AddVisibilityRow(column, "Dim While Aura Inactive", "auraShellDim", {
-                setting = entryVisibilitySettings.auraDim,
-                filter = FilterAuraEntry,
-                tooltip = {
-                    "Dim While Aura Inactive",
-                    {"Shows this entry dimmed until its tracked aura is active, then at full strength while it runs.", 1, 1, 1, true},
-                },
-                onChanged = function(widget, event, val)
-                    ApplyToAuraEntries("auraShellDim", val or nil)
-                    if val then
-                        ApplyToAuraEntries("hideWhileAuraNotActive", nil)
-                    end
+                tooltip = BuildVisibilityModeTooltip("While Aura Inactive", {
+                    {"What this entry does until its tracked aura is active. It returns to full strength while the aura runs.", 1, 1, 1, true},
+                    VISIBILITY_TOOLTIP_SPACER,
+                    {"In Compact Mode panels a hidden aura still reserves its space. The game hides whether auras are active from addons, so other entries cannot close the gap.", 1, 1, 1, true},
+                }, true),
+                write = function(value)
+                    ApplyToAuraEntries("hideWhileAuraNotActive", value == "hide" or nil)
+                    ApplyToAuraEntries("auraShellDim", value == "dim" or nil)
                     CooldownCompanion:RefreshAllGroups()
                     CooldownCompanion:RefreshConfigPanel()
                 end,
@@ -2560,7 +2602,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         end)
     end
 
-    -- Hide While On Cooldown (skip for passives — no cooldown)
+    -- Cooldown family (skip for passives — no cooldown)
     -- Batch: show if not ALL selected are passive
     local allPassive
     if isBatch then allPassive = AllSelectedAre(group, "isPassive")
@@ -2572,108 +2614,84 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     if isBatch then allNeverUnusable = AllSelectedNeverUnusable(group)
     else allNeverUnusable = IsNeverUnusableButton(buttonData) end
 
-    -- The whole cooldown family (both directions plus their Dim children) needs
-    -- a spell cooldown to react to; an Aura Panel entry has none, and the panel
-    -- draws no CC button for the rule to hide in the first place.
+    -- The whole cooldown family (both directions, their dim variants and the
+    -- ready side's charge refinement) needs a spell cooldown to react to; an
+    -- Aura Panel entry has none, and the panel draws no CC button for the rule
+    -- to hide in the first place.
     if not allPassive and not allNoCooldown and not isAuraPanel then
-    -- Dim Instead Of Hide (nested under hideWhileOnCooldown)
-    local showFallbackOnCooldown
-    if isBatch then showFallbackOnCooldown = AnySelectedHas(group, "hideWhileOnCooldown")
-    else showFallbackOnCooldown = buttonData.hideWhileOnCooldown end
-    showFallbackOnCooldown = showFallbackOnCooldown and not isTexturePanel
-
-    AddFamily(showFallbackOnCooldown and 2 or 1, function(column)
-        AddVisibilityRow(column, "Hide While On Cooldown", "hideWhileOnCooldown", {
-            setting = entryVisibilitySettings.cooldown,
-            onChanged = function(widget, event, val)
-                ApplyToSelected("hideWhileOnCooldown", val or nil)
-                if val then
-                    ApplyToSelected("hideWhileNotOnCooldown", nil)
-                    ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", nil)
-                    ApplyToChargeSpell("showOnlyAtZeroCharges", nil)
-                else
-                    ApplyToSelected("useBaselineAlphaFallbackOnCooldown", nil)
-                end
-                CooldownCompanion:RefreshConfigPanel()
-            end,
-        })
-
-        if showFallbackOnCooldown then
-            AddVisibilityRow(column, "Dim Instead Of Hide", "useBaselineAlphaFallbackOnCooldown", {
-                setting = entryVisibilitySettings.cooldownDim,
-                indent = true,
-                tooltip = DIM_INSTEAD_OF_HIDE_TOOLTIP,
-                onChanged = function(widget, event, val)
-                    ApplyToSelected("useBaselineAlphaFallbackOnCooldown", val or nil)
-                end,
-            })
-        end
-    end)
-
-    -- Hide While Not On Cooldown, with its charge refinement and fallback
-    local showOnlyAtZeroCharges
-    if isBatch then
-        showOnlyAtZeroCharges = AnySelectedMatch(FilterChargeSpellNotOnCooldown)
-    else
-        showOnlyAtZeroCharges = buttonData.hideWhileNotOnCooldown
-            and FilterChargeSpell(buttonData)
+    -- One dropdown states the whole family. The five keys underneath are
+    -- unchanged: the row derives one value from them and writes them back as
+    -- a set, so the two directions can never both be on.
+    --
+    -- Show Only At 0 Charges only means anything on a charge spell, and its
+    -- write sets hide-while-ready on every selected entry, so a batch offers
+    -- it only when EVERY selected entry is a charge spell: a plain spell in
+    -- the selection would otherwise be quietly set to Hide While Ready by a
+    -- pick whose label says nothing of the sort.
+    local offerZeroOnly
+    if isBatch then offerZeroOnly = AllSelectedMatch(FilterChargeSpell)
+    else offerZeroOnly = FilterChargeSpell(buttonData) end
+    -- Showing only at zero charges contradicts hiding or dimming at zero
+    -- charges (the At Zero Charges row below), so the option greys out while
+    -- that row says so. A batch has no single state to grey against; its
+    -- write keeps the clearing as a safety net instead.
+    local zeroOnlyBlocked = not isBatch and buttonData.hideWhileZeroCharges == true
+    local cooldownLabels = COOLDOWN_VISIBILITY.labels
+    local cooldownList = {
+        show = cooldownLabels.show,
+        hide_cooldown = cooldownLabels.hide_cooldown,
+        hide_ready = cooldownLabels.hide_ready,
+    }
+    local cooldownOrder = { "show" }
+    if not isTexturePanel then
+        cooldownList.dim_cooldown = cooldownLabels.dim_cooldown
+        cooldownOrder[#cooldownOrder + 1] = "dim_cooldown"
     end
-    local showFallbackNotOnCooldown
-    if isBatch then showFallbackNotOnCooldown = AnySelectedHas(group, "hideWhileNotOnCooldown")
-    else showFallbackNotOnCooldown = buttonData.hideWhileNotOnCooldown end
-    showFallbackNotOnCooldown = showFallbackNotOnCooldown and not isTexturePanel
+    cooldownOrder[#cooldownOrder + 1] = "hide_cooldown"
+    if not isTexturePanel then
+        cooldownList.dim_ready = cooldownLabels.dim_ready
+        cooldownOrder[#cooldownOrder + 1] = "dim_ready"
+    end
+    cooldownOrder[#cooldownOrder + 1] = "hide_ready"
+    if offerZeroOnly then
+        cooldownList.zero_only = cooldownLabels.zero_only
+        cooldownOrder[#cooldownOrder + 1] = "zero_only"
+    end
 
-    local notOnCooldownRows = 1
-    if showOnlyAtZeroCharges then notOnCooldownRows = notOnCooldownRows + 1 end
-    if showFallbackNotOnCooldown then notOnCooldownRows = notOnCooldownRows + 1 end
-
-    AddFamily(notOnCooldownRows, function(column)
-        AddVisibilityRow(column, "Hide While Not On Cooldown", "hideWhileNotOnCooldown", {
-            setting = entryVisibilitySettings.ready,
-            onChanged = function(widget, event, val)
-                ApplyToSelected("hideWhileNotOnCooldown", val or nil)
-                if val then
-                    ApplyToSelected("hideWhileOnCooldown", nil)
-                    ApplyToSelected("useBaselineAlphaFallbackOnCooldown", nil)
-                else
-                    ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", nil)
-                    ApplyToChargeSpell("showOnlyAtZeroCharges", nil)
+    AddFamily(1, function(column)
+        AddVisibilityDropdown(column, {
+            setting = entryVisibilitySettings.cooldownVisibility,
+            list = cooldownList,
+            order = cooldownOrder,
+            disabledItems = zeroOnlyBlocked and { "zero_only" } or nil,
+            read = function(bd)
+                if bd.hideWhileOnCooldown then
+                    return bd.useBaselineAlphaFallbackOnCooldown and "dim_cooldown" or "hide_cooldown"
+                elseif bd.hideWhileNotOnCooldown then
+                    if bd.showOnlyAtZeroCharges and FilterChargeSpell(bd) then
+                        return "zero_only"
+                    end
+                    return bd.useBaselineAlphaFallbackNotOnCooldown and "dim_ready" or "hide_ready"
+                end
+                return "show"
+            end,
+            tooltip = BuildVisibilityModeTooltip("Cooldown Visibility",
+                COOLDOWN_VISIBILITY.tooltipLines, not isTexturePanel),
+            write = function(value)
+                local hideOn = value == "hide_cooldown" or value == "dim_cooldown"
+                local hideReady = value == "hide_ready" or value == "dim_ready" or value == "zero_only"
+                ApplyToSelected("hideWhileOnCooldown", hideOn or nil)
+                ApplyToSelected("useBaselineAlphaFallbackOnCooldown", value == "dim_cooldown" or nil)
+                ApplyToSelected("hideWhileNotOnCooldown", hideReady or nil)
+                ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", value == "dim_ready" or nil)
+                ApplyToChargeSpell("showOnlyAtZeroCharges", value == "zero_only" or nil)
+                if value == "zero_only" then
+                    ApplyToChargeSpellNotOnCooldownOnly("hideWhileZeroCharges", nil)
+                    ApplyToChargeSpellNotOnCooldownOnly("useBaselineAlphaFallbackZeroCharges", nil)
                 end
                 CooldownCompanion:RefreshConfigPanel()
             end,
         })
-
-        if showOnlyAtZeroCharges then
-            AddVisibilityRow(column, "Only Show At Zero Charges", "showOnlyAtZeroCharges", {
-                setting = entryVisibilitySettings.readyZeroCharges,
-                indent = true,
-                filter = FilterChargeSpellNotOnCooldown,
-                onChanged = function(widget, event, val)
-                    ApplyToChargeSpellNotOnCooldown("showOnlyAtZeroCharges", val or nil)
-                    if val then
-                        ApplyToChargeSpellNotOnCooldownOnly("useBaselineAlphaFallbackNotOnCooldown", nil)
-                        ApplyToChargeSpellNotOnCooldownOnly("hideWhileZeroCharges", nil)
-                        ApplyToChargeSpellNotOnCooldownOnly("useBaselineAlphaFallbackZeroCharges", nil)
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-        end
-
-        if showFallbackNotOnCooldown then
-            AddVisibilityRow(column, "Dim Instead Of Hide", "useBaselineAlphaFallbackNotOnCooldown", {
-                setting = entryVisibilitySettings.readyDim,
-                indent = true,
-                tooltip = DIM_INSTEAD_OF_HIDE_TOOLTIP,
-                onChanged = function(widget, event, val)
-                    ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", val or nil)
-                    if val then
-                        ApplyToChargeSpellNotOnCooldownOnly("showOnlyAtZeroCharges", nil)
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-        end
     end)
 
     end -- not allPassive and not allNoCooldown
@@ -2682,42 +2700,19 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- Same reason as the cooldown family: usability is a spell state an Aura
     -- Panel entry never carries.
     if not allNeverUnusable and not isAuraPanel then
-    -- Hide While Unusable
-    local showFallbackUnusable
-    if isBatch then showFallbackUnusable = AnySelectedHas(group, "hideWhileUnusable")
-    else showFallbackUnusable = buttonData.hideWhileUnusable end
-    showFallbackUnusable = showFallbackUnusable and not isTexturePanel
-
-    AddFamily(showFallbackUnusable and 2 or 1, function(column)
-        AddVisibilityRow(column, "Hide While Unusable", "hideWhileUnusable", {
-            setting = entryVisibilitySettings.unusable,
-            tooltip = {
-                "Hide While Unusable",
-                {"Uses the same logic as Unusable Visual, but completely hides the button instead of changing the icon.", 1, 1, 1, true},
-            },
-            onChanged = function(widget, event, val)
-                ApplyToSelected("hideWhileUnusable", val or nil)
-                if not val then
-                    ApplyToSelected("useBaselineAlphaFallbackUnusable", nil)
-                end
-                CooldownCompanion:RefreshConfigPanel()
-            end,
-        })
-
-        if showFallbackUnusable then
-            AddVisibilityRow(column, "Dim Instead Of Hide", "useBaselineAlphaFallbackUnusable", {
-                setting = entryVisibilitySettings.unusableDim,
-                indent = true,
-                tooltip = DIM_INSTEAD_OF_HIDE_TOOLTIP,
-                onChanged = function(widget, event, val)
-                    ApplyToSelected("useBaselineAlphaFallbackUnusable", val or nil)
-                end,
-            })
-        end
-    end)
+    AddStateFamily({
+        setting = entryVisibilitySettings.unusable,
+        apply = ApplyToSelected,
+        hideKey = "hideWhileUnusable",
+        dimKey = "useBaselineAlphaFallbackUnusable",
+        title = "While Unusable",
+        tooltipLines = {
+            {"Uses the same logic as Unusable Visual. Hide removes the button instead of changing the icon.", 1, 1, 1, true},
+        },
+    })
     end -- not allNeverUnusable
 
-    -- Hide While No Proc (spell entries only, not aura entries)
+    -- No Proc (spell entries only, not aura entries)
     local showNoProcToggle
     if isBatch then
         showNoProcToggle = batchContext
@@ -2729,39 +2724,33 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
             and not buttonData.isPassiveCooldown
     end
     if showNoProcToggle then
-        local showFallbackNoProc
-        if isBatch then showFallbackNoProc = AnySelectedHas(group, "hideWhileNoProc")
-        else showFallbackNoProc = buttonData.hideWhileNoProc end
-        showFallbackNoProc = showFallbackNoProc and not isTexturePanel
-
-        AddFamily(showFallbackNoProc and 2 or 1, function(column)
-            AddVisibilityRow(column, "Hide While No Proc", "hideWhileNoProc", {
-                setting = entryVisibilitySettings.noProc,
-                onChanged = function(widget, event, val)
-                    ApplyToSelected("hideWhileNoProc", val or nil)
-                    if not val then
-                        ApplyToSelected("useBaselineAlphaFallbackNoProc", nil)
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-
-            if showFallbackNoProc then
-                AddVisibilityRow(column, "Dim Instead Of Hide", "useBaselineAlphaFallbackNoProc", {
-                    setting = entryVisibilitySettings.noProcDim,
-                    indent = true,
-                    tooltip = DIM_INSTEAD_OF_HIDE_TOOLTIP,
-                    onChanged = function(widget, event, val)
-                        ApplyToSelected("useBaselineAlphaFallbackNoProc", val or nil)
-                    end,
-                })
-            end
-        end)
+        AddStateFamily({
+            setting = entryVisibilitySettings.noProc,
+            apply = ApplyToSelected,
+            hideKey = "hideWhileNoProc",
+            dimKey = "useBaselineAlphaFallbackNoProc",
+            title = "While No Proc",
+            tooltipLines = {
+                {"What this entry does while the spell has no proc active.", 1, 1, 1, true},
+            },
+        })
     end
 
     end -- not allPassive (unusable + no proc)
 
-    -- Charge-based visibility toggles (spells + non-equippable items with charges)
+    -- Desaturate is an icon treatment, so its sentence only belongs on rows
+    -- whose list offers it (never on a Texture panel).
+    local DESATURATE_TOOLTIP_LINE = {"Desaturate grays the icon in place.", 1, 1, 1, true}
+    local function ZeroStateTooltipLines(firstLine)
+        local lines = { {firstLine, 1, 1, 1, true} }
+        if not isTexturePanel then
+            lines[#lines + 1] = VISIBILITY_TOOLTIP_SPACER
+            lines[#lines + 1] = DESATURATE_TOOLTIP_LINE
+        end
+        return lines
+    end
+
+    -- Charge-based visibility (spells + non-equippable items with charges)
     -- Batch: show if any selected button is charge-capable
     local showChargeSection
     if isBatch then showChargeSection = AnySelectedChargeCapable(group)
@@ -2771,59 +2760,29 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
             and not HasItemFallbacks(buttonData)
     end
     if showChargeSection then
-        -- Hide While At Zero Charges
-        -- Batch: the nested fallback shows if any selected has it on
-        local showFallbackZeroCharges
-        if isBatch then showFallbackZeroCharges = AnySelectedHasFiltered(group, "hideWhileZeroCharges", FilterChargeCapable)
-        else showFallbackZeroCharges = buttonData.hideWhileZeroCharges end
-        showFallbackZeroCharges = showFallbackZeroCharges and not isTexturePanel
-
-        AddFamily(showFallbackZeroCharges and 2 or 1, function(column)
-            AddVisibilityRow(column, "Hide While At Zero Charges", "hideWhileZeroCharges", {
-                setting = entryVisibilitySettings.zeroCharges,
-                filter = FilterChargeCapable,
-                onChanged = function(widget, event, val)
-                    ApplyToChargeCapable("hideWhileZeroCharges", val or nil)
-                    if val then
-                        ApplyToChargeCapable("desaturateWhileZeroCharges", nil)
-                        ApplyToChargeSpell("showOnlyAtZeroCharges", nil)
-                    else
-                        ApplyToChargeCapable("useBaselineAlphaFallbackZeroCharges", nil)
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-
-            if showFallbackZeroCharges then
-                AddVisibilityRow(column, "Dim Instead Of Hide", "useBaselineAlphaFallbackZeroCharges", {
-                    setting = entryVisibilitySettings.zeroChargesDim,
-                    indent = true,
-                    filter = FilterChargeCapable,
-                    tooltip = DIM_INSTEAD_OF_HIDE_TOOLTIP,
-                    onChanged = function(widget, event, val)
-                        ApplyToChargeCapable("useBaselineAlphaFallbackZeroCharges", val or nil)
-                    end,
-                })
-            end
-        end)
-
-        -- Desaturate While At Zero Charges
-        if not isTexturePanel then
-            AddFamily(1, function(column)
-                AddVisibilityRow(column, "Desaturate While At Zero Charges", "desaturateWhileZeroCharges", {
-                    setting = entryVisibilitySettings.zeroChargesDesaturate,
-                    filter = FilterChargeCapable,
-                    onChanged = function(widget, event, val)
-                        ApplyToChargeCapable("desaturateWhileZeroCharges", val or nil)
-                        if val then
-                            ApplyToChargeCapable("hideWhileZeroCharges", nil)
-                            ApplyToChargeCapable("useBaselineAlphaFallbackZeroCharges", nil)
-                        end
-                        CooldownCompanion:RefreshConfigPanel()
-                    end,
-                })
-            end)
-        end
+        -- Hiding or dimming at zero charges contradicts the Cooldown
+        -- Visibility row's Show Only At 0 Charges, so both grey out while
+        -- that row says so (single entry; a batch keeps the clearing write).
+        local zeroChargesBlocked = not isBatch
+            and buttonData.hideWhileNotOnCooldown == true
+            and buttonData.showOnlyAtZeroCharges == true
+            and FilterChargeSpell(buttonData)
+        AddStateFamily({
+            setting = entryVisibilitySettings.zeroCharges,
+            filter = FilterChargeCapable,
+            apply = ApplyToChargeCapable,
+            hideKey = "hideWhileZeroCharges",
+            dimKey = "useBaselineAlphaFallbackZeroCharges",
+            desaturateKey = "desaturateWhileZeroCharges",
+            disabledItems = zeroChargesBlocked and { "dim", "hide" } or nil,
+            title = "At Zero Charges",
+            tooltipLines = ZeroStateTooltipLines("What this entry does once every charge is spent."),
+            afterWrite = function(value)
+                if value == "hide" or value == "dim" then
+                    ApplyToChargeSpell("showOnlyAtZeroCharges", nil)
+                end
+            end,
+        })
 
         -- Hide Cooldown While Charges Remain
         AddFamily(1, function(column)
@@ -2837,7 +2796,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         end)
     end
 
-    -- Stack-based visibility toggles (non-equippable items without charges)
+    -- Stack-based visibility (non-equippable items without charges)
     -- Batch: show if any selected non-equippable item exists
     local showStackSection
     if isBatch then showStackSection = isItem and AnySelectedNonEquippable(group)
@@ -2849,101 +2808,39 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         else hasStacks = HasItemFallbacks(buttonData) or not UsesChargeBehavior(buttonData) end
         if hasStacks then
             local fallbackItemUses = isBatch and AnySelectedHasItemFallbacks(group) or HasItemFallbacks(buttonData)
-            local zeroStacksLabel = fallbackItemUses and "Hide While No Uses Available" or "Hide While At Zero Stacks"
-            local desatStacksLabel = fallbackItemUses and "Desaturate While No Uses Available" or "Desaturate While At Zero Stacks"
-
-            -- Hide While At Zero Stacks
-            local showFallbackZeroStacks
-            if isBatch then showFallbackZeroStacks = AnySelectedHasFiltered(group, "hideWhileZeroStacks", FilterNonEquippable)
-            else showFallbackZeroStacks = buttonData.hideWhileZeroStacks end
-            showFallbackZeroStacks = showFallbackZeroStacks and not isTexturePanel
-
-            AddFamily(showFallbackZeroStacks and 2 or 1, function(column)
-                AddVisibilityRow(column, zeroStacksLabel, "hideWhileZeroStacks", {
-                    setting = fallbackItemUses and entryVisibilitySettings.noUses
-                        or entryVisibilitySettings.zeroStacks,
-                    filter = FilterNonEquippable,
-                    onChanged = function(widget, event, val)
-                        ApplyToNonEquippable("hideWhileZeroStacks", val or nil)
-                        if val then
-                            ApplyToNonEquippable("desaturateWhileZeroStacks", nil)
-                        else
-                            ApplyToNonEquippable("useBaselineAlphaFallbackZeroStacks", nil)
-                        end
-                        CooldownCompanion:RefreshConfigPanel()
-                    end,
-                })
-
-                if showFallbackZeroStacks then
-                    AddVisibilityRow(column, "Dim Instead Of Hide", "useBaselineAlphaFallbackZeroStacks", {
-                        setting = entryVisibilitySettings.zeroStacksDim,
-                        indent = true,
-                        filter = FilterNonEquippable,
-                        tooltip = DIM_INSTEAD_OF_HIDE_TOOLTIP,
-                        onChanged = function(widget, event, val)
-                            ApplyToNonEquippable("useBaselineAlphaFallbackZeroStacks", val or nil)
-                        end,
-                    })
-                end
-            end)
-
-            -- Desaturate While At Zero Stacks
-            if not isTexturePanel then
-                AddFamily(1, function(column)
-                    AddVisibilityRow(column, desatStacksLabel, "desaturateWhileZeroStacks", {
-                        setting = fallbackItemUses and entryVisibilitySettings.noUsesDesaturate
-                            or entryVisibilitySettings.zeroStacksDesaturate,
-                        filter = FilterNonEquippable,
-                        onChanged = function(widget, event, val)
-                            ApplyToNonEquippable("desaturateWhileZeroStacks", val or nil)
-                            if val then
-                                ApplyToNonEquippable("hideWhileZeroStacks", nil)
-                                ApplyToNonEquippable("useBaselineAlphaFallbackZeroStacks", nil)
-                            end
-                            CooldownCompanion:RefreshConfigPanel()
-                        end,
-                    })
-                end)
-            end
+            AddStateFamily({
+                setting = fallbackItemUses and entryVisibilitySettings.noUses
+                    or entryVisibilitySettings.zeroStacks,
+                filter = FilterNonEquippable,
+                apply = ApplyToNonEquippable,
+                hideKey = "hideWhileZeroStacks",
+                dimKey = "useBaselineAlphaFallbackZeroStacks",
+                desaturateKey = "desaturateWhileZeroStacks",
+                title = fallbackItemUses and "With No Uses Available" or "At Zero Stacks",
+                tooltipLines = ZeroStateTooltipLines(fallbackItemUses
+                    and "What this entry does once the item has no uses left."
+                    or "What this entry does once you hold none of the item."),
+            })
         end
     end
 
-    -- Hide While Not Equipped (equippable items only)
+    -- Not Equipped (equippable items only)
     -- Batch: show if any selected item is equippable
     local showEquipSection
     if isBatch then showEquipSection = isItem and AnySelectedEquippable(group)
     else showEquipSection = isItem and CooldownCompanion.IsItemEquippable(buttonData) end
     if showEquipSection then
-        local showFallbackEquip
-        if isBatch then showFallbackEquip = AnySelectedHasFiltered(group, "hideWhileNotEquipped", FilterEquippable)
-        else showFallbackEquip = buttonData.hideWhileNotEquipped end
-        showFallbackEquip = showFallbackEquip and not isTexturePanel
-
-        AddFamily(showFallbackEquip and 2 or 1, function(column)
-            AddVisibilityRow(column, "Hide While Not Equipped", "hideWhileNotEquipped", {
-                setting = entryVisibilitySettings.equipped,
-                filter = FilterEquippable,
-                onChanged = function(widget, event, val)
-                    ApplyToEquippable("hideWhileNotEquipped", val or nil)
-                    if not val then
-                        ApplyToEquippable("useBaselineAlphaFallbackNotEquipped", nil)
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-
-            if showFallbackEquip then
-                AddVisibilityRow(column, "Dim Instead Of Hide", "useBaselineAlphaFallbackNotEquipped", {
-                    setting = entryVisibilitySettings.equippedDim,
-                    indent = true,
-                    filter = FilterEquippable,
-                    tooltip = DIM_INSTEAD_OF_HIDE_TOOLTIP,
-                    onChanged = function(widget, event, val)
-                        ApplyToEquippable("useBaselineAlphaFallbackNotEquipped", val or nil)
-                    end,
-                })
-            end
-        end)
+        AddStateFamily({
+            setting = entryVisibilitySettings.equipped,
+            filter = FilterEquippable,
+            apply = ApplyToEquippable,
+            hideKey = "hideWhileNotEquipped",
+            dimKey = "useBaselineAlphaFallbackNotEquipped",
+            title = "While Not Equipped",
+            tooltipLines = {
+                {"What this entry does while the item is not equipped.", 1, 1, 1, true},
+            },
+        })
     end
 
     -- An entry type can filter every family away (a passive with no cooldown

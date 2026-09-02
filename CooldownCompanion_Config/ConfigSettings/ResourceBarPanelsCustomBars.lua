@@ -686,8 +686,11 @@ if ST._DefineSettingRoute then
                 return FinderCustomBarAuraActive(context) and cab and cab.pandemicEffect == true
             end,
         },
-        activeOnly = { label = "Show Only While Aura Active", applies = FinderCustomBarAuraActive },
-        dimInactive = { label = "Dim While Aura Inactive", applies = FinderCustomBarAuraActive },
+        inactiveState = {
+            label = "While Aura Inactive",
+            aliases = { "show only while aura active", "dim while aura inactive", "hide aura inactive" },
+            applies = FinderCustomBarAuraActive,
+        },
     })
     CUSTOM_BAR_FINDER.stackFormatting = {
         showOne = CUSTOM_BAR_FINDER.aura.showOne,
@@ -787,14 +790,12 @@ if ST._DefineSettingRoute then
         end,
     })
     CUSTOM_BAR_FINDER.rules = rules:Settings({
-        onCooldown = { label = "Hide While On Cooldown" },
-        notOnCooldown = { label = "Hide While Not On Cooldown" },
-        onlyZero = {
-            label = "Only Show At Zero Charges",
-            applies = function(context)
-                local caps, cab = FinderCustomBarCapabilities(context), FinderCustomBar(context)
-                return caps and caps.hasCharges and cab and cab.hideWhileNotOnCooldown == true
-            end,
+        cooldownVisibility = {
+            label = "Cooldown Visibility",
+            aliases = {
+                "hide while on cooldown", "hide while not on cooldown", "hide while ready",
+                "only show at zero charges", "zero charges only",
+            },
         },
         hideZero = {
             label = "Hide While At Zero Charges",
@@ -1208,56 +1209,71 @@ local function BuildCustomBarLoadConditionsTab(container, cab, infoButtons, capa
             local rulesLeft, rulesRight = BeginRowGrid(container)
             local isChargeSpell = capabilities.hasCharges
 
-            AddCheckboxRow(rulesLeft, {
-                label = "Hide While On Cooldown",
-                setting = CUSTOM_BAR_FINDER.rules.onCooldown,
-                value = cab.hideWhileOnCooldown == true,
-                onChange = function(value)
-                    cab.hideWhileOnCooldown = value or nil
-                    if value then
-                        cab.hideWhileNotOnCooldown = nil
-                        cab.showOnlyAtZeroCharges = nil
-                    end
-                    CommitRules()
-                end,
-            })
-
-            AddCheckboxRow(rulesLeft, {
-                label = "Hide While Not On Cooldown",
-                setting = CUSTOM_BAR_FINDER.rules.notOnCooldown,
-                value = cab.hideWhileNotOnCooldown == true,
-                onChange = function(value)
-                    cab.hideWhileNotOnCooldown = value or nil
-                    if value then
-                        cab.hideWhileOnCooldown = nil
-                    else
-                        cab.showOnlyAtZeroCharges = nil
-                    end
-                    CommitRules()
-                end,
-            })
-
-            if isChargeSpell and cab.hideWhileNotOnCooldown == true then
-                AddCheckboxRow(rulesLeft, {
-                    label = "Only Show At Zero Charges",
-                    setting = CUSTOM_BAR_FINDER.rules.onlyZero,
-                    indent = true,
-                    value = cab.showOnlyAtZeroCharges == true,
-                    onChange = function(value)
-                        cab.showOnlyAtZeroCharges = value or nil
-                        if value then
-                            cab.hideWhileZeroCharges = nil
-                        end
-                        CommitRules()
-                    end,
-                })
+            -- One dropdown states the cooldown family (panel parity: the
+            -- Cooldown Visibility row in ButtonConditions). The three keys
+            -- underneath are unchanged; the row derives one value from them
+            -- and writes them back as a set, so the two directions can never
+            -- both be on. A bar has no dim variants: it either keeps its slot
+            -- or hides in it.
+            local zeroOnly = isChargeSpell and cab.showOnlyAtZeroCharges == true
+                and cab.hideWhileNotOnCooldown == true
+            -- Labels and tooltip are the panel row's own (ST._COOLDOWN_VISIBILITY,
+            -- Helpers.lua), so the two surfaces cannot drift apart.
+            local cooldownLabels = ST._COOLDOWN_VISIBILITY.labels
+            local cooldownList = {
+                show = cooldownLabels.show,
+                hide_cooldown = cooldownLabels.hide_cooldown,
+                hide_ready = cooldownLabels.hide_ready,
+            }
+            local cooldownOrder = { "show", "hide_cooldown", "hide_ready" }
+            if isChargeSpell then
+                cooldownList.zero_only = cooldownLabels.zero_only
+                cooldownOrder[#cooldownOrder + 1] = "zero_only"
             end
+            local cooldownValue = "show"
+            if cab.hideWhileOnCooldown == true then
+                cooldownValue = "hide_cooldown"
+            elseif cab.hideWhileNotOnCooldown == true then
+                cooldownValue = zeroOnly and "zero_only" or "hide_ready"
+            end
+            local cooldownRow = AddDropdownRow(rulesLeft, {
+                setting = CUSTOM_BAR_FINDER.rules.cooldownVisibility,
+                list = cooldownList,
+                order = cooldownOrder,
+                value = cooldownValue,
+                onChange = function(value)
+                    cab.hideWhileOnCooldown = value == "hide_cooldown" or nil
+                    cab.hideWhileNotOnCooldown = (value == "hide_ready" or value == "zero_only") or nil
+                    cab.showOnlyAtZeroCharges = value == "zero_only" or nil
+                    if value == "zero_only" then
+                        cab.hideWhileZeroCharges = nil
+                    end
+                    CommitRules()
+                end,
+            })
+            -- Showing only at zero charges contradicts hiding at zero
+            -- charges, so each side greys the other's option rather than
+            -- silently clearing it.
+            if isChargeSpell and cab.hideWhileZeroCharges == true then
+                cooldownRow:SetItemDisabled("zero_only", true)
+            end
+            local cooldownInfo = { "Cooldown Visibility" }
+            for _, line in ipairs(ST._COOLDOWN_VISIBILITY.tooltipLines) do
+                cooldownInfo[#cooldownInfo + 1] = line
+            end
+            AnchorRowBadge(cooldownRow, CreateInfoButton(cooldownRow.frame, cooldownRow.frame, "LEFT", "LEFT", 0, 0,
+                cooldownInfo, infoButtons))
 
             if isChargeSpell then
                 AddCheckboxRow(rulesRight, {
                     label = "Hide While At Zero Charges",
                     setting = CUSTOM_BAR_FINDER.rules.hideZero,
                     value = cab.hideWhileZeroCharges == true,
+                    disabled = zeroOnly,
+                    tooltip = zeroOnly and {
+                        "Hide While At Zero Charges",
+                        {"Not available while Cooldown Visibility shows the bar only at zero charges.", 1, 1, 1, true},
+                    } or nil,
                     onChange = function(value)
                         cab.hideWhileZeroCharges = value or nil
                         if value then
@@ -1970,29 +1986,38 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     end
 
     -- Group/pet-tracked aura bars cannot join the collapsing aura block
-    -- (owner ruling 2026-08-26: they always keep their slot), so the toggle
-    -- greys out rather than lying. The stored key survives, and switching
-    -- the scope back restores it. Spell bars shell in place, so their
-    -- toggle stays live under every scope.
+    -- (owner ruling 2026-08-26: they always keep their slot), so the Hide
+    -- choice greys out rather than lying. The stored key survives, and
+    -- switching the scope back restores it. Spell bars shell in place, so
+    -- their Hide stays live under every scope.
     local scopeExpanded = cab.auraTrackGroup == true or cab.auraTrackPet == true
     local shellDisabled = scopeExpanded and not isSpellBar
-    local shellRow = AddCheckboxRow(auraRight, {
-        label = "Show Only While Aura Active",
-        setting = CUSTOM_BAR_FINDER.aura.activeOnly,
-        value = cab.hideWhenInactive == true,
-        disabled = shellDisabled,
+    -- The two inactive-state presentations, hide (hideWhenInactive) and dim
+    -- (auraShellDim), are mutually exclusive, so they are one dropdown (panel
+    -- parity: the While Aura Inactive row in ButtonConditions). Both keys are
+    -- unchanged; the row derives one value and writes the pair back. Hide
+    -- greys out under a group or pet scope rather than leaving the row.
+    local inactiveValue = "show"
+    if cab.hideWhenInactive == true then
+        inactiveValue = "hide"
+    elseif cab.auraShellDim == true then
+        inactiveValue = "dim"
+    end
+    local inactiveRow = AddDropdownRow(auraRight, {
+        setting = CUSTOM_BAR_FINDER.aura.inactiveState,
+        list = { show = "Show", dim = "Dim", hide = "Hide" },
+        order = { "show", "dim", "hide" },
+        value = inactiveValue,
         onChange = function(value)
-            cab.hideWhenInactive = value or nil
-            if value then
-                cab.auraShellDim = nil
+            cab.hideWhenInactive = value == "hide" or nil
+            cab.auraShellDim = value == "dim" or nil
+            if value == "hide" and isSpellBar then
                 -- The hidden spell shell has no cooldown/zero-charge or
                 -- recharge look. Disarm its canvas stand-in immediately;
                 -- saved colors remain untouched and return with the shell.
-                if isSpellBar then
-                    CooldownCompanion:SetCustomBarCooldownPreview(cab, nil)
-                end
+                CooldownCompanion:SetCustomBarCooldownPreview(cab, nil)
             end
-            -- Toggling moves an aura bar between the fixed stack and the
+            -- Hiding moves an aura bar between the fixed stack and the
             -- collapsing block, so the stack's extent changes: this needs
             -- the same commit as a layout drop, not just a config refresh.
             CooldownCompanion:ApplyResourceBars()
@@ -2001,54 +2026,40 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
             CooldownCompanion:RefreshConfigPanel()
         end,
     })
-    local shellInfo = {
-        "Show Only While Aura Active",
-        {"The bar shows only while the aura is running.", 1, 1, 1, true},
+    if shellDisabled then
+        inactiveRow:SetItemDisabled("hide", true)
+        -- A stored Hide survives the scope switch (it returns with the
+        -- scope), but under this scope it is inert, so the row says so
+        -- instead of presenting a greyed item as a live selection.
+        if inactiveValue == "hide" then
+            inactiveRow:SetText("Hide (unavailable)")
+        end
+    end
+    local inactiveInfo = {
+        "While Aura Inactive",
+        {"What the bar does until its tracked aura is running. It returns to full strength while the aura is up.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Dim keeps the bar in its place at reduced strength.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
     }
     -- Only aura entries join the collapsing aura block
     -- (RB.IsAuraBlockEntry); a spell bar keeps its slot either way.
     if isSpellBar then
-        shellInfo[#shellInfo + 1] = {"Its slot in the bar stack stays reserved.", 1, 1, 1, true}
+        inactiveInfo[#inactiveInfo + 1] = {"Hide keeps the bar's slot in the stack reserved.", 1, 1, 1, true}
     else
-        shellInfo[#shellInfo + 1] = {"It leaves the stack while hidden. It returns at the far end of its side, in order with the other bars that do the same.", 1, 1, 1, true}
-        shellInfo[#shellInfo + 1] = {" ", 1, 1, 1, true}
-        shellInfo[#shellInfo + 1] = {"Your auras and the target's collapse in separate groups.", 1, 1, 1, true}
-        shellInfo[#shellInfo + 1] = {" ", 1, 1, 1, true}
-        shellInfo[#shellInfo + 1] = {"A group whose bars are all hidden still holds one bar gap of space. The game hides aura activity from addons, so that space cannot close.", 1, 1, 1, true}
-        shellInfo[#shellInfo + 1] = {" ", 1, 1, 1, true}
-        shellInfo[#shellInfo + 1] = {"Splitting your auras and the target's onto different sides avoids the extra gap.", 1, 1, 1, true}
+        inactiveInfo[#inactiveInfo + 1] = {"Hide takes the bar out of the stack. It returns at the far end of its side, in order with the other bars that do the same.", 1, 1, 1, true}
+        inactiveInfo[#inactiveInfo + 1] = {" ", 1, 1, 1, true}
+        inactiveInfo[#inactiveInfo + 1] = {"Your auras and the target's collapse in separate groups.", 1, 1, 1, true}
+        inactiveInfo[#inactiveInfo + 1] = {" ", 1, 1, 1, true}
+        inactiveInfo[#inactiveInfo + 1] = {"A group whose bars are all hidden still holds one bar gap of space. The game hides aura activity from addons, so that space cannot close.", 1, 1, 1, true}
+        inactiveInfo[#inactiveInfo + 1] = {" ", 1, 1, 1, true}
+        inactiveInfo[#inactiveInfo + 1] = {"Splitting your auras and the target's onto different sides avoids the extra gap.", 1, 1, 1, true}
     end
     if shellDisabled then
-        shellInfo[#shellInfo + 1] = {" ", 1, 1, 1, true}
-        shellInfo[#shellInfo + 1] = {"Not available while tracking your group or your pet. Those bars keep their place in the stack.", 1, 1, 1, true}
+        inactiveInfo[#inactiveInfo + 1] = {" ", 1, 1, 1, true}
+        inactiveInfo[#inactiveInfo + 1] = {"Hide is not available while tracking your group or your pet. Those bars keep their place in the stack.", 1, 1, 1, true}
     end
-    AnchorRowBadge(shellRow, CreateInfoButton(shellRow.frame, shellRow.frame, "LEFT", "LEFT", 0, 0, shellInfo, infoButtons))
-
-    -- The dim twin (panel parity: Dim While Aura Inactive / auraShellDim).
-    -- The bar keeps its place at reduced strength until the aura runs, so
-    -- it works under every scope; mutually exclusive with the hide above.
-    local dimRow = AddCheckboxRow(auraRight, {
-        label = "Dim While Aura Inactive",
-        setting = CUSTOM_BAR_FINDER.aura.dimInactive,
-        value = cab.auraShellDim == true,
-        onChange = function(value)
-            cab.auraShellDim = value and true or nil
-            if value then
-                cab.hideWhenInactive = nil
-            end
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RepositionCastBar()
-            CooldownCompanion:UpdateAnchorStacking()
-            CooldownCompanion:RefreshConfigPanel()
-        end,
-    })
-    AnchorRowBadge(dimRow, CreateInfoButton(dimRow.frame, dimRow.frame, "LEFT", "LEFT", 0, 0, {
-        "Dim While Aura Inactive",
-        {"Shows the bar dimmed until its tracked aura is active, then at full strength while it runs.", 1, 1, 1, true},
-        {" ", 1, 1, 1, true},
-        {"The bar keeps its place in the stack.", 1, 1, 1, true},
-    }, infoButtons))
+    AnchorRowBadge(inactiveRow, CreateInfoButton(inactiveRow.frame, inactiveRow.frame, "LEFT", "LEFT", 0, 0, inactiveInfo, infoButtons))
 end
 
 local function BuildCustomBarWorkspaceAddBox(container)

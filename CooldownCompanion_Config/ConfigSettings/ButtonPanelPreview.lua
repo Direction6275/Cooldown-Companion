@@ -99,40 +99,75 @@ local function IsBarPreviewAuraActive(conditional, effectFlags)
         and true or false
 end
 
+-- Each rule names the Show & Hide Rules row and the value it holds, the way
+-- the entry's own Visibility tab states it: naming the wrong choice sends the
+-- owner looking for a switch they never turned on.
+local function StateRule(row, buttonData, dimKey)
+    return row .. ": " .. (buttonData[dimKey] and "Dim" or "Hide")
+end
+
 local BAR_PREVIEW_REASON_DEFS = {
     { key = "disabled", label = "Disabled", rule = "Enabled is off" },
-    -- The aura pair shares one reason but not one rule name: while inactive
-    -- the entry is either hidden or dimmed, and naming the wrong toggle
-    -- sends the owner looking for a switch they never turned on.
     { key = "aura-inactive", label = "Aura inactive",
         rule = function(buttonData)
-            return buttonData.auraShellDim == true
-                and "Dim While Aura Inactive"
-                or "Show Only While Aura Active"
+            return StateRule("While Aura Inactive", buttonData, "auraShellDim")
         end,
         fallback = "auraShellDim" },
-    { key = "on-cooldown", label = "On cooldown", rule = "Hide While On Cooldown",
+    -- The cooldown labels are the dropdown's own (ST._COOLDOWN_VISIBILITY,
+    -- Helpers.lua), so the preview can never name a choice the tab does not.
+    { key = "on-cooldown", label = "On cooldown",
+        rule = function(buttonData)
+            local labels = ST._COOLDOWN_VISIBILITY.labels
+            return "Cooldown Visibility: "
+                .. (buttonData.useBaselineAlphaFallbackOnCooldown and labels.dim_cooldown or labels.hide_cooldown)
+        end,
         fallback = "useBaselineAlphaFallbackOnCooldown" },
-    { key = "not-on-cooldown", label = "Not on cooldown", rule = "Hide While Not On Cooldown",
+    { key = "not-on-cooldown", label = "Not on cooldown",
+        rule = function(buttonData)
+            local labels = ST._COOLDOWN_VISIBILITY.labels
+            -- Same gate the tab's reader and the runtime use: the zero-only
+            -- refinement only exists on a spell that actually uses charge
+            -- behavior (an aura-added spell does not, whatever hasCharges says).
+            if buttonData.showOnlyAtZeroCharges and buttonData.type == "spell"
+                and buttonData.hasCharges == true
+                and ST._UsesConfigOnlyBarChargeBehavior(buttonData) then
+                return "Cooldown Visibility: " .. labels.zero_only
+            end
+            return "Cooldown Visibility: "
+                .. (buttonData.useBaselineAlphaFallbackNotOnCooldown and labels.dim_ready or labels.hide_ready)
+        end,
         fallback = "useBaselineAlphaFallbackNotOnCooldown" },
-    { key = "no-proc", label = "No proc", rule = "Hide While No Proc",
+    { key = "no-proc", label = "No proc",
+        rule = function(buttonData)
+            return StateRule("While No Proc", buttonData, "useBaselineAlphaFallbackNoProc")
+        end,
         fallback = "useBaselineAlphaFallbackNoProc" },
-    { key = "zero-charges", label = "Zero charges", rule = "Hide While At Zero Charges",
+    { key = "zero-charges", label = "Zero charges",
+        rule = function(buttonData)
+            return StateRule("At Zero Charges", buttonData, "useBaselineAlphaFallbackZeroCharges")
+        end,
         fallback = "useBaselineAlphaFallbackZeroCharges" },
-    -- Items with use-count fallbacks title this row "Hide While No Uses
-    -- Available" in the config (ButtonConditions), so the tooltip must name
-    -- the toggle the way that entry's own row does.
+    -- Items with use-count fallbacks title this row "With No Uses Available"
+    -- in the config (ButtonConditions), so the tooltip must name the row the
+    -- way that entry's own tab does.
     { key = "zero-stacks", label = "Zero stacks",
         rule = function(buttonData)
-            return type(CooldownCompanion.HasItemFallbacks) == "function"
+            local row = type(CooldownCompanion.HasItemFallbacks) == "function"
                 and CooldownCompanion.HasItemFallbacks(buttonData) == true
-                and "Hide While No Uses Available"
-                or "Hide While At Zero Stacks"
+                and "With No Uses Available"
+                or "At Zero Stacks"
+            return StateRule(row, buttonData, "useBaselineAlphaFallbackZeroStacks")
         end,
         fallback = "useBaselineAlphaFallbackZeroStacks" },
-    { key = "not-equipped", label = "Not equipped", rule = "Hide While Not Equipped",
+    { key = "not-equipped", label = "Not equipped",
+        rule = function(buttonData)
+            return StateRule("While Not Equipped", buttonData, "useBaselineAlphaFallbackNotEquipped")
+        end,
         fallback = "useBaselineAlphaFallbackNotEquipped" },
-    { key = "unusable", label = "Unusable", rule = "Hide While Unusable",
+    { key = "unusable", label = "Unusable",
+        rule = function(buttonData)
+            return StateRule("While Unusable", buttonData, "useBaselineAlphaFallbackUnusable")
+        end,
         fallback = "useBaselineAlphaFallbackUnusable" },
 }
 
