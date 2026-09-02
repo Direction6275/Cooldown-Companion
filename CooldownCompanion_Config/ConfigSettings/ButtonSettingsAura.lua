@@ -326,9 +326,11 @@ local AURA_ID_OVERRIDE_TOOLTIP = {
     {"Use when detection picks the wrong aura for this entry. Leave empty for automatic.", 1, 1, 1, true},
 }
 
-local GROUP_SCOPE_TOOLTIP = {
-    "Track on Group Members",
-    {"Follows the buff onto anyone in your party or raid, like a healer's Lifebloom on a tank.", 1, 1, 1, true},
+-- The Tracked on row's "?" is assembled per entry: the unit sentence always,
+-- then these blocks for whichever of the two wider scopes the entry offers.
+local GROUP_SCOPE_TOOLTIP_LINES = {
+    {" ", 1, 1, 1, true},
+    {"You and your group follows the buff onto anyone in your party or raid, like a healer's Lifebloom on a tank.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"Group members only. The game gives the addon no way to track buffs on friendly players outside your group.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
@@ -339,9 +341,9 @@ local GROUP_SCOPE_TOOLTIP = {
     {"Group size is read out of combat, so someone joining mid-fight is picked up at the next quiet moment.", 1, 1, 1, true},
 }
 
-local PET_SCOPE_TOOLTIP = {
-    "Track on Your Pet",
-    {"Tracks the buff on your summoned pet instead of on you, like Dark Transformation on a ghoul.", 1, 1, 1, true},
+local PET_SCOPE_TOOLTIP_LINES = {
+    {" ", 1, 1, 1, true},
+    {"Your pet tracks the buff on your summoned pet instead of on you, like Dark Transformation on a ghoul.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"Covers buffs you cast on the pet and buffs the pet gains on its own.", 1, 1, 1, true},
 }
@@ -403,29 +405,9 @@ local function GetAuraTrackingCatalogState(context)
     context._ccAuraTrackingCatalogState = state
     if not active then return state end
 
-    local unitOverride = GetAuraUnitOverride(buttonData)
-    local primaryAuraSpellID = ResolveConfiguredAuraSpellID(buttonData)
-    local classifiedUnit = ClassifyAuraSpellUnit(primaryAuraSpellID)
-    local unit = unitOverride or classifiedUnit or buttonData.auraUnit or "player"
-    local isBuff = unit ~= "target"
-    local polarityKnown = unitOverride ~= nil or classifiedUnit ~= nil
-    state.primaryAuraSpellID = primaryAuraSpellID
-    state.canTrackGroup = not isTexturePanel and not isAuraPanel and isBuff and polarityKnown
-        and EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
-
-    -- The visible pane has already called CharacterCanCommandPets while
-    -- building this same section, which learns the sticky character flag.
-    -- Finder applicability stays read-only and consults that cached proof
-    -- rather than repeating the API probe (and its SavedVariables write) on
-    -- every keystroke.
-    local db = CooldownCompanion.db
-    local charKey = db and db.keys and db.keys.char
-    local petCapable = charKey and db.global and db.global.petCapableChars
-        and db.global.petCapableChars[charKey] == true
-    state.canTrackPet = not isTexturePanel and not isAuraPanel and isBuff and polarityKnown
-        and petCapable
-        and CooldownCompanion:EntryCanUsePetAuraScope(buttonData, primaryAuraSpellID)
-
+    -- The group and pet scopes are choices inside the Tracked on row now, so
+    -- the finder has no per-scope descriptor left to gate; their eligibility
+    -- is resolved by the visible pane alone.
     if not isTexturePanel then
         state.maxStacks = CooldownCompanion:GetAuraStackBarMax(buttonData, true)
     end
@@ -481,20 +463,8 @@ local auraSettings = ST._DefineSettingRoute({
     },
     unit = {
         label = "Tracked on",
-        aliases = { "aura unit", "you target" },
+        aliases = { "aura unit", "you target", "party raid", "group aura", "track on group members", "pet aura", "track on your pet" },
         applies = AuraStateApplies(function(state) return state.active end),
-    },
-    group = {
-        label = "Track on group members",
-        aliases = { "party raid", "group aura" },
-        applies = AuraStateApplies(function(state) return state.active and state.canTrackGroup end),
-    },
-    pet = {
-        label = "Track on your pet",
-        aliases = { "pet aura" },
-        applies = AuraStateApplies(function(state)
-            return state.active and (state.canTrackPet or state.buttonData.auraTrackPet == true)
-        end),
     },
     idOverride = {
         label = "Aura ID Override",
@@ -672,31 +642,87 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- resolves to the target unconditionally and the setting does nothing.
     -- A user override IS confirmation: it decides the bind unit outright.
     local polarityKnown = unitOverride ~= nil or classifiedUnit ~= nil
+    -- Castable buffs only. Blizzard permits spell-ID matching for helpful auras
+    -- across the group, but group scope applies its own-cast filter on every
+    -- unit, including you. A foreign buff would never match anywhere; debuffs
+    -- resolve to your target and ignore the flag, so offering either would lie.
     local canTrackGroup = not isTexturePanel and not isAuraPanel and isBuff and polarityKnown
         and EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
+    -- A stored flag offers the choice regardless of the gate (same escape the
+    -- pet side and the custom bar twin have): the runtime binds group tokens
+    -- off the flag alone, so the row has to state it and give it a way out.
+    local offerGroup = canTrackGroup or buttonData.auraTrackGroup == true
+    -- Pet eligibility is deliberately NOT canTrackGroup: standalone Aura
+    -- entries can follow pet self-buffs without a separate castable spell, and
+    -- a harmful base spell applying a helpful pet aura is also valid (Barbed
+    -- Shot -> Frenzy). Spell entries keep the CORE castable-identity check.
+    -- The extra gate is character capability (learned sticky, see
+    -- CharacterCanCommandPets):
+    -- per-spell "lands on the pet" knowledge does not exist in any API, so
+    -- character level is the finest honest cut. A stored flag offers the
+    -- choice regardless of every gate, so retained or imported pet state
+    -- always has a clearing path.
+    local canTrackPet = not isTexturePanel and not isAuraPanel and isBuff and polarityKnown
+        and CharacterCanCommandPets()
+        and CooldownCompanion:EntryCanUsePetAuraScope(buttonData, primaryAuraSpellID)
+    local offerPet = canTrackPet or buttonData.auraTrackPet == true
     local automaticLabel = "Automatic"
     if classifiedUnit == "target" then
         automaticLabel = "Automatic (Target)"
     elseif classifiedUnit == "player" then
         automaticLabel = "Automatic (You)"
     end
-    AddDropdownRow(auraLeft, {
+    -- One dropdown for the whole scope (custom bar parity: the Tracked on
+    -- row in ResourceBarPanelsCustomBars). Group and pet are exclusive with
+    -- each other, so they are two more choices beside the unit rather than
+    -- two checkboxes that cleared each other. The stored keys are unchanged.
+    local scopeList = {
+        automatic = automaticLabel,
+        player = "You",
+        target = "Target",
+    }
+    local scopeOrder = { "automatic", "player", "target" }
+    if offerGroup then
+        scopeList.group = "You and your group"
+        scopeOrder[#scopeOrder + 1] = "group"
+    end
+    if offerPet then
+        scopeList.pet = "Your pet"
+        scopeOrder[#scopeOrder + 1] = "pet"
+    end
+    local scopeValue = buttonData.auraTrackPet == true and "pet"
+        or buttonData.auraTrackGroup == true and "group"
+        or unitOverride
+        or "automatic"
+    local scopeRow = AddDropdownRow(auraLeft, {
         setting = auraSettings.unit,
         indent = not isStandalone,
-        list = {
-            automatic = automaticLabel,
-            player = "You",
-            target = "Target",
-        },
-        order = { "automatic", "player", "target" },
-        value = unitOverride or "automatic",
+        list = scopeList,
+        order = scopeOrder,
+        value = scopeValue,
         onChange = function(value)
+            if value == "group" or value == "pet" then
+                -- Scope choices leave the unit override untouched: both are
+                -- only offered on confirmed buffs, and an override to
+                -- "player" is what confirmed some of them.
+                buttonData.auraTrackGroup = value == "group" and true or nil
+                buttonData.auraTrackPet = value == "pet" and true or nil
+                RefreshAuraConfig()
+                return
+            end
+            -- A refused pick is a full no-op: the scope flags are snapshotted
+            -- with the override so the reject path restores all three.
+            local previousGroup, previousPet = buttonData.auraTrackGroup, buttonData.auraTrackPet
             local previousOverride = buttonData.auraUnitOverride
+            buttonData.auraTrackGroup = nil
+            buttonData.auraTrackPet = nil
             buttonData.auraUnitOverride = (value == "player" or value == "target")
                 and value or nil
             local reject = GetOverrideSurfaceRejectMessage(group, buttonData)
             if reject then
                 buttonData.auraUnitOverride = previousOverride
+                buttonData.auraTrackGroup = previousGroup
+                buttonData.auraTrackPet = previousPet
                 CooldownCompanion:Print(reject)
                 RefreshAuraConfig()
                 return
@@ -705,52 +731,21 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
             RefreshAuraConfig()
         end,
     })
-
-    -- Castable buffs only. Blizzard permits spell-ID matching for helpful auras
-    -- across the group, but group scope applies its own-cast filter on every
-    -- unit, including you. A foreign buff would never match anywhere; debuffs
-    -- resolve to your target and ignore the flag, so offering either would lie.
-    if canTrackGroup then
-        AddCheckboxRow(auraLeft, {
-            setting = auraSettings.group,
-            indent = not isStandalone,
-            value = buttonData.auraTrackGroup == true,
-            tooltip = GROUP_SCOPE_TOOLTIP,
-            onChange = function(value)
-                buttonData.auraTrackGroup = value and true or nil
-                -- Scopes are exclusive: pet tracking watches ONLY the pet.
-                if value then buttonData.auraTrackPet = nil end
-                RefreshAuraConfig()
-            end,
-        })
+    local scopeInfo = {
+        "Tracked On",
+        {"Automatic follows the detected buff or debuff. You and Target force it when the game's data gets one wrong.", 1, 1, 1, true},
+    }
+    if offerGroup then
+        for _, line in ipairs(GROUP_SCOPE_TOOLTIP_LINES) do
+            scopeInfo[#scopeInfo + 1] = line
+        end
     end
-
-    -- Pet eligibility is deliberately NOT canTrackGroup: standalone Aura
-    -- entries can follow pet self-buffs without a separate castable spell, and
-    -- a harmful base spell applying a helpful pet aura is also valid (Barbed
-    -- Shot -> Frenzy). Spell entries keep the CORE castable-identity check.
-    -- The extra gate is character capability (learned sticky, see
-    -- CharacterCanCommandPets):
-    -- per-spell "lands on the pet" knowledge does not exist in any API, so
-    -- character level is the finest honest cut. A stored flag shows the row
-    -- regardless of every gate, so retained or imported pet state always
-    -- has a clearing path.
-    local canTrackPet = not isTexturePanel and not isAuraPanel and isBuff and polarityKnown
-        and CharacterCanCommandPets()
-        and CooldownCompanion:EntryCanUsePetAuraScope(buttonData, primaryAuraSpellID)
-    if canTrackPet or buttonData.auraTrackPet == true then
-        AddCheckboxRow(auraLeft, {
-            setting = auraSettings.pet,
-            indent = not isStandalone,
-            value = buttonData.auraTrackPet == true,
-            tooltip = PET_SCOPE_TOOLTIP,
-            onChange = function(value)
-                buttonData.auraTrackPet = value and true or nil
-                if value then buttonData.auraTrackGroup = nil end
-                RefreshAuraConfig()
-            end,
-        })
+    if offerPet then
+        for _, line in ipairs(PET_SCOPE_TOOLTIP_LINES) do
+            scopeInfo[#scopeInfo + 1] = line
+        end
     end
+    AnchorRowBadge(scopeRow, CreateInfoButton(scopeRow.frame, scopeRow.frame, "LEFT", "LEFT", 0, 0, scopeInfo, infoButtons))
 
     -- The head-replacement escape hatch, one shape on every entry kind
     -- (owner ruling 2026-08-28): automatic detection resolves the entry's

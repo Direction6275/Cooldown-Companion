@@ -6,6 +6,28 @@ local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
 local IsNoCooldownSpellID = ST.IsNoCooldownSpell
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
+-- The Cooldown Visibility dropdown's user-facing strings, owned here because
+-- three surfaces state them: the panel entry row (ButtonConditions), its
+-- custom bar twin (ResourceBarPanelsCustomBars), and the preview's "hidden in
+-- simulated state" reason text (ButtonPanelPreview), which promises to name
+-- the row the way the entry's own tab does. One table keeps a rename on all
+-- three at once. Bars offer no dim variants; they read the same labels.
+ST._COOLDOWN_VISIBILITY = {
+    labels = {
+        show = "Always Show",
+        dim_cooldown = "Dim On Cooldown",
+        hide_cooldown = "Hide On Cooldown",
+        dim_ready = "Dim While Ready",
+        hide_ready = "Hide While Ready",
+        zero_only = "Show Only At 0 Charges",
+    },
+    tooltipLines = {
+        {"Ready means the spell is off cooldown. For a charge spell that is every charge available, and On Cooldown is any charge recharging.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Show Only At 0 Charges keeps a charge spell hidden until its last charge is spent.", 1, 1, 1, true},
+    },
+}
+
 -- Continuous controls in the Buttons workspace render against the pinned
 -- mirror while they are being manipulated.  The mirror helper is published
 -- later in the config load order, so resolve it at call time.
@@ -3443,7 +3465,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
         "Compact Mode",
         {"Compacts visible buttons or bars when hide conditions remove entries, helping centered layouts stay centered.", 1, 1, 1, true},
         {" ", 1, 1, 1},
-        {"Auras set to |cffffd100Show Only While Aura Active|r always keep their space reserved. The game hides whether auras are active from addons, so the panel cannot tighten around a hidden aura.", 1, 1, 1, true},
+        {"Auras set to hide |cffffd100While Aura Inactive|r always keep their space reserved. The game hides whether auras are active from addons, so the panel cannot tighten around a hidden aura.", 1, 1, 1, true},
         {" ", 1, 1, 1},
     }
     if compactSuppressed then
