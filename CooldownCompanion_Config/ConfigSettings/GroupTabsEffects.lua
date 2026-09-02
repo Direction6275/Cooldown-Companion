@@ -67,6 +67,58 @@ local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 -- rule fading right.
 local ROW_SECTION = { leftAligned = true }
 
+-- The gear sites' "Turn On" enable specs, riding the LAZY unlock specs the
+-- gears store in options.unlock / opts.advancedUnlock (resolved only at
+-- panel-build time by ST._ResolveAdvancedUnlock, Helpers.lua). File-local
+-- constants so a tab rebuild allocates none of them.
+local TURNON_PROC_GLOW = {
+    label = "Turn On Show Proc Glow",
+    apply = function(write) write.procGlowStyle = "glow" end,
+}
+
+-- One enable path for the checkbox AND the read-only panel's Turn On
+-- footer: re-enabling forces the pulse style and resets its per-style
+-- keys so a leftover proc-scale size can't render as a 30px border, and
+-- the two entrances of one feature must never drift.
+local function EnableAuraGlow(write)
+    write.auraGlowStyle = "pulse"
+    write.auraGlowSize = 2
+    write.auraGlowSpeed = 0.5
+end
+
+local TURNON_AURA_GLOW = { label = "Turn On Show Aura Glow", apply = EnableAuraGlow }
+local TURNON_PANDEMIC_EFFECT = {
+    label = "Turn On Show Pandemic Effect",
+    apply = function(write) write.pandemicEffectEnabled = true end,
+}
+-- The marker's enable is a mode, not a boolean.
+local TURNON_PANDEMIC_MARKER = {
+    label = "Turn On Pandemic Marker",
+    apply = function(write) write.pandemicMarkerMode = "auto" end,
+}
+local TURNON_READY_GLOW = {
+    label = "Turn On Show Ready Glow",
+    apply = function(write) write.readyGlowStyle = "solid" end,
+}
+local TURNON_KEY_PRESS_HIGHLIGHT = {
+    label = "Turn On Show Key Press Highlight",
+    apply = function(write) write.keyPressHighlightStyle = "solid" end,
+}
+local TURNON_ASSISTED_HIGHLIGHT = { label = "Turn On Show Assisted Highlight", key = "showAssistedHighlight" }
+local TURNON_ICON_FILL_TIMER = {
+    label = "Turn On Icon Fill Timer",
+    key = "iconFillEnabled",
+    -- The checkbox path (ApplyIconFillEnabled, SectionBuilders.lua) rewalks
+    -- cooldowns after the style apply: style application resets the fill,
+    -- and only the cooldown pass shows it again on already-running
+    -- cooldowns. The footer entrance must match.
+    after = function() CooldownCompanion:UpdateAllCooldowns() end,
+}
+local TURNON_COOLDOWN_SWIPE = { label = "Turn On Show Cooldown Swipe", key = "showCooldownSwipe" }
+local TURNON_AURA_DURATION_SWIPE = { label = "Turn On Show Aura Duration Swipe", key = "showAuraDurationSwipe" }
+local TURNON_SHOW_UNUSABLE = { label = "Turn On Show Unusable Visual", key = "showUnusable" }
+local TURNON_SHOW_TOOLTIPS = { label = "Turn On Show Tooltips", key = "showTooltips" }
+
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
 
@@ -201,31 +253,33 @@ local function BuildProcGlowSection(container, group, style, lens)
     -- the shared glow builder runs in row mode with NO rightColumn - its row
     -- path puts the extras in `container` when none is given.
     --
-    -- The panel captures the section's WRITE table, which is the group style or
-    -- the selected entry's override store depending on scope. Only built while
-    -- there is one: an inert section has no gear to open it from.
+    -- The panel captures the section's resolved table (sec.tbl): the write
+    -- table wherever one exists, else the effective read table for the
+    -- read-only inherited view the unlock strip fronts.
     local function BuildProcGlowAdvanced(panel)
         AddCheckboxRow(panel, {
             label = "Show Only In Combat",
             setting = EFFECTS_FINDER.advanced.proc and EFFECTS_FINDER.advanced.proc.combatOnly,
-            value = procSec.write.procGlowCombatOnly or false,
+            value = procSec.tbl.procGlowCombatOnly or false,
             onChange = function(val)
                 procSec.write.procGlowCombatOnly = val
                 UpdateSelectedGroupStyle()
             end,
         })
 
-        BuildProcGlowControls(panel, procSec.write, UpdateSelectedGroupStyle, {
+        BuildProcGlowControls(panel, procSec.tbl, UpdateSelectedGroupStyle, {
             row = true,
             settings = EFFECTS_FINDER.advanced.proc,
         })
 
     end
 
-    if procSec.write then
-        AddAdvancedToggle(procEnableCb, "procGlow", tabInfoButtons, procSec.read.procGlowStyle ~= "none", {
+    if procSec.scope ~= "denied" then
+        AddAdvancedToggle(procEnableCb, "procGlow", tabInfoButtons, true, {
             title = "Proc Glow Advanced",
             build = BuildProcGlowAdvanced,
+            unlock = { sec = procSec,
+                enable = procSec.read.procGlowStyle == "none" and TURNON_PROC_GLOW or nil },
         })
     end
     procSec:Chrome(procEnableCb)
@@ -257,6 +311,10 @@ local function BuildAuraGlowSection(container, group, style, lens)
     local auraSec = BeginLensSection(lens, group, "auraIndicator", { column = container })
 
     local auraGlowEnabled = (auraSec.read.auraGlowStyle or "pulse") ~= "none"
+
+    -- EnableAuraGlow (file-local, by the Turn On constants) is the one
+    -- enable path for this checkbox AND the read-only panel's Turn On
+    -- footer.
     local auraEnableCb = AddCheckboxRow(container, {
         label = "Show Aura Glow",
         setting = EFFECTS_FINDER.icons.aura.auraGlow,
@@ -264,31 +322,31 @@ local function BuildAuraGlowSection(container, group, style, lens)
         disabled = auraSec.disabled,
         onChange = function(val)
             if not auraSec.write then return end
-            auraSec.write.auraGlowStyle = val and "pulse" or "none"
             if val then
-                -- Re-enabling forces the pulse style; reset its per-style keys
-                -- so a leftover proc-scale size can't render as a 30px border.
-                auraSec.write.auraGlowSize = 2
-                auraSec.write.auraGlowSpeed = 0.5
+                EnableAuraGlow(auraSec.write)
+            else
+                auraSec.write.auraGlowStyle = "none"
             end
             UpdateSelectedGroupStyle(true)
         end,
     })
 
     -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn. The
-    -- panel captures the section's WRITE table and is only built while there is
-    -- one - an inert section has no gear to open it from.
+    -- panel captures the section's resolved table (sec.tbl), read-only behind
+    -- the unlock strip while the section is inherited or the glow is off.
     local function BuildAuraGlowAdvanced(panel)
-        BuildAuraGlowControls(panel, auraSec.write, UpdateSelectedGroupStyle, {
+        BuildAuraGlowControls(panel, auraSec.tbl, UpdateSelectedGroupStyle, {
             row = true,
             settings = EFFECTS_FINDER.advanced.auraGlow,
         })
     end
 
-    if auraSec.write then
-        AddAdvancedToggle(auraEnableCb, "auraGlow", tabInfoButtons, auraGlowEnabled, {
+    if auraSec.scope ~= "denied" then
+        AddAdvancedToggle(auraEnableCb, "auraGlow", tabInfoButtons, true, {
             title = "Aura Glow Advanced",
             build = BuildAuraGlowAdvanced,
+            unlock = { sec = auraSec,
+                enable = not auraGlowEnabled and TURNON_AURA_GLOW or nil },
         })
     end
     -- Second badge in the chain: gear, then this, then the scope chrome the lens
@@ -358,17 +416,19 @@ local function BuildPandemicGlowSection(container, group, style, lens)
         -- panel's. The section's enable toggle lives on the row above, never in
         -- the shared builder.
         local function BuildPandemicAdvanced(panel)
-            BuildPandemicGlowControls(panel, pandemicSec.write, UpdateSelectedGroupStyle, {
+            BuildPandemicGlowControls(panel, pandemicSec.tbl, UpdateSelectedGroupStyle, {
                 row = true,
                 fallbackStyle = pandemicSec.fallbackStyle,
                 settings = EFFECTS_FINDER.advanced.pandemicGlow,
             })
         end
 
-        if pandemicSec.write then
-            AddAdvancedToggle(pandemicCb, "pandemicGlow", tabInfoButtons, pandemicEnabled, {
+        if pandemicSec.scope ~= "denied" then
+            AddAdvancedToggle(pandemicCb, "pandemicGlow", tabInfoButtons, true, {
                 title = "Pandemic Effect Advanced",
                 build = BuildPandemicAdvanced,
+                unlock = { sec = pandemicSec,
+                    enable = not pandemicEnabled and TURNON_PANDEMIC_EFFECT or nil },
             })
         end
         AnchorRowBadge(pandemicCb, CreateInfoButton(pandemicCb.frame, pandemicCb.frame, "LEFT", "LEFT", 0, 0, {
@@ -426,21 +486,23 @@ local function BuildPandemicMarkerSection(container, group, style, lens)
 
     -- Single rail (AdvancedSettingsPanel.lua): the three styling rows fill the
     -- panel, so they carry no indent - childrenOnly drops it. The panel
-    -- captures the section's WRITE table, and is only built while there is one.
+    -- captures the section's resolved table (sec.tbl), read-only behind the
+    -- unlock strip while the section is inherited or the marker is off.
     local function BuildPandemicMarkerAdvanced(panel)
-        AddPandemicMarkerControls(panel, markerSec.write, applyStyle, RefreshActiveAdvancedSettingsPanel,
+        AddPandemicMarkerControls(panel, markerSec.tbl, applyStyle, RefreshActiveAdvancedSettingsPanel,
             {
                 childrenOnly = true,
                 settings = EFFECTS_FINDER.advanced.pandemicMarker,
             })
     end
 
-    if markerSec.write then
-        AddAdvancedToggle(markerRow, "pandemicMarker", tabInfoButtons,
-            markerSec.read.pandemicMarkerMode ~= "off", {
-                title = "Pandemic Marker Advanced",
-                build = BuildPandemicMarkerAdvanced,
-            })
+    if markerSec.scope ~= "denied" then
+        AddAdvancedToggle(markerRow, "pandemicMarker", tabInfoButtons, true, {
+            title = "Pandemic Marker Advanced",
+            build = BuildPandemicMarkerAdvanced,
+            unlock = { sec = markerSec,
+                enable = markerSec.read.pandemicMarkerMode == "off" and TURNON_PANDEMIC_MARKER or nil },
+        })
     end
 
     -- The shared helper takes no `disabled`, so the inert bracket is what makes
@@ -480,7 +542,7 @@ local function BuildReadyGlowSection(container, group, style, lens)
         AddCheckboxRow(panel, {
             label = "Show Only In Combat",
             setting = EFFECTS_FINDER.advanced.ready and EFFECTS_FINDER.advanced.ready.combatOnly,
-            value = readySec.write.readyGlowCombatOnly or false,
+            value = readySec.tbl.readyGlowCombatOnly or false,
             onChange = function(val)
                 readySec.write.readyGlowCombatOnly = val
                 UpdateSelectedGroupStyle()
@@ -493,7 +555,7 @@ local function BuildReadyGlowSection(container, group, style, lens)
         local readyChargesRow = AddCheckboxRow(panel, {
             label = "Glow When Charges Are Capped",
             setting = EFFECTS_FINDER.advanced.ready and EFFECTS_FINDER.advanced.ready.cappedCharges,
-            value = readySec.write.readyGlowOnlyAtMaxCharges or false,
+            value = readySec.tbl.readyGlowOnlyAtMaxCharges or false,
             tooltip = { "Glow When Charges Are Capped" },
             onChange = function(val)
                 readySec.write.readyGlowOnlyAtMaxCharges = val == true
@@ -518,7 +580,7 @@ local function BuildReadyGlowSection(container, group, style, lens)
         AddCheckboxRow(panel, {
             label = "Auto-Hide After Duration",
             setting = EFFECTS_FINDER.advanced.ready and EFFECTS_FINDER.advanced.ready.autoHide,
-            value = (readySec.write.readyGlowDuration or 0) > 0,
+            value = (readySec.tbl.readyGlowDuration or 0) > 0,
             onChange = function(val)
                 readySec.write.readyGlowDuration = val and 3 or 0
                 UpdateSelectedGroupStyle()
@@ -536,30 +598,33 @@ local function BuildReadyGlowSection(container, group, style, lens)
             end,
         })
 
-        if (readySec.write.readyGlowDuration or 0) > 0 then
+        if (readySec.tbl.readyGlowDuration or 0) > 0 then
             local durationRow = AddSliderRow(panel, {
                 label = "Duration (seconds)",
                 setting = EFFECTS_FINDER.advanced.ready and EFFECTS_FINDER.advanced.ready.duration,
                 indent = true,
                 min = 0.5, max = 5, step = 0.5,
-                value = readySec.write.readyGlowDuration or 3,
+                value = readySec.tbl.readyGlowDuration or 3,
             })
             WireMirrorFirstSlider(durationRow, function(val)
                 readySec.write.readyGlowDuration = val
-            end, UpdateSelectedGroupStyle, nil, readySec.write, "readyGlowDuration")
+            end, UpdateSelectedGroupStyle, nil, readySec.tbl, "readyGlowDuration")
         end
 
-        BuildReadyGlowControls(panel, readySec.write, UpdateSelectedGroupStyle, {
+        BuildReadyGlowControls(panel, readySec.tbl, UpdateSelectedGroupStyle, {
             row = true,
             settings = EFFECTS_FINDER.advanced.ready,
         })
 
     end
 
-    if readySec.write then
-        AddAdvancedToggle(readyEnableCb, "readyGlow", tabInfoButtons, readySec.read.readyGlowStyle and readySec.read.readyGlowStyle ~= "none", {
+    if readySec.scope ~= "denied" then
+        AddAdvancedToggle(readyEnableCb, "readyGlow", tabInfoButtons, true, {
             title = "Ready Glow Advanced",
             build = BuildReadyGlowAdvanced,
+            unlock = { sec = readySec,
+                enable = not (readySec.read.readyGlowStyle and readySec.read.readyGlowStyle ~= "none")
+                    and TURNON_READY_GLOW or nil },
         })
     end
     -- Second badge in the chain: gear, then this, then the scope chrome the lens
@@ -593,30 +658,33 @@ local function BuildKeyPressHighlightSection(container, group, style, lens)
     })
 
     -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn. The
-    -- panel captures the section's WRITE table and is only built while there is
-    -- one - an inert section has no gear to open it from.
+    -- panel captures the section's resolved table (sec.tbl), read-only behind
+    -- the unlock strip while the section is inherited or the highlight is off.
     local function BuildKeyPressHighlightAdvanced(panel)
         AddCheckboxRow(panel, {
             label = "Show Only In Combat",
             setting = EFFECTS_FINDER.advanced.keyPress and EFFECTS_FINDER.advanced.keyPress.combatOnly,
-            value = kphSec.write.keyPressHighlightCombatOnly or false,
+            value = kphSec.tbl.keyPressHighlightCombatOnly or false,
             onChange = function(val)
                 kphSec.write.keyPressHighlightCombatOnly = val
                 UpdateSelectedGroupStyle()
             end,
         })
 
-        BuildKeyPressHighlightControls(panel, kphSec.write, UpdateSelectedGroupStyle, {
+        BuildKeyPressHighlightControls(panel, kphSec.tbl, UpdateSelectedGroupStyle, {
             row = true,
             settings = EFFECTS_FINDER.advanced.keyPress,
         })
 
     end
 
-    if kphSec.write then
-        AddAdvancedToggle(kphEnableCb, "keyPressHighlight", tabInfoButtons, kphSec.read.keyPressHighlightStyle and kphSec.read.keyPressHighlightStyle ~= "none", {
+    if kphSec.scope ~= "denied" then
+        AddAdvancedToggle(kphEnableCb, "keyPressHighlight", tabInfoButtons, true, {
             title = "Key Press Highlight Advanced",
             build = BuildKeyPressHighlightAdvanced,
+            unlock = { sec = kphSec,
+                enable = not (kphSec.read.keyPressHighlightStyle and kphSec.read.keyPressHighlightStyle ~= "none")
+                    and TURNON_KEY_PRESS_HIGHLIGHT or nil },
         })
     end
     -- Second badge in the chain: gear, then this, then the scope chrome the lens
@@ -714,16 +782,13 @@ ST._INDICATORS_SECTION_BY_ADVANCED_KEY = {
 -- text maps (ST._APPEARANCE_SECTION_BY_ADVANCED_KEY and friends) - never feed
 -- one map's values to the other's consumer.
 --
--- The style lens reads it at the foot of BOTH icons builders: a section the
--- selected entry only INHERITS builds no gear at all, so nothing rebinds or
--- closes an advanced panel that was already open on it, and that panel's
--- controls still point at the table the previous build handed them. Only one
--- panel tab is ever built at a time, so each icons builder sweeps this map AND
--- ST._APPEARANCE_SECTION_BY_ADVANCED_KEY (GroupTabsAppearance.lua).
+-- Read by the Customizations list (Helpers.lua) to resolve a section's gear.
+-- Stale-panel cleanup no longer iterates it: the gear-stamp sweep in
+-- AdvancedSettingsPanel.lua closes unrebuilt gear panels by key, mapless.
 --
 -- It lists every icons-mode gear on the tab. Bars-only gears (barActiveAura,
--- barPandemicMarker) are NOT here - BarModeTabs owns and sweeps its own map -
--- and neither are the textures gears, which have no override sections at all.
+-- barPandemicMarker) are NOT here - BarModeTabs owns its own map - and
+-- neither are the textures gears, which have no override sections at all.
 --
 -- A gear added to any section on this tab belongs here the same day.
 ST._INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY = {
@@ -747,6 +812,9 @@ ST._INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY = {
     tooltipBehavior = "showTooltips",
 }
 
+-- Early returns in here (missing group, and every non-icons display mode)
+-- land on the dispatch-level gear build pass's sweep
+-- (RunAdvancedGearBuildPass, AdvancedSettingsPanel.lua).
 local function BuildEffectsTab(container)
     ClearEffectsTabWidgets()
 
@@ -814,8 +882,14 @@ local function BuildEffectsTab(container)
             CooldownCompanion:RefreshConfigPanel()
         end, {
             row = true,
+            advanced = true,
             setting = EFFECTS_FINDER.assistant.spell.unusable,
             settings = EFFECTS_FINDER.assistant.unusableAdvanced,
+            -- Non-lens lazy spec: the assistant path has no lens sections,
+            -- so the footer writes the panel style directly through the
+            -- shared groupStyle refresh sequence.
+            advancedUnlock = { target = style, refreshKind = "groupStyle",
+                enable = style.showUnusable ~= true and TURNON_SHOW_UNUSABLE or nil },
         })
         BuildShowOutOfRangeControls(raStateLeft, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -841,6 +915,9 @@ local function BuildEffectsTab(container)
         end, {
             row = true,
             advanced = true,
+            -- Non-lens lazy spec, same shape as Show Unusable above.
+            advancedUnlock = { target = style, refreshKind = "groupStyle",
+                enable = style.showTooltips ~= true and TURNON_SHOW_TOOLTIPS or nil },
             setting = EFFECTS_FINDER.assistant.interaction.tooltips,
             settings = EFFECTS_FINDER.assistant.tooltipAdvanced,
         })
@@ -980,28 +1057,30 @@ local function BuildEffectsTab(container)
 
     -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn - the
     -- builder's row path falls back to `container` for its right-hand rows. The
-    -- panel captures the section's WRITE table and is only built while there is
-    -- one - an inert section has no gear to open it from.
+    -- panel captures the section's resolved table (sec.tbl), read-only behind
+    -- the unlock strip while the section is inherited or the highlight is off.
     local function BuildAssistedHighlightAdvanced(panel)
         AddCheckboxRow(panel, {
             label = "Show Only In Combat",
             setting = EFFECTS_FINDER.advanced.assisted and EFFECTS_FINDER.advanced.assisted.combatOnly,
-            value = assistedSec.write.assistedHighlightCombatOnly or false,
+            value = assistedSec.tbl.assistedHighlightCombatOnly or false,
             onChange = function(val)
                 assistedSec.write.assistedHighlightCombatOnly = val
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             end,
         })
 
-        BuildAssistedHighlightControls(panel, assistedSec.write, function()
+        BuildAssistedHighlightControls(panel, assistedSec.tbl, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end, { row = true, settings = EFFECTS_FINDER.advanced.assisted })
     end
 
-    if assistedSec.write then
-        AddAdvancedToggle(assistedCb, "assistedHighlight", tabInfoButtons, assistedSec.read.showAssistedHighlight or false, {
+    if assistedSec.scope ~= "denied" then
+        AddAdvancedToggle(assistedCb, "assistedHighlight", tabInfoButtons, true, {
             title = "Assisted Highlight Advanced",
             build = BuildAssistedHighlightAdvanced,
+            unlock = { sec = assistedSec,
+                enable = not assistedSec.read.showAssistedHighlight and TURNON_ASSISTED_HIGHLIGHT or nil },
         })
     end
     assistedSec:Chrome(assistedCb)
@@ -1067,24 +1146,31 @@ local function BuildEffectsTab(container)
         end,
     })
     -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn. The
-    -- panel captures the section's WRITE table and is only built while there is
-    -- one - an inert section has no gear to open it from.
+    -- panel captures the section's resolved table (sec.tbl), read-only behind
+    -- the unlock strip while the section is inherited or the timer is off.
     local function BuildIconFillAdvanced(panel)
         if BuildIconFillTimerAdvancedControls then
-            BuildIconFillTimerAdvancedControls(panel, fillSec.write, function()
+            BuildIconFillTimerAdvancedControls(panel, fillSec.tbl, function()
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             end, {
                 row = true,
                 indent = false,
+                -- The builder's own enabled gate is an inline-children rule;
+                -- this panel shows the rows greyed while the timer is off.
+                buildWhileOff = true,
                 settings = EFFECTS_FINDER.advanced.iconFill,
             })
         end
     end
 
-    if fillSec.write then
-        AddAdvancedToggle(iconFillCb, "iconFillTimer", tabInfoButtons, iconFillTimerActive, {
+    -- Masque stays a structural gate on the gear: the whole feature is dead
+    -- under it and its own row already says so.
+    if fillSec.scope ~= "denied" then
+        AddAdvancedToggle(iconFillCb, "iconFillTimer", tabInfoButtons, group.masqueEnabled ~= true, {
             title = "Icon Fill Timer Advanced",
             build = BuildIconFillAdvanced,
+            unlock = { sec = fillSec,
+                enable = fillSec.read.iconFillEnabled ~= true and TURNON_ICON_FILL_TIMER or nil },
         })
     end
     -- Second badge in the chain: gear, then this, then the scope chrome the
@@ -1119,18 +1205,24 @@ local function BuildEffectsTab(container)
         end,
     })
 
-    if swipeSec.write then
+    if swipeSec.scope ~= "denied" then
         -- Panel scope hands the descriptor NO table, so it keeps resolving the
-        -- live group style itself (see the factory's note). An entry's override
-        -- store has no such resolver, so that one is handed over explicitly.
+        -- live group style itself (see the factory's note). A customized entry
+        -- hands its override store; an inherited one hands the effective read
+        -- table, whose panel opens read-only behind the unlock strip.
         local swipeAdvanced = MakeCooldownSwipeAdvancedDescriptor(
-            swipeSec.scope == "customized" and swipeSec.write or nil,
+            swipeSec.scope == "customized" and swipeSec.write
+                or swipeSec.write == nil and swipeSec.read or nil,
             EFFECTS_FINDER.advanced.cooldownSwipe)
 
+        -- The fill-timer interlock stays a structural gate on the gear: the
+        -- swipe row itself is disabled under it and states why.
         AddAdvancedToggle(swipeCb, swipeAdvanced.settingKey, tabInfoButtons,
-            swipeSec.read.showCooldownSwipe ~= false and not iconFillTimerActive, {
+            not iconFillTimerActive, {
                 title = swipeAdvanced.title,
                 build = swipeAdvanced.build,
+                unlock = { sec = swipeSec,
+                    enable = swipeSec.read.showCooldownSwipe == false and TURNON_COOLDOWN_SWIPE or nil },
             })
     end
     swipeSec:Chrome(swipeCb)
@@ -1197,10 +1289,10 @@ local function BuildEffectsTab(container)
     desatSec:Chrome(desatCb)
     end -- CanGroupUseOverrideSection desaturation
 
-    -- Unusable Visual. This shared builder owns its OWN gear, so an inert scope
-    -- cannot skip building one the way the hand-written sections do: the inert
-    -- pass gates the gear it finds on the row (_cdcAdvancedBtn), and the sweep
-    -- at the foot of this builder closes a panel it rebound.
+    -- Unusable Visual. This shared builder owns its OWN gear; the caller
+    -- passes the denied gate as opts.advanced and the Customize/Turn On
+    -- footer as opts.advancedUnlock, so an inert scope's gear stays live and
+    -- opens the panel read-only like every hand-written section's.
     if CanGroupUseOverrideSection(group, "unusableDimming") then
     local unusableSec = BeginLensSection(lens, group, "unusableDimming", { column = stateLeft })
     local unusableCb = BuildUnusableDimmingControls(stateLeft, unusableSec.tbl, function()
@@ -1208,6 +1300,9 @@ local function BuildEffectsTab(container)
         CooldownCompanion:RefreshConfigPanel()
     end, {
         row = true,
+        advanced = unusableSec.scope ~= "denied",
+        advancedUnlock = { sec = unusableSec,
+            enable = unusableSec.read.showUnusable ~= true and TURNON_SHOW_UNUSABLE or nil },
         setting = EFFECTS_FINDER.icons.spell.unusable,
         settings = EFFECTS_FINDER.advanced.unusable,
         fallbackStyle = unusableSec.fallbackStyle,
@@ -1312,17 +1407,20 @@ local function BuildEffectsTab(container)
             fallbackStyle = auraSwipeSec.fallbackStyle,
         })
         -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn. The
-        -- panel captures the section's WRITE table and is only built while there
-        -- is one - an inert section has no gear to open it from.
+        -- panel captures the section's resolved table (sec.tbl), read-only
+        -- behind the unlock strip while the section is inherited or the swipe
+        -- is off.
         local function BuildAuraDurationSwipeAdvanced(panel)
-            BuildAuraDurationSwipeAdvancedControls(panel, auraSwipeSec.write, function()
+            BuildAuraDurationSwipeAdvancedControls(panel, auraSwipeSec.tbl, function()
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             end, { row = true, settings = EFFECTS_FINDER.advanced.auraSwipe })
         end
-        if auraSwipeSec.write then
-            AddAdvancedToggle(auraDurationCb, "auraDurationSwipe", tabInfoButtons, auraSwipeSec.read.showAuraDurationSwipe ~= false, {
+        if auraSwipeSec.scope ~= "denied" then
+            AddAdvancedToggle(auraDurationCb, "auraDurationSwipe", tabInfoButtons, true, {
                 title = "Aura Duration Swipe Advanced",
                 build = BuildAuraDurationSwipeAdvanced,
+                unlock = { sec = auraSwipeSec,
+                    enable = auraSwipeSec.read.showAuraDurationSwipe == false and TURNON_AURA_DURATION_SWIPE or nil },
             })
         end
         auraSwipeSec:Chrome(auraDurationCb)
@@ -1420,16 +1518,18 @@ local function BuildEffectsTab(container)
     -- hover row is on the left rather than beside an empty column.
     local interactionLeft, interactionRight = BeginRowGrid(container)
 
-    -- Show Tooltips (panel refresh: the advanced gear only shows while the
-    -- toggle is on). Its gear is the builder's own, so it is bracketed rather
-    -- than skipped - see the Unusable Visual note in States above.
+    -- Show Tooltips. Its gear is the builder's own and always builds while
+    -- the section is not denied, opening read-only behind the Turn On footer
+    -- when the toggle is off - see the Unusable Visual note in States above.
     local tooltipSec = BeginLensSection(lens, group, "showTooltips", { column = interactionLeft })
     local tooltipCb = BuildShowTooltipsControls(interactionLeft, tooltipSec.tbl, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end, {
         row = true,
-        advanced = true,
+        advanced = tooltipSec.scope ~= "denied",
+        advancedUnlock = { sec = tooltipSec,
+            enable = tooltipSec.read.showTooltips ~= true and TURNON_SHOW_TOOLTIPS or nil },
         setting = EFFECTS_FINDER.icons.interaction.tooltips,
         settings = EFFECTS_FINDER.advanced.tooltip,
         infoButtons = tabInfoButtons,
@@ -1460,36 +1560,6 @@ local function BuildEffectsTab(container)
     pingsSec:Finish()
     end
     end -- not interactionCollapsed
-
-    -- Inert-section sweep, over BOTH icons gear maps. A section the lens
-    -- resolved read-only builds no gear, so nothing rebound or closed an
-    -- advanced panel that was already open on that gear - and its controls
-    -- still write to the table the PREVIOUS build handed them. Close those here.
-    --
-    -- Scope-driven, not collapse-driven: a collapsed section builds no gear
-    -- either, and a panel left over from before an entry was selected is just
-    -- as live behind a closed section as behind an open one.
-    --
-    -- Both maps, not just this tab's: only one panel tab is ever built at a
-    -- time, so a stale panel whose gear lives on the icons Appearance tab is
-    -- just as live from here as one of this tab's own. The bars pair has swept
-    -- across its two tabs the same way since they were converted.
-    --
-    -- OVERRIDE maps, never the collapse map beside them: they are keyed the
-    -- same and answer different questions, and a collapse key handed to the lens
-    -- would resolve as a section no entry can own and close every gear on the
-    -- tab.
-    if CS.CloseAdvancedSettingsPanel then
-        local gearMaps = { ST._INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY, ST._APPEARANCE_SECTION_BY_ADVANCED_KEY }
-        for i = 1, #gearMaps do
-            for advancedKey, sectionId in pairs(gearMaps[i]) do
-                local _, _, sectionWrite = ResolveLensSection(lens, group, sectionId)
-                if sectionWrite == nil then
-                    CS.CloseAdvancedSettingsPanel({ settingKey = advancedKey })
-                end
-            end
-        end
-    end
 end
 
 ------------------------------------------------------------------------
@@ -1516,17 +1586,37 @@ local function EffectsFinderCanUse(context, sectionId)
         and CanGroupUseOverrideSection(context.group, sectionId)
 end
 
+-- One lens resolve per finder pass, not one per predicate: under an entry
+-- lens every resolve deep-copies the effective style, and a single search
+-- refresh evaluates dozens of these predicates. Same cache shape as
+-- BarModeTabs' BarFinderLens.
+local function EffectsFinderLens(context)
+    local group = context and context.group
+    if not group then return nil end
+    local cached = rawget(context, "_cdcEffectsFinderLens")
+    if cached and cached.group == group and cached.buttonData == context.buttonData then
+        return cached.lens
+    end
+    local lens = ST._ResolveStyleLens(group)
+    rawset(context, "_cdcEffectsFinderLens", {
+        group = group,
+        buttonData = context.buttonData,
+        lens = lens,
+    })
+    return lens
+end
+
 local function EffectsFinderSectionState(context, sectionId)
     local group = context and context.group
     if not group then return nil, nil, nil end
-    local lens = ST._ResolveStyleLens(group)
+    local lens = EffectsFinderLens(context)
     return ResolveLensSection(lens, group, sectionId)
 end
 
 local function EffectsFinderEffectiveStyle(context)
     local group = context and context.group
     if not group then return nil end
-    local lens = ST._ResolveStyleLens(group)
+    local lens = EffectsFinderLens(context)
     return (lens and lens.effective) or group.style
 end
 
@@ -1538,7 +1628,13 @@ local function EffectsFinderIconsRow(sectionId, needsAura)
     end
 end
 
-local function EffectsFinderIconsAdvanced(sectionId, enabled, needsAura)
+-- Advanced routes index on STRUCTURE alone: the gear now exists for every
+-- scope except "denied", and an uncustomized section or an off parent toggle
+-- opens its panel read-only behind the unlock strip with the searched row
+-- drawn inside. Structural extras a gear still hides for (the Masque and
+-- fill-timer interlocks, the marker's aura-text surface) stay at the call
+-- sites that name them.
+local function EffectsFinderIconsAdvanced(sectionId, needsAura)
     return function(context)
         if not EffectsFinderIcons(context)
             or (needsAura and not EffectsFinderTracksAura(context))
@@ -1546,21 +1642,17 @@ local function EffectsFinderIconsAdvanced(sectionId, enabled, needsAura)
         then
             return false
         end
-        local _, read, write = EffectsFinderSectionState(context, sectionId)
-        return write ~= nil and (not enabled or enabled(read or {}, context))
+        local scope = EffectsFinderSectionState(context, sectionId)
+        return scope ~= "denied"
     end
 end
 
+-- The rendered builders decide which rows exist from the normalized style,
+-- so the finder resolves through the SAME normalizer (SectionBuilders.lua)
+-- or it hides rows the panel shows. Call-time lookup: load order between the
+-- two files must not matter.
 local function EffectsFinderNormalizeGlowStyle(style, fallback)
-    style = style or fallback
-    if style == "lcgProc" or style == "lcgButton" then
-        return "glow"
-    elseif style == "lcgAutoCast" then
-        return "autocast"
-    elseif style == "pulsingBorder" then
-        return "pulse"
-    end
-    return style
+    return ST._NormalizeGlowStyleForDisplay(style, fallback)
 end
 
 local function EffectsFinderGlowStyleApplies(sectionId, styleKey, fallback, allowed)
@@ -1753,17 +1845,16 @@ if ST._DefineSettingRoute then
         pings = { label = "Allow Pings" },
     })
 
-    local function DefineGlowAdvanced(prefix, sectionId, advancedKey, enabled, needsAura, options)
+    local function DefineGlowAdvanced(prefix, sectionId, advancedKey, needsAura, options)
         local route = EffectsFinderRoute(prefix, needsAura and EFFECTS_AURA_SECTION or EFFECTS_SPELL_SECTION,
             needsAura and "Aura Indicators" or "Cooldown / Spell Indicators",
-            EffectsFinderIconsAdvanced(sectionId, enabled, needsAura), advancedKey, sectionId)
+            EffectsFinderIconsAdvanced(sectionId, needsAura), advancedKey, sectionId)
         options.sectionId = sectionId
         return EffectsFinderDefineGlowSettings(route, options), route
     end
 
     local proc, procRoute = DefineGlowAdvanced(
-        "panel.icons.effects.proc", "procGlow", "procGlow",
-        function(read) return read.procGlowStyle ~= "none" end, false, {
+        "panel.icons.effects.proc", "procGlow", "procGlow", false, {
             styleKey = "procGlowStyle", fallback = "glow", colorLabel = "Glow Color",
             supported = { solid = true, pixel = true, glow = true, autocast = true },
         })
@@ -1771,8 +1862,7 @@ if ST._DefineSettingRoute then
     EFFECTS_FINDER.advanced.proc = proc
 
     local ready, readyRoute = DefineGlowAdvanced(
-        "panel.icons.effects.ready", "readyGlow", "readyGlow",
-        function(read) return read.readyGlowStyle and read.readyGlowStyle ~= "none" end, false, {
+        "panel.icons.effects.ready", "readyGlow", "readyGlow", false, {
             styleKey = "readyGlowStyle", fallback = "solid", colorLabel = "Glow Color",
             supported = { solid = true, pixel = true, glow = true, autocast = true },
         })
@@ -1789,8 +1879,7 @@ if ST._DefineSettingRoute then
     EFFECTS_FINDER.advanced.ready = ready
 
     local keyPress, keyPressRoute = DefineGlowAdvanced(
-        "panel.icons.effects.keyPress", "keyPressHighlight", "keyPressHighlight",
-        function(read) return read.keyPressHighlightStyle and read.keyPressHighlightStyle ~= "none" end, false, {
+        "panel.icons.effects.keyPress", "keyPressHighlight", "keyPressHighlight", false, {
             styleKey = "keyPressHighlightStyle", fallback = "solid", colorLabel = "Highlight Color",
             supported = { solid = true, overlay = true },
         })
@@ -1798,8 +1887,7 @@ if ST._DefineSettingRoute then
     EFFECTS_FINDER.advanced.keyPress = keyPress
 
     local auraGlow = DefineGlowAdvanced(
-        "panel.icons.effects.auraGlow", "auraIndicator", "auraGlow",
-        function(read) return (read.auraGlowStyle or "pulse") ~= "none" end, true, {
+        "panel.icons.effects.auraGlow", "auraIndicator", "auraGlow", true, {
             styleKey = "auraGlowStyle", fallback = "pulse", colorLabel = "Glow Color", color2 = true,
             supported = {
                 solid = true, pulse = true, colorShift = true, dashes = true,
@@ -1809,8 +1897,7 @@ if ST._DefineSettingRoute then
     EFFECTS_FINDER.advanced.auraGlow = auraGlow
 
     local pandemicGlow = DefineGlowAdvanced(
-        "panel.icons.effects.pandemicGlow", "pandemic", "pandemicGlow",
-        function(read) return read.pandemicEffectEnabled == true end, true, {
+        "panel.icons.effects.pandemicGlow", "pandemic", "pandemicGlow", true, {
             styleKey = "pandemicGlowStyle", fallback = "solid", colorLabel = "Effect Color",
             color2 = true, noColorStyle = "cdm",
             supported = {
@@ -1823,9 +1910,8 @@ if ST._DefineSettingRoute then
     local assistedRoute = EffectsFinderRoute(
         "panel.icons.effects.assisted", EFFECTS_SPELL_SECTION,
         "Cooldown / Spell Indicators",
-        EffectsFinderIconsAdvanced("assistedHighlight", function(read)
-            return read.showAssistedHighlight == true
-        end), "assistedHighlight", "assistedHighlight")
+        EffectsFinderIconsAdvanced("assistedHighlight"),
+        "assistedHighlight", "assistedHighlight")
     EFFECTS_FINDER.advanced.assisted = assistedRoute:Settings({
         combatOnly = { label = "Show Only In Combat" },
         hostileOnly = { label = "Hostile Target Only" },
@@ -1867,12 +1953,16 @@ if ST._DefineSettingRoute then
         },
     })
 
+    -- Masque keeps the fill timer's gear hidden outright, so it stays a
+    -- structural term here rather than an unlockable state.
+    local iconFillStructural = EffectsFinderIconsAdvanced("iconFillTimer")
     local iconFillRoute = EffectsFinderRoute(
         "panel.icons.effects.iconFill", EFFECTS_SPELL_SECTION,
         "Cooldown / Spell Indicators",
-        EffectsFinderIconsAdvanced("iconFillTimer", function(read, context)
-            return read.iconFillEnabled == true and context.group.masqueEnabled ~= true
-        end), "iconFillTimer", "iconFillTimer")
+        function(context)
+            return iconFillStructural(context)
+                and context.group.masqueEnabled ~= true
+        end, "iconFillTimer", "iconFillTimer")
     EFFECTS_FINDER.advanced.iconFill = iconFillRoute:Settings({
         orientation = { label = "Orientation" },
         anchorEdge = { label = "Anchor Edge" },
@@ -1884,10 +1974,12 @@ if ST._DefineSettingRoute then
         if not EffectsFinderIcons(context) or not EffectsFinderCanUse(context, "cooldownSwipe") then
             return false
         end
-        local _, read, write = EffectsFinderSectionState(context, "cooldownSwipe")
+        local scope = EffectsFinderSectionState(context, "cooldownSwipe")
+        -- The fill-timer interlock stays: it hides the gear outright rather
+        -- than opening the panel read-only.
         local fillStyle = EffectsFinderEffectiveStyle(context) or {}
         local fillActive = fillStyle.iconFillEnabled == true and context.group.masqueEnabled ~= true
-        return write ~= nil and read and read.showCooldownSwipe ~= false and not fillActive
+        return scope ~= "denied" and not fillActive
     end
     local cooldownSwipeRoute = EffectsFinderRoute(
         "panel.icons.effects.cooldownSwipe", EFFECTS_SPELL_SECTION,
@@ -1916,9 +2008,8 @@ if ST._DefineSettingRoute then
     local auraSwipeRoute = EffectsFinderRoute(
         "panel.icons.effects.auraSwipe", EFFECTS_AURA_SECTION,
         "Aura Indicators",
-        EffectsFinderIconsAdvanced("auraDurationSwipe", function(read)
-            return read.showAuraDurationSwipe ~= false
-        end, true), "auraDurationSwipe", "auraDurationSwipe")
+        EffectsFinderIconsAdvanced("auraDurationSwipe", true),
+        "auraDurationSwipe", "auraDurationSwipe")
     EFFECTS_FINDER.advanced.auraSwipe = auraSwipeRoute:Settings({
         blizzard = { label = "Blizzard Style Aura Swipe" },
         reverse = { label = "Reverse Swipe" },
@@ -1943,9 +2034,8 @@ if ST._DefineSettingRoute then
     local unusableRoute = EffectsFinderRoute(
         "panel.icons.effects.unusable", EFFECTS_SPELL_SECTION,
         "Cooldown / Spell Indicators",
-        EffectsFinderIconsAdvanced("unusableDimming", function(read)
-            return read.showUnusable == true
-        end), "unusableVisual", "unusableDimming")
+        EffectsFinderIconsAdvanced("unusableDimming"),
+        "unusableVisual", "unusableDimming")
     EFFECTS_FINDER.advanced.unusable = unusableRoute:Settings({
         dim = { label = "Dim Icon" },
         dimColor = {
@@ -1958,12 +2048,17 @@ if ST._DefineSettingRoute then
         desaturate = { label = "Desaturate Icon" },
     })
 
+    -- The marker rides the aura duration text: with that surface off its row
+    -- is not drawn at all, so the aura-text term stays structural.
+    local markerStructural = EffectsFinderIconsAdvanced("pandemic", true)
     local markerRoute = EffectsFinderRoute(
         "panel.icons.effects.pandemicMarker", EFFECTS_AURA_SECTION,
         "Aura Indicators",
-        EffectsFinderIconsAdvanced("pandemic", function(read)
-            return read.pandemicMarkerMode ~= "off" and read.showAuraText ~= false
-        end, true), "pandemicMarker", "pandemic")
+        function(context)
+            if not markerStructural(context) then return false end
+            local style = EffectsFinderEffectiveStyle(context)
+            return style and style.showAuraText ~= false
+        end, "pandemicMarker", "pandemic")
     EFFECTS_FINDER.advanced.pandemicMarker = markerRoute:Settings({
         text = { label = "Marker Text" },
         coloring = { label = "Marker Coloring" },
@@ -1979,9 +2074,8 @@ if ST._DefineSettingRoute then
     local tooltipRoute = EffectsFinderRoute(
         "panel.icons.effects.tooltip", EFFECTS_INTERACTION_SECTION,
         "Interaction",
-        EffectsFinderIconsAdvanced("showTooltips", function(read)
-            return read.showTooltips == true
-        end), "tooltipBehavior", "showTooltips")
+        EffectsFinderIconsAdvanced("showTooltips"),
+        "tooltipBehavior", "showTooltips")
     EFFECTS_FINDER.advanced.tooltip = tooltipRoute:Settings({
         position = { label = "Tooltip Position" },
         hideInCombat = { label = "Hide Tooltips in Combat" },
@@ -1989,10 +2083,7 @@ if ST._DefineSettingRoute then
 
     local assistantUnusable = EffectsFinderRoute(
         "panel.assistant.effects.unusable", EFFECTS_SPELL_SECTION,
-        "Cooldown / Spell Indicators", function(context)
-            local style = context and context.group and context.group.style
-            return EffectsFinderAssistant(context) and style and style.showUnusable == true
-        end, "unusableVisual")
+        "Cooldown / Spell Indicators", EffectsFinderAssistant, "unusableVisual")
     EFFECTS_FINDER.assistant.unusableAdvanced = assistantUnusable:Settings({
         dim = { label = "Dim Icon" },
         dimColor = {
@@ -2007,10 +2098,7 @@ if ST._DefineSettingRoute then
 
     local assistantTooltip = EffectsFinderRoute(
         "panel.assistant.effects.tooltip", EFFECTS_INTERACTION_SECTION,
-        "Interaction", function(context)
-            local style = context and context.group and context.group.style
-            return EffectsFinderAssistant(context) and style and style.showTooltips == true
-        end, "tooltipBehavior")
+        "Interaction", EffectsFinderAssistant, "tooltipBehavior")
     EFFECTS_FINDER.assistant.tooltipAdvanced = assistantTooltip:Settings({
         position = { label = "Tooltip Position" },
         hideInCombat = { label = "Hide Tooltips in Combat" },

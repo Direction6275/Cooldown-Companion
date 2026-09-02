@@ -946,28 +946,37 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
     end
 
     if container then
+    -- One enable path for the checkbox AND the read-only panel's Turn On
+    -- footer, so the effect-collision handling can never differ between the
+    -- two entrances.
+    local function EnableTextureIndicator()
+        local usedEffects = GetTextureIndicatorUsedEffects(indicators, sectionKey)
+        local firstAvailable = GetFirstAvailableTextureIndicatorEffect(indicators, sectionKey)
+        local currentEffect = config.effectType
+        if currentEffect == "none" or usedEffects[currentEffect] then
+            if firstAvailable then
+                config.effectType = firstAvailable
+            else
+                config.enabled = false
+                CooldownCompanion:Print("All texture indicator effects are already in use by other sections.")
+                RefreshTextureIndicatorConfig(group, auraControlled)
+                return
+            end
+        end
+        config.enabled = true
+        RefreshTextureIndicatorConfig(group, auraControlled)
+    end
+
     local enableCb = AddCheckboxRow(container, {
         label = sectionDef.label,
         setting = finder and finder.enabled,
         value = config.enabled,
         onChange = function(value)
             if value then
-                local usedEffects = GetTextureIndicatorUsedEffects(indicators, sectionKey)
-                local firstAvailable = GetFirstAvailableTextureIndicatorEffect(indicators, sectionKey)
-                local currentEffect = config.effectType
-                if currentEffect == "none" or usedEffects[currentEffect] then
-                    if firstAvailable then
-                        config.effectType = firstAvailable
-                    else
-                        config.enabled = false
-                        CooldownCompanion:Print("All texture indicator effects are already in use by other sections.")
-                        RefreshTextureIndicatorConfig(group, auraControlled)
-                        return
-                    end
-                end
+                EnableTextureIndicator()
+                return
             end
-
-            config.enabled = value == true
+            config.enabled = false
             RefreshTextureIndicatorConfig(group, auraControlled)
         end,
     })
@@ -1039,11 +1048,17 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
         end
     else
         local advKey = "textureIndicator_" .. sectionKey
-        AddAdvancedToggle(enableCb, advKey, tabInfoButtons, config.enabled, {
+        AddAdvancedToggle(enableCb, advKey, tabInfoButtons, true, {
             title = sectionDef.label .. " Advanced",
             build = function(panel)
                 BuildTextureIndicatorOptions(panel)
             end,
+            -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): the shared
+            -- enable owns its WHOLE sequence, effect-collision handling and
+            -- refresh included, so it rides the spec as `run`.
+            unlock = not config.enabled and {
+                enable = { label = "Turn On " .. sectionDef.label, run = EnableTextureIndicator },
+            } or nil,
         })
     end
     end -- container
@@ -1106,9 +1121,16 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
     end
 
     local advKey = "triggerEffect_" .. effectKey
-    AddAdvancedToggle(enableCb, advKey, tabInfoButtons, config.enabled, {
+    AddAdvancedToggle(enableCb, advKey, tabInfoButtons, true, {
         title = def.label .. " Advanced",
         build = BuildTriggerEffectAdvanced,
+        -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): write-true plus
+        -- the trigger effects' restyle-then-rebuild refresh sequence.
+        unlock = not config.enabled and {
+            target = config,
+            enable = { label = "Turn On " .. def.label, key = "enabled" },
+            refreshKind = "auraTextures",
+        } or nil,
     })
 end
 
@@ -1144,8 +1166,11 @@ local function BuildTriggerEffectsTab(container, group)
 
     -- One row-grammar section. The gears inside it are safe behind a collapse:
     -- the preview command center's trigger route is tab-only (it plays every
-    -- enabled effect at once, so it names no single advanced key), and nothing
-    -- else queues a `triggerEffect_*` key.
+    -- enabled effect at once, so it names no single advanced key), and the
+    -- finder's structural trigger-effect routes DO queue `triggerEffect_*`
+    -- keys but always force this section open first (collapseKeys names
+    -- "effects_triggerEffects"), so the gear builds and consumes the queue.
+    -- Any future entrance that queues one of these keys must do the same.
     local _, effectsCollapsed = BuildCollapsibleSection(container, "Trigger Panel Effects",
         "effects_triggerEffects", nil, nil, ROW_SECTION)
 
@@ -1603,11 +1628,6 @@ local function SpecialFinderTriggerTextSettings(context)
     return trigger and trigger.text or nil
 end
 
-local function SpecialFinderTriggerEffects(context)
-    local trigger = context and context.group and context.group.triggerSettings
-    return trigger and trigger.effects or nil
-end
-
 local function SpecialFinderTextureIndicators(context)
     local style = context and context.group and context.group.style
     return style and style.textureIndicators or nil
@@ -1675,12 +1695,6 @@ local function SpecialFinderTriggerEffectOffered(context, effectKey)
     return effectKey ~= "shrinkExpand" or SpecialFinderTriggerDisplayType(context) ~= "text"
 end
 
-local function SpecialFinderTriggerEffectEnabled(context, effectKey)
-    if not SpecialFinderTriggerEffectOffered(context, effectKey) then return false end
-    local effects = SpecialFinderTriggerEffects(context)
-    return effects and effects[effectKey] and effects[effectKey].enabled == true
-end
-
 local function SpecialFinderTextureEffectShown(context, sectionKey)
     if sectionKey == "aura" then
         return SpecialFinderTextureAuraControlled(context)
@@ -1695,9 +1709,18 @@ local function SpecialFinderTextureEffectEnabled(context, sectionKey)
 end
 
 local function SpecialFinderTextureEffectType(context, sectionKey, effectType)
-    if not SpecialFinderTextureEffectEnabled(context, sectionKey) then return false end
+    -- Standard indicators index structurally: their read-only panel draws the
+    -- stored effect's rows while disabled, so those rows stay findable. The
+    -- aura-controlled variant draws its options inline and only while
+    -- enabled, so it keeps the enabled gate.
+    if sectionKey == "aura" then
+        if not SpecialFinderTextureEffectEnabled(context, sectionKey) then return false end
+    elseif not SpecialFinderTextureEffectShown(context, sectionKey) then
+        return false
+    end
     local indicators = SpecialFinderTextureIndicators(context)
-    return indicators[sectionKey].effectType == effectType
+    return indicators and indicators[sectionKey]
+        and indicators[sectionKey].effectType == effectType
 end
 
 if ST._DefineSettingRoute then
@@ -1782,7 +1805,9 @@ if ST._DefineSettingRoute then
             collapseKeys = { "effects_triggerEffects" },
             rowScope = "primary",
             advancedKey = "triggerEffect_" .. key,
-            applies = function(context) return SpecialFinderTriggerEffectEnabled(context, key) end,
+            -- Structural only: the gear exists with the effect off too, opening
+            -- its panel read-only behind the unlock strip.
+            applies = function(context) return SpecialFinderTriggerEffectOffered(context, key) end,
         })
         finder.duration = advanced:Setting({ key = "duration", label = def.speedLabel })
         if key == "colorShift" then
@@ -1818,11 +1843,20 @@ if ST._DefineSettingRoute then
             collapseKeys = { EFFECTS_TEXTURE_INDICATORS_SECTION },
             rowScope = "primary",
             advancedKey = key == "aura" and nil or ("textureIndicator_" .. key),
-            applies = function(context) return SpecialFinderTextureEffectEnabled(context, key) end,
+            -- Standard indicators index structurally: their gear exists with
+            -- the indicator off too, opening read-only behind the unlock
+            -- strip. The aura-controlled variant draws its options inline and
+            -- only while enabled, so it keeps the enabled gate.
+            applies = function(context)
+                if key == "aura" then
+                    return SpecialFinderTextureEffectEnabled(context, key)
+                end
+                return SpecialFinderTextureEffectShown(context, key)
+            end,
         })
         finder.combatOnly = options:Setting({
             key = "combatOnly", label = "Show Only In Combat",
-            applies = function(context) return key ~= "aura" and SpecialFinderTextureEffectEnabled(context, key) end,
+            applies = function(context) return key ~= "aura" and SpecialFinderTextureEffectShown(context, key) end,
         })
         finder.effectType = options:Setting({ key = "type", label = "Effect Type" })
         finder.shiftColor = options:Setting({

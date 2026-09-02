@@ -187,7 +187,11 @@ local function GetLayoutFinderState(context)
     state.entriesPerLine = not standalone and isTextMode and buttonCount > 1
     state.compact = not standalone and not isAuraPanel
         and (isIconsMode or isBarMode or isTextMode)
-    state.compactAdvanced = state.compact and group.compactLayout == true
+    -- Structural, not compactLayout state: the gear now builds with Compact
+    -- Mode off too, opening its panel read-only behind the Turn On footer, so
+    -- the rows inside stay findable. Only the centered-growth restriction
+    -- still hides the Growth Direction row itself.
+    state.compactAdvanced = state.compact
     local style = group.style or {}
     state.compactGrowth = state.compactAdvanced
         and ST.GetCenteredGrowthEdge(
@@ -393,6 +397,9 @@ end
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
 
+-- Early returns in here (missing group, and the standalone texture/trigger
+-- settings guard) land on the dispatch-level gear build pass's sweep
+-- (RunAdvancedGearBuildPass, AdvancedSettingsPanel.lua).
 local function BuildLayoutTab(container)
     for _, elem in ipairs(appearanceTabElements) do
         elem:ClearAllPoints()
@@ -1373,10 +1380,11 @@ local function BuildLayoutTab(container)
     --
     -- Panel-only data with no override section, and the Layout tab is panel
     -- scope throughout (no entry lens ever reaches it), so the row needs no
-    -- lens bracket of its own here. Its gear closes itself when the selection
-    -- moves: an advanced panel's context carries selectedButton AND
-    -- panelSettingsTab, and selecting an entry changes both (the Layout tab is
-    -- not offered under an entry lens, so the surface lands on Appearance).
+    -- lens bracket of its own here. Its gear panel closes like every other
+    -- gear's: the dispatch-level gear build pass sweeps it when this
+    -- section collapses, and a surface move closes it through the panel
+    -- context (selecting an entry lands the surface on Appearance, changing
+    -- panelSettingsTab - selectedButton itself is lens-ignored).
     --
     -- Compact Mode still copies with the APPEARANCE scope of
     -- "Copy Panel Settings To..." (ST.PANEL_COPY_SCOPES, Defaults.lua) - it is

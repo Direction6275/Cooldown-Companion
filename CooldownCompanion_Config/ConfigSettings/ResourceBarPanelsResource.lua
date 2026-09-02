@@ -372,8 +372,22 @@ function HealthResource.AddEffectStyleControls(container, checkbox, health, opti
         end
     end
 
-    local expanded, advBtn = AddAdvancedToggle(checkbox, options.advancedKey, tabInfoButtons, enabled, {
+    local expanded, advBtn = AddAdvancedToggle(checkbox, options.advancedKey, tabInfoButtons, true, {
         build = BuildEffectStyleAdvanced,
+        -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): the effect
+        -- checkboxes' sequence runs the caller's applyBars closure (which
+        -- also repaints the canvas), which no shared refreshKind runs, so
+        -- the enable owns its whole sequence as `run`.
+        unlock = not enabled and {
+            enable = {
+                label = "Turn On " .. options.toggleLabel,
+                run = function()
+                    health[options.enabledKey] = true
+                    applyBars()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            },
+        } or nil,
     })
     if not (enabled and expanded) then
         return expanded, advBtn
@@ -643,13 +657,29 @@ local function BuildResourceTextControls(container, settings, powerType, display
     end
 
     local textAdvKey = "rbText_" .. capturedPt .. "_" .. tostring(displaySpecID)
-    AddAdvancedToggle(cb, textAdvKey, rbTextAdvBtns, showTextEnabled, {
+    AddAdvancedToggle(cb, textAdvKey, rbTextAdvBtns, true, {
         title = name .. " Text Advanced",
         build = BuildResourceTextAdvanced,
         context = {
             selectedResourcePowerType = capturedPt,
             resourceSettingsSpecID = displaySpecID,
         },
+        -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): the checkbox's
+        -- write plus its health-only format fixup, then the resource bars'
+        -- apply-then-rebuild refresh sequence.
+        unlock = not showTextEnabled and {
+            target = resSettings,
+            enable = {
+                label = "Turn On Show " .. name .. " Text",
+                apply = function(write)
+                    write.showText = true
+                    if isHealthResource and not IsHealthTextFormat(write.textFormat) then
+                        write.textFormat = "percent"
+                    end
+                end,
+            },
+            refreshKind = "resourceBars",
+        } or nil,
     })
 
     if capturedPt ~= 5 then
@@ -803,13 +833,23 @@ local function BuildResourceTextControls(container, settings, powerType, display
     end
 
     local rechargeAdvKey = "rbRechargeText_" .. capturedPt .. "_" .. tostring(displaySpecID)
-    AddAdvancedToggle(rechargeCb, rechargeAdvKey, rbTextAdvBtns, rechargeEnabled, {
+    AddAdvancedToggle(rechargeCb, rechargeAdvKey, rbTextAdvBtns, true, {
         title = name .. " Recharge Text Advanced",
         build = BuildRechargeTextAdvanced,
         context = {
             selectedResourcePowerType = capturedPt,
             resourceSettingsSpecID = displaySpecID,
         },
+        -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): write-true plus
+        -- the resource bars' apply-then-rebuild refresh sequence.
+        unlock = not rechargeEnabled and {
+            target = resSettings,
+            enable = {
+                label = "Turn On Show " .. name .. " Recharge Text",
+                key = "showRechargeText",
+            },
+            refreshKind = "resourceBars",
+        } or nil,
     })
 end
 
@@ -932,6 +972,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     })
     HealthResource.AddEffectStyleControls(effectsLeft, absorbsCb, health, {
         enabledKey = "showAbsorbs",
+        toggleLabel = "Show Absorbs",
         advancedKey = "healthAbsorbs",
         colorKey = "healthAbsorbColor",
         textureKey = "healthAbsorbTexture",
@@ -955,6 +996,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     })
     HealthResource.AddEffectStyleControls(effectsLeft, healAbsorbsCb, health, {
         enabledKey = "showHealAbsorbs",
+        toggleLabel = "Show Healing Absorbs",
         advancedKey = "healthHealAbsorbs",
         colorKey = "healthHealAbsorbColor",
         textureKey = "healthHealAbsorbTexture",
@@ -978,6 +1020,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     })
     HealthResource.AddEffectStyleControls(effectsRight, incomingHealsCb, health, {
         enabledKey = "showIncomingHeals",
+        toggleLabel = "Show Incoming Heals",
         advancedKey = "healthIncomingHeals",
         colorKey = "healthIncomingHealColor",
         textureKey = "healthIncomingHealTexture",
@@ -1001,6 +1044,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     })
     HealthResource.AddEffectStyleControls(effectsRight, lowHealthAlertCb, health, {
         enabledKey = "showLowHealthAlert",
+        toggleLabel = "Show Low Health Alert",
         advancedKey = "healthLowHealthAlert",
         colorKey = "healthLowHealthAlertColor",
         textureKey = "healthLowHealthAlertTexture",
@@ -1024,9 +1068,8 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
             })
         end,
     }, applyBars)
-    -- Second badge after the gear when the setting is on, first when it is off:
-    -- AddAdvancedToggle only chains a gear it actually shows, so the anchor
-    -- args below are a placeholder - AnchorRowBadge re-points the button.
+    -- Second badge after the gear: the anchor args below are a placeholder -
+    -- AnchorRowBadge re-points the button behind the chained gear.
     AnchorRowBadge(lowHealthAlertCb, CreateInfoButton(lowHealthAlertCb.frame, lowHealthAlertCb.frame, "LEFT", "LEFT", 0, 0, {
         "Low Health Alert",
         {"Blizzard sets the low-health threshold to 35%. This cannot be configured.", 1, 1, 1, true},
@@ -1143,6 +1186,10 @@ local function AddResourceSpecCopyButton(enableCb)
     end)
 end
 
+-- The conflict-gate early return lands on the dispatch-level gear build
+-- pass's sweep (RunAdvancedGearBuildPass, AdvancedSettingsPanel.lua), which
+-- brackets each of this file's exported panes (ResourcesWideColumn builds
+-- exactly one per rebuild into a fresh scroll).
 local function BuildResourceBarAnchoringPanel(container)
     if BuildResourceBarConflictGate(container, "Resource Bars", true) then
         return
@@ -1760,14 +1807,32 @@ local function BuildBarHeightControls(container, settings, layout)
         end
     end
 
-    AddAdvancedToggle(customHeightsCb, customHeightsAdvKey, tabInfoButtons, layout.customBarHeights == true, {
+    AddAdvancedToggle(customHeightsCb, customHeightsAdvKey, tabInfoButtons, true, {
         title = customThicknessLabel .. " Advanced",
         build = BuildCustomResourceHeightsAdvanced,
+        -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): the checkbox's own
+        -- sequence queues this panel open and runs the full bar/cast-bar/
+        -- anchor apply chain, which no shared refreshKind runs, so the
+        -- enable owns its whole sequence as `run`.
+        unlock = layout.customBarHeights ~= true and {
+            enable = {
+                label = "Turn On " .. customThicknessLabel,
+                run = function()
+                    layout.customBarHeights = true
+                    if CS.QueueAdvancedSettingsPanelOpen then
+                        CS.QueueAdvancedSettingsPanelOpen(customHeightsAdvKey)
+                    end
+                    CooldownCompanion:ApplyResourceBars()
+                    CooldownCompanion:RepositionCastBar()
+                    CooldownCompanion:UpdateAnchorStacking()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            },
+        } or nil,
     })
 
-    -- Second badge after the gear when the setting is on, first when it is off:
-    -- AddAdvancedToggle only chains a gear it actually shows, so the anchor
-    -- args below are a placeholder - AnchorRowBadge re-points the button.
+    -- Second badge after the gear: the anchor args below are a placeholder -
+    -- AnchorRowBadge re-points the button behind the chained gear.
     AnchorRowBadge(customHeightsCb, CreateInfoButton(customHeightsCb.frame, customHeightsCb.frame, "LEFT", "LEFT", 0, 0, {
         customThicknessLabel,
         {"When enabled, each resource can have its own bar size. Open advanced settings here to configure all resource sizes together.", 1, 1, 1, true},
@@ -2021,24 +2086,27 @@ end
 local function AddThresholdTickEnableCheckbox(container, settings, powerType, specID,
     settingKey, label, advKey, finderSetting)
     local enabled = ReadSpecOverrideKey(settings, powerType, specID, settingKey, false) == true
+    -- One writer for both entrances (the checkbox and the gear panel's
+    -- Turn On footer), so the two can never drift apart.
+    local function SetEnabled(val)
+        local wasEnabled = ReadSpecOverrideKey(settings, powerType, specID, settingKey, false) == true
+        WriteSpecOverrideKey(settings, powerType, specID, settingKey, val == true)
+        if val and not wasEnabled and CS.QueueAdvancedSettingsPanelOpen then
+            CS.QueueAdvancedSettingsPanelOpen(advKey, {
+                selectedResourcePowerType = powerType,
+                resourceSettingsSpecID = specID,
+            })
+        end
+        CooldownCompanion:ApplyResourceBars()
+        C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
+    end
     local checkbox = AddCheckboxRow(container, {
         label = label,
         setting = finderSetting,
         value = enabled,
-        onChange = function(val)
-            local wasEnabled = ReadSpecOverrideKey(settings, powerType, specID, settingKey, false) == true
-            WriteSpecOverrideKey(settings, powerType, specID, settingKey, val == true)
-            if val and not wasEnabled and CS.QueueAdvancedSettingsPanelOpen then
-                CS.QueueAdvancedSettingsPanelOpen(advKey, {
-                    selectedResourcePowerType = powerType,
-                    resourceSettingsSpecID = specID,
-                })
-            end
-            CooldownCompanion:ApplyResourceBars()
-            C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
-        end,
+        onChange = SetEnabled,
     })
-    return checkbox, enabled
+    return checkbox, enabled, function() SetEnabled(true) end
 end
 
 local function GetConfigSegmentedThresholdEntries(settings, powerType, specID)
@@ -3142,7 +3210,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
 
                 if isSegmented then
                     local thresholdAdvKey = "rbSegThreshold_" .. capturedPt .. "_" .. tostring(_colorSpecID)
-                    local thresholdEnableCb, _segEnabled = AddThresholdTickEnableCheckbox(
+                    local thresholdEnableCb, _segEnabled, thresholdTurnOn = AddThresholdTickEnableCheckbox(
                         thresholdLeft,
                         settings,
                         capturedPt,
@@ -3191,7 +3259,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                         thresholdEnableCb,
                         thresholdAdvKey,
                         rbThresholdTickAdvBtns,
-                        _segEnabled,
+                        true,
                         {
                             title = resourceName .. " Threshold Advanced",
                             build = BuildSegmentedThresholdAdvanced,
@@ -3199,12 +3267,23 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                                 selectedResourcePowerType = capturedPt,
                                 resourceSettingsSpecID = _colorSpecID,
                             },
+                            -- Non-lens lazy spec (ST._ResolveAdvancedUnlock):
+                            -- the checkbox's sequence queues this panel open
+                            -- and defers its rebuild a frame, which no shared
+                            -- refreshKind runs, so the shared enable owns its
+                            -- whole sequence as `run`.
+                            unlock = not _segEnabled and {
+                                enable = {
+                                    label = "Turn On " .. resourceName .. " Threshold Colors",
+                                    run = thresholdTurnOn,
+                                },
+                            } or nil,
                         }
                     )
                 elseif capturedPt ~= 101 and capturedPt ~= healthResourceID then
                     -- Stagger (101) and Health have dedicated coloring; tick markers not applicable
                     local tickAdvKey = "rbTickMarker_" .. capturedPt .. "_" .. tostring(_colorSpecID)
-                    local tickEnableCb, _tickEnabled = AddThresholdTickEnableCheckbox(
+                    local tickEnableCb, _tickEnabled, tickTurnOn = AddThresholdTickEnableCheckbox(
                         thresholdLeft,
                         settings,
                         capturedPt,
@@ -3336,7 +3415,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                         tickEnableCb,
                         tickAdvKey,
                         rbThresholdTickAdvBtns,
-                        _tickEnabled,
+                        true,
                         {
                             title = resourceName .. " Tick Markers Advanced",
                             build = BuildTickMarkerAdvanced,
@@ -3344,6 +3423,17 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                                 selectedResourcePowerType = capturedPt,
                                 resourceSettingsSpecID = _colorSpecID,
                             },
+                            -- Non-lens lazy spec (ST._ResolveAdvancedUnlock):
+                            -- the checkbox's sequence queues this panel open
+                            -- and defers its rebuild a frame, which no shared
+                            -- refreshKind runs, so the shared enable owns its
+                            -- whole sequence as `run`.
+                            unlock = not _tickEnabled and {
+                                enable = {
+                                    label = "Turn On " .. resourceName .. " Tick Markers",
+                                    run = tickTurnOn,
+                                },
+                            } or nil,
                         }
                     )
                 end
@@ -3374,7 +3464,6 @@ local function BuildResourceSettingsPanel(container, powerType, specID)
         container:AddChild(label)
         return
     end
-
     BuildResourceBarStylingPanel(container, "resource_settings", {
         powerType = numericPowerType,
         specID = numericSpecID,
@@ -3468,23 +3557,6 @@ RESOURCE_FINDER.EffectiveTexture = function(context)
         or texture
 end
 
-RESOURCE_FINDER.TextEnabled = function(context, powerType)
-    local value = RESOURCE_FINDER.ReadResourceValue(context, powerType, "showText", nil)
-    if powerType == RESOURCE_HEALTH
-        or SEGMENTED_TYPES[powerType] == true
-        or powerType == 100
-        or RB.AURA_STACK_RESOURCES[powerType] ~= nil
-    then
-        return value == true
-    end
-    return value ~= false
-end
-
-RESOURCE_FINDER.RechargeTextEnabled = function(context)
-    return RESOURCE_FINDER.ReadResourceValue(
-        context, 5, "showRechargeText", DEFAULT_RESOURCE_RECHARGE_TEXT_ENABLED) == true
-end
-
 RESOURCE_FINDER.ResourceEnabled = function(context, powerType)
     local settings = RESOURCE_FINDER.Settings(context)
     local resource = settings and settings.resources and settings.resources[powerType]
@@ -3542,16 +3614,6 @@ RESOURCE_FINDER.AuraBorderStyleIs = function(context, style)
     local entry = RESOURCE_FINDER.AuraEntry(context)
     return entry and RESOURCE_FINDER.AuraBorderEnabled(context)
         and RB.GetResourceOverlayBorderStyle(entry) == style or false
-end
-
-RESOURCE_FINDER.SegThresholdEnabled = function(context, powerType)
-    return RESOURCE_FINDER.ReadResourceValue(
-        context, powerType, "segThresholdEnabled", false) == true
-end
-
-RESOURCE_FINDER.TickEnabled = function(context, powerType)
-    return RESOURCE_FINDER.ReadResourceValue(
-        context, powerType, "continuousTickEnabled", false) == true
 end
 
 RESOURCE_FINDER.TickMode = function(context, powerType)
@@ -3801,14 +3863,17 @@ if ST._DefineSettingRoute then
         RESOURCE_FINDER.primary.customWidth = {}
         for powerType, name in pairs(POWER_NAMES) do
             local capturedPowerType = powerType
+            -- STRUCTURE only, matching gear existence: the per-resource rows
+            -- live behind the custom-sizes gear, which builds whether or not
+            -- the toggle is on - off just opens its panel read-only behind
+            -- the Turn On footer, so the rows stay findable.
             local function CustomSizeApplies(context, vertical)
                 local layout = RESOURCE_FINDER.Layout(context)
                 local settings = RESOURCE_FINDER.Settings(context)
                 local orientation = layout and layout.orientation
                     or settings and settings.orientation
                 local active = context and context._settingsFinderActiveResourceSet
-                return layout and layout.customBarHeights == true
-                    and type(active) == "table" and active[capturedPowerType] == true
+                return type(active) == "table" and active[capturedPowerType] == true
                     and ((orientation == "vertical") == vertical)
             end
             RESOURCE_FINDER.primary.customHeight[capturedPowerType] = route:Setting({
@@ -4081,10 +4146,11 @@ if ST._DefineSettingRoute then
             sectionLabel = "Health Text",
             collapseKeys = { "rb_health_text" },
             collapseStore = "resource",
-            applies = function(context)
-                return healthApplies(context)
-                    and RESOURCE_FINDER.TextEnabled(context, RESOURCE_HEALTH)
-            end,
+            -- STRUCTURE only, matching gear existence: the text gear builds
+            -- whenever the health page does, so these stay findable while
+            -- Show Health Text is off (the panel opens read-only behind its
+            -- Turn On footer).
+            applies = healthApplies,
             advancedKey = function(context)
                 local specID = context and context.resourceSpecID
                 if not specID and CS._GetCurrentConfigSpecID then
@@ -4154,11 +4220,11 @@ if ST._DefineSettingRoute then
                 collapseKeys = { "rb_health_effects" },
                 collapseStore = "resource",
                 advancedKey = captured.advancedKey,
-                applies = function(context)
-                    return healthApplies(context)
-                        and RESOURCE_FINDER.ReadResourceValue(
-                            context, RESOURCE_HEALTH, captured.enabledKey, false) == true
-                end,
+                -- STRUCTURE only, matching gear existence: every effect gear
+                -- builds whenever the Health Effects section does, so these
+                -- stay findable while the effect toggle is off (the panel
+                -- opens read-only behind its Turn On footer).
+                applies = healthApplies,
             }):Settings({
                 color = { label = captured.color },
                 texture = { label = captured.texture },
@@ -4318,10 +4384,11 @@ if ST._DefineSettingRoute then
                     return "rbText_" .. tostring(capturedPowerType)
                         .. "_" .. tostring(context.resourceSpecID)
                 end,
-                applies = function(context)
-                    return appliesPower(context)
-                        and RESOURCE_FINDER.TextEnabled(context, capturedPowerType)
-                end,
+                -- STRUCTURE only, matching gear existence: the text gear
+                -- builds whenever the resource page does, so these stay
+                -- findable while the show-text toggle is off (the panel
+                -- opens read-only behind its Turn On footer).
+                applies = appliesPower,
             })
             detail.text.advanced = textAdvanced:Settings({
                 format = { label = "Text Format" },
@@ -4357,10 +4424,9 @@ if ST._DefineSettingRoute then
                     advancedKey = function(context)
                         return "rbRechargeText_5_" .. tostring(context.resourceSpecID)
                     end,
-                    applies = function(context)
-                        return appliesPower(context)
-                            and RESOURCE_FINDER.RechargeTextEnabled(context)
-                    end,
+                    -- STRUCTURE only, matching gear existence (same rule as
+                    -- the text route above).
+                    applies = appliesPower,
                 }):Settings({
                     mode = { label = "Show Recharge Text On" },
                     size = { label = "Font Size" },
@@ -4415,9 +4481,15 @@ if ST._DefineSettingRoute then
                             return "rbSegThreshold_" .. tostring(capturedPowerType)
                                 .. "_" .. tostring(context.resourceSpecID)
                         end,
+                        -- STRUCTURE only, matching gear existence: the gear
+                        -- builds for every enabled resource whether or not
+                        -- threshold colors are on - off just opens its panel
+                        -- read-only behind the Turn On footer. ResourceEnabled
+                        -- stays: a disabled resource draws no toggle row and
+                        -- so keeps no gear at all.
                         applies = function(context)
                             return appliesPower(context)
-                                and RESOURCE_FINDER.SegThresholdEnabled(
+                                and RESOURCE_FINDER.ResourceEnabled(
                                     context, capturedPowerType)
                         end,
                     })
@@ -4467,9 +4539,12 @@ if ST._DefineSettingRoute then
                             return "rbTickMarker_" .. tostring(capturedPowerType)
                                 .. "_" .. tostring(context.resourceSpecID)
                         end,
+                        -- STRUCTURE only, matching gear existence (same rule
+                        -- as the threshold route above): only a disabled
+                        -- resource, which draws no toggle row, keeps no gear.
                         applies = function(context)
                             return appliesPower(context)
-                                and RESOURCE_FINDER.TickEnabled(
+                                and RESOURCE_FINDER.ResourceEnabled(
                                     context, capturedPowerType)
                         end,
                     })

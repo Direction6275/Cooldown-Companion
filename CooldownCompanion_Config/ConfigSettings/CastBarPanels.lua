@@ -26,6 +26,15 @@ local BeginRowGrid = ST._BeginRowGrid
 -- rule fading right.
 local ROW_SECTION = { leftAligned = true }
 
+-- The gear sites' "Turn On" enable specs, riding the LAZY unlock specs the
+-- gears store in options.unlock (resolved only at panel-build time by
+-- ST._ResolveAdvancedUnlock, Helpers.lua). File-local constants so a rebuild
+-- allocates none of them; the channel-tick spec stays inline at its site
+-- because its checkbox sequence also repaints the canvas, so it rides `run`.
+local TURNON_SHOW_ICON = { label = "Turn On Show Spell Icon", key = "showIcon" }
+local TURNON_SHOW_NAME_TEXT = { label = "Turn On Show Spell Name", key = "showNameText" }
+local TURNON_SHOW_CAST_TIME = { label = "Turn On Show Cast Time", key = "showCastTimeText" }
+
 ------------------------------------------------------------------------
 -- SETTINGS FINDER CATALOG
 ------------------------------------------------------------------------
@@ -38,29 +47,10 @@ local function CastBarFinderEnabled(context)
     return settings and settings.enabled == true
 end
 
-local function CastBarFinderIconAdvanced(context)
-    local cache = context and context._ccCastBarFinderCache
-    local settings = cache and cache.settings
-    return settings and settings.enabled == true and settings.showIcon ~= false
-end
-
-local function CastBarFinderTicksAdvanced(context)
-    local cache = context and context._ccCastBarFinderCache
-    local settings = cache and cache.settings
-    return settings and settings.enabled == true and settings.showChannelTickMarks == true
-end
-
-local function CastBarFinderNameAdvanced(context)
-    local cache = context and context._ccCastBarFinderCache
-    local settings = cache and cache.settings
-    return settings and settings.enabled == true and settings.showNameText ~= false
-end
-
-local function CastBarFinderTimeAdvanced(context)
-    local cache = context and context._ccCastBarFinderCache
-    local settings = cache and cache.settings
-    return settings and settings.enabled == true and settings.showCastTimeText ~= false
-end
+-- The four Contents advanced routes gate on CastBarFinderEnabled alone,
+-- STRUCTURE only: their gears build whenever the styling panel does, which is
+-- whenever the module is enabled - a content toggle that is off just opens
+-- its panel read-only behind the Turn On footer, so it stays findable.
 
 local function CastBarFinderAttached(context)
     local cache = context and context._ccCastBarFinderCache
@@ -233,7 +223,7 @@ if ST._DefineSettingRoute then
         collapseKeys = { "castbar_contents" },
         rowScope = "detail",
         advancedKey = "castbarIcon",
-        applies = CastBarFinderIconAdvanced,
+        applies = CastBarFinderEnabled,
     })
     CASTBAR_FINDER.icon = icon:Settings({
         zoom = { label = "Icon Zoom" },
@@ -261,7 +251,7 @@ if ST._DefineSettingRoute then
         collapseKeys = { "castbar_contents" },
         rowScope = "detail",
         advancedKey = "castbarChannelTicks",
-        applies = CastBarFinderTicksAdvanced,
+        applies = CastBarFinderEnabled,
     })
     CASTBAR_FINDER.ticks = ticks:Settings({
         width = { label = "Tick Mark Width" },
@@ -281,7 +271,7 @@ if ST._DefineSettingRoute then
         collapseKeys = { "castbar_contents" },
         rowScope = "detail",
         advancedKey = "castbarNameText",
-        applies = CastBarFinderNameAdvanced,
+        applies = CastBarFinderEnabled,
     })
     CASTBAR_FINDER.name = name:Settings({
         fontSize = { label = "Font Size" },
@@ -301,7 +291,7 @@ if ST._DefineSettingRoute then
         collapseKeys = { "castbar_contents" },
         rowScope = "detail",
         advancedKey = "castbarCastTime",
-        applies = CastBarFinderTimeAdvanced,
+        applies = CastBarFinderEnabled,
     })
     CASTBAR_FINDER.castTime = castTime:Settings({
         fontSize = { label = "Font Size" },
@@ -1008,9 +998,16 @@ local function BuildCastBarStylingPanel(container)
         end
     end
 
-    AddAdvancedToggle(iconRow, "castbarIcon", cbAdvBtns, settings.showIcon ~= false, {
+    AddAdvancedToggle(iconRow, "castbarIcon", cbAdvBtns, true, {
         title = "Spell Icon Advanced",
         build = BuildIconAdvanced,
+        -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): write-true plus
+        -- the contents checkboxes' apply-then-rebuild refresh sequence.
+        unlock = settings.showIcon == false and {
+            target = settings,
+            enable = TURNON_SHOW_ICON,
+            refreshKind = "castBar",
+        } or nil,
     })
 
     local channelTickRow = AddCheckboxRow(contentsLeft, {
@@ -1081,11 +1078,23 @@ local function BuildCastBarStylingPanel(container)
         end
     end
 
-    AddAdvancedToggle(channelTickRow, "castbarChannelTicks", cbAdvBtns,
-        settings.showChannelTickMarks == true, {
-            title = "Channel Tick Marks Advanced",
-            build = BuildChannelTickAdvanced,
-        })
+    AddAdvancedToggle(channelTickRow, "castbarChannelTicks", cbAdvBtns, true, {
+        title = "Channel Tick Marks Advanced",
+        build = BuildChannelTickAdvanced,
+        -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): this checkbox's
+        -- sequence also repaints the canvas (applyCastBar), which no shared
+        -- refreshKind runs, so the enable owns its whole sequence as `run`.
+        unlock = settings.showChannelTickMarks ~= true and {
+            enable = {
+                label = "Turn On Show Channel Tick Marks",
+                run = function()
+                    settings.showChannelTickMarks = true
+                    applyCastBar()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            },
+        } or nil,
+    })
 
     local nameRow = AddCheckboxRow(contentsRight, {
         label = "Show Spell Name",
@@ -1128,9 +1137,16 @@ local function BuildCastBarStylingPanel(container)
         })
     end
 
-    AddAdvancedToggle(nameRow, "castbarNameText", cbAdvBtns, settings.showNameText ~= false, {
+    AddAdvancedToggle(nameRow, "castbarNameText", cbAdvBtns, true, {
         title = "Spell Name Advanced",
         build = BuildNameTextAdvanced,
+        -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): write-true plus
+        -- the contents checkboxes' apply-then-rebuild refresh sequence.
+        unlock = settings.showNameText == false and {
+            target = settings,
+            enable = TURNON_SHOW_NAME_TEXT,
+            refreshKind = "castBar",
+        } or nil,
     })
 
     local castTimeRow = AddCheckboxRow(contentsRight, {
@@ -1198,9 +1214,16 @@ local function BuildCastBarStylingPanel(container)
         })
     end
 
-    AddAdvancedToggle(castTimeRow, "castbarCastTime", cbAdvBtns, settings.showCastTimeText ~= false, {
+    AddAdvancedToggle(castTimeRow, "castbarCastTime", cbAdvBtns, true, {
         title = "Cast Time Advanced",
         build = BuildCastTimeAdvanced,
+        -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): write-true plus
+        -- the contents checkboxes' apply-then-rebuild refresh sequence.
+        unlock = settings.showCastTimeText == false and {
+            target = settings,
+            enable = TURNON_SHOW_CAST_TIME,
+            refreshKind = "castBar",
+        } or nil,
     })
 end
 

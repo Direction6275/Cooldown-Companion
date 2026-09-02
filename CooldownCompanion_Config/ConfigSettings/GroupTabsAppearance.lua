@@ -75,6 +75,16 @@ local KEYBIND_CUSTOM_TOOLTIP = {
     {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
 }
 
+-- The gear sites' "Turn On" enable specs, riding the LAZY unlock specs the
+-- gears store in options.unlock (resolved only at panel-build time by
+-- ST._ResolveAdvancedUnlock, Helpers.lua). File-local constants so a tab
+-- rebuild allocates none of them.
+local TURNON_COOLDOWN_TEXT = { label = "Turn On Show Cooldown Text", key = "showCooldownText" }
+local TURNON_CHARGE_TEXT = { label = "Turn On Show Count Text", key = "showChargeText" }
+local TURNON_AURA_TEXT = { label = "Turn On Show Aura Duration Text", key = "showAuraText" }
+local TURNON_AURA_STACK_TEXT = { label = "Turn On Show Aura Stack Text", key = "showAuraStackText" }
+local TURNON_KEYBIND_TEXT = { label = "Turn On " .. KEYBIND_CUSTOM_LABEL, key = "showKeybindText" }
+
 -- The While Aura Active Cooldown control. Its two style keys used to live elsewhere
 -- (an entry-data checkbox on the entry's Aura Tracking section; a "Separate
 -- Text Positions" checkbox inside the Aura Duration Text advanced panel) and
@@ -138,11 +148,9 @@ local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 -- section is this gear inside", this one answers "which OVERRIDE section owns
 -- this gear's values". Keep them apart - they are read for different reasons.
 --
--- The style lens reads it at the foot of BOTH icons builders: a section the
--- selected entry only INHERITS builds no gear at all, so nothing rebinds or
--- closes an advanced panel that was already open on it, and that panel's
--- controls still point at the table the previous build handed them. The sweeps
--- close those, each over this map AND the indicators map above.
+-- Read by the Customizations list (Helpers.lua) to resolve a section's gear.
+-- Stale-panel cleanup no longer iterates it: the gear-stamp sweep in
+-- AdvancedSettingsPanel.lua closes unrebuilt gear panels by key, mapless.
 --
 -- A gear added to one of these five sections belongs here the same day. The
 -- tab's other lens sections (Border, Icon Tint, Icon Zoom) carry no gear at
@@ -222,11 +230,15 @@ end
 -- rather than written as literals: this axis is ONE table, and the icons homes
 -- for both tabs have always been stated here together. Each cites its gate.
 ST._SECTION_HOME = ST._SECTION_HOME or {}
+-- gearEnabled predicates survive only where a STRUCTURAL gate still hides a
+-- gear (the Masque and fill-timer interlocks). Parent-toggle state no longer
+-- hides gears anywhere: a gear behind an off toggle keeps its normal looks
+-- (locked and live gears wear the SAME two colors, owner ruling 2026-08-31)
+-- and opens its panel read-only behind an unlock strip.
 ST._SECTION_HOME.icons = {
     cooldownText = {
         tab = "appearance", collapseKey = "appearance_text",
         available = GroupDrawsCooldownTextRow,
-        gearEnabled = function(_, style) return (style.showCooldownText) ~= false end,
     },
     durationLowTime = {
         tab = "appearance", collapseKey = "appearance_text",
@@ -234,14 +246,12 @@ ST._SECTION_HOME.icons = {
     },
     chargeText = {
         tab = "appearance", collapseKey = "appearance_text",
-        gearEnabled = function(_, style) return (style.showChargeText ~= false) ~= false end,
     },
     -- The aura text sections are drawn only while the GROUP tracks an aura
     -- (BuildAppearanceTab's `if groupHasAuraEntry then`).
     auraText = {
         tab = "appearance", collapseKey = "appearance_text",
         available = IconsGroupTracksAura,
-        gearEnabled = function(_, style) return (style.showAuraText ~= false) ~= false end,
     },
     -- While Aura Active is its own collapsible, right after Text: it names a
     -- STATE, not a kind of text (owner ruling 2026-08-16). One gate, mirrored
@@ -255,11 +265,9 @@ ST._SECTION_HOME.icons = {
     auraStackText = {
         tab = "appearance", collapseKey = "appearance_text",
         available = IconsGroupTracksAura,
-        gearEnabled = function(_, style) return (style.showAuraStackText ~= false) ~= false end,
     },
     keybindText = {
         tab = "appearance", collapseKey = "appearance_text",
-        gearEnabled = function(_, style) return (style.showKeybindText) ~= false end,
     },
     borderSettings = { tab = "appearance", collapseKey = "appearance_border" },
     iconTint = { tab = "appearance", collapseKey = "appearance_iconTint" },
@@ -276,7 +284,6 @@ ST._SECTION_HOME.icons = {
     -- state, so there is nothing finer for a home to point at.
     procGlow = {
         tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
-        gearEnabled = function(_, style) return (style.procGlowStyle ~= "none") ~= false end,
     },
     -- The aura family has its own section on the Indicators tab (owner ruling
     -- 2026-08-30), so the three aura rows below name it rather than the spell
@@ -285,23 +292,15 @@ ST._SECTION_HOME.icons = {
     auraIndicator = {
         tab = "effects", collapseKey = EFFECTS_AURA_SECTION,
         available = IconsGroupTracksAura,
-        gearEnabled = function(_, style) return ((style.auraGlowStyle or "pulse") ~= "none") ~= false end,
     },
     readyGlow = {
         tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
-        gearEnabled = function(_, style)
-            return (style.readyGlowStyle and style.readyGlowStyle ~= "none") ~= false
-        end,
     },
     keyPressHighlight = {
         tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
-        gearEnabled = function(_, style)
-            return (style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none") ~= false
-        end,
     },
     assistedHighlight = {
         tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
-        gearEnabled = function(_, style) return (style.showAssistedHighlight or false) ~= false end,
     },
     -- Both halves of the refresh window live in one section, so the feature has
     -- one home whichever half a consumer was looking for. It is the Pandemic
@@ -317,12 +316,12 @@ ST._SECTION_HOME.icons = {
     },
     iconFillTimer = {
         tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
-        gearEnabled = function(group, style) return IconsFillTimerActive(group, style) ~= false end,
+        gearEnabled = function(group) return group.masqueEnabled ~= true end,
     },
     cooldownSwipe = {
         tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
         gearEnabled = function(group, style)
-            return (style.showCooldownSwipe ~= false and not IconsFillTimerActive(group, style)) ~= false
+            return not IconsFillTimerActive(group, style)
         end,
     },
     -- The aura duration swipe is drawn only while the GROUP tracks an aura -
@@ -330,7 +329,6 @@ ST._SECTION_HOME.icons = {
     auraDurationSwipe = {
         tab = "effects", collapseKey = EFFECTS_AURA_SECTION,
         available = IconsGroupTracksAura,
-        gearEnabled = function(_, style) return (style.showAuraDurationSwipe ~= false) ~= false end,
     },
     showGCDSwipe = { tab = "effects", collapseKey = EFFECTS_SPELL_SECTION },
     desaturation = { tab = "effects", collapseKey = EFFECTS_SPELL_SECTION },
@@ -343,7 +341,6 @@ ST._SECTION_HOME.icons = {
     },
     unusableDimming = {
         tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
-        gearEnabled = function(_, style) return (style.showUnusable == true) ~= false end,
     },
     showOutOfRange = { tab = "effects", collapseKey = EFFECTS_SPELL_SECTION },
     lossOfControl = { tab = "effects", collapseKey = EFFECTS_SPELL_SECTION },
@@ -351,7 +348,6 @@ ST._SECTION_HOME.icons = {
     -- drawn on an icons panel, so no `available` predicate.
     showTooltips = {
         tab = "effects", collapseKey = EFFECTS_INTERACTION_SECTION,
-        gearEnabled = function(_, style) return (style.showTooltips == true) ~= false end,
     },
 }
 
@@ -407,24 +403,18 @@ local function RefreshAppearanceFinderState(context)
         local _, lowTimeRead = ResolveLensSection(lens, group, "durationLowTime")
         local _, borderRead = ResolveLensSection(lens, group, "borderSettings")
         local _, tintRead = ResolveLensSection(lens, group, "iconTint")
-        local _, cooldownRead, cooldownWrite = ResolveLensSection(
+        local cooldownScope, cooldownRead = ResolveLensSection(
             lens, group, "cooldownText")
-        local _, countRead, countWrite = ResolveLensSection(
-            lens, group, "chargeText")
-        local _, auraTextRead, auraTextWrite = ResolveLensSection(
+        local countScope = ResolveLensSection(lens, group, "chargeText")
+        local auraTextScope, auraTextRead = ResolveLensSection(
             lens, group, "auraText")
-        local _, auraStackRead, auraStackWrite = ResolveLensSection(
-            lens, group, "auraStackText")
-        local _, keybindRead, keybindWrite = ResolveLensSection(
-            lens, group, "keybindText")
+        local auraStackScope = ResolveLensSection(lens, group, "auraStackText")
+        local keybindScope = ResolveLensSection(lens, group, "keybindText")
         lowTimeRead = lowTimeRead or effective
         borderRead = borderRead or effective
         tintRead = tintRead or effective
         cooldownRead = cooldownRead or effective
-        countRead = countRead or effective
         auraTextRead = auraTextRead or effective
-        auraStackRead = auraStackRead or effective
-        keybindRead = keybindRead or effective
 
         local drawsCooldownLowTime = IconsDrawCooldownDurationLowTimeRows(group, effective)
         local drawsAuraLowTime = IconsDrawAuraDurationLowTimeRows(group, effective)
@@ -461,16 +451,18 @@ local function RefreshAppearanceFinderState(context)
             group, group.style) or drawsCooldownLowTime
             or IconsDrawAuraDurationLowTimeRows(group, group.style)
             or drawsAuraLowTime
-        state.advancedCooldown = cooldownWrite ~= nil
-            and cooldownRead.showCooldownText == true
-        state.advancedCount = state.countAvailable and countWrite ~= nil
-            and countRead.showChargeText ~= false
-        state.advancedAuraText = hasAura and auraTextWrite ~= nil
-            and auraTextRead.showAuraText ~= false
-        state.advancedAuraStacks = hasAura and auraStackWrite ~= nil
-            and auraStackRead.showAuraStackText ~= false
-        state.advancedKeybind = state.keybindAvailable and keybindWrite ~= nil
-            and keybindRead.showKeybindText == true
+        -- Advanced routes index on STRUCTURE alone: a setting is findable
+        -- whenever its gear exists, and the gear now exists for every scope
+        -- except "denied" - an uncustomized section or an off parent toggle
+        -- opens the panel read-only behind its unlock strip, with the searched
+        -- row drawn and highlighted inside it.
+        state.advancedCooldown = state.cooldownAvailable
+            and cooldownScope ~= "denied"
+        state.advancedCount = state.countAvailable and countScope ~= "denied"
+        state.advancedAuraText = hasAura and auraTextScope ~= "denied"
+        state.advancedAuraStacks = hasAura and auraStackScope ~= "denied"
+        state.advancedKeybind = state.keybindAvailable
+            and keybindScope ~= "denied"
     end
 
     if context then
@@ -1390,17 +1382,21 @@ local function BuildAppearanceTab(container)
         end,
     })
 
-    if cdTextSec.write then
+    if cdTextSec.scope ~= "denied" then
         -- Panel scope hands the descriptor NO table, so it keeps resolving the
-        -- live group style itself (see the factory's note). An entry's override
-        -- store has no such resolver, so that one is handed over explicitly.
+        -- live group style itself (see the factory's note). A customized entry
+        -- hands its override store; an inherited one hands the effective read
+        -- table, whose panel opens read-only behind the unlock strip.
         local cdTextAdvanced = MakeCooldownTextAdvancedDescriptor(
-            cdTextSec.scope == "customized" and cdTextSec.write or nil,
+            cdTextSec.scope == "customized" and cdTextSec.write
+                or cdTextSec.write == nil and cdTextSec.read or nil,
             APPEARANCE_FINDER.cooldown)
 
-        AddAdvancedToggle(cdTextRow, cdTextAdvanced.settingKey, tabInfoButtons, cdTextSec.read.showCooldownText, {
+        AddAdvancedToggle(cdTextRow, cdTextAdvanced.settingKey, tabInfoButtons, true, {
             title = cdTextAdvanced.title,
             build = cdTextAdvanced.build,
+            unlock = { sec = cdTextSec,
+                enable = cdTextSec.read.showCooldownText ~= true and TURNON_COOLDOWN_TEXT or nil },
         })
     end
     cdTextSec:Chrome(cdTextRow)
@@ -1463,11 +1459,11 @@ local function BuildAppearanceTab(container)
     -- deferCommit is deliberately absent throughout, matching the
     -- stock color pickers these rows replaced.
     --
-    -- The panel captures the section's WRITE table, which is the group style or
-    -- the selected entry's override store depending on scope. Only built while
-    -- there is one: an inert section has no gear to open it from.
+    -- The panel captures the section's resolved table (sec.tbl): the write
+    -- table wherever one exists, else the effective read table for the
+    -- read-only inherited view the unlock strip fronts.
     local function BuildChargeTextAdvanced(panel)
-        AddFontControls(panel, chargeSec.write, "charge", { size = 12 }, refreshStyle, {
+        AddFontControls(panel, chargeSec.tbl, "charge", { size = 12 }, refreshStyle, {
             row = true,
             settings = {
                 size = APPEARANCE_FINDER.count.fontSize,
@@ -1481,7 +1477,7 @@ local function BuildAppearanceTab(container)
                 label = rowLabel,
                 setting = setting,
                 tooltip = { rowLabel },
-                tbl = chargeSec.write,
+                tbl = chargeSec.tbl,
                 key = key,
                 default = {1, 1, 1, 1},
                 hasAlpha = true,
@@ -1493,20 +1489,22 @@ local function BuildAppearanceTab(container)
         ChargeColorRow("Font Color (Missing Charges)", "chargeFontColorMissing", APPEARANCE_FINDER.count.missingColor)
         ChargeColorRow("Font Color (Zero Charges)", "chargeFontColorZero", APPEARANCE_FINDER.count.zeroColor)
 
-        AddAnchorDropdown(panel, chargeSec.write, "chargeAnchor", "BOTTOMRIGHT", refreshStyle, nil, {
+        AddAnchorDropdown(panel, chargeSec.tbl, "chargeAnchor", "BOTTOMRIGHT", refreshStyle, nil, {
             row = true,
             setting = APPEARANCE_FINDER.count.anchor,
         })
-        AddOffsetSliders(panel, chargeSec.write, "chargeXOffset", "chargeYOffset", { x = -2, y = 2 }, refreshStyle, {
+        AddOffsetSliders(panel, chargeSec.tbl, "chargeXOffset", "chargeYOffset", { x = -2, y = 2 }, refreshStyle, {
             row = true,
             settings = { x = APPEARANCE_FINDER.count.xOffset, y = APPEARANCE_FINDER.count.yOffset },
         })
     end
 
-    if chargeSec.write then
-        AddAdvancedToggle(chargeTextRow, "chargeText", tabInfoButtons, chargeSec.read.showChargeText ~= false, {
+    if chargeSec.scope ~= "denied" then
+        AddAdvancedToggle(chargeTextRow, "chargeText", tabInfoButtons, true, {
             title = "Count Text Advanced",
             build = BuildChargeTextAdvanced,
+            unlock = { sec = chargeSec,
+                enable = chargeSec.read.showChargeText == false and TURNON_CHARGE_TEXT or nil },
         })
     end
     chargeSec:Chrome(chargeTextRow)
@@ -1547,7 +1545,7 @@ local function BuildAppearanceTab(container)
         -- Single rail (AdvancedSettingsPanel.lua): every builder runs with
         -- { row = true } and no rightColumn.
         local function BuildAuraDurationTextAdvanced(panel)
-            AddFontControls(panel, auraTextSec.write, "auraText", { size = 12 }, refreshStyle, {
+            AddFontControls(panel, auraTextSec.tbl, "auraText", { size = 12 }, refreshStyle, {
                 row = true,
                 settings = {
                     size = APPEARANCE_FINDER.auraText.fontSize,
@@ -1561,7 +1559,7 @@ local function BuildAppearanceTab(container)
             AddColorRow(panel, {
                 label = "Font Color",
                 setting = APPEARANCE_FINDER.auraText.color,
-                tbl = auraTextSec.write,
+                tbl = auraTextSec.tbl,
                 key = "auraTextFontColor",
                 default = {0, 0.925, 1, 1},
                 onConfirm = refreshStyle,
@@ -1585,11 +1583,11 @@ local function BuildAppearanceTab(container)
             -- otherwise a keep-swipe entry's live position keys would have no
             -- rows to edit them.
             if SeparatePositionsOn() or WhileAuraFlagOn(whileAuraSec, "auraKeepSpellCooldownSwipe") then
-                AddAnchorDropdown(panel, auraTextSec.write, "auraTextAnchor", "TOPLEFT", refreshStyle, nil, {
+                AddAnchorDropdown(panel, auraTextSec.tbl, "auraTextAnchor", "TOPLEFT", refreshStyle, nil, {
                     row = true,
                     setting = APPEARANCE_FINDER.auraText.anchor,
                 })
-                AddOffsetSliders(panel, auraTextSec.write, "auraTextXOffset", "auraTextYOffset", { x = 2, y = -2 }, refreshStyle, {
+                AddOffsetSliders(panel, auraTextSec.tbl, "auraTextXOffset", "auraTextYOffset", { x = 2, y = -2 }, refreshStyle, {
                     row = true,
                     settings = { x = APPEARANCE_FINDER.auraText.xOffset, y = APPEARANCE_FINDER.auraText.yOffset },
                 })
@@ -1620,10 +1618,12 @@ local function BuildAppearanceTab(container)
             end
         end
 
-        if auraTextSec.write then
-            AddAdvancedToggle(auraTextRow, "auraText", tabInfoButtons, auraTextSec.read.showAuraText ~= false, {
+        if auraTextSec.scope ~= "denied" then
+            AddAdvancedToggle(auraTextRow, "auraText", tabInfoButtons, true, {
                 title = "Aura Duration Text Advanced",
                 build = BuildAuraDurationTextAdvanced,
+                unlock = { sec = auraTextSec,
+                    enable = auraTextSec.read.showAuraText == false and TURNON_AURA_TEXT or nil },
             })
         end
         -- Second badge in the chain: gear, then this, then the scope chrome the
@@ -1693,7 +1693,7 @@ local function BuildAppearanceTab(container)
 
         -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
         local function BuildAuraStackTextAdvanced(panel)
-            AddFontControls(panel, auraStackSec.write, "auraStack", { size = 12 }, refreshStyle, {
+            AddFontControls(panel, auraStackSec.tbl, "auraStack", { size = 12 }, refreshStyle, {
                 row = true,
                 settings = {
                     size = APPEARANCE_FINDER.auraStacks.fontSize,
@@ -1706,27 +1706,29 @@ local function BuildAppearanceTab(container)
             AddColorRow(panel, {
                 label = "Font Color",
                 setting = APPEARANCE_FINDER.auraStacks.color,
-                tbl = auraStackSec.write,
+                tbl = auraStackSec.tbl,
                 key = "auraStackFontColor",
                 default = {1, 1, 1, 1},
                 hasAlpha = true,
                 onConfirm = refreshStyle,
                 onChange = refreshStyle,
             })
-            AddAnchorDropdown(panel, auraStackSec.write, "auraStackAnchor", "BOTTOMLEFT", refreshStyle, nil, {
+            AddAnchorDropdown(panel, auraStackSec.tbl, "auraStackAnchor", "BOTTOMLEFT", refreshStyle, nil, {
                 row = true,
                 setting = APPEARANCE_FINDER.auraStacks.anchor,
             })
-            AddOffsetSliders(panel, auraStackSec.write, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle, {
+            AddOffsetSliders(panel, auraStackSec.tbl, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle, {
                 row = true,
                 settings = { x = APPEARANCE_FINDER.auraStacks.xOffset, y = APPEARANCE_FINDER.auraStacks.yOffset },
             })
         end
 
-        if auraStackSec.write then
-            AddAdvancedToggle(auraStackRow, "auraStackText", tabInfoButtons, auraStackSec.read.showAuraStackText ~= false, {
+        if auraStackSec.scope ~= "denied" then
+            AddAdvancedToggle(auraStackRow, "auraStackText", tabInfoButtons, true, {
                 title = "Aura Stack Text Advanced",
                 build = BuildAuraStackTextAdvanced,
+                unlock = { sec = auraStackSec,
+                    enable = auraStackSec.read.showAuraStackText == false and TURNON_AURA_STACK_TEXT or nil },
             })
         end
         auraStackSec:Chrome(auraStackRow)
@@ -1767,18 +1769,18 @@ local function BuildAppearanceTab(container)
                 BOTTOMRIGHT = "Bottom Right",
                 BOTTOMLEFT = "Bottom Left",
             },
-            value = kbSec.write.keybindAnchor or "TOPRIGHT",
+            value = kbSec.tbl.keybindAnchor or "TOPRIGHT",
             onChange = function(val)
                 kbSec.write.keybindAnchor = val
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             end,
         })
 
-        AddOffsetSliders(panel, kbSec.write, "keybindXOffset", "keybindYOffset", { x = -2, y = -2 }, refreshStyle, {
+        AddOffsetSliders(panel, kbSec.tbl, "keybindXOffset", "keybindYOffset", { x = -2, y = -2 }, refreshStyle, {
             row = true,
             settings = { x = APPEARANCE_FINDER.keybind.xOffset, y = APPEARANCE_FINDER.keybind.yOffset },
         })
-        AddFontControls(panel, kbSec.write, "keybind", { size = 10, sizeMin = 6, sizeMax = 24 }, refreshStyle, {
+        AddFontControls(panel, kbSec.tbl, "keybind", { size = 10, sizeMin = 6, sizeMax = 24 }, refreshStyle, {
             row = true,
             settings = {
                 size = APPEARANCE_FINDER.keybind.fontSize,
@@ -1791,7 +1793,7 @@ local function BuildAppearanceTab(container)
         AddColorRow(panel, {
             label = "Font Color",
             setting = APPEARANCE_FINDER.keybind.color,
-            tbl = kbSec.write,
+            tbl = kbSec.tbl,
             key = "keybindFontColor",
             default = {1, 1, 1, 1},
             hasAlpha = true,
@@ -1800,10 +1802,12 @@ local function BuildAppearanceTab(container)
         })
     end
 
-    if kbSec.write then
-        AddAdvancedToggle(kbRow, "keybindText", tabInfoButtons, kbSec.read.showKeybindText, {
+    if kbSec.scope ~= "denied" then
+        AddAdvancedToggle(kbRow, "keybindText", tabInfoButtons, true, {
             title = KEYBIND_CUSTOM_LABEL .. " Advanced",
             build = BuildKeybindTextAdvanced,
+            unlock = { sec = kbSec,
+                enable = not kbSec.read.showKeybindText and TURNON_KEYBIND_TEXT or nil },
         })
     end
     -- The gear is already chained off the label; this info button lands to its
@@ -2159,30 +2163,9 @@ local function BuildAppearanceTab(container)
         end -- not masqueCollapsed
     end
 
-    -- Inert-section sweep, over BOTH icons gear maps. A section the lens
-    -- resolved read-only builds no gear, so nothing rebound or closed an
-    -- advanced panel that was already open on that gear - and its controls
-    -- still write to the table the PREVIOUS build handed them. Close those here.
-    --
-    -- Scope-driven, not collapse-driven: a collapsed section builds no gear
-    -- either, and a panel left over from before an entry was selected is just
-    -- as live behind a closed section as behind an open one.
-    --
-    -- Both maps, not just this tab's: only one panel tab is ever built at a
-    -- time, so a stale panel whose gear lives on the icons Indicators tab is
-    -- just as live from here as one of this tab's own. See the twin sweep at
-    -- the foot of BuildEffectsTab.
-    if CS.CloseAdvancedSettingsPanel then
-        local gearMaps = { ST._APPEARANCE_SECTION_BY_ADVANCED_KEY, ST._INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY }
-        for i = 1, #gearMaps do
-            for advancedKey, sectionId in pairs(gearMaps[i]) do
-                local _, _, sectionWrite = ResolveLensSection(lens, group, sectionId)
-                if sectionWrite == nil then
-                    CS.CloseAdvancedSettingsPanel({ settingKey = advancedKey })
-                end
-            end
-        end
-    end
+    -- Gear panels whose gear did not rebuild are closed by the dispatch-level
+    -- gear build pass (RunAdvancedGearBuildPass, AdvancedSettingsPanel.lua),
+    -- which brackets this builder - every early return above included.
 end
 
 ST._BuildAppearanceTab = BuildAppearanceTab

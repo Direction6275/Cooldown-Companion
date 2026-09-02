@@ -43,6 +43,13 @@ local BeginRowGrid = ST._BeginRowGrid
 -- rule fading right.
 local ROW_SECTION = { leftAligned = true }
 
+-- The gear sites' "Turn On" enable specs, riding the LAZY unlock specs the
+-- gears store in options.unlock (resolved only at panel-build time by
+-- ST._ResolveAdvancedUnlock, Helpers.lua). File-local constant so a rebuild
+-- allocates none of it; the stack text twin's label varies per bar kind, so
+-- its spec stays inline at the site.
+local TURNON_SHOW_DURATION_TEXT = { label = "Turn On Show Duration Text", key = "showDurationText" }
+
 -- Sound option labels read "Category - Name" and run well past the 140px
 -- control column, and a dropdown sizes its menu from the control.
 local SOUND_PULLOUT_WIDTH = 300
@@ -542,11 +549,13 @@ if ST._DefineSettingRoute then
             end,
         })
     end
+    -- Advanced routes index on the bar's CAPABILITY alone: the gear now exists
+    -- with the text toggle off too, opening its panel read-only behind the
+    -- unlock strip with the searched row drawn inside.
     CUSTOM_BAR_FINDER.durationText = TextAdvanced("duration", "Duration Text", "rbCabDurationText_",
         function(context)
             local caps = FinderCustomBarCapabilities(context)
-            local cab = FinderCustomBar(context)
-            return caps and cab and caps.durationConsumer and cab.showDurationText == true
+            return caps and FinderCustomBar(context) and caps.durationConsumer or false
         end):Settings({
             fontSize = { label = "Font Size" }, font = { label = "Font" }, outline = { label = "Font Outline" },
             color = { label = "Duration Text Color" },
@@ -554,8 +563,7 @@ if ST._DefineSettingRoute then
     CUSTOM_BAR_FINDER.stackText = TextAdvanced("stack", "Other Text", "rbCabStackText_",
         function(context)
             local caps = FinderCustomBarCapabilities(context)
-            local cab = FinderCustomBar(context)
-            return caps and cab and caps.countConsumer and cab.showStackText == true
+            return caps and FinderCustomBar(context) and caps.countConsumer or false
         end):Settings({
             fontSize = { label = "Font Size" }, font = { label = "Font" }, outline = { label = "Font Outline" },
             color = { label = "Stack Text Color" },
@@ -1880,9 +1888,28 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
             })
         end
         AddAdvancedToggle(pandemicRow, "rbCabPandemicMarker_" .. tostring(sectionKey), infoButtons,
-            pandemicValue == true, {
+            true, {
                 title = "Pandemic Marker Advanced",
                 build = BuildCustomBarPandemicMarkerAdvanced,
+                -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): the
+                -- resourceBars refresh kind is the same apply-then-rebuild
+                -- pair RefreshCustomBarAuraConfig runs.
+                unlock = pandemicValue ~= true and {
+                    target = cab,
+                    refreshKind = "resourceBars",
+                    enable = {
+                        label = "Turn On Pandemic Marker",
+                        apply = function(write)
+                            -- Mirrors the checkbox: the stored key stays nil
+                            -- when on IS this bar's default.
+                            if pandemicDefault == true then
+                                write.pandemicMarker = nil
+                            else
+                                write.pandemicMarker = true
+                            end
+                        end,
+                    },
+                } or nil,
             })
         AnchorRowBadge(pandemicRow, CreateInfoButton(pandemicRow.frame, pandemicRow.frame, "LEFT", "LEFT", 0, 0, {
             "Pandemic Marker",
@@ -2250,6 +2277,11 @@ end
 -- parity): identity heading, then every former tab as collapsible sections,
 -- Talent Conditions last. Collapse keys are unchanged from the tab era, so
 -- expand state and the command-center deep links survived the merge.
+-- Early returns in here (conflict gate, resource bars disabled, no bar
+-- selected) land on the dispatch-level gear build pass's sweep
+-- (RunAdvancedGearBuildPass, AdvancedSettingsPanel.lua), which closes this
+-- pane's gear panels - the pandemic marker and the duration/stack text pair
+-- - when their gear does not rebuild.
 local function BuildCustomAuraBarPanel(container, customBarId)
     if BuildResourceBarConflictGate(container, "Custom Bars", false) then
         return
@@ -2578,9 +2610,14 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                     end
 
                     if showDurationControls then
-                        AddAdvancedToggle(durationTextRow, "rbCabDurationText_" .. capturedKey, rbCabTextAdvBtns, showDuration, {
+                        AddAdvancedToggle(durationTextRow, "rbCabDurationText_" .. capturedKey, rbCabTextAdvBtns, true, {
                             title = "Duration Text Advanced",
                             build = BuildDurationTextAdvanced,
+                            unlock = not showDuration and {
+                                target = customBars[cabIdx],
+                                enable = TURNON_SHOW_DURATION_TEXT,
+                                refreshKind = "resourceBars",
+                            } or nil,
                         })
                     end
 
@@ -2677,9 +2714,14 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                     end
 
                     if capabilities.countConsumer then
-                        AddAdvancedToggle(stackTextRow, "rbCabStackText_" .. capturedKey, rbCabTextAdvBtns, showStack, {
+                        AddAdvancedToggle(stackTextRow, "rbCabStackText_" .. capturedKey, rbCabTextAdvBtns, true, {
                             title = stackTextLabel .. " Advanced",
                             build = BuildStackTextAdvanced,
+                            unlock = not showStack and {
+                                target = customBars[cabIdx],
+                                enable = { label = "Turn On " .. stackTextLabel, key = "showStackText" },
+                                refreshKind = "resourceBars",
+                            } or nil,
                         })
                     end
                 end -- not textsCollapsed

@@ -988,7 +988,11 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
             PANDEMIC_MARKER_TOOLTIP_LINES, enableRow))
     end
 
-    if opts.enableOnly or mode == "off" then
+    -- childrenOnly is the advanced panel's shape, and that panel now opens
+    -- read-only while the marker is off (the unlock strip fronts it), so its
+    -- three styling rows still draw there. Inline children keep hiding under
+    -- an off mode as before.
+    if opts.enableOnly or (mode == "off" and not opts.childrenOnly) then
         return enableRow
     end
 
@@ -1406,13 +1410,17 @@ local function BuildShowTooltipsControls(container, styleTable, refreshCallback,
         return cb
     end
 
+    -- The gear builds whenever the caller asks for one; a toggle that is off,
+    -- or a lens section the entry only inherits, opens the panel read-only
+    -- behind the caller's opts.advancedUnlock strip instead of hiding it.
     local _, advBtn = AddAdvancedToggle(cb, "tooltipBehavior",
         opts.infoButtons or tabInfoButtons,
-        styleTable.showTooltips == true, {
+        true, {
             title = "Tooltip Advanced",
             build = function(panel)
                 BuildTooltipBehaviorControls(panel, styleTable, refreshCallback, opts)
             end,
+            unlock = opts.advancedUnlock,
         })
 
     return cb, advBtn
@@ -1795,11 +1803,15 @@ end
 -- four are one parent chain under Icon Fill Timer and stay in that toggle's
 -- column.
 BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCallback, opts)
-    if styleTable.iconFillEnabled ~= true then
+    opts = opts or {}
+    -- Inline these rows are the toggle's children and only exist while it is
+    -- on. The advanced panel builds them regardless (buildWhileOff): with the
+    -- timer off the panel opens read-only behind its Turn On strip, and the
+    -- greyed rows are what that panel shows - the read-only sweep is what
+    -- keeps their callbacks unreachable there.
+    if styleTable.iconFillEnabled ~= true and opts.buildWhileOff ~= true then
         return
     end
-
-    opts = opts or {}
     local iconFillOrientation = styleTable.iconFillOrientation == "horizontal" and "horizontal" or "vertical"
 
     -- Inline these rows hang off the Icon Fill Timer toggle and indent as its
@@ -1954,15 +1966,23 @@ local function BuildUnusableDimmingControls(container, styleTable, refreshCallba
         end,
     })
 
-    local _, unusableAdvBtn = AddAdvancedToggle(unusableCb,
-        opts.advancedKey or "unusableVisual",
-        opts.infoButtons or tabInfoButtons,
-        styleTable.showUnusable == true, {
-            title = "Unusable Visual Advanced",
-            build = function(panel)
-                BuildUnusableVisualModeControls(panel, styleTable, refreshCallback, opts)
-            end,
-        })
+    -- Opt-in, the same polarity as BuildShowTooltipsControls above: a caller
+    -- that wants the gear passes opts.advanced (the lens sites pass their
+    -- denied gate), with the Customize/Turn On footer as opts.advancedUnlock.
+    local unusableAdvBtn
+    if opts.advanced then
+        local _
+        _, unusableAdvBtn = AddAdvancedToggle(unusableCb,
+            opts.advancedKey or "unusableVisual",
+            opts.infoButtons or tabInfoButtons,
+            true, {
+                title = "Unusable Visual Advanced",
+                build = function(panel)
+                    BuildUnusableVisualModeControls(panel, styleTable, refreshCallback, opts)
+                end,
+                unlock = opts.advancedUnlock,
+            })
+    end
 
     return unusableCb, unusableAdvBtn
 end
@@ -2194,15 +2214,28 @@ local function AddGlowSliderRows(container, styleTable, currentStyle, keys, refr
     end
 end
 
--- Legacy profile compatibility: lcgProc duplicated Blizzard glow; lcgButton
--- and lcgAutoCast came from the removed LibCustomGlow library (lcgButton maps
--- to its modern Blizzard successor, lcgAutoCast to the CC-owned rebuild).
-local function NormalizeLegacyGlowStyle(style)
+-- The ONE display-side glow-style normalizer: the rendered builders and the
+-- settings finder must resolve a stored style identically, or search offers
+-- rows a panel does not draw. Legacy profile compatibility: lcgProc
+-- duplicated Blizzard glow; lcgButton and lcgAutoCast came from the removed
+-- LibCustomGlow library (lcgButton maps to its modern Blizzard successor,
+-- lcgAutoCast to the CC-owned rebuild); pulsingBorder is the aura kit's old
+-- name for pulse. "none" is the glow toggles' OFF encoding, not a style -
+-- it resolves to the caller's fallback (the section default), whose rows the
+-- off-state read-only panel draws.
+local function NormalizeGlowStyleForDisplay(style, fallback)
+    style = style or fallback
     if style == "lcgProc" or style == "lcgButton" then
         return "glow"
     end
     if style == "lcgAutoCast" then
         return "autocast"
+    end
+    if style == "pulsingBorder" then
+        return "pulse"
+    end
+    if style == "none" then
+        return fallback
     end
     return style
 end
@@ -2238,10 +2271,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
     if styleTable[cfg.styleKey] == "lcgProc" then
         styleTable[cfg.styleKey] = "glow"
     end
-    local currentStyle = NormalizeLegacyGlowStyle(styleTable[cfg.styleKey] or cfg.defaultStyle)
-    if currentStyle == "none" then
-        currentStyle = cfg.defaultStyle
-    end
+    local currentStyle = NormalizeGlowStyleForDisplay(styleTable[cfg.styleKey], cfg.defaultStyle)
 
     local styleOptions = cfg.styleOptions or {
         ["solid"] = "Solid Border",
@@ -2800,6 +2830,9 @@ ST._BuildLossOfControlControls = BuildLossOfControlControls
 ST._BuildUnusableDimmingControls = BuildUnusableDimmingControls
 ST._BuildAssistedHighlightControls = BuildAssistedHighlightControls
 ST._BuildProcGlowControls = BuildProcGlowControls
+-- The finder resolves stored glow styles through the SAME normalizer the
+-- rendered builders use (see NormalizeGlowStyleForDisplay above).
+ST._NormalizeGlowStyleForDisplay = NormalizeGlowStyleForDisplay
 ST._BuildAuraGlowControls = BuildAuraGlowControls
 ST._BuildPandemicGlowControls = BuildPandemicGlowControls
 -- The bare per-style slider renderer, for surfaces that own their style

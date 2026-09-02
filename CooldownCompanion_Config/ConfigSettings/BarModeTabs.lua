@@ -26,9 +26,9 @@ local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 -- that entry's effective values, with per-section scope deciding where - or
 -- whether - each section writes. Helpers.lua loads first (the .toc), so these
 -- resolve at load like every other import above.
--- ResolveLensSection is kept for the inert-section sweeps at the foot of both
--- builders, which only ask whether a section has a write table; every section
--- that draws rows goes through the host below instead.
+-- ResolveLensSection is kept for the finder predicates below, which only ask
+-- a section's scope; every section that draws rows goes through the host
+-- below instead.
 local ResolveStyleLens = ST._ResolveStyleLens
 local ResolveLensSection = ST._ResolveLensSection
 local BeginLensSection = ST._BeginLensSection
@@ -60,6 +60,45 @@ local AnchorRowBadge = ST._AnchorRowBadge
 local BeginRowGrid = ST._BeginRowGrid
 
 local tabInfoButtons = CS.tabInfoButtons
+
+-- The gear sites' "Turn On" enable specs, riding the LAZY unlock specs the
+-- gears store in options.unlock (resolved only at panel-build time by
+-- ST._ResolveAdvancedUnlock, Helpers.lua). File-local constants so a tab
+-- rebuild allocates none of them.
+local TURNON_BAR_ICON = { label = "Turn On Show Icon", key = "showBarIcon" }
+local TURNON_BAR_NAME_TEXT = { label = "Turn On Show Name Text", key = "showBarNameText" }
+local TURNON_BAR_COOLDOWN_TEXT = { label = "Turn On Show Cooldown Text", key = "showCooldownText" }
+local TURNON_BAR_CHARGE_TEXT = { label = "Turn On Show Count Text", key = "showChargeText" }
+local TURNON_BAR_READY_TEXT = { label = "Turn On Show Ready Text", key = "showBarReadyText" }
+local TURNON_BAR_AURA_TEXT = { label = "Turn On Show Aura Duration Text", key = "showAuraText" }
+local TURNON_BAR_AURA_STACK_TEXT = { label = "Turn On Show Aura Stack Text", key = "showAuraStackText" }
+local TURNON_SHOW_UNUSABLE = { label = "Turn On Show Unusable Visual", key = "showUnusable" }
+local TURNON_SHOW_TOOLTIPS = { label = "Turn On Show Tooltips", key = "showTooltips" }
+-- The marker's enable is a mode, not a boolean.
+local TURNON_BAR_PANDEMIC_MARKER = {
+    label = "Turn On Pandemic Marker",
+    apply = function(write) write.pandemicMarkerMode = "auto" end,
+}
+
+-- One enable path for the checkbox AND the read-only panel's Turn On
+-- footer: enabling with nothing visible configured forces the pulse
+-- border and resets its per-style keys (a leftover proc-scale size
+-- would render a 30px wall), and the two entrances of one feature
+-- must never drift.
+local function EnableBarAuraIndicator(write)
+    write.barAuraIndicatorEnabled = true
+    if not (write.barAuraEffect and write.barAuraEffect ~= "color" and write.barAuraEffect ~= "none"
+        or write.barAuraPulseEnabled == true or write.barAuraColorShiftEnabled == true) then
+        write.barAuraEffect = "pulse"
+        write.barAuraEffectSize = 2
+        write.barAuraEffectSpeed = 0.5
+    end
+end
+
+local TURNON_BAR_AURA_INDICATOR = {
+    label = "Turn On Active Aura Indicator",
+    apply = EnableBarAuraIndicator,
+}
 
 -- Populated at module load near the exports. Bar mode has several advanced
 -- text panels with identical visible labels, so callers pass exact descriptor
@@ -105,12 +144,9 @@ local BAR_TEXTURE_PULLOUT_WIDTH = 300
 -- beside it: that map answers "which COLLAPSE section is this gear inside",
 -- this one answers "which OVERRIDE section owns this gear's values".
 --
--- Both bar builders sweep the WHOLE map at the foot of their build. A section
--- the lens resolved read-only builds no gear, so nothing rebound or closed an
--- advanced panel already open on it, and that panel's controls still write to
--- the table the PREVIOUS build handed them. A stale panel is just as live when
--- its gear lives on the other bars tab, so neither builder limits itself to
--- its own keys.
+-- Read by the Customizations list (Helpers.lua) to resolve a section's gear.
+-- Stale-panel cleanup no longer iterates it: the gear-stamp sweep in
+-- AdvancedSettingsPanel.lua closes unrebuilt gear panels by key, mapless.
 --
 -- A gear added to any converted section belongs here the same day.
 ST._BARMODE_SECTION_BY_ADVANCED_KEY = {
@@ -235,9 +271,12 @@ end
 -- because a gear queues a panel that a gear which was never built can never
 -- consume.
 --
--- gearEnabled mirrors AddAdvancedToggle's own gate, which hides the gear on an
--- EXACT `false` and builds it for nil - so each one is its call site's
--- isEnabled expression tested `~= false`, copied rather than simplified.
+-- gearEnabled mirrors the STRUCTURAL gates that still remove a gear outright
+-- (Masque, the fill-timer interlock, a row surface that is not drawn). Parent
+-- toggles and customization state stopped hiding gears: those gears build
+-- with their normal looks (locked and live gears wear the SAME two colors,
+-- owner ruling 2026-08-31 - the panel is what says locked) and open
+-- read-only behind an unlock strip, so no predicate mirrors them any more.
 --
 -- Only sections the entry has CUSTOMIZED are ever asked, so a builder reading
 -- `sec.tbl` (the override store) and one reading `sec.read` (the effective
@@ -255,18 +294,19 @@ ST._SECTION_HOME.bars = {
         tab = "appearance", collapseKey = "barappearance_iconTint",
         available = BarsIconShown,
     },
+    -- gearEnabled predicates survive only where a STRUCTURAL gate still hides
+    -- a gear; parent-toggle state no longer hides gears anywhere - a gear
+    -- behind an off toggle keeps its normal looks and opens its panel
+    -- read-only behind an unlock strip.
     barIcon = {
         tab = "appearance", collapseKey = "barappearance_textIcon",
-        gearEnabled = function(_, style) return (style.showBarIcon ~= false) ~= false end,
     },
     barNameText = {
         tab = "appearance", collapseKey = "barappearance_textIcon",
-        gearEnabled = function(_, style) return (style.showBarNameText ~= false) ~= false end,
     },
     cooldownText = {
         tab = "appearance", collapseKey = "barappearance_textIcon",
         available = GroupDrawsCooldownTextRow,
-        gearEnabled = function(_, style) return (style.showCooldownText) ~= false end,
     },
     durationLowTime = {
         tab = "appearance", collapseKey = "barappearance_textIcon",
@@ -274,22 +314,18 @@ ST._SECTION_HOME.bars = {
     },
     chargeText = {
         tab = "appearance", collapseKey = "barappearance_textIcon",
-        gearEnabled = function(_, style) return (style.showChargeText ~= false) ~= false end,
     },
     barReadyText = {
         tab = "appearance", collapseKey = "barappearance_textIcon",
-        gearEnabled = function(_, style) return (style.showBarReadyText) ~= false end,
     },
     -- The bar aura block is drawn only while the GROUP tracks an aura.
     auraText = {
         tab = "appearance", collapseKey = "barappearance_textIcon",
         available = BarsGroupTracksAura,
-        gearEnabled = function(_, style) return (style.showAuraText ~= false) ~= false end,
     },
     auraStackText = {
         tab = "appearance", collapseKey = "barappearance_textIcon",
         available = BarsGroupTracksAura,
-        gearEnabled = function(_, style) return (style.showAuraStackText ~= false) ~= false end,
     },
     -- Icon Zoom is edited inside the Show Icon gear's advanced panel in bar
     -- mode, so its home is that gear's section.
@@ -307,21 +343,17 @@ ST._SECTION_HOME.bars = {
     barActiveAura = {
         tab = "effects", collapseKey = EFFECTS_AURA_SECTION,
         available = BarsGroupTracksAura,
-        gearEnabled = function(_, style) return BarAuraIndicatorRenders(style) ~= false end,
     },
     -- The Pandemic subheading at the foot of Aura Indicators, so the home names
     -- that section's key.
     pandemic = {
         tab = "effects", collapseKey = EFFECTS_AURA_SECTION,
         available = BarsGroupTracksAura,
-        -- One gear on this section in bar mode (barPandemicMarker), so the
-        -- list can resolve it while the marker's aura-duration-text surface
-        -- renders - unlike icons, where the glow and the marker are two and
-        -- the row carries none. The fill half remains available independently.
-        gearEnabled = function(group, style)
-            return BarsDrawAuraDurationRows(group, style)
-                and style.pandemicMarkerMode ~= "off"
-        end,
+        -- One gear on this section in bar mode (barPandemicMarker). The marker
+        -- rides the aura duration text, so its ROW - and with it the gear -
+        -- exists only while that surface renders; the marker's own on/off no
+        -- longer hides it. The fill half remains available independently.
+        gearEnabled = BarsDrawAuraDurationRows,
     },
     -- The Timers and States subheadings sit inside the Cooldown / Spell
     -- Indicators section, drawn only while the bar icon renders for the current
@@ -349,7 +381,6 @@ ST._SECTION_HOME.bars = {
     unusableDimming = {
         tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
         available = BarsIconShown,
-        gearEnabled = function(_, style) return (style.showUnusable == true) ~= false end,
     },
     showOutOfRange = {
         tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
@@ -367,7 +398,6 @@ ST._SECTION_HOME.bars = {
     showTooltips = {
         tab = "effects", collapseKey = EFFECTS_INTERACTION_SECTION,
         available = BarsTooltipRowShown,
-        gearEnabled = function(_, style) return (style.showTooltips == true) ~= false end,
     },
 }
 
@@ -397,12 +427,16 @@ local function ResolveSelectedGroupStyle()
     return group and group.style or nil
 end
 
-local function MakeBarCooldownTextAdvancedDescriptor(styleTable, finderSettings)
+local function MakeBarCooldownTextAdvancedDescriptor(styleTable, finderSettings, isEntryOverride)
     local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
-    -- Panel scope hands this factory NO table, so the panel keeps resolving the
-    -- live group style itself; a table means the panel is editing one entry's
-    -- override store instead.
-    local isEntryOverride = styleTable ~= nil
+    -- Panel scope hands this factory NO table, so the panel keeps resolving
+    -- the live group style itself. isEntryOverride is passed EXPLICITLY
+    -- (review finding 2026-08-31), never inferred from the table: the
+    -- inherited read-only view also hands a table (the effective read), and
+    -- inferring entry-ness from it dropped the panel-owned rows (Flip Time
+    -- Text, the offsets) from a view that should show them greyed - the
+    -- sibling Name Text panel keeps its panel-owned rows in that state.
+    isEntryOverride = isEntryOverride == true
     return {
         settingKey = "barCooldownText",
         title = "Cooldown Text Advanced",
@@ -935,11 +969,10 @@ local function BuildBarAppearanceTab(container, group, style)
     -- the rows go straight onto the panel scroll and Icon Size indents under the
     -- toggle that gates it.
     --
-    -- The panel captures the section's WRITE table - the group style, or the
-    -- selected entry's override store - and reads its starting values from the
-    -- section's READ table. Built only while there is a write table: an inert
-    -- section has no gear to open it from.
-    local function BuildBarIconAdvanced(panel)
+    -- The panel reads its starting values from the section's READ table and
+    -- writes through its WRITE table; with no write table it opens read-only
+    -- behind the unlock strip, so no write callback of its own can fire.
+    local function BuildBarIconAdvanced(panel, descriptor)
         AddCheckboxRow(panel, {
             label = "Flip Icon Side",
             setting = BAR_FINDER.advanced.icon and BAR_FINDER.advanced.icon.flip,
@@ -1022,12 +1055,28 @@ local function BuildBarAppearanceTab(container, group, style)
         -- out. Clicking it rebuilds the config, which rebinds this panel.
         zoomSec:Chrome(zoomRow)
         zoomSec:Finish()
+
+        -- This section is the row's OWN: once the entry has taken it over,
+        -- its override outranks whatever Bar Icon resolves to, so a read-only
+        -- build must not grey it - the row's Customize would otherwise create
+        -- an override behind a dead slider. Customized scope only: at panel
+        -- or multi scope the zoom rides the panel's lock like every other
+        -- row (the grey answers a toggle that is off, and no Customize can
+        -- strand an override there). Consumed (and cleared) by
+        -- MakeWidgetTreeInert in the same build; the revert glyph still
+        -- hides with the rest of the locked surface (owner ruling
+        -- 2026-08-31).
+        if descriptor and descriptor._resolvedUnlock and zoomSec.scope == "customized" then
+            zoomRow._cdcReadOnlyExempt = true
+        end
     end
 
-    if iconSec.write then
-        AddAdvancedToggle(showIconRow, "barIcon", tabInfoButtons, iconSec.read.showBarIcon ~= false, {
+    if iconSec.scope ~= "denied" then
+        AddAdvancedToggle(showIconRow, "barIcon", tabInfoButtons, true, {
             title = "Bar Icon Advanced",
             build = BuildBarIconAdvanced,
+            unlock = { sec = iconSec,
+                enable = iconSec.read.showBarIcon == false and TURNON_BAR_ICON or nil },
         })
     end
     iconSec:Chrome(showIconRow)
@@ -1063,7 +1112,7 @@ local function BuildBarAppearanceTab(container, group, style)
             end,
         })
 
-        AddFontControls(panel, nameSec.write, "barName", {sizeMin = 6, sizeMax = 24, size = 10}, refreshStyle, {
+        AddFontControls(panel, nameSec.tbl, "barName", {sizeMin = 6, sizeMax = 24, size = 10}, refreshStyle, {
             row = true,
             settings = BAR_FINDER.advanced.name and {
                 size = BAR_FINDER.advanced.name.fontSize,
@@ -1076,7 +1125,7 @@ local function BuildBarAppearanceTab(container, group, style)
         AddColorRow(panel, {
             label = "Font Color",
             setting = BAR_FINDER.advanced.name and BAR_FINDER.advanced.name.color,
-            tbl = nameSec.write,
+            tbl = nameSec.tbl,
             key = "barNameFontColor",
             default = {1, 1, 1, 1},
             hasAlpha = true,
@@ -1101,10 +1150,12 @@ local function BuildBarAppearanceTab(container, group, style)
         nameSec:PanelRowChrome(offsetYRow)
     end
 
-    if nameSec.write then
-        AddAdvancedToggle(showNameRow, "barNameText", tabInfoButtons, nameSec.read.showBarNameText ~= false, {
+    if nameSec.scope ~= "denied" then
+        AddAdvancedToggle(showNameRow, "barNameText", tabInfoButtons, true, {
             title = "Name Text Advanced",
             build = BuildBarNameTextAdvanced,
+            unlock = { sec = nameSec,
+                enable = nameSec.read.showBarNameText == false and TURNON_BAR_NAME_TEXT or nil },
         })
     end
     nameSec:Chrome(showNameRow)
@@ -1131,17 +1182,22 @@ local function BuildBarAppearanceTab(container, group, style)
         end,
     })
 
-    if cdTextSec.write then
+    if cdTextSec.scope ~= "denied" then
         -- Panel scope hands the descriptor NO table, so it keeps resolving the
-        -- live group style itself (see the factory's note). An entry's override
-        -- store has no such resolver, so that one is handed over explicitly.
+        -- live group style itself (see the factory's note). A customized entry
+        -- hands its override store; an inherited one hands the effective read
+        -- table, whose panel opens read-only behind the unlock strip.
         local barCdTextAdvanced = MakeBarCooldownTextAdvancedDescriptor(
-            cdTextSec.scope == "customized" and cdTextSec.write or nil,
-            BAR_FINDER.advanced.cooldown)
+            cdTextSec.scope == "customized" and cdTextSec.write
+                or cdTextSec.write == nil and cdTextSec.read or nil,
+            BAR_FINDER.advanced.cooldown,
+            cdTextSec.scope == "customized")
 
-        AddAdvancedToggle(showTimeRow, barCdTextAdvanced.settingKey, tabInfoButtons, cdTextSec.read.showCooldownText, {
+        AddAdvancedToggle(showTimeRow, barCdTextAdvanced.settingKey, tabInfoButtons, true, {
             title = barCdTextAdvanced.title,
             build = barCdTextAdvanced.build,
+            unlock = { sec = cdTextSec,
+                enable = cdTextSec.read.showCooldownText ~= true and TURNON_BAR_COOLDOWN_TEXT or nil },
         })
     end
     cdTextSec:Chrome(showTimeRow)
@@ -1205,7 +1261,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- deferCommit is deliberately absent throughout, matching the stock color-picker
     -- calls these rows replaced.
     local function BuildBarChargeTextAdvanced(panel)
-        AddFontControls(panel, chargeSec.write, "charge", {}, refreshStyle, {
+        AddFontControls(panel, chargeSec.tbl, "charge", {}, refreshStyle, {
             row = true,
             settings = BAR_FINDER.advanced.charge and {
                 size = BAR_FINDER.advanced.charge.fontSize,
@@ -1219,7 +1275,7 @@ local function BuildBarAppearanceTab(container, group, style)
                 label = rowLabel,
                 setting = BAR_FINDER.advanced.charge and BAR_FINDER.advanced.charge[key],
                 tooltip = { rowLabel },
-                tbl = chargeSec.write,
+                tbl = chargeSec.tbl,
                 key = key,
                 default = {1, 1, 1, 1},
                 hasAlpha = true,
@@ -1231,11 +1287,11 @@ local function BuildBarAppearanceTab(container, group, style)
         ChargeColorRow("Font Color (Missing Charges)", "chargeFontColorMissing")
         ChargeColorRow("Font Color (Zero Charges)", "chargeFontColorZero")
 
-        AddAnchorDropdown(panel, chargeSec.write, "chargeAnchor", "BOTTOMRIGHT", refreshStyle, nil, {
+        AddAnchorDropdown(panel, chargeSec.tbl, "chargeAnchor", "BOTTOMRIGHT", refreshStyle, nil, {
             row = true,
             setting = BAR_FINDER.advanced.charge and BAR_FINDER.advanced.charge.anchor,
         })
-        AddOffsetSliders(panel, chargeSec.write, "chargeXOffset", "chargeYOffset", {x = -2, y = 2}, refreshStyle, {
+        AddOffsetSliders(panel, chargeSec.tbl, "chargeXOffset", "chargeYOffset", {x = -2, y = 2}, refreshStyle, {
             row = true,
             settings = BAR_FINDER.advanced.charge and {
                 x = BAR_FINDER.advanced.charge.xOffset,
@@ -1244,10 +1300,12 @@ local function BuildBarAppearanceTab(container, group, style)
         })
     end
 
-    if chargeSec.write then
-        AddAdvancedToggle(chargeTextRow, "barChargeText", tabInfoButtons, chargeSec.read.showChargeText ~= false, {
+    if chargeSec.scope ~= "denied" then
+        AddAdvancedToggle(chargeTextRow, "barChargeText", tabInfoButtons, true, {
             title = "Count Text Advanced",
             build = BuildBarChargeTextAdvanced,
+            unlock = { sec = chargeSec,
+                enable = chargeSec.read.showChargeText == false and TURNON_BAR_CHARGE_TEXT or nil },
         })
     end
     chargeSec:Chrome(chargeTextRow)
@@ -1295,14 +1353,14 @@ local function BuildBarAppearanceTab(container, group, style)
         AddColorRow(panel, {
             label = "Ready Text Color",
             setting = BAR_FINDER.advanced.ready and BAR_FINDER.advanced.ready.color,
-            tbl = readySec.write,
+            tbl = readySec.tbl,
             key = "barReadyTextColor",
             default = {0.2, 1.0, 0.2, 1.0},
             hasAlpha = true,
             onConfirm = refreshStyle,
             onChange = refreshStyle,
         })
-        AddFontControls(panel, readySec.write, "barReady", {sizeMin = 6, sizeMax = 24}, refreshStyle, {
+        AddFontControls(panel, readySec.tbl, "barReady", {sizeMin = 6, sizeMax = 24}, refreshStyle, {
             row = true,
             settings = BAR_FINDER.advanced.ready and {
                 size = BAR_FINDER.advanced.ready.fontSize,
@@ -1312,10 +1370,12 @@ local function BuildBarAppearanceTab(container, group, style)
         })
     end
 
-    if readySec.write then
-        AddAdvancedToggle(showReadyRow, "barReadyText", tabInfoButtons, readySec.read.showBarReadyText, {
+    if readySec.scope ~= "denied" then
+        AddAdvancedToggle(showReadyRow, "barReadyText", tabInfoButtons, true, {
             title = "Ready Text Advanced",
             build = BuildBarReadyTextAdvanced,
+            unlock = { sec = readySec,
+                enable = not readySec.read.showBarReadyText and TURNON_BAR_READY_TEXT or nil },
         })
     end
     readySec:Chrome(showReadyRow)
@@ -1354,7 +1414,7 @@ local function BuildBarAppearanceTab(container, group, style)
         -- deferCommit is deliberately absent, matching the stock color-picker call
         -- the color row replaced.
         local function BuildBarAuraTextAdvanced(panel)
-            AddFontControls(panel, auraTextSec.write, "auraText", { size = 12 }, refreshStyle, {
+            AddFontControls(panel, auraTextSec.tbl, "auraText", { size = 12 }, refreshStyle, {
                 row = true,
                 settings = BAR_FINDER.advanced.auraText and {
                     size = BAR_FINDER.advanced.auraText.fontSize,
@@ -1365,7 +1425,7 @@ local function BuildBarAppearanceTab(container, group, style)
             AddColorRow(panel, {
                 label = "Font Color",
                 setting = BAR_FINDER.advanced.auraText and BAR_FINDER.advanced.auraText.color,
-                tbl = auraTextSec.write,
+                tbl = auraTextSec.tbl,
                 key = "auraTextFontColor",
                 default = {0, 0.925, 1, 1},
                 onConfirm = refreshStyle,
@@ -1407,10 +1467,12 @@ local function BuildBarAppearanceTab(container, group, style)
             end
         end
 
-        if auraTextSec.write then
-            AddAdvancedToggle(auraTextRow, "barAuraText", tabInfoButtons, auraTextSec.read.showAuraText ~= false, {
+        if auraTextSec.scope ~= "denied" then
+            AddAdvancedToggle(auraTextRow, "barAuraText", tabInfoButtons, true, {
                 title = "Aura Duration Text Advanced",
                 build = BuildBarAuraTextAdvanced,
+                unlock = { sec = auraTextSec,
+                    enable = auraTextSec.read.showAuraText == false and TURNON_BAR_AURA_TEXT or nil },
             })
         end
         -- Second badge in the chain: gear, then this, then the scope chrome the
@@ -1478,7 +1540,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
         -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
         local function BuildBarAuraStackTextAdvanced(panel)
-            AddFontControls(panel, auraStackSec.write, "auraStack", { size = 12 }, refreshStyle, {
+            AddFontControls(panel, auraStackSec.tbl, "auraStack", { size = 12 }, refreshStyle, {
                 row = true,
                 settings = BAR_FINDER.advanced.auraStack and {
                     size = BAR_FINDER.advanced.auraStack.fontSize,
@@ -1491,18 +1553,18 @@ local function BuildBarAppearanceTab(container, group, style)
             AddColorRow(panel, {
                 label = "Font Color",
                 setting = BAR_FINDER.advanced.auraStack and BAR_FINDER.advanced.auraStack.color,
-                tbl = auraStackSec.write,
+                tbl = auraStackSec.tbl,
                 key = "auraStackFontColor",
                 default = {1, 1, 1, 1},
                 hasAlpha = true,
                 onConfirm = refreshStyle,
                 onChange = refreshStyle,
             })
-            AddAnchorDropdown(panel, auraStackSec.write, "auraStackAnchor", "BOTTOMLEFT", refreshStyle, nil, {
+            AddAnchorDropdown(panel, auraStackSec.tbl, "auraStackAnchor", "BOTTOMLEFT", refreshStyle, nil, {
                 row = true,
                 setting = BAR_FINDER.advanced.auraStack and BAR_FINDER.advanced.auraStack.anchor,
             })
-            AddOffsetSliders(panel, auraStackSec.write, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle, {
+            AddOffsetSliders(panel, auraStackSec.tbl, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle, {
                 row = true,
                 settings = BAR_FINDER.advanced.auraStack and {
                     x = BAR_FINDER.advanced.auraStack.xOffset,
@@ -1511,10 +1573,12 @@ local function BuildBarAppearanceTab(container, group, style)
             })
         end
 
-        if auraStackSec.write then
-            AddAdvancedToggle(auraStackRow, "barAuraStackText", tabInfoButtons, auraStackSec.read.showAuraStackText ~= false, {
+        if auraStackSec.scope ~= "denied" then
+            AddAdvancedToggle(auraStackRow, "barAuraStackText", tabInfoButtons, true, {
                 title = "Aura Stack Text Advanced",
                 build = BuildBarAuraStackTextAdvanced,
+                unlock = { sec = auraStackSec,
+                    enable = auraStackSec.read.showAuraStackText == false and TURNON_BAR_AURA_STACK_TEXT or nil },
             })
         end
         AnchorRowBadge(auraStackRow, CreateInfoButton(auraStackRow.frame, auraStackRow.frame, "LEFT", "LEFT", 0, 0, {
@@ -1607,22 +1671,10 @@ local function BuildBarAppearanceTab(container, group, style)
     end -- not whileAuraCollapsed
     end -- While Aura Active section drawn
 
-    -- Inert-section sweep. A section the lens resolved read-only builds no
-    -- gear, so nothing rebound or closed an advanced panel that was already
-    -- open on that gear - and its controls still write to the table the
-    -- PREVIOUS build handed them. Close those here.
-    --
-    -- Scope-driven, not collapse-driven: a collapsed section builds no gear
-    -- either, and a panel left over from before an entry was selected is just
-    -- as live behind a closed section as behind an open one.
-    if CS.CloseAdvancedSettingsPanel then
-        for advancedKey, sectionId in pairs(ST._BARMODE_SECTION_BY_ADVANCED_KEY) do
-            local _, _, sectionWrite = ResolveLensSection(lens, group, sectionId)
-            if sectionWrite == nil then
-                CS.CloseAdvancedSettingsPanel({ settingKey = advancedKey })
-            end
-        end
-    end
+    -- Gear panels whose gear did not rebuild (collapsed sections, the bar
+    -- icon gate above, the other bars sub-tab) are closed by the
+    -- dispatch-level gear build pass that brackets this builder
+    -- (RunAdvancedGearBuildPass, AdvancedSettingsPanel.lua).
 end
 
 ------------------------------------------------------------------------
@@ -1667,6 +1719,9 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
         -- bracket is taken here rather than at Begin.
         auraSec:Mark(container)
 
+        -- EnableBarAuraIndicator (file-local, by the Turn On constants) is
+        -- the one enable path for this checkbox AND the read-only panel's
+        -- Turn On footer.
         local enableRow = AddCheckboxRow(container, {
             label = "Show Active Aura Indicator",
             setting = BAR_FINDER.effects.aura.active,
@@ -1674,15 +1729,10 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
             disabled = auraSec.disabled,
             onChange = function(val)
                 if not auraSec.write then return end
-                auraSec.write.barAuraIndicatorEnabled = val
-                if val and not (auraSec.write.barAuraEffect and auraSec.write.barAuraEffect ~= "color" and auraSec.write.barAuraEffect ~= "none"
-                    or auraSec.write.barAuraPulseEnabled == true or auraSec.write.barAuraColorShiftEnabled == true) then
-                    -- Nothing visible was configured; force the pulse border and
-                    -- reset its per-style keys (a leftover proc-scale size would
-                    -- render a 30px wall).
-                    auraSec.write.barAuraEffect = "pulse"
-                    auraSec.write.barAuraEffectSize = 2
-                    auraSec.write.barAuraEffectSpeed = 0.5
+                if val then
+                    EnableBarAuraIndicator(auraSec.write)
+                else
+                    auraSec.write.barAuraIndicatorEnabled = false
                 end
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
                 CooldownCompanion:RefreshConfigPanel()
@@ -1699,7 +1749,7 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
         -- section passes. The section's enable toggle lives on the row above,
         -- never in the shared builder.
         local function BuildBarActiveAuraAdvanced(panel)
-            BuildBarActiveAuraControls(panel, auraSec.write, function()
+            BuildBarActiveAuraControls(panel, auraSec.tbl, function()
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             end, {
                 row = true,
@@ -1710,10 +1760,12 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
             })
         end
 
-        if auraSec.write then
-            AddAdvancedToggle(enableRow, "barActiveAura", tabInfoButtons, indicatorOn, {
+        if auraSec.scope ~= "denied" then
+            AddAdvancedToggle(enableRow, "barActiveAura", tabInfoButtons, true, {
                 title = "Active Aura Indicator Advanced",
                 build = BuildBarActiveAuraAdvanced,
+                unlock = { sec = auraSec,
+                    enable = not indicatorOn and TURNON_BAR_AURA_INDICATOR or nil },
             })
         end
         -- Second badge in the chain: gear, then this, then the scope chrome the
@@ -1846,9 +1898,10 @@ local function BuildBarPandemicMarkerSection(container, group, style, lens)
 
     -- Single rail (AdvancedSettingsPanel.lua): the styling rows fill the panel,
     -- so childrenOnly drops the indent they carry when inline. The panel
-    -- captures the section's WRITE table, and is only built while there is one.
+    -- captures the section's resolved table (sec.tbl), read-only behind the
+    -- unlock strip while the section is inherited or the marker is off.
     local function BuildBarPandemicMarkerAdvanced(panel)
-        AddPandemicMarkerControls(panel, markerSec.write, applyStyle, function()
+        AddPandemicMarkerControls(panel, markerSec.tbl, applyStyle, function()
             if CS.RefreshAdvancedSettingsPanel then
                 CS.RefreshAdvancedSettingsPanel()
             end
@@ -1862,12 +1915,13 @@ local function BuildBarPandemicMarkerSection(container, group, style, lens)
     -- carries its own prefixed key (barAuraText, barNameText, barChargeText),
     -- so a panel switch can never rebind an open panel onto the other mode's
     -- builder. The gear-to-section maps name both.
-    if markerSec.write then
-        AddAdvancedToggle(markerRow, "barPandemicMarker", tabInfoButtons,
-            markerSec.read.pandemicMarkerMode ~= "off", {
-                title = "Pandemic Marker Advanced",
-                build = BuildBarPandemicMarkerAdvanced,
-            })
+    if markerSec.scope ~= "denied" then
+        AddAdvancedToggle(markerRow, "barPandemicMarker", tabInfoButtons, true, {
+            title = "Pandemic Marker Advanced",
+            build = BuildBarPandemicMarkerAdvanced,
+            unlock = { sec = markerSec,
+                enable = markerSec.read.pandemicMarkerMode == "off" and TURNON_BAR_PANDEMIC_MARKER or nil },
+        })
     end
 
     markerSec:Finish()
@@ -2091,10 +2145,10 @@ local function BuildBarEffectsTab(container, group, style)
         desatSec:Chrome(desatRow)
         end -- CanGroupUseOverrideSection desaturation
 
-        -- The two shared builders below own their gears, so an inert scope
-        -- cannot skip building one the way the hand-written sections do: the
-        -- inert pass gates the gear it finds on the row (_cdcAdvancedBtn), and
-        -- the sweep at the foot of this builder closes a panel it rebound.
+        -- The two shared builders below own their gears; the callers pass the
+        -- denied gate as opts.advanced and the Customize/Turn On footer as
+        -- opts.advancedUnlock, so an inert scope's gear stays live and opens
+        -- the panel read-only like every hand-written section's.
         if barIconShown and CanGroupUseOverrideSection(group, "unusableDimming") then
         local unusableSec = BeginLensSection(lens, group, "unusableDimming", { column = stateLeft })
         local unusableRow = BuildUnusableDimmingControls(stateLeft, unusableSec.tbl, function()
@@ -2102,6 +2156,9 @@ local function BuildBarEffectsTab(container, group, style)
             CooldownCompanion:RefreshConfigPanel()
         end, {
             row = true,
+            advanced = unusableSec.scope ~= "denied",
+            advancedUnlock = { sec = unusableSec,
+                enable = unusableSec.read.showUnusable ~= true and TURNON_SHOW_UNUSABLE or nil },
             fallbackStyle = unusableSec.fallbackStyle,
             setting = BAR_FINDER.effects.spell.unusable,
             settings = BAR_FINDER.advanced.unusable,
@@ -2171,7 +2228,9 @@ local function BuildBarEffectsTab(container, group, style)
             CooldownCompanion:RefreshConfigPanel()
         end, {
             row = true,
-            advanced = true,
+            advanced = tooltipSec.scope ~= "denied",
+            advancedUnlock = { sec = tooltipSec,
+                enable = tooltipSec.read.showTooltips ~= true and TURNON_SHOW_TOOLTIPS or nil },
             infoButtons = tabInfoButtons,
             fallbackStyle = tooltipSec.fallbackStyle,
             setting = BAR_FINDER.effects.interaction.tooltips,
@@ -2184,7 +2243,7 @@ local function BuildBarEffectsTab(container, group, style)
         -- (ST.OVERRIDE_SECTIONS), so under an entry lens it goes read-only with
         -- the rest of the panel-only content instead of letting a panel-wide
         -- edit be made from an entry's page. Its "?" badge stays readable: the
-        -- inert walk only reaches AceGUI children and the gear.
+        -- inert walk only reaches AceGUI children, never frame badges.
         --
         -- Not offered on an Aura Panel: the row's own tooltip already says
         -- entries added as auras cannot be pinged, and every entry here is one.
@@ -2201,17 +2260,9 @@ local function BuildBarEffectsTab(container, group, style)
         end -- not interactionCollapsed
     end
 
-    -- Inert-section sweep, over the WHOLE bars map - see the note by
-    -- ST._BARMODE_SECTION_BY_ADVANCED_KEY at the top of this file for why
-    -- neither builder limits itself to its own tab's keys.
-    if CS.CloseAdvancedSettingsPanel then
-        for advancedKey, sectionId in pairs(ST._BARMODE_SECTION_BY_ADVANCED_KEY) do
-            local _, _, sectionWrite = ResolveLensSection(lens, group, sectionId)
-            if sectionWrite == nil then
-                CS.CloseAdvancedSettingsPanel({ settingKey = advancedKey })
-            end
-        end
-    end
+    -- Gear panels whose gear did not rebuild are closed by the dispatch-level
+    -- gear build pass that brackets this builder (RunAdvancedGearBuildPass,
+    -- AdvancedSettingsPanel.lua).
 end
 
 ------------------------------------------------------------------------
@@ -2278,12 +2329,19 @@ local function BarFinderWrap(predicate)
     end
 end
 
-local function BarFinderAdvanced(sectionId, structural, enabled)
+-- Advanced routes index on STRUCTURE alone: the gear now exists for every
+-- scope except "denied", and an uncustomized section or an off parent toggle
+-- opens its panel read-only behind the unlock strip with the searched row
+-- drawn inside. `structural` keeps the gates that still remove the gear's row
+-- outright (aura tracking, the cooldown-text row, the marker's text surface).
+local function BarFinderAdvanced(sectionId, structural)
     return BarFinderWrap(function(context)
         if structural and not structural(context) then return false end
-        local read, write = BarFinderSectionState(context, sectionId)
-        return write ~= nil and read ~= nil
-            and (enabled == nil or enabled(read, context) == true)
+        local group = context and context.group
+        local lens = BarFinderLens(context)
+        if not (group and lens) then return false end
+        local scope = ResolveLensSection(lens, group, sectionId)
+        return scope ~= "denied"
     end)
 end
 
@@ -2579,7 +2637,7 @@ if ST._DefineSettingRoute then
 
     local iconAdvanced = BarFinderTextRoute(
         "panel.bars.appearance.iconAdvanced", "barIcon", "barIcon",
-        BarFinderAdvanced("barIcon", nil, function(read) return read.showBarIcon ~= false end))
+        BarFinderAdvanced("barIcon"))
     BAR_FINDER.advanced.icon = iconAdvanced:Settings({
         flip = { label = "Flip Icon Side" },
         offset = { label = "Icon Offset" },
@@ -2596,7 +2654,7 @@ if ST._DefineSettingRoute then
 
     BAR_FINDER.advanced.name = BarFinderTextRoute(
         "panel.bars.appearance.nameAdvanced", "barNameText", "barNameText",
-        BarFinderAdvanced("barNameText", nil, function(read) return read.showBarNameText ~= false end)):Settings({
+        BarFinderAdvanced("barNameText")):Settings({
         flip = { label = "Flip Name Text" },
         fontSize = { label = "Font Size" }, font = { label = "Font" },
         outline = { label = "Font Outline" }, color = { label = "Font Color" },
@@ -2605,8 +2663,7 @@ if ST._DefineSettingRoute then
 
     BAR_FINDER.advanced.cooldown = BarFinderTextRoute(
         "panel.bars.appearance.cooldownAdvanced", "cooldownText", "barCooldownText",
-        BarFinderAdvanced("cooldownText", BarFinderCooldownText,
-            function(read) return read.showCooldownText ~= false end)):Settings({
+        BarFinderAdvanced("cooldownText", BarFinderCooldownText)):Settings({
         flip = { label = "Flip Time Text", applies = function(context) return context.scope == "panel" end },
         fontSize = { label = "Font Size" }, font = { label = "Font" },
         outline = { label = "Font Outline" }, color = { label = "Font Color" },
@@ -2617,8 +2674,7 @@ if ST._DefineSettingRoute then
     BAR_FINDER.advanced.charge = BarFinderTextRoute(
         "panel.bars.appearance.countAdvanced", "chargeText", "barChargeText",
         BarFinderAdvanced("chargeText",
-            function(context) return BarFinderCanUse(context, "chargeText") end,
-            function(read) return read.showChargeText ~= false end)):Settings({
+            function(context) return BarFinderCanUse(context, "chargeText") end)):Settings({
         fontSize = { label = "Font Size" }, font = { label = "Font" },
         outline = { label = "Font Outline" },
         chargeFontColor = { label = "Font Color (Max Charges)" },
@@ -2631,8 +2687,7 @@ if ST._DefineSettingRoute then
     BAR_FINDER.advanced.ready = BarFinderTextRoute(
         "panel.bars.appearance.readyAdvanced", "barReadyText", "barReadyText",
         BarFinderAdvanced("barReadyText",
-            function(context) return BarFinderCanUse(context, "barReadyText") end,
-            function(read) return read.showBarReadyText ~= false end)):Settings({
+            function(context) return BarFinderCanUse(context, "barReadyText") end)):Settings({
         text = { label = "Ready Text" }, color = { label = "Ready Text Color" },
         fontSize = { label = "Font Size" }, font = { label = "Font" },
         outline = { label = "Font Outline" },
@@ -2640,8 +2695,7 @@ if ST._DefineSettingRoute then
 
     BAR_FINDER.advanced.auraText = BarFinderTextRoute(
         "panel.bars.appearance.auraTextAdvanced", "auraText", "barAuraText",
-        BarFinderAdvanced("auraText", BarFinderTracksAura,
-            function(read) return read.showAuraText ~= false end)):Settings({
+        BarFinderAdvanced("auraText", BarFinderTracksAura)):Settings({
         fontSize = { label = "Font Size" }, font = { label = "Font" },
         outline = { label = "Font Outline" }, color = { label = "Font Color" },
         flip = {
@@ -2658,8 +2712,7 @@ if ST._DefineSettingRoute then
 
     BAR_FINDER.advanced.auraStack = BarFinderTextRoute(
         "panel.bars.appearance.auraStackAdvanced", "auraStackText", "barAuraStackText",
-        BarFinderAdvanced("auraStackText", BarFinderTracksAura,
-            function(read) return read.showAuraStackText ~= false end)):Settings({
+        BarFinderAdvanced("auraStackText", BarFinderTracksAura)):Settings({
         fontSize = { label = "Font Size" }, font = { label = "Font" },
         outline = { label = "Font Outline" }, color = { label = "Font Color" },
         anchor = { label = "Anchor" }, xOffset = { label = "X Offset" },
@@ -2743,8 +2796,7 @@ if ST._DefineSettingRoute then
     })
 
     local ActiveAuraAdvanced = BarFinderAdvanced(
-        "barActiveAura", BarFinderTracksAura,
-        function(read) return BarAuraIndicatorRenders(read) end)
+        "barActiveAura", BarFinderTracksAura)
     local function ActiveAuraStyle(context)
         local read = BarFinderSectionState(context, "barActiveAura") or {}
         local style = read.barAuraEffect or "color"
@@ -2822,8 +2874,7 @@ if ST._DefineSettingRoute then
 
     BAR_FINDER.advanced.pandemicMarker = BarFinderEffectRoute(
         "panel.bars.effects.pandemicMarker", EFFECTS_AURA_SECTION,
-        "Aura Indicators", BarFinderAdvanced("pandemic", BarFinderAuraTextVisible,
-            function(read) return read.pandemicMarkerMode ~= "off" end),
+        "Aura Indicators", BarFinderAdvanced("pandemic", BarFinderAuraTextVisible),
         "barPandemicMarker", "pandemic"):Settings({
         text = { label = "Marker Text" },
         coloring = { label = "Marker Coloring" },
@@ -2841,7 +2892,7 @@ if ST._DefineSettingRoute then
         "Cooldown / Spell Indicators", BarFinderAdvanced("unusableDimming",
             function(context)
                 return SpellStates(context) and BarFinderCanUse(context, "unusableDimming")
-            end, function(read) return read.showUnusable == true end),
+            end),
         "unusableVisual", "unusableDimming"):Settings({
         dim = { label = "Dim Icon" },
         dimColor = {
@@ -2858,7 +2909,7 @@ if ST._DefineSettingRoute then
         "panel.bars.effects.tooltip", EFFECTS_INTERACTION_SECTION,
         "Interaction", BarFinderAdvanced("showTooltips", function(context)
             return BarsTooltipRowShown(context.group, BarFinderStyle(context))
-        end, function(read) return read.showTooltips == true end),
+        end),
         "tooltipBehavior", "showTooltips"):Settings({
         position = { label = "Tooltip Position" },
         hideInCombat = { label = "Hide Tooltips in Combat" },
