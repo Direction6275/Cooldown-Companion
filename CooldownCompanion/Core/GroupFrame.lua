@@ -5833,6 +5833,10 @@ local function FinishGroupAnchorChange(self, groupId, frame, group, wasCursorAnc
     end
 end
 
+-- Shared with Core/GroupManagement.lua so a Panel Template's Group-relative
+-- offset finishes with the exact sequence a container re-anchor runs here.
+ST._FinishGroupAnchorChange = FinishGroupAnchorChange
+
 function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
     local group = self.db.profile.groups[groupId]
     local frame = self.groupFrames[groupId]

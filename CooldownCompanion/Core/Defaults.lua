@@ -40,6 +40,15 @@ local defaults = {
                 lastVersionSeen = nil,
             },
         },
+        -- Panel Templates (Core/PanelTemplates.lua): account-wide, entry-less
+        -- panel styles. Deliberately a MINI PROFILE shape - a `groups` map of
+        -- panel-shaped tables with empty `buttons`, plus its own id counter -
+        -- so the per-login migration chain walks it every login
+        -- (NormalizePanelTemplateStore) exactly as it walks a profile.
+        panelTemplates = {
+            groups = {},
+            nextGroupId = 1,
+        },
     },
     profile = {
         minimap = {
@@ -1685,6 +1694,30 @@ ST.PANEL_COPY_SCOPES = {
             copiesCompact = true,
         },
     },
+}
+
+------------------------------------------------------------------------
+-- PANEL TEMPLATE SHAPE REGISTRY
+-- The arrangement keys a Panel Template carries on top of the copy scopes
+-- above (Core/PanelTemplates.lua). Shape is the arrangement the Layout tab
+-- edits: orientation, growth origin, wrap count, and for bars the fill
+-- direction pair. The copy registry deliberately leaves these out - the
+-- look copies, the placement does not - and a template carries them by
+-- owner ruling (2026-09-01): a template is a whole panel minus its entries
+-- and its place on screen, and the arrangement is part of what makes it
+-- that panel. The same-day rule applies here too: a new Layout-tab
+-- arrangement key must be added to its mode's list the day it lands, or
+-- templates silently stop carrying it.
+--
+-- Deliberately NOT included: strata (frameStrata, strataOrder), sections,
+-- Collapse Direction (an Aura Panel Layout key, living on the group as
+-- compactGrowthDirection), and any anchor to another panel, frame, or the
+-- cursor. A template's one placement fact is its offset from its own Group
+-- frame, and that rides the template's anchor field, not this list.
+ST.PANEL_TEMPLATE_SHAPE_KEYS = {
+    icons = { "orientation", "growthOrigin", "buttonsPerRow" },
+    bars = { "barOrientation", "growthOrigin", "buttonsPerRow", "barFillVertical", "barReverseFill" },
+    text = { "textOrientation", "growthOrigin", "buttonsPerRow" },
 }
 
 function ST.CanButtonUseOverrideSection(buttonData, sectionId)

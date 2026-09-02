@@ -515,6 +515,82 @@ StaticPopupDialogs["CDC_RENAME_GROUP"] = {
     preferredIndex = 3,
 }
 
+-- Panel Templates (Core/PanelTemplates.lua). The name box opens holding the
+-- panel's own name, selected, so typing replaces it and Enter keeps it.
+StaticPopupDialogs["CDC_SAVE_PANEL_TEMPLATE"] = {
+    text = "Save panel '%s' as template:",
+    button1 = "Save",
+    button2 = "Cancel",
+    hasEditBox = true,
+    OnAccept = function(self, data)
+        if not (data and data.panelId and CooldownCompanion.SavePanelTemplate) then return end
+        local templateId = CooldownCompanion:SavePanelTemplate(data.panelId, self.EditBox:GetText())
+        if not templateId then
+            CooldownCompanion:Print("Could not save the template: the panel is gone or is not an icon, bar, or text panel.")
+            return
+        end
+        local template = CooldownCompanion:GetPanelTemplate(templateId)
+        CooldownCompanion:Print("Saved template '" .. (template and template.name or "") .. "'.")
+        CooldownCompanion:RefreshConfigPanel()
+    end,
+    EditBoxOnEnterPressed = function(self)
+        local parent = self:GetParent()
+        StaticPopupDialogs["CDC_SAVE_PANEL_TEMPLATE"].OnAccept(parent, parent.data)
+        parent:Hide()
+    end,
+    OnShow = function(self, data)
+        self.EditBox:SetText(data and data.defaultName or "")
+        self.EditBox:SetFocus()
+        self.EditBox:HighlightText()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_UPDATE_PANEL_TEMPLATE"] = {
+    text = "Update template '%s' from this panel?",
+    button1 = "Update",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if not (data and CooldownCompanion.UpdatePanelTemplate) then return end
+        local updated, reason = CooldownCompanion:UpdatePanelTemplate(data.templateId, data.panelId)
+        if not updated then
+            CooldownCompanion:Print(reason == "mode_mismatch"
+                and "That template is for a different panel type."
+                or "Could not update the template.")
+            return
+        end
+        local template = CooldownCompanion:GetPanelTemplate(data.templateId)
+        CooldownCompanion:Print("Updated template '" .. (template and template.name or "") .. "'.")
+        CooldownCompanion:RefreshConfigPanel()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_DELETE_PANEL_TEMPLATE"] = {
+    text = "Delete template '%s'?",
+    button1 = "Delete",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if not (data and CooldownCompanion.DeletePanelTemplate) then return end
+        local template = CooldownCompanion:GetPanelTemplate(data.templateId)
+        local name = template and template.name or ""
+        if CooldownCompanion:DeletePanelTemplate(data.templateId) then
+            CooldownCompanion:Print("Deleted template '" .. name .. "'.")
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 StaticPopupDialogs["CDC_DELETE_BUTTON"] = {
     text = "Are you sure you want to delete '%s'?",
     button1 = "Delete",

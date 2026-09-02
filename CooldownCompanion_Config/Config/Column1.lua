@@ -557,6 +557,47 @@ local function ToggleContainerLock(containerId)
     return true
 end
 
+-- Panel Templates (Core/PanelTemplates.lua). Every list here goes through
+-- the Core API at call time; the store is never walked directly.
+local function GetPanelTemplateList(mode)
+    if not CooldownCompanion.GetPanelTemplates then return {} end
+    return CooldownCompanion:GetPanelTemplates(mode)
+end
+
+-- "Name (Icon Panel)": the type rides along in grey wherever a list mixes
+-- types or names a template away from a panel of its own type.
+local function FormatPanelTemplateMenuText(template)
+    local modeLabel = ST._GetPanelTemplateModeLabel(template)
+    return (template.name or "") .. " |cff777777(" .. modeLabel .. ")|r"
+end
+
+-- A list filtered to one type says which type it has none of ("No Icon
+-- Panel templates"); the all-types list just says there are none.
+local function AddNoTemplatesItem(level, modeLabel)
+    local info = UIDropDownMenu_CreateInfo()
+    info.text = modeLabel and ("No " .. modeLabel .. " templates") or "No templates"
+    info.notCheckable = true
+    info.disabled = true
+    UIDropDownMenu_AddButton(info, level)
+end
+
+local PANEL_TEMPLATE_APPLY_FAILURE_TEXT = {
+    missing_template = "That template no longer exists.",
+    missing_group = "That panel no longer exists.",
+    mode_mismatch = "That template is for a different panel type.",
+    invalid_class_scope = "This panel's Group is not valid for this class.",
+}
+
+-- Owner ruling: applying a template to an existing panel never moves it.
+local function ApplyPanelTemplateToPanel(templateId, panelId)
+    local applied, reason = CooldownCompanion:ApplyPanelTemplate(templateId, panelId, { position = false })
+    if not applied then
+        CooldownCompanion:Print(PANEL_TEMPLATE_APPLY_FAILURE_TEXT[reason] or "Could not apply the template.")
+        return
+    end
+    CooldownCompanion:RefreshConfigPanel()
+end
+
 local function ShowPanelContextMenu(panelId, containerId)
     local db = CooldownCompanion.db.profile
     local panel = db.groups and db.groups[panelId]
@@ -714,6 +755,18 @@ local function ShowPanelContextMenu(panelId, containerId)
                 UIDropDownMenu_AddButton(info, level)
             end
 
+            if CooldownCompanion.CanSavePanelTemplate and CooldownCompanion:CanSavePanelTemplate(panelId) then
+                info = UIDropDownMenu_CreateInfo()
+                info.text = "Templates"
+                info.notCheckable = true
+                info.hasArrow = true
+                info.menuList = "PANEL_TEMPLATES"
+                info.tooltipTitle = "Templates"
+                info.tooltipText = "Save this panel's look and arrangement, or apply a saved one."
+                info.tooltipOnButton = 1
+                UIDropDownMenu_AddButton(info, level)
+            end
+
             local moveTargets = BuildFlatContainerOrder(db, containerId, panelId)
             if #moveTargets > 0 then
                 info = UIDropDownMenu_CreateInfo()
@@ -758,6 +811,76 @@ local function ShowPanelContextMenu(panelId, containerId)
             end
             if #scopes > 1 then
                 AddScopeItem("all", "All Panel Settings")
+            end
+        elseif menuList == "PANEL_TEMPLATES" then
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = "Save as Template..."
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                ShowPopupAboveConfig("CDC_SAVE_PANEL_TEMPLATE", panel.name or "Panel", {
+                    panelId = panelId,
+                    defaultName = panel.name or "Panel",
+                })
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            local function AddTemplateListItem(label, listName)
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = label
+                info.notCheckable = true
+                info.hasArrow = true
+                info.menuList = listName
+                UIDropDownMenu_AddButton(info, level)
+            end
+            AddTemplateListItem("Apply Template", "APPLY_PANEL_TEMPLATE")
+            AddTemplateListItem("Update Template", "UPDATE_PANEL_TEMPLATE")
+            AddTemplateListItem("Delete Template", "DELETE_PANEL_TEMPLATE")
+        elseif menuList == "APPLY_PANEL_TEMPLATE"
+            or menuList == "UPDATE_PANEL_TEMPLATE"
+            or menuList == "DELETE_PANEL_TEMPLATE" then
+            -- Apply and Update offer the panel's own type; Delete offers the
+            -- whole account-wide list, so each entry there carries its type.
+            local deleting = menuList == "DELETE_PANEL_TEMPLATE"
+            local copyMode = CooldownCompanion.GetPanelCopyMode
+                and CooldownCompanion:GetPanelCopyMode(panel) or nil
+            local templates = {}
+            if deleting then
+                templates = GetPanelTemplateList(nil)
+            elseif copyMode then
+                templates = GetPanelTemplateList(copyMode)
+            end
+            local function AddTemplateItem(templateId, template)
+                local info = UIDropDownMenu_CreateInfo()
+                if deleting then
+                    info.text = FormatPanelTemplateMenuText(template)
+                else
+                    info.text = template.name
+                end
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    if menuList == "APPLY_PANEL_TEMPLATE" then
+                        ApplyPanelTemplateToPanel(templateId, panelId)
+                    elseif menuList == "UPDATE_PANEL_TEMPLATE" then
+                        ShowPopupAboveConfig("CDC_UPDATE_PANEL_TEMPLATE", template.name, {
+                            templateId = templateId,
+                            panelId = panelId,
+                        })
+                    else
+                        ShowPopupAboveConfig("CDC_DELETE_PANEL_TEMPLATE", template.name, {
+                            templateId = templateId,
+                        })
+                    end
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+            if #templates == 0 then
+                AddNoTemplatesItem(level, not deleting and copyMode
+                    and ST._GetPanelModeLabel(copyMode) or nil)
+            end
+            for _, entry in ipairs(templates) do
+                AddTemplateItem(entry.id, entry.template)
             end
         elseif menuList == "MOVE_TO_GROUP" then
             for _, target in ipairs(BuildFlatContainerOrder(db, containerId, panelId)) do
@@ -869,6 +992,32 @@ ST._CreatePanelInContainer = CreatePanelInContainer
 local FALLBACK_FIRST_SPECIALIST_PANEL_TYPE = 3
 local function FirstSpecialistPanelTypeIndex()
     return ST._FIRST_SPECIALIST_PANEL_TYPE or FALLBACK_FIRST_SPECIALIST_PANEL_TYPE
+end
+
+-- Every create menu offers the account's templates after the specialists,
+-- and offers nothing, not even the separator, while there are none. The
+-- create path itself lives in PanelShared, which loads after this file.
+local function AddPanelTemplateCreateItems(level, containerId)
+    local templates = GetPanelTemplateList(nil)
+    if #templates == 0 then return end
+    UIDropDownMenu_AddSeparator(level)
+    for _, entry in ipairs(templates) do
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = "From Template: " .. FormatPanelTemplateMenuText(entry.template)
+        info.notCheckable = true
+        if ST._AddPanelTemplateMenuTooltip then
+            ST._AddPanelTemplateMenuTooltip(info, entry.template)
+        end
+        local templateId = entry.id
+        info.func = function()
+            CloseDropDownMenus()
+            if not IsCreateTargetContainer(containerId) then return end
+            if ST._CreatePanelFromTemplateInContainer then
+                ST._CreatePanelFromTemplateInContainer(containerId, templateId)
+            end
+        end
+        UIDropDownMenu_AddButton(info, level)
+    end
 end
 
 local function ShowContainerContextMenu(db, containerId, container)
@@ -1035,6 +1184,7 @@ local function ShowContainerContextMenu(db, containerId, container)
                 end
                 UIDropDownMenu_AddButton(info, level)
             end
+            AddPanelTemplateCreateItems(level, containerId)
         end
     end, "MENU")
 
@@ -1119,7 +1269,8 @@ local function AddCDMStarterCreateItem(level, containerId)
 end
 
 -- Opened by the Group overview's add tile. The everyday types, specialists,
--- and Cooldown Manager starter share one list, separated into visual groups.
+-- saved templates and Cooldown Manager starter share one list, separated into
+-- visual groups.
 -- It uses the create surfaces' own dropdown frame rather than the Group context
 -- menu's, so opening it never toggles or re-initializes that one, and it opens
 -- at the cursor because the tile it belongs to moves with the grid.
@@ -1135,6 +1286,7 @@ local function ShowPanelTypeMenuForContainer(containerId)
             AddPanelTypeCreateItems(level, containerId, 1, firstSpecialist - 1)
             UIDropDownMenu_AddSeparator(level)
             AddPanelTypeCreateItems(level, containerId, firstSpecialist)
+            AddPanelTemplateCreateItems(level, containerId)
             UIDropDownMenu_AddSeparator(level)
             AddCDMStarterCreateItem(level, containerId)
         end

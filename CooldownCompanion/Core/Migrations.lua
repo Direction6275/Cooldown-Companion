@@ -3499,6 +3499,78 @@ local function MigrateDurationTextVisibilityBackfill(self, profile)
     profile[DURATION_TEXT_VISIBILITY_SENTINEL.current] = true
 end
 
+-- Panel templates (db.global.panelTemplates) are an account-wide store of
+-- saved panel styles, kept PROFILE-SHAPED on purpose: { groups = { [id] =
+-- <panel-shaped table> }, nextGroupId = N }. Each template carries a panel's
+-- name, displayMode, style, Masque/compact/visible-limit flags and a
+-- relativeTo-less anchor, with an always-empty buttons list; never an entry,
+-- a section, a container parent, an aura-panel flag or a resource store.
+--
+-- The shape is the whole point. groupSettingPresets was a second style store
+-- with its own layout, so every pass that rewrote style vocabulary had to
+-- grow a two-level presets loop by hand (nine of them in this file), and it
+-- was a store the one-shot passes never reached at all until each grew that
+-- loop, which is exactly why a1871266 had to add an inline expander on the
+-- apply path. A template IS a group inside a profile-shaped table, so the
+-- passes' existing profile.groups walks already reach it: this runs the style
+-- passes over the store as their `profile` argument, in the order
+-- RunAllMigrations runs them on the real profile. Each one-shot pass stamps
+-- its sentinel on the STORE ROOT (they all write profile[sentinel.current]),
+-- so the store re-runs a pass only on a generation bump, exactly like a
+-- profile does. ClearMigrationSentinels is profile-only: a door that ever
+-- installs templates wholesale has to bring them through here itself.
+--
+-- Only passes that read or write groups[*].style belong here. Entry, folder,
+-- flag, cast-bar, totem and resource passes would find nothing (empty
+-- buttons, no stores), and three are unsafe on a template: the group-scope
+-- pass reads C_ClassTalents unconditionally, the cursor-anchor sanitizer
+-- expects the relativeTo a template anchor deliberately lacks, and the alpha
+-- inheritance normalizer validates against the live profile's containers.
+--
+-- Silent by design. The notices these passes print are worded for the
+-- player's profile, and a template nobody has applied yet is not news, so
+-- the shim swallows Print and forwards everything else to the addon.
+--
+-- MAINTENANCE RULE: a new pass that rewrites groups[*].style vocabulary must
+-- be added here the same day it is added to RunAllMigrations. Otherwise
+-- templates become the unreached store presets used to be, and applying one
+-- hands a panel keys the runtime no longer reads.
+function CooldownCompanion:NormalizePanelTemplateStore(store)
+    if type(store) ~= "table" or type(store.groups) ~= "table" then return end
+    local quiet = setmetatable({ Print = function() end }, { __index = self })
+
+    ClearInvalidStrataOrders(store)
+    -- Aura swipe keys are icons-only vocabulary: the backfill walks just the
+    -- icons templates (a throwaway map of references; the pass mutates in
+    -- place), and every other template is stripped of the five keys.
+    local iconsTemplates = { groups = {} }
+    for id, template in pairs(store.groups) do
+        if type(template) == "table" then
+            if template.displayMode == "icons" then
+                iconsTemplates.groups[id] = template
+            elseif type(template.style) == "table" then
+                template.style.showAuraDurationSwipe = nil
+                for _, mirror in ipairs(AURA_DURATION_SWIPE_STYLE_MIRRORS) do
+                    template.style[mirror.auraKey] = nil
+                end
+            end
+        end
+    end
+    -- No saved checkpoint state for an account store, and no globalStyle to
+    -- fall back to: a missing aura swipe key resolves to the shipped default,
+    -- which is the right baseline for a template.
+    BackfillAuraDurationSwipeSettings(iconsTemplates, nil)
+    StripRetiredSwipeEdgeKeys(store)
+    StripRetiredIconFillAuraColor(store)
+    -- Return discarded: its notice is profile-worded.
+    StripRetiredTextSizeKeys(store)
+    MigratePerModeOrientation(quiet, store)
+    MigrateAuraGlowRebuild(quiet, store)
+    MigrateLcgGlowStyles(quiet, store)
+    MigrateBarAuraEffectStyles(quiet, store)
+    MigratePandemicSwitchOwnership(quiet, store)
+end
+
 function CooldownCompanion:RunAllMigrations()
     local checkpointState = self._savedProfileCheckpointState
     local allowMissingCheckpoint = self._allowMissingMigrationCheckpointOnce
@@ -3595,6 +3667,11 @@ function CooldownCompanion:RunAllMigrations()
     if self.NormalizePanelAlphaInheritance then
         self:NormalizePanelAlphaInheritance(self.db and self.db.profile)
     end
+    -- Account-wide panel templates, last: a profile-shaped store the style
+    -- passes above walk as-is. Reached on the supported profile-change path
+    -- too, which is harmless (every pass is idempotent and sentinel-gated);
+    -- the unsupported-legacy early return above skips it, harmlessly.
+    self:NormalizePanelTemplateStore(self.db and self.db.global and self.db.global.panelTemplates)
     return true
 end
 
