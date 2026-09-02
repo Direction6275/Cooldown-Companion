@@ -734,11 +734,9 @@ local function SetUnifiedRowScope(scope)
     if not scope then
         return
     end
-    if ST._UnifiedRowSetScope then
-        ST._UnifiedRowSetScope(scope)
-    else
-        CS.unifiedRowScope = scope == "primary" and "primary" or "detail"
-    end
+    -- Always through the strip's own writer - no fallback copy of its
+    -- normalization, so the two can never drift.
+    ST._UnifiedRowSetScope(scope)
 end
 
 local function ApplyDefaultTabRoute(descriptor, context)

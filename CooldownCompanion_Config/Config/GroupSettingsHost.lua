@@ -207,21 +207,29 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
                 ST._BeginLensAnchorBuild(scroll)
             end
 
-            if tab == "format" then
-                ST._BuildTextFormatTab(scroll)
-            elseif tab == "appearance" then
-                ST._BuildAppearanceTab(scroll)
-            elseif tab == "layout" then
-                ST._BuildLayoutTab(scroll)
-            elseif tab == "effects" then
-                ST._BuildEffectsTab(scroll)
-            elseif tab == "loadconditions" then
-                -- One Visibility tab for both scopes: the dispatcher edits
-                -- the selected entry's rules when there is one (including
-                -- the rotation assistant's virtual entry, which has no entry
-                -- tabs of its own) and the panel's otherwise.
-                ST._BuildVisibilityTab(scroll)
-            end
+            -- One advanced-gear build pass per surface rebuild
+            -- (AdvancedSettingsPanel.lua): gears stamp as they build, and
+            -- the pass's foot sweep closes every gear panel whose gear did
+            -- not rebuild - collapsed sections, early-returned builders and
+            -- gearless tabs alike.
+            CS.RunAdvancedGearBuildPass(function()
+                if tab == "format" then
+                    ST._BuildTextFormatTab(scroll)
+                elseif tab == "appearance" then
+                    ST._BuildAppearanceTab(scroll)
+                elseif tab == "layout" then
+                    ST._BuildLayoutTab(scroll)
+                elseif tab == "effects" then
+                    ST._BuildEffectsTab(scroll)
+                elseif tab == "loadconditions" then
+                    -- One Visibility tab for both scopes: the dispatcher
+                    -- edits the selected entry's rules when there is one
+                    -- (including the rotation assistant's virtual entry,
+                    -- which has no entry tabs of its own) and the panel's
+                    -- otherwise.
+                    ST._BuildVisibilityTab(scroll)
+                end
+            end)
 
             -- Re-run the layout with final widths: AddChild lays out on every
             -- insertion, so half-width overrides applied after a builder

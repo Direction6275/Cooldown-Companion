@@ -903,15 +903,20 @@ local function ShowResourceSettingsPanel(col3)
             widget:AddChild(scroll)
             widget._cdcScroll = scroll
             widget._cdcScrollKey = GetResourceSettingsDetailScrollKey()
-            if ST._BuildResourceSettingsPanel then
-                ST._BuildResourceSettingsPanel(scroll, CS.selectedResourcePowerType, CS.resourceSettingsSpecID)
-            else
-                local label = AceGUI:Create("Label")
-                ST._ConfigureWrappedHelperLabel(label)
-                label:SetText("|cff888888Resource settings are unavailable.|r")
-                label:SetFullWidth(true)
-                scroll:AddChild(label)
-            end
+            -- One advanced-gear build pass per surface rebuild
+            -- (AdvancedSettingsPanel.lua): its foot sweep closes every gear
+            -- panel whose gear did not rebuild this pass.
+            CS.RunAdvancedGearBuildPass(function()
+                if ST._BuildResourceSettingsPanel then
+                    ST._BuildResourceSettingsPanel(scroll, CS.selectedResourcePowerType, CS.resourceSettingsSpecID)
+                else
+                    local label = AceGUI:Create("Label")
+                    ST._ConfigureWrappedHelperLabel(label)
+                    label:SetText("|cff888888Resource settings are unavailable.|r")
+                    label:SetFullWidth(true)
+                    scroll:AddChild(label)
+                end
+            end)
             -- Re-run the layout with final widths: AddChild lays out on every
             -- insertion, so a row grid added before its siblings measures
             -- against a stale width and renders clipped until something else
@@ -952,7 +957,10 @@ local function ShowCustomBarDetail(col3, selectedEntry)
             widget:AddChild(scroll)
             widget._cdcScroll = scroll
             widget._cdcScrollKey = GetCustomBarDetailScrollKey()
-            ST._BuildCustomAuraBarPanel(scroll, CS.selectedCustomBarId)
+            -- One advanced-gear build pass per surface rebuild
+            -- (AdvancedSettingsPanel.lua): its foot sweep closes every gear
+            -- panel whose gear did not rebuild this pass.
+            CS.RunAdvancedGearBuildPass(ST._BuildCustomAuraBarPanel, scroll, CS.selectedCustomBarId)
             -- Re-run the layout with final widths: nested Flow rows resize
             -- themselves after their children land, and that height never
             -- reaches the scroll frame until something relayouts it.
@@ -1020,15 +1028,20 @@ local function ShowResourcesTabPage(col3, stripOnly)
             widget:AddChild(scroll)
             widget._cdcScroll = scroll
             widget._cdcScrollKey = "resources:" .. tab
-            if tab == "general" then
-                ST._BuildResourceBarAnchoringPanel(scroll)
-            elseif tab == "appearance" then
-                ST._BuildResourceBarBarTextStylingPanel(scroll)
-            elseif tab == "layout" then
-                ST._BuildResourceBarPositioningPanel(scroll)
-            elseif tab == "health" then
-                ST._BuildResourceBarHealthStylingPanel(scroll)
-            end
+            -- One advanced-gear build pass per surface rebuild
+            -- (AdvancedSettingsPanel.lua): its foot sweep closes every gear
+            -- panel whose gear did not rebuild this pass.
+            CS.RunAdvancedGearBuildPass(function()
+                if tab == "general" then
+                    ST._BuildResourceBarAnchoringPanel(scroll)
+                elseif tab == "appearance" then
+                    ST._BuildResourceBarBarTextStylingPanel(scroll)
+                elseif tab == "layout" then
+                    ST._BuildResourceBarPositioningPanel(scroll)
+                elseif tab == "health" then
+                    ST._BuildResourceBarHealthStylingPanel(scroll)
+                end
+            end)
             -- Re-run the layout with final widths: AddChild lays out on every
             -- insertion, so a row grid added before its siblings measures
             -- against a stale width and renders clipped until something else
@@ -1122,13 +1135,19 @@ local function ShowCastBarSettings(col3)
             widget:AddChild(scroll)
             widget._cdcScroll = scroll
             widget._cdcScrollKey = "castbar:" .. tab
-            if tab == "general" then
-                ST._BuildCastBarAnchoringPanel(scroll)
-            elseif tab == "appearance" then
-                ST._BuildCastBarStylingPanel(scroll)
-            elseif tab == "layout" then
-                ST._BuildCastBarPositioningPanel(scroll)
-            end
+            -- One advanced-gear build pass per surface rebuild
+            -- (AdvancedSettingsPanel.lua): its foot sweep closes every gear
+            -- panel whose gear did not rebuild this pass - the cast bar's
+            -- gears open panels like every other surface's.
+            CS.RunAdvancedGearBuildPass(function()
+                if tab == "general" then
+                    ST._BuildCastBarAnchoringPanel(scroll)
+                elseif tab == "appearance" then
+                    ST._BuildCastBarStylingPanel(scroll)
+                elseif tab == "layout" then
+                    ST._BuildCastBarPositioningPanel(scroll)
+                end
+            end)
             -- Re-run the layout with final widths: AddChild lays out on every
             -- insertion, so a row grid added before its siblings measures
             -- against a stale width and renders clipped until something else
@@ -1180,11 +1199,16 @@ local function ShowUnitFrameSettings(col3, item)
 
     scroll:ReleaseChildren()
     scroll.frame:Show()
-    if item == "player" then
-        ST._BuildFrameAnchoringPlayerPanel(scroll)
-    else
-        ST._BuildFrameAnchoringTargetPanel(scroll)
-    end
+    -- One advanced-gear build pass per surface rebuild
+    -- (AdvancedSettingsPanel.lua): gearless today, but the pass's foot sweep
+    -- still closes whatever stale gear panels the previous surface left open.
+    CS.RunAdvancedGearBuildPass(function()
+        if item == "player" then
+            ST._BuildFrameAnchoringPlayerPanel(scroll)
+        else
+            ST._BuildFrameAnchoringTargetPanel(scroll)
+        end
+    end)
     -- Re-run the layout with final widths: AddChild lays out on every
     -- insertion, so a row grid added before its siblings measures against a
     -- stale width and renders clipped until something else triggers a layout.

@@ -556,18 +556,16 @@ local CHARGE_ROUTE = TextRoute("chargeText", "barChargeText")
 
 -- One ownership answer for every Cooldown Swipe route. Icon Fill replaces the
 -- swipe while it is active (outside Masque), so both the gear and Customize
--- target that section. Otherwise Cooldown Swipe remains the setting being
--- previewed even when explicitly off: it is still customizable as a tab-only
--- setting, matching the command center's other disabled-state previews.
+-- target that section. Otherwise Cooldown Swipe owns the route WITH its
+-- advanced key even while the swipe is explicitly off: the tab gear now
+-- builds in that state too and opens the panel read-only behind its Turn On
+-- footer, so this entrance queues and claims the same panel.
 local function ResolveCooldownVisualOwner(group, buttonIndex)
     local style = ResolveTargetStyle(group, buttonIndex)
     if style.iconFillEnabled == true and group.masqueEnabled ~= true then
         return "iconFillTimer", "iconFillTimer"
     end
-    if style.showCooldownSwipe ~= false then
-        return "cooldownSwipe", "cooldownSwipe"
-    end
-    return "cooldownSwipe", nil
+    return "cooldownSwipe", "cooldownSwipe"
 end
 
 local CONTROLS = {
@@ -794,8 +792,9 @@ local CONTROLS = {
             tab = "effects",
             uncollapse = "effects_spell",
             -- The same owner resolver drives the section and the advanced key,
-            -- so the gear and Customize cannot disagree. A nil advanced key
-            -- (swipe explicitly off, no fill) navigates to the row and stops.
+            -- so the gear and Customize cannot disagree. The swipe key is
+            -- returned even while the swipe is off: its panel opens read-only
+            -- behind the Turn On footer now.
             resolveKey = function(group, buttonIndex)
                 local _, advancedKey = ResolveCooldownVisualOwner(group, buttonIndex)
                 return advancedKey
@@ -1765,11 +1764,14 @@ local function ResolveRouteSectionScope(sectionId)
     return scope, lens, group
 end
 
--- A queued advanced key cannot be consumed by an inherited or unavailable
--- section: both build inert under the entry lens. The route still lands on and
--- points at the section; only the advanced-panel open is suppressed.
+-- A queued advanced key cannot be consumed by a DENIED section: it builds no
+-- gear, so the queue would expire unconsumed. An inherited section now builds
+-- its gear and opens the panel read-only behind its Customize footer, so its
+-- open is no longer suppressed - this entrance matches the tab gear and the
+-- Settings Finder. The route still lands on and points at the section either
+-- way.
 local function RouteSectionSuppressesAdvancedPanel(scope)
-    return scope == "inherited" or scope == "denied"
+    return scope == "denied"
 end
 
 local function NavigateToPreviewSettings(bar)
@@ -2309,9 +2311,9 @@ local function EnsureBar(host, surface)
             local sectionScope = control
                 and ResolveRouteSectionScope(ControlSectionId(control)) or nil
             if sectionScope == "inherited" then
-                GameTooltip:AddLine("Go to settings")
+                GameTooltip:AddLine("Open settings")
                 GameTooltip:AddLine(
-                    "This entry follows the panel here. Customize the section to edit it.",
+                    "This entry follows the panel here. The settings open read only until customized.",
                     0.7, 0.7, 0.7, true)
             elseif sectionScope == "denied" then
                 GameTooltip:AddLine("Go to settings")
@@ -2334,9 +2336,10 @@ local function EnsureBar(host, surface)
     end)
     bar.gear = gear
 
-    -- An inherited preview section cannot open its advanced panel yet. Put the
-    -- escape hatch beside the gear the user already reached for: it gives this
-    -- entry its own copy, then the gear's existing route opens that setting.
+    -- An inherited preview section's panel opens read only until customized.
+    -- Keep the one-click Customize beside the gear the user already reached
+    -- for: it gives this entry its own copy, then the gear's existing route
+    -- opens that setting editable.
     local customize = CreateFrame("Button", nil, bar)
     customize:SetHeight(BAR_HEIGHT)
     customize:SetPoint("LEFT", gear, "RIGHT", CUSTOMIZE_GAP, 0)

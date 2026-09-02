@@ -18,8 +18,8 @@ local CreateInfoButton = ST._CreateInfoButton
 -- these resolve at load like every other import above.
 --
 -- BeginLensSection owns the per-section ritual on both tabs. ResolveLensSection
--- stays only for the sweep at the foot of the Appearance tab, which wants a
--- section's write table and nothing else.
+-- stays only for the finder predicates below, which want a section's scope
+-- and nothing else.
 local ResolveStyleLens = ST._ResolveStyleLens
 local ResolveLensSection = ST._ResolveLensSection
 local BeginLensSection = ST._BeginLensSection
@@ -489,9 +489,9 @@ end
 -- section, and its row now lives on the Layout tab (GroupTabsLayout.lua's
 -- Arrangement section), which this map does not describe.
 --
--- The map and the sweep at the foot of the builder are kept even so: a gear
--- added to any of the three sections belongs here the same day, and a sweep
--- that has to be invented later is a sweep that ships late.
+-- The map is kept even so: a gear added to any of the three sections belongs
+-- here the same day for the Customizations list. Stale-panel cleanup runs
+-- maplessly through the gear-stamp sweep (AdvancedSettingsPanel.lua).
 ST._TEXTMODE_SECTION_BY_ADVANCED_KEY = {}
 
 -- Where each text override section is EDITED, now that the panel tabs are the
@@ -831,26 +831,10 @@ local function BuildTextAppearanceTab(container, group, style)
     -- copy membership is unchanged - still this tab's appearance scope in
     -- ST.PANEL_COPY_SCOPES).
 
-    -- Inert-section sweep. A section the lens resolved read-only builds no
-    -- gear, so nothing rebound or closed an advanced panel that was already
-    -- open on that gear - and that panel's controls still write to the table
-    -- the PREVIOUS build handed them. Close those here.
-    --
-    -- Scope-driven, not collapse-driven: a collapsed section builds no gear
-    -- either, and a panel left over from before an entry was selected is just
-    -- as live behind a closed section as behind an open one.
-    --
-    -- A no-op while ST._TEXTMODE_SECTION_BY_ADVANCED_KEY is empty (see the note
-    -- by it): it is here so the first gear added to a text section is covered
-    -- by declaring it in the map, and nothing else.
-    if CS.CloseAdvancedSettingsPanel then
-        for advancedKey, sectionId in pairs(ST._TEXTMODE_SECTION_BY_ADVANCED_KEY) do
-            local _, _, sectionWrite = ResolveLensSection(lens, group, sectionId)
-            if sectionWrite == nil then
-                CS.CloseAdvancedSettingsPanel({ settingKey = advancedKey })
-            end
-        end
-    end
+    -- The dispatch-level gear build pass brackets this builder
+    -- (RunAdvancedGearBuildPass, AdvancedSettingsPanel.lua), so the first
+    -- text-section gear added here gets the same lifecycle as every other
+    -- styling tab's.
 end
 
 ------------------------------------------------------------------------

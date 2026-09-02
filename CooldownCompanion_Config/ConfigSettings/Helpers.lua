@@ -444,7 +444,6 @@ end
 -- Helper: add an advanced-settings button on a parent widget (CheckBox or Heading).
 -- The button opens the shared side editor when options.build is provided.
 local ADVANCED_TOGGLE_ATLAS = "QuestLog-icon-setting"
-local ADVANCED_TOGGLE_INERT_ALPHA = 0.4
 -- The gear's idle tint. Named because the Customizations list's own gear wears
 -- it too (ApplyAdvancedGlyphLook below), and two copies of the same four
 -- numbers is two chances for the two gears to stop looking like one control.
@@ -482,6 +481,16 @@ local function BuildAdvancedDescriptor(parentWidget, settingKey, options)
         isAvailable = options and options.isAvailable,
         context = options and options.context,
         deferBuild = options and options.deferBuild,
+        unlock = options and options.unlock,
+        -- Every settings-side gear panel follows lens shifts (owner ruling
+        -- 2026-08-31): selecting an entry rebinds the open panel to that
+        -- entry's scope instead of closing it, and the gear-stamp sweeps
+        -- close it whenever its gear does not rebuild. See LENS_CONTEXT_FIELDS
+        -- in AdvancedSettingsPanel.lua for what this loosens - and what it
+        -- doesn't. A descriptor built anywhere else (none today; historically
+        -- the preview command center's tab-less factory opens) does not set
+        -- it and keeps the full-context close with no sweep coverage.
+        lensAgnostic = true,
     }
 end
 
@@ -493,18 +502,6 @@ local function SetAdvancedToggleActive(btn, active)
             btn._icon:SetVertexColor(ADVANCED_TOGGLE_IDLE_COLOR[1], ADVANCED_TOGGLE_IDLE_COLOR[2],
                 ADVANCED_TOGGLE_IDLE_COLOR[3], ADVANCED_TOGGLE_IDLE_COLOR[4])
         end
-    end
-end
-
--- A gear that sits inside a read-only (inert) section is dimmed with
--- desaturation plus frame-level alpha, deliberately NOT with the vertex color
--- SetAdvancedToggleActive owns: object alpha and vertex alpha multiply, so the
--- two states stay independent and either one can be restored without having to
--- know the other's current value.
-local function SetAdvancedToggleInert(btn, inert)
-    if btn and btn._icon then
-        btn._icon:SetDesaturated(inert and true or false)
-        btn._icon:SetAlpha(inert and ADVANCED_TOGGLE_INERT_ALPHA or 1)
     end
 end
 
@@ -546,12 +543,13 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
 
     btn:SetParent(frame)
     btn:ClearAllPoints()
-    -- The gear is cached on the widget's frame and outlives the build that put
-    -- it there, so an inert section (ApplyInertRange below) can leave it
-    -- disabled and dimmed. Re-assert the interactive state here: the next
-    -- tenant of a recycled frame must never inherit the previous one's gate.
+    -- The gear is cached on the widget's frame and outlives the build that
+    -- put it there; re-enable in case a previous tenant left it disabled.
+    -- Locked and live gears deliberately wear the SAME two looks (owner
+    -- ruling 2026-08-31): idle grey closed, gold open - the read-only panel
+    -- and its unlock strip are what say locked, never the gear's color, so
+    -- there is no dim state left to reset.
     btn:Enable()
-    SetAdvancedToggleInert(btn, false)
     btn._advancedSettingKey = settingKey
 
     -- Clean up on widget release (prevent leaking into recycled widgets).
@@ -619,6 +617,15 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
 
     btn:Show()
     btn._icon:Show()
+
+    -- The dispatch-level gear build pass sweeps every gear panel whose gear
+    -- did not build this pass (no gear means no rebind, so an open panel's
+    -- controls still point at the previous build's tables). Stamp every
+    -- SHOWN gear so a rebound panel - read-only or live - is told apart from
+    -- a stale one. See RunAdvancedGearBuildPass in AdvancedSettingsPanel.lua.
+    if CS.StampAdvancedGearBuilt then
+        CS.StampAdvancedGearBuilt(settingKey)
+    end
 
     -- Position for row-grammar widgets: badges chain off the end of the row's
     -- label text (RowWidgets.lua). The gear is normally created first, so it
@@ -1313,7 +1320,13 @@ local function ResolveLensSection(lens, group, sectionId)
         return "denied", lens.effective, nil, deniedReason
     end
 
-    if buttonData.overrideSections and buttonData.overrideSections[sectionId] then
+    -- "customized" requires the override STORE, not just the section flag: a
+    -- flagged section with no styleOverrides table (hand-edited or partially
+    -- imported data) resolves as inherited, so its Customize path recreates
+    -- the store properly instead of a write-less customized scope leaking a
+    -- live surface that edits the detached effective table.
+    if buttonData.overrideSections and buttonData.overrideSections[sectionId]
+        and buttonData.styleOverrides then
         return "customized", lens.effective, buttonData.styleOverrides
     end
 
@@ -1328,27 +1341,52 @@ local function MarkInertRange(column)
     return children and #children or 0
 end
 
-local function MakeWidgetTreeInert(widget)
-    if widget.SetDisabled then
+local function MakeWidgetTreeInert(widget, hideReverts)
+    -- hideReverts rides the read-only panel walk only (MakeAdvancedPanelReadOnly):
+    -- a REVERT glyph does not survive the lock (owner ruling 2026-08-31) - a
+    -- destructive one-click delete has no place on a surface presented as
+    -- locked. The glyph lives on the row FRAME where the child walk below
+    -- never looks, so it is handled here, per widget, on the same traversal.
+    -- The main column's inert ranges never pass the flag: their reverts stay.
+    if hideReverts then
+        local frame = widget.frame
+        local revert = frame and frame._cdcScopeRowRevert
+        if revert then
+            revert:Hide()
+        end
+    end
+
+    -- A row inside a locked advanced panel whose OWN nested lens section is
+    -- independently writable (bar mode's Icon Zoom, customized while Bar Icon
+    -- itself is inherited) opts out of the lock: greying it would leave an
+    -- override the user just created with no live control. The flag is set
+    -- only while a read-only build is underway and consumed here in the same
+    -- BuildPanelContents call, so it can never ride a pooled widget into a
+    -- later build. It exempts exactly the widget's OWN disable: the revert
+    -- above still hides, and children are still walked, so a future flag on
+    -- a container row cannot silently unlock a whole subtree.
+    local exempt = widget._cdcReadOnlyExempt
+    if exempt then
+        widget._cdcReadOnlyExempt = nil
+    end
+
+    if not exempt and widget.SetDisabled then
         widget:SetDisabled(true)
     end
 
     -- Badges live on the widget's FRAME, not in the AceGUI child tree, so the
-    -- walk below would never reach a gear. Gate it here instead - an inert
-    -- section's advanced panel is just more controls for the same values.
-    local frame = widget.frame
-    local advancedBtn = frame and frame._cdcAdvancedBtn
-    if advancedBtn then
-        advancedBtn:Disable()
-        SetAdvancedToggleInert(advancedBtn, true)
-    end
+    -- walk below never reaches a gear - deliberately. A gear in an inert
+    -- section stays live and keeps its normal idle/open colors (owner ruling
+    -- 2026-08-31): it opens its panel read-only behind the unlock strip
+    -- (AddAdvancedToggle's options.unlock), which is a way into the section,
+    -- not an edit of it, and the panel is what says locked.
 
     local children = widget.children
     if children then
         for i = 1, #children do
             local child = children[i]
             if child then
-                MakeWidgetTreeInert(child)
+                MakeWidgetTreeInert(child, hideReverts)
             end
         end
     end
@@ -1461,9 +1499,13 @@ end
 --
 -- The chrome is the ESCAPE HATCH out of a read-only section, so it must stay
 -- live where everything else is gated: it hangs off the widget's FRAME under
--- _cdcScope* names, and MakeWidgetTreeInert only ever walks AceGUI children
--- plus _cdcAdvancedBtn. Keep it that way - a scope control the inert pass can
--- reach would strand the entry with no way back out.
+-- _cdcScope* names, and MakeWidgetTreeInert only ever walks AceGUI children -
+-- never frame badges. Keep it that way - a scope control the inert pass can
+-- reach would strand the entry with no way back out, and the advanced GEAR
+-- must stay live too (owner ruling 2026-08-31): it is the only entrance into
+-- a locked section's read-only panel, so the inert walk must never disable
+-- _cdcAdvancedBtn. The one exception is the revert glyph, hidden by the
+-- read-only panel walk's hideReverts flag.
 --
 -- Every element is cached on that frame, re-styled from scratch on each
 -- attach, and hidden both at attach time and on widget release, because the
@@ -1550,6 +1592,306 @@ local function PromoteLensSection(lens, group, sectionId, opts)
         CooldownCompanion:RefreshConfigPanel()
     end
     return true
+end
+
+-- The unlock action for an advanced gear, resolved from the small LAZY spec
+-- the gear site stores in options.unlock. Only the one panel being built ever
+-- consumes an unlock, so all labels and closures are made HERE, at panel-build
+-- time (BuildPanelContentsBody, AdvancedSettingsPanel.lua) - a tab rebuild
+-- that opens no panel allocates none of them.
+--
+-- Lens spec { sec, enable }: the ONE next step that makes the panel's greyed
+-- rows editable. An inherited section unlocks by Customize (the same
+-- PromoteLensSection the scope chrome runs); a writable section whose parent
+-- toggle is off unlocks by the enable spec, wrapped in the styling tabs'
+-- standard refresh. Both-locked resolves Customize FIRST - after it the
+-- panel rebinds live and re-renders the footer with the enable step.
+--
+-- Non-lens spec { target, enable, refreshKind }: the enable applies to the
+-- caller's own settings table, then the named refresh sequence runs - each
+-- kind reproduces exactly what its sites' checkboxes run.
+--
+-- An enable spec is { label, key } for the plain write-true case, or
+-- { label, apply(write) [, after] } where enabling sets more than one key;
+-- sites declare the plain ones as file-local constants. `enable.run` is the
+-- non-lens seam for a shared enable function that owns its WHOLE sequence,
+-- refresh included (the texture indicators' collision handling).
+--
+-- The enable action is deliberately ONE-WAY (owner ruling 2026-08-31, after
+-- trying every variant in game): the footer may turn a feature ON to start
+-- editing right where the settings are, but turning it OFF stays solely on
+-- the toggle's own row. The gear itself is built for every scope except
+-- "denied" - a denied section structurally cannot exist for the entry, so it
+-- keeps no gear at all.
+local ADVANCED_UNLOCK_REFRESH = {
+    -- The styling tabs' standard write-then-rebuild pair.
+    groupStyle = function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end,
+    -- Custom bars: apply the bars, then rebuild.
+    resourceBars = function()
+        CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:RefreshConfigPanel()
+    end,
+    -- Trigger-panel effects: restyle the texture visuals, then rebuild.
+    auraTextures = function()
+        CooldownCompanion:RefreshAllAuraTextureVisuals()
+        CooldownCompanion:RefreshConfigPanel()
+    end,
+    -- Cast bar contents: apply the live cast bar, then rebuild.
+    castBar = function()
+        CooldownCompanion:ApplyCastBarSettings()
+        CooldownCompanion:RefreshConfigPanel()
+    end,
+}
+
+local function ApplyAdvancedUnlockEnable(enable, write)
+    if enable.apply then
+        enable.apply(write)
+    else
+        write[enable.key] = true
+    end
+end
+
+local function ResolveAdvancedUnlock(spec)
+    if not spec then
+        return nil
+    end
+    local sec = spec.sec
+    local enable = spec.enable
+    if not sec then
+        -- Non-lens: no enable means the toggle is on, so the panel is live.
+        if not enable then
+            return nil
+        end
+        if enable.run then
+            return { label = enable.label, onClick = enable.run }
+        end
+        return {
+            label = enable.label,
+            onClick = function()
+                ApplyAdvancedUnlockEnable(enable, spec.target)
+                ADVANCED_UNLOCK_REFRESH[spec.refreshKind]()
+            end,
+        }
+    end
+    if sec.write == nil then
+        if sec.scope == "inherited" then
+            return {
+                label = "Customize " .. GetOverrideSectionLabel(sec.sectionId) .. " for this entry",
+                onClick = function()
+                    PromoteLensSection(sec.lens, sec.group, sec.sectionId)
+                end,
+            }
+        end
+        if sec.scope == "denied" then
+            -- Denied stays nil by call-site convention: a denied section
+            -- structurally cannot exist for the entry, so it keeps no gear
+            -- and this helper is never consulted for one.
+            return nil
+        end
+        -- Any other write-less scope ("panelOnly": a nil sectionId under an
+        -- entry lens) must NEVER open live - its rows would bind the detached
+        -- effective snapshot and edits would silently vanish on the next
+        -- rebuild. Lock the panel with no footer action; the strip renders
+        -- nothing for an unlock without one.
+        return {}
+    end
+    if enable then
+        return {
+            label = enable.label,
+            onClick = function()
+                ApplyAdvancedUnlockEnable(enable, sec.write)
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                -- The one seam for a section whose checkbox path runs an
+                -- extra step between style apply and the config rebuild (the
+                -- icon fill timer's cooldown rewalk) - the two entrances of
+                -- one enable must run the same sequence.
+                if enable.after then
+                    enable.after()
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        }
+    end
+    return nil
+end
+
+-- The unlock strip's gold accents: a soft center-peaked wash behind the text
+-- and a 1px rule fading out from center along its top edge - the two-half
+-- gradient recipe the mode banners and the preview banner already draw, in
+-- the scope chrome's gold.
+local UNLOCK_STRIP_CLEAR = CreateColor(1, 0.82, 0, 0)
+local UNLOCK_STRIP_WASH = CreateColor(1, 0.82, 0, 0.12)
+local UNLOCK_STRIP_WASH_HOVER = CreateColor(1, 0.82, 0, 0.2)
+local UNLOCK_STRIP_RULE = CreateColor(1, 0.82, 0, 0.55)
+
+local function SetUnlockStripWash(art, color)
+    art.bgLeft:SetGradient("HORIZONTAL", UNLOCK_STRIP_CLEAR, color)
+    art.bgRight:SetGradient("HORIZONTAL", color, UNLOCK_STRIP_CLEAR)
+end
+
+-- The strip's accent art lives on a Cooldown Companion-OWNED singleton frame,
+-- never on the pooled label (review finding 2026-08-31): textures can never
+-- be reparented off a frame, the AceGUI pool is shared with every other addon
+-- embedding the library, and the repo invariant forbids child regions on
+-- pooled widget frames (agent-reference/patterns-and-gotchas.md). The frame
+-- is attached to the label at build and detached on the label's release, the
+-- same borrow-and-detach pattern the gears and info badges use. One panel
+-- exists at a time (singleton by ruling), so one art frame serves.
+local unlockStripArt
+
+local function EnsureUnlockStripArt()
+    if unlockStripArt then
+        return unlockStripArt
+    end
+    local art = CreateFrame("Frame")
+    art:EnableMouse(false)
+    art:Hide()
+    local function StripTexture(layer)
+        local tex = art:CreateTexture(nil, layer)
+        tex:SetTexture("Interface/Buttons/WHITE8x8")
+        return tex
+    end
+    art.bgLeft = StripTexture("BACKGROUND")
+    art.bgLeft:SetPoint("TOPLEFT")
+    art.bgLeft:SetPoint("BOTTOMRIGHT", art, "BOTTOM", 0, 0)
+    art.bgRight = StripTexture("BACKGROUND")
+    art.bgRight:SetPoint("TOPLEFT", art, "TOP", 0, 0)
+    art.bgRight:SetPoint("BOTTOMRIGHT")
+    art.lineLeft = StripTexture("BORDER")
+    art.lineLeft:SetHeight(1)
+    art.lineLeft:SetPoint("TOPLEFT")
+    art.lineLeft:SetPoint("TOPRIGHT", art, "TOP", 0, 0)
+    art.lineLeft:SetGradient("HORIZONTAL", UNLOCK_STRIP_CLEAR, UNLOCK_STRIP_RULE)
+    art.lineRight = StripTexture("BORDER")
+    art.lineRight:SetHeight(1)
+    art.lineRight:SetPoint("TOPLEFT", art, "TOP", 0, 0)
+    art.lineRight:SetPoint("TOPRIGHT")
+    art.lineRight:SetGradient("HORIZONTAL", UNLOCK_STRIP_RULE, UNLOCK_STRIP_CLEAR)
+    unlockStripArt = art
+    return art
+end
+
+local function DetachUnlockStripArt()
+    if unlockStripArt then
+        unlockStripArt:Hide()
+        unlockStripArt:ClearAllPoints()
+        unlockStripArt:SetParent(nil)
+    end
+end
+
+-- The centered gold action at the foot of a read-only advanced panel: one
+-- text step in the scope chrome's family (same color, same hover language as
+-- Customize and Revert), because for an inherited section it IS that same
+-- Customize. The foot, not the head (owner ruling 2026-08-31): panels end in
+-- slack, so the step sits in space the rows never use.
+local function BuildAdvancedUnlockStrip(scroll, unlock)
+    -- An unlock with no action is a pure lock (a write-less "panelOnly"
+    -- section, ResolveAdvancedUnlock): the rows grey but there is
+    -- no one next step to offer, so no footer renders.
+    if not (unlock and unlock.onClick) then
+        return
+    end
+    -- Spacer above the action, sized to VERTICALLY CENTER the text in the
+    -- panel's empty foot band: the panel height allows 63px of chrome
+    -- (FRAME_CHROME_HEIGHT + CONTENT_HEIGHT_PADDING, AdvancedSettingsPanel.lua)
+    -- while the AceGUI Window's real content insets total 45px (top 32,
+    -- bottom 13), leaving a constant 18px of viewport below the content. An
+    -- 18px gap above matches it, so the text sits dead center between the
+    -- last row and the panel's bottom edge. Change either height constant and
+    -- this number moves with it.
+    if ST._AddModeSummarySpacer then
+        ST._AddModeSummarySpacer(scroll, 18)
+    end
+
+    local action = AceGUI:Create("InteractiveLabel")
+    -- The shared InteractiveLabel pool also serves the Navigator, whose rows
+    -- hang plain-child badges off the label FRAME; nothing hides those on
+    -- release, so a reacquired frame arrives wearing its previous tenant's
+    -- badges. Same clean-on-acquire call every other non-Navigator consumer
+    -- of the pool makes.
+    if ST._CleanRecycledEntry then
+        ST._CleanRecycledEntry(action)
+    end
+    action:SetFontObject(GameFontNormal)
+    action:SetText(unlock.label)
+    action:SetColor(SCOPE_CHROME_GOLD[1], SCOPE_CHROME_GOLD[2], SCOPE_CHROME_GOLD[3])
+    action:SetJustifyH("CENTER")
+    action:SetFullWidth(true)
+
+    -- Borrow the singleton art frame for this build: anchored 6px past the
+    -- text on both sides (up into the spacer's gap, down into the panel's
+    -- foot slack), leveled just below the label so the text draws over the
+    -- wash, and detached again when the label is released back to the pool.
+    local frame = action.frame
+    local art = EnsureUnlockStripArt()
+    art:SetParent(frame)
+    art:SetFrameLevel(math.max(frame:GetFrameLevel() - 1, 0))
+    art:ClearAllPoints()
+    art:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 6)
+    art:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, -6)
+    art:Show()
+    -- Re-asserted every build: a pointer that left without OnLeave firing
+    -- (the refresh tore the frame out from under it) must not strand the
+    -- hover wash.
+    SetUnlockStripWash(art, UNLOCK_STRIP_WASH)
+
+    -- Chain, don't replace, exactly as AddAdvancedToggle's release handler
+    -- does: a freshly acquired widget has no OnRelease callback, but never
+    -- clobber one another decorator installed in the same build.
+    local prevOnRelease = action.events and action.events["OnRelease"]
+    action:SetCallback("OnRelease", function(widget, event, ...)
+        if prevOnRelease then
+            prevOnRelease(widget, event, ...)
+        end
+        if unlockStripArt and unlockStripArt:GetParent() == frame then
+            DetachUnlockStripArt()
+        end
+    end)
+
+    action:SetCallback("OnClick", function()
+        unlock.onClick()
+    end)
+    action:SetCallback("OnEnter", function(widget)
+        if widget.label then
+            widget.label:SetTextColor(SCOPE_CHROME_GOLD_HOVER[1],
+                SCOPE_CHROME_GOLD_HOVER[2], SCOPE_CHROME_GOLD_HOVER[3])
+        end
+        SetUnlockStripWash(art, UNLOCK_STRIP_WASH_HOVER)
+    end)
+    action:SetCallback("OnLeave", function(widget)
+        if widget.label then
+            widget.label:SetTextColor(SCOPE_CHROME_GOLD[1],
+                SCOPE_CHROME_GOLD[2], SCOPE_CHROME_GOLD[3])
+        end
+        SetUnlockStripWash(art, UNLOCK_STRIP_WASH)
+    end)
+    scroll:AddChild(action)
+    return action
+end
+
+
+-- Read-only gate for a locked advanced panel, applied AFTER the build so the
+-- panel can never drift from its live twin - the same built-like-live rule the
+-- main column's inert ranges follow. Runs before the unlock strip is appended,
+-- so the sweep covers exactly the build's own rows. One traversal: the
+-- hideReverts flag folds the revert-glyph hiding (owner ruling 2026-08-31,
+-- see MakeWidgetTreeInert) into the same walk, and embedded rows with their
+-- OWN lens sections (bar mode's Icon Zoom inside Bar Icon Advanced) keep
+-- their scope chrome live - Customize is the escape hatch into the section.
+local function MakeAdvancedPanelReadOnly(scroll)
+    local children = scroll and scroll.children
+    if not children then
+        return
+    end
+    for i = 1, #children do
+        local child = children[i]
+        if child then
+            MakeWidgetTreeInert(child, true)
+        end
+    end
 end
 
 -- One-click promotion for an inherited color control rebuilds the whole tab,
@@ -2522,10 +2864,12 @@ local function IsSectionHomeAvailable(home, group, style, sectionId)
     return available(group, style) and true or false
 end
 
--- Same question for the section's advanced GEAR, which has a gate of its own:
--- a drawn section whose parent readout toggle is off builds no gear
--- (AddAdvancedToggle's isEnabled), and a queued advanced key with no gear left
--- to consume it would open a panel behind a gear that is not on screen.
+-- Same question for the section's advanced GEAR, whose surviving gates are
+-- STRUCTURAL only (the Masque and fill-timer interlocks): parent toggles no
+-- longer hide gears - an off toggle's gear opens its panel read-only behind
+-- the Turn On footer. A queued advanced key with no gear left to consume it
+-- would open a panel behind a gear that is not on screen, which is why the
+-- structural gates still gate the list glyph too.
 local function IsSectionHomeGearBuilt(home, group, style)
     local gearEnabled = home and home.gearEnabled
     if not gearEnabled then
@@ -2542,9 +2886,9 @@ end
 -- this one (the .toc), so they are fetched off ST at build time, exactly as
 -- ST._SECTION_HOME is above.
 --
--- A mode's sources are EXACTLY the maps that mode's own builders sweep, so this
--- list can never offer a gear the mode does not draw. Icons builds both the
--- Appearance and Indicators tabs and each of those sweeps both maps; bars builds
+-- A mode's sources are EXACTLY the maps that mode's own builders declare, so
+-- this list can never offer a gear the mode does not draw. Icons builds both
+-- the Appearance and Indicators tabs off both maps; bars builds
 -- its two tabs off the one bars map (its pandemic, unusable and tooltip gears
 -- are listed there, so the indicators map is not a bars source); text's map is
 -- deliberately empty today. Textures has no override sections at all, so it has
@@ -2859,10 +3203,11 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
         -- format row is a flat field with no section and no advanced panel at
         -- all. Both fall out of the gates below rather than being special-cased.
         --
-        -- The gear ALSO has to exist at the destination: its section can be
-        -- drawn with the gear itself unbuilt (parent readout toggled off), and
-        -- the queue is consumed before that gate runs, so a panel would open
-        -- behind a gear that is not on screen.
+        -- The gear ALSO has to exist at the destination: a structural gate
+        -- (Masque, the fill-timer interlock) can leave a drawn section with no
+        -- gear, and the queue is consumed before that gate runs, so a panel
+        -- would open behind a gear that is not on screen. Parent toggles no
+        -- longer unbuild gears - an off toggle's gear opens read-only.
         local advancedKey
         if navigable and not item.reason and item.sectionId and gearBySection
             and IsSectionHomeGearBuilt(item.home, group, predicateStyle) then
@@ -3079,9 +3424,16 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
             maxVisTooltip, tabInfoButtons))
     end
 
-    AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout, {
+    AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, true, {
         title = "Compact Mode Advanced",
         build = BuildCompactAdvanced,
+        -- Non-lens lazy spec (ResolveAdvancedUnlock): the shared enable
+        -- owns its whole sequence (populate + layout-dirty + rebuild), so
+        -- it rides the spec as `run` - the checkbox above runs the same
+        -- path.
+        unlock = not group.compactLayout and {
+            enable = { label = "Turn On Compact Mode", run = function() ApplyCompactLayout(true) end },
+        } or nil,
     })
 
     -- (?) tooltip for compact mode. The gear is already chained off the label,
@@ -3541,6 +3893,9 @@ ST._GroupSupportsPerButtonOverrides = GroupSupportsPerButtonOverrides
 ST._ResolveStyleLens = ResolveStyleLens
 ST._ResolveLensSection = ResolveLensSection
 ST._PromoteLensSection = PromoteLensSection
+ST._ResolveAdvancedUnlock = ResolveAdvancedUnlock
+ST._BuildAdvancedUnlockStrip = BuildAdvancedUnlockStrip
+ST._MakeAdvancedPanelReadOnly = MakeAdvancedPanelReadOnly
 ST._BeginLensSection = BeginLensSection
 ST._ResolveLensCollapseKey = ResolveLensCollapseKey
 ST._AddLensPanelScopeNote = AddLensPanelScopeNote
