@@ -2911,11 +2911,28 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup()
     if not containers then return nil end
     local specId = self._currentSpecId
 
+    -- One walk over the panels, bucketed by container, in place of one
+    -- GetPanels walk-and-sort per container: this runs on the bars-and-frames
+    -- gate path, so its cost lands on every bar evaluation. Same ordering as
+    -- GetPanels (order, then numeric id, then string id).
+    local panelsByContainer = {}
+    for groupId, group in pairs(groups) do
+        local cid = group.parentContainerId
+        if cid ~= nil and containers[cid] then
+            local bucket = panelsByContainer[cid]
+            if not bucket then
+                bucket = {}
+                panelsByContainer[cid] = bucket
+            end
+            bucket[#bucket + 1] = { groupId = groupId, group = group }
+        end
+    end
+
     local orderedContainers = {}
-    for cid, container in pairs(containers) do
+    for cid in pairs(panelsByContainer) do
         orderedContainers[#orderedContainers + 1] = {
             id = cid,
-            order = self:GetOrderForSpec(container, specId, cid),
+            order = self:GetOrderForSpec(containers[cid], specId, cid),
         }
     end
     table.sort(orderedContainers, function(a, b)
@@ -2931,8 +2948,25 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup()
         return tostring(a.id) < tostring(b.id)
     end)
 
+    local function ComparePanels(a, b)
+        local aOrder = a.group.order or 0
+        local bOrder = b.group.order or 0
+        if aOrder ~= bOrder then
+            return aOrder < bOrder
+        end
+
+        local aId = tonumber(a.groupId)
+        local bId = tonumber(b.groupId)
+        if aId and bId and aId ~= bId then
+            return aId < bId
+        end
+        return tostring(a.groupId) < tostring(b.groupId)
+    end
+
     for _, containerInfo in ipairs(orderedContainers) do
-        for _, panelInfo in ipairs(self:GetPanels(containerInfo.id)) do
+        local panels = panelsByContainer[containerInfo.id]
+        table.sort(panels, ComparePanels)
+        for _, panelInfo in ipairs(panels) do
             if self:IsGroupAvailableForAnchoring(panelInfo.groupId) then
                 return panelInfo.groupId
             end
@@ -2960,11 +2994,16 @@ function CooldownCompanion:IsResourceBarAnchorIndependent()
     return IsResourceBarIndependentAnchor(settings, self._currentSpecId)
 end
 
-local function CollectStableExternalAnchorCompactReasons(self, groupId)
+-- anchorGroupId: the already-resolved GetFirstAvailableAnchorGroup result,
+-- when the caller has it. That resolution walks and sorts every panel, and
+-- the suppression refresh below is on the bars-and-frames gate path.
+local function CollectStableExternalAnchorCompactReasons(self, groupId, anchorGroupId)
     groupId = tonumber(groupId)
     if not groupId then return nil end
 
-    local anchorGroupId = self.GetFirstAvailableAnchorGroup and tonumber(self:GetFirstAvailableAnchorGroup()) or nil
+    if anchorGroupId == nil then
+        anchorGroupId = self.GetFirstAvailableAnchorGroup and tonumber(self:GetFirstAvailableAnchorGroup()) or nil
+    end
     if anchorGroupId ~= groupId then return nil end
 
     local reasons = nil
@@ -3051,7 +3090,7 @@ function CooldownCompanion:RefreshStableExternalAnchorCompactSuppression(options
     local oldGroupId = self._compactLayoutSuppressedGroupId
     local oldReasons = self._compactLayoutSuppressionReasons
     local newGroupId = self.GetFirstAvailableAnchorGroup and tonumber(self:GetFirstAvailableAnchorGroup()) or nil
-    local newReasons = newGroupId and CollectStableExternalAnchorCompactReasons(self, newGroupId) or nil
+    local newReasons = newGroupId and CollectStableExternalAnchorCompactReasons(self, newGroupId, newGroupId) or nil
     if not newReasons then
         newGroupId = nil
     end
@@ -3609,8 +3648,16 @@ function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
     self:MarkCooldownsDirty("availability-rebuild")
 end
 
-function CooldownCompanion:RefreshAllGroupsForSpellAvailability()
-    local needsFullRefresh = self:AnyGroupButtonSetNeedsRebuild()
+-- opts.perGroupRebuild: never escalate to RefreshAllGroups. The visibility
+-- pass already repopulates each panel whose entry set moved and re-finalizes
+-- anchors afterwards, so a caller that cannot have changed container
+-- visibility (SPELLS_CHANGED on a shapeshift, the settling pass) gets the
+-- changed panels rebuilt without a from-scratch refresh of every panel in
+-- the profile. Spec and talent callers keep the escalation: they can flip
+-- which containers exist for the character.
+function CooldownCompanion:RefreshAllGroupsForSpellAvailability(opts)
+    local needsFullRefresh = not (opts and opts.perGroupRebuild)
+        and self:AnyGroupButtonSetNeedsRebuild()
     self:ResetSpellAvailabilityButtonRuntime()
 
     if needsFullRefresh then
@@ -3811,13 +3858,19 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
         return
     end
 
-    self:RefreshStableExternalAnchorCompactSuppression()
+    -- Whether this pass loaded, unloaded, repopulated or first-showed any
+    -- frame. The anchor/wrapper finalization at the end costs a resize and
+    -- re-anchor of every panel, and the resource bar hook re-applies the bars
+    -- after it; neither has anything to do when the pass changed nothing,
+    -- which is every shapeshift on a profile without form-gated entries.
+    local changed = self:RefreshStableExternalAnchorCompactSuppression() == true
 
     -- Fully unload frames for groups not in the current profile
     for groupId, _ in pairs(self.groupFrames) do
         if not self.db.profile.groups[groupId] then
             self:UnloadGroup(groupId)
             self:DiscardDormantFrame(groupId)
+            changed = true
         end
     end
     -- Also discard dormant frames for deleted groups
@@ -3832,7 +3885,10 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     for groupId, group in pairs(self.db.profile.groups) do
         local visible = self:IsGroupVisibleToCurrentChar(groupId)
         if not visible then
-            self:UnloadGroup(groupId)
+            if self.groupFrames[groupId] then
+                self:UnloadGroup(groupId)
+                changed = true
+            end
         else
             local active = self:IsGroupActive(groupId, {
                 group = group,
@@ -3842,13 +3898,18 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
             })
 
             if not active then
-                self:UnloadGroup(groupId)
+                if self.groupFrames[groupId] then
+                    self:UnloadGroup(groupId)
+                    changed = true
+                end
             else
                 local frame = self.groupFrames[groupId]
                 if frame and self:GroupButtonSetNeedsRebuild(groupId, group) then
                     self:RefreshGroupFrame(groupId)
                     frame = self.groupFrames[groupId]
+                    changed = true
                 elseif not frame then
+                    changed = true
                     if self:GroupButtonSetNeedsRebuild(groupId, group) then
                         -- Recover the shell and repopulate it rather than
                         -- discarding it: frames cannot be destroyed, so a
@@ -3904,6 +3965,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                     -- When transitioning hidden -> shown, refresh button state
                     -- immediately so compact groups never show stale slots.
                     if not wasShown then
+                        changed = true
                         if frame.UpdateCooldowns then
                             frame:UpdateCooldowns()
                         end
@@ -3917,10 +3979,15 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
         end
     end
 
-    self:FinalizeContainerAnchorsToScreenOffsets()
-    self:FinalizePanelAnchors()
-    if self.RefreshAllContainerWrappers then
-        self:RefreshAllContainerWrappers()
+    -- Read by the resource bar lifecycle hook on this method, which otherwise
+    -- re-applies every bar 0.1s after each pass.
+    self._lastVisibilityPassChanged = changed
+    if changed then
+        self:FinalizeContainerAnchorsToScreenOffsets()
+        self:FinalizePanelAnchors()
+        if self.RefreshAllContainerWrappers then
+            self:RefreshAllContainerWrappers()
+        end
     end
     if self.RefreshCursorAnchorTicker then
         self:RefreshCursorAnchorTicker()

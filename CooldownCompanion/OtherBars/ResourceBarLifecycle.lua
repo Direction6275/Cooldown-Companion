@@ -75,8 +75,16 @@ function RB.CreateResourceBarLifecycleModule(deps)
             lifecycleFrame:SetScript("OnEvent", function(self, event, ...)
                 if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
                 if event == "UPDATE_SHAPESHIFT_FORM" then
-                    CooldownCompanion:EvaluateResourceBars()
-                    CooldownCompanion:UpdateAnchorStacking()
+                    -- A form only concerns the bars when it changes WHICH
+                    -- bars show (druid forms swap resources). A form that
+                    -- keeps the set (Stealth, the all-forms union) skips the
+                    -- full re-apply and the stacking pass it queues; bars
+                    -- that reverted because their panel hid read as changed
+                    -- and still come back here.
+                    if not CooldownCompanion:ResourceBarsActiveSetUnchanged() then
+                        CooldownCompanion:EvaluateResourceBars()
+                        CooldownCompanion:UpdateAnchorStacking()
+                    end
                 elseif event == "ACTIVE_TALENT_GROUP_CHANGED"
                     or event == "PLAYER_SPECIALIZATION_CHANGED" then
                     if not pendingSpecChange then
@@ -188,6 +196,9 @@ function RB.CreateResourceBarLifecycleModule(deps)
         -- still needs resource bar anchoring re-evaluation.
         hooksecurefunc(CooldownCompanion, "RefreshAllGroupsVisibilityOnly", function()
             if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
+            -- A pass that loaded, unloaded or repopulated nothing left every
+            -- anchor panel exactly where it was.
+            if CooldownCompanion._lastVisibilityPassChanged == false then return end
             QueueResourceBarReevaluate()
         end)
 
