@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.5",
         "2.4",
         "2.3",
         "2.2.1",
@@ -35,6 +36,36 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.5"] = {
+            markdown = [[
+## New Features
+
+- **Panel Templates:** Right-click a panel and choose Templates > Save as Template to keep its look, layout, sections, and Group position. Templates are account-wide, so new panels on any character or spec can start from one, or apply one to an existing panel. Entries are never saved.
+- **Aura text in text panels:** `{aura}` shows the tracked aura's remaining time, `{aurastacks}` its stacks, and `{?aura}...{/aura}` shows text only while the aura is active. On an aura entry, `{status}` becomes a live countdown. Spell entries on text panels gain the Aura Tracking section.
+- **Cooldown Press Flash:** An optional Effects tab setting for icon panels. Pressing a spell that is still on cooldown or out of charges flashes its icon red. Presses blocked only by the global cooldown do not flash. Color, duration, and combat-only are adjustable.
+- **External anchor for other addons:** Right-click a panel in the Navigator and choose Use as External Anchor. Addons like BigWigs can then anchor to CooldownCompanionExternalAnchor once, and it follows the chosen panel for each spec.
+
+## Polish | QoL
+
+- **Advanced settings always reachable:** Gears no longer vanish when a feature is off or inherited. Clicking one opens its panel read-only with a single gold button to turn it on or customize it. The settings finder now finds these too.
+- **One dropdown per visibility rule:** Show & Hide Rules are now dropdowns instead of stacked checkboxes, for panel entries and custom bars. Conflicting choices grey out instead of unchecking each other, and multi-select shows Mixed until you pick.
+- **Tracked on covers group and pet:** You and your group and Your pet are now choices in the Tracked on dropdown.
+- **Drop ghost in the Live Preview:** While dragging a spell or hovering an add suggestion, a dimmed copy of the panel's cell shows exactly where the entry will land. Empty placeholder boxes are gone.
+- **Easier section drops:** Drop anywhere to add to the row, or bring the cursor near an edge or an existing section to land there. Gold chevrons show the growth direction, and moving a section previews where it will sit.
+- **Ghosted entries on unlocked panels:** Entries hidden by their rules show at ghost opacity while the panel or Group is unlocked, so an empty-looking panel can still be seen and dragged.
+- **Copy Panel Settings carries Max Visible Buttons:** Copying onto an empty panel now includes the source's visible limit.
+
+## Bug Fixes
+
+- **Summon timers stay on the right spell:** An instant cast right before a summon appeared or expired no longer steals the summon timer. Summons also track from their first cast in combat.
+- **Aura-only summon entries:** A standalone Aura entry for a guardian summon now shows its remaining duration on icon and bar panels. Its aura settings note that the timer comes from the totem slot.
+- **Attached bars no longer overlap sections:** Resource bars and the cast bar now sit past a sectioned panel's full footprint, matching the Live Preview.
+
+## Performance
+
+- **No more shapeshift stutter:** Druid form changes and rogue Stealth or Shadow Dance no longer hitch the game.
+]],
+        },
         ["2.4"] = {
             markdown = [[
 ## New Features
