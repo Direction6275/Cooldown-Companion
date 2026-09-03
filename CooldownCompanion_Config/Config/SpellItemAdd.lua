@@ -315,13 +315,116 @@ end
 -- Helper: Add spell to selected group
 ------------------------------------------------------------------------
 -- opts.section (cursor drops only): the section anchor the new entry lands
--- in. A drop on one of the Live Preview's anchor pads, or onto a section's
--- own cluster, adds the entry AND places it, and the anchor rides into
+-- in. A drop near one of the Live Preview's section landings, or onto a
+-- section's own cluster, adds the entry AND places it, and the anchor rides into
 -- AddButtonToGroup as its last argument: Core assigns the section ahead of
 -- its own keeper pass and refresh, so the entry is drawn in place the first
 -- time instead of landing in the base grid and moving. Core judges the anchor
 -- against the panel as it is THEN rather than at the drop (an item add can
 -- finish later, from its load callback).
+-- The add's routing for a spell, decided ONCE and read by two callers: the
+-- add itself (TryAddSpell) and the Live Preview ghost that promises it
+-- (CS.ResolveProspectiveAdd). What the entry will be born as, or why the add
+-- will refuse it, so the ghost can never show a landing the add will not
+-- make, nor a cooldown look for an entry the add turns into an aura.
+-- Returns the route (one reused table: addAsAura, forceAura, routedToAura)
+-- or nil plus a reason ("blocked", "target-aura", "aura-unsupported",
+-- "aura-panel") and, for the last, the panel's own reject line.
+local spellAddRoute = {}
+local function ResolveSpellAddRoute(spellId, spellName, forceAura, groupId)
+    if IsBlockedSpellForTracking(spellId) then
+        return nil, "blocked"
+    end
+    -- An Aura Panel holds aura entries only, so a spell arriving here is
+    -- aura intent by destination: route it rather than refuse it for the
+    -- shape it was typed in. This also takes the castability branch below
+    -- out of play, which would otherwise announce the routing twice.
+    local isAuraOnlyTarget = TargetPanelIsAuraOnly(groupId)
+    if isAuraOnlyTarget then
+        forceAura = true
+    end
+    -- 12.1: passives/procs add directly as aura-tracking entries -- the new
+    -- AuraContainer backend needs no Cooldown Manager setup. forceAura=true
+    -- comes from "Aura" autocomplete suggestions (tracked buff/bar rows).
+    local addAsAura = forceAura == true or IsPassiveOrProc(spellId)
+    local routedToAura
+    if not addAsAura and not CanPlayerEverCastSpellCached(spellId) then
+        if CooldownCompanion.ClassifyAuraSpellUnit(spellId) == "target" then
+            return nil, "target-aura"
+        end
+        addAsAura = true
+        forceAura = true
+        routedToAura = true
+    end
+    -- AuraDisplay binds primary Aura entries in icon, bar, and Texture
+    -- panels; refuse aura adds elsewhere instead of creating a dead entry.
+    if addAsAura and not TargetPanelAcceptsAuraEntries(groupId) then
+        return nil, "aura-unsupported"
+    end
+    -- An Aura Panel also judges WHICH aura, against its derived unit. Asked
+    -- here, before the add, so the refusal is the only thing printed:
+    -- AddButtonToGroup can emit a transform notice on its way to the same
+    -- verdict, which would put a stray line ahead of the reject.
+    if isAuraOnlyTarget then
+        local probe = {
+            type = "spell",
+            id = spellId,
+            name = spellName,
+            addedAs = "aura",
+        }
+        probe.auraUnit = CooldownCompanion:ResolveStandaloneAuraDefaultUnit(probe)
+        local rejectMessage = CooldownCompanion:GetPanelManualEntryRejectMessage(
+            GetTargetGroup(groupId), probe)
+        if rejectMessage then
+            return nil, "aura-panel", rejectMessage
+        end
+    end
+    local route = spellAddRoute
+    route.addAsAura = addAsAura or nil
+    route.forceAura = forceAura
+    route.routedToAura = routedToAura
+    return route
+end
+
+--- The ghost's half of that decision: fill `stub` (type, id, name,
+--- isPetSpell, forceAura) with what the entry will be born as, in the
+--- fields AddButtonToGroup stamps (isPassive, addedAs,
+--- hideWhileAuraNotActive), or answer false when the add would refuse it.
+--- Items are refused where TryAddItem refuses them: an Aura Panel, or an
+--- item with no usable effect (judged only once its data is cached).
+function CS.ResolveProspectiveAdd(stub, groupId)
+    groupId = groupId or CS.selectedGroup
+    local group = GetTargetGroup(groupId)
+    if not group then return false end
+    if stub.type == "item" then
+        if CooldownCompanion:IsAuraPanel(group)
+            and CooldownCompanion:GetPanelManualEntryRejectMessage(group, AURA_PANEL_ITEM_PROBE) then
+            return false
+        end
+        local itemId = tonumber(stub.id)
+        if itemId and C_Item.IsItemDataCachedByID(itemId) and not C_Item.GetItemSpell(itemId) then
+            return false
+        end
+        return true
+    end
+    if stub.type ~= "spell" then return true end
+    local spellId = tonumber(stub.id)
+    if not spellId then return true end
+    local route = ResolveSpellAddRoute(spellId, stub.name, stub.forceAura, groupId)
+    if not route then return false end
+    stub.isPassive = route.addAsAura
+    if route.forceAura == true or (stub.isPassive and route.forceAura ~= false) then
+        stub.addedAs = "aura"
+        local displayMode = group.displayMode or "icons"
+        if route.forceAura == true and (displayMode == "icons" or displayMode == "bars") then
+            stub.hideWhileAuraNotActive = true
+        end
+    else
+        stub.addedAs = "spell"
+    end
+    return true
+end
+
 local function TryAddSpell(input, isPetSpell, forceAura, opts)
     if input == "" or not CS.selectedGroup then return false end
 
@@ -347,56 +450,22 @@ local function TryAddSpell(input, isPetSpell, forceAura, opts)
             CooldownCompanion:Print("Cannot track Single-Button Assistant")
             return false
         end
-        if IsBlockedSpellForTracking(spellId) then
-            PrintBlockedSpellMessage(spellName)
+        local route, reason, detail = ResolveSpellAddRoute(spellId, spellName, forceAura,
+            CS.selectedGroup)
+        if not route then
+            if reason == "blocked" then
+                PrintBlockedSpellMessage(spellName)
+            elseif reason == "target-aura" then
+                PrintCannotTrackAsAura(spellName)
+            elseif reason == "aura-unsupported" then
+                PrintAuraPanelUnsupported()
+            elseif detail then
+                CooldownCompanion:Print(detail)
+            end
             return false
         end
-        -- An Aura Panel holds aura entries only, so a spell arriving here is
-        -- aura intent by destination: route it rather than refuse it for the
-        -- shape it was typed in. This also takes the castability branch below
-        -- out of play, which would otherwise announce the routing twice.
-        local isAuraOnlyTarget = TargetPanelIsAuraOnly(CS.selectedGroup)
-        if isAuraOnlyTarget then
-            forceAura = true
-        end
-        -- 12.1: passives/procs add directly as aura-tracking entries — the new
-        -- AuraContainer backend needs no Cooldown Manager setup. forceAura=true
-        -- comes from "Aura" autocomplete suggestions (tracked buff/bar rows).
-        local addAsAura = forceAura == true or IsPassiveOrProc(spellId)
-        local routedToAura
-        if not addAsAura and not CanPlayerEverCastSpellCached(spellId) then
-            if CooldownCompanion.ClassifyAuraSpellUnit(spellId) == "target" then
-                PrintCannotTrackAsAura(spellName)
-                return false
-            end
-            addAsAura = true
-            forceAura = true
-            routedToAura = true
-        end
-        -- AuraDisplay binds primary Aura entries in icon, bar, and Texture
-        -- panels; refuse aura adds elsewhere instead of creating a dead entry.
-        if addAsAura then
-            if not TargetPanelAcceptsAuraEntries(CS.selectedGroup) then
-                PrintAuraPanelUnsupported()
-                return false
-            end
-        end
-        -- An Aura Panel also judges WHICH aura, against its derived unit. Asked
-        -- here, before the add, so the refusal is the only thing printed:
-        -- AddButtonToGroup can emit a transform notice on its way to the same
-        -- verdict, which would put a stray line ahead of the reject.
-        if isAuraOnlyTarget then
-            local probe = {
-                type = "spell",
-                id = spellId,
-                name = spellName,
-                addedAs = "aura",
-            }
-            probe.auraUnit = CooldownCompanion:ResolveStandaloneAuraDefaultUnit(probe)
-            if RejectNonAuraPanelAdd(CS.selectedGroup, probe) then
-                return false
-            end
-        end
+        local addAsAura, routedToAura = route.addAsAura, route.routedToAura
+        forceAura = route.forceAura
         local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName,
             isPetSpell, addAsAura or nil, forceAura, nil, nil, opts and opts.section)
         if not idx then
@@ -1283,6 +1352,62 @@ local function HideAutocomplete()
 end
 
 ------------------------------------------------------------------------
+-- Autocomplete: Live Preview ghost for the row under consideration
+------------------------------------------------------------------------
+-- Only the panel add box asks for this: its ShowAutocompleteResults options
+-- carry previewGhostHost (ButtonsWideColumn's EnsureAddBox), and every other
+-- field's dropdown, naming no host, stays silent. The ghost draws the row
+-- Enter would add and nothing else: the list has ONE selection (the
+-- highlight), which the arrow keys and the mouse both move, so the
+-- highlight bar, the ghost and Enter can never name three different rows.
+-- Index 0 (no explicit choice yet) shows nothing. The preview draws the cell
+-- where the pick will land (ST._ShowPreviewDropGhost).
+--
+-- One stub table, refilled: the text metrics cache would otherwise key a
+-- fresh table per hover. Nil when the add would refuse the row
+-- (CS.ResolveProspectiveAdd), which is also where the stub learns what the
+-- entry will be born as.
+local autocompleteGhostSpec = {}
+local function AutocompleteGhostSpec(entry)
+    local spec = autocompleteGhostSpec
+    wipe(spec)
+    -- The row's own icon, through the manual-icon door both preview icon
+    -- resolvers already honor, so the ghost never re-resolves it.
+    spec.manualIcon = entry.icon
+    spec.name = entry.name
+    if entry.isEquipmentSlot then
+        -- Name and icon only: all a trinket-slot ghost can claim before the
+        -- slot resolves to an item.
+        return spec
+    end
+    spec.type = entry.isItem and "item" or "spell"
+    spec.id = tonumber(entry.id) or entry.id
+    spec.isPetSpell = entry.isPetSpell or nil
+    spec.forceAura = entry.forceAura or nil
+    if not CS.ResolveProspectiveAdd(spec, CS.addingToPanelId or CS.selectedGroup) then
+        return nil
+    end
+    return spec
+end
+
+local function UpdateAutocompleteGhost()
+    local dropdown = autocompleteDropdown
+    local host = dropdown and dropdown._ghostHost
+    if not host then return end
+    local idx = dropdown._highlightIndex or 0
+    local row = dropdown:IsShown() and idx > 0 and dropdown.rows[idx] or nil
+    local entry = row and row.entry
+    local spec = entry and AutocompleteGhostSpec(entry)
+    if spec and ST._ShowPreviewDropGhost
+        and ST._ShowPreviewDropGhost(host, spec, nil, "autocomplete") then
+        return
+    end
+    if ST._HidePreviewDropGhost then
+        ST._HidePreviewDropGhost(host, "autocomplete")
+    end
+end
+
+------------------------------------------------------------------------
 -- Autocomplete: Update keyboard selection highlight
 ------------------------------------------------------------------------
 local function UpdateAutocompleteHighlight()
@@ -1297,6 +1422,7 @@ local function UpdateAutocompleteHighlight()
             end
         end
     end
+    UpdateAutocompleteGhost()
 end
 
 ------------------------------------------------------------------------
@@ -1398,6 +1524,17 @@ local function GetOrCreateAutocompleteDropdown()
         categoryText:SetPoint("RIGHT", typeBadge, "LEFT", -AUTOCOMPLETE_TYPE_GAP, 0)
         nameText:SetPoint("RIGHT", categoryText, "LEFT", -6, 0)
 
+        -- The mouse moves the selection exactly as the arrow keys do, and
+        -- counts as the explicit choice requireExplicitChoice waits for: the
+        -- bar sits on the row, the ghost shows it, Enter adds it.
+        row:SetScript("OnEnter", function()
+            if dropdown._highlightIndex ~= i then
+                dropdown._highlightIndex = i
+                dropdown._userNavigated = true
+                UpdateAutocompleteHighlight()
+            end
+        end)
+
         row:SetScript("OnMouseDown", function()
             dropdown._clickInProgress = true
         end)
@@ -1420,6 +1557,13 @@ local function GetOrCreateAutocompleteDropdown()
             self:Hide()
         end
     end)
+    -- However the list goes (a pick, Escape, the field cleared or blurred),
+    -- the ghost goes with it.
+    dropdown:SetScript("OnHide", function(self)
+        if self._ghostHost and ST._HidePreviewDropGhost then
+            ST._HidePreviewDropGhost(self._ghostHost, "autocomplete")
+        end
+    end)
 
     autocompleteDropdown = dropdown
     return dropdown
@@ -1439,6 +1583,14 @@ local function ShowAutocompleteResults(results, anchorWidget, onSelect, options)
     dropdown._editbox = anchorWidget.editbox
     dropdown._requireExactNumericEnter = options and options.requireExactNumericEnter == true
     dropdown._requireExplicitChoice = options and options.requireExplicitChoice == true
+    -- One dropdown serves every field. A ghost the previous owner left up
+    -- (the list stayed open while another field took over) goes with the
+    -- owner, since the hider below only ever knows the current one.
+    local ghostHost = options and options.previewGhostHost or nil
+    if dropdown._ghostHost and dropdown._ghostHost ~= ghostHost and ST._HidePreviewDropGhost then
+        ST._HidePreviewDropGhost(dropdown._ghostHost, "autocomplete")
+    end
+    dropdown._ghostHost = ghostHost
 
     if not results then
         dropdown:Hide()
@@ -1481,6 +1633,17 @@ local function ShowAutocompleteResults(results, anchorWidget, onSelect, options)
             row.entry = nil
             row.typeBadge:Hide()
             row:Hide()
+        end
+    end
+
+    -- The rows are retexted in place, so a row already under a resting
+    -- cursor gets no OnEnter of its own; it is read here instead, so the
+    -- selection (and the ghost) stay on the row the mouse is on.
+    for i = 1, numResults do
+        if dropdown.rows[i]:IsMouseOver() then
+            dropdown._highlightIndex = i
+            dropdown._userNavigated = true
+            break
         end
     end
 

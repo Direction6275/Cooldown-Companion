@@ -1780,46 +1780,105 @@ end
 -- cursor, mirroring the Navigator panel drop overlays. TryReceiveCursorDrop
 -- targets CS.selectedGroup, which is exactly the previewed panel.
 --
--- Two looks. Alone, the overlay is the whole message: a wash, a darker plate,
--- "Drop here" in the middle. Over a panel whose preview offers its section
--- anchor pads or lanes to the cursor (ST._ShowPreviewCursorPads), the pads
--- are the message: the plate goes, since it would bury them, and the line
--- moves to the bottom band and says what an edge means while a free pad is
--- on offer, or what a cluster means once every anchor is taken. The pads
--- draw on the preview beneath the wash; without the plate the wash alone is
--- light enough to read them through.
+-- Two looks. Alone, the overlay is the whole message: a wash, a darker
+-- plate, "Drop here" in the middle. Over a panel whose preview tracks the
+-- cursor against its section landings (ST._TrackPreviewCursorDrop), or draws
+-- the drop ghost (ST._ShowPreviewDropGhost: the cell the release will add,
+-- where it will land), the preview is the message: the plate goes, and the
+-- line moves to the bottom band, where it says what is on offer and, once
+-- the cursor is near a section's landing, names the release outright. The
+-- ghost draws on the preview beneath the wash, and without the plate the
+-- wash alone is light enough to read it through.
 
 -- Screen pixels between the bottom band's line and whatever sits below it:
 -- the command center's reserve when the bar is up, the host's edge otherwise.
 local DROP_OVERLAY_TEXT_INSET = 6
 
-local function SetPreviewDropOverlayPadsMode(overlay, host, padsShown, hasPads)
-    padsShown = padsShown and true or false
-    hasPads = padsShown and hasPads and true or false
+local function SetPreviewDropOverlayMode(overlay, host, landings, hasFree, ghostShown, target)
+    landings = landings and true or false
+    hasFree = landings and hasFree and true or false
+    ghostShown = ghostShown and true or false
+    local bottomBand = landings or ghostShown
     -- The reserve comes and goes with the selection, so the anchor is re-read
-    -- on every frame the pads are up and rewritten only when it moved.
-    local inset = padsShown
+    -- on every frame the band is used and rewritten only when it moved.
+    local inset = bottomBand
         and ((host._cdcPreviewReserveBottom or 0) + DROP_OVERLAY_TEXT_INSET) or nil
-    if overlay._cdcPadsMode == padsShown and overlay._cdcHasPads == hasPads
-        and overlay._cdcPadsInset == inset then
+    -- The line. Near a landing it names the release outright: the game's
+    -- own cursor icon draws over the ghost's cell, so the words are the one
+    -- readable confirmation of the choice besides the trail.
+    local line
+    local anchor = target and (target.create or target.section)
+    local label = anchor and ST.PANEL_SECTION_ANCHOR_LABELS
+        and ST.PANEL_SECTION_ANCHOR_LABELS[anchor] or anchor
+    if target and target.create then
+        line = "|cffFFD100Release to start a section on the " .. label .. " edge|r"
+    elseif target and target.section then
+        line = "|cffFFD100Release to join the " .. label .. " section|r"
+    elseif landings then
+        line = hasFree
+            and "|cffAADDFFDrop here, or near a section's spot to start or join one|r"
+            or "|cffAADDFFDrop here, or on a section to join it|r"
+    else
+        line = "|cffAADDFFDrop here|r"
+    end
+    if overlay._cdcBottomBand == bottomBand and overlay._cdcLine == line
+        and overlay._cdcLineInset == inset then
         return
     end
-    overlay._cdcPadsMode = padsShown
-    overlay._cdcHasPads = hasPads
-    overlay._cdcPadsInset = inset
+    overlay._cdcBottomBand = bottomBand
+    overlay._cdcLine = line
+    overlay._cdcLineInset = inset
     local text = overlay._cdcText
     text:ClearAllPoints()
-    if padsShown then
+    if bottomBand then
         overlay._cdcInner:Hide()
         text:SetPoint("BOTTOM", overlay, "BOTTOM", 0, inset)
-        text:SetText(hasPads
-            and "|cffAADDFFDrop here, or onto an edge to start a section|r"
-            or "|cffAADDFFDrop here, or onto a cluster to join it|r")
     else
         overlay._cdcInner:Show()
         text:SetPoint("CENTER", 0, 0)
-        text:SetText("|cffAADDFFDrop here|r")
     end
+    text:SetText(line)
+end
+
+-- The stub the drop ghost renders for what the cursor carries: the same four
+-- values TryReceiveCursorDrop reads, mapped the way the add will map them
+-- (a pet action is a pet spell; an item is an item), then routed the way
+-- the add routes them (CS.ResolveProspectiveAdd: a passive is born an aura
+-- entry, and a spell the add would refuse gets no ghost at all). One table,
+-- refilled only when the payload or the panel changes: the overlay asks
+-- every frame.
+local cursorGhostSpec = {}
+local function CursorGhostSpec()
+    local cursorType, cursorID, _, cursorSpellID = GetCursorInfo()
+    local spec = cursorGhostSpec
+    local id
+    if cursorType == "spell" then
+        id = cursorSpellID
+    elseif cursorType == "petaction" or cursorType == "item" then
+        id = cursorID
+    end
+    if not id then return nil end
+    if spec.cursorType == cursorType and spec.id == id and spec.panelId == CS.selectedGroup then
+        if spec.refused then return nil end
+        return spec
+    end
+    wipe(spec)
+    spec.cursorType = cursorType
+    spec.id = id
+    spec.panelId = CS.selectedGroup
+    if cursorType == "item" then
+        spec.type = "item"
+        spec.name = C_Item.GetItemNameByID(id)
+    else
+        spec.type = "spell"
+        spec.isPetSpell = (cursorType == "petaction") or nil
+        spec.name = C_Spell.GetSpellName(id)
+    end
+    if CS.ResolveProspectiveAdd and not CS.ResolveProspectiveAdd(spec, CS.selectedGroup) then
+        spec.refused = true
+        return nil
+    end
+    return spec
 end
 
 local function EnsurePreviewDropOverlay(host)
@@ -1840,17 +1899,17 @@ local function EnsurePreviewDropOverlay(host)
         overlay._cdcText = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         overlay._cdcText:SetPoint("CENTER", 0, 0)
         overlay._cdcText:SetText("|cffAADDFFDrop here|r")
-        overlay._cdcPadsMode = false
-        overlay._cdcHasPads = false
+        overlay._cdcBottomBand = false
+        overlay._cdcLine = "|cffAADDFFDrop here|r"
 
         local function ReceiveDrop()
             if not ST._TryReceiveCursorDrop then return end
             -- Read BEFORE the add: the add rebuilds the preview, and the
-            -- rebuild replaces the pads the cursor was over.
+            -- rebuild ends the gesture the answer belongs to.
             local target = ST._ResolvePreviewCursorDrop
-                and ST._ResolvePreviewCursorDrop(host, GetCursorPosition())
+                and ST._ResolvePreviewCursorDrop(host)
             ST._TryReceiveCursorDrop({
-                section = target and (target.pad or target.section) or nil,
+                section = target and (target.create or target.section) or nil,
             })
         end
         overlay:SetScript("OnReceiveDrag", ReceiveDrop)
@@ -1860,21 +1919,36 @@ local function EnsurePreviewDropOverlay(host)
             end
         end)
         -- Runs only while the overlay is shown (a hidden frame gets no
-        -- OnUpdate): the pads follow the cursor, and the overlay wears
+        -- OnUpdate): the preview tracks the cursor, and the overlay wears
         -- whichever look the preview's answer calls for.
         overlay:SetScript("OnUpdate", function(self)
-            local padsShown, hasPads
-            if ST._ShowPreviewCursorPads then
-                padsShown, hasPads = select(2, ST._ShowPreviewCursorPads(host, GetCursorPosition()))
+            local target, landings, hasFree
+            if ST._TrackPreviewCursorDrop then
+                target, landings, hasFree = ST._TrackPreviewCursorDrop(host, GetCursorPosition())
             end
-            SetPreviewDropOverlayPadsMode(self, host, padsShown, hasPads)
+            -- The ghost follows the pointer, not the payload: off the overlay
+            -- there is no landing to show. It lands where the preview's
+            -- answer says the release will.
+            local ghostShown = false
+            if self:IsMouseOver() and ST._ShowPreviewDropGhost then
+                local spec = CursorGhostSpec()
+                ghostShown = spec ~= nil
+                    and ST._ShowPreviewDropGhost(host, spec, target, "cursor")
+            end
+            if not ghostShown and ST._HidePreviewDropGhost then
+                ST._HidePreviewDropGhost(host, "cursor")
+            end
+            SetPreviewDropOverlayMode(self, host, landings, hasFree, ghostShown, target)
         end)
         -- One hider, however the overlay goes (the payload cleared, the host
-        -- hidden, the view switched): the pads go with it.
+        -- hidden, the view switched): the gesture and the ghost go with it.
         overlay:SetScript("OnHide", function(self)
-            SetPreviewDropOverlayPadsMode(self, host, false)
-            if ST._HidePreviewCursorPads then
-                ST._HidePreviewCursorPads(host)
+            SetPreviewDropOverlayMode(self, host, false)
+            if ST._EndPreviewCursorDrop then
+                ST._EndPreviewCursorDrop(host)
+            end
+            if ST._HidePreviewDropGhost then
+                ST._HidePreviewDropGhost(host, "cursor")
             end
         end)
         overlay:Hide()
@@ -2162,6 +2236,10 @@ local function EnsureAddBox(col3)
             end, {
                 requireExactNumericEnter = true,
                 requireExplicitChoice = true,
+                -- The suggestion under consideration ghosts onto this box's
+                -- Live Preview (SpellItemAdd's autocomplete ghost); no other
+                -- field's dropdown names a host.
+                previewGhostHost = col3.buttonsPreviewHost,
             })
         else
             CS.HideAutocomplete()
