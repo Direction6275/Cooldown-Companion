@@ -48,6 +48,11 @@ ST._changelogData = {
 - **Settings in predictable homes:** Cooldown/spell, aura, and interaction settings are grouped more consistently. Text, color, layout, alpha, tooltip, and ping controls now appear where players are more likely to look for them.
 - **Clearer Preview Command Center:** Preview choices are grouped into Cooldowns & Charges, Auras, and Feedback & States, with shorter labels and cleaner spacing.
 - **Better empty-panel guidance:** Empty panels explain how to add the first spell or item through search, direct IDs, or drag-and-drop. Aura Panels also clarify how the first aura determines buff or debuff tracking.
+
+## Bug Fixes
+
+- **Summon timers stay on the right spell:** Casting an instant right before a summon appeared or expired could label that summon as the instant, so an unrelated icon (Implosion after Call Dreadstalkers, for example) later showed a summon timer instead of its cooldown. Summons are now only matched to spells known to create them.
+- **Standalone Aura entries for summons:** An Aura-only entry for a guardian summon such as Call Dreadstalkers now shows the summon's remaining duration on icons and bars, just like the matching spell entry, and returns to its hidden or dimmed state when the summon ends. The entry's aura settings note when an ID is a summon shown from the totem slot.
 ]],
         },
         ["2.3"] = {

@@ -419,7 +419,9 @@ local function UpdateBarDisplay(button)
     -- Aura-tracked buttons always use the base bar color (aura color override handles active state).
     local wantCdColor
     local cdColorReason
-    if onCooldown and not button.buttonData.isPassive then
+    -- The totem phase paints for aura-added (passive-stamped) entries too:
+    -- it is the whole active visual of a standalone summon entry.
+    if onCooldown and (button._totemActive == true or not button.buttonData.isPassive) then
         if button._totemActive == true then
             wantCdColor = ResolveBarAuraFillColor(style, button.buttonData)
             cdColorReason = "totem"

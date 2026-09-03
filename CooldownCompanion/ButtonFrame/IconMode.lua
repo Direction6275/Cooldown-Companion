@@ -1249,8 +1249,10 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         end
 
         local showText, fontColor
-        if buttonData.isPassive then
-            -- Passive aura entry: no cooldown text (cooldown frame hidden)
+        if buttonData.isPassive and button._totemActive ~= true then
+            -- Passive aura entry: no cooldown text (cooldown frame hidden).
+            -- The totem phase is the exception: an aura-added summon entry
+            -- shows the summon's remaining time exactly like the spell entry.
             button._cdTextRegion:SetTextColor(0, 0, 0, 0)
         else
             -- The countdown FontString is hosted outside the Cooldown frame,
