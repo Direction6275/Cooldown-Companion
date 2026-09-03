@@ -1318,7 +1318,7 @@ local DISPLAY_MODE_CHANGE_REFUSALS = {
     assistant = "Assistant Panels cannot be converted. Create a new Assistant Panel instead.",
     trigger = "Trigger Panels cannot be converted. Create a new Trigger Panel instead.",
     ["texture-entry-limit"] = "Texture Panels can only hold one entry. Remove extra entries first, or create a new Texture Panel.",
-    ["aura-entries"] = "This panel contains aura entries, which can only be tracked in icon, bar, or Texture panels. Remove them first, or convert to one of those modes.",
+    ["aura-entries"] = "This panel contains aura entries, which can only be tracked in icon, bar, text, or Texture panels. Remove them first, or convert to one of those modes.",
     ["aura-panel-modes"] = "Aura Panels can only switch between icons and bars.",
     ["aura-panel-create-only"] = "Aura Panels cannot be converted from an existing panel. Create a new Aura Panel instead.",
 }
@@ -1355,12 +1355,13 @@ function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
     end
 
     -- Primary aura entries only display through the aura system, which binds
-    -- to icon, bar, and Texture panels; refuse conversions that would strand
-    -- them.
+    -- to icon, bar, text and Texture panels; refuse conversions that would
+    -- strand them.
     if oldMode ~= newMode
         and newMode ~= "icons"
         and newMode ~= "bars"
         and newMode ~= "textures"
+        and newMode ~= "text"
         and newMode ~= nil then
         for _, bd in ipairs(group.buttons or {}) do
             if bd.addedAs == "aura" then
@@ -1732,7 +1733,8 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             -- Explicit aura adds (picked as an aura, not a passive that
             -- auto-classified) default to showing only while the aura is
             -- active — the entry exists to display the aura. Icon and bar
-            -- groups both compose a full shell; text mode has no aura display.
+            -- groups both compose a full shell; text panels show auras through
+            -- their format's aura tokens, so no shell default applies.
             local displayMode = group.displayMode or "icons"
             if forceAura == true and (displayMode == "icons" or displayMode == "bars") then
                 group.buttons[buttonIndex].hideWhileAuraNotActive = true

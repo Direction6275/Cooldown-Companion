@@ -51,11 +51,13 @@ local function GroupUsesTriggerPanelEntries(group)
     return group and group.displayMode == "trigger"
 end
 
--- 12.1 aura tracking is offered on spell entries in icon/bar groups and as a
--- Texture-only active/inactive display. Text panels do not render aura state
--- on 12.1 (a client-drawn readout docked into the format was trialed and
--- removed by owner decision), and Trigger panels retain their separate
--- condition system.
+-- 12.1 aura tracking is offered on spell entries in icon, bar and text
+-- groups, and as a Texture-only active/inactive display. Icons and bars
+-- compose a full aura shell; text panels show aura state only through the
+-- format's aura tokens ({aura}, {aurastacks}, {?aura}...{/aura}), rendered
+-- by Blizzard's aura button inside each entry, so the setup made here is
+-- what gives those tokens an aura to read. Trigger panels retain their
+-- separate condition system.
 --
 -- This used to gate a second entry TAB; it now gates the Aura Tracking SECTION
 -- of the one entry Settings pane (owner ruling: Visibility' aura toggles
@@ -69,6 +71,7 @@ local function EntryOffersAuraTab(group, buttonData)
     local displayMode = group and group.displayMode or "icons"
     return displayMode == "icons"
         or displayMode == "bars"
+        or displayMode == "text"
         or (displayMode == "textures"
             and CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData))
 end

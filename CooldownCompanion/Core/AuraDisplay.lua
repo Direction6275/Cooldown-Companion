@@ -842,6 +842,43 @@ local function BuildTexturePanelSlotKit(slotButton)
     return { texturePanelHost = host }
 end
 
+-- Text panels: the entry's format is cut into columns (ButtonFrame/TextMode
+-- .lua, TEXT RENDER PLAN) and the aura columns are the client's to render.
+-- The kit is two registered FontStrings and nothing else — no icon, swipe,
+-- bars, glows or pandemic regions — so the slot draws only the text the entry
+-- reserved room for, and Blizzard hiding the whole button while no aura
+-- matches IS the entry's "only while active" behavior. Geometry is anchored
+-- to the host button at bind time (StyleTextSlotKit); both regions start
+-- centered on the slot at alpha 0 because an unanchored FontString is a
+-- layout error even when invisible.
+local function BuildTextSlotKit(slotButton)
+    -- Click-through for life: a text entry has no tooltip or cancel-aura
+    -- surface, and the slot covers the whole entry box.
+    slotButton:SetMouseClickEnabled(false)
+    slotButton:SetMouseMotionEnabled(false)
+
+    local kit = { isText = true }
+    kit.textOverlay = CreateFrame("Frame", nil, slotButton)
+    kit.textOverlay:SetAllPoints(slotButton)
+
+    -- Plain registrations here; every bind re-calls both setters with the
+    -- entry's piece formatters (or plain again, to converge a pooled slot).
+    kit.durationText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
+    kit.durationText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
+    kit.durationText:SetAlpha(0)
+    slotButton:SetDurationText(kit.durationText)
+
+    -- One count region serves both a {aurastacks} piece and a presence
+    -- piece: the planner emits at most one of the two per entry.
+    kit.countText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
+    kit.countText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
+    kit.countText:SetAlpha(0)
+    slotButton:SetApplicationCount(kit.countText)
+
+    kit.countFormatter = C_StringUtil.CreateNumericRuleFormatter()
+    return kit
+end
+
 -- Position contract for the aura duration text: it shares the Cooldown Text
 -- position unless separateTextPositions switches it to the aura keys. Shared
 -- with the config preview, which renders a CC-side stand-in FontString from
@@ -2376,8 +2413,11 @@ local function EnsureAuraLayer(button)
     -- Re-anchored every call: idempotent, and frame-relative anchoring tracks
     -- geometry restyles for free. Bar hosts mount the slot on the bar rect
     -- (statusBar is already inset by the border layout, so the CC border ring
-    -- stays visible around the aura display).
-    local anchorTo = (button._isBar and button.statusBar) or button.icon or button
+    -- stays visible around the aura display). Text hosts mount on the whole
+    -- entry box: their `icon` is a hidden 1x1 stub, never an anchor.
+    local anchorTo = (button._isBar and button.statusBar)
+        or (not button._isText and button.icon)
+        or button
     layer:ClearAllPoints()
     layer:SetPoint("TOPLEFT", anchorTo, "TOPLEFT", 0, 0)
     layer:SetPoint("BOTTOMRIGHT", anchorTo, "BOTTOMRIGHT", 0, 0)
@@ -2396,6 +2436,11 @@ local function EnsureAuraLayer(button)
         if button.overlayFrame then
             button.overlayFrame:SetFrameLevel(layer:GetFrameLevel() + 10)
         end
+    elseif button._isText then
+        -- Text hosts have no strata order: the entry is one flat frame
+        -- (background, border and run strings all on it), so one level above
+        -- it puts the client's text over everything the entry draws.
+        layer:SetFrameLevel(button:GetFrameLevel() + 1)
     else
         -- Icon hosts: the aura display is a CONFIGURABLE layer, so its level
         -- comes from the panel's strata order. ApplyStrataOrder
@@ -2482,9 +2527,13 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
         initializeFrame = function(frame)
             -- The ONLY place the slot button is ever positioned.
             frame:SetAllPoints(container)
-            record.kit = hostKind == "texturePanel"
-                and BuildTexturePanelSlotKit(frame)
-                or BuildSlotKit(frame)
+            if hostKind == "texturePanel" then
+                record.kit = BuildTexturePanelSlotKit(frame)
+            elseif hostKind == "text" then
+                record.kit = BuildTextSlotKit(frame)
+            else
+                record.kit = BuildSlotKit(frame)
+            end
         end,
     })
     if not slotButton then
@@ -2589,6 +2638,35 @@ local AURA_TOOLTIP_ANCHORS = {
 -- parity); segmented follows the per-entry toggle. Plain duration binds
 -- (wantMax == 1) never use the stack fill, so they keep the creation-time
 -- registration untouched.
+-- Breakpoint list for a stack-count formatter. The engine picks the highest
+-- breakpoint whose threshold is <= the (secret) count. Stock behavior stays
+-- hidden below 2; the opt-in lowers that first visible breakpoint to 1.
+-- Threshold/max entries wrap the number in their color escape; max wins a
+-- collision with the threshold by overwriting its slot in the map. prefix
+-- and suffix are baked around every VISIBLE format (text hosts carry their
+-- column's static text this way); the hidden zero bracket stays "" so they
+-- vanish with the number. Icon/bar callers pass "" for both.
+local function BuildStackCountBreakpoints(showCountAtOne, policy, prefix, suffix)
+    -- threshold -> format map; later writes win collisions (max last).
+    local firstVisible = showCountAtOne and 1 or 2
+    local formats = { [0] = "", [firstVisible] = prefix .. "%d" .. suffix }
+    if policy and policy.threshold then
+        formats[policy.threshold] = prefix .. PandemicColorEscape(policy.thresholdColor) .. "%d|r" .. suffix
+    end
+    if policy and policy.maxOn then
+        formats[policy.maxStacks < firstVisible and firstVisible or policy.maxStacks] =
+            prefix .. PandemicColorEscape(policy.maxColor) .. "%d|r" .. suffix
+    end
+    local thresholds = {}
+    for value in pairs(formats) do thresholds[#thresholds + 1] = value end
+    table.sort(thresholds)
+    local breakpoints = {}
+    for i = 1, #thresholds do
+        breakpoints[i] = { threshold = thresholds[i], format = formats[thresholds[i]] }
+    end
+    return breakpoints
+end
+
 local function ConvergeApplicationBar(slotButton, kit, buttonData, stackBarMax)
     if not (kit and kit.stackFill) then return end
     local wantMax = stackBarMax or 1
@@ -2616,12 +2694,9 @@ end
 -- (breakpoints rebuilt first); entries with neither option converge back
 -- to the bare stock registration. All threshold clamp/prefer rules live
 -- in ResolveAuraStackThresholdPolicy — never re-derive them here.
---
--- Breakpoint contract: the engine picks the highest breakpoint whose
--- threshold is <= the (secret) count. Stock behavior stays hidden below 2;
--- the opt-in lowers that first visible breakpoint to 1. Threshold/max
--- entries wrap the number in their color escape. Max wins a collision with
--- the threshold by overwriting its slot in the map.
+-- Breakpoints come from BuildStackCountBreakpoints below, shared with the
+-- text host so the one-stack and threshold-color keys read the same on
+-- every surface that renders a count.
 local function ConvergeApplicationCount(slotButton, kit, buttonData)
     if not (kit and kit.stackText and kit.stackFormatter) then return end
     local showCountAtOne = CooldownCompanion:IsAuraStackCountAtOneEnabled(buttonData)
@@ -2641,28 +2716,113 @@ local function ConvergeApplicationCount(slotButton, kit, buttonData)
     if not (showCountAtOne or policy) then
         slotButton:SetApplicationCount(kit.stackText)
     else
-        -- threshold -> format map; later writes win collisions (max last).
-        local firstVisible = showCountAtOne and 1 or 2
-        local formats = { [0] = "", [firstVisible] = "%d" }
-        if policy and policy.threshold then
-            formats[policy.threshold] = PandemicColorEscape(policy.thresholdColor) .. "%d|r"
-        end
-        if policy and policy.maxOn then
-            formats[policy.maxStacks < firstVisible and firstVisible or policy.maxStacks] =
-                PandemicColorEscape(policy.maxColor) .. "%d|r"
-        end
-        local thresholds = {}
-        for value in pairs(formats) do thresholds[#thresholds + 1] = value end
-        table.sort(thresholds)
-        local breakpoints = {}
-        for i = 1, #thresholds do
-            breakpoints[i] = { threshold = thresholds[i], format = formats[thresholds[i]] }
-        end
         kit.stackFormatter:ClearBreakpoints()
-        kit.stackFormatter:SetBreakpoints(breakpoints)
+        kit.stackFormatter:SetBreakpoints(BuildStackCountBreakpoints(showCountAtOne, policy, "", ""))
         slotButton:SetApplicationCount(kit.stackText, { formatter = kit.stackFormatter })
     end
     kit.stackCountFormatterKey = wantKey
+end
+
+-- Text host styling (ButtonFrame/TextMode.lua, TEXT RENDER PLAN): anchor the
+-- kit's two client-driven FontStrings onto the entry's laid-out aura pieces
+-- (x/y from the host button's TOPLEFT, the column's reserved width, the
+-- line height, the line's alignment) and install formatters carrying each
+-- piece's baked prefix/suffix, so the client renders the whole column.
+-- Both regions are reset first so a pooled slot rebound to an entry whose
+-- pieces changed or vanished converges to inert; a region no piece claims
+-- is re-registered plain. The piece tables belong to the plan: read only.
+--
+-- Duration pieces reuse the shared Duration Format brackets (with the aura
+-- low-time opt-in) and bake the prefix/suffix onto every bracket EXCEPT the
+-- visibility tail: its empty format is what hides the countdown above the
+-- threshold, and the column's static text must go with it. No Pandemic
+-- composition on text hosts (owner ruling). Stack pieces go through the same
+-- breakpoint builder as icon/bar stack text; presence pieces install one
+-- constant format at threshold 0, so the region reads the piece's text for
+-- any count while the aura is up (ApplyApplicationCount always formats
+-- through the formatter when one is registered; no aura means "").
+local function StyleTextSlotKit(slot, button, buttonData, style)
+    local kit = slot.kit
+    if not (kit and kit.isText) then return end
+    style = style or {}
+    local slotButton = slot.slotButton
+
+    kit.durationText:ClearAllPoints()
+    kit.durationText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
+    kit.durationText:SetAlpha(0)
+    kit.countText:ClearAllPoints()
+    kit.countText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
+    kit.countText:SetAlpha(0)
+
+    local pieces = ST._GetTextAuraPieces and ST._GetTextAuraPieces(button)
+    local durationBound, countBound = false, false
+    if pieces then
+        local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
+        local outline = ST.GetEffectiveFontOutline(style.textFontOutline or "OUTLINE")
+        for _, piece in ipairs(pieces) do
+            local fs = piece.kind == "duration" and kit.durationText or kit.countText
+            -- Same recipe as the addon-rendered runs (TextMode's
+            -- StyleTextRunString): font, size, outline and base color from
+            -- the text keys, then the shadow rule. The prefix/suffix carry
+            -- their own color escapes.
+            ApplyFontStyle(fs, style, "text")
+            ST.ApplyFontShadowForOutline(fs, outline, style.textShadow == true)
+            fs:ClearAllPoints()
+            fs:SetPoint("TOPLEFT", button, "TOPLEFT", piece.x, piece.y)
+            fs:SetSize(piece.width, piece.height)
+            fs:SetJustifyH(piece.justifyH)
+            fs:SetJustifyV("MIDDLE")
+            fs:SetWordWrap(false)
+            fs:SetAlpha(1)
+
+            if piece.kind == "duration" then
+                -- Bounded text contract (owner ruling 2026-09-03): Low Time
+                -- is explicitly OFF on text hosts, so no retained key can
+                -- colour a column the text config never exposes. The
+                -- prefix/suffix can carry an open colour escape across the
+                -- value; that only stays correct while no bracket format in
+                -- between emits `|r` -- the plain Duration Format brackets
+                -- and the "" visibility tail never do. Re-enabling Low Time,
+                -- Pandemic or stack colours here would need the enclosing
+                -- colour reopened after the value.
+                local brackets = CooldownCompanion.GetDurationTextBrackets(style, false, "aura")
+                local list = {}
+                for i, bracket in ipairs(brackets) do
+                    local clone = CloneBracket(bracket)
+                    if clone.format ~= "" then
+                        clone.format = piece.prefix .. clone.format .. piece.suffix
+                    end
+                    list[i] = clone
+                end
+                local formatter = C_StringUtil.CreateNumericRuleFormatter()
+                formatter:SetBreakpoints(list)
+                slotButton:SetDurationText(kit.durationText, { textFormatter = formatter })
+                durationBound = true
+            else
+                local breakpoints
+                if piece.kind == "stacks" then
+                    -- Stock breakpoints only (owner ruling 2026-09-03):
+                    -- hidden below 2, plain colour. The per-entry one-stack
+                    -- and threshold/max-colour policies are icon/bar stack
+                    -- text options the text config does not expose, so a
+                    -- retained or imported one must not shape a column.
+                    breakpoints = BuildStackCountBreakpoints(false, nil, piece.prefix, piece.suffix)
+                else
+                    breakpoints = { { threshold = 0, format = piece.text } }
+                end
+                kit.countFormatter:ClearBreakpoints()
+                kit.countFormatter:SetBreakpoints(breakpoints)
+                slotButton:SetApplicationCount(kit.countText, { formatter = kit.countFormatter })
+                countBound = true
+            end
+        end
+    end
+    if not durationBound then
+        slotButton:SetDurationText(kit.durationText)
+    end
+    if not countBound then
+        slotButton:SetApplicationCount(kit.countText)
+    end
 end
 
 local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMax, soundsAllowed, groupScoped, textureSettings, textureIndicator)
@@ -2704,7 +2864,10 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     record.container:SetAuraSlotFilterString(record.key, SlotContract(unit, groupScoped).filter)
     record.container:SetAuraSlotCandidateFilters(record.key,
         BuildCandidateFilters(unit, spellSet, groupScoped))
-    if record.hostKind ~= "texturePanel" then
+    -- Text hosts converge their own count registration per piece inside
+    -- StyleTextSlotKit (no stack bar exists on the kit).
+    local isTextHost = record.hostKind == "text"
+    if record.hostKind ~= "texturePanel" and not isTextHost then
         ConvergeApplicationBar(record.slotButton, record.kit, buttonData, stackBarMax)
         ConvergeApplicationCount(record.slotButton, record.kit, buttonData)
     end
@@ -2712,6 +2875,8 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     record.boundStackMax = stackBarMax
     if record.hostKind == "texturePanel" then
         StyleTexturePanelSlotKit(record, textureSettings, textureIndicator)
+    elseif isTextHost then
+        StyleTextSlotKit(record, button, buttonData, style)
     else
         StyleSlotKit(record, button, buttonData, style)
     end
@@ -2732,21 +2897,23 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     -- (_ccTooltipMotion, written by the same style passes that run the
     -- click-through sweep; the sweep itself never reaches the slot subtree).
     -- Not the sweep's motion state: entry pings widen motion without wanting
-    -- tooltips. P7-validated shape.
+    -- tooltips. P7-validated shape. Text hosts stay click-through for life
+    -- (BuildTextSlotKit); forcing motion off here keeps that true on every
+    -- bind.
     record.slotButton:SetMouseMotionEnabled(
-        record.hostKind ~= "texturePanel" and button._ccTooltipMotion == true)
+        record.hostKind ~= "texturePanel" and not isTextHost and button._ccTooltipMotion == true)
     -- Tooltip position + combat hide (tracker D-C1): plain per-bind mixin
     -- state on the slot button, same OOC re-call pattern as the motion line
     -- above; Blizzard's OnEnter path reads it. ANCHOR_NONE with zero offsets
     -- is what an untouched button resolves to, so re-calling it converges
     -- pooled buttons when the setting goes back to Default.
     record.slotButton:SetTooltipAnchorPoint(
-        record.hostKind ~= "texturePanel"
+        record.hostKind ~= "texturePanel" and not isTextHost
             and (AURA_TOOLTIP_ANCHORS[style.tooltipAnchor] or "ANCHOR_NONE")
             or "ANCHOR_NONE",
         0, 0)
     record.slotButton:SetHideTooltipInCombat(
-        record.hostKind == "texturePanel" or style.tooltipHideInCombat == true)
+        record.hostKind == "texturePanel" or isTextHost or style.tooltipHideInCombat == true)
     record.parked = nil
     record.boundEntry = buttonData
     record.boundGroupScoped = groupScoped
@@ -4403,15 +4570,17 @@ function RunAuraRebind()
     -- Collect wanted bindings from live buttons. Icon/bar behavior keeps its
     -- existing aura flags. Texture panels always bind primary Aura entries and
     -- require an explicit opt-in for ordinary spells, so retained pre-12.1
-    -- auraTracking residue stays dormant; Trigger/Text remain excluded. A
-    -- client-drawn aura readout docked into a text entry's format was trialed
-    -- and removed by owner decision, so text panels are aura-blind by design
-    -- rather than by omission.
+    -- auraTracking residue stays dormant. Text panels bind an aura-tracking
+    -- entry only when its format reserves at least one aura column
+    -- (ButtonFrame/TextMode.lua, TEXT RENDER PLAN): the client renders the
+    -- aura's time, stacks or presence into those columns through the text
+    -- host kit. Trigger panels remain excluded.
     local wanted = {}
     for groupId, frame in pairs(self.groupFrames) do
         local group = self.db.profile.groups[groupId]
         local displayMode = group and (group.displayMode or "icons")
-        if (displayMode == "icons" or displayMode == "bars" or displayMode == "textures") and frame.buttons then
+        if (displayMode == "icons" or displayMode == "bars" or displayMode == "textures" or displayMode == "text")
+            and frame.buttons then
             for _, button in ipairs(frame.buttons) do
                 local buttonData = button.buttonData
                 local textureAura = displayMode == "textures"
@@ -4420,7 +4589,15 @@ function RunAuraRebind()
                     and buttonData
                     and (buttonData.auraTracking or buttonData.addedAs == "aura")
                 if buttonData and buttonData.type == "spell" and (textureAura or standardAura) then
-                    local spellSet = self:GetAuraCandidateSpellIDSet(buttonData, true)
+                    local textAura = displayMode == "text"
+                    local style = self:GetEffectiveStyle(group.style, buttonData)
+                    -- Text entries: the plan decides. No aura column, no
+                    -- want (a format with only cc content stays exactly as
+                    -- before), so candidate resolution is skipped too.
+                    local spellSet
+                    if not textAura or ST._TextEntryHasAuraPieces(buttonData, style) then
+                        spellSet = self:GetAuraCandidateSpellIDSet(buttonData, true)
+                    end
                     local textureSettings = textureAura and self:GetTexturePanelSettings(group) or nil
                     local textureIndicators = textureAura and self:GetTexturePanelIndicatorSettings(group) or nil
                     if spellSet and (not textureAura or (textureSettings and textureSettings.enabled)) then
@@ -4436,9 +4613,9 @@ function RunAuraRebind()
                             button = button,
                             buttonData = buttonData,
                             spellSet = spellSet,
-                            style = self:GetEffectiveStyle(group.style, buttonData),
+                            style = style,
                             stackBarMax = stackBarMax,
-                            hostKind = textureAura and "texturePanel" or "button",
+                            hostKind = textureAura and "texturePanel" or textAura and "text" or "button",
                             textureSettings = textureSettings,
                             textureIndicator = textureIndicators and textureIndicators.aura or nil,
                         }

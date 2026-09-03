@@ -1582,6 +1582,11 @@ local function ClearReusableButtonRuntime(button)
         button.textString:SetText("")
         button.textString:SetAlpha(1)
     end
+    -- Composite text entries render through pooled run strings beside
+    -- textString; put them away with it so the next entry starts blank.
+    if button._isText and ST._ResetTextRunStrings then
+        ST._ResetTextRunStrings(button)
+    end
     if button.nameText then button.nameText:SetText("") end
     if button.timeText then
         UnbindDurationText(button.timeText)

@@ -1060,6 +1060,14 @@ function CooldownCompanion:UpdateButtonIcon(button)
         button.icon:SetTexture(QUESTION_MARK_ICON)
     end
 
+    -- Composite text entries bake the resolved name/icon into their aura
+    -- columns at measure time; this is the identity edge that re-measures
+    -- them (no-op for every other button). After the texture write above so
+    -- the probe sees the new icon.
+    if button._isText and ST._RequestTextIdentityRelayout then
+        ST._RequestTextIdentityRelayout(button)
+    end
+
     -- Update cooldown secrecy when override spell changes (e.g. Command Demon → pet ability)
     if displayId ~= prevDisplayId and buttonData.type == "spell" then
         buttonData._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(displayId)
