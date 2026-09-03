@@ -1250,11 +1250,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     local group = buttonGroup
     local isTriggerPanel = group and group.displayMode == "trigger"
-    local forceVisibleByUnlockPreview = group
-        and group.parentContainerId
-        and CooldownCompanion.IsContainerUnlockPreviewActive
-        and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)
-        and not isTriggerPanel
+    -- An unlocked panel shows every entry so there is something to grab and
+    -- arrange, whether the whole Group is unlocked or just this panel. Read
+    -- off the per-refresh cached frame flags (set in RefreshGroupFrame,
+    -- cleared by the combat forced lock): this runs at tick rate, so the
+    -- predicates themselves are never called from here.
+    local unlockFrame = not isTriggerPanel and button:GetParent() or nil
+    local forceVisibleByUnlockPreview = unlockFrame ~= nil
+        and (unlockFrame._containerUnlockPreviewActive == true
+            or unlockFrame._panelUnlockPreviewActive == true)
     local visibilityOverrideSource
     if isTriggerPanel then
         button._visibilityHidden = true
@@ -1267,7 +1271,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local forceVisibleByLayoutPreview = IsRuntimeLayoutPreviewButtonForceVisible(button)
     if forceVisibleByUnlockPreview then
         button._visibilityHidden = false
-        button._visibilityAlphaOverride = 1
+        -- An entry its own rules would hide right now comes back as a GHOST,
+        -- the way an Aura Panel's unlock placeholders and a hidden panel's
+        -- 40% ghost do, so the unlocked panel reads as "here is where this
+        -- entry sits" rather than as the entry being ready (owner ruling
+        -- 2026-09-03). Entries the rules leave visible keep their real alpha.
+        if button._rawVisibilityHidden == true then
+            button._visibilityAlphaOverride = CooldownCompanion.DIM_FALLBACK_ALPHA
+        else
+            button._visibilityAlphaOverride = 1
+        end
         visibilityOverrideSource = "unlock-preview"
     elseif forceVisibleByLayoutPreview and not isTriggerPanel then
         button._visibilityHidden = false
