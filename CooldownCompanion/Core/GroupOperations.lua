@@ -3687,6 +3687,9 @@ function CooldownCompanion:FinalizePanelAnchors()
     end
 
     self:RebuildPanelAlphaDependencyTargets(groups)
+    -- Every bulk frame pass ends here, so the stable external anchor
+    -- re-points once per pass, after the marked panel's frame object settles.
+    self:RefreshExternalAnchorFrame()
 end
 
 function CooldownCompanion:FinalizeNonPanelGroupAnchors()

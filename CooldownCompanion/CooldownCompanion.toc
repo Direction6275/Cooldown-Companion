@@ -69,6 +69,7 @@ Core\AlphaFade.lua
 Core\Keybinds.lua
 Core\GroupOperations.lua
 Core\PanelTemplates.lua
+Core\ExternalAnchorFrame.lua
 Core\MoverQuickMenu.lua
 ButtonFrame\Helpers.lua
 ButtonFrame\Glows.lua
