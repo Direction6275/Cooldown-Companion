@@ -97,7 +97,7 @@ local TURNON_KEYBIND_TEXT = { label = "Turn On " .. KEYBIND_CUSTOM_LABEL, key = 
 -- share the one info button rather than growing a badge each.
 local WHILE_AURA_ACTIVE_TOOLTIP = {
     "Cooldown While Aura Active",
-    {"Hidden by Aura: the aura duration swipe and text take over the icon.", 1, 1, 1, true},
+    {"Hidden by Aura: the aura duration swipe and text take over the icon. Cooldown text placed outside the icon is not covered, so both timers show while both run.", 1, 1, 1, true},
     " ",
     {"Show Text: the cooldown countdown and charge count draw above the aura display. The aura duration text moves to its own position.", 1, 1, 1, true},
     " ",
@@ -1637,6 +1637,8 @@ local function BuildAppearanceTab(container)
             local auraPosInfo = AnchorRowBadge(auraTextRow, CreateInfoButton(auraTextRow.frame, auraTextRow.frame, "LEFT", "LEFT", 0, 0, {
                 "Shared Position",
                 {"Position is shared with Cooldown Text by default. Set Cooldown under While Aura Active to Show Text for an independent position, set in advanced settings.", 1, 1, 1, true},
+                " ",
+                {"The aura display covers the icon, not the space around it. Cooldown text placed outside the icon stays visible, so both timers show while both run.", 1, 1, 1, true},
             }, auraTextRow))
             if auraTextSec.read.showAuraText == false then
                 auraPosInfo:Hide()
