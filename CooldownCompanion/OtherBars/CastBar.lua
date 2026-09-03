@@ -1138,9 +1138,12 @@ local function ResolveCastBarWidth(s)
     end
     local groupFrame = GetAnchorGroupFrame(s)
     if not groupFrame then return nil end
-    -- The bar matches the panel's BASE ROW, not the union a sectioned panel's
-    -- frame spans.
-    local width = ST.GetPanelAnchorBodyFrame(groupFrame):GetWidth()
+    -- The bar matches the panel's WHOLE footprint: on a sectioned panel the
+    -- frame spans the union of the base row and its sections, and the bar
+    -- wraps all of it, exactly as the Live Preview's lanes wrap the mirror
+    -- (owner ruling 2026-09-03, reversing the base-row rule for the attached
+    -- bars only; unit frames and panel anchors still use the base row).
+    local width = groupFrame:GetWidth()
     if not width or width <= 0 then return nil end
     return width
 end
@@ -1225,10 +1228,13 @@ local function ApplyCastBarPosition(s, width, height)
         end
     end
 
-    -- Straight onto the panel: its BASE ROW, for the same reason the resource
-    -- stack uses it -- a sectioned panel's frame is the union of the base
-    -- cluster and its sections, and the bar belongs to the row.
-    AnchorBySide(frame, side, ST.GetPanelAnchorBodyFrame(groupFrame), gap + panelYOffset)
+    -- Straight onto the panel FRAME, for the same reason the resource stack
+    -- uses it: a sectioned panel's frame is the union of the base row and
+    -- its sections, and the bar sits past the whole of it rather than across
+    -- a section on its side (owner ruling 2026-09-03, matching the Live
+    -- Preview). The frame follows the footprint on its own, so a section
+    -- appearing or dissolving needs no re-anchor here.
+    AnchorBySide(frame, side, groupFrame, gap + panelYOffset)
     return true
 end
 

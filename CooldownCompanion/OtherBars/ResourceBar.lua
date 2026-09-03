@@ -2698,10 +2698,12 @@ function CooldownCompanion:ApplyResourceBars(opts)
         EnsureIndependentStackConfig(settings, layout)
         totalPrimaryLength = layout.independentWidth
     else
-        -- Measured off the panel's ANCHORING BODY: on a sectioned panel the
-        -- frame spans the union of the base cluster and its sections, and the
-        -- stack matches the BASE ROW it hangs off.
-        totalPrimaryLength = GetResourcePrimaryLength(ST.GetPanelAnchorBodyFrame(groupFrame), settings)
+        -- Measured off the panel FRAME: on a sectioned panel that is the union
+        -- of the base row and its sections, and the stack spans the whole of
+        -- it, exactly as the Live Preview's lanes wrap the mirror (owner
+        -- ruling 2026-09-03; the base-row body stays for unit frames and
+        -- panel-to-panel anchors only).
+        totalPrimaryLength = GetResourcePrimaryLength(groupFrame, settings)
     end
 
     -- Determine side/order for each bar (per-spec layout)
@@ -3246,12 +3248,14 @@ function CooldownCompanion:ApplyResourceBars(opts)
     elseif groupFrame then
         -- Group-relative mode (original behavior)
         HideIndependentWrapperFrame()
-        -- The stack hangs off the panel's BASE ROW. A sectioned panel's frame
-        -- spans the union of the base cluster and every section, so anchoring
-        -- to the frame would shove the bars away the moment a section appeared
-        -- on that side. Identity and the alpha inheritance further down stay on
-        -- the panel frame itself.
-        local anchorBody = ST.GetPanelAnchorBodyFrame(groupFrame)
+        -- The stack hangs off the panel FRAME. A sectioned panel's frame spans
+        -- the union of the base row and every section, so the bars sit past
+        -- the whole footprint instead of across a section on their side -
+        -- what the Live Preview's lanes have always shown (owner ruling
+        -- 2026-09-03). The frame resizes with the footprint, so a section
+        -- appearing or dissolving moves the stack with no re-anchor; the
+        -- RefreshGroupFrame hook re-measures the length.
+        local anchorBody = groupFrame
         if isVerticalLayout then
             containerFrameAbove:SetHeight(totalPrimaryLength)
             containerFrameBelow:SetHeight(totalPrimaryLength)
