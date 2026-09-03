@@ -2948,24 +2948,9 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup()
         return tostring(a.id) < tostring(b.id)
     end)
 
-    local function ComparePanels(a, b)
-        local aOrder = a.group.order or 0
-        local bOrder = b.group.order or 0
-        if aOrder ~= bOrder then
-            return aOrder < bOrder
-        end
-
-        local aId = tonumber(a.groupId)
-        local bId = tonumber(b.groupId)
-        if aId and bId and aId ~= bId then
-            return aId < bId
-        end
-        return tostring(a.groupId) < tostring(b.groupId)
-    end
-
     for _, containerInfo in ipairs(orderedContainers) do
         local panels = panelsByContainer[containerInfo.id]
-        table.sort(panels, ComparePanels)
+        table.sort(panels, ST.ComparePanelOrder)
         for _, panelInfo in ipairs(panels) do
             if self:IsGroupAvailableForAnchoring(panelInfo.groupId) then
                 return panelInfo.groupId
@@ -3853,6 +3838,8 @@ end
 -- Used by zone/resting/pet-battle transitions to avoid compact-layout flash
 -- caused by full button repopulation.
 function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
+    -- nil until this pass reports: a hook must never read the previous pass.
+    self._lastVisibilityPassChanged = nil
     if self._unsupportedLegacyProfile then
         self:ClearUnsupportedProfileRuntime()
         return
@@ -4595,6 +4582,9 @@ function CooldownCompanion:RebuildTalentNodeCache()
 
     local specID = self._currentSpecId
     if not specID then return end
+    -- Which spec this cache describes; a pass that would otherwise keep the
+    -- cache rebuilds when the current spec no longer matches.
+    self._talentNodeCacheSpecId = specID
 
     local treeID = C_ClassTalents.GetTraitTreeForSpec(specID)
     if not treeID then return end

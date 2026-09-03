@@ -718,6 +718,14 @@ function CooldownCompanion:EvaluateFrameAnchoring(opts)
         self:RevertFrameAnchoring()
         return
     end
+    -- The gate refreshes compact suppression only when a feature flag moved.
+    -- Anchor-eligibility and reorder edits change WHICH panel the unit frames
+    -- hang from without moving a flag, and when unit frames are the only
+    -- enabled feature this evaluate is the one pass those edits reach, so it
+    -- refreshes unconditionally like the bulk evaluate passes do.
+    if self.RefreshStableExternalAnchorCompactSuppression then
+        self:RefreshStableExternalAnchorCompactSuppression()
+    end
     if self.RecordBarsAndFramesRuntimeWork then
         self:RecordBarsAndFramesRuntimeWork("frameEvaluate")
     end

@@ -64,11 +64,10 @@ end
 -- land in it. A shapeshift fires UPDATE_SHAPESHIFT_FORM, UPDATE_BONUS_ACTIONBAR,
 -- ACTIONBAR_PAGE_CHANGED and a slot-0 ACTIONBAR_SLOT_CHANGED together, and the
 -- spell-availability pass adds one more; each used to run the full rebuild
--- synchronously. Next frame is also the first moment Blizzard's buttons carry
--- the new bonus-bar actions the slot mapping reads. `slot` narrows the item
--- cache update; nil means a full rebuild.
+-- synchronously. `slot` narrows the item cache update. nil and 0 (Blizzard's
+-- "every slot" payload on a bonus bar swap) both mean a full rebuild.
 local function QueueKeybindStateRefresh(addon, slot)
-    if slot then
+    if slot and slot ~= 0 then
         pendingSlotChangedSlots[slot] = true
     else
         pendingSlotChangedSlots._fullRebuild = true
@@ -77,13 +76,14 @@ local function QueueKeybindStateRefresh(addon, slot)
     local token = pendingSlotChangeToken
     C_Timer.After(0, function()
         if pendingSlotChangeToken ~= token then return end
-        addon:RebuildSlotMapping()
         if pendingSlotChangedSlots._fullRebuild then
-            addon:RebuildItemSlotCache()
-        else
-            for s in pairs(pendingSlotChangedSlots) do
-                addon:UpdateItemSlotCache(s)
-            end
+            wipe(pendingSlotChangedSlots)
+            addon:RefreshKeybindState()
+            return
+        end
+        addon:RebuildSlotMapping()
+        for s in pairs(pendingSlotChangedSlots) do
+            addon:UpdateItemSlotCache(s)
         end
         wipe(pendingSlotChangedSlots)
         addon:RebuildAddonSlotBindings()
@@ -153,8 +153,10 @@ function CooldownCompanion:RefreshSpellAvailabilityState(opts)
     self._currentHeroSpecId = C_ClassTalents.GetActiveHeroTalentSpec()
     -- Talent and spec events rebuild the node cache themselves; a caller
     -- that knows no talent moved (SPELLS_CHANGED, the settling pass) skips
-    -- the per-node C_Traits walk.
-    if not opts.skipTalentCache then
+    -- the per-node C_Traits walk. A cache built for another spec is never
+    -- kept: on a spec swap SPELLS_CHANGED can land before the spec events,
+    -- and this pass must not evaluate talent conditions against the old tree.
+    if not opts.skipTalentCache or self._talentNodeCacheSpecId ~= self._currentSpecId then
         self:RebuildTalentNodeCache()
     end
     if opts.refreshAllChargeTypes then
@@ -480,13 +482,16 @@ function CooldownCompanion:OnZoneChanged()
 end
 
 -- PLAYER_UPDATE_RESTING also fires on login and loading screens without the
--- resting state actually flipping, so only do work on a real change. The
--- RefreshAllGroupsVisibilityOnly hooks re-evaluate bars and frame anchoring.
+-- resting state actually flipping, so only do work on a real change. Bars
+-- are evaluated explicitly: a custom bar's rested load condition can flip
+-- with no panel loading or unloading, which is the case the visibility
+-- pass's hooks skip.
 function CooldownCompanion:OnRestingChanged()
     local isResting = IsResting()
     if isResting == self._isResting then return end
     self._isResting = isResting
     self:RefreshAllGroupsVisibilityOnly()
+    self:EvaluateBarsAndFramesRuntime("resting-changed")
     self:RefreshConfigPanel()
 end
 
@@ -574,8 +579,8 @@ end
 
 function CooldownCompanion:OnActionBarSlotChanged(_, slot)
     -- Modifier-reactive macros fire this event per affected slot in the same
-    -- frame; the queue collapses them into one pass. Slot 0 (Blizzard's
-    -- "every slot" signal on a bonus bar swap) arrives as nil here.
+    -- frame; the queue collapses them into one pass and treats slot 0 as a
+    -- full rebuild.
     QueueKeybindStateRefresh(self, slot)
 end
 
