@@ -62,6 +62,9 @@ local defaults = {
         profileWideBarTextureEnabled = false,
         profileWideBarTextureName = nil,
         showAdvanced = {},
+        -- Stable external anchor: [specId] = groupId, one marked panel per
+        -- spec (Core/ExternalAnchorFrame.lua).
+        externalAnchorPanels = {},
         groupSettingPresets = {
             icons = {},
             bars = {},

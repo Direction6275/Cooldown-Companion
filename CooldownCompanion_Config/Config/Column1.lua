@@ -679,6 +679,33 @@ local function ShowPanelContextMenu(panelId, containerId)
                 UIDropDownMenu_AddButton(info, level)
             end
 
+            -- Stable external anchor (Core/ExternalAnchorFrame.lua): one
+            -- marked panel per spec. A cursor-anchored panel is skipped like
+            -- Lock Anchor above; an anchor that chases the cursor is no anchor.
+            if not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel)) then
+                local holderId = CooldownCompanion:GetExternalAnchorPanelId()
+                local isHolder = holderId ~= nil and holderId == tonumber(panelId)
+                local holder = holderId and db.groups[holderId] or nil
+                local holderName = holder and (holder.name or ("Panel " .. tostring(holderId))) or "none"
+                info = UIDropDownMenu_CreateInfo()
+                info.text = isHolder and "Clear External Anchor" or "Use as External Anchor"
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    CooldownCompanion:SetExternalAnchorPanel(not isHolder and panelId or nil)
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+                info.tooltipTitle = "External Anchor"
+                info.tooltipText = "Lets other addons, like BigWigs, attach their bars to this panel."
+                    .. "\n\nIn the other addon, anchor to the frame named "
+                    .. CooldownCompanion:GetExternalAnchorFrameName()
+                    .. ". Its bars will then sit on this panel and stay attached as the panel moves or changes size."
+                    .. "\n\nSet it once per specialization. Each specialization remembers its own panel, and picking a new panel replaces the old one."
+                    .. "\n\nThis specialization uses: " .. holderName
+                info.tooltipOnButton = 1
+                UIDropDownMenu_AddButton(info, level)
+            end
+
             if ST._IsActiveCDMPanelSource and ST._IsActiveCDMPanelSource(panel)
                 and ST._IsCreateTargetContainer and ST._IsCreateTargetContainer(containerId) then
                 info = UIDropDownMenu_CreateInfo()

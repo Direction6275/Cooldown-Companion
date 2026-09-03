@@ -854,6 +854,7 @@ function CooldownCompanion:DeleteContainer(containerId)
         self:DiscardDormantFrame(groupId)
         db.groups[groupId] = nil
     end
+    self:ClearExternalAnchorMarksForPanels(deletedGroupIds)
 
     -- Clean up container frame
     if self.containerFrames and self.containerFrames[containerId] then
@@ -1261,6 +1262,7 @@ function CooldownCompanion:DeletePanel(containerId, groupId)
     self:UnloadGroup(groupId)
     self:DiscardDormantFrame(groupId)
     db.groups[groupId] = nil
+    self:ClearExternalAnchorMarksForPanels({ [groupId] = true })
     if self.RefreshStableExternalAnchorCompactSuppression then
         self:RefreshStableExternalAnchorCompactSuppression()
     end
@@ -1532,6 +1534,7 @@ function CooldownCompanion:DeleteGroup(id)
     self:UnloadGroup(id)
     self:DiscardDormantFrame(id)
     self.db.profile.groups[id] = nil
+    self:ClearExternalAnchorMarksForPanels({ [id] = true })
 
     -- If this was the last panel, delete the parent container too
     if parentId and self:GetPanelCount(parentId) == 0 then
