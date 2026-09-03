@@ -1355,6 +1355,9 @@ local function ResetButtonGlowTransitionState(button)
             HideGlowStyles(button.assistedHighlight)
         end
     end
+    if ST._StopCooldownPressFlash then
+        ST._StopCooldownPressFlash(button)
+    end
 
     button._procGlowActive = nil
     button._auraGlowActive = nil
@@ -1650,6 +1653,9 @@ local function DeactivatePooledButton(self, groupId, button)
     HideButtonGlowContainer(button.procGlow)
     HideButtonGlowContainer(button.readyGlow)
     HideButtonGlowContainer(button.keyPressHighlight)
+    if ST._StopCooldownPressFlash then
+        ST._StopCooldownPressFlash(button)
+    end
     HideButtonGlowContainer(button.barAuraEffect)
     -- Totem active phase aura indicator: CC-owned kit regions on the button
     -- itself, so the glow-container hides above do not reach them. Hidden here

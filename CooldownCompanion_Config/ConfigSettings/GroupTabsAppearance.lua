@@ -299,6 +299,9 @@ ST._SECTION_HOME.icons = {
     keyPressHighlight = {
         tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
     },
+    cooldownPressFlash = {
+        tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
+    },
     assistedHighlight = {
         tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
     },

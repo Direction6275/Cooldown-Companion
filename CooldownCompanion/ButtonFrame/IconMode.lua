@@ -927,6 +927,9 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
             SetFrameClickThroughRecursive(button.keyPressHighlight.procFrame, true, true)
         end
     end
+    if button._cooldownPressFlash then
+        SetFrameClickThroughRecursive(button._cooldownPressFlash.frame, true, true)
+    end
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
     if showTooltips then
         SetupTooltipScripts(button)
@@ -1590,6 +1593,11 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button._keyPressHighlightActive = nil
         RefreshKeyPressHighlightEnrollment(button)
     end
+    -- A restyle may change the flash color or duration; a flash still
+    -- playing from the old style must not linger.
+    if ST._StopCooldownPressFlash then
+        ST._StopCooldownPressFlash(button)
+    end
 
     -- Every configurable level, plus the pinned elements above them.
     ApplyStrataOrder(button, style.strataOrder)
@@ -1650,6 +1658,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         if button.keyPressHighlight.procFrame then
             SetFrameClickThroughRecursive(button.keyPressHighlight.procFrame, true, true)
         end
+    end
+    if button._cooldownPressFlash then
+        SetFrameClickThroughRecursive(button._cooldownPressFlash.frame, true, true)
     end
 
     -- (Ready glow and key press highlight used to be re-pinned to cooldown+1
