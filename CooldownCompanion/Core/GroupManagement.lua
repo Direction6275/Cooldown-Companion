@@ -744,6 +744,26 @@ end
 -- Container & Panel Helpers
 ------------------------------------------------------------------------
 
+-- The one panel ordering rule: panel.order, then numeric id, then string id.
+-- Sorts { groupId = id, group = groupData } records. Shared with the anchor
+-- panel resolver (GroupOperations GetFirstAvailableAnchorGroup) so the first
+-- available anchor is always the first panel the Navigator shows.
+local function ComparePanelOrder(a, b)
+    local aOrder = a.group.order or 0
+    local bOrder = b.group.order or 0
+    if aOrder ~= bOrder then
+        return aOrder < bOrder
+    end
+
+    local aId = tonumber(a.groupId)
+    local bId = tonumber(b.groupId)
+    if aId and bId and aId ~= bId then
+        return aId < bId
+    end
+    return tostring(a.groupId) < tostring(b.groupId)
+end
+ST.ComparePanelOrder = ComparePanelOrder
+
 -- Returns a sorted array of { groupId = id, group = groupData } for all panels
 -- belonging to the given container, ordered by panel.order.
 function CooldownCompanion:GetPanels(containerId)
@@ -753,20 +773,7 @@ function CooldownCompanion:GetPanels(containerId)
             panels[#panels + 1] = { groupId = groupId, group = group }
         end
     end
-    table_sort(panels, function(a, b)
-        local aOrder = a.group.order or 0
-        local bOrder = b.group.order or 0
-        if aOrder ~= bOrder then
-            return aOrder < bOrder
-        end
-
-        local aId = tonumber(a.groupId)
-        local bId = tonumber(b.groupId)
-        if aId and bId and aId ~= bId then
-            return aId < bId
-        end
-        return tostring(a.groupId) < tostring(b.groupId)
-    end)
+    table_sort(panels, ComparePanelOrder)
     return panels
 end
 

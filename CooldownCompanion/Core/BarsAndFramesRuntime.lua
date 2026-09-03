@@ -108,10 +108,27 @@ function CooldownCompanion:RefreshBarsAndFramesRuntimeGate(reason)
     return runtime.enabled, runtime.flags
 end
 
+local function FlagsEqual(a, b)
+    return (a and a.resourceBars == true or false) == (b and b.resourceBars == true or false)
+        and (a and a.castBar == true or false) == (b and b.castBar == true or false)
+        and (a and a.frameAnchoring == true or false) == (b and b.frameAnchoring == true or false)
+end
+
+-- Per-feature gate: every EvaluateCastBar / EvaluateResourceBars /
+-- ApplyResourceBars entry passes through here. The compact-suppression
+-- refresh it used to run unconditionally resolves the first available anchor
+-- panel (a walk over every panel) each time, and the inputs it takes from
+-- this gate are the feature flags, so it re-runs only when those moved. The
+-- bulk evaluate passes below still refresh it unconditionally.
 function CooldownCompanion:RefreshBarsAndFramesRuntimeFeatureGate(feature, reason)
+    local previousEnabled = runtime.enabled
+    local previousFlags = runtime.flags
+    local wasInitialized = runtime.initialized == true
     local enabled, flags = self:RefreshBarsAndFramesRuntimeGate(reason)
     local featureEnabled = enabled == true and flags and flags[feature] == true or false
-    CallIfAvailable("RefreshStableExternalAnchorCompactSuppression")
+    if not wasInitialized or previousEnabled ~= enabled or not FlagsEqual(previousFlags, flags) then
+        CallIfAvailable("RefreshStableExternalAnchorCompactSuppression")
+    end
     return featureEnabled, flags
 end
 

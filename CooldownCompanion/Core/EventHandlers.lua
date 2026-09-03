@@ -41,12 +41,53 @@ local function QueueTalentChargeRefresh(addon)
     end)
 end
 
+-- The settle exists for late-resolving charge data and entry usability. It
+-- re-reads exactly those and rebuilds only the panels whose entry set moved;
+-- the talent cache, the keybind pass and the every-panel escalation belong to
+-- the first pass, and repeating them 0.2s later was the second hitch of a
+-- shapeshift (every form change fires SPELLS_CHANGED).
 local function QueueSpellAvailabilitySettlingRefresh(addon)
     pendingSpellAvailabilityRefreshToken = pendingSpellAvailabilityRefreshToken + 1
     local token = pendingSpellAvailabilityRefreshToken
     C_Timer.After(0.2, function()
         if pendingSpellAvailabilityRefreshToken ~= token then return end
-        addon:RefreshSpellAvailabilityState({ skipSettlingRefresh = true })
+        addon:RefreshSpellAvailabilityState({
+            skipSettlingRefresh = true,
+            skipTalentCache = true,
+            skipKeybindRefresh = true,
+            perGroupRebuild = true,
+        })
+    end)
+end
+
+-- One next-frame keybind rebuild per frame, however many action bar events
+-- land in it. A shapeshift fires UPDATE_SHAPESHIFT_FORM, UPDATE_BONUS_ACTIONBAR,
+-- ACTIONBAR_PAGE_CHANGED and a slot-0 ACTIONBAR_SLOT_CHANGED together, and the
+-- spell-availability pass adds one more; each used to run the full rebuild
+-- synchronously. `slot` narrows the item cache update. nil and 0 (Blizzard's
+-- "every slot" payload on a bonus bar swap) both mean a full rebuild.
+local function QueueKeybindStateRefresh(addon, slot)
+    if slot and slot ~= 0 then
+        pendingSlotChangedSlots[slot] = true
+    else
+        pendingSlotChangedSlots._fullRebuild = true
+    end
+    pendingSlotChangeToken = pendingSlotChangeToken + 1
+    local token = pendingSlotChangeToken
+    C_Timer.After(0, function()
+        if pendingSlotChangeToken ~= token then return end
+        if pendingSlotChangedSlots._fullRebuild then
+            wipe(pendingSlotChangedSlots)
+            addon:RefreshKeybindState()
+            return
+        end
+        addon:RebuildSlotMapping()
+        for s in pairs(pendingSlotChangedSlots) do
+            addon:UpdateItemSlotCache(s)
+        end
+        wipe(pendingSlotChangedSlots)
+        addon:RebuildAddonSlotBindings()
+        addon:OnKeybindsChanged()
     end)
 end
 
@@ -110,14 +151,26 @@ function CooldownCompanion:RefreshSpellAvailabilityState(opts)
     self:CachePlayerState()
     self:CacheCurrentSpec()
     self._currentHeroSpecId = C_ClassTalents.GetActiveHeroTalentSpec()
-    self:RebuildTalentNodeCache()
+    -- Talent and spec events rebuild the node cache themselves; a caller
+    -- that knows no talent moved (SPELLS_CHANGED, the settling pass) skips
+    -- the per-node C_Traits walk. A cache built for another spec is never
+    -- kept: on a spec swap SPELLS_CHANGED can land before the spec events,
+    -- and this pass must not evaluate talent conditions against the old tree.
+    if not opts.skipTalentCache or self._talentNodeCacheSpecId ~= self._currentSpecId then
+        self:RebuildTalentNodeCache()
+    end
     if opts.refreshAllChargeTypes then
         self:RefreshChargeFlags()
     else
         self:RefreshChargeFlags("spell")
     end
-    self:RefreshAllGroupsForSpellAvailability()
-    self:RefreshKeybindState()
+    self:RefreshAllGroupsForSpellAvailability({ perGroupRebuild = opts.perGroupRebuild })
+    -- Coalesced with the action bar events of the same frame (see
+    -- QueueKeybindStateRefresh). Freshly populated buttons stamp their own
+    -- keybind text at populate time; this pass re-stamps every button once.
+    if not opts.skipKeybindRefresh then
+        QueueKeybindStateRefresh(self)
+    end
     self:RefreshConfigPanel()
 
     if opts.applyResourceBars then
@@ -146,12 +199,34 @@ function CooldownCompanion:OnPlayerSpecializationChanged(event, unit)
     self:OnSpecChanged()
 end
 
+-- SPELLS_CHANGED fires on every shapeshift (druid forms, Stealth), not only
+-- on spellbook rebuilds. No talent moved, so the node cache stands, and a
+-- panel whose entry set changed refreshes on its own rather than escalating
+-- to a rebuild of every panel in the profile.
 function CooldownCompanion:OnSpellsChanged()
     self:OnSpellUpdateIcon()
-    self:RefreshSpellAvailabilityState()
+    self:RefreshSpellAvailabilityState({
+        skipTalentCache = true,
+        perGroupRebuild = true,
+    })
 end
 
+-- Coalesce icon passes to one per frame. A shapeshift delivers SPELLS_CHANGED,
+-- SPELL_UPDATE_ICON and one COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED per
+-- transforming spell in the same frame, and every one resolves every entry's
+-- icon. Same token pattern as QueueTalentChargeRefresh.
+local pendingIconRefreshToken = 0
+
 function CooldownCompanion:OnSpellUpdateIcon()
+    pendingIconRefreshToken = pendingIconRefreshToken + 1
+    local token = pendingIconRefreshToken
+    C_Timer.After(0, function()
+        if pendingIconRefreshToken ~= token then return end
+        self:RunSpellUpdateIconPass()
+    end)
+end
+
+function CooldownCompanion:RunSpellUpdateIconPass()
     local anyDeferred = false
     self:ForEachButton(function(button, bd)
         if bd.cdmChildSlot then
@@ -407,13 +482,16 @@ function CooldownCompanion:OnZoneChanged()
 end
 
 -- PLAYER_UPDATE_RESTING also fires on login and loading screens without the
--- resting state actually flipping, so only do work on a real change. The
--- RefreshAllGroupsVisibilityOnly hooks re-evaluate bars and frame anchoring.
+-- resting state actually flipping, so only do work on a real change. Bars
+-- are evaluated explicitly: a custom bar's rested load condition can flip
+-- with no panel loading or unloading, which is the case the visibility
+-- pass's hooks skip.
 function CooldownCompanion:OnRestingChanged()
     local isResting = IsResting()
     if isResting == self._isResting then return end
     self._isResting = isResting
     self:RefreshAllGroupsVisibilityOnly()
+    self:EvaluateBarsAndFramesRuntime("resting-changed")
     self:RefreshConfigPanel()
 end
 
@@ -500,34 +578,14 @@ function CooldownCompanion:OnBindingsChanged()
 end
 
 function CooldownCompanion:OnActionBarSlotChanged(_, slot)
-    -- Coalesce: modifier-reactive macros fire this event per affected slot in
-    -- the same frame. Accumulate slots and defer the rebuild to next frame so
-    -- N simultaneous changes collapse into one pass.
-    if slot then
-        pendingSlotChangedSlots[slot] = true
-    else
-        pendingSlotChangedSlots._fullRebuild = true
-    end
-    pendingSlotChangeToken = pendingSlotChangeToken + 1
-    local token = pendingSlotChangeToken
-    C_Timer.After(0, function()
-        if pendingSlotChangeToken ~= token then return end
-        self:RebuildSlotMapping()
-        if pendingSlotChangedSlots._fullRebuild then
-            self:RebuildItemSlotCache()
-        else
-            for s in pairs(pendingSlotChangedSlots) do
-                self:UpdateItemSlotCache(s)
-            end
-        end
-        wipe(pendingSlotChangedSlots)
-        self:RebuildAddonSlotBindings()
-        self:OnKeybindsChanged()
-    end)
+    -- Modifier-reactive macros fire this event per affected slot in the same
+    -- frame; the queue collapses them into one pass and treats slot 0 as a
+    -- full rebuild.
+    QueueKeybindStateRefresh(self, slot)
 end
 
 function CooldownCompanion:OnActionBarLayoutChanged(event)
-    self:RefreshKeybindState()
+    QueueKeybindStateRefresh(self)
     -- UPDATE_SHAPESHIFT_FORM also routes here, and druid travel form is an alpha
     -- force-condition input the alpha pass reads fresh. That pass resolves the
     -- form only for druids, so no other class can need the re-arm.

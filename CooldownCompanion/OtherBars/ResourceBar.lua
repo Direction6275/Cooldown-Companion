@@ -2570,6 +2570,78 @@ RB.StyleHealthBar = HealthBar.Style
 RB.StyleSegmentedText = StyleSegmentedText
 RB.StyleSegmentedBar = StyleSegmentedBar
 
+-- The ordered list ApplyResourceBars materializes: enabled, unsuppressed
+-- power types followed by eligible custom bars. Pure; the meta-flip watch
+-- flag comes back as a second value for the caller that owns stackSwapState.
+-- A mutually exclusive pair (the Devourer resources) is filtered here rather
+-- than in the spec list itself: DetermineActiveResources also feeds the
+-- config's layout preview, which must keep listing both halves whatever the
+-- player is currently in. Dropping the hidden half from this one list leaves
+-- ordering, stacking and the trailing-frame cleanup entirely to the apply
+-- machinery, exactly as a disabled resource does — so the surviving half
+-- lands in the slot the pair occupies, ahead of everything after it.
+local function CollectActiveBarEntries(settings)
+    local filtered = {}
+    local watchMetaFlip = false
+    for _, pt in ipairs(DetermineActiveResources(settings)) do
+        if IsResourceEnabled(pt, settings) then
+            if RB.AURA_STACK_RESOURCES[pt] and RB.AURA_STACK_RESOURCES[pt].metaVisibility then
+                watchMetaFlip = true
+            end
+            if not RB.IsAuraStackResourceSuppressed(pt) then
+                table.insert(filtered, pt)
+            end
+        end
+    end
+
+    -- Append enabled Custom Bars
+    local customBars = GetSpecCustomAuraBars(settings)
+    for i, cab in ipairs(customBars) do
+        if cab and CooldownCompanion:IsCustomBarRuntimeEligible(cab) then
+            table.insert(filtered, {
+                kind = "custom",
+                customBarIndex = i,
+                customBarId = RB.EnsureCustomBarId(settings, cab),
+                config = cab,
+            })
+        end
+    end
+    return filtered, watchMetaFlip
+end
+
+local function BuildActiveBarSignature(filtered)
+    local parts = {}
+    for i, entry in ipairs(filtered) do
+        if type(entry) == "table" then
+            parts[i] = "c:" .. tostring(entry.customBarId)
+        else
+            parts[i] = tostring(entry)
+        end
+    end
+    return table.concat(parts, ",")
+end
+
+-- Signature of the list the live bars were last built from; nil while reverted.
+local lastAppliedActiveBarSignature = nil
+
+-- True when the bars are applied and a fresh apply would materialize the same
+-- ordered list. The form-change lifecycle event uses this to skip the full
+-- re-apply (and the stacking pass and aura rebind it queues) for a form that
+-- keeps the same resources: Stealth on a rogue, or a druid form under the
+-- all-forms union. A druid form that swaps resources, or bars that reverted
+-- because their anchor panel hid, still reads as changed.
+function CooldownCompanion:ResourceBarsActiveSetUnchanged()
+    if not isApplied or not lastAppliedActiveBarSignature then
+        return false
+    end
+    local settings = GetResourceBarSettings()
+    if not settings or not settings.enabled then
+        return false
+    end
+    local filtered = CollectActiveBarEntries(settings)
+    return BuildActiveBarSignature(filtered) == lastAppliedActiveBarSignature
+end
+
 function CooldownCompanion:ApplyResourceBars(opts)
     opts = opts or {}
     if not opts.skipRuntimeGate
@@ -2625,43 +2697,12 @@ function CooldownCompanion:ApplyResourceBars(opts)
     local reverseVerticalFill = IsVerticalFillReversed(settings)
 
     -- Determine which resources to show
-    local resources = DetermineActiveResources(settings)
-    local filtered = {}
-    -- A mutually exclusive pair (the Devourer resources) is filtered here
-    -- rather than in the spec list itself: DetermineActiveResources also
-    -- feeds the config's layout preview, which must keep listing both
-    -- halves whatever the player is currently in. Dropping the hidden half
-    -- from this one list leaves ordering, stacking and the trailing-frame
-    -- cleanup entirely to the machinery below, exactly as a disabled
-    -- resource does — so the surviving half lands in the slot the pair
-    -- occupies, ahead of everything after it.
-    stackSwapState.watch = false
-    for _, pt in ipairs(resources) do
-        if IsResourceEnabled(pt, settings) then
-            if RB.AURA_STACK_RESOURCES[pt] and RB.AURA_STACK_RESOURCES[pt].metaVisibility then
-                stackSwapState.watch = true
-            end
-            if not RB.IsAuraStackResourceSuppressed(pt) then
-                table.insert(filtered, pt)
-            end
-        end
-    end
+    local filtered, watchMetaFlip = CollectActiveBarEntries(settings)
+    stackSwapState.watch = watchMetaFlip
     -- The state this materialization is being built for, so the tick only
     -- reacts to a real change from here.
     stackSwapState.inMeta = stackSwapState.watch and RB.IsInVoidMetamorphosis() or false
-
-    -- Append enabled Custom Bars
-    local customBars = GetSpecCustomAuraBars(settings)
-    for i, cab in ipairs(customBars) do
-        if cab and CooldownCompanion:IsCustomBarRuntimeEligible(cab) then
-            table.insert(filtered, {
-                kind = "custom",
-                customBarIndex = i,
-                customBarId = RB.EnsureCustomBarId(settings, cab),
-                config = cab,
-            })
-        end
-    end
+    lastAppliedActiveBarSignature = BuildActiveBarSignature(filtered)
 
     if #filtered == 0 then
         self:RevertResourceBars()
@@ -3387,6 +3428,7 @@ function CooldownCompanion:RevertResourceBars()
     stackSwapState.SetWatcher(false)
     if not isApplied then return end
     isApplied = false
+    lastAppliedActiveBarSignature = nil
     lastAppliedPrimaryLength = nil
     lastAppliedOrientation = nil
     lastAppliedLayout = nil
