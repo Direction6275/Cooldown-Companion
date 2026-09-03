@@ -371,6 +371,45 @@ local function AuraSwipeEntryApplies(group, buttonIndex)
     return false
 end
 
+-- Text panels have no aura text sections: an aura's time and stacks show
+-- only where the entry's format puts an aura column (ButtonFrame/TextMode
+-- TEXT RENDER PLAN), and only on an entry the runtime gives an aura button
+-- (a spell tracking an aura - the rebind pass's own gate). Same scoping
+-- rule as ChargeEntryApplies: a selected entry must itself qualify, at
+-- panel scope one qualifying entry is enough. `wantKinds` is the control's
+-- own set of piece kinds (duration / stacks / presence): a duration preview
+-- is only offered where a duration column exists, and so on.
+local function TextAuraPiecesApply(group, buttonIndex, wantKinds)
+    local pieceKinds = ST._TextEntryAuraPieceKinds
+    if not pieceKinds then
+        return false
+    end
+    local buttons = group.buttons or {}
+    local function EntryApplies(index, buttonData)
+        if not (buttonData ~= nil
+            and buttonData.type == "spell"
+            and (buttonData.auraTracking or buttonData.addedAs == "aura")) then
+            return false
+        end
+        local kinds = pieceKinds(buttonData, ResolveTargetStyle(group, index))
+        for kind in pairs(wantKinds) do
+            if kinds[kind] then
+                return true
+            end
+        end
+        return false
+    end
+    if buttonIndex then
+        return EntryApplies(buttonIndex, buttons[buttonIndex])
+    end
+    for index, buttonData in ipairs(buttons) do
+        if EntryApplies(index, buttonData) then
+            return true
+        end
+    end
+    return false
+end
+
 -- Conditional state previews render nothing while the visual they stand
 -- in for is switched off, so the toggle hides with it - matching how the
 -- settings-side badges have always behaved.
@@ -543,10 +582,14 @@ end
 local ICON_TEXT_SECTION = "appearance_text"
 local BAR_TEXT_SECTION = "barappearance_textIcon"
 
-local function TextRoute(iconKey, barKey)
+-- `textTab` adds a text-panel destination: a tab-only route, since text
+-- panels have no advanced panel for these readouts (the aura readouts are
+-- the entry's format, so their route lands on the Format tab).
+local function TextRoute(iconKey, barKey, textTab)
     return {
         icons = { tab = "appearance", key = iconKey, uncollapse = ICON_TEXT_SECTION },
         bars = { tab = "appearance", key = barKey, uncollapse = BAR_TEXT_SECTION },
+        text = textTab and { tab = textTab } or nil,
     }
 end
 
@@ -807,10 +850,13 @@ local CONTROLS = {
         label = "Preview Aura Duration Text",
         group = GROUP_AURAS,
         menuOrder = 30,
-        modes = { icons = true, bars = true },
+        -- Text panels: the format decides (textAuraPieces below), and the
+        -- gear lands on the Format tab, where that decision is made.
+        modes = { icons = true, bars = true, text = true },
         section = "auraText",
         styleKeyDefaultOn = "showAuraText",
-        settings = TextRoute("auraText", "barAuraText"),
+        textAuraPieces = { duration = true, presence = true },
+        settings = TextRoute("auraText", "barAuraText", "format"),
         preview = ConditionalPreview("aura_duration_text"),
     },
     {
@@ -838,10 +884,12 @@ local CONTROLS = {
         label = "Preview Aura Stack Text",
         group = GROUP_AURAS,
         menuOrder = 40,
-        modes = { icons = true, bars = true },
+        -- Text panels: same rule as Aura Duration Text above.
+        modes = { icons = true, bars = true, text = true },
         section = "auraStackText",
         styleKeyDefaultOn = "showAuraStackText",
-        settings = TextRoute("auraStackText", "barAuraStackText"),
+        textAuraPieces = { stacks = true, presence = true },
+        settings = TextRoute("auraStackText", "barAuraStackText", "format"),
         preview = ConditionalPreview("aura_stack_text"),
     },
     {
@@ -899,6 +947,12 @@ local CONTROLS = {
 local function ControlApplies(control, group, displayMode, buttonIndex)
     if not control.modes[displayMode] then
         return false
+    end
+    if displayMode == "text" and control.textAuraPieces then
+        -- On a text panel the control's section and style gates describe
+        -- readouts the panel does not have; the entry's format is the whole
+        -- answer (see TextAuraPiecesApply).
+        return TextAuraPiecesApply(group, buttonIndex, control.textAuraPieces)
     end
     if control.section and not SectionApplies(group, control.section, buttonIndex) then
         return false
@@ -1332,6 +1386,15 @@ local function ControlSectionId(control)
         end
         local sectionId = control.resolveSection(group, buttonIndex)
         return sectionId
+    end
+    if control.textAuraPieces then
+        -- No section on a text panel (see ControlApplies): the gear is a
+        -- plain tab route, with no lens scope or Customize shortcut to
+        -- describe.
+        local _, group = ResolveContext()
+        if group and group.displayMode == "text" then
+            return nil
+        end
     end
     return control.lensSection or control.section
 end

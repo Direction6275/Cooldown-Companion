@@ -67,6 +67,15 @@ local function RefreshAuraConfig()
     CooldownCompanion:RefreshConfigPanel()
 end
 
+-- Text panels track auras the same way icons and bars do (which aura, on
+-- whom), but they have no shell, icon or stack text of their own: the
+-- format's aura tokens are the only readout. So the section keeps its left
+-- column there and builds none of the right-column visual rows, and the
+-- finder must not advertise a row the pane never draws.
+local function IsTextPanel(group)
+    return group ~= nil and group.displayMode == "text"
+end
+
 local function ResolveConfiguredAuraSpellID(buttonData)
     return CooldownCompanion:ResolveAuraSpellID(buttonData)
         or CooldownCompanion:ResolveTexturePanelAuraSpellID(buttonData)
@@ -319,6 +328,17 @@ local TEXTURE_AURA_TRACKING_TOOLTIP = {
     {"This is presence-only: duration and stacks are not displayed. An optional active-aura effect can be configured in the Indicators tab.", 1, 1, 1, true},
 }
 
+local TEXT_AURA_TRACKING_TOOLTIP = {
+    "Aura Tracking",
+    {"Blizzard tracks the aura and drives the display; the addon never reads aura state in combat.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"Buffs are tracked on you. A buff tied to a helpful spell you can cast can also follow your group. Helpful buffs can instead be tracked only on your pet, including buffs the pet gains on its own. A buff overriding a harmful spell stays on you. Your own debuffs are tracked on your target.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"The format decides what shows: {aura} for remaining time, {aurastacks} for the count, and text inside {?aura}...{/aura} while the aura is active. See the Format tab.", 1, 1, 1, true},
+    {" ", 1, 1, 1, true},
+    {"With no auras listed, the entry tracks its own aura. Added aura IDs take priority; its own aura remains a fallback only when both are buffs or both are debuffs.", 1, 1, 1, true},
+}
+
 local AURA_ID_OVERRIDE_TOOLTIP = {
     "Aura ID Override",
     {"Replaces the automatically detected aura with exactly this ID. Auras added below still track alongside it.", 1, 1, 1, true},
@@ -388,6 +408,7 @@ local function GetAuraTrackingCatalogState(context)
 
     local isStandalone = buttonData.addedAs == "aura"
     local isTexturePanel = group.displayMode == "textures"
+    local isTextPanel = IsTextPanel(group)
     local active = (isTexturePanel
             and CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData))
         or (not isTexturePanel and (isStandalone or buttonData.auraTracking == true))
@@ -399,6 +420,7 @@ local function GetAuraTrackingCatalogState(context)
         buttonData = buttonData,
         isStandalone = isStandalone,
         isTexturePanel = isTexturePanel,
+        isTextPanel = isTextPanel,
         isAuraPanel = isAuraPanel,
         active = active,
     }
@@ -430,7 +452,10 @@ local function GetAuraTrackingCatalogState(context)
         local override = rawget(buttonData.styleOverrides, "showAuraStackText")
         if override ~= nil then showAuraStackText = override end
     end
-    state.stackTextVisible = not isTexturePanel and showAuraStackText ~= false
+    -- Text panels have no stack text of their own (the format's tokens are
+    -- the readout), so every stack-text row stays off the finder there.
+    state.stackTextVisible = not isTexturePanel and not isTextPanel
+        and showAuraStackText ~= false
     state.showCountAtOne = CooldownCompanion:IsAuraStackCountAtOneEnabled(buttonData)
     state.threshold = CooldownCompanion:GetAuraStackThresholdValue(buttonData)
     state.maxColor = CooldownCompanion:IsAuraStackMaxColorEnabled(buttonData)
@@ -554,7 +579,8 @@ local auraSettings = ST._DefineSettingRoute({
         label = "Never Desaturate",
         aliases = { "keep color", "passive aura" },
         applies = AuraStateApplies(function(state)
-            return state.active and not state.isTexturePanel and state.buttonData.isPassive == true
+            return state.active and not state.isTexturePanel and not state.isTextPanel
+                and state.buttonData.isPassive == true
         end),
     },
 })
@@ -564,6 +590,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
 
     local isStandalone = buttonData.addedAs == "aura"
     local isTexturePanel = group and group.displayMode == "textures"
+    local isTextPanel = IsTextPanel(group)
     -- An Aura Panel cell is structurally SINGLE-UNIT: BindPanelGroup never
     -- passes groupScoped, so the group-scope rows below have nothing to act on
     -- there (owner ruling 2026-08-15).
@@ -589,14 +616,17 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- The heading's "?" chains off the end of its label; the fading rule
     -- restarts after that badge.
     local auraInfoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0,
-        isTexturePanel and TEXTURE_AURA_TRACKING_TOOLTIP or AURA_TRACKING_TOOLTIP, infoButtons)
+        (isTexturePanel and TEXTURE_AURA_TRACKING_TOOLTIP)
+            or (isTextPanel and TEXT_AURA_TRACKING_TOOLTIP)
+            or AURA_TRACKING_TOOLTIP, infoButtons)
     AnchorLeftAlignedHeadingRule(heading, auraInfoBtn)
 
     if collapsed then return end
 
     -- LEFT column: which aura is tracked, and on whom. RIGHT column: how the
     -- entry draws it. Both halves are gated on the toggle at the head of the
-    -- left one, so the right side is empty until tracking is on.
+    -- left one, so the right side is empty until tracking is on. On text
+    -- panels it stays empty for good: the format's tokens are the drawing.
     local auraLeft, auraRight = BeginRowGrid(scroll)
 
     if not isTexturePanel and not isStandalone then
@@ -925,13 +955,22 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
             or (primaryAuraSpellID
                 and CooldownCompanion:IsTotemLaneSummonDisplaySpell(primaryAuraSpellID))
         if isSummonDisplay then
+            -- Text panels sit outside the totem lane (CooldownUpdate.lua,
+            -- owner scope ruling): the summon's duration is never read
+            -- there, so the row says so instead of promising it.
             AddLabelRow(auraLeft, {
                 label = "Shown As",
                 indent = not isStandalone,
-                controlText = "Summon duration from the totem slot",
+                controlText = isTextPanel and "Not available on text panels"
+                    or "Summon duration from the totem slot",
             })
         end
     end
+
+    -- Text panels stop here. Every row below configures a shell, bar fill,
+    -- stack text or icon the entry does not have; what the aura shows is
+    -- decided by the format's tokens (the heading's "?" points there).
+    if isTextPanel then return end
 
     if isTexturePanel then
         -- Texture Aura display intentionally exposes presence only. The

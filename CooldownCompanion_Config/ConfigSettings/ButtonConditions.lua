@@ -2558,8 +2558,9 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     local anyAuraEntry
     if isBatch then anyAuraEntry = AnySelectedMatch(FilterAuraEntry)
     else anyAuraEntry = FilterAuraEntry(buttonData) end
-    -- Icon and bar groups (both compose a full shell); text mode has no aura
-    -- display at all.
+    -- Icon and bar groups (both compose a full shell). Text panels show aura
+    -- state through their format's aura tokens instead of a shell, so there
+    -- is nothing for an inactive state to hide or dim.
     --
     -- An Aura Panel is already this pair, panel-wide and unconditionally: every
     -- cell shows only while its aura is up, and Blizzard's container gives the

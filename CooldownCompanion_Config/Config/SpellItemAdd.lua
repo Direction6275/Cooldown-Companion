@@ -59,6 +59,7 @@ local function TargetPanelAcceptsAuraEntries(groupId)
     local group = GetTargetGroup(groupId)
     local displayMode = group and (group.displayMode or "icons")
     return displayMode == "icons" or displayMode == "bars" or displayMode == "textures"
+        or displayMode == "text"
 end
 
 -- An Aura Panel takes aura entries only, and only for the one unit it derived
@@ -291,7 +292,7 @@ local function PrintCannotTrackAsAura(spellName)
 end
 
 local function PrintAuraPanelUnsupported()
-    CooldownCompanion:Print("Use an icon or bar panel for Aura tracking.")
+    CooldownCompanion:Print("Use an icon, bar or text panel for Aura tracking.")
 end
 
 local function IsExactNumericSpellInput(input, spellId)

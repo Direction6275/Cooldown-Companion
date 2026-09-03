@@ -73,11 +73,12 @@ end
 -- No pandemic token: it needed readable pandemic state, which 12.1 made
 -- permanently secret (retired Phase 3; migrations scrub saved formats).
 --
--- Text panels are AURA-BLIND on 12.1. {aura} is kept as a known token only so
--- saved formats holding it keep parsing instead of degrading to literal
--- braces; it emits nothing (SubstituteTokens below). A client-owned docked
--- readout was trialed and removed by owner decision, so there is deliberately
--- no {aurastacks} token and no reserved space for either.
+-- Aura tokens are CLIENT-RENDERED on 12.1. The addon can never read the
+-- tracked aura's remaining time or application count, so {aura} (remaining
+-- time) and {aurastacks} (application count) never reach SubstituteTokens:
+-- BuildTextRenderPlan below cuts them out of the line as aura PIECES with
+-- reserved widths, and Core/AuraDisplay's text host hands the client a
+-- FontString per piece. {status} on a standalone aura entry is {aura}.
 local KNOWN_TOKENS = {
     name = true,
     time = true,
@@ -87,6 +88,7 @@ local KNOWN_TOKENS = {
     zerocharges = true,
     stacks = true,
     aura = true,
+    aurastacks = true,
     proc = true,
     unusable = true,
     oor = true,
@@ -98,10 +100,12 @@ local KNOWN_TOKENS = {
     br = true,
 }
 
--- `aura` is kept ONLY so saved {?aura}/{!aura} formats keep parsing as
--- conditionals instead of degrading to literal braces. It can no longer be
--- true: the aura's presence lives entirely on the client now, so
--- EvaluateTokenPresence has nothing to answer with.
+-- `aura` conditionals are resolved by the PLANNER, not at runtime: a
+-- {?aura}...{/aura} region becomes client-rendered aura content that the
+-- client shows only while the aura is active, and a {!aura}...{/aura} region
+-- is dropped whole (the client cannot render "while inactive"). Neither ever
+-- reaches EvaluateTokenPresence, which answers false for `aura` as a defined
+-- fallback only.
 local KNOWN_CONDITIONAL_TOKENS = {
     time = true,
     charges = true,
@@ -201,6 +205,488 @@ local function HasAnyEffects(segments)
         if seg.type == "effect_start" then return true end
     end
     return false
+end
+
+------------------------------------------------------------------------
+-- TEXT RENDER PLAN
+--
+-- On 12.1 an aura's remaining time and application count belong to the
+-- client, never to the addon: only a Blizzard aura button can render them,
+-- into addon-owned FontStrings it is handed (SetDurationText /
+-- SetApplicationCount) whose text is then secret. An aura value can
+-- therefore never be spliced into the entry's single string. Instead a
+-- format line is cut into COLUMNS that sit side by side, each with a fixed
+-- width reserved from the same worst-case mock the box is sized from:
+--
+--   * "cc" columns hold ordinary segments and are rendered by the addon
+--     through SubstituteTokens, one pooled FontString per column;
+--   * aura PIECES are rendered by the client. Core/AuraDisplay's text host
+--     anchors a client-driven FontString on each piece's geometry and
+--     installs a formatter carrying the piece's baked prefix and suffix.
+--
+-- What becomes aura content:
+--   * a {?aura}...{/aura} region (a {br} inside it ends the region on that
+--     line and reopens it on the next);
+--   * a bare {aura} or {aurastacks} outside a region (an implicit region
+--     holding only that token);
+--   * {status} on a standalone aura entry (buttonData.addedAs == "aura"),
+--     which means the aura's remaining time and is treated exactly as {aura}.
+-- A {!aura}...{/aura} region contributes nothing: the client cannot render
+-- "while the aura is inactive", so the region is dropped whole and is not
+-- measured.
+--
+-- Inside aura content: {aura} -> a "duration" piece, {aurastacks} -> a
+-- "stacks" piece. Literal text, colour tags and the static tokens {name},
+-- {keybind} and {icon} attach to the nearest PRECEDING value piece as its
+-- suffix, or, when nothing precedes them, to the NEXT value piece as its
+-- prefix. A region with no value token yields one "presence" piece whose
+-- text shows while the aura is active. Every other CC token inside aura
+-- content ({time}, {charges}, {stacks}, {status} on a spell entry, ...)
+-- emits nothing and sets plan.hasUnsupportedInAura; CC conditionals and
+-- effects inside aura content are ignored (their contents render as if
+-- present).
+--
+-- Per-entry limits: one client aura button carries one duration FontString
+-- and one count FontString, so across the whole format only the first
+-- "duration" piece and the first "stacks"-or-"presence" piece are live.
+-- Later ones become kind "unsupported" (no width, no render, their attached
+-- chunks dropped) and set plan.hasDuplicateAuraPiece.
+--
+-- Plan shape. BuildTextRenderPlan is pure structure; BakeTextRenderPlan
+-- fills the strings; measurement adds `width`; layout adds `x`, `y`,
+-- `height`, `justifyH` (and `runIndex` on cc columns):
+--   plan.composite         true when the plan must drive rendering: at least
+--                          one live piece exists, or a {!aura} region was
+--                          dropped. When false the plan is unused and every
+--                          existing single-FontString path runs unchanged.
+--   plan.hasAuraPieces     true when at least one live piece exists.
+--   plan.hasUnsupportedInAura, plan.hasDuplicateAuraPiece,
+--   plan.hasNegatedAuraRegion            editor advisories.
+--   plan.lines[i].columns[j]  in format order, one of
+--     { kind = "cc", segments = {...} }
+--     { kind = "duration"|"stacks"|"presence"|"unsupported",
+--       prefix = "", suffix = "", text = "",   -- baked; `%` escaped as `%%`
+--       prefixSegments = {...}, suffixSegments = {...}, textSegments = {...},
+--       region = n }                           -- colour state carries per region
+--   plan.runColumns        flat list of the "cc" columns in format order
+--   plan.auraPieces        flat list of the live pieces in format order
+--
+-- cc columns are self-balanced: a conditional, colour or effect tag still
+-- open when a column is cut is closed at its end and reopened at the start
+-- of the next cc column, so SubstituteTokens' per-call state never leaks
+-- across FontStrings. Colour tags open in cc content when an aura region
+-- starts are inherited by the region. Original segment tables are reused
+-- (never mutated); only closing tags are synthesized. A cc column that
+-- would render nothing (tags only) is not emitted.
+--
+-- Nothing here runs per tick: plans are built where the box is measured
+-- (create / restyle / invalidation) and cached beside the metrics.
+------------------------------------------------------------------------
+local AURA_VALUE_TOKEN_KIND = { aura = "duration", aurastacks = "stacks" }
+local AURA_STATIC_TOKENS = { name = true, keybind = true, icon = true }
+local CC_TAG_END_TYPE = {
+    cond_start = "cond_end",
+    color_start = "color_end",
+    effect_start = "effect_end",
+}
+
+local function IsStandaloneAuraEntry(buttonData)
+    return buttonData ~= nil and buttonData.addedAs == "aura"
+end
+
+local function IsAuraValueSegment(seg, statusIsAura)
+    if seg.type ~= "token" or seg.unknown then return nil end
+    local token = seg.value
+    if token == "status" and statusIsAura then token = "aura" end
+    return AURA_VALUE_TOKEN_KIND[token]
+end
+
+-- True when the list holds something the renderer would draw (a literal or
+-- a known token); tag-only lists draw nothing.
+local function SegmentsRender(segments)
+    for _, seg in ipairs(segments) do
+        local segType = seg.type
+        if segType == "literal" then
+            if seg.value ~= "" then return true end
+        elseif segType == "token" and not seg.unknown then
+            return true
+        end
+    end
+    return false
+end
+
+local function NewAuraPiece(kind, region)
+    return {
+        kind = kind,
+        region = region,
+        prefix = "",
+        suffix = "",
+        text = "",
+        prefixSegments = {},
+        suffixSegments = {},
+        textSegments = {},
+    }
+end
+
+local function BuildTextRenderPlan(segments, buttonData, style)
+    local plan = {
+        composite = false,
+        hasAuraPieces = false,
+        hasUnsupportedInAura = false,
+        hasDuplicateAuraPiece = false,
+        hasNegatedAuraRegion = false,
+        -- A CC conditional or effect wrapped around (or opened inside) aura
+        -- content cannot gate client-rendered text: the piece shows whenever
+        -- the aura is active. Editor advisory.
+        hasWrappedAuraPiece = false,
+        -- An {icon} baked into a piece: the cache must then treat the entry's
+        -- icon texture as an identity input (GetTextEntryMetrics).
+        hasIconInAura = false,
+        lines = {},
+        runColumns = {},
+        auraPieces = {},
+    }
+    local statusIsAura = IsStandaloneAuraEntry(buttonData)
+
+    local line = { columns = {} }
+    plan.lines[1] = line
+
+    -- cc state
+    local ccSegments = nil   -- the open cc column's list, nil between columns
+    local openTags = {}      -- cond/colour/effect starts open in cc content
+
+    -- aura state
+    local inAura = false
+    local auraDepth = 0      -- nested {?aura}/{!aura} tags inside a region
+    local dropDepth = 0      -- > 0 while inside a dropped {!aura} region
+    local pending = nil      -- chunks waiting for a value piece (its prefix)
+    local lastPiece = nil    -- the region's latest value piece (takes suffix)
+    local auraColors = nil   -- colour starts open inside the current region
+    local regionCount = 0
+    local haveDuration, haveCount = false, false
+
+    local function OpenCcColumn()
+        ccSegments = {}
+        for i = 1, #openTags do
+            ccSegments[i] = openTags[i]
+        end
+    end
+
+    local function CloseCcColumn()
+        if not ccSegments then return end
+        if SegmentsRender(ccSegments) then
+            for i = #openTags, 1, -1 do
+                local tag = openTags[i]
+                ccSegments[#ccSegments + 1] = { type = CC_TAG_END_TYPE[tag.type], value = tag.value }
+            end
+            local column = { kind = "cc", segments = ccSegments }
+            line.columns[#line.columns + 1] = column
+            plan.runColumns[#plan.runColumns + 1] = column
+        end
+        ccSegments = nil
+    end
+
+    local function AppendCc(seg)
+        if not ccSegments then OpenCcColumn() end
+        ccSegments[#ccSegments + 1] = seg
+        local segType = seg.type
+        if CC_TAG_END_TYPE[segType] then
+            openTags[#openTags + 1] = seg
+        elseif segType == "cond_end" or segType == "color_end" or segType == "effect_end" then
+            -- Same tolerance as SubstituteTokens: an end pops the nearest
+            -- open tag of its kind, whatever its name, and a stray end pops
+            -- nothing.
+            for i = #openTags, 1, -1 do
+                if CC_TAG_END_TYPE[openTags[i].type] == segType then
+                    table.remove(openTags, i)
+                    break
+                end
+            end
+        end
+    end
+
+    local function NewLine()
+        CloseCcColumn()
+        line = { columns = {} }
+        plan.lines[#plan.lines + 1] = line
+    end
+
+    local function AddPiece(piece, live)
+        line.columns[#line.columns + 1] = piece
+        if live then
+            plan.auraPieces[#plan.auraPieces + 1] = piece
+            plan.hasAuraPieces = true
+        else
+            plan.hasDuplicateAuraPiece = true
+        end
+    end
+
+    -- `seeds` are colour_start segments the region inherits (cc colours open
+    -- when it starts, or the previous line's aura colours after a {br}).
+    local function BeginAuraRegion(seeds)
+        CloseCcColumn()
+        for i = 1, #openTags do
+            if openTags[i].type ~= "color_start" then
+                plan.hasWrappedAuraPiece = true
+                break
+            end
+        end
+        regionCount = regionCount + 1
+        inAura = true
+        auraDepth = 0
+        pending = {}
+        lastPiece = nil
+        auraColors = {}
+        if seeds then
+            for i = 1, #seeds do
+                pending[i] = seeds[i]
+                auraColors[i] = seeds[i]
+            end
+        end
+    end
+
+    local function EndAuraRegion()
+        if not lastPiece and SegmentsRender(pending) then
+            local live = not haveCount
+            haveCount = true
+            local piece = NewAuraPiece(live and "presence" or "unsupported", regionCount)
+            piece.textSegments = pending
+            AddPiece(piece, live)
+        end
+        inAura = false
+        pending = nil
+        lastPiece = nil
+    end
+
+    local function AuraChunk(seg)
+        if lastPiece then
+            lastPiece.suffixSegments[#lastPiece.suffixSegments + 1] = seg
+        else
+            pending[#pending + 1] = seg
+        end
+    end
+
+    local function AddValuePiece(kind)
+        local live
+        if kind == "duration" then
+            live = not haveDuration
+            haveDuration = true
+        else
+            live = not haveCount
+            haveCount = true
+        end
+        local piece = NewAuraPiece(live and kind or "unsupported", regionCount)
+        piece.prefixSegments = pending
+        pending = {}
+        lastPiece = piece
+        AddPiece(piece, live)
+    end
+
+    local function AuraToken(seg)
+        if seg.unknown then return end
+        local kind = IsAuraValueSegment(seg, statusIsAura)
+        if kind then
+            AddValuePiece(kind)
+        elseif AURA_STATIC_TOKENS[seg.value] then
+            if seg.value == "icon" then
+                plan.hasIconInAura = true
+            end
+            AuraChunk(seg)
+        else
+            plan.hasUnsupportedInAura = true
+        end
+    end
+
+    local function CcColorSeeds()
+        local seeds = nil
+        for i = 1, #openTags do
+            if openTags[i].type == "color_start" then
+                seeds = seeds or {}
+                seeds[#seeds + 1] = openTags[i]
+            end
+        end
+        return seeds
+    end
+
+    for _, seg in ipairs(segments) do
+        local segType = seg.type
+        local isAuraTag = seg.value == "aura" and (segType == "cond_start" or segType == "cond_end")
+        if dropDepth > 0 then
+            if isAuraTag then
+                dropDepth = dropDepth + ((segType == "cond_start") and 1 or -1)
+            end
+        elseif inAura then
+            if isAuraTag then
+                if segType == "cond_start" then
+                    auraDepth = auraDepth + 1
+                elseif auraDepth > 0 then
+                    auraDepth = auraDepth - 1
+                else
+                    EndAuraRegion()
+                end
+            elseif segType == "token" and seg.value == "br" and not seg.unknown then
+                local carried = auraColors
+                EndAuraRegion()
+                NewLine()
+                BeginAuraRegion(carried)
+            elseif segType == "token" then
+                AuraToken(seg)
+            elseif segType == "literal" then
+                AuraChunk(seg)
+            elseif segType == "color_start" then
+                AuraChunk(seg)
+                auraColors[#auraColors + 1] = seg
+            elseif segType == "color_end" then
+                AuraChunk(seg)
+                auraColors[#auraColors] = nil
+            elseif segType == "cond_start" or segType == "effect_start" then
+                -- CC conditionals and effects cannot gate client-rendered
+                -- text: their contents render as if present. Flagged so the
+                -- editor can say so; the end tags are simply ignored.
+                plan.hasWrappedAuraPiece = true
+            end
+        else
+            if isAuraTag then
+                if segType == "cond_end" then
+                    -- Stray {/aura}: nothing to close.
+                elseif seg.negated then
+                    plan.hasNegatedAuraRegion = true
+                    dropDepth = 1
+                else
+                    BeginAuraRegion(CcColorSeeds())
+                end
+            elseif IsAuraValueSegment(seg, statusIsAura) then
+                BeginAuraRegion(CcColorSeeds())
+                AuraToken(seg)
+                EndAuraRegion()
+            elseif segType == "token" and seg.value == "br" and not seg.unknown then
+                NewLine()
+            else
+                AppendCc(seg)
+            end
+        end
+    end
+    if dropDepth == 0 and inAura then
+        -- Unclosed {?aura}: the region runs to the end of the format, as an
+        -- unclosed conditional does in SubstituteTokens.
+        EndAuraRegion()
+    end
+    CloseCcColumn()
+
+    plan.composite = plan.hasAuraPieces or plan.hasNegatedAuraRegion
+    return plan
+end
+
+-- Forward declaration: the memoized colour-escape helper is defined with the
+-- rest of the colour wrapping below, after the measurement section that
+-- bakes plans through it.
+local ColorPrefix
+
+local bakeParts = {}
+local bakeColorStack = {}
+
+-- `%` must survive the client's formatter, which treats the baked prefix and
+-- suffix as a format string.
+local function BakeEscape(text)
+    if text == nil or text == "" then return end
+    bakeParts[#bakeParts + 1] = (text:gsub("%%", "%%%%"))
+end
+
+-- Walks one chunk list into bakeParts, carrying the region's colour state in
+-- bakeColorStack. Returns the colour table active afterwards. Colour tags
+-- resolve to raw |cffRRGGBB / |r escapes here rather than per-chunk wraps so
+-- an override opened before a value token still colours the client-rendered
+-- value between prefix and suffix.
+local function BakeChunks(chunks, colorOverride, ctx, iconEscape, cdColor, readyColor, auraColor, customColor)
+    for _, seg in ipairs(chunks) do
+        local segType = seg.type
+        if segType == "literal" then
+            BakeEscape(seg.value)
+        elseif segType == "token" then
+            local token = seg.value
+            if token == "name" then
+                BakeEscape(ctx.name)
+            elseif token == "keybind" then
+                BakeEscape(ctx.keybind)
+            elseif token == "icon" then
+                BakeEscape(iconEscape)
+            end
+        elseif segType == "color_start" then
+            bakeColorStack[#bakeColorStack + 1] = colorOverride
+            local name = seg.value
+            if name == "cooldown" then colorOverride = cdColor
+            elseif name == "ready" then colorOverride = readyColor
+            elseif name == "active" then colorOverride = auraColor
+            elseif name == "custom" then colorOverride = customColor
+            end
+            if colorOverride then
+                bakeParts[#bakeParts + 1] = ColorPrefix(colorOverride)
+            end
+        elseif segType == "color_end" then
+            colorOverride = bakeColorStack[#bakeColorStack]
+            bakeColorStack[#bakeColorStack] = nil
+            bakeParts[#bakeParts + 1] = "|r"
+            if colorOverride then
+                bakeParts[#bakeParts + 1] = ColorPrefix(colorOverride)
+            end
+        end
+    end
+    return colorOverride
+end
+
+-- Fills every piece's prefix/suffix/text from its chunk lists. `ctx` is the
+-- mock context (its name and keybind are the same strings SubstituteTokens
+-- would resolve, so the cache's identity comparisons already cover them);
+-- `iconEscape` is the entry's inline icon escape. Each piece's strings are
+-- self-contained: a colour active at a piece boundary is reopened at the
+-- start of the next piece and closed at the end of the current one. A value
+-- with no override wears the same role colour SubstituteTokens gives it
+-- (the aura colour for a duration, the base colour for stacks).
+local function BakeTextRenderPlan(plan, style, ctx, iconEscape)
+    local cdColor = style.textCooldownColor or DEFAULT_CD_COLOR
+    local readyColor = style.textReadyColor or DEFAULT_READY_COLOR
+    local auraColor = style.textAuraColor or DEFAULT_AURA_COLOR
+    local customColor = style.textCustomColor or DEFAULT_CUSTOM_COLOR
+
+    local region = nil
+    local colorOverride = nil
+    for _, planLine in ipairs(plan.lines) do
+        for _, column in ipairs(planLine.columns) do
+            local kind = column.kind
+            if kind ~= "cc" and kind ~= "unsupported" then
+                if column.region ~= region then
+                    region = column.region
+                    colorOverride = nil
+                    wipe(bakeColorStack)
+                end
+                if kind == "presence" then
+                    wipe(bakeParts)
+                    if colorOverride then bakeParts[1] = ColorPrefix(colorOverride) end
+                    colorOverride = BakeChunks(column.textSegments, colorOverride, ctx, iconEscape,
+                        cdColor, readyColor, auraColor, customColor)
+                    if colorOverride then bakeParts[#bakeParts + 1] = "|r" end
+                    column.text = table_concat(bakeParts)
+                else
+                    wipe(bakeParts)
+                    if colorOverride then bakeParts[1] = ColorPrefix(colorOverride) end
+                    colorOverride = BakeChunks(column.prefixSegments, colorOverride, ctx, iconEscape,
+                        cdColor, readyColor, auraColor, customColor)
+                    local valueColor = (not colorOverride) and (kind == "duration") and auraColor or nil
+                    if valueColor then bakeParts[#bakeParts + 1] = ColorPrefix(valueColor) end
+                    column.prefix = table_concat(bakeParts)
+
+                    wipe(bakeParts)
+                    if valueColor then bakeParts[1] = "|r" end
+                    colorOverride = BakeChunks(column.suffixSegments, colorOverride, ctx, iconEscape,
+                        cdColor, readyColor, auraColor, customColor)
+                    if colorOverride then bakeParts[#bakeParts + 1] = "|r" end
+                    column.suffix = table_concat(bakeParts)
+                end
+            end
+        end
+    end
+    wipe(bakeParts)
+    wipe(bakeColorStack)
 end
 
 ------------------------------------------------------------------------
@@ -412,8 +898,9 @@ local function BuildMockContext(fs, style, buttonData, button, identity)
     end
 
     ctx.stacks = WORST_CASE_STACKS
-    -- No {aura} entry: the token renders nothing on 12.1, so it reserves no
-    -- width either.
+    -- No {aura}/{aurastacks} entries: those never reach the mock text. The
+    -- planner cuts them out as aura pieces, which MeasureTextEntry measures
+    -- on their own from ctx.time and WORST_CASE_STACKS.
     return ctx
 end
 
@@ -490,8 +977,10 @@ local function BuildMockText(segments, ctx, presence)
                 MockEmit("\n")
             end
             -- missingcharges/zerocharges are conditional-only: as bare
-            -- tokens SubstituteTokens emits nothing for them either. {aura}
-            -- renders nothing at all on 12.1, so it is absent here too.
+            -- tokens SubstituteTokens emits nothing for them either.
+            -- {aura}/{aurastacks} are absent because they never reach this
+            -- walk: any format holding one produces a composite plan, whose
+            -- cc columns exclude them and whose pieces are measured apart.
         end
         -- effect_start/effect_end/color_start/color_end and unknown tokens
         -- contribute no width.
@@ -652,9 +1141,54 @@ local function MeasureWorstCaseVariant(fs, segments, ctx)
     return width, lineCount
 end
 
--- Returns width, height, lineCount, provisional. `provisional` means the
--- numbers were measured against a {name} the client had not resolved yet, so
--- the caller must not treat them as final (see GetTextEntryMetrics).
+-- Composite measurement: every column of every line gets its own reserved
+-- width, rounded UP to a whole pixel so the anchored offsets the layout
+-- derives from them stay pixel-aligned. cc columns measure through the same
+-- conditional-variant enumeration as a whole format; aura pieces measure as
+-- one mock string around the same worst-case time / stack values. Colour
+-- escapes are zero-width in GetUnboundedStringWidth, exactly as in the mock
+-- text, so the baked strings measure as built -- only the `%%` escaping is
+-- undone, since the client renders it as a single `%`.
+local function MeasurePieceMock(fs, text)
+    if text == "" then return 0 end
+    return MeasureStringWidth(fs, (text:gsub("%%%%", "%%")))
+end
+
+local function MeasureRenderPlan(fs, plan, ctx)
+    local maxLineWidth = 0
+    for _, planLine in ipairs(plan.lines) do
+        local lineWidth = 0
+        for _, column in ipairs(planLine.columns) do
+            local kind = column.kind
+            local width
+            if kind == "cc" then
+                width = MeasureWorstCaseVariant(fs, column.segments, ctx)
+            elseif kind == "duration" then
+                width = MeasurePieceMock(fs, column.prefix .. ctx.time .. column.suffix)
+            elseif kind == "stacks" then
+                width = MeasurePieceMock(fs, column.prefix .. WORST_CASE_STACKS .. column.suffix)
+            elseif kind == "presence" then
+                width = MeasurePieceMock(fs, column.text)
+            else
+                width = 0
+            end
+            width = math_ceil(width)
+            column.width = width
+            lineWidth = lineWidth + width
+        end
+        planLine.width = lineWidth
+        if lineWidth > maxLineWidth then
+            maxLineWidth = lineWidth
+        end
+    end
+    return maxLineWidth, #plan.lines
+end
+
+-- Returns width, height, lineCount, provisional, plan, lineHeight.
+-- `provisional` means the numbers were measured against a {name} the client
+-- had not resolved yet, so the caller must not treat them as final (see
+-- GetTextEntryMetrics). `plan` is the baked, column-measured render plan
+-- when the format is composite and nil otherwise.
 local function MeasureTextEntry(style, buttonData, formatString, button, identity)
     local fs = GetMeasureFontString()
     local font = CooldownCompanion:FetchFont(style.textFont or "Friz Quadrata TT")
@@ -670,10 +1204,33 @@ local function MeasureTextEntry(style, buttonData, formatString, button, identit
     local segments = ParseFormatString(formatString)
     local ctx = BuildMockContext(fs, style, buttonData, button, identity)
 
-    local width, lineCount = MeasureWorstCaseVariant(fs, segments, ctx)
+    local width, lineCount
+    local iconTex
+    local plan = BuildTextRenderPlan(segments, buttonData, style)
+    if plan.composite then
+        -- {icon} inside aura content bakes the live texture when a button
+        -- exists; the placeholder measures identically (see
+        -- MEASURE_ICON_ESCAPE), so the data-only path agrees to the pixel.
+        -- The texture is read ONLY when a piece actually bakes it: it is
+        -- the one identity input the cache then has to compare, and a plan
+        -- without {icon} in aura content never touches it.
+        local iconEscape = MEASURE_ICON_ESCAPE
+        if plan.hasIconInAura and button and button.icon then
+            iconTex = button.icon:GetTexture()
+        end
+        if iconTex then
+            iconEscape = string_format("|T%s:0|t", tostring(iconTex))
+        end
+        BakeTextRenderPlan(plan, style, ctx, iconEscape)
+        width, lineCount = MeasureRenderPlan(fs, plan, ctx)
+    else
+        plan = nil
+        width, lineCount = MeasureWorstCaseVariant(fs, segments, ctx)
+    end
 
     -- Only a format that actually renders {name} is wrong because of an
     -- unresolved name; every other format measures the same either way.
+    -- (A {name} inside aura content is in `segments` too, so it counts.)
     local provisional = ctx.namePending == true and FormatHasNameToken(segments)
 
     -- Same helper the live FontString anchors through, against the measuring
@@ -685,7 +1242,7 @@ local function MeasureTextEntry(style, buttonData, formatString, button, identit
 
     fs:SetText("")
 
-    return boxWidth, boxHeight, lineCount, provisional
+    return boxWidth, boxHeight, lineCount, provisional, plan, lineHeight, iconTex
 end
 
 -- Per-entry metrics cache. Keyed by buttonData (or the style table for the
@@ -701,6 +1258,20 @@ end
 -- has no ephemerons, so the entry -- and the style table it pointed at -- could
 -- never be collected even after the group was deleted.
 local textMetricsCache = setmetatable({}, { __mode = "k" })
+
+-- The four role colours BakeTextRenderPlan can bake into a piece are cache
+-- inputs too. Compared component-wise (colour tables are mutated in place by
+-- the config, so table identity proves nothing) and stored as plain fields,
+-- so a hit allocates nothing.
+local function SnapshotColor(cached, key, color)
+    cached[key .. "R"], cached[key .. "G"], cached[key .. "B"], cached[key .. "A"] =
+        color[1], color[2], color[3], color[4]
+end
+
+local function ColorMatches(cached, key, color)
+    return cached[key .. "R"] == color[1] and cached[key .. "G"] == color[2]
+        and cached[key .. "B"] == color[3] and cached[key .. "A"] == color[4]
+end
 
 local function GetTextEntryMetrics(style, buttonData, formatString, button, forceRefresh)
     if type(style) ~= "table" then
@@ -724,6 +1295,10 @@ local function GetTextEntryMetrics(style, buttonData, formatString, button, forc
         and cached.decimalTimers == style.decimalTimers
         and cached.borderSize == style.textBorderSize
         and cached.borderMode == style.textBorderRenderMode
+        and ColorMatches(cached, "cd", style.textCooldownColor or DEFAULT_CD_COLOR)
+        and ColorMatches(cached, "ready", style.textReadyColor or DEFAULT_READY_COLOR)
+        and ColorMatches(cached, "aura", style.textAuraColor or DEFAULT_AURA_COLOR)
+        and ColorMatches(cached, "custom", style.textCustomColor or DEFAULT_CUSTOM_COLOR)
 
     -- The style keys above are only half the inputs. The other half is what the
     -- CLIENT resolved: the entry's displayed name and its keybind text. Both
@@ -741,10 +1316,19 @@ local function GetTextEntryMetrics(style, buttonData, formatString, button, forc
 
     local identity = ResolveMeasureIdentity(buttonData, button, cached)
     local probeName, probeKeybind = ProbeMeasureStrings(buttonData, button, identity)
+    -- Third client-resolved input, only for plans that baked an {icon} into
+    -- a piece (a spell transform swaps the texture with no style edit). A
+    -- data-only read has no texture to probe and keeps the stored one, the
+    -- same fallback the spell/item identity uses.
+    local probeIcon = cached and cached.iconTexture or nil
+    if cached and cached.plan and cached.plan.hasIconInAura and button and button.icon then
+        probeIcon = button.icon:GetTexture()
+    end
 
     if not forceRefresh and inputsMatch
         and cached.name == probeName
-        and cached.keybind == probeKeybind then
+        and cached.keybind == probeKeybind
+        and cached.iconTexture == probeIcon then
         cached.probePass = now
         if not cached.provisional then
             return cached.width, cached.height, cached.lineCount
@@ -763,13 +1347,19 @@ local function GetTextEntryMetrics(style, buttonData, formatString, button, forc
         end
     end
 
-    local width, height, lineCount, provisional =
+    local width, height, lineCount, provisional, plan, lineHeight, iconTex =
         MeasureTextEntry(style, buttonData, fmt, button, identity)
 
     if not cached then
         cached = {}
         textMetricsCache[cacheKey] = cached
     end
+    -- The composite render plan (nil for a single-string format) and the
+    -- line height its rows are stacked on. ApplyTextLayout reads both back
+    -- through the cache right after its forced re-measure; the data-only
+    -- readers never look at them.
+    cached.plan = plan
+    cached.lineHeight = lineHeight
     cached.fmt = fmt
     -- See the cache's INVARIANT: never store the style on the entry whose key
     -- it already is, or the weak key can never be collected.
@@ -787,10 +1377,15 @@ local function GetTextEntryMetrics(style, buttonData, formatString, button, forc
     cached.decimalTimers = style.decimalTimers
     cached.borderSize = style.textBorderSize
     cached.borderMode = style.textBorderRenderMode
+    SnapshotColor(cached, "cd", style.textCooldownColor or DEFAULT_CD_COLOR)
+    SnapshotColor(cached, "ready", style.textReadyColor or DEFAULT_READY_COLOR)
+    SnapshotColor(cached, "aura", style.textAuraColor or DEFAULT_AURA_COLOR)
+    SnapshotColor(cached, "custom", style.textCustomColor or DEFAULT_CUSTOM_COLOR)
     -- The client-resolved half of the inputs, plus the ids they were resolved
     -- through so a later data-only read reproduces the same strings.
     cached.name = probeName
     cached.keybind = probeKeybind
+    cached.iconTexture = iconTex
     cached.identitySpellId = identity.spellId
     cached.identityItemId = identity.itemId
     cached.probePass = now
@@ -804,14 +1399,155 @@ local function GetTextEntryMetrics(style, buttonData, formatString, button, forc
     return width, height, lineCount
 end
 
+------------------------------------------------------------------------
+-- COMPOSITE LAYOUT
+--
+-- A composite entry renders its cc columns through pooled FontStrings
+-- (button._textRunStrings, created lazily, one per cc column in format
+-- order) while button.textString stays blank. Each column is anchored at
+-- its measured x/y inside the box and sized to its reserved width; a line's
+-- columns are shifted together by the alignment slack so LEFT / CENTER /
+-- RIGHT behave as they do for a single string. Aura pieces get the same
+-- geometry written onto their column tables (x, y, width, height,
+-- justifyH); Core/AuraDisplay's text host anchors the client's FontStrings
+-- from those numbers and nothing here creates them.
+------------------------------------------------------------------------
+-- Font, alignment, shadow and base colour for a pooled run string: the same
+-- recipe UpdateTextStyle / CreateTextFrame apply to button.textString.
+local function StyleTextRunString(fs, style)
+    local font = CooldownCompanion:FetchFont(style.textFont or "Friz Quadrata TT")
+    local fontSize = style.textFontSize or 12
+    local fontOutline = ST.GetEffectiveFontOutline(style.textFontOutline or "OUTLINE")
+    fs:SetFont(font, fontSize, fontOutline)
+    local baseColor = style.textFontColor or DEFAULT_WHITE
+    fs:SetTextColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4] or 1)
+    fs:SetJustifyH(style.textAlignment or "LEFT")
+    fs:SetJustifyV("MIDDLE")
+    fs:SetWordWrap(false)
+    ST.ApplyFontShadowForOutline(fs, fontOutline, style.textShadow == true)
+end
+
+local function HideTextRunStrings(button, fromIndex)
+    local runs = button._textRunStrings
+    if not runs then return end
+    for i = fromIndex, #runs do
+        local fs = runs[i]
+        fs:SetText("")
+        fs:SetAlpha(1.0)
+        fs:Hide()
+    end
+end
+
+-- One alpha writer for both modes: the single string, or every live cc run.
+local function SetTextRunsAlpha(button, alpha)
+    local plan = button._textRenderPlan
+    if plan then
+        local runs = button._textRunStrings
+        local runColumns = plan.runColumns
+        for i = 1, #runColumns do
+            runs[runColumns[i].runIndex]:SetAlpha(alpha)
+        end
+    else
+        button.textString:SetAlpha(alpha)
+    end
+end
+
+-- The geometry of a composite plan, with no writes: walks the lines and
+-- columns in format order and hands each column's placement to `sink`
+-- (column, x, y, width, height, justifyH). x already includes the left
+-- padding, y is negative-down from the box's top, width is the column's
+-- reserved width and height the line height. The live layout below writes
+-- these onto the columns; the config mirror keeps its own copy, since the
+-- plan it reads is the live entry's (see ST._GetTextRenderPlanMetrics).
+local function ComputeTextColumnGeometry(plan, style, lineHeight, boxWidth, region, sink)
+    local padX, padY = GetTextStringPadding(style, region)
+    local align = style.textAlignment or "LEFT"
+    local innerWidth = boxWidth - padX * 2
+    for lineIndex, planLine in ipairs(plan.lines) do
+        local x
+        if align == "CENTER" then
+            x = math_floor((innerWidth - planLine.width) / 2)
+        elseif align == "RIGHT" then
+            x = innerWidth - planLine.width
+        else
+            x = 0
+        end
+        local y = -(padY + (lineIndex - 1) * lineHeight)
+        for _, column in ipairs(planLine.columns) do
+            sink(column, padX + x, y, column.width, lineHeight, align)
+            x = x + column.width
+        end
+    end
+end
+
+-- The live layout's sink. Module-level with its inputs in upvalues rather
+-- than a closure per restyle; only LayoutCompositeText drives it, and never
+-- re-entrantly.
+local layoutButton, layoutStyle, layoutRunIndex
+local function LayoutCompositeColumn(column, x, y, width, height, justifyH)
+    column.x = x
+    column.y = y
+    column.height = height
+    column.justifyH = justifyH
+    if column.kind == "cc" then
+        local button = layoutButton
+        local runs = button._textRunStrings
+        local runIndex = layoutRunIndex + 1
+        layoutRunIndex = runIndex
+        local fs = runs[runIndex]
+        if not fs then
+            fs = button:CreateFontString(nil, "OVERLAY")
+            runs[runIndex] = fs
+        end
+        StyleTextRunString(fs, layoutStyle)
+        fs:ClearAllPoints()
+        fs:SetPoint("TOPLEFT", button, "TOPLEFT", x, y)
+        fs:SetSize(width, height)
+        fs:Show()
+        column.runIndex = runIndex
+    end
+end
+
+local function LayoutCompositeText(button, style, plan, lineHeight, boxWidth)
+    if not button._textRunStrings then
+        button._textRunStrings = {}
+    end
+    layoutButton, layoutStyle, layoutRunIndex = button, style, 0
+    ComputeTextColumnGeometry(plan, style, lineHeight, boxWidth, button, LayoutCompositeColumn)
+    local runIndex = layoutRunIndex
+    layoutButton, layoutStyle = nil, nil
+    HideTextRunStrings(button, runIndex + 1)
+    -- The single string renders nothing while the plan drives the entry. It
+    -- stays anchored, so a later non-composite restyle simply resumes it.
+    button.textString:SetText("")
+    button.textString:SetAlpha(1.0)
+    button._textRenderPlan = plan
+end
+
 local function ApplyTextLayout(button, style, formatString)
+    local buttonData = button.buttonData
     -- Force a re-measure: this is the restyle path, and it is the one place
     -- that re-resolves late-arriving inputs (spell/item name, keybind).
     local width, height, lineCount =
-        GetTextEntryMetrics(style, button.buttonData, formatString, button, true)
+        GetTextEntryMetrics(style, buttonData, formatString, button, true)
     local isMultiline = lineCount > 1
 
     button:SetSize(width, height)
+
+    -- The forced re-measure just refreshed this entry's cache slot, which is
+    -- where the plan and line height live (same key GetTextEntryMetrics used).
+    local cached = textMetricsCache[buttonData or style]
+    local plan = cached and cached.plan
+    if plan then
+        LayoutCompositeText(button, style, plan, cached.lineHeight, width)
+        return
+    end
+    if button._textRenderPlan then
+        -- Composite -> single string (the format was edited): put the pooled
+        -- runs away and let button.textString render again.
+        HideTextRunStrings(button, 1)
+        button._textRenderPlan = nil
+    end
     button.textString:SetJustifyV(isMultiline and "TOP" or "MIDDLE")
     button.textString:SetWordWrap(isMultiline)
 end
@@ -864,7 +1600,17 @@ local function RefreshTextEntryLayout(button)
     -- Measured box sizes are whole numbers, so this is an equality test with a
     -- sub-pixel guard: nothing here may turn a frequent event (action bar slot
     -- changes route through OnKeybindsChanged) into a per-event panel restyle.
-    if math_abs(width - currentWidth) < 0.5 and math_abs(height - currentHeight) < 0.5 then
+    --
+    -- A composite entry also re-lays out when the read above re-measured and
+    -- so replaced the cached plan (the plan object the button renders is the
+    -- one the cache handed it): a {keybind} baked into an aura piece can
+    -- rebind to a same-width key, and the client host reads its pieces from
+    -- the button's plan. A cache hit keeps the same object, so this costs one
+    -- comparison when nothing moved.
+    cached = textMetricsCache[buttonData]
+    local planChanged = (cached and cached.plan) ~= button._textRenderPlan
+    if not planChanged
+        and math_abs(width - currentWidth) < 0.5 and math_abs(height - currentHeight) < 0.5 then
         return nil
     end
 
@@ -899,7 +1645,9 @@ end
 -- the colour table itself (they belong to persisted style data).
 local colorPrefixCache = setmetatable({}, { __mode = "k" })
 
-local function ColorPrefix(color)
+-- Assigns the forward-declared local above the measurement section (the
+-- plan baker resolves colour tags through it).
+function ColorPrefix(color)
     local r, g, b = color[1], color[2], color[3]
     local entry = colorPrefixCache[color]
     if entry and entry.r == r and entry.g == g and entry.b == b then
@@ -1043,11 +1791,11 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
     elseif tokenName == "stacks" then
         return stackDisplayKind ~= nil
     elseif tokenName == "aura" then
-        -- Structurally false on 12.1: nothing sets _auraActive true any more
-        -- and the aura's remaining duration is the client's, not the addon's.
-        -- Kept as a defined answer so legacy {?aura} regions render empty
-        -- rather than erroring or falling through to an unknown token.
-        return button._auraActive == true or auraIsSecret or (auraRemaining and auraRemaining > 0)
+        -- Never asked in practice: {?aura}/{!aura} regions are resolved by
+        -- BuildTextRenderPlan (client-rendered content / dropped) and never
+        -- reach SubstituteTokens. The aura's presence is the client's, not
+        -- the addon's, so the defined fallback answer is false.
+        return false
     elseif tokenName == "keybind" then
         local kb = CooldownCompanion:GetKeybindText(button.buttonData, button._resolvedItemId, button)
         return kb and kb ~= ""
@@ -1287,13 +2035,11 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
                     end
                 end
 
-            elseif token == "aura" then
-                -- Emits NOTHING: text panels are aura-blind on 12.1, which
-                -- made the tracked aura's remaining time and stack count
-                -- unreadable to the addon. A client-drawn docked readout was
-                -- trialed and removed by owner decision, so the token is kept
-                -- only to stop saved formats degrading to literal braces.
-                -- The config's format editor flags it.
+            elseif token == "aura" or token == "aurastacks" then
+                -- Emits NOTHING here: the planner routes both tokens to
+                -- client-rendered aura pieces, so a segment list handed to
+                -- this walk never holds them. Kept as a defined no-op for
+                -- safety only.
 
             elseif token == "keybind" then
                 local kb = CooldownCompanion:GetKeybindText(buttonData, button._resolvedItemId, button)
@@ -1393,33 +2139,23 @@ local SECRET_PLACEHOLDERS = {
     {text = "%NAME%",   fmt = "%s"},
 }
 
-local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverride)
-    local style = button.style
-    if not style or not button._textSegments then
-        ClearTextVisualState(button)
-        return
-    end
-    local shouldStoreTextVisualState = ShouldStoreTextVisualState()
-    if not shouldStoreTextVisualState then
-        ClearTextVisualState(button)
-    end
+-- One run: substitutes `segments` and writes the result onto `fontString`,
+-- through the secret pass-through when a secret value is in play. Shared by
+-- the single-string path (button.textString, button._textSegments) and the
+-- composite path (one call per cc column). The per-button scratch tables
+-- SubstituteTokens and the secret pass borrow are reused across columns
+-- within a tick; each run completes before the next starts.
+-- Returns whether a secret name placeholder was written.
+local function RenderTextRun(button, fontString, segments, style, es, secretNameOverride, hasSecretNameOverride, shouldStoreTextVisualState)
+    local text, secretValue, secretColorToken, secretStackValue, secretNameValue, hasSecretNameValue = SubstituteTokens(button, segments, style, es, secretNameOverride, hasSecretNameOverride, shouldStoreTextVisualState)
 
-    -- Reset pulse content flag before substitution
-    local es = button._effectState
-    if es then
-        es.pulseActive = false
-    end
-
-    local text, secretValue, secretColorToken, secretStackValue, secretNameValue, hasSecretNameValue = SubstituteTokens(button, button._textSegments, style, es, secretNameOverride, hasSecretNameOverride, shouldStoreTextVisualState)
-    button._textSecretNameActive = hasSecretNameValue == true
+    local baseColor = style.textFontColor or DEFAULT_WHITE
+    fontString:SetTextColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4] or 1)
 
     if secretValue or secretStackValue or hasSecretNameValue then
         -- Secret value pass-through: use SetFormattedText with the secret value
         -- Per-token coloring via |c..|r escape sequences works alongside % format specifiers
         -- (they operate at different layers: WoW text rendering vs C sprintf)
-        local baseColor = style.textFontColor or DEFAULT_WHITE
-        button.textString:SetTextColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4] or 1)
-
         local fmtStr = text
 
         -- Sentinel placeholders and their format specifiers / secret values
@@ -1475,7 +2211,7 @@ local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverri
         end
 
         local finalFmt = table_concat(resultParts)
-        button.textString:SetFormattedText(finalFmt, unpack(args))
+        fontString:SetFormattedText(finalFmt, unpack(args))
         if shouldStoreTextVisualState then
             StoreTextVisualApplied(button, "formatted", text, secretValue, secretStackValue, hasSecretNameValue)
         end
@@ -1487,21 +2223,60 @@ local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverri
         allPlaceholders[5].active = nil
     else
         -- Normal path: full per-token coloring via escape sequences
-        local baseColor = style.textFontColor or DEFAULT_WHITE
-        button.textString:SetTextColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4] or 1)
-        button.textString:SetText(text)
+        fontString:SetText(text)
         if shouldStoreTextVisualState then
             StoreTextVisualApplied(button, "text", text, secretValue, secretStackValue, hasSecretNameValue)
         end
     end
 
-    -- Apply pulse alpha effect to the FontString
+    return hasSecretNameValue == true
+end
+
+local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverride)
+    local style = button.style
+    if not style or not button._textSegments then
+        ClearTextVisualState(button)
+        return
+    end
+    local shouldStoreTextVisualState = ShouldStoreTextVisualState()
+    if not shouldStoreTextVisualState then
+        ClearTextVisualState(button)
+    end
+
+    -- Reset pulse content flag before substitution
+    local es = button._effectState
     if es then
-        if es.pulseActive then
-            button.textString:SetAlpha(es.pulseAlpha)
-        else
-            button.textString:SetAlpha(1.0)
+        es.pulseActive = false
+    end
+
+    local plan = button._textRenderPlan
+    local secretNameActive
+    if plan then
+        -- Composite: one run per cc column onto its pooled FontString. The
+        -- aura pieces are the client's and are not touched here. The visual
+        -- state snapshot (debug-only) records the first column.
+        local runs = button._textRunStrings
+        local runColumns = plan.runColumns
+        secretNameActive = false
+        for i = 1, #runColumns do
+            local column = runColumns[i]
+            if RenderTextRun(button, runs[column.runIndex], column.segments, style, es,
+                secretNameOverride, hasSecretNameOverride, shouldStoreTextVisualState and i == 1) then
+                secretNameActive = true
+            end
         end
+        if shouldStoreTextVisualState and #runColumns == 0 then
+            ClearTextVisualState(button)
+        end
+    else
+        secretNameActive = RenderTextRun(button, button.textString, button._textSegments, style, es,
+            secretNameOverride, hasSecretNameOverride, shouldStoreTextVisualState)
+    end
+    button._textSecretNameActive = secretNameActive
+
+    -- Apply pulse alpha effect to the FontString(s)
+    if es then
+        SetTextRunsAlpha(button, es.pulseActive and es.pulseAlpha or 1.0)
     end
     if shouldStoreTextVisualState then
         UpdateTextVisualAppliedPulse(button)
@@ -1524,11 +2299,7 @@ local function EffectOnUpdate(self, elapsed)
     es.pulseAlpha = ComputePulse(now)
 
     if self._textSecretNameActive then
-        if es.pulseActive then
-            self.textString:SetAlpha(es.pulseAlpha)
-        else
-            self.textString:SetAlpha(1.0)
-        end
+        SetTextRunsAlpha(self, es.pulseActive and es.pulseAlpha or 1.0)
         if ShouldStoreTextVisualState() then
             UpdateTextVisualAppliedPulse(self)
         else
@@ -1554,7 +2325,7 @@ local function InstallEffectOnUpdate(button)
         button._effectState = nil
         button._effectElapsed = nil
         button:SetScript("OnUpdate", nil)
-        button.textString:SetAlpha(1.0)
+        SetTextRunsAlpha(button, 1.0)
     end
 end
 
@@ -1794,3 +2565,103 @@ ST._ApplyTextEntryLayout = ApplyTextEntryLayout
 -- (style, region) -> padX, padY. The config text mirror anchors its replica
 -- FontString with the same padding the live renderer uses.
 ST._GetTextStringPadding = GetTextStringPadding
+-- (style, buttonData, formatString) -> width, height, lineCount, plan,
+-- lineHeight. GetTextEntryMetrics plus the cache entry's composite plan and
+-- line height (plan is nil for a single-string format). The plan is the SAME
+-- object the live entry renders from -- LayoutCompositeText writes its
+-- geometry onto these columns and the aura host reads it back -- so a reader
+-- must never write to it; the config mirror keeps its own geometry through
+-- ComputeTextColumnGeometry's sink.
+ST._GetTextRenderPlanMetrics = function(style, buttonData, formatString)
+    local width, height, lineCount = GetTextEntryMetrics(style, buttonData, formatString)
+    local cached = type(style) == "table" and textMetricsCache[buttonData or style] or nil
+    return width, height, lineCount, cached and cached.plan or nil, cached and cached.lineHeight or nil
+end
+-- (plan, style, lineHeight, boxWidth, region, sink) -> nothing. Read-only
+-- geometry walk of a composite plan; the same numbers the live layout writes
+-- (see the function's note). The config mirror positions its stand-in
+-- FontStrings through the sink.
+ST._ComputeTextColumnGeometry = ComputeTextColumnGeometry
+-- The placeholder an {icon} bakes into an aura piece when the plan is
+-- measured with no button in hand (data-only readers, the config mirror);
+-- a live entry bakes its own texture instead.
+ST._TEXT_MEASURE_ICON_ESCAPE = MEASURE_ICON_ESCAPE
+-- (segments, buttonData, style) -> plan. Pure planner (structure only, no
+-- baked strings, no geometry) for the format editor and the config mirror;
+-- see the TEXT RENDER PLAN comment for the shape and the advisory flags.
+ST._BuildTextRenderPlan = BuildTextRenderPlan
+-- (button) -> the button's laid-out live aura pieces as a flat array in
+-- format order (kind, prefix, suffix, text, x, y, width, height, justifyH),
+-- or nil when the entry is not composite. Core/AuraDisplay's text host reads
+-- this at bind time, out of combat; the array is the plan's own and must not
+-- be mutated.
+ST._GetTextAuraPieces = function(button)
+    local plan = button and button._textRenderPlan
+    if not plan or not plan.hasAuraPieces then return nil end
+    return plan.auraPieces
+end
+-- (buttonData, style) -> boolean. Data-only: does this entry's format put at
+-- least one live aura piece on the client? No button needed, so the rebind
+-- pass can decide which text entries get an aura button.
+ST._TextEntryHasAuraPieces = function(buttonData, style)
+    local fmt = buttonData and buttonData.textFormat
+        or (type(style) == "table" and style.textFormat)
+        or DEFAULT_TEXT_FORMAT
+    return BuildTextRenderPlan(ParseFormatString(fmt), buttonData, style).hasAuraPieces
+end
+-- (buttonData, style) -> { duration = bool, stacks = bool, presence = bool }.
+-- Data-only: which live piece kinds this entry's format puts on the client.
+-- The Preview Command Center offers each aura preview only where a matching
+-- column exists.
+ST._TextEntryAuraPieceKinds = function(buttonData, style)
+    local fmt = buttonData and buttonData.textFormat
+        or (type(style) == "table" and style.textFormat)
+        or DEFAULT_TEXT_FORMAT
+    local kinds = { duration = false, stacks = false, presence = false }
+    local plan = BuildTextRenderPlan(ParseFormatString(fmt), buttonData, style)
+    for _, piece in ipairs(plan.auraPieces) do
+        kinds[piece.kind] = true
+    end
+    return kinds
+end
+
+-- Display-identity edge for composite entries. A piece's prefix/suffix
+-- bakes the resolved {name} / {keybind} / {icon} at measure time, so a spell
+-- transforming into an override, an equipment slot resolving to another
+-- item, or a texture swap must re-measure the entry -- the same probe-driven
+-- re-read the keybind path uses (Core/Keybinds.lua). Called from
+-- UpdateButtonIcon, which runs on those edges (and on SPELL_UPDATE_ICON for
+-- every button), so it must stay cheap: a non-composite entry returns at
+-- once (its {name} is substituted per tick anyway), and a composite entry
+-- whose strings did not move costs the cache's few comparisons.
+--
+-- The restyle that re-pitches the panel and rebinds the aura button runs
+-- AFTER the current walk, never inside it: UpdateGroupStyle can fall back to
+-- repopulating the panel, which rebuilds the very button list being
+-- iterated. One timer drains every panel touched in the same frame.
+local pendingIdentityRelayoutGroups = {}
+local identityRelayoutScheduled = false
+local function DrainIdentityRelayout()
+    identityRelayoutScheduled = false
+    for groupId in pairs(pendingIdentityRelayoutGroups) do
+        CooldownCompanion:UpdateGroupStyle(groupId)
+    end
+    wipe(pendingIdentityRelayoutGroups)
+end
+ST._RequestTextIdentityRelayout = function(button)
+    if not (button and button._isText and button._textRenderPlan) then return end
+    local groupId = RefreshTextEntryLayout(button)
+    if not groupId then return end
+    pendingIdentityRelayoutGroups[groupId] = true
+    if not identityRelayoutScheduled then
+        identityRelayoutScheduled = true
+        C_Timer.After(0, DrainIdentityRelayout)
+    end
+end
+-- (button) -> nothing. Pool hygiene for GroupFrame's ClearReusableButtonRuntime:
+-- hides and blanks every pooled run string and forgets the plan, so a
+-- released text button carries no composite render into its next entry.
+ST._ResetTextRunStrings = function(button)
+    HideTextRunStrings(button, 1)
+    button._textRenderPlan = nil
+end

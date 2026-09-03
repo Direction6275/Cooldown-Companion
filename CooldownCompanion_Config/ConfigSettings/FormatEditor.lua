@@ -19,13 +19,14 @@ local ParseFormatString = ST._ParseFormatString
 local CreateInfoButton = ST._CreateInfoButton
 
 -- Token list for insert buttons. Order is the order the buttons appear in.
--- No {aura} button: text panels are aura-blind on 12.1 (see the advisory
--- below), so the token is only ever reached through an older saved format.
-local TOKEN_LIST = {"name", "time", "charges", "maxcharges", "stacks", "keybind", "status", "icon", "br"}
+-- {aura} and {aurastacks} are client-rendered aura pieces (TEXT RENDER PLAN
+-- in ButtonFrame/TextMode.lua); the advisories below say when they cannot
+-- show anything for the format being edited.
+local TOKEN_LIST = {"name", "time", "charges", "maxcharges", "stacks", "aura", "aurastacks", "keybind", "status", "icon", "br"}
 
 -- Tokens available as conditional targets.
 local COND_TOKEN_LIST = {}
-local COND_TOKEN_ORDER = {"time", "available", "charges", "maxcharges", "missingcharges", "zerocharges", "stacks", "keybind", "proc", "unusable", "oor", "incombat"}
+local COND_TOKEN_ORDER = {"time", "aura", "available", "charges", "maxcharges", "missingcharges", "zerocharges", "stacks", "keybind", "proc", "unusable", "oor", "incombat"}
 for _, t in ipairs(COND_TOKEN_ORDER) do
     COND_TOKEN_LIST[t] = t
 end
@@ -39,6 +40,7 @@ local DEFAULT_TEXT_FORMAT = "{name}  {status}"
 -- same-named value token prints.
 local COND_TOKEN_HELP = {
     time = "Wraps the format so that part only shows while the entry is on cooldown.",
+    aura = "Wraps the format so that part only shows while the tracked aura is active.",
     available = "Wraps the format so that part only shows while the entry is off cooldown.",
     charges = "Wraps the format so that part only shows for entries that use charges.",
     maxcharges = "Wraps the format so that part only shows while every charge is ready.",
@@ -54,7 +56,7 @@ local COND_TOKEN_HELP = {
 
 -- Starter formats for the "Start From an Example" chips. Every string is
 -- written in the parser's grammar (ButtonFrame/TextMode.lua) and validates
--- with no warnings.
+-- with no warnings and, under a panel lens, no advisories.
 local FORMAT_TEMPLATES = {
     { label = "Name + Status",    format = DEFAULT_TEXT_FORMAT },
     { label = "Time Only",        format = "{time}" },
@@ -63,6 +65,8 @@ local FORMAT_TEMPLATES = {
     { label = "Pulse When Ready", format = "{?available}{pulse}{name}{/pulse}{/available}{?time}{name}  {time}{/time}" },
     { label = "Two Lines",        format = "{name}{br}{status}" },
     { label = "Stacks Watch",     format = "{name}  {stacks}" },
+    { label = "Aura Timer",       format = "{name}  {aura}" },
+    { label = "Aura Stacks",      format = "{name}{?aura}  {aurastacks}x{/aura}" },
 }
 
 -- Overwriting hand-written work is the one destructive thing a chip can do,
@@ -310,11 +314,18 @@ end
 -- format still renders, it just will not do what the user meant. They ride
 -- the same label, tinted so the two read apart without a severity system.
 --
--- All three concern the same fact: a text panel cannot see aura state on
--- 12.1, so {aura} prints nothing and {?aura} can never be true
--- (EvaluateTokenPresence in ButtonFrame/TextMode.lua). The tokens still
--- parse so an older saved format keeps its shape instead of degrading to
--- literal braces.
+-- Aura tokens are client-rendered pieces cut out of the line by
+-- BuildTextRenderPlan (TEXT RENDER PLAN in ButtonFrame/TextMode.lua). The
+-- planner is the one authority on what an aura token can and cannot show,
+-- so the advisories read its flags rather than re-deriving the rules from
+-- the segments: {!aura} regions are dropped whole, CC tokens inside aura
+-- content emit nothing, and only the first duration piece and the first
+-- stacks-or-presence piece are live.
+--
+-- The last advisory is the editor's own: the pieces only ever get values
+-- when the entry tracks an aura, which a panel-level format cannot know
+-- (each entry decides for itself), so it is raised only under an entry
+-- lens. entryData is the lens's buttonData, nil under a panel lens.
 ------------------------------------------------------------------------
 local ADVISORY_COLOR = "|cffffcc66"
 
@@ -322,24 +333,34 @@ local function AddAdvisory(warnings, text)
     warnings[#warnings + 1] = ADVISORY_COLOR .. text .. "|r"
 end
 
-local function AppendAuraAdvisories(warnings, segments)
-    local saidInert, saidNeverShows, saidAlwaysShows = false, false, false
+-- Mirrors the aura-tracking gate the text host applies (IsAuraOnlyEntry and
+-- the Track an Aura toggle, ButtonSettingsAura.lua): a standalone aura entry
+-- always tracks its aura; a spell entry tracks one only while the toggle is
+-- on; nothing else can track one.
+local function EntryTracksAura(entryData)
+    return entryData.type == "spell"
+        and (entryData.auraTracking == true or entryData.addedAs == "aura")
+end
 
-    for _, seg in ipairs(segments) do
-        if seg.type == "token" and not seg.unknown and seg.value == "aura" then
-            if not saidInert then
-                saidInert = true
-                AddAdvisory(warnings, "{aura} shows nothing on this game version.")
-            end
-        elseif seg.type == "cond_start" and seg.value == "aura" then
-            if seg.negated and not saidAlwaysShows then
-                saidAlwaysShows = true
-                AddAdvisory(warnings, "{!aura} is always true on this game version, so that part always shows.")
-            elseif not seg.negated and not saidNeverShows then
-                saidNeverShows = true
-                AddAdvisory(warnings, "{?aura} can never be true on this game version, so that part never shows.")
-            end
-        end
+local function AppendAuraAdvisories(warnings, segments, entryData, style)
+    local buildPlan = ST._BuildTextRenderPlan
+    if not buildPlan then return end
+    local plan = buildPlan(segments, entryData, style)
+
+    if plan.hasNegatedAuraRegion then
+        AddAdvisory(warnings, "{!aura} cannot show text while an aura is inactive on this game version, so that part never shows.")
+    end
+    if plan.hasUnsupportedInAura then
+        AddAdvisory(warnings, "Only {aura}, {aurastacks}, {name}, {keybind}, {icon} and text work inside {?aura}...{/aura}; other tokens there show nothing.")
+    end
+    if plan.hasDuplicateAuraPiece then
+        AddAdvisory(warnings, "{aura} can appear once per format, and {aurastacks} or a {?aura} part once; extra copies show nothing.")
+    end
+    if plan.hasWrappedAuraPiece then
+        AddAdvisory(warnings, "Conditions and effects cannot wrap aura text; that part shows whenever the aura is active.")
+    end
+    if plan.hasAuraPieces and entryData and not EntryTracksAura(entryData) then
+        AddAdvisory(warnings, "This entry tracks no aura, so its aura tokens show nothing. Turn on Track an Aura in the entry's Settings.")
     end
 end
 
@@ -521,7 +542,11 @@ local function BuildFormatEditorContent(container, opts)
     -- currentRawText is the actual format string the user is editing.
     local initialTarget = opts.target or {}
     local currentStyle = initialTarget.style or {}
-    local currentFormatTarget = initialTarget.saveTarget or currentStyle
+    -- The entry under an entry lens, nil under a panel lens. Kept apart from
+    -- currentFormatTarget (which falls back to the style) because the aura
+    -- advisories need to know WHETHER an entry is being edited.
+    local currentEntryData = initialTarget.saveTarget
+    local currentFormatTarget = currentEntryData or currentStyle
     local currentDefaultFormat = initialTarget.defaultFormat or DEFAULT_TEXT_FORMAT
     local currentRawText = currentFormatTarget.textFormat or currentDefaultFormat
 
@@ -602,7 +627,7 @@ local function BuildFormatEditorContent(container, opts)
         local warnings = ValidateFormat(segments)
         -- Runs after the structural pass so malformed-format errors always
         -- read first.
-        AppendAuraAdvisories(warnings, segments)
+        AppendAuraAdvisories(warnings, segments, currentEntryData, currentStyle)
         if #warnings > 0 then
             warningLabel:SetText(table.concat(warnings, "\n"))
         else
@@ -705,10 +730,30 @@ local function BuildFormatEditorContent(container, opts)
         {"|cff00ff00{charges}|r  Current charges (if spell has charges)", 1, 1, 1},
         {"|cff00ff00{maxcharges}|r  Maximum charges (if spell has charges)", 1, 1, 1},
         {"|cff00ff00{stacks}|r  Item count", 1, 1, 1},
+        {"|cff00ff00{aura}|r  Remaining time of the tracked aura", 1, 1, 1},
+        {"|cff00ff00{aurastacks}|r  Stacks of the tracked aura", 1, 1, 1},
         {"|cff00ff00{keybind}|r  Keybind text", 1, 1, 1},
-        {"|cff00ff00{status}|r  Shows ready or cooldown automatically", 1, 1, 1},
+        {"|cff00ff00{status}|r  Ready or cooldown; on aura entries, aura time", 1, 1, 1},
         {"|cff00ff00{icon}|r  Inline spell icon", 1, 1, 1},
         {"|cff00ff00{br}|r  Insert a manual line break", 1, 1, 1},
+        " ",
+        {"Aura Text", 1, 0.82, 0},
+        " ",
+        {"The game draws aura values in their own column,", 0.7, 0.7, 0.7},
+        {"with room reserved for the longest value.", 0.7, 0.7, 0.7},
+        " ",
+        {"Put them at the end of a line, or on their own line,", 0.7, 0.7, 0.7},
+        {"for the tightest fit.", 0.7, 0.7, 0.7},
+        " ",
+        {"Text inside |cffffff00{?aura}|r...|cffffff00{/aura}|r shows only", 0.7, 0.7, 0.7},
+        {"while the aura is active.", 0.7, 0.7, 0.7},
+        {"The entry must track an aura (see its Settings).", 0.7, 0.7, 0.7},
+        " ",
+        {"An aura with no duration shows no time.", 0.7, 0.7, 0.7},
+        {"Use |cffffff00{?aura}|rActive|cffffff00{/aura}|r for a word while it is up.", 0.7, 0.7, 0.7},
+        " ",
+        {"Low Time, Pandemic and stack colours", 0.7, 0.7, 0.7},
+        {"do not apply to text panels.", 0.7, 0.7, 0.7},
     }, tokenHeading)
     tokenHeading.right:ClearAllPoints()
     tokenHeading.right:SetPoint("RIGHT", tokenHeading.frame, "RIGHT", -3, 0)
@@ -810,6 +855,7 @@ local function BuildFormatEditorContent(container, opts)
         {"on whether a condition is true.", 1, 1, 1, true},
         " ",
         {"|cffffff00{time}|r  Cooldown time remaining", 1, 1, 1, true},
+        {"|cffffff00{aura}|r  Tracked aura is active", 1, 1, 1, true},
         {"|cffffff00{available}|r  Off cooldown", 1, 1, 1, true},
         {"|cffffff00{charges}|r  Entry uses charges", 1, 1, 1, true},
         {"|cffffff00{maxcharges}|r  At max charges", 1, 1, 1, true},
@@ -826,6 +872,8 @@ local function BuildFormatEditorContent(container, opts)
         " ",
         {"|cffffff00{?token}|r...|cffffff00{/token}|r  Show when true", 1, 1, 1, true},
         {"|cffff8844{!token}|r...|cffff8844{/token}|r  Show when false", 1, 1, 1, true},
+        " ",
+        {"|cffff8844{!aura}|r is not available on this game version.", 0.7, 0.7, 0.7, true},
         " ",
         {"Example:", 0.7, 0.7, 0.7, true},
         {"|cffffff00{?time}|rCD: |cff00ff00{time}|r|cffffff00{/time}|r", 0.7, 0.7, 0.7, true},
@@ -868,7 +916,7 @@ local function BuildFormatEditorContent(container, opts)
     condGroup:AddChild(hideBtn)
 
     -- Plain-language readout of whatever the dropdown currently names, so the
-    -- twelve conditions do not all have to be learned from the info button.
+    -- conditions do not all have to be learned from the info button.
     local condHelp = AceGUI:Create("Label")
     ST._ConfigureWrappedHelperLabel(condHelp)
     condHelp:SetFullWidth(true)
@@ -952,7 +1000,8 @@ local function BuildFormatEditorContent(container, opts)
     function controller:SetTarget(newTarget)
         newTarget = newTarget or {}
         currentStyle = newTarget.style or {}
-        currentFormatTarget = newTarget.saveTarget or currentStyle
+        currentEntryData = newTarget.saveTarget
+        currentFormatTarget = currentEntryData or currentStyle
         currentDefaultFormat = newTarget.defaultFormat or DEFAULT_TEXT_FORMAT
         currentRawText = currentFormatTarget.textFormat or currentDefaultFormat
         ApplyColorized(currentRawText, #currentRawText)
