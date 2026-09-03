@@ -14,17 +14,21 @@
     CooldownCompanion:NormalizePanelTemplateStore (Core/Migrations.lua), run
     every login and on profile change; nothing here normalizes a template.
 
-    THE LINE. A template carries exactly three things:
+    THE LINE. A template carries exactly four things:
       * the look: every key of every ST.PANEL_COPY_SCOPES[mode] scope - the
         registry Copy Panel Settings writes - plus masqueEnabled and the
         compact trio where the mode's appearance scope carries them;
       * the shape: ST.PANEL_TEMPLATE_SHAPE_KEYS[mode], the arrangement the
         Layout tab edits;
+      * the sections (icon panels only): each anchor's settings, keyed by
+        ST.PANEL_TEMPLATE_SECTION_KEYS, with no members - a placement that
+        waits for entries (owner ruling 2026-09-03);
       * the panel's offset from its own Group frame (point, relativePoint,
         x, y) - and only that anchor.
-    It never carries entries, per-entry settings, sections, alpha or
-    visibility, strata, name-derived data (order, createdBy, cdmPanelSource),
-    the Aura Panel flag, or an anchor to another panel, frame, or the cursor.
+    It never carries entries, per-entry settings, section membership, alpha
+    or visibility, strata, name-derived data (order, createdBy,
+    cdmPanelSource), the Aura Panel flag, or an anchor to another panel,
+    frame, or the cursor.
 
     Owner ruling (2026-09-01): Apply on an existing panel keeps the panel
     where it is; create-from-template places the new panel at the template's
@@ -139,6 +143,24 @@ local function BuildPanelTemplateSnapshot(self, group, mode)
     end
     for _, key in ipairs(ST.PANEL_TEMPLATE_SHAPE_KEYS[mode] or {}) do
         CopyStyleKey(key)
+    end
+
+    -- Sections: settings only, never membership. Only a panel the section
+    -- model covers (icons, not an Aura Panel) can have any, and a section
+    -- whose table is gone is no section (its entries are base members), so
+    -- the walk is over the tables that exist.
+    if ST.PanelSupportsSections(group) and type(group.sections) == "table" then
+        for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
+            local section = group.sections[anchor]
+            if type(section) == "table" then
+                local copy = {}
+                for _, key in ipairs(ST.PANEL_TEMPLATE_SECTION_KEYS) do
+                    copy[key] = ST._CopyPresetValue(section[key])
+                end
+                template.sections = template.sections or {}
+                template.sections[anchor] = copy
+            end
+        end
     end
 
     -- Stored as the EFFECTIVE format: a legacy panel can still carry only
@@ -352,6 +374,7 @@ function CooldownCompanion:ApplyPanelTemplate(templateId, groupId, opts)
         -- A template saved from an Aura Panel carries no compact trio; the
         -- applier must then leave the target's alone rather than default it.
         skipCompact = template.compactLayout == nil,
+        sections = template.sections,
         anchor = position and template.anchor or nil,
     })
 end

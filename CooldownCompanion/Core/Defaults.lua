@@ -1710,15 +1710,32 @@ ST.PANEL_COPY_SCOPES = {
 -- arrangement key must be added to its mode's list the day it lands, or
 -- templates silently stop carrying it.
 --
--- Deliberately NOT included: strata (frameStrata, strataOrder), sections,
--- Collapse Direction (an Aura Panel Layout key, living on the group as
+-- Deliberately NOT included: strata (frameStrata, strataOrder), Collapse
+-- Direction (an Aura Panel Layout key, living on the group as
 -- compactGrowthDirection), and any anchor to another panel, frame, or the
 -- cursor. A template's one placement fact is its offset from its own Group
--- frame, and that rides the template's anchor field, not this list.
+-- frame, and that rides the template's anchor field, not this list. Sections
+-- are not style keys either: they ride the template's own `sections` table,
+-- keyed by ST.PANEL_TEMPLATE_SECTION_KEYS below.
 ST.PANEL_TEMPLATE_SHAPE_KEYS = {
     icons = { "orientation", "growthOrigin", "buttonsPerRow" },
     bars = { "barOrientation", "growthOrigin", "buttonsPerRow", "barFillVertical", "barReverseFill" },
     text = { "textOrientation", "growthOrigin", "buttonsPerRow" },
+}
+
+-- The per-anchor section settings a Panel Template carries (icon panels
+-- only, the one mode sections apply to). Owner ruling (2026-09-03): a
+-- template is a whole panel minus its entries, and a section's size,
+-- spacing, offset, wrap and aura-only flag are part of that panel even
+-- though its members are not - so a template stores each section as a
+-- placement waiting for members, and a panel created from it shows those
+-- sections in the Layout and Appearance tabs before anything is dropped in.
+-- This is the one deliberate exception to the "a section IS its members"
+-- rule (Core/PanelSections.lua): the dissolve only ever runs on a departure,
+-- so a member-less section a template placed stays until something leaves
+-- it. Same-day rule: a new section key must be added here the day it lands.
+ST.PANEL_TEMPLATE_SECTION_KEYS = {
+    "offsetX", "offsetY", "iconWidth", "iconHeight", "spacing", "maxPerLine", "auraOnly",
 }
 
 function ST.CanButtonUseOverrideSection(buttonData, sectionId)

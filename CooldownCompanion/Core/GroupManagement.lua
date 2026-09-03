@@ -519,6 +519,11 @@ end
 --                source-value-else-baseline rule (ST.PANEL_TEMPLATE_SHAPE_KEYS)
 --   skipCompact  leave the target's compact trio alone even where a scope
 --                copies it (a template saved from an Aura Panel carries none)
+--   sections     { [anchor] = { <ST.PANEL_TEMPLATE_SECTION_KEYS> } }: per
+--                anchor, the section's settings, written onto the target's
+--                section at that anchor (created member-less when absent).
+--                Only for a target the section model covers. Anchors the
+--                source lacks are left alone: their members keep their place.
 --   anchor       { point, relativePoint, x, y }: the target's offset from its
 --                own Group frame, written and re-anchored only for a panel
 --                that has one. Never any other anchor target.
@@ -589,6 +594,42 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
     -- asks for it: the copy feature's line stops at the look.
     for _, key in ipairs(opts.shapeKeys or {}) do
         CopyStyleKey(key)
+    end
+
+    -- Sections ride after the shape, only onto a panel the section model
+    -- covers (icons, not an Aura Panel; anywhere else the data is inert and
+    -- must not be written). Settings only: the target's members stay where
+    -- they are, and an anchor the target has no section at gets a member-
+    -- less one carrying the source's settings - the template's "placement
+    -- waiting for entries" (ST.PANEL_TEMPLATE_SECTION_KEYS). Every key is
+    -- written, nil included, so the target's section comes out exactly
+    -- matching the source's, not a merge of the two.
+    if type(opts.sections) == "table" and ST.PanelSupportsSections(targetGroup) then
+        local targetSections = targetGroup.sections
+        if type(targetSections) ~= "table" then
+            targetSections = {}
+            targetGroup.sections = targetSections
+        end
+        for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
+            local sourceSection = opts.sections[anchor]
+            if type(sourceSection) == "table" then
+                local section = targetSections[anchor]
+                if type(section) ~= "table" then
+                    section = {}
+                    targetSections[anchor] = section
+                end
+                for _, key in ipairs(ST.PANEL_TEMPLATE_SECTION_KEYS) do
+                    if key ~= "auraOnly" then
+                        section[key] = CopyPresetValue(sourceSection[key])
+                    end
+                end
+                -- The aura-only flag goes through its own setter: turning it
+                -- on is refused when a current member cannot live in an aura
+                -- section, and turning it on stamps the members' aura keys.
+                -- A refusal leaves the flag off rather than failing the apply.
+                ST.SetPanelSectionAuraOnly(targetGroup, anchor, sourceSection.auraOnly == true)
+            end
+        end
     end
 
     -- durationFormat: legacy profiles can still carry only decimalTimers=true
