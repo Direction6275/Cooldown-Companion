@@ -57,6 +57,7 @@ local UpdateItemChargeTracking = ST._UpdateItemChargeTracking
 -- Imports from IconMode
 local ApplyIconCountTextStyle = ST._ApplyIconCountTextStyle
 local UpdateIconModeVisuals = ST._UpdateIconModeVisuals
+local IsTotemPhaseEligibleEntry = ST.IsTotemPhaseEligibleEntry
 local UpdateIconModeGlows = ST._UpdateIconModeGlows
 local CacheButtonBindingKeys = ST._CacheButtonBindingKeys
 local ClearIconFillVisualState = ST._ClearIconFillVisualState
@@ -729,7 +730,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local spellRealCooldownShown = false
     local spellCooldownResult
 
-    if buttonData.isPassive then
+    -- Passive entries own no cooldown widget, except while the totem phase
+    -- holds it open (latched below, so this is not a per-tick Hide/Show pair).
+    if buttonData.isPassive and button._totemCooldownShown ~= true then
         button.cooldown:Hide()
     end
 
@@ -1066,10 +1069,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- toggle. auraTracking off -> the entry shows its spell cooldown only and
     -- the phase never activates; auraTracking on -> the phase displays, and the
     -- aura config sections it draws with open through the ordinary aura gate.
-    if buttonData.type == "spell"
-            and buttonData.auraTracking == true
-            and not buttonData.isPassive
-            and not button._isText then
+    -- Eligibility (including the aura-added passive-stamped case) is owned by
+    -- ST.IsTotemPhaseEligibleEntry; text panels stay excluded here.
+    if IsTotemPhaseEligibleEntry(buttonData) and not button._isText then
         local totemObj = self:GetTotemDurationObjectForSpell(buttonData.id)
         if not totemObj and cooldownSpellId and cooldownSpellId ~= buttonData.id then
             totemObj = self:GetTotemDurationObjectForSpell(cooldownSpellId)
@@ -1077,6 +1079,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if totemObj and EntryRuntime.DurationObjectShowsCooldown(totemObj) then
             button._totemActive = true
             button._durationObj = totemObj
+            if buttonData.isPassive and button._totemCooldownShown ~= true then
+                -- Aura-added entry: the passive branch above keeps the widget
+                -- hidden; the phase needs it, so open it once and latch.
+                button._totemCooldownShown = true
+                button.cooldown:Show()
+            end
             -- The phase reads as AURA-active, not on-cooldown (owner ruling):
             -- the underlying spell cooldown keeps running, but desaturate-on-
             -- cooldown and the cooldown tint must not fire while the summon
@@ -1094,6 +1102,30 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             else
                 button.cooldown:SetCooldownFromDurationObject(totemObj)
             end
+        end
+    end
+
+    -- Totem phase shell edges. A shell entry's CC layer resolves statically
+    -- for aura state (unreadable) but follows this phase (readable):
+    -- GetAuraShellAlpha reads _totemActive, so the shell must be re-applied
+    -- on both edges. Latched on the button rather than on totemWasActive:
+    -- runtime resets (GroupFrame / GroupOperations) null _totemActive and
+    -- would otherwise strand a lifted shell with no edge left to close it,
+    -- exactly why they preserve _totemSwipeStyleActive. Passive or not makes
+    -- no difference here; the alpha decision has no passive term either.
+    if button._totemActive == true then
+        if button._totemShellLifted ~= true and self:IsAuraShellEntry(buttonData) then
+            button._totemShellLifted = true
+            ST._ApplyShellVisualsForButton(button, buttonData)
+        end
+    else
+        if button._totemCooldownShown == true then
+            button._totemCooldownShown = nil
+            button.cooldown:Hide()
+        end
+        if button._totemShellLifted == true then
+            button._totemShellLifted = nil
+            ST._ApplyShellVisualsForButton(button, buttonData)
         end
     end
 

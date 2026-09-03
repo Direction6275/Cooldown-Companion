@@ -22,8 +22,25 @@
     - In combat: OWNER-APPROVED cast correlation -- the player's own successful
       cast followed within CAST_CORRELATION_WINDOW by the next
       PLAYER_TOTEM_UPDATE names that slot. One cast names at most one slot
-      (first update wins); an uncorrelated slot keeps whatever identity it
-      already had, and an unknown slot simply resolves to nothing.
+      (first update wins). Only a cast that is a plausible summon is
+      accepted as a name: the window is wide enough that an unrelated
+      instant (Implosion, Demonbolt) cast just before a slot update -- a
+      second summon landing from the same cast, or a summon expiring -- was
+      stamped onto that slot and then shown as a summon phase the next time
+      the slot went live (Demonology, owner log 2026-09-02). Plausible means
+      the spell already carries a learned link, or Blizzard's own Cooldown
+      Manager lists it (or its base spell) in a Tracked Buff or Tracked Bar
+      row -- the same rows that hand CC the totem identity in the first
+      place (Call Dreadstalkers 104316 -> bar row linked to 193332). That
+      data answers with no prior out-of-combat sighting, which matters
+      because many summons are only ever cast in combat. A name stamps the
+      cast ID and its learned partner and clears any totem identity left by
+      a previous occupancy. A FRESH occupancy (empty -> live) that arrives
+      with no accepted name carries no identity at all -- cast label and
+      totem identity are both dropped -- unless this slot was named within
+      the correlation window (the second update of the same cast). A live
+      slot that updates without a name keeps its identity: that is a refresh
+      of the same summon. An unknown slot simply resolves to nothing.
 
     The cast spellID a user's entry carries and the spellID the totem API
     reports are frequently different IDs for the same summon, so both are kept
@@ -88,6 +105,49 @@ local updateStampCounter = 0
 local lastCastSpellID = nil
 local lastCastTime = nil
 
+-- Spells Blizzard's Cooldown Manager tracks as a buff or bar row for the
+-- current spec: [spellID] = "bar" | "buff" (bar wins), covering the row
+-- spellID, both override forms, linked IDs, and the base spell. The set is
+-- handed in by RebuildSoundAlertSpellMap (Core/SoundAlerts.lua), which
+-- already walks every viewer row on the viewer-map rebuild, so it is built
+-- out of combat and shares that map's lifetime. nil = not built yet.
+local summonCandidateSpells = nil
+
+function CooldownCompanion:SetTotemLaneSummonCandidates(set)
+    summonCandidateSpells = set
+end
+
+-- "bar" / "buff" when the spell (or its base spell) sits in such a row.
+local function GetSummonCandidateKind(self, spellID)
+    if type(spellID) ~= "number" then
+        return nil
+    end
+    if not summonCandidateSpells then
+        self:RebuildSoundAlertSpellMap()
+        if not summonCandidateSpells then
+            return nil
+        end
+    end
+    local kind = summonCandidateSpells[spellID]
+    if kind then
+        return kind
+    end
+    local baseSpellID = C_Spell.GetBaseSpell(spellID)
+    if type(baseSpellID) == "number" and baseSpellID ~= spellID then
+        return summonCandidateSpells[baseSpellID]
+    end
+    return nil
+end
+
+-- The combat-correlation gate: a learned link (self-link included) or any
+-- Cooldown Manager buff/bar row makes a cast a plausible summon.
+local function IsPlausibleSummonCast(self, charLinks, spellID)
+    if charLinks and charLinks[spellID] then
+        return true
+    end
+    return GetSummonCandidateKind(self, spellID) ~= nil
+end
+
 local function NextStamp()
     updateStampCounter = updateStampCounter + 1
     return updateStampCounter
@@ -114,12 +174,19 @@ local function LearnLink(self, castSpellID, totemSpellID)
     if type(castSpellID) ~= "number" or type(totemSpellID) ~= "number" then
         return false
     end
-    if castSpellID == totemSpellID then
-        return false
-    end
     local charLinks = GetLinkTable(self, true)
     if not charLinks then
         return false
+    end
+    if castSpellID == totemSpellID then
+        -- No partner to learn, but the sighting proves the spell is a summon
+        -- (most Shaman totems report their own cast ID): a self-link is what
+        -- lets the combat gate accept it without a Cooldown Manager row.
+        if charLinks[castSpellID] == castSpellID then
+            return false
+        end
+        charLinks[castSpellID] = castSpellID
+        return true
     end
     if charLinks[castSpellID] == totemSpellID and charLinks[totemSpellID] == castSpellID then
         return false
@@ -302,14 +369,37 @@ function CooldownCompanion:OnTotemUpdate(event, slot)
         -- fact available: nil means the slot is empty or sealed, and a fresh
         -- object means it is live. Identity can only come from correlation.
         local record = EnsureSlotRecord(slot)
+        local wasLive = record.durationObj ~= nil
         record.durationObj = GetTotemDuration(slot)
+        local isLive = record.durationObj ~= nil
         -- Start time and duration are secret in combat, so any expiration this
         -- slot carried from an OOC pass is now unverifiable: drop it and let
         -- the update stamp order duplicates here.
         record.expirationTime = nil
+        local now = GetTime()
         local castSpellID = ConsumeCastNote()
-        if castSpellID then
+        local charLinks = GetLinkTable(self, false)
+        if castSpellID and IsPlausibleSummonCast(self, charLinks, castSpellID) then
+            -- A plausible summon caster names the slot. The learned partner
+            -- (nil when unknown or a self-link) replaces whatever totem
+            -- identity a previous occupancy left, so no stale ID rides along.
             record.castSpellID = castSpellID
+            local partner = charLinks and charLinks[castSpellID]
+            if partner == castSpellID then
+                partner = nil
+            end
+            record.totemSpellID = partner
+            record.namedAt = now
+        elseif isLive and not wasLive then
+            -- Fresh occupancy with no accepted name. The one legitimate carry
+            -- is the second update of the cast that just named this slot
+            -- (a destroy/create pair inside the correlation window);
+            -- anything older is a foreign identity and is dropped whole.
+            if not (record.namedAt and (now - record.namedAt) <= CAST_CORRELATION_WINDOW) then
+                record.castSpellID = nil
+                record.totemSpellID = nil
+                record.namedAt = nil
+            end
         end
         record.updateStamp = NextStamp()
         RebuildSpellSlots(self)
@@ -344,6 +434,56 @@ function CooldownCompanion:GetTotemDurationObjectForSpell(spellID)
     end
     local record = slotState[slot]
     return record and record.durationObj or nil
+end
+
+-- Read-only: the learned partner of a spellID for this character (cast ID ->
+-- totem ID or the reverse; a self-linked summon reports itself), else nil.
+function CooldownCompanion:GetLinkedTotemSpellID(spellID)
+    if type(spellID) ~= "number" then
+        return nil
+    end
+    local charLinks = GetLinkTable(self, false)
+    local partner = charLinks and charLinks[spellID]
+    if type(partner) ~= "number" then
+        return nil
+    end
+    return partner
+end
+
+-- Read-only, for config surfaces: would this spell's active phase be a
+-- summon duration read from the totem slot? True on a learned link or a
+-- Cooldown Manager Tracked BAR row -- the same evidence the combat gate
+-- accepts, minus buff rows, which also hold ordinary self-buffs that never
+-- occupy a slot (Demonic Core) and must not be explained as summons.
+function CooldownCompanion:IsTotemLaneSummonDisplaySpell(spellID)
+    if type(spellID) ~= "number" then
+        return false
+    end
+    if self:GetLinkedTotemSpellID(spellID) then
+        return true
+    end
+    return GetSummonCandidateKind(self, spellID) == "bar"
+end
+
+-- Totem phase eligibility (one owner, shared by the render lane and tests).
+-- The phase is opt-in through the entry's own "Track an Aura" toggle. Aura-
+-- added entries are stamped isPassive by the add path, and that flag gates
+-- every cooldown-lane decision, so the phase is the one passive-stamped case
+-- admitted: a summon's standing duration IS the aura a standalone entry for
+-- it is asking to see (Call Dreadstalkers occupies a totem slot and applies
+-- no aura at all). A true passive aura entry costs one table lookup per tick
+-- and resolves to nothing. Text panels are excluded at the call site.
+function ST.IsTotemPhaseEligibleEntry(buttonData)
+    if type(buttonData) ~= "table" then
+        return false
+    end
+    if buttonData.type ~= "spell" or buttonData.auraTracking ~= true then
+        return false
+    end
+    if buttonData.isPassive and buttonData.addedAs ~= "aura" then
+        return false
+    end
+    return true
 end
 
 function CooldownCompanion:ResetTotemTracking()

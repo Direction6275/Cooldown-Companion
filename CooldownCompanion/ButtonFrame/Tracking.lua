@@ -320,8 +320,11 @@ local function ResolveDesaturationIntent(button, buttonData, style, target)
     -- with the invert/never opt-outs (invert lives on the aura layer instead,
     -- and is a whileAuraActive STYLE key; neverDesaturate stays entry data).
     -- The non-passive opt-in is a STYLE key too (desaturation section), so
-    -- both static desat rules resolve from the same effective style.
-    if buttonData.auraTracking or buttonData.addedAs == "aura" then
+    -- both static desat rules resolve from the same effective style. The
+    -- totem active phase is the one readable exception: a standing summon is
+    -- the entry's "aura active", so the aura-missing desaturate lifts for it.
+    if (buttonData.auraTracking or buttonData.addedAs == "aura")
+            and button._totemActive ~= true then
         if buttonData.isPassive then
             if not (buttonData.neverDesaturate or style.invertAuraDesaturationLogic) then
                 target.active = true

@@ -914,6 +914,24 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         controlText = #trackedAuraIDParts > 0
             and table.concat(trackedAuraIDParts, ", ") or "None",
     })
+    -- A guardian summon (Call Dreadstalkers and similar) applies no aura:
+    -- the ID the automatic machinery names for it is the totem-slot identity,
+    -- and the entry's active phase is the summon's remaining duration read
+    -- from that slot. Say so, because the ID above never shows up in the
+    -- buff frame and looks like a miss. Same evidence the lane itself
+    -- accepts, so a summon only ever cast in combat is explained too.
+    if not isTexturePanel then
+        local isSummonDisplay = CooldownCompanion:IsTotemLaneSummonDisplaySpell(buttonData.id)
+            or (primaryAuraSpellID
+                and CooldownCompanion:IsTotemLaneSummonDisplaySpell(primaryAuraSpellID))
+        if isSummonDisplay then
+            AddLabelRow(auraLeft, {
+                label = "Shown As",
+                indent = not isStandalone,
+                controlText = "Summon duration from the totem slot",
+            })
+        end
+    end
 
     if isTexturePanel then
         -- Texture Aura display intentionally exposes presence only. The

@@ -152,29 +152,46 @@ local function ResolveGroup(groupOrId)
     return profile and profile.groups and profile.groups[groupOrId] or nil
 end
 
+-- Totem lane summon candidates ride the same walk: every ID form of a
+-- Tracked Buff / Tracked Bar row, tagged by row kind (bar wins over buff).
+local SUMMON_ROW_KIND = {
+    [Enum.CooldownViewerCategory.TrackedBuff] = "buff",
+    [Enum.CooldownViewerCategory.TrackedBar] = "bar",
+}
+
+local function AddRowSpell(spellToCooldownIDs, summonCandidates, spellID, cooldownID, summonKind)
+    if not spellID or spellID == 0 then return end
+    AddCooldownIDForSpell(spellToCooldownIDs, spellID, cooldownID)
+    if summonKind and (summonKind == "bar" or not summonCandidates[spellID]) then
+        summonCandidates[spellID] = summonKind
+    end
+end
+
 function CooldownCompanion:RebuildSoundAlertSpellMap()
     local spellToCooldownIDs = {}
+    local summonCandidates = {}
 
     for _, category in ipairs(COOLDOWN_VIEWER_CATEGORIES) do
+        local summonKind = SUMMON_ROW_KIND[category]
         local cooldownIDs = C_CooldownViewer.GetCooldownViewerCategorySet(category, true)
         if cooldownIDs then
             for _, cooldownID in ipairs(cooldownIDs) do
                 local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID)
                 if info then
-                    AddCooldownIDForSpell(spellToCooldownIDs, info.spellID, cooldownID)
-                    AddCooldownIDForSpell(spellToCooldownIDs, info.overrideSpellID, cooldownID)
-                    AddCooldownIDForSpell(spellToCooldownIDs, info.overrideTooltipSpellID, cooldownID)
+                    AddRowSpell(spellToCooldownIDs, summonCandidates, info.spellID, cooldownID, summonKind)
+                    AddRowSpell(spellToCooldownIDs, summonCandidates, info.overrideSpellID, cooldownID, summonKind)
+                    AddRowSpell(spellToCooldownIDs, summonCandidates, info.overrideTooltipSpellID, cooldownID, summonKind)
 
                     if info.linkedSpellIDs then
                         for _, linkedSpellID in ipairs(info.linkedSpellIDs) do
-                            AddCooldownIDForSpell(spellToCooldownIDs, linkedSpellID, cooldownID)
+                            AddRowSpell(spellToCooldownIDs, summonCandidates, linkedSpellID, cooldownID, summonKind)
                         end
                     end
 
                     if info.spellID then
                         local baseSpellID = C_Spell.GetBaseSpell(info.spellID)
                         if baseSpellID and baseSpellID ~= info.spellID then
-                            AddCooldownIDForSpell(spellToCooldownIDs, baseSpellID, cooldownID)
+                            AddRowSpell(spellToCooldownIDs, summonCandidates, baseSpellID, cooldownID, summonKind)
                         end
                     end
                 end
@@ -184,6 +201,7 @@ function CooldownCompanion:RebuildSoundAlertSpellMap()
 
     self._soundAlertSpellToCooldownIDs = spellToCooldownIDs
     self._soundAlertValidEventTypesByCooldownID = {}
+    self:SetTotemLaneSummonCandidates(summonCandidates)
 end
 
 function CooldownCompanion:EnsureSoundAlertSpellMap()
