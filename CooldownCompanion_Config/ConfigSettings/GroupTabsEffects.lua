@@ -41,6 +41,7 @@ local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
 -- Imports from RowWidgets.lua (the row grammar)
 local AddCheckboxRow = ST._AddCheckboxRow
 local AddSliderRow = ST._AddSliderRow
+local AddColorRow = ST._AddColorRow
 local AnchorRowBadge = ST._AnchorRowBadge
 local BeginRowGrid = ST._BeginRowGrid
 
@@ -103,6 +104,10 @@ local TURNON_READY_GLOW = {
 local TURNON_KEY_PRESS_HIGHLIGHT = {
     label = "Turn On Show Key Press Highlight",
     apply = function(write) write.keyPressHighlightStyle = "solid" end,
+}
+local TURNON_COOLDOWN_PRESS_FLASH = {
+    label = "Turn On Cooldown Press Flash",
+    apply = function(write) write.cooldownPressFlashEnabled = true end,
 }
 local TURNON_ASSISTED_HIGHLIGHT = { label = "Turn On Show Assisted Highlight", key = "showAssistedHighlight" }
 local TURNON_ICON_FILL_TIMER = {
@@ -702,6 +707,77 @@ local function BuildKeyPressHighlightSection(container, group, style, lens)
     end
 end
 
+local function BuildCooldownPressFlashSection(container, group, style, lens)
+    local flashSec = BeginLensSection(lens, group, "cooldownPressFlash", { column = container })
+
+    local flashEnableCb = AddCheckboxRow(container, {
+        label = "Show Cooldown Press Flash",
+        setting = EFFECTS_FINDER.icons.spell.pressFlash,
+        value = flashSec.read.cooldownPressFlashEnabled == true,
+        disabled = flashSec.disabled,
+        onChange = function(val)
+            if not flashSec.write then return end
+            flashSec.write.cooldownPressFlashEnabled = val == true
+            UpdateSelectedGroupStyle(true)
+        end,
+    })
+
+    -- Single rail, row mode, like the key press highlight panel above it.
+    local function BuildCooldownPressFlashAdvanced(panel)
+        local settings = EFFECTS_FINDER.advanced.pressFlash
+
+        AddCheckboxRow(panel, {
+            label = "Show Only In Combat",
+            setting = settings and settings.combatOnly,
+            value = flashSec.tbl.cooldownPressFlashCombatOnly or false,
+            onChange = function(val)
+                flashSec.write.cooldownPressFlashCombatOnly = val
+                UpdateSelectedGroupStyle()
+            end,
+        })
+
+        AddColorRow(panel, {
+            label = "Flash Color",
+            setting = settings and settings.color,
+            tbl = flashSec.tbl,
+            key = "cooldownPressFlashColor",
+            default = {1, 0.25, 0.25, 0.6},
+            hasAlpha = true,
+            onConfirm = UpdateSelectedGroupStyle,
+            onChange = UpdateSelectedGroupStyle,
+        })
+
+        local durationRow = AddSliderRow(panel, {
+            label = "Flash Duration",
+            setting = settings and settings.duration,
+            min = 0.1, max = 1.5, step = 0.05,
+            value = flashSec.tbl.cooldownPressFlashDuration or 0.25,
+        })
+        WireMirrorFirstSlider(durationRow, function(val)
+            flashSec.write.cooldownPressFlashDuration = val
+        end, UpdateSelectedGroupStyle, nil, flashSec.tbl, "cooldownPressFlashDuration")
+    end
+
+    if flashSec.scope ~= "denied" then
+        AddAdvancedToggle(flashEnableCb, "cooldownPressFlash", tabInfoButtons, true, {
+            title = "Cooldown Press Flash Advanced",
+            build = BuildCooldownPressFlashAdvanced,
+            unlock = { sec = flashSec,
+                enable = flashSec.read.cooldownPressFlashEnabled ~= true
+                    and TURNON_COOLDOWN_PRESS_FLASH or nil },
+        })
+    end
+    AnchorRowBadge(flashEnableCb, CreateInfoButton(flashEnableCb.frame, flashEnableCb.frame, "LEFT", "LEFT", 0, 0, {
+        "Cooldown Press Flash",
+        {"Flashes the icon when you try to use the spell while it is still on cooldown or out of charges.", 1, 1, 1, true},
+        " ",
+        {"Presses during the global cooldown alone do not flash.", 1, 1, 1, true},
+    }, tabInfoButtons))
+    flashSec:Chrome(flashEnableCb)
+
+    flashSec:Finish()
+end
+
 -- The Indicators tab's row-grammar sections. They collapse like every
 -- other row-grammar section, which means the advanced gears inside them only
 -- build while their section is open - and a queued advanced key with no gear
@@ -737,6 +813,7 @@ ST._INDICATORS_SECTION_BY_ADVANCED_KEY = {
     procGlow = EFFECTS_SPELL_SECTION,
     readyGlow = EFFECTS_SPELL_SECTION,
     keyPressHighlight = EFFECTS_SPELL_SECTION,
+    cooldownPressFlash = EFFECTS_SPELL_SECTION,
     assistedHighlight = EFFECTS_SPELL_SECTION,
 
     -- The aura family has a section of its own on BOTH Indicators tabs (owner
@@ -795,6 +872,7 @@ ST._INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY = {
     procGlow = "procGlow",
     readyGlow = "readyGlow",
     keyPressHighlight = "keyPressHighlight",
+    cooldownPressFlash = "cooldownPressFlash",
     auraGlow = "auraIndicator",
     assistedHighlight = "assistedHighlight",
 
@@ -1030,6 +1108,9 @@ local function BuildEffectsTab(container)
     end
     if CanGroupUseOverrideSection(group, "keyPressHighlight") then
         BuildKeyPressHighlightSection(glowRight, group, style, lens)
+    end
+    if CanGroupUseOverrideSection(group, "cooldownPressFlash") then
+        BuildCooldownPressFlashSection(glowRight, group, style, lens)
     end
 
     -- Assisted Highlight is an override section like the three glows above, and
@@ -1727,6 +1808,7 @@ local EFFECTS_FINDER_ADVANCED_SECTION_LABELS = {
     procGlow = "Proc Glow",
     readyGlow = "Ready Glow",
     keyPressHighlight = "Key Press Highlight",
+    cooldownPressFlash = "Cooldown Press Flash",
     auraGlow = "Aura Glow",
     pandemicGlow = "Pandemic Effect",
     assistedHighlight = "Assisted Highlight",
@@ -1763,6 +1845,7 @@ if ST._DefineSettingRoute then
         proc = { label = "Show Proc Glow", applies = EffectsFinderIconsRow("procGlow") },
         ready = { label = "Show Ready Glow", applies = EffectsFinderIconsRow("readyGlow") },
         keyPress = { label = "Show Key Press Highlight", applies = EffectsFinderIconsRow("keyPressHighlight") },
+        pressFlash = { label = "Show Cooldown Press Flash", applies = EffectsFinderIconsRow("cooldownPressFlash") },
         assisted = { label = "Show Assisted Highlight", applies = EffectsFinderIconsRow("assistedHighlight") },
         iconFill = { label = "Icon Fill Timer", applies = EffectsFinderIconsRow("iconFillTimer") },
         cooldownSwipe = { label = "Show Cooldown Swipe", applies = EffectsFinderIconsRow("cooldownSwipe") },
@@ -1885,6 +1968,19 @@ if ST._DefineSettingRoute then
         })
     keyPress.combatOnly = keyPressRoute:Setting({ key = "combatOnly", label = "Show Only In Combat" })
     EFFECTS_FINDER.advanced.keyPress = keyPress
+
+    -- A plain color + slider panel, so it is defined directly rather than
+    -- through the glow-shaped DefineGlowAdvanced above.
+    local pressFlashRoute = EffectsFinderRoute(
+        "panel.icons.effects.pressFlash", EFFECTS_SPELL_SECTION,
+        "Cooldown / Spell Indicators",
+        EffectsFinderIconsAdvanced("cooldownPressFlash"),
+        "cooldownPressFlash", "cooldownPressFlash")
+    EFFECTS_FINDER.advanced.pressFlash = pressFlashRoute:Settings({
+        combatOnly = { label = "Show Only In Combat" },
+        color = { label = "Flash Color" },
+        duration = { label = "Flash Duration" },
+    })
 
     local auraGlow = DefineGlowAdvanced(
         "panel.icons.effects.auraGlow", "auraIndicator", "auraGlow", true, {

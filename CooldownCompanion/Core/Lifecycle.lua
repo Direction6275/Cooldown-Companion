@@ -6,6 +6,9 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local EntryRuntime = ST.EntryRuntime
+local CooldownLogic = ST.CooldownLogic
+local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
+local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
 -- Localize frequently-used globals for faster access
 local InCombatLockdown = InCombatLockdown
@@ -166,6 +169,8 @@ function CooldownCompanion:OnEnable()
         self._unitEventFrame:SetScript("OnEvent", function(_, event, ...)
             if event == "UNIT_SPELLCAST_SUCCEEDED" then
                 self:OnSpellCast(event, ...)
+            elseif event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_FAILED_QUIET" then
+                self:OnSpellCastFailed(event, ...)
             elseif event == "UNIT_AURA" then
                 self:OnUnitAura(event, ...)
             elseif event == "UNIT_PET" then
@@ -174,6 +179,13 @@ function CooldownCompanion:OnEnable()
         end)
     end
     self._unitEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+    -- Failed casts drive the Cooldown Press Flash (OnSpellCastFailed). The
+    -- event does not say why the cast failed; CC decides from its own
+    -- cooldown state on the matching buttons.
+    -- The pet too: a pet-spell entry's cast is the pet's, and its payload is
+    -- as plain as the player's (the secret predicate covers other units).
+    self._unitEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "player", "pet")
+    self._unitEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED_QUIET", "player", "pet")
     -- UNIT_PET carries the OWNER's token, and OnPetChanged reads no unit state:
     -- only the player's own pet can change which pet-spell buttons exist. The
     -- filtered registration must live on this frame because AceEvent owners have
@@ -497,6 +509,42 @@ function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
         end
         self:QueueCooldownRefresh("cast-event")
     end
+end
+
+-- Cooldown Press Flash: the player tried to use a spell and the cast failed.
+-- Only entries CC already knows to be on a REAL cooldown (or at zero
+-- charges) flash; a GCD-only press never does. Icon-mode spell entries only,
+-- pet spells included (their cast fails on the pet unit). Item and
+-- equipment-slot entries are denied the section instead (Defaults.lua).
+-- spellID is plain for the player's and pet's own casts
+-- (SecretWhenUnitSpellCastRestricted covers other units), but the guard
+-- stays so a secret can never error here.
+function CooldownCompanion:OnSpellCastFailed(event, unit, castGUID, spellID)
+    if (unit ~= "player" and unit ~= "pet")
+        or type(spellID) ~= "number" or issecretvalue(spellID) then
+        return
+    end
+    local playFlash = ST._PlayCooldownPressFlash
+    if not playFlash then return end
+    local inCombat = InCombatLockdown()
+    self:ForEachButton(function(button, buttonData)
+        if buttonData.type ~= "spell" or buttonData.isPassive then return end
+        if spellID ~= buttonData.id and spellID ~= (button._displaySpellId or buttonData.id) then return end
+        if button._isBar or not button.keyPressHighlight then return end
+        local style = button.style
+        if not (style and style.cooldownPressFlashEnabled == true) then return end
+        if style.cooldownPressFlashCombatOnly and not inCombat then return end
+        if button._visibilityHidden or not button:IsShown() then return end
+        local onRealCooldown
+        if self.UsesChargeBehavior(buttonData) then
+            onRealCooldown = button._chargeState == CHARGE_STATE_ZERO
+        else
+            onRealCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
+        end
+        if onRealCooldown then
+            playFlash(button, style)
+        end
+    end)
 end
 
 

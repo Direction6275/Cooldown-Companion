@@ -1305,6 +1305,78 @@ local SetKeyPressHighlight = MakeGlowSetter({
     cacheSz = "_kphSz",
 })
 
+-- Cooldown Press Flash: a full-icon tinted overlay that fades out when the
+-- player tries to use the spell while it is on a real cooldown (Lifecycle's
+-- OnSpellCastFailed decides WHEN; this only draws). A direct child of the
+-- button, not of the key press highlight container: that container carries
+-- the aura-shell alpha (0 for a hidden shell), which would make the flash
+-- invisible on exactly the entries a press should answer. It draws at the
+-- Key Press Highlight strata slot all the same - ApplyStrataOrder levels it
+-- with that slot's frames (Helpers.lua frameMap), so it never lands on the
+-- next slot's level - without a layer of its own.
+local DEFAULT_COOLDOWN_PRESS_FLASH_COLOR = {1, 0.25, 0.25, 0.6}
+local COOLDOWN_PRESS_FLASH_MIN_DURATION = 0.05
+local COOLDOWN_PRESS_FLASH_MAX_DURATION = 2
+
+local function EnsureCooldownPressFlash(button)
+    local flash = button._cooldownPressFlash
+    if flash then return flash end
+
+    local frame = CreateFrame("Frame", nil, button)
+    frame:SetAllPoints(button)
+    frame:EnableMouse(false)
+    -- The Key Press Highlight slot's level until the next ApplyStrataOrder
+    -- pass takes over (it re-levels this frame with that slot every restyle).
+    local slotFrame = button.keyPressHighlight and button.keyPressHighlight.solidFrame
+    frame:SetFrameLevel(slotFrame and slotFrame:GetFrameLevel() or (button:GetFrameLevel() + 1))
+    SetFrameClickThroughRecursive(frame, true, true)
+
+    local texture = frame:CreateTexture(nil, "OVERLAY", nil, 3)
+    texture:SetAllPoints(frame)
+
+    local anim = frame:CreateAnimationGroup()
+    local alpha = anim:CreateAnimation("Alpha")
+    alpha:SetFromAlpha(1)
+    alpha:SetToAlpha(0)
+    alpha:SetDuration(0.25)
+    anim:SetScript("OnFinished", function() frame:Hide() end)
+    -- An ancestor hiding mid-fade (compact reflow, a panel's visibility rule)
+    -- pauses the group without finishing it, and the frame would come back
+    -- mid-flash on the next show. Hiding from OnHide fires for that case
+    -- too, so a cut-short flash is simply over.
+    frame:SetScript("OnHide", function(self)
+        anim:Stop()
+        self:Hide()
+    end)
+    frame:Hide()
+
+    flash = { frame = frame, texture = texture, anim = anim, alpha = alpha }
+    button._cooldownPressFlash = flash
+    return flash
+end
+
+-- Re-pressing restarts the flash from full.
+local function PlayCooldownPressFlash(button, style)
+    if not button then return end
+    local flash = EnsureCooldownPressFlash(button)
+    local color = (style and style.cooldownPressFlashColor) or DEFAULT_COOLDOWN_PRESS_FLASH_COLOR
+    flash.texture:SetColorTexture(color[1] or 1, color[2] or 0.25, color[3] or 0.25, color[4] or 0.6)
+    local duration = tonumber(style and style.cooldownPressFlashDuration) or 0.25
+    duration = math_max(COOLDOWN_PRESS_FLASH_MIN_DURATION, math_min(COOLDOWN_PRESS_FLASH_MAX_DURATION, duration))
+    flash.alpha:SetDuration(duration)
+    flash.anim:Stop()
+    flash.frame:SetAlpha(1)
+    flash.frame:Show()
+    flash.anim:Play()
+end
+
+local function StopCooldownPressFlash(button)
+    local flash = button and button._cooldownPressFlash
+    if not flash then return end
+    flash.anim:Stop()
+    flash.frame:Hide()
+end
+
 -- Create a complete glow container with solid border and proc glow sub-frames.
 -- Pixel dash and autocast spark regions are created lazily on solidFrame by
 -- their ShowGlowStyle branches.
@@ -1865,3 +1937,5 @@ ST._StyleKitBarGlowRegions = StyleKitBarGlowRegions
 ST._StyleKitPandemicGlowRegions = StyleKitPandemicGlowRegions
 ST._SetReadyGlow = SetReadyGlow
 ST._SetKeyPressHighlight = SetKeyPressHighlight
+ST._PlayCooldownPressFlash = PlayCooldownPressFlash
+ST._StopCooldownPressFlash = StopCooldownPressFlash

@@ -241,6 +241,10 @@ local defaults = {
                         keyPressHighlightColor = {1, 1, 1, 0.4},
                         keyPressHighlightSize = 5,
                         keyPressHighlightCombatOnly = false,
+                        cooldownPressFlashEnabled = false,
+                        cooldownPressFlashColor = {1, 0.25, 0.25, 0.6},
+                        cooldownPressFlashDuration = 0.25,
+                        cooldownPressFlashCombatOnly = false,
                         barAuraColor = {0.2, 1.0, 0.2, 1.0},
                         barAuraEffect = "color",
                         barAuraEffectColor = {1, 0.84, 0, 0.9},
@@ -419,6 +423,10 @@ local defaults = {
             keyPressHighlightColor = {1, 1, 1, 0.4},
             keyPressHighlightSize = 5,
             keyPressHighlightCombatOnly = false,
+            cooldownPressFlashEnabled = false,
+            cooldownPressFlashColor = {1, 0.25, 0.25, 0.6},
+            cooldownPressFlashDuration = 0.25,
+            cooldownPressFlashCombatOnly = false,
             barAuraColor = {0.2, 1.0, 0.2, 1.0},
             barAuraEffect = "color",
             barAuraEffectColor = {1, 0.84, 0, 0.9},
@@ -1376,6 +1384,11 @@ ST.OVERRIDE_SECTIONS = {
         keys = {"keyPressHighlightStyle", "keyPressHighlightColor", "keyPressHighlightSize", "keyPressHighlightCombatOnly"},
         modes = {icons = true},
     },
+    cooldownPressFlash = {
+        label = "Cooldown Press Flash",
+        keys = {"cooldownPressFlashEnabled", "cooldownPressFlashColor", "cooldownPressFlashDuration", "cooldownPressFlashCombatOnly"},
+        modes = {icons = true},
+    },
     -- Bar Mode — Appearance Tab
     -- The bar pandemic display (the fill recolor: pandemicEffectEnabled +
     -- barPandemicColor) is NOT here: it shares the mode-spanning "pandemic"
@@ -1460,7 +1473,7 @@ ST.OVERRIDE_SECTION_ORDER = {
     "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "auraMissingDesaturation", "showOutOfRange", "showTooltips",
     -- "pandemic" spans both display modes (like auraText above), so it sits in
     -- the icons run rather than being listed twice.
-    "lossOfControl", "unusableDimming", "iconTint", "iconZoom", "assistedHighlight", "procGlow", "auraIndicator", "pandemic", "readyGlow", "keyPressHighlight",
+    "lossOfControl", "unusableDimming", "iconTint", "iconZoom", "assistedHighlight", "procGlow", "auraIndicator", "pandemic", "readyGlow", "keyPressHighlight", "cooldownPressFlash",
     "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText",
     "textFont", "textColors", "textBackground",
 }
@@ -1496,11 +1509,22 @@ ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS = {
     auraIndicator = true,
     pandemic = true,
     barActiveAura = true,
+    -- The press flash answers a failed SPELL cast (Core/Lifecycle.lua); an
+    -- item's use never reaches it, so the section would be a dead control.
+    cooldownPressFlash = true,
+}
+
+-- The plain-item twin of the list above (type == "item": potions, on-use
+-- bag items). Entry type is as immutable as add intent, so the prune pass
+-- may drop stored overrides for these sections just as it does above.
+ST.ITEM_ENTRY_DENIED_OVERRIDE_SECTIONS = {
+    cooldownPressFlash = true,
 }
 
 ST.NO_COOLDOWN_DENIED_OVERRIDE_SECTIONS = {
     desaturation = true,
     readyGlow = true,
+    cooldownPressFlash = true,
 }
 
 -- Standalone aura entries (addedAs == "aura") have no cast, cooldown, or
@@ -1538,6 +1562,7 @@ ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS = {
     procGlow = true,
     readyGlow = true,
     keyPressHighlight = true,
+    cooldownPressFlash = true,
 }
 
 -- The panel-scope twin of the list above. EVERY entry an Aura Panel can hold is
@@ -1635,7 +1660,7 @@ ST.PANEL_COPY_SCOPES = {
         },
         indicators = {
             sections = {
-                "procGlow", "auraIndicator", "readyGlow", "keyPressHighlight",
+                "procGlow", "auraIndicator", "readyGlow", "keyPressHighlight", "cooldownPressFlash",
                 "assistedHighlight", "pandemic", "iconFillTimer",
                 "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe",
                 "desaturation", "auraMissingDesaturation", "unusableDimming",
@@ -1747,6 +1772,10 @@ function ST.CanButtonUseOverrideSection(buttonData, sectionId)
             return false, "entryType"
         end
         return true
+    end
+    if buttonData and buttonData.type == "item"
+        and ST.ITEM_ENTRY_DENIED_OVERRIDE_SECTIONS[sectionId] then
+        return false, "entryType"
     end
     if buttonData and buttonData.addedAs == "aura" then
         -- A predicate value asks about this entry's shape; `true` denies every
