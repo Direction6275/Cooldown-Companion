@@ -14,6 +14,7 @@ local ResetConfigSelection = ST._ResetConfigSelection
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local COLUMN_PADDING = ST._COLUMN_PADDING
 local RefreshColumn1 = ST._RefreshColumn1
+local MaybeSelectInitialConfigContainer = ST._MaybeSelectInitialConfigContainer
 local RefreshColumn3 = ST._RefreshColumn3
 local RefreshProfileBar = ST._RefreshProfileBar
 local SetConfigPrimaryMode = ST._SetConfigPrimaryMode
@@ -2508,6 +2509,7 @@ function CooldownCompanion:_configToggleImpl()
             if not (CS.configFrame and CS.configFrame.frame and CS.configFrame.frame:IsShown()) then
                 return
             end
+            MaybeSelectInitialConfigContainer()
             CooldownCompanion:RefreshConfigPanel()
             MaybeAutoOpenChangelog()
             if MaybeAutoStartFirstIconPanelTutorial then
@@ -2538,6 +2540,7 @@ function CooldownCompanion:_configToggleImpl()
     else
         SetConfigPrimaryMode("buttons", { skipRefresh = true })
         CS.configFrame.frame:Show()
+        MaybeSelectInitialConfigContainer()
         self:RefreshConfigPanel()
         MaybeAutoOpenChangelog()
         if MaybeAutoStartFirstIconPanelTutorial then

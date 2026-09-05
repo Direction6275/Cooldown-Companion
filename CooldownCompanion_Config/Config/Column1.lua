@@ -920,6 +920,45 @@ end
 
 ST._ShowPanelContextMenu = ShowPanelContextMenu
 
+local function ResolveContainerScope(containerId, container)
+    if CooldownCompanion.ResolveContainerClassScope then
+        return CooldownCompanion:ResolveContainerClassScope(container or containerId)
+    end
+    if container and container.isGlobal then
+        return { scope = "global", sectionKey = "global", runtimeVisible = true }
+    end
+    if container and container.createdBy == CooldownCompanion.db.keys.char then
+        return { scope = "current-class", sectionKey = "char", runtimeVisible = true }
+    end
+    return { scope = "invalid", sectionKey = "invalid", runtimeVisible = false }
+end
+
+-- Startup selection and Navigator sections must agree on the first Group.
+local function BuildOrderedContainerItems(db, containerIds, searchResults)
+    local items = {}
+    local specId = CooldownCompanion._currentSpecId
+    for _, cid in ipairs(containerIds) do
+        if not searchResults or searchResults.containerMatches[cid] then
+            items[#items + 1] = {
+                kind = "container",
+                id = cid,
+                order = CooldownCompanion:GetOrderForSpec(db.groupContainers[cid], specId, cid),
+            }
+        end
+    end
+    table.sort(items, function(a, b)
+        if a.order == b.order then return a.id < b.id end
+        return a.order < b.order
+    end)
+    return items
+end
+
+local function IsNavigatorContainerInactive(container, stats)
+    if not container or container.enabled == false then return true end
+    if not stats or not stats.hasButtons then return true end
+    return stats.hasActivePanel ~= true
+end
+
 local function BuildColumn1ContainerStats(db, containerIds)
     local statsByContainer = {}
     if not containerIds or not next(containerIds) then return statsByContainer end
@@ -964,6 +1003,47 @@ local function BuildColumn1ContainerStats(db, containerIds)
 
     return statsByContainer
 end
+
+local function MaybeSelectInitialConfigContainer()
+    if CS.initialContainerSelectionAttempted then return end
+    CS.initialContainerSelectionAttempted = true
+
+    -- An explicit destination or workflow opened before the first refresh wins.
+    if CooldownCompanion._unsupportedLegacyProfile
+        or CS.selectedContainer or CS.selectedGroup or CS.selectedButton
+        or CS.selectedRotationAssistantEntry or CS.barsEntrySelected
+        or CS.selectedResourcePowerType or CS.selectedCustomBarId
+        or CS.castFramesSelectedItem or CS.unifiedBarKind
+        or next(CS.selectedGroups) or next(CS.selectedPanels)
+        or next(CS.selectedButtons) or next(CS.selectedCustomBars)
+        or CS.importMode or CS.exportMode or CS.talentPickerMode
+        or CS.copyPanelSettings or CS.otherClassLibraryActive
+        or CS.inlineTextureBrowserOpen or CS.addingToPanelId or CS.dragState
+        or (CS.configSearchText and CS.configSearchText ~= "")
+        or (CS.tutorialRuntime and CS.tutorialRuntime.active) then
+        return
+    end
+
+    local db = CooldownCompanion.db.profile
+    local containerIds, included = {}, {}
+    for id, container in pairs(db.groupContainers or {}) do
+        if ResolveContainerScope(id, container).scope == "current-class" then
+            containerIds[#containerIds + 1] = id
+            included[id] = true
+        end
+    end
+    local stats = BuildColumn1ContainerStats(db, included)
+    for _, item in ipairs(BuildOrderedContainerItems(db, containerIds)) do
+        if not IsNavigatorContainerInactive(db.groupContainers[item.id], stats[item.id]) then
+            SelectConfigContainer(item.id)
+            CS.expandedContainer = item.id
+            CS.peekedContainers[item.id] = nil
+            return
+        end
+    end
+end
+
+ST._MaybeSelectInitialConfigContainer = MaybeSelectInitialConfigContainer
 
 local function IsCreateTargetContainer(containerId)
     local db = CooldownCompanion.db and CooldownCompanion.db.profile
@@ -2038,7 +2118,6 @@ local function RefreshColumn1(preserveDrag)
     end
 
     local db = CooldownCompanion.db.profile
-    local charKey = CooldownCompanion.db.keys.char
     local searchResults = IsConfigFinderActive and IsConfigFinderActive() and BuildConfigFinderResults and BuildConfigFinderResults() or nil
     local searchPanelResultsByContainer = {}
     for _, result in ipairs(searchResults and searchResults.panelResults or {}) do
@@ -2113,42 +2192,13 @@ local function RefreshColumn1(preserveDrag)
         return meta
     end
 
-    local function ResolveContainerScope(containerId, container)
-        if CooldownCompanion.ResolveContainerClassScope then
-            return CooldownCompanion:ResolveContainerClassScope(container or containerId)
-        end
-        if container and container.isGlobal then
-            return { scope = "global", sectionKey = "global", runtimeVisible = true }
-        end
-        if container and container.createdBy == charKey then
-            return { scope = "current-class", sectionKey = "char", runtimeVisible = true }
-        end
-        return { scope = "invalid", sectionKey = "invalid", runtimeVisible = false }
-    end
-
     -- Build the flat Group order for a section.
     local function BuildSectionItems(section, sectionContainerIds)
-        local items = {}
-        local specId = CooldownCompanion._currentSpecId
-        for _, cid in ipairs(sectionContainerIds) do
-            if not searchResults or searchResults.containerMatches[cid] then
-                table.insert(items, {
-                    kind = "container",
-                    id = cid,
-                    order = CooldownCompanion:GetOrderForSpec(db.groupContainers[cid], specId, cid),
-                })
-            end
-        end
-        table.sort(items, function(a, b) return a.order < b.order end)
-        return items
+        return BuildOrderedContainerItems(db, sectionContainerIds, searchResults)
     end
 
     local function IsContainerInactive(containerId, container)
-        if not container then return true end
-        if container.enabled == false then return true end
-        local stats = containerStats[containerId]
-        if not stats or not stats.hasButtons then return true end
-        return stats.hasActivePanel ~= true
+        return IsNavigatorContainerInactive(container, containerStats[containerId])
     end
 
     local function ResolveSelectedDragLoadBucket(defaultBucket)
