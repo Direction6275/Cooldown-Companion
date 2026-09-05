@@ -199,6 +199,7 @@ local COLUMN_PADDING = 8
 ------------------------------------------------------------------------
 ST._configState = {
     -- Selection state
+    initialContainerSelectionAttempted = false, -- Once per login/reload; not reset with selection
     selectedContainer = nil,     -- Group container selected in the Navigator
     selectedGroup = nil,         -- Panel selected in the Navigator
     selectedButton = nil,
