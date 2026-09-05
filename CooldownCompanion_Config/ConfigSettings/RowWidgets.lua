@@ -1525,7 +1525,32 @@ end
 -- select the item or close the dropdown.
 local function AddSoundPreviewDropdownRow(container, opts)
     local onPreview = opts.onPreview
-    local row = AddDropdownRow(container, opts, SOUND_PREVIEW_DROPDOWN_ITEM_TYPE)
+    -- The closed control only needs its current selection. Full sound lists
+    -- can contain hundreds of entries, repeated for every alert event.
+    local initialOptions = {}
+    for key, value in pairs(opts) do initialOptions[key] = value end
+    initialOptions.list, initialOptions.order = {}, {}
+    if opts.value ~= nil and opts.list and opts.list[opts.value] ~= nil then
+        initialOptions.list[opts.value] = opts.list[opts.value]
+        initialOptions.order[1] = opts.value
+    end
+    local row = AddDropdownRow(container, initialOptions, SOUND_PREVIEW_DROPDOWN_ITEM_TYPE)
+
+    -- AceGUI fires OnOpened after positioning/showing the menu items. Populate
+    -- before its public Open method so the first visible menu is complete.
+    -- This override belongs only to this borrowed pullout, never its type.
+    local pullout = row.pullout
+    local originalOpen = pullout.Open
+    local function OpenSoundMenu(widget, ...)
+        widget.Open = originalOpen
+        row:SetList(opts.list, opts.order, SOUND_PREVIEW_DROPDOWN_ITEM_TYPE)
+        return originalOpen(widget, ...)
+    end
+    pullout.Open = OpenSoundMenu
+    row:SetCallback("OnRelease", function()
+        -- An unopened menu must also return to AceGUI's pool unmodified.
+        if pullout.Open == OpenSoundMenu then pullout.Open = originalOpen end
+    end)
 
     row:SetCallback("OnOpened", function(widget)
         if not widget.pullout then return end
