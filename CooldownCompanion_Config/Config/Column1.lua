@@ -415,7 +415,14 @@ local function IsGenericGroupName(name)
         or trimmed:match("^Group%s+%d+$") ~= nil
 end
 
-local function EnsureGenericGroupRenameBadge(entry)
+local function IsGenericPanelName(name)
+    local trimmed = TrimGroupName(name)
+    return trimmed == ""
+        or trimmed == "Panel"
+        or trimmed:match("^Panel%s+%d+$") ~= nil
+end
+
+local function EnsureGenericRenameBadge(entry)
     local badge = entry.frame._cdcGenericRenameBadge
     if not badge then
         badge = CreateFrame("Button", nil, entry.frame)
@@ -439,19 +446,19 @@ local function EnsureGenericGroupRenameBadge(entry)
     return badge
 end
 
-local function ConfigureGenericGroupRenameBadge(entry, container, containerId, rightReserve)
-    local badge = EnsureGenericGroupRenameBadge(entry)
+local function ConfigureGenericRenameBadge(entry, name, isGeneric, renameData, rightReserve)
+    local badge = EnsureGenericRenameBadge(entry)
     badge:ClearAllPoints()
     badge:SetScript("OnClick", nil)
 
-    if not IsGenericGroupName(container and container.name) then
+    if not isGeneric then
         badge:Hide()
         return 0
     end
 
-    local currentName = TrimGroupName(container and container.name)
+    local currentName = TrimGroupName(name)
     if currentName == "" then
-        currentName = "New Group"
+        currentName = renameData.containerId and "New Group" or "Panel"
     end
 
     badge.icon:SetAtlas("QuestLegendary", false)
@@ -460,7 +467,7 @@ local function ConfigureGenericGroupRenameBadge(entry, container, containerId, r
     badge:SetScript("OnClick", function(_, button)
         if button ~= "LeftButton" then return end
         GameTooltip:Hide()
-        ShowPopupAboveConfig("CDC_RENAME_GROUP", currentName, { containerId = containerId })
+        ShowPopupAboveConfig("CDC_RENAME_GROUP", currentName, renameData)
     end)
     badge:Show()
     return 18
@@ -2329,7 +2336,10 @@ local function RefreshColumn1(preserveDrag)
         end
         local rightReserve = expandReserve + GetConfigRowBadgeReserve(entry.frame) + 4
         rightReserve = rightReserve
-            + ConfigureGenericGroupRenameBadge(entry, container, containerId, rightReserve)
+            + ConfigureGenericRenameBadge(
+                entry, container.name, IsGenericGroupName(container.name),
+                { containerId = containerId }, rightReserve
+            )
         ConfigureGroupHeaderLayout(entry, rightReserve)
 
         if CS.selectedGroups[containerId] then
@@ -2474,6 +2484,12 @@ local function RefreshColumn1(preserveDrag)
                         desaturated = true
                     end
                 end
+                -- Keep the naming cue left of the status/count area and reserve
+                -- its width in both normal and compact row layouts.
+                local renameReserve = ConfigureGenericRenameBadge(
+                    panelEntry, panel.name, IsGenericPanelName(panel.name),
+                    { groupId = panelId }, TREE.PANEL_META_WIDTH + 4
+                )
                 ApplyConfigRowIcon(panelEntry, iconTexture, {
                     atlas = iconAtlas,
                     desaturated = desaturated,
@@ -2484,7 +2500,7 @@ local function RefreshColumn1(preserveDrag)
                     compactRowHeight = 24,
                     texCoord = texCoord,
                     vertexColor = vertexColor,
-                    rightPad = TREE.PANEL_META_WIDTH + 8,
+                    rightPad = TREE.PANEL_META_WIDTH + 8 + renameReserve,
                 })
                 panelEntry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
                 ConfigureTreePanelMeta(
