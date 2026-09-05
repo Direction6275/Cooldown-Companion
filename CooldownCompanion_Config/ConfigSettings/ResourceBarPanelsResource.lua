@@ -1706,11 +1706,7 @@ local function BuildBarHeightControls(container, settings, layout)
                 and RESOURCE_FINDER.primary.size.customHeights,
         value = layout.customBarHeights or false,
         onChange = function(val)
-            local wasEnabled = layout.customBarHeights == true
             layout.customBarHeights = val
-            if val and not wasEnabled and CS.QueueAdvancedSettingsPanelOpen then
-                CS.QueueAdvancedSettingsPanelOpen(customHeightsAdvKey)
-            end
             CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:RepositionCastBar()
             CooldownCompanion:UpdateAnchorStacking()
@@ -1805,17 +1801,14 @@ local function BuildBarHeightControls(container, settings, layout)
         title = customThicknessLabel .. " Advanced",
         build = BuildCustomResourceHeightsAdvanced,
         -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): the checkbox's own
-        -- sequence queues this panel open and runs the full bar/cast-bar/
-        -- anchor apply chain, which no shared refreshKind runs, so the
+        -- sequence runs the full bar/cast-bar/anchor apply chain,
+        -- which no shared refreshKind runs, so the
         -- enable owns its whole sequence as `run`.
         unlock = layout.customBarHeights ~= true and {
             enable = {
                 label = "Turn On " .. customThicknessLabel,
                 run = function()
                     layout.customBarHeights = true
-                    if CS.QueueAdvancedSettingsPanelOpen then
-                        CS.QueueAdvancedSettingsPanelOpen(customHeightsAdvKey)
-                    end
                     CooldownCompanion:ApplyResourceBars()
                     CooldownCompanion:RepositionCastBar()
                     CooldownCompanion:UpdateAnchorStacking()
@@ -2078,19 +2071,12 @@ local function AddThresholdTickValueRow(panel, label, text, buttonText, onEnter,
 end
 
 local function AddThresholdTickEnableCheckbox(container, settings, powerType, specID,
-    settingKey, label, advKey, finderSetting)
+    settingKey, label, finderSetting)
     local enabled = ReadSpecOverrideKey(settings, powerType, specID, settingKey, false) == true
     -- One writer for both entrances (the checkbox and the gear panel's
     -- Turn On footer), so the two can never drift apart.
     local function SetEnabled(val)
-        local wasEnabled = ReadSpecOverrideKey(settings, powerType, specID, settingKey, false) == true
         WriteSpecOverrideKey(settings, powerType, specID, settingKey, val == true)
-        if val and not wasEnabled and CS.QueueAdvancedSettingsPanelOpen then
-            CS.QueueAdvancedSettingsPanelOpen(advKey, {
-                selectedResourcePowerType = powerType,
-                resourceSettingsSpecID = specID,
-            })
-        end
         CooldownCompanion:ApplyResourceBars()
         C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
     end
@@ -3211,7 +3197,6 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                         _colorSpecID,
                         "segThresholdEnabled",
                         "Enable " .. resourceName .. " Threshold Colors",
-                        thresholdAdvKey,
                         RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[capturedPt]
                             and RESOURCE_FINDER.detail[capturedPt].thresholds
                             and RESOURCE_FINDER.detail[capturedPt].thresholds.enable
@@ -3284,7 +3269,6 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                         _colorSpecID,
                         "continuousTickEnabled",
                         "Enable " .. resourceName .. " Tick Markers",
-                        tickAdvKey,
                         RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[capturedPt]
                             and RESOURCE_FINDER.detail[capturedPt].thresholds
                             and RESOURCE_FINDER.detail[capturedPt].thresholds.enable

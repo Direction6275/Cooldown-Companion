@@ -854,9 +854,6 @@ local function ReanchorConfigSideWindows()
     if ST._ReanchorSpellbookPanelWindow then
         ST._ReanchorSpellbookPanelWindow()
     end
-    if ST._ReanchorAdvancedSettingsPanels then
-        ST._ReanchorAdvancedSettingsPanels()
-    end
 end
 
 local function SaveConfigWindowGeometry(content)

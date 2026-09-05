@@ -90,6 +90,7 @@ local ROW_GRID_MIN_WIDTH     = 64
 
 -- Hierarchy comes from position, size and color - never boxes or backdrops.
 local LABEL_COLOR            = { 1, 1, 1 }
+local LABEL_DISCLOSURE_HOVER = { 1, 0.82, 0 }
 local LABEL_CHILD_COLOR      = { 0.749, 0.714, 0.612 }  -- #bfb69c
 local LABEL_DISABLED_COLOR   = { 0.5, 0.5, 0.5 }
 -- Caption rows (SetCaption) are read-only column headings, not settings.
@@ -109,7 +110,9 @@ local COLOR_ROW_TYPE    = "CDC-ColorRow"
 local LABEL_ROW_TYPE    = "CDC-LabelRow"
 local ROW_GRID_TYPE     = "CDC-RowGrid"
 local ROW_GRID_COL_TYPE = "CDC-RowGridColumn"
-local ROW_WIDGET_VERSION = 1
+local INLINE_SETTINGS_TYPE = "CDC-InlineSettings"
+local INLINE_PADDING = 6
+local ROW_WIDGET_VERSION = 2
 
 -- Flip to true to trace every grid layout pass to chat. Left in deliberately:
 -- the resize bug this template was hardened against was never reproduced from
@@ -120,12 +123,22 @@ local DEBUG_ROW_GRID = false
 -- SHARED ROW SCAFFOLDING
 ------------------------------------------------------------------------
 
--- Reposition the invisible badge anchor at the end of the label text so the
--- gear/info/scope badge creators in Helpers.lua can hang off it.
+-- Bound the name click target to the visible text, clear of the badges.
+local function UpdateDisclosureBounds(self)
+    local target = self.settingsDisclosureTarget
+    if not (target and self.settingsDisclosure) then return end
+    local label = self.rowLabel
+    target:ClearAllPoints()
+    target:SetPoint("LEFT", label, "LEFT", 0, 0)
+    target:SetSize(max(1, min(label:GetStringWidth() or 0, label:GetWidth() or 0)), ROW_HEIGHT)
+end
+
+-- Reposition the anchor shared by the gear/info/scope badge chain.
 local function UpdateBadgeAnchor(self)
     local label = self.rowLabel
     self.badgeAnchor:ClearAllPoints()
     self.badgeAnchor:SetPoint("LEFT", label, "LEFT", label:GetStringWidth() or 0, 0)
+    UpdateDisclosureBounds(self)
 end
 
 -- Chain a badge (gear / info / scope chrome) off the end of the row's label
@@ -160,7 +173,9 @@ end
 
 local function ApplyLabelColor(self)
     local color = LABEL_COLOR
-    if self.disabled then
+    if self.settingsDisclosureHovered then
+        color = LABEL_DISCLOSURE_HOVER
+    elseif self.disabled then
         color = LABEL_DISABLED_COLOR
     elseif self.captioned then
         color = LABEL_CAPTION_COLOR
@@ -203,12 +218,12 @@ end
 -- and the only one is the control overlay below. The row frame's own OnEnter
 -- never passes it, so a greyed row's label and empty middle say nothing about
 -- scope (owner ruling 2026-08-14: the row-wide hover was tooltip soup).
-local function ShowRowTooltip(self, includeScope)
+local function ShowRowTooltip(self, includeScope, disclosureHint)
     local lines = self.tooltipLines
     local range = self.rangeTooltip
     local scope = includeScope and self.scopeTooltipLines or nil
     local hasOwn = range or (lines and lines[1])
-    if not (hasOwn or (scope and scope[1])) then return end
+    if not (hasOwn or (scope and scope[1]) or disclosureHint) then return end
 
     GameTooltip:SetOwner(self.frame, "ANCHOR_RIGHT")
     if lines then
@@ -223,6 +238,7 @@ local function ShowRowTooltip(self, includeScope)
         end
         AddRowTooltipLines(scope)
     end
+    if disclosureHint then GameTooltip:AddLine(disclosureHint, 1, 0.82, 0) end
     GameTooltip:Show()
 end
 
@@ -344,6 +360,46 @@ end
 -- Methods every row type shares. Copied into each type's method table so the
 -- widgets stay plain AceGUI widgets with no extra metatable layer.
 local sharedMethods = {
+    ["SetSettingsDisclosure"] = function(self, onClick, getHint)
+        self.settingsDisclosure = onClick
+        self.settingsDisclosureHint = getHint
+        self.settingsDisclosureHovered = nil
+        local target = self.settingsDisclosureTarget
+        if not onClick then
+            if target then
+                target:Hide()
+                target:ClearAllPoints()
+                target:SetScript("OnClick", nil)
+                target:SetScript("OnEnter", nil)
+                target:SetScript("OnLeave", nil)
+            end
+            ApplyLabelColor(self)
+            return
+        end
+        if not target then
+            target = CreateFrame("Button", nil, self.frame)
+            target:RegisterForClicks("LeftButtonUp")
+            self.settingsDisclosureTarget = target
+        end
+        -- Only the rendered name is clickable. Badge and control regions keep
+        -- their independent actions, including read-only scope overlays.
+        target:SetScript("OnClick", function() self.settingsDisclosure() end)
+        target:SetScript("OnEnter", function()
+            self.settingsDisclosureHovered = true
+            ApplyLabelColor(self)
+            ShowRowTooltip(self, false, self.settingsDisclosureHint())
+            self:Fire("OnEnter")
+        end)
+        target:SetScript("OnLeave", function()
+            self.settingsDisclosureHovered = nil
+            ApplyLabelColor(self)
+            GameTooltip:Hide()
+            self:Fire("OnLeave")
+        end)
+        UpdateDisclosureBounds(self)
+        target:Show()
+    end,
+
     ["SetLabel"] = function(self, text)
         self.rowLabel:SetText(text or "")
         UpdateBadgeAnchor(self)
@@ -408,6 +464,7 @@ local sharedMethods = {
 
     ["OnWidthSet"] = function(self, width)
         UpdateControlColumnWidth(self, width)
+        UpdateDisclosureBounds(self)
     end,
 
     ["SetControlColumnWidth"] = function(self, width)
@@ -420,6 +477,7 @@ local sharedMethods = {
 -- then resets its own control, matching the AceGUI convention that OnAcquire
 -- (not OnRelease) is what guarantees a clean widget.
 local function ResetRowBase(self)
+    self:SetSettingsDisclosure(nil)
     self.disabled = false
     self.indented = false
     self.tooltipLines = nil
@@ -1690,13 +1748,14 @@ end
 -- FULLSCREEN_DIALOG matches the strata SimpleGroup's constructor forces
 -- (AceGUIContainer-SimpleGroup.lua:50). These types replace SimpleGroups in an
 -- already owner-validated layout, so the draw order stays byte-identical.
-local function BuildGridContainer(widgetType)
+local function BuildGridContainer(widgetType, inset, padding)
+    inset, padding = inset or 0, padding or 0
     local frame = CreateFrame("Frame", nil, UIParent)
     frame:SetFrameStrata("FULLSCREEN_DIALOG")
 
     local content = CreateFrame("Frame", nil, frame)
-    content:SetPoint("TOPLEFT")
-    content:SetPoint("BOTTOMRIGHT")
+    content:SetPoint("TOPLEFT", frame, "TOPLEFT", inset, -padding)
+    content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, padding)
 
     local widget = {
         frame   = frame,
@@ -1709,19 +1768,21 @@ local function BuildGridContainer(widgetType)
         -- Cleared here rather than in OnRelease: OnAcquire is what AceGUI
         -- guarantees runs before a widget is used again.
         self._cdcWidthLaid = nil
+        self._cdcInlineIndent = nil
         self:SetWidth(300)
         self:SetHeight(ROW_HEIGHT)
     end
 
     widget.LayoutFinished = function(self, _, height)
         if self.noAutoHeight then return end
-        self:SetHeight(height or 0)
+        self:SetHeight((height or 0) + padding * 2)
     end
 
     widget.OnWidthSet = function(self, width)
         local frameContent = self.content
-        frameContent:SetWidth(width)
-        frameContent.width = width
+        local contentWidth = max(0, width - (self._cdcInlineIndent or inset))
+        frameContent:SetWidth(contentWidth)
+        frameContent.width = contentWidth
         if width ~= self._cdcWidthLaid then
             self._cdcWidthLaid = width
             self:DoLayout()
@@ -1730,8 +1791,9 @@ local function BuildGridContainer(widgetType)
 
     widget.OnHeightSet = function(self, height)
         local frameContent = self.content
-        frameContent:SetHeight(height)
-        frameContent.height = height
+        local contentHeight = max(0, height - padding * 2)
+        frameContent:SetHeight(contentHeight)
+        frameContent.height = contentHeight
     end
 
     return AceGUI:RegisterAsContainer(widget)
@@ -1826,9 +1888,32 @@ if not AceGUI:GetLayout(ROW_GRID_LAYOUT) then
     end)
 end
 
--- Open a two-column grid inside `container` (typically the tab's ScrollFrame,
--- laid out with "List"). Add rows to `left` and `right`; sections that only
--- need one column just leave `right` empty.
+-- A resize-safe editor shares the grid layout machinery, with an inset
+-- that leaves its control column aligned with the parent setting.
+AceGUI:RegisterWidgetType(INLINE_SETTINGS_TYPE, function()
+    local widget = BuildGridContainer(INLINE_SETTINGS_TYPE, CHILD_INDENT, INLINE_PADDING)
+    local rule = widget.frame:CreateTexture(nil, "BORDER")
+    rule:SetColorTexture(1, 0.82, 0, 0.18)
+    rule:SetWidth(1)
+    widget.inlineRule = rule
+    return widget
+end, ROW_WIDGET_VERSION)
+
+local function CreateInlineSettingsGroup(row)
+    local group = AceGUI:Create(INLINE_SETTINGS_TYPE)
+    local inset = CHILD_INDENT + (row.indented and CHILD_INDENT or 0)
+    group._cdcInlineIndent = inset
+    group._cdcWidthLaid = nil
+    group.content:SetPoint("TOPLEFT", group.frame, "TOPLEFT", inset, -INLINE_PADDING)
+    group.inlineRule:ClearAllPoints()
+    group.inlineRule:SetPoint("TOPLEFT", group.frame, "TOPLEFT", inset / 2, -INLINE_PADDING)
+    group.inlineRule:SetPoint("BOTTOMLEFT", group.frame, "BOTTOMLEFT", inset / 2, INLINE_PADDING)
+    group:SetFullWidth(true)
+    group:SetLayout("List")
+    return group
+end
+
+-- Open a top-aligned two-column grid; either column can be left empty.
 local function BeginRowGrid(container)
     local grid = AceGUI:Create(ROW_GRID_TYPE)
     grid:SetFullWidth(true)
@@ -1862,6 +1947,7 @@ end
 ------------------------------------------------------------------------
 ST._RowGrammar = {
     ROW_HEIGHT = ROW_HEIGHT,
+    INLINE_PADDING = INLINE_PADDING,
     CONTROL_COLUMN_WIDTH = CONTROL_COLUMN_WIDTH,
     CHILD_INDENT = CHILD_INDENT,
     CHECKBOX_ROW_TYPE = CHECKBOX_ROW_TYPE,
@@ -1882,3 +1968,5 @@ ST._AddLabelRow = AddLabelRow
 ST._AnchorRowBadge = AnchorRowBadge
 ST._BeginRowGrid = BeginRowGrid
 ST._BeginFullWidthRowGroup = BeginFullWidthRowGroup
+
+ST._CreateInlineSettingsGroup = CreateInlineSettingsGroup

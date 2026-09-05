@@ -502,16 +502,9 @@ local function BuildAdvancedDescriptor(parentWidget, settingKey, options)
         build = options and options.build,
         isAvailable = options and options.isAvailable,
         context = options and options.context,
-        deferBuild = options and options.deferBuild,
         unlock = options and options.unlock,
-        -- Every settings-side gear panel follows lens shifts (owner ruling
-        -- 2026-08-31): selecting an entry rebinds the open panel to that
-        -- entry's scope instead of closing it, and the gear-stamp sweeps
-        -- close it whenever its gear does not rebuild. See LENS_CONTEXT_FIELDS
-        -- in AdvancedSettingsPanel.lua for what this loosens - and what it
-        -- doesn't. A descriptor built anywhere else (none today; historically
-        -- the preview command center's tab-less factory opens) does not set
-        -- it and keeps the full-context close with no sweep coverage.
+        -- Keep the editor open across panel/entry lens shifts. Page context
+        -- and fresh row registration still govern its lifetime.
         lensAgnostic = true,
     }
 end
@@ -538,21 +531,9 @@ local function SetActiveAdvancedSettingsToggleButton(btn)
 end
 
 local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnabled, options)
-    local useSidePanel = options and type(options.build) == "function" and CS.OpenAdvancedSettingsPanel
-    local isActive = false
-    if useSidePanel then
-        if CS.ConsumeQueuedAdvancedSettingsPanelOpen then
-            CS.ConsumeQueuedAdvancedSettingsPanelOpen(BuildAdvancedDescriptor(parentWidget, settingKey, options))
-        end
-        isActive = CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(settingKey, options.context) or false
-        if isActive and CS.RebindAdvancedSettingsPanel then
-            CS.RebindAdvancedSettingsPanel(BuildAdvancedDescriptor(parentWidget, settingKey, options))
-        end
-    end
-
+    local hasEditor = options and type(options.build) == "function" and CS.OpenAdvancedSettingsPanel
     local frame = parentWidget.frame
     local btn = frame._cdcAdvancedBtn
-
     if not btn then
         btn = CreateFrame("Button", nil, frame)
         btn:SetSize(14, 14)
@@ -562,49 +543,23 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
         btn._icon:SetAtlas(ADVANCED_TOGGLE_ATLAS, false)
         frame._cdcAdvancedBtn = btn
     end
-
     btn:SetParent(frame)
     btn:ClearAllPoints()
-    -- The gear is cached on the widget's frame and outlives the build that
-    -- put it there; re-enable in case a previous tenant left it disabled.
-    -- Locked and live gears deliberately wear the SAME two looks (owner
-    -- ruling 2026-08-31): idle grey closed, gold open - the read-only panel
-    -- and its unlock strip are what say locked, never the gear's color, so
-    -- there is no dim state left to reset.
     btn:Enable()
     btn._advancedSettingKey = settingKey
 
-    -- Clean up on widget release (prevent leaking into recycled widgets).
-    -- Also covers any collapse button on the same frame, since AddAdvancedToggle
-    -- may run after AttachCollapseButton on the same heading.
-    --
-    -- Chain, don't replace: the left-aligned heading variant and the row
-    -- widgets install their own restore/detach handlers, and clobbering those
-    -- would leave stock Heading anatomy re-anchored in the shared pool. The
-    -- collapse-button detach below is idempotent with AttachCollapseButton's
-    -- own handler, so running both is a no-op for existing call sites.
-    --
-    -- Every close below names its own setting key. A settings-side gear owns
-    -- exactly one panel, and the preview command center can have a second one
-    -- open whose gear lives on another tab - closing that one too would be a
-    -- gear reaching past its own panel.
     local prevOnRelease = parentWidget.events and parentWidget.events["OnRelease"]
     parentWidget:SetCallback("OnRelease", function(widget, event, ...)
-        if prevOnRelease then
-            prevOnRelease(widget, event, ...)
-        end
-        local activeSidePanelToggleReleased = useSidePanel and CS.activeAdvancedSettingsToggleButton == btn
-        if activeSidePanelToggleReleased
-            and not CS.configRefreshInProgress
-            and not CS.advancedSettingsPanelRefreshing
-            and CS.CloseAdvancedSettingsPanel
-        then
-            CS.CloseAdvancedSettingsPanel({ settingKey = settingKey })
-        end
-
+        if prevOnRelease then prevOnRelease(widget, event, ...) end
+        if CS.ReleaseAdvancedSettingsRow then CS.ReleaseAdvancedSettingsRow(settingKey, widget) end
+        if widget.SetSettingsDisclosure then widget:SetSettingsDisclosure(nil) end
         btn:ClearAllPoints()
         btn:Hide()
         btn:SetParent(nil)
+        btn:SetScript("OnClick", nil)
+        btn:SetScript("OnEnter", nil)
+        btn:SetScript("OnLeave", nil)
+        btn._advancedSettingKey = nil
         SetAdvancedToggleActive(btn, false)
         if CS.activeAdvancedSettingsToggleButton == btn then
             CS.activeAdvancedSettingsToggleButton = nil
@@ -617,20 +572,13 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
         end
     end)
 
-    -- The navigated-to setting's own row: the most specific thing a route can
-    -- name, so it wins over the section-anchor and heading matches. Recorded
-    -- ahead of the disabled gate below - the ROW is drawn and worth pointing
-    -- at even while its gear is hidden or inert.
-    local pendingHighlight = CS.pendingSettingHighlight
-    if pendingHighlight and pendingHighlight.rowKey == settingKey then
-        pendingHighlight.rowWidget = parentWidget
-    end
-
-    -- Hide when parent setting is disabled
+    local pending = CS.pendingSettingHighlight
+    if pending and pending.rowKey == settingKey then pending.rowWidget = parentWidget end
     if isEnabled == false then
-        if useSidePanel and isActive and CS.CloseAdvancedSettingsPanel then
+        if CS.CloseAdvancedSettingsPanel then
             CS.CloseAdvancedSettingsPanel({ settingKey = settingKey })
         end
+        if parentWidget.SetSettingsDisclosure then parentWidget:SetSettingsDisclosure(nil) end
         btn:Hide()
         btn._icon:Hide()
         table.insert(tabInfoBtns, btn)
@@ -639,27 +587,16 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
 
     btn:Show()
     btn._icon:Show()
-
-    -- The dispatch-level gear build pass sweeps every gear panel whose gear
-    -- did not build this pass (no gear means no rebind, so an open panel's
-    -- controls still point at the previous build's tables). Stamp every
-    -- SHOWN gear so a rebound panel - read-only or live - is told apart from
-    -- a stale one. See RunAdvancedGearBuildPass in AdvancedSettingsPanel.lua.
-    if CS.StampAdvancedGearBuilt then
-        CS.StampAdvancedGearBuilt(settingKey)
-    end
-
-    -- Position for row-grammar widgets: badges chain off the end of the row's
-    -- label text (RowWidgets.lua). The gear is normally created first, so it
-    -- is the badge nearest the label.
     if parentWidget.badgeAnchor then
         ST._AnchorRowBadge(parentWidget, btn)
-    -- Position for CheckBox widgets (has checkbg and text)
     elseif parentWidget.checkbg then
         btn:SetPoint("LEFT", parentWidget.checkbg, "RIGHT", parentWidget.text:GetStringWidth() + 6, 0)
     end
-    -- For headings, caller positions manually (use returned btn reference)
 
+    -- Register first, build later: the page's inheritance sweeps must finish
+    -- before the editor's independently gated body and unlock action exist.
+    local isActive = hasEditor and CS.RegisterAdvancedSettingsRow(
+        BuildAdvancedDescriptor(parentWidget, settingKey, options), parentWidget, btn) or false
     SetAdvancedToggleActive(btn, isActive)
     if isActive then
         SetActiveAdvancedSettingsToggleButton(btn)
@@ -667,31 +604,28 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
         CS.activeAdvancedSettingsToggleButton = nil
     end
 
-    btn:SetScript("OnClick", function()
-        if useSidePanel then
-            if CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(settingKey, options.context) then
-                CS.CloseAdvancedSettingsPanel({ settingKey = settingKey })
-            else
-                local descriptor = BuildAdvancedDescriptor(parentWidget, settingKey, options)
-                if CS.OpenAdvancedSettingsPanel(descriptor) and btn:GetParent() == frame then
-                    SetActiveAdvancedSettingsToggleButton(btn)
-                end
-            end
-        else
-            CooldownCompanion:RefreshConfigPanel()
+    local function ToggleEditor()
+        AceGUI:ClearFocus()
+        if hasEditor then
+            CS.OpenAdvancedSettingsPanel(BuildAdvancedDescriptor(parentWidget, settingKey, options))
         end
-    end)
-
+        GameTooltip:Hide()
+    end
+    local function DisclosureHint()
+        local active = CS.IsAdvancedSettingsPanelOpen(settingKey, options and options.context)
+        return active and "Collapse settings" or "Expand settings"
+    end
+    btn:SetScript("OnClick", ToggleEditor)
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        local active = CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(settingKey, options and options.context)
-        GameTooltip:AddLine(active and "Close advanced settings" or ADVANCED_TOGGLE_OPEN_TOOLTIP)
+        GameTooltip:AddLine(DisclosureHint())
         GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
+    if hasEditor and parentWidget.SetSettingsDisclosure then
+        parentWidget:SetSettingsDisclosure(ToggleEditor, DisclosureHint)
+    end
     table.insert(tabInfoBtns, btn)
-
     return isActive, btn
 end
 
@@ -808,6 +742,7 @@ end
 -- the widget parent chain AceGUI maintains - generic on purpose, so the same
 -- fire path serves the buttons workspace and the resource-bar panes.
 local function FindOwningScrollWidget(widget)
+    if widget and widget.type == "ScrollFrame" then return widget end
     local cur = widget
     for _ = 1, 12 do
         cur = cur.parent
@@ -820,6 +755,8 @@ local function FindOwningScrollWidget(widget)
     end
     return nil
 end
+
+ST._FindOwningSettingsScroll = FindOwningScrollWidget
 
 local function ScrollNavTargetIntoView(widget)
     local scroll = FindOwningScrollWidget(widget)
@@ -1804,11 +1741,9 @@ local function DetachUnlockStripArt()
     end
 end
 
--- The centered gold action at the foot of a read-only advanced panel: one
--- text step in the scope chrome's family (same color, same hover language as
--- Customize and Revert), because for an inherited section it IS that same
--- Customize. The foot, not the head (owner ruling 2026-08-31): panels end in
--- slack, so the step sits in space the rows never use.
+-- The inline editor's first row is the existing one-step unlock action.
+-- Its controls are gated separately so inherited outer sections cannot
+-- disable Customize or Turn On along with the settings they unlock.
 local function BuildAdvancedUnlockStrip(scroll, unlock)
     -- An unlock with no action is a pure lock (a write-less "panelOnly"
     -- section, ResolveAdvancedUnlock): the rows grey but there is
@@ -1816,18 +1751,6 @@ local function BuildAdvancedUnlockStrip(scroll, unlock)
     if not (unlock and unlock.onClick) then
         return
     end
-    -- Spacer above the action, sized to VERTICALLY CENTER the text in the
-    -- panel's empty foot band: the panel height allows 63px of chrome
-    -- (FRAME_CHROME_HEIGHT + CONTENT_HEIGHT_PADDING, AdvancedSettingsPanel.lua)
-    -- while the AceGUI Window's real content insets total 45px (top 32,
-    -- bottom 13), leaving a constant 18px of viewport below the content. An
-    -- 18px gap above matches it, so the text sits dead center between the
-    -- last row and the panel's bottom edge. Change either height constant and
-    -- this number moves with it.
-    if ST._AddModeSummarySpacer then
-        ST._AddModeSummarySpacer(scroll, 18)
-    end
-
     local action = AceGUI:Create("InteractiveLabel")
     -- The shared InteractiveLabel pool also serves the Navigator, whose rows
     -- hang plain-child badges off the label FRAME; nothing hides those on
@@ -1843,10 +1766,8 @@ local function BuildAdvancedUnlockStrip(scroll, unlock)
     action:SetJustifyH("CENTER")
     action:SetFullWidth(true)
 
-    -- Borrow the singleton art frame for this build: anchored 6px past the
-    -- text on both sides (up into the spacer's gap, down into the panel's
-    -- foot slack), leveled just below the label so the text draws over the
-    -- wash, and detached again when the label is released back to the pool.
+    -- The editor's top padding and the following gap contain the action's
+    -- wash. Detach its art when the label returns to the shared pool.
     local frame = action.frame
     local art = EnsureUnlockStripArt()
     art:SetParent(frame)
@@ -1891,6 +1812,7 @@ local function BuildAdvancedUnlockStrip(scroll, unlock)
         SetUnlockStripWash(art, UNLOCK_STRIP_WASH)
     end)
     scroll:AddChild(action)
+    if ST._AddModeSummarySpacer then ST._AddModeSummarySpacer(scroll, 6) end
     return action
 end
 
@@ -2560,7 +2482,7 @@ local function MeasureInfoTooltipLineWidth(text, isHeader)
 end
 
 -- Creates a (?) info button anchored to a frame. Replaces the repeated
--- CreateFrame→SetSize→SetPoint→CreateTexture→SetAtlas→tooltip pattern.
+-- CreateFrameâ†’SetSizeâ†’SetPointâ†’CreateTextureâ†’SetAtlasâ†’tooltip pattern.
 --
 -- tooltipLines: array of entries. Strings become title lines (AddLine).
 --   Tables {text, r, g, b, wrap} become body lines with color/wrapping.
@@ -3607,13 +3529,13 @@ end
 
 -- The modern ColorPickerFrame never delivers AceGUI's OnValueConfirmed:
 -- the OK button runs swatchFunc/opacityFunc BEFORE Hide(), so the widget's
--- "picker still open" test routes them to OnValueChanged — and its no-change
+-- "picker still open" test routes them to OnValueChanged â€” and its no-change
 -- guard swallows them anyway, because the last drag tick already carried the
 -- same values. Commit is therefore detected by picker CLOSE. Every close
--- path (OK, Cancel, Esc, any click outside the picker — including on
+-- path (OK, Cancel, Esc, any click outside the picker â€” including on
 -- another swatch, which cancels via GLOBAL_MOUSE_DOWN before its own click
 -- lands) runs through OnHide, and the cancel paths restore the original
--- color into the bound table via OnValueChanged before hiding — so flushing
+-- color into the bound table via OnValueChanged before hiding â€” so flushing
 -- the armed commit on hide applies the right value on every path.
 local pendingColorCommit
 local colorCommitHookInstalled
@@ -3644,7 +3566,7 @@ local function SetupColorCallbacks(widget, tbl, key, onConfirmedFn, onChangeFn, 
             -- Deferred mode: the live renderers re-read this table every tick,
             -- so an uncommitted drag value may only exist in it for the moment
             -- the config canvas rebuild reads it. Arm the close commit FIRST so
-            -- a failed refresh still converges when the picker closes — and arm
+            -- a failed refresh still converges when the picker closes â€” and arm
             -- it unconditionally, because this closure is the only writer of
             -- tbl[key] in deferred mode; without it the edit would be silently
             -- discarded when no confirm callback is supplied.
@@ -3709,7 +3631,7 @@ local FONT_ROW_PULLOUT_WIDTH = 300
 
 -- Create Font Size slider + Font dropdown + Font Outline dropdown.
 -- prefix: key prefix (e.g. "cooldown" reads cooldownFont, cooldownFontSize, cooldownFontOutline).
--- defaults: {size, sizeMin, sizeMax, sizeStep, font, outline} — all optional with sane fallbacks.
+-- defaults: {size, sizeMin, sizeMax, sizeStep, font, outline} â€” all optional with sane fallbacks.
 --
 -- Row grammar only (RowWidgets.lua); opts.indent makes them child rows. The
 -- pre-redesign full-width stock trio had no call sites left after the

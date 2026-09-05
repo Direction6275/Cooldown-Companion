@@ -183,7 +183,7 @@ local CastBarPreview = {
 }
 
 -- Custom-bar active-aura preview (the aura pass): a CC-side stand-in on the
--- config canvas — fill, texts, and effects render as if the aura were
+-- config canvas â€” fill, texts, and effects render as if the aura were
 -- running; the real bar and the aura slot kit are never touched. Keyed by
 -- the stored config table (the identity the runtime carries).
 local function CustomBarAuraPreview(cabConfig)
@@ -228,7 +228,7 @@ local function CustomBarMarkerPreview(cabConfig)
 end
 
 -- Spell custom-bar cooldown stand-in: the mid-cooldown look on the config
--- canvas — fill progress, cooldown/recharge colour, duration text and the
+-- canvas â€” fill progress, cooldown/recharge colour, duration text and the
 -- charge readout. One flag holding a KIND rather than two flags: the two
 -- looks are the same fabrication in different colours, and only one can
 -- ever run.
@@ -441,7 +441,7 @@ end
 
 -- Effective pandemic enable (PTR 8 visuals): the effective style's
 -- explicit-true key, which at entry scope is that entry's own value whenever it
--- customized the Pandemic section — the same resolution the live bind gate and
+-- customized the Pandemic section â€” the same resolution the live bind gate and
 -- the config mirror perform, so the control is never offered where the preview
 -- renders nothing nor hidden at entry scope where the live rig actually renders.
 local function PandemicEffectEnabled(group, buttonIndex)
@@ -451,7 +451,7 @@ end
 -- Effective marker enable, the same resolution the live bind gate performs
 -- (AuraDisplay's IsPandemicMarkerWanted): the style's mode, and for "auto" the
 -- tracked-unit default. Deliberately separate from PandemicEffectEnabled above
--- — the marker and the effect are independent settings, and the effect is off
+-- â€” the marker and the effect are independent settings, and the effect is off
 -- by default, so sharing that gate would hide the marker preview on almost
 -- every panel.
 local function PandemicMarkerEnabled(group, buttonIndex)
@@ -688,7 +688,7 @@ local CONTROLS = {
         requiresPandemicEffect = true,
         -- No advanced key exists for the bars pandemic FILL rows (enable +
         -- color only), so the gear lands on the Effects tab with the Aura
-        -- Indicators section forced open by name — the Pandemic rows are a
+        -- Indicators section forced open by name â€” the Pandemic rows are a
         -- subheading inside it, and a subheading owns no collapse state of its
         -- own. The section constant is GroupTabs' (EFFECTS_AURA_SECTION); bars
         -- shares it.
@@ -1173,7 +1173,7 @@ local function CollectObjectControls(objects)
     end
 
     -- Per-custom-bar groups (the aura pass): one group per live
-    -- aura-tracked Custom Bar, built dynamically — the entry appears
+    -- aura-tracked Custom Bar, built dynamically â€” the entry appears
     -- exactly when the bar would render an aura display. Controls close
     -- over the stored config table, the same identity the runtime keys
     -- its preview state by.
@@ -1303,7 +1303,7 @@ local function CollectObjectControls(objects)
 
     -- Per-resource groups (the aura pass, Phase 2): one group per resource
     -- whose overlay is configured, built the same way as the custom-bar
-    -- groups above, and keyed by power type — the identity that survives
+    -- groups above, and keyed by power type â€” the identity that survives
     -- rebuilds. The CANVAS owns which resources have a lane on screen (its
     -- choice of list depends on the anchor mode), so ask it rather than
     -- re-derive: enumerating independently here put the menu out of step
@@ -1786,7 +1786,7 @@ end
 
 -- Gold gear, gold tooltip: the command center's gear reads as "on" while
 -- the panel behind this preview is up, which is also what the tint (read
--- off the window itself) shows.
+-- from the inline editor) shows.
 local function IsRoutePanelOpen(route)
     if not CS.IsAdvancedSettingsPanelOpen then
         return false
@@ -1837,14 +1837,6 @@ local function NavigateToPreviewSettings(bar)
         return
     end
 
-    -- Toggle: while this gear's advanced panel is on screen, the click
-    -- closes it. No navigation happens on the way out - a panel can only
-    -- stay open while its surface is current, so there is nowhere to go.
-    if IsRoutePanelOpen(route) and CS.CloseAdvancedSettingsPanel then
-        CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
-        return
-    end
-
     local sectionId = ControlSectionId(control)
     local queueKey = ResolveRouteAdvancedKey(route)
     -- Read BEFORE ApplyGearRoute: the lens is resolved from the selection,
@@ -1892,9 +1884,8 @@ local function NavigateToPreviewSettings(bar)
 
     -- Queued last, with every navigation write already made, so the context
     -- it snapshots is the one the rebuild will consume it under. The
-    -- already-open case normally exits through the toggle branch above;
-    -- this guard keeps a stale open from flapping the panel shut if the
-    -- post-navigation context still matches it.
+    -- Navigation ensures the editor is open, including repeated clicks.
+    -- An already open editor is rebound by the page build below.
     if queueKey
         and not suppressQueue
         and CS.QueueAdvancedSettingsPanelOpen
@@ -2176,25 +2167,14 @@ local function OpenPreviewMenu(bar)
 end
 
 ------------------------------------------------------------------------
--- Gear tint: gold while an advanced settings panel is on screen, grey
--- otherwise.
---
--- Read from the window itself rather than from
--- IsAdvancedSettingsPanelOpen(key), which also compares the full navigation
--- context and so answered "closed" for a panel the user could plainly see.
--- And repaintable on its own, because the panel opens and closes without
--- rebuilding this bar - a settings-side gear toggles it with no config
--- refresh at all. Those two together are what made the tint look random.
+-- Gear tint follows the visible inline editor. It can open or close without
+-- rebuilding the preview bar, so the editor owner also repaints this state.
 ------------------------------------------------------------------------
 
--- The bar currently on screen, so the advanced panel can repaint its gear
--- without going through a rebuild.
 local activeBar
 
-local function IsAdvancedSettingsWindowShown()
-    local window = CS.advancedSettingsPanelWindow
-    local frame = window and window.frame
-    return frame ~= nil and frame:IsShown() == true
+local function IsAdvancedSettingsEditorShown()
+    return CS.IsAdvancedSettingsEditorShown and CS.IsAdvancedSettingsEditorShown() or false
 end
 
 local function ApplyGearTint(bar)
@@ -2202,7 +2182,7 @@ local function ApplyGearTint(bar)
     if not gear then
         return
     end
-    if IsAdvancedSettingsWindowShown() then
+    if IsAdvancedSettingsEditorShown() then
         gear._icon:SetVertexColor(1, 0.82, 0, 1)
     else
         gear._icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
@@ -2360,8 +2340,8 @@ local function EnsureBar(host, surface)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         local route = bar._gearRoute
         if IsRoutePanelOpen(route) then
-            GameTooltip:AddLine("Close settings")
-            GameTooltip:AddLine("Close the advanced settings for this preview.", 0.7, 0.7, 0.7)
+            GameTooltip:AddLine("Go to settings")
+            GameTooltip:AddLine("Show the settings for this preview.", 0.7, 0.7, 0.7)
         else
             local control = bar._selected
             local sectionScope = control

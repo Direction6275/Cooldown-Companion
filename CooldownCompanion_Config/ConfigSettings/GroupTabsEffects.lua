@@ -545,6 +545,22 @@ local function BuildReadyGlowSection(container, group, style, lens)
     local primeTarget = (lens and lens.mode == "entry") and lens.buttonData or nil
     local function BuildReadyGlowAdvanced(panel)
         AddCheckboxRow(panel, {
+            label = "Only while usable",
+            setting = EFFECTS_FINDER.advanced.ready and EFFECTS_FINDER.advanced.ready.onlyWhileUsable,
+            value = readySec.tbl.readyGlowOnlyWhileUsable == true,
+            tooltip = {
+                "Only while usable",
+                {"Show the ready glow only while Blizzard reports the spell or item as usable.", 1, 1, 1, true},
+                {"Auto-hide timing continues while unusable. Passive cooldown trackers ignore this setting.", 1, 1, 1, true},
+            },
+            onChange = function(val)
+                readySec.write.readyGlowOnlyWhileUsable = val == true
+                UpdateSelectedGroupStyle()
+                CooldownCompanion:UpdateAllCooldowns()
+            end,
+        })
+
+        AddCheckboxRow(panel, {
             label = "Show Only In Combat",
             setting = EFFECTS_FINDER.advanced.ready and EFFECTS_FINDER.advanced.ready.combatOnly,
             value = readySec.tbl.readyGlowCombatOnly or false,
@@ -1950,6 +1966,7 @@ if ST._DefineSettingRoute then
             supported = { solid = true, pixel = true, glow = true, autocast = true },
         })
     ready.combatOnly = readyRoute:Setting({ key = "combatOnly", label = "Show Only In Combat" })
+    ready.onlyWhileUsable = readyRoute:Setting({ key = "onlyWhileUsable", label = "Only while usable" })
     ready.cappedCharges = readyRoute:Setting({ key = "cappedCharges", label = "Glow When Charges Are Capped" })
     ready.autoHide = readyRoute:Setting({ key = "autoHide", label = "Auto-Hide After Duration" })
     ready.duration = readyRoute:Setting({

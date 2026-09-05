@@ -303,6 +303,30 @@ function CooldownCompanion:OnSpellRangeCheckUpdate(event, spellIdentifier, isInR
     end
 end
 
+function CooldownCompanion:OnReadyGlowUsabilityChanged()
+    -- A pending broad pass already re-reads usability. Ignore the action-slot
+    -- payload: tracked entries need not live on an action bar.
+    if self._queuedCooldownRefreshSource then return end
+
+    for _, frame in pairs(self.groupFrames) do
+        if frame and frame:IsShown() and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                local style, bd = button.style, button.buttonData
+                -- Include individually hidden entries so hide-while-unusable
+                -- can recover. Only an enabled icon Ready Glow needs this pass.
+                if button.readyGlow and not button._isBar and not button._isText
+                        and style and style.readyGlowOnlyWhileUsable == true
+                        and style.readyGlowStyle and style.readyGlowStyle ~= "none"
+                        and bd and not bd.isPassive and not bd.isPassiveCooldown
+                        and bd.addedAs ~= "aura" and not bd._rotationAssistantVirtual then
+                    self:QueueCooldownRefresh("ready-glow-usability")
+                    return
+                end
+            end
+        end
+    end
+end
+
 function CooldownCompanion:OnBagChanged()
     self:MarkCooldownsDirty("bag-changed")
     self:RefreshChargeFlags("item")

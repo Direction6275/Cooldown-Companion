@@ -160,6 +160,9 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("PLAYER_EQUIPMENT_CHANGED", "OnEquipmentChanged")
     self:EnsureEquipmentSlotItemLoadFrame()
 
+    self:RegisterEvent("SPELL_UPDATE_USABLE", "OnReadyGlowUsabilityChanged")
+    self:RegisterEvent("ACTION_USABLE_CHANGED", "OnReadyGlowUsabilityChanged")
+
     self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnPlayerEnteringWorld")
 
     -- Filtered unit events. RegisterUnitEvent avoids global UNIT_* traffic
