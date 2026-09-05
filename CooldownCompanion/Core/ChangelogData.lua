@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.5.1",
         "2.5",
         "2.4",
         "2.3",
@@ -36,6 +37,21 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.5.1"] = {
+            markdown = [[
+## Polish | QoL
+
+- **Attached settings in one place:** Edit resources, custom bars, the cast bar, and player/target frame anchoring from their panel. Choose Icon or Custom Bar beside the Add field.
+- **Optional Modules in the Navigator:** Find independent, disabled, or unplaced features here. Disabled modules show a short introduction and an Enable button. Badges mark groups and panels with attached resources.
+- **Live Preview on first open:** After login or reload, opening config selects the first loaded group for your class and shows its full preview.
+- **Panel rename reminders:** Default-named panels now show an orange exclamation mark in the Navigator. Click it to rename the panel.
+
+## Performance
+
+- **Faster settings pages:** Entry and custom-bar settings with Sound Alerts open faster.
+- **Less resource-bar overhead:** Reduced repeated settings work, especially with aura overlays.
+]],
+        },
         ["2.5"] = {
             markdown = [[
 ## New Features
