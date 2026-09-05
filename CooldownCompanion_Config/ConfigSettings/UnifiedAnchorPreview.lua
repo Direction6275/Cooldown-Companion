@@ -61,11 +61,8 @@ local function IsUnifiedAnchorPreviewEligible(groupId)
         and ST._HasAttachedBarLanesToRender() == true
 end
 
--- The unified composition renders only while the quick toggle has not
--- hidden it. Exported under this name, so the toggle also clears a
--- lane-selected bar's settings through the shipped validation
--- (GetValidatedUnifiedBarKind): with the lanes off screen there is no
--- lane to have clicked.
+-- The command center uses the same visibility gate as the composition.
+-- Hidden bars remain editable through the workspace's selection links.
 local function ShouldUseUnifiedAnchorPreview(groupId)
     return IsUnifiedAnchorPreviewEligible(groupId)
         and not CS.unifiedAnchorBarsHidden
@@ -137,13 +134,9 @@ end
 
 local function ToggleAttachedBars()
     CS.unifiedAnchorBarsHidden = not CS.unifiedAnchorBarsHidden or nil
-    -- Hiding the lanes takes a lane-selected bar's settings with them; only
-    -- the full refresh revalidates that selection.
-    if CS.unifiedBarKind then
-        CooldownCompanion:RefreshConfigPanel()
-    elseif ST._RefreshButtonsPreviewMirror then
-        ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
-    end
+    -- Rebuild the fallback selection links as well as the canvas, including
+    -- when no bar was selected before hiding the lanes.
+    CooldownCompanion:RefreshConfigPanel()
 end
 
 -- Session state, view only: the flag lives in CS and the live bars never

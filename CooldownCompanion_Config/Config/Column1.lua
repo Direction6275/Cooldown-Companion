@@ -15,6 +15,7 @@ local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
 local ApplyConfigTextRow = ST._ApplyConfigTextRow
 local CompactUntitledInlineGroupConfig = ST._CompactUntitledInlineGroupConfig
 local SetupGroupRowIndicators = ST._SetupGroupRowIndicators
+local SetupPanelResourceIndicator = ST._SetupPanelResourceIndicator
 local GetConfigRowBadgeReserve = ST._GetConfigRowBadgeReserve
 local GetContainerIcon = ST._GetContainerIcon
 local GetButtonIcon = ST._GetButtonIcon
@@ -153,37 +154,14 @@ local function UpdateRailDestinations()
     end
     host._cdcDivider:SetColorTexture(r, g, b, 0.38)
 
-    local bars = EnsureRailDestinationButton(host, "bars-frames")
     local otherClasses = EnsureRailDestinationButton(host, "other-classes")
     local showOtherClasses = ST._ShouldShowOtherClassNavigatorRow
         and ST._ShouldShowOtherClassNavigatorRow() or false
-
-    bars:ClearAllPoints()
+    local old = host._cdcDestinationButtons and host._cdcDestinationButtons["bars-frames"]
+    if old then old:Hide() end
     otherClasses:ClearAllPoints()
-    if showOtherClasses then
-        otherClasses:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -8)
-        otherClasses:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -8)
-        bars:SetPoint("TOPLEFT", otherClasses, "BOTTOMLEFT", 0, 0)
-        bars:SetPoint("TOPRIGHT", otherClasses, "BOTTOMRIGHT", 0, 0)
-    else
-        bars:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -8)
-        bars:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -8)
-    end
-    ConfigureRailDestinationButton(bars, {
-        label = "Resources, Cast Bar & Unit Frames",
-        atlas = "ui_adv_health",
-        selected = CS.barsEntrySelected == true,
-        onClick = function()
-            -- Always a "go home" click: the setter clears whatever bar or
-            -- cast/frames item was selected, so a second click on the row
-            -- returns to the Resources home instead of doing nothing.
-            if ST._SelectConfigBarsEntry then
-                ST._SelectConfigBarsEntry()
-            end
-            CooldownCompanion:RefreshConfigPanel()
-        end,
-    })
-    CS.col1ResourcesButton = bars
+    otherClasses:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -8)
+    otherClasses:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -8)
 
     if showOtherClasses then
         ConfigureRailDestinationButton(otherClasses, {
@@ -322,6 +300,7 @@ local function ConfigureTreePanelMeta(entry, entryCount, panelDisabled, hasWarni
     else
         meta.status:EnableMouse(false)
     end
+    meta.count:SetWidth(18)
     meta.count:SetText(tostring(entryCount or 0))
     meta.count:SetTextColor(0.52, 0.49, 0.43, 1)
     meta.status:SetScript("OnEnter", nil)
@@ -347,6 +326,8 @@ local function ConfigureTreePanelMeta(entry, entryCount, panelDisabled, hasWarni
         meta.status:Hide()
     end
     meta:Show()
+    -- Reserve the warning slot only while its badge is visible.
+    return (panelDisabled or hasWarning) and 36 or 18
 end
 
 local function ConfigureGroupHeaderLayout(entry, rightReserve)
@@ -2031,6 +2012,7 @@ end
 
 local function RefreshColumn1(preserveDrag)
     if not CS.col1Scroll then return end
+    CS.col1ResourcesButton = nil
 
     CS.col1Scroll.frame:Show()
 
@@ -2484,11 +2466,20 @@ local function RefreshColumn1(preserveDrag)
                         desaturated = true
                     end
                 end
-                -- Keep the naming cue left of the status/count area and reserve
-                -- its width in both normal and compact row layouts.
+                -- Pack visible badges next to the count, without leaving a
+                -- vacant warning slot in normal or compact rows.
+                local metaReserve = 4 + ConfigureTreePanelMeta(
+                    panelEntry,
+                    GetConfigPanelEntryCount(panel),
+                    panel.enabled == false,
+                    panel.enabled ~= false and ConfigPanelHasWarning(panel)
+                )
+                local resourceReserve = SetupPanelResourceIndicator(
+                    panelEntry, panelId, metaReserve + 2
+                )
                 local renameReserve = ConfigureGenericRenameBadge(
                     panelEntry, panel.name, IsGenericPanelName(panel.name),
-                    { groupId = panelId }, TREE.PANEL_META_WIDTH + 4
+                    { groupId = panelId }, metaReserve + resourceReserve
                 )
                 ApplyConfigRowIcon(panelEntry, iconTexture, {
                     atlas = iconAtlas,
@@ -2500,15 +2491,9 @@ local function RefreshColumn1(preserveDrag)
                     compactRowHeight = 24,
                     texCoord = texCoord,
                     vertexColor = vertexColor,
-                    rightPad = TREE.PANEL_META_WIDTH + 8 + renameReserve,
+                    rightPad = metaReserve + 4 + resourceReserve + renameReserve,
                 })
                 panelEntry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-                ConfigureTreePanelMeta(
-                    panelEntry,
-                    GetConfigPanelEntryCount(panel),
-                    panel.enabled == false,
-                    panel.enabled ~= false and ConfigPanelHasWarning(panel)
-                )
 
                 if CS.selectedPanels[panelId] then
                     panelEntry:SetColor(0.4, 0.7, 1.0)
@@ -2789,6 +2774,111 @@ local function RefreshColumn1(preserveDrag)
         return isFirst
     end
 
+    local standaloneItems = {}
+    local deferredUnloadedSections = {}
+    local function RenderStandalonePanels()
+        if #standaloneItems == 0 then return end
+        local allDisabled = true
+        for _, item in ipairs(standaloneItems) do
+            if item.placement ~= "disabled" then
+                allDisabled = false
+                break
+            end
+        end
+        if not TakeCol1FirstRow() then
+            local spacer = AceGUI:Create("Label")
+            spacer:SetText("")
+            spacer:SetFullWidth(true)
+            spacer:SetHeight(10)
+            CS.col1Scroll:AddChild(spacer)
+        end
+        local groupUnit = AceGUI:Create("InlineGroup")
+        groupUnit:SetTitle("")
+        groupUnit:SetLayout("List")
+        groupUnit:SetFullWidth(true)
+        CompactUntitledInlineGroupConfig(groupUnit)
+        ConfigureNestedPanelAccent(groupUnit, nil, nil, nil, nil)
+        groupUnit.frame:SetAlpha(allDisabled and 0.58 or 1)
+        CS.col1Scroll:AddChild(groupUnit)
+
+        local expanded = searchResults ~= nil or CS.standalonePanelsCollapsed ~= true
+        local function Toggle()
+            CS.standalonePanelsCollapsed = expanded
+            CooldownCompanion:RefreshConfigPanel()
+        end
+        local header = AceGUI:Create("InteractiveLabel")
+        CleanRecycledEntry(header)
+        header:SetText("Optional Modules  |cff777777(" .. #standaloneItems .. ")|r")
+        header:SetFullWidth(true)
+        header:SetFontObject(GameFontHighlight)
+        ApplyConfigRowIcon(header, 134400, {
+            atlas = "ui_adv_health", indent = 2, desaturated = allDisabled,
+            iconSize = TREE.GROUP_ICON_SIZE, iconGap = TREE.ICON_GAP,
+            rowHeight = TREE.GROUP_ROW_HEIGHT, compactRowHeight = 30,
+        })
+        header:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        groupUnit:AddChild(header)
+        local expandReserve = not searchResults
+            and ConfigureTreeExpandButton(header, expanded, false, Toggle) or 0
+        ConfigureGroupHeaderLayout(header, expandReserve + 4)
+        header:SetCallback("OnClick", function(_, _, button)
+            if button == "LeftButton" and not searchResults then Toggle() end
+        end)
+
+        if expanded then
+            for _, item in ipairs(standaloneItems) do
+                local kind = item.kind
+                local entry = AceGUI:Create("InteractiveLabel")
+                CleanRecycledEntry(entry)
+                entry:SetText(item.label)
+                entry:SetFullWidth(true)
+                entry:SetFontObject(GameFontHighlight)
+                ApplyConfigRowIcon(entry, 134400, {
+                    atlas = item.atlas, indent = TREE.PANEL_INDENT,
+                    iconSize = TREE.PANEL_ICON_SIZE, iconGap = TREE.ICON_GAP,
+                    rowHeight = TREE.PANEL_ROW_HEIGHT, compactRowHeight = 24,
+                    rightPad = 88, desaturated = item.placement == "disabled",
+                })
+                entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+                ConfigureTreePanelMeta(entry, nil, false, false)
+                local badge = entry.frame._cdcTreePanelMeta.count
+                badge:SetWidth(80)
+                badge:SetText(item.placement == "disabled" and "Disabled"
+                    or item.placement == "independent" and "Independent" or "No anchor")
+                local selected = CS.barsEntrySelected and (CS.barWorkspaceKind == kind
+                    or (kind == "player" and CS.barWorkspaceKind == "target"))
+                local disabled = item.placement == "disabled"
+                -- The shell already fades an entirely disabled group.
+                entry.frame:SetAlpha(disabled and not allDisabled and 0.58 or 1)
+                if selected and disabled then
+                    local selection = entry.frame._cdcDisabledModuleSelection
+                    if not selection then
+                        selection = entry.frame:CreateTexture(nil, "BACKGROUND")
+                        selection:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+                        selection:SetAllPoints(entry.frame)
+                        selection:SetAlpha(0.35)
+                        entry.frame._cdcDisabledModuleSelection = selection
+                    end
+                    selection:Show()
+                elseif selected then
+                    entry:SetColor(0, 1, 0)
+                end
+                entry:SetCallback("OnClick", function(_, _, button)
+                    if button ~= "LeftButton" then return end
+                    ST._OpenBarWorkspace(kind)
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+                groupUnit:AddChild(entry)
+                if kind == "resources" then CS.col1ResourcesButton = entry end
+            end
+        end
+        TrackRenderedRow({
+            kind = "aux-block", rowType = "standalone-panels", widget = groupUnit,
+            section = "standalone", loadBucket = "aux", acceptsDrop = false,
+            previewDraggable = false,
+        })
+    end
+
     local function RenderSection(section, sectionGroupIds, headingText, headingColor, options)
         local items = BuildSectionItems(section, sectionGroupIds)
         local isClassSection = options and options.classSection == true
@@ -2873,12 +2963,13 @@ local function RefreshColumn1(preserveDrag)
         local isEmpty = #loadedItems == 0 and #unloadedItems == 0
         if isEmpty and not CS.showPhantomSections then return end
 
+        local deferUnloaded = options and options.deferUnloaded == true
         local useUnloadedOnlyHeading = options
             and options.preferUnloadedHeading
             and #loadedItems == 0
             and #unloadedItems > 0
 
-        if not isClassSection then
+        if not isClassSection and not (deferUnloaded and #loadedItems == 0 and not isEmpty) then
             local heading = AddColumn1SectionHeading(
                 useUnloadedOnlyHeading and "Unloaded Groups" or headingText,
                 useUnloadedOnlyHeading and { 0.53, 0.53, 0.53 } or headingColor,
@@ -2927,19 +3018,28 @@ local function RefreshColumn1(preserveDrag)
 
         RenderItems(loadedItems, "loaded")
 
-        if #unloadedItems > 0 and not useUnloadedOnlyHeading then
-            local sep = AddColumn1SectionHeading("Unloaded Groups", { 0.53, 0.53, 0.53 }, TakeCol1FirstRow())
+        local function RenderUnloaded()
+            if #unloadedItems > 0 and (deferUnloaded or not useUnloadedOnlyHeading) then
+                local sep = AddColumn1SectionHeading("Unloaded Groups", { 0.53, 0.53, 0.53 }, TakeCol1FirstRow())
 
-            TrackRenderedRow({
-                kind = "unloaded-divider",
-                widget = sep,
-                section = section,
-                loadBucket = "marker",
-                acceptsDrop = false,
-            })
+                TrackRenderedRow({
+                    kind = "unloaded-divider",
+                    widget = sep,
+                    section = section,
+                    loadBucket = "marker",
+                    acceptsDrop = false,
+                })
+            end
+
+            RenderItems(unloadedItems, "unloaded")
         end
-
-        RenderItems(unloadedItems, "unloaded")
+        if deferUnloaded then
+            if #unloadedItems > 0 then
+                deferredUnloadedSections[#deferredUnloadedSections + 1] = RenderUnloaded
+            end
+        else
+            RenderUnloaded()
+        end
     end
 
     local GetClassInfoByID = ST._GetClassInfoByID
@@ -3162,7 +3262,27 @@ local function RefreshColumn1(preserveDrag)
         return (a.title or a.classKey or a.key) < (b.title or b.classKey or b.key)
     end)
 
-    if searchResults and not next(searchResults.containerMatches) then
+    -- Optional modules follow loaded groups and precede the inactive tail.
+    -- Disabled modules and modules without an anchor keep their own destination.
+    if not CS.otherClassLibraryActive then
+        for _, item in ipairs({
+            { kind = "resources", label = "Resource Bars", atlas = "ui_adv_health" },
+            { kind = "castbar", label = "Cast Bar", atlas = "ui_adv_health" },
+            { kind = "player", label = "Unit Frame Anchoring", atlas = "ui_adv_health" },
+        }) do
+            local placement, anchorId = ST._GetBarWorkspacePlacement(item.kind)
+            local matches = not searchResults
+                or item.label:lower():find(searchResults.query, 1, true)
+                or ("optional modules"):find(searchResults.query, 1, true)
+            if not anchorId and matches then
+                item.placement = placement
+                standaloneItems[#standaloneItems + 1] = item
+            end
+        end
+    end
+    local hasStandaloneRows = #standaloneItems > 0
+
+    if searchResults and not hasStandaloneRows and not next(searchResults.containerMatches) then
         local label = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(label)
         label:SetText("|cff888888No matching groups, panels, or entries.|r")
@@ -3177,8 +3297,9 @@ local function RefreshColumn1(preserveDrag)
         return
     end
 
-    if showNewUserEmptyState then
+    if showNewUserEmptyState and not CS.otherClassLibraryActive then
         ClearOtherClassBrowseState()
+        TakeCol1FirstRow()
 
         local spacer = AceGUI:Create("SimpleGroup")
         spacer:SetFullWidth(true)
@@ -3187,7 +3308,7 @@ local function RefreshColumn1(preserveDrag)
         CS.col1Scroll:AddChild(spacer)
 
         local header = AceGUI:Create("Label")
-        header:SetText("Every setup starts with a group.")
+        header:SetText("Organize cooldowns with groups.")
         header:SetFullWidth(true)
         header:SetJustifyH("CENTER")
         header:SetFont((GameFontNormal:GetFont()), 15, "")
@@ -3203,7 +3324,7 @@ local function RefreshColumn1(preserveDrag)
         CS.col1Scroll:AddChild(descSpacer)
 
         local desc = AceGUI:Create("Label")
-        desc:SetText("A group holds one or more panels so you can organize related cooldowns together. Use the New Group button below.")
+        desc:SetText("For cooldown entries, start with New Group below. Resource Bars and Cast Bar can be used on their own.")
         desc:SetFullWidth(true)
         desc:SetJustifyH("CENTER")
         desc:SetFont((GameFontNormal:GetFont()), 12, "")
@@ -3272,7 +3393,8 @@ local function RefreshColumn1(preserveDrag)
 
             if #globalIds > 0 or CS.showPhantomSections then
                 if hasGlobalContent or CS.showPhantomSections then
-                    RenderSection("global", globalIds, "Global Groups", ST._COL1_GLOBAL_SECTION_COLOR)
+                    RenderSection("global", globalIds, "Global Groups", ST._COL1_GLOBAL_SECTION_COLOR,
+                        { deferUnloaded = true })
                 end
             end
 
@@ -3286,7 +3408,7 @@ local function RefreshColumn1(preserveDrag)
                     charIds,
                     currentClassName .. " Groups",
                     cc and { cc.r, cc.g, cc.b } or { 1, 1, 1 },
-                    { preferUnloadedHeading = not hasGlobalContent }
+                    { preferUnloadedHeading = not hasGlobalContent, deferUnloaded = true }
                 )
             end
 
@@ -3313,6 +3435,8 @@ local function RefreshColumn1(preserveDrag)
         end
     end
 
+    RenderStandalonePanels()
+    for _, renderUnloaded in ipairs(deferredUnloadedSections) do renderUnloaded() end
     AddColumn1BottomSpacer()
     UpdateRailDestinations()
 

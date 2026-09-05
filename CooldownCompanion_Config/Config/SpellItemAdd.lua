@@ -190,7 +190,7 @@ local function GetAutocompleteTypeDisplay(entry)
     return AUTOCOMPLETE_TYPE_DISPLAY[kind] or AUTOCOMPLETE_TYPE_DISPLAY.spell
 end
 
-local function CreateAddBoxInfoButton(parentFrame, anchorFrame, cleanup)
+local function CreateAddBoxInfoButton(parentFrame, anchorFrame, cleanup, customBar)
     local btn = parentFrame._cdcAddBoxInfoButton
     if not btn then
         btn = CreateFrame("Button", nil, parentFrame)
@@ -203,10 +203,14 @@ local function CreateAddBoxInfoButton(parentFrame, anchorFrame, cleanup)
             GameTooltip:SetMinimumWidth(0)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:AddLine(ADD_BOX_TRACKABILITY_TOOLTIP[1])
+            if self._cdcCustomBarAdd then
+                GameTooltip:AddLine("Add a spell or aura to Resources as a Custom Bar.", 1, 1, 1, true)
+                GameTooltip:AddLine(" ")
+            end
             -- The workspace add box always targets the SELECTED panel (its
             -- submit path clears any stale inline-add target), so the panel
             -- rule is asked of that panel and no other.
-            local auraLines = TargetPanelIsAuraOnly(CS.selectedGroup)
+            local auraLines = not self._cdcCustomBarAdd and TargetPanelIsAuraOnly(CS.selectedGroup)
                 and ADD_BOX_AURA_PANEL_TOOLTIP or nil
             for _, line in ipairs(auraLines or {}) do
                 GameTooltip:AddLine(line[1], line[2], line[3], line[4], line[5])
@@ -229,6 +233,7 @@ local function CreateAddBoxInfoButton(parentFrame, anchorFrame, cleanup)
         parentFrame._cdcAddBoxInfoButton = btn
     end
 
+    btn._cdcCustomBarAdd = customBar == true
     btn:SetParent(parentFrame)
     btn:ClearAllPoints()
     btn:SetPoint("RIGHT", anchorFrame, "RIGHT", -1, 0)

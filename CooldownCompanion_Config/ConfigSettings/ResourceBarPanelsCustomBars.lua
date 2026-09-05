@@ -2182,6 +2182,9 @@ local function BuildCustomBarWorkspaceAddBox(container)
             customBars[#customBars + 1] = entry
             EnsureCustomBarLayout(settings, nil, id, 1000 + #customBars)
         end
+        -- The refresh rebuilds the Add field. Clear before it so a successful
+        -- creation cannot restore the just-committed query into the new widget.
+        addBox:SetText("")
         ST._SelectConfigCustomBar(id)
         ApplyCustomAuraBarPanelChanges({
             updateAnchors = true,

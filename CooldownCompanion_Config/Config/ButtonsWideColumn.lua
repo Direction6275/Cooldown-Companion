@@ -20,10 +20,10 @@ local ShouldSubmitRawAddOnEnter = ST._ShouldSubmitRawAddOnEnter
 local CreateAddBoxInfoButton = ST._CreateAddBoxInfoButton
 
 local PREVIEW_GAP = 4
--- The one destination that owns resources, custom bars, the cast bar, and
--- the unit frames; every crumb under it names it as the parent.
-local BARS_HOME_LABEL = "Resources, Cast Bar & Unit Frames"
+-- Standalone resources use this parent crumb; attached objects use their panel.
+local BARS_HOME_LABEL = "Resource Bars"
 local ADD_BOX_HEIGHT = 26
+local ADD_MODE_WIDTH = 104
 local EDIT_CONTEXT_ICON_SIZE = 16
 local EDIT_CONTEXT_BADGE_SIZE = 16
 local EDIT_CONTEXT_BADGE_GAP = 3
@@ -722,6 +722,13 @@ local function LayoutEditingActionRow(col3)
         return
     end
 
+    local selector = col3._cdcAddModeDropdown
+    local modeWidth = selector and selector.frame:IsShown() and (ADD_MODE_WIDTH + 6) or 0
+    if modeWidth > 0 then
+        selector.frame:SetParent(row)
+        selector.frame:ClearAllPoints()
+        selector.frame:SetPoint("LEFT", row, "LEFT", 0, 0)
+    end
     local height = ADD_BOX_HEIGHT
     if hasAdd then
         height = math.max(height, addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
@@ -741,19 +748,19 @@ local function LayoutEditingActionRow(col3)
 
         addBox.frame:ClearAllPoints()
         addBox.frame:SetPoint(
-            "LEFT", row, "LEFT", EDIT_ACTION_FIELD_LEFT_NUDGE, 0)
+            "LEFT", row, "LEFT", EDIT_ACTION_FIELD_LEFT_NUDGE + modeWidth, 0)
         addBox.frame:SetPoint("RIGHT", finder.frame, "LEFT", 0, 0)
         addBox.frame:SetHeight(addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
     elseif hasFinder then
         finder.frame:ClearAllPoints()
         finder.frame:SetPoint(
-            "LEFT", row, "LEFT", EDIT_ACTION_FIELD_LEFT_NUDGE, 0)
+            "LEFT", row, "LEFT", EDIT_ACTION_FIELD_LEFT_NUDGE + modeWidth, 0)
         finder.frame:SetPoint("RIGHT", row, "RIGHT", 0, 0)
         finder.frame:SetHeight(ADD_BOX_HEIGHT)
     else
         addBox.frame:ClearAllPoints()
         addBox.frame:SetPoint(
-            "LEFT", row, "LEFT", EDIT_ACTION_FIELD_LEFT_NUDGE, 0)
+            "LEFT", row, "LEFT", EDIT_ACTION_FIELD_LEFT_NUDGE + modeWidth, 0)
         addBox.frame:SetPoint("RIGHT", row, "RIGHT", 0, 0)
         addBox.frame:SetHeight(addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
     end
@@ -1009,6 +1016,10 @@ local function SetWideEditingChips(col3, prefix, items)
 end
 
 local function ClearWideEditingExtras(col3, preserveFinderState)
+    if col3._cdcAddModeDropdown then
+        col3._cdcAddModeDropdown:ClearFocus()
+        col3._cdcAddModeDropdown.frame:Hide()
+    end
     local alternate = col3._cdcAlternateEditingAddBox
     if alternate and alternate.frame then
         alternate.frame:Hide()
@@ -1055,11 +1066,11 @@ local function GetEditingHeaderPath()
     local db = CooldownCompanion.db and CooldownCompanion.db.profile
     if CS.barsEntrySelected and CS.castFramesSelectedItem then
         if CS.castFramesSelectedItem == "player" then
-            return BARS_HOME_LABEL, "Player Frame"
+            return "Unit Frame Anchoring", "Player Frame"
         elseif CS.castFramesSelectedItem == "target" then
-            return BARS_HOME_LABEL, "Target Frame"
+            return "Unit Frame Anchoring", "Target Frame"
         end
-        return BARS_HOME_LABEL, "Cast Bar"
+        return nil, "Cast Bar"
     end
     if CS.barsEntrySelected then
         local multiCount = 0
@@ -2254,10 +2265,47 @@ local function EnsureAddBox(col3)
     return addBox
 end
 
+local function EnsureAddModeDropdown(col3)
+    local selector = col3._cdcAddModeDropdown
+    if selector then return selector end
+    selector = AceGUI:Create("Dropdown")
+    selector:SetLabel()
+    selector:SetWidth(ADD_MODE_WIDTH)
+    selector.frame:SetParent(col3.content)
+    selector:SetCallback("OnOpened", function()
+        CS.HideAutocomplete()
+        HideSettingsFinderResults()
+    end)
+    selector:SetCallback("OnValueChanged", function(widget, _, mode)
+        if mode ~= "entry" and mode ~= "custom" then return end
+        if CS.panelAddMode == mode then return end
+        local current = CS.panelAddMode == "custom"
+            and col3._resourcesAddBoxHost and col3._resourcesAddBoxHost._cdcAddInput
+            or col3.buttonsAddBox
+        CS.panelAddModeQuery = current and current:GetText() or ""
+        CS.panelAddMode = mode
+        widget:ClearFocus()
+        CS.HideAutocomplete()
+        CooldownCompanion:RefreshConfigPanel()
+        local input = mode == "custom"
+            and col3._resourcesAddBoxHost and col3._resourcesAddBoxHost._cdcAddInput
+            or col3.buttonsAddBox
+        if input then
+            input:SetFocus()
+            input:Fire("OnTextChanged", input:GetText())
+        end
+    end)
+    col3._cdcAddModeDropdown = selector
+    return selector
+end
+
 local function UpdateAddBox(col3)
     local host = col3.buttonsPreviewHost
     local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    if not (host and host:IsShown() and CanManuallyAddToPanel(group)) then
+    local _, resourcePanel = ST._GetBarWorkspacePlacement("resources")
+    local hasStack = resourcePanel ~= nil and resourcePanel == CS.selectedGroup
+    local canAddEntry = CanManuallyAddToPanel(group)
+    if not (host and host:IsShown() and (canAddEntry or hasStack)) then
         if col3.buttonsAddBox then
             col3.buttonsAddBox.frame:Hide()
         end
@@ -2265,7 +2313,30 @@ local function UpdateAddBox(col3)
         return
     end
 
+    if CS.panelAddModePanelId ~= CS.selectedGroup then
+        CS.panelAddModePanelId = CS.selectedGroup
+        CS.panelAddMode = "entry"
+        CS.panelAddModeQuery = nil
+    end
+    local selector = EnsureAddModeDropdown(col3)
+    selector.frame:SetShown(hasStack and canAddEntry)
+    if not hasStack then CS.panelAddMode = "entry"
+    elseif not canAddEntry then CS.panelAddMode = "custom" end
+    local iconLabel = CooldownCompanion:IsIconLikeDisplayMode(group.displayMode) and "Icon" or "Entry"
+    selector:SetList({ entry = iconLabel, custom = "Custom Bar" }, { "entry", "custom" })
+    selector:SetValue(CS.panelAddMode)
+    if hasStack and CS.panelAddMode == "custom" then
+        if col3.buttonsAddBox then col3.buttonsAddBox.frame:Hide() end
+        ST._EnsureCustomBarAddBox(col3)
+        local input = col3._resourcesAddBoxHost and col3._resourcesAddBoxHost._cdcAddInput
+        if input and CS.panelAddModeQuery ~= nil then input:SetText(CS.panelAddModeQuery) end
+        CS.panelAddModeQuery = nil
+        UpdateEditingActionRow(col3)
+        return
+    end
     local addBox = EnsureAddBox(col3)
+    if CS.panelAddModeQuery ~= nil then addBox:SetText(CS.panelAddModeQuery) end
+    CS.panelAddModeQuery = nil
     addBox._cdcInstructions:SetText(CooldownCompanion:IsAuraPanel(group)
         and "Add an aura spell or ID\226\128\166"
         or "Add a spell, item, trinket slot, or ID\226\128\166")
@@ -2412,7 +2483,26 @@ end
 -- Extend the Editing path with a selected entry or attached bar. The entry
 -- icon, tracking kind, and status badges all share that header line instead
 -- of consuming a separate identity row below the add box.
+local function UpdatePanelWorkspaceChips(col3)
+    if ST._GetPanelWorkspaceChips then
+        local chips = ST._GetPanelWorkspaceChips()
+        local _, resourcePanel = ST._GetBarWorkspacePlacement("resources")
+        if resourcePanel and resourcePanel == CS.selectedGroup and ST._CollectBarsOffCanvasChips then
+            -- Include inactive resources/custom bars; visible slots can be
+            -- clicked in the preview, while these chips remain a fallback.
+            local host = col3.buttonsPreviewHost
+            local rendered = ST._GetLayoutPreviewRenderedSelectionKeys
+                and ST._GetLayoutPreviewRenderedSelectionKeys(host) or {}
+            for _, item in ipairs(ST._CollectBarsOffCanvasChips(rendered or {})) do
+                chips[#chips + 1] = item
+            end
+        end
+        SetWideEditingChips(col3, "Select:", chips)
+    end
+end
+
 local function UpdateEditingContext(col3)
+    UpdatePanelWorkspaceChips(col3)
     local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
     local icon, name, badgeStatus, kindText, sectionText
     if group then
@@ -2429,6 +2519,12 @@ local function UpdateEditingContext(col3)
                 local entry = ST._FindSelectedConfigCustomBar and ST._FindSelectedConfigCustomBar()
                 name = (entry and entry.label) or "Custom Bar"
                 kindText = "Custom Bar"
+            elseif CS.unifiedBarKind == "stack" then
+                name = "Resources"
+            elseif CS.unifiedBarKind == "player" then
+                name = "Player Frame"
+            elseif CS.unifiedBarKind == "target" then
+                name = "Target Frame"
             elseif CS.unifiedBarKind == "cast" then
                 name = "Cast Bar"
             end
@@ -2493,16 +2589,19 @@ end
 local function GetValidatedUnifiedBarKind()
     local kind = CS.unifiedBarKind
     if not kind then return nil end
-    if not (ST._ShouldUseUnifiedAnchorPreview
-        and ST._ShouldUseUnifiedAnchorPreview(CS.selectedGroup)) then
+    local owner = (kind == "cast") and "castbar"
+        or (kind == "player" or kind == "target") and kind or "resources"
+    local _, anchorId = ST._GetBarWorkspacePlacement(owner)
+    if anchorId ~= CS.selectedGroup or not anchorId then
         CS.unifiedBarKind = nil
         return nil
     end
+    if kind == "stack" or kind == "player" or kind == "target" then return kind end
     if kind == "resource" then
         local settings = CooldownCompanion:GetResourceBarSettings()
         local RBP = ST._RBP
         if not (CS.selectedResourcePowerType and RBP and RBP.IsResourceEditableInColumn4
-            and RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, settings)) then
+            and RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, settings, true)) then
             CS.unifiedBarKind = nil
             return nil
         end
@@ -2689,36 +2788,34 @@ local function RefreshButtonsWideColumn(selectionOnly)
         UpdateEditingContext(col3)
         ReapplyPanelPreviewSplit()
 
-        -- The bar's tabs join the panel tabs in the row, same as an entry's:
-        -- panel tabs first, since the bar strip is offset by their width.
-        -- Without a selected panel there is no panel scope to offer, so the
-        -- bar keeps the row to itself.
-        if CS.selectedGroup then
-            local host = EnsureGroupSettingsHost(col3)
-            AnchorButtonsContentFrame(col3, host)
-            host:Show()
-            ST._RefreshGroupSettingsHost(host, nil, ST._UnifiedRowGetScope() ~= "primary")
-        elseif col3.groupSettingsHost then
-            col3.groupSettingsHost:Hide()
+        if unifiedBarKind == "custom" then
+            local ids, entries = {}, {}
+            local settings = CooldownCompanion:GetResourceBarSettings()
+            local all = ST._RB.GetAllCustomBars(settings)
+            for _, entry in ipairs(all or {}) do
+                if CS.selectedCustomBars[entry.customBarId] then
+                    ids[#ids + 1] = entry.customBarId
+                    entries[#entries + 1] = entry
+                end
+            end
+            if #entries >= 2 then
+                if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
+                ST._ShowCustomBarMultiSelectSurface(col3, ids, entries)
+                return
+            end
         end
 
-        local shown = false
-        if unifiedBarKind == "resource" then
-            shown = ST._ShowResourceSettingsSurface
-                and ST._ShowResourceSettingsSurface(col3) == true
-        elseif unifiedBarKind == "custom" then
-            local entry = ST._FindSelectedConfigCustomBar and ST._FindSelectedConfigCustomBar()
-            if entry and ST._ShowCustomBarDetailSurface then
-                ST._ShowCustomBarDetailSurface(col3, entry)
-                shown = true
-            end
-        else
-            if ST._ShowCastBarSettingsSurface then
-                ST._ShowCastBarSettingsSurface(col3)
-                shown = true
-            end
-        end
-        if shown then
+        -- The selected object owns the settings area. Reuse exactly the
+        -- standalone resource/cast surfaces, with the panel preview retained.
+        if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
+        if unifiedBarKind == "stack" or unifiedBarKind == "resource" or unifiedBarKind == "custom" then
+            ST._ShowResourceWorkspaceSurfaces(col3)
+            return
+        elseif unifiedBarKind == "player" or unifiedBarKind == "target" then
+            ST._ShowUnitFrameSettingsSurface(col3, unifiedBarKind)
+            return
+        elseif unifiedBarKind == "cast" then
+            ST._ShowCastBarSettingsSurface(col3)
             return
         end
         -- The surface didn't materialize (transient state); clear the bar

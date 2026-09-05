@@ -101,9 +101,9 @@ local STEP_DATA = {
         placement = "right",
     },
     view_modes_intro = {
-        title = "Resources, Cast Bar & Unit Frames",
-        text = "This button opens one workspace for your resource bars, Custom Bars, the cast bar, and your unit frames.\n\nClick a bar in the preview, or one of the entries listed below it, to configure it.",
-        anchor = "resources_button",
+        title = "Resources and Cast Bar",
+        text = "Edit attached resources and the cast bar in their panel's workspace. Select Resources for shared settings, or click a bar to edit it.\n\nUse Icon / Custom Bar beside Add to choose what to create. Independent displays have their own items in the panel list.",
+        anchor = "panels_column_area",
         placement = "above",
     },
     finish = {

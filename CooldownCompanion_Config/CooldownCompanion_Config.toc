@@ -17,6 +17,7 @@ Libs\LibDeflate\lib.xml
 
 Bootstrap.lua
 Config\State.lua
+Config\BarWorkspace.lua
 Config\Tutorial.lua
 Config\ExportCodec.lua
 Config\ProfileImport.lua

@@ -1091,19 +1091,11 @@ local function CastBarEnabled()
     return settings ~= nil and settings.enabled == true
 end
 
--- Does a canvas cast lane exist ANYWHERE for the current configuration?
--- Distinct from "is the control offered on this surface": navigating away
--- from a home must not stop a running preview, but the cast bar being
--- disabled or moved to its own anchor leaves the preview with nothing to
--- render on, and it would silently resume when the setting came back.
+-- Both attached and independent cast bars have a preview destination.
+-- Only disabling the module invalidates it; transient attachment changes
+-- are handled by the current canvas's offer gate.
 local function HasCastPreviewDestination()
-    local settings = CooldownCompanion.GetCastBarSettings
-        and CooldownCompanion:GetCastBarSettings()
-    local IsTruthyConfigFlag = RB and RB.IsTruthyConfigFlag
-    return settings ~= nil
-        and settings.enabled == true
-        and IsTruthyConfigFlag ~= nil
-        and not IsTruthyConfigFlag(settings.independentAnchorEnabled)
+    return CastBarEnabled()
 end
 
 local function StopStrandedCastPreview()
@@ -1493,23 +1485,18 @@ local function ApplyObjectRoute(route)
     local RBP = ST._RBP
 
     if route.object == "cast" then
-        if not CS.barsEntrySelected and ST._SelectConfigBarsEntry then
-            ST._SelectConfigBarsEntry()
-        end
         if ST._SelectConfigCastFramesItem then
             ST._SelectConfigCastFramesItem("castbar")
         end
         CS.castBarHomeTab = "appearance"
         SetRowScope("detail")
-        return RESOURCES_SURFACE
+        return CS.barsEntrySelected and RESOURCES_SURFACE or BUTTONS_SURFACE
     end
 
     -- Everything else is a Resources-home object. Selecting the home first
     -- matters: it always drops any object selection, so a bar selected below
     -- would be cleared right after we made it.
-    if not CS.barsEntrySelected and ST._SelectConfigBarsEntry then
-        ST._SelectConfigBarsEntry()
-    end
+    ST._OpenBarWorkspace("resources")
 
     if route.object == "health" then
         -- A module tab rather than a bar: at primary scope it owns the
@@ -1576,7 +1563,7 @@ local function ApplyObjectRoute(route)
         end
     end
 
-    return RESOURCES_SURFACE
+    return CS.barsEntrySelected and RESOURCES_SURFACE or BUTTONS_SURFACE
 end
 
 -- Where the styling tabs DRAW this section: the tab that owns it in this
@@ -1732,6 +1719,12 @@ local function ApplyGearRoute(route, queueKey, sectionId)
         return ApplyObjectRoute(route)
     end
 
+    -- The panel and its attached modules share one chooser. A panel gear
+    -- must leave the module editor before opening the panel's own tab.
+    if CS.unifiedBarKind then
+        CS.unifiedBarKind = nil
+        ST._ClearConfigBarsHomeSelection()
+    end
     local home = ResolveSectionHome(sectionId)
 
     SetRowScope("primary")
@@ -2670,11 +2663,25 @@ local function UpdatePreviewCommandCenter(host)
         end
     end
 
-    -- Object previews (health/cast/custom-bar auras) deliberately do NOT
-    -- appear here, even on the anchor panel whose canvas draws the bar
-    -- lanes — owner ruling 2026-07-26: the panel-view chooser stays scoped
-    -- to panel previews, and the bars' previews live on the Resources /
-    -- Cast Bar & Unit Frames home that configures those objects.
+    -- Attached modules are edited here too. Reuse their existing commands,
+    -- with the same visibility gate as the lanes this canvas is about to draw.
+    local _, resourcePanel = ST._GetBarWorkspacePlacement("resources")
+    local _, castPanel = ST._GetBarWorkspacePlacement("castbar")
+    local barsVisible = ST._ShouldUseUnifiedAnchorPreview
+        and ST._ShouldUseUnifiedAnchorPreview(panelId)
+    local resourcesAttached = resourcePanel == panelId
+    for _, control in ipairs(CollectObjectControls({
+        health = resourcesAttached,
+        customBars = resourcesAttached,
+        resourceAuras = resourcesAttached,
+        cast = castPanel == panelId,
+    })) do
+        if barsVisible then
+            applicable[#applicable + 1] = control
+        elseif control.preview.IsActive(panelId, buttonIndex) == true then
+            control.preview.SetActive(panelId, buttonIndex, false)
+        end
+    end
 
     if #applicable == 0 then
         -- Zero controls means a texture panel. Empty, the band still earns
@@ -2719,14 +2726,14 @@ local function UpdateResourcesPreviewCommandCenter(host)
     -- independent resource stack drops the cast slot from the canvas even
     -- with the cast bar attached, and the control then named a preview that
     -- repainted a cast-free canvas and visibly did nothing.
-    local onBarsWorkspace = CS.barsEntrySelected == true
+    local onBarsWorkspace = CS.barsEntrySelected == true and CS.barWorkspaceKind == "resources"
+        and ST._GetBarWorkspacePlacement("resources") ~= "unplaced"
     local objects = {
         cast = ST._ResourcesPreviewRendersCastSlot ~= nil
             and ST._ResourcesPreviewRendersCastSlot() == true,
         health = onBarsWorkspace,
-        customBars = onBarsWorkspace or CS.selectedCustomBarId ~= nil,
-        resourceAuras = onBarsWorkspace
-            or CS.selectedResourcePowerType ~= nil,
+        customBars = onBarsWorkspace,
+        resourceAuras = onBarsWorkspace,
     }
     UpdateBar(host, RESOURCES_SURFACE, CollectObjectControls(objects))
 end

@@ -1137,7 +1137,8 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
         end
     end
 
-    if cbSettings and cbSettings.enabled and not IsTruthyConfigFlag(cbSettings.independentAnchorEnabled) then
+    if cbSettings and cbSettings.enabled and (not IsTruthyConfigFlag(cbSettings.independentAnchorEnabled)
+        or (IsBarsWorkspaceActive() and CS.barWorkspaceKind == "castbar")) then
         table_insert(castSlots, {
             id = "cast",
             slotCategory = "cast",
@@ -2827,7 +2828,7 @@ local function SelectPreviewSlot(slot, modifierMulti)
     -- selection, which owns the entry-vs-bar exclusivity and cast support.
     if not IsBarsWorkspaceActive() then
         if ST._SelectUnifiedAnchorBar then
-            return ST._SelectUnifiedAnchorBar(slot)
+            return ST._SelectUnifiedAnchorBar(slot, { multi = modifierMulti })
         end
         return false
     end
@@ -2942,7 +2943,8 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
                     and tostring(CS.selectedResourcePowerType) == tostring(slotModel.powerType))
                 or (kind == "custom" and slotModel.kind == "custom"
                     and slotModel.customBarId ~= nil
-                    and tostring(CS.selectedCustomBarId) == tostring(slotModel.customBarId))
+                    and (tostring(CS.selectedCustomBarId) == tostring(slotModel.customBarId)
+                        or CS.selectedCustomBars[slotModel.customBarId] == true))
                 or (kind == "cast" and slotModel.kind == "cast")
         end
         if isSelected and slotFrame.selectedHighlight then
@@ -2968,7 +2970,7 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             marker:Show()
         end
         slotFrame:SetScript("OnMouseDown", function(self, button)
-            if button ~= "LeftButton" or GetCursorInfo() then return end
+            if button ~= "LeftButton" or GetCursorInfo() or preview.standaloneCast then return end
             layoutDrag.slotCategory = slotModel.slotCategory
             local cursorX, cursorY = GetCursorPosition()
             CS.dragState = {
@@ -3004,6 +3006,11 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
                 return
             end
 
+            if button == "LeftButton" and preview.standaloneCast then
+                SelectPreviewSlot(slotModel, false)
+                CooldownCompanion:RefreshConfigPanel()
+                return
+            end
             -- Escape already cancelled this drag; the release the user is still
             -- holding belongs to that cancel, never to a selection click.
             if button == "LeftButton" and ST._ConsumeDragEscapeMouseUp() then return end
@@ -3038,18 +3045,13 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(slotModel.label or "Bar", 1, 1, 1)
-            local dragHelp = preview.independentResources
+            local dragHelp = preview.standaloneCast and "Click to edit."
+                or preview.independentResources
                 and "Click to edit. Drag to reorder this independent bar."
                 or "Click to edit. Drag to reorder this attached bar."
             GameTooltip:AddLine(dragHelp, 0.75, 0.82, 0.92, true)
             if slotModel.kind == "custom" then
-                -- Multi-select is a workspace-only affordance; the unified
-                -- anchor preview offers the menu alone.
-                if IsBarsWorkspaceActive() then
-                    GameTooltip:AddLine("Ctrl+Click to multi-select. Right-click for actions.", 0.75, 0.82, 0.92, true)
-                else
-                    GameTooltip:AddLine("Right-click for actions.", 0.75, 0.82, 0.92, true)
-                end
+                GameTooltip:AddLine("Ctrl+Click to multi-select. Right-click for actions.", 0.75, 0.82, 0.92, true)
             end
             local customConfig = slotModel.customEntry and slotModel.customEntry.config
             if IsAuraBlockCustomBar(customConfig) then
@@ -4035,8 +4037,12 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     end
     preview.rbSettings = CooldownCompanion:GetResourceBarSettings()
     preview.cbSettings = CooldownCompanion:GetCastBarSettings()
+    local workspaceKind = IsBarsWorkspaceActive() and CS.barWorkspaceKind or nil
+    local standaloneCast = workspaceKind == "castbar"
+    local standaloneResources = workspaceKind == "resources"
     local layout = CooldownCompanion:GetSpecLayoutOrder()
-    preview.isVerticalLayout = preview.rbSettings
+    if standaloneCast and not layout then layout = {} end
+    preview.isVerticalLayout = not standaloneCast and preview.rbSettings
         and preview.rbSettings.enabled == true
         and IsResourceBarVerticalConfig(preview.rbSettings, layout)
         or false
@@ -4061,32 +4067,45 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
 
     local rbSettings = preview.rbSettings
     local cbSettings = preview.cbSettings
-    local resourceBarsEnabled = rbSettings and rbSettings.enabled == true
-    local castBarEnabled = cbSettings and cbSettings.enabled == true
+    local resourceBarsEnabled = (not workspaceKind or standaloneResources) and rbSettings and rbSettings.enabled == true
+    local castBarEnabled = (not workspaceKind or standaloneCast) and cbSettings and cbSettings.enabled == true
     local frameAnchoringSettings = CooldownCompanion.GetFrameAnchoringSettings
         and CooldownCompanion:GetFrameAnchoringSettings()
-    local hasUnitFrameBadges = IsBarsWorkspaceActive()
+    local hasUnitFrameBadges = (workspaceKind == "player" or workspaceKind == "target")
         and frameAnchoringSettings
         and frameAnchoringSettings.enabled == true
     if not (resourceBarsEnabled or castBarEnabled or hasUnitFrameBadges) then
         FinishPreviewWithMessage(preview,
-            "Nothing to show yet. Switch on Resource Bars, the cast bar, or unit frames to start.")
+            workspaceKind == "resources" and "Enable Resource Bars below to start."
+                or workspaceKind == "castbar" and "Enable Cast Bar below to start."
+                or "Enable Unit Frame Anchoring below to start.")
         return
     end
 
-    local independentResourcesPreview = IsBarsWorkspaceActive()
-        and resourceBarsEnabled
-        and layout
-        and IsTruthyConfigFlag(layout.independentAnchorEnabled)
+    -- A virtual destination can also be an attached module awaiting an
+    -- eligible panel. Never portray that missing attachment as independent.
+    if (standaloneResources or standaloneCast)
+        and ST._GetBarWorkspacePlacement(workspaceKind) == "unplaced" then
+        FinishPreviewWithMessage(preview,
+            standaloneCast
+                and "No eligible panel to attach to. Enable an eligible panel, or choose Independent in General."
+                or "No eligible panel to attach to. Enable an eligible panel, or choose Independent in Layout.")
+        return
+    end
+
+    local independentResourcesPreview = standaloneResources and resourceBarsEnabled
+        and CooldownCompanion:IsResourceBarAnchorIndependent()
+    local standalonePreview = independentResourcesPreview or (standaloneCast and castBarEnabled)
+    preview.standaloneCast = standaloneCast
     preview.independentResources = independentResourcesPreview == true
     local supportsAttachedResourceBars = resourceBarsEnabled
         and not (layout and IsTruthyConfigFlag(layout.independentAnchorEnabled))
     local hasAttachedCastBar = castBarEnabled and not IsTruthyConfigFlag(cbSettings.independentAnchorEnabled)
     local includeResourceSlots = supportsAttachedResourceBars or independentResourcesPreview
-    local includeCastSlots = not independentResourcesPreview
-    local hasAttachedBarContext = not independentResourcesPreview
+    local includeCastSlots = castBarEnabled and not independentResourcesPreview
+    local hasAttachedBarContext = not standalonePreview
         and (includeResourceSlots or hasAttachedCastBar)
-    local hasBarContext = independentResourcesPreview or hasAttachedBarContext
+    local hasBarContext = standalonePreview or hasAttachedBarContext
     if not hasBarContext and not hasUnitFrameBadges then
         FinishPreviewWithMessage(preview,
             "Nothing is anchored to a panel right now. Pick an object below to edit it.")
@@ -4161,11 +4180,11 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
 
     local contentWidth = 0
     local contentHeight = 0
-    if independentResourcesPreview and layoutDrag then
+    if standalonePreview and layoutDrag then
         local resourceThickness = math_max(8, tonumber(GetResourceGlobalThickness(rbSettings)) or 12)
         local independentLength = math_max(
             20,
-            tonumber(layout.independentWidth or rbSettings.independentWidth) or 200
+            tonumber(standaloneCast and cbSettings.independentWidth or layout.independentWidth or rbSettings.independentWidth) or 200
         )
         if preview.isVerticalLayout then
             contentWidth, contentHeight = RenderIndependentVerticalLayout(
@@ -4329,6 +4348,11 @@ end
 -- stop: `layout` is briefly nil across a spec change, and stopping on that
 -- would kill a running preview for a transient live condition.
 function ST._ResourcesPreviewRendersCastSlot()
+    if IsBarsWorkspaceActive() then
+        local settings = CooldownCompanion:GetCastBarSettings()
+        return CS.barWorkspaceKind == "castbar" and settings and settings.enabled == true
+            and ST._GetBarWorkspacePlacement("castbar") ~= "unplaced" or false
+    end
     local cbSettings = CooldownCompanion:GetCastBarSettings()
     if not (cbSettings and cbSettings.enabled == true) then
         return false
@@ -4370,6 +4394,8 @@ end
 -- the pair, and offering the hidden half a resource-aura toggle pointed at a
 -- lane that is not on screen.
 function ST._ResourcesPreviewResourceLanePowerTypes()
+    if IsBarsWorkspaceActive() and (CS.barWorkspaceKind ~= "resources"
+        or ST._GetBarWorkspacePlacement("resources") == "unplaced") then return {} end
     local rbSettings = CooldownCompanion:GetResourceBarSettings()
     if not (rbSettings and rbSettings.enabled == true) then
         return {}
@@ -4380,7 +4406,7 @@ function ST._ResourcesPreviewResourceLanePowerTypes()
         return {}
     end
     local powerTypes
-    if IsTruthyConfigFlag(layout.independentAnchorEnabled) then
+    if IsBarsWorkspaceActive() or IsTruthyConfigFlag(layout.independentAnchorEnabled) then
         -- An independent stack is drawn on the bars workspace alone, and
         -- from the runtime-eligible list; anywhere else it has no lanes.
         if not IsBarsWorkspaceActive() then
@@ -4403,7 +4429,8 @@ end
 -- disagree about which objects are on screen. Call it AFTER the build.
 function ST._GetLayoutPreviewRenderedSelectionKeys(host)
     local preview = host and host._cdcLayoutPreview
-    return preview and preview.renderedSelectionKeys or nil
+    return preview and preview.root and preview.root:IsShown()
+        and preview.renderedSelectionKeys or nil
 end
 
 -- The pools that hold this canvas's own lane chrome. A constant, not a literal

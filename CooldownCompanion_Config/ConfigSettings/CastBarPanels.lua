@@ -84,8 +84,8 @@ if ST._DefineSettingRoute then
         rowScope = "detail",
     })
     CASTBAR_FINDER.general = general:Settings({
-        enabled = { label = "Enable Cast Bar Anchoring", aliases = { "enable cast bar" } },
-        anchoringMode = { label = "Anchoring Mode", applies = CastBarFinderEnabled },
+        enabled = { label = "Enable Cast Bar", aliases = { "enable cast bar anchoring" } },
+        anchoringMode = { label = "Anchoring Mode", aliases = { "attach to" }, applies = CastBarFinderEnabled },
     })
 
     local attached = ST._DefineSettingRoute({
@@ -455,11 +455,12 @@ local function BuildCastBarAnchoringPanel(container)
         local generalLeft = BeginRowGrid(container)
 
         local enableRow = AddCheckboxRow(generalLeft, {
-            label = "Enable Cast Bar Anchoring",
+            label = "Enable Cast Bar",
             setting = CASTBAR_FINDER.general and CASTBAR_FINDER.general.enabled,
             value = settings.enabled,
             onChange = function(val)
                 settings.enabled = val
+                if val then ST._PrepareBarWorkspaceEnable("castbar") end
                 CooldownCompanion:EvaluateCastBar()
                 CooldownCompanion:RefreshConfigPanel()
             end,
@@ -472,23 +473,18 @@ local function BuildCastBarAnchoringPanel(container)
         end)
 
         if settings.enabled then
+            local attachmentList, attachmentOrder = ST._GetBarAttachmentOptions()
             AddDropdownRow(generalLeft, {
                 label = "Anchoring Mode",
                 setting = CASTBAR_FINDER.general and CASTBAR_FINDER.general.anchoringMode,
                 pulloutWidth = WIDE_PULLOUT_WIDTH,
-                list = {
-                    attached = "Attached to Panel",
-                    independent = "Independent",
-                },
-                order = { "attached", "independent" },
-                value = settings.independentAnchorEnabled == true and "independent" or "attached",
-                onChange = function(val)
-                    settings.independentAnchorEnabled = (val == "independent")
-                    CooldownCompanion:EvaluateCastBar()
-                    CooldownCompanion:UpdateAnchorStacking()
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
+                tooltip = { "Attached to Panel", "Uses the existing automatic anchoring rules for the active specialization." },
+                list = attachmentList,
+                order = attachmentOrder,
+                value = ST._GetBarAttachmentValue("castbar"),
+                onChange = function(val) ST._SetBarAttachment("castbar", val) end,
             })
+
         end
     end
 
@@ -500,7 +496,7 @@ local function BuildCastBarPositioningPanel(container)
     if not settings.enabled then
         local label = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(label)
-        label:SetText("Enable Cast Bar Anchoring to configure positioning.")
+        label:SetText("Enable Cast Bar to configure positioning.")
         label:SetFullWidth(true)
         container:AddChild(label)
         return
@@ -647,7 +643,7 @@ local function BuildCastBarStylingPanel(container)
     if not settings.enabled then
         local label = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(label)
-        label:SetText("Enable Cast Bar Anchoring to configure appearance.")
+        label:SetText("Enable Cast Bar to configure appearance.")
         label:SetFullWidth(true)
         container:AddChild(label)
         return
