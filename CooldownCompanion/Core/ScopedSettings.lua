@@ -90,6 +90,11 @@ local function GetClassIDFromClassKey(classKey)
     if not classKey then
         return nil
     end
+    -- Lifecycle owns this identity; other classes and pre-enable reads still
+    -- use discovery below.
+    if classKey == CooldownCompanion._playerClassFilename and CooldownCompanion._playerClassID then
+        return CooldownCompanion._playerClassID
+    end
     for classID = 1, CLASS_SCAN_LIMIT do
         if GetClassKeyFromClassID(classID) == classKey then
             return classID
@@ -493,16 +498,16 @@ local function MarkLegacyScopedBarSeenCharacter(snapshot, charKey)
     snapshot[charKey] = true
 end
 
-local function GetClassSpecInfo(classKey)
+local function GetClassSpecIDs(classKey)
     local classID = GetClassIDFromClassKey(classKey)
     if not classID then
-        return nil, nil
+        return nil
     end
 
     local specIDs = {}
     local numSpecs = C_SpecializationInfo.GetNumSpecializationsForClassID(classID) or 0
     if numSpecs <= 0 then
-        return nil, nil
+        return nil
     end
 
     for i = 1, numSpecs do
@@ -512,6 +517,15 @@ local function GetClassSpecInfo(classKey)
         end
     end
     if not next(specIDs) then
+        return nil
+    end
+
+    return specIDs
+end
+
+local function GetClassSpecInfo(classKey)
+    local specIDs = GetClassSpecIDs(classKey)
+    if not specIDs then
         return nil, nil
     end
 
@@ -984,15 +998,9 @@ local function ResourceAuraOverlayNeedsNormalizationForClass(settings, classKey)
     end
     classKey = NormalizeClassKey(classKey)
 
+    -- Entries mutate in place, so validate them on every read. Resolve only
+    -- the allowed IDs here; current-spec discovery is for normalization.
     local allowedSpecIDs = nil
-    local checkedSpecIDs = false
-    local function GetAllowedSpecIDs()
-        if not checkedSpecIDs then
-            allowedSpecIDs = GetClassSpecInfo(classKey)
-            checkedSpecIDs = true
-        end
-        return allowedSpecIDs
-    end
 
     for _, resource in pairs(settings.resources) do
         if type(resource) == "table" then
@@ -1005,8 +1013,10 @@ local function ResourceAuraOverlayNeedsNormalizationForClass(settings, classKey)
                     return true
                 end
 
-                local allowed = GetAllowedSpecIDs()
-                if type(allowed) ~= "table" then
+                if not allowedSpecIDs then
+                    allowedSpecIDs = GetClassSpecIDs(classKey)
+                end
+                if type(allowedSpecIDs) ~= "table" then
                     return true
                 end
 
@@ -1014,7 +1024,7 @@ local function ResourceAuraOverlayNeedsNormalizationForClass(settings, classKey)
                     local numericSpecID = tonumber(specID)
                     if not numericSpecID
                         or numericSpecID ~= specID
-                        or allowed[numericSpecID] ~= true
+                        or allowedSpecIDs[numericSpecID] ~= true
                         or not IsResourceAuraUnitNormalized(entry) then
                         return true
                     end
