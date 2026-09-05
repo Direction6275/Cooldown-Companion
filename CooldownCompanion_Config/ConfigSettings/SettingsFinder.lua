@@ -295,7 +295,7 @@ local CONTEXT_STATE_FIELDS = {
     "selectedContainer", "selectedGroup", "selectedButton",
     "selectedRotationAssistantEntry", "selectedResourcePowerType",
     "resourceSettingsSpecID", "selectedCustomBarId", "castFramesSelectedItem",
-    "barsEntrySelected", "unifiedBarKind",
+    "barsEntrySelected", "barWorkspaceKind", "unifiedBarKind",
 }
 
 local function CaptureContextState()
@@ -373,7 +373,13 @@ local function GetSettingsFinderContext()
         -- An entry or attached bar remains the edited object while either
         -- unified tab row owns the surface. rowScope is a navigation target,
         -- not part of the object's searchable identity.
-        if CS.unifiedBarKind == "resource" and context.resourcePowerType ~= nil then
+        if CS.unifiedBarKind == "stack" then
+            context.scope = "resources"
+        elseif CS.unifiedBarKind == "player" then
+            context.scope = "playerFrame"
+        elseif CS.unifiedBarKind == "target" then
+            context.scope = "targetFrame"
+        elseif CS.unifiedBarKind == "resource" and context.resourcePowerType ~= nil then
             context.scope = "resource"
         elseif CS.unifiedBarKind == "custom" and context.customBarId then
             context.scope = "customBar"

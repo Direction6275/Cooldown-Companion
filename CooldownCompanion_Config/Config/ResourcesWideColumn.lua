@@ -1,13 +1,9 @@
 --[[
     CooldownCompanion - Config/ResourcesWideColumn
-    Workspace for the unified Resources, Cast Bar & Unit Frames
-    home: the pinned Layout & Order preview (sharing the split divider and
-    persisted split fraction from ButtonsWideColumn) above the editing
-    surfaces: the resources tab page, per-resource
-    settings, the Custom Bar detail tabs, the Custom Bar multi-select, and
-    the Cast Bar tabs - plus the player/target frame anchoring panels.
-    The Navigator keeps only its destination row; the canvas objects and
-    the pill row along its bottom select the concrete bar/frame settings.
+    Shared resource, custom-bar, cast-bar and frame settings surfaces.
+    Attached objects reuse these builders in the panel workspace. Independent,
+    disabled or unplaced objects use their own inventory destination and pinned
+    preview, sharing the panel workspace's editing chrome and split divider.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -70,10 +66,10 @@ local function EnsureResourcesAddBox(col3)
     if not host then
         host = AceGUI:Create("SimpleGroup")
         host:SetLayout("Fill")
-        host:SetHeight(28)
+        host:SetHeight(26)
         host.noAutoHeight = true
         host.frame:SetParent(col3.content)
-        host.frame._cdcEditingHeight = 28
+        host.frame._cdcEditingHeight = 26
         host.frame:SetScript("OnSizeChanged", function(_, width, height)
             host.content.width = width
             host.content.height = height
@@ -81,9 +77,24 @@ local function EnsureResourcesAddBox(col3)
         end)
         col3._resourcesAddBoxHost = host
     end
+    local settings = CooldownCompanion:GetResourceBarSettings()
+    local specID = CooldownCompanion._currentSpecId
+    local sameContext = host._cdcAddContextRevision == CS.customBarAddContextRevision
+        and host._cdcAddSettings == settings and host._cdcAddSpecID == specID
+    local query = sameContext and host._cdcAddInput and host._cdcAddInput:GetText() or ""
+    host._cdcAddContextRevision = CS.customBarAddContextRevision
+    host._cdcAddSettings = settings
+    host._cdcAddSpecID = specID
+    host._cdcAddInput = nil
     host:ReleaseChildren()
     if ST._BuildCustomBarWorkspaceAddBox then
-        ST._BuildCustomBarWorkspaceAddBox(host)
+        local _, input = ST._BuildCustomBarWorkspaceAddBox(host)
+        host._cdcAddInput = input
+        if input then
+            input.editbox:SetPoint("BOTTOMRIGHT", input.frame, "BOTTOMRIGHT", -18, 0)
+            ST._CreateAddBoxInfoButton(input.frame, input.frame, input, true)
+            if query ~= "" then input:SetText(query) end
+        end
     end
     host.frame:Show()
     if ST._SetWideEditingAddBox then
@@ -92,7 +103,7 @@ local function EnsureResourcesAddBox(col3)
 end
 
 ------------------------------------------------------------------------
--- Module enable, shared by the overview pane's buttons and the canvas's
+-- Module enable, shared by the introduction buttons and the canvas's
 -- enable pills. Either route leaves exactly the state the module checkbox
 -- on the settings surface leaves, then lands on that module's own
 -- settings: the cast bar and the unit frames select their object, while
@@ -113,6 +124,7 @@ local function EnableResourceBarsModule()
         return
     end
     settings.enabled = true
+    ST._PrepareBarWorkspaceEnable("resources")
     -- Nothing to select: the Resources home tabs are the surface. Clearing
     -- all three selection families is what lands there, and a stale one can
     -- be standing (a Custom Bar selection survives the module being turned
@@ -133,6 +145,7 @@ local function EnableCastBarModule()
         return
     end
     settings.enabled = true
+    ST._PrepareBarWorkspaceEnable("castbar")
     SelectBarsCastFramesItem("castbar")
     CooldownCompanion:EvaluateCastBar()
     CooldownCompanion:UpdateAnchorStacking()
@@ -150,15 +163,14 @@ local function EnableFrameAnchoringModule()
     CooldownCompanion:RefreshConfigPanel()
 end
 
--- Every module of this workspace that is switched off entirely, as
--- descriptors for the canvas's bottom-right enable cluster. Never all
--- three: with nothing enabled the workspace shows its overview pane
--- instead, and that pane offers the same three handlers.
+-- Enable actions for the canvas's recovery controls. Disabled standalone
+-- destinations use the full introduction instead of building this canvas.
 local function CollectBarsEnableItems()
     local items = {}
+    local kind = CS.barsEntrySelected and CS.barWorkspaceKind or nil
 
     local settings = CooldownCompanion:GetResourceBarSettings()
-    if not (settings and settings.enabled == true) then
+    if (not kind or kind == "resources") and not (settings and settings.enabled == true) then
         items[#items + 1] = {
             label = "Enable Resource Bars",
             tooltip = "Resource Bars",
@@ -168,7 +180,7 @@ local function CollectBarsEnableItems()
     end
 
     local castSettings = CooldownCompanion:GetCastBarSettings()
-    if not (castSettings and castSettings.enabled == true) then
+    if (not kind or kind == "castbar") and not (castSettings and castSettings.enabled == true) then
         items[#items + 1] = {
             label = "Enable Cast Bar",
             tooltip = "Cast Bar",
@@ -179,9 +191,9 @@ local function CollectBarsEnableItems()
 
     local frameSettings = CooldownCompanion.GetFrameAnchoringSettings
         and CooldownCompanion:GetFrameAnchoringSettings()
-    if not (frameSettings and frameSettings.enabled == true) then
+    if (not kind or kind == "player" or kind == "target") and not (frameSettings and frameSettings.enabled == true) then
         items[#items + 1] = {
-            label = "Enable Unit Frames",
+            label = "Enable Unit Frame Anchoring",
             tooltip = "Unit Frames",
             tooltipLine = "Turn frame anchoring on and open the player frame's settings.",
             onClick = EnableFrameAnchoringModule,
@@ -209,6 +221,22 @@ end
 local function CollectBarsOffCanvasChipItems(rendered)
     rendered = rendered or {}
     local items = {}
+    if CS.barsEntrySelected and CS.barWorkspaceKind ~= "resources" then
+        if CS.barWorkspaceKind == "player" or CS.barWorkspaceKind == "target" then
+            for _, kind in ipairs({ "player", "target" }) do
+                local item = kind
+                items[#items + 1] = {
+                    label = item == "player" and "Player Frame" or "Target Frame",
+                    selected = CS.castFramesSelectedItem == item,
+                    onClick = function()
+                        ST._OpenBarWorkspace(item)
+                        CooldownCompanion:RefreshConfigPanel()
+                    end,
+                }
+            end
+        end
+        return items
+    end
     local settings = CooldownCompanion:GetResourceBarSettings()
     local RBP = ST._RBP
     local powerNames = RB and RB.POWER_NAMES or {}
@@ -220,7 +248,8 @@ local function CollectBarsOffCanvasChipItems(rendered)
         if not rendered[key] then
             items[#items + 1] = {
                 label = powerNames[powerType] or ("Power " .. tostring(powerType)),
-                selected = tostring(CS.selectedResourcePowerType) == tostring(powerType),
+                selected = (CS.barsEntrySelected or CS.unifiedBarKind == "resource")
+                    and tostring(CS.selectedResourcePowerType) == tostring(powerType),
                 onClick = function()
                     ST._SelectConfigResource(capturedPowerType, { toggle = true })
                     CooldownCompanion:RefreshConfigPanel()
@@ -249,8 +278,9 @@ local function CollectBarsOffCanvasChipItems(rendered)
                 or ("Custom Bar " .. tostring(index))
             items[#items + 1] = {
                 label = label,
-                selected = tostring(CS.selectedCustomBarId) == tostring(customBarId)
-                    or (CS.selectedCustomBars and CS.selectedCustomBars[customBarId] == true),
+                selected = (CS.barsEntrySelected or CS.unifiedBarKind == "custom")
+                    and (tostring(CS.selectedCustomBarId) == tostring(customBarId)
+                        or CS.selectedCustomBars[customBarId] == true),
                 onClick = function()
                     ST._SelectConfigCustomBar(capturedCustomBarId, { toggle = true })
                     CooldownCompanion:RefreshConfigPanel()
@@ -270,21 +300,6 @@ local function CollectBarsOffCanvasChipItems(rendered)
         end
     end
 
-    -- The cast bar earns a chip only while it is enabled but anchored
-    -- independently, which is exactly when the canvas leaves its slot out.
-    -- Disabled, it belongs to the enable cluster instead.
-    local castSettings = CooldownCompanion:GetCastBarSettings()
-    if castSettings and castSettings.enabled == true and not rendered["cast"] then
-        items[#items + 1] = {
-            label = "Cast Bar",
-            selected = CS.castFramesSelectedItem == "castbar",
-            onClick = function()
-                SelectBarsCastFramesItem("castbar")
-                CooldownCompanion:RefreshConfigPanel()
-            end,
-        }
-    end
-
     return items
 end
 
@@ -298,8 +313,18 @@ local function SetBarsOffCanvasChips(col3)
     local rendered = ST._GetLayoutPreviewRenderedSelectionKeys
         and ST._GetLayoutPreviewRenderedSelectionKeys(col3._resourcesPreviewHost)
         or nil
-    ST._SetWideEditingChips(col3, "Not currently shown:",
-        CollectBarsOffCanvasChipItems(rendered))
+    local items = CollectBarsOffCanvasChipItems(rendered or {})
+    if CS.barWorkspaceKind == "resources" then
+        table.insert(items, 1, {
+            label = "Resources",
+            selected = not CS.selectedResourcePowerType and not CS.selectedCustomBarId,
+            onClick = function()
+                ST._OpenBarWorkspace("resources")
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+    end
+    ST._SetWideEditingChips(col3, "Select:", items)
 end
 
 local function PrepareResourcesEditingChrome(col3)
@@ -307,125 +332,84 @@ local function PrepareResourcesEditingChrome(col3)
 end
 
 ------------------------------------------------------------------------
--- Overview pane: the whole workspace while all three of its modules are
--- disabled, so the canvas has nothing to draw and no object can be
--- selected. One centered stack - the workspace heading, then a section
--- per module carrying its description and its own enable button. Enabling
--- any of them drops this pane and lands on the live canvas.
+-- A disabled feature has one introduction and one Enable action. The full
+-- editor, preview and split divider are built only once the feature is on.
 ------------------------------------------------------------------------
-local BARS_OVERVIEW_TITLE = "Resources, Cast Bar & Unit Frames"
-local BARS_OVERVIEW_SIDE_INSET = 48
-local BARS_OVERVIEW_BUTTON_WIDTH = 220
-local BARS_OVERVIEW_BUTTON_HEIGHT = 24
-local BARS_OVERVIEW_HEADING_GAP = 18
-local BARS_OVERVIEW_SECTION_GAP = 26
-local BARS_OVERVIEW_TITLE_GAP = 6
-local BARS_OVERVIEW_BODY_GAP = 12
-
--- Same enable handlers the canvas's enable pills use, so both routes leave
--- the same state behind and land on the same settings surface.
-local BARS_OVERVIEW_SECTIONS = {
-    {
-        title = "Resources",
-        body = "Class resources displayed as bars, attached to one of your panels or positioned anywhere on screen."
-            .. "\nAdd Custom Bars to track any aura or cooldown you choose.",
+local BAR_WORKSPACE_INTROS = {
+    resources = {
+        title = "Resource Bars",
+        body = "Display your class resources as customizable bars. Add Custom Bars to track spell cooldowns or auras."
+            .. "\n\nKeep the stack alongside your panels with automatic anchoring, or position it independently.",
         buttonText = "Enable Resource Bars",
         onEnable = EnableResourceBarsModule,
     },
-    {
+    castbar = {
         title = "Cast Bar",
-        body = "Draw your cast bar in your chosen style, anchored to a panel or positioned anywhere on screen.",
+        body = "Display your casts and channels in a customizable bar."
+            .. "\n\nKeep it alongside your panels with automatic anchoring, or position it independently.",
         buttonText = "Enable Cast Bar",
         onEnable = EnableCastBarModule,
     },
-    {
-        title = "Unit Frames",
-        body = "Anchor your player and target unit frames to your panels.",
-        buttonText = "Enable Frame Anchoring",
+    frames = {
+        title = "Unit Frame Anchoring",
+        body = "Keep Blizzard's player and target frames positioned alongside your panels."
+            .. "\n\nAdjust their placement together with the rest of your setup.",
+        buttonText = "Enable Unit Frame Anchoring",
         onEnable = EnableFrameAnchoringModule,
     },
 }
 
--- Measures the stack against the pane's current size, then centers it.
--- Runs on every show and on the pane's own resize, so the wrapped body
--- text never leaves the stack off-center after a column resize.
-local function LayoutBarsOverviewPane(pane)
-    local heading = pane._cdcHeading
-    local textWidth = math.max(260, (pane:GetWidth() or 0) - BARS_OVERVIEW_SIDE_INSET * 2)
-
-    -- Measure first: the body text wraps against the current column width,
-    -- so the stack's height is only known once the widths are applied.
-    local total = heading:GetStringHeight()
-    local gap = BARS_OVERVIEW_HEADING_GAP
-    for _, section in ipairs(pane._cdcSections) do
-        section.body:SetWidth(textWidth)
-        total = total + gap + section.title:GetStringHeight()
-            + BARS_OVERVIEW_TITLE_GAP + section.body:GetStringHeight()
-            + BARS_OVERVIEW_BODY_GAP + BARS_OVERVIEW_BUTTON_HEIGHT
-        gap = BARS_OVERVIEW_SECTION_GAP
-    end
-
-    heading:ClearAllPoints()
-    heading:SetPoint("TOP", pane, "TOP", 0, -math.max(12, ((pane:GetHeight() or 0) - total) * 0.5))
-
-    local previous = heading
-    gap = BARS_OVERVIEW_HEADING_GAP
-    for _, section in ipairs(pane._cdcSections) do
-        section.title:ClearAllPoints()
-        section.title:SetPoint("TOP", previous, "BOTTOM", 0, -gap)
-        section.body:ClearAllPoints()
-        section.body:SetPoint("TOP", section.title, "BOTTOM", 0, -BARS_OVERVIEW_TITLE_GAP)
-        section.button.frame:ClearAllPoints()
-        section.button.frame:SetPoint("TOP", section.body, "BOTTOM", 0, -BARS_OVERVIEW_BODY_GAP)
-        previous = section.button.frame
-        gap = BARS_OVERVIEW_SECTION_GAP
-    end
+local function GetBarWorkspaceIntroDefinition()
+    local kind = ST._GetBarWorkspaceIntroKind()
+    return kind and BAR_WORKSPACE_INTROS[kind] or nil
 end
 
-local function ShowBarsOverviewPane(col3)
-    local pane = col3._barsOverviewPane
+local function LayoutBarWorkspaceIntro(pane)
+    local width = math.max(120, math.min(560, (pane:GetWidth() or 0) - 96))
+    pane.heading:SetWidth(width)
+    pane.body:SetWidth(width)
+    pane.button:SetWidth(math.min(220, width))
+    local total = pane.heading:GetStringHeight() + 18
+        + pane.body:GetStringHeight() + 24 + 24
+    pane.heading:ClearAllPoints()
+    pane.heading:SetPoint("TOP", pane, "TOP", 0,
+        -math.max(12, ((pane:GetHeight() or 0) - total) * 0.5))
+end
+
+local function ShowBarWorkspaceIntro(col3)
+    local definition = GetBarWorkspaceIntroDefinition()
+    if not definition then return end
+    ST._HideWideEditingChrome(col3)
+    CS.RunAdvancedGearBuildPass(function() end)
+    local pane = col3._barWorkspaceIntroPane
     if not pane then
         local content = col3.content or col3
         pane = CreateFrame("Frame", nil, content)
         pane:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
         pane:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
-
-        pane._cdcHeading = pane:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-        pane._cdcHeading:SetText(BARS_OVERVIEW_TITLE)
-
-        pane._cdcSections = {}
-        for _, definition in ipairs(BARS_OVERVIEW_SECTIONS) do
-            local title = pane:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-            title:SetText(definition.title)
-
-            local body = pane:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-            body:SetJustifyH("CENTER")
-            body:SetSpacing(3)
-            body:SetText(definition.body)
-
-            local button = AceGUI:Create("Button")
-            button:SetText(definition.buttonText)
-            button:SetWidth(BARS_OVERVIEW_BUTTON_WIDTH)
-            button:SetHeight(BARS_OVERVIEW_BUTTON_HEIGHT)
-            button:SetCallback("OnClick", definition.onEnable)
-            button.frame:SetParent(pane)
-            button.frame:Show()
-
-            pane._cdcSections[#pane._cdcSections + 1] = {
-                title = title,
-                body = body,
-                button = button,
-            }
-        end
-
-        pane:SetScript("OnSizeChanged", function(self)
-            LayoutBarsOverviewPane(self)
+        pane.heading = pane:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+        pane.heading:SetJustifyH("CENTER")
+        pane.body = pane:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        pane.body:SetJustifyH("CENTER")
+        pane.body:SetSpacing(3)
+        pane.body:SetPoint("TOP", pane.heading, "BOTTOM", 0, -18)
+        pane.button = AceGUI:Create("Button")
+        pane.button:SetHeight(24)
+        pane.button.frame:SetParent(pane)
+        pane.button.frame:SetPoint("TOP", pane.body, "BOTTOM", 0, -24)
+        pane.button:SetCallback("OnClick", function()
+            if pane.definition then pane.definition.onEnable() end
         end)
-        col3._barsOverviewPane = pane
+        pane.button.frame:Show()
+        pane:SetScript("OnSizeChanged", LayoutBarWorkspaceIntro)
+        col3._barWorkspaceIntroPane = pane
     end
-
-    LayoutBarsOverviewPane(pane)
+    pane.definition = definition
+    pane.heading:SetText(definition.title)
+    pane.body:SetText(definition.body)
+    pane.button:SetText(definition.buttonText)
     pane:Show()
+    LayoutBarWorkspaceIntro(pane)
 end
 
 -- Attached-bar tabs join the unified tab row beside the panel tabs, so they
@@ -682,7 +666,7 @@ local function HideResourcesWideSurfaces(col3, preserveFinderState)
     if ST._ClearWideEditingExtras then
         ST._ClearWideEditingExtras(col3, preserveFinderState)
     end
-    if col3._barsOverviewPane then col3._barsOverviewPane:Hide() end
+    if col3._barWorkspaceIntroPane then col3._barWorkspaceIntroPane:Hide() end
     local host = col3._resourcesPreviewHost
     if host then
         ReleaseResourcesPanelMirrors(host)
@@ -1228,18 +1212,13 @@ end
 -- Workspace dispatch
 ------------------------------------------------------------------------
 
--- One refresh for the whole workspace. The pinned canvas draws every
--- object this destination owns, so it shows for every selection; below the
--- divider exactly one settings surface does, chosen by whichever object is
--- selected. A disabled module keeps its own settings surface - the enable
--- control lives there - so only two states replace the column outright: a
--- profile conflict (its gate) and all three modules disabled (the
--- overview pane).
+-- Disabled standalone features show their introduction. Enabled destinations
+-- build the preview and the selected object's settings beneath the divider.
 local function RefreshBarsWideColumn(col3)
     -- Everything restarts hidden; the active surface re-shows below.
     HideResourcesWideSurfaces(col3, true)
 
-    if CooldownCompanion.GetCurrentResourceBarConflict and CooldownCompanion:GetCurrentResourceBarConflict() then
+    if CS.barWorkspaceKind == "resources" and CooldownCompanion.GetCurrentResourceBarConflict and CooldownCompanion:GetCurrentResourceBarConflict() then
         if ST._ClearSettingsFinderActionRowState then
             ST._ClearSettingsFinderActionRowState(col3)
         end
@@ -1247,11 +1226,11 @@ local function RefreshBarsWideColumn(col3)
         return
     end
 
-    if ST._IsBarsOverviewActive and ST._IsBarsOverviewActive() then
+    if ST._GetBarWorkspaceIntroKind() then
         if ST._ClearSettingsFinderActionRowState then
             ST._ClearSettingsFinderActionRowState(col3)
         end
-        ShowBarsOverviewPane(col3)
+        ShowBarWorkspaceIntro(col3)
         return
     end
 
@@ -1323,6 +1302,7 @@ end
 ------------------------------------------------------------------------
 -- ST._ exports
 ------------------------------------------------------------------------
+ST._GetBarWorkspaceIntroDefinition = GetBarWorkspaceIntroDefinition
 ST._RefreshResourcesWideColumn = RefreshBarsWideColumn
 ST._HideResourcesWideSurfaces = HideResourcesWideSurfaces
 -- Read by the shared canvas (ConfigSettings/, loaded after this file) while
@@ -1335,3 +1315,14 @@ ST._ShowResourceSettingsSurface = ShowResourceSettingsPanel
 ST._ShowCustomBarDetailSurface = ShowCustomBarDetail
 ST._ShowCastBarSettingsSurface = ShowCastBarSettings
 ST._FindSelectedConfigCustomBar = FindSelectedCustomBar
+
+ST._ShowResourceWorkspaceSurfaces = function(col3)
+    local settings = CooldownCompanion:GetResourceBarSettings()
+    ShowResourcesHomeSurfaces(col3, function(id)
+        return FindCustomBarById(settings, id) ~= nil
+    end)
+end
+ST._ShowUnitFrameSettingsSurface = ShowUnitFrameSettings
+ST._EnsureCustomBarAddBox = EnsureResourcesAddBox
+ST._CollectBarsOffCanvasChips = CollectBarsOffCanvasChipItems
+ST._ShowCustomBarMultiSelectSurface = ShowCustomBarMultiSelect

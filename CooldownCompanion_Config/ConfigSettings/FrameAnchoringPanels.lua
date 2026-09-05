@@ -76,12 +76,12 @@ if ST._DefineSettingRoute then
         tab = "settings",
         tabLabel = "Settings",
         section = "anchoring",
-        sectionLabel = "Frame Anchoring",
+        sectionLabel = "Unit Frame Anchoring",
         collapseKeys = { "unitframe_player_anchoring" },
         rowScope = "detail",
     })
     FRAME_ANCHORING_FINDER.player.anchoring = playerAnchoring:Settings({
-        enabled = { label = "Enable Frame Anchoring" },
+        enabled = { label = "Enable Unit Frame Anchoring" },
         unitFrames = { label = "Unit Frames", applies = FrameAnchoringFinderEnabled },
         mirrorTarget = { label = "Mirror target from player", applies = FrameAnchoringFinderEnabled },
         inheritAlpha = { label = "Inherit group alpha", applies = FrameAnchoringFinderEnabled },
@@ -112,11 +112,11 @@ if ST._DefineSettingRoute then
         tab = "settings",
         tabLabel = "Settings",
         section = "anchoring",
-        sectionLabel = "Frame Anchoring",
+        sectionLabel = "Unit Frame Anchoring",
         collapseKeys = { "unitframe_target_anchoring" },
         rowScope = "detail",
     }):Settings({
-        enabled = { label = "Enable Frame Anchoring" },
+        enabled = { label = "Enable Unit Frame Anchoring" },
     })
 
     FRAME_ANCHORING_FINDER.target.position = ST._DefineSettingRoute({
@@ -275,7 +275,7 @@ local function BuildFrameAnchoringPlayerPanel(container)
     -- over the first caret has nowhere to belong. Disabling the module ends
     -- the section after one row and builds nothing below it, exactly as the
     -- pre-row panel returned early after the same checkbox.
-    local _, anchoringCollapsed = BuildCollapsibleSection(container, "Frame Anchoring",
+    local _, anchoringCollapsed = BuildCollapsibleSection(container, "Unit Frame Anchoring",
         "unitframe_player_anchoring", nil, nil, ROW_SECTION)
 
     if not anchoringCollapsed then
@@ -285,7 +285,7 @@ local function BuildFrameAnchoringPlayerPanel(container)
         local generalLeft, generalRight = BeginRowGrid(container)
 
         local enableRow = AddCheckboxRow(generalLeft, {
-            label = "Enable Frame Anchoring",
+            label = "Enable Unit Frame Anchoring",
             setting = FRAME_ANCHORING_FINDER.player.anchoring
                 and FRAME_ANCHORING_FINDER.player.anchoring.enabled,
             value = settings.enabled,
@@ -296,7 +296,7 @@ local function BuildFrameAnchoringPlayerPanel(container)
             end,
         })
 
-        CreateCharacterCopyButton(enableRow, "frameAnchoring", "Frame Anchoring", function()
+        CreateCharacterCopyButton(enableRow, "frameAnchoring", "Unit Frame Anchoring", function()
             CooldownCompanion:EvaluateFrameAnchoring()
             CooldownCompanion:RefreshConfigPanel()
         end)
@@ -382,7 +382,7 @@ local function BuildFrameAnchoringTargetPanel(container)
     -- The module switch, as on the Player Frame panel: either frame can be
     -- selected on its own in the workspace, so each one has to be able to
     -- turn frame anchoring on rather than pointing at the other.
-    local _, anchoringCollapsed = BuildCollapsibleSection(container, "Frame Anchoring",
+    local _, anchoringCollapsed = BuildCollapsibleSection(container, "Unit Frame Anchoring",
         "unitframe_target_anchoring", nil, nil, ROW_SECTION)
 
     if not anchoringCollapsed then
@@ -391,7 +391,7 @@ local function BuildFrameAnchoringTargetPanel(container)
         local generalLeft = BeginRowGrid(container)
 
         AddCheckboxRow(generalLeft, {
-            label = "Enable Frame Anchoring",
+            label = "Enable Unit Frame Anchoring",
             setting = FRAME_ANCHORING_FINDER.target.anchoring
                 and FRAME_ANCHORING_FINDER.target.anchoring.enabled,
             value = settings.enabled,

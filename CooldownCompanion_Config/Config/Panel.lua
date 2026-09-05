@@ -310,7 +310,7 @@ ST._ShouldShowOtherClassNavigatorRow = ShouldShowOtherClassNavigatorRow
 -- 8px top offset + 24px per row (+1 slack). The second row appears only when
 -- another class has browsable inventory.
 local function GetNavigatorDestinationsHeight()
-    return ShouldShowOtherClassNavigatorRow() and (NAVIGATOR_DESTINATIONS_HEIGHT + 24) or NAVIGATOR_DESTINATIONS_HEIGHT
+    return ShouldShowOtherClassNavigatorRow() and NAVIGATOR_DESTINATIONS_HEIGHT or 8
 end
 
 -- Title bar buttons share one flat monochrome treatment: desaturated glyphs
@@ -435,14 +435,8 @@ local function GetConfigSelectionSummary()
 end
 
 local function GetColumn3HeaderMode(selection)
-    -- The bars workspace shows whichever object is selected: a cast/frames
-    -- item first, otherwise the Resources home and its editing surfaces.
-    -- With every module disabled the overview pane replaces all of them.
-    local barsOverview = CS.barsEntrySelected
-        and ST._IsBarsOverviewActive
-        and ST._IsBarsOverviewActive()
-    if barsOverview then
-        return "bars_overview"
+    if ST._GetBarWorkspaceIntroKind and ST._GetBarWorkspaceIntroKind() then
+        return "bar_intro"
     end
     if CS.barsEntrySelected and CS.castFramesSelectedItem then
         if CS.castFramesSelectedItem == "player" then
@@ -505,8 +499,9 @@ end
 
 local function GetColumn3HeaderTitle(selection)
     local mode = GetColumn3HeaderMode(selection)
-    if mode == "bars_overview" then
-        return "Resources, Cast Bar & Unit Frames"
+    if mode == "bar_intro" then
+        local intro = ST._GetBarWorkspaceIntroDefinition()
+        return intro and intro.title or "Optional Modules"
     elseif mode == "resources_panel" then
         return "Resource Bars"
     elseif mode == "resource_settings" then
@@ -1887,9 +1882,10 @@ local function CreateConfigPanel()
     bsInfoIcon:SetAtlas("QuestRepeatableTurnin")
     bsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if CS.barsEntrySelected and ST._IsBarsOverviewActive and ST._IsBarsOverviewActive() then
-            GameTooltip:AddLine("Resources, Cast Bar & Unit Frames")
-            GameTooltip:AddLine("Resource Bars, the cast bar, and unit frame anchoring are all disabled. Enable any of them to start building this workspace.", 1, 1, 1, true)
+        local intro = ST._GetBarWorkspaceIntroDefinition()
+        if intro then
+            GameTooltip:AddLine(intro.title)
+            GameTooltip:AddLine(intro.body, 1, 1, 1, true)
         elseif CS.barsEntrySelected and CS.castFramesSelectedItem == "castbar" then
             GameTooltip:AddLine("Cast Bar")
             GameTooltip:AddLine("Draws your cast bar in your chosen style, anchored to a panel or positioned anywhere on screen.", 1, 1, 1, true)
@@ -2393,6 +2389,7 @@ function CooldownCompanion:RefreshConfigSelection()
     if CS.configRefreshInProgress or CS.advancedSettingsPanelRefreshing then return end
 
     CS.configRefreshInProgress = true
+    if ST._NormalizeBarWorkspace then ST._NormalizeBarWorkspace() end
     if ST._BeginNavSettingHighlightRefresh then
         ST._BeginNavSettingHighlightRefresh()
     end
@@ -2428,6 +2425,7 @@ function CooldownCompanion:_configRefreshPanelImpl()
     if CS.talentPickerMode then return end
     if CS.configRefreshInProgress or CS.advancedSettingsPanelRefreshing then return end
     CS.configRefreshInProgress = true
+    if ST._NormalizeBarWorkspace then ST._NormalizeBarWorkspace() end
     if ST._BeginNavSettingHighlightRefresh then
         ST._BeginNavSettingHighlightRefresh()
     end

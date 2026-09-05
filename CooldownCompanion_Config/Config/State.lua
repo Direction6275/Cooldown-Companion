@@ -331,8 +331,9 @@ ST._configState = {
     appearanceTabElements = {},
     selectedCustomBarId = nil,
     customBarSpecExpandedId = nil,
-    -- The unified Resources, Cast Bar & Unit Frames workspace
+    -- A standalone bar destination in the panel inventory
     barsEntrySelected = false,
+    barWorkspaceKind = nil,
     -- Which cast/frames object that workspace is editing
     -- ("castbar" | "player" | "target"); nil is the Resources home, where a
     -- resource or a custom bar can be selected instead
@@ -623,6 +624,7 @@ local function SnapshotOtherClassLibraryState()
         selectedResourcePowerType = CS.selectedResourcePowerType,
         resourceSettingsSpecID = CS.resourceSettingsSpecID,
         barsEntrySelected = CS.barsEntrySelected,
+        barWorkspaceKind = CS.barWorkspaceKind,
         castFramesSelectedItem = CS.castFramesSelectedItem,
         unifiedBarKind = CS.unifiedBarKind,
         addingToPanelId = CS.addingToPanelId,
@@ -660,6 +662,7 @@ local function RestoreOtherClassLibrarySnapshot()
     CS.selectedResourcePowerType = snapshot.selectedResourcePowerType
     CS.resourceSettingsSpecID = snapshot.resourceSettingsSpecID
     CS.barsEntrySelected = snapshot.barsEntrySelected
+    CS.barWorkspaceKind = snapshot.barWorkspaceKind
     CS.castFramesSelectedItem = snapshot.castFramesSelectedItem
     CS.unifiedBarKind = snapshot.unifiedBarKind
     CS.addingToPanelId = snapshot.addingToPanelId
@@ -2010,6 +2013,10 @@ local function EnsureConfigRowHandlers(entry)
         entry._cdcConfigRowOriginalOnRelease = entry.OnRelease
         entry.OnRelease = function(self)
             local originalOnRelease = self._cdcConfigRowOriginalOnRelease
+            if self.frame._cdcDisabledModuleSelection then
+                self.frame._cdcDisabledModuleSelection:Hide()
+            end
+            self.frame:SetAlpha(1)
             ClearConfigRowLayout(self, true)
             if originalOnRelease then
                 originalOnRelease(self)
@@ -2020,6 +2027,7 @@ local function EnsureConfigRowHandlers(entry)
 end
 
 local function CleanRecycledEntry(entry)
+    if entry.frame._cdcDisabledModuleSelection then entry.frame._cdcDisabledModuleSelection:Hide() end
     if entry._cdcModeBadge then entry._cdcModeBadge:Hide() end
     if entry._cdcModeBadgeHitRect then entry._cdcModeBadgeHitRect:Hide() end
     if entry.frame._cdcBadges then
@@ -2211,6 +2219,35 @@ local function BuildEligibilityBadgeMap(...)
     return badgeMap
 end
 
+local function ConfigureResourceAttachmentBadge(frame, index, description)
+    local badge = AcquireBadge(frame, index)
+    badge.icon:SetAtlas("Waypoint-MapPin-Tracked", false)
+    if not InCombatLockdown() and badge.SetPropagateMouseClicks then
+        badge:EnableMouse(true)
+        badge:SetPropagateMouseClicks(true)
+        badge:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Resources attached")
+            GameTooltip:AddLine(description, 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        badge:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
+    badge:Show()
+    return badge
+end
+
+local function SetupPanelResourceIndicator(entry, panelId, rightReserve)
+    local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
+    if placement ~= "attached" or anchorPanelId ~= panelId then return 0 end
+    local badge = ConfigureResourceAttachmentBadge(entry.frame, 1,
+        "Your resource bars are attached to this panel. Select Resources below the preview to edit shared settings and bar order.")
+    badge:SetSize(16, 16)
+    badge:ClearAllPoints()
+    badge:SetPoint("RIGHT", entry.frame, "RIGHT", -(rightReserve or 4), 0)
+    return badge:GetWidth() + BADGE_SPACING
+end
+
 local function SetupGroupRowIndicators(entry, group)
     local frame = entry.frame
     if frame._cdcBadges then
@@ -2250,20 +2287,8 @@ local function SetupGroupRowIndicators(entry, group)
             if anchorContainer ~= nil and anchorContainer == group then
                 local anchorPanelName = anchorGroup.name or "a panel"
                 badgeIndex = badgeIndex + 1
-                local badge = AcquireBadge(frame, badgeIndex)
-                badge.icon:SetAtlas("Waypoint-MapPin-Tracked", false)
-                if not InCombatLockdown() and badge.SetPropagateMouseClicks then
-                    badge:EnableMouse(true)
-                    badge:SetPropagateMouseClicks(true)
-                    badge:SetScript("OnEnter", function(self)
-                        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                        GameTooltip:AddLine("Resource Bars")
-                        GameTooltip:AddLine("Your resource bars are anchored to " .. anchorPanelName .. " in this group.", 1, 1, 1, true)
-                        GameTooltip:Show()
-                    end)
-                    badge:SetScript("OnLeave", function() GameTooltip:Hide() end)
-                end
-                badge:Show()
+                ConfigureResourceAttachmentBadge(frame, badgeIndex,
+                    "Your resource bars are anchored to " .. anchorPanelName .. " in this group.")
             end
         end
     end
@@ -2458,6 +2483,12 @@ local function ToggleConfigContainerMultiSelect(containerId)
 end
 
 local function SelectConfigPanel(panelId, opts)
+    if CS.selectedGroup ~= panelId or CS.barsEntrySelected then
+        CS.customBarAddContextRevision = (CS.customBarAddContextRevision or 0) + 1
+        CS.panelAddModePanelId = panelId
+        CS.panelAddMode = "entry"
+        CS.panelAddModeQuery = nil
+    end
     CooldownCompanion:ClearAllConfigPreviews()
     CS.configFinderRestoredCollapsedContainerId = nil
     if opts and opts.containerId ~= nil then
@@ -2655,7 +2686,12 @@ local function ClearConfigBarsHomeSelection()
 end
 
 local function SelectConfigCustomBar(customBarId, opts)
-    local selectionChanged = CS.selectedCustomBarId ~= customBarId
+    local wasActive = CS.barsEntrySelected or CS.unifiedBarKind == "custom"
+    if not CS.barsEntrySelected and CS.selectedGroup then
+        CS.unifiedBarKind = "custom"
+        ClearSelectedButton()
+    end
+    local selectionChanged = CS.selectedCustomBarId ~= customBarId or not wasActive
     if opts and opts.toggle and not selectionChanged then
         ClearConfigCustomBarSelection()
         return true
@@ -2708,11 +2744,14 @@ end
 
 local function SelectConfigResource(powerType, opts)
     local numericPowerType = tonumber(powerType)
-    if numericPowerType == nil then
-        return false
+    if numericPowerType == nil then return false end
+    local wasActive = CS.barsEntrySelected or CS.unifiedBarKind == "resource"
+    if not CS.barsEntrySelected and CS.selectedGroup then
+        CS.unifiedBarKind = "resource"
+        ClearSelectedButton()
     end
 
-    local selectionChanged = CS.selectedResourcePowerType ~= numericPowerType
+    local selectionChanged = CS.selectedResourcePowerType ~= numericPowerType or not wasActive
     if opts and opts.toggle and not selectionChanged then
         ClearConfigResourceSelection()
         return true
@@ -2779,6 +2818,14 @@ local function SelectUnifiedAnchorBar(slot, opts)
         return false
     end
     local allowToggle = not (opts and opts.toggle == false)
+    if slot.kind == "custom" and opts and opts.multi then
+        if not CS.selectedCustomBarId then SelectConfigCustomBar(slot.customBarId) end
+        ToggleConfigCustomBarMultiSelect(slot.customBarId)
+        CS.unifiedBarKind = "custom"
+        CS.unifiedRowScope = "detail"
+        ClearSelectedButton()
+        return true
+    end
 
     if slot.kind == "resource" and slot.powerType ~= nil then
         if allowToggle
@@ -2823,12 +2870,17 @@ local function SelectUnifiedAnchorBar(slot, opts)
     return true
 end
 
--- The unified Resources, Cast Bar & Unit Frames workspace: the pinned
--- preview and the inactive chips select the resource, custom bar, or
--- cast/frames item whose settings show beneath it. The destination row is a
--- "go home" click - entering, or clicking it again while an object is
--- selected, lands on the Resources home with nothing selected.
+-- Route legacy Resources-home callers to the actual stack destination.
+-- Only the workspace router requests a standalone inventory destination.
 local function SelectConfigBarsEntry(opts)
+    if not (opts and opts.standalone) and ST._OpenBarWorkspace then
+        return ST._OpenBarWorkspace("resources")
+    end
+    local kind = opts and opts.kind or "resources"
+    if not CS.barsEntrySelected or CS.barWorkspaceKind ~= kind then
+        CS.customBarAddContextRevision = (CS.customBarAddContextRevision or 0) + 1
+    end
+    CS.barWorkspaceKind = kind
     CooldownCompanion:ClearAllConfigPreviews()
     ResetOtherClassLibraryState()
     -- Destination navigation exits the temporary filtered-tree view.
@@ -2853,6 +2905,7 @@ local function SelectConfigCastFramesItem(item)
         return false
     end
     local changed = CS.castFramesSelectedItem ~= item
+    if ST._OpenBarWorkspace then ST._OpenBarWorkspace(item) end
     ClearConfigResourceSelection()
     ClearConfigCustomBarSelection({ clearExpanded = true })
     CS.castFramesSelectedItem = item
@@ -2876,37 +2929,26 @@ local function GetResourcesEntryPlacement()
     return "attached", CooldownCompanion:GetFirstAvailableAnchorGroup()
 end
 
--- With all three of the workspace's modules disabled there is nothing for
--- the canvas to draw and nothing to select, so the workspace becomes a
--- single wide overview pane offering each module its own enable button. A
--- profile conflict keeps the normal layout so its gate stays reachable.
-local function IsBarsOverviewActive()
-    if not CS.barsEntrySelected then
-        return false
+-- A disabled standalone feature introduces itself before exposing its editor.
+-- The resource conflict gate must remain reachable instead of being covered.
+local function GetBarWorkspaceIntroKind()
+    if not CS.barsEntrySelected then return nil end
+    local kind = CS.barWorkspaceKind or CS.castFramesSelectedItem or "resources"
+    local settings
+    if kind == "resources" then
+        if CooldownCompanion.GetCurrentResourceBarConflict
+            and CooldownCompanion:GetCurrentResourceBarConflict() then return nil end
+        settings = CooldownCompanion:GetResourceBarSettings()
+    elseif kind == "castbar" then
+        settings = CooldownCompanion:GetCastBarSettings()
+    elseif kind == "player" or kind == "target" then
+        kind = "frames"
+        settings = CooldownCompanion:GetFrameAnchoringSettings()
+    else
+        return nil
     end
-    if CooldownCompanion.GetCurrentResourceBarConflict
-        and CooldownCompanion:GetCurrentResourceBarConflict() then
-        return false
-    end
-    local resourceBars = CooldownCompanion.GetResourceBarSettings
-        and CooldownCompanion:GetResourceBarSettings()
-        or nil
-    if resourceBars and resourceBars.enabled == true then
-        return false
-    end
-    local castBar = CooldownCompanion.GetCastBarSettings
-        and CooldownCompanion:GetCastBarSettings()
-        or nil
-    if castBar and castBar.enabled == true then
-        return false
-    end
-    local frameAnchoring = CooldownCompanion.GetFrameAnchoringSettings
-        and CooldownCompanion:GetFrameAnchoringSettings()
-        or nil
-    if frameAnchoring and frameAnchoring.enabled == true then
-        return false
-    end
-    return true
+    if not (settings and settings.enabled == true) then return kind end
+    return nil
 end
 
 -- True for the normal panel workspace, including Other Class browsing,
@@ -3234,6 +3276,7 @@ ST._ApplyConfigRowIcon = ApplyConfigRowIcon
 ST._ApplyConfigTextRow = ApplyConfigTextRow
 ST._RefreshVisibleConfigCompactRows = RefreshVisibleConfigCompactRows
 ST._SetupGroupRowIndicators = SetupGroupRowIndicators
+ST._SetupPanelResourceIndicator = SetupPanelResourceIndicator
 ST._GetConfigRowBadgeReserve = GetConfigRowBadgeReserve
 ST._GetButtonIcon = GetButtonIcon
 ST._GetConfigEntryDisplayName = GetConfigEntryDisplayName
@@ -3287,7 +3330,7 @@ ST._PruneConfigResourceSelection = PruneConfigResourceSelection
 ST._SelectConfigBarsEntry = SelectConfigBarsEntry
 ST._SelectConfigCastFramesItem = SelectConfigCastFramesItem
 ST._GetResourcesEntryPlacement = GetResourcesEntryPlacement
-ST._IsBarsOverviewActive = IsBarsOverviewActive
+ST._GetBarWorkspaceIntroKind = GetBarWorkspaceIntroKind
 ST._IsButtonsWideViewActive = IsButtonsWideViewActive
 ST._ResetConfigSelection = ResetConfigSelection
 ST._SetConfigPrimaryModeImpl = SetConfigPrimaryMode

@@ -1226,6 +1226,7 @@ local function BuildResourceBarAnchoringPanel(container)
             value = settings.enabled,
             onChange = function(val)
                 settings.enabled = val
+                if val then ST._PrepareBarWorkspaceEnable("resources") end
                 CooldownCompanion:EvaluateResourceBars()
                 CooldownCompanion:UpdateAnchorStacking()
                 CooldownCompanion:RefreshConfigPanel()
@@ -1378,23 +1379,16 @@ local function BuildResourceBarPositioningPanel(container)
         -- have no panel to inherit from, so that side ends early.
         local placementLeft, placementRight = BeginRowGrid(container)
 
+        local attachmentList, attachmentOrder = ST._GetBarAttachmentOptions()
         AddDropdownRow(placementLeft, {
             label = "Anchoring Mode",
             setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.placement
                 and RESOURCE_FINDER.primary.placement.anchoring,
-            list = {
-                attached = "Attached to Panel",
-                independent = "Independent",
-            },
-            order = { "attached", "independent" },
-            value = isIndependentStack and "independent" or "attached",
-            onChange = function(val)
-                layout.independentAnchorEnabled = (val == "independent")
-                CooldownCompanion:EvaluateResourceBars()
-                CooldownCompanion:RepositionCastBar()
-                CooldownCompanion:UpdateAnchorStacking()
-                CooldownCompanion:RefreshConfigPanel()
-            end,
+            tooltip = { "Attached to Panel", "Uses the existing automatic anchoring rules for the active specialization." },
+            list = attachmentList,
+            order = attachmentOrder,
+            value = ST._GetBarAttachmentValue("resources"),
+            onChange = function(val) ST._SetBarAttachment("resources", val) end,
         })
 
         AddDropdownRow(placementLeft, {
@@ -3783,7 +3777,7 @@ if ST._DefineSettingRoute then
         collapseStore = "resource",
         applies = RESOURCE_FINDER.BarsEnabled,
     }):Settings({
-        anchoring = { label = "Anchoring Mode", aliases = { "attach independent" } },
+        anchoring = { label = "Anchoring Mode", aliases = { "attach to", "attach independent" } },
         orientation = { label = "Bar Orientation", aliases = { "horizontal vertical" } },
         verticalFill = {
             label = "Vertical Fill Direction",
