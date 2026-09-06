@@ -112,7 +112,7 @@ local ROW_GRID_TYPE     = "CDC-RowGrid"
 local ROW_GRID_COL_TYPE = "CDC-RowGridColumn"
 local INLINE_SETTINGS_TYPE = "CDC-InlineSettings"
 local INLINE_PADDING = 6
-local ROW_WIDGET_VERSION = 4
+local ROW_WIDGET_VERSION = 6
 
 -- Flip to true to trace every grid layout pass to chat. Left in deliberately:
 -- the resize bug this template was hardened against was never reproduced from
@@ -133,45 +133,98 @@ local function UpdateDisclosureBounds(self)
     target:SetSize(max(1, min(label:GetStringWidth() or 0, label:GetWidth() or 0)), ROW_HEIGHT)
 end
 
--- Reposition the anchor shared by the gear/info/scope badge chain.
+-- Measure our own non-secret config label without its current width limit.
+local function MeasureRowText(label, text)
+    label:SetText(text)
+    return label:GetUnboundedStringWidth()
+end
+
+local function FitRowName(label, text, width)
+    if MeasureRowText(label, text) <= width then return text, false end
+    -- Let the FontString clip rich text intact rather than splitting a WoW
+    -- escape sequence. Ordinary names get a UTF-8-safe ellipsis.
+    if text:find("|", 1, true) then return text, true end
+    local ends, pos = { 0 }, 1
+    while pos <= #text do
+        local byte = text:byte(pos)
+        pos = pos + (byte < 0x80 and 1 or byte < 0xE0 and 2 or byte < 0xF0 and 3 or 4)
+        ends[#ends + 1] = pos - 1
+    end
+    local low, high = 1, #ends
+    while low < high do
+        local mid = math.floor((low + high + 1) / 2)
+        if MeasureRowText(label, text:sub(1, ends[mid]) .. "…") <= width then low = mid else high = mid - 1 end
+    end
+    return text:sub(1, ends[low]) .. "…", true
+end
+
+-- Reserve the actual control and badge widths first. Badges still sit beside
+-- the visible name; optional summaries surrender space before that name does.
 local function UpdateBadgeAnchor(self)
     local label = self.rowLabel
+    local name = self.labelText or ""
+    local badges, badgeWidth = self._cdcRowBadges or {}, 0
+    local previous
+    for _, item in ipairs(badges) do
+        local btn = item.button
+        if btn:IsShown() then
+            btn:ClearAllPoints()
+            btn:SetPoint("LEFT", previous or self.badgeAnchor, "RIGHT", item.gap, 0)
+            badgeWidth = badgeWidth + item.gap + btn:GetWidth()
+            previous = btn
+        end
+    end
+    self._cdcLastBadge = previous
+    local inset = LABEL_INSET + (self.indented and CHILD_INDENT or 0)
+    local controlWidth = self.controlHoverAnchor and self.controlHoverAnchor:GetWidth()
+        or self.controlColumn:GetWidth()
+    if self.type == SLIDER_ROW_TYPE then
+        controlWidth = SLIDER_TRACK_WIDTH + CONTROL_GAP + SLIDER_VALUE_WIDTH
+    end
+    local available = max(1, self.frame:GetWidth() - inset - controlWidth - LABEL_CONTROL_GAP - badgeWidth)
+    -- Item/caption rows (including Customizations navigation links) and
+    -- explicitly multiline rows retain their existing layout contract.
+    local fixedLabel = self.type == LABEL_ROW_TYPE or self.labelLines
+    if fixedLabel then
+        label:SetText(name)
+        self.labelTruncated = nil
+    else
+        local summary = self.labelSummary
+        if summary and MeasureRowText(label, name .. "  " .. summary) > available then
+            summary = self.labelShortSummary
+        end
+        if summary and MeasureRowText(label, name .. "  " .. summary) > available then summary = nil end
+        self.visibleLabelSummary = summary
+        local text, truncated = FitRowName(label, name, available)
+        self.labelTruncated = truncated
+        if summary then
+            text = text .. (self.disabled and "  |cff808080" or "  |cffbfb69c") .. summary .. "|r"
+        end
+        label:SetText(text)
+        label:ClearAllPoints()
+        label:SetPoint("LEFT", self.frame, "LEFT", inset, 0)
+        label:SetWidth(max(1, min(available, label:GetUnboundedStringWidth())))
+    end
     self.badgeAnchor:ClearAllPoints()
-    self.badgeAnchor:SetPoint("LEFT", label, "LEFT", label:GetStringWidth() or 0, 0)
+    local textWidth = fixedLabel and label:GetStringWidth() or min(label:GetStringWidth(), label:GetWidth())
+    self.badgeAnchor:SetPoint("LEFT", label, "LEFT", textWidth, 0)
     UpdateDisclosureBounds(self)
 end
 
--- Chain a badge (gear / info / scope chrome) off the end of the row's label
--- text, growing LEFT to RIGHT: the first badge hangs off badgeAnchor, each
--- further one off the previous badge. Creation order gear -> info -> scope
--- therefore reads on screen as gear, info, scope.
---
--- Badges belong to the label, not to a shared rail. A full-width rail was
--- tried and reversed: with ~600px between a label and its control, badges
--- parked at the control column read as floating mid-screen rather than as
--- belonging to the setting. Inside a ~360px grid cell the horizontal scatter
--- is bounded and reads as ownership.
---
--- The chain is NOT clamped to the control column: badgeAnchor tracks the
--- label's unclipped string width, so a long label plus three badges can reach
--- a little past the column's left edge. That is safe only because every
--- control is right-aligned inside the column and the badge-bearing rows use
--- narrow controls (checkbox, color swatch). Never badge a slider row in a
--- grid cell - its track starts at that left edge.
---
--- Badges that are hidden because their setting is off must NOT be chained, or
--- they leave a hole; the callers already skip anchoring in that case.
 local function AnchorRowBadge(row, btn, gap)
     if not (row and btn) then return btn end
-    local previous = row._cdcLastBadge
+    local badges = row._cdcRowBadges or {}
+    row._cdcRowBadges = badges
+    for i = #badges, 1, -1 do
+        if badges[i].button == btn then table.remove(badges, i) end
+    end
+    badges[#badges + 1] = { button = btn, gap = gap or BADGE_GAP }
     btn:SetParent(row.frame)
-    btn:ClearAllPoints()
-    btn:SetPoint("LEFT", previous or row.badgeAnchor, "RIGHT", gap or BADGE_GAP, 0)
-    row._cdcLastBadge = btn
+    UpdateBadgeAnchor(row)
     return btn
 end
 
-local function ApplyLabelColor(self)
+local function ApplyLabelColor(self, colorOnly)
     local color = LABEL_COLOR
     if self.settingsDisclosureHovered then
         color = LABEL_DISCLOSURE_HOVER
@@ -183,6 +236,7 @@ local function ApplyLabelColor(self)
         color = LABEL_CHILD_COLOR
     end
     self.rowLabel:SetTextColor(color[1], color[2], color[3])
+    if not colorOnly then UpdateBadgeAnchor(self) end
 end
 
 -- The control column is a fixed width pinned to the row's right edge, but a
@@ -222,13 +276,18 @@ local function ShowRowTooltip(self, includeScope, disclosureHint, owner)
     local lines = self.tooltipLines
     local range = self.rangeTooltip
     local scope = includeScope and self.scopeTooltipLines or nil
-    local hasOwn = range or (lines and lines[1])
+    local summary = self.labelSummary ~= self.visibleLabelSummary and self.labelSummary or nil
+    local hasOwn = range or (lines and lines[1]) or self.labelTruncated or summary
     if not (hasOwn or (scope and scope[1]) or disclosureHint) then return end
 
     GameTooltip:SetOwner(owner or self.frame, "ANCHOR_RIGHT")
+    local firstLine = lines and lines[1]
+    if type(firstLine) == "table" then firstLine = firstLine[1] end
+    if self.labelTruncated and firstLine ~= self.labelText then GameTooltip:AddLine(self.labelText) end
     if lines then
         AddRowTooltipLines(lines)
     end
+    if summary then GameTooltip:AddLine(summary, LABEL_CHILD_COLOR[1], LABEL_CHILD_COLOR[2], LABEL_CHILD_COLOR[3], true) end
     if range then
         GameTooltip:AddLine(range, 0.7, 0.7, 0.7)
     end
@@ -394,13 +453,13 @@ local sharedMethods = {
         target:SetScript("OnClick", function() self.settingsDisclosure() end)
         target:SetScript("OnEnter", function()
             self.settingsDisclosureHovered = true
-            ApplyLabelColor(self)
+            ApplyLabelColor(self, true)
             self:ShowSettingsDisclosureTooltip()
             self:Fire("OnEnter")
         end)
         target:SetScript("OnLeave", function()
             self.settingsDisclosureHovered = nil
-            ApplyLabelColor(self)
+            ApplyLabelColor(self, true)
             GameTooltip:Hide()
             self:Fire("OnLeave")
         end)
@@ -409,12 +468,17 @@ local sharedMethods = {
     end,
 
     ["SetLabel"] = function(self, text)
-        self.rowLabel:SetText(text or "")
+        self.labelText = text or ""
         UpdateBadgeAnchor(self)
     end,
 
     ["GetLabel"] = function(self)
-        return self.rowLabel:GetText()
+        return self.labelText or ""
+    end,
+
+    ["SetLabelSummary"] = function(self, summary, shortSummary)
+        self.labelSummary, self.labelShortSummary = summary, shortSummary
+        UpdateBadgeAnchor(self)
     end,
 
     ["SetAdvancedSetting"] = function(self, advanced)
@@ -429,7 +493,6 @@ local sharedMethods = {
         label:SetPoint("LEFT", self.frame, "LEFT", LABEL_INSET + (self.indented and CHILD_INDENT or 0), 0)
         label:SetPoint("RIGHT", self.controlColumn, "LEFT", -LABEL_CONTROL_GAP, 0)
         ApplyLabelColor(self)
-        UpdateBadgeAnchor(self)
     end,
 
     ["IsIndented"] = function(self)
@@ -448,7 +511,6 @@ local sharedMethods = {
         self.captioned = caption and true or false
         self.rowLabel:SetFontObject(self.captioned and GameFontNormalSmall or GameFontHighlight)
         ApplyLabelColor(self)
-        UpdateBadgeAnchor(self)
     end,
 
     -- tooltipLines follows CreateInfoButton's shape: plain strings are title
@@ -476,13 +538,18 @@ local sharedMethods = {
     end,
 
     ["OnWidthSet"] = function(self, width)
+        -- AceGUI reissues unchanged widths as each sibling is added. All
+        -- non-width inputs (label, font, badges, scope) update through setters.
+        if self._cdcRowWidth == width then return end
+        self._cdcRowWidth = width
         UpdateControlColumnWidth(self, width)
-        UpdateDisclosureBounds(self)
+        UpdateBadgeAnchor(self)
     end,
 
     ["SetControlColumnWidth"] = function(self, width)
         self.controlColumnWidthOverride = tonumber(width)
         UpdateControlColumnWidth(self)
+        UpdateBadgeAnchor(self)
     end,
 }
 
@@ -490,6 +557,10 @@ local sharedMethods = {
 -- then resets its own control, matching the AceGUI convention that OnAcquire
 -- (not OnRelease) is what guarantees a clean widget.
 local function ResetRowBase(self)
+    self._cdcRowWidth = nil
+    self._cdcRowBadges = nil
+    self.labelSummary, self.labelShortSummary, self.visibleLabelSummary = nil, nil, nil
+    self.labelLines = nil
     self:SetSettingsDisclosure(nil)
     self.disabled = false
     self.indented = false
@@ -1528,6 +1599,10 @@ local function ApplyCommonRowOptions(row, opts)
         row:SetControlColumnWidth(opts.controlColumnWidth)
     end
     if opts.labelLines and row.rowLabel then
+        row.labelLines = opts.labelLines
+        row.rowLabel:ClearAllPoints()
+        row.rowLabel:SetPoint("LEFT", row.frame, "LEFT", LABEL_INSET + (row.indented and CHILD_INDENT or 0), 0)
+        row.rowLabel:SetPoint("RIGHT", row.controlColumn, "LEFT", -LABEL_CONTROL_GAP, 0)
         row.rowLabel:SetWordWrap(true)
         if row.rowLabel.SetMaxLines then row.rowLabel:SetMaxLines(opts.labelLines) end
         row:SetHeight(opts.height or ROW_HEIGHT)

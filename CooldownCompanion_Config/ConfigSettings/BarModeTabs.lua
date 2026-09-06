@@ -65,18 +65,18 @@ local tabInfoButtons = CS.tabInfoButtons
 -- gears store in options.unlock (resolved only at panel-build time by
 -- ST._ResolveAdvancedUnlock, Helpers.lua). File-local constants so a tab
 -- rebuild allocates none of them.
-local TURNON_BAR_ICON = { label = "Turn On Show Icon", key = "showBarIcon" }
-local TURNON_BAR_NAME_TEXT = { label = "Turn On Show Name Text", key = "showBarNameText" }
-local TURNON_BAR_COOLDOWN_TEXT = { label = "Turn On Show Cooldown Text", key = "showCooldownText" }
-local TURNON_BAR_CHARGE_TEXT = { label = "Turn On Show Count Text", key = "showChargeText" }
-local TURNON_BAR_READY_TEXT = { label = "Turn On Show Ready Text", key = "showBarReadyText" }
-local TURNON_BAR_AURA_TEXT = { label = "Turn On Show Aura Duration Text", key = "showAuraText" }
-local TURNON_BAR_AURA_STACK_TEXT = { label = "Turn On Show Aura Stack Text", key = "showAuraStackText" }
-local TURNON_SHOW_UNUSABLE = { label = "Turn On Show Unusable Visual", key = "showUnusable" }
-local TURNON_SHOW_TOOLTIPS = { label = "Turn On Show Tooltips", key = "showTooltips" }
+local TURNON_BAR_ICON = { label = "Enable Icon", key = "showBarIcon" }
+local TURNON_BAR_NAME_TEXT = { label = "Enable Name Text", key = "showBarNameText" }
+local TURNON_BAR_COOLDOWN_TEXT = { label = "Enable Cooldown Text", key = "showCooldownText" }
+local TURNON_BAR_CHARGE_TEXT = { label = "Enable Count Text", key = "showChargeText" }
+local TURNON_BAR_READY_TEXT = { label = "Enable Ready Text", key = "showBarReadyText" }
+local TURNON_BAR_AURA_TEXT = { label = "Enable Aura Duration Text", key = "showAuraText" }
+local TURNON_BAR_AURA_STACK_TEXT = { label = "Enable Aura Stack Text", key = "showAuraStackText" }
+local TURNON_SHOW_UNUSABLE = { label = "Enable Unusable Visual", key = "showUnusable" }
+local TURNON_SHOW_TOOLTIPS = { label = "Enable Tooltips", key = "showTooltips" }
 -- The marker's enable is a mode, not a boolean.
 local TURNON_BAR_PANDEMIC_MARKER = {
-    label = "Turn On Pandemic Marker",
+    label = "Enable Pandemic Marker",
     apply = function(write) write.pandemicMarkerMode = "auto" end,
 }
 
@@ -96,7 +96,7 @@ local function EnableBarAuraIndicator(write)
 end
 
 local TURNON_BAR_AURA_INDICATOR = {
-    label = "Turn On Active Aura Indicator",
+    label = "Enable Active Aura Indicator",
     apply = EnableBarAuraIndicator,
 }
 
@@ -1837,7 +1837,7 @@ local function BuildBarPandemicSection(container, group, style, lens)
         pandemicSec:Chrome(enableRow)
 
         ST._AddAdvancedToggle(enableRow, "barPandemicColor", {}, pandemicSec.scope ~= "denied", {
-            unlock = { sec = pandemicSec, enable = not pandemicOn and { label = "Turn On Pandemic Color", key = "pandemicEffectEnabled" } or nil },
+            unlock = { sec = pandemicSec, enable = not pandemicOn and { label = "Enable Pandemic Color", key = "pandemicEffectEnabled" } or nil },
             build = function(panel)
                 -- No alpha: the pandemic color REPLACES the aura fill color
                 -- (owner ruling — never blends with it), so the live clone and

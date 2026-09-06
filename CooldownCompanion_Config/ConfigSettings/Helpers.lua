@@ -479,7 +479,9 @@ local function GetAdvancedToggleTitle(parentWidget, options)
     end
 
     local labelText
-    if parentWidget.text and parentWidget.text.GetText then
+    if parentWidget.GetLabel then
+        labelText = parentWidget:GetLabel()
+    elseif parentWidget.text and parentWidget.text.GetText then
         labelText = parentWidget.text:GetText()
     elseif parentWidget.label and parentWidget.label.GetText then
         labelText = parentWidget.label:GetText()
@@ -3366,7 +3368,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
         -- it rides the spec as `run` - the checkbox above runs the same
         -- path.
         unlock = not group.compactLayout and {
-            enable = { label = "Turn On Compact Mode", run = function() ApplyCompactLayout(true) end },
+            enable = { label = "Enable Compact Mode", run = function() ApplyCompactLayout(true) end },
         } or nil,
     })
 
@@ -3443,13 +3445,13 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
     -- Row-grammar checkboxes have no checkbg/text anatomy: the badge chains
     -- off the end of the row's label instead, like every other row badge.
     -- AnchorRowBadge does the SetParent and ClearAllPoints itself.
+    btn:Show()
     if enableCb.badgeAnchor then
         ST._AnchorRowBadge(enableCb, btn)
     else
         btn:ClearAllPoints()
         btn:SetPoint("LEFT", enableCb.checkbg, "RIGHT", enableCb.text:GetStringWidth() + 4, 0)
     end
-    btn:Show()
 
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")

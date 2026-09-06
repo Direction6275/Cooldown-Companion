@@ -81,18 +81,22 @@ local TEXTURE_INDICATOR_EFFECT_ORDER = {
 local TEXTURE_INDICATOR_SECTION_DEFS = {
     proc = {
         label = "Show Proc Effect",
+        enableLabel = "Enable Proc Effect",
         previewText = "Preview Proc Effect",
     },
     aura = {
         label = "Show Aura Effect",
+        enableLabel = "Enable Aura Effect",
         previewText = "Preview Aura Effect",
     },
     ready = {
         label = "Show Ready Effect",
+        enableLabel = "Enable Ready Effect",
         previewText = "Preview Ready Effect",
     },
     unusable = {
         label = "Show Unusable Effect",
+        enableLabel = "Enable Unusable Effect",
         previewText = "Preview Unusable Effect",
     },
 }
@@ -1059,7 +1063,7 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
             -- enable owns its WHOLE sequence, effect-collision handling and
             -- refresh included, so it rides the spec as `run`.
             unlock = not config.enabled and {
-                enable = { label = "Turn On " .. sectionDef.label, run = EnableTextureIndicator },
+                enable = { label = sectionDef.enableLabel, run = EnableTextureIndicator },
             } or nil,
         })
     end
@@ -1130,7 +1134,7 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
         -- the trigger effects' restyle-then-rebuild refresh sequence.
         unlock = not config.enabled and {
             target = config,
-            enable = { label = "Turn On " .. def.label, key = "enabled" },
+            enable = { label = "Enable " .. def.label, key = "enabled" },
             refreshKind = "auraTextures",
         } or nil,
     })

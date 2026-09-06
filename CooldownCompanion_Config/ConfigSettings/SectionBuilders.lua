@@ -352,7 +352,7 @@ local function BuildStackThresholdColorRows(container, buttonData, maxStacks, op
         ST._AddAdvancedToggle(thresholdRow, "entryStackThreshold", {}, true, {
             lensAgnostic = false,
             unlock = not threshold and { enable = {
-                label = "Turn On Stack Text Threshold Color", run = function()
+                label = "Enable Stack Text Threshold Color", run = function()
                     CooldownCompanion:SetAuraStackThresholdValue(buttonData, maxStacks and math.max(2, maxStacks - 1) or 2)
                     opts.refresh()
                 end,
@@ -391,7 +391,7 @@ local function BuildStackThresholdColorRows(container, buttonData, maxStacks, op
             ST._AddAdvancedToggle(maxRow, "entryStackMaxColor", {}, true, {
                 lensAgnostic = false,
                 unlock = not CooldownCompanion:IsAuraStackMaxColorEnabled(buttonData) and { enable = {
-                    label = "Turn On Max Stacks Text Color", run = function()
+                    label = "Enable Max Stacks Text Color", run = function()
                         CooldownCompanion:SetAuraStackMaxColorEnabled(buttonData, true)
                         opts.refresh()
                     end,
@@ -736,7 +736,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
 
     -- Keep the current behavior readable while the editor is collapsed.
     if active then
-        toggleRow:SetLabel("Change Text Near Expiry  |cffbfb69cBelow " .. threshold .. "s · " .. summaryTarget .. "|r")
+        toggleRow:SetLabelSummary("Below " .. threshold .. "s · " .. summaryTarget, "Below " .. threshold .. "s")
     end
 
     local function BuildDetails(panel)
@@ -906,7 +906,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
             unlock = {
                 sec = opts.sec,
                 enable = not active and {
-                    label = "Turn On Change Text Near Expiry",
+                    label = "Enable Text Changes Near Expiry",
                     run = function() SetEnabled(true) end,
                     apply = function() ApplyEnabled(true) end,
                 } or nil,
@@ -1116,7 +1116,7 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback, 
 
     ST._AddAdvancedToggle(kbRow, "assistantKeybindText", {}, true, {
         unlock = not styleTable.showKeybindText and { enable = {
-            label = "Turn On Keybind Text", run = function() ApplyShowKeybindText(true) end,
+            label = "Enable Keybind Text", run = function() ApplyShowKeybindText(true) end,
         } } or nil,
         build = function(panel)
             AddFontControls(panel, styleTable, "keybind", {size = 10, sizeMin = 6, sizeMax = 24},
@@ -1317,7 +1317,7 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
 
         ST._AddAdvancedToggle(cooldownTintRow, "iconCooldownTintEnabled", {}, sec.scope ~= "denied", {
             unlock = { sec = sec, enable = not sec.read.iconCooldownTintEnabled and {
-                label = "Turn On Cooldown Tint", key = "iconCooldownTintEnabled",
+                label = "Enable Cooldown Tint", key = "iconCooldownTintEnabled",
             } or nil },
             build = function(panel)
                 AddColorRow(panel, {
@@ -1349,7 +1349,7 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
 
         ST._AddAdvancedToggle(auraTintRow, "iconAuraTintEnabled", {}, sec.scope ~= "denied", {
             unlock = { sec = sec, enable = not sec.read.iconAuraTintEnabled and {
-                label = "Turn On Aura Tint", key = "iconAuraTintEnabled",
+                label = "Enable Aura Tint", key = "iconAuraTintEnabled",
             } or nil },
             build = function(panel)
                 AddColorRow(panel, {
@@ -1608,7 +1608,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
 
     ST._AddAdvancedToggle(swipeRow, "assistantCooldownSwipe", {}, not disabledByIconFill, {
         unlock = styleTable.showCooldownSwipe == false and { enable = {
-            label = "Turn On Cooldown Swipe", run = function() ApplyShowSwipe(true) end,
+            label = "Enable Cooldown Swipe", run = function() ApplyShowSwipe(true) end,
         } } or nil,
         build = function(panel)
             AddCheckboxRow(panel, {
@@ -2644,7 +2644,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
     else
         ST._AddAdvancedToggle(pulseRow, "customBarAuraPulse", {}, true, {
             unlock = styleTable.barAuraPulseEnabled ~= true and { enable = {
-                label = "Turn On Pulse Bar Fill", run = function()
+                label = "Enable Bar Fill Pulse", run = function()
                     styleTable.barAuraPulseEnabled = true
                     refreshCallback()
                     RefreshStructuralControls(container)
@@ -2699,7 +2699,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
     else
         ST._AddAdvancedToggle(shiftRow, "customBarAuraShift", {}, true, {
             unlock = styleTable.barAuraColorShiftEnabled ~= true and { enable = {
-                label = "Turn On Color Shift Bar Fill", run = function()
+                label = "Enable Bar Fill Color Shift", run = function()
                     styleTable.barAuraColorShiftEnabled = true
                     refreshCallback()
                     RefreshStructuralControls(container)

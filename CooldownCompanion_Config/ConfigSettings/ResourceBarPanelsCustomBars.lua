@@ -48,7 +48,7 @@ local ROW_SECTION = { leftAligned = true }
 -- ST._ResolveAdvancedUnlock, Helpers.lua). File-local constant so a rebuild
 -- allocates none of it; the stack text twin's label varies per bar kind, so
 -- its spec stays inline at the site.
-local TURNON_SHOW_DURATION_TEXT = { label = "Turn On Show Duration Text", key = "showDurationText" }
+local TURNON_SHOW_DURATION_TEXT = { label = "Enable Duration Text", key = "showDurationText" }
 
 -- Sound option labels read "Category - Name" and run well past the 140px
 -- control column, and a dropdown sizes its menu from the control.
@@ -1797,7 +1797,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
 
     ST._AddAdvancedToggle(stacksRow, "rbCabStackDisplay_" .. tostring(sectionKey), {}, true, {
         unlock = mode ~= "stacks" and { target = cab, refreshKind = "resourceBars",
-            enable = { label = "Turn On Bar Shows Stacks", apply = function(write) write.trackingMode = "stacks" end } } or nil,
+            enable = { label = "Enable Stack Display", apply = function(write) write.trackingMode = "stacks" end } } or nil,
         build = function(panel)
             -- Constrained, matching every runtime resolve since the review
             -- alignment (2026-08-15): one max across config, bind, and policy.
@@ -1901,7 +1901,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
                     target = cab,
                     refreshKind = "resourceBars",
                     enable = {
-                        label = "Turn On Pandemic Marker",
+                        label = "Enable Pandemic Marker",
                         apply = function(write)
                             -- Mirrors the checkbox: the stored key stays nil
                             -- when on IS this bar's default.
@@ -1950,7 +1950,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         {"While the bar shows stacks, its filled stack run or filled segments wear this color; gaps, borders, and stack geometry stay unchanged.", 1, 1, 1, true},
     }, infoButtons))
     ST._AddAdvancedToggle(effectRow, "rbCabPandemicColor_" .. tostring(sectionKey), {}, true, {
-        unlock = cab.pandemicEffect ~= true and { target = cab, refreshKind = "resourceBars", enable = { label = "Turn On Pandemic Color", key = "pandemicEffect" } } or nil,
+        unlock = cab.pandemicEffect ~= true and { target = cab, refreshKind = "resourceBars", enable = { label = "Enable Pandemic Color", key = "pandemicEffect" } } or nil,
         build = function(panel)
             -- No alpha: the pandemic color REPLACES the aura fill color (owner
             -- ruling), so the live clone renders it opaque.
@@ -2737,7 +2737,7 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                             build = BuildStackTextAdvanced,
                             unlock = not showStack and {
                                 target = customBars[cabIdx],
-                                enable = { label = "Turn On " .. stackTextLabel, key = "showStackText" },
+                                enable = { label = isSpellCustomBar and "Enable Count Text (Charges/Uses)" or "Enable Stack Text", key = "showStackText" },
                                 refreshKind = "resourceBars",
                             } or nil,
                         })

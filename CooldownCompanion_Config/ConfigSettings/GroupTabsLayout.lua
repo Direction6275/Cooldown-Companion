@@ -1633,7 +1633,7 @@ local function BuildLayoutTab(container)
     if strataToggleRow then
         ST._AddAdvancedToggle(strataToggleRow, "customIconStrata", {}, true, {
             unlock = not customStrataEnabled and { enable = {
-                label = "Turn On Custom Icon Strata", run = function()
+                label = "Enable Custom Icon Strata", run = function()
                     style.strataOrder = {}
                     CS.pendingStrataOrder = nil
                     CS.InitPendingStrataOrder(CS.selectedGroup)

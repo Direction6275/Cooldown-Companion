@@ -11,6 +11,8 @@ local queuedOpen
 local buildingPage = false
 local refreshingAdvancedPanel = false
 local scrollGeneration = 0
+local editingRequest
+local editGeneration = 0
 CS.advancedSettingsInfoButtons = CS.advancedSettingsInfoButtons or {}
 
 local function BoolValue(value)
@@ -205,6 +207,7 @@ local function ReleaseEditorView()
 end
 
 local function ClearActiveEditor()
+    editGeneration = editGeneration + 1
     scrollGeneration = scrollGeneration + 1
     ReleaseEditorView()
     activeEditor = nil
@@ -235,7 +238,7 @@ local function CaptureRowPosition(row)
     return contentTop - rowTop - ((status and status.offset) or 0)
 end
 
-local function ScheduleEditorReveal(registration, view, rowPosition)
+local function ScheduleEditorReveal(registration, view, rowPosition, revealRows)
     scrollGeneration = scrollGeneration + 1
     local generation = scrollGeneration
     C_Timer.After(0, function()
@@ -243,6 +246,8 @@ local function ScheduleEditorReveal(registration, view, rowPosition)
             or registrations[registration.descriptor.settingKey] ~= registration
             or not (activeEditor and activeEditor.view == view)
             or not CurrentContextMatches(registration.descriptor)
+            or (revealRows and (revealRows.generation ~= editGeneration
+                or not ContextMatches(revealRows.context, BuildContext())))
             or CS.pendingSettingHighlight or CS.pendingLensAnchor then return end
         local row = registration.row
         local scroll = ST._FindOwningSettingsScroll(row)
@@ -253,12 +258,23 @@ local function ScheduleEditorReveal(registration, view, rowPosition)
         if not (contentTop and rowTop and editorTop and height and height > 0) then return end
         local maxOffset = math.max(0, scroll.content:GetHeight() - height)
         local status = scroll.status or scroll.localstatus
-        local rowOffset = contentTop - rowTop
-        local desired = rowPosition and rowOffset - rowPosition or ((status and status.offset) or 0)
         -- Fit the entire editor with the least movement possible. If it is
         -- taller than the viewport, keep the owner at the top and devote the
         -- remaining height to its controls.
         local bottom = contentTop - editorTop + view.widget.frame:GetHeight()
+        if revealRows then
+            local top, lastBottom
+            for _, widget in ipairs(revealRows.widgets) do
+                if not widget.frame:IsVisible() then return end
+                local widgetTop, widgetBottom = widget.frame:GetTop(), widget.frame:GetBottom()
+                if not (widgetTop and widgetBottom) then return end
+                top = top and math.max(top, widgetTop) or widgetTop
+                lastBottom = lastBottom and math.min(lastBottom, widgetBottom) or widgetBottom
+            end
+            rowTop, bottom = top, contentTop - lastBottom
+        end
+        local rowOffset = contentTop - rowTop
+        local desired = rowPosition and rowOffset - rowPosition or ((status and status.offset) or 0)
         desired = math.max(desired, bottom - height)
         desired = math.min(desired, rowOffset)
         desired = math.max(0, math.min(maxOffset, desired))
@@ -266,6 +282,85 @@ local function ScheduleEditorReveal(registration, view, rowPosition)
         scroll:SetScroll(value)
         if scroll.scrollBarShown and scroll.scrollbar then scroll.scrollbar:SetValue(value) end
     end)
+end
+
+-- Finder identities survive a page rebuild. Uncatalogued rows can use their
+-- exact type/name pair only when unique within this editor; ambiguous names
+-- never select a scroll target. These snapshots contain no editable tables.
+local function IndexEditorRows(container, index, ordered)
+    index, ordered = index or {}, ordered or {}
+    for _, child in ipairs(container.children or {}) do
+        local actionKey = child:GetUserData("advancedRevealKey")
+        if child.rowLabel or actionKey then
+            local descriptor = child._cdcSettingDescriptor
+            local key = actionKey or (descriptor and descriptor.id)
+                or (child.type .. ":" .. child:GetLabel())
+            local entry = { key = key, widget = child }
+            ordered[#ordered + 1] = entry
+            if index[key] ~= nil then index[key] = false else index[key] = entry end
+        end
+        if child.children then IndexEditorRows(child, index, ordered) end
+    end
+    return index, ordered
+end
+
+local function RevealAddedEditorRows(registration, view)
+    local request = editingRequest
+    if not (request and not request.consumed and not request.cancelled
+        and request.generation == editGeneration
+        and request.settingKey == registration.descriptor.settingKey
+        and ContextMatches(request.context, BuildContext())) then return end
+    request.consumed = true
+    local index, ordered = IndexEditorRows(view.widget)
+    local trigger = index[request.triggerKey]
+    if not trigger and not request.revealNewRows then return end
+    local widgets = trigger and { trigger.widget } or {}
+    for _, entry in ipairs(ordered) do
+        if index[entry.key] and request.keys[entry.key] == nil then
+            widgets[#widgets + 1] = entry.widget
+        end
+    end
+    if #widgets > (trigger and 1 or 0) then
+        ScheduleEditorReveal(registration, view, nil, { widgets = widgets, context = request.context, generation = request.generation })
+    end
+end
+
+local function WatchEditorChanges(view)
+    local index, ordered = IndexEditorRows(view.widget)
+    local keys = {}
+    for id in pairs(index) do keys[id] = true end
+    for _, entry in ipairs(ordered) do
+        local row, key = entry.widget, entry.key
+        if index[key] then
+            for _, eventName in ipairs({ "OnValueChanged", "OnMouseUp", "OnEnterPressed", "OnClick" }) do
+                local callback = row.events and row.events[eventName]
+                if callback then
+                    row:SetCallback(eventName, function(widget, event, ...)
+                        local previous = editingRequest
+                        local request
+                        if activeEditor and activeEditor.view == view and not widget.disabled then
+                            editGeneration = editGeneration + 1
+                            request = { settingKey = activeEditor.settingKey,
+                                context = BuildContext(), triggerKey = key, keys = keys,
+                                generation = editGeneration,
+                                revealNewRows = row:GetUserData("advancedRevealNewRows") == true }
+                        end
+                        editingRequest = request
+                        local args, count = { ... }, select("#", ...)
+                        -- Error boundary: a failed setting callback must not
+                        -- leave its reveal request attached to a later edit.
+                        local ok, result = xpcall(function()
+                            return callback(widget, event, unpack(args, 1, count))
+                        end, CallErrorHandler)
+                        editingRequest = previous
+                        if ok then return result end
+                        if request then request.cancelled = true end
+                        scrollGeneration = scrollGeneration + 1
+                    end)
+                end
+            end
+        end
+    end
 end
 
 -- Label hierarchy belongs to the editor, independent of indentation. Walk
@@ -306,8 +401,11 @@ local function BuildActiveEditor()
         ClearActiveEditor()
         return
     end
-    ReleaseEditorView()
     local row = registration.row
+    local scroll = ST._FindOwningSettingsScroll(row)
+    local status = scroll and (scroll.status or scroll.localstatus)
+    local offset = status and status.offset
+    ReleaseEditorView()
     local parent = row.parent
     local found, before
     for index, child in ipairs(parent.children) do
@@ -340,6 +438,26 @@ local function BuildActiveEditor()
     if not ok then ClearActiveEditor(); return end
     editor:DoLayout()
     Relayout(row)
+    -- Release/insertion can clamp AceGUI's offset against a temporarily short
+    -- page. Restore only after the replacement reaches its final height.
+    if offset and scroll and not AceGUI:IsReleasing(scroll)
+        and not CS.pendingSettingHighlight and not CS.pendingLensAnchor then
+        local maxOffset = math.max(0, scroll.content:GetHeight() - scroll.scrollframe:GetHeight())
+        local desired = math.max(0, math.min(maxOffset, offset))
+        if desired ~= status.offset then
+            local value = maxOffset > 0 and desired / maxOffset * 1000 or 0
+            scroll:SetScroll(value)
+            if scroll.scrollBarShown and scroll.scrollbar then scroll.scrollbar:SetValue(value) end
+            -- Like AceGUI FixScroll, keep the pixel offset rather than losing
+            -- a pixel to SetScroll's percentage-to-pixel rounding each edit.
+            scroll.content:ClearAllPoints()
+            scroll.content:SetPoint("TOPLEFT", scroll.scrollframe, "TOPLEFT", 0, desired)
+            scroll.content:SetPoint("TOPRIGHT", scroll.scrollframe, "TOPRIGHT", 0, desired)
+            status.offset = desired
+        end
+    end
+    WatchEditorChanges(view)
+    RevealAddedEditorRows(registration, view)
     RefreshGearTint()
     return view
 end
@@ -417,6 +535,33 @@ local function RefreshAdvancedSettingsPanel()
     if not CS.configRefreshInProgress then BuildActiveEditor() end
 end
 
+-- The request is carried by this specific refresh, never left globally armed
+-- between frames. Neither the request nor the closure retains pooled widgets.
+local function RefreshAdvancedSettingsPanelSoon(fullPage)
+    local request = editingRequest
+    local generation, context = scrollGeneration, BuildContext()
+    C_Timer.After(0, function()
+        if generation ~= scrollGeneration or not ContextMatches(context, BuildContext()) then return end
+        if request and (request.cancelled or request.consumed or request.generation ~= editGeneration) then
+            request = nil
+        end
+        local previous = editingRequest
+        editingRequest = request
+        local ok = xpcall(function()
+            if fullPage then
+                CooldownCompanion:RefreshConfigPanel()
+            else
+                RefreshAdvancedSettingsPanel()
+            end
+        end, CallErrorHandler)
+        editingRequest = previous
+        if not ok then
+            if request then request.cancelled = true end
+            scrollGeneration = scrollGeneration + 1
+        end
+    end)
+end
+
 local function RunAdvancedGearBuildPass(fn, ...)
     scrollGeneration = scrollGeneration + 1
     ReleaseEditorView()
@@ -459,6 +604,7 @@ CS.RegisterAdvancedSettingsRow = RegisterAdvancedSettingsRow
 CS.ReleaseAdvancedSettingsRow = ReleaseAdvancedSettingsRow
 CS.RunAdvancedGearBuildPass = RunAdvancedGearBuildPass
 CS.RefreshAdvancedSettingsPanel = RefreshAdvancedSettingsPanel
+CS.RefreshAdvancedSettingsPanelSoon = RefreshAdvancedSettingsPanelSoon
 CS.RebindAdvancedSettingsPanel = RebindAdvancedSettingsPanel
 CS.QueueAdvancedSettingsPanelOpen = QueueAdvancedSettingsPanelOpen
 CS.ConsumeQueuedAdvancedSettingsPanelOpen = ConsumeQueuedAdvancedSettingsPanelOpen

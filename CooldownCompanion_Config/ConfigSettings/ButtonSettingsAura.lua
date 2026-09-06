@@ -1012,7 +1012,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         ST._AddAdvancedToggle(stacksRow, "entryAuraStackDisplay", {}, true, {
             lensAgnostic = false,
             unlock = not CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) and { enable = {
-                label = "Turn On Bar Shows Stacks", run = function()
+                label = "Enable Stack Display", run = function()
                     CooldownCompanion:SetBarPanelAuraStackDisplay(buttonData, true)
                     RefreshAuraConfig()
                 end,

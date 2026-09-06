@@ -31,9 +31,9 @@ local ROW_SECTION = { leftAligned = true }
 -- ST._ResolveAdvancedUnlock, Helpers.lua). File-local constants so a rebuild
 -- allocates none of them; the channel-tick spec stays inline at its site
 -- because its checkbox sequence also repaints the canvas, so it rides `run`.
-local TURNON_SHOW_ICON = { label = "Turn On Show Spell Icon", key = "showIcon" }
-local TURNON_SHOW_NAME_TEXT = { label = "Turn On Show Spell Name", key = "showNameText" }
-local TURNON_SHOW_CAST_TIME = { label = "Turn On Show Cast Time", key = "showCastTimeText" }
+local TURNON_SHOW_ICON = { label = "Enable Spell Icon", key = "showIcon" }
+local TURNON_SHOW_NAME_TEXT = { label = "Enable Spell Name", key = "showNameText" }
+local TURNON_SHOW_CAST_TIME = { label = "Enable Cast Time", key = "showCastTimeText" }
 
 ------------------------------------------------------------------------
 -- SETTINGS FINDER CATALOG
@@ -819,7 +819,7 @@ local function BuildCastBarStylingPanel(container)
         })
 
         ST._AddAdvancedToggle(sparkRow, "castSpark", {}, true, {
-            unlock = settings.showSpark == false and { target = settings, refreshKind = "castBar", enable = { label = "Turn On Spark", key = "showSpark" } } or nil,
+            unlock = settings.showSpark == false and { target = settings, refreshKind = "castBar", enable = { label = "Enable Spark", key = "showSpark" } } or nil,
             build = function(panel)
                 AddCheckboxRow(panel, {
                     label = "Show Spark Trail",
@@ -1087,7 +1087,7 @@ local function BuildCastBarStylingPanel(container)
         -- refreshKind runs, so the enable owns its whole sequence as `run`.
         unlock = settings.showChannelTickMarks ~= true and {
             enable = {
-                label = "Turn On Show Channel Tick Marks",
+                label = "Enable Channel Tick Marks",
                 run = function()
                     settings.showChannelTickMarks = true
                     applyCastBar()

@@ -79,11 +79,11 @@ local KEYBIND_CUSTOM_TOOLTIP = {
 -- gears store in options.unlock (resolved only at panel-build time by
 -- ST._ResolveAdvancedUnlock, Helpers.lua). File-local constants so a tab
 -- rebuild allocates none of them.
-local TURNON_COOLDOWN_TEXT = { label = "Turn On Show Cooldown Text", key = "showCooldownText" }
-local TURNON_CHARGE_TEXT = { label = "Turn On Show Count Text", key = "showChargeText" }
-local TURNON_AURA_TEXT = { label = "Turn On Show Aura Duration Text", key = "showAuraText" }
-local TURNON_AURA_STACK_TEXT = { label = "Turn On Show Aura Stack Text", key = "showAuraStackText" }
-local TURNON_KEYBIND_TEXT = { label = "Turn On " .. KEYBIND_CUSTOM_LABEL, key = "showKeybindText" }
+local TURNON_COOLDOWN_TEXT = { label = "Enable Cooldown Text", key = "showCooldownText" }
+local TURNON_CHARGE_TEXT = { label = "Enable Count Text", key = "showChargeText" }
+local TURNON_AURA_TEXT = { label = "Enable Aura Duration Text", key = "showAuraText" }
+local TURNON_AURA_STACK_TEXT = { label = "Enable Aura Stack Text", key = "showAuraStackText" }
+local TURNON_KEYBIND_TEXT = { label = "Enable Keybind/Custom Text", key = "showKeybindText" }
 
 -- The While Aura Active Cooldown control. Its two style keys used to live elsewhere
 -- (an entry-data checkbox on the entry's Aura Tracking section; a "Separate

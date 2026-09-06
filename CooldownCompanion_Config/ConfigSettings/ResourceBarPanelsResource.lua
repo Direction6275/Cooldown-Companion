@@ -380,7 +380,7 @@ function HealthResource.AddEffectStyleControls(container, checkbox, health, opti
         -- the enable owns its whole sequence as `run`.
         unlock = not enabled and {
             enable = {
-                label = "Turn On " .. options.toggleLabel,
+                label = options.enableLabel,
                 run = function()
                     health[options.enabledKey] = true
                     applyBars()
@@ -670,7 +670,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
         unlock = not showTextEnabled and {
             target = resSettings,
             enable = {
-                label = "Turn On Show " .. name .. " Text",
+                label = "Enable " .. name .. " Text",
                 apply = function(write)
                     write.showText = true
                     if isHealthResource and not IsHealthTextFormat(write.textFormat) then
@@ -845,7 +845,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
         unlock = not rechargeEnabled and {
             target = resSettings,
             enable = {
-                label = "Turn On Show " .. name .. " Recharge Text",
+                label = "Enable " .. name .. " Recharge Text",
                 key = "showRechargeText",
             },
             refreshKind = "resourceBars",
@@ -983,6 +983,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     HealthResource.AddEffectStyleControls(effectsLeft, absorbsCb, health, {
         enabledKey = "showAbsorbs",
         toggleLabel = "Show Absorbs",
+        enableLabel = "Enable Absorbs",
         advancedKey = "healthAbsorbs",
         colorKey = "healthAbsorbColor",
         textureKey = "healthAbsorbTexture",
@@ -1007,6 +1008,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     HealthResource.AddEffectStyleControls(effectsLeft, healAbsorbsCb, health, {
         enabledKey = "showHealAbsorbs",
         toggleLabel = "Show Healing Absorbs",
+        enableLabel = "Enable Healing Absorbs",
         advancedKey = "healthHealAbsorbs",
         colorKey = "healthHealAbsorbColor",
         textureKey = "healthHealAbsorbTexture",
@@ -1031,6 +1033,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     HealthResource.AddEffectStyleControls(effectsRight, incomingHealsCb, health, {
         enabledKey = "showIncomingHeals",
         toggleLabel = "Show Incoming Heals",
+        enableLabel = "Enable Incoming Heals",
         advancedKey = "healthIncomingHeals",
         colorKey = "healthIncomingHealColor",
         textureKey = "healthIncomingHealTexture",
@@ -1055,6 +1058,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     HealthResource.AddEffectStyleControls(effectsRight, lowHealthAlertCb, health, {
         enabledKey = "showLowHealthAlert",
         toggleLabel = "Show Low Health Alert",
+        enableLabel = "Enable Low Health Alert",
         advancedKey = "healthLowHealthAlert",
         colorKey = "healthLowHealthAlertColor",
         textureKey = "healthLowHealthAlertTexture",
@@ -1114,8 +1118,8 @@ local function AddResourceSpecCopyButton(enableCb)
 
     -- A badge on the row's label, chained off the end of the label text like
     -- every other row-grammar badge. AnchorRowBadge does the ClearAllPoints.
-    AnchorRowBadge(enableCb, btn)
     btn:Show()
+    AnchorRowBadge(enableCb, btn)
 
     -- The singleton is a plain child of a pooled row frame: without this it
     -- survives the row's release and surfaces on whatever row the pool hands
@@ -1816,7 +1820,7 @@ local function BuildBarHeightControls(container, settings, layout)
         -- enable owns its whole sequence as `run`.
         unlock = layout.customBarHeights ~= true and {
             enable = {
-                label = "Turn On " .. customThicknessLabel,
+                label = "Enable " .. customThicknessLabel,
                 run = function()
                     layout.customBarHeights = true
                     CooldownCompanion:ApplyResourceBars()
@@ -1999,19 +2003,7 @@ local function HasThresholdTickDuplicateValue(entries, value, skipIndex)
 end
 
 local function RefreshAdvancedSettingsPanelSoon()
-    if C_Timer and C_Timer.After then
-        C_Timer.After(0, function()
-            if CS.RefreshAdvancedSettingsPanel then
-                CS.RefreshAdvancedSettingsPanel()
-            else
-                CooldownCompanion:RefreshConfigPanel()
-            end
-        end)
-    elseif CS.RefreshAdvancedSettingsPanel then
-        CS.RefreshAdvancedSettingsPanel()
-    else
-        CooldownCompanion:RefreshConfigPanel()
-    end
+    CS.RefreshAdvancedSettingsPanelSoon()
 end
 
 local function SetThresholdTickEditorError(errorKey, message)
@@ -2049,7 +2041,7 @@ end
 --
 -- onEnter takes AddEditBoxRow's (text, widget) contract; the widget it hands
 -- back is the row, which forwards SetText to the embedded stock EditBox.
-local function AddThresholdTickValueRow(panel, label, text, buttonText, onEnter, onButton, setting)
+local function AddThresholdTickValueRow(panel, label, text, buttonText, onEnter, onButton, setting, revealKey)
     local valueRow = AddEditBoxRow(panel, {
         label = label,
         setting = setting,
@@ -2059,6 +2051,9 @@ local function AddThresholdTickValueRow(panel, label, text, buttonText, onEnter,
         value = text,
         onEnterPressed = onEnter,
     })
+    valueRow:SetUserData("advancedRevealKey", revealKey)
+    -- Committing a draft replaces its input with the new value/color rows.
+    valueRow:SetUserData("advancedRevealNewRows", buttonText == "Cancel")
     valueRow:DisableButton(true)
     if valueRow.editbox and valueRow.editbox.Instructions then
         valueRow.editbox.Instructions:Hide()
@@ -2088,7 +2083,7 @@ local function AddThresholdTickEnableCheckbox(container, settings, powerType, sp
     local function SetEnabled(val)
         WriteSpecOverrideKey(settings, powerType, specID, settingKey, val == true)
         CooldownCompanion:ApplyResourceBars()
-        C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
+        CS.RefreshAdvancedSettingsPanelSoon(true)
     end
     local checkbox = AddCheckboxRow(container, {
         label = label,
@@ -2212,7 +2207,7 @@ local function AddThresholdTickEntryEditor(panel, options)
                 options.applyBars()
                 RefreshAdvancedSettingsPanelSoon()
             end,
-            valueSetting)
+            valueSetting, draftKey .. ":value:" .. index)
 
         if thresholdTickEditorErrors[errorKey] then
             AddThresholdTickHelperLabel(panel, "|cffff7777" .. thresholdTickEditorErrors[errorKey] .. "|r")
@@ -2227,7 +2222,7 @@ local function AddThresholdTickEntryEditor(panel, options)
         -- value resting in it cannot reach a live renderer.
         local colorSetting = options.colorSettings and options.colorSettings[index]
         local colorLabel = colorSetting and colorSetting.label or options.colorLabel
-        AddColorRow(panel, {
+        local colorRow = AddColorRow(panel, {
             label = colorLabel,
             setting = colorSetting,
             tooltip = { colorLabel },
@@ -2258,6 +2253,7 @@ local function AddThresholdTickEntryEditor(panel, options)
                 end
             end,
         })
+        colorRow:SetUserData("advancedRevealKey", draftKey .. ":color:" .. index)
     end
 
     if draftActive then
@@ -2270,7 +2266,7 @@ local function AddThresholdTickEntryEditor(panel, options)
                 thresholdTickDraftRows[draftKey] = nil
                 thresholdTickEditorErrors[errorKey] = nil
                 RefreshAdvancedSettingsPanelSoon()
-            end)
+            end, nil, draftKey .. ":draft")
 
         if thresholdTickEditorErrors[errorKey] then
             AddThresholdTickHelperLabel(panel, "|cffff7777" .. thresholdTickEditorErrors[errorKey] .. "|r")
@@ -2288,6 +2284,7 @@ local function AddThresholdTickEntryEditor(panel, options)
 
     local addBtn = AceGUI:Create("Button")
     addBtn:SetText(options.addText)
+    addBtn:SetUserData("advancedRevealKey", draftKey .. ":add")
     addBtn:SetAutoWidth(true)
     local addDisabled = rowCount >= MAX_RESOURCE_THRESHOLD_TICK_ENTRIES or draftActive
     if addBtn.SetDisabled then
@@ -2394,7 +2391,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
     local previewOnly = RefreshLayoutOrderPreviewForDrag
     local function refresh()
         applyBars()
-        C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
+        CS.RefreshAdvancedSettingsPanelSoon(true)
     end
 
     local enabled = IsResourceAuraOverlayEnabledConfig(settings, powerType, specID)
@@ -2415,7 +2412,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
 
     ST._AddAdvancedToggle(trackingRow, "rbAuraTracking_" .. tostring(powerType), {}, true, {
         unlock = not enabled and { enable = {
-            label = "Turn On Aura Tracking",
+            label = "Enable Aura Tracking",
             run = function()
                 WriteSpecOverrideKey(settings, powerType, specID, "auraOverlayEnabled", true)
                 refresh()
@@ -2746,7 +2743,7 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
             end
             settings.resources[powerType][keys.enabled] = value == true or nil
             applyRows()
-            C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
+            CS.RefreshAdvancedSettingsPanelSoon(true)
         end,
     })
     AnchorRowBadge(borderToggleRow, CreateInfoButton(borderToggleRow.frame, borderToggleRow.frame, "LEFT", "LEFT", 0, 0, {
@@ -2755,7 +2752,7 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
     }, borderToggleRow))
 
     ST._AddAdvancedToggle(borderToggleRow, "rbMaxStackBorder_" .. tostring(finderPowerType), {}, true, {
-        unlock = not borderOn and { enable = { label = "Turn On Max Stack Border", run = function()
+        unlock = not borderOn and { enable = { label = "Enable Max Stack Border", run = function()
             settings.resources = settings.resources or {}
             settings.resources[powerType] = settings.resources[powerType] or {}
             settings.resources[powerType][keys.enabled] = true
@@ -2782,7 +2779,7 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
                     resource[keys.lines] = value == "pixel" and 5 or 2
                     resource[keys.thickness] = value == "pixel" and 3 or 4
                     applyRows()
-                    C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
+                    CS.RefreshAdvancedSettingsPanelSoon(true)
                 end,
             })
             AddColorRow(panel, {
@@ -3032,7 +3029,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         displayProfile.barTexture = val
         CooldownCompanion:ApplyResourceBars()
         -- Defer panel rebuild to next frame so it doesn't interfere with current callback
-        C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
+        CS.RefreshAdvancedSettingsPanelSoon(true)
     end)
 
     -- Brightness slider (only for Blizzard Class texture)
@@ -3284,7 +3281,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                             -- whole sequence as `run`.
                             unlock = not _segEnabled and {
                                 enable = {
-                                    label = "Turn On " .. resourceName .. " Threshold Colors",
+                                    label = "Enable " .. resourceName .. " Threshold Colors",
                                     run = thresholdTurnOn,
                                 },
                             } or nil,
@@ -3347,11 +3344,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                                 end
                                 WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickMode", val)
                                 applyBars()
-                                C_Timer.After(0, function()
-                                    if CS.RefreshAdvancedSettingsPanel then
-                                        CS.RefreshAdvancedSettingsPanel()
-                                    end
-                                end)
+                                RefreshAdvancedSettingsPanelSoon()
                             end,
                         })
 
@@ -3439,7 +3432,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                             -- whole sequence as `run`.
                             unlock = not _tickEnabled and {
                                 enable = {
-                                    label = "Turn On " .. resourceName .. " Tick Markers",
+                                    label = "Enable " .. resourceName .. " Tick Markers",
                                     run = tickTurnOn,
                                 },
                             } or nil,

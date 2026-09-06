@@ -767,7 +767,7 @@ local function BuildTextAppearanceTab(container, group, style)
 
     ST._AddAdvancedToggle(headerRow, "textGroupHeader", {}, true, {
         unlock = { sec = panelSec, enable = not style.showTextGroupHeader and {
-            label = "Turn On Group Header",
+            label = "Enable Group Header",
             apply = function(write) write.showTextGroupHeader = true end,
             after = function() CooldownCompanion:RefreshGroupFrame(CS.selectedGroup) end,
         } or nil },
