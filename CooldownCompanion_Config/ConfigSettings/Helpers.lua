@@ -505,7 +505,7 @@ local function BuildAdvancedDescriptor(parentWidget, settingKey, options)
         unlock = options and options.unlock,
         -- Keep the editor open across panel/entry lens shifts. Page context
         -- and fresh row registration still govern its lifetime.
-        lensAgnostic = true,
+        lensAgnostic = not options or options.lensAgnostic ~= false,
     }
 end
 
@@ -617,13 +617,17 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
     end
     btn:SetScript("OnClick", ToggleEditor)
     btn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine(DisclosureHint())
-        GameTooltip:Show()
+        if hasEditor and parentWidget.ShowSettingsDisclosureTooltip then
+            parentWidget:ShowSettingsDisclosureTooltip()
+        else
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(DisclosureHint())
+            GameTooltip:Show()
+        end
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     if hasEditor and parentWidget.SetSettingsDisclosure then
-        parentWidget:SetSettingsDisclosure(ToggleEditor, DisclosureHint)
+        parentWidget:SetSettingsDisclosure(ToggleEditor, DisclosureHint, btn)
     end
     table.insert(tabInfoBtns, btn)
     return isActive, btn
@@ -1816,7 +1820,6 @@ local function BuildAdvancedUnlockStrip(scroll, unlock)
     return action
 end
 
-
 -- Read-only gate for a locked advanced panel, applied AFTER the build so the
 -- panel can never drift from its live twin - the same built-like-live rule the
 -- main column's inert ranges follow. Runs before the unlock strip is appended,
@@ -2092,10 +2095,8 @@ local function AttachRowScopeChrome(rowWidget, lens, group, sectionId)
         attached = true
 
     elseif scope == "customized" then
-        if rowWidget.rowLabel and not rowWidget.disabled then
-            rowWidget.rowLabel:SetTextColor(SCOPE_CHROME_GOLD[1], SCOPE_CHROME_GOLD[2], SCOPE_CHROME_GOLD[3])
-            frame._cdcScopeRowTinted = true
-        end
+        -- Ownership is shown by Revert. Let the row own its label color so
+        -- customization cannot masquerade as the disclosure's hover state.
         local revert = EnsureScopeGlyph(frame, "_cdcScopeRowRevert")
         WireRevertGlyph(revert, revert.icon, lens.buttonData, sectionId)
         ST._AnchorRowBadge(rowWidget, revert)
@@ -2120,15 +2121,6 @@ local function AttachRowScopeChrome(rowWidget, lens, group, sectionId)
             end
             HideScopeChrome(frame, ROW_SCOPE_FIELDS)
             SetRowScopeTooltip(widget, nil)
-            if frame._cdcScopeRowTinted then
-                frame._cdcScopeRowTinted = nil
-                -- Hand the label colour back to the row: SetIndent re-derives
-                -- it from the row's own disabled/indented state. The row's
-                -- OnAcquire does this again on reuse; this just does not wait.
-                if widget.SetIndent then
-                    widget:SetIndent(widget.indented)
-                end
-            end
         end)
     end
 
@@ -3197,10 +3189,8 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
         end
         AnchorRowBadge(row, revert)
 
-        -- The name becomes a link only where there is somewhere to go. Gold is
-        -- the affordance here, not the "customized" tint the scope chrome uses
-        -- on a row label: inside a section titled Customizations every row is
-        -- customized, so the colour is free to mean "clickable".
+        -- The name becomes a link only where there is somewhere to go. Gold
+        -- identifies these navigation links in the Customizations list.
         if navigable then
             row.rowLabel:SetTextColor(SCOPE_CHROME_GOLD[1], SCOPE_CHROME_GOLD[2], SCOPE_CHROME_GOLD[3])
             local nav = EnsureRowNameButton(row, "_cdcCustomizationsName")

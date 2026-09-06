@@ -168,9 +168,9 @@ if ST._DefineSettingRoute then
     })
     CASTBAR_FINDER.border = border:Settings({
         style = { label = "Border Style" },
-        color = { label = "Border Color", applies = CastBarFinderCacheFlag("pixelBorder") },
-        thickness = { label = "Border Thickness", applies = CastBarFinderCacheFlag("pixelBorder") },
-        size = { label = "Border Size", applies = CastBarFinderCacheFlag("customBorderSize") },
+        color = { advancedKey = "castBorder", label = "Border Color", applies = CastBarFinderCacheFlag("pixelBorder") },
+        thickness = { advancedKey = "castBorder", label = "Border Thickness", applies = CastBarFinderCacheFlag("pixelBorder") },
+        size = { advancedKey = "castBorder", label = "Border Size", applies = CastBarFinderCacheFlag("customBorderSize") },
     })
 
     local effects = ST._DefineSettingRoute({
@@ -187,7 +187,7 @@ if ST._DefineSettingRoute then
     })
     CASTBAR_FINDER.effects = effects:Settings({
         spark = { label = "Show Spark" },
-        sparkTrail = { label = "Show Spark Trail", applies = CastBarFinderCacheFlag("sparkShown") },
+        sparkTrail = { advancedKey = "castSpark", label = "Show Spark Trail", applies = CastBarFinderCacheFlag("sparkShown") },
         finish = { label = "Show Cast Finish FX", aliases = { "finish effect" } },
         interruptShake = { label = "Show Interrupt Shake" },
         interruptGlow = { label = "Show Interrupt Glow" },
@@ -417,7 +417,7 @@ local function BuildAttachedCastBarOffsetControls(container, layout)
         AddSliderRow(container, {
             label = "Cast Bar Y Offset",
             setting = CASTBAR_FINDER.attached and CASTBAR_FINDER.attached.castBarYOffset,
-            indent = true,
+            indent = false,
             min = -100, max = 100, step = 0.1,
             value = castLayout.panelAnchorYOffset or 0,
             onChange = function(val)
@@ -735,7 +735,7 @@ local function BuildCastBarStylingPanel(container)
         -- have to stay adjacent.
         local borderLeft, borderRight = BeginRowGrid(container)
 
-        AddDropdownRow(borderLeft, {
+        local borderRow = AddDropdownRow(borderLeft, {
             label = "Border Style",
             setting = CASTBAR_FINDER.border and CASTBAR_FINDER.border.style,
             list = {
@@ -752,46 +752,48 @@ local function BuildCastBarStylingPanel(container)
             end,
         })
 
-        if settings.borderStyle == "pixel" then
-            AddColorRow(borderLeft, {
-                label = "Border Color",
-                setting = CASTBAR_FINDER.border and CASTBAR_FINDER.border.color,
-                indent = true,
-                tbl = settings,
-                key = "borderColor",
-                default = {0, 0, 0, 1},
-                hasAlpha = true,
-                onConfirm = applyCastBar,
-                onChange = castPreviewOnly,
-            })
-
-            local renderMode = AddBorderRenderModeDropdown(borderRight, settings, "borderRenderMode", function()
-                CooldownCompanion:ApplyCastBarSettings()
-                CooldownCompanion:RefreshConfigPanel()
-            end, nil, {
-                row = true,
-                setting = CASTBAR_FINDER.border and CASTBAR_FINDER.border.thickness,
-            })
-            local borderThicknessLocked = ST.IsBorderThicknessLocked()
-
-            if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-                AddMirrorFirstSliderRow(borderRight, {
-                    label = "Border Size",
-                    setting = CASTBAR_FINDER.border and CASTBAR_FINDER.border.size,
-                    indent = true,
-                    min = 0, max = 5, step = 0.1,
-                    value = settings.borderSize or 1,
-                    disabled = borderThicknessLocked,
-                    set = function(val)
-                        if borderThicknessLocked then return end
-                        settings.borderSize = val
-                    end,
-                    apply = applyCastBar,
-                    stateOwner = settings,
-                    stateKeys = "borderSize",
+        ST._AddAdvancedToggle(borderRow, "castBorder", {}, (settings.borderStyle or "pixel") == "pixel", {
+            build = function(panel)
+                AddColorRow(panel, {
+                    label = "Border Color",
+                    setting = CASTBAR_FINDER.border and CASTBAR_FINDER.border.color,
+                    indent = false,
+                    tbl = settings,
+                    key = "borderColor",
+                    default = {0, 0, 0, 1},
+                    hasAlpha = true,
+                    onConfirm = applyCastBar,
+                    onChange = castPreviewOnly,
                 })
-            end
-        end
+
+                local renderMode = AddBorderRenderModeDropdown(panel, settings, "borderRenderMode", function()
+                    CooldownCompanion:ApplyCastBarSettings()
+                    CooldownCompanion:RefreshConfigPanel()
+                end, nil, {
+                    row = true,
+                    setting = CASTBAR_FINDER.border and CASTBAR_FINDER.border.thickness,
+                })
+                local borderThicknessLocked = ST.IsBorderThicknessLocked()
+
+                if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+                    AddMirrorFirstSliderRow(panel, {
+                        label = "Border Size",
+                        setting = CASTBAR_FINDER.border and CASTBAR_FINDER.border.size,
+                        indent = false,
+                        min = 0, max = 5, step = 0.1,
+                        value = settings.borderSize or 1,
+                        disabled = borderThicknessLocked,
+                        set = function(val)
+                            if borderThicknessLocked then return end
+                            settings.borderSize = val
+                        end,
+                        apply = applyCastBar,
+                        stateOwner = settings,
+                        stateKeys = "borderSize",
+                    })
+                end
+            end,
+        })
     end
 
     -- ================================================================
@@ -805,7 +807,7 @@ local function BuildCastBarStylingPanel(container)
         -- interrupt pair, which reads as one choice.
         local effectsLeft, effectsRight = BeginRowGrid(container)
 
-        AddCheckboxRow(effectsLeft, {
+        local sparkRow = AddCheckboxRow(effectsLeft, {
             label = "Show Spark",
             setting = CASTBAR_FINDER.effects and CASTBAR_FINDER.effects.spark,
             value = settings.showSpark ~= false,
@@ -816,18 +818,21 @@ local function BuildCastBarStylingPanel(container)
             end,
         })
 
-        if settings.showSpark ~= false then
-            AddCheckboxRow(effectsLeft, {
-                label = "Show Spark Trail",
-                setting = CASTBAR_FINDER.effects and CASTBAR_FINDER.effects.sparkTrail,
-                indent = true,
-                value = settings.showSparkTrail ~= false,
-                onChange = function(val)
-                    settings.showSparkTrail = val
-                    applyCastBar()
-                end,
-            })
-        end
+        ST._AddAdvancedToggle(sparkRow, "castSpark", {}, true, {
+            unlock = settings.showSpark == false and { target = settings, refreshKind = "castBar", enable = { label = "Turn On Spark", key = "showSpark" } } or nil,
+            build = function(panel)
+                AddCheckboxRow(panel, {
+                    label = "Show Spark Trail",
+                    setting = CASTBAR_FINDER.effects and CASTBAR_FINDER.effects.sparkTrail,
+                    indent = false,
+                    value = settings.showSparkTrail ~= false,
+                    onChange = function(val)
+                        settings.showSparkTrail = val
+                        applyCastBar()
+                    end,
+                })
+            end,
+        })
 
         AddCheckboxRow(effectsLeft, {
             label = "Show Cast Finish FX",

@@ -1917,17 +1917,17 @@ if ST._DefineSettingRoute then
     })
     EFFECTS_FINDER.assistant.cooldownSwipe = assistantSpell:Settings({
         enabled = { label = "Show Cooldown Swipe" },
-        reverse = { label = "Reverse Swipe" },
-        fill = { label = "Show Swipe Fill" },
-        fillOpacity = {
+        reverse = { advancedKey = "assistantCooldownSwipe", label = "Reverse Swipe" },
+        fill = { advancedKey = "assistantCooldownSwipe", label = "Show Swipe Fill" },
+        fillOpacity = { advancedKey = "assistantCooldownSwipe",
             label = "Swipe Fill Opacity",
             applies = function(context)
                 local style = context and context.group and context.group.style
                 return style and style.showCooldownSwipeFill ~= false
             end,
         },
-        edge = { label = "Show Swipe Edge" },
-        edgeColor = {
+        edge = { advancedKey = "assistantCooldownSwipe", label = "Show Swipe Edge" },
+        edgeColor = { advancedKey = "assistantCooldownSwipe",
             label = "Swipe Edge Color",
             applies = function(context)
                 local style = context and context.group and context.group.style

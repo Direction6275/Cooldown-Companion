@@ -234,6 +234,12 @@ local function FinderCustomBar(context)
     return context and context.customBar or nil
 end
 
+local function CustomBarEditorKey(prefix)
+    return function(context)
+        return prefix .. GetCustomBarCollapseKey(FinderCustomBar(context))
+    end
+end
+
 local function FinderCustomBarCapabilities(context)
     local prepared = context and context._settingsFinderCustomBarState
     return prepared and prepared.capabilities or nil
@@ -455,7 +461,7 @@ if ST._DefineSettingRoute then
                 return caps and not caps.isSpellBar and caps.countConsumer
             end,
         },
-        cooldownVisibility = {
+        cooldownVisibility = { advancedKey = CustomBarEditorKey("rbCabDurationText_"),
             label = "Cooldown Visibility",
             applies = function(context)
                 local caps = FinderCustomBarCapabilities(context)
@@ -464,7 +470,7 @@ if ST._DefineSettingRoute then
                     and caps.isSpellBar and caps.auraTracked
             end,
         },
-        cooldownLast = {
+        cooldownLast = { advancedKey = CustomBarEditorKey("rbCabDurationText_"),
             label = "Cooldown: Show During Last",
             applies = function(context)
                 local caps = FinderCustomBarCapabilities(context)
@@ -473,7 +479,7 @@ if ST._DefineSettingRoute then
                     and caps.isSpellBar and caps.auraTracked
             end,
         },
-        spellVisibility = {
+        spellVisibility = { advancedKey = CustomBarEditorKey("rbCabDurationText_"),
             label = "Visible",
             aliases = { "cooldown visibility" },
             applies = function(context)
@@ -483,7 +489,7 @@ if ST._DefineSettingRoute then
                     and caps.isSpellBar and not caps.auraTracked
             end,
         },
-        spellLast = {
+        spellLast = { advancedKey = CustomBarEditorKey("rbCabDurationText_"),
             label = "Show During Last",
             aliases = { "cooldown text threshold" },
             applies = function(context)
@@ -493,7 +499,7 @@ if ST._DefineSettingRoute then
                     and caps.isSpellBar and not caps.auraTracked
             end,
         },
-        auraVisibility = {
+        auraVisibility = { advancedKey = CustomBarEditorKey("rbCabDurationText_"),
             label = "Aura Visibility",
             applies = function(context)
                 local caps = FinderCustomBarCapabilities(context)
@@ -502,7 +508,7 @@ if ST._DefineSettingRoute then
                     and caps.isSpellBar and caps.auraTracked
             end,
         },
-        auraLast = {
+        auraLast = { advancedKey = CustomBarEditorKey("rbCabDurationText_"),
             label = "Aura: Show During Last",
             applies = function(context)
                 local caps = FinderCustomBarCapabilities(context)
@@ -511,7 +517,7 @@ if ST._DefineSettingRoute then
                     and caps.isSpellBar and caps.auraTracked
             end,
         },
-        auraOnlyVisibility = {
+        auraOnlyVisibility = { advancedKey = CustomBarEditorKey("rbCabDurationText_"),
             label = "Visible",
             aliases = { "aura visibility" },
             applies = function(context)
@@ -520,7 +526,7 @@ if ST._DefineSettingRoute then
                 return caps and cab and cab.showDurationText == true and not caps.isSpellBar
             end,
         },
-        auraOnlyLast = {
+        auraOnlyLast = { advancedKey = CustomBarEditorKey("rbCabDurationText_"),
             label = "Show During Last",
             aliases = { "aura text threshold" },
             applies = function(context)
@@ -529,7 +535,7 @@ if ST._DefineSettingRoute then
                 return caps and cab and cab.showDurationText == true and not caps.isSpellBar
             end,
         },
-        format = {
+        format = { advancedKey = CustomBarEditorKey("rbCabDurationText_"),
             label = "Duration Format",
             aliases = { "timer format" },
             applies = function(context)
@@ -579,9 +585,9 @@ if ST._DefineSettingRoute then
     })
     CUSTOM_BAR_FINDER.lowTime = lowTime:Settings({
         enabled = { label = "Change Text Near Expiry", aliases = { "low time", "warning time" } },
-        warningThreshold = { label = "Start Warning Below", applies = FinderCustomBarLowTimeActive },
-        warningColor = { label = "Warning Color", applies = FinderCustomBarLowTimeActive },
-        auras = {
+        warningThreshold = { advancedKey = CustomBarEditorKey("rbCabLowTime_"), label = "Start Warning Below", applies = FinderCustomBarLowTimeActive },
+        warningColor = { advancedKey = CustomBarEditorKey("rbCabLowTime_"), label = "Warning Color", applies = FinderCustomBarLowTimeActive },
+        auras = { advancedKey = CustomBarEditorKey("rbCabLowTime_"),
             label = "Also Apply to Aura Text",
             applies = function(context)
                 return FinderCustomBarLowTimeActive(context)
@@ -589,10 +595,10 @@ if ST._DefineSettingRoute then
                     and FinderCustomBarAuraTracked(context)
             end,
         },
-        critical = { label = "Add Critical Styling", applies = FinderCustomBarLowTimeActive },
-        criticalThreshold = { label = "Start Critical Below", applies = FinderCustomBarLowTimeCriticalActive },
-        criticalColor = { label = "Critical Color", applies = FinderCustomBarLowTimeCriticalActive },
-        decimals = { label = "Show Decimals Near Expiry", applies = FinderCustomBarLowTimeActive },
+        critical = { advancedKey = CustomBarEditorKey("rbCabLowTime_"), label = "Add Critical Styling", applies = FinderCustomBarLowTimeActive },
+        criticalThreshold = { advancedKey = CustomBarEditorKey("rbCabLowTime_"), label = "Start Critical Below", applies = FinderCustomBarLowTimeCriticalActive },
+        criticalColor = { advancedKey = CustomBarEditorKey("rbCabLowTime_"), label = "Critical Color", applies = FinderCustomBarLowTimeCriticalActive },
+        decimals = { advancedKey = CustomBarEditorKey("rbCabLowTime_"), label = "Show Decimals Near Expiry", applies = FinderCustomBarLowTimeActive },
     })
 
     local aura = DefineCustomBarRoute("aura", "Aura Tracking", { applies = FinderCustomBarHasSpell })
@@ -601,7 +607,7 @@ if ST._DefineSettingRoute then
         trackedOn = { label = "Tracked on", aliases = { "aura unit", "target", "player", "group", "pet" }, applies = FinderCustomBarAuraActive },
         idOverride = { label = "Aura ID Override", applies = FinderCustomBarAuraActive },
         showsStacks = { label = "Bar Shows Stacks", applies = FinderCustomBarAuraActive },
-        stackStyle = {
+        stackStyle = { advancedKey = CustomBarEditorKey("rbCabStackDisplay_"),
             label = "Stack Style",
             applies = function(context)
                 local cab = FinderCustomBar(context)
@@ -609,7 +615,7 @@ if ST._DefineSettingRoute then
                     and FinderCustomBarAuraMax(context) ~= nil
             end,
         },
-        segmentGap = {
+        segmentGap = { advancedKey = CustomBarEditorKey("rbCabStackDisplay_"),
             label = "Segment Gap",
             applies = function(context)
                 local cab = FinderCustomBar(context)
@@ -620,7 +626,7 @@ if ST._DefineSettingRoute then
                     and FinderCustomBarAuraMax(context) <= ST.STACK_SEGMENT_ATLAS_MAX
             end,
         },
-        showOne = {
+        showOne = { advancedKey = CustomBarEditorKey("rbCabStackText_"), collapseKeys = FinderCustomBarCollapse("texts"),
             label = "Show Count at 1 Stack",
             applies = function(context)
                 local cab = FinderCustomBar(context)
@@ -631,14 +637,14 @@ if ST._DefineSettingRoute then
                         or (type(auraBar) == "table" and auraBar.showCountAtOne == true))
             end,
         },
-        threshold = {
+        threshold = { advancedKey = CustomBarEditorKey("rbCabStackText_"), collapseKeys = FinderCustomBarCollapse("texts"),
             label = "Stack Text Threshold Color",
             applies = function(context)
                 return FinderCustomBarAuraActive(context) and FinderCustomBarShowsStackText(context)
                     and (FinderCustomBarAuraMax(context) ~= nil or FinderCustomBarStackRowsInCombat(context))
             end,
         },
-        thresholdStacks = {
+        thresholdStacks = { advancedKey = CustomBarEditorKey("rbCabStackText_"), collapseKeys = FinderCustomBarCollapse("texts"),
             label = "Threshold Stacks",
             applies = function(context)
                 local cab = FinderCustomBar(context)
@@ -647,7 +653,7 @@ if ST._DefineSettingRoute then
                     and (FinderCustomBarAuraMax(context) ~= nil or FinderCustomBarStackRowsInCombat(context))
             end,
         },
-        thresholdColor = {
+        thresholdColor = { advancedKey = CustomBarEditorKey("rbCabStackText_"), collapseKeys = FinderCustomBarCollapse("texts"),
             label = "Threshold Color",
             applies = function(context)
                 local cab = FinderCustomBar(context)
@@ -656,14 +662,14 @@ if ST._DefineSettingRoute then
                     and (FinderCustomBarAuraMax(context) ~= nil or FinderCustomBarStackRowsInCombat(context))
             end,
         },
-        maxStacks = {
+        maxStacks = { advancedKey = CustomBarEditorKey("rbCabStackText_"), collapseKeys = FinderCustomBarCollapse("texts"),
             label = "Max Stacks Text Color",
             applies = function(context)
                 return FinderCustomBarAuraActive(context) and FinderCustomBarShowsStackText(context)
                     and FinderCustomBarAuraMax(context) ~= nil
             end,
         },
-        maxColor = {
+        maxColor = { advancedKey = CustomBarEditorKey("rbCabStackText_"), collapseKeys = FinderCustomBarCollapse("texts"),
             label = "Max Color",
             applies = function(context)
                 local cab = FinderCustomBar(context)
@@ -679,7 +685,7 @@ if ST._DefineSettingRoute then
             end,
         },
         pandemicColor = { label = "Show Pandemic Color", applies = FinderCustomBarAuraActive },
-        fillColor = {
+        fillColor = { advancedKey = CustomBarEditorKey("rbCabPandemicColor_"),
             label = "Fill Color",
             applies = function(context)
                 local cab = FinderCustomBar(context)
@@ -724,23 +730,23 @@ if ST._DefineSettingRoute then
         return cab and (cab.barAuraEffect or "color") == expected
     end
     CUSTOM_BAR_FINDER.effects = effects:Settings({
-        style = { label = "Glow Style" }, color = { label = "Effect Color" },
-        color2 = { label = "Second Color", applies = function(context) return FinderBarAuraEffectIs(context, "colorShift") end },
-        borderSize = {
+        style = { label = "Glow Style" }, color = { advancedKey = "customBarAuraBorder", label = "Effect Color" },
+        color2 = { advancedKey = "customBarAuraBorder", label = "Second Color", applies = function(context) return FinderBarAuraEffectIs(context, "colorShift") end },
+        borderSize = { advancedKey = "customBarAuraBorder",
             label = "Border Size",
             applies = function(context)
                 return FinderBarAuraEffectIs(context, "solid") or FinderBarAuraEffectIs(context, "pulse")
                     or FinderBarAuraEffectIs(context, "colorShift")
             end,
         },
-        pulseDuration = { label = "Border Pulse Duration", aliases = { "pulse duration" }, applies = function(context) return FinderBarAuraEffectIs(context, "pulse") end },
-        dashLength = { label = "Dash Length", applies = function(context) return FinderBarAuraEffectIs(context, "dashes") end },
-        dashThickness = { label = "Dash Thickness", applies = function(context) return FinderBarAuraEffectIs(context, "dashes") end },
-        dashCount = { label = "Number of Dashes", applies = function(context) return FinderBarAuraEffectIs(context, "dashes") end },
-        lapDuration = { label = "Lap Duration", applies = function(context) return FinderBarAuraEffectIs(context, "dashes") end },
-        shiftDuration = { label = "Border Shift Duration", aliases = { "shift duration" }, applies = function(context) return FinderBarAuraEffectIs(context, "colorShift") end },
+        pulseDuration = { advancedKey = "customBarAuraBorder", label = "Border Pulse Duration", aliases = { "pulse duration" }, applies = function(context) return FinderBarAuraEffectIs(context, "pulse") end },
+        dashLength = { advancedKey = "customBarAuraBorder", label = "Dash Length", applies = function(context) return FinderBarAuraEffectIs(context, "dashes") end },
+        dashThickness = { advancedKey = "customBarAuraBorder", label = "Dash Thickness", applies = function(context) return FinderBarAuraEffectIs(context, "dashes") end },
+        dashCount = { advancedKey = "customBarAuraBorder", label = "Number of Dashes", applies = function(context) return FinderBarAuraEffectIs(context, "dashes") end },
+        lapDuration = { advancedKey = "customBarAuraBorder", label = "Lap Duration", applies = function(context) return FinderBarAuraEffectIs(context, "dashes") end },
+        shiftDuration = { advancedKey = "customBarAuraBorder", label = "Border Shift Duration", aliases = { "shift duration" }, applies = function(context) return FinderBarAuraEffectIs(context, "colorShift") end },
         pulseFill = { label = "Pulse Bar Fill" },
-        pulseFillDuration = {
+        pulseFillDuration = { advancedKey = "customBarAuraPulse",
             label = "Fill Pulse Duration", aliases = { "pulse duration" },
             applies = function(context)
                 local cab = FinderCustomBar(context)
@@ -748,14 +754,14 @@ if ST._DefineSettingRoute then
             end,
         },
         colorShiftFill = { label = "Color Shift Bar Fill" },
-        colorShiftDuration = {
+        colorShiftDuration = { advancedKey = "customBarAuraShift",
             label = "Fill Shift Duration", aliases = { "shift duration" },
             applies = function(context)
                 local cab = FinderCustomBar(context)
                 return cab and cab.barAuraColorShiftEnabled == true
             end,
         },
-        shiftColor = {
+        shiftColor = { advancedKey = "customBarAuraShift",
             label = "Shift Color",
             applies = function(context)
                 local cab = FinderCustomBar(context)
@@ -1789,67 +1795,48 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         {"If the aura doesn't stack, the bar keeps the normal duration fill.", 1, 1, 1, true},
     }, infoButtons))
 
-    if mode == "stacks" then
-        -- Constrained, matching every runtime resolve since the review
-        -- alignment (2026-08-15): one max across config, bind, and policy.
-        if maxStacks then
-            AddDropdownRow(auraRight, {
-                label = "Stack Style",
-                setting = CUSTOM_BAR_FINDER.aura.stackStyle,
-                indent = true,
-                list = { segmented = "Segmented", continuous = "Continuous" },
-                order = { "segmented", "continuous" },
-                value = cab.displayMode == "continuous" and "continuous" or "segmented",
-                onChange = function(value)
-                    cab.displayMode = value
-                    RefreshCustomBarAuraConfig()
-                end,
-            })
-
-            -- Widget block bars only (pure aura bars): a preset picking
-            -- which gap-variant atlas set the bind uses. Spell bars with
-            -- stacks paint their dividers from the Resource Bars segment
-            -- gap instead.
-            if not isSpellBar and cab.displayMode ~= "continuous"
-                and maxStacks <= ST.STACK_SEGMENT_ATLAS_MAX then
-                ST._AddStackBlockGapRow(auraRight, cab, {
-                    setting = CUSTOM_BAR_FINDER.aura.segmentGap,
-                    maxStacks = maxStacks,
-                    commit = function()
-                        CooldownCompanion:ApplyResourceBars()
-                        RefreshLayoutOrderPreview()
+    ST._AddAdvancedToggle(stacksRow, "rbCabStackDisplay_" .. tostring(sectionKey), {}, true, {
+        unlock = mode ~= "stacks" and { target = cab, refreshKind = "resourceBars",
+            enable = { label = "Turn On Bar Shows Stacks", apply = function(write) write.trackingMode = "stacks" end } } or nil,
+        build = function(panel)
+            -- Constrained, matching every runtime resolve since the review
+            -- alignment (2026-08-15): one max across config, bind, and policy.
+            if maxStacks then
+                AddDropdownRow(panel, {
+                    label = "Stack Style",
+                    setting = CUSTOM_BAR_FINDER.aura.stackStyle,
+                    indent = false,
+                    list = { segmented = "Segmented", continuous = "Continuous" },
+                    order = { "segmented", "continuous" },
+                    value = cab.displayMode == "continuous" and "continuous" or "segmented",
+                    onChange = function(value)
+                        cab.displayMode = value
+                        RefreshCustomBarAuraConfig()
                     end,
                 })
+
+                -- Widget block bars only (pure aura bars): a preset picking
+                -- which gap-variant atlas set the bind uses. Spell bars with
+                -- stacks paint their dividers from the Resource Bars segment
+                -- gap instead.
+                if not isSpellBar and cab.displayMode ~= "continuous"
+                    and maxStacks <= ST.STACK_SEGMENT_ATLAS_MAX then
+                    ST._AddStackBlockGapRow(panel, cab, {
+                        setting = CUSTOM_BAR_FINDER.aura.segmentGap,
+                        maxStacks = maxStacks,
+                        commit = function()
+                            CooldownCompanion:ApplyResourceBars()
+                            RefreshLayoutOrderPreview()
+                        end,
+                    })
+                end
             end
-        end
 
-        -- What the game resolved (or that combat is hiding it), reported as a
-        -- child of the toggle it explains. The shared helper owns the shape.
-        AddAuraStackMaxStatusLabel(auraRight, maxStacks, { row = true })
-    end
-
-    -- Stack text formatter options, the same rows the panel entry section
-    -- shows (SectionBuilders.lua): count text can begin at one and recolor
-    -- at threshold/max stacks. Outside the Bar Shows Stacks gate because the
-    -- count text runs on duration bars too, but gated on the stack text
-    -- actually showing (owner ruling 2026-08-16: settings for a hidden text
-    -- hide with it). The keys live in cab.auraBar under the panel names,
-    -- which lets the runtime adapter and engine policy read them unchanged.
-    -- Resolved with constrained fallbacks,
-    -- the one max every custom-bar surface shares since the review
-    -- alignment.
-    if showsStackText then
-        ST._BuildStackThresholdColorRows(auraRight, cab, maxStacks, {
-                infoButtons = infoButtons,
-                settings = CUSTOM_BAR_FINDER.stackFormatting,
-                refresh = RefreshCustomBarAuraConfig,
-                commit = function()
-                    CooldownCompanion:ApplyResourceBars()
-                    RefreshLayoutOrderPreview()
-                end,
-                previewRefresh = RefreshLayoutOrderPreviewForDrag,
-            })
-    end
+            -- What the game resolved (or that combat is hiding it), reported as a
+            -- child of the toggle it explains. The shared helper owns the shape.
+            AddAuraStackMaxStatusLabel(panel, maxStacks, { row = true })
+        end,
+    })
 
     -- The marker row hides with the duration text it rides (owner ruling
     -- 2026-08-16); the stored keys are untouched, so re-enabling the text
@@ -1962,28 +1949,31 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         {" ", 1, 1, 1, true},
         {"While the bar shows stacks, its filled stack run or filled segments wear this color; gaps, borders, and stack geometry stay unchanged.", 1, 1, 1, true},
     }, infoButtons))
-    if cab.pandemicEffect == true then
-        -- No alpha: the pandemic color REPLACES the aura fill color (owner
-        -- ruling), so the live clone renders it opaque.
-        --
-        -- "Fill Color", not "Pandemic Color": the marker gear a few rows up
-        -- opens its own "Marker Color", and the two drive different visuals.
-        AddColorRow(auraRight, {
-            label = "Fill Color",
-            setting = CUSTOM_BAR_FINDER.aura.fillColor,
-            indent = true,
-            tbl = cab,
-            key = "pandemicColor",
-            default = {1, 0.5, 0, 1},
-            hasAlpha = false,
-            onConfirm = function()
-                CooldownCompanion:ApplyResourceBars()
-                RefreshLayoutOrderPreview()
-            end,
-            onChange = RefreshLayoutOrderPreviewForDrag,
-            deferCommit = true,
-        })
-    end
+    ST._AddAdvancedToggle(effectRow, "rbCabPandemicColor_" .. tostring(sectionKey), {}, true, {
+        unlock = cab.pandemicEffect ~= true and { target = cab, refreshKind = "resourceBars", enable = { label = "Turn On Pandemic Color", key = "pandemicEffect" } } or nil,
+        build = function(panel)
+            -- No alpha: the pandemic color REPLACES the aura fill color (owner
+            -- ruling), so the live clone renders it opaque.
+            --
+            -- "Fill Color", not "Pandemic Color": the marker gear a few rows up
+            -- opens its own "Marker Color", and the two drive different visuals.
+            AddColorRow(panel, {
+                label = "Fill Color",
+                setting = CUSTOM_BAR_FINDER.aura.fillColor,
+                indent = false,
+                tbl = cab,
+                key = "pandemicColor",
+                default = {1, 0.5, 0, 1},
+                hasAlpha = false,
+                onConfirm = function()
+                    CooldownCompanion:ApplyResourceBars()
+                    RefreshLayoutOrderPreview()
+                end,
+                onChange = RefreshLayoutOrderPreviewForDrag,
+                deferCommit = true,
+            })
+        end,
+    })
 
     -- Group/pet-tracked aura bars cannot join the collapsing aura block
     -- (owner ruling 2026-08-26: they always keep their slot), so the Hide
@@ -2594,6 +2584,56 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                     -- narrow column, so every row goes straight onto the panel
                     -- scroll.
                     local function BuildDurationTextAdvanced(panel)
+                        if isSpellCustomBar then
+                            AddDurationTextVisibilityRows(
+                                panel, customBars[cabIdx], customBars[cabIdx],
+                                "cooldown", nil, {
+                                    indent = false,
+                                    modeLabel = isAuraTracked and "Cooldown Visibility" or "Visible",
+                                    sliderLabel = isAuraTracked
+                                        and "Cooldown: Show During Last" or "Show During Last",
+                                    infoButtons = CS.advancedSettingsInfoButtons,
+                                    preview = cabPreviewOnly,
+                                    settings = isAuraTracked and {
+                                        mode = CUSTOM_BAR_FINDER.texts.cooldownVisibility,
+                                        threshold = CUSTOM_BAR_FINDER.texts.cooldownLast,
+                                    } or {
+                                        mode = CUSTOM_BAR_FINDER.texts.spellVisibility,
+                                        threshold = CUSTOM_BAR_FINDER.texts.spellLast,
+                                    },
+                                    rebuild = RefreshCustomBarAuraConfig,
+                                })
+                        end
+                        if not isSpellCustomBar or isAuraTracked then
+                            local auraHost = panel
+                            AddDurationTextVisibilityRows(
+                                auraHost, customBars[cabIdx], customBars[cabIdx],
+                                "aura", nil, {
+                                    indent = false,
+                                    modeLabel = isSpellCustomBar and "Aura Visibility" or "Visible",
+                                    sliderLabel = isSpellCustomBar
+                                        and "Aura: Show During Last" or "Show During Last",
+                                    infoButtons = CS.advancedSettingsInfoButtons,
+                                    preview = cabPreviewOnly,
+                                    settings = isSpellCustomBar and {
+                                        mode = CUSTOM_BAR_FINDER.texts.auraVisibility,
+                                        threshold = CUSTOM_BAR_FINDER.texts.auraLast,
+                                    } or {
+                                        mode = CUSTOM_BAR_FINDER.texts.auraOnlyVisibility,
+                                        threshold = CUSTOM_BAR_FINDER.texts.auraOnlyLast,
+                                    },
+                                    rebuild = RefreshCustomBarAuraConfig,
+                                })
+                        end
+
+                        AddDurationFormatDropdown(
+                            panel, customBars[cabIdx], cabApplyBars, {
+                                row = true,
+                                setting = CUSTOM_BAR_FINDER.texts.format,
+                                sharedHelp = isSpellCustomBar and isAuraTracked,
+                                infoButtons = CS.advancedSettingsInfoButtons,
+                            })
+
                         AddFontControls(panel, customBars[cabIdx], "durationText", {
                             size = DEFAULT_RESOURCE_TEXT_SIZE, sizeMin = 6, sizeMax = 24, sizeStep = 1,
                             font = DEFAULT_RESOURCE_TEXT_FONT, outline = DEFAULT_RESOURCE_TEXT_OUTLINE,
@@ -2636,58 +2676,11 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                     end
 
                     if showDuration then
-                        if isSpellCustomBar then
-                            AddDurationTextVisibilityRows(
-                                durationLeft, customBars[cabIdx], customBars[cabIdx],
-                                "cooldown", nil, {
-                                    modeLabel = isAuraTracked and "Cooldown Visibility" or "Visible",
-                                    sliderLabel = isAuraTracked
-                                        and "Cooldown: Show During Last" or "Show During Last",
-                                    infoButtons = infoButtons,
-                                    preview = cabPreviewOnly,
-                                    settings = isAuraTracked and {
-                                        mode = CUSTOM_BAR_FINDER.texts.cooldownVisibility,
-                                        threshold = CUSTOM_BAR_FINDER.texts.cooldownLast,
-                                    } or {
-                                        mode = CUSTOM_BAR_FINDER.texts.spellVisibility,
-                                        threshold = CUSTOM_BAR_FINDER.texts.spellLast,
-                                    },
-                                    rebuild = RefreshCustomBarAuraConfig,
-                                })
-                        end
-                        if not isSpellCustomBar or isAuraTracked then
-                            local auraHost = isSpellCustomBar and durationRight or durationLeft
-                            AddDurationTextVisibilityRows(
-                                auraHost, customBars[cabIdx], customBars[cabIdx],
-                                "aura", nil, {
-                                    modeLabel = isSpellCustomBar and "Aura Visibility" or "Visible",
-                                    sliderLabel = isSpellCustomBar
-                                        and "Aura: Show During Last" or "Show During Last",
-                                    infoButtons = infoButtons,
-                                    preview = cabPreviewOnly,
-                                    settings = isSpellCustomBar and {
-                                        mode = CUSTOM_BAR_FINDER.texts.auraVisibility,
-                                        threshold = CUSTOM_BAR_FINDER.texts.auraLast,
-                                    } or {
-                                        mode = CUSTOM_BAR_FINDER.texts.auraOnlyVisibility,
-                                        threshold = CUSTOM_BAR_FINDER.texts.auraOnlyLast,
-                                    },
-                                    rebuild = RefreshCustomBarAuraConfig,
-                                })
-                        end
-
-                        AddDurationFormatDropdown(
-                            durationLeft, customBars[cabIdx], cabApplyBars, {
-                                row = true,
-                                setting = CUSTOM_BAR_FINDER.texts.format,
-                                sharedHelp = isSpellCustomBar and isAuraTracked,
-                                infoButtons = infoButtons,
-                            })
-
                         if ST._AddDurationLowTimeRows then
                             ST._AddDurationLowTimeRows(
                                 lowTimeLeft, customBars[cabIdx], cabApplyBars, {
                                     settings = CUSTOM_BAR_FINDER.lowTime,
+                                    advancedKey = "rbCabLowTime_" .. GetCustomBarCollapseKey(customBars[cabIdx]),
                                     rightColumn = lowTimeRight,
                                     auraOnly = not isSpellCustomBar,
                                     auraToggle = isSpellCustomBar and isAuraTracked,
@@ -2699,6 +2692,17 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                     end
 
                     local function BuildStackTextAdvanced(panel)
+                        if isAuraTracked then
+                            ST._BuildStackThresholdColorRows(panel, customBars[cabIdx],
+                                CooldownCompanion:GetAuraStackBarMax(BuildCustomBarAuraProbe(customBars[cabIdx]), true), {
+                                    infoButtons = CS.advancedSettingsInfoButtons,
+                                    settings = CUSTOM_BAR_FINDER.stackFormatting,
+                                    refresh = RefreshCustomBarAuraConfig,
+                                    commit = cabApplyBars,
+                                    previewRefresh = cabPreviewOnly,
+                                })
+                        end
+
                         AddFontControls(panel, customBars[cabIdx], "stackText", {
                             size = DEFAULT_RESOURCE_TEXT_SIZE, sizeMin = 6, sizeMax = 24, sizeStep = 1,
                             font = DEFAULT_RESOURCE_TEXT_FONT, outline = DEFAULT_RESOURCE_TEXT_OUTLINE,
@@ -2752,12 +2756,10 @@ local function BuildCustomAuraBarPanel(container, customBarId)
 
                 -- Shared builder (SectionBuilders): the cabConfig speaks the
                 -- same barAura* key family as the panel bar style tables. The
-                -- builder is row-only now and opens its own grid on this
-                -- container - LEFT the border effect, RIGHT the two fill effects -
-                -- so this section reads like every other one on the pane. Only a
-                -- caller passing opts.singleRail suppresses that grid: the
-                -- bar-mode advanced panel, whose popout is too narrow for two
-                -- columns.
+                -- overview groups the border and fill effect choices into two
+                -- columns. Each choice owns its tuning editor. Inside a panel's
+                -- existing editor, singleRail keeps their conditional controls
+                -- together without another disclosure level.
                 local isAuraTracked = capabilities.auraTracked
                 if isAuraTracked and ST._BuildBarActiveAuraControls then
                     local _, effectsCollapsed = AddCustomBarSettingsHeading(container, "Effects",

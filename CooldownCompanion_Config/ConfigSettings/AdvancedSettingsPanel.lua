@@ -255,10 +255,10 @@ local function ScheduleEditorReveal(registration, view, rowPosition)
         local status = scroll.status or scroll.localstatus
         local rowOffset = contentTop - rowTop
         local desired = rowPosition and rowOffset - rowPosition or ((status and status.offset) or 0)
-        local grammar = ST._RowGrammar
-        local revealHeight = math.min(view.widget.frame:GetHeight(),
-            grammar.ROW_HEIGHT * 2 + grammar.INLINE_PADDING * 2)
-        local bottom = contentTop - editorTop + revealHeight
+        -- Fit the entire editor with the least movement possible. If it is
+        -- taller than the viewport, keep the owner at the top and devote the
+        -- remaining height to its controls.
+        local bottom = contentTop - editorTop + view.widget.frame:GetHeight()
         desired = math.max(desired, bottom - height)
         desired = math.min(desired, rowOffset)
         desired = math.max(0, math.min(maxOffset, desired))
@@ -266,6 +266,15 @@ local function ScheduleEditorReveal(registration, view, rowPosition)
         scroll:SetScroll(value)
         if scroll.scrollBarShown and scroll.scrollbar then scroll.scrollbar:SetValue(value) end
     end)
+end
+
+-- Label hierarchy belongs to the editor, independent of indentation. Walk
+-- nested groups too; disabled/caption rows keep their own color precedence.
+local function StyleEditorLabels(container)
+    for _, child in ipairs(container.children or {}) do
+        if child.SetAdvancedSetting then child:SetAdvancedSetting(true) end
+        if child.children then StyleEditorLabels(child) end
+    end
 end
 
 local function BuildEditorContents(view, registration)
@@ -282,6 +291,7 @@ local function BuildEditorContents(view, registration)
     body:SetCallback("OnRelease", function(widget) widget._isAdvancedSettingsPanel = nil end)
     body:PauseLayout()
     descriptor.build(body, descriptor)
+    StyleEditorLabels(body)
     if descriptor._resolvedUnlock then ST._MakeAdvancedPanelReadOnly(body) end
     body:ResumeLayout()
     body:DoLayout()

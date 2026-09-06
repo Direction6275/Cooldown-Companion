@@ -2084,7 +2084,7 @@ local function CreateConfigPanel()
             end
         end
 
-        BuildEntryTabContent()
+        CS.RunAdvancedGearBuildPass(BuildEntryTabContent)
 
         -- Re-run the layout with final widths (AddChild lays out on every
         -- insertion; width overrides applied after a builder returns are

@@ -158,6 +158,10 @@ local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 -- data with no override section - see the note at its call site, which is on
 -- the Layout tab (GroupTabsLayout.lua's Arrangement section) for every mode.
 ST._APPEARANCE_SECTION_BY_ADVANCED_KEY = {
+    iconBorder = "borderSettings",
+    durationLowTime = "durationLowTime",
+    iconCooldownTintEnabled = "iconTint",
+    iconAuraTintEnabled = "iconTint",
     cooldownText = "cooldownText",
     chargeText = "chargeText",
     auraText = "auraText",
@@ -509,17 +513,17 @@ if ST._DefineSettingRoute then
         width = { label = "Icon Width", applies = AppearanceFinderStateFlag("assistantRectangular") },
         height = { label = "Icon Height", applies = AppearanceFinderStateFlag("assistantRectangular") },
         zoom = { label = "Icon Zoom" },
-        thickness = { label = "Border Thickness" },
-        borderSize = { label = "Border Size", applies = AppearanceFinderStateFlag("assistantCustomBorder") },
+        thickness = { advancedKey = "panelBorder", label = "Border Thickness" },
+        borderSize = { advancedKey = "panelBorder", label = "Border Size", applies = AppearanceFinderStateFlag("assistantCustomBorder") },
         borderColor = { label = "Border Color" },
         keybind = { label = "Show Keybind Text" },
-        keybindAnchor = { label = "Anchor" },
-        keybindXOffset = { label = "X Offset" },
-        keybindYOffset = { label = "Y Offset" },
-        keybindFontSize = { label = "Font Size" },
-        keybindFont = { label = "Font" },
-        keybindOutline = { label = "Font Outline" },
-        keybindColor = { label = "Font Color" },
+        keybindAnchor = { advancedKey = "assistantKeybindText", label = "Anchor" },
+        keybindXOffset = { advancedKey = "assistantKeybindText", label = "X Offset" },
+        keybindYOffset = { advancedKey = "assistantKeybindText", label = "Y Offset" },
+        keybindFontSize = { advancedKey = "assistantKeybindText", label = "Font Size" },
+        keybindFont = { advancedKey = "assistantKeybindText", label = "Font" },
+        keybindOutline = { advancedKey = "assistantKeybindText", label = "Font Outline" },
+        keybindColor = { advancedKey = "assistantKeybindText", label = "Font Color" },
     })
 
     local icons = ST._DefineSettingRoute({
@@ -580,24 +584,24 @@ if ST._DefineSettingRoute then
     })
     APPEARANCE_FINDER.text = text:Settings({
         cooldown = { label = "Show Cooldown Text", applies = AppearanceFinderStateFlag("cooldownAvailable") },
-        cooldownVisible = {
+        cooldownVisible = { advancedKey = "cooldownText",
             label = "Visible", sectionLabel = "Cooldown Text",
             aliases = { "cooldown text visibility" },
             applies = AppearanceFinderStateFlag("cooldownVisibility"),
         },
-        cooldownLast = {
+        cooldownLast = { advancedKey = "cooldownText",
             label = "Show During Last", sectionLabel = "Cooldown Text",
             aliases = { "cooldown text threshold" },
             applies = AppearanceFinderStateFlag("cooldownVisibility"),
         },
         count = { label = "Show Count Text (Charges/Uses)", aliases = { "charges", "uses" }, applies = AppearanceFinderStateFlag("countAvailable") },
         auraDuration = { label = "Show Aura Duration Text", applies = AppearanceFinderStateFlag("auraTextAvailable") },
-        auraVisible = {
+        auraVisible = { advancedKey = "auraText",
             label = "Visible", sectionLabel = "Aura Duration Text",
             aliases = { "aura text visibility" },
             applies = AppearanceFinderStateFlag("auraTextVisibility"),
         },
-        auraLast = {
+        auraLast = { advancedKey = "auraText",
             label = "Show During Last", sectionLabel = "Aura Duration Text",
             aliases = { "aura text threshold" },
             applies = AppearanceFinderStateFlag("auraTextVisibility"),
@@ -624,13 +628,13 @@ if ST._DefineSettingRoute then
             aliases = { "low time", "warning time" },
             applies = AppearanceFinderStateFlag("lowTimeAvailable"),
         },
-        warningThreshold = { label = "Start Warning Below", applies = AppearanceFinderStateFlag("lowTimeActive") },
-        warningColor = { label = "Warning Color", applies = AppearanceFinderStateFlag("lowTimeActive") },
-        auras = { label = "Also Apply to Aura Text", applies = AppearanceFinderStateFlag("lowTimeAuraToggle") },
-        critical = { label = "Add Critical Styling", applies = AppearanceFinderStateFlag("lowTimeActive") },
-        criticalThreshold = { label = "Start Critical Below", applies = AppearanceFinderStateFlag("lowTimeCritical") },
-        criticalColor = { label = "Critical Color", applies = AppearanceFinderStateFlag("lowTimeCritical") },
-        decimals = { label = "Show Decimals Near Expiry", applies = AppearanceFinderStateFlag("lowTimeActive") },
+        warningThreshold = { advancedKey = "durationLowTime", label = "Start Warning Below", applies = AppearanceFinderStateFlag("lowTimeActive") },
+        warningColor = { advancedKey = "durationLowTime", label = "Warning Color", applies = AppearanceFinderStateFlag("lowTimeActive") },
+        auras = { advancedKey = "durationLowTime", label = "Also Apply to Aura Text", applies = AppearanceFinderStateFlag("lowTimeAuraToggle") },
+        critical = { advancedKey = "durationLowTime", label = "Add Critical Styling", applies = AppearanceFinderStateFlag("lowTimeActive") },
+        criticalThreshold = { advancedKey = "durationLowTime", label = "Start Critical Below", applies = AppearanceFinderStateFlag("lowTimeCritical") },
+        criticalColor = { advancedKey = "durationLowTime", label = "Critical Color", applies = AppearanceFinderStateFlag("lowTimeCritical") },
+        decimals = { advancedKey = "durationLowTime", label = "Show Decimals Near Expiry", applies = AppearanceFinderStateFlag("lowTimeActive") },
     })
 
     local function TextAdvanced(sectionId, advancedKey, suffix, label)
@@ -719,8 +723,8 @@ if ST._DefineSettingRoute then
     })
     APPEARANCE_FINDER.border = border:Settings({
         color = { label = "Border Color" },
-        thickness = { label = "Border Thickness" },
-        size = { label = "Border Size", applies = AppearanceFinderStateFlag("customBorderSize") },
+        thickness = { advancedKey = "iconBorder", label = "Border Thickness" },
+        size = { advancedKey = "iconBorder", label = "Border Size", applies = AppearanceFinderStateFlag("customBorderSize") },
     })
 
     local tint = ST._DefineSettingRoute({
@@ -738,9 +742,9 @@ if ST._DefineSettingRoute then
         base = { label = "Base Icon Color" },
         background = { label = "Background Color" },
         separateCooldown = { label = "Use Separate Cooldown Tint" },
-        cooldown = { label = "Cooldown Icon Color", applies = AppearanceFinderStateFlag("cooldownTintColor") },
+        cooldown = { advancedKey = "iconCooldownTintEnabled", label = "Cooldown Icon Color", applies = AppearanceFinderStateFlag("cooldownTintColor") },
         separateAura = { label = "Use Separate Aura Tint", applies = AppearanceFinderTracksAura },
-        aura = { label = "Aura Active Icon Color", applies = AppearanceFinderStateFlag("auraTintColor") },
+        aura = { advancedKey = "iconAuraTintEnabled", label = "Aura Active Icon Color", applies = AppearanceFinderStateFlag("auraTintColor") },
     })
 
     APPEARANCE_FINDER.masque = ST._DefineSettingRoute({
@@ -1340,6 +1344,7 @@ local function BuildAppearanceTab(container)
         -- surface exists; Aura Panels apply unconditionally (runtime gate).
         local rows = ST._AddDurationLowTimeRows(lowTimeLeft, lowTimeSec.tbl, refreshStyle, {
             settings = APPEARANCE_FINDER.lowTime,
+            sec = lowTimeSec,
             explicitOff = lowTimeSec.scope == "customized",
             disabled = lowTimeSec.disabled,
             rightColumn = lowTimeRight,
@@ -1397,28 +1402,28 @@ local function BuildAppearanceTab(container)
 
         AddAdvancedToggle(cdTextRow, cdTextAdvanced.settingKey, tabInfoButtons, true, {
             title = cdTextAdvanced.title,
-            build = cdTextAdvanced.build,
+            build = function(panel)
+                AddDurationTextVisibilityRows(panel, cdTextSec.read, cdTextSec.write,
+                    "cooldown", refreshStyle, {
+                        indent = false,
+                        explicitOff = cdTextSec.scope == "customized",
+                        disabled = cdTextSec.disabled,
+                        settings = {
+                            mode = APPEARANCE_FINDER.text.cooldownVisible,
+                            threshold = APPEARANCE_FINDER.text.cooldownLast,
+                        },
+                        infoButtons = CS.advancedSettingsInfoButtons,
+                        rebuild = function()
+                            CooldownCompanion:RefreshConfigPanel()
+                        end,
+                    })
+                cdTextAdvanced.build(panel)
+            end,
             unlock = { sec = cdTextSec,
                 enable = cdTextSec.read.showCooldownText ~= true and TURNON_COOLDOWN_TEXT or nil },
         })
     end
     cdTextSec:Chrome(cdTextRow)
-
-    if cdTextSec.read.showCooldownText == true then
-        AddDurationTextVisibilityRows(durationLeft, cdTextSec.read, cdTextSec.write,
-            "cooldown", refreshStyle, {
-                explicitOff = cdTextSec.scope == "customized",
-                disabled = cdTextSec.disabled,
-                settings = {
-                    mode = APPEARANCE_FINDER.text.cooldownVisible,
-                    threshold = APPEARANCE_FINDER.text.cooldownLast,
-                },
-                infoButtons = tabInfoButtons,
-                rebuild = function()
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-    end
 
     cdTextSec:Finish()
     if drawsCooldownFormat then
@@ -1548,6 +1553,20 @@ local function BuildAppearanceTab(container)
         -- Single rail (AdvancedSettingsPanel.lua): every builder runs with
         -- { row = true } and no rightColumn.
         local function BuildAuraDurationTextAdvanced(panel)
+            AddDurationTextVisibilityRows(panel, auraTextSec.read, auraTextSec.write,
+                "aura", refreshStyle, {
+                    indent = false,
+                    explicitOff = auraTextSec.scope == "customized",
+                    disabled = auraTextSec.disabled,
+                    settings = {
+                        mode = APPEARANCE_FINDER.text.auraVisible,
+                        threshold = APPEARANCE_FINDER.text.auraLast,
+                    },
+                    infoButtons = CS.advancedSettingsInfoButtons,
+                    rebuild = function()
+                        CooldownCompanion:RefreshConfigPanel()
+                    end,
+                })
             AddFontControls(panel, auraTextSec.tbl, "auraText", { size = 12 }, refreshStyle, {
                 row = true,
                 settings = {
@@ -1648,22 +1667,6 @@ local function BuildAppearanceTab(container)
             end
         end
         auraTextSec:Chrome(auraTextRow)
-
-        if auraTextSec.read.showAuraText ~= false then
-            AddDurationTextVisibilityRows(auraTextHost, auraTextSec.read, auraTextSec.write,
-                "aura", refreshStyle, {
-                    explicitOff = auraTextSec.scope == "customized",
-                    disabled = auraTextSec.disabled,
-                    settings = {
-                        mode = APPEARANCE_FINDER.text.auraVisible,
-                        threshold = APPEARANCE_FINDER.text.auraLast,
-                    },
-                    infoButtons = tabInfoButtons,
-                    rebuild = function()
-                        CooldownCompanion:RefreshConfigPanel()
-                    end,
-                })
-        end
 
         auraTextSec:Finish()
         if drawsAuraFormat and not durationFormatAdded then
@@ -2026,39 +2029,45 @@ local function BuildAppearanceTab(container)
     })
     borderSec:DirectColorControl(borderColorRow, "borderColor", group.masqueEnabled == true)
 
-    local renderMode = AddBorderRenderModeDropdown(borderLeft, borderSec.tbl, "borderRenderMode", function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end, group.masqueEnabled or borderSec.disabled, {
-        row = true,
-        indent = true,
-        setting = APPEARANCE_FINDER.border.thickness,
-    })
-    local borderThicknessLocked = group.masqueEnabled or ST.IsBorderThicknessLocked()
-
-    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-        local borderSizeRow = AddSliderRow(borderLeft, {
-            label = "Border Size",
-            setting = APPEARANCE_FINDER.border.size,
-            indent = true,
-            min = 0, max = 5, step = 0.1,
-            value = borderSec.read.borderSize or ST.DEFAULT_BORDER_SIZE,
-            disabled = (borderSec.disabled or borderThicknessLocked) and true or false,
-        })
-        -- Not wired at all while the section is inert. The mirror-first path
-        -- SNAPSHOTS AND RESTORES its state owner on every drag tick, so wiring
-        -- it to anything is wiring a write path; the read-only lens has no
-        -- table for one, so it gets no wiring instead of a harmless-looking one.
-        if borderSec.write then
-            WireMirrorFirstSlider(borderSizeRow, function(val)
-                if borderThicknessLocked then return end
-                borderSec.write.borderSize = val
-            end, function()
-                if borderThicknessLocked then return end
+    ST._AddAdvancedToggle(borderColorRow, "iconBorder", {}, borderSec.scope ~= "denied" and not group.masqueEnabled, {
+        unlock = { sec = borderSec },
+        build = function(panel)
+            local renderMode = AddBorderRenderModeDropdown(panel, borderSec.tbl, "borderRenderMode", function()
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end, nil, borderSec.write, "borderSize")
-        end
-    end
+                CooldownCompanion:RefreshConfigPanel()
+            end, group.masqueEnabled or borderSec.disabled, {
+                row = true,
+                indent = false,
+                setting = APPEARANCE_FINDER.border.thickness,
+            })
+            local borderThicknessLocked = group.masqueEnabled or ST.IsBorderThicknessLocked()
+
+            if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+                local borderSizeRow = AddSliderRow(panel, {
+                    label = "Border Size",
+                    setting = APPEARANCE_FINDER.border.size,
+                    indent = false,
+                    min = 0, max = 5, step = 0.1,
+                    value = borderSec.read.borderSize or ST.DEFAULT_BORDER_SIZE,
+                    disabled = (borderSec.disabled or borderThicknessLocked) and true or false,
+                })
+                -- Not wired at all while the section is inert. The mirror-first path
+                -- SNAPSHOTS AND RESTORES its state owner on every drag tick, so wiring
+                -- it to anything is wiring a write path; the read-only lens has no
+                -- table for one, so it gets no wiring instead of a harmless-looking one.
+                if borderSec.write then
+                    WireMirrorFirstSlider(borderSizeRow, function(val)
+                        if borderThicknessLocked then return end
+                        borderSec.write.borderSize = val
+                    end, function()
+                        if borderThicknessLocked then return end
+                        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                    end, nil, borderSec.write, "borderSize")
+                end
+            end
+
+        end,
+    })
 
     borderSec:Finish()
     end -- not borderCollapsed

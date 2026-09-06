@@ -380,7 +380,8 @@ if ST._DefineSettingRoute then
         sectionLabel = "Strata",
         collapseKeys = { "layout_strata" },
         rowScope = "primary",
-        applies = LayoutFinderFlag("customStrataLayers"),
+        applies = LayoutFinderFlag("customStrata"),
+        advancedKey = "customIconStrata",
     })
     local layerCount = #(ST.DEFAULT_STRATA_ORDER or {})
     for position = 1, layerCount do
@@ -1562,8 +1563,9 @@ local function BuildLayoutTab(container)
     local strataLeft, strataRight = BeginRowGrid(container)
     local frameStrataHost = showCustomStrata and strataRight or strataLeft
 
+    local strataToggleRow
     if showCustomStrata then
-    local strataToggleRow = AddCheckboxRow(strataLeft, {
+    strataToggleRow = AddCheckboxRow(strataLeft, {
         label = "Custom Icon Strata",
         setting = LAYOUT_FINDER.strata and LAYOUT_FINDER.strata.custom,
         value = customStrataEnabled,
@@ -1628,90 +1630,98 @@ local function BuildLayoutTab(container)
         {"Only change this if you need one group to overlap another.", 1, 1, 1, true},
     }, tabInfoButtons))
 
-    if customStrataEnabled then
-        CS.InitPendingStrataOrder(CS.selectedGroup)
-
-        local ELEMENT_COUNT = #ST.DEFAULT_STRATA_ORDER
-
-        -- Build dropdown list with unassigned entries highlighted in green
-        local function BuildStrataList()
-            local assigned = {}
-            for i = 1, ELEMENT_COUNT do
-                if CS.pendingStrataOrder[i] then
-                    assigned[CS.pendingStrataOrder[i]] = true
-                end
-            end
-            local list = {}
-            for _, key in ipairs(CS.strataElementKeys) do
-                if not assigned[key] then
-                    list[key] = "|cff40ff40" .. CS.strataElementLabels[key] .. "|r"
-                else
-                    list[key] = CS.strataElementLabels[key]
-                end
-            end
-            return list
-        end
-
-        local strataDropdowns = {}
-
-        -- Refresh all dropdown lists and values
-        local function RefreshAllDropdowns()
-            local list = BuildStrataList()
-            for i = 1, ELEMENT_COUNT do
-                if strataDropdowns[i] then
-                    strataDropdowns[i]:SetList(list)
-                    strataDropdowns[i]:SetValue(CS.pendingStrataOrder[i])
-                end
-            end
-        end
-
-        -- The layers are one ordered stack, so they get their own grid and
-        -- fill it top-down: the top half of the stack in the left column,
-        -- the bottom half in the right.
-        local layerLeft, layerRight = BeginRowGrid(container)
-        local splitAt = math.ceil(ELEMENT_COUNT / 2)
-
-        for displayIdx = 1, ELEMENT_COUNT do
-            local pos = ELEMENT_COUNT + 1 - displayIdx
-            local label
-            if pos == ELEMENT_COUNT then
-                label = "Layer " .. pos .. " (Top)"
-            elseif pos == 1 then
-                label = "Layer " .. pos .. " (Bottom)"
-            else
-                label = "Layer " .. pos
-            end
-
-            local drop = AddDropdownRow(displayIdx <= splitAt and layerLeft or layerRight, {
-                label = label,
-                setting = LAYOUT_FINDER.layers[pos],
-                indent = true,
-                list = BuildStrataList(),
-                value = CS.pendingStrataOrder[pos],
-                onChange = function(val)
-                    for i = 1, ELEMENT_COUNT do
-                        if i ~= pos and CS.pendingStrataOrder[i] == val then
-                            CS.pendingStrataOrder[i] = nil
-                        end
-                    end
-                    CS.pendingStrataOrder[pos] = val
-
-                    if CS.IsStrataOrderComplete(CS.pendingStrataOrder) then
-                        style.strataOrder = {}
-                        for i = 1, ELEMENT_COUNT do
-                            style.strataOrder[i] = CS.pendingStrataOrder[i]
-                        end
-                    else
-                        style.strataOrder = {}
-                    end
-                    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-
-                    RefreshAllDropdowns()
+    if strataToggleRow then
+        ST._AddAdvancedToggle(strataToggleRow, "customIconStrata", {}, true, {
+            unlock = not customStrataEnabled and { enable = {
+                label = "Turn On Custom Icon Strata", run = function()
+                    style.strataOrder = {}
+                    CS.pendingStrataOrder = nil
+                    CS.InitPendingStrataOrder(CS.selectedGroup)
+                    CooldownCompanion:RefreshConfigPanel()
                 end,
-            })
-            strataDropdowns[pos] = drop
-        end
-    end -- customStrataEnabled
+            } } or nil,
+            build = function(panel)
+                CS.InitPendingStrataOrder(CS.selectedGroup)
+
+                local ELEMENT_COUNT = #ST.DEFAULT_STRATA_ORDER
+
+                -- Build dropdown list with unassigned entries highlighted in green
+                local function BuildStrataList()
+                    local assigned = {}
+                    for i = 1, ELEMENT_COUNT do
+                        if CS.pendingStrataOrder[i] then
+                            assigned[CS.pendingStrataOrder[i]] = true
+                        end
+                    end
+                    local list = {}
+                    for _, key in ipairs(CS.strataElementKeys) do
+                        if not assigned[key] then
+                            list[key] = "|cff40ff40" .. CS.strataElementLabels[key] .. "|r"
+                        else
+                            list[key] = CS.strataElementLabels[key]
+                        end
+                    end
+                    return list
+                end
+
+                local strataDropdowns = {}
+
+                -- Refresh all dropdown lists and values
+                local function RefreshAllDropdowns()
+                    local list = BuildStrataList()
+                    for i = 1, ELEMENT_COUNT do
+                        if strataDropdowns[i] then
+                            strataDropdowns[i]:SetList(list)
+                            strataDropdowns[i]:SetValue(CS.pendingStrataOrder[i])
+                        end
+                    end
+                end
+
+                -- One ordered stack, top to bottom inside its owning editor.
+
+                for displayIdx = 1, ELEMENT_COUNT do
+                    local pos = ELEMENT_COUNT + 1 - displayIdx
+                    local label
+                    if pos == ELEMENT_COUNT then
+                        label = "Layer " .. pos .. " (Top)"
+                    elseif pos == 1 then
+                        label = "Layer " .. pos .. " (Bottom)"
+                    else
+                        label = "Layer " .. pos
+                    end
+
+                    local drop = AddDropdownRow(panel, {
+                        label = label,
+                        setting = LAYOUT_FINDER.layers[pos],
+                        indent = false,
+                        list = BuildStrataList(),
+                        value = CS.pendingStrataOrder[pos],
+                        onChange = function(val)
+                            for i = 1, ELEMENT_COUNT do
+                                if i ~= pos and CS.pendingStrataOrder[i] == val then
+                                    CS.pendingStrataOrder[i] = nil
+                                end
+                            end
+                            CS.pendingStrataOrder[pos] = val
+
+                            if CS.IsStrataOrderComplete(CS.pendingStrataOrder) then
+                                style.strataOrder = {}
+                                for i = 1, ELEMENT_COUNT do
+                                    style.strataOrder[i] = CS.pendingStrataOrder[i]
+                                end
+                            else
+                                style.strataOrder = {}
+                            end
+                            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+
+                            RefreshAllDropdowns()
+                        end,
+                    })
+                    strataDropdowns[pos] = drop
+                end
+            end,
+        })
+    end
     end -- not strataCollapsed
 
 end

@@ -877,31 +877,35 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     local _, healthFillCollapsed = BuildCollapsibleSection(container, "Health", healthFillKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
     if not healthFillCollapsed then
-        -- LEFT column: the gradient choice and the colors it decides - they
-        -- have to be read together, so they stay adjacent and the colors are
-        -- indented children of the toggle above them. RIGHT column: the one
-        -- setting the choice does not touch.
+        -- Color mode and its editor stay together; opacity is independent of
+        -- choosing a solid color or a gradient.
         local fillLeft, fillRight = BeginRowGrid(container)
 
-        AddCheckboxRow(fillLeft, {
-            label = "Use Health Gradient",
+        local colorModeRow = AddDropdownRow(fillLeft, {
+            label = "Health Colors",
+            list = { solid = "Solid", gradient = "Gradient" },
+            order = { "solid", "gradient" },
             setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill
                 and RESOURCE_FINDER.primary.healthFill.gradient,
-            value = fillGradientEnabled == true,
+            value = fillGradientEnabled == true and "gradient" or "solid",
             onChange = function(val)
-                health.healthBarGradient = val == true
+                health.healthBarGradient = val == "gradient"
                 applyBars()
                 CooldownCompanion:RefreshConfigPanel()
             end,
         })
 
-        if fillGradientEnabled == true then
-            AddColorRow(fillLeft, { label = "Full Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.full, indent = true, tbl = health, key = "healthBarFullColor", default = DEFAULT_HEALTH_BAR_FULL_COLOR, onConfirm = applyBars, onChange = applyBars })
-            AddColorRow(fillLeft, { label = "Half Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.half, indent = true, tbl = health, key = "healthBarHalfColor", default = DEFAULT_HEALTH_BAR_HALF_COLOR, onConfirm = applyBars, onChange = applyBars })
-            AddColorRow(fillLeft, { label = "Low Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.low, indent = true, tbl = health, key = "healthBarLowColor", default = DEFAULT_HEALTH_BAR_LOW_COLOR, onConfirm = applyBars, onChange = applyBars })
-        else
-            AddColorRow(fillLeft, { label = "Health Color", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.color, indent = true, tbl = health, key = "healthBarColor", default = DEFAULT_HEALTH_BAR_COLOR, onConfirm = applyBars, onChange = applyBars })
-        end
+        ST._AddAdvancedToggle(colorModeRow, "healthBarGradient", {}, true, {
+            build = function(panel)
+                if fillGradientEnabled == true then
+                    AddColorRow(panel, { label = "Full Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.full, indent = false, tbl = health, key = "healthBarFullColor", default = DEFAULT_HEALTH_BAR_FULL_COLOR, onConfirm = applyBars, onChange = applyBars })
+                    AddColorRow(panel, { label = "Half Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.half, indent = false, tbl = health, key = "healthBarHalfColor", default = DEFAULT_HEALTH_BAR_HALF_COLOR, onConfirm = applyBars, onChange = applyBars })
+                    AddColorRow(panel, { label = "Low Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.low, indent = false, tbl = health, key = "healthBarLowColor", default = DEFAULT_HEALTH_BAR_LOW_COLOR, onConfirm = applyBars, onChange = applyBars })
+                else
+                    AddColorRow(panel, { label = "Health Color", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.color, indent = false, tbl = health, key = "healthBarColor", default = DEFAULT_HEALTH_BAR_COLOR, onConfirm = applyBars, onChange = applyBars })
+                end
+            end,
+        })
         HealthResource.AddOpacitySlider(fillRight, health, "healthBarOpacity",
             "Health Opacity", DEFAULT_HEALTH_BAR_OPACITY, applyBars,
             RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill
@@ -920,26 +924,32 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         -- Same split as the fill section above, for the same reason.
         local missingLeft, missingRight = BeginRowGrid(container)
 
-        AddCheckboxRow(missingLeft, {
-            label = "Use Missing Health Gradient",
+        local colorModeRow = AddDropdownRow(missingLeft, {
+            label = "Missing Health Colors",
+            list = { solid = "Solid", gradient = "Gradient" },
+            order = { "solid", "gradient" },
             setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing
                 and RESOURCE_FINDER.primary.healthMissing.gradient,
-            value = gradientEnabled == true,
+            value = gradientEnabled == true and "gradient" or "solid",
             onChange = function(val)
-                health.healthBackgroundGradient = val == true
+                health.healthBackgroundGradient = val == "gradient"
                 applyBars()
                 CooldownCompanion:RefreshConfigPanel()
             end,
         })
 
-        if gradientEnabled == true then
-            AddColorRow(missingLeft, { label = "Missing Health Full", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.full, indent = true, tbl = health, key = "healthBackgroundFullColor", default = DEFAULT_HEALTH_BACKGROUND_FULL_COLOR, onConfirm = applyBars, onChange = applyBars })
-            AddColorRow(missingLeft, { label = "Missing Health Half", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.half, indent = true, tbl = health, key = "healthBackgroundHalfColor", default = DEFAULT_HEALTH_BACKGROUND_HALF_COLOR, onConfirm = applyBars, onChange = applyBars })
-            AddColorRow(missingLeft, { label = "Missing Health Low", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.low, indent = true, tbl = health, key = "healthBackgroundLowColor", default = DEFAULT_HEALTH_BACKGROUND_LOW_COLOR, onConfirm = applyBars, onChange = applyBars })
-        else
-            AddColorRow(missingLeft, { label = "Missing Health Color", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.color, indent = true, tbl = health, key = "healthBackgroundColor", default = DEFAULT_HEALTH_BACKGROUND_COLOR, onConfirm = applyBars, onChange = applyBars })
-        end
+        ST._AddAdvancedToggle(colorModeRow, "healthBackgroundGradient", {}, true, {
+            build = function(panel)
+                if gradientEnabled == true then
+                    AddColorRow(panel, { label = "Missing Health Full", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.full, indent = false, tbl = health, key = "healthBackgroundFullColor", default = DEFAULT_HEALTH_BACKGROUND_FULL_COLOR, onConfirm = applyBars, onChange = applyBars })
+                    AddColorRow(panel, { label = "Missing Health Half", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.half, indent = false, tbl = health, key = "healthBackgroundHalfColor", default = DEFAULT_HEALTH_BACKGROUND_HALF_COLOR, onConfirm = applyBars, onChange = applyBars })
+                    AddColorRow(panel, { label = "Missing Health Low", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.low, indent = false, tbl = health, key = "healthBackgroundLowColor", default = DEFAULT_HEALTH_BACKGROUND_LOW_COLOR, onConfirm = applyBars, onChange = applyBars })
+                else
+                    AddColorRow(panel, { label = "Missing Health Color", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.color, indent = false, tbl = health, key = "healthBackgroundColor", default = DEFAULT_HEALTH_BACKGROUND_COLOR, onConfirm = applyBars, onChange = applyBars })
+                end
 
+            end,
+        })
         HealthResource.AddOpacitySlider(missingRight, health, "healthBackgroundOpacity",
             "Missing Health Opacity", DEFAULT_HEALTH_BACKGROUND_OPACITY, applyBars,
             RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing
@@ -1414,7 +1424,7 @@ local function BuildResourceBarPositioningPanel(container)
             label = "Vertical Fill Direction",
             setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.placement
                 and RESOURCE_FINDER.primary.placement.verticalFill,
-            indent = true,
+            indent = false,
             list = {
                 bottom_to_top = "Bottom to Top",
                 top_to_bottom = "Top to Bottom",
@@ -2389,14 +2399,11 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
 
     local enabled = IsResourceAuraOverlayEnabledConfig(settings, powerType, specID)
 
-    -- LEFT column: which aura is tracked, on whom, and the Stack Lane
-    -- toggle. RIGHT column: the shared colour and the Border toggle with its
-    -- styling. Border and lane are INDEPENDENT (owner ruling 2026-08-02);
-    -- both halves are gated on the toggle at the head of the left one, so
-    -- the right side is empty until an aura is picked.
-    local auraLeft, auraRight = BeginRowGrid(container)
+    -- Tracking owns one editor. Border, fill and lane remain independent
+    -- choices inside it, all gated by the tracking feature.
+    local auraLeft = BeginRowGrid(container)
 
-    AddCheckboxRow(auraLeft, {
+    local trackingRow = AddCheckboxRow(auraLeft, {
         label = "Enable " .. resourceName .. " Aura Tracking",
         setting = finderAura and finderAura.enable,
         value = enabled,
@@ -2406,299 +2413,308 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
         end,
     })
 
-    if not enabled then return end
+    ST._AddAdvancedToggle(trackingRow, "rbAuraTracking_" .. tostring(powerType), {}, true, {
+        unlock = not enabled and { enable = {
+            label = "Turn On Aura Tracking",
+            run = function()
+                WriteSpecOverrideKey(settings, powerType, specID, "auraOverlayEnabled", true)
+                refresh()
+            end,
+        } } or nil,
+        build = function(panel)
+            local entry = GetResourceAuraOverlayEntry(settings, powerType, specID)
+            local spellID = entry and tonumber(entry.auraColorSpellID) or nil
 
-    local entry = GetResourceAuraOverlayEntry(settings, powerType, specID)
-    local spellID = entry and tonumber(entry.auraColorSpellID) or nil
-
-    if not spellID then
-        -- Commit one aura onto the entry. Shared by the autocomplete pick and
-        -- the typed Enter, so both land the same derived state.
-        local function CommitTrackedAura(id)
-            local target = EnsureResourceAuraOverlayEntry(settings, powerType, specID)
-            if not target then return false end
-            target.auraColorSpellID = id
-            -- Store the derived unit so the runtime's fallback starts right
-            -- for spells the client has not cached yet; the rebind pass
-            -- re-derives it from spell polarity every pass regardless.
-            target.auraUnit = ClassifyAuraSpellUnit(id) or "player"
-            return true
-        end
-
-        local auraAddBox
-        auraAddBox = AddEditBoxRow(auraLeft, {
-            label = "Aura by name or ID",
-            indent = true,
-            value = "",
-            onEnterPressed = function(text, widget)
-                -- The dropdown owns Enter while it has a highlighted row.
-                if CS.ConsumeAutocompleteEnter() then return end
-                CS.HideAutocomplete()
-                -- The tracked-aura resolver, not the identity one: a typed
-                -- name lands the applied-aura ID, matching a dropdown pick.
-                local id, blank = ResolveTrackedAuraSpellIDFromText(text)
-                if not id then
-                    -- Enter on an empty box is a no-op, not a failed lookup.
-                    if not blank then
-                        CooldownCompanion:Print("No spell found for that name or ID.")
-                    end
-                    return
+            if not spellID then
+                -- Commit one aura onto the entry. Shared by the autocomplete pick and
+                -- the typed Enter, so both land the same derived state.
+                local function CommitTrackedAura(id)
+                    local target = EnsureResourceAuraOverlayEntry(settings, powerType, specID)
+                    if not target then return false end
+                    target.auraColorSpellID = id
+                    -- Store the derived unit so the runtime's fallback starts right
+                    -- for spells the client has not cached yet; the rebind pass
+                    -- re-derives it from spell polarity every pass regardless.
+                    target.auraUnit = ClassifyAuraSpellUnit(id) or "player"
+                    return true
                 end
-                if not CommitTrackedAura(id) then return end
-                widget:SetText("")
-                refresh()
-            end,
-        })
 
-        -- Same aura-only suggestion list the icon entry's tracked-aura field
-        -- draws (RBP.BuildTrackedAuraAutocompleteCache): this field tracks an
-        -- aura, so plain spells would be noise.
-        auraAddBox:SetCallback("OnTextChanged", function(widget, _, text)
-            if text and #text >= 1 then
-                local results = CS.SearchAutocompleteInCache(text, BuildTrackedAuraAutocompleteCache())
-                CS.ShowAutocompleteResults(results, widget.editBoxWidget, function(entry)
-                    CS.HideAutocomplete()
-                    local id = entry and tonumber(entry.id) or nil
-                    if not id or not CommitTrackedAura(id) then return end
-                    auraAddBox:SetText("")
+                local auraAddBox
+                auraAddBox = AddEditBoxRow(panel, {
+                    label = "Aura by name or ID",
+                    indent = false,
+                    value = "",
+                    onEnterPressed = function(text, widget)
+                        -- The dropdown owns Enter while it has a highlighted row.
+                        if CS.ConsumeAutocompleteEnter() then return end
+                        CS.HideAutocomplete()
+                        -- The tracked-aura resolver, not the identity one: a typed
+                        -- name lands the applied-aura ID, matching a dropdown pick.
+                        local id, blank = ResolveTrackedAuraSpellIDFromText(text)
+                        if not id then
+                            -- Enter on an empty box is a no-op, not a failed lookup.
+                            if not blank then
+                                CooldownCompanion:Print("No spell found for that name or ID.")
+                            end
+                            return
+                        end
+                        if not CommitTrackedAura(id) then return end
+                        widget:SetText("")
+                        refresh()
+                    end,
+                })
+
+                -- Same aura-only suggestion list the icon entry's tracked-aura field
+                -- draws (RBP.BuildTrackedAuraAutocompleteCache): this field tracks an
+                -- aura, so plain spells would be noise.
+                auraAddBox:SetCallback("OnTextChanged", function(widget, _, text)
+                    if text and #text >= 1 then
+                        local results = CS.SearchAutocompleteInCache(text, BuildTrackedAuraAutocompleteCache())
+                        CS.ShowAutocompleteResults(results, widget.editBoxWidget, function(entry)
+                            CS.HideAutocomplete()
+                            local id = entry and tonumber(entry.id) or nil
+                            if not id or not CommitTrackedAura(id) then return end
+                            auraAddBox:SetText("")
+                            refresh()
+                        end, {
+                            requireExactNumericEnter = true,
+                            widthMultiplier = 2,
+                        })
+                    else
+                        CS.HideAutocomplete()
+                    end
+                end)
+                CS.SetupAutocompleteKeyHandler(auraAddBox)
+                return
+            end
+
+            -- The tracked aura presents an ITEM, not a setting: a CDC-LabelRow with
+            -- the spell's icon inlined into the label text (the row's label is a
+            -- FontString, so the icon rides an inline texture escape) and a Remove
+            -- link owned by the row's control column. This draws the same shape the
+            -- shared AddAuraCandidateRow now draws; it stays inline because the
+            -- overlay tracks ONE spell on auraColorSpellID rather than a candidate
+            -- list, so only what Remove clears differs. Worth folding into the shared
+            -- helper (it takes the remove action as a callback) if this file is opened
+            -- for other reasons.
+            local spellInfo = C_Spell.GetSpellInfo(spellID)
+            local spellName = spellInfo and spellInfo.name or ("Spell " .. spellID)
+            local spellIcon = C_Spell.GetSpellTexture(spellID) or 134400
+            local auraRow = AddLabelRow(panel, {
+                label = ("|T%d:16:16:0:0|t %s |cff999999(%d)|r"):format(spellIcon, spellName, spellID),
+                indent = false,
+            })
+
+            -- Right-justified so the word lands on the control column's right edge
+            -- like every other row's control. SetJustifyH is public API and the stock
+            -- Label resets it to LEFT in OnAcquire, so the pool stays clean.
+            local removeLabel = AceGUI:Create("InteractiveLabel")
+            -- The shared InteractiveLabel pool also serves the Navigator, whose rows
+            -- hang plain-child badges off the label FRAME (expand button, warning
+            -- meta, rename badge). Nothing hides those on release, so a reacquired
+            -- frame arrives wearing its previous tenant's badges — the badge-leak
+            -- class. Same clean-on-acquire call every Navigator site makes.
+            CleanRecycledEntry(removeLabel)
+            removeLabel:SetText("|cffff5555Remove|r")
+            removeLabel:SetWidth(60)
+            removeLabel:SetJustifyH("RIGHT")
+            removeLabel:SetCallback("OnClick", function()
+                local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
+                if target then
+                    target.auraColorSpellID = nil
+                    target.auraUnit = nil
+                end
+                refresh()
+            end)
+            auraRow:SetControlWidget(removeLabel)
+
+            local unit = ClassifyAuraSpellUnit(spellID) or "player"
+            AddLabelRow(panel, {
+                label = "Tracked on",
+                indent = false,
+                controlText = unit == "target" and "Target" or "You",
+            })
+
+            -- The Stack Lane is a fact about the TRACKING, so it lives with the
+            -- aura rows on the left, independent of the border (owner ruling
+            -- 2026-08-02: separate systems, any combination). It only exists where
+            -- the runtime can draw the lane; the stored key stays
+            -- auraColorTrackingMode ("stacks"/"active") so no config migrates.
+            if SupportsResourceAuraStackMode(powerType) then
+                local laneOn = RB.GetResourceOverlayTrackingMode(entry, powerType) == "stacks"
+
+                local laneRow = AddCheckboxRow(panel, {
+                    label = "Stack Lane",
+                    setting = finderAura and finderAura.stackLane,
+                    indent = false,
+                    value = laneOn,
+                    onChange = function(value)
+                        local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
+                        if not target then return end
+                        target.auraColorTrackingMode = value == true and "stacks" or "active"
+                        refresh()
+                    end,
+                })
+                -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+                -- onto the end of the row's label.
+                AnchorRowBadge(laneRow, CreateInfoButton(laneRow.frame, laneRow.frame, "LEFT", "LEFT", 0, 0, {
+                    "Stack Lane",
+                    {"Fills a lane along the bar as the aura's stacks build.", 1, 1, 1, true},
+                    " ",
+                    {"The maximum comes from the game's spell data. An aura that does not stack shows no lane.", 1, 1, 1, true},
+                }, laneRow))
+
+                if laneOn then
+                    local maxStacks = RB.ResolveResourceOverlayStackMax(entry, powerType)
+                    local inCombat = InCombatLockdown()
+
+                    -- Own colour per system (owner ruling 2026-08-02). New key;
+                    -- unset falls back to the border colour at render time, so the
+                    -- swatch shows the effective colour as its default.
+                    --
+                    -- Only where a lane can actually render. A nil max OUT of combat
+                    -- is a definitive "this aura doesn't stack" and the collector
+                    -- drops the lane, so the swatch would edit nothing. In combat a
+                    -- nil max only means UNREADABLE — the runtime still draws from
+                    -- its OOC cache — so the control has to stay.
+                    if maxStacks or inCombat then
+                        AddColorRow(panel, {
+                            label = "Lane Color",
+                            setting = finderAura and finderAura.laneColor,
+                            indent = false,
+                            tbl = entry,
+                            key = "auraLaneColor",
+                            default = RB.GetResourceOverlayLaneColor(entry),
+                            onConfirm = applyBars,
+                            onChange = previewOnly,
+                        })
+                    end
+
+                    local statusLabel = AceGUI:Create("Label")
+                    ST._ConfigureWrappedHelperLabel(statusLabel)
+                    if maxStacks then
+                        statusLabel:SetText("|cffffd100Stack lane:|r full at " .. maxStacks .. " stacks")
+                    elseif inCombat then
+                        statusLabel:SetText("|cffff9955The stack maximum can't be read in combat; it resolves when you leave combat.|r")
+                    else
+                        statusLabel:SetText("|cffff9955This aura doesn't stack, so the lane won't show.|r")
+                    end
+                    statusLabel:SetFullWidth(true)
+                    panel:AddChild(statusLabel)
+                end
+            end
+
+            -- The fill recolor is a fact about the BAR BODY, so it sits with the
+            -- lane on the left, independent of border and lane (each system its own
+            -- toggle and colour). Continuous shapes only: segment clusters have no
+            -- single fill for the tint to ride, so the rows only appear where the
+            -- runtime can draw them.
+            if RB.IsContinuousResourceShape(settings, powerType, specID) then
+                local fillOn = RB.IsResourceOverlayFillEnabled(entry)
+                local fillRow = AddCheckboxRow(panel, {
+                    label = "Recolor Fill",
+                    setting = finderAura and finderAura.recolor,
+                    indent = false,
+                    value = fillOn,
+                    onChange = function(value)
+                        local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
+                        if not target then return end
+                        -- Off is the shipped look; nil keeps pre-feature configs
+                        -- clean of the key.
+                        target.auraFillEnabled = value == true and true or nil
+                        refresh()
+                    end,
+                })
+                -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+                -- onto the end of the row's label.
+                AnchorRowBadge(fillRow, CreateInfoButton(fillRow.frame, fillRow.frame, "LEFT", "LEFT", 0, 0, {
+                    "Recolor Fill",
+                    {"Changes the bar's fill to this color while the aura is active.", 1, 1, 1, true},
+                }, fillRow))
+
+                if fillOn then
+                    AddColorRow(panel, {
+                        label = "Fill Color",
+                        setting = finderAura and finderAura.fillColor,
+                        indent = false,
+                        tbl = entry,
+                        key = "auraFillColor",
+                        default = RB.GetResourceOverlayFillColor(entry),
+                        onConfirm = applyBars,
+                        onChange = previewOnly,
+                    })
+                end
+            end
+
+            local borderOn = RB.IsResourceOverlayBorderEnabled(entry)
+            AddCheckboxRow(panel, {
+                label = "Border",
+                setting = finderAura and finderAura.border,
+                value = borderOn,
+                onChange = function(value)
+                    local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
+                    if not target then return end
+                    -- nil = on, so pre-toggle configs never carry the key. Written
+                    -- with an if: `x and nil or false` collapses to false both ways.
+                    if value == true then
+                        target.auraBorderEnabled = nil
+                    else
+                        target.auraBorderEnabled = false
+                    end
                     refresh()
-                end, {
-                    requireExactNumericEnter = true,
-                    widthMultiplier = 2,
-                })
-            else
-                CS.HideAutocomplete()
-            end
-        end)
-        CS.SetupAutocompleteKeyHandler(auraAddBox)
-        return
-    end
+                end,
+            })
 
-    -- The tracked aura presents an ITEM, not a setting: a CDC-LabelRow with
-    -- the spell's icon inlined into the label text (the row's label is a
-    -- FontString, so the icon rides an inline texture escape) and a Remove
-    -- link owned by the row's control column. This draws the same shape the
-    -- shared AddAuraCandidateRow now draws; it stays inline because the
-    -- overlay tracks ONE spell on auraColorSpellID rather than a candidate
-    -- list, so only what Remove clears differs. Worth folding into the shared
-    -- helper (it takes the remove action as a callback) if this file is opened
-    -- for other reasons.
-    local spellInfo = C_Spell.GetSpellInfo(spellID)
-    local spellName = spellInfo and spellInfo.name or ("Spell " .. spellID)
-    local spellIcon = C_Spell.GetSpellTexture(spellID) or 134400
-    local auraRow = AddLabelRow(auraLeft, {
-        label = ("|T%d:16:16:0:0|t %s |cff999999(%d)|r"):format(spellIcon, spellName, spellID),
-        indent = true,
-    })
+            if not borderOn then return end
 
-    -- Right-justified so the word lands on the control column's right edge
-    -- like every other row's control. SetJustifyH is public API and the stock
-    -- Label resets it to LEFT in OnAcquire, so the pool stays clean.
-    local removeLabel = AceGUI:Create("InteractiveLabel")
-    -- The shared InteractiveLabel pool also serves the Navigator, whose rows
-    -- hang plain-child badges off the label FRAME (expand button, warning
-    -- meta, rename badge). Nothing hides those on release, so a reacquired
-    -- frame arrives wearing its previous tenant's badges — the badge-leak
-    -- class. Same clean-on-acquire call every Navigator site makes.
-    CleanRecycledEntry(removeLabel)
-    removeLabel:SetText("|cffff5555Remove|r")
-    removeLabel:SetWidth(60)
-    removeLabel:SetJustifyH("RIGHT")
-    removeLabel:SetCallback("OnClick", function()
-        local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
-        if target then
-            target.auraColorSpellID = nil
-            target.auraUnit = nil
-        end
-        refresh()
-    end)
-    auraRow:SetControlWidget(removeLabel)
+            local borderStyle = RB.GetResourceOverlayBorderStyle(entry)
+            AddDropdownRow(panel, {
+                label = "Border Style",
+                setting = finderAura and finderAura.borderStyle,
+                indent = false,
+                list = { solid = "Solid Border", pixel = "Pixel Glow" },
+                order = { "solid", "pixel" },
+                value = borderStyle,
+                onChange = function(value)
+                    if value ~= "solid" and value ~= "pixel" then return end
+                    local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
+                    if not target then return end
+                    target.auraBorderStyle = value
+                    -- Size and speed change meaning per style (border px vs dash
+                    -- length; lap seconds), so a style switch resets the per-style
+                    -- keys to that style's defaults, like every glow dropdown.
+                    target.auraBorderSize = value == "pixel" and 12 or 2
+                    target.auraBorderSpeed = value == "pixel" and 2 or 0.5
+                    target.auraBorderLines = value == "pixel" and 5 or 2
+                    target.auraBorderThickness = value == "pixel" and 3 or 4
+                    refresh()
+                end,
+            })
 
-    local unit = ClassifyAuraSpellUnit(spellID) or "player"
-    AddLabelRow(auraLeft, {
-        label = "Tracked on",
-        indent = true,
-        controlText = unit == "target" and "Target" or "You",
-    })
-
-    -- The Stack Lane is a fact about the TRACKING, so it lives with the
-    -- aura rows on the left, independent of the border (owner ruling
-    -- 2026-08-02: separate systems, any combination). It only exists where
-    -- the runtime can draw the lane; the stored key stays
-    -- auraColorTrackingMode ("stacks"/"active") so no config migrates.
-    if SupportsResourceAuraStackMode(powerType) then
-        local laneOn = RB.GetResourceOverlayTrackingMode(entry, powerType) == "stacks"
-
-        local laneRow = AddCheckboxRow(auraLeft, {
-            label = "Stack Lane",
-            setting = finderAura and finderAura.stackLane,
-            indent = true,
-            value = laneOn,
-            onChange = function(value)
-                local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
-                if not target then return end
-                target.auraColorTrackingMode = value == true and "stacks" or "active"
-                refresh()
-            end,
-        })
-        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
-        -- onto the end of the row's label.
-        AnchorRowBadge(laneRow, CreateInfoButton(laneRow.frame, laneRow.frame, "LEFT", "LEFT", 0, 0, {
-            "Stack Lane",
-            {"Fills a lane along the bar as the aura's stacks build.", 1, 1, 1, true},
-            " ",
-            {"The maximum comes from the game's spell data. An aura that does not stack shows no lane.", 1, 1, 1, true},
-        }, laneRow))
-
-        if laneOn then
-            local maxStacks = RB.ResolveResourceOverlayStackMax(entry, powerType)
-            local inCombat = InCombatLockdown()
-
-            -- Own colour per system (owner ruling 2026-08-02). New key;
-            -- unset falls back to the border colour at render time, so the
-            -- swatch shows the effective colour as its default.
-            --
-            -- Only where a lane can actually render. A nil max OUT of combat
-            -- is a definitive "this aura doesn't stack" and the collector
-            -- drops the lane, so the swatch would edit nothing. In combat a
-            -- nil max only means UNREADABLE — the runtime still draws from
-            -- its OOC cache — so the control has to stay.
-            if maxStacks or inCombat then
-                AddColorRow(auraLeft, {
-                    label = "Lane Color",
-                    setting = finderAura and finderAura.laneColor,
-                    indent = true,
-                    tbl = entry,
-                    key = "auraLaneColor",
-                    default = RB.GetResourceOverlayLaneColor(entry),
-                    onConfirm = applyBars,
-                    onChange = previewOnly,
-                })
-            end
-
-            local statusLabel = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(statusLabel)
-            if maxStacks then
-                statusLabel:SetText("|cffffd100Stack lane:|r full at " .. maxStacks .. " stacks")
-            elseif inCombat then
-                statusLabel:SetText("|cffff9955The stack maximum can't be read in combat; it resolves when you leave combat.|r")
-            else
-                statusLabel:SetText("|cffff9955This aura doesn't stack, so the lane won't show.|r")
-            end
-            statusLabel:SetFullWidth(true)
-            auraLeft:AddChild(statusLabel)
-        end
-    end
-
-    -- The fill recolor is a fact about the BAR BODY, so it sits with the
-    -- lane on the left, independent of border and lane (each system its own
-    -- toggle and colour). Continuous shapes only: segment clusters have no
-    -- single fill for the tint to ride, so the rows only appear where the
-    -- runtime can draw them.
-    if RB.IsContinuousResourceShape(settings, powerType, specID) then
-        local fillOn = RB.IsResourceOverlayFillEnabled(entry)
-        local fillRow = AddCheckboxRow(auraLeft, {
-            label = "Recolor Fill",
-            setting = finderAura and finderAura.recolor,
-            indent = true,
-            value = fillOn,
-            onChange = function(value)
-                local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
-                if not target then return end
-                -- Off is the shipped look; nil keeps pre-feature configs
-                -- clean of the key.
-                target.auraFillEnabled = value == true and true or nil
-                refresh()
-            end,
-        })
-        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
-        -- onto the end of the row's label.
-        AnchorRowBadge(fillRow, CreateInfoButton(fillRow.frame, fillRow.frame, "LEFT", "LEFT", 0, 0, {
-            "Recolor Fill",
-            {"Changes the bar's fill to this color while the aura is active.", 1, 1, 1, true},
-        }, fillRow))
-
-        if fillOn then
-            AddColorRow(auraLeft, {
-                label = "Fill Color",
-                setting = finderAura and finderAura.fillColor,
-                indent = true,
+            -- Own colour per system (owner ruling 2026-08-02): this key stays
+            -- auraActiveColor — pre-split configs keep their border colour — and
+            -- the lane's own key falls back to it.
+            AddColorRow(panel, {
+                label = "Border Color",
+                setting = finderAura and finderAura.borderColor,
+                indent = false,
                 tbl = entry,
-                key = "auraFillColor",
-                default = RB.GetResourceOverlayFillColor(entry),
+                key = "auraActiveColor",
+                default = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR,
                 onConfirm = applyBars,
                 onChange = previewOnly,
             })
-        end
-    end
 
-    local borderOn = RB.IsResourceOverlayBorderEnabled(entry)
-    AddCheckboxRow(auraRight, {
-        label = "Border",
-        setting = finderAura and finderAura.border,
-        value = borderOn,
-        onChange = function(value)
-            local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
-            if not target then return end
-            -- nil = on, so pre-toggle configs never carry the key. Written
-            -- with an if: `x and nil or false` collapses to false both ways.
-            if value == true then
-                target.auraBorderEnabled = nil
-            else
-                target.auraBorderEnabled = false
-            end
-            refresh()
+            -- The style's own sliders, the same rows every other glow surface
+            -- draws ("pixel" renders as the kit's dashes shape, so it takes that
+            -- spec). Mirror-first here and nowhere else: the last argument is the
+            -- opt-in, and every non-resource caller leaves it off.
+            AddGlowSliderRows(panel, entry,
+                borderStyle == "pixel" and "dashes" or "solid",
+                AURA_BORDER_SLIDER_KEYS, applyBars, 1, true, previewOnly,
+                finderAura and finderAura.glow)
         end,
     })
-
-    if not borderOn then return end
-
-    local borderStyle = RB.GetResourceOverlayBorderStyle(entry)
-    AddDropdownRow(auraRight, {
-        label = "Border Style",
-        setting = finderAura and finderAura.borderStyle,
-        indent = true,
-        list = { solid = "Solid Border", pixel = "Pixel Glow" },
-        order = { "solid", "pixel" },
-        value = borderStyle,
-        onChange = function(value)
-            if value ~= "solid" and value ~= "pixel" then return end
-            local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
-            if not target then return end
-            target.auraBorderStyle = value
-            -- Size and speed change meaning per style (border px vs dash
-            -- length; lap seconds), so a style switch resets the per-style
-            -- keys to that style's defaults, like every glow dropdown.
-            target.auraBorderSize = value == "pixel" and 12 or 2
-            target.auraBorderSpeed = value == "pixel" and 2 or 0.5
-            target.auraBorderLines = value == "pixel" and 5 or 2
-            target.auraBorderThickness = value == "pixel" and 3 or 4
-            refresh()
-        end,
-    })
-
-    -- Own colour per system (owner ruling 2026-08-02): this key stays
-    -- auraActiveColor — pre-split configs keep their border colour — and
-    -- the lane's own key falls back to it.
-    AddColorRow(auraRight, {
-        label = "Border Color",
-        setting = finderAura and finderAura.borderColor,
-        indent = true,
-        tbl = entry,
-        key = "auraActiveColor",
-        default = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR,
-        onConfirm = applyBars,
-        onChange = previewOnly,
-    })
-
-    -- The style's own sliders, the same rows every other glow surface
-    -- draws ("pixel" renders as the kit's dashes shape, so it takes that
-    -- spec). Mirror-first here and nowhere else: the last argument is the
-    -- opt-in, and every non-resource caller leaves it off.
-    AddGlowSliderRows(auraRight, entry,
-        borderStyle == "pixel" and "dashes" or "solid",
-        AURA_BORDER_SLIDER_KEYS, applyBars, 1, true, previewOnly,
-        finderAura and finderAura.glow)
 end
 
 -- The max-stack border rows, shared by every stack-counted resource: the
@@ -2738,42 +2754,53 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
         {"Shows a border while " .. resourceName .. " is at full stacks.", 1, 1, 1, true},
     }, borderToggleRow))
 
-    if not borderOn then return end
-
-    local borderStyle = resource[keys.style] == "pixel" and "pixel" or "solid"
-    AddDropdownRow(column, {
-        label = "Border Style",
-        setting = finderStack and finderStack.maxStyle,
-        indent = true,
-        list = { solid = "Solid Border", pixel = "Pixel Glow" },
-        order = { "solid", "pixel" },
-        value = borderStyle,
-        onChange = function(value)
-            if value ~= "solid" and value ~= "pixel" then return end
-            resource[keys.style] = value
-            -- Per-style key resets, like every glow dropdown.
-            resource[keys.size] = value == "pixel" and 12 or 2
-            resource[keys.speed] = value == "pixel" and 2 or 0.5
-            resource[keys.lines] = value == "pixel" and 5 or 2
-            resource[keys.thickness] = value == "pixel" and 3 or 4
+    ST._AddAdvancedToggle(borderToggleRow, "rbMaxStackBorder_" .. tostring(finderPowerType), {}, true, {
+        unlock = not borderOn and { enable = { label = "Turn On Max Stack Border", run = function()
+            settings.resources = settings.resources or {}
+            settings.resources[powerType] = settings.resources[powerType] or {}
+            settings.resources[powerType][keys.enabled] = true
             applyRows()
-            C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
+            CooldownCompanion:RefreshConfigPanel()
+        end } } or nil,
+        build = function(panel)
+            local resource = resource or {}
+
+            local borderStyle = resource[keys.style] == "pixel" and "pixel" or "solid"
+            AddDropdownRow(panel, {
+                label = "Border Style",
+                setting = finderStack and finderStack.maxStyle,
+                indent = false,
+                list = { solid = "Solid Border", pixel = "Pixel Glow" },
+                order = { "solid", "pixel" },
+                value = borderStyle,
+                onChange = function(value)
+                    if value ~= "solid" and value ~= "pixel" then return end
+                    resource[keys.style] = value
+                    -- Per-style key resets, like every glow dropdown.
+                    resource[keys.size] = value == "pixel" and 12 or 2
+                    resource[keys.speed] = value == "pixel" and 2 or 0.5
+                    resource[keys.lines] = value == "pixel" and 5 or 2
+                    resource[keys.thickness] = value == "pixel" and 3 or 4
+                    applyRows()
+                    C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
+                end,
+            })
+            AddColorRow(panel, {
+                label = "Border Color",
+                setting = finderStack and finderStack.maxColor,
+                indent = false,
+                tbl = resource,
+                key = keys.color,
+                default = RB.DEFAULT_MW_MAX_STACK_BORDER_COLOR,
+                onConfirm = applyRows,
+                onChange = previewOnly,
+            })
+            AddGlowSliderRows(panel, resource,
+                borderStyle == "pixel" and "dashes" or "solid",
+                keys, applyRows, 1, true, previewOnly,
+                finderStack and finderStack.maxGlow)
         end,
     })
-    AddColorRow(column, {
-        label = "Border Color",
-        setting = finderStack and finderStack.maxColor,
-        indent = true,
-        tbl = resource,
-        key = keys.color,
-        default = RB.DEFAULT_MW_MAX_STACK_BORDER_COLOR,
-        onConfirm = applyRows,
-        onChange = previewOnly,
-    })
-    AddGlowSliderRows(column, resource,
-        borderStyle == "pixel" and "dashes" or "solid",
-        keys, applyRows, 1, true, previewOnly,
-        finderStack and finderStack.maxGlow)
 end
 
 local function BuildResourceBarStylingPanel(container, sectionMode, opts)
@@ -3009,25 +3036,27 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     end)
 
     -- Brightness slider (only for Blizzard Class texture)
-    if effectiveBarTextureName == "blizzard_class" then
-        local brightnessLocked = ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked()
-        AddMirrorFirstSliderRow(barLeft, {
-            label = "Class Texture Brightness",
-            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.bar
-                and RESOURCE_FINDER.primary.bar.brightness,
-            indent = true,
-            min = 0.5, max = 2.0, step = 0.1,
-            value = displayProfile.classBarBrightness or settings.classBarBrightness or 1.3,
-            disabled = brightnessLocked,
-            set = function(val)
-                if ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked() then return end
-                displayProfile.classBarBrightness = val
-            end,
-            apply = applyBars,
-            stateOwner = displayProfile,
-            stateKeys = "classBarBrightness",
-        })
-    end
+    ST._AddAdvancedToggle(texRow, "rbClassTexture", {}, effectiveBarTextureName == "blizzard_class", {
+        build = function(panel)
+            local brightnessLocked = ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked()
+            AddMirrorFirstSliderRow(panel, {
+                label = "Class Texture Brightness",
+                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.bar
+                    and RESOURCE_FINDER.primary.bar.brightness,
+                indent = false,
+                min = 0.5, max = 2.0, step = 0.1,
+                value = displayProfile.classBarBrightness or settings.classBarBrightness or 1.3,
+                disabled = brightnessLocked,
+                set = function(val)
+                    if ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked() then return end
+                    displayProfile.classBarBrightness = val
+                end,
+                apply = applyBars,
+                stateOwner = displayProfile,
+                stateKeys = "classBarBrightness",
+            })
+        end,
+    })
 
     local smoothingRow = AddDropdownRow(barRight, {
         label = "Segmented Smoothing",
@@ -3078,7 +3107,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     -- above, so both end early when the border is off.
     local borderLeft, borderRight = BeginRowGrid(container)
 
-    AddDropdownRow(borderLeft, {
+    local borderRow = AddDropdownRow(borderLeft, {
         label = "Border Style",
         setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.border
             and RESOURCE_FINDER.primary.border.style,
@@ -3095,49 +3124,51 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         end,
     })
 
-    if (displayProfile.borderStyle or settings.borderStyle or "pixel") == "pixel" then
-        AddColorRow(borderLeft, {
-            label = "Border Color",
-            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.border
-                and RESOURCE_FINDER.primary.border.color,
-            indent = true,
-            tbl = displayProfile,
-            key = "borderColor",
-            default = { 0, 0, 0, 1 },
-            hasAlpha = true,
-            onConfirm = applyBars,
-            onChange = previewOnly,
-        })
-
-        local renderMode = ST._AddBorderRenderModeDropdown(borderRight, displayProfile, "borderRenderMode", function()
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RefreshConfigPanel()
-        end, nil, {
-            row = true,
-            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.border
-                and RESOURCE_FINDER.primary.border.thickness,
-        })
-        local borderThicknessLocked = ST.IsBorderThicknessLocked()
-
-        if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-            AddMirrorFirstSliderRow(borderRight, {
-                label = "Border Size",
+    ST._AddAdvancedToggle(borderRow, "rbBorder", {}, (displayProfile.borderStyle or settings.borderStyle or "pixel") == "pixel", {
+        build = function(panel)
+            AddColorRow(panel, {
+                label = "Border Color",
                 setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.border
-                    and RESOURCE_FINDER.primary.border.size,
-                indent = true,
-                min = 0, max = 4, step = 0.1,
-                value = displayProfile.borderSize or settings.borderSize or 1,
-                disabled = borderThicknessLocked,
-                set = function(val)
-                    if borderThicknessLocked then return end
-                    displayProfile.borderSize = val
-                end,
-                apply = applyBars,
-                stateOwner = displayProfile,
-                stateKeys = "borderSize",
+                    and RESOURCE_FINDER.primary.border.color,
+                indent = false,
+                tbl = displayProfile,
+                key = "borderColor",
+                default = { 0, 0, 0, 1 },
+                hasAlpha = true,
+                onConfirm = applyBars,
+                onChange = previewOnly,
             })
-        end
-    end
+
+            local renderMode = ST._AddBorderRenderModeDropdown(panel, displayProfile, "borderRenderMode", function()
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:RefreshConfigPanel()
+            end, nil, {
+                row = true,
+                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.border
+                    and RESOURCE_FINDER.primary.border.thickness,
+            })
+            local borderThicknessLocked = ST.IsBorderThicknessLocked()
+
+            if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+                AddMirrorFirstSliderRow(panel, {
+                    label = "Border Size",
+                    setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.border
+                        and RESOURCE_FINDER.primary.border.size,
+                    indent = false,
+                    min = 0, max = 4, step = 0.1,
+                    value = displayProfile.borderSize or settings.borderSize or 1,
+                    disabled = borderThicknessLocked,
+                    set = function(val)
+                        if borderThicknessLocked then return end
+                        displayProfile.borderSize = val
+                    end,
+                    apply = applyBars,
+                    stateOwner = displayProfile,
+                    stateKeys = "borderSize",
+                })
+            end
+        end,
+    })
     end -- not borderCollapsed
     end
 
@@ -3943,7 +3974,7 @@ if ST._DefineSettingRoute then
         applies = RESOURCE_FINDER.BarsEnabled,
     }):Settings({
         texture = { label = "Bar Texture", aliases = { "statusbar texture" } },
-        brightness = {
+        brightness = { advancedKey = "rbClassTexture",
             label = "Class Texture Brightness",
             applies = function(context)
                 return RESOURCE_FINDER.EffectiveTexture(context) == "blizzard_class"
@@ -3966,7 +3997,7 @@ if ST._DefineSettingRoute then
         applies = RESOURCE_FINDER.BarsEnabled,
     }):Settings({
         style = { label = "Border Style" },
-        color = {
+        color = { advancedKey = "rbBorder",
             label = "Border Color",
             applies = function(context)
                 local settings = RESOURCE_FINDER.Settings(context)
@@ -3975,7 +4006,7 @@ if ST._DefineSettingRoute then
                     or settings and settings.borderStyle or "pixel") == "pixel"
             end,
         },
-        thickness = {
+        thickness = { advancedKey = "rbBorder",
             label = "Border Thickness",
             applies = function(context)
                 local settings = RESOURCE_FINDER.Settings(context)
@@ -3984,7 +4015,7 @@ if ST._DefineSettingRoute then
                     or settings and settings.borderStyle or "pixel") == "pixel"
             end,
         },
-        size = {
+        size = { advancedKey = "rbBorder",
             label = "Border Size",
             applies = function(context)
                 local settings = RESOURCE_FINDER.Settings(context)
@@ -4017,8 +4048,8 @@ if ST._DefineSettingRoute then
             applies = healthApplies,
         })
         RESOURCE_FINDER.primary.healthFill = healthRoute:Settings({
-            gradient = { label = "Use Health Gradient" },
-            full = {
+            gradient = { label = "Health Colors", aliases = { "Use Health Gradient" } },
+            full = { advancedKey = "healthBarGradient",
                 label = "Full Health",
                 applies = function(context)
                     return RESOURCE_FINDER.ReadResourceValue(
@@ -4026,7 +4057,7 @@ if ST._DefineSettingRoute then
                         DEFAULT_HEALTH_BAR_GRADIENT) == true
                 end,
             },
-            half = {
+            half = { advancedKey = "healthBarGradient",
                 label = "Half Health",
                 applies = function(context)
                     return RESOURCE_FINDER.ReadResourceValue(
@@ -4034,7 +4065,7 @@ if ST._DefineSettingRoute then
                         DEFAULT_HEALTH_BAR_GRADIENT) == true
                 end,
             },
-            low = {
+            low = { advancedKey = "healthBarGradient",
                 label = "Low Health",
                 applies = function(context)
                     return RESOURCE_FINDER.ReadResourceValue(
@@ -4042,7 +4073,7 @@ if ST._DefineSettingRoute then
                         DEFAULT_HEALTH_BAR_GRADIENT) == true
                 end,
             },
-            color = {
+            color = { advancedKey = "healthBarGradient",
                 label = "Health Color",
                 applies = function(context)
                     return RESOURCE_FINDER.ReadResourceValue(
@@ -4065,8 +4096,8 @@ if ST._DefineSettingRoute then
             collapseStore = "resource",
             applies = healthApplies,
         }):Settings({
-            gradient = { label = "Use Missing Health Gradient" },
-            full = {
+            gradient = { label = "Missing Health Colors", aliases = { "Use Missing Health Gradient" } },
+            full = { advancedKey = "healthBackgroundGradient",
                 label = "Missing Health Full",
                 applies = function(context)
                     return RESOURCE_FINDER.ReadResourceValue(
@@ -4074,7 +4105,7 @@ if ST._DefineSettingRoute then
                         DEFAULT_HEALTH_BACKGROUND_GRADIENT) == true
                 end,
             },
-            half = {
+            half = { advancedKey = "healthBackgroundGradient",
                 label = "Missing Health Half",
                 applies = function(context)
                     return RESOURCE_FINDER.ReadResourceValue(
@@ -4082,7 +4113,7 @@ if ST._DefineSettingRoute then
                         DEFAULT_HEALTH_BACKGROUND_GRADIENT) == true
                 end,
             },
-            low = {
+            low = { advancedKey = "healthBackgroundGradient",
                 label = "Missing Health Low",
                 applies = function(context)
                     return RESOURCE_FINDER.ReadResourceValue(
@@ -4090,7 +4121,7 @@ if ST._DefineSettingRoute then
                         DEFAULT_HEALTH_BACKGROUND_GRADIENT) == true
                 end,
             },
-            color = {
+            color = { advancedKey = "healthBackgroundGradient",
                 label = "Missing Health Color",
                 applies = function(context)
                     return RESOURCE_FINDER.ReadResourceValue(
@@ -4286,41 +4317,43 @@ if ST._DefineSettingRoute then
                     label = "Max Stack Border",
                 })
                 detail.stack.maxStyle = stackRoute:Setting({
+                    advancedKey = "rbMaxStackBorder_" .. tostring(capturedPowerType),
                     key = "max_style",
                     label = "Border Style",
                     applies = RESOURCE_FINDER.MaxBorderEnabled,
                 })
                 detail.stack.maxColor = stackRoute:Setting({
+                    advancedKey = "rbMaxStackBorder_" .. tostring(capturedPowerType),
                     key = "max_color",
                     label = "Border Color",
                     applies = RESOURCE_FINDER.MaxBorderEnabled,
                 })
                 detail.stack.maxGlow = stackRoute:Settings({
-                    borderSize = {
+                    borderSize = { advancedKey = "rbMaxStackBorder_" .. tostring(capturedPowerType),
                         label = "Border Size",
                         applies = function(context)
                             return RESOURCE_FINDER.MaxBorderStyleIs(context, "solid")
                         end,
                     },
-                    dashLength = {
+                    dashLength = { advancedKey = "rbMaxStackBorder_" .. tostring(capturedPowerType),
                         label = "Dash Length",
                         applies = function(context)
                             return RESOURCE_FINDER.MaxBorderStyleIs(context, "pixel")
                         end,
                     },
-                    dashThickness = {
+                    dashThickness = { advancedKey = "rbMaxStackBorder_" .. tostring(capturedPowerType),
                         label = "Dash Thickness",
                         applies = function(context)
                             return RESOURCE_FINDER.MaxBorderStyleIs(context, "pixel")
                         end,
                     },
-                    dashCount = {
+                    dashCount = { advancedKey = "rbMaxStackBorder_" .. tostring(capturedPowerType),
                         label = "Number of Dashes",
                         applies = function(context)
                             return RESOURCE_FINDER.MaxBorderStyleIs(context, "pixel")
                         end,
                     },
-                    lapDuration = {
+                    lapDuration = { advancedKey = "rbMaxStackBorder_" .. tostring(capturedPowerType),
                         label = "Lap Duration",
                         applies = function(context)
                             return RESOURCE_FINDER.MaxBorderStyleIs(context, "pixel")
@@ -4615,6 +4648,7 @@ if ST._DefineSettingRoute then
                 sectionLabel = "Aura Tracking",
                 collapseKeys = { "rb_aura_overlay_" .. tostring(capturedPowerType) },
                 collapseStore = "resource",
+                advancedKey = "rbAuraTracking_" .. tostring(capturedPowerType),
                 applies = function(context)
                     return appliesPower(context)
                         and RESOURCE_FINDER.AuraEnabled(context)

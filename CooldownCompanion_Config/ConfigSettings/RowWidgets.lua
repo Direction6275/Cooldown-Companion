@@ -112,7 +112,7 @@ local ROW_GRID_TYPE     = "CDC-RowGrid"
 local ROW_GRID_COL_TYPE = "CDC-RowGridColumn"
 local INLINE_SETTINGS_TYPE = "CDC-InlineSettings"
 local INLINE_PADDING = 6
-local ROW_WIDGET_VERSION = 2
+local ROW_WIDGET_VERSION = 4
 
 -- Flip to true to trace every grid layout pass to chat. Left in deliberately:
 -- the resize bug this template was hardened against was never reproduced from
@@ -179,7 +179,7 @@ local function ApplyLabelColor(self)
         color = LABEL_DISABLED_COLOR
     elseif self.captioned then
         color = LABEL_CAPTION_COLOR
-    elseif self.indented then
+    elseif self.indented or self.advancedSetting then
         color = LABEL_CHILD_COLOR
     end
     self.rowLabel:SetTextColor(color[1], color[2], color[3])
@@ -218,14 +218,14 @@ end
 -- and the only one is the control overlay below. The row frame's own OnEnter
 -- never passes it, so a greyed row's label and empty middle say nothing about
 -- scope (owner ruling 2026-08-14: the row-wide hover was tooltip soup).
-local function ShowRowTooltip(self, includeScope, disclosureHint)
+local function ShowRowTooltip(self, includeScope, disclosureHint, owner)
     local lines = self.tooltipLines
     local range = self.rangeTooltip
     local scope = includeScope and self.scopeTooltipLines or nil
     local hasOwn = range or (lines and lines[1])
     if not (hasOwn or (scope and scope[1]) or disclosureHint) then return end
 
-    GameTooltip:SetOwner(self.frame, "ANCHOR_RIGHT")
+    GameTooltip:SetOwner(owner or self.frame, "ANCHOR_RIGHT")
     if lines then
         AddRowTooltipLines(lines)
     end
@@ -360,9 +360,17 @@ end
 -- Methods every row type shares. Copied into each type's method table so the
 -- widgets stay plain AceGUI widgets with no extra metatable layer.
 local sharedMethods = {
-    ["SetSettingsDisclosure"] = function(self, onClick, getHint)
+    -- Name and gear share the row's help and hint at one stable anchor.
+    ["ShowSettingsDisclosureTooltip"] = function(self)
+        if self.settingsDisclosureHint then
+            ShowRowTooltip(self, false, self.settingsDisclosureHint(), self.settingsDisclosureTooltipOwner)
+        end
+    end,
+
+    ["SetSettingsDisclosure"] = function(self, onClick, getHint, tooltipOwner)
         self.settingsDisclosure = onClick
         self.settingsDisclosureHint = getHint
+        self.settingsDisclosureTooltipOwner = tooltipOwner
         self.settingsDisclosureHovered = nil
         local target = self.settingsDisclosureTarget
         if not onClick then
@@ -387,7 +395,7 @@ local sharedMethods = {
         target:SetScript("OnEnter", function()
             self.settingsDisclosureHovered = true
             ApplyLabelColor(self)
-            ShowRowTooltip(self, false, self.settingsDisclosureHint())
+            self:ShowSettingsDisclosureTooltip()
             self:Fire("OnEnter")
         end)
         target:SetScript("OnLeave", function()
@@ -407,6 +415,11 @@ local sharedMethods = {
 
     ["GetLabel"] = function(self)
         return self.rowLabel:GetText()
+    end,
+
+    ["SetAdvancedSetting"] = function(self, advanced)
+        self.advancedSetting = advanced == true
+        ApplyLabelColor(self)
     end,
 
     ["SetIndent"] = function(self, indent)
@@ -480,6 +493,7 @@ local function ResetRowBase(self)
     self:SetSettingsDisclosure(nil)
     self.disabled = false
     self.indented = false
+    self.advancedSetting = false
     self.tooltipLines = nil
     self.scopeControlAction = nil
     -- Through the setter, not the field: this is also what parks a scope
