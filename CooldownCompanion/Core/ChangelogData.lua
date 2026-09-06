@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.5.2",
         "2.5.1",
         "2.5",
         "2.4",
@@ -37,6 +38,32 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.5.2"] = {
+            markdown = [[
+## New Features
+
+- **Bar text positioning:** Choose from nine anchors, including Center, and fine-tune horizontal and vertical offsets for names and cooldown/ready text. Set panel defaults or customize individual entries, and position Aura Duration separately when needed.
+- **Custom bar text positioning:** Position Duration and Stack/Count text independently. Automatic keeps the existing layout.
+- **Ready Glow usability filter:** Enable Only While Usable to show Ready Glow only when the spell or item is usable. This optional setting is off by default.
+
+## Polish | QoL
+
+- **Advanced settings in place:** Click a setting name or gear to expand its options directly beneath it. Related controls stay together, with one editor open at a time and checkboxes working independently.
+- **Smoother settings navigation:** Expanded options scroll into view, and changing settings preserves your scroll position. Settings Finder and preview shortcuts open the right editor reliably, while narrow layouts keep setting names readable with full details in tooltips.
+- **Easier first-time setup:** Empty profiles open a welcome page with New Group as the main action. Optional Modules appears below groups and starts collapsed when all modules are disabled.
+- **Clearer empty groups:** Eligible groups and panels stay in the normal Navigator section before you add entries. Empty groups show an Empty badge, and panel counts make room for group names in narrow layouts.
+
+## Bug Fixes
+
+- **Cursor-anchored panel movement:** Unlock panels through the Navigator menu or middle-click and manage them in the unlock toolbar. Panels stay visible while dragging, mover previews clear correctly afterward, and selecting a locked panel no longer shows a dummy cursor.
+- **Stable panel positioning:** Adding, removing, hiding, or resizing sections and changing compact layouts no longer cause panel position drift. Offsets and snapping consistently use the base icon grid. Existing offset numbers may change once to preserve the visible base position.
+- **Count text without an icon:** Bar count text now respects its saved anchor and offsets when the icon is hidden.
+
+## Development
+
+- **Smaller bug reports:** Standard reports focus on your character's class across all specs while retaining related settings. Generate Full Profile Bug Report includes every class and character when needed. Incomplete or altered reports show clearer errors, and scoped reports cannot replace an entire profile.
+]],
+        },
         ["2.5.1"] = {
             markdown = [[
 ## Polish | QoL
