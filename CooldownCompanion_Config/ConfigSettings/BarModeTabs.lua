@@ -17,6 +17,7 @@ local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local AddAnchorDropdown = ST._AddAnchorDropdown
+local AddBarTextPositionControls = ST._AddBarTextPositionControls
 local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
 local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
@@ -211,7 +212,7 @@ end
 
 -- The Cooldown Text ROW is left out on an Aura Panel (BuildBarAppearanceTab's
 -- `if not isAuraPanel`): nothing there has a cooldown, so the toggle is dead and
--- Duration Format remains a shared row in the duration options; Flip Time Text
+-- Duration Format remains a shared row in the duration options; time placement
 -- and the two time-text offsets move under the aura duration text they place. The
 -- section itself stays usable, so this is an `available` predicate rather than a
 -- denial in ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS. Without it the
@@ -432,16 +433,8 @@ local function ResolveSelectedGroupStyle()
     return group and group.style or nil
 end
 
-local function MakeBarCooldownTextAdvancedDescriptor(styleTable, finderSettings, isEntryOverride)
+local function MakeBarCooldownTextAdvancedDescriptor(styleTable, finderSettings)
     local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
-    -- Panel scope hands this factory NO table, so the panel keeps resolving
-    -- the live group style itself. isEntryOverride is passed EXPLICITLY
-    -- (review finding 2026-08-31), never inferred from the table: the
-    -- inherited read-only view also hands a table (the effective read), and
-    -- inferring entry-ness from it dropped the panel-owned rows (Flip Time
-    -- Text, the offsets) from a view that should show them greyed - the
-    -- sibling Name Text panel keeps its panel-owned rows in that state.
-    isEntryOverride = isEntryOverride == true
     return {
         settingKey = "barCooldownText",
         title = "Cooldown Text Advanced",
@@ -449,37 +442,6 @@ local function MakeBarCooldownTextAdvancedDescriptor(styleTable, finderSettings,
             local style = styleTable or ResolveSelectedGroupStyle()
             if not style then
                 return
-            end
-
-            -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow
-            -- column, so every row goes straight onto the panel scroll and each
-            -- shared builder runs with { row = true } and no rightColumn.
-            --
-            -- Flip Time Text and the two offsets are NOT cooldownText keys
-            -- (ST.OVERRIDE_SECTIONS in Defaults.lua): they are bar-wide, and
-            -- the time text position is shared with ready text. So they are
-            -- drawn only while this panel edits the panel style. Writing them
-            -- into an entry's override store would leave keys behind that
-            -- RevertSection cannot clear. Duration Format has the same problem
-            -- and answers it the other way: it stays panel-owned and labeled
-            -- rather than hidden (see the row in the Duration Text section).
-            if not isEntryOverride then
-                local flipTimeRow = AddCheckboxRow(panel, {
-                    label = "Flip Time Text",
-                    setting = finderSettings and finderSettings.flip,
-                    value = style.barTimeTextReverse or false,
-                    onChange = function(val)
-                        style.barTimeTextReverse = val or nil
-                        refreshStyle()
-                    end,
-                })
-
-                -- (?) tooltip for Flip Time Text. Anchor args are a placeholder -
-                -- AnchorRowBadge re-points the button onto the end of the label.
-                AnchorRowBadge(flipTimeRow, CreateInfoButton(flipTimeRow.frame, flipTimeRow.frame, "LEFT", "LEFT", 0, 0, {
-                    "Flip Time Text",
-                    {"Applies to all time-based text, including cooldown time and ready text.", 1, 1, 1, true},
-                }, flipTimeRow))
             end
 
             AddFontControls(panel, style, "cooldown", {sizeMin = 6, sizeMax = 24}, refreshStyle, {
@@ -501,15 +463,14 @@ local function MakeBarCooldownTextAdvancedDescriptor(styleTable, finderSettings,
                 onConfirm = refreshStyle,
                 onChange = refreshStyle,
             })
-            if not isEntryOverride then
-                AddOffsetSliders(panel, style, "barCdTextOffsetX", "barCdTextOffsetY", {range = 50}, refreshStyle, {
-                    row = true,
-                    settings = finderSettings and {
-                        x = finderSettings.xOffset,
-                        y = finderSettings.yOffset,
-                    },
+            local anchorRow = AddBarTextPositionControls(panel, style,
+                "barTimeTextAnchor", "barCdTextOffsetX", "barCdTextOffsetY", refreshStyle, {
+                    automatic = true, settings = finderSettings,
                 })
-            end
+            AnchorRowBadge(anchorRow, CreateInfoButton(anchorRow.frame, anchorRow.frame, "LEFT", "LEFT", 0, 0, {
+                "Time Text Position",
+                {"Cooldown and Ready text share this position. Aura Duration follows it unless Independent Position is enabled. Automatic keeps the bar's original placement.", 1, 1, 1, true},
+            }, anchorRow))
         end,
     }
 end
@@ -533,7 +494,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     -- An Aura Panel bar draws no cooldown text (nothing on it has a cooldown),
     -- so the Text & Icon section drops that toggle and re-homes the rows under
-    -- it that DO still work - Duration Format, Flip Time Text and the two
+    -- it that DO still work - Duration Format, Time text positioning and the two
     -- time-text offsets - under the aura duration text they actually place
     -- (owner ruling 2026-08-15).
     local isAuraPanel = ST.IsAuraPanelGroup(group)
@@ -1108,17 +1069,6 @@ local function BuildBarAppearanceTab(container, group, style)
 
     -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
     local function BuildBarNameTextAdvanced(panel)
-        AddCheckboxRow(panel, {
-            label = "Flip Name Text",
-            setting = BAR_FINDER.advanced.name and BAR_FINDER.advanced.name.flip,
-            value = nameSec.read.barNameTextReverse or false,
-            onChange = function(val)
-                -- Explicit false for an override store; see Flip Icon Side.
-                nameSec.write.barNameTextReverse = nameSec:BoolValue(val)
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end,
-        })
-
         AddFontControls(panel, nameSec.tbl, "barName", {sizeMin = 6, sizeMax = 24, size = 10}, refreshStyle, {
             row = true,
             settings = BAR_FINDER.advanced.name and {
@@ -1139,22 +1089,10 @@ local function BuildBarAppearanceTab(container, group, style)
             onConfirm = refreshStyle,
             onChange = refreshStyle,
         })
-        -- barNameTextOffsetX/Y are not one of this section's override keys, so
-        -- the rows are openly PANEL-OWNED: they read and write group.style
-        -- whatever the lens shows, and stay live when an entry owns the
-        -- section. They used to hide themselves once the section was
-        -- customized, which stranded the setting on some other selection
-        -- state. Duration Format answers the same problem the same way (see
-        -- the row in the Duration Text section).
-        local offsetXRow, offsetYRow = AddOffsetSliders(panel, group.style, "barNameTextOffsetX", "barNameTextOffsetY", {range = 50}, refreshStyle, {
-            row = true,
-            settings = BAR_FINDER.advanced.name and {
-                x = BAR_FINDER.advanced.name.xOffset,
-                y = BAR_FINDER.advanced.name.yOffset,
-            },
-        })
-        nameSec:PanelRowChrome(offsetXRow)
-        nameSec:PanelRowChrome(offsetYRow)
+        AddBarTextPositionControls(panel, nameSec.tbl,
+            "barNameTextAnchor", "barNameTextOffsetX", "barNameTextOffsetY", refreshStyle, {
+                automatic = true, settings = BAR_FINDER.advanced.name, disabled = nameSec.disabled,
+            })
     end
 
     if nameSec.scope ~= "denied" then
@@ -1171,7 +1109,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     -- Show Cooldown Text toggle. An Aura Panel bar has no cooldown to count
     -- down, so the toggle itself is dead there and is left out; everything live
-    -- that hung off it (Duration Format, Flip Time Text, the two time-text
+    -- that hung off it (Duration Format, time text positioning, the two time-text
     -- offsets) moves into the aura duration text section on the right.
     if not isAuraPanel then
     local cdTextSec = BeginLensSection(lens, group, "cooldownText", { column = durationLeft })
@@ -1197,8 +1135,7 @@ local function BuildBarAppearanceTab(container, group, style)
         local barCdTextAdvanced = MakeBarCooldownTextAdvancedDescriptor(
             cdTextSec.scope == "customized" and cdTextSec.write
                 or cdTextSec.write == nil and cdTextSec.read or nil,
-            BAR_FINDER.advanced.cooldown,
-            cdTextSec.scope == "customized")
+            BAR_FINDER.advanced.cooldown)
 
         AddAdvancedToggle(showTimeRow, barCdTextAdvanced.settingKey, tabInfoButtons, true, {
             title = barCdTextAdvanced.title,
@@ -1400,8 +1337,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- combat end with the one-time note when needed.
     if GroupHasAuraTrackingEntry(group) then
         -- Aura duration text: rendered by the aura display at the bar's time
-        -- text position (it follows the Flip Time Text and offset settings
-        -- from the Cooldown Text section).
+        -- text position by default, with optional independent placement.
         local auraTextSec = BeginLensSection(lens, group, "auraText", { column = durationRight })
 
         local auraTextRow = AddCheckboxRow(durationRight, {
@@ -1450,38 +1386,35 @@ local function BuildBarAppearanceTab(container, group, style)
                 onChange = refreshStyle,
             })
 
-            -- The re-homed position rows. Same STORAGE KEYS as before - the aura
-            -- display places this text from barTimeTextReverse and
-            -- barCdTextOffsetX/Y (AuraDisplay.lua's bar branch) - so nothing is
-            -- migrated; only where they are edited moves.
-            --
-            -- They write group.style rather than this section's store, exactly as
-            -- they did under the Cooldown Text gear: the keys are bar-wide and
-            -- belong to no override section, so a copy inside the auraText store
-            -- would be keys RevertSection cannot clear. Openly PANEL-OWNED, with
-            -- the grey "Panel setting" label, the way the bar name offsets and
-            -- Duration Format already answer this.
-            if isAuraPanel then
-                local panelStyle = group.style
-                local flipRow = AddCheckboxRow(panel, {
-                    label = "Flip Time Text",
-                    setting = BAR_FINDER.advanced.auraText and BAR_FINDER.advanced.auraText.flip,
-                    value = panelStyle.barTimeTextReverse or false,
-                    onChange = function(val)
-                        panelStyle.barTimeTextReverse = val or nil
+            if not isAuraPanel then
+                AddCheckboxRow(panel, {
+                    label = "Independent Position",
+                    setting = BAR_FINDER.advanced.auraText.independent,
+                    value = auraTextSec.read.barAuraTextIndependent == true,
+                    disabled = auraTextSec.disabled,
+                    onChange = function(value)
+                        if not auraTextSec.write then return end
+                        ST.BarTextLayout.SetAuraIndependent(auraTextSec.write,
+                            auraTextSec.read, group.style.barFillVertical, value)
                         refreshStyle()
+                        CooldownCompanion:RefreshConfigPanel()
                     end,
                 })
-                local offsetXRow, offsetYRow = AddOffsetSliders(panel, panelStyle, "barCdTextOffsetX", "barCdTextOffsetY", {range = 50}, refreshStyle, {
-                    row = true,
-                    settings = BAR_FINDER.advanced.auraText and {
-                        x = BAR_FINDER.advanced.auraText.xOffset,
-                        y = BAR_FINDER.advanced.auraText.yOffset,
-                    },
-                })
-                auraTextSec:PanelRowChrome(flipRow)
-                auraTextSec:PanelRowChrome(offsetXRow)
-                auraTextSec:PanelRowChrome(offsetYRow)
+            end
+            if isAuraPanel or auraTextSec.read.barAuraTextIndependent == true then
+                AddBarTextPositionControls(panel, auraTextSec.tbl,
+                    "barAuraTextAnchor", "barAuraTextOffsetX", "barAuraTextOffsetY", refreshStyle, {
+                        settings = BAR_FINDER.advanced.auraText,
+                        disabled = auraTextSec.disabled,
+                        resolve = function()
+                            return ST.BarTextLayout.Resolve(auraTextSec.read, "aura", group.style.barFillVertical)
+                        end,
+                        prepareKey = "barAuraTextIndependent",
+                        prepare = function()
+                            ST.BarTextLayout.SetAuraIndependent(auraTextSec.tbl,
+                                auraTextSec.read, group.style.barFillVertical, true)
+                        end,
+                    })
             end
         end
 
@@ -1497,15 +1430,15 @@ local function BuildBarAppearanceTab(container, group, style)
         -- lens attaches last. The anchor args below are a placeholder -
         -- AnchorRowBadge re-points the button onto the end of the chain.
         --
-        -- On an Aura Panel the flip and offset rows live in this section's own
+        -- On an Aura Panel the anchor and offset rows live in this section's own
         -- gear, so the pointer to the Cooldown Text section would send the user
         -- to a row that is not drawn.
         AnchorRowBadge(auraTextRow, CreateInfoButton(auraTextRow.frame, auraTextRow.frame, "LEFT", "LEFT", 0, 0, isAuraPanel and {
             "Aura Duration Text",
-            {"Shows the remaining aura time at the bar's time text position while the aura is active.", 1, 1, 1, true},
+            {"Shows the remaining aura time while the aura is active. Set its Anchor and offsets in this section.", 1, 1, 1, true},
         } or {
             "Aura Duration Text",
-            {"Shows the remaining aura time at the bar's time text position while the aura is active. Position follows the flip and offset settings in the Cooldown Text section.", 1, 1, 1, true},
+            {"Shows the remaining aura time at the bar's time text position while the aura is active. Position follows Cooldown Text unless Independent Position is enabled; the last independent placement is remembered.", 1, 1, 1, true},
         }, auraTextRow))
         auraTextSec:Chrome(auraTextRow)
 
@@ -2316,6 +2249,12 @@ local function BarFinderSectionState(context, sectionId)
     return read, write
 end
 
+local function BarFinderAuraPositionVisible(context)
+    if ST.IsAuraPanelGroup(context.group) then return true end
+    local read = BarFinderSectionState(context, "auraText")
+    return read and read.barAuraTextIndependent == true or false
+end
+
 local function BarFinderTracksAura(context)
     return context and context.group and GroupHasAuraTrackingEntry(context.group) or false
 end
@@ -2663,7 +2602,7 @@ if ST._DefineSettingRoute then
     BAR_FINDER.advanced.name = BarFinderTextRoute(
         "panel.bars.appearance.nameAdvanced", "barNameText", "barNameText",
         BarFinderAdvanced("barNameText")):Settings({
-        flip = { label = "Flip Name Text" },
+        anchor = { label = "Anchor", aliases = { "position", "center", "flip name text" } },
         fontSize = { label = "Font Size" }, font = { label = "Font" },
         outline = { label = "Font Outline" }, color = { label = "Font Color" },
         xOffset = { label = "X Offset" }, yOffset = { label = "Y Offset" },
@@ -2672,11 +2611,10 @@ if ST._DefineSettingRoute then
     BAR_FINDER.advanced.cooldown = BarFinderTextRoute(
         "panel.bars.appearance.cooldownAdvanced", "cooldownText", "barCooldownText",
         BarFinderAdvanced("cooldownText", BarFinderCooldownText)):Settings({
-        flip = { label = "Flip Time Text", applies = function(context) return context.scope == "panel" end },
+        anchor = { label = "Anchor", aliases = { "position", "center", "ready text position", "flip time text" } },
         fontSize = { label = "Font Size" }, font = { label = "Font" },
         outline = { label = "Font Outline" }, color = { label = "Font Color" },
-        xOffset = { label = "X Offset", applies = function(context) return context.scope == "panel" end },
-        yOffset = { label = "Y Offset", applies = function(context) return context.scope == "panel" end },
+        xOffset = { label = "X Offset" }, yOffset = { label = "Y Offset" },
     })
 
     BAR_FINDER.advanced.charge = BarFinderTextRoute(
@@ -2706,16 +2644,13 @@ if ST._DefineSettingRoute then
         BarFinderAdvanced("auraText", BarFinderTracksAura)):Settings({
         fontSize = { label = "Font Size" }, font = { label = "Font" },
         outline = { label = "Font Outline" }, color = { label = "Font Color" },
-        flip = {
-            label = "Flip Time Text",
-            applies = function(context) return ST.IsAuraPanelGroup(context.group) end,
+        independent = {
+            label = "Independent Position", aliases = { "separate aura position", "aura anchor", "center aura text", "aura offset" },
+            applies = function(context) return not ST.IsAuraPanelGroup(context.group) end,
         },
-        xOffset = {
-            label = "X Offset", applies = function(context) return ST.IsAuraPanelGroup(context.group) end,
-        },
-        yOffset = {
-            label = "Y Offset", applies = function(context) return ST.IsAuraPanelGroup(context.group) end,
-        },
+        anchor = { label = "Anchor", aliases = { "position", "center" }, applies = BarFinderAuraPositionVisible },
+        xOffset = { label = "X Offset", applies = BarFinderAuraPositionVisible },
+        yOffset = { label = "Y Offset", applies = BarFinderAuraPositionVisible },
     })
 
     BAR_FINDER.advanced.auraStack = BarFinderTextRoute(

@@ -1280,6 +1280,69 @@ local function AddAnchorDropdown(container, tbl, key, default, refreshFn, label,
     })
 end
 
+-- One compact positioning group for bar-panel and custom-bar text. Optional
+-- preparation materializes an aura-only panel's first independent edit. Drag
+-- previews restore raw saved values, including absent override keys.
+local function AddBarTextPositionControls(container, tbl, anchorKey, xKey, yKey, refreshFn, opts)
+    opts = opts or {}
+    local settings = opts.settings or {}
+    local list, order = {}, {}
+    if opts.automatic then
+        list.AUTO = "Automatic"
+        order[1] = "AUTO"
+    end
+    for _, point in ipairs(CS.anchorPoints) do
+        list[point] = CS.anchorDropdownList[point]
+        order[#order + 1] = point
+    end
+    local point, x, y
+    if opts.resolve then
+        point, x, y = opts.resolve()
+    else
+        point = tbl[anchorKey] or (opts.automatic and "AUTO" or "CENTER")
+        x, y = tbl[xKey] or 0, tbl[yKey] or 0
+    end
+    local function Set(key, value)
+        if opts.prepare then opts.prepare() end
+        tbl[key] = value
+    end
+    local function Commit(key, value)
+        if opts.disabled then return end
+        Set(key, value)
+        refreshFn()
+    end
+    local function Preview(key, value)
+        if opts.disabled then return end
+        local keys = { anchorKey, xKey, yKey }
+        if opts.prepareKey then keys[#keys + 1] = opts.prepareKey end
+        local saved = {}
+        for _, field in ipairs(keys) do saved[field] = rawget(tbl, field) end
+        Set(key, value)
+        local previewRefresh = opts.previewRefresh or RefreshSelectedButtonsPreview
+        previewRefresh()
+        for _, field in ipairs(keys) do tbl[field] = saved[field] end
+    end
+    local anchorRow = ST._AddDropdownRow(container, {
+        label = "Anchor", setting = settings.anchor,
+        list = list, order = order, value = point, disabled = opts.disabled,
+        onChange = function(value) Commit(anchorKey, value) end,
+    })
+    local xRow = ST._AddSliderRow(container, {
+        label = "X Offset", setting = settings.xOffset,
+        min = -50, max = 50, step = 0.1, value = x, disabled = opts.disabled,
+        onChange = function(value) Preview(xKey, value) end,
+        onRelease = function(value) Commit(xKey, value) end,
+    })
+    local yRow = ST._AddSliderRow(container, {
+        label = "Y Offset", setting = settings.yOffset,
+        min = -50, max = 50, step = 0.1, value = y, disabled = opts.disabled,
+        onChange = function(value) Preview(yKey, value) end,
+        onRelease = function(value) Commit(yKey, value) end,
+    })
+    return anchorRow, xRow, yRow
+end
+ST._AddBarTextPositionControls = AddBarTextPositionControls
+
 -- LibSharedMedia font names run well past the 140px control column, and a
 -- dropdown sizes its menu from the control it hangs under.
 local FONT_ROW_PULLOUT_WIDTH = 300

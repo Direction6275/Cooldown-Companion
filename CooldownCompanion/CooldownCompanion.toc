@@ -51,6 +51,7 @@ Core\Changelog.lua
 Core\ScopedSettings.lua
 Core\BarsAndFramesRuntime.lua
 Core\SoundAlerts.lua
+Core\BarTextLayout.lua
 Core\StyleOverrides.lua
 Core\RefreshTelemetry.lua
 Core\SpellButtonIndex.lua

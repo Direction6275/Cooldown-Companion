@@ -1166,7 +1166,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     cooldownText = {
         label = "Cooldown Text",
-        keys = {"showCooldownText", "cooldownTextVisibilityThreshold", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor", "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset"},
+        keys = {"showCooldownText", "cooldownTextVisibilityThreshold", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor", "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset", "barTimeTextAnchor", "barTimeTextReverse", "barCdTextOffsetX", "barCdTextOffsetY"},
         defaults = { cooldownTextVisibilityThreshold = false },
         modes = {icons = true, bars = true},
     },
@@ -1209,7 +1209,7 @@ ST.OVERRIDE_SECTIONS = {
     -- RevertSection stops clearing a key it no longer owns.
     auraText = {
         label = "Aura Duration Text",
-        keys = {"showAuraText", "auraTextVisibilityThreshold", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor", "auraTextAnchor", "auraTextXOffset", "auraTextYOffset"},
+        keys = {"showAuraText", "auraTextVisibilityThreshold", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor", "auraTextAnchor", "auraTextXOffset", "auraTextYOffset", "barAuraTextIndependent", "barAuraTextAnchor", "barAuraTextOffsetX", "barAuraTextOffsetY"},
         defaults = { auraTextVisibilityThreshold = false },
         modes = {icons = true, bars = true},
     },
@@ -1437,7 +1437,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     barNameText = {
         label = "Name Text",
-        keys = {"showBarNameText", "barNameTextReverse", "barNameFont", "barNameFontSize", "barNameFontOutline", "barNameFontColor"},
+        keys = {"showBarNameText", "barNameTextReverse", "barNameTextAnchor", "barNameTextOffsetX", "barNameTextOffsetY", "barNameFont", "barNameFontSize", "barNameFontOutline", "barNameFontColor"},
         modes = {bars = true},
     },
     barReadyText = {
@@ -1690,9 +1690,6 @@ ST.PANEL_COPY_SCOPES = {
                 -- in the header above, and the findability move that put
                 -- their rows here did not change what copies.
                 "barLength", "barHeight", "buttonSpacing", "barTexture",
-                -- Bar-wide text placement (panel-owned rows in the text gears)
-                "barTimeTextReverse", "barCdTextOffsetX", "barCdTextOffsetY",
-                "barNameTextOffsetX", "barNameTextOffsetY",
                 -- Duration Format is panel-owned; Low Time Threshold is the
                 -- durationLowTime override section above.
                 "durationFormat",

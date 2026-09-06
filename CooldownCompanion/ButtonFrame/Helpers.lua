@@ -1457,7 +1457,8 @@ local function AnchorBarCountText(button, showIcon, anchor, xOff, yOff)
     if showIcon then
         button.count:SetPoint(anchor, button.icon, anchor, xOff, yOff)
     else
-        button.count:SetPoint(anchor, button, anchor, xOff, yOff)
+        local barArea = button.barTextFrame or button.textFrame or button
+        button.count:SetPoint(anchor, barArea, anchor, xOff, yOff)
     end
 end
 

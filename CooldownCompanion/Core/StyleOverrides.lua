@@ -120,6 +120,7 @@ function CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
         end
     end
 
+    ST.BarTextLayout.SnapshotSection(buttonData.styleOverrides, groupStyle, sectionId)
     buttonData.overrideSections[sectionId] = true
 end
 
@@ -167,6 +168,8 @@ function CooldownCompanion:CopySectionOverride(sourceButtonData, sourceGroupStyl
         end
     end
 
+    ST.BarTextLayout.SnapshotSection(targetButtonData.styleOverrides,
+        self:GetEffectiveStyle(sourceGroupStyle, sourceButtonData), sectionId)
     targetButtonData.overrideSections[sectionId] = true
     return true
 end

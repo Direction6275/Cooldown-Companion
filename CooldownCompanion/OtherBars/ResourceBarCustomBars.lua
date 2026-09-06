@@ -263,16 +263,8 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             if bar.text then
                 bar.text:SetShown(showDuration)
                 if showDuration then
-                    bar.text:ClearAllPoints()
-                    if showStack then
-                        if isVertical then
-                            bar.text:SetPoint("BOTTOM", bar, "BOTTOM", 0, 2)
-                        else
-                            bar.text:SetPoint("LEFT", bar, "LEFT", 4, 0)
-                        end
-                    else
-                        bar.text:SetPoint("CENTER")
-                    end
+                    ST.BarTextLayout.Apply(bar.text, bar,
+                        ST.BarTextLayout.ResolveCustom(cabConfig, "durationText", isVertical, showStack))
                 else
                     UnbindDurationText(bar.text)
                 end
@@ -282,16 +274,8 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             if bar.stackText then
                 bar.stackText:SetShown(showStack)
                 if showStack then
-                    bar.stackText:ClearAllPoints()
-                    if showDuration then
-                        if isVertical then
-                            bar.stackText:SetPoint("TOP", bar, "TOP", 0, -2)
-                        else
-                            bar.stackText:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
-                        end
-                    else
-                        bar.stackText:SetPoint("CENTER")
-                    end
+                    ST.BarTextLayout.Apply(bar.stackText, bar,
+                        ST.BarTextLayout.ResolveCustom(cabConfig, "stackText", isVertical, showDuration))
                 end
             end
         end

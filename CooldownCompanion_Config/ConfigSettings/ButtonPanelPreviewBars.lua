@@ -53,39 +53,14 @@ local function EnsureBarSlotAuraStackText(slot)
     return slot.auraStackCount
 end
 
--- Time text placement per BarMode.lua CreateBarFrame, including the
--- name/time overlap guard when both sit on the same side.
-local function AnchorBarSlotTimeText(slot, style)
-    local tt = slot.timeText
-    local isVertical = style.barFillVertical or false
-    local cdOffX = style.barCdTextOffsetX or 0
-    local cdOffY = style.barCdTextOffsetY or 0
-    local timeReverse = style.barTimeTextReverse
-    tt:ClearAllPoints()
-    if isVertical then
-        if timeReverse then
-            tt:SetPoint("BOTTOM", cdOffX, 3 + cdOffY)
-        else
-            tt:SetPoint("TOP", cdOffX, -3 + cdOffY)
-        end
-        tt:SetJustifyH("CENTER")
-    else
-        if timeReverse then
-            tt:SetPoint("LEFT", 3 + cdOffX, cdOffY)
-            tt:SetJustifyH("LEFT")
-        else
-            tt:SetPoint("RIGHT", -3 + cdOffX, cdOffY)
-            tt:SetJustifyH("RIGHT")
-        end
-    end
-    -- Raw comparison like live (nil and false differ deliberately there)
-    if not isVertical and style.barNameTextReverse == style.barTimeTextReverse
-        and slot.nameText and slot.nameText:IsShown() then
-        if style.barNameTextReverse then
-            slot.nameText:SetPoint("LEFT", tt, "RIGHT", 4, 0)
-        else
-            slot.nameText:SetPoint("RIGHT", tt, "LEFT", -4, 0)
-        end
+-- Runtime and preview share the same placement and truncation rules.
+local function AnchorBarSlotTimeText(slot, style, lane)
+    lane = lane or "time"
+    ST.BarTextLayout.Apply(slot.timeText, slot.textFrame,
+        ST.BarTextLayout.Resolve(style, lane, style.barFillVertical))
+    if slot.nameText then
+        ST.BarTextLayout.ApplyName(slot.nameText, slot.textFrame, slot.timeText,
+            style, style.barFillVertical, lane, lane ~= "aura" or style.showAuraText ~= false)
     end
 end
 
@@ -215,8 +190,12 @@ local function ResetBarSlotConditionalVisuals(slot)
 end
 
 local function ApplyBarAuraTimeTextPreview(slot, style, remaining, kind, buttonData)
-    if style.showAuraText == false then return end
     local tt = EnsureBarSlotTimeText(slot)
+    AnchorBarSlotTimeText(slot, style, "aura")
+    if style.showAuraText == false then
+        tt:SetText("")
+        return
+    end
     local font = CooldownCompanion:FetchFont(style.auraTextFont or "Friz Quadrata TT")
     local size = style.auraTextFontSize or 12
     local outline = ST.GetEffectiveFontOutline(style.auraTextFontOutline or "OUTLINE")
@@ -224,7 +203,6 @@ local function ApplyBarAuraTimeTextPreview(slot, style, remaining, kind, buttonD
     ST.ApplyFontShadowForOutline(tt, outline)
     local color = style.auraTextFontColor or CooldownCompanion.DEFAULT_AURA_TEXT_COLOR
     tt:SetTextColor(color[1], color[2], color[3], color[4])
-    AnchorBarSlotTimeText(slot, style)
     tt:SetText(FormatAuraDurationPreviewText(remaining, kind, style, buttonData,
         slot._cdcAuraLowTime))
     tt:Show()
@@ -603,26 +581,8 @@ local function StyleBarEntry(slot, buttonData, group, effectiveStyle)
 
     local nameText = slot.nameText
     CooldownCompanion.ApplyFontStyle(nameText, style, "barName", 10)
-    local nameOffX = style.barNameTextOffsetX or 0
-    local nameOffY = style.barNameTextOffsetY or 0
-    local nameReverse = style.barNameTextReverse
-    nameText:ClearAllPoints()
-    if isVertical then
-        if nameReverse then
-            nameText:SetPoint("TOP", nameOffX, -3 + nameOffY)
-        else
-            nameText:SetPoint("BOTTOM", nameOffX, 3 + nameOffY)
-        end
-        nameText:SetJustifyH("CENTER")
-    else
-        if nameReverse then
-            nameText:SetPoint("RIGHT", -3 + nameOffX, nameOffY)
-            nameText:SetJustifyH("RIGHT")
-        else
-            nameText:SetPoint("LEFT", 3 + nameOffX, nameOffY)
-            nameText:SetJustifyH("LEFT")
-        end
-    end
+    ST.BarTextLayout.Apply(nameText, slot.textFrame,
+        ST.BarTextLayout.Resolve(style, "name", isVertical))
     if style.showBarNameText ~= false or buttonData.customName then
         nameText:SetText(GetConfigOnlyBarPreviewName(buttonData))
         nameText:Show()
