@@ -47,7 +47,11 @@ Config\CopyPanelSettingsMode.lua
 Config\ProfileBar.lua
 Config\PanelChangelogOverlay.lua
 Config\Panel.lua
+# Settings navigation and controls before style scopes and consumers
+ConfigSettings\SettingsNavigation.lua
 ConfigSettings\Helpers.lua
+ConfigSettings\StyleLens.lua
+ConfigSettings\EntryCustomizations.lua
 ConfigSettings\RowWidgets.lua
 ConfigSettings\SettingsFinder.lua
 ConfigSettings\AdvancedSettingsPanel.lua
@@ -55,6 +59,15 @@ ConfigSettings\SectionBuilders.lua
 ConfigSettings\CastBarPanels.lua
 ConfigSettings\ResourceBarPanelsHelpers.lua
 ConfigSettings\ResourceBarLayoutOrderPreview.lua
+# Live Preview: providers before interactions and composition
+ConfigSettings\ButtonPanelPreviewShared.lua
+ConfigSettings\ButtonPanelPreviewSections.lua
+ConfigSettings\ButtonPanelPreviewIcons.lua
+ConfigSettings\ButtonPanelPreviewBars.lua
+ConfigSettings\ButtonPanelPreviewText.lua
+ConfigSettings\ButtonPanelPreviewEffects.lua
+ConfigSettings\ButtonPanelPreviewInteraction.lua
+ConfigSettings\ButtonPanelPreviewTriggers.lua
 ConfigSettings\ButtonPanelPreview.lua
 ConfigSettings\GroupPanelOverviewPreview.lua
 ConfigSettings\UnifiedAnchorPreview.lua
