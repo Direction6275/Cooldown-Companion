@@ -686,7 +686,9 @@ local function RebuildTutorialAnchors()
     -- Named handle, not a bar position: Browse Other Classes swaps the New
     -- Group button out for its own toggle, and only the named field goes nil
     -- there.
-    local createButton = CS.col1CreateButton
+    local welcome = CS.configFrame and CS.configFrame.profileWelcome
+    local createButton = welcome and welcome.frame:IsShown() and welcome.pane.create
+        or CS.col1CreateButton
     if createButton and createButton.frame then
         anchors.new_group_button = createButton.frame
     end

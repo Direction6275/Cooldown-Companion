@@ -2261,6 +2261,11 @@ local function CreateConfigPanel()
 
     -- Layout columns on size change
     local function LayoutColumns()
+        -- Profile controls live outside colParent and remain available here.
+        -- Normal refreshes still clean up/rebuild the hidden column contents.
+        if CS.configFrame and ST._UpdateProfileWelcome(CS.configFrame) then
+            return
+        end
         local w = colParent:GetWidth()
         local h = colParent:GetHeight()
         local pad = COLUMN_PADDING

@@ -3355,7 +3355,18 @@ local function RefreshColumn1(preserveDrag)
         return
     end
 
-    if showNewUserEmptyState and not CS.otherClassLibraryActive then
+    if showNewUserEmptyState and CS.barsEntrySelected and ST._IsProfileWelcomeEligible() then
+        local back = AceGUI:Create("InteractiveLabel")
+        back:SetText("< Back to Get Started")
+        back:SetFullWidth(true)
+        back:SetCallback("OnClick", function(_, _, button)
+            if button ~= "LeftButton" then return end
+            ST._ResetConfigSelection(true)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        CS.col1Scroll:AddChild(back)
+        TakeCol1FirstRow()
+    elseif showNewUserEmptyState and not CS.otherClassLibraryActive then
         ClearOtherClassBrowseState()
         TakeCol1FirstRow()
 
@@ -3515,3 +3526,4 @@ end
 -- ST._ exports
 ------------------------------------------------------------------------
 ST._RefreshColumn1 = RefreshColumn1
+ST._CreateConfigGroup = CreateGroupFromRail
