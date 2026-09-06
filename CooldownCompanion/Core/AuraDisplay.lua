@@ -1726,35 +1726,12 @@ local function StyleSlotKit(slot, button, buttonData, style)
         kit.durationText:SetAlpha(0)
         kit.stackText:SetAlpha(0)
     elseif isBar and isCustomBarHost then
-        -- Custom-bar convention (StyleCustomAuraBar parity): duration text
-        -- centers when alone and moves to the start end when the stack text
-        -- shares the bar; stack text mirrors on the far end.
         local showDur = style.showAuraText ~= false
         local showStack = style.showAuraStackText ~= false
-        if button._isVertical then
-            if showStack then
-                kit.durationText:SetPoint("BOTTOM", innerHost, "BOTTOM", 0, 2)
-            else
-                kit.durationText:SetPoint("CENTER", innerHost, "CENTER", 0, 0)
-            end
-            if showDur then
-                kit.stackText:SetPoint("TOP", innerHost, "TOP", 0, -2)
-            else
-                kit.stackText:SetPoint("CENTER", innerHost, "CENTER", 0, 0)
-            end
-        else
-            if showStack then
-                kit.durationText:SetPoint("LEFT", innerHost, "LEFT", 4, 0)
-            else
-                kit.durationText:SetPoint("CENTER", innerHost, "CENTER", 0, 0)
-            end
-            if showDur then
-                kit.stackText:SetPoint("RIGHT", innerHost, "RIGHT", -4, 0)
-            else
-                kit.stackText:SetPoint("CENTER", innerHost, "CENTER", 0, 0)
-            end
-        end
-        kit.durationText:SetJustifyH("CENTER")
+        ST.BarTextLayout.Apply(kit.durationText, innerHost,
+            ST.BarTextLayout.ResolveCustom(style, "durationText", button._isVertical, showStack))
+        ST.BarTextLayout.Apply(kit.stackText, innerHost,
+            ST.BarTextLayout.ResolveCustom(style, "stackText", button._isVertical, showDur))
         kit.durationText:SetAlpha(showDur and 1 or 0)
         kit.stackText:SetAlpha(showStack and 1 or 0)
     elseif isBar then
@@ -1762,25 +1739,8 @@ local function StyleSlotKit(slot, button, buttonData, style)
         -- backdrop occludes the originals): duration text at the bar
         -- time-text spot, stack text against the icon square like the old
         -- aura stack count.
-        local cdOffX = style.barCdTextOffsetX or 0
-        local cdOffY = style.barCdTextOffsetY or 0
-        local timeReverse = style.barTimeTextReverse
-        if button._isVertical then
-            if timeReverse then
-                kit.durationText:SetPoint("BOTTOM", innerHost, "BOTTOM", cdOffX, 3 + cdOffY)
-            else
-                kit.durationText:SetPoint("TOP", innerHost, "TOP", cdOffX, -3 + cdOffY)
-            end
-            kit.durationText:SetJustifyH("CENTER")
-        else
-            if timeReverse then
-                kit.durationText:SetPoint("LEFT", innerHost, "LEFT", 3 + cdOffX, cdOffY)
-                kit.durationText:SetJustifyH("LEFT")
-            else
-                kit.durationText:SetPoint("RIGHT", innerHost, "RIGHT", -3 + cdOffX, cdOffY)
-                kit.durationText:SetJustifyH("RIGHT")
-            end
-        end
+        ST.BarTextLayout.Apply(kit.durationText, innerHost,
+            ST.BarTextLayout.Resolve(style, "aura", button._isVertical))
         kit.durationText:SetAlpha(style.showAuraText ~= false and 1 or 0)
         local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
         local stackAnchorTo = barIconShown and button.icon or innerHost
@@ -1843,44 +1803,10 @@ local function StyleSlotKit(slot, button, buttonData, style)
         if ApplyFontStyle then
             ApplyFontStyle(nameText, style, "barName", 10)
         end
-        local nameOffX = style.barNameTextOffsetX or 0
-        local nameOffY = style.barNameTextOffsetY or 0
-        local nameReverse = style.barNameTextReverse
-        if button._isVertical then
-            if nameReverse then
-                nameText:SetPoint("TOP", innerHost, "TOP", nameOffX, -3 + nameOffY)
-            else
-                nameText:SetPoint("BOTTOM", innerHost, "BOTTOM", nameOffX, 3 + nameOffY)
-            end
-            nameText:SetJustifyH("CENTER")
-        else
-            if nameReverse then
-                nameText:SetPoint("RIGHT", innerHost, "RIGHT", -3 + nameOffX, nameOffY)
-                nameText:SetJustifyH("RIGHT")
-            else
-                nameText:SetPoint("LEFT", innerHost, "LEFT", 3 + nameOffX, nameOffY)
-                nameText:SetJustifyH("LEFT")
-            end
-            -- Same-side truncation guard, replicated from CreateBarFrame:
-            -- when the visible duration text shares the name's side, pin the
-            -- name against it so the two can't overlap. The renderer
-            -- truncates the live region's secret text inside these anchors —
-            -- never measure it. Decided from the style key CC just wrote the
-            -- alpha FROM — never read back from a registered kit region:
-            -- PTR 7 stamps "initial secrets" into them at creation
-            -- (AuraContainerFrameProviders.lua CreateFrame forces
-            -- UpdateAuraDisplay), so GetAlpha returns a SECRET number even
-            -- OOC and any comparison errors. Registered regions are
-            -- write-only from the moment the slot exists.
-            if style.barNameTextReverse == style.barTimeTextReverse
-                and style.showAuraText ~= false then
-                if nameReverse then
-                    nameText:SetPoint("LEFT", kit.durationText, "RIGHT", 4, 0)
-                else
-                    nameText:SetPoint("RIGHT", kit.durationText, "LEFT", -4, 0)
-                end
-            end
-        end
+        -- Registered names and timers are write-only. The renderer handles
+        -- truncation; eligibility comes only from the style just applied.
+        ST.BarTextLayout.ApplyName(nameText, innerHost, kit.durationText,
+            style, button._isVertical, "aura", style.showAuraText ~= false)
     end
     -- Text writes stay on the STATIC region only — the live region's text is
     -- Blizzard's channel and a CC SetText there would error on the secret

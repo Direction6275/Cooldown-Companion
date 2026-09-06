@@ -85,6 +85,13 @@ local BindDurationText = CooldownCompanion.BindDurationText
 local UnbindDurationText = CooldownCompanion.UnbindDurationText
 local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
 
+local function ApplyBarTextPlacement(button, style, lane)
+    ST.BarTextLayout.Apply(button.timeText, button.barTextFrame,
+        ST.BarTextLayout.Resolve(style, lane, button._isVertical))
+    ST.BarTextLayout.ApplyName(button.nameText, button.barTextFrame, button.timeText,
+        style, button._isVertical, lane, lane ~= "aura" or style.showAuraText ~= false)
+end
+
 -- Bar mode tooltip behavior: tooltip should come from hovering the icon area only.
 local function SetBarIconTooltipScripts(button, enable)
     local iconBounds = button and button._iconBounds
@@ -194,6 +201,17 @@ local function UpdateBarFill(button)
         end
     end
 
+    -- Reposition only at the existing text-mode transition. Hidden totem
+    -- text still changes the name's layout, and leaving the phase restores
+    -- the shared Cooldown/Ready position even when no timer is shown.
+    local textMode = onCooldown and (button._totemActive == true and "totemAura" or "cd") or "ready"
+    local textModeChanged = button._barTextMode ~= textMode
+    if textModeChanged then
+        button._barTextMode = textMode
+        button._barTextColorDirty = true
+        ApplyBarTextPlacement(button, button.style, textMode == "totemAura" and "aura" or "time")
+    end
+
     if onCooldown then
         -- The totem active phase is aura-side by owner ruling: its timer text
         -- follows the AURA visibility toggle and the aura font/size/outline/
@@ -209,18 +227,14 @@ local function UpdateBarFill(button)
         if showTimeText then
             -- Switch font/color when mode changes
             if totemPhase then
-                if button._barTextMode ~= "totemAura" then
-                    button._barTextMode = "totemAura"
-                    button._barTextColorDirty = true
+                if textModeChanged then
                     local f = CooldownCompanion:FetchFont(button.style.auraTextFont or "Friz Quadrata TT")
                     local s = button.style.auraTextFontSize or 12
                     local o = ST.GetEffectiveFontOutline(button.style.auraTextFontOutline or "OUTLINE")
                     button.timeText:SetFont(f, s, o)
                     ST.ApplyFontShadowForOutline(button.timeText, o)
                 end
-            elseif button._barTextMode ~= "cd" then
-                button._barTextMode = "cd"
-                button._barTextColorDirty = true
+            elseif textModeChanged then
                 local f = CooldownCompanion:FetchFont(button.style.cooldownFont or "Friz Quadrata TT")
                 local s = button.style.cooldownFontSize or 12
                 local o = ST.GetEffectiveFontOutline(button.style.cooldownFontOutline or "OUTLINE")
@@ -269,8 +283,7 @@ local function UpdateBarFill(button)
         else
             SetStatusBarImmediateValue(button.statusBar, 1)
             if button.style.showBarReadyText then
-                if button._barTextMode ~= "ready" then
-                    button._barTextMode = "ready"
+                if textModeChanged then
                     local f = CooldownCompanion:FetchFont(button.style.barReadyFont or "Friz Quadrata TT")
                     local s = button.style.barReadyFontSize or 12
                     local o = ST.GetEffectiveFontOutline(button.style.barReadyFontOutline or "OUTLINE")
@@ -297,16 +310,9 @@ local function ApplyBarCountTextStyle(button, style)
 
     if useChargeTextLane then
         ApplyFontStyle(button.count, style, "charge")
-        local chargeAnchor, chargeXOffset, chargeYOffset
-        if showIcon then
-            chargeAnchor = style.chargeAnchor or defAnchor
-            chargeXOffset = style.chargeXOffset or defXOff
-            chargeYOffset = style.chargeYOffset or defYOff
-        else
-            chargeAnchor = "CENTER"
-            chargeXOffset = 0
-            chargeYOffset = 0
-        end
+        local chargeAnchor = style.chargeAnchor or defAnchor
+        local chargeXOffset = style.chargeXOffset or defXOff
+        local chargeYOffset = style.chargeYOffset or defYOff
         AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
     elseif buttonData and buttonData.type == "item" and not IsItemEquippable(buttonData) then
         ApplyFontStyle(button.count, buttonData, "itemCount")
@@ -755,25 +761,8 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     -- Name text
     button.nameText = button.barTextFrame:CreateFontString(nil, "OVERLAY")
     ApplyFontStyle(button.nameText, style, "barName", 10)
-    local nameOffX = style.barNameTextOffsetX or 0
-    local nameOffY = style.barNameTextOffsetY or 0
-    local nameReverse = style.barNameTextReverse
-    if isVertical then
-        if nameReverse then
-            button.nameText:SetPoint("TOP", nameOffX, -3 + nameOffY)
-        else
-            button.nameText:SetPoint("BOTTOM", nameOffX, 3 + nameOffY)
-        end
-        button.nameText:SetJustifyH("CENTER")
-    else
-        if nameReverse then
-            button.nameText:SetPoint("RIGHT", -3 + nameOffX, nameOffY)
-            button.nameText:SetJustifyH("RIGHT")
-        else
-            button.nameText:SetPoint("LEFT", 3 + nameOffX, nameOffY)
-            button.nameText:SetJustifyH("LEFT")
-        end
-    end
+    ST.BarTextLayout.Apply(button.nameText, button.barTextFrame,
+        ST.BarTextLayout.Resolve(style, "name", isVertical))
     if style.showBarNameText ~= false or buttonData.customName then
         button.nameText:SetText(buttonData.customName or buttonData.name or "")
     else
@@ -783,34 +772,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     -- Time text
     button.timeText = button.barTextFrame:CreateFontString(nil, "OVERLAY")
     ApplyFontStyle(button.timeText, style, "cooldown")
-    local cdOffX = style.barCdTextOffsetX or 0
-    local cdOffY = style.barCdTextOffsetY or 0
-    local timeReverse = style.barTimeTextReverse
-    if isVertical then
-        if timeReverse then
-            button.timeText:SetPoint("BOTTOM", cdOffX, 3 + cdOffY)
-        else
-            button.timeText:SetPoint("TOP", cdOffX, -3 + cdOffY)
-        end
-        button.timeText:SetJustifyH("CENTER")
-    else
-        if timeReverse then
-            button.timeText:SetPoint("LEFT", 3 + cdOffX, cdOffY)
-            button.timeText:SetJustifyH("LEFT")
-        else
-            button.timeText:SetPoint("RIGHT", -3 + cdOffX, cdOffY)
-            button.timeText:SetJustifyH("RIGHT")
-        end
-    end
-
-    -- Truncate name text so it doesn't overlap time text (horizontal only, opposite sides)
-    if not isVertical and nameReverse == timeReverse then
-        if nameReverse then
-            button.nameText:SetPoint("LEFT", button.timeText, "RIGHT", 4, 0)
-        else
-            button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
-        end
-    end
+    ApplyBarTextPlacement(button, style, button._totemActive == true and "aura" or "time")
 
     -- Border textures (around bar area, not full button)
     button.borderTextures = {}
@@ -1162,54 +1124,9 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._barTextMode = nil
     button._barTextColorDirty = true
 
-    -- Re-anchor name and time text for orientation
-    local nameOffX = newStyle.barNameTextOffsetX or 0
-    local nameOffY = newStyle.barNameTextOffsetY or 0
-    local cdOffX = newStyle.barCdTextOffsetX or 0
-    local cdOffY = newStyle.barCdTextOffsetY or 0
-    local nameReverse = newStyle.barNameTextReverse
-    local timeReverse = newStyle.barTimeTextReverse
-    button.nameText:ClearAllPoints()
-    button.timeText:ClearAllPoints()
-    if isVertical then
-        if nameReverse then
-            button.nameText:SetPoint("TOP", nameOffX, -3 + nameOffY)
-        else
-            button.nameText:SetPoint("BOTTOM", nameOffX, 3 + nameOffY)
-        end
-        button.nameText:SetJustifyH("CENTER")
-        if timeReverse then
-            button.timeText:SetPoint("BOTTOM", cdOffX, 3 + cdOffY)
-        else
-            button.timeText:SetPoint("TOP", cdOffX, -3 + cdOffY)
-        end
-        button.timeText:SetJustifyH("CENTER")
-    else
-        if nameReverse then
-            button.nameText:SetPoint("RIGHT", -3 + nameOffX, nameOffY)
-            button.nameText:SetJustifyH("RIGHT")
-        else
-            button.nameText:SetPoint("LEFT", 3 + nameOffX, nameOffY)
-            button.nameText:SetJustifyH("LEFT")
-        end
-        if timeReverse then
-            button.timeText:SetPoint("LEFT", 3 + cdOffX, cdOffY)
-            button.timeText:SetJustifyH("LEFT")
-        else
-            button.timeText:SetPoint("RIGHT", -3 + cdOffX, cdOffY)
-            button.timeText:SetJustifyH("RIGHT")
-        end
-        -- Truncate name text so it doesn't overlap time text (opposite sides only)
-        if nameReverse == timeReverse then
-            if nameReverse then
-                button.nameText:SetPoint("LEFT", button.timeText, "RIGHT", 4, 0)
-            else
-                button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
-            end
-        end
-    end
+    ApplyBarTextPlacement(button, newStyle, button._totemActive == true and "aura" or "time")
 
-    -- Update charge/item count font and anchor to icon or bar center
+    -- Update charge/item count font and anchor to icon or bar area
     ApplyBarCountTextStyle(button, newStyle)
 
     -- Update spell name text

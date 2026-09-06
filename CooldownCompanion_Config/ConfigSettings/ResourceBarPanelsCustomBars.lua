@@ -565,6 +565,8 @@ if ST._DefineSettingRoute then
         end):Settings({
             fontSize = { label = "Font Size" }, font = { label = "Font" }, outline = { label = "Font Outline" },
             color = { label = "Duration Text Color" },
+            anchor = { label = "Anchor", aliases = { "position", "center" } },
+            xOffset = { label = "X Offset" }, yOffset = { label = "Y Offset" },
         })
     CUSTOM_BAR_FINDER.stackText = TextAdvanced("stack", "Other Text", "rbCabStackText_",
         function(context)
@@ -573,6 +575,8 @@ if ST._DefineSettingRoute then
         end):Settings({
             fontSize = { label = "Font Size" }, font = { label = "Font" }, outline = { label = "Font Outline" },
             color = { label = "Stack Text Color" },
+            anchor = { label = "Anchor", aliases = { "position", "center" } },
+            xOffset = { label = "X Offset" }, yOffset = { label = "Y Offset" },
         })
 
     local lowTime = DefineCustomBarRoute("texts.lowTime", "Duration Text", {
@@ -2661,6 +2665,11 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                             onChange = cabPreviewOnly,
                             deferCommit = true,
                         })
+                        ST._AddBarTextPositionControls(panel, customBars[cabIdx],
+                            "durationTextAnchor", "durationTextXOffset", "durationTextYOffset", cabApplyBars, {
+                                automatic = true, previewRefresh = cabPreviewOnly,
+                                settings = CUSTOM_BAR_FINDER.durationText,
+                            })
                     end
 
                     if showDurationControls then
@@ -2729,6 +2738,11 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                             onChange = cabPreviewOnly,
                             deferCommit = true,
                         })
+                        ST._AddBarTextPositionControls(panel, customBars[cabIdx],
+                            "stackTextAnchor", "stackTextXOffset", "stackTextYOffset", cabApplyBars, {
+                                automatic = true, previewRefresh = cabPreviewOnly,
+                                settings = CUSTOM_BAR_FINDER.stackText,
+                            })
                     end
 
                     if capabilities.countConsumer then

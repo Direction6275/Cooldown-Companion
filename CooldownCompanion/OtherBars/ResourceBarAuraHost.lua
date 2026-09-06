@@ -375,6 +375,12 @@ function RB.CreateResourceBarAuraHostModule(deps)
             ResolveCustomBarFont(cabConfig, "durationText")
         style.auraStackFont, style.auraStackFontSize, style.auraStackFontOutline, style.auraStackFontColor =
             ResolveCustomBarFont(cabConfig, "stackText")
+        style.durationTextAnchor = cabConfig.durationTextAnchor
+        style.durationTextXOffset = cabConfig.durationTextXOffset
+        style.durationTextYOffset = cabConfig.durationTextYOffset
+        style.stackTextAnchor = cabConfig.stackTextAnchor
+        style.stackTextXOffset = cabConfig.stackTextXOffset
+        style.stackTextYOffset = cabConfig.stackTextYOffset
         style.showAuraText = cabConfig.showDurationText == true
         style.auraTextVisibilityThreshold = cabConfig.auraTextVisibilityThreshold
         -- Duration Format + Low Time Threshold: the kit's SetDurationText bind
