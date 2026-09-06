@@ -349,13 +349,14 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     -- which releases old col4Scroll and creates a new one)
     SelectPanelSettingsTabProgrammatic(container.tabGroup, CS.selectedTab)
 
-    -- Restore scroll state on the new col4Scroll widget.  LayoutFinished has already
-    -- scheduled FixScrollOnUpdate for next frame — it will read these values.
+    -- Restore the saved position; a full refresh applies it after the
+    -- inline Advanced editor is reinserted, before returning to rendering.
     if savedOffset and CS.col4Scroll then
         local s = CS.col4Scroll.status or CS.col4Scroll.localstatus
         if s then
             s.offset = savedOffset
             s.scrollvalue = savedScrollvalue
+            CS.FixConfigScroll(CS.col4Scroll)
         end
     end
 end

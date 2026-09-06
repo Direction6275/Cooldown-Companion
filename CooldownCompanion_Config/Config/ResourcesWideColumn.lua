@@ -458,13 +458,13 @@ local function ShowStrip(col3, tabGroup, tabs, activeTab, scrollKey, stripOnly)
 
     tabGroup:SelectTab(activeTab)
 
-    -- LayoutFinished has already scheduled FixScrollOnUpdate for next
-    -- frame; it reads these values.
+    -- Apply after the full page (including its inline Advanced editor) is ready.
     if savedOffset then
         local state = GetStripScrollState(tabGroup)
         if state then
             state.offset = savedOffset
             state.scrollvalue = savedScrollvalue
+            CS.FixConfigScroll(tabGroup._cdcScroll)
         end
     end
 end
@@ -1204,6 +1204,7 @@ local function ShowUnitFrameSettings(col3, item)
         if state then
             state.offset = savedOffset
             state.scrollvalue = savedScrollvalue
+            CS.FixConfigScroll(scroll)
         end
     end
 end
