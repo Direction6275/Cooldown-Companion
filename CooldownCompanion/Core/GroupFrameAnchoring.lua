@@ -48,13 +48,12 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
         if not canUseCursorAnchor then
             frame._anchorDirty = nil
             frame:ClearAllPoints()
-            frame._hasBeenSized = false
             if frame.alphaSyncFrame then
                 frame.alphaSyncFrame:SetScript("OnUpdate", nil)
             end
             SetExternalAnchorAlphaSyncActive(frame, false)
             frame.anchoredToParent = nil
-            frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+            ST.SetPanelBasePoint(frame, "CENTER", UIParent, "CENTER", 0, 0)
             UpdateCoordLabel(frame, 0, 0)
             if self.RefreshCursorAnchorTicker then
                 self:RefreshCursorAnchorTicker()
@@ -62,7 +61,7 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
             return
         end
         local cursorX, cursorY = GetCursorAnchorLayoutPreviewPosition(self, frame.groupId)
-        ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY, true)
+        ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY)
         if self.RefreshCursorAnchorTicker then
             self:RefreshCursorAnchorTicker()
         end
@@ -71,13 +70,6 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
 
     frame._anchorDirty = nil
     frame:ClearAllPoints()
-
-    -- ClearAllPoints removes all anchor points, discarding any offsets that
-    -- AdjustPointsOffset added for compact anchor compensation.  Clear the
-    -- sized flag so subsequent ResizeGroupFrame calls (from PopulateGroupButtons
-    -- or the layout ticker) treat the freshly-set anchor as the baseline —
-    -- no compensation relative to the previous size.
-    frame._hasBeenSized = false
 
     -- Stop any existing alpha sync
     if frame.alphaSyncFrame then
@@ -95,7 +87,7 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
             -- the base row is what a dependent is glued to. Identity stays the
             -- real frame -- alpha inheritance, validation, and the circular
             -- guard all key on the panel, not on its interior stand-in.
-            frame:SetPoint(anchor.point, ST.GetPanelAnchorBodyFrame(relativeFrame),
+            ST.SetPanelBasePoint(frame, anchor.point, ST.GetPanelAnchorBodyFrame(relativeFrame),
                 anchor.relativePoint, anchor.x, anchor.y)
             UpdateCoordLabel(frame, anchor.x, anchor.y)
             -- Store reference for alpha inheritance
@@ -110,7 +102,7 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
             if containerName then
                 local containerFrame = _G[containerName]
                 if containerFrame then
-                    frame:SetPoint("TOPLEFT", containerFrame, "TOPLEFT", 0, 0)
+                    ST.SetPanelBasePoint(frame, "TOPLEFT", containerFrame, "TOPLEFT", 0, 0)
                     frame.anchoredToParent = containerFrame
                     self:SetupAlphaSync(frame, containerFrame)
                     -- Don't overwrite group.anchor — preserve custom anchor
@@ -124,7 +116,7 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
             -- intentionally changes them.
             -- Otherwise use saved position relative to UIParent
             if forceCenter and anchorState ~= "unsafe" then
-                frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+                ST.SetPanelBasePoint(frame, "CENTER", UIParent, "CENTER", 0, 0)
                 -- Update the saved anchor to reflect the centered position
                 local group = self.db.profile.groups[frame.groupId]
                 if group then
@@ -143,7 +135,7 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
     end
 
     -- Anchor to UIParent using saved position (preserves position across reloads)
-    frame:SetPoint(anchor.point, UIParent, anchor.relativePoint, anchor.x, anchor.y)
+    ST.SetPanelBasePoint(frame, anchor.point, UIParent, anchor.relativePoint, anchor.x, anchor.y)
     UpdateCoordLabel(frame, anchor.x, anchor.y)
 end
 
@@ -252,7 +244,7 @@ function CooldownCompanion:SaveGroupPosition(groupId)
 
     -- Re-anchor with the corrected values so WoW doesn't change our anchor point
     frame:ClearAllPoints()
-    frame:SetPoint(desiredPoint, relFrame, desiredRelPoint, newX, newY)
+    ST.SetPanelBasePoint(frame, desiredPoint, relFrame, desiredRelPoint, newX, newY)
 
     UpdateCoordLabel(frame, newX, newY)
     self:RefreshConfigPanel()

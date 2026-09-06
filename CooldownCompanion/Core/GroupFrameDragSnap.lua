@@ -17,7 +17,9 @@ local IsShiftKeyDown = IsShiftKeyDown
 local GF = ST._GroupFrame
 
 -- GroupFrameShared.lua
-local GetFrameRectInUIParentSpace = GF.GetFrameRectInUIParentSpace
+local function GetFrameRectInUIParentSpace(frame)
+    return GF.GetFrameRectInUIParentSpace(ST.GetPanelAnchorBodyFrame(frame))
+end
 local GetContainerState = GF.GetContainerState
 local IsSecretValue = GF.IsSecretValue
 

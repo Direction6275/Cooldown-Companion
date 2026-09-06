@@ -31,7 +31,6 @@ local PropagateFrameStrata = GF.PropagateFrameStrata
 local NormalizeCompactGrowthDirection = GF.NormalizeCompactGrowthDirection
 local GetCompactAnchorFixedPoint = GF.GetCompactAnchorFixedPoint
 local UpdateCoordLabel = GF.UpdateCoordLabel
-local GetAnchorOffset = ST._GetPanelAnchorOffset
 local GetCompactSlotForIndex = GF.GetCompactSlotForIndex
 
 -- GroupFrameButtonPool.lua
@@ -462,22 +461,11 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
 end
 
 local function FinishGroupButtonRefresh(self, groupId, frame, group)
-    -- Resize the frame to fit visible buttons
+    -- Compact population first measures all entries. Defer saved positioning
+    -- until the immediate reflow has the final visible base dimensions.
+    local compact = self:IsGroupCompactLayoutActive(groupId, group)
+    frame._deferPanelBaseAnchor = compact or nil
     self:ResizeGroupFrame(groupId)
-
-    -- Reset the sized flag so the next ResizeGroupFrame call skips compact
-    -- anchor compensation and treats the current size as a baseline. A
-    -- non-compact panel with an ACTIVE centered edge keeps its baseline
-    -- instead: it has no follow-up reflow resize to rebuild one, and the
-    -- edge must hold across config-driven size changes. Explicit re-anchors
-    -- (AnchorGroupFrame) still reset, so a freshly placed frame baselines.
-    local style = group.style or {}
-    local holdCenteredBaseline = not self:IsGroupCompactLayoutActive(groupId, group)
-        and not ST.IsAuraPanelGroup(group)
-        and ST.GetCenteredGrowthEdge(style.growthOrigin, ST.GetPanelLayoutOrientation(group.displayMode, style)) ~= nil
-    if not holdCenteredBaseline then
-        frame._hasBeenSized = false
-    end
 
     -- Update clickthrough state
     self:UpdateGroupClickthrough(groupId)
@@ -487,9 +475,10 @@ local function FinishGroupButtonRefresh(self, groupId, frame, group)
 
     -- Compact mode: apply reflow immediately so newly rebuilt buttons don't
     -- briefly appear before the next ticker-driven layout pass.
-    if self:IsGroupCompactLayoutActive(groupId, group) then
+    frame._deferPanelBaseAnchor = nil
+    if compact then
         frame._layoutDirty = true
-        self:UpdateGroupLayout(groupId)
+        self:UpdateGroupLayout(groupId, true)
     end
 
     -- Propagate group frame strata to all button sub-elements
@@ -710,14 +699,6 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     -- Aura slots bind to materialized buttons: re-run the (coalesced,
     -- OOC-deferred) rebind pass whenever population changes.
     self:RequestAuraRebind("populate")
-    -- _hasBeenSized is now true if the compact resize ran (set by
-    -- ResizeGroupFrame), or still false if all buttons were visible and no
-    -- compact resize was needed. When effective compact layout is off, it stays false
-    -- (harmless — ResizeGroupFrame skips compensation for non-compact groups).
-    -- Either state is correct: the first ticker-driven resize after this
-    -- will either compensate (true) relative to the established compact
-    -- baseline, or skip compensation (false) to establish a new baseline
-    -- when config-forced visibility clears.
 end
 
 function CooldownCompanion:ResizeGroupFrame(groupId)
@@ -747,7 +728,6 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     end
 
     local targetWidth, targetHeight
-    local oldWidth, oldHeight = frame:GetSize()
 
     -- The section branch wins an empty count. A panel whose only entries live in
     -- AURA sections materializes no buttons at all, so numButtons reads 0 while
@@ -821,56 +801,9 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     if not fixedPoint and self:IsGroupCompactLayoutActive(groupId, group) then
         fixedPoint = GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, style.growthOrigin)
     end
-    local canCompensateAnchor = frame._hasBeenSized and oldWidth > 0 and oldHeight > 0
-    if sectionLayout or frame._sectionBaseOffsetX then
-        -- A sectioned frame is bigger than its base cluster, so the same
-        -- compensation has to hold a point on the CLUSTER still instead of a
-        -- point on the frame -- otherwise a section appearing on one side shoves
-        -- the base grid across the screen. The trailing condition catches the
-        -- pass where the last section went away and the frame collapses back.
-        --
-        -- It runs off its OWN baseline, not _hasBeenSized. _hasBeenSized is
-        -- cleared by every AnchorGroupFrame and by every non-compact
-        -- FinishGroupButtonRefresh, and each of those runs immediately before
-        -- the resize that a membership or geometry commit ends in -- so gating
-        -- on it meant this compensation effectively never fired on an ordinary
-        -- corner-growth panel. _sectionSizeBaseline says only "this frame has
-        -- been through a real resize, so its rect and its section stamps
-        -- describe a genuine previous state", and a re-anchor no longer
-        -- invalidates that because the compensation writes its delta into the
-        -- saved anchor as well as into the live points.
-        local sectionAnchorX, sectionAnchorY = ST.CompensatePanelSectionAnchorDrift(
-            frame, group, sectionLayout, fixedPoint,
-            frame._sectionSizeBaseline and oldWidth > 0 and oldHeight > 0,
-            oldWidth, oldHeight, targetWidth, targetHeight)
-        if sectionAnchorX then
-            UpdateCoordLabel(frame, sectionAnchorX, sectionAnchorY)
-        end
-    elseif fixedPoint and canCompensateAnchor then
-        local anchorPoint = (group.anchor and group.anchor.point) or "CENTER"
-        local oldFixedX, oldFixedY = GetAnchorOffset(fixedPoint, oldWidth, oldHeight)
-        local oldAnchorX, oldAnchorY = GetAnchorOffset(anchorPoint, oldWidth, oldHeight)
-        local newFixedX, newFixedY = GetAnchorOffset(fixedPoint, targetWidth, targetHeight)
-        local newAnchorX, newAnchorY = GetAnchorOffset(anchorPoint, targetWidth, targetHeight)
-
-        local deltaX = (oldFixedX - oldAnchorX) - (newFixedX - newAnchorX)
-        local deltaY = (oldFixedY - oldAnchorY) - (newFixedY - newAnchorY)
-        if deltaX ~= 0 or deltaY ~= 0 then
-            frame:AdjustPointsOffset(deltaX, deltaY)
-        end
-    end
-
-    frame._hasBeenSized = true
-    -- A second, STICKY baseline flag, read only by the sectioned compensation
-    -- above. _hasBeenSized answers "may the plain fixed-point compensation
-    -- treat the previous size as a baseline", and is reset on purpose whenever
-    -- the points are rebuilt from the saved anchor. This one answers the
-    -- narrower "has this frame ever been sized for real", which a re-anchor
-    -- does not change -- the saved anchor and the live points agree after every
-    -- sectioned pass. It is per-frame, so a fresh frame after a /reload starts
-    -- without one and its first sectioned resize establishes the baseline
-    -- instead of compensating against CreateGroupFrame's placeholder size.
-    frame._sectionSizeBaseline = true
+    local anchorX, anchorY = ST.UpdatePanelBaseAnchor(frame, group, sectionLayout,
+        fixedPoint, targetWidth, targetHeight)
+    if anchorX then UpdateCoordLabel(frame, anchorX, anchorY) end
     frame._sizeDirty = nil
     -- The one moment a dependent's SetPoint target has to change hands: the
     -- panel frame and its anchoring body are the same frame while there are no
@@ -905,7 +838,7 @@ end
 
 -- Compact layout reflow: reposition visible buttons to fill gaps left by hidden ones.
 -- Only runs when compact layout is effective and _layoutDirty is true.
-function CooldownCompanion:UpdateGroupLayout(groupId)
+function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
     if not frame or not group then return end
@@ -1026,7 +959,7 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
         footprintChanged = math_abs(currentWidth - math_max(sectionLayout.footprintWidth, 1)) > 0.5
             or math_abs(currentHeight - math_max(sectionLayout.footprintHeight, 1)) > 0.5
     end
-    if frame.visibleButtonCount ~= visibleCount or footprintChanged then
+    if forceResize or frame.visibleButtonCount ~= visibleCount or footprintChanged then
         frame.visibleButtonCount = visibleCount
         self:ResizeGroupFrame(groupId)
     end

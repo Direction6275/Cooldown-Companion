@@ -81,7 +81,7 @@ local function GetFallbackCursorPosition(self)
     return 0, 0
 end
 
-local function ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY, resetSized)
+local function ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY)
     if not (frame and anchor) then
         return false
     end
@@ -91,9 +91,6 @@ local function ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY, 
     end
 
     frame._anchorDirty = nil
-    if resetSized then
-        frame._hasBeenSized = false
-    end
 
     if frame.alphaSyncFrame then
         frame.alphaSyncFrame:SetScript("OnUpdate", nil)
@@ -111,7 +108,7 @@ local function ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY, 
     local x = anchor.x or CURSOR_ANCHOR_X
     local y = anchor.y or CURSOR_ANCHOR_Y
     frame:ClearAllPoints()
-    frame:SetPoint(anchor.point or CURSOR_ANCHOR_POINT, UIParent, "BOTTOMLEFT", cursorX + x, cursorY + y)
+    ST.SetPanelBasePoint(frame, anchor.point or CURSOR_ANCHOR_POINT, UIParent, "BOTTOMLEFT", cursorX + x, cursorY + y)
     UpdateCoordLabel(frame, x, y)
     return true
 end
@@ -338,8 +335,9 @@ local function ComputeCursorAnchorLayoutPreviewPanelCoordinates(self, frame, gro
     end
 
     local cursorX, cursorY = GetCursorAnchorLayoutPreviewPosition(self, groupId)
-    local frameCenterX, frameCenterY = frame:GetCenter()
-    local frameWidth, frameHeight = GetFrameSizeInUIParentSpace(frame)
+    local body = ST.GetPanelAnchorBodyFrame(frame)
+    local frameCenterX, frameCenterY = body:GetCenter()
+    local frameWidth, frameHeight = GetFrameSizeInUIParentSpace(body)
     if not (cursorX and cursorY and frameCenterX and frameCenterY and frameWidth and frameHeight) then
         return nil, nil
     end
