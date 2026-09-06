@@ -137,37 +137,11 @@ function CooldownCompanion:ApplyMoverQuickAnchor(descriptor, target)
     if descriptor.kind == "panel" then
         local group = self.db.profile.groups[descriptor.id]
         if not group then return false end
-        local wasCursorAnchored = self:IsGroupCursorAnchored(group)
         local applied
         if self:IsStandaloneTexturePanelGroup(group) then
             applied = SetStandaloneAnchor(descriptor.id, group, target)
         else
             applied = self:SetGroupAnchor(descriptor.id, target)
-        end
-        if applied
-            and wasCursorAnchored
-            and not self:IsGroupCursorAnchored(group)
-            and self:IsArrangeModeActive() then
-            -- Cursor-only containers intentionally stay locked in Arrange.
-            -- Once this panel leaves Cursor, promote just the panel to an
-            -- independent mover so it cannot become an inert toolbar row.
-            self:SetPanelLocked(descriptor.id, false)
-            if self.ShowCursorAnchorLayoutPreview then
-                self:ShowCursorAnchorLayoutPreview(nil)
-            end
-            self:ActivateArrangePanel(group.parentContainerId, descriptor.id, false)
-        elseif applied
-            and not wasCursorAnchored
-            and self:IsGroupCursorAnchored(group)
-            and self:IsArrangeModeActive() then
-            -- The panel just left its container preview. Clear that stale
-            -- selection before rebuilding dummy-cursor membership, then keep
-            -- the same panel selected through the shared activation owner.
-            self:ClearArrangeMoverSelection()
-            if self.ShowCursorAnchorLayoutPreview then
-                self:ShowCursorAnchorLayoutPreview(nil)
-            end
-            self:ActivateArrangePanel(group.parentContainerId, descriptor.id, false)
         end
         return applied
     elseif descriptor.kind == "cast" or descriptor.kind == "resource" then
@@ -382,7 +356,9 @@ local function ArrangeTreePanelVisible(addon, panelInfo, panelUnlocked)
         group = group,
         checkCharVisibility = true,
     }
-    if panelUnlocked then
+    -- Cursor movers use the parked-preview gate below; the ordinary
+    -- independent-panel preview deliberately excludes cursor anchors.
+    if panelUnlocked and not addon:IsGroupCursorAnchored(group) then
         visibilityOpts.panelUnlockPreview = true
     else
         visibilityOpts.assumeContainerUnlocked = true

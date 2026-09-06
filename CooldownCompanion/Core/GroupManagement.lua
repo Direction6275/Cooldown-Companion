@@ -842,6 +842,19 @@ end
 
 local ResetStandalonePanelAnchorsTargeting
 
+-- Cursor movers outlive config previews. Release their gesture and selection
+-- while the old panel and parent still exist, before deleting or moving them.
+local function ClearCursorPanelMoverBeforeMutation(self, groupId)
+    if not self:IsCursorAnchorLayoutPreviewGroupActive(groupId) then return end
+    local preview = self._cursorAnchorLayoutPreview
+    if preview.draggedGroupId == groupId then
+        self:CancelCursorAnchorLayoutPreviewDrag()
+    end
+    if self._arrangeSelectedPanelId == groupId or preview.selectedGroupId == groupId then
+        self:ClearArrangeMoverSelection()
+    end
+end
+
 function CooldownCompanion:DeleteContainer(containerId)
     local db = self.db.profile
     if not db.groupContainers[containerId] then return end
@@ -857,6 +870,7 @@ function CooldownCompanion:DeleteContainer(containerId)
     end
     ResetStandalonePanelAnchorsTargeting(db.groups, deletedGroupIds, { [containerId] = true })
     for _, groupId in ipairs(panelIds) do
+        ClearCursorPanelMoverBeforeMutation(self, groupId)
         self:UnloadGroup(groupId)
         self:DiscardDormantFrame(groupId)
         db.groups[groupId] = nil
@@ -878,6 +892,7 @@ function CooldownCompanion:DeleteContainer(containerId)
     end
     RefreshPanelAlphaDependencyTargets(self)
     self:RequestAuraRebind("delete")
+    self:RefreshCursorAnchorLayoutPreview()
 end
 
 local function GetStandalonePanelAnchorSettings(panel)
@@ -1265,6 +1280,7 @@ function CooldownCompanion:DeletePanel(containerId, groupId)
     local group = db.groups[groupId]
     if not group or group.parentContainerId ~= containerId then return false end
 
+    ClearCursorPanelMoverBeforeMutation(self, groupId)
     ResetStandalonePanelAnchorsTargeting(db.groups, { [groupId] = true })
     self:UnloadGroup(groupId)
     self:DiscardDormantFrame(groupId)
@@ -1278,6 +1294,7 @@ function CooldownCompanion:DeletePanel(containerId, groupId)
     -- unloading alone leaves a deleted entry's alert registered and firing.
     -- The rebind pass parks every record and re-registers from current config.
     self:RequestAuraRebind("delete")
+    self:RefreshCursorAnchorLayoutPreview()
     return true
 end
 
@@ -1326,6 +1343,8 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
     end
 
     local sourceContainerId = group.parentContainerId
+    local wasCursorAnchored = self:IsGroupCursorAnchored(group)
+    ClearCursorPanelMoverBeforeMutation(self, groupId)
 
     -- Reassign to target container
     group.parentContainerId = targetContainerId
@@ -1349,6 +1368,10 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
         self.alphaState[groupId] = nil
     end
 
+    local frame = self.groupFrames[groupId]
+    if wasCursorAnchored and frame then
+        ST._FinishGroupAnchorChange(self, groupId, frame, group, wasCursorAnchored)
+    end
     self:RefreshGroupFrame(groupId)
 
     -- If source container is now empty, delete it
@@ -1537,6 +1560,7 @@ function CooldownCompanion:DeleteGroup(id)
 
     local parentId = group.parentContainerId
 
+    ClearCursorPanelMoverBeforeMutation(self, id)
     ResetStandalonePanelAnchorsTargeting(self.db.profile.groups, { [id] = true })
     self:UnloadGroup(id)
     self:DiscardDormantFrame(id)
@@ -1551,6 +1575,7 @@ function CooldownCompanion:DeleteGroup(id)
     end
     RefreshPanelAlphaDependencyTargets(self)
     self:RequestAuraRebind("delete")
+    self:RefreshCursorAnchorLayoutPreview()
 end
 
 function CooldownCompanion:DuplicateGroup(id)

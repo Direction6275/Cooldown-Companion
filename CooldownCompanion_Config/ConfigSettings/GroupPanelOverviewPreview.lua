@@ -1434,9 +1434,7 @@ function ST._BuildGroupPanelOverview(host, containerId)
             naturalWidth = math_max(1, tonumber(naturalWidth) or 220),
             naturalHeight = math_max(1, tonumber(naturalHeight) or 90),
             hasAttachedResources = attachedResourcePanelId == panelInfo.groupId,
-            canToggleAnchorLock = not browsingOtherClasses
-                and not (CooldownCompanion.IsGroupCursorAnchored
-                    and CooldownCompanion:IsGroupCursorAnchored(panelInfo.group)),
+            canToggleAnchorLock = not browsingOtherClasses,
         }
         -- Row height is intentionally standardized by the overview. Horizontal
         -- allocation should therefore follow the Panel's saved-design width,

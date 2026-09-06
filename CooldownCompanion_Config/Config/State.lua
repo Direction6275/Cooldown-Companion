@@ -2269,8 +2269,7 @@ local function SetupGroupRowIndicators(entry, group)
         AddAtlasBadge("GM-icon-visibleDis-pressed")
     end
     -- Unlocked (lock icon)
-    if group.locked == false
-        and not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(group)) then
+    if group.locked == false then
         AddAtlasBadge("ShipMissionIcon-Training-Map")
     end
     -- Resource Bars anchored to a panel in this group (pin badge).

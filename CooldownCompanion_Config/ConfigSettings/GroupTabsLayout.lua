@@ -525,12 +525,6 @@ local function BuildLayoutTab(container)
             RefreshTextureVisual()
         end
 
-        if targetMode == "cursor" then
-            CooldownCompanion:ShowCursorAnchorLayoutPreview(textureGroupId)
-        else
-            CooldownCompanion:ClearCursorAnchorLayoutPreview()
-        end
-
         -- ============================================================
         -- The row grammar (RowWidgets.lua). Same shapes as the panel half
         -- below - the rules are stated once in the recipe comment atop
@@ -870,11 +864,6 @@ local function BuildLayoutTab(container)
         targetMode = preferredTargetMode
     end
     CS.layoutAnchorTargetMode[CS.selectedGroup] = targetMode
-    if targetMode == "cursor" and isCursorAnchor then
-        CooldownCompanion:ShowCursorAnchorLayoutPreview(CS.selectedGroup)
-    else
-        CooldownCompanion:ClearCursorAnchorLayoutPreview()
-    end
     -- ================================================================
     -- The row grammar (RowWidgets.lua). The rules every row-grammar section
     -- follows are stated once, in the recipe comment at the top of

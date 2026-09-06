@@ -2873,32 +2873,49 @@ local function GetCursorAnchorLayoutPreviewAnchor(self, groupId, fallbackAnchor)
     return fallbackAnchor
 end
 
+local function IsCursorAnchorLayoutPreviewEligible(self, groupId, group)
+    return group ~= nil
+        and not self._combatForcedLock
+        and not InCombatLockdown()
+        and IsCursorAnchor(group.anchor)
+        and (self._arrangeModeActive == true or group.locked == false)
+        and not self:IsArrangePanelSuppressed(groupId)
+        and not (group.parentContainerId and self:IsArrangeContainerSuppressed(group.parentContainerId))
+        and self:CanGroupUseCursorAnchor(group)
+        and self:IsGroupActive(groupId, {
+            group = group,
+            checkCharVisibility = true,
+            checkLoadConditions = true,
+            requireButtons = true,
+        })
+end
+
 local function BuildCursorAnchorLayoutPreviewGroupMap(self)
     local activeGroupIds = {}
     local profile = self.db and self.db.profile
-    local groups = profile and profile.groups
-    if not groups then
-        return activeGroupIds
-    end
-
-    for groupId, group in pairs(groups) do
-        if IsCursorAnchor(group.anchor)
-            and not (self.IsArrangePanelSuppressed and self:IsArrangePanelSuppressed(groupId))
-            and not (group.parentContainerId
-                and self.IsArrangeContainerSuppressed
-                and self:IsArrangeContainerSuppressed(group.parentContainerId))
-            and self:CanGroupUseCursorAnchor(group)
-            and self:IsGroupActive(groupId, {
-                group = group,
-                checkCharVisibility = true,
-                checkLoadConditions = true,
-                requireButtons = true,
-            }) then
+    for groupId, group in pairs(profile and profile.groups or {}) do
+        if IsCursorAnchorLayoutPreviewEligible(self, groupId, group) then
             activeGroupIds[groupId] = true
         end
     end
-
     return activeGroupIds
+end
+
+-- Release the shared mover selection before dropping its cursor membership.
+-- A panel changing to another anchor keeps its selection in that mover instead.
+local function ClearInactiveCursorPreviewSelection(self, activeGroupIds)
+    local selectedGroupId = self._arrangeSelectedPanelId
+    local preview = self._cursorAnchorLayoutPreview
+    local group = selectedGroupId and self.db.profile.groups[selectedGroupId]
+    if selectedGroupId
+        and PreviewMapContains(preview and preview.activeGroupIds, selectedGroupId)
+        and not PreviewMapContains(activeGroupIds, selectedGroupId)
+        and (not group or IsCursorAnchor(group.anchor)) then
+        -- The old panel may already be dormant. Do not reapply its active
+        -- preview just to deselect it; that would recreate an unloaded frame.
+        preview.selectedGroupId = nil
+        self:ClearArrangeMoverSelection()
+    end
 end
 
 local function SetCursorAnchorLayoutPreviewGroupState(self, groupId, active)
@@ -2976,9 +2993,8 @@ end
 -- the selection; a drag selects without ever toggling off.
 function CooldownCompanion:SelectArrangeCursorPanel(groupId, toggle)
     local preview = self._cursorAnchorLayoutPreview
-    if not (self._arrangeModeActive
-        and preview
-        and PreviewMapContains(preview.activeGroupIds, groupId)) then
+    if self._combatForcedLock or InCombatLockdown()
+        or not (preview and PreviewMapContains(preview.activeGroupIds, groupId)) then
         return false
     end
 
@@ -3258,6 +3274,31 @@ function CooldownCompanion:EndCursorAnchorLayoutPreviewHostDrag(groupId, cancelS
     return true
 end
 
+-- Eligibility can disappear during a drag, after the runtime frame was moved
+-- to the dormant cache. Cancel that gesture without saving its partial offset.
+function CooldownCompanion:CancelCursorAnchorLayoutPreviewDrag()
+    local preview = self._cursorAnchorLayoutPreview
+    local groupId = preview and preview.draggedGroupId
+    if groupId == nil then return end
+    local frame = self.groupFrames and self.groupFrames[groupId]
+        or self._dormantFrames and self._dormantFrames[groupId]
+    local button = frame and frame.buttons and frame.buttons[1]
+    local host = button and button.auraTextureHost
+    if host and host._cursorAnchorDrag then
+        host._cursorAnchorDrag = nil
+        host._isDragging = nil
+        host._arrangePanelSurfaceDrag = nil
+        host._dragCancelPending = true
+        if not (InCombatLockdown() and host:IsProtected()) then
+            host:StopMovingOrSizing()
+        end
+        self:EndCursorAnchorLayoutPreviewHostDrag(groupId, true)
+        self:EndMoverChromeFade(host)
+    else
+        EndCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId, true)
+    end
+end
+
 local function ResetCursorAnchorLayoutPreviewPosition(self)
     local preview = self._cursorAnchorLayoutPreview
     local frame = preview and preview.frame or nil
@@ -3445,12 +3486,18 @@ local function EnsureCursorAnchorLayoutPreview(self)
 end
 
 -- groupId names the panel that takes drag/nudge chrome. A nil groupId is the
--- pin-only form used by arrange mode: every active cursor panel parks on the
--- dummy cursor quietly, and clicking or dragging one selects it into the
--- positioning chrome (SelectArrangeCursorPanel).
+-- pin-only form: unlocked cursor panels park on the dummy cursor, and clicking
+-- or dragging one selects its positioning chrome (SelectArrangeCursorPanel).
+-- Only explicit individual unlocks or Arrange Mode can create this preview.
 function CooldownCompanion:ShowCursorAnchorLayoutPreview(groupId)
-    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
-    if groupId ~= nil and not (group and IsCursorAnchor(group.anchor)) then
+    local activeGroupIds = BuildCursorAnchorLayoutPreviewGroupMap(self)
+    local currentPreview = self._cursorAnchorLayoutPreview
+    if currentPreview and currentPreview.draggedGroupId
+        and not PreviewMapContains(activeGroupIds, currentPreview.draggedGroupId) then
+        self:CancelCursorAnchorLayoutPreviewDrag()
+    end
+    ClearInactiveCursorPreviewSelection(self, activeGroupIds)
+    if next(activeGroupIds) == nil then
         self:ClearCursorAnchorLayoutPreview()
         return
     end
@@ -3458,12 +3505,7 @@ function CooldownCompanion:ShowCursorAnchorLayoutPreview(groupId)
     local preview = EnsureCursorAnchorLayoutPreview(self)
     local frame = preview.frame
     local previousActiveGroupIds = preview.activeGroupIds
-    local activeGroupIds = BuildCursorAnchorLayoutPreviewGroupMap(self)
-    if groupId == nil and next(activeGroupIds) == nil then
-        self:ClearCursorAnchorLayoutPreview()
-        return
-    end
-    preview.selectedGroupId = groupId
+    preview.selectedGroupId = PreviewMapContains(activeGroupIds, groupId) and groupId or nil
     preview.activeGroupIds = activeGroupIds
     preview.stagedAnchors = nil
     if not preview.hasCustomPosition and not preview.hasDefaultPosition then
@@ -3492,6 +3534,37 @@ function CooldownCompanion:ShowCursorAnchorLayoutPreview(groupId)
         self:RefreshCursorAnchorTicker()
     end
     self:UpdateCursorAnchoredFrames()
+end
+
+-- Runtime refreshes own preview membership, including when no preview exists
+-- yet. A one-panel refresh checks only that panel unless membership changed;
+-- unchanged refreshes leave selection, staged offsets, and mover chrome alone.
+function CooldownCompanion:RefreshCursorAnchorLayoutPreview(groupId)
+    local preview = self._cursorAnchorLayoutPreview
+    local previous = preview and preview.activeGroupIds
+    if groupId ~= nil then
+        local group = self.db.profile.groups[groupId]
+        if IsCursorAnchorLayoutPreviewEligible(self, groupId, group)
+            == PreviewMapContains(previous, groupId) then
+            return false
+        end
+    end
+
+    local current = BuildCursorAnchorLayoutPreviewGroupMap(self)
+    local changed = false
+    for id in pairs(current) do
+        if not PreviewMapContains(previous, id) then changed = true; break end
+    end
+    if not changed then
+        for id in pairs(previous or {}) do
+            if not PreviewMapContains(current, id) then changed = true; break end
+        end
+    end
+    if not changed then return false end
+
+    self:ShowCursorAnchorLayoutPreview(preview and preview.selectedGroupId)
+    self:RefreshUnlockToolbar()
+    return true
 end
 
 -- Slider drags in config may move the explicit dummy-cursor layout preview,
@@ -3547,7 +3620,7 @@ function CooldownCompanion:ClearCursorAnchorLayoutPreviewOffset(groupId)
     return true
 end
 
-function CooldownCompanion:ClearCursorAnchorLayoutPreview()
+function CooldownCompanion:ClearCursorAnchorLayoutPreview(force)
     local preview = self._cursorAnchorLayoutPreview
     if not preview then
         return
@@ -3565,17 +3638,21 @@ function CooldownCompanion:ClearCursorAnchorLayoutPreview()
         return
     end
 
-    -- While arrange mode holds cursor panels on the dummy cursor, a
-    -- config-side clear only drops the selection chrome; the pin itself
-    -- stays until arrange mode exits. Combat forced lock bypasses the
-    -- demote: cursor panels must follow the real cursor for the fight.
-    if self._arrangeModeActive == true
-        and not self._combatForcedLock
-        and next(BuildCursorAnchorLayoutPreviewGroupMap(self)) ~= nil then
-        self:ShowCursorAnchorLayoutPreview(nil)
+    -- Config selection and closing settings do not end an explicit unlock.
+    -- Combat and lock-all teardown hand panels back to the real cursor.
+    if not force and next(BuildCursorAnchorLayoutPreviewGroupMap(self)) ~= nil then
+        local selectedGroupId = preview.selectedGroupId
+        -- Keep an explicit toolbar selection through the config refresh that
+        -- follows a Navigator unlock, including during global Arrange Mode.
+        if self._arrangeModeActive and self._arrangeSelectedPanelId ~= selectedGroupId then
+            selectedGroupId = nil
+        end
+        self:ShowCursorAnchorLayoutPreview(selectedGroupId)
         return
     end
 
+    self:CancelCursorAnchorLayoutPreviewDrag()
+    ClearInactiveCursorPreviewSelection(self, nil)
     local activeGroupIds = preview.activeGroupIds
     preview.selectedGroupId = nil
     preview.activeGroupIds = nil
@@ -5669,6 +5746,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     if group.parentContainerId and self.RefreshContainerWrapper then
         self:RefreshContainerWrapper(group.parentContainerId)
     end
+    self:RefreshCursorAnchorLayoutPreview(groupId)
     if self.RefreshCursorAnchorTicker then
         self:RefreshCursorAnchorTicker()
     end
@@ -5839,8 +5917,35 @@ local function FinishGroupAnchorChange(self, groupId, frame, group, wasCursorAnc
     self:RebuildPanelAlphaDependencyTargets()
     RefreshGroupAnchorInteractionState(self, groupId, frame, group)
     self:RefreshCursorAnchorTicker()
-    if (wasCursorAnchored or IsCursorAnchor(group.anchor)) and self.EvaluateBarsAndFramesRuntime then
-        self:EvaluateBarsAndFramesRuntime("cursor-anchor-changed")
+    local cursorAnchored = IsCursorAnchor(group.anchor)
+    if wasCursorAnchored or cursorAnchored then
+        local preview = self._cursorAnchorLayoutPreview
+        local selectedGroupId = self._arrangeSelectedPanelId
+            or (preview and preview.selectedGroupId)
+        local transferSelection = wasCursorAnchored ~= cursorAnchored
+            and self._arrangeSelectedPanelId == groupId
+        local wasParked = IsCursorAnchorLayoutPreviewGroupActive(self, groupId)
+        if transferSelection then
+            -- The cursor and container movers have different selection owners.
+            -- Release the old owner before activating the replacement below.
+            self:ClearArrangeMoverSelection()
+            selectedGroupId = nil
+        end
+        if wasCursorAnchored and not cursorAnchored and wasParked and self._arrangeModeActive then
+            -- Cursor-only containers stay locked in Arrange. Carry this panel's
+            -- active unlock across the anchor change without unlocking its group.
+            self:SetPanelLocked(groupId, false)
+        end
+        self:ShowCursorAnchorLayoutPreview(selectedGroupId)
+        if wasCursorAnchored and not cursorAnchored then
+            self:RefreshIndependentPanelMoverChrome(groupId)
+        end
+        if self.EvaluateBarsAndFramesRuntime then
+            self:EvaluateBarsAndFramesRuntime("cursor-anchor-changed")
+        end
+        if transferSelection then
+            self:ActivateArrangePanel(group.parentContainerId, groupId, false)
+        end
     end
 end
 
@@ -5880,9 +5985,7 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
         end
 
         group.anchor = BuildDefaultCursorAnchor()
-        group.locked = nil
         FinishGroupAnchorChange(self, groupId, frame, group, wasCursorAnchored)
-        self:SetGroupDragControlsShown(frame, false)
         return true
     end
 
@@ -6102,7 +6205,6 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     -- click or drag can select it; its chrome stays down until then.
     if isCursorAnchored
         and not isTextureMode
-        and self._arrangeModeActive
         and IsCursorAnchorLayoutPreviewGroupActive(self, groupId) then
         SetFrameClickThrough(frame, false, false)
         frame:RegisterForDrag("LeftButton")
@@ -6481,7 +6583,14 @@ function CooldownCompanion:ClearContainerUnlockState(containerId)
     local cursorSelectedGroup = cursorSelectedGroupId
         and self.db.profile.groups[cursorSelectedGroupId]
         or nil
-    if cursorSelectedGroup and cursorSelectedGroup.parentContainerId == containerId then
+    -- A locked parent has no wrapper, but its cursor panel can still be
+    -- unlocked independently. Refreshing that wrapper must not deselect the
+    -- cursor mover; only explicit hiding or preview teardown owns that state.
+    if cursorSelectedGroup and cursorSelectedGroup.parentContainerId == containerId
+        and (self._combatForcedLock
+            or self:IsArrangeContainerSuppressed(containerId)
+            or self:IsContainerArrangeChromeHidden(containerId)
+            or not IsCursorAnchorLayoutPreviewGroupActive(self, cursorSelectedGroupId)) then
         if self._arrangeSelectedPanelId == cursorSelectedGroupId then
             self._arrangeSelectedPanelId = nil
         end

@@ -509,12 +509,18 @@ ST._ApplyPanelDisplayModeChange = ApplyPanelDisplayModeChange
 
 local function TogglePanelAnchorLock(panelId)
     local panel = CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[panelId]
-    if not panel
-        or (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel)) then
+    if not panel then
+        return false
+    end
+    if InCombatLockdown() or CooldownCompanion._combatForcedLock then
+        CooldownCompanion:Print("Cannot change anchor lock during combat.")
         return false
     end
 
     local isLocked = panel.locked ~= false
+    if isLocked and CooldownCompanion:IsGroupCursorAnchored(panel) then
+        isLocked = not CooldownCompanion:IsCursorAnchorLayoutPreviewGroupActive(panelId)
+    end
     CooldownCompanion:SetPanelLocked(panelId, not isLocked)
     if isLocked then
         CooldownCompanion:Print((panel.name or "Panel") .. " unlocked. Drag to reposition.")
@@ -633,16 +639,18 @@ local function ShowPanelContextMenu(panelId, containerId)
             end
             UIDropDownMenu_AddButton(info, level)
 
-            if not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel)) then
-                info = UIDropDownMenu_CreateInfo()
-                info.text = panel.locked == false and "Lock Anchor" or "Unlock Anchor"
-                info.notCheckable = true
-                info.func = function()
-                    CloseDropDownMenus()
-                    TogglePanelAnchorLock(panelId)
-                end
-                UIDropDownMenu_AddButton(info, level)
+            info = UIDropDownMenu_CreateInfo()
+            local anchorUnlocked = panel.locked == false
+            if not anchorUnlocked and CooldownCompanion:IsGroupCursorAnchored(panel) then
+                anchorUnlocked = CooldownCompanion:IsCursorAnchorLayoutPreviewGroupActive(panelId)
             end
+            info.text = anchorUnlocked and "Lock Anchor" or "Unlock Anchor"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                TogglePanelAnchorLock(panelId)
+            end
+            UIDropDownMenu_AddButton(info, level)
 
             -- Aura Panels are structurally excluded from auto-anchoring
             -- (IsGroupAvailableForAnchoring), so there is nothing to toggle.
@@ -668,8 +676,8 @@ local function ShowPanelContextMenu(panelId, containerId)
             end
 
             -- Stable external anchor (Core/ExternalAnchorFrame.lua): one
-            -- marked panel per spec. A cursor-anchored panel is skipped like
-            -- Lock Anchor above; an anchor that chases the cursor is no anchor.
+            -- marked panel per spec. A cursor-anchored panel cannot provide
+            -- a stable position for other addons.
             if not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel)) then
                 local holderId = CooldownCompanion:GetExternalAnchorPanelId()
                 local isHolder = holderId ~= nil and holderId == tonumber(panelId)
