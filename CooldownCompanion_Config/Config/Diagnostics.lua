@@ -191,6 +191,7 @@ local function BuildConfigDiagnosticSummary(profile, groupFrameStates, container
     end
 
     return {
+        otherClassLibraryClassKey = CS and CS.otherClassLibraryClassKey or nil,
         selectedContainer = selectedContainerId,
         selectedGroup = selectedPanelId,
         selectedButton = selectedButtonIndex,
@@ -220,10 +221,10 @@ local function BuildConfigDiagnosticSummary(profile, groupFrameStates, container
     }
 end
 
-local function BuildDiagnosticSnapshot()
+local function BuildDiagnosticSnapshot(fullProfile)
     local db = CooldownCompanion.db
     local snapshot = {
-        _v = 2,
+        _v = 3,
         reportKind = DIAGNOSTIC_REPORT_BUG_REPORT,
     }
 
@@ -414,8 +415,15 @@ local function BuildDiagnosticSnapshot()
     cacheSpecsFromResourceStores(rawget(db.profile, "resourceBarsByChar"))
     snapshot.meta.specNameCache = specNameCache
 
-    -- Keep the decoded report compact while attaching an importable profile.
-    snapshot.profile = db.profile
+    if fullProfile then
+        snapshot.profile = CopyTable(db.profile)
+        snapshot.profile._characterInfo = CopyTable(db.global and db.global.characterInfo or {})
+        snapshot.scope = { kind = "full" }
+    else
+        snapshot.profile, snapshot.scope = ST._BuildScopedDiagnosticProfile(
+            db.profile, snapshot.meta, snapshot.config, snapshot.runtime,
+            db.global and db.global.characterInfo)
+    end
 
     return snapshot
 end
@@ -446,7 +454,7 @@ local function AddVisualStateDiagnosticsLines(add, visualStateDiagnostics)
         add("  reason=" .. tostring(vsd.reason))
     end
     if vsd.truncated then
-        add("  truncated=true")
+        add("  Coverage: visual sample limited to " .. tostring(vsd.maxRows or (type(vsd.rows) == "table" and #vsd.rows) or 0) .. " entries; this limit does not indicate transfer damage.")
     end
     if type(vsd.rows) == "table" and #vsd.rows > 0 then
         for _, row in ipairs(vsd.rows) do
@@ -713,7 +721,7 @@ local function FormatRelevantAddonList(loadedAddons)
     local found = {}
     for _, addon in ipairs(loadedAddons) do
         local name = addon and addon.name
-        if relevantNames[name] then
+        if relevantNames[name] or (type(name) == "string" and name:match("^EllesmereUI")) then
             found[#found + 1] = name .. " v" .. tostring(addon.version or "?")
         end
     end
@@ -731,7 +739,7 @@ local function AddAgentDebugSignals(add, diag)
     local shape = c.profileShape or {}
     local vsd = r.visualStateDiagnostics
 
-    add("--- Agent Debug Signals ---")
+    add("--- Diagnostic Summary ---")
     add("Profile Shape: panelModes=" .. FormatCountMap(shape.panelModes)
         .. " | buttonTypes=" .. FormatCountMap(shape.buttonTypes))
 
@@ -745,12 +753,15 @@ local function AddAgentDebugSignals(add, diag)
     end
 
     if vsd then
-        add(("Visual-State Signal: mismatched=%s missing=%s restored=%s truncated=%s"):format(
+        add(("Visual sample: %s entries; mismatched=%s missing=%s; capture restored=%s"):format(
+            tostring(vsd.rowCount or (type(vsd.rows) == "table" and #vsd.rows) or 0),
             tostring(vsd.mismatchCount or 0),
             tostring(vsd.missingSnapshots or 0),
-            tostring(vsd.captureRestored),
-            tostring(vsd.truncated == true)
+            tostring(vsd.captureRestored)
         ))
+        if vsd.truncated then
+            add("Coverage: visual sample is limited; remaining entries were not assessed. This flag does not describe export integrity.")
+        end
     else
         add("Visual-State Signal: unavailable")
     end
@@ -761,10 +772,25 @@ local function AddAgentDebugSignals(add, diag)
         ))
     end
     add("Relevant Addons: " .. FormatRelevantAddonList(r.loadedAddons))
-    add("Profile Attachment: compact profile included in this bug report string.")
+    local scope = diag.scope
+    if type(scope) == "table" and scope.kind == "character" then
+        add(("Profile Attachment: %s setup, all specs; %s groups, %s panels, %s entries included."):format(
+            tostring(scope.className or "character"), tostring(scope.includedContainers or 0),
+            tostring(scope.includedPanels or 0), tostring(scope.includedButtons or 0)))
+        add(("Scope: omitted %s other-class groups, %s panels, %s class bar stores, and the preset library. Other known characters' local bar settings are omitted."):format(
+            tostring(#(scope.omittedContainerIds or {})), tostring(#(scope.omittedPanelIds or {})),
+            tostring(#(scope.omittedClassStores or {}))))
+        add(("Retained: shared/hidden/disabled content, selections, runtime references, and dependencies (%s extra panels); unknown ownership retained (%s groups/panels)."):format(
+            tostring(scope.dependencyPanelCount or 0), tostring(scope.unknownOwnerCount or 0)))
+        add("Scoped attachment: import selected pieces only. Generate a Full Profile Bug Report for profile-wide or migration issues.")
+    else
+        add(type(diag.profile) == "table"
+            and "Profile Attachment: full profile included (all classes and characters), using the shared profile export rules."
+            or "Profile Attachment: unavailable in this report.")
+    end
 end
 
-local function FormatDiagnosticBugReportAsText(diag)
+local function FormatDiagnosticBugReportAsText(diag, includeDetails)
     local lines = {}
     local function add(s) lines[#lines + 1] = s end
     local m = diag.meta or {}
@@ -782,11 +808,17 @@ local function FormatDiagnosticBugReportAsText(diag)
     add(("Instance: %s | Resting: %s"):format(
         tostring(m.instanceType or "?"), tostring(r.isResting)))
     add(("Timestamp: %s"):format(tostring(m.timestamp or "?")))
-    add(("Containers: %s | Panels: %s | Total Buttons: %s"):format(
+    add(("Source profile: %s groups | %s panels | %s entries"):format(
         tostring(m.containerCount or "?"), tostring(m.groupCount or "?"), tostring(m.totalButtons or "?")))
 
     add("")
     AddAgentDebugSignals(add, diag)
+    if includeDetails and type(diag.scope) == "table" and diag.scope.kind == "character" then
+        add("Omitted group IDs: " .. FormatIDList(diag.scope.omittedContainerIds))
+        add("Omitted panel IDs: " .. FormatIDList(diag.scope.omittedPanelIds))
+        add("Omitted class bar stores: " .. FormatIDList(diag.scope.omittedClassStores))
+        add("Omitted character-store counts: " .. FormatCountMap(diag.scope.omittedCharacterStores))
+    end
 
     add("")
     add("--- Current Config Context ---")
@@ -795,15 +827,18 @@ local function FormatDiagnosticBugReportAsText(diag)
         tostring(c.selectedGroup or "nil"),
         tostring(c.selectedButton or "nil"),
         tostring(c.selectedCustomBarId or "nil")))
-    add(("Tabs: scope=%s selected=%s container=%s panel=%s button=%s resources=%s castBar=%s"):format(
-        tostring(c.unifiedRowScope or "nil"),
-        tostring(c.selectedTab or "nil"),
-        tostring(c.selectedContainerTab or "nil"),
-        tostring(c.panelSettingsTab or "nil"),
-        tostring(c.buttonSettingsTab or "nil"),
-        tostring(c.resourcesSettingsTab or "nil"),
-        tostring(c.castBarHomeTab or "nil")))
-    if c.selectedButtons ~= "" or c.selectedPanels ~= "" or c.selectedGroups ~= "" or c.selectedCustomBars ~= "" then
+    if includeDetails then
+        add(("Tabs: scope=%s selected=%s container=%s panel=%s button=%s resources=%s castBar=%s"):format(
+            tostring(c.unifiedRowScope or "nil"),
+            tostring(c.selectedTab or "nil"),
+            tostring(c.selectedContainerTab or "nil"),
+            tostring(c.panelSettingsTab or "nil"),
+            tostring(c.buttonSettingsTab or "nil"),
+            tostring(c.resourcesSettingsTab or "nil"),
+            tostring(c.castBarHomeTab or "nil")))
+    end
+    if (c.selectedButtons and c.selectedButtons ~= "") or (c.selectedPanels and c.selectedPanels ~= "")
+        or (c.selectedGroups and c.selectedGroups ~= "") or (c.selectedCustomBars and c.selectedCustomBars ~= "") then
         add(("Multi-select: buttons=%s panels=%s groups=%s customBars=%s"):format(
             c.selectedButtons ~= "" and c.selectedButtons or "none",
             c.selectedPanels ~= "" and c.selectedPanels or "none",
@@ -849,10 +884,22 @@ local function FormatDiagnosticBugReportAsText(diag)
             tostring(button.loadConditionCount or 0),
             tostring(button.overrideCount or 0)))
     end
+    if not includeDetails then
+        add("Visible Panels: " .. tostring(c.visiblePanelCount or 0))
+        local anchoring = r.barsAndFramesRuntime and r.barsAndFramesRuntime.frameAnchoring
+        if anchoring and anchoring.applied then
+            add(("Frame Anchoring: provider=%s panel=%s pendingRepair=%s repairs=%s"):format(
+                tostring(anchoring.resolvedProvider or "none"), tostring(anchoring.anchorGroupId or "none"),
+                tostring(anchoring.pendingExternalAnchorRepair), tostring(anchoring.externalAnchorRepairCount or 0)))
+        end
+        add("")
+        add("Enable Show details for visual rows, subsystem counters, and the complete addon list.")
+        return table.concat(lines, "\n")
+    end
     if type(c.visiblePanels) == "table" then
         add(("Visible Panels: %s%s"):format(
             tostring(c.visiblePanelCount or #c.visiblePanels),
-            c.visiblePanelsTruncated and " (truncated)" or ""))
+            c.visiblePanelsTruncated and " (list limited to 12)" or ""))
         for _, panel in ipairs(c.visiblePanels) do
             add(("  [%s] %q mode=%s buttons=%s parent=%s"):format(
                 tostring(panel.id or "?"),
@@ -921,19 +968,19 @@ local function FormatDiagnosticBugReportAsText(diag)
     return table.concat(lines, "\n")
 end
 
-local function FormatDiagnosticAsText(diag)
-    return FormatDiagnosticBugReportAsText(diag)
+local function FormatDiagnosticAsText(diag, includeDetails)
+    return FormatDiagnosticBugReportAsText(diag, includeDetails)
 end
 
-local function SetDiagnosticExportText(popup)
-    local snapshot = BuildDiagnosticSnapshot()
+local function SetDiagnosticExportText(popup, fullProfile)
+    local snapshot = BuildDiagnosticSnapshot(fullProfile)
     popup.EditBox:SetText("CDCdiag:" .. EncodeSharedPayload(snapshot, "diagnostic"))
     popup.EditBox:HighlightText()
     popup.EditBox:SetFocus()
 end
 
 StaticPopupDialogs["CDC_DIAGNOSTIC_BUG_REPORT"] = {
-    text = "Bug report string with compact profile export (Ctrl+C to copy, paste in Discord):",
+    text = "Character setup report (all class specs, shared groups, and dependencies). Copy with Ctrl+C into a plain text file, then attach the file to your bug report.",
     button1 = "Close",
     hasEditBox = true,
     OnShow = function(self)
@@ -947,6 +994,12 @@ StaticPopupDialogs["CDC_DIAGNOSTIC_BUG_REPORT"] = {
     hideOnEscape = true,
     preferredIndex = 3,
 }
+
+StaticPopupDialogs["CDC_DIAGNOSTIC_FULL_REPORT"] = CopyTable(StaticPopupDialogs["CDC_DIAGNOSTIC_BUG_REPORT"])
+StaticPopupDialogs["CDC_DIAGNOSTIC_FULL_REPORT"].text = "Full profile report (all classes and characters). Copy with Ctrl+C into a plain text file, then attach the file to your bug report."
+StaticPopupDialogs["CDC_DIAGNOSTIC_FULL_REPORT"].OnShow = function(self)
+    SetDiagnosticExportText(self, true)
+end
 
 local function OpenDiagnosticDecodePanel()
     if diagnosticDecodeFrame then
@@ -969,10 +1022,18 @@ local function OpenDiagnosticDecodePanel()
     frame:AddChild(inputBox)
 
     local outputBox = AceGUI:Create("MultiLineEditBox")
-    outputBox:SetLabel("Decoded report:")
+    outputBox:SetLabel("Decoded summary:")
     outputBox:SetFullWidth(true)
     outputBox:SetNumLines(20)
     outputBox.button:Hide()
+
+    local decodedSnapshot = nil
+    local includeDetails = false
+    inputBox:SetCallback("OnTextChanged", function()
+        decodedSnapshot = nil
+        outputBox.canCopyDiagnosticText = nil
+        outputBox:SetText("")
+    end)
 
     local btnGroup = AceGUI:Create("SimpleGroup")
     btnGroup:SetFullWidth(true)
@@ -982,11 +1043,13 @@ local function OpenDiagnosticDecodePanel()
     decodeBtn:SetText("Decode")
     decodeBtn:SetWidth(120)
     decodeBtn:SetCallback("OnClick", function()
+        decodedSnapshot = nil
+        outputBox.canCopyDiagnosticText = nil
+        outputBox:SetText("")
         local text = inputBox:GetText()
         if not text or text == "" then return end
         local preparedText, compactText = PrepareSharedImportText(text)
         if not preparedText then return end
-        outputBox.canCopyDiagnosticText = nil
         if compactText:sub(1, 8) == "CDCdiag:" then
             preparedText = compactText:sub(9)
             compactText = preparedText
@@ -996,17 +1059,18 @@ local function OpenDiagnosticDecodePanel()
             CooldownCompanion:NotifyLegacySupportCutoff("diagnostic string")
             return
         end
-        local success, data = DecodeSharedPayload(preparedText)
+        local success, data, decodeError = DecodeSharedPayload(preparedText)
         if not success or type(data) ~= "table" then
-            outputBox:SetText("Error: Failed to deserialize.")
+            outputBox:SetText(decodeError or "Error: Failed to deserialize. Ask for the original diagnostic string as a text-file attachment.")
             return
         end
         if RejectUnsupportedImportPayload(data, "diagnostic string") then
             outputBox:SetText("")
             return
         end
+        decodedSnapshot = data
         outputBox.canCopyDiagnosticText = true
-        outputBox:SetText(FormatDiagnosticAsText(data))
+        outputBox:SetText(FormatDiagnosticAsText(data, includeDetails))
     end)
     btnGroup:AddChild(decodeBtn)
 
@@ -1019,6 +1083,19 @@ local function OpenDiagnosticDecodePanel()
         outputBox.editBox:SetFocus()
     end)
     btnGroup:AddChild(copyBtn)
+
+    local detailsToggle = AceGUI:Create("CheckBox")
+    detailsToggle:SetLabel("Show details")
+    detailsToggle:SetWidth(160)
+    detailsToggle:SetValue(false)
+    detailsToggle:SetCallback("OnValueChanged", function(_, _, value)
+        includeDetails = value == true
+        outputBox:SetLabel(includeDetails and "Decoded report:" or "Decoded summary:")
+        if decodedSnapshot then
+            outputBox:SetText(FormatDiagnosticAsText(decodedSnapshot, includeDetails))
+        end
+    end)
+    btnGroup:AddChild(detailsToggle)
 
     frame:AddChild(btnGroup)
     frame:AddChild(outputBox)

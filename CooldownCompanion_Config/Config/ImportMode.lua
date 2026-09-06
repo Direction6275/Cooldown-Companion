@@ -604,6 +604,7 @@ local function RenderSetupReview(scroll, mode, review)
 end
 
 local function RenderModeRadioRow(scroll, review)
+    if ST._IsScopedDiagnosticReview and ST._IsScopedDiagnosticReview(review) then return end
     if not (ST._IsProfileImportReviewKind and ST._IsProfileImportReviewKind(review)
         and review.pieces) then
         return

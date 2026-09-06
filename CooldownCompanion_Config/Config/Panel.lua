@@ -1506,13 +1506,25 @@ local function CreateConfigPanel()
             info4.text = "  Generate Bug Report"
             info4.notCheckable = true
             info4.tooltipTitle = "Generate Bug Report"
-            info4.tooltipText = "Creates a support report with current runtime details and a compact profile export. If possible, select the broken group, panel, or entry before generating it."
+            info4.tooltipText = "Includes your class across all specs, shared groups, dependencies, and runtime details. Hidden and disabled panels are retained. Select the broken group, panel, or entry first if possible."
             info4.tooltipOnButton = true
             info4.func = function()
                 CloseDropDownMenus()
                 ShowPopupAboveConfig("CDC_DIAGNOSTIC_BUG_REPORT")
             end
             UIDropDownMenu_AddButton(info4, level)
+
+            local infoFullReport = UIDropDownMenu_CreateInfo()
+            infoFullReport.text = "  Generate Full Profile Bug Report"
+            infoFullReport.notCheckable = true
+            infoFullReport.tooltipTitle = "Full Profile Bug Report"
+            infoFullReport.tooltipText = "Includes every class and character. Use for profile-wide problems, migration issues, or when support requests it. Larger than the standard report."
+            infoFullReport.tooltipOnButton = true
+            infoFullReport.func = function()
+                CloseDropDownMenus()
+                ShowPopupAboveConfig("CDC_DIAGNOSTIC_FULL_REPORT")
+            end
+            UIDropDownMenu_AddButton(infoFullReport, level)
 
             local infoChangelog = UIDropDownMenu_CreateInfo()
             infoChangelog.text = "  View Changelog"
