@@ -240,8 +240,9 @@ local function SyncTexturePanelPositionFromGroupFrame(self, groupId, group)
     end
 
     if frame and frame.GetCenter then
-        local cx, cy = frame:GetCenter()
-        local fw, fh = frame:GetSize()
+        local body = ST.GetPanelAnchorBodyFrame(frame)
+        local cx, cy = body:GetCenter()
+        local fw, fh = body:GetSize()
         local rcx, rcy = UIParent:GetCenter()
         local rw, rh = UIParent:GetSize()
 
@@ -1152,6 +1153,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
 
     db.groups[groupId] = {
         name = isRotationAssistant and ST.ROTATION_ASSISTANT_NAME or ("Panel " .. panelOrder),
+        baseRowAnchorVersion = 1,
         parentContainerId = containerId,
         order = panelOrder,
         anchor = {

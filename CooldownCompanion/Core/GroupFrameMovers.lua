@@ -319,11 +319,8 @@ local function CreateNudger(frame, groupId)
                 end
 
                 gFrame:AdjustPointsOffset(dir.dx, dir.dy)
-                -- Read the actual frame position so display stays in sync
-                local _, _, _, x, y = gFrame:GetPoint()
-                group.anchor.x = math_floor(x * 10 + 0.5) / 10
-                group.anchor.y = math_floor(y * 10 + 0.5) / 10
-                UpdateCoordLabel(gFrame, x, y)
+                -- Save the base-grid position, not the outer frame offsets.
+                CooldownCompanion:SaveGroupPosition(groupId)
                 if group.parentContainerId and CooldownCompanion.RefreshContainerWrapper then
                     CooldownCompanion:RefreshContainerWrapper(group.parentContainerId)
                 end

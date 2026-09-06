@@ -559,7 +559,8 @@ function ST.BuildPanelSectionLayout(group, sections, lists, panelWidth, panelHei
     -- The base cluster's rect, measured exactly the way ResizeGroupFrame
     -- measures a section-less panel -- over base members only.
     local baseCount = #lists.base
-    local baseWidth, baseHeight = 0, 0
+    -- An empty base retains one cell; sections never become its anchor body.
+    local baseWidth, baseHeight = panelWidth, panelHeight
     if baseCount > 0 then
         local cols, rows
         if orientation == "horizontal" then
@@ -867,15 +868,7 @@ local function AcquireBaseAnchorFrame(frame, layout)
         anchorFrame:EnableMouse(false)
         frame._sectionBaseAnchor = anchorFrame
     end
-    -- Nothing visible anywhere on the panel: the body takes the same one-button
-    -- rectangle the frame itself does, so a dependent anchored to it keeps
-    -- measuring a panel rather than a 1x1 dot. A base row that is merely empty
-    -- while a section still shows is a different case and keeps the 1x1 floor.
-    if layout.isEmpty then
-        anchorFrame:SetSize(math_max(1, layout.footprintWidth), math_max(1, layout.footprintHeight))
-    else
-        anchorFrame:SetSize(math_max(1, layout.baseWidth), math_max(1, layout.baseHeight))
-    end
+    anchorFrame:SetSize(math_max(1, layout.baseWidth), math_max(1, layout.baseHeight))
     anchorFrame:ClearAllPoints()
     anchorFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", layout.baseOffsetX, -layout.baseOffsetY)
     anchorFrame:Show()
@@ -991,9 +984,9 @@ local function PlaceSectionMembers(frame, lists, layout, panelWidth, panelHeight
 end
 
 --- Undo a panel's sectioned state after its last section went away.
---- The base-cluster offsets are deliberately LEFT behind: the resize that
---- follows this pass still needs the outgoing offset to hold the base grid
---- still while the frame collapses back onto it. ResizeGroupFrame clears them
+--- The outer-frame correction is deliberately left behind: the resize that
+--- follows this pass still needs it to hold the base grid
+--- still while the frame collapses back onto it. UpdatePanelBaseAnchor clears it
 --- once it has used them.
 function ST.ClearPanelSectionLayout(frame, group, panelWidth, panelHeight)
     if not frame._sectionLayout then return end
@@ -1587,104 +1580,96 @@ function ST.SetSectionMoverOverlaysShown(addon, frame, group, shown)
 end
 
 ------------------------------------------------------------------------
--- ANCHOR DRIFT
+-- BASE-GRID ANCHORING
 ------------------------------------------------------------------------
 
---- Hold a sectioned panel's BASE CLUSTER still across a resize.
---- A section-less panel gets this for free: its frame IS its base cluster, so
---- whatever point the frame is anchored by (or the edge midpoint centered
---- growth and compact mode pin) is a point on the cluster. Once the frame spans
---- the union, those are different rectangles, and a section appearing on one
---- side would shove the base grid across the screen. So the same compensation
---- runs against the base cluster's rect instead of the frame's.
----
---- With no sections in play the arithmetic reduces to exactly the frame-based
---- form GroupFrame has always used, which is why the two are one function.
----
---- The compensation is DURABLE: the delta goes onto the frame's live points AND
---- onto the saved anchor offsets, which are the same coordinate space (both are
---- the x/y arguments of the frame's one SetPoint). Without that second write the
---- next AnchorGroupFrame -- which every membership and geometry commit runs --
---- would ClearAllPoints and put the panel back where the compensation had just
---- taken it from, and a /reload would do the same. There is no double
---- application: after this pass the live points and the saved anchor describe
---- one position, and the next resize measures old == new and computes a zero
---- delta.
---- Returns the updated saved anchor offsets when they moved, so the caller can
---- refresh the drag coordinate readout.
-function ST.CompensatePanelSectionAnchorDrift(frame, group, layout, fixedPoint, canCompensate,
-                                              oldWidth, oldHeight, newWidth, newHeight)
+-- Offset of a point on the base grid from the same point on the outer frame.
+-- These are exact layout dimensions, never rounded frame measurements.
+local function BasePointOffset(point, width, height, baseX, baseY, baseWidth, baseHeight)
     local GetAnchorOffset = ST._GetPanelAnchorOffset
-    local savedX, savedY
-    local anchorPoint = (group.anchor and group.anchor.point) or "CENTER"
-    -- Without a pinned edge the panel holds the point it is anchored by, which
-    -- is what an unsectioned panel does on its own.
-    local holdPoint = fixedPoint or anchorPoint
+    local ax, ay = GetAnchorOffset(point, width, height)
+    local bx, by = GetAnchorOffset(point, baseWidth, baseHeight)
+    return -width / 2 + baseX + baseWidth / 2 + bx - ax,
+        height / 2 - baseY - baseHeight / 2 + by - ay
+end
 
-    local newBaseX, newBaseY = 0, 0
-    local newBaseW, newBaseH = newWidth, newHeight
-    if layout and layout.totalWidth > 0 then
-        newBaseX, newBaseY = layout.baseOffsetX, layout.baseOffsetY
-        newBaseW, newBaseH = layout.baseWidth, layout.baseHeight
+function ST.GetPanelBasePointOffset(frame, point)
+    local layout = frame._sectionLayout
+    if not layout then return 0, 0 end
+    return BasePointOffset(point, layout.footprintWidth, layout.footprintHeight,
+        layout.baseOffsetX, layout.baseOffsetY, layout.baseWidth, layout.baseHeight)
+end
+
+function ST.SetPanelBasePoint(frame, point, relativeFrame, relativePoint, x, y)
+    local group = ST.Addon.db.profile.groups[frame.groupId]
+    local dx, dy = 0, 0
+    -- Legacy positions are converted once the first real layout is available.
+    if group and group.baseRowAnchorVersion == 1 then
+        dx, dy = ST.GetPanelBasePointOffset(frame, point)
     end
+    frame:SetPoint(point, relativeFrame, relativePoint, x - dx, y - dy)
+    frame._panelBaseCorrectionX, frame._panelBaseCorrectionY = -dx, -dy
+    frame._panelBasePoint = point
+    local anchor = group and group.anchor
+    local target = anchor and _G[anchor.relativeTo or "UIParent"]
+    frame._panelBaseUsesSavedAnchor = anchor and point == anchor.point
+        and ((relativeFrame == ST.GetPanelAnchorBodyFrame(target) and relativePoint == anchor.relativePoint)
+            or ST.Addon:IsCursorAnchor(anchor)) or false
+end
 
-    -- Nothing stamped yet means the panel was unsectioned on its previous
-    -- resize, and an unsectioned panel's base cluster IS its frame -- which is
-    -- what these defaults say. That makes the very first section to appear
-    -- compensate like every later change instead of jumping once.
-    local oldBaseX = frame._sectionBaseOffsetX or 0
-    local oldBaseY = frame._sectionBaseOffsetY or 0
-    local oldBaseW = frame._sectionBaseWidth or oldWidth
-    local oldBaseH = frame._sectionBaseHeight or oldHeight
-    if canCompensate and GetAnchorOffset then
-        local oldHoldX, oldHoldY = GetAnchorOffset(holdPoint, oldBaseW, oldBaseH)
-        local newHoldX, newHoldY = GetAnchorOffset(holdPoint, newBaseW, newBaseH)
-        local oldAnchorX, oldAnchorY = GetAnchorOffset(anchorPoint, oldWidth, oldHeight)
-        local newAnchorX, newAnchorY = GetAnchorOffset(anchorPoint, newWidth, newHeight)
-
-        -- The hold point measured from the frame's own anchor point, before and
-        -- after. The difference is how far the base cluster just slid.
-        local oldX = (-oldWidth / 2 + oldBaseX + oldBaseW / 2 + oldHoldX) - oldAnchorX
-        local oldY = (oldHeight / 2 - oldBaseY - oldBaseH / 2 + oldHoldY) - oldAnchorY
-        local newX = (-newWidth / 2 + newBaseX + newBaseW / 2 + newHoldX) - newAnchorX
-        local newY = (newHeight / 2 - newBaseY - newBaseH / 2 + newHoldY) - newAnchorY
-
-        local deltaX, deltaY = oldX - newX, oldY - newY
-        if deltaX ~= 0 or deltaY ~= 0 then
-            frame:AdjustPointsOffset(deltaX, deltaY)
-
-            -- Persist it, but only onto an anchor that actually describes the
-            -- point AdjustPointsOffset just moved. AnchorGroupFrame has three
-            -- fallbacks -- the owning container's TOPLEFT, the force-center
-            -- recovery, and the cursor anchor -- that place the frame by rules
-            -- of their own and whose saved offsets mean something else; the
-            -- point/relativePoint match is what tells them apart.
-            local anchor = group.anchor
-            if type(anchor) == "table" then
-                local point, _, relativePoint = frame:GetPoint(1)
-                if point == anchor.point and relativePoint == anchor.relativePoint then
-                    savedX = (tonumber(anchor.x) or 0) + deltaX
-                    savedY = (tonumber(anchor.y) or 0) + deltaY
-                    anchor.x = savedX
-                    anchor.y = savedY
-                end
-            end
+function ST.UpdatePanelBaseAnchor(frame, group, layout, fixedPoint, newWidth, newHeight)
+    -- A compact refresh first measures all materialized entries. Only its
+    -- final visible layout may migrate or update the saved base coordinates.
+    if frame._deferPanelBaseAnchor then return end
+    local anchor = group.anchor
+    if not anchor then return end
+    local point = frame._panelBasePoint or anchor.point or "CENTER"
+    local dx, dy = ST.GetPanelBasePointOffset(frame, point)
+    local migrationX, migrationY = 0, 0
+    if group.baseRowAnchorVersion ~= 1 then
+        -- Old offsets positioned the union. Convert its base point once, using
+        -- the saved footprint from the earlier compensation fix when present.
+        local geometry = anchor.sectionGeometry
+        if type(geometry) == "table" then
+            migrationX, migrationY = BasePointOffset(anchor.point or "CENTER", geometry.width, geometry.height,
+                geometry.baseX, geometry.baseY, geometry.baseWidth, geometry.baseHeight)
+        else
+            migrationX, migrationY = ST.GetPanelBasePointOffset(frame, anchor.point or "CENTER")
         end
+        anchor.x = (anchor.x or 0) + migrationX
+        anchor.y = (anchor.y or 0) + migrationY
+        if type(geometry) == "table" then
+            anchor.baseWidth, anchor.baseHeight = geometry.baseWidth, geometry.baseHeight
+        end
+        anchor.sectionGeometry = nil
+        group.baseRowAnchorVersion = 1
+        if not frame._panelBaseUsesSavedAnchor then migrationX, migrationY = 0, 0 end
     end
 
-    if layout then
-        frame._sectionBaseOffsetX = newBaseX
-        frame._sectionBaseOffsetY = newBaseY
-        frame._sectionBaseWidth = newBaseW
-        frame._sectionBaseHeight = newBaseH
-    else
-        -- The panel just collapsed back onto its base cluster; stop tracking so
-        -- the plain frame-based compensation owns it again from here.
-        frame._sectionBaseOffsetX = nil
-        frame._sectionBaseOffsetY = nil
-        frame._sectionBaseWidth = nil
-        frame._sectionBaseHeight = nil
+    local baseWidth = layout and layout.baseWidth or newWidth
+    local baseHeight = layout and layout.baseHeight or newHeight
+    local growthX, growthY = 0, 0
+    -- Coordinates and their exact base dimensions travel together, including
+    -- through refreshes and reloads. A fresh anchor has no dimensions yet and
+    -- establishes its baseline here. Section dimensions never participate.
+    local oldBaseW, oldBaseH = anchor.baseWidth, anchor.baseHeight
+    if fixedPoint and oldBaseW and oldBaseH and frame._panelBaseUsesSavedAnchor then
+        local oldFx, oldFy = ST._GetPanelAnchorOffset(fixedPoint, oldBaseW, oldBaseH)
+        local oldAx, oldAy = ST._GetPanelAnchorOffset(point, oldBaseW, oldBaseH)
+        local newFx, newFy = ST._GetPanelAnchorOffset(fixedPoint, baseWidth, baseHeight)
+        local newAx, newAy = ST._GetPanelAnchorOffset(point, baseWidth, baseHeight)
+        growthX, growthY = oldFx - oldAx - newFx + newAx, oldFy - oldAy - newFy + newAy
     end
-
-    return savedX, savedY
+    if growthX ~= 0 or growthY ~= 0 then
+        anchor.x = (anchor.x or 0) + growthX
+        anchor.y = (anchor.y or 0) + growthY
+    end
+    local moveX = -dx - (frame._panelBaseCorrectionX or 0) + migrationX + growthX
+    local moveY = -dy - (frame._panelBaseCorrectionY or 0) + migrationY + growthY
+    if moveX ~= 0 or moveY ~= 0 then frame:AdjustPointsOffset(moveX, moveY) end
+    frame._panelBaseCorrectionX, frame._panelBaseCorrectionY = -dx, -dy
+    if frame._panelBaseUsesSavedAnchor then
+        anchor.baseWidth, anchor.baseHeight = baseWidth, baseHeight
+    end
+    return anchor.x, anchor.y
 end

@@ -780,8 +780,9 @@ ComputeGroupFrameCoordinates = function(
     resolvedAnchorState
 )
     -- Get the screen-space center of our frame
-    local cx, cy = frame:GetCenter()
-    local fw, fh = frame:GetSize()
+    local body = ST.GetPanelAnchorBodyFrame(frame)
+    local cx, cy = body:GetCenter()
+    local fw, fh = body:GetSize()
 
     -- Determine the reference frame and its dimensions
     local relativeTo = useResolvedReference and resolvedRelativeTo or group.anchor.relativeTo
