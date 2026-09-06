@@ -1722,10 +1722,9 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         and self.IsContainerPanelHovered
         and self:IsContainerPanelHovered(containerId, driverButton._groupId)
         or false
-    -- A cursor-anchored panel is never "unlocked", but while parked on the
-    -- dummy cursor it edits through the preview's selection gate: selection
-    -- shows the host's mover chrome, and in arrange the bare parked host
-    -- stays clickable so a click can select it.
+    -- Cursor panels edit through the dummy cursor's selection gate for both
+    -- individual unlocks and Arrange Mode. Unselected parked hosts remain
+    -- clickable so a click can select them.
     local isCursorPreviewSelected = visibilityState.isCursorLayoutPreview
         and self.IsCursorAnchorLayoutPreviewSelected
         and self:IsCursorAnchorLayoutPreviewSelected(driverButton._groupId)
@@ -1741,7 +1740,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         or (isCursorPreviewSelected and hasSavedDisplay)
     host._wrapperManaged = visibilityState.isGroupedPreview or nil
     SetTextureHostMouseEnabled(host, (host._dragEnabled == true and not visibilityState.isGroupedPreview)
-        or (visibilityState.isCursorLayoutPreview and self._arrangeModeActive == true))
+        or visibilityState.isCursorLayoutPreview)
     SetAuraTextureOutlineShown(
         host,
         visibilityState.isGroupedPreview and isGroupedPreviewSelected or false,
@@ -1801,7 +1800,7 @@ end
 -- owner calls this when parking state or selection changes; the periodic
 -- visibility refresh computes the same answers, so the two never fight.
 -- Selection shows the host's own mover chrome; parked-unselected keeps the
--- host bare but clickable (arrange only) so a click can select it.
+-- host bare but clickable so a click can select it.
 function CooldownCompanion:RefreshCursorAnchoredHostControls(host, groupId, group, active, selected)
     if not host then
         return
@@ -1810,7 +1809,7 @@ function CooldownCompanion:RefreshCursorAnchoredHostControls(host, groupId, grou
     local hasSavedDisplay = host._hasSavedDisplay == true
     local showControls = (active and selected and hasSavedDisplay) or false
     host._dragEnabled = showControls
-    SetTextureHostMouseEnabled(host, showControls or (active and self._arrangeModeActive == true))
+    SetTextureHostMouseEnabled(host, showControls or active == true)
     if showControls then
         local anchor = group and group.anchor
         UpdateTextureHostCoordLabel(host, (anchor and tonumber(anchor.x)) or 0, (anchor and tonumber(anchor.y)) or 0)

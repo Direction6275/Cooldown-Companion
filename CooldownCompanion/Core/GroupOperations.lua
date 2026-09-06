@@ -1028,8 +1028,12 @@ end
 
 function CooldownCompanion:IsUnlockToolbarPanelEligible(groupId, group)
     group = group or (self.db.profile.groups and self.db.profile.groups[groupId])
+    if group and self:IsGroupCursorAnchored(group) then
+        return not self._combatForcedLock
+            and self:IsCursorAnchorLayoutPreviewGroupActive(groupId)
+            or false
+    end
     return group ~= nil
-        and not (self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group))
         and self:IsGroupVisibleInUnlockPreview(groupId, {
             group = group,
             panelUnlockPreview = true,
@@ -1040,9 +1044,9 @@ end
 
 -- Padlocks inside an active unlock session remove only the mover they belong
 -- to. Containers normally preview every child regardless of the child's saved
--- independent lock flag, while cursor panels have no independent saved lock at
--- all, so the session needs an explicit effective-lock layer shared by every
--- preview, toolbar, and activation path.
+-- independent lock flag. Arrange also parks cursor panels regardless of that
+-- flag, so the session needs an effective-lock layer shared by every preview,
+-- toolbar, and activation path.
 function CooldownCompanion:IsArrangePanelSuppressed(groupId)
     return self._arrangePanelSuppressed ~= nil
         and self._arrangePanelSuppressed[groupId] == true
@@ -1095,7 +1099,7 @@ function CooldownCompanion:SetArrangePanelSuppressed(groupId, suppressed)
     if self._arrangeModeActive
         and self._cursorAnchorLayoutPreview
         and self.ShowCursorAnchorLayoutPreview then
-        self:ShowCursorAnchorLayoutPreview(nil)
+        self:RefreshCursorAnchorLayoutPreview()
     end
     if group.parentContainerId and self.RefreshContainerWrapper then
         self:RefreshContainerWrapper(group.parentContainerId)
@@ -1655,7 +1659,6 @@ function CooldownCompanion:BeginCombatForcedLock()
     for groupId, group in pairs(self.db.profile.groups or {}) do
         if group
             and group.locked == false
-            and not (self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group))
             and self:IsGroupVisibleToCurrentChar(groupId)
         then
             snapshot.groups[groupId] = true
@@ -1834,9 +1837,8 @@ function CooldownCompanion:EndCombatForcedLock()
         self:ApplyResourceBars()
     end
 
-    -- Re-park cursor panels on the dummy cursor for the rest of the
-    -- arrange session (the pin suspended on combat entry).
-    if self._arrangeModeActive and self.ShowCursorAnchorLayoutPreview then
+    -- Resume individual cursor unlocks as well as the global arrange pin.
+    if self.ShowCursorAnchorLayoutPreview then
         self:ShowCursorAnchorLayoutPreview(nil)
     end
     self:RefreshUnlockToolbar()
@@ -3673,6 +3675,7 @@ function CooldownCompanion:CreateAllGroupFrames()
     if self.RefreshAlphaUpdateDriver then
         self:RefreshAlphaUpdateDriver()
     end
+    self:RefreshCursorAnchorLayoutPreview()
 end
 
 function CooldownCompanion:FinalizePanelAnchors()
@@ -3832,6 +3835,8 @@ function CooldownCompanion:RefreshAllGroups()
     if self.RefreshAlphaUpdateDriver then
         self:RefreshAlphaUpdateDriver()
     end
+    self:RefreshCursorAnchorLayoutPreview()
+    self:RefreshUnlockToolbar()
 end
 
 -- Refresh only frame-level visibility/load-state without rebuilding buttons.
@@ -3982,6 +3987,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     if self.RefreshAlphaUpdateDriver then
         self:RefreshAlphaUpdateDriver()
     end
+    self:RefreshCursorAnchorLayoutPreview()
 end
 
 -- Fully unload a group: save/clear button OnUpdate scripts, clear runtime
@@ -4283,7 +4289,7 @@ function CooldownCompanion:SetContainerLocked(containerId, locked)
         and self._arrangeModeActive
         and self._cursorAnchorLayoutPreview
         and self.ShowCursorAnchorLayoutPreview then
-        self:ShowCursorAnchorLayoutPreview(nil)
+        self:RefreshCursorAnchorLayoutPreview()
     end
     self:RefreshUnlockToolbar()
 end
@@ -4298,13 +4304,24 @@ function CooldownCompanion:SetPanelLocked(panelId, locked)
         and self.ClearArrangeMoverSelection then
         self:ClearArrangeMoverSelection()
     end
+    if locked then
+        group.locked = nil
+    else
+        group.locked = false
+    end
+    -- Suppression can rebuild the cursor preview. Keep a sibling's selection
+    -- through that rebuild so its chrome and shared mover selection agree.
+    local selectedCursorPanelId = self._cursorAnchorLayoutPreview
+        and self._cursorAnchorLayoutPreview.selectedGroupId
     self:SetArrangePanelSuppressed(panelId, locked)
-    if not isCursorAnchored then
-        if locked then
-            group.locked = nil
-        else
-            group.locked = false
+    if isCursorAnchored then
+        self:ShowCursorAnchorLayoutPreview(selectedCursorPanelId)
+        if not locked then
+            -- Select through the shared owner so cursor chrome, panel selection,
+            -- and solo state move together, even between panels in one group.
+            self:ActivateArrangePanel(containerId, panelId, false)
         end
+    else
         self:RefreshGroupFrame(panelId)
     end
     -- Panels are not part of the arrange-managed set (arrange unlocks containers,
@@ -4378,6 +4395,9 @@ function CooldownCompanion:LockAllFrames()
         if group.locked == false then
             group.locked = nil
         end
+    end
+    if self.ClearCursorAnchorLayoutPreview then
+        self:ClearCursorAnchorLayoutPreview(true)
     end
     for groupId, frame in pairs(self.groupFrames) do
         if frame then
@@ -4493,11 +4513,7 @@ function CooldownCompanion:ExitArrangeMode(opts)
     self._arrangePanelSuppressed = nil
     self._arrangeContainerSuppressed = nil
     CancelActiveMoverGestures(self)
-    -- The arrange flag is already down, so this is a full teardown; config
-    -- re-expand below restores its own selection preview if one applies.
-    if self.ClearCursorAnchorLayoutPreview then
-        self:ClearCursorAnchorLayoutPreview()
-    end
+    -- LockAllFrames tears down cursor previews after clearing saved unlocks.
     self:LockAllFrames()
     if self.SetIndependentCastBarLocked then
         self:SetIndependentCastBarLocked(true)
