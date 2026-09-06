@@ -560,6 +560,31 @@ local function ApplyConfigColumnTitles(frame)
     end
 end
 
+-- Scroll restores during a page rebuild must wait for the inline Advanced
+-- editor to be reinserted. Keep these references only until this synchronous
+-- refresh finishes, then apply the final offsets before returning to rendering.
+local pendingScrollFixes = {}
+
+local function FixConfigScroll(widget)
+    if CS.configRefreshInProgress then
+        pendingScrollFixes[widget] = true
+    else
+        widget:FixScroll()
+    end
+end
+CS.FixConfigScroll = FixConfigScroll
+
+local function FinishConfigRefresh()
+    CS.configRefreshInProgress = false
+    if CS.RefreshAdvancedSettingsPanel then
+        CS.RefreshAdvancedSettingsPanel()
+    end
+    for widget in pairs(pendingScrollFixes) do
+        pendingScrollFixes[widget] = nil
+        widget:FixScroll()
+    end
+end
+
 local function SaveScrollState(widget)
     if not widget then return nil end
     local state = widget.status or widget.localstatus
@@ -583,6 +608,7 @@ local function RestoreScrollState(widget, saved)
     if not state then return end
     state.offset = saved.offset
     state.scrollvalue = saved.scrollvalue
+    FixConfigScroll(widget)
 end
 
 local function ClearScrollState(widget)
@@ -2398,11 +2424,7 @@ function CooldownCompanion:RefreshConfigSelection()
     RefreshColumn3(true)
     ApplyConfigColumnTitles(CS.configFrame)
     RestoreScrollState(buttonSettingsScroll, savedButtonSettings)
-    CS.configRefreshInProgress = false
-
-    if CS.RefreshAdvancedSettingsPanel then
-        CS.RefreshAdvancedSettingsPanel()
-    end
+    FinishConfigRefresh()
     if RebuildTutorialAnchors then
         RebuildTutorialAnchors()
     end
@@ -2484,10 +2506,7 @@ function CooldownCompanion:_configRefreshPanelImpl()
     if RefreshTutorialPlacement then
         RefreshTutorialPlacement()
     end
-    CS.configRefreshInProgress = false
-    if CS.RefreshAdvancedSettingsPanel then
-        CS.RefreshAdvancedSettingsPanel()
-    end
+    FinishConfigRefresh()
     if ST.UpdateArrangeBadge then
         ST.UpdateArrangeBadge()
     end
