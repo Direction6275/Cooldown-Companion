@@ -330,7 +330,7 @@ local function ConfigureTreePanelMeta(entry, entryCount, panelDisabled, hasWarni
     return (panelDisabled or hasWarning) and 36 or 18
 end
 
-local function ConfigureGroupHeaderLayout(entry, rightReserve)
+local function ConfigureGroupHeaderLayout(entry, rightReserve, groupName, countLabel)
     entry._cdcAfterConfigRowLayout = function()
         local frame = entry.frame
         local label = entry.label
@@ -350,6 +350,15 @@ local function ConfigureGroupHeaderLayout(entry, rightReserve)
         label:SetPoint("RIGHT", frame, "RIGHT", -reserve, 0)
         label:SetJustifyH("LEFT")
         label:SetWordWrap(false)
+        if groupName then
+            -- The count is optional: keep it whole or give its space to the name.
+            local text = countLabel and (groupName .. "  |cff777777(" .. countLabel .. ")|r")
+                or groupName
+            label:SetText(text)
+            if countLabel and label:GetUnboundedStringWidth() > label:GetWidth() then
+                label:SetText(groupName)
+            end
+        end
     end
     entry:_cdcAfterConfigRowLayout()
 end
@@ -963,7 +972,17 @@ end
 
 local function IsNavigatorContainerInactive(container, stats)
     if not container or container.enabled == false then return true end
-    if not stats or not stats.hasButtons then return true end
+    if not stats or stats.panelCount == 0 then
+        -- A panel-less Group owns the same enabled/spec/load-condition fields
+        -- as a standalone group; evaluate them without requiring any entries.
+        return not CooldownCompanion:IsGroupActive(nil, {
+            group = container,
+            requireButtons = false,
+            ignoreUnlockPreview = true,
+            checkCharVisibility = false,
+            checkLoadConditions = true,
+        })
+    end
     return stats.hasActivePanel ~= true
 end
 
@@ -980,31 +999,25 @@ local function BuildColumn1ContainerStats(db, containerIds)
             if not stats then
                 stats = {
                     panelCount = 0,
-                    hasButtons = false,
+                    entryCount = 0,
                     hasActivePanel = false,
                 }
                 statsByContainer[containerId] = stats
             end
 
             stats.panelCount = stats.panelCount + 1
-            if CooldownCompanion:GroupHasUsableButtons(group, {
-                checkLoadConditions = false,
-                ignoreSpellAvailability = true,
-            }) then
-                stats.hasButtons = true
-
-                local container = containers[containerId]
-                if container and container.enabled ~= false and not stats.hasActivePanel then
-                    local active = CooldownCompanion:IsGroupActive(nil, {
-                        group = group,
-                        requireButtons = true,
-                        checkCharVisibility = false,
-                        checkLoadConditions = true,
-                    })
-                    if active then
-                        stats.hasActivePanel = true
-                    end
-                end
+            stats.entryCount = stats.entryCount + GetConfigPanelEntryCount(group)
+            local container = containers[containerId]
+            if container and container.enabled ~= false and not stats.hasActivePanel then
+                -- Navigator availability describes the configured panel, not
+                -- whether it currently has an entry that can draw something.
+                stats.hasActivePanel = CooldownCompanion:IsGroupActive(nil, {
+                    group = group,
+                    requireButtons = false,
+                    ignoreUnlockPreview = true,
+                    checkCharVisibility = false,
+                    checkLoadConditions = true,
+                }) == true
             end
         end
     end
@@ -1612,7 +1625,7 @@ end
 --    never applied and the last group clips against the bottom edge.
 -- 2. An InlineGroup added to the outer List reports only its empty compact
 --    height at add time; its children arrive afterwards and do NOT relayout the
---    parent. Because the unloaded bucket renders last, nothing later repairs
+--    parent. For the last rendered section, nothing later repairs
 --    that stale sum. Adding a child AFTER the groups forces one final parent
 --    layout once they have settled.
 --
@@ -2347,7 +2360,8 @@ local function RefreshColumn1(preserveDrag)
         CleanRecycledEntry(entry)
         local groupName = container.name or "New Group"
         local countLabel = panelCount == 1 and "1 panel" or (tostring(panelCount) .. " panels")
-        entry:SetText(groupName .. "  |cff777777(" .. countLabel .. ")|r")
+        local isEmpty = not stats or stats.entryCount == 0
+        entry:SetText(groupName)
         entry:SetFullWidth(true)
         entry:SetFontObject(GameFontHighlight)
         ApplyConfigRowIcon(entry, GetContainerIcon(containerId, db), {
@@ -2361,7 +2375,7 @@ local function RefreshColumn1(preserveDrag)
         entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
         groupUnit:AddChild(entry)
 
-        SetupGroupRowIndicators(entry, container)
+        SetupGroupRowIndicators(entry, container, isEmpty)
         local expandReserve = 0
         if not searchResults and not browsePanels and allowPanelRows and panelCount > 0 then
             expandReserve = ConfigureTreeExpandButton(
@@ -2380,7 +2394,15 @@ local function RefreshColumn1(preserveDrag)
                 entry, container.name, IsGenericGroupName(container.name),
                 { containerId = containerId }, rightReserve
             )
-        ConfigureGroupHeaderLayout(entry, rightReserve)
+        ConfigureGroupHeaderLayout(entry, rightReserve, groupName, not isEmpty and countLabel or nil)
+        entry:SetCallback("OnEnter", function(widget)
+            GameTooltip:SetOwner(widget.frame, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(groupName, 1, 1, 1, true)
+            GameTooltip:AddLine(countLabel, 0.7, 0.7, 0.7)
+            if isEmpty then GameTooltip:AddLine("Contains no entries.", 0.7, 0.7, 0.7) end
+            GameTooltip:Show()
+        end)
+        entry:SetCallback("OnLeave", function() GameTooltip:Hide() end)
 
         if CS.selectedGroups[containerId] then
             entry:SetColor(0.4, 0.7, 1.0)
@@ -2859,7 +2881,9 @@ local function RefreshColumn1(preserveDrag)
         groupUnit.frame:SetAlpha(allDisabled and 0.58 or 1)
         CS.col1Scroll:AddChild(groupUnit)
 
-        local expanded = searchResults ~= nil or CS.standalonePanelsCollapsed ~= true
+        local expanded = searchResults ~= nil
+            or CS.standalonePanelsCollapsed == false
+            or (CS.standalonePanelsCollapsed == nil and not allDisabled)
         local function Toggle()
             CS.standalonePanelsCollapsed = expanded
             CooldownCompanion:RefreshConfigPanel()
@@ -3320,7 +3344,7 @@ local function RefreshColumn1(preserveDrag)
         return (a.title or a.classKey or a.key) < (b.title or b.classKey or b.key)
     end)
 
-    -- Optional modules follow loaded groups and precede the inactive tail.
+    -- Optional modules keep their own destination below every Group.
     -- Disabled modules and modules without an anchor keep their own destination.
     if not CS.otherClassLibraryActive then
         for _, item in ipairs({
@@ -3355,7 +3379,18 @@ local function RefreshColumn1(preserveDrag)
         return
     end
 
-    if showNewUserEmptyState and not CS.otherClassLibraryActive then
+    if showNewUserEmptyState and CS.barsEntrySelected and ST._IsProfileWelcomeEligible() then
+        local back = AceGUI:Create("InteractiveLabel")
+        back:SetText("< Back to Get Started")
+        back:SetFullWidth(true)
+        back:SetCallback("OnClick", function(_, _, button)
+            if button ~= "LeftButton" then return end
+            ST._ResetConfigSelection(true)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        CS.col1Scroll:AddChild(back)
+        TakeCol1FirstRow()
+    elseif showNewUserEmptyState and not CS.otherClassLibraryActive then
         ClearOtherClassBrowseState()
         TakeCol1FirstRow()
 
@@ -3493,8 +3528,8 @@ local function RefreshColumn1(preserveDrag)
         end
     end
 
-    RenderStandalonePanels()
     for _, renderUnloaded in ipairs(deferredUnloadedSections) do renderUnloaded() end
+    RenderStandalonePanels()
     AddColumn1BottomSpacer()
     UpdateRailDestinations()
 
@@ -3515,3 +3550,4 @@ end
 -- ST._ exports
 ------------------------------------------------------------------------
 ST._RefreshColumn1 = RefreshColumn1
+ST._CreateConfigGroup = CreateGroupFromRail

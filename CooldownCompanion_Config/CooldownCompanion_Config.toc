@@ -46,6 +46,7 @@ Config\ExportMode.lua
 Config\ImportMode.lua
 Config\CopyPanelSettingsMode.lua
 Config\ProfileBar.lua
+Config\ProfileWelcome.lua
 Config\PanelChangelogOverlay.lua
 Config\Panel.lua
 # Settings navigation and controls before style scopes and consumers

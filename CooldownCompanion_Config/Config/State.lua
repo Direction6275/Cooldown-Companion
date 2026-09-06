@@ -2249,7 +2249,7 @@ local function SetupPanelResourceIndicator(entry, panelId, rightReserve)
     return badge:GetWidth() + BADGE_SPACING
 end
 
-local function SetupGroupRowIndicators(entry, group)
+local function SetupGroupRowIndicators(entry, group, isEmpty)
     local frame = entry.frame
     if frame._cdcBadges then
         for _, b in ipairs(frame._cdcBadges) do b:Hide() end
@@ -2261,6 +2261,16 @@ local function SetupGroupRowIndicators(entry, group)
         local badge = AcquireBadge(frame, badgeIndex)
         badge.icon:SetAtlas(atlas, false)
         if r then badge.icon:SetVertexColor(r, g, b, a or 1) end
+        badge:Show()
+    end
+
+    -- Empty describes saved contents, independently of enabled/load state.
+    if isEmpty then
+        badgeIndex = badgeIndex + 1
+        local badge = AcquireBadge(frame, badgeIndex)
+        badge.text:SetText("Empty")
+        badge.text:SetTextColor(0.7, 0.7, 0.7)
+        badge:SetWidth(math.ceil(badge.text:GetStringWidth()) + 8)
         badge:Show()
     end
 
