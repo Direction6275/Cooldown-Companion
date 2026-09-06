@@ -504,14 +504,14 @@ local auraSettings = ST._DefineSettingRoute({
                 and (state.group.displayMode or "icons") == "bars"
         end),
     },
-    stackStyle = {
+    stackStyle = { advancedKey = "entryAuraStackDisplay",
         label = "Stack Style",
         aliases = { "segmented continuous" },
         applies = AuraStateApplies(function(state)
             return state.active and state.barShowsStacks and state.maxStacks ~= nil
         end),
     },
-    segmentedSmoothing = {
+    segmentedSmoothing = { advancedKey = "entryAuraStackDisplay",
         label = "Segmented Smoothing",
         aliases = { "smooth stacks", "snap stacks" },
         applies = AuraStateApplies(function(state)
@@ -519,7 +519,7 @@ local auraSettings = ST._DefineSettingRoute({
                 and state.stackStyle == "segmented"
         end),
     },
-    segmentGap = {
+    segmentGap = { advancedKey = "entryAuraStackDisplay",
         label = "Segment Gap",
         aliases = { "stack gap", "divider gap", "block gap" },
         applies = AuraStateApplies(function(state)
@@ -544,7 +544,7 @@ local auraSettings = ST._DefineSettingRoute({
                 and (state.maxStacks ~= nil or InCombatLockdown())
         end),
     },
-    thresholdStacks = {
+    thresholdStacks = { advancedKey = "entryStackThreshold",
         label = "Threshold Stacks",
         aliases = { "stack threshold number" },
         applies = AuraStateApplies(function(state)
@@ -552,7 +552,7 @@ local auraSettings = ST._DefineSettingRoute({
                 and (state.maxStacks ~= nil or InCombatLockdown())
         end),
     },
-    thresholdColor = {
+    thresholdColor = { advancedKey = "entryStackThreshold",
         label = "Threshold Color",
         aliases = { "stack threshold color" },
         applies = AuraStateApplies(function(state)
@@ -567,7 +567,7 @@ local auraSettings = ST._DefineSettingRoute({
             return state.active and state.stackTextVisible and state.maxStacks ~= nil
         end),
     },
-    maxColor = {
+    maxColor = { advancedKey = "entryStackMaxColor",
         label = "Max Color",
         aliases = { "maximum stack color" },
         applies = AuraStateApplies(function(state)
@@ -1009,102 +1009,111 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         AnchorRowBadge(stacksRow, CreateInfoButton(stacksRow.frame, stacksRow.frame, "LEFT", "LEFT", 0, 0,
             BAR_SHOWS_STACKS_TOOLTIP, infoButtons))
 
-        if CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) then
-            local maxStacks = CooldownCompanion:GetAuraStackBarMax(buttonData, true)
-            local stackStyle = CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData)
+        ST._AddAdvancedToggle(stacksRow, "entryAuraStackDisplay", {}, true, {
+            lensAgnostic = false,
+            unlock = not CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) and { enable = {
+                label = "Enable Stack Display", run = function()
+                    CooldownCompanion:SetBarPanelAuraStackDisplay(buttonData, true)
+                    RefreshAuraConfig()
+                end,
+            } } or nil,
+            build = function(panel)
+                local maxStacks = CooldownCompanion:GetAuraStackBarMax(buttonData, true)
+                local stackStyle = CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData)
 
-            -- Stack style (live parity): segmented per-stack rendering or a
-            -- plain continuous fill. Live's stored style was wiped by the
-            -- aura-rebuild migration, so this is a fresh 12.1 choice.
-            if maxStacks then
-                AddDropdownRow(auraRight, {
-                    setting = auraSettings.stackStyle,
-                    indent = true,
-                    list = { segmented = "Segmented", continuous = "Continuous" },
-                    order = { "segmented", "continuous" },
-                    value = stackStyle,
-                    onChange = function(value)
-                        CooldownCompanion:SetBarPanelAuraStackDisplayMode(buttonData, value)
-                        CooldownCompanion:RequestAuraRebind("config")
-                        RefreshAuraConfig()
-                    end,
-                })
-
-                -- Segmented style only: Continuous always animates smoothly
-                -- (resource-bar parity), so the toggle would be dead there.
-                if stackStyle == "segmented" then
-                    local smoothRow = AddDropdownRow(auraRight, {
-                        setting = auraSettings.segmentedSmoothing,
-                        indent = true,
-                        list = {
-                            [ST.SEGMENTED_SMOOTHING_ON] = "On",
-                            [ST.SEGMENTED_SMOOTHING_OFF] = "Off",
-                        },
-                        order = { ST.SEGMENTED_SMOOTHING_ON, ST.SEGMENTED_SMOOTHING_OFF },
-                        value = CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(buttonData),
+                -- Stack style (live parity): segmented per-stack rendering or a
+                -- plain continuous fill. Live's stored style was wiped by the
+                -- aura-rebuild migration, so this is a fresh 12.1 choice.
+                if maxStacks then
+                    AddDropdownRow(panel, {
+                        setting = auraSettings.stackStyle,
+                        indent = false,
+                        list = { segmented = "Segmented", continuous = "Continuous" },
+                        order = { "segmented", "continuous" },
+                        value = stackStyle,
                         onChange = function(value)
-                            CooldownCompanion:SetBarPanelAuraSegmentedSmoothing(buttonData, value)
-                            -- Rebind only: the option re-registers the stack bar
-                            -- in the next OOC bind pass; no panel rebuild needed.
+                            CooldownCompanion:SetBarPanelAuraStackDisplayMode(buttonData, value)
+                            CooldownCompanion:RequestAuraRebind("config")
+                            RefreshAuraConfig()
+                        end,
+                    })
+
+                    -- Segmented style only: Continuous always animates smoothly
+                    -- (resource-bar parity), so the toggle would be dead there.
+                    if stackStyle == "segmented" then
+                        local smoothRow = AddDropdownRow(panel, {
+                            setting = auraSettings.segmentedSmoothing,
+                            indent = false,
+                            list = {
+                                [ST.SEGMENTED_SMOOTHING_ON] = "On",
+                                [ST.SEGMENTED_SMOOTHING_OFF] = "Off",
+                            },
+                            order = { ST.SEGMENTED_SMOOTHING_ON, ST.SEGMENTED_SMOOTHING_OFF },
+                            value = CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(buttonData),
+                            onChange = function(value)
+                                CooldownCompanion:SetBarPanelAuraSegmentedSmoothing(buttonData, value)
+                                -- Rebind only: the option re-registers the stack bar
+                                -- in the next OOC bind pass; no panel rebuild needed.
+                                CooldownCompanion:RequestAuraRebind("config")
+                            end,
+                        })
+                        AnchorRowBadge(smoothRow, CreateInfoButton(smoothRow.frame, smoothRow.frame, "LEFT", "LEFT", 0, 0,
+                            SEGMENTED_SMOOTHING_TOOLTIP, CS.advancedSettingsInfoButtons))
+                    end
+                end
+
+                -- Widget-mode blocks (standalone aura entries): the gap lives
+                -- in the bundled fill atlas, so the control is a preset
+                -- dropdown picking an atlas set, capped at the block-atlas
+                -- max (a larger bound runs painted dividers instead).
+                if isStandalone and maxStacks and stackStyle == "segmented"
+                    and maxStacks <= ST.STACK_SEGMENT_ATLAS_MAX then
+                    ST._AddStackBlockGapRow(panel, buttonData, {
+                        setting = auraSettings.segmentGap,
+                        maxStacks = maxStacks,
+                        commit = function()
+                            ST._RefreshSelectedButtonsPreview()
+                            CooldownCompanion:RequestAuraRebind("config")
+                            CooldownCompanion:RefreshAllGroups()
+                        end,
+                    })
+                end
+
+                -- Painted-divider mode only: spell entries keep the free pixel
+                -- slider (their stripes are CC-painted, not atlas artwork).
+                -- Hidden too when the aura doesn't stack (duration fallback —
+                -- there are no segments for a gap to sit between) and for the
+                -- continuous style (no segments at all).
+                if not isStandalone and maxStacks and stackStyle == "segmented" then
+                    AddSliderRow(panel, {
+                        setting = auraSettings.segmentGap,
+                        indent = false,
+                        min = 0, max = 20, step = 1,
+                        value = CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData),
+                        onChange = function(value)
+                            local previousAuraBar = buttonData.auraBar
+                            local hadAuraBar = type(previousAuraBar) == "table"
+                            local previous = hadAuraBar and previousAuraBar.segmentGap or nil
+                            CooldownCompanion:SetBarPanelAuraSegmentGap(buttonData, value)
+                            ST._RefreshSelectedButtonsPreview()
+                            if hadAuraBar then
+                                buttonData.auraBar.segmentGap = previous
+                            else
+                                buttonData.auraBar = previousAuraBar
+                            end
+                        end,
+                        onRelease = function(value)
+                            CooldownCompanion:SetBarPanelAuraSegmentGap(buttonData, value)
+                            -- Rebind only: the gap is pure slot-kit styling, so no
+                            -- group refresh or panel rebuild is needed.
                             CooldownCompanion:RequestAuraRebind("config")
                         end,
                     })
-                    AnchorRowBadge(smoothRow, CreateInfoButton(smoothRow.frame, smoothRow.frame, "LEFT", "LEFT", 0, 0,
-                        SEGMENTED_SMOOTHING_TOOLTIP, infoButtons))
                 end
-            end
 
-            -- Widget-mode blocks (standalone aura entries): the gap lives
-            -- in the bundled fill atlas, so the control is a preset
-            -- dropdown picking an atlas set, capped at the block-atlas
-            -- max (a larger bound runs painted dividers instead).
-            if isStandalone and maxStacks and stackStyle == "segmented"
-                and maxStacks <= ST.STACK_SEGMENT_ATLAS_MAX then
-                ST._AddStackBlockGapRow(auraRight, buttonData, {
-                    setting = auraSettings.segmentGap,
-                    maxStacks = maxStacks,
-                    commit = function()
-                        ST._RefreshSelectedButtonsPreview()
-                        CooldownCompanion:RequestAuraRebind("config")
-                        CooldownCompanion:RefreshAllGroups()
-                    end,
-                })
-            end
-
-            -- Painted-divider mode only: spell entries keep the free pixel
-            -- slider (their stripes are CC-painted, not atlas artwork).
-            -- Hidden too when the aura doesn't stack (duration fallback —
-            -- there are no segments for a gap to sit between) and for the
-            -- continuous style (no segments at all).
-            if not isStandalone and maxStacks and stackStyle == "segmented" then
-                AddSliderRow(auraRight, {
-                    setting = auraSettings.segmentGap,
-                    indent = true,
-                    min = 0, max = 20, step = 1,
-                    value = CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData),
-                    onChange = function(value)
-                        local previousAuraBar = buttonData.auraBar
-                        local hadAuraBar = type(previousAuraBar) == "table"
-                        local previous = hadAuraBar and previousAuraBar.segmentGap or nil
-                        CooldownCompanion:SetBarPanelAuraSegmentGap(buttonData, value)
-                        ST._RefreshSelectedButtonsPreview()
-                        if hadAuraBar then
-                            buttonData.auraBar.segmentGap = previous
-                        else
-                            buttonData.auraBar = previousAuraBar
-                        end
-                    end,
-                    onRelease = function(value)
-                        CooldownCompanion:SetBarPanelAuraSegmentGap(buttonData, value)
-                        -- Rebind only: the gap is pure slot-kit styling, so no
-                        -- group refresh or panel rebuild is needed.
-                        CooldownCompanion:RequestAuraRebind("config")
-                    end,
-                })
-            end
-
-            AddAuraStackMaxStatusLabel(auraRight, maxStacks, { row = true })
-        end
+                AddAuraStackMaxStatusLabel(panel, maxStacks, { row = true })
+            end,
+        })
     end
 
     -- Effective style for the text-visibility gates below and the

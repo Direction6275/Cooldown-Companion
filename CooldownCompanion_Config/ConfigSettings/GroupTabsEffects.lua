@@ -73,7 +73,7 @@ local ROW_SECTION = { leftAligned = true }
 -- panel-build time by ST._ResolveAdvancedUnlock, Helpers.lua). File-local
 -- constants so a tab rebuild allocates none of them.
 local TURNON_PROC_GLOW = {
-    label = "Turn On Show Proc Glow",
+    label = "Enable Proc Glow",
     apply = function(write) write.procGlowStyle = "glow" end,
 }
 
@@ -87,31 +87,31 @@ local function EnableAuraGlow(write)
     write.auraGlowSpeed = 0.5
 end
 
-local TURNON_AURA_GLOW = { label = "Turn On Show Aura Glow", apply = EnableAuraGlow }
+local TURNON_AURA_GLOW = { label = "Enable Aura Glow", apply = EnableAuraGlow }
 local TURNON_PANDEMIC_EFFECT = {
-    label = "Turn On Show Pandemic Effect",
+    label = "Enable Pandemic Effect",
     apply = function(write) write.pandemicEffectEnabled = true end,
 }
 -- The marker's enable is a mode, not a boolean.
 local TURNON_PANDEMIC_MARKER = {
-    label = "Turn On Pandemic Marker",
+    label = "Enable Pandemic Marker",
     apply = function(write) write.pandemicMarkerMode = "auto" end,
 }
 local TURNON_READY_GLOW = {
-    label = "Turn On Show Ready Glow",
+    label = "Enable Ready Glow",
     apply = function(write) write.readyGlowStyle = "solid" end,
 }
 local TURNON_KEY_PRESS_HIGHLIGHT = {
-    label = "Turn On Show Key Press Highlight",
+    label = "Enable Key Press Highlight",
     apply = function(write) write.keyPressHighlightStyle = "solid" end,
 }
 local TURNON_COOLDOWN_PRESS_FLASH = {
-    label = "Turn On Cooldown Press Flash",
+    label = "Enable Cooldown Press Flash",
     apply = function(write) write.cooldownPressFlashEnabled = true end,
 }
-local TURNON_ASSISTED_HIGHLIGHT = { label = "Turn On Show Assisted Highlight", key = "showAssistedHighlight" }
+local TURNON_ASSISTED_HIGHLIGHT = { label = "Enable Assisted Highlight", key = "showAssistedHighlight" }
 local TURNON_ICON_FILL_TIMER = {
-    label = "Turn On Icon Fill Timer",
+    label = "Enable Icon Fill Timer",
     key = "iconFillEnabled",
     -- The checkbox path (ApplyIconFillEnabled, SectionBuilders.lua) rewalks
     -- cooldowns after the style apply: style application resets the fill,
@@ -119,10 +119,10 @@ local TURNON_ICON_FILL_TIMER = {
     -- cooldowns. The footer entrance must match.
     after = function() CooldownCompanion:UpdateAllCooldowns() end,
 }
-local TURNON_COOLDOWN_SWIPE = { label = "Turn On Show Cooldown Swipe", key = "showCooldownSwipe" }
-local TURNON_AURA_DURATION_SWIPE = { label = "Turn On Show Aura Duration Swipe", key = "showAuraDurationSwipe" }
-local TURNON_SHOW_UNUSABLE = { label = "Turn On Show Unusable Visual", key = "showUnusable" }
-local TURNON_SHOW_TOOLTIPS = { label = "Turn On Show Tooltips", key = "showTooltips" }
+local TURNON_COOLDOWN_SWIPE = { label = "Enable Cooldown Swipe", key = "showCooldownSwipe" }
+local TURNON_AURA_DURATION_SWIPE = { label = "Enable Aura Duration Swipe", key = "showAuraDurationSwipe" }
+local TURNON_SHOW_UNUSABLE = { label = "Enable Unusable Visual", key = "showUnusable" }
+local TURNON_SHOW_TOOLTIPS = { label = "Enable Tooltips", key = "showTooltips" }
 
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
@@ -544,6 +544,22 @@ local function BuildReadyGlowSection(container, group, style, lens)
     -- entries the edit never touched.
     local primeTarget = (lens and lens.mode == "entry") and lens.buttonData or nil
     local function BuildReadyGlowAdvanced(panel)
+        AddCheckboxRow(panel, {
+            label = "Only while usable",
+            setting = EFFECTS_FINDER.advanced.ready and EFFECTS_FINDER.advanced.ready.onlyWhileUsable,
+            value = readySec.tbl.readyGlowOnlyWhileUsable == true,
+            tooltip = {
+                "Only while usable",
+                {"Show the ready glow only while Blizzard reports the spell or item as usable.", 1, 1, 1, true},
+                {"Auto-hide timing continues while unusable. Passive cooldown trackers ignore this setting.", 1, 1, 1, true},
+            },
+            onChange = function(val)
+                readySec.write.readyGlowOnlyWhileUsable = val == true
+                UpdateSelectedGroupStyle()
+                CooldownCompanion:UpdateAllCooldowns()
+            end,
+        })
+
         AddCheckboxRow(panel, {
             label = "Show Only In Combat",
             setting = EFFECTS_FINDER.advanced.ready and EFFECTS_FINDER.advanced.ready.combatOnly,
@@ -1901,17 +1917,17 @@ if ST._DefineSettingRoute then
     })
     EFFECTS_FINDER.assistant.cooldownSwipe = assistantSpell:Settings({
         enabled = { label = "Show Cooldown Swipe" },
-        reverse = { label = "Reverse Swipe" },
-        fill = { label = "Show Swipe Fill" },
-        fillOpacity = {
+        reverse = { advancedKey = "assistantCooldownSwipe", label = "Reverse Swipe" },
+        fill = { advancedKey = "assistantCooldownSwipe", label = "Show Swipe Fill" },
+        fillOpacity = { advancedKey = "assistantCooldownSwipe",
             label = "Swipe Fill Opacity",
             applies = function(context)
                 local style = context and context.group and context.group.style
                 return style and style.showCooldownSwipeFill ~= false
             end,
         },
-        edge = { label = "Show Swipe Edge" },
-        edgeColor = {
+        edge = { advancedKey = "assistantCooldownSwipe", label = "Show Swipe Edge" },
+        edgeColor = { advancedKey = "assistantCooldownSwipe",
             label = "Swipe Edge Color",
             applies = function(context)
                 local style = context and context.group and context.group.style
@@ -1950,6 +1966,7 @@ if ST._DefineSettingRoute then
             supported = { solid = true, pixel = true, glow = true, autocast = true },
         })
     ready.combatOnly = readyRoute:Setting({ key = "combatOnly", label = "Show Only In Combat" })
+    ready.onlyWhileUsable = readyRoute:Setting({ key = "onlyWhileUsable", label = "Only while usable" })
     ready.cappedCharges = readyRoute:Setting({ key = "cappedCharges", label = "Glow When Charges Are Capped" })
     ready.autoHide = readyRoute:Setting({ key = "autoHide", label = "Auto-Hide After Duration" })
     ready.duration = readyRoute:Setting({

@@ -96,7 +96,7 @@ local STEP_DATA = {
     },
     panel_settings_intro = {
         title = "Panel Settings",
-        text = "With a button selected, the styling tabs show that button's values. Each section reads Panel setting until Customize gives the button its own copy, and Revert hands it back.\n\n|A:QuestLog-icon-setting:14:14|a next to a setting opens advanced options for it.",
+        text = "With a button selected, the styling tabs show that button's values. Each section reads Panel setting until Customize gives the button its own copy, and Revert hands it back.\n\nClick a setting name or its |A:QuestLog-icon-setting:14:14|a to expand options directly below it. The checkbox turns the feature on or off.",
         anchor = "col3_area",
         placement = "right",
     },

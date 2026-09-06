@@ -81,18 +81,22 @@ local TEXTURE_INDICATOR_EFFECT_ORDER = {
 local TEXTURE_INDICATOR_SECTION_DEFS = {
     proc = {
         label = "Show Proc Effect",
+        enableLabel = "Enable Proc Effect",
         previewText = "Preview Proc Effect",
     },
     aura = {
         label = "Show Aura Effect",
+        enableLabel = "Enable Aura Effect",
         previewText = "Preview Aura Effect",
     },
     ready = {
         label = "Show Ready Effect",
+        enableLabel = "Enable Ready Effect",
         previewText = "Preview Ready Effect",
     },
     unusable = {
         label = "Show Unusable Effect",
+        enableLabel = "Enable Unusable Effect",
         previewText = "Preview Unusable Effect",
     },
 }
@@ -710,7 +714,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
         onConfirm = RefreshIconPreview, onChange = RefreshIconPreview,
     })
 
-    local renderMode = AddBorderRenderModeDropdown(iconRight, settings, "borderRenderMode", function()
+    local renderMode, borderModeRow = AddBorderRenderModeDropdown(iconRight, settings, "borderRenderMode", function()
         RefreshIconPreview()
         CooldownCompanion:RefreshConfigPanel()
     end, nil, {
@@ -719,26 +723,28 @@ local function BuildTriggerIconAppearanceTab(container, group)
     })
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
-    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-        local borderRow = AddSliderRow(iconRight, {
-            label = "Border Size",
-            setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.borderSize,
-            indent = true,
-            min = 0, max = 5, step = 0.1,
-            value = settings.borderSize or ST.DEFAULT_BORDER_SIZE,
-            disabled = borderThicknessLocked and true or false,
-        })
-        WireMirrorFirstSlider(borderRow, function(value)
-            if borderThicknessLocked then return end
-            settings.borderSize = value
-        end, function()
-            if borderThicknessLocked then return end
-            RefreshStandaloneTriggerDisplay(groupId)
-        end, function()
-            if borderThicknessLocked then return end
-            RefreshTriggerPreviewMirror(groupId)
-        end, settings, "borderSize")
-    end
+    ST._AddAdvancedToggle(borderModeRow, "triggerIconBorder", {}, renderMode ~= ST.BORDER_RENDER_MODE_CRISP, {
+        build = function(panel)
+            local borderRow = AddSliderRow(panel, {
+                label = "Border Size",
+                setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.borderSize,
+                indent = false,
+                min = 0, max = 5, step = 0.1,
+                value = settings.borderSize or ST.DEFAULT_BORDER_SIZE,
+                disabled = borderThicknessLocked and true or false,
+            })
+            WireMirrorFirstSlider(borderRow, function(value)
+                if borderThicknessLocked then return end
+                settings.borderSize = value
+            end, function()
+                if borderThicknessLocked then return end
+                RefreshStandaloneTriggerDisplay(groupId)
+            end, function()
+                if borderThicknessLocked then return end
+                RefreshTriggerPreviewMirror(groupId)
+            end, settings, "borderSize")
+        end,
+    })
 
     AddColorRow(iconRight, {
         label = "Border Color",
@@ -1057,7 +1063,7 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
             -- enable owns its WHOLE sequence, effect-collision handling and
             -- refresh included, so it rides the spec as `run`.
             unlock = not config.enabled and {
-                enable = { label = "Turn On " .. sectionDef.label, run = EnableTextureIndicator },
+                enable = { label = sectionDef.enableLabel, run = EnableTextureIndicator },
             } or nil,
         })
     end
@@ -1128,7 +1134,7 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
         -- the trigger effects' restyle-then-rebuild refresh sequence.
         unlock = not config.enabled and {
             target = config,
-            enable = { label = "Turn On " .. def.label, key = "enabled" },
+            enable = { label = "Enable " .. def.label, key = "enabled" },
             refreshKind = "auraTextures",
         } or nil,
     })
@@ -1432,7 +1438,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
 
     local locationOptions, locationOrder = CooldownCompanion:GetTexturePanelLocationOptions()
     local selectedLayoutValue = CooldownCompanion:GetTexturePanelLayoutSelectionValue(settings.locationType or 0)
-    AddDropdownRow(textureLeft, {
+    local textureLayoutRow = AddDropdownRow(textureLeft, {
         label = "Texture Layout",
         setting = SPECIAL_FINDER.texture.layout,
         list = locationOptions,
@@ -1447,18 +1453,21 @@ local function BuildTexturePanelAppearanceTab(container, group)
         end,
     })
 
-    if selectedLayoutValue == PREVIEW_LOCATION_LEFTRIGHT or selectedLayoutValue == PREVIEW_LOCATION_TOPBOTTOM then
-        -- Only the paired layouts have a gap to set, so it reads as a child
-        -- of the layout above it.
-        local spacingRow = AddSliderRow(textureLeft, {
-            label = "Pair Spacing",
-            setting = SPECIAL_FINDER.texture.spacing,
-            indent = true,
-            min = MIN_TEXTURE_PAIR_SPACING, max = MAX_TEXTURE_PAIR_SPACING, step = 0.01,
-            value = settings.pairSpacing or 0,
-        })
-        AttachTextureValueSlider(spacingRow, "pairSpacing")
-    end
+    ST._AddAdvancedToggle(textureLayoutRow, "texturePairLayout", {},
+        selectedLayoutValue == PREVIEW_LOCATION_LEFTRIGHT or selectedLayoutValue == PREVIEW_LOCATION_TOPBOTTOM, {
+        build = function(panel)
+            -- Only the paired layouts have a gap to set, so it reads as a child
+            -- of the layout above it.
+            local spacingRow = AddSliderRow(panel, {
+                label = "Pair Spacing",
+                setting = SPECIAL_FINDER.texture.spacing,
+                indent = false,
+                min = MIN_TEXTURE_PAIR_SPACING, max = MAX_TEXTURE_PAIR_SPACING, step = 0.01,
+                value = settings.pairSpacing or 0,
+            })
+            AttachTextureValueSlider(spacingRow, "pairSpacing")
+        end,
+    })
 
     AddDropdownRow(textureLeft, {
         label = "Texture Look",
@@ -1754,7 +1763,7 @@ if ST._DefineSettingRoute then
         baseColor = { label = "Base Icon Color" },
         background = { label = "Background Color" },
         borderThickness = { label = "Border Thickness" },
-        borderSize = { label = "Border Size", applies = SpecialFinderTriggerIconCustomBorder },
+        borderSize = { advancedKey = "triggerIconBorder", label = "Border Size", applies = SpecialFinderTriggerIconCustomBorder },
         borderColor = { label = "Border Color" },
     })
 
@@ -1894,7 +1903,7 @@ if ST._DefineSettingRoute then
         applies = SpecialFinderTextureAppearance,
     }):Settings({
         layout = { label = "Texture Layout" },
-        spacing = { label = "Pair Spacing", applies = SpecialFinderTexturePair },
+        spacing = { advancedKey = "texturePairLayout", label = "Pair Spacing", applies = SpecialFinderTexturePair },
         look = { label = "Texture Look", aliases = { "blend mode" } },
         scale = { label = "Texture Scale" },
         rotation = { label = "Rotation" },

@@ -489,10 +489,9 @@ end
 -- section, and its row now lives on the Layout tab (GroupTabsLayout.lua's
 -- Arrangement section), which this map does not describe.
 --
--- The map is kept even so: a gear added to any of the three sections belongs
--- here the same day for the Customizations list. Stale-panel cleanup runs
--- maplessly through the gear-stamp sweep (AdvancedSettingsPanel.lua).
-ST._TEXTMODE_SECTION_BY_ADVANCED_KEY = {}
+-- The Customizations list uses this map to open a section's tuning editor.
+-- Editor lifetime remains owned by the page registration pass.
+ST._TEXTMODE_SECTION_BY_ADVANCED_KEY = { textBorder = "textBackground" }
 
 -- Where each text override section is EDITED, now that the panel tabs are the
 -- lens onto a selected entry: the tab that draws it and the collapse key of the
@@ -754,7 +753,7 @@ local function BuildTextAppearanceTab(container, group, style)
         })
     end
 
-    AddCheckboxRow(panelRight, {
+    local headerRow = AddCheckboxRow(panelRight, {
         label = "Show Group Header",
         setting = TEXTMODE_FINDER.panel and TEXTMODE_FINDER.panel.header,
         value = style.showTextGroupHeader == true,
@@ -766,33 +765,40 @@ local function BuildTextAppearanceTab(container, group, style)
         end,
     })
 
-    if style.showTextGroupHeader then
-        AddSliderRow(panelRight, {
-            label = "Header Font Size",
-            setting = TEXTMODE_FINDER.panel and TEXTMODE_FINDER.panel.headerSize,
-            indent = true,
-            min = 6, max = 72, step = 1,
-            value = style.textHeaderFontSize or 12,
-            disabled = panelSec.disabled,
-            onChange = function(val)
-                ST._PreviewScalarSetting(style, "textHeaderFontSize", val, ST._RefreshSelectedButtonsPreview)
-            end,
-            onRelease = function(val)
-                style.textHeaderFontSize = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end,
-        })
+    ST._AddAdvancedToggle(headerRow, "textGroupHeader", {}, true, {
+        unlock = { sec = panelSec, enable = not style.showTextGroupHeader and {
+            label = "Enable Group Header",
+            apply = function(write) write.showTextGroupHeader = true end,
+            after = function() CooldownCompanion:RefreshGroupFrame(CS.selectedGroup) end,
+        } or nil },
+        build = function(panel)
+            AddSliderRow(panel, {
+                label = "Header Font Size",
+                setting = TEXTMODE_FINDER.panel and TEXTMODE_FINDER.panel.headerSize,
+                indent = false,
+                min = 6, max = 72, step = 1,
+                value = style.textHeaderFontSize or 12,
+                disabled = panelSec.disabled,
+                onChange = function(val)
+                    ST._PreviewScalarSetting(style, "textHeaderFontSize", val, ST._RefreshSelectedButtonsPreview)
+                end,
+                onRelease = function(val)
+                    style.textHeaderFontSize = val
+                    CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                end,
+            })
 
-        AddColorRow(panelRight, {
-            label = "Header Color",
-            setting = TEXTMODE_FINDER.panel and TEXTMODE_FINDER.panel.headerColor,
-            indent = true,
-            tbl = style, key = "textHeaderFontColor",
-            default = {1, 1, 1, 1}, hasAlpha = true,
-            disabled = panelSec.disabled,
-            onConfirm = refreshFrame, onChange = refreshFrame,
-        })
-    end
+            AddColorRow(panel, {
+                label = "Header Color",
+                setting = TEXTMODE_FINDER.panel and TEXTMODE_FINDER.panel.headerColor,
+                indent = false,
+                tbl = style, key = "textHeaderFontColor",
+                default = {1, 1, 1, 1}, hasAlpha = true,
+                disabled = panelSec.disabled,
+                onConfirm = refreshFrame, onChange = refreshFrame,
+            })
+        end,
+    })
 
     panelSec:Finish()
     panelSec:FinishBracket(panelRightBracket)
@@ -818,6 +824,7 @@ local function BuildTextAppearanceTab(container, group, style)
 
     -- Same styleTable + fallbackStyle pair as the two sections above.
     BuildTextBackgroundControls(bgLeft, bgSec.tbl, refreshStyle, {
+        sec = bgSec,
         row = true,
         fallbackStyle = bgSec.fallbackStyle,
         settings = TEXTMODE_FINDER.background,
@@ -961,8 +968,8 @@ if ST._DefineSettingRoute then
         padding = { label = "Padding" },
         spacing = { label = "Entry Spacing", applies = TextModeFinderHasSpacing },
         header = { label = "Show Group Header" },
-        headerSize = { label = "Header Font Size", applies = TextModeFinderHeaderEnabled },
-        headerColor = { label = "Header Color", applies = TextModeFinderHeaderEnabled },
+        headerSize = { advancedKey = "textGroupHeader", label = "Header Font Size", applies = TextModeFinderHeaderEnabled },
+        headerColor = { advancedKey = "textGroupHeader", label = "Header Color", applies = TextModeFinderHeaderEnabled },
     })
 
     TEXTMODE_FINDER.background = ST._DefineSettingRoute({
@@ -978,8 +985,8 @@ if ST._DefineSettingRoute then
         applies = TextModeFinderApplies,
     }):Settings({
         background = { label = "Background Color" },
-        thickness = { label = "Border Thickness" },
-        size = { label = "Border Size", applies = TextModeFinderCustomBorder },
+        thickness = { advancedKey = "textBorder", label = "Border Thickness" },
+        size = { advancedKey = "textBorder", label = "Border Size", applies = TextModeFinderCustomBorder },
         color = { label = "Border Color" },
     })
 end

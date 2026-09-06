@@ -236,6 +236,7 @@ local defaults = {
                         readyGlowSpeed = 50,
                         readyGlowLines = 8,
                         readyGlowCombatOnly = false,
+                        readyGlowOnlyWhileUsable = false,
                         readyGlowDuration = 0,
                         keyPressHighlightStyle = "none",
                         keyPressHighlightColor = {1, 1, 1, 0.4},
@@ -417,6 +418,7 @@ local defaults = {
             readyGlowSpeed = 50,
             readyGlowLines = 8,
             readyGlowCombatOnly = false,
+            readyGlowOnlyWhileUsable = false,
             readyGlowOnlyAtMaxCharges = false,
             readyGlowDuration = 0,
             keyPressHighlightStyle = "none",
@@ -1376,7 +1378,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     readyGlow = {
         label = "Ready Glow",
-        keys = {"readyGlowStyle", "readyGlowColor", "readyGlowSize", "readyGlowThickness", "readyGlowSpeed", "readyGlowLines", "readyGlowCombatOnly", "readyGlowOnlyAtMaxCharges", "readyGlowDuration"},
+        keys = {"readyGlowStyle", "readyGlowColor", "readyGlowSize", "readyGlowThickness", "readyGlowSpeed", "readyGlowLines", "readyGlowCombatOnly", "readyGlowOnlyWhileUsable", "readyGlowOnlyAtMaxCharges", "readyGlowDuration"},
         modes = {icons = true},
     },
     keyPressHighlight = {

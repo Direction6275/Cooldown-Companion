@@ -854,9 +854,6 @@ local function ReanchorConfigSideWindows()
     if ST._ReanchorSpellbookPanelWindow then
         ST._ReanchorSpellbookPanelWindow()
     end
-    if ST._ReanchorAdvancedSettingsPanels then
-        ST._ReanchorAdvancedSettingsPanels()
-    end
 end
 
 local function SaveConfigWindowGeometry(content)
@@ -2087,7 +2084,7 @@ local function CreateConfigPanel()
             end
         end
 
-        BuildEntryTabContent()
+        CS.RunAdvancedGearBuildPass(BuildEntryTabContent)
 
         -- Re-run the layout with final widths (AddChild lays out on every
         -- insertion; width overrides applied after a builder returns are

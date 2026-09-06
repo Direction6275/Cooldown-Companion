@@ -65,18 +65,18 @@ local tabInfoButtons = CS.tabInfoButtons
 -- gears store in options.unlock (resolved only at panel-build time by
 -- ST._ResolveAdvancedUnlock, Helpers.lua). File-local constants so a tab
 -- rebuild allocates none of them.
-local TURNON_BAR_ICON = { label = "Turn On Show Icon", key = "showBarIcon" }
-local TURNON_BAR_NAME_TEXT = { label = "Turn On Show Name Text", key = "showBarNameText" }
-local TURNON_BAR_COOLDOWN_TEXT = { label = "Turn On Show Cooldown Text", key = "showCooldownText" }
-local TURNON_BAR_CHARGE_TEXT = { label = "Turn On Show Count Text", key = "showChargeText" }
-local TURNON_BAR_READY_TEXT = { label = "Turn On Show Ready Text", key = "showBarReadyText" }
-local TURNON_BAR_AURA_TEXT = { label = "Turn On Show Aura Duration Text", key = "showAuraText" }
-local TURNON_BAR_AURA_STACK_TEXT = { label = "Turn On Show Aura Stack Text", key = "showAuraStackText" }
-local TURNON_SHOW_UNUSABLE = { label = "Turn On Show Unusable Visual", key = "showUnusable" }
-local TURNON_SHOW_TOOLTIPS = { label = "Turn On Show Tooltips", key = "showTooltips" }
+local TURNON_BAR_ICON = { label = "Enable Icon", key = "showBarIcon" }
+local TURNON_BAR_NAME_TEXT = { label = "Enable Name Text", key = "showBarNameText" }
+local TURNON_BAR_COOLDOWN_TEXT = { label = "Enable Cooldown Text", key = "showCooldownText" }
+local TURNON_BAR_CHARGE_TEXT = { label = "Enable Count Text", key = "showChargeText" }
+local TURNON_BAR_READY_TEXT = { label = "Enable Ready Text", key = "showBarReadyText" }
+local TURNON_BAR_AURA_TEXT = { label = "Enable Aura Duration Text", key = "showAuraText" }
+local TURNON_BAR_AURA_STACK_TEXT = { label = "Enable Aura Stack Text", key = "showAuraStackText" }
+local TURNON_SHOW_UNUSABLE = { label = "Enable Unusable Visual", key = "showUnusable" }
+local TURNON_SHOW_TOOLTIPS = { label = "Enable Tooltips", key = "showTooltips" }
 -- The marker's enable is a mode, not a boolean.
 local TURNON_BAR_PANDEMIC_MARKER = {
-    label = "Turn On Pandemic Marker",
+    label = "Enable Pandemic Marker",
     apply = function(write) write.pandemicMarkerMode = "auto" end,
 }
 
@@ -96,7 +96,7 @@ local function EnableBarAuraIndicator(write)
 end
 
 local TURNON_BAR_AURA_INDICATOR = {
-    label = "Turn On Active Aura Indicator",
+    label = "Enable Active Aura Indicator",
     apply = EnableBarAuraIndicator,
 }
 
@@ -150,6 +150,11 @@ local BAR_TEXTURE_PULLOUT_WIDTH = 300
 --
 -- A gear added to any converted section belongs here the same day.
 ST._BARMODE_SECTION_BY_ADVANCED_KEY = {
+    panelBorder = "borderSettings",
+    durationLowTime = "durationLowTime",
+    iconCooldownTintEnabled = "iconTint",
+    iconAuraTintEnabled = "iconTint",
+    barPandemicColor = "pandemic",
     barIcon = "barIcon",
     barNameText = "barNameText",
     barCooldownText = "cooldownText",
@@ -781,6 +786,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- styleTable + fallbackStyle pair a customized section passes - or, inert,
     -- the read-only snapshot. The lens draws one shape for both scopes.
     local borderColorRow = BuildBorderControls(borderLeft, borderSec.tbl, refreshStyle, {
+        sec = borderSec,
         row = true,
         fallbackStyle = borderSec.fallbackStyle,
         settings = BAR_FINDER.appearance.border,
@@ -927,6 +933,7 @@ local function BuildBarAppearanceTab(container, group, style)
         -- Master row unindented and aura opt-in row: keep in step with the
         -- icon-mode twin in GroupTabsAppearance.lua (owner ruling 2026-08-28).
         local rows = ST._AddDurationLowTimeRows(lowTimeLeft, lowTimeSec.tbl, refreshStyle, {
+            sec = lowTimeSec,
             explicitOff = lowTimeSec.scope == "customized",
             disabled = lowTimeSec.disabled,
             rightColumn = lowTimeRight,
@@ -1195,25 +1202,25 @@ local function BuildBarAppearanceTab(container, group, style)
 
         AddAdvancedToggle(showTimeRow, barCdTextAdvanced.settingKey, tabInfoButtons, true, {
             title = barCdTextAdvanced.title,
-            build = barCdTextAdvanced.build,
+            build = function(panel)
+                AddDurationTextVisibilityRows(panel, cdTextSec.read, cdTextSec.write,
+                    "cooldown", refreshStyle, {
+                        indent = false,
+                        explicitOff = cdTextSec.scope == "customized",
+                        disabled = cdTextSec.disabled,
+                        infoButtons = CS.advancedSettingsInfoButtons,
+                        rebuild = function()
+                            CooldownCompanion:RefreshConfigPanel()
+                        end,
+                        settings = BAR_FINDER.appearance.cooldownVisibility,
+                    })
+                    barCdTextAdvanced.build(panel)
+            end,
             unlock = { sec = cdTextSec,
                 enable = cdTextSec.read.showCooldownText ~= true and TURNON_BAR_COOLDOWN_TEXT or nil },
         })
     end
     cdTextSec:Chrome(showTimeRow)
-
-    if cdTextSec.read.showCooldownText == true then
-        AddDurationTextVisibilityRows(durationLeft, cdTextSec.read, cdTextSec.write,
-            "cooldown", refreshStyle, {
-                explicitOff = cdTextSec.scope == "customized",
-                disabled = cdTextSec.disabled,
-                infoButtons = tabInfoButtons,
-                rebuild = function()
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-                settings = BAR_FINDER.appearance.cooldownVisibility,
-            })
-    end
 
     cdTextSec:Finish()
     if drawsCooldownFormat then
@@ -1414,6 +1421,17 @@ local function BuildBarAppearanceTab(container, group, style)
         -- deferCommit is deliberately absent, matching the stock color-picker call
         -- the color row replaced.
         local function BuildBarAuraTextAdvanced(panel)
+            AddDurationTextVisibilityRows(panel, auraTextSec.read, auraTextSec.write,
+                "aura", refreshStyle, {
+                    indent = false,
+                    explicitOff = auraTextSec.scope == "customized",
+                    disabled = auraTextSec.disabled,
+                    infoButtons = CS.advancedSettingsInfoButtons,
+                    rebuild = function()
+                        CooldownCompanion:RefreshConfigPanel()
+                    end,
+                    settings = BAR_FINDER.appearance.auraVisibility,
+                })
             AddFontControls(panel, auraTextSec.tbl, "auraText", { size = 12 }, refreshStyle, {
                 row = true,
                 settings = BAR_FINDER.advanced.auraText and {
@@ -1490,19 +1508,6 @@ local function BuildBarAppearanceTab(container, group, style)
             {"Shows the remaining aura time at the bar's time text position while the aura is active. Position follows the flip and offset settings in the Cooldown Text section.", 1, 1, 1, true},
         }, auraTextRow))
         auraTextSec:Chrome(auraTextRow)
-
-        if auraTextSec.read.showAuraText ~= false then
-            AddDurationTextVisibilityRows(durationRight, auraTextSec.read, auraTextSec.write,
-                "aura", refreshStyle, {
-                    explicitOff = auraTextSec.scope == "customized",
-                    disabled = auraTextSec.disabled,
-                    infoButtons = tabInfoButtons,
-                    rebuild = function()
-                        CooldownCompanion:RefreshConfigPanel()
-                    end,
-                    settings = BAR_FINDER.appearance.auraVisibility,
-                })
-        end
 
         auraTextSec:Finish()
         if drawsAuraFormat and not drawsCooldownFormat then
@@ -1831,27 +1836,30 @@ local function BuildBarPandemicSection(container, group, style, lens)
         }, tabInfoButtons))
         pandemicSec:Chrome(enableRow)
 
-        if pandemicOn then
-            -- No alpha: the pandemic color REPLACES the aura fill color
-            -- (owner ruling — never blends with it), so the live clone and
-            -- the mirror both render it opaque.
-            --
-            -- "Fill Color", not "Pandemic Color": the marker's own color row
-            -- sits in the same section now, and two rows reading the same
-            -- thing would leave no way to tell the fill from the text.
-            AddColorRow(container, {
-                label = "Fill Color",
-                setting = BAR_FINDER.effects.aura.pandemicFill,
-                indent = true,
-                tbl = pandemicSec.tbl,
-                key = "barPandemicColor",
-                default = {1, 0.5, 0, 1},
-                hasAlpha = false,
-                disabled = pandemicSec.disabled,
-                onConfirm = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end,
-                onChange = ST._RefreshSelectedButtonsPreview,
-            })
-        end
+        ST._AddAdvancedToggle(enableRow, "barPandemicColor", {}, pandemicSec.scope ~= "denied", {
+            unlock = { sec = pandemicSec, enable = not pandemicOn and { label = "Enable Pandemic Color", key = "pandemicEffectEnabled" } or nil },
+            build = function(panel)
+                -- No alpha: the pandemic color REPLACES the aura fill color
+                -- (owner ruling — never blends with it), so the live clone and
+                -- the mirror both render it opaque.
+                --
+                -- "Fill Color", not "Pandemic Color": the marker's own color row
+                -- sits in the same section now, and two rows reading the same
+                -- thing would leave no way to tell the fill from the text.
+                AddColorRow(panel, {
+                    label = "Fill Color",
+                    setting = BAR_FINDER.effects.aura.pandemicFill,
+                    indent = false,
+                    tbl = pandemicSec.tbl,
+                    key = "barPandemicColor",
+                    default = {1, 0.5, 0, 1},
+                    hasAlpha = false,
+                    disabled = pandemicSec.disabled,
+                    onConfirm = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end,
+                    onChange = ST._RefreshSelectedButtonsPreview,
+                })
+            end,
+        })
 
         pandemicSec:Finish()
     end
@@ -2488,8 +2496,8 @@ if ST._DefineSettingRoute then
     BAR_FINDER.appearance.border = BarFinderRoute(
         "panel.bars.appearance.border", "appearance", "borderSettings",
         "Border", "barappearance_border", nil, nil, "borderSettings"):Settings({
-        thickness = { label = "Border Thickness" },
-        size = {
+        thickness = { advancedKey = "panelBorder", label = "Border Thickness" },
+        size = { advancedKey = "panelBorder",
             label = "Border Size",
             applies = function(context)
                 local read = BarFinderSectionState(context, "borderSettings")
@@ -2509,7 +2517,7 @@ if ST._DefineSettingRoute then
             label = "Use Separate Cooldown Tint",
             applies = function(context) return BarFinderCanUse(context, "desaturation") end,
         },
-        cooldown = {
+        cooldown = { advancedKey = "iconCooldownTintEnabled",
             label = "Cooldown Icon Color",
             applies = function(context)
                 if not BarFinderCanUse(context, "desaturation") then return false end
@@ -2518,7 +2526,7 @@ if ST._DefineSettingRoute then
             end,
         },
         separateAura = { label = "Use Separate Aura Tint", applies = BarFinderTracksAura },
-        aura = {
+        aura = { advancedKey = "iconAuraTintEnabled",
             label = "Aura Active Icon Color",
             applies = function(context)
                 if not BarFinderTracksAura(context) then return false end
@@ -2560,7 +2568,7 @@ if ST._DefineSettingRoute then
     })
 
     BAR_FINDER.appearance.cooldownVisibility = BarFinderTextRoute(
-        "panel.bars.appearance.cooldownVisibility", "cooldownText", nil,
+        "panel.bars.appearance.cooldownVisibility", "cooldownText", "barCooldownText",
         BarFinderCooldownTextVisible):Settings({
         mode = { label = "Visible", aliases = { "cooldown text visibility" } },
         threshold = {
@@ -2574,7 +2582,7 @@ if ST._DefineSettingRoute then
     })
 
     BAR_FINDER.appearance.auraVisibility = BarFinderTextRoute(
-        "panel.bars.appearance.auraVisibility", "auraText", nil,
+        "panel.bars.appearance.auraVisibility", "auraText", "barAuraText",
         BarFinderAuraTextVisible):Settings({
         mode = { label = "Visible", aliases = { "aura text visibility" } },
         threshold = {
@@ -2591,28 +2599,28 @@ if ST._DefineSettingRoute then
         "panel.bars.appearance.lowTime", "durationLowTime", nil,
         BarFinderLowTime):Settings({
         enabled = { label = "Change Text Near Expiry", aliases = { "low time", "warning time" } },
-        warningThreshold = {
+        warningThreshold = { advancedKey = "durationLowTime",
             label = "Start Warning Below",
             applies = function(context) local _, _, _, active = BarFinderLowTimeState(context); return active end,
         },
-        warningColor = {
+        warningColor = { advancedKey = "durationLowTime",
             label = "Warning Color",
             applies = function(context) local _, _, _, active = BarFinderLowTimeState(context); return active end,
         },
-        auras = { label = "Also Apply to Aura Text", applies = BarFinderLowTimeAuraToggle },
-        critical = {
+        auras = { advancedKey = "durationLowTime", label = "Also Apply to Aura Text", applies = BarFinderLowTimeAuraToggle },
+        critical = { advancedKey = "durationLowTime",
             label = "Add Critical Styling",
             applies = function(context) local _, _, _, active = BarFinderLowTimeState(context); return active end,
         },
-        criticalThreshold = {
+        criticalThreshold = { advancedKey = "durationLowTime",
             label = "Start Critical Below",
             applies = function(context) local _, _, _, _, active = BarFinderLowTimeState(context); return active end,
         },
-        criticalColor = {
+        criticalColor = { advancedKey = "durationLowTime",
             label = "Critical Color",
             applies = function(context) local _, _, _, _, active = BarFinderLowTimeState(context); return active end,
         },
-        decimals = {
+        decimals = { advancedKey = "durationLowTime",
             label = "Show Decimals Near Expiry",
             applies = function(context) local _, _, _, active = BarFinderLowTimeState(context); return active end,
         },
@@ -2732,7 +2740,7 @@ if ST._DefineSettingRoute then
             end,
         },
         pandemicColor = { label = "Show Pandemic Color", sectionId = "pandemic" },
-        pandemicFill = {
+        pandemicFill = { advancedKey = "barPandemicColor",
             label = "Fill Color", aliases = { "pandemic fill color" }, sectionId = "pandemic",
             applies = function(context)
                 local read = BarFinderSectionState(context, "pandemic")

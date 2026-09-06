@@ -10,6 +10,10 @@ local DEFAULT_ICON_FILL_COOLDOWN_COLOR = {0.6, 0.13, 0.18, 0.55}
 local UsesChargeBehavior = CooldownCompanion and CooldownCompanion.UsesChargeBehavior
 local InCombatLockdown = InCombatLockdown
 local GetTime = GetTime
+local IsSpellUsable = C_Spell.IsSpellUsable
+local IsUsableItem = C_Item.IsUsableItem
+local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
+local IsEquipmentSlotEntry = CooldownCompanion.IsEquipmentSlotEntry
 
 local function IsTrue(value)
     return value == true
@@ -209,6 +213,24 @@ local function GetResolverTime(options)
     return 0
 end
 
+local function IsReadyGlowUsable(button, buttonData)
+    -- Passive cooldowns have readiness, but no player-cast usability requirement.
+    if buttonData.isPassiveCooldown then return true end
+
+    if buttonData.type == "spell" then
+        local spellID = button._displaySpellId or buttonData.id
+        return spellID ~= nil and IsSpellUsable(spellID)
+    elseif IsEntryItemLike(buttonData) then
+        -- A slot number is not an item ID; an empty equipment slot stays unusable.
+        local itemID = button._resolvedItemId
+        if not itemID and not IsEquipmentSlotEntry(buttonData) then
+            itemID = buttonData.id
+        end
+        return itemID ~= nil and IsUsableItem(itemID)
+    end
+    return true
+end
+
 local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActive, target, options)
     target = target or {}
     style = style or {}
@@ -340,6 +362,18 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
             ready.durationWindow = true
         else
             SetGlowIntent(ready, true, "ready", snapshots)
+        end
+    end
+
+    -- Filter the finished ready intent so charge/timer/suppression rules keep
+    -- their existing ownership. Resource changes never re-arm either timer.
+    -- Query independently of tint/text usability, which can be disabled or
+    -- presentation-suppressed and is not a shared castability source.
+    if ready.active and style.readyGlowOnlyWhileUsable == true
+            and not IsReadyGlowUsable(button, buttonData) then
+        ready.active = false
+        if snapshots then
+            ready.reason = "unusable"
         end
     end
 
