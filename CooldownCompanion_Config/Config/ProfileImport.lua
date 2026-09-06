@@ -697,6 +697,10 @@ local function CopyProfileDataIntoActiveProfile(activeProfile, data)
 end
 
 function CooldownCompanion:ApplyFullProfileImport(data, options)
+    if type(data) == "table" and data._cdcDiagnosticScope ~= nil then
+        if self.Print then self:Print("Scoped diagnostics cannot replace a profile. Import selected pieces instead.") end
+        return false
+    end
     if type(data) ~= "table" then
         return false
     end

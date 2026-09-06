@@ -24,6 +24,7 @@ Config\ProfileImport.lua
 Config\Popups.lua
 Config\ProfileImportPieces.lua
 Config\ImportReview.lua
+Config\DiagnosticScope.lua
 Config\Diagnostics.lua
 Config\Pickers.lua
 Config\TalentPicker.lua

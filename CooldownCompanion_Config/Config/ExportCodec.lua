@@ -1344,6 +1344,14 @@ local function CompactDiagnosticSnapshot(snapshot, formatVersion)
 
     if type(compact.profile) == "table" then
         compact.profile = CompactProfile(compact.profile, formatVersion)
+        -- Older builds stored this derived cache on entries. StyleOverrides.lua
+        -- now owns it in a weak-key table; these are not user settings.
+        for _, panel in pairs(compact.profile.groups or {}) do
+            for _, button in ipairs(panel.buttons or {}) do
+                button._effectiveStyleGroupStyle = nil
+                button._effectiveStyleOverrides = nil
+            end
+        end
     end
 
     if type(compact.runtime) == "table" then
@@ -1392,6 +1400,42 @@ local function RehydrateCompactPayload(data, formatVersion)
     return NormalizeTextureLibraryProfile(RehydrateProfile(data, formatVersion))
 end
 
+-- Keep the AceSerializer wire format, but place matching settings in the same
+-- order so Deflate can find repeated runs across a mature profile. Delegate
+-- scalar encoding (especially exact floating-point values) to AceSerializer.
+local function SerializeDiagnosticSnapshot(snapshot)
+    local parts = { "^1" }
+    local function append(value)
+        if type(value) ~= "table" then
+            parts[#parts + 1] = AceSerializer:Serialize(value):sub(3, -3)
+            return
+        end
+        local keys = {}
+        for key in pairs(value) do
+            if type(key) ~= "string" and type(key) ~= "number" and type(key) ~= "boolean" then
+                -- Preserve the library's behavior for unusual table keys.
+                parts[#parts + 1] = AceSerializer:Serialize(value):sub(3, -3)
+                return
+            end
+            keys[#keys + 1] = key
+        end
+        table.sort(keys, function(a, b)
+            if type(a) ~= type(b) then return type(a) < type(b) end
+            if type(a) == "boolean" then return a == false and b == true end
+            return a < b
+        end)
+        parts[#parts + 1] = "^T"
+        for _, key in ipairs(keys) do
+            append(key)
+            append(value[key])
+        end
+        parts[#parts + 1] = "^t"
+    end
+    append(snapshot)
+    parts[#parts + 1] = "^^"
+    return table.concat(parts)
+end
+
 local function EncodeSharedPayload(payload, exportKind)
     local exportData = CopyTable(payload)
     local formatVersion = CURRENT_COMPACT_FORMAT_VALUE
@@ -1411,11 +1455,25 @@ local function EncodeSharedPayload(payload, exportKind)
         exportData = CompactEntityPayload(exportData, formatVersion)
     end
 
+    if exportKind == "diagnostic" and type(exportData.profile) == "table"
+        and exportData.profile._cdcDiagnosticScope ~= nil then
+        -- Older decoders see no importable profile and reject a scoped restore.
+        -- New decoders restore the normal in-memory shape only after decoding.
+        exportData._cdcScopedProfile = exportData.profile
+        exportData.profile = nil
+    end
     exportData[COMPACT_FORMAT_KEY] = formatVersion
 
-    local serialized = AceSerializer:Serialize(exportData)
+    local serialized = exportKind == "diagnostic"
+        and SerializeDiagnosticSnapshot(exportData) or AceSerializer:Serialize(exportData)
     local compressed = LibDeflate:CompressDeflate(serialized, COMPRESSION_CONFIG)
-    return LibDeflate:EncodeForPrint(compressed)
+    local encoded = LibDeflate:EncodeForPrint(compressed)
+    if exportKind == "diagnostic" then
+        -- The caller supplies CDCdiag:. Detect damage before decompression;
+        -- older unwrapped diagnostic strings remain readable.
+        return ("3:%d:%.0f:%s"):format(#encoded, LibDeflate:Adler32(encoded), encoded)
+    end
+    return encoded
 end
 
 local function DecodeSharedPayload(text)
@@ -1426,6 +1484,20 @@ local function DecodeSharedPayload(text)
 
     if isLegacy then
         return false, nil
+    end
+
+    if normalized:match("^%d+:") then
+        local version, length, checksum, body = normalized:match("^(%d+):(%d+):(%d+):(.*)$")
+        if version ~= "3" then
+            return false, nil, "Unsupported or damaged diagnostic header. Ask for a fresh export as a text-file attachment."
+        end
+        if #body ~= tonumber(length) then
+            return false, nil, ("Incomplete or altered diagnostic string: expected %s characters, received %d. Ask for the full text-file attachment."):format(length, #body)
+        end
+        if LibDeflate:Adler32(body) ~= tonumber(checksum) then
+            return false, nil, "Diagnostic checksum mismatch: the text changed during sharing. Ask for the original text-file attachment."
+        end
+        normalized = body
     end
 
     local decoded = LibDeflate:DecodeForPrint(normalized)
@@ -1443,6 +1515,14 @@ local function DecodeSharedPayload(text)
         return false, nil
     end
 
+    if data._cdcScopedProfile ~= nil then
+        if type(data._cdcScopedProfile) ~= "table" or data.profile ~= nil then
+            return false, nil, "Invalid scoped diagnostic attachment."
+        end
+        data.profile = data._cdcScopedProfile
+        data._cdcScopedProfile = nil
+        data.profile._cdcDiagnosticScope = "character"
+    end
     local formatVersion = data[COMPACT_FORMAT_KEY]
     if IsSupportedCompactFormat(formatVersion) then
         data[COMPACT_FORMAT_KEY] = nil

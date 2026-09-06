@@ -176,8 +176,12 @@ local function IsProfileReviewKind(review)
     return review and (review.kind == "profile" or review.kind == "diagnostic")
 end
 
+local function IsScopedDiagnosticReview(review)
+    return review and type(review.data) == "table" and review.data._cdcDiagnosticScope ~= nil
+end
+
 local function ReviewUsesSelectedPieces(review)
-    return IsProfileReviewKind(review) and review.mode == "selected"
+    return IsProfileReviewKind(review) and (review.mode == "selected" or IsScopedDiagnosticReview(review))
 end
 
 local function AddCharacterEligibilityNotice(lines, data)
@@ -209,6 +213,10 @@ local function BuildSelectedPiecesSummaryLines(review, selectedCount)
     local lines = {}
     AddLine(lines, review.kind == "diagnostic" and "Diagnostic selected pieces" or "Profile selected pieces")
     AddLine(lines, "Only pieces compatible with your current class are shown.")
+    if IsScopedDiagnosticReview(review) then
+        AddLine(lines, "Scoped attachment: all source-class specs, shared groups, selections, and dependencies; unrelated classes and character settings omitted.")
+        AddLine(lines, "Full-profile replacement is unavailable. Remaining captured settings can be inspected in Diagnostic Decode.")
+    end
     AddLine(lines, FormatCount("Importable pieces", pieces and pieces.eligibleCount or 0))
     AddLine(lines, FormatCount("Selected pieces", selectedCount or RecountSelectedPieces(review)))
     if pieces and pieces.disabledCount and pieces.disabledCount > 0 then
@@ -224,6 +232,9 @@ end
 local function GetProfileImportDisclaimer(review)
     if not IsProfileReviewKind(review) then
         return nil
+    end
+    if IsScopedDiagnosticReview(review) then
+        return "|cffffd100Scoped diagnostic:|r Contains part of the source profile. Import selected pieces only; full-profile replacement is unavailable."
     end
     if ReviewUsesSelectedPieces(review) then
         return "|cffffd100Selected Pieces:|r Best for sharing setups. "
@@ -427,6 +438,9 @@ local function ValidateProfilePayload(data)
 end
 
 local function ClassifyProfilePayload(data)
+    if data._cdcDiagnosticScope ~= nil then
+        return BuildError("scoped_profile", "This is a partial diagnostic profile, not a full backup. Import the original diagnostic string as selected pieces.")
+    end
     local validation = ValidateProfilePayload(data)
     if validation then
         return validation
@@ -461,6 +475,7 @@ local function ClassifyDiagnosticPayload(data)
         return validation
     end
 
+    local scoped = data.profile._cdcDiagnosticScope ~= nil
     local meta = GetDiagnosticMeta(data)
     local pieces = BuildProfileImportPiecesReview and BuildProfileImportPiecesReview(data.profile, {
         exporterCharKey = meta and meta.charKey,
@@ -476,10 +491,10 @@ local function ClassifyDiagnosticPayload(data)
     return BuildReview("diagnostic", data.profile, "Diagnostic Restore",
         "Restore Diagnostic", lines, {
         diagnostic = data,
-        destructive = true,
-        mode = "restore",
+        destructive = not scoped,
+        mode = scoped and "selected" or "restore",
         pieces = pieces,
-        warning = "This replaces your current profile with the bug report profile.",
+        warning = not scoped and "This replaces your current profile with the bug report profile." or nil,
     })
 end
 
@@ -562,9 +577,9 @@ function CooldownCompanion:ClassifyImportReviewText(text)
         return BuildError("too_large", "Import string too large (" .. #compactText .. " characters).")
     end
 
-    local success, data = DecodeSharedPayload(preparedText)
+    local success, data, decodeError = DecodeSharedPayload(preparedText)
     if not success or type(data) ~= "table" then
-        return BuildError("invalid", "Import failed: invalid data.")
+        return BuildError("invalid", decodeError or "Import failed: invalid data.")
     end
     if IsUnsupportedPayload(data) then
         return BuildLegacyError(GetPayloadDataLabel(data, isDiagnostic))
@@ -585,6 +600,9 @@ function CooldownCompanion:ApplyReviewedImport(review)
     end
 
     if review.kind == "profile" or review.kind == "diagnostic" then
+        if IsScopedDiagnosticReview(review) and review.mode ~= "selected" then
+            return false
+        end
         if ReviewUsesSelectedPieces(review) then
             return ApplyProfileImportPieces and ApplyProfileImportPieces(review.data, review.pieces) == true
         end
@@ -660,6 +678,7 @@ end
 -- Review helpers shared with import mode (Config/ImportMode.lua), which
 -- owns all rendering of these classifications.
 ------------------------------------------------------------------------
+ST._IsScopedDiagnosticReview = IsScopedDiagnosticReview
 ST._IsProfileImportReviewKind = IsProfileReviewKind
 ST._ImportReviewUsesSelectedPieces = ReviewUsesSelectedPieces
 ST._RecountImportReviewSelectedPieces = RecountSelectedPieces
