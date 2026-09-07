@@ -610,6 +610,12 @@ local function ShowPanelContextMenu(panelId, containerId)
     if not CS.panelContextMenu then
         CS.panelContextMenu = CreateFrame("Frame", "CDCPanelContextMenu", UIParent, "UIDropDownMenuTemplate")
     end
+    local switchModes = {
+        { mode = "icons", label = "Icons" },
+        { mode = "bars", label = "Bars" },
+        { mode = "text", label = "Text" },
+        { mode = "textures", label = "Textures" },
+    }
     UIDropDownMenu_Initialize(CS.panelContextMenu, function(_, level, menuList)
         level = level or 1
         if level == 1 then
@@ -633,20 +639,7 @@ local function ShowPanelContextMenu(panelId, containerId)
             end
             UIDropDownMenu_AddButton(info, level)
 
-            info = UIDropDownMenu_CreateInfo()
-            info.text = "Visibility"
-            info.notCheckable = true
-            info.func = function()
-                CloseDropDownMenus()
-                SelectConfigPanel(panelId, { containerId = containerId })
-                CS.selectedTab = "loadconditions"
-                CS.panelSettingsTab = "loadconditions"
-                -- A deliberate destination, so it outranks a display mode's
-                -- own default landing tab.
-                CS.panelSettingsTabExplicit = true
-                CooldownCompanion:RefreshConfigPanel()
-            end
-            UIDropDownMenu_AddButton(info, level)
+            UIDropDownMenu_AddSeparator(level)
 
             info = UIDropDownMenu_CreateInfo()
             local anchorUnlocked = panel.locked == false
@@ -660,29 +653,6 @@ local function ShowPanelContextMenu(panelId, containerId)
                 TogglePanelAnchorLock(panelId)
             end
             UIDropDownMenu_AddButton(info, level)
-
-            -- Aura Panels are structurally excluded from auto-anchoring
-            -- (IsGroupAvailableForAnchoring), so there is nothing to toggle.
-            if CooldownCompanion:IsIconLikeDisplayMode(panel.displayMode)
-                and not CooldownCompanion:IsAuraPanel(panel) then
-                info = UIDropDownMenu_CreateInfo()
-                info.text = panel.anchorEligible ~= false and "Exclude from Auto-Anchoring" or "Include in Auto-Anchoring"
-                info.notCheckable = true
-                info.func = function()
-                    CloseDropDownMenus()
-                    if panel.anchorEligible ~= false then
-                        panel.anchorEligible = false
-                    else
-                        panel.anchorEligible = nil
-                    end
-                    CooldownCompanion:EvaluateResourceBars()
-                    CooldownCompanion:UpdateAnchorStacking()
-                    CooldownCompanion:EvaluateCastBar()
-                    CooldownCompanion:EvaluateFrameAnchoring()
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-                UIDropDownMenu_AddButton(info, level)
-            end
 
             -- Stable external anchor (Core/ExternalAnchorFrame.lua): one
             -- marked panel per spec. A cursor-anchored panel cannot provide
@@ -711,56 +681,27 @@ local function ShowPanelContextMenu(panelId, containerId)
                 UIDropDownMenu_AddButton(info, level)
             end
 
-            if ST._IsActiveCDMPanelSource and ST._IsActiveCDMPanelSource(panel)
-                and ST._IsCreateTargetContainer and ST._IsCreateTargetContainer(containerId) then
-                info = UIDropDownMenu_CreateInfo()
-                info.text = "Refresh from Cooldown Manager"
-                info.notCheckable = true
-                info.func = function()
-                    CloseDropDownMenus()
-                    ShowPopupAboveConfig("CDC_REFRESH_CDM_PANEL", panel.name or "Panel", {
-                        panelId = panelId,
-                        containerId = containerId,
-                        sourceKey = panel.cdmPanelSource,
-                    })
-                end
-                UIDropDownMenu_AddButton(info, level)
-            end
-
             if panel.displayMode ~= ST.DISPLAY_MODE_ROTATION_ASSISTANT then
-                local switchModes = {
-                    { mode = "icons", label = "Icons" },
-                    { mode = "bars", label = "Bars" },
-                    { mode = "text", label = "Text" },
-                    { mode = "textures", label = "Textures" },
-                }
+                local hasSwitchModes = false
                 for _, modeInfo in ipairs(switchModes) do
                     if panel.displayMode ~= modeInfo.mode
                         and CooldownCompanion:CanChangePanelDisplayMode(panelId, modeInfo.mode) then
-                        info = UIDropDownMenu_CreateInfo()
-                        info.text = "Switch to " .. modeInfo.label
-                        info.notCheckable = true
-                        local targetMode = modeInfo.mode
-                        info.func = function()
-                            CloseDropDownMenus()
-                            -- Sections exist only in icon mode, and leaving it
-                            -- flattens them for good (placements are not
-                            -- remembered), so a panel that actually has some
-                            -- says so before the switch instead of after.
-                            if targetMode ~= "icons" and ST.GetSectionsForLayout(panel) then
-                                ShowPopupAboveConfig("CDC_FLATTEN_PANEL_SECTIONS", panel.name or "Panel", {
-                                    panelId = panelId,
-                                    containerId = containerId,
-                                    targetMode = targetMode,
-                                })
-                                return
-                            end
-                            ApplyPanelDisplayModeChange(panelId, containerId, targetMode)
-                        end
-                        UIDropDownMenu_AddButton(info, level)
+                        hasSwitchModes = true
+                        break
                     end
                 end
+                if hasSwitchModes then
+                    UIDropDownMenu_AddSeparator(level)
+                    info = UIDropDownMenu_CreateInfo()
+                    info.text = "Panel Type"
+                    info.notCheckable = true
+                    info.hasArrow = true
+                    info.menuList = "PANEL_TYPE"
+                    UIDropDownMenu_AddButton(info, level)
+                end
             end
+
+            UIDropDownMenu_AddSeparator(level)
 
             info = UIDropDownMenu_CreateInfo()
             info.text = "Duplicate"
@@ -799,6 +740,24 @@ local function ShowPanelContextMenu(panelId, containerId)
                 UIDropDownMenu_AddButton(info, level)
             end
 
+            if ST._IsActiveCDMPanelSource and ST._IsActiveCDMPanelSource(panel)
+                and ST._IsCreateTargetContainer and ST._IsCreateTargetContainer(containerId) then
+                info = UIDropDownMenu_CreateInfo()
+                info.text = "Refresh from Cooldown Manager"
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    ShowPopupAboveConfig("CDC_REFRESH_CDM_PANEL", panel.name or "Panel", {
+                        panelId = panelId,
+                        containerId = containerId,
+                        sourceKey = panel.cdmPanelSource,
+                    })
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+
+            UIDropDownMenu_AddSeparator(level)
+
             local moveTargets = BuildFlatContainerOrder(db, containerId, panelId)
             if #moveTargets > 0 then
                 info = UIDropDownMenu_CreateInfo()
@@ -820,6 +779,35 @@ local function ShowPanelContextMenu(panelId, containerId)
                 })
             end
             UIDropDownMenu_AddButton(info, level)
+        elseif menuList == "PANEL_TYPE" then
+            if panel.displayMode ~= ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+                for _, modeInfo in ipairs(switchModes) do
+                    if panel.displayMode ~= modeInfo.mode
+                        and CooldownCompanion:CanChangePanelDisplayMode(panelId, modeInfo.mode) then
+                        local info = UIDropDownMenu_CreateInfo()
+                        info.text = "Switch to " .. modeInfo.label
+                        info.notCheckable = true
+                        local targetMode = modeInfo.mode
+                        info.func = function()
+                            CloseDropDownMenus()
+                            -- Sections exist only in icon mode, and leaving it
+                            -- flattens them for good (placements are not
+                            -- remembered), so a panel that actually has some
+                            -- says so before the switch instead of after.
+                            if targetMode ~= "icons" and ST.GetSectionsForLayout(panel) then
+                                ShowPopupAboveConfig("CDC_FLATTEN_PANEL_SECTIONS", panel.name or "Panel", {
+                                    panelId = panelId,
+                                    containerId = containerId,
+                                    targetMode = targetMode,
+                                })
+                                return
+                            end
+                            ApplyPanelDisplayModeChange(panelId, containerId, targetMode)
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+                    end
+                end
+            end
         elseif menuList == "COPY_PANEL_SETTINGS" then
             local copyMode = CooldownCompanion.GetPanelCopyMode
                 and CooldownCompanion:GetPanelCopyMode(panel) or nil
@@ -1187,20 +1175,6 @@ local function ShowContainerContextMenu(db, containerId, container)
             UIDropDownMenu_AddButton(info, level)
 
             info = UIDropDownMenu_CreateInfo()
-            info.text = container.isGlobal and "Move to Current Class" or "Make Global"
-            info.notCheckable = true
-            info.func = function()
-                CloseDropDownMenus()
-                if container.isGlobal and ContainersHaveForeignSpecs({ container }, false) then
-                    ShowPopupAboveConfig("CDC_UNGLOBAL_GROUP", container.name, { containerId = containerId })
-                    return
-                end
-                CooldownCompanion:ToggleGroupGlobal(containerId)
-                CooldownCompanion:RefreshConfigPanel()
-            end
-            UIDropDownMenu_AddButton(info, level)
-
-            info = UIDropDownMenu_CreateInfo()
             info.text = (container.enabled ~= false) and "Disable" or "Enable"
             info.notCheckable = true
             info.func = function()
@@ -1210,18 +1184,7 @@ local function ShowContainerContextMenu(db, containerId, container)
             end
             UIDropDownMenu_AddButton(info, level)
 
-            info = UIDropDownMenu_CreateInfo()
-            info.text = "Duplicate"
-            info.notCheckable = true
-            info.func = function()
-                CloseDropDownMenus()
-                local newContainerId = CooldownCompanion:DuplicateGroup(containerId)
-                if newContainerId then
-                    SelectConfigContainer(newContainerId)
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-            end
-            UIDropDownMenu_AddButton(info, level)
+            UIDropDownMenu_AddSeparator(level)
 
             info = UIDropDownMenu_CreateInfo()
             info.text = container.locked ~= false and "Unlock" or "Lock"
@@ -1232,46 +1195,7 @@ local function ShowContainerContextMenu(db, containerId, container)
             end
             UIDropDownMenu_AddButton(info, level)
 
-            do
-                local isCurrentlyEligible
-                if container.isGlobal then
-                    isCurrentlyEligible = container.anchorEligible == true
-                else
-                    isCurrentlyEligible = container.anchorEligible ~= false
-                end
-                info = UIDropDownMenu_CreateInfo()
-                info.text = isCurrentlyEligible and "Exclude from Auto-Anchoring" or "Include in Auto-Anchoring"
-                info.notCheckable = true
-                info.func = function()
-                    CloseDropDownMenus()
-                    local fresh = db.groupContainers[containerId]
-                    if not fresh then return end
-                    if fresh.isGlobal then
-                        fresh.anchorEligible = not fresh.anchorEligible or nil
-                    else
-                        if fresh.anchorEligible ~= false then
-                            fresh.anchorEligible = false
-                        else
-                            fresh.anchorEligible = nil
-                        end
-                    end
-                    CooldownCompanion:EvaluateResourceBars()
-                    CooldownCompanion:UpdateAnchorStacking()
-                    CooldownCompanion:EvaluateCastBar()
-                    CooldownCompanion:EvaluateFrameAnchoring()
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-                UIDropDownMenu_AddButton(info, level)
-            end
-
-            info = UIDropDownMenu_CreateInfo()
-            info.text = "Visibility"
-            info.notCheckable = true
-            info.func = function()
-                CloseDropDownMenus()
-                OpenContainerLoadConditions(containerId)
-            end
-            UIDropDownMenu_AddButton(info, level)
+            UIDropDownMenu_AddSeparator(level)
 
             info = UIDropDownMenu_CreateInfo()
             info.text = "Set Group Icon..."
@@ -1297,6 +1221,21 @@ local function ShowContainerContextMenu(db, containerId, container)
                 UIDropDownMenu_AddButton(info, level)
             end
 
+            UIDropDownMenu_AddSeparator(level)
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "Duplicate"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                local newContainerId = CooldownCompanion:DuplicateGroup(containerId)
+                if newContainerId then
+                    SelectConfigContainer(newContainerId)
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+            end
+            UIDropDownMenu_AddButton(info, level)
+
             if IsCreateTargetContainer(containerId) then
                 info = UIDropDownMenu_CreateInfo()
                 info.text = "Add Panel"
@@ -1305,6 +1244,22 @@ local function ShowContainerContextMenu(db, containerId, container)
                 info.menuList = "ADD_PANEL"
                 UIDropDownMenu_AddButton(info, level)
             end
+
+            UIDropDownMenu_AddSeparator(level)
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = container.isGlobal and "Move to Current Class" or "Make Global"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                if container.isGlobal and ContainersHaveForeignSpecs({ container }, false) then
+                    ShowPopupAboveConfig("CDC_UNGLOBAL_GROUP", container.name, { containerId = containerId })
+                    return
+                end
+                CooldownCompanion:ToggleGroupGlobal(containerId)
+                CooldownCompanion:RefreshConfigPanel()
+            end
+            UIDropDownMenu_AddButton(info, level)
 
             info = UIDropDownMenu_CreateInfo()
             info.text = "|cffff4444Delete|r"
