@@ -19,6 +19,7 @@ function ChargeBarSegments.Create(parent)
     -- Clip fills only. Pixel-aligned borders may straddle the outer rectangle
     -- at preview scale and must not be cut off by the fill containment frame.
     holder.fillClip = CreateFrame("Frame", nil, holder)
+    holder.fillClip._ccPreserveHitRectInsets = true
     holder.fillClip:SetAllPoints(holder)
     holder.fillClip:SetClipsChildren(true)
     holder.segments = {}
@@ -32,6 +33,7 @@ function ChargeBarSegments.Create(parent)
     -- a later charge red. The native fill and its geometry stay write-only.
     holder.rechargeBar:SetAlpha(0)
     holder.rechargeClip = CreateFrame("Frame", nil, holder.fillClip)
+    holder.rechargeClip._ccPreserveHitRectInsets = true
     holder.rechargeClip:SetAllPoints(holder.rechargeBar:GetStatusBarTexture())
     holder.rechargeClip:SetClipsChildren(true)
     holder.rechargeClip:Hide()
@@ -99,6 +101,7 @@ function ChargeBarSegments.Layout(holder, width, height, maximum, gap, vertical,
             -- seam where fractional segment widths rasterize differently.
             segment.background:SetAllPoints(segment.borderHost)
             segment.rechargeWindow = CreateFrame("Frame", nil, holder.rechargeClip)
+            segment.rechargeWindow._ccPreserveHitRectInsets = true
             segment.rechargeWindow:SetAllPoints(segment)
             segment.rechargeWindow:SetClipsChildren(true)
             segment.rechargeTexture = segment.rechargeWindow:CreateTexture(nil, "ARTWORK")
@@ -300,6 +303,7 @@ function ChargeBarSegments.PaintPanel(owner, count, maximum, duration, rechargin
     if not paint then
         paint = {
             texture = ST.Addon:FetchEffectiveBarTexture(style.barTexture or "Solid"),
+            rechargeInterpolation = Enum.StatusBarInterpolation.Immediate,
             readyColor = style.barColor or {0.2, 0.6, 1, 1},
             cooldownColor = style.barCooldownColor or {0.6, 0.13, 0.18, 1},
             rechargeColor = style.barChargeColor or {1, 0.82, 0, 1},
