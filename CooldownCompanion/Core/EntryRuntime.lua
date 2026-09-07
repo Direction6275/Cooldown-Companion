@@ -658,6 +658,9 @@ function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
     -- stale base classification. The scratch is wiped per call, so this is
     -- always current.
     result.noCooldownForVisibility = noCooldown == true and baseNoCooldown == true
+    -- Raw charge info is consumed synchronously by the segmented renderer.
+    result.chargeInfo = charges
+    result.chargeSpellID = cooldownSpellID
 
     if hasCharges then
         ApplyCustomBarChargeState(owner, result, spellID, cooldownSpellID, charges, maxCharges)

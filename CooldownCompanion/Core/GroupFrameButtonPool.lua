@@ -198,6 +198,7 @@ local function ClearReusableButtonRuntime(button)
     button._baseResourceGateCostSpellId = nil
     button._cooldownDeferred = nil
     button._durationObj = nil
+    ST.ChargeBarSegments.Invalidate(button.statusBar)
     button._chargeDurationObj = nil
     -- _totemSwipeStyleActive is deliberately NOT cleared here: it is the latch
     -- that owes the swipe-style restore, and the next pass sees the phase gone
@@ -206,6 +207,7 @@ local function ClearReusableButtonRuntime(button)
     button._totemActive = nil
     button._chargeRecharging = nil
     button._chargeState = nil
+    button._chargeRenderCount = nil
     button._currentReadableCharges = nil
     button._chargeCountReadable = nil
     button._chargeText = nil

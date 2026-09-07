@@ -68,6 +68,7 @@ function ST.ClearStatusBarMotion(statusBar)
     statusBar._cdcStatusBarMotionKind = nil
     statusBar._cdcStatusBarMotionDurationObj = nil
     statusBar._cdcStatusBarMotionDirection = nil
+    statusBar._cdcStatusBarMotionInterpolation = nil
     statusBar._cdcStatusBarMotionValue = nil
 end
 
@@ -125,6 +126,7 @@ function ST.SetStatusBarImmediateValue(statusBar, value)
     statusBar._cdcStatusBarMotionKind = STATUS_BAR_MOTION_IMMEDIATE_VALUE
     statusBar._cdcStatusBarMotionDurationObj = nil
     statusBar._cdcStatusBarMotionDirection = nil
+    statusBar._cdcStatusBarMotionInterpolation = nil
     if valueIsSecret then
         statusBar._cdcStatusBarMotionValue = nil
     else
@@ -151,6 +153,7 @@ function ST.SetStatusBarSmoothValue(statusBar, value)
     statusBar._cdcStatusBarMotionKind = STATUS_BAR_MOTION_SMOOTH_VALUE
     statusBar._cdcStatusBarMotionDurationObj = nil
     statusBar._cdcStatusBarMotionDirection = nil
+    statusBar._cdcStatusBarMotionInterpolation = nil
     if valueIsSecret then
         statusBar._cdcStatusBarMotionValue = nil
     else
@@ -180,29 +183,32 @@ function ST.SetStatusBarSegmentedValue(statusBar, value, segmentedSmoothing)
     return ST.SetStatusBarSmoothValue(statusBar, value)
 end
 
-function ST.SetStatusBarTimerDuration(statusBar, durationObj, direction)
+function ST.SetStatusBarTimerDuration(statusBar, durationObj, direction, interpolation)
     if not (statusBar and durationObj and statusBar.SetTimerDuration) then
         return false
     end
 
     direction = direction or ST.STATUS_BAR_TIMER_DIRECTION_ELAPSED
+    if interpolation == nil then interpolation = ST.STATUS_BAR_INTERPOLATION_SMOOTH end
     if statusBar._cdcStatusBarMotionKind == STATUS_BAR_MOTION_TIMER
         and statusBar._cdcStatusBarMotionDurationObj == durationObj
-        and statusBar._cdcStatusBarMotionDirection == direction then
+        and statusBar._cdcStatusBarMotionDirection == direction
+        and statusBar._cdcStatusBarMotionInterpolation == interpolation then
         return true
     end
 
     statusBar._cdcStatusBarMotionKind = STATUS_BAR_MOTION_TIMER
     statusBar._cdcStatusBarMotionDurationObj = durationObj
     statusBar._cdcStatusBarMotionDirection = direction
+    statusBar._cdcStatusBarMotionInterpolation = interpolation
     statusBar._cdcStatusBarMotionValue = nil
 
-    statusBar:SetTimerDuration(durationObj, ST.STATUS_BAR_INTERPOLATION_SMOOTH, direction)
+    statusBar:SetTimerDuration(durationObj, interpolation, direction)
     return true
 end
 
-function ST.SetStatusBarElapsedDuration(statusBar, durationObj)
-    return ST.SetStatusBarTimerDuration(statusBar, durationObj, ST.STATUS_BAR_TIMER_DIRECTION_ELAPSED)
+function ST.SetStatusBarElapsedDuration(statusBar, durationObj, interpolation)
+    return ST.SetStatusBarTimerDuration(statusBar, durationObj, ST.STATUS_BAR_TIMER_DIRECTION_ELAPSED, interpolation)
 end
 
 --------------------------------------------------------------------------------
