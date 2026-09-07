@@ -1003,15 +1003,7 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
             end
             UIDropDownMenu_AddButton(toggleInfo, level)
 
-            if not (sourceGroup and sourceGroup.displayMode == "textures") then
-                local dupInfo = UIDropDownMenu_CreateInfo()
-                dupInfo.text = "Duplicate"
-                dupInfo.notCheckable = true
-                dupInfo.func = function()
-                    DuplicateEntrySelection(snapshot)
-                end
-                UIDropDownMenu_AddButton(dupInfo, level)
-            end
+            UIDropDownMenu_AddSeparator(level)
 
             local iconInfo = UIDropDownMenu_CreateInfo()
             iconInfo.text = "Override Icon..."
@@ -1040,12 +1032,26 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                 UIDropDownMenu_AddButton(resetIconInfo, level)
             end
 
-            AddEntrySelectionMoveMenuItem(level, snapshot, "Move to...")
+            local canDuplicate = not (sourceGroup and sourceGroup.displayMode == "textures")
+            local hasCustomizations = #CollectCopyCustomizationItems(entryData) > 0
+            if canDuplicate or hasCustomizations then
+                UIDropDownMenu_AddSeparator(level)
+            end
+
+            if canDuplicate then
+                local dupInfo = UIDropDownMenu_CreateInfo()
+                dupInfo.text = "Duplicate"
+                dupInfo.notCheckable = true
+                dupInfo.func = function()
+                    DuplicateEntrySelection(snapshot)
+                end
+                UIDropDownMenu_AddButton(dupInfo, level)
+            end
 
             -- No source-side display-mode gate: even a texture panel's entry
             -- can carry stranded customizations worth copying out, and the
             -- copy mode's target eligibility does all the real gating.
-            if #CollectCopyCustomizationItems(entryData) > 0 then
+            if hasCustomizations then
                 local copyInfo = UIDropDownMenu_CreateInfo()
                 copyInfo.text = "Copy Customization To..."
                 copyInfo.notCheckable = true
@@ -1056,6 +1062,10 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                 copyInfo.tooltipOnButton = true
                 UIDropDownMenu_AddButton(copyInfo, level)
             end
+
+            UIDropDownMenu_AddSeparator(level)
+
+            AddEntrySelectionMoveMenuItem(level, snapshot, "Move to...")
 
             -- Red "Delete" behind the confirmation popup, the same way every
             -- other destructive menu item in the config reads.

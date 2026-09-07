@@ -1425,6 +1425,8 @@ local function CreateConfigPanel()
             end
             UIDropDownMenu_AddButton(info2, level)
 
+            UIDropDownMenu_AddSeparator(level)
+
             local info3 = UIDropDownMenu_CreateInfo()
             info3.text = "  Profile One-pixel Borders"
             info3.checked = function() return ST.IsProfileOnePixelBordersEnabled() end
@@ -1502,6 +1504,8 @@ local function CreateConfigPanel()
                 UIDropDownMenu_AddButton(infoBarTexturePicker, level)
             end
 
+            UIDropDownMenu_AddSeparator(level)
+
             local info4 = UIDropDownMenu_CreateInfo()
             info4.text = "  Generate Bug Report"
             info4.notCheckable = true
@@ -1525,6 +1529,8 @@ local function CreateConfigPanel()
                 ShowPopupAboveConfig("CDC_DIAGNOSTIC_FULL_REPORT")
             end
             UIDropDownMenu_AddButton(infoFullReport, level)
+
+            UIDropDownMenu_AddSeparator(level)
 
             local infoChangelog = UIDropDownMenu_CreateInfo()
             infoChangelog.text = "  View Changelog"
