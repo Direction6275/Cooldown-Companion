@@ -646,11 +646,9 @@ local function BuildFormatEditorContent(container, opts)
     -- ================================================================
     local templateHeading = AceGUI:Create("Heading")
     templateHeading:SetText("Start From an Example")
-    templateHeading.right:ClearAllPoints()
-    templateHeading.right:SetPoint("RIGHT", templateHeading.frame, "RIGHT", -3, 0)
-    templateHeading.right:SetPoint("LEFT", templateHeading.label, "RIGHT", 5, 0)
     templateHeading:SetFullWidth(true)
     container:AddChild(templateHeading)
+    ST._ApplyLeftAlignedHeading(templateHeading, nil, true)
 
     local templateGroup = AceGUI:Create("SimpleGroup")
     templateGroup:SetFullWidth(true)
@@ -721,6 +719,7 @@ local function BuildFormatEditorContent(container, opts)
     tokenHeading:SetText("Show Information")
     tokenHeading:SetFullWidth(true)
     container:AddChild(tokenHeading)
+    ST._ApplyLeftAlignedHeading(tokenHeading, nil, true)
 
     local tokenInfo = CreateInfoButton(tokenHeading.frame, tokenHeading.label, "LEFT", "RIGHT", 4, 0, {
         {"Available Tokens", 1, 0.82, 0},
@@ -755,9 +754,7 @@ local function BuildFormatEditorContent(container, opts)
         {"Low Time, Pandemic and stack colours", 0.7, 0.7, 0.7},
         {"do not apply to text panels.", 0.7, 0.7, 0.7},
     }, tokenHeading)
-    tokenHeading.right:ClearAllPoints()
-    tokenHeading.right:SetPoint("RIGHT", tokenHeading.frame, "RIGHT", -3, 0)
-    tokenHeading.right:SetPoint("LEFT", tokenInfo, "RIGHT", 4, 0)
+    ST._AnchorLeftAlignedHeadingRule(tokenHeading, tokenInfo)
 
     local tokenGroup = AceGUI:Create("SimpleGroup")
     tokenGroup:SetFullWidth(true)
@@ -782,6 +779,7 @@ local function BuildFormatEditorContent(container, opts)
     colorHeading:SetText("Color a Section")
     colorHeading:SetFullWidth(true)
     container:AddChild(colorHeading)
+    ST._ApplyLeftAlignedHeading(colorHeading, nil, true)
 
     local colorInfo = CreateInfoButton(colorHeading.frame, colorHeading.label, "LEFT", "RIGHT", 4, 0, {
         {"Color a Section", 1, 0.82, 0, true},
@@ -804,9 +802,7 @@ local function BuildFormatEditorContent(container, opts)
         {"Nestable: inner color overrides outer.", 0.7, 0.7, 0.7, true},
         {"Composes with conditionals and effects.", 0.7, 0.7, 0.7, true},
     }, colorHeading)
-    colorHeading.right:ClearAllPoints()
-    colorHeading.right:SetPoint("RIGHT", colorHeading.frame, "RIGHT", -3, 0)
-    colorHeading.right:SetPoint("LEFT", colorInfo, "RIGHT", 4, 0)
+    ST._AnchorLeftAlignedHeadingRule(colorHeading, colorInfo)
 
     local colorGroup = AceGUI:Create("SimpleGroup")
     colorGroup:SetFullWidth(true)
@@ -847,6 +843,7 @@ local function BuildFormatEditorContent(container, opts)
     condHeading:SetText("Show Only When...")
     condHeading:SetFullWidth(true)
     container:AddChild(condHeading)
+    ST._ApplyLeftAlignedHeading(condHeading, nil, true)
 
     local condInfo = CreateInfoButton(condHeading.frame, condHeading.label, "LEFT", "RIGHT", 4, 0, {
         {"Available Conditionals", 1, 0.82, 0, true},
@@ -879,9 +876,7 @@ local function BuildFormatEditorContent(container, opts)
         {"|cffffff00{?time}|rCD: |cff00ff00{time}|r|cffffff00{/time}|r", 0.7, 0.7, 0.7, true},
         {"Shows 'CD: 1:23' on cooldown, nothing when ready.", 0.7, 0.7, 0.7, true},
     }, condHeading)
-    condHeading.right:ClearAllPoints()
-    condHeading.right:SetPoint("RIGHT", condHeading.frame, "RIGHT", -3, 0)
-    condHeading.right:SetPoint("LEFT", condInfo, "RIGHT", 4, 0)
+    ST._AnchorLeftAlignedHeadingRule(condHeading, condInfo)
 
     local condGroup = AceGUI:Create("SimpleGroup")
     condGroup:SetFullWidth(true)
@@ -938,6 +933,7 @@ local function BuildFormatEditorContent(container, opts)
     effectHeading:SetText("Effects")
     effectHeading:SetFullWidth(true)
     container:AddChild(effectHeading)
+    ST._ApplyLeftAlignedHeading(effectHeading, nil, true)
 
     local effectInfo = CreateInfoButton(effectHeading.frame, effectHeading.label, "LEFT", "RIGHT", 4, 0, {
         {"Visual Effects", 1, 0.82, 0, true},
@@ -953,9 +949,7 @@ local function BuildFormatEditorContent(container, opts)
         " ",
         {"Pulse affects the whole line's alpha.", 0.7, 0.7, 0.7, true},
     }, effectHeading)
-    effectHeading.right:ClearAllPoints()
-    effectHeading.right:SetPoint("RIGHT", effectHeading.frame, "RIGHT", -3, 0)
-    effectHeading.right:SetPoint("LEFT", effectInfo, "RIGHT", 4, 0)
+    ST._AnchorLeftAlignedHeadingRule(effectHeading, effectInfo)
 
     local effectGroup = AceGUI:Create("SimpleGroup")
     effectGroup:SetFullWidth(true)

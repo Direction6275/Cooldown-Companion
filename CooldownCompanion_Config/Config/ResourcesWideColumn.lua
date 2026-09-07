@@ -809,11 +809,9 @@ local function ShowCustomBarMultiSelect(col3, selectedIds, selectedEntries)
 
     local heading = AceGUI:Create("Heading")
     heading:SetText(#selectedEntries .. " Custom Bars Selected")
-    heading.right:ClearAllPoints()
-    heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
-    heading.right:SetPoint("LEFT", heading.label, "RIGHT", 5, 0)
     heading:SetFullWidth(true)
     scroll:AddChild(heading)
+    ST._ApplyLeftAlignedHeading(heading, nil, true)
 
     local function AddSpacer()
         local sp = AceGUI:Create("Label")

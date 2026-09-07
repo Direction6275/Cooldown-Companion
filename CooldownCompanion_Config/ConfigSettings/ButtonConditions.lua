@@ -958,12 +958,14 @@ local function AddCharacterEligibilityControls(container, opts)
         container:AddChild(heading)
 
         local collapsed = opts.characterCollapsedKey and CS.collapsedSections[opts.characterCollapsedKey]
+        local collapseButton
         if opts.characterCollapsedKey then
-            AttachCollapseButton(heading, collapsed, function()
+            collapseButton = AttachCollapseButton(heading, collapsed, function()
                 CS.collapsedSections[opts.characterCollapsedKey] = not CS.collapsedSections[opts.characterCollapsedKey]
                 CooldownCompanion:RefreshConfigPanel()
             end)
         end
+        ApplyLeftAlignedHeading(heading, collapseButton, not collapseButton)
         if collapsed then return end
     end
 

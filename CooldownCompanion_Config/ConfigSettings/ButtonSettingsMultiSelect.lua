@@ -117,6 +117,7 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
     ColorHeading(heading)
     heading:SetFullWidth(true)
     scroll:AddChild(heading)
+    ST._ApplyLeftAlignedHeading(heading, nil, true)
 
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     local isTriggerPanel = GroupUsesTriggerPanelEntries(group)
@@ -146,6 +147,7 @@ function ST._RefreshGroupMultiSelect(scroll, multiCount, multiGroupIds)
     ColorHeading(heading)
     heading:SetFullWidth(true)
     scroll:AddChild(heading)
+    ST._ApplyLeftAlignedHeading(heading, nil, true)
 
     local anyDisabled = false
     local anyUnlocked = false
@@ -244,6 +246,7 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
     ColorHeading(heading)
     heading:SetFullWidth(true)
     scroll:AddChild(heading)
+    ST._ApplyLeftAlignedHeading(heading, nil, true)
 
     local anyDisabled = false
     for _, pid in ipairs(multiPanelIds) do
