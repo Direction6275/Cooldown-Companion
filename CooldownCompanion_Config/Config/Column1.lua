@@ -3369,6 +3369,7 @@ local function RefreshColumn1(preserveDrag)
 
     if showNewUserEmptyState and CS.barsEntrySelected and ST._IsProfileWelcomeEligible() then
         local back = AceGUI:Create("InteractiveLabel")
+        CleanRecycledEntry(back)
         back:SetText("< Back to Get Started")
         back:SetFullWidth(true)
         back:SetCallback("OnClick", function(_, _, button)
