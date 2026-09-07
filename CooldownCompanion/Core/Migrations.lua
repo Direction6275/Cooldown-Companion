@@ -2179,7 +2179,7 @@ local function MigrateAuraGlowStyleTable(styleTable, counts)
     if oldStyle ~= nil and oldStyle ~= "none" and oldStyle ~= "solid"
         and oldStyle ~= "pulse" and oldStyle ~= "proc"
         and oldStyle ~= "colorShift" and oldStyle ~= "dashes"
-        and oldStyle ~= "ants" and oldStyle ~= "overlay" then
+        and oldStyle ~= "ants" and oldStyle ~= "overlay" and oldStyle ~= "autocast" then
         if oldStyle == "glow" or oldStyle == "lcgProc" then
             styleTable.auraGlowStyle = "proc"
         elseif oldStyle == "pixel" then
@@ -2213,10 +2213,9 @@ local function MigrateAuraGlowStyleTable(styleTable, counts)
     end
 
     -- Speed stores seconds (cycles up to 2.0, dashes laps up to 3); anything
-    -- larger is a leftover pixel-scale value regardless of which style it
-    -- arrived with.
+    -- larger is a leftover pixel-scale value except for autocast frequency.
     local speed = rawget(styleTable, "auraGlowSpeed")
-    if type(speed) == "number" and speed > 3 then
+    if oldStyle ~= "autocast" and type(speed) == "number" and speed > 3 then
         styleTable.auraGlowSpeed = nil
     end
 
@@ -2259,7 +2258,7 @@ local function MigrateAuraGlowStyleTable(styleTable, counts)
         styleTable.pandemicGlowStyle = "solid"
     end
     local pandemicSpeed = rawget(styleTable, "pandemicGlowSpeed")
-    if type(pandemicSpeed) == "number" and pandemicSpeed > 3 then
+    if pandemicStyle ~= "autocast" and type(pandemicSpeed) == "number" and pandemicSpeed > 3 then
         styleTable.pandemicGlowSpeed = nil
     end
     pandemicStyle = rawget(styleTable, "pandemicGlowStyle") or "solid"
@@ -2479,7 +2478,7 @@ local function MigrateBarAuraEffectTable(styleTable, counts)
         end
         if style ~= nil then
             local speed = rawget(styleTable, keys.speed)
-            if type(speed) == "number" and speed > 3 then
+            if style ~= "autocast" and type(speed) == "number" and speed > 3 then
                 styleTable[keys.speed] = nil
             end
         end

@@ -2003,7 +2003,7 @@ if ST._DefineSettingRoute then
         "panel.icons.effects.auraGlow", "auraIndicator", "auraGlow", true, {
             styleKey = "auraGlowStyle", fallback = "pulse", colorLabel = "Glow Color", color2 = true,
             supported = {
-                solid = true, pulse = true, colorShift = true, dashes = true,
+                solid = true, pulse = true, colorShift = true, dashes = true, autocast = true,
                 ants = true, proc = true, overlay = true,
             },
         })
@@ -2014,7 +2014,7 @@ if ST._DefineSettingRoute then
             styleKey = "pandemicGlowStyle", fallback = "solid", colorLabel = "Effect Color",
             color2 = true, noColorStyle = "cdm",
             supported = {
-                solid = true, pulse = true, colorShift = true, dashes = true,
+                solid = true, pulse = true, colorShift = true, dashes = true, autocast = true,
                 ants = true, proc = true, overlay = true, cdm = true,
             },
         })

@@ -749,6 +749,8 @@ if ST._DefineSettingRoute then
         dashCount = { advancedKey = "customBarAuraBorder", label = "Number of Dashes", applies = function(context) return FinderBarAuraEffectIs(context, "dashes") end },
         lapDuration = { advancedKey = "customBarAuraBorder", label = "Lap Duration", applies = function(context) return FinderBarAuraEffectIs(context, "dashes") end },
         shiftDuration = { advancedKey = "customBarAuraBorder", label = "Border Shift Duration", aliases = { "shift duration" }, applies = function(context) return FinderBarAuraEffectIs(context, "colorShift") end },
+        particleScale = { advancedKey = "customBarAuraBorder", label = "Particle Scale", applies = function(context) return FinderBarAuraEffectIs(context, "autocast") end },
+        frequency = { advancedKey = "customBarAuraBorder", label = "Frequency", applies = function(context) return FinderBarAuraEffectIs(context, "autocast") end },
         pulseFill = { label = "Pulse Bar Fill" },
         pulseFillDuration = { advancedKey = "customBarAuraPulse",
             label = "Fill Pulse Duration", aliases = { "pulse duration" },

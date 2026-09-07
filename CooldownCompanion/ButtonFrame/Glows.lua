@@ -49,13 +49,14 @@ local MAX_AURA_GLOW_DASHES = 8
 -- lazily, so the higher ceiling costs nothing until a user asks for it; the
 -- lines slider tops out at 16).
 local MAX_PIXEL_DASHES = 16
--- Aura glow speed key semantics per style, in seconds: pulse/colorShift store
--- a cycle duration, dashes stores one full lap around the button. Keyed by
+-- Aura glow speed semantics: pulse/colorShift store cycle seconds, dashes
+-- stores lap seconds, and autocast stores frequency (10..200). Keyed by
 -- both kit names and their normalized preview names.
 local AURA_GLOW_SPEED_DEFAULTS = {
     pulse = 0.5, pulsingBorder = 0.5,
     colorShift = 0.8,
     dashes = 2,
+    autocast = 50,
 }
 
 -- Shared click-through helpers from Utils.lua
@@ -83,7 +84,7 @@ local function NormalizeBarAuraEffectStyle(style)
     if style == "color" or style == "none" then
         return "none"
     end
-    if style == "solid" or style == "colorShift" or style == "dashes" then
+    if style == "solid" or style == "colorShift" or style == "dashes" or style == "autocast" then
         return style
     end
     if style == "pixel" then
@@ -529,7 +530,10 @@ local function CreateSparkRegions(parent, sparkList)
 end
 
 local function StyleAutocastPerimeter(sparkList, anchorFrame, scale, speed, r, g, b, a)
-    local w, h = anchorFrame:GetSize()
+    local w, h = anchorFrame._ccKitRectW, anchorFrame._ccKitRectH
+    if not (w and h) then
+        w, h = anchorFrame:GetSize()
+    end
     local P = 2 * (w + h)
     -- Perimeter path from the bottom-left corner, relative to the anchor
     -- TOPLEFT: left edge up, top edge right, right edge down, bottom edge
@@ -1200,7 +1204,7 @@ local SetProcGlow = MakeGlowSetter({
 -- dashes lookalike) so preview matches the kit.
 local function NormalizeAuraGlowPreviewStyle(style, isPandemic)
     if style == "none" or style == "solid" or style == "overlay"
-        or style == "ants" or style == "colorShift" or style == "dashes" then
+        or style == "ants" or style == "colorShift" or style == "dashes" or style == "autocast" then
         return style
     end
     -- "cdm" exists only in the pandemic style menu; on the aura branch it
@@ -1550,7 +1554,7 @@ local KIT_PROC_ATLAS = "UI-HUD-ActionBar-Proc-Loop-Flipbook"
 local function NormalizeKitGlowStyle(style)
     if style == "none" or style == "solid" or style == "proc"
         or style == "overlay" or style == "ants"
-        or style == "colorShift" or style == "dashes" then
+        or style == "colorShift" or style == "dashes" or style == "autocast" then
         return style
     end
     if style == "glow" then
@@ -1635,6 +1639,10 @@ local function BuildKitGlowRegions(parent, withCdm)
     glowKit.dashes = {}
     CreateDashRegions(host, glowKit.dashes, glowKit.dashMasks, MAX_AURA_GLOW_DASHES)
 
+    -- Prebuild sparks during initialization; styling only writes cached regions.
+    glowKit.sparks = {}
+    CreateSparkRegions(host, glowKit.sparks)
+
     -- CDM parity rig, pandemic rigs only: the style menu offers "cdm" just
     -- for the pandemic glow, so the aura-glow and resource-bar rig
     -- populations skip its five regions and twelve-anim loop. Anchored to
@@ -1689,6 +1697,10 @@ local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, s
     glowKit.flip:SetAlpha(0)
     glowKit.ants:SetAlpha(0)
     glowKit.overlay:SetAlpha(0)
+    for _, spark in ipairs(glowKit.sparks) do
+        spark.ag:Stop()
+        spark.tex:SetAlpha(0)
+    end
     for _, d in ipairs(glowKit.dashes) do
         for _, piece in ipairs(d.pieces) do
             piece.ag:Stop()
@@ -1747,6 +1759,12 @@ local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, s
         return
     end
 
+    if kitStyle == "autocast" then
+        if not size or size < 0.2 or size > 3 then size = 2 end
+        StyleAutocastPerimeter(glowKit.sparks, anchorFrame, size, speed, r, g, b, a)
+        return
+    end
+
     if kitStyle == "dashes" then
         count = math_min(math_max(count or 5, 1), MAX_AURA_GLOW_DASHES)
         -- _ccKitRectW/H: rect dims stamped by the aura-host anchor pass for
@@ -1796,9 +1814,9 @@ local function StyleKitGlowRegions(glowKit, styleTable, anchorFrame, enabled)
         and NormalizeKitGlowStyle((styleTable and styleTable.auraGlowStyle) or "pulse")
         or "none"
     local speed = styleTable and styleTable.auraGlowSpeed
-    -- Speed keys store seconds (cycles 0.1..2.0, dashes laps 1..3); guard
-    -- against legacy pixel-scale values (10..200) with the style's own default.
-    if not speed or speed <= 0 or speed > 3 then
+    -- Duration styles reject legacy pixel-scale speeds; autocast uses
+    -- the 10..200 frequency scale directly.
+    if not speed or speed <= 0 or (kitStyle ~= "autocast" and speed > 3) then
         speed = AURA_GLOW_SPEED_DEFAULTS[kitStyle]
     end
     StyleKitGlowCore(glowKit, anchorFrame, kitStyle,
@@ -1820,7 +1838,7 @@ local function NormalizeKitBarEffectStyle(style)
         return "none"
     end
     if style == "none" or style == "solid"
-        or style == "colorShift" or style == "dashes" then
+        or style == "colorShift" or style == "dashes" or style == "autocast" then
         return style
     end
     if style == "pixel" then
@@ -1838,7 +1856,7 @@ local function StyleKitBarGlowRegions(glowKit, styleTable, anchorFrame, enabled)
     end
     local speed = styleTable and styleTable.barAuraEffectSpeed
     -- Same legacy pixel-scale speed guard as the icon resolver.
-    if not speed or speed <= 0 or speed > 3 then
+    if not speed or speed <= 0 or (kitStyle ~= "autocast" and speed > 3) then
         speed = AURA_GLOW_SPEED_DEFAULTS[kitStyle]
     end
     StyleKitGlowCore(glowKit, anchorFrame, kitStyle,
@@ -1872,8 +1890,8 @@ local function StyleKitPandemicGlowRegions(glowKit, styleTable, anchorFrame, ena
     local speed = styleTable and styleTable.pandemicGlowSpeed
     -- Same legacy pixel-scale speed guard as the icon resolver: the dormant
     -- pandemicGlowSpeed shipped as 50 in the retired LCG scale, so stored
-    -- values that large fall back to the style's own seconds default.
-    if not speed or speed <= 0 or speed > 3 then
+    -- values that large fall back to seconds defaults except for autocast.
+    if not speed or speed <= 0 or (kitStyle ~= "autocast" and speed > 3) then
         speed = AURA_GLOW_SPEED_DEFAULTS[kitStyle]
     end
     StyleKitGlowCore(glowKit, anchorFrame, kitStyle,
@@ -1897,7 +1915,7 @@ local SetBarAuraEffect = MakeGlowSetter({
     useGetGlowSize     = true,
     defaultSizes        = BAR_AURA_GLOW_SIZES,
     defaultAlpha       = 0.9,
-    includeScale       = false,
+    includeScale       = true,
     optsDefaultAlpha   = 0.9,
     -- Kit style vocabulary: speed keys store seconds (matches SetAuraGlow).
     defaultSpeed       = 0.5,
