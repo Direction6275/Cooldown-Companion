@@ -13,7 +13,8 @@
     active spec, the pet bank, flyout contents flattened in place, and an
     unavailable section for off-spec and not-yet-learned spells. Unavailable
     rows cannot be dragged -- Blizzard's own pickup no-ops for them -- so they
-    add to the selected panel on click instead.
+    add to the selected panel on double-click instead. CDM auras have their
+    own section and also add on double-click, with explicit aura intent.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -24,6 +25,8 @@ local WINDOW_WIDTH = 360
 local WINDOW_GAP = 4
 local CONTENT_INSET = 2
 local HINT_GAP = 5
+local TAB_HEIGHT = 26
+local TAB_GAP = 4
 -- The stock AceGUI EditBox's own label-less height (its SetLabel("") branch),
 -- restated here because a parked widget frame is sized by us, not by a layout.
 local SEARCH_HEIGHT = 26
@@ -56,7 +59,11 @@ local GENERAL_SKILL_LINE = Enum.SpellBookSkillLineIndex.General
 local CLASS_SKILL_LINE = Enum.SpellBookSkillLineIndex.Class
 local MAIN_SPEC_SKILL_LINE = Enum.SpellBookSkillLineIndex.MainSpec
 
-local UNAVAILABLE_HEADER = "Unavailable (double-click to add)"
+local TABS = {
+    { id = "spells", name = "Spells", hint = "Drag a spell onto a panel to add it.", empty = "No spells available." },
+    { id = "auras", name = "Auras", hint = "Double-click an aura to add it.", empty = "No auras available." },
+    { id = "unavailable", name = "Unavailable", hint = "Double-click a spell to add it.", empty = "No unavailable spells." },
+}
 local NOT_LEARNED_REASON = "Not learned"
 local DIM_TEXT = { 0.5, 0.5, 0.5 }
 local NAME_TEXT = { 1, 1, 1 }
@@ -72,6 +79,8 @@ local window
 local chrome
 local eventFrame
 local searchText = ""
+local activeTab = "spells"
+local tabScroll = {}
 local suppressSearchChanged = false
 local rowPool, activeRows = {}, {}
 local headerPool, activeHeaders = {}, {}
@@ -143,10 +152,14 @@ local function CollectSections()
     -- Both are unique skill lines, so a single slot each is enough; anything
     -- else keeps its relative order behind them.
     local specSection, classSection
+    local activeSpecName
     local otherSections = {}
 
     for lineIndex = 1, C_SpellBook.GetNumSpellBookSkillLines() or 0 do
         local line = C_SpellBook.GetSpellBookSkillLineInfo(lineIndex)
+        if lineIndex == MAIN_SPEC_SKILL_LINE and line and not line.offSpecID then
+            activeSpecName = line.name
+        end
         local listed = line and not line.shouldHide and lineIndex ~= GENERAL_SKILL_LINE
         if listed then
             -- Why the row is unavailable: the owning spec reads better than a
@@ -179,6 +192,7 @@ local function CollectSections()
                             bank = PLAYER_BANK,
                             name = info.name or "",
                             subName = info.subName or "",
+                            searchSpellID = info.spellID or info.actionID,
                             icon = info.iconID,
                         }
                     end
@@ -221,6 +235,7 @@ local function CollectSections()
                 bank = PET_BANK,
                 name = info.name or "",
                 subName = info.subName or "",
+                searchSpellID = info.spellID,
                 icon = info.iconID,
             }
         end
@@ -229,14 +244,84 @@ local function CollectSections()
         sections[#sections + 1] = { name = PET or "Pet", items = petItems }
     end
 
+    local auraEntries = {}
+    ST._AppendCDMAuraEntries(auraEntries)
+    local auraItems = {}
+    for _, entry in ipairs(auraEntries) do
+        local name = entry.displayAuraName or entry.name
+        auraItems[#auraItems + 1] = {
+            name = name,
+            searchLower = (entry.searchLower or entry.nameLower or name:lower())
+                .. " " .. entry.id .. " " .. (entry.displayAuraID or entry.id),
+            subName = "",
+            icon = entry.icon,
+            tooltipSpellID = entry.displayAuraID or entry.id,
+            addSpellID = entry.id,
+            forceAura = true,
+        }
+    end
+    table.sort(auraItems, function(a, b)
+        return a.name:lower() < b.name:lower()
+    end)
+    for _, item in ipairs(auraItems) do
+        item.name = ("%s |cff999999(%d)|r"):format(item.name, item.tooltipSpellID)
+    end
+    if #auraItems > 0 then
+        sections[#sections + 1] = {
+            name = activeSpecName or "Auras",
+            category = "auras",
+            items = auraItems,
+        }
+    end
+
     if #unavailable > 0 then
         sections[#sections + 1] = {
-            name = UNAVAILABLE_HEADER,
+            name = "Unavailable",
+            category = "unavailable",
             items = unavailable,
             dimHeader = true,
         }
     end
     return sections
+end
+
+-- Browsing retains spec/class/pet sections. Search merges matches into the
+-- three top-level categories, regardless of the tab that was being browsed.
+local function GetVisibleSections(sections, query, tabID)
+    local visible = {}
+    if query == "" then
+        for _, section in ipairs(sections) do
+            if (section.category or "spells") == tabID then
+                visible[#visible + 1] = section
+            end
+        end
+        return visible
+    end
+
+    local matches = {}
+    local needle = query:lower()
+    for _, section in ipairs(sections) do
+        local category = section.category or "spells"
+        for _, item in ipairs(section.items) do
+            local searchable = item.searchLower or item.name:lower()
+            local spellID = item.searchSpellID or item.addSpellID or item.tooltipSpellID
+            if spellID then searchable = searchable .. " " .. spellID end
+            if searchable:find(needle, 1, true) then
+                matches[category] = matches[category] or {}
+                table.insert(matches[category], item)
+            end
+        end
+    end
+    for _, tab in ipairs(TABS) do
+        if matches[tab.id] then
+            visible[#visible + 1] = {
+                name = tab.name,
+                items = matches[tab.id],
+                dimHeader = tab.id == "unavailable",
+            }
+        end
+    end
+    return visible
 end
 
 local function ReleaseListFrames()
@@ -250,6 +335,7 @@ local function ReleaseListFrames()
         row.pickupSpellID = nil
         row.tooltipSpellID = nil
         row.addSpellID = nil
+        row.forceAura = nil
         rowPool[#rowPool + 1] = row
     end
     wipe(activeRows)
@@ -276,7 +362,7 @@ local function AcquireRow()
     row:SetScript("OnDragStart", function(self)
         -- Moving the cursor is protected while locked down, and an unavailable
         -- spell cannot be picked up at all -- Blizzard's own pickup no-ops for
-        -- it -- so those rows add on double-click instead.
+        -- it -- so those rows and the aura catalog add on double-click instead.
         if self.addSpellID or InCombatLockdown() then
             return
         end
@@ -290,14 +376,20 @@ local function AcquireRow()
     -- Double-click, not click: a stray click on a list this dense should never
     -- put a spell in a panel.
     row:SetScript("OnDoubleClick", function(self)
-        if not self.addSpellID then
+        if not self.addSpellID or InCombatLockdown() then
             return
         end
         if not CS.selectedGroup then
             CooldownCompanion:Print("Select a group first before adding spells.")
             return
         end
-        if ST._TryAdd(tostring(self.addSpellID)) then
+        local added
+        if self.forceAura then
+            added = ST._TryAddSpell(tostring(self.addSpellID), nil, true)
+        else
+            added = ST._TryAdd(tostring(self.addSpellID))
+        end
+        if added then
             CooldownCompanion:RefreshConfigPanel()
         end
     end)
@@ -315,6 +407,9 @@ local function AcquireRow()
             GameTooltip:SetSpellBookItem(self.slot, self.bank)
         else
             GameTooltip:SetSpellByID(self.tooltipSpellID)
+        end
+        if self.forceAura and self.tooltipSpellID then
+            GameTooltip:AddLine("Spell ID: " .. self.tooltipSpellID, 0.7, 0.7, 0.7)
         end
         if self.addSpellID then
             GameTooltip:AddLine("Double-click to add to the selected panel.", 0.7, 0.7, 0.7)
@@ -395,31 +490,48 @@ local function AcquireHeader()
     return header
 end
 
--- `keepScroll` is for the refresh events, which fire while the user is looking
--- at a settled list; typing and opening both start at the top.
+local function RefreshTabs()
+    local searching = searchText ~= ""
+    for _, tab in ipairs(TABS) do
+        local button = chrome.tabs[tab.id]
+        local selected = not searching and tab.id == activeTab
+        button.selection:SetShown(selected)
+        if selected then
+            button.label:SetTextColor(1, 0.82, 0)
+        else
+            button.label:SetTextColor(0.7, 0.7, 0.7)
+        end
+        if not searching and tab.id == activeTab then
+            chrome.hint:SetText(tab.hint)
+            chrome.empty:SetText(tab.empty)
+        end
+    end
+    if searching then
+        chrome.hint:SetText("Drag spells; double-click other entries.")
+        chrome.empty:SetText("No matches in any category.")
+    end
+end
+
+-- Refresh events keep the current view; leaving search or changing tabs
+-- restores that tab's last browsing position. Query edits start at the top.
 RebuildList = function(keepScroll)
     if not chrome then
         return
     end
 
-    local previousScroll = keepScroll and chrome.scrollFrame:GetVerticalScroll() or 0
+    local previousScroll = keepScroll and chrome.scrollFrame:GetVerticalScroll()
+        or (searchText == "" and tabScroll[activeTab]) or 0
+    RefreshTabs()
     ReleaseListFrames()
 
-    local needle = string.lower(searchText)
+    local searching = searchText ~= ""
     local y = 0
     local shown = 0
 
-    for _, section in ipairs(CollectSections()) do
-        local matched
-        for _, item in ipairs(section.items) do
-            if needle == "" or string.find(string.lower(item.name), needle, 1, true) then
-                matched = matched or {}
-                matched[#matched + 1] = item
-            end
-        end
-
-        -- A section whose spells all filtered out loses its header too.
-        if matched then
+    for _, section in ipairs(GetVisibleSections(CollectSections(), searchText, activeTab)) do
+        -- Spells and auras identify their owning spec/class; Unavailable
+        -- needs a category heading only when mixed into global search.
+        if searching or activeTab ~= "unavailable" then
             local header = AcquireHeader()
             header:SetPoint("TOPLEFT", chrome.scrollChild, "TOPLEFT", 0, -y)
             header:SetPoint("TOPRIGHT", chrome.scrollChild, "TOPRIGHT", 0, -y)
@@ -433,29 +545,30 @@ RebuildList = function(keepScroll)
             header:Show()
             activeHeaders[#activeHeaders + 1] = header
             y = y + HEADER_HEIGHT
+        end
 
-            for _, item in ipairs(matched) do
-                local row = AcquireRow()
-                row:SetPoint("TOPLEFT", chrome.scrollChild, "TOPLEFT", 0, -y)
-                row:SetPoint("TOPRIGHT", chrome.scrollChild, "TOPRIGHT", 0, -y)
-                row.slot = item.slot
-                row.bank = item.bank
-                row.pickupSpellID = item.pickupSpellID
-                row.tooltipSpellID = item.tooltipSpellID
-                row.addSpellID = item.addSpellID
-                row.icon:SetTexture(item.icon)
-                -- Pooled rows carry the last row's look, so both states are set
-                -- every time rather than only the dim one.
-                row.icon:SetDesaturated(item.dim == true)
-                row.nameText:SetText(item.name)
-                local nameColor = item.dim and DIM_TEXT or NAME_TEXT
-                row.nameText:SetTextColor(nameColor[1], nameColor[2], nameColor[3])
-                row.subName:SetText(item.subName)
-                row:Show()
-                activeRows[#activeRows + 1] = row
-                y = y + ROW_HEIGHT
-                shown = shown + 1
-            end
+        for _, item in ipairs(section.items) do
+            local row = AcquireRow()
+            row:SetPoint("TOPLEFT", chrome.scrollChild, "TOPLEFT", 0, -y)
+            row:SetPoint("TOPRIGHT", chrome.scrollChild, "TOPRIGHT", 0, -y)
+            row.slot = item.slot
+            row.bank = item.bank
+            row.pickupSpellID = item.pickupSpellID
+            row.tooltipSpellID = item.tooltipSpellID
+            row.addSpellID = item.addSpellID
+            row.forceAura = item.forceAura
+            row.icon:SetTexture(item.icon)
+            -- Pooled rows carry the last row's look, so both states are set
+            -- every time rather than only the dim one.
+            row.icon:SetDesaturated(item.dim == true)
+            row.nameText:SetText(item.name)
+            local nameColor = item.dim and DIM_TEXT or NAME_TEXT
+            row.nameText:SetTextColor(nameColor[1], nameColor[2], nameColor[3])
+            row.subName:SetText(item.subName)
+            row:Show()
+            activeRows[#activeRows + 1] = row
+            y = y + ROW_HEIGHT
+            shown = shown + 1
         end
     end
 
@@ -484,6 +597,58 @@ local function EnsureChrome()
     local host = CreateFrame("Frame", nil, UIParent)
     host:Hide()
 
+    local tabBar = CreateFrame("Frame", nil, host)
+    tabBar:SetHeight(TAB_HEIGHT)
+    local tabs = {}
+    local previousTab
+    for _, tab in ipairs(TABS) do
+        local tabID = tab.id
+        local button = CreateFrame("Button", nil, tabBar)
+        button:SetHeight(TAB_HEIGHT)
+        if previousTab then
+            button:SetPoint("LEFT", previousTab, "RIGHT", TAB_GAP, 0)
+        else
+            button:SetPoint("LEFT", tabBar, "LEFT")
+        end
+        local hover = button:CreateTexture(nil, "HIGHLIGHT")
+        hover:SetAllPoints()
+        hover:SetColorTexture(1, 1, 1, 0.06)
+        local selection = button:CreateTexture(nil, "ARTWORK")
+        selection:SetHeight(2)
+        selection:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT")
+        selection:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT")
+        selection:SetColorTexture(1, 0.82, 0, 1)
+        button.selection = selection
+        local label = button:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        label:SetPoint("LEFT", button, "LEFT", 2, 0)
+        label:SetPoint("RIGHT", button, "RIGHT", -2, 0)
+        label:SetJustifyH("CENTER")
+        label:SetWordWrap(false)
+        label:SetText(tab.name)
+        button.label = label
+        button:SetScript("OnClick", function()
+            if searchText == "" then
+                tabScroll[activeTab] = chrome.scrollFrame:GetVerticalScroll()
+            end
+            activeTab = tabID
+            searchText = ""
+            suppressSearchChanged = true
+            chrome.searchBox:SetText("")
+            suppressSearchChanged = false
+            chrome.searchHint:Show()
+            chrome.searchBox:ClearFocus()
+            RebuildList(false)
+        end)
+        tabs[tabID] = button
+        previousTab = button
+    end
+    tabBar:SetScript("OnSizeChanged", function(_, width)
+        if width <= TAB_GAP * (#TABS - 1) then return end
+        for _, button in pairs(tabs) do
+            button:SetWidth((width - TAB_GAP * (#TABS - 1)) / #TABS)
+        end
+    end)
+
     -- Centred over the whole window and one size up from the list's own small
     -- text: it captions the list rather than labelling the search box. Still
     -- muted grey -- it is an instruction, not a heading.
@@ -510,6 +675,9 @@ local function EnsureChrome()
     searchBox.frame:SetHeight(SEARCH_HEIGHT)
     searchBox.frame:Show()
 
+    tabBar:SetPoint("TOPLEFT", searchBox.frame, "BOTTOMLEFT", 0, -SEARCH_GAP)
+    tabBar:SetPoint("TOPRIGHT", searchBox.frame, "BOTTOMRIGHT", 0, -SEARCH_GAP)
+
     -- The template used to supply its own "Search" placeholder. InputBoxTemplate
     -- has one too, but the config's other AceGUI boxes hide it and own their own
     -- so it can be toggled from a text callback; do the same, with the same 6px
@@ -523,7 +691,7 @@ local function EnsureChrome()
     searchHint:SetTextColor(0.5, 0.5, 0.5)
     searchHint:SetJustifyH("LEFT")
     searchHint:SetWordWrap(false)
-    searchHint:SetText(SEARCH or "Search")
+    searchHint:SetText("Search everything...")
 
     -- Live filtering, one rebuild per keystroke. The widget only fires this when
     -- the text differs from what its own SetText last recorded, so the reset in
@@ -534,13 +702,16 @@ local function EnsureChrome()
         if suppressSearchChanged then
             return
         end
+        if searchText == "" then
+            tabScroll[activeTab] = chrome.scrollFrame:GetVerticalScroll()
+        end
         searchText = text or ""
         RebuildList(false)
     end)
 
     local scrollFrame = CreateFrame("ScrollFrame", nil, host)
-    scrollFrame:SetPoint("TOPLEFT", searchBox.frame, "BOTTOMLEFT", 0, -SEARCH_GAP)
-    scrollFrame:SetPoint("TOPRIGHT", searchBox.frame, "BOTTOMRIGHT", 0, -SEARCH_GAP)
+    scrollFrame:SetPoint("TOPLEFT", tabBar, "BOTTOMLEFT", 0, -SEARCH_GAP)
+    scrollFrame:SetPoint("TOPRIGHT", tabBar, "BOTTOMRIGHT", 0, -SEARCH_GAP)
     scrollFrame:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", CONTENT_INSET, CONTENT_INSET)
     scrollFrame:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -CONTENT_INSET, CONTENT_INSET)
     scrollFrame:EnableMouseWheel(true)
@@ -568,6 +739,8 @@ local function EnsureChrome()
 
     chrome = {
         host = host,
+        tabs = tabs,
+        hint = hint,
         searchBox = searchBox,
         searchHint = searchHint,
         scrollFrame = scrollFrame,
@@ -741,6 +914,8 @@ local function OpenSpellbookPanel()
     AttachChrome(window.content)
 
     searchText = ""
+    activeTab = "spells"
+    wipe(tabScroll)
     suppressSearchChanged = true
     chrome.searchBox:SetText("")
     suppressSearchChanged = false
