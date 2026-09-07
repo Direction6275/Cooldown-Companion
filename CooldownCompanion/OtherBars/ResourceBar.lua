@@ -1403,8 +1403,10 @@ local function UpdateSegmentedBar(holder, powerType, settings)
         local now = GetTime()
         local numSegs = math_min(#holder.segments, 6)
         local runeData = segmentedUpdateScratch.GetRuneData(holder)
+        runeData.soundReadable = true
         for i = 1, 6 do
             local start, duration, ready = GetRuneCooldown(i)
+            if ready == nil then runeData.soundReadable = false end
             local remaining = 0
             local activelyRecharging = false
             if not ready and duration and duration > 0 then
@@ -1431,6 +1433,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
                 readyCount = readyCount + 1
             end
         end
+        if runeData.soundReadable then RB.ResourceSounds.Observe(holder, powerType, readyCount, numSegs) end
         local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, readyCount, holder)
         local activeReadyColor = allReady and maxColor or (thresholdActive and thresholdColor or readyColor)
         -- At max means all runes ready. numSegs > 0 so a holder with no
@@ -1498,6 +1501,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
             local perShard = rawMax / max
             if perShard > 0 then
                 local filled = math_floor(raw / perShard)
+                RB.ResourceSounds.Observe(holder, powerType, filled, max)
                 local partial = (raw % perShard) / perShard
                 displayCurrent = filled + partial
                 local readyColor, rechargingColor, maxColor = GetResourceColors(7, settings)
@@ -1553,6 +1557,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
             return
         end
 
+        RB.ResourceSounds.Observe(holder, powerType, filled, max)
         local partial = partialRaw / 1000
         local displayCurrent = filled + partial
         local readyColor, rechargingColor, maxColor = GetResourceColors(19, settings)
@@ -1600,6 +1605,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
             return
         end
 
+        RB.ResourceSounds.Observe(holder, powerType, current, max)
         local normalColor, maxColor, chargedColor = GetResourceColors(4, settings)
         local isMax = (current == max and max > 0)
         local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, current, holder)
@@ -1646,6 +1652,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
         segmentedUpdateScratch.FinishText(holder, nil, nil, true)
         return
     end
+    RB.ResourceSounds.Observe(holder, powerType, current, max)
     local normalColor, maxColor
     if RESOURCE_COLOR_DEFS[powerType] then
         normalColor, maxColor = GetResourceColors(powerType, settings)
@@ -1843,6 +1850,7 @@ local function UpdateMaelstromWeaponBar(holder, settings, barType)
 
     local baseColor, overlayColor, maxColor = GetResourceColors(100, settings)
     local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(RESOURCE_MAELSTROM_WEAPON, settings, stacks, holder)
+    RB.ResourceSounds.Observe(holder, RESOURCE_MAELSTROM_WEAPON, stacks, mwMaxStacks)
     local isMax = stacks > 0 and stacks == mwMaxStacks
     -- Colour precedence is identical in all three shapes: at max wins, then
     -- a configured threshold, then the resource's own colour.
@@ -1937,7 +1945,7 @@ local function UpdateAuraStackResourceBar(holder, settings, barType, powerType)
         settings = GetResourceBarSettings()
     end
     local segmentedSmoothing = GetResourceSegmentedSmoothing(settings)
-    local maxStacks = RB.GetAuraStackResourceMax(powerType)
+    local maxStacks, soundMaxConfirmed = RB.GetAuraStackResourceMax(powerType)
     -- The ACTIVE segment count. The holder is re-segmented in place, so its
     -- segments array is the high-water mark and everything past
     -- _activeSegments is parked and hidden (EnsureSegmentCount/LayoutSegments).
@@ -1985,6 +1993,7 @@ local function UpdateAuraStackResourceBar(holder, settings, barType, powerType)
     -- stand-in fallback the API has not replaced yet, so stacks past it
     -- should still read as "at max" instead of silently losing the max
     -- colour and the border.
+    if soundMaxConfirmed then RB.ResourceSounds.Observe(holder, powerType, stacks, maxStacks) end
     local isMax = stacks > 0 and stacks >= maxStacks
     local activeColor = isMax and maxColor or (thresholdActive and thresholdColor or baseColor)
     UpdateMaxStackBorder(holder, settings, isMax, powerType)
@@ -2216,7 +2225,9 @@ local function OnUpdate(self, elapsed)
         end
     end
 
+    RB.ResourceSounds.BeginTick(settings)
     for _, barInfo in ipairs(resourceBarFrames) do
+        RB.ResourceSounds.BeginSample(barInfo.frame, barInfo.powerType)
         if barInfo.frame and barInfo.frame:IsShown() then
             if barInfo.barType == "continuous" then
                 UpdateContinuousBar(barInfo.frame, barInfo.powerType, settings)
@@ -2245,7 +2256,9 @@ local function OnUpdate(self, elapsed)
                 end
             end
         end
+        RB.ResourceSounds.EndSample(barInfo.frame, barInfo.powerType)
     end
+    RB.ResourceSounds.RetainFrames(resourceBarFrames)
 
     -- Re-materialization runs after the loop, never inside it:
     -- ApplyResourceBars recycles and reorders the very list this tick just
@@ -3338,6 +3351,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
     EnableEventFrame()
 
     isApplied = true
+    RB.ResourceSounds.RetainFrames(resourceBarFrames)
 
     -- Alpha handling: 3-way branching
     local rbModuleId = "rb"
@@ -3422,6 +3436,7 @@ end
 ------------------------------------------------------------------------
 
 function CooldownCompanion:RevertResourceBars()
+    RB.ResourceSounds.Reset()
     -- Before the isApplied gate on purpose: the empty-list apply path starts
     -- the meta-flip watcher while the module is NOT applied, so gating this
     -- would leave it running after the feature is switched off.

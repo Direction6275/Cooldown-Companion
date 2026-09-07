@@ -2800,6 +2800,72 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
     })
 end
 
+-- Resource sounds are spec-owned behavior, independent of the stack shape.
+function RBP.BuildResourceSoundRows(container, settings, powerType, specID)
+    if not RB.ResourceSounds.Supports(powerType) then return end
+    local heading, collapsed = BuildCollapsibleSection(container, "Sound Alerts", "rb_resource_sounds",
+        resourceBarCollapsedSections, nil, ROW_SECTION)
+    local infoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
+        "Sound Alerts",
+        {"Plays once when the visible resource bar reaches the threshold. Requires readable resource values.", 1, 1, 1, true},
+        " ",
+        {"Sound effects follow Master Volume; speech follows WoW's speech settings.", 1, 1, 1, true},
+    }, heading)
+    AnchorLeftAlignedHeadingRule(heading, infoBtn)
+    if collapsed then return end
+    local config = RB.ResourceSounds.ReadConfig(settings, powerType, specID)
+    local finder = RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[powerType]
+    finder = finder and finder.sounds or {}
+    local left, right = BeginRowGrid(container)
+    local function Write(key, value)
+        WriteSpecOverrideKey(settings, powerType, specID, key, value)
+        RB.ResourceSounds.Reset(powerType)
+        CooldownCompanion:RefreshConfigPanel()
+    end
+    AddCheckboxRow(left, {
+        label = "Enable Sound Alert", setting = finder.enabled, value = config.enabled,
+        onChange = function(value) Write("resourceSoundEnabled", value == true) end,
+    })
+    if not config.enabled then return end
+    AddDropdownRow(left, {
+        label = "Trigger", setting = finder.trigger,
+        list = { maximum = "Reached Maximum", amount = "Reached Amount" },
+        order = { "maximum", "amount" }, value = config.trigger,
+        onChange = function(value) Write("resourceSoundTrigger", value) end,
+    })
+    if config.trigger == "amount" then
+        local amountRow = AddEditBoxRow(left, {
+            label = "Amount", setting = finder.amount, value = tostring(config.amount),
+            onEnterPressed = function(text, widget)
+                local value = tonumber(text)
+                if not RB.ResourceSounds.IsAmount(value) then
+                    widget:SetText(tostring(config.amount))
+                    return
+                end
+                Write("resourceSoundAmount", value)
+            end,
+        })
+        AnchorRowBadge(amountRow, CreateInfoButton(amountRow.frame, amountRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Amount",
+            {"Use a positive whole number. Amounts above the current maximum stay saved but do not trigger alerts.", 1, 1, 1, true},
+        }, amountRow))
+    end
+    local soundOptions = CooldownCompanion:GetSoundAlertOptions()
+    ST._AddSoundPreviewDropdownRow(right, {
+        label = "Sound", setting = finder.sound, value = config.sound,
+        list = soundOptions,
+        order = CooldownCompanion:GetSoundAlertOptionOrder(soundOptions), pulloutWidth = MEDIA_PULLOUT_WIDTH,
+        onChange = function(value) Write("resourceSound", value) end,
+        onPreview = function(value)
+            CooldownCompanion:PreviewResourceSoundAlertSelection(powerType, value, config.trigger, config.amount)
+        end,
+    })
+    AddCheckboxRow(right, {
+        label = "Combat Only", setting = finder.combatOnly, value = config.combatOnly,
+        onChange = function(value) Write("resourceSoundCombatOnly", value == true) end,
+    })
+end
+
 local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     if BuildResourceBarConflictGate(container, "Resource Bars", true) then
         return
@@ -2866,6 +2932,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
 
     if showResourceSettings then
         BuildResourceColorControls(container, settings, resourceSettingsPowerType, _colorSpecID, effectiveBarTextureName, applyBars)
+        RBP.BuildResourceSoundRows(container, settings, resourceSettingsPowerType, _colorSpecID)
     end
 
     -- Maelstrom Weapon stack shape. Only this resource has a choice: its
@@ -4352,6 +4419,29 @@ if ST._DefineSettingRoute then
                             return RESOURCE_FINDER.MaxBorderStyleIs(context, "pixel")
                         end,
                     },
+                })
+            end
+
+            if RB.ResourceSounds.Supports(capturedPowerType) then
+                local soundRoute = ST._DefineSettingRoute({
+                    idPrefix = "resource." .. tostring(capturedPowerType) .. ".sounds",
+                    scope = "resource", rowScope = "detail", tab = "settings", tabLabel = "Settings",
+                    section = "sounds", sectionLabel = "Sound Alerts",
+                    collapseKeys = { "rb_resource_sounds" }, collapseStore = "resource",
+                    applies = appliesPower,
+                })
+                local function SoundEnabled(context)
+                    return RESOURCE_FINDER.ReadResourceValue(context, capturedPowerType, "resourceSoundEnabled", false) == true
+                end
+                detail.sounds = soundRoute:Settings({
+                    enabled = { label = "Enable Sound Alert" },
+                    trigger = { label = "Trigger", applies = SoundEnabled },
+                    sound = { label = "Sound", applies = SoundEnabled },
+                    combatOnly = { label = "Combat Only", applies = SoundEnabled },
+                    amount = { label = "Amount", applies = function(context)
+                        return SoundEnabled(context) and RESOURCE_FINDER.ReadResourceValue(context,
+                            capturedPowerType, "resourceSoundTrigger", "maximum") == "amount"
+                    end },
                 })
             end
 

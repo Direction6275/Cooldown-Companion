@@ -1683,7 +1683,7 @@ end
 local function GetAuraStackResourceMax(powerType)
     local info = RB.AURA_STACK_RESOURCES[powerType]
     if not info then return 0 end
-    if info.maxStacks then return info.maxStacks end
+    if info.maxStacks then return info.maxStacks, true end
 
     local resolved
     if info.dynamicMax == "cumulativeAura"
@@ -1699,11 +1699,14 @@ local function GetAuraStackResourceMax(powerType)
     if issecretvalue and issecretvalue(resolved) then
         resolved = nil
     end
+    local confirmed = type(resolved) == "number" and resolved > 0
+        and resolved < math.huge and resolved == math.floor(resolved)
     if resolved == nil or resolved == 0 then
         resolved = info.fallbackMax
     end
     resolved = tonumber(resolved) or 1
-    return resolved >= 1 and resolved or 1
+    -- Rendering keeps its fallback; sounds require a confirmed cap.
+    return resolved >= 1 and resolved or 1, confirmed
 end
 
 -- Whether an aura-stack family member is currently the hidden half of a

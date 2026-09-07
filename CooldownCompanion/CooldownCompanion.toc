@@ -99,6 +99,7 @@ Core\ContainerFrame.lua
 Core\GroupFrame.lua
 OtherBars\ResourceBarConstants.lua
 OtherBars\ResourceBarHelpers.lua
+OtherBars\ResourceBarSoundAlerts.lua
 OtherBars\CastBar.lua
 OtherBars\ResourceBarVisuals.lua
 OtherBars\ResourceBarHealth.lua
