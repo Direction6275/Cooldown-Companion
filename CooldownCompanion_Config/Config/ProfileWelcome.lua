@@ -73,6 +73,7 @@ local function CreateWelcome(parent)
     pane.create.frame:Show()
 
     pane.disclosure = AceGUI:Create("InteractiveLabel")
+    ST._CleanRecycledEntry(pane.disclosure)
     pane.disclosure:SetFontObject(GameFontHighlight)
     pane.disclosure:SetJustifyH("CENTER")
     pane.disclosure:SetColor(0.7, 0.7, 0.7)
