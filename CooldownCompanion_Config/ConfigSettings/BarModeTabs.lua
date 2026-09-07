@@ -49,7 +49,6 @@ local ReconcilePandemicMarkerPreview = ST._ReconcilePandemicMarkerPreview
 local AddDurationTextVisibilityRows = ST._AddDurationTextVisibilityRows
 local AddSettingsSubheading = ST._AddSettingsSubheading
 local AddFamilyColumnCaptions = ST._AddFamilyColumnCaptions
-local BeginFullWidthRowGroup = ST._BeginFullWidthRowGroup
 
 -- Imports from RowWidgets.lua (the row grammar)
 local AddCheckboxRow = ST._AddCheckboxRow
@@ -837,7 +836,7 @@ local function BuildBarAppearanceTab(container, group, style)
     AddSettingsSubheading(container, "Duration Text")
     local durationLeft, durationRight
     if isAuraPanel then
-        durationLeft = BeginFullWidthRowGroup(container)
+        durationLeft = BeginRowGrid(container)
         durationRight = durationLeft
     else
         durationLeft, durationRight = BeginRowGrid(container)
@@ -846,7 +845,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- rule and the same predicate the icons twin uses. LEFT is the Show
     -- Cooldown Text block, whose only gate is `not isAuraPanel`; RIGHT is the
     -- aura duration text block, gated on an aura-tracking entry. An Aura Panel
-    -- is a single rail, which the helper also refuses on its own. The low-time
+    -- uses the left half, which the helper also refuses on its own. The low-time
     -- grid below is NOT captioned: one feature across two columns, not a family
     -- split.
     if not isAuraPanel and GroupHasAuraTrackingEntry(group) then
@@ -855,7 +854,7 @@ local function BuildBarAppearanceTab(container, group, style)
     local lowTimeLeft, lowTimeRight
     if drawsCooldownLowTime or drawsAuraLowTime then
         if isAuraPanel then
-            lowTimeLeft = BeginFullWidthRowGroup(container)
+            lowTimeLeft = BeginRowGrid(container)
             lowTimeRight = lowTimeLeft
         else
             lowTimeLeft, lowTimeRight = BeginRowGrid(container)
