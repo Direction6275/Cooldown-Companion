@@ -520,8 +520,23 @@ EntryRuntime.ClassifyChargeState = ClassifyChargeState
 -- charge-aware and can show during per-cast lockouts and recharge, so while
 -- the charge count is unreadable (countUnreadable), cast-history evidence
 -- (owner._chargesSpent) suppresses the zero claim when it says charges remain.
-local function ResolveZeroChargesConfirmed(owner, mainCDShown, countUnreadable, maxCharges)
+local function ResolveZeroChargesConfirmed(owner, mainCDShown, countUnreadable, maxCharges, spellCooldownInfo)
     local zeroConfirmed = mainCDShown == true
+    -- Owner-approved recovery heuristic: the live Fire Blast trace showed
+    -- brief start-recovery lockouts surviving ignoreGCD with no active category.
+    -- They do not establish zero charges, even after the cast counter reaches max.
+    -- Keep category-backed, deferred, and ambiguous cooldown evidence unchanged.
+    if zeroConfirmed and countUnreadable and maxCharges and maxCharges > 1
+            and spellCooldownInfo and spellCooldownInfo.isActive == true
+            and spellCooldownInfo.isEnabled == true and spellCooldownInfo.isOnGCD ~= true then
+        local category = spellCooldownInfo.activeCategory
+        if not issecretvalue(category) and category == nil then
+            local recovery = spellCooldownInfo.timeUntilEndOfStartRecovery
+            if issecretvalue(recovery) or (type(recovery) == "number" and recovery > 0) then
+                return false
+            end
+        end
+    end
     if zeroConfirmed and countUnreadable and owner then
         local spent = owner._chargesSpent
         if maxCharges and maxCharges > 1 and spent and spent < maxCharges then
@@ -596,7 +611,7 @@ local function ApplyCustomBarChargeState(owner, result, baseSpellID, cooldownSpe
         owner._chargesSpent = maxCharges or 0
     end
 
-    local zeroConfirmed = ResolveZeroChargesConfirmed(owner, mainCDShown, currentCharges == nil, maxCharges)
+    local zeroConfirmed = ResolveZeroChargesConfirmed(owner, mainCDShown, currentCharges == nil, maxCharges, result.info)
     result.chargeState = ClassifyChargeState(currentCharges, maxCharges, zeroConfirmed, result.chargeRecharging)
 
     if result.chargeRecharging then

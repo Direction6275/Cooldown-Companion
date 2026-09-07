@@ -969,9 +969,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._chargesSpent = buttonData.maxCharges or 0
         end
 
-        -- Cast-history suppression (shared heuristic) applies only to charge
-        -- spells whose count is unreadable; it covers both the action bar
-        -- probe and the isActive fallback paths.
+        -- Recovery and cast-history suppression apply only to charge spells
+        -- whose count is unreadable, covering both action-slot and spell paths.
         local countUnreadable = buttonData.type == "spell"
             and buttonData.hasCharges
             and button._chargeCountReadable ~= true
@@ -979,7 +978,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button,
             button._mainCDShown,
             countUnreadable,
-            buttonData.maxCharges
+            buttonData.maxCharges,
+            spellCooldownInfo
         )
     else
         button._zeroChargesConfirmed = false
