@@ -793,6 +793,18 @@ local function PlaySharedMediaSound(soundName, channel, speechText)
     return willPlayFile and true or false
 end
 
+-- Resource thresholds use ordinary playback, not native aura registrations.
+-- Explicit previews never touch resource transition history.
+function CooldownCompanion:PlayResourceSoundAlert(powerType, soundName, trigger, amount)
+    local name = ST._RB.POWER_NAMES[powerType] or "Resource"
+    local threshold = trigger == "amount" and tostring(amount or 1) or "maximum"
+    return PlaySharedMediaSound(soundName, DEFAULT_SOUND_CHANNEL, name .. ": " .. threshold)
+end
+
+function CooldownCompanion:PreviewResourceSoundAlertSelection(powerType, soundName, trigger, amount)
+    return self:PlayResourceSoundAlert(powerType, soundName, trigger, amount)
+end
+
 function CooldownCompanion:PreviewSoundAlertSelection(buttonData, soundName)
     return PlaySharedMediaSound(soundName, self:GetButtonSoundAlertChannel(buttonData), GetButtonSpeechText(buttonData))
 end

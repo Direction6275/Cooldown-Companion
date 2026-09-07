@@ -74,6 +74,11 @@ function RB.CreateResourceBarLifecycleModule(deps)
             lifecycleFrame = CreateFrame("Frame")
             lifecycleFrame:SetScript("OnEvent", function(self, event, ...)
                 if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
+                if event == "UPDATE_SHAPESHIFT_FORM"
+                    or event == "ACTIVE_TALENT_GROUP_CHANGED"
+                    or event == "PLAYER_SPECIALIZATION_CHANGED" then
+                    RB.ResourceSounds.Reset()
+                end
                 if event == "UPDATE_SHAPESHIFT_FORM" then
                     -- A form only concerns the bars when it changes WHICH
                     -- bars show (druid forms swap resources). A form that
@@ -137,7 +142,9 @@ function RB.CreateResourceBarLifecycleModule(deps)
             eventFrame = CreateFrame("Frame")
             eventFrame:SetScript("OnEvent", function(self, event, ...)
                 if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
-                if event == "UNIT_MAXPOWER" or event == "UNIT_MAXHEALTH" then
+                if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+                    RB.ResourceSounds.ResetCombat()
+                elseif event == "UNIT_MAXPOWER" or event == "UNIT_MAXHEALTH" then
                     local unit = ...
                     if unit == "player" then
                         CooldownCompanion:ApplyResourceBars()
@@ -145,6 +152,8 @@ function RB.CreateResourceBarLifecycleModule(deps)
                 end
             end)
         end
+        eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+        eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
         eventFrame:RegisterUnitEvent("UNIT_MAXPOWER", "player")
         -- UNIT_MAXHEALTH: stagger bar max is health-based; only matters for Brewmaster
         -- but RegisterUnitEvent with "player" filter has negligible overhead for others
