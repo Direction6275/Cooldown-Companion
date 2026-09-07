@@ -167,21 +167,21 @@ local function AddCDMStarterMenuTooltip(info)
 end
 
 -- Panel Templates (Core/PanelTemplates.lua). A template's type label is the
--- descriptor label of the base type it was saved from, so every surface
--- names it the same way: "Icon Panel", "Bar Panel", "Text Panel".
+-- descriptor label of its saved creation type, including Aura subtypes, so
+-- every create and apply surface names it the same way.
 local function GetPanelModeLabel(mode)
     local panelType = mode and PANEL_TYPE_BY_MODE[mode]
     return panelType and panelType.label or "Panel"
 end
 local function GetPanelTemplateModeLabel(template)
-    return GetPanelModeLabel(template and template.displayMode)
+    return GetPanelModeLabel(CooldownCompanion:GetPanelTemplateCreationMode(template))
 end
 -- One sentence for every surface that offers to build from a template, the
 -- article following the label: "an Icon Panel", "a Bar Panel".
 local function GetPanelTemplateTooltipText(template)
     local modeLabel = GetPanelTemplateModeLabel(template)
     local article = modeLabel:sub(1, 1):lower():match("[aeiou]") and "an" or "a"
-    return "Creates " .. article .. " " .. modeLabel .. " styled as this template."
+    return "Creates " .. article .. " " .. modeLabel .. " with this template's saved settings and placement."
 end
 local function AddPanelTemplateMenuTooltip(info, template)
     info.tooltipTitle = template.name
@@ -239,7 +239,7 @@ end
 
 -- The one create-from-template path, shared by the add tile's menu, the
 -- Group context menu and the empty-Group picker. Core builds the panel with
--- the template's name, look, shape and Group offset; it then finishes the
+-- template's complete saved setup and placement; it then finishes the
 -- way a typed create does, so an Icon Panel template still advances the
 -- tutorial and the add box still arms.
 local function CreatePanelFromTemplateInContainer(containerId, templateId)
@@ -253,10 +253,11 @@ local function CreatePanelFromTemplateInContainer(containerId, templateId)
     if not template then
         return
     end
-    local opts = BuildPanelCreateOptions(template.displayMode)
+    local creationMode = CooldownCompanion:GetPanelTemplateCreationMode(template)
+    local opts = BuildPanelCreateOptions(creationMode)
     opts.containerId = containerId
     local newPanelId = CooldownCompanion:CreatePanelFromTemplate(containerId, templateId)
-    FinalizeCreatedPanel(newPanelId, template.displayMode, opts)
+    FinalizeCreatedPanel(newPanelId, creationMode, opts)
 end
 
 local function PrintCooldownManagerUnavailable(sourceData)

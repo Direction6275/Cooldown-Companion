@@ -403,13 +403,13 @@ end
 ------------------------------------------------------------------------
 -- Copy Panel Settings ("Copy Panel Settings To...")
 --
--- The one panel-to-panel style transfer: armed from the Navigator's panel
--- context menu, it pushes the source panel's Appearance and/or Indicators
--- tab settings onto a clicked target panel. Replaces the retired
+-- Armed from the Navigator's panel context menu, this pushes selected
+-- settings onto a clicked target panel. Replaces the retired
 -- panel-setting presets and the pull-style Copy Style From Panel, whose
 -- machinery this reuses in scoped form. What copies is declared by
 -- ST.PANEL_COPY_SCOPES (Defaults.lua) plus the override sections' own key
--- lists; anchors, Layout-tab keys, visibility, name, and entries never move.
+-- lists. Position is explicit; anchor targets, eligibility, name and entries
+-- never move. The combined copy excludes Position.
 ------------------------------------------------------------------------
 
 -- Which copy family a panel belongs to. nil for the specialist modes
@@ -428,14 +428,17 @@ function CooldownCompanion:GetPanelCopyMode(group)
     return nil
 end
 
--- The scopes a mode offers, in menu order. "all" is every listed scope and
--- is always valid for a copyable mode.
+-- The scopes a mode offers, in menu order. The combined "all" scope excludes
+-- Position and shares Arrangement's display-mode and Aura-subtype gate.
 function CooldownCompanion:GetPanelCopyScopeList(mode)
     local modeScopes = ST.PANEL_COPY_SCOPES[mode]
     if not modeScopes then return {} end
     local list = {}
     if modeScopes.appearance then list[#list + 1] = "appearance" end
     if modeScopes.indicators then list[#list + 1] = "indicators" end
+    if modeScopes.visibility then list[#list + 1] = "visibility" end
+    if modeScopes.arrangement then list[#list + 1] = "arrangement" end
+    if modeScopes.position then list[#list + 1] = "position" end
     return list
 end
 
@@ -481,13 +484,24 @@ function CooldownCompanion:CanCopyPanelSettings(sourceGroupId, targetGroupId, sc
     end
 
     local mode = self:GetPanelCopyMode(sourceGroup)
-    if not mode or mode ~= self:GetPanelCopyMode(targetGroup) then
+    local targetMode = self:GetPanelCopyMode(targetGroup)
+    local portable = scope == "visibility" or scope == "position"
+    if not mode or not targetMode or (not portable and mode ~= targetMode) then
         return false, "mode_mismatch"
     end
 
     local modeScopes = ST.PANEL_COPY_SCOPES[mode]
     if not modeScopes or (scope ~= "all" and not modeScopes[scope]) then
         return false, "invalid_scope"
+    end
+
+    if (scope == "arrangement" or scope == "all")
+        and ST.IsAuraPanelGroup(sourceGroup) ~= ST.IsAuraPanelGroup(targetGroup) then
+        return false, "subtype_mismatch"
+    end
+    if scope == "position"
+        and self:IsCursorAnchor(sourceGroup.anchor) ~= self:IsCursorAnchor(targetGroup.anchor) then
+        return false, "anchor_mode_mismatch"
     end
 
     -- Any panel in the profile is a legal source or target as long as both
@@ -509,6 +523,105 @@ function CooldownCompanion:CanCopyPanelSettings(sourceGroupId, targetGroupId, sc
     return true
 end
 
+-- Only the panel's own hide rules move: retain every eligibility field and
+-- never flatten inherited Group rules. A missing table means no local rules;
+-- a present table defaults Pet Battle and Vehicle / Override UI to hidden.
+local function CopyPanelVisibility(self, source, target, scopeData)
+    local defaults = self:GetDefaultLoadConditions()
+    local sourceConditions = source.loadConditions
+    local targetConditions = target.loadConditions
+    if type(targetConditions) ~= "table" then
+        targetConditions = {}
+        target.loadConditions = targetConditions
+    end
+    for _, option in ipairs(ST.LOAD_CONDITION_OPTIONS) do
+        local value = false
+        if type(sourceConditions) == "table" then
+            value = sourceConditions[option.key]
+            if value == nil then
+                value = defaults[option.key]
+                if value == nil then value = option.default or false end
+            end
+        end
+        -- Explicit booleans also preserve the missing-source-table meaning
+        -- when the target needs a table to retain its eligibility restrictions.
+        targetConditions[option.key] = value == true
+    end
+    for _, key in ipairs(scopeData.groupKeys) do
+        -- nil restores the runtime reader's default, including custom fades.
+        target[key] = CopyPresetValue(source[key])
+    end
+end
+
+local function CopyPanelArrangement(source, target, mode, scopeData)
+    local sourceStyle = source.style or {}
+    local style = target.style
+    if type(style) ~= "table" then
+        style = {}
+        target.style = style
+    end
+    local auraPanel = ST.IsAuraPanelGroup(target)
+    -- Aura bars always occupy a vertical column; their hidden orientation
+    -- and wrap settings must not be overwritten by an arrangement copy.
+    if not (auraPanel and mode == "bars") then
+        style[scopeData.orientationKey] = ST.GetPanelLayoutOrientation(mode, sourceStyle)
+        style.buttonsPerRow = sourceStyle.buttonsPerRow or 12
+    end
+    style.growthOrigin = sourceStyle.growthOrigin or "TOPLEFT"
+    if auraPanel then
+        target.compactGrowthDirection = source.compactGrowthDirection or "center"
+    else
+        CopyCompactLayoutSettings(source, target)
+    end
+end
+
+local function CopyPanelPosition(self, source, target)
+    local cursor = source.positionMode == "cursor" or self:IsCursorAnchor(source.anchor)
+    local defaults = cursor and self:GetDefaultCursorPanelAnchor()
+        or { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0 }
+    local sourceAnchor = type(source.anchor) == "table" and source.anchor or {}
+    local anchor = target.anchor
+    if type(anchor) ~= "table" then
+        -- Preserve legacy string targets too; do not substitute the source's
+        -- target or the template applier's Group-relative anchor.
+        anchor = { relativeTo = anchor }
+        target.anchor = anchor
+    end
+    anchor.point = sourceAnchor.point or defaults.point
+    anchor.relativePoint = cursor and "CENTER" or sourceAnchor.relativePoint or defaults.relativePoint
+    anchor.x = tonumber(sourceAnchor.x) or defaults.x
+    anchor.y = tonumber(sourceAnchor.y) or defaults.y
+end
+
+-- Template snapshots use the same field writers as direct panel copying.
+ST._CopyPanelVisibility = CopyPanelVisibility
+ST._CopyPanelArrangement = CopyPanelArrangement
+ST._CopyPanelPosition = CopyPanelPosition
+
+local function RefreshCopiedPanelLayout(self, groupId, position)
+    if not self:IsGroupVisibleToCurrentChar(groupId) then return end
+    local frame = self.groupFrames and self.groupFrames[groupId]
+    if InCombatLockdown() and (not frame or frame:IsProtected()) then
+        if frame then
+            frame._layoutDirty = true
+            if position then frame._anchorDirty = true end
+        end
+        self._pendingFullRefresh = true
+        return
+    end
+    if position then
+        if self.ClearCursorAnchorLayoutPreviewOffset then
+            self:ClearCursorAnchorLayoutPreviewOffset(groupId)
+        end
+        if frame and ST._FinishGroupAnchorChange then
+            local group = self.db.profile.groups[groupId]
+            ST._FinishGroupAnchorChange(self, groupId, frame, group, self:IsCursorAnchor(group.anchor))
+        end
+    end
+    -- The standard refresh also owns the pinned mirror and Aura rebind.
+    self:RefreshGroupFrame(groupId)
+end
+
 -- The one writer behind Copy Panel Settings and Panel Templates
 -- (Core/PanelTemplates.lua). `source` is any panel-shaped table - a live
 -- panel or a stored template: its style, masqueEnabled and compact trio are
@@ -518,8 +631,10 @@ end
 -- opts, every one optional and template-only (the copy feature passes none):
 --   shapeKeys    style keys copied after the look scopes, each by the same
 --                source-value-else-baseline rule (ST.PANEL_TEMPLATE_SHAPE_KEYS)
---   skipCompact  leave the target's compact trio alone even where a scope
---                copies it (a template saved from an Aura Panel carries none)
+--   copyCompact  copy the original template compact trio independently of
+--                quick-copy scope ownership
+--   skipCompact  leave the target's compact trio alone (an Aura template
+--                carries none)
 --   sections     { [anchor] = { <ST.PANEL_TEMPLATE_SECTION_KEYS> } }: per
 --                anchor, the section's settings, written onto the target's
 --                section at that anchor (created member-less when absent).
@@ -537,6 +652,38 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
     local targetGroup = db.groups[targetGroupId]
     local mode = self:GetPanelCopyMode(targetGroup)
     local modeScopes = ST.PANEL_COPY_SCOPES[mode]
+    local copiedVisibility = false
+    local copiedArrangement = false
+    local copiedPosition = false
+    for _, scopeName in ipairs(scopes) do
+        local scopeData = modeScopes[scopeName]
+        if scopeData and scopeData.copiesLoadConditions then
+            CopyPanelVisibility(self, source, targetGroup, scopeData)
+            copiedVisibility = true
+        elseif scopeData and scopeName == "arrangement" then
+            CopyPanelArrangement(source, targetGroup, mode, scopeData)
+            copiedArrangement = true
+        elseif scopeData and scopeName == "position" then
+            CopyPanelPosition(self, source, targetGroup)
+            copiedPosition = true
+        end
+    end
+
+    if #scopes == 1 and (copiedArrangement or copiedPosition) then
+        RefreshCopiedPanelLayout(self, targetGroupId, copiedPosition)
+        return true
+    end
+
+    -- Visibility is portable across display types and never enters the style,
+    -- compact-layout, or Aura Panel normalization path. RefreshGroupFrame owns
+    -- visibility and combat deferral, just as it does for the tab's hide rules.
+    if copiedVisibility and #scopes == 1 then
+        if self:IsGroupVisibleToCurrentChar(targetGroupId) then
+            self:RefreshGroupFrame(targetGroupId)
+            self:RefreshAlphaUpdateDriver()
+        end
+        return true
+    end
 
     -- Per key: the source's value, or the shipped default where the source
     -- carries none - so the target's scope comes out exactly matching the
@@ -569,30 +716,26 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
     for _, scopeName in ipairs(scopes) do
         local scopeData = modeScopes[scopeName]
         if scopeData then
-            -- One scope at a time, so each scope's keys land before its Masque
-            -- and compact writes, exactly as they always have.
+            -- Appearance and Indicators carry style keys; the other scopes
+            -- wrote their own fields above.
             ForEachPanelCopyStyleKey(mode, { scopeName }, CopyStyleKey)
             if scopeData.copiesMasque then
                 targetGroup.masqueEnabled = source.masqueEnabled and true or false
                 copiedMasque = true
             end
-            -- Compact settings never cross an Aura Panel boundary in either
-            -- direction: on an Aura Panel compactGrowthDirection is the
-            -- Layout-owned Collapse Direction (a placement setting outside
-            -- this feature's line), and compactLayout is invariant-forced
-            -- false there - so an Aura endpoint has nothing Appearance-shaped
-            -- to give or take here.
-            if scopeData.copiesCompact
-                and not opts.skipCompact
-                and not ST.IsAuraPanelGroup(source)
-                and not ST.IsAuraPanelGroup(targetGroup) then
-                CopyCompactLayoutSettings(source, targetGroup)
-            end
+
         end
     end
 
-    -- Shape rides after the look, by the same baseline rule. Only a template
-    -- asks for it: the copy feature's line stops at the look.
+    -- Templates retain their original compact contract after packing moved
+    -- out of Appearance. Aura endpoints still do not give or take this trio.
+    if opts.copyCompact and not opts.skipCompact
+        and not ST.IsAuraPanelGroup(source)
+        and not ST.IsAuraPanelGroup(targetGroup) then
+        CopyCompactLayoutSettings(source, targetGroup)
+    end
+
+    -- Templates retain their original shape registry and baseline rule.
     for _, key in ipairs(opts.shapeKeys or {}) do
         CopyStyleKey(key)
     end
@@ -666,7 +809,7 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
     -- gate like every key above; the frame side runs with the refresh below,
     -- or rides _anchorDirty out of combat the way a deferred layout does.
     local anchor = opts.anchor
-    local wasCursorAnchored = false
+    local wasCursorAnchored = copiedPosition and self:IsCursorAnchor(targetGroup.anchor) or false
     if anchor and targetGroup.parentContainerId then
         wasCursorAnchored = self:IsCursorAnchor(targetGroup.anchor)
         targetGroup.anchor = {
@@ -677,7 +820,16 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
             y = tonumber(anchor.y) or 0,
         }
     else
-        anchor = nil
+        anchor = copiedPosition and targetGroup.anchor or nil
+    end
+
+    if copiedVisibility then
+        -- Other-class copies update saved data without creating runtime frames
+        -- or Masque groups. The class's normal load path applies it later.
+        if not self:IsGroupVisibleToCurrentChar(targetGroupId) then return true end
+        -- Arm before the combat-deferred return too: Alpha owns its runtime
+        -- updates independently of the protected frame's pending layout work.
+        self:RefreshAlphaUpdateDriver()
     end
 
     local frame = self.groupFrames and self.groupFrames[targetGroupId]
@@ -733,7 +885,10 @@ function CooldownCompanion:CopyPanelSettings(sourceGroupId, targetGroupId, scope
 
     local scopes
     if scope == "all" then
-        scopes = self:GetPanelCopyScopeList(mode)
+        scopes = {}
+        for _, scopeName in ipairs(self:GetPanelCopyScopeList(mode)) do
+            if scopeName ~= "position" then scopes[#scopes + 1] = scopeName end
+        end
     else
         scopes = { scope }
     end

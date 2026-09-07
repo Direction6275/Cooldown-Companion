@@ -1376,10 +1376,8 @@ local function BuildLayoutTab(container)
     -- context (selecting an entry lands the surface on Appearance, changing
     -- panelSettingsTab - selectedButton itself is lens-ignored).
     --
-    -- Compact Mode still copies with the APPEARANCE scope of
-    -- "Copy Panel Settings To..." (ST.PANEL_COPY_SCOPES, Defaults.lua) - it is
-    -- packing behavior, not placement - and this move deliberately does not
-    -- change that.
+    -- Compact Mode copies with the Arrangement scope of
+    -- "Copy Panel Settings To..." (ST.PANEL_COPY_SCOPES, Defaults.lua).
     if isIconsMode or isBarMode or isTextMode then
         BuildCompactModeControls(arrangeRight, group, tabInfoButtons, {
             setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.compact,

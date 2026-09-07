@@ -4,7 +4,7 @@
     "Copy Panel Settings To...": armed from the Navigator's panel context
     menu. While armed, a banner rides the top of the Navigator, eligible
     panel rows ring green, and left-clicking one copies the armed scope
-    (Appearance / Indicators / All Panel Settings) onto it. The mode
+    onto it. Position is explicit; the combined scope excludes it. The mode
     survives panel switches and Browse Other Classes and stays armed after
     each apply; Esc (Panel.lua's key chain) or right-clicking a Navigator
     row cancels. The SOURCE row is the one row that still navigates
@@ -27,7 +27,10 @@ local COPY_PANEL_BANNER_HEIGHT = 20
 local SCOPE_LABELS = {
     appearance = "Appearance",
     indicators = "Indicators",
-    all = "All Panel Settings",
+    visibility = "Visibility",
+    arrangement = "Arrangement",
+    position = "Position",
+    all = "All Except Position",
 }
 
 local function GetCopyPanelSettingsLabel(state)

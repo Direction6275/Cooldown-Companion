@@ -794,7 +794,7 @@ local function ShowPanelContextMenu(panelId, containerId)
                 info.hasArrow = true
                 info.menuList = "PANEL_TEMPLATES"
                 info.tooltipTitle = "Templates"
-                info.tooltipText = "Save this panel's look and arrangement, or apply a saved one."
+                info.tooltipText = "Save this panel's settings, or apply a saved setup without moving the panel."
                 info.tooltipOnButton = 1
                 UIDropDownMenu_AddButton(info, level)
             end
@@ -825,11 +825,34 @@ local function ShowPanelContextMenu(panelId, containerId)
                 and CooldownCompanion:GetPanelCopyMode(panel) or nil
             local scopes = copyMode
                 and CooldownCompanion:GetPanelCopyScopeList(copyMode) or {}
-            local scopeLabels = { appearance = "Appearance", indicators = "Indicators" }
+            local scopeLabels = {
+                appearance = "Appearance", indicators = "Indicators", visibility = "Visibility",
+                arrangement = "Arrangement", position = "Position",
+            }
             local function AddScopeItem(scopeName, label)
                 local info = UIDropDownMenu_CreateInfo()
                 info.text = label
                 info.notCheckable = true
+                if scopeName == "appearance" then
+                    info.tooltipText = "Copies visual styling, size, and spacing. Arrangement, position, visibility rules, and entries stay unchanged."
+                elseif scopeName == "indicators" then
+                    info.tooltipText = "Copies indicator effects, dimming, tooltips, and pings. Size, layout, visibility rules, and entries stay unchanged."
+                elseif scopeName == "visibility" then
+                    info.tooltipText = "Visibility copies this panel's Where To Hide It rules and local Alpha settings. Eligibility and Alpha inheritance stay unchanged; inherited Group rules and Alpha still apply."
+                elseif scopeName == "arrangement" then
+                    info.tooltipText = "Copies orientation, growth, wrapping, and packing for matching panel types. Appearance, position, visibility, and entries stay unchanged."
+                elseif scopeName == "position" then
+                    info.tooltipText = "Copies anchor points and offsets relative to each destination's existing target. Anchor targets stay unchanged. Cursor panels copy only to cursor panels."
+                elseif scopeName == "all" then
+                    info.tooltipText = (copyMode == "text"
+                        and "Copies Appearance, Visibility, and Arrangement for matching panel types."
+                        or "Copies Appearance, Indicators, Visibility, and Arrangement for matching panel types.")
+                        .. " Position, anchor targets, entries, eligibility, and Alpha inheritance stay unchanged."
+                end
+                if info.tooltipText then
+                    info.tooltipTitle = label
+                    info.tooltipOnButton = 1
+                end
                 info.func = function()
                     CloseDropDownMenus()
                     if ST._ArmCopyPanelSettings then
@@ -842,7 +865,7 @@ local function ShowPanelContextMenu(panelId, containerId)
                 AddScopeItem(scopeName, scopeLabels[scopeName] or scopeName)
             end
             if #scopes > 1 then
-                AddScopeItem("all", "All Panel Settings")
+                AddScopeItem("all", "All Except Position")
             end
         elseif menuList == "PANEL_TEMPLATES" then
             local info = UIDropDownMenu_CreateInfo()
@@ -884,12 +907,22 @@ local function ShowPanelContextMenu(panelId, containerId)
             end
             local function AddTemplateItem(templateId, template)
                 local info = UIDropDownMenu_CreateInfo()
-                if deleting then
-                    info.text = FormatPanelTemplateMenuText(template)
-                else
-                    info.text = template.name
-                end
+                info.text = FormatPanelTemplateMenuText(template)
                 info.notCheckable = true
+                if not deleting then
+                    info.disabled = not CooldownCompanion:CanApplyPanelTemplate(templateId, panelId)
+                    info.tooltipTitle = template.name
+                    info.tooltipText = template.templateVersion == 2
+                        and "Applies saved appearance, indicators, visibility, arrangement, and template extras. Position, anchor targets, eligibility, and Alpha inheritance stay unchanged."
+                        or "This older template applies its saved look and arrangement. Visibility stays unchanged; update it from a panel to capture the complete setup."
+                    if menuList == "UPDATE_PANEL_TEMPLATE" then
+                        info.tooltipText = "Replaces this template's saved setup with this panel's current settings."
+                    end
+                    if info.disabled then
+                        info.tooltipText = "This template requires a matching panel type."
+                    end
+                    info.tooltipOnButton = 1
+                end
                 info.func = function()
                     CloseDropDownMenus()
                     if menuList == "APPLY_PANEL_TEMPLATE" then
